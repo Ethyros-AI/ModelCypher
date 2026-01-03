@@ -22,6 +22,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection
 
 logger = logging.getLogger(__name__)
@@ -131,9 +132,11 @@ class RefusalDirectionCache:
     @staticmethod
     def _direction_to_dict(direction: RefusalDirection) -> dict:
         raw_direction = direction.direction
-        direction_list = (
-            raw_direction.tolist() if hasattr(raw_direction, "tolist") else list(raw_direction)
-        )
+        if hasattr(raw_direction, "shape") or hasattr(raw_direction, "tolist"):
+            backend = get_default_backend()
+            direction_list = backend.tolist(raw_direction)
+        else:
+            direction_list = list(raw_direction)
         return {
             "direction": direction_list,
             "layerIndex": direction.layer_index,

@@ -348,14 +348,16 @@ class InvariantLayerMappingService:
                     # Get top-k activated dimensions
                     abs_vals = mx.abs(last_hidden)
                     mx.eval(abs_vals)
-
-                    # Convert to list for processing
-                    abs_list = abs_vals.tolist()
-
-                    # Find top 32 activated dimensions
-                    indexed = [(i, v) for i, v in enumerate(abs_list)]
-                    indexed.sort(key=lambda x: -x[1])
-                    top_dims = indexed[:32]
+                    # Find top 32 activated dimensions on the backend
+                    b = self._backend
+                    top_k = min(32, int(abs_vals.shape[0]))
+                    neg_abs = -abs_vals
+                    top_idx = b.argsort(neg_abs)[:top_k]
+                    top_vals = b.take(abs_vals, top_idx, axis=0)
+                    b.eval(top_idx, top_vals)
+                    top_idx_list = [int(x) for x in b.tolist(top_idx)]
+                    top_val_list = [float(x) for x in b.tolist(top_vals)]
+                    top_dims = list(zip(top_idx_list, top_val_list))
 
                     # Derive activation threshold from dtype and data range
                     # Use division_epsilon which accounts for machine precision
@@ -363,8 +365,10 @@ class InvariantLayerMappingService:
                         division_epsilon,
                     )
 
-                    eps = division_epsilon(self._backend, abs_vals)
-                    max_val = max(abs_list) if abs_list else 1.0
+                    eps = division_epsilon(b, abs_vals)
+                    max_val_arr = b.max(abs_vals)
+                    b.eval(max_val_arr)
+                    max_val = float(b.to_scalar(max_val_arr)) if top_k > 0 else 1.0
                     activation_threshold = eps * max_val
 
                     # Create ActivatedDimension objects

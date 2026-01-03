@@ -124,7 +124,7 @@ class TestProcrustesBasic:
             for _ in range(10):  # 10 samples
                 row = backend.random_normal((5,))
                 backend.eval(row)
-                model_acts.append(backend.to_numpy(row).tolist())
+                model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
         config = Config(max_iterations=50, frechet_mean=FrechetMeanConfig(enabled=False))
@@ -146,7 +146,7 @@ class TestProcrustesBasic:
             for _ in range(8):
                 row = backend.random_normal((4,))
                 backend.eval(row)
-                model_acts.append(backend.to_numpy(row).tolist())
+                model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
         config = Config(frechet_mean=FrechetMeanConfig(enabled=False))
@@ -160,15 +160,15 @@ class TestProcrustesBasic:
             R_T = backend.transpose(R_arr)
             product = backend.matmul(R_arr, R_T)
             backend.eval(product)
-            prod_np = backend.to_numpy(product)
+            prod_list = backend.tolist(product)
 
             # Should be close to identity
             n = len(R)
             for i in range(n):
                 for j in range(n):
                     expected = 1.0 if i == j else 0.0
-                    eps = _eps(float(prod_np[i, j]), expected)
-                    assert abs(prod_np[i, j] - expected) <= eps
+                    eps = _eps(float(prod_list[i][j]), expected)
+                    assert abs(prod_list[i][j] - expected) <= eps
 
 
 class TestProcrustesMetricProperties:
@@ -207,7 +207,7 @@ class TestProcrustesMetricProperties:
             for _ in range(5):
                 row = backend.random_normal((3,))
                 backend.eval(row)
-                model_acts.append(backend.to_numpy(row).tolist())
+                model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
         config = Config(frechet_mean=FrechetMeanConfig(enabled=False))
@@ -277,7 +277,7 @@ class TestProcrustesHypothesis:
             for _ in range(n_samples):
                 row = backend.random_normal((n_features,))
                 backend.eval(row)
-                model_acts.append(backend.to_numpy(row).tolist())
+                model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
         config = Config(max_iterations=30, frechet_mean=FrechetMeanConfig(enabled=False))
@@ -307,7 +307,7 @@ class TestProcrustesHypothesis:
             for _ in range(n_samples):
                 row = backend.random_normal((n_features,))
                 backend.eval(row)
-                model_acts.append(backend.to_numpy(row).tolist())
+                model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
         config = Config(max_iterations=30, frechet_mean=FrechetMeanConfig(enabled=False))
@@ -319,14 +319,14 @@ class TestProcrustesHypothesis:
                 R_T = backend.transpose(R_arr)
                 product = backend.matmul(R_arr, R_T)
                 backend.eval(product)
-                prod_np = backend.to_numpy(product)
+                prod_list = backend.tolist(product)
 
                 n = len(R)
                 for i in range(n):
                     for j in range(n):
                         expected = 1.0 if i == j else 0.0
-                        eps = _eps(float(prod_np[i, j]), expected)
-                        assert abs(prod_np[i, j] - expected) <= eps
+                        eps = _eps(float(prod_list[i][j]), expected)
+                        assert abs(prod_list[i][j] - expected) <= eps
 
 
 class TestProcrustesWithScaling:
@@ -389,7 +389,7 @@ class TestProcrustesFrechetMean:
             for _ in range(15):
                 row = backend.random_normal((4,))
                 backend.eval(row)
-                model_acts.append(backend.to_numpy(row).tolist())
+                model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
         config = Config(

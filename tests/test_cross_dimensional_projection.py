@@ -812,14 +812,18 @@ class TestIntegration:
         back = project_cross_dimensional(forward.projected, original, backend=backend)
 
         # Compute correlation between original and round-trip result
-        orig_flat = backend.to_numpy(backend.reshape(original, (-1,)))
-        back_flat = backend.to_numpy(backend.reshape(back.projected, (-1,)))
+        orig_flat = backend.reshape(original, (-1,))
+        back_flat = backend.reshape(back.projected, (-1,))
+        backend.eval(orig_flat, back_flat)
 
-        # Should have some positive correlation (structure preserved)
-        import numpy as np
-        corr = np.corrcoef(orig_flat, back_flat)[0, 1]
+        # Compute Pearson correlation using backend
+        from modelcypher.core.domain.geometry.numerical_stability import compute_pearson_correlation
+        import math
+        orig_list = backend.tolist(orig_flat)
+        back_list = backend.tolist(back_flat)
+        corr = compute_pearson_correlation(orig_list, back_list)
         # Note: with random data, correlation may be low but should be defined
-        assert not np.isnan(corr)
+        assert math.isfinite(corr)
 
     def test_all_methods_produce_valid_output(self, backend: "Backend") -> None:
         """All methods should produce valid, usable output."""
@@ -836,7 +840,9 @@ class TestIntegration:
             assert 0.0 <= result.alignment_score <= 1.0
 
             # Check no NaN or Inf
-            proj_np = backend.to_numpy(result.projected)
-            import numpy as np
-            assert not np.any(np.isnan(proj_np))
-            assert not np.any(np.isinf(proj_np))
+            isfinite_arr = backend.isfinite(result.projected)
+            backend.eval(isfinite_arr)
+            isfinite_list = backend.tolist(isfinite_arr)
+            # Flatten and check all are finite
+            all_finite = all(all(row) if isinstance(row, list) else row for row in isfinite_list)
+            assert all_finite, "Output contains NaN or Inf"

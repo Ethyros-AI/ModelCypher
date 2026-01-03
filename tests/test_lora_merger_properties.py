@@ -315,8 +315,8 @@ class TestProcrustesAlign:
         target_energy = backend.mean(target_arr * target_arr)
         backend.eval(mse, target_energy)
         eps = _div_eps()
-        expected = float(backend.to_numpy(mse).item()) / max(
-            float(backend.to_numpy(target_energy).item()), eps
+        expected = float(backend.to_scalar(mse)) / max(
+            float(backend.to_scalar(target_energy)), eps
         )
         assert abs(error - expected) < eps
 

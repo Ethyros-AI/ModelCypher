@@ -75,7 +75,7 @@ def simple_gaussian_samples():
     samples = backend.astype(samples, "float32")
     backend.eval(samples)
 
-    return backend.to_numpy(samples)
+    return backend.tolist(samples)
 
 
 @pytest.fixture
@@ -89,13 +89,11 @@ def spherical_samples():
     # Sample from unit sphere
     samples = backend.random_normal((n_samples, d))
     backend.eval(samples)
-    samples_np = backend.to_numpy(samples)
-
-    # Normalize to unit sphere using numpy (unavoidable for this operation)
-    import numpy as np
-    samples_np = samples_np / np.linalg.norm(samples_np, axis=1, keepdims=True)
-
-    return samples_np
+    # Normalize to unit sphere using backend
+    norms = backend.norm(samples, axis=1, keepdims=True)
+    normalized = samples / norms
+    backend.eval(normalized)
+    return backend.tolist(normalized)
 
 
 @pytest.fixture
@@ -117,7 +115,7 @@ def two_overlapping_concepts():
     samples_b = samples_b + 0.5  # shift by 0.5
     backend.eval(samples_b)
 
-    return backend.to_numpy(samples_a), backend.to_numpy(samples_b)
+    return backend.tolist(samples_a), backend.tolist(samples_b)
 
 
 @pytest.fixture
@@ -139,7 +137,7 @@ def two_distant_concepts():
     samples_b = samples_b + 10.0  # shift by 10
     backend.eval(samples_b)
 
-    return backend.to_numpy(samples_a), backend.to_numpy(samples_b)
+    return backend.tolist(samples_a), backend.tolist(samples_b)
 
 
 # ============================================================================
@@ -184,8 +182,8 @@ class TestSectionalCurvatureEstimator:
         neighbors = backend.random_normal((3, 10))  # Less than d+1
         backend.eval(point, neighbors)
 
-        point_np = backend.to_numpy(point)
-        neighbors_np = backend.to_numpy(neighbors)
+        point_np = backend.tolist(point)
+        neighbors_np = backend.tolist(neighbors)
 
         curvature = estimator.estimate_local_curvature(point_np, neighbors_np)
 
@@ -228,7 +226,7 @@ class TestRiemannianDensityEstimator:
             random_point = backend.random_normal((volume.dimension,))
             random_point = random_point * 3.0
             backend.eval(random_point)
-            random_point_np = backend.to_numpy(random_point)
+            random_point_np = backend.tolist(random_point)
             density_random = volume.density_at(random_point_np)
             assert density_random <= density_at_centroid
 
@@ -238,10 +236,13 @@ class TestRiemannianDensityEstimator:
 
         volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
-        # Use numpy for eigvalsh - unavoidable
-        import numpy as np
-        eigenvalues = np.linalg.eigvalsh(volume.covariance)
-        assert all(eigenvalues > 0)
+        # Use backend for eigenvalue decomposition
+        backend = get_default_backend()
+        cov_arr = backend.array(volume.covariance)
+        eigenvalues, _ = backend.eigh(cov_arr)
+        backend.eval(eigenvalues)
+        eig_list = backend.tolist(eigenvalues)
+        assert all(e > 0 for e in eig_list)
 
     def test_single_sample_volume(self):
         """Single sample should produce point mass volume."""
@@ -250,15 +251,14 @@ class TestRiemannianDensityEstimator:
 
         single = backend.array([[1.0, 2.0, 3.0]])
         backend.eval(single)
-        single_np = backend.to_numpy(single)
+        single_list = backend.tolist(single)
 
-        volume = estimator.estimate_concept_volume("single", single_np)
+        volume = estimator.estimate_concept_volume("single", single_list)
 
         assert volume.num_samples == 1
         assert volume.geodesic_radius == 0.0
-        # Use numpy for assert_allclose - unavoidable
-        import numpy as np
-        np.testing.assert_allclose(volume.centroid, single_np[0])
+        # Use pytest.approx for comparison
+        assert list(volume.centroid) == pytest.approx(single_list[0])
 
     def test_mahalanobis_distance_at_centroid(self, simple_gaussian_samples):
         """Mahalanobis distance at centroid should be zero."""
@@ -335,20 +335,20 @@ class TestConceptVolumeRelation:
         backend.eval(samples_a, samples_b)
 
         estimator = RiemannianDensityEstimator()
-        vol_a = estimator.estimate_concept_volume("A", backend.to_numpy(samples_a))
-        vol_b = estimator.estimate_concept_volume("B", backend.to_numpy(samples_b))
+        vol_a = estimator.estimate_concept_volume("A", backend.tolist(samples_a))
+        vol_b = estimator.estimate_concept_volume("B", backend.tolist(samples_b))
 
         relation_similar = estimator.compute_relation(vol_a, vol_b)
 
         # Create orthogonal subspace (rotate samples_b by 90 degrees in first 2 dims)
-        samples_orthogonal = backend.array(backend.to_numpy(samples_b))
+        samples_orthogonal = backend.array(backend.tolist(samples_b))
         # Swap and negate to create orthogonal vectors in first 2 dimensions
-        orthogonal_np = backend.to_numpy(samples_orthogonal)
+        orthogonal_np = backend.tolist(samples_orthogonal)
         orthogonal_np[:, 0], orthogonal_np[:, 1] = -orthogonal_np[:, 1].copy(), orthogonal_np[:, 0].copy()
         samples_orthogonal = backend.array(orthogonal_np)
         backend.eval(samples_orthogonal)
 
-        vol_orthogonal = estimator.estimate_concept_volume("C", backend.to_numpy(samples_orthogonal))
+        vol_orthogonal = estimator.estimate_concept_volume("C", backend.tolist(samples_orthogonal))
         relation_orthogonal = estimator.compute_relation(vol_a, vol_orthogonal)
 
         # Self-alignment is the maximum possible
@@ -438,9 +438,9 @@ class TestGlobalMergeAnalysisReport:
         backend.eval(samples_a, samples_b, samples_c)
 
         concepts = {
-            "A": backend.to_numpy(samples_a),
-            "B": backend.to_numpy(samples_b),
-            "C": backend.to_numpy(samples_c),
+            "A": backend.tolist(samples_a),
+            "B": backend.tolist(samples_b),
+            "C": backend.tolist(samples_c),
         }
 
         estimator = RiemannianDensityEstimator()
@@ -467,8 +467,8 @@ class TestGlobalMergeAnalysisReport:
         backend.eval(samples_x, samples_y)
 
         concepts = {
-            "X": backend.to_numpy(samples_x),
-            "Y": backend.to_numpy(samples_y),
+            "X": backend.tolist(samples_x),
+            "Y": backend.tolist(samples_y),
         }
 
         estimator = RiemannianDensityEstimator()
@@ -503,12 +503,12 @@ class TestQuickInterferenceCheck:
         backend.eval(math_source, code_source, math_target, code_target)
 
         source = {
-            "math": backend.to_numpy(math_source),
-            "code": backend.to_numpy(code_source),
+            "math": backend.tolist(math_source),
+            "code": backend.tolist(code_source),
         }
         target = {
-            "math": backend.to_numpy(math_target),
-            "code": backend.to_numpy(code_target),
+            "math": backend.tolist(math_target),
+            "code": backend.tolist(code_target),
         }
 
         report = quick_merge_analysis(source, target)
@@ -528,8 +528,8 @@ class TestQuickInterferenceCheck:
         target_b = backend.random_normal((10, 5))
         backend.eval(source_a, target_b)
 
-        source = {"A": backend.to_numpy(source_a)}
-        target = {"B": backend.to_numpy(target_b)}
+        source = {"A": backend.tolist(source_a)}
+        target = {"B": backend.tolist(target_b)}
 
         report = quick_merge_analysis(source, target)
 
@@ -559,7 +559,7 @@ class TestRiemannianDensityProperties:
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("test", backend.to_numpy(samples))
+        volume = estimator.estimate_concept_volume("test", backend.tolist(samples))
 
         assert volume.dimension == dim
         assert volume.centroid.shape == (dim,)
@@ -569,8 +569,8 @@ class TestRiemannianDensityProperties:
     @settings(max_examples=10, deadline=None)
     def test_density_decreases_with_distance(self, scale):
         """Density should decrease as we move away from centroid."""
-        import numpy as np
-        assume(np.isfinite(scale))
+        import math
+        assume(math.isfinite(scale))
 
         backend = get_default_backend()
         backend.random_seed(42)
@@ -579,7 +579,7 @@ class TestRiemannianDensityProperties:
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("test", backend.to_numpy(samples))
+        volume = estimator.estimate_concept_volume("test", backend.tolist(samples))
 
         # Density at centroid
         d0 = volume.density_at(volume.centroid)
@@ -588,7 +588,7 @@ class TestRiemannianDensityProperties:
         direction = backend.ones((5,))
         direction = direction / backend.sqrt(backend.array(5.0))
         backend.eval(direction)
-        direction_np = backend.to_numpy(direction)
+        direction_np = backend.tolist(direction)
 
         far_point = volume.centroid + direction_np * 2 * scale
         d_far = volume.density_at(far_point)
@@ -602,8 +602,8 @@ class TestRiemannianDensityProperties:
     @settings(max_examples=20, deadline=None)
     def test_geometric_scores_bounded(self, offset_a, offset_b):
         """Geometric measurements should always be in [0, 1]."""
-        import numpy as np
-        assume(np.isfinite(offset_a) and np.isfinite(offset_b))
+        import math
+        assume(math.isfinite(offset_a) and math.isfinite(offset_b))
 
         backend = get_default_backend()
         backend.random_seed(42)
@@ -614,8 +614,8 @@ class TestRiemannianDensityProperties:
         backend.eval(samples_a, samples_b)
 
         estimator = RiemannianDensityEstimator()
-        vol_a = estimator.estimate_concept_volume("A", backend.to_numpy(samples_a))
-        vol_b = estimator.estimate_concept_volume("B", backend.to_numpy(samples_b))
+        vol_a = estimator.estimate_concept_volume("A", backend.tolist(samples_a))
+        vol_b = estimator.estimate_concept_volume("B", backend.tolist(samples_b))
 
         predictor = MergeAnalyzer()
         result = predictor.analyze(vol_a, vol_b)
@@ -648,13 +648,19 @@ class TestEdgeCases:
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("tiny", backend.to_numpy(samples))
+        volume = estimator.estimate_concept_volume("tiny", backend.tolist(samples))
 
         # Should not crash, covariance should be regularized
-        import numpy as np
-        assert np.all(np.isfinite(volume.covariance))
-        eigenvalues = np.linalg.eigvalsh(volume.covariance)
-        assert all(eigenvalues > 0)
+        import math
+        cov_arr = backend.array(volume.covariance)
+        isfinite_arr = backend.isfinite(cov_arr)
+        backend.eval(isfinite_arr)
+        isfinite_list = backend.tolist(isfinite_arr)
+        assert all(all(row) for row in isfinite_list)
+        eigenvalues, _ = backend.eigh(cov_arr)
+        backend.eval(eigenvalues)
+        eig_list = backend.tolist(eigenvalues)
+        assert all(e > 0 for e in eig_list)
 
     def test_high_dimensional_samples(self):
         """Handle high-dimensional samples."""
@@ -664,11 +670,11 @@ class TestEdgeCases:
         backend.eval(samples)
 
         estimator = RiemannianDensityEstimator()
-        volume = estimator.estimate_concept_volume("high_dim", backend.to_numpy(samples))
+        volume = estimator.estimate_concept_volume("high_dim", backend.tolist(samples))
 
         assert volume.dimension == 500
-        import numpy as np
-        assert np.all(np.isfinite(volume.centroid))
+        import math
+        assert all(math.isfinite(c) for c in volume.centroid)
 
     def test_different_influence_types(self, simple_gaussian_samples):
         """Test different influence function types."""
@@ -715,7 +721,7 @@ class TestEdgeCases:
         estimator = RiemannianDensityEstimator()
         samples = backend.random_normal((20, 5))
         backend.eval(samples)
-        volumes = {"only": estimator.estimate_concept_volume("only", backend.to_numpy(samples))}
+        volumes = {"only": estimator.estimate_concept_volume("only", backend.tolist(samples))}
 
         relations = compute_pairwise_relations(estimator, volumes)
         assert len(relations) == 0

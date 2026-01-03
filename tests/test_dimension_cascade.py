@@ -355,8 +355,10 @@ class TestDimensionCascade:
 
         # Coupling should have changed (completely replaced with new)
         new_coupling = cascade._couplings[3]
-        diff = backend.to_numpy(backend.abs(original_coupling - new_coupling))
-        assert diff.sum() > _div_eps(backend)
+        diff = backend.abs(original_coupling - new_coupling)
+        diff_sum = backend.sum(diff)
+        backend.eval(diff_sum)
+        assert float(backend.to_scalar(diff_sum)) > _div_eps(backend)
 
     def test_min_points_validation(self, backend: "Backend") -> None:
         """Test validation of minimum calibration points."""

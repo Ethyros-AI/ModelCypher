@@ -222,7 +222,7 @@ class DualPathGenerator:
         # MLX-LM `generate` is high level. We use `generate_step` or manual loop.
 
         # Internal state
-        tokens = prompt_tokens.tolist()
+        tokens = b.tolist(prompt_tokens)
 
         # Cache for both models
         # MLX-LM make_cache equivalent?

@@ -312,16 +312,18 @@ class RefusalDirectionDetector:
     def _to_list_matrix(values: Any) -> list[list[float]]:
         if isinstance(values, list):
             return values
-        if hasattr(values, "tolist"):
-            return values.tolist()
+        if hasattr(values, "shape") or hasattr(values, "tolist"):
+            backend = get_default_backend()
+            return backend.tolist(values)
         return list(values)
 
     @staticmethod
     def _to_list_vector(values: Any) -> list[float]:
         if isinstance(values, list):
             return values
-        if hasattr(values, "tolist"):
-            return values.tolist()
+        if hasattr(values, "shape") or hasattr(values, "tolist"):
+            backend = get_default_backend()
+            return backend.tolist(values)
         return list(values)
 
 

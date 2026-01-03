@@ -87,8 +87,10 @@ def test_geodesic_and_spectral_invariance_under_padding(any_backend) -> None:
     geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
     geo_max = backend.max(geo_diff)
     backend.eval(geo_max)
-    eps = _eps(backend, float(backend.to_numpy(geo_max).item()))
-    assert float(backend.to_numpy(geo_max).item()) <= eps
+    # Handle case where max returns a scalar (already a float) or an array
+    geo_max_val = float(geo_max) if isinstance(geo_max, (float, int)) else float(backend.to_scalar(geo_max))
+    eps = _eps(backend, geo_max_val)
+    assert geo_max_val <= eps
     assert geo_base.connected == geo_padded.connected
     assert geo_base.k_neighbors == geo_padded.k_neighbors
 
@@ -157,7 +159,7 @@ def test_padding_invariance_random_pointcloud(
 
     points_arr = backend.random_normal((sample_count, base_dim))
     backend.eval(points_arr)
-    points = backend.to_numpy(points_arr).tolist()
+    points = backend.tolist(points_arr)
     padded = _pad_points(points, base_dim + pad_extra)
     k_neighbors = sample_count - 1
 
@@ -180,8 +182,10 @@ def test_padding_invariance_random_pointcloud(
     geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
     geo_max = backend.max(geo_diff)
     backend.eval(geo_max)
-    eps = _eps(backend, float(backend.to_numpy(geo_max).item()))
-    assert float(backend.to_numpy(geo_max).item()) <= eps
+    # Handle case where max returns a scalar (already a float) or an array
+    geo_max_val = float(geo_max) if isinstance(geo_max, (float, int)) else float(backend.to_scalar(geo_max))
+    eps = _eps(backend, geo_max_val)
+    assert geo_max_val <= eps
 
     config = SpectralSignatureConfig(k_neighbors=k_neighbors)
     spectral = SpectralSignature(backend)

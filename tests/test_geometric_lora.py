@@ -135,10 +135,12 @@ class TestLayerLoRAWeights:
         """Test effective rank computation."""
         backend = get_default_backend()
         cond_thresh = condition_threshold(backend, sample_weights.singular_values)
-        threshold = float(backend.to_numpy(sample_weights.singular_values)[0]) / cond_thresh
-        expected = float(
-            (backend.to_numpy(sample_weights.singular_values) > threshold).sum()
-        )
+        # Get first singular value using backend operations
+        first_sv = backend.to_scalar(sample_weights.singular_values[0])
+        threshold = first_sv / cond_thresh
+        # Count singular values above threshold using backend
+        above_threshold = sample_weights.singular_values > threshold
+        expected = float(backend.to_scalar(backend.sum(above_threshold)))
         assert sample_weights.effective_rank == expected
 
     def test_to_dict(self, sample_weights: LayerLoRAWeights) -> None:
@@ -374,8 +376,9 @@ class TestGeometricLoRAGenerator:
         rank = generator._determine_rank(sv, backend)
 
         cond_thresh = condition_threshold(backend, sv)
-        threshold = float(backend.to_numpy(sv)[0]) / cond_thresh
-        expected = int((backend.to_numpy(sv) > threshold).sum())
+        threshold = float(backend.to_scalar(sv[0])) / cond_thresh
+        above = sv > threshold
+        expected = int(float(backend.to_scalar(backend.sum(above))))
         expected = max(1, min(expected, int(backend.shape(sv)[0])))
         assert rank == expected
 
@@ -390,8 +393,9 @@ class TestGeometricLoRAGenerator:
         generator = GeometricLoRAGenerator(config)
 
         rank = generator._determine_rank(sv, backend)
-        threshold = float(backend.to_numpy(sv)[0]) / cond_thresh
-        expected = int((backend.to_numpy(sv) > threshold).sum())
+        threshold = float(backend.to_scalar(sv[0])) / cond_thresh
+        above = sv > threshold
+        expected = int(float(backend.to_scalar(backend.sum(above))))
         expected = max(1, min(expected, int(backend.shape(sv)[0])))
         assert rank == expected
 

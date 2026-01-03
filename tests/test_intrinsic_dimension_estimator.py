@@ -446,13 +446,13 @@ class TestSyntheticManifoldDimension:
             backend.random_seed(42 + i)
             noise = backend.random_uniform(low=-0.2, high=0.2, shape=())
             backend.eval(noise)
-            t += float(backend.to_numpy(noise).item())
+            t += float(backend.to_scalar(noise))
 
             # Random height
             backend.random_seed(1000 + i)
             height = backend.random_uniform(low=0.0, high=10.0, shape=())
             backend.eval(height)
-            h = float(backend.to_numpy(height).item())
+            h = float(backend.to_scalar(height))
 
             x = t * math.cos(t)
             y = h
@@ -532,13 +532,13 @@ class TestSyntheticManifoldDimension:
             backend.random_seed(42 + i)
             noise_theta = backend.random_uniform(low=-0.1, high=0.1, shape=())
             backend.eval(noise_theta)
-            theta += float(backend.to_numpy(noise_theta).item())
+            theta += float(backend.to_scalar(noise_theta))
 
             # Random phi
             backend.random_seed(1000 + i)
             phi_rand = backend.random_uniform(low=0.0, high=2 * math.pi, shape=())
             backend.eval(phi_rand)
-            phi = float(backend.to_numpy(phi_rand).item())
+            phi = float(backend.to_scalar(phi_rand))
 
             points_list.append([
                 math.cos(theta),
