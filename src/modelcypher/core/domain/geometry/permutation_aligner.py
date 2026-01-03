@@ -261,13 +261,10 @@ class PermutationAligner:
                 signs_target[tgt] = signs[src]
                 confidences_target[tgt] = match_confidences[src]
 
-        # Build permutation
-        perm_data = [0.0] * (N * N)
-        for src, tgt in enumerate(assignment):
-            if tgt >= 0:
-                perm_data[tgt * N + src] = 1.0
-
-        permutation = b.astype(b.reshape(b.array(perm_data), (N, N)), "float32")
+        # Build permutation via backend column take: P = I[:, assignment]
+        identity = b.eye(N)
+        permutation = b.take(identity, assignment_arr, axis=1)
+        permutation = b.astype(permutation, "float32")
         sign_matrix = b.astype(b.diag(b.array(signs_target)), "float32")
         b.eval(permutation, sign_matrix)
 
@@ -466,12 +463,9 @@ class PermutationAligner:
                 assignment_indices=assignment,
             )
 
-        perm_data = [0.0] * (N * N)
-        for src, tgt in enumerate(assignment):
-            if tgt >= 0:
-                perm_data[tgt * N + src] = 1.0
-
-        permutation = b.astype(b.reshape(b.array(perm_data), (N, N)), "float32")
+        identity = b.eye(N)
+        permutation = b.take(identity, assignment_arr, axis=1)
+        permutation = b.astype(permutation, "float32")
         sign_matrix = b.astype(b.diag(b.array(signs_target)), "float32")
 
         return AlignmentResult(

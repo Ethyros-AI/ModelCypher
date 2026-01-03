@@ -1331,7 +1331,6 @@ def compute_entropy_effective_rank(
     sv_array = backend.reshape(sv_array, (-1,))
     backend.eval(sv_array)
     eps = machine_epsilon(backend, sv_array)
-    log_eps = safe_log_epsilon(backend, sv_array)
 
     zeros = backend.zeros_like(sv_array)
     positive = backend.where(sv_array > eps, sv_array, zeros)
@@ -1341,11 +1340,14 @@ def compute_entropy_effective_rank(
     if total <= eps:
         return 0.0
 
+    # Compute probabilities exactly (no epsilon added to preserve precision)
     probs = positive / total
-    log_eps_arr = backend.full(probs.shape, log_eps)
-    log_p = backend.log(probs + log_eps_arr)
+    # For entries where prob > 0, compute p * log(p); otherwise 0
+    # Use where to mask: log is only computed where probs > 0
+    # Since we already zeroed out non-positive entries in 'positive',
+    # probs > 0 exactly where positive > 0
+    log_p = backend.where(probs > 0, backend.log(probs), zeros)
     p_log_p = probs * log_p
-    p_log_p = backend.where(positive > 0, p_log_p, zeros)
     entropy_arr = -backend.sum(p_log_p)
     backend.eval(entropy_arr)
     entropy = float(backend.to_scalar(entropy_arr))

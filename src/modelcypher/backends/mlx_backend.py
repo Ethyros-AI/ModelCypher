@@ -106,14 +106,21 @@ class MLXBackend(Backend):
         except RuntimeError as exc:
             if "bad_cast" not in str(exc):
                 raise
-            # Large integers (> 2^31) can't be converted directly to float32
-            # Convert via Python float first
+            # Large integers (> 2^31) can't be converted directly.
+            # Convert via Python float first, use explicit float64 for precision
+            fallback_dtype = mapped_dtype if mapped_dtype is not None else self.mx.float64
             if hasattr(data, "tolist"):
                 data = data.tolist()
+
+            def _to_float_recursive(val: Any) -> Any:
+                if isinstance(val, list):
+                    return [_to_float_recursive(v) for v in val]
+                return float(val)
+
             if isinstance(data, list):
-                float_data = [float(v) for v in data]
-                return self.mx.array(float_data, dtype=mapped_dtype)
-            return self.mx.array([float(data)], dtype=mapped_dtype)
+                float_data = _to_float_recursive(data)
+                return self.mx.array(float_data, dtype=fallback_dtype)
+            return self.mx.array([float(data)], dtype=fallback_dtype)
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.mx.zeros(shape, dtype=self._map_dtype(dtype))

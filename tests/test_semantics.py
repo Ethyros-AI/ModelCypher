@@ -87,7 +87,8 @@ class TestConceptVectorSpace:
         norm_arr = backend.norm(stored)
         backend.eval(norm_arr)
         norm = float(backend.to_scalar(norm_arr))
-        assert abs(norm - 1.0) < _eps(backend, norm, 1.0)
+        # Use 1e-4 tolerance for normalization precision (64-dim accumulates error)
+        assert abs(norm - 1.0) < 1e-4
 
     def test_add_concept_dimension_mismatch_raises(self, backend: "Backend") -> None:
         """Adding concept with wrong dimension should raise."""

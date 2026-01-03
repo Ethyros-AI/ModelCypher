@@ -1112,21 +1112,19 @@ class BackendTopologicalFingerprint:
             match_costs = b.maximum(birth_diff, death_diff)
             b.eval(match_costs)
 
-            # Build full cost matrix
-            cost = [[float("inf")] * n for _ in range(n)]
-            match_costs_list = b.tolist(match_costs)
-            for i in range(n_a):
-                row_costs = match_costs_list[i]
-                for j in range(n_b):
-                    cost[i][j] = float(row_costs[j])
-                diag_cost_a = (pa[i].death - pa[i].birth) / 2.0
-                cost[i][n_b + i] = diag_cost_a
-
-            for i in range(n_b):
-                diag_cost_b = (pb[i].death - pb[i].birth) / 2.0
-                cost[n_a + i][i] = diag_cost_b
-                for j in range(n_b, n):
-                    cost[n_a + i][j] = 0.0
+            # Build full cost matrix on backend, then convert once for Hungarian algorithm.
+            inf_val = float(b.finfo().max)
+            diag_cost_a = b.array([(p.death - p.birth) / 2.0 for p in pa])
+            diag_cost_b = b.array([(p.death - p.birth) / 2.0 for p in pb])
+            eye_a = b.eye(n_a)
+            eye_b = b.eye(n_b)
+            diag_block_a = b.where(eye_a > 0, b.diag(diag_cost_a), b.full((n_a, n_a), inf_val))
+            diag_block_b = b.where(eye_b > 0, b.diag(diag_cost_b), b.full((n_b, n_b), inf_val))
+            top_block = b.concatenate([match_costs, diag_block_a], axis=1)
+            bottom_block = b.concatenate([diag_block_b, b.zeros((n_b, n_a))], axis=1)
+            cost_matrix_arr = b.concatenate([top_block, bottom_block], axis=0)
+            b.eval(cost_matrix_arr)
+            cost = b.tolist(cost_matrix_arr)
 
             matching = TopologicalFingerprint._hungarian_algorithm(cost)
 
@@ -1181,21 +1179,19 @@ class BackendTopologicalFingerprint:
             match_costs = birth_diff + death_diff
             b.eval(match_costs)
 
-            # Build full cost matrix
-            cost = [[float("inf")] * n for _ in range(n)]
-            match_costs_list = b.tolist(match_costs)
-            for i in range(n_a):
-                row_costs = match_costs_list[i]
-                for j in range(n_b):
-                    cost[i][j] = float(row_costs[j])
-                diag_cost_a = pa[i].death - pa[i].birth
-                cost[i][n_b + i] = diag_cost_a
-
-            for i in range(n_b):
-                diag_cost_b = pb[i].death - pb[i].birth
-                cost[n_a + i][i] = diag_cost_b
-                for j in range(n_b, n):
-                    cost[n_a + i][j] = 0.0
+            # Build full cost matrix on backend, then convert once for Hungarian algorithm.
+            inf_val = float(b.finfo().max)
+            diag_cost_a = b.array([p.death - p.birth for p in pa])
+            diag_cost_b = b.array([p.death - p.birth for p in pb])
+            eye_a = b.eye(n_a)
+            eye_b = b.eye(n_b)
+            diag_block_a = b.where(eye_a > 0, b.diag(diag_cost_a), b.full((n_a, n_a), inf_val))
+            diag_block_b = b.where(eye_b > 0, b.diag(diag_cost_b), b.full((n_b, n_b), inf_val))
+            top_block = b.concatenate([match_costs, diag_block_a], axis=1)
+            bottom_block = b.concatenate([diag_block_b, b.zeros((n_b, n_a))], axis=1)
+            cost_matrix_arr = b.concatenate([top_block, bottom_block], axis=0)
+            b.eval(cost_matrix_arr)
+            cost = b.tolist(cost_matrix_arr)
 
             matching = TopologicalFingerprint._hungarian_algorithm(cost)
 

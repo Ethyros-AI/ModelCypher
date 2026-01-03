@@ -50,8 +50,14 @@ class ConceptVectorSpace:
 
         # Normalize on insertion for cosine similarity
         norm = self._backend.norm(vector)
+        self._backend.eval(norm)
+        norm_val = float(self._backend.to_scalar(norm))
         div_eps = division_epsilon(self._backend, vector)
-        normalized = vector / (norm + div_eps)
+        # Only add epsilon when norm is near zero to preserve precision
+        if norm_val < div_eps:
+            normalized = vector / div_eps
+        else:
+            normalized = vector / norm
 
         self.concepts[concept_id] = ConceptNode(
             id=concept_id,
@@ -63,10 +69,19 @@ class ConceptVectorSpace:
         if not self.concepts:
             return []
 
-        # 1. Prepare Query
+        # 1. Prepare Query - normalize only if not already unit-length
         q_norm = self._backend.norm(query_vector)
+        self._backend.eval(q_norm)
+        q_norm_val = float(self._backend.to_scalar(q_norm))
         div_eps = division_epsilon(self._backend, query_vector)
-        q = query_vector / (q_norm + div_eps)
+        # Skip normalization if already unit-length (within machine epsilon)
+        # This preserves precision when querying with a stored (normalized) vector
+        if abs(q_norm_val - 1.0) < div_eps:
+            q = query_vector  # Already normalized
+        elif q_norm_val < div_eps:
+            q = query_vector / div_eps
+        else:
+            q = query_vector / q_norm
 
         # 2. Stack Concept Vectors
         ids = list(self.concepts.keys())
