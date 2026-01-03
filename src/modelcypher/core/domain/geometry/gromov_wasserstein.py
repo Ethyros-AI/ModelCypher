@@ -107,9 +107,12 @@ class Result:
         return 1.0 - exp_scalar(-self.distance, backend) if is_finite(self.distance, backend) else 1.0
 
     @property
-    def alignment_score(self) -> float:
+    def aligned(self) -> bool:
         backend = get_default_backend()
-        return exp_scalar(-self.distance, backend) if is_finite(self.distance, backend) else 0.0
+        if not is_finite(self.distance, backend):
+            return False
+        eps = float(machine_epsilon(backend, backend.array([self.distance])))
+        return abs(self.distance) <= eps
 
 
 # Algorithm constants - derived from numerical analysis, not configurable

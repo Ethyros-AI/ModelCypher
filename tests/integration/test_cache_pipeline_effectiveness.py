@@ -158,11 +158,8 @@ class TestLRUEvictionBehavior:
 
     def test_lru_eviction_order(self, backend):
         """Oldest entries should be evicted first."""
-        from modelcypher.core.domain.cache import ComputationCacheConfig
-
         # Create cache with very small limit
-        config = ComputationCacheConfig(max_gram_entries=3)
-        cache = ComputationCache(config)
+        cache = ComputationCache(max_gram_entries=3)
 
         backend.random_seed(42)
 
@@ -199,10 +196,7 @@ class TestLRUEvictionBehavior:
 
     def test_access_refreshes_lru_position(self, backend):
         """Accessing an entry should move it to end of LRU order."""
-        from modelcypher.core.domain.cache import ComputationCacheConfig
-
-        config = ComputationCacheConfig(max_gram_entries=3)
-        cache = ComputationCache(config)
+        cache = ComputationCache(max_gram_entries=3)
 
         backend.random_seed(42)
 

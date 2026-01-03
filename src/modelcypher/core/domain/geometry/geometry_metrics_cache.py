@@ -38,7 +38,6 @@ class CachedGWResult:
 
     distance: float
     normalized_distance: float
-    alignment_score: float
     converged: bool
     iterations: int
     coupling_shape: tuple[int, int]
@@ -96,7 +95,7 @@ class GeometryMetricsCache:
     Cache is stored in ~/Library/Caches/ModelCypher/geometry_metrics/
     """
 
-    CACHE_VERSION = 1
+    CACHE_VERSION = 2
     _shared_instance: "GeometryMetricsCache" | None = None
 
     @classmethod
@@ -220,7 +219,6 @@ class GeometryMetricsCache:
         return {
             "distance": result.distance,
             "normalized_distance": result.normalized_distance,
-            "alignment_score": result.alignment_score,
             "converged": result.converged,
             "iterations": result.iterations,
             "coupling_shape": list(result.coupling_shape),
@@ -231,7 +229,6 @@ class GeometryMetricsCache:
         return CachedGWResult(
             distance=float(data["distance"]),
             normalized_distance=float(data["normalized_distance"]),
-            alignment_score=float(data["alignment_score"]),
             converged=bool(data["converged"]),
             iterations=int(data["iterations"]),
             coupling_shape=tuple(data["coupling_shape"]),

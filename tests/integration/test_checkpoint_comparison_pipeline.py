@@ -146,8 +146,20 @@ class MockDualPathConfig:
 class MockDualPathGenerator:
     """Mock generator that produces test tokens."""
 
-    def __init__(self, config: MockDualPathConfig) -> None:
-        self.config = config
+    def __init__(
+        self,
+        base_model_path: str,
+        adapter_path: str | None = None,
+        max_tokens: int = 100,
+        temperature: float = 0.7,
+        top_p: float = 1.0,
+        repetition_penalty: float = 1.0,
+        stop_sequences: list[str] | None = None,
+    ) -> None:
+        self.base_model_path = base_model_path
+        self.adapter_path = adapter_path
+        self.max_tokens = max_tokens
+        self.temperature = temperature
         self._tokens = ["Hello", " world", "!", " This", " is", " a", " test", "."]
 
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
@@ -169,8 +181,17 @@ class MockDualPathGenerator:
 class MockFailingGenerator:
     """Mock generator that fails."""
 
-    def __init__(self, config: MockDualPathConfig) -> None:
-        self.config = config
+    def __init__(
+        self,
+        base_model_path: str,
+        adapter_path: str | None = None,
+        max_tokens: int = 100,
+        temperature: float = 0.7,
+        top_p: float = 1.0,
+        repetition_penalty: float = 1.0,
+        stop_sequences: list[str] | None = None,
+    ) -> None:
+        self.base_model_path = base_model_path
 
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
         """Fail immediately."""
@@ -191,23 +212,21 @@ class TestCheckpointComparisonCoordinatorFlow:
         """Single checkpoint comparison should yield expected events."""
         coordinator = CheckpointComparisonCoordinator()
 
-        config = MockDualPathConfig(
-            base_model_path="/test/model",
-            adapter_path=None,
-            max_tokens=100,
-            temperature=0.7,
-        )
-
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_config_class"
-        ) as mock_config_cls, patch(
             "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
-            mock_config_cls.return_value = MockDualPathConfig
             mock_gen_cls.return_value = MockDualPathGenerator
 
             events = []
-            async for event in coordinator.compare(["/test/model"], "Hello", config):
+            async for event in coordinator.compare(
+                checkpoints=["/test/model"],
+                prompt="Hello",
+                max_tokens=100,
+                temperature=0.7,
+                top_p=1.0,
+                repetition_penalty=1.0,
+                stop_sequences=[],
+            ):
                 events.append(event)
 
         # Should have: prefetch_started, prefetch_finished, checkpoint_started, tokens..., checkpoint_finished
@@ -224,25 +243,23 @@ class TestCheckpointComparisonCoordinatorFlow:
         """Multiple checkpoint comparison should process all checkpoints."""
         coordinator = CheckpointComparisonCoordinator()
 
-        config = MockDualPathConfig(
-            base_model_path="/test/model1",
-            adapter_path=None,
-            max_tokens=100,
-            temperature=0.7,
-        )
-
         checkpoints = ["/test/model1", "/test/model2"]
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_config_class"
-        ) as mock_config_cls, patch(
             "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
-            mock_config_cls.return_value = MockDualPathConfig
             mock_gen_cls.return_value = MockDualPathGenerator
 
             events = []
-            async for event in coordinator.compare(checkpoints, "Hello", config):
+            async for event in coordinator.compare(
+                checkpoints=checkpoints,
+                prompt="Hello",
+                max_tokens=100,
+                temperature=0.7,
+                top_p=1.0,
+                repetition_penalty=1.0,
+                stop_sequences=[],
+            ):
                 events.append(event)
 
         # Count finished events - should have 2 (one per checkpoint)
@@ -259,23 +276,21 @@ class TestCheckpointComparisonCoordinatorFlow:
         """Comparison should collect tokens into response."""
         coordinator = CheckpointComparisonCoordinator()
 
-        config = MockDualPathConfig(
-            base_model_path="/test/model",
-            adapter_path=None,
-            max_tokens=100,
-            temperature=0.7,
-        )
-
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_config_class"
-        ) as mock_config_cls, patch(
             "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
-            mock_config_cls.return_value = MockDualPathConfig
             mock_gen_cls.return_value = MockDualPathGenerator
 
             events = []
-            async for event in coordinator.compare(["/test/model"], "Hello", config):
+            async for event in coordinator.compare(
+                checkpoints=["/test/model"],
+                prompt="Hello",
+                max_tokens=100,
+                temperature=0.7,
+                top_p=1.0,
+                repetition_penalty=1.0,
+                stop_sequences=[],
+            ):
                 events.append(event)
 
         # Find finished event

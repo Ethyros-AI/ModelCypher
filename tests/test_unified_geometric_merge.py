@@ -32,7 +32,6 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.merge import (
     UnifiedGeometricMerger,
-    UnifiedMergeConfig,
     UnifiedMergeResult,
 )
 
@@ -98,44 +97,13 @@ def mock_model_loader_with_weights(real_weights):
     return MockModelLoader(real_weights)
 
 
-class TestUnifiedMergeConfig:
-    """Test configuration dataclass."""
-
-    def test_default_config(self):
-        """Test default config values."""
-        config = UnifiedMergeConfig()
-        assert config.output_quant is None
-        assert config.transplant_domains == ()
-
-    def test_transplant_config(self):
-        """Test transplant config values."""
-        config = UnifiedMergeConfig(
-            transplant_domains=("mathematical", "logical"),
-            output_quant="f16",
-        )
-        assert config.transplant_domains == ("mathematical", "logical")
-        assert config.output_quant == "f16"
-
-
 class TestUnifiedGeometricMerger:
     """Test the merger pipeline stages."""
 
     def test_merger_initialization(self, mock_model_loader):
-        """Test merger initializes with default config."""
+        """Test merger initializes successfully."""
         merger = UnifiedGeometricMerger(model_loader=mock_model_loader)
-        assert merger.config is not None
-        assert merger.config.transplant_domains == ()
-        assert merger.config.output_quant is None
-
-    def test_merger_with_custom_config(self, mock_model_loader):
-        """Test merger accepts custom config."""
-        config = UnifiedMergeConfig(
-            transplant_domains=("mathematical",),
-            output_quant="f16",
-        )
-        merger = UnifiedGeometricMerger(model_loader=mock_model_loader, config=config)
-        assert merger.config.transplant_domains == ("mathematical",)
-        assert merger.config.output_quant == "f16"
+        assert merger is not None
 
     def test_extract_layer_indices(self, real_weights, mock_model_loader):
         """Test layer index extraction from weight keys."""

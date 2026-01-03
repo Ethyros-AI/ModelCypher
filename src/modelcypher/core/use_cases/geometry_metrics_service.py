@@ -40,6 +40,7 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     _MAX_OUTER_ITERATIONS,
     _SINKHORN_EPSILON,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
@@ -55,7 +56,7 @@ class GromovWassersteinResult:
 
     distance: float
     normalized_distance: float
-    alignment_score: float
+    aligned: bool
     converged: bool
     iterations: int
     coupling_shape: tuple[int, int]
@@ -205,7 +206,6 @@ class GeometryMetricsService:
         cached_result = CachedGWResult(
             distance=result.distance,
             normalized_distance=result.normalized_distance,
-            alignment_score=result.alignment_score,
             converged=result.converged,
             iterations=result.iterations,
             coupling_shape=(len(source_points), len(target_points)),
@@ -222,10 +222,15 @@ class GeometryMetricsService:
 
     def _gw_result_from_cached(self, cached: CachedGWResult) -> GromovWassersteinResult:
         """Convert cached GW result to full result."""
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+        eps = float(machine_epsilon(backend, backend.array([cached.distance])))
+        aligned = abs(cached.distance) <= eps
         return GromovWassersteinResult(
             distance=cached.distance,
             normalized_distance=cached.normalized_distance,
-            alignment_score=cached.alignment_score,
+            aligned=aligned,
             converged=cached.converged,
             iterations=cached.iterations,
             coupling_shape=cached.coupling_shape,
@@ -485,7 +490,7 @@ class GeometryMetricsService:
         return {
             "distance": result.distance,
             "normalizedDistance": result.normalized_distance,
-            "alignmentScore": result.alignment_score,
+            "aligned": result.aligned,
             "converged": result.converged,
             "iterations": result.iterations,
             "couplingShape": list(result.coupling_shape),
