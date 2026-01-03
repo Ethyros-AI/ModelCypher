@@ -543,6 +543,21 @@ def _compute_std(values: list[float]) -> float:
     return math.sqrt(variance)
 
 
+def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
+    flat = backend.reshape(array, (-1,))
+    count = int(flat.shape[0])
+    return [backend.to_scalar(flat[i]) for i in range(count)]
+
+
+def _array_to_2d_list(backend: "Backend", array: "Array") -> list[list[float]]:
+    rows = int(array.shape[0])
+    cols = int(array.shape[1])
+    return [
+        [backend.to_scalar(array[i, j]) for j in range(cols)]
+        for i in range(rows)
+    ]
+
+
 class ManifoldStitcher:
     """
     Manifold stitching for cross-architecture model merging.
@@ -756,8 +771,8 @@ class ManifoldStitcher:
             clusters.append(
                 AlignmentCluster(
                     id=cluster_id,
-                    centroid_source=b.to_numpy(s_mean).tolist(),
-                    centroid_target=b.to_numpy(t_mean).tolist(),
+                    centroid_source=_array_to_list(b, s_mean),
+                    centroid_target=_array_to_list(b, t_mean),
                     local_rotation=omega,
                     procrustes_error=procrustes_error,
                     member_count=len(indices),
@@ -893,10 +908,10 @@ class ManifoldStitcher:
             assignments = new_assignments
 
             # Update step: compute new centroids using Fréchet mean
-            assignments_np = b.to_numpy(assignments).tolist()
+            assignments_list = [int(b.to_scalar(assignments[i])) for i in range(n)]
             new_centroids = []
             for c in range(k):
-                indices = [i for i, val in enumerate(assignments_np) if val == c]
+                indices = [i for i, val in enumerate(assignments_list) if val == c]
                 if indices:
                     idx_arr = b.array(indices)
                     cluster_pts = b.take(pts, idx_arr, axis=0)
@@ -922,7 +937,7 @@ class ManifoldStitcher:
                 best_idx = int(b.to_scalar(b.argmin(col)))
                 centroid_reps[ci] = best_idx
 
-        return (b.to_numpy(assignments).tolist(), b.to_numpy(centroids).tolist())
+        return (_array_to_list(b, assignments), _array_to_2d_list(b, centroids))
 
     @staticmethod
     async def validate_merged_model(

@@ -230,6 +230,14 @@ class GeometryValidationSuite:
         self._backend = backend or get_default_backend()
         self._gw = GromovWassersteinDistance(self._backend)
 
+    def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
+        rows = int(array.shape[0])
+        cols = int(array.shape[1])
+        return [
+            [self._backend.to_scalar(array[i, j]) for j in range(cols)]
+            for i in range(rows)
+        ]
+
     def run(self, config: Config | None = None) -> Report:
         """Run the full geometry validation suite.
 
@@ -299,8 +307,8 @@ class GeometryValidationSuite:
 
         # Convert back to lists for fixture storage
         backend.eval(source_distances_arr, target_distances_arr)
-        source_distances = backend.to_numpy(source_distances_arr).tolist()
-        target_distances = backend.to_numpy(target_distances_arr).tolist()
+        source_distances = self._array_to_2d_list(source_distances_arr)
+        target_distances = self._array_to_2d_list(target_distances_arr)
         symmetry_source_distances = [
             [0.0, 1.0, 3.0],
             [1.0, 0.0, 1.0],

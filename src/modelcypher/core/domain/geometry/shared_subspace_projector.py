@@ -437,9 +437,11 @@ class SharedSubspaceProjector:
         # Select top-k eigenvectors (eigh returns ascending, so take last k)
         source_proj = source_cov_eigenvectors[:, -shared_dim:]
         target_proj = target_cov_eigenvectors[:, -shared_dim:]
-        # Reverse columns to get descending order
-        source_proj = b.array(b.to_numpy(source_proj)[:, ::-1].copy())
-        target_proj = b.array(b.to_numpy(target_proj)[:, ::-1].copy())
+        # Reverse columns to get descending order using backend operations
+        reverse_indices = b.arange(shared_dim - 1, -1, -1)
+        b.eval(reverse_indices)
+        source_proj = b.take(source_proj, reverse_indices, axis=1)
+        target_proj = b.take(target_proj, reverse_indices, axis=1)
         b.eval(source_proj, target_proj)
 
         # Project data to shared space
@@ -540,34 +542,17 @@ class SharedSubspaceProjector:
         b.eval(omega)
 
         # Check for reflection (det < 0) and fix by flipping last column of U
-        # Compute determinant using Backend (for orthogonal matrix, det = product of signs)
-        omega_np = b.to_numpy(omega)
-        # Use numpy for determinant since Backend may not have it
-        det = 1.0
-        work = omega_np.copy()
-        for col in range(d):
-            max_row = col
-            for row in range(col + 1, d):
-                if abs(work[row, col]) > abs(work[max_row, col]):
-                    max_row = row
-            if abs(work[max_row, col]) < sys.float_info.min:
-                det = 0.0
-                break
-            if max_row != col:
-                work[[col, max_row]] = work[[max_row, col]]
-                det = -det
-            pivot = work[col, col]
-            for row in range(col + 1, d):
-                factor = work[row, col] / pivot
-                work[row, col:] -= factor * work[col, col:]
-            det *= work[col, col]
+        det_omega = b.det(omega)
+        b.eval(det_omega)
+        det_val = float(b.to_scalar(det_omega))
 
-        if det < 0:
-            # Flip last column of U
-            # Use .copy() to get a writable array (JAX returns read-only)
-            u_np = b.to_numpy(u).copy()
-            u_np[:, -1] = -u_np[:, -1]
-            u = b.array(u_np)
+        if det_val < 0:
+            # Flip last column of U using backend operations
+            # Create scaling vector: [1, 1, ..., 1, -1] to negate last column
+            scale_values = [1.0] * (d - 1) + [-1.0]
+            scale = b.array(scale_values)
+            scale_row = b.reshape(scale, (1, d))
+            u = u * scale_row
             b.eval(u)
             # Recompute omega with corrected U
             omega = b.matmul(u, v_t)
@@ -831,10 +816,12 @@ class SharedSubspaceProjector:
             b.eval(eigenvalues, eigenvectors)
 
             # Sort in descending order (eigh returns ascending)
-            eig_np = b.to_numpy(eigenvalues)
-            order = list(range(len(eig_np) - 1, -1, -1))  # Reverse order
-            eigenvectors_reordered = eigenvectors[:, order]
-            eigenvalues_sorted = b.array([float(eig_np[i]) for i in order])
+            # Use backend operations for reversal instead of NumPy
+            n_eig = int(eigenvalues.shape[0])
+            reverse_order = b.arange(n_eig - 1, -1, -1)
+            b.eval(reverse_order)
+            eigenvectors_reordered = b.take(eigenvectors, reverse_order, axis=1)
+            eigenvalues_sorted = b.take(eigenvalues, reverse_order, axis=0)
             b.eval(eigenvectors_reordered, eigenvalues_sorted)
 
             # Singular values from eigenvalues

@@ -576,15 +576,13 @@ class IntrinsicDimension:
         local_dims = backend.where(valid_id, local_dims_raw, nan_val)
         backend.eval(local_dims)
 
-        # Extract valid dimensions for statistics (convert to numpy for final stats)
-        local_dims_np = backend.to_numpy(local_dims)
-        valid_id_np = backend.to_numpy(valid_id)
+        # Extract valid dimensions for statistics
+        valid_mask = valid_id & (local_dims > 0)
+        valid_mask_float = backend.astype(valid_mask, str(local_dims.dtype))
+        valid_count = backend.sum(valid_mask_float)
+        valid_count_scalar = backend.to_scalar(valid_count)
 
-        # Filter to valid positive dimensions
-        valid_mask_np = valid_id_np & (local_dims_np > 0)
-        valid_dims_arr = local_dims_np[valid_mask_np]
-
-        if len(valid_dims_arr) == 0:
+        if valid_count_scalar <= 0.0:
             return LocalDimensionMap(
                 dimensions=local_dims,
                 modal_dimension=0.0,
@@ -596,23 +594,34 @@ class IntrinsicDimension:
             )
 
         # Compute statistics using backend operations
-        valid_dims_backend = backend.array(valid_dims_arr)
-        mean_dim = float(backend.mean(valid_dims_backend))
-        var_dim = float(backend.mean((valid_dims_backend - mean_dim) ** 2))
-        std_dim = float(backend.sqrt(backend.array(var_dim)))
+        zeros = backend.zeros_like(local_dims)
+        local_dims_safe = backend.where(valid_mask, local_dims, zeros)
+        mean_dim_arr = backend.sum(local_dims_safe) / valid_count
+        mean_dim = backend.to_scalar(mean_dim_arr)
+        diff = backend.where(valid_mask, local_dims_safe - mean_dim_arr, zeros)
+        var_dim_arr = backend.sum(diff * diff) / valid_count
+        std_dim = backend.to_scalar(backend.sqrt(var_dim_arr))
 
         # Modal dimension: bin dimensions and find most common
         # Use histogram with bins of width 0.5
-        min_dim = float(backend.min(valid_dims_backend))
-        max_dim = float(backend.max(valid_dims_backend))
+        pos_inf = backend.array(float("inf"), dtype=local_dims.dtype)
+        neg_inf = backend.array(float("-inf"), dtype=local_dims.dtype)
+        min_dim_arr = backend.min(backend.where(valid_mask, local_dims, pos_inf))
+        max_dim_arr = backend.max(backend.where(valid_mask, local_dims, neg_inf))
+        min_dim = backend.to_scalar(min_dim_arr)
+        max_dim = backend.to_scalar(max_dim_arr)
 
-        if len(valid_dims_arr) > 1 and max_dim > min_dim:
+        if valid_count_scalar > 1.0 and max_dim > min_dim:
             n_bins = max(1, int((max_dim - min_dim) / 0.5) + 1)
-            bin_width = (max_dim - min_dim + eps) / n_bins
+            bin_width_arr = (max_dim_arr - min_dim_arr + eps) / backend.array(
+                float(n_bins), dtype=local_dims.dtype
+            )
 
             # Compute bin indices
             bin_indices = backend.astype(
-                (valid_dims_backend - min_dim) / bin_width, "int32"
+                (backend.where(valid_mask, local_dims, min_dim_arr) - min_dim_arr)
+                / bin_width_arr,
+                "int32",
             )
             # Clamp to valid range
             max_bin_idx = backend.array(n_bins - 1, dtype="int32")
@@ -627,15 +636,19 @@ class IntrinsicDimension:
             one_hot = eye_mat[bin_indices]  # [n_points, n_bins] with 1 at bin index
             backend.eval(one_hot)
             # Sum columns to get bin counts
-            bin_counts_arr = backend.sum(one_hot, axis=0)
+            valid_mask_col = backend.reshape(valid_mask_float, (-1, 1))
+            bin_counts_arr = backend.sum(one_hot * valid_mask_col, axis=0)
             backend.eval(bin_counts_arr)
 
             # Find modal bin using backend argmax
             max_bin = int(backend.to_scalar(backend.argmax(bin_counts_arr)))
 
-            modal_dim = min_dim + (max_bin + 0.5) * bin_width
+            modal_dim = min_dim + (max_bin + 0.5) * backend.to_scalar(bin_width_arr)
         else:
-            modal_dim = valid_dims_arr[0] if len(valid_dims_arr) > 0 else 0.0
+            idx_range = backend.arange(0, n)
+            idx_masked = backend.where(valid_mask, idx_range, backend.array(n, dtype="int32"))
+            first_idx = int(backend.to_scalar(backend.min(idx_masked)))
+            modal_dim = backend.to_scalar(local_dims[first_idx])
 
         # Find deficient points (only if threshold provided)
         deficient: list[int] = []
@@ -644,8 +657,9 @@ class IntrinsicDimension:
             # Use backend operations to find deficient points
             deficient_mask = valid_id & (local_dims < backend.array(threshold))
             backend.eval(deficient_mask)
-            deficient_mask_np = backend.to_numpy(deficient_mask)
-            deficient = [i for i in range(n) if deficient_mask_np[i]]
+            deficient = [
+                i for i in range(n) if backend.to_scalar(deficient_mask[i])
+            ]
 
         return LocalDimensionMap(
             dimensions=local_dims,

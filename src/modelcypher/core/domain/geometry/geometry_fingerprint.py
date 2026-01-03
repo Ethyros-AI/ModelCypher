@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import struct
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -72,9 +73,7 @@ class GeometricFingerprint:
         std = math.sqrt(variance)
 
         backend = get_default_backend()
-        raw = backend.array(gram, dtype="float32")
-        backend.eval(raw)
-        raw_bytes = backend.to_numpy(raw).tobytes()
+        raw_bytes = b"".join(struct.pack("<f", float(val)) for val in gram)
         gram_hash = hashlib.sha256(raw_bytes).hexdigest()
 
         return mean, std, gram_hash
@@ -95,20 +94,15 @@ class GeometricFingerprint:
 
         lam = 0.0
         for _ in range(iterations):
-            w = backend.zeros((n,))
+            w_values: list[float] = []
             for i in range(n):
                 row_sum = 0.0
                 for j in range(n):
                     v_val = float(backend.to_scalar(v[j]))
                     row_sum += float(gram[i * n + j]) * v_val
-                w_arr = backend.array([row_sum])
-                backend.eval(w_arr)
-                backend.eval(w)
-                # Update w[i] in-place through numpy conversion
-                # Use .copy() to get a writable array (JAX returns read-only)
-                w_np = backend.to_numpy(w).copy()
-                w_np[i] = row_sum
-                w = backend.array(w_np)
+                w_values.append(row_sum)
+            w = backend.array(w_values)
+            backend.eval(w)
 
             dot_arr = backend.sum(v * w)
             norm_arr = backend.norm(w)

@@ -231,6 +231,14 @@ class GramAligner:
         # Cache for centering matrices (keyed by n)
         self._centering_cache: dict[int, "Array"] = {}
 
+    def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
+        rows = int(array.shape[0])
+        cols = int(array.shape[1])
+        return [
+            [self._backend.to_scalar(array[i, j]) for j in range(cols)]
+            for i in range(rows)
+        ]
+
     def _solve_feature_transform(
         self,
         source_centered: "Array",
@@ -381,36 +389,34 @@ class GramAligner:
             eigvals, eigvecs = b.eigh(gram)
         b.eval(eigvals, eigvecs)
 
-        values = [float(v) for v in b.to_numpy(eigvals).tolist()]
-        if values:
-            min_eig = min(values)
-            if min_eig > 0.0:
-                inv_vals = b.where(
-                    eigvals > eps,
-                    1.0 / eigvals,
-                    b.zeros_like(eigvals),
-                )
-                b.eval(inv_vals)
+        min_eig = float(b.to_scalar(b.min(eigvals)))
+        if min_eig > 0.0:
+            inv_vals = b.where(
+                eigvals > eps,
+                1.0 / eigvals,
+                b.zeros_like(eigvals),
+            )
+            b.eval(inv_vals)
 
-                gram_inv = b.matmul(
-                    eigvecs * b.reshape(inv_vals, (1, -1)),
-                    b.transpose(eigvecs),
-                )
-                b.eval(gram_inv)
+            gram_inv = b.matmul(
+                eigvecs * b.reshape(inv_vals, (1, -1)),
+                b.transpose(eigvecs),
+            )
+            b.eval(gram_inv)
 
-                F_eig = b.matmul(
-                    b.transpose(source),
-                    b.matmul(gram_inv, target),
-                )
-                b.eval(F_eig)
+            F_eig = b.matmul(
+                b.transpose(source),
+                b.matmul(gram_inv, target),
+            )
+            b.eval(F_eig)
 
-                # Compute residual for eigendecomposition
-                reconstructed = b.matmul(source, F_eig)
-                residual_eig = b.norm(reconstructed - target)
-                target_norm = b.norm(target)
-                b.eval(residual_eig, target_norm)
-                rel_residual = float(b.to_scalar(residual_eig)) / (float(b.to_scalar(target_norm)) + eps)
-                candidates.append((rel_residual, F_eig, "eigendecomposition"))
+            # Compute residual for eigendecomposition
+            reconstructed = b.matmul(source, F_eig)
+            residual_eig = b.norm(reconstructed - target)
+            target_norm = b.norm(target)
+            b.eval(residual_eig, target_norm)
+            rel_residual = float(b.to_scalar(residual_eig)) / (float(b.to_scalar(target_norm)) + eps)
+            candidates.append((rel_residual, F_eig, "eigendecomposition"))
 
         # Select best method (lowest error)
         if not candidates:
@@ -496,8 +502,8 @@ class GramAligner:
                 sample_transform = self._compute_sample_transform(K_s_c, K_s_c)
                 b.eval(sample_transform)
                 return AlignmentResult(
-                    feature_transform=b.to_numpy(identity).tolist(),
-                    sample_transform=b.to_numpy(sample_transform).tolist(),
+                    feature_transform=self._array_to_2d_list(identity),
+                    sample_transform=self._array_to_2d_list(sample_transform),
                     achieved_cka=1.0,
                     iterations=0,
                     alignment_error=0.0,
@@ -529,8 +535,8 @@ class GramAligner:
                     sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
                     b.eval(sample_transform)
                     return AlignmentResult(
-                        feature_transform=b.to_numpy(scale_transform).tolist(),
-                        sample_transform=b.to_numpy(sample_transform).tolist(),
+                        feature_transform=self._array_to_2d_list(scale_transform),
+                        sample_transform=self._array_to_2d_list(sample_transform),
                         achieved_cka=1.0,
                         iterations=0,
                         alignment_error=0.0,
@@ -567,8 +573,8 @@ class GramAligner:
                 sample_transform = self._compute_sample_transform(K_s_c, K_s_c)
                 b.eval(sample_transform)
                 return AlignmentResult(
-                    feature_transform=b.to_numpy(rotation).tolist(),
-                    sample_transform=b.to_numpy(sample_transform).tolist(),
+                    feature_transform=self._array_to_2d_list(rotation),
+                    sample_transform=self._array_to_2d_list(sample_transform),
                     achieved_cka=1.0,
                     iterations=0,
                     alignment_error=0.0,
@@ -599,8 +605,8 @@ class GramAligner:
                 sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
                 b.eval(sample_transform)
                 return AlignmentResult(
-                    feature_transform=b.to_numpy(uncentered_transform).tolist(),
-                    sample_transform=b.to_numpy(sample_transform).tolist(),
+                    feature_transform=self._array_to_2d_list(uncentered_transform),
+                    sample_transform=self._array_to_2d_list(sample_transform),
                     achieved_cka=1.0,
                     iterations=0,
                     alignment_error=0.0,
@@ -694,8 +700,8 @@ class GramAligner:
         diagnostic = self._diagnose_alignment(source_transformed, target_centered, final_cka)
 
         return AlignmentResult(
-            feature_transform=b.to_numpy(feature_transform).tolist(),
-            sample_transform=b.to_numpy(sample_transform).tolist(),
+            feature_transform=self._array_to_2d_list(feature_transform),
+            sample_transform=self._array_to_2d_list(sample_transform),
             achieved_cka=final_cka,
             iterations=total_iterations,
             alignment_error=alignment_error,

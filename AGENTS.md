@@ -95,20 +95,41 @@ Multiple AI agents work concurrently. Don't pause for unrelated changes.
 
 ## Core Principles
 
-### No NumPy in Core
+### No NumPy. Period.
 
-Use the Backend protocol (79 methods). NumPy only at I/O boundaries.
+**Every user has a GPU. NumPy forces CPU fallback and kills performance.**
+
+Use the Backend protocol exclusively. No `import numpy`, no `to_numpy()`, no NumPy operations anywhere in core code. If the Backend doesn't have an operation you need, **add it to the Backend protocol**.
 
 ```python
-# Wrong
+# WRONG - Forces CPU fallback
 import numpy as np
 mean = np.mean(vectors, axis=0)
+sorted_vals = np.sort(eigenvalues)[::-1]
+result = backend.to_numpy(arr)[mask]  # NumPy boolean indexing
 
-# Correct
+# CORRECT - Stays on GPU
 from modelcypher.core.domain._backend import get_default_backend
 backend = get_default_backend()
 mean = backend.mean(vectors, axis=0)
+sorted_idx = backend.argsort(eigenvalues)
+reversed_idx = backend.arange(n - 1, -1, -1)
+sorted_vals = backend.take(eigenvalues, reversed_idx, axis=0)
+result = backend.where(mask, arr, backend.zeros_like(arr))
 ```
+
+**Common NumPy patterns and their Backend replacements:**
+
+| NumPy Pattern | Backend Replacement |
+|---------------|---------------------|
+| `arr[::-1]` | `backend.take(arr, backend.arange(n-1, -1, -1), axis=0)` |
+| `arr[mask]` | `backend.where(mask, arr, zeros)` then filter |
+| `np.sort(arr)` | `backend.sort(arr)` |
+| `arr[:, -1] *= -1` | `scale = backend.array([1.0]*(d-1) + [-1.0]); arr * scale` |
+| `np.linalg.det(A)` | `backend.det(A)` |
+| `for x in to_numpy(arr)` | Keep on backend, use `backend.take()` for indexing |
+
+**If you need an operation the Backend doesn't have, add it.** The Backend protocol is extensible. Don't work around missing ops with NumPy.
 
 ### Geodesic is Correct
 

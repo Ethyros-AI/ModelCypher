@@ -163,17 +163,15 @@ class ModelFingerprintsProjection:
         # Extract points
         points = []
         self._backend.eval(coords)
-        coords_np = self._backend.to_numpy(coords)
 
         for i, fp in enumerate(fingerprints.fingerprints):
-            pt = coords_np[i]
             points.append(
                 ProjectionPoint(
                     id=fp.prime_id,
                     prime_id=fp.prime_id,
                     prime_text=fp.prime_text,
-                    x=float(pt[0]),
-                    y=float(pt[1]),
+                    x=self._backend.to_scalar(coords[i, 0]),
+                    y=self._backend.to_scalar(coords[i, 1]),
                 )
             )
 

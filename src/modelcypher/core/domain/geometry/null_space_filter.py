@@ -285,7 +285,7 @@ class NullSpaceFilter:
 
         # Determine threshold from machine epsilon - the ONLY correct threshold
         # Standard numerical rank: σ_i > ε * σ_max
-        S_np = list(backend.to_numpy(S).tolist())
+        S_np = [float(backend.to_scalar(S[i])) for i in range(int(S.shape[0]))]
         eps = machine_epsilon(backend, A)
         effective_threshold, row_space_dim = _compute_numerical_rank(S_np, eps)
 
@@ -480,13 +480,16 @@ class NullSpaceFilter:
 
             # Condition number
             S = projection.singular_values
-            S_np = backend.to_numpy(S)
-            if len(S_np) > 0 and S_np[-1] > 0:
-                condition_number = float(S_np[0]) / float(S_np[-1])
+            if int(S.shape[0]) > 0 and float(backend.to_scalar(S[-1])) > 0:
+                condition_number = float(backend.to_scalar(S[0])) / float(
+                    backend.to_scalar(S[-1])
+                )
             else:
                 condition_number = float("inf")
 
-            mean_sv = float(sum(S_np) / len(S_np)) if len(S_np) > 0 else 0.0
+            mean_sv = (
+                float(backend.to_scalar(backend.mean(S))) if int(S.shape[0]) > 0 else 0.0
+            )
 
             profile = LayerNullSpaceProfile(
                 layer_idx=layer_idx,

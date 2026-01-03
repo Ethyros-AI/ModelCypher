@@ -23,13 +23,18 @@ Use these functions instead of hardcoded values like 1e-8 or 1e-10.
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 __all__ = [
+    # Backend scalar helpers (use instead of math module)
+    "sqrt_scalar",
+    "is_finite",
+    "log_scalar",
+    "exp_scalar",
+    "power_scalar",
     # Epsilon and threshold utilities
     "machine_epsilon",
     "division_epsilon",
@@ -56,6 +61,67 @@ __all__ = [
 ]
 
 
+# =============================================================================
+# Backend Scalar Helpers
+# =============================================================================
+# Use these instead of math.sqrt, math.isfinite, etc. to keep computation on GPU.
+
+
+def sqrt_scalar(value: float, backend: "Backend") -> float:
+    """Compute sqrt of scalar using backend.
+
+    Use instead of math.sqrt(value).
+    """
+    arr = backend.array([value])
+    result = backend.sqrt(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def is_finite(value: float, backend: "Backend") -> bool:
+    """Check if scalar is finite using backend.
+
+    Use instead of math.isfinite(value).
+    """
+    arr = backend.array([value])
+    result = backend.isfinite(arr)
+    backend.eval(result)
+    return bool(backend.to_numpy(result)[0])
+
+
+def log_scalar(value: float, backend: "Backend") -> float:
+    """Compute natural log of scalar using backend.
+
+    Use instead of math.log(value).
+    """
+    arr = backend.array([value])
+    result = backend.log(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def exp_scalar(value: float, backend: "Backend") -> float:
+    """Compute exp of scalar using backend.
+
+    Use instead of math.exp(value).
+    """
+    arr = backend.array([value])
+    result = backend.exp(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def power_scalar(value: float, exponent: float, backend: "Backend") -> float:
+    """Compute value ** exponent using backend.
+
+    Use instead of value ** exponent for GPU acceleration.
+    """
+    arr = backend.array([value])
+    result = arr ** exponent
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
 def machine_epsilon(backend: Backend, array: Array) -> float:
     """Get machine epsilon for the array's dtype.
 
@@ -65,22 +131,24 @@ def machine_epsilon(backend: Backend, array: Array) -> float:
     return backend.finfo(array.dtype).eps
 
 
-def division_epsilon(backend: Backend, array: Array) -> float:
+def division_epsilon(backend: "Backend", array: "Array") -> float:
     """Get epsilon for safe division operations.
 
     Uses sqrt(eps) to provide numerical headroom.
     Use when dividing to prevent division by zero.
     """
-    return math.sqrt(backend.finfo(array.dtype).eps)
+    eps = backend.finfo(array.dtype).eps
+    return sqrt_scalar(eps, backend)
 
 
-def regularization_epsilon(backend: Backend, array: Array) -> float:
+def regularization_epsilon(backend: "Backend", array: "Array") -> float:
     """Get epsilon for matrix regularization.
 
     Uses eps^0.75 to scale regularization above division safety
     while remaining tied to dtype precision.
     """
-    return backend.finfo(array.dtype).eps ** 0.75
+    eps = backend.finfo(array.dtype).eps
+    return power_scalar(eps, 0.75, backend)
 
 
 def condition_threshold(backend: Backend, array: Array) -> float:
