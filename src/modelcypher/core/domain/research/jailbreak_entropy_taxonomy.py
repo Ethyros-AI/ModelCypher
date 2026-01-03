@@ -29,12 +29,14 @@
 
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 
 class AttackCategory(str, Enum):
@@ -149,7 +151,8 @@ class EntropySignature:
 
         # Standard deviation
         variance = sum((h - local_mean) ** 2 for h in self.trajectory) / n
-        local_std = math.sqrt(variance)
+        _b = get_default_backend()
+        local_std = sqrt_scalar(variance, _b)
 
         # Spike count: values > 2σ from mean
         spike_threshold = 2 * local_std

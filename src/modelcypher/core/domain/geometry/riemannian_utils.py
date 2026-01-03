@@ -1727,64 +1727,24 @@ class RiemannianGeometry:
         euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
         backend.eval(euc_dist)
 
-        # Deterministic neighbor selection with index tie-breaker
-        sorted_indices = backend.argsort(euc_dist)
-        backend.eval(sorted_indices)
-        sorted_list = [int(x) for x in backend.tolist(sorted_indices)]
-        euc_list = backend.tolist(euc_dist)
-
-        # Include all points tied at the k-th distance to ensure symmetric treatment
-        # Without this, equidistant points would be arbitrarily excluded by index order
-        def get_neighbors_with_ties(k: int) -> list[int]:
-            """Get k nearest neighbors, including all ties at the k-th distance."""
-            if k >= n:
-                return sorted_list
-            threshold_idx = sorted_list[k - 1]
-            threshold_dist = float(euc_list[threshold_idx])
-            eps = division_epsilon(backend, euc_dist)
-            neighbors: list[int] = []
-            for idx in sorted_list:
-                dist_val = float(euc_list[idx])
-                if dist_val <= threshold_dist + eps:
-                    neighbors.append(idx)
-                else:
-                    break
-            return neighbors
-
         # For query attachment, always use all points to ensure direct paths exist.
         # This is mathematically necessary because excluding any point forces a detour:
         #   d(q, i) via j = d(q, j) + d(j, i) >= d(q, i)  (triangle inequality)
         # Equality holds only when j is on the geodesic from q to i.
         # In flat space, excluding the farthest point causes overestimation.
         # Using all points ensures the minimum always includes the direct path.
-        current_k = n
-        while current_k <= n:
-            neighbors = get_neighbors_with_ties(current_k)
+        weights_col = backend.reshape(euc_dist, (n, 1))
+        candidates = geo_result.distances + weights_col
+        geo_from_query = backend.min(candidates, axis=0)
 
-            neighbors_arr = backend.array(neighbors)
-            neighbor_dists = backend.take(euc_dist, neighbors_arr, axis=0)
-            geo_rows = backend.take(geo_result.distances, neighbors_arr, axis=0)
+        # Check if all points are reachable (no inf or nan values)
+        backend.eval(geo_from_query)
+        # Vectorized count - O(1) vs O(n)
+        nonfinite_count = count_nonfinite(geo_from_query, backend)
 
-            # Exact geodesic distances for the augmented graph:
-            # d(q, i) = min_j (d(q, j) + d(j, i))
-            weights_col = backend.reshape(neighbor_dists, (len(neighbors), 1))
-            candidates = geo_rows + weights_col
-            geo_from_query = backend.min(candidates, axis=0)
-
-            # Check if all points are reachable (no inf or nan values)
-            backend.eval(geo_from_query)
-            # Vectorized count - O(1) vs O(n)
-            nonfinite_count = count_nonfinite(geo_from_query, backend)
-
-            if nonfinite_count == 0:
-                # All points reachable with finite distances
-                return geo_from_query
-
-            # Increase k and retry
-            if current_k == n:
-                # Already using all points, can't increase further
-                break
-            current_k = min(current_k * 2, n)
+        if nonfinite_count == 0:
+            # All points reachable with finite distances
+            return geo_from_query
 
         # If we get here with non-finite values even after using all points,
         # there's a fundamental issue with the geodesic matrix or query position
@@ -1792,6 +1752,7 @@ class RiemannianGeometry:
         # Vectorized counts - O(1) vs O(n) / O(n²)
         final_nonfinite = count_nonfinite(geo_from_query, backend)
 
+        current_k = n
         if final_nonfinite > 0:
             # Check the underlying geodesic matrix for issues
             mat_nonfinite = count_nonfinite(geo_result.distances, backend)

@@ -24,7 +24,6 @@ embeddings. Returns only raw distance measurements.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyProbe,
@@ -34,6 +33,7 @@ from modelcypher.core.domain.safety.behavioral_probes import (
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
+    ulp_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.ports.embedding import EmbeddingProvider
@@ -140,7 +140,8 @@ def _distance_threshold(values: list[float]) -> float:
             relative_gap = (next_val - curr) / curr
             if relative_gap > max_gap:
                 max_gap = relative_gap
-    eps = max(math.ulp(max(sorted_vals)), math.ulp(1.0))
+    _b = get_default_backend()
+    eps = max(ulp_scalar(max(sorted_vals), _b), ulp_scalar(1.0, _b))
     if max_gap <= eps:
         return float("inf")
     return float(find_magnitude_gap_threshold(sorted_vals))

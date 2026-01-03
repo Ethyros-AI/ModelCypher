@@ -318,21 +318,30 @@ class BaseAtlas(ABC, Generic[C, S]):
         Returns:
             Normalized entropy in [0, 1], or None if values sum to zero.
         """
-        clamped = [max(0.0, v) for v in values]
-        total = sum(clamped)
+        if not values:
+            return None
+
+        backend = get_default_backend()
+        arr = backend.array(values)
+        clamped = backend.maximum(arr, backend.zeros_like(arr))
+        total_arr = backend.sum(clamped)
+        backend.eval(total_arr)
+        total = float(backend.to_scalar(total_arr))
         if total <= 0:
             return None
 
-        probs = [v / total for v in clamped]
-        entropy = 0.0
-        _b = get_default_backend()
-        for p in probs:
-            if p > 0:
-                entropy -= p * log_scalar(p, _b)
+        probs = clamped / total
+        mask = probs > 0
+        safe_probs = backend.where(mask, probs, backend.ones_like(probs))
+        log_probs = backend.log(safe_probs)
+        entropy_arr = -backend.sum(probs * log_probs)
 
         # Normalize by maximum entropy (uniform distribution)
-        n = len([p for p in probs if p > 0])
+        n_arr = backend.sum(mask)
+        backend.eval(entropy_arr, n_arr)
+        entropy = float(backend.to_scalar(entropy_arr))
+        n = int(backend.to_scalar(n_arr))
         if n <= 1:
             return 0.0
-        max_entropy = log_scalar(float(n), _b)
+        max_entropy = log_scalar(float(n), backend)
         return entropy / max_entropy if max_entropy > 0 else 0.0

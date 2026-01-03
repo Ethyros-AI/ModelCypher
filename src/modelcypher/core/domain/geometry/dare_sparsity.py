@@ -183,6 +183,7 @@ class DARESparsityAnalyzer:
         total_sum_sq = 0.0
         non_zero_count = 0
         min_non_zero = float("inf")
+        inf_val = float(b.finfo().max)
 
         for name, arr in filtered.items():
             flat = b.abs(b.reshape(arr, (-1,)))
@@ -201,7 +202,6 @@ class DARESparsityAnalyzer:
             layer_non_zero = int(b.to_scalar(layer_non_zero_arr))
 
             if layer_non_zero > 0:
-                inf_val = float(b.finfo().max)
                 masked = b.where(flat > 0, flat, b.full(flat.shape, inf_val))
                 layer_min_nz_arr = b.min(masked)
                 b.eval(layer_min_nz_arr)

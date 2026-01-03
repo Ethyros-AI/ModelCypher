@@ -28,7 +28,6 @@ The extractor does NOT require loading the full model, just the adapter weights.
 from __future__ import annotations
 
 import logging
-import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 

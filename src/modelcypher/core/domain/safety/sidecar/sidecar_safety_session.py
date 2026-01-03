@@ -23,11 +23,12 @@ and consumed from async generation loops.
 
 from __future__ import annotations
 
-import math
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_finite
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     ScenarioMode,
     SessionControlState,
@@ -113,7 +114,8 @@ class SidecarSafetySession:
             self._state.tokens_observed += 1
 
             # Track KL values for online threshold estimation
-            if sample.kl_to_horror is not None and math.isfinite(sample.kl_to_horror):
+            _b = get_default_backend()
+            if sample.kl_to_horror is not None and is_finite(sample.kl_to_horror, _b):
                 self._state.observed_horror_kl.append(sample.kl_to_horror)
                 if self._state.min_horror_kl is None:
                     self._state.min_horror_kl = sample.kl_to_horror
@@ -125,7 +127,7 @@ class SidecarSafetySession:
                 control, now, observed_kl=self._state.observed_horror_kl
             )
 
-            if sample.kl_to_sentinel is not None and math.isfinite(sample.kl_to_sentinel):
+            if sample.kl_to_sentinel is not None and is_finite(sample.kl_to_sentinel, _b):
                 if self._state.min_sentinel_kl is None:
                     self._state.min_sentinel_kl = sample.kl_to_sentinel
                 else:
@@ -136,7 +138,7 @@ class SidecarSafetySession:
             mode = SidecarSafetyMode.NORMAL
 
             # Check horror probe thresholds
-            if sample.kl_to_horror is not None and math.isfinite(sample.kl_to_horror):
+            if sample.kl_to_horror is not None and is_finite(sample.kl_to_horror, _b):
                 kl_horror = sample.kl_to_horror
 
                 if kl_horror <= thresholds.horror_hard:
@@ -177,7 +179,7 @@ class SidecarSafetySession:
                 if (
                     thresholds.sentinel_soft is not None
                     and sample.kl_to_sentinel is not None
-                    and math.isfinite(sample.kl_to_sentinel)
+                    and is_finite(sample.kl_to_sentinel, _b)
                     and sample.kl_to_sentinel <= thresholds.sentinel_soft
                 ):
                     mode = max(mode, SidecarSafetyMode.CAUTION)

@@ -27,7 +27,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import math
 from typing import Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -38,6 +37,7 @@ from modelcypher.core.domain.agents.unified_atlas import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
+    ulp_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
@@ -159,7 +159,8 @@ def _distance_threshold(values: list[float]) -> float:
             relative_gap = (next_val - curr) / curr
             if relative_gap > max_gap:
                 max_gap = relative_gap
-    eps = max(math.ulp(max(sorted_vals)), math.ulp(1.0))
+    _b = get_default_backend()
+    eps = max(ulp_scalar(max(sorted_vals), _b), ulp_scalar(1.0, _b))
     if max_gap <= eps:
         return float("inf")
     return float(find_magnitude_gap_threshold(sorted_vals))

@@ -125,9 +125,9 @@ class SpectralSignature:
         )
         backend.eval(adjacency, euclidean_dist, neighbor_indices)
         edge_mask = adjacency < inf_value * 0.9
-        edge_count_total = int(
-            backend.to_scalar(backend.sum(backend.astype(edge_mask, "int32")))
-        )
+        edge_count_total_arr = backend.sum(backend.astype(edge_mask, "int32"))
+        backend.eval(edge_count_total_arr)
+        edge_count_total = int(backend.to_scalar(edge_count_total_arr))
         edge_count = max(0, (edge_count_total - n) // 2)
 
         neighbor_dists = backend.take(euclidean_dist, neighbor_indices, axis=1)
@@ -163,7 +163,9 @@ class SpectralSignature:
 
         eigvals, _ = backend.eigh(laplacian)
         backend.eval(eigvals)
-        eig_list = sorted([float(x) for x in backend.tolist(eigvals)])
+        eig_sorted = backend.sort(eigvals)
+        backend.eval(eig_sorted)
+        eig_list = [float(x) for x in backend.tolist(eig_sorted)]
 
         spectral_entropy = _spectral_entropy(backend, eigvals, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
@@ -280,12 +282,15 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
         return 0.0
     sorted_vals = backend.sort(flat)
     backend.eval(sorted_vals)
-    # Use native tolist() for O(1) extraction
-    sorted_list = backend.tolist(sorted_vals)
     mid = count // 2
     if count % 2 == 1:
-        return float(sorted_list[mid])
-    return 0.5 * (float(sorted_list[mid - 1]) + float(sorted_list[mid]))
+        mid_val = backend.take(sorted_vals, backend.array([mid]), axis=0)
+        backend.eval(mid_val)
+        return float(backend.to_scalar(mid_val))
+    mid_vals = backend.take(sorted_vals, backend.array([mid - 1, mid]), axis=0)
+    backend.eval(mid_vals)
+    mid_list = backend.tolist(mid_vals)
+    return 0.5 * (float(mid_list[0]) + float(mid_list[1]))
 
 
 def _spectral_entropy(backend: "Backend", eigenvalues: "Array", eps: float) -> float:
