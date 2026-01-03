@@ -34,7 +34,9 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    log_scalar,
     machine_epsilon,
+    sqrt_scalar,
     svd_via_eigh,
 )
 
@@ -193,17 +195,16 @@ def stage_validate(
         #   κ = 1 → instability = 0 (perfectly conditioned)
         #   κ = 1/sqrt(eps) → instability = 1 (numerical breakdown threshold)
         # Use float32 machine epsilon since we convert to float32 for computation
-        import math
         # Get machine epsilon for float32 (arrays are astype'd to float32)
         ref_array = b.array([1.0], dtype="float32")
         float32_eps = float(machine_epsilon(b, ref_array))
-        max_stable_condition = 1.0 / math.sqrt(float32_eps)
+        max_stable_condition = 1.0 / sqrt_scalar(float32_eps, b)
         if condition_number <= 1.0:
             instability = 0.0
         else:
             # log-scale normalization: log(κ) / log(κ_max)
-            log_cond = math.log(condition_number)
-            log_max = math.log(max_stable_condition)
+            log_cond = log_scalar(condition_number, b)
+            log_max = log_scalar(max_stable_condition, b)
             instability = min(1.0, log_cond / log_max)
         instability_samples.append(instability)
 
@@ -215,8 +216,7 @@ def stage_validate(
         complexity_samples.append(complexity)
 
         # Compute magnitude for this layer
-        import math
-        magnitude = math.sqrt(interference**2 + importance**2 + instability**2 + complexity**2)
+        magnitude = sqrt_scalar(interference**2 + importance**2 + instability**2 + complexity**2, b)
         magnitude_samples.append(magnitude)
 
     # Derive bounds from measurements (or skip if no measurements)
@@ -299,9 +299,8 @@ def stage_validate(
             )
 
             # Report raw refusal score and noise floor (dtype-derived).
-            import math
             ref_array = b.array([1.0], dtype="float32")
-            noise_floor = math.sqrt(float(machine_epsilon(b, ref_array)))
+            noise_floor = sqrt_scalar(float(machine_epsilon(b, ref_array)), b)
 
             metrics["content_safety"] = {
                 "refusal_score": refusal_score,

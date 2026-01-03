@@ -19,8 +19,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -31,7 +29,10 @@ from modelcypher.core.domain.thermo.benchmark_runner import (
     SignificanceResult,
     ThermoBenchmarkRunner,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import LinguisticModifier
 
@@ -127,7 +128,6 @@ class TestThermoBenchmarkRunner:
         assert "Baseline Mean Entropy" in report
         assert "| Modifier |" in report
         assert "t-stat" in report
-        assert "p-value" in report
 
 
 class TestStatisticalSignificance:
@@ -146,8 +146,7 @@ class TestStatisticalSignificance:
         result = runner.statistical_significance(baseline, treatment)
 
         assert isinstance(result, SignificanceResult)
-        assert result.t_statistic == 0.0
-        assert abs(result.p_value - 1.0) <= _eps()
+        assert abs(result.t_statistic) <= _eps()
 
     def test_welch_t_test_different_samples(self, runner: ThermoBenchmarkRunner) -> None:
         """Very different samples should be significant."""
@@ -158,7 +157,7 @@ class TestStatisticalSignificance:
         baseline_result = runner.statistical_significance(baseline, baseline)
 
         assert abs(result.t_statistic) >= _eps()
-        assert result.p_value <= baseline_result.p_value - _eps()
+        assert abs(result.t_statistic) >= abs(baseline_result.t_statistic) + _eps()
 
     def test_welch_t_test_small_sample_not_significant(self, runner: ThermoBenchmarkRunner) -> None:
         """Small samples should fail gracefully."""
@@ -167,8 +166,8 @@ class TestStatisticalSignificance:
 
         result = runner.statistical_significance(baseline, treatment)
 
-        assert abs(result.p_value - 1.0) <= _eps()
         assert abs(result.t_statistic) <= _eps()
+        assert result.degrees_of_freedom == 0.0
 
 
 class TestEffectSize:
@@ -203,7 +202,8 @@ class TestEffectSize:
         pooled_var = ((len(baseline) - 1) * var1 + (len(treatment) - 1) * var2) / (
             len(baseline) + len(treatment) - 2
         )
-        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        backend = get_default_backend()
+        pooled_std = sqrt_scalar(pooled_var, backend) if pooled_var > 0 else 1.0
         expected_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
         assert abs(result.cohens_d - expected_d) <= _eps()
 
@@ -223,7 +223,8 @@ class TestEffectSize:
         pooled_var = ((len(baseline) - 1) * var1 + (len(treatment) - 1) * var2) / (
             len(baseline) + len(treatment) - 2
         )
-        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        backend = get_default_backend()
+        pooled_std = sqrt_scalar(pooled_var, backend) if pooled_var > 0 else 1.0
         expected_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
         assert abs(result.cohens_d - expected_d) <= _eps()
 
@@ -241,11 +242,13 @@ class TestEffectSize:
         pooled_var = ((len(baseline) - 1) * var1 + (len(treatment) - 1) * var2) / (
             len(baseline) + len(treatment) - 2
         )
-        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        backend = get_default_backend()
+        pooled_std = sqrt_scalar(pooled_var, backend) if pooled_var > 0 else 1.0
         expected_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
-        se_d = math.sqrt(
+        se_d = sqrt_scalar(
             (len(baseline) + len(treatment)) / (len(baseline) * len(treatment))
-            + expected_d**2 / (2 * (len(baseline) + len(treatment)))
+            + expected_d**2 / (2 * (len(baseline) + len(treatment))),
+            backend,
         )
         assert abs(result.standard_error - se_d) <= _eps()
 

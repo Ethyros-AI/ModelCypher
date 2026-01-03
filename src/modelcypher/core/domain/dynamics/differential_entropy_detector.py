@@ -359,8 +359,6 @@ class BatchDetectionStatistics:
         BatchDetectionStatistics
             Aggregate statistics
         """
-        import math
-
         total = len(results)
         if total == 0:
             return BatchDetectionStatistics(

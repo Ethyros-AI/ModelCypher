@@ -796,7 +796,6 @@ def thermo_benchmark(
                 "significance": (
                     {
                         "tStatistic": s.significance.t_statistic,
-                        "pValue": s.significance.p_value,
                         "degreesOfFreedom": s.significance.degrees_of_freedom,
                     }
                     if s.significance

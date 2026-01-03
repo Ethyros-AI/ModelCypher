@@ -803,10 +803,14 @@ class RiemannianGeometry:
             finite_mask = backend.isfinite(adj)
             below_inf = adj < inf_val * 0.9
             edge_mask = finite_mask * below_inf  # element-wise AND
-            edge_count = int(float(backend.to_scalar(backend.sum(edge_mask))))
+            edge_count_arr = backend.sum(edge_mask)
+            backend.eval(edge_count_arr)
+            edge_count = int(float(backend.to_scalar(edge_count_arr)))
             # Count inf entries (at or above inf threshold)
             inf_mask = adj >= inf_val * 0.9
-            inf_count_adj = int(float(backend.to_scalar(backend.sum(inf_mask))))
+            inf_count_arr = backend.sum(inf_mask)
+            backend.eval(inf_count_arr)
+            inf_count_adj = int(float(backend.to_scalar(inf_count_arr)))
             # Count NaN entries
             nan_count_adj = count_nan(adj, backend)
             logger.debug(
@@ -837,8 +841,11 @@ class RiemannianGeometry:
             # Vectorized counts - O(1) vs O(n²)
             finite_mask = backend.isfinite(geo_dist_arr)
             below_inf = geo_dist_arr < inf_val * 0.9
-            fw_finite = int(float(backend.to_scalar(backend.sum(finite_mask * below_inf))))
-            fw_inf = int(float(backend.to_scalar(backend.sum(geo_dist_arr >= inf_val * 0.9))))
+            fw_finite_arr = backend.sum(finite_mask * below_inf)
+            fw_inf_arr = backend.sum(geo_dist_arr >= inf_val * 0.9)
+            backend.eval(fw_finite_arr, fw_inf_arr)
+            fw_finite = int(float(backend.to_scalar(fw_finite_arr)))
+            fw_inf = int(float(backend.to_scalar(fw_inf_arr)))
             fw_nan = count_nan(geo_dist_arr, backend)
             logger.debug(
                 f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
@@ -859,7 +866,9 @@ class RiemannianGeometry:
 
         # Count disconnected pairs (inf values represent genuinely infinite
         # geodesic distance between disconnected manifold components)
-        inf_count = int(backend.to_scalar(backend.sum(near_inf_indicator)))
+        inf_count_arr = backend.sum(near_inf_indicator)
+        backend.eval(inf_count_arr)
+        inf_count = int(backend.to_scalar(inf_count_arr))
         connected = inf_count == 0
 
         # Zero out only the diagonal (self-distances should be exactly 0).
@@ -985,8 +994,9 @@ class RiemannianGeometry:
             diff = defects - mean_defect_arr
             diff = backend.where(valid_mask, diff, backend.zeros_like(diff))
             variance = backend.sum(diff * diff) / valid_count_val
-            backend.eval(variance)
-            std_defect = float(backend.to_scalar(backend.sqrt(variance)))
+            std_defect_arr = backend.sqrt(variance)
+            backend.eval(std_defect_arr)
+            std_defect = float(backend.to_scalar(std_defect_arr))
         else:
             std_defect = 0.0
 
@@ -995,8 +1005,9 @@ class RiemannianGeometry:
         # where K = 1/R² is the sectional curvature
         # So defect ≈ K*r²/6, giving K ≈ 6*defect/r²
 
-        neighbor_radii = [center_euc[j] for j in neighbors]
-        avg_radius = sum(neighbor_radii) / len(neighbor_radii)
+        avg_radius_arr = backend.mean(center_euc_k)
+        backend.eval(avg_radius_arr)
+        avg_radius = float(backend.to_scalar(avg_radius_arr))
         if avg_radius > eps:
             # Rough curvature estimate
             sectional_curvature = 6.0 * mean_defect / (avg_radius * avg_radius)
@@ -1223,41 +1234,38 @@ class RiemannianGeometry:
         tolerance = regularization_epsilon(backend, geo_dist) * total_dist
         col_end = backend.take(geo_dist, backend.array([end_idx]), axis=1)
         col_end = backend.squeeze(col_end, axis=1)
-        backend.eval(col_end)
-        col_end_list = backend.tolist(col_end)
+        index = backend.arange(n)
+        ones_vec = backend.ones((n,))
+        zeros_vec = backend.zeros((n,))
+        visited = backend.where(index == start_idx, ones_vec, zeros_vec)
+        inf_val = float(backend.finfo().max)
+        inf_vec = backend.full((n,), inf_val)
+        backend.eval(col_end, index, visited, ones_vec, zeros_vec)
 
         while current != end_idx:
             # Find next point: must satisfy triangle equality
             # d(current, next) + d(next, end) ≈ d(current, end)
             row = backend.take(geo_dist, backend.array([current]), axis=0)
             row = backend.squeeze(row, axis=0)
-            backend.eval(row)
-            row_list = backend.tolist(row)
-            dist_to_end = float(row_list[end_idx])
+            dist_to_end_arr = backend.take(row, backend.array([end_idx]), axis=0)
+            path_through = row + col_end
+            diff = backend.abs(path_through - dist_to_end_arr)
+            finite_mask = backend.isfinite(row) & backend.isfinite(col_end)
+            valid_mask = finite_mask & (diff <= tolerance) & (visited < 0.5)
+            candidate_count_arr = backend.sum(backend.astype(valid_mask, "int32"))
+            backend.eval(candidate_count_arr, dist_to_end_arr)
+            candidate_count = int(backend.to_scalar(candidate_count_arr))
 
-            best_next = end_idx
-            best_dist = dist_to_end
-
-            for candidate in range(n):
-                if candidate == current or candidate in path:
-                    continue
-
-                d_to_candidate = float(row_list[candidate])
-                d_candidate_to_end = float(col_end_list[candidate])
-
-                if is_inf(d_to_candidate, backend) or is_inf(d_candidate_to_end, backend):
-                    continue
-
-                # Check triangle equality (point is on geodesic)
-                path_through_candidate = d_to_candidate + d_candidate_to_end
-
-                if abs(path_through_candidate - dist_to_end) <= tolerance:
-                    # Candidate is on the geodesic - pick the one closest to current
-                    if d_to_candidate < best_dist:
-                        best_next = candidate
-                        best_dist = d_to_candidate
+            if candidate_count == 0:
+                best_next = end_idx
+            else:
+                masked = backend.where(valid_mask, row, inf_vec)
+                best_idx_arr = backend.argmin(masked)
+                backend.eval(best_idx_arr)
+                best_next = int(backend.to_scalar(best_idx_arr))
 
             path.append(best_next)
+            visited = backend.where(index == best_next, ones_vec, visited)
             current = best_next
 
             # Safety: prevent infinite loops
@@ -1426,7 +1434,9 @@ class RiemannianGeometry:
             masked = backend.where(backend.isfinite(masked), masked, neg_inf)
             backend.eval(masked)
 
-            farthest_idx = int(backend.to_scalar(backend.argmax(masked)))
+            farthest_idx_arr = backend.argmax(masked)
+            backend.eval(farthest_idx_arr)
+            farthest_idx = int(backend.to_scalar(farthest_idx_arr))
             selected.append(farthest_idx)
 
             # Update mask for selected points
@@ -1443,7 +1453,9 @@ class RiemannianGeometry:
         masked = backend.where(mask > 0, neg_inf, min_distances)
         masked = backend.where(backend.isfinite(masked), masked, neg_inf)
         backend.eval(masked)
-        max_val = float(backend.to_scalar(backend.max(masked)))
+        max_val_arr = backend.max(masked)
+        backend.eval(max_val_arr)
+        max_val = float(backend.to_scalar(max_val_arr))
         coverage_radius = 0.0 if is_inf(max_val, backend) else max(0.0, max_val)
 
         return FarthestPointSamplingResult(

@@ -26,8 +26,6 @@ References:
     Transformer Computations" arXiv:2502.16570
 """
 
-import math
-
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -48,7 +46,11 @@ from modelcypher.core.domain.entropy.layer_entropy_projector import (
     LayerEntropyResult,
     ModelLayerEntropyProfile,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    log_scalar,
+    machine_epsilon,
+    sqrt_scalar,
+)
 
 
 def _eps(backend) -> float:
@@ -93,7 +95,7 @@ class TestModelLayerEntropyProfile:
             probe_prompts=["test"],
             unembedding_source="lm_head",
             vocab_size=32000,
-            max_possible_entropy=math.log(32000),
+            max_possible_entropy=log_scalar(32000.0, get_default_backend()),
         )
 
         trajectory = profile.entropy_trajectory()
@@ -102,7 +104,7 @@ class TestModelLayerEntropyProfile:
 
     def test_normalized_trajectory(self):
         """Should normalize entropy to [0, 1] by max possible entropy."""
-        max_entropy = math.log(32000)  # ~10.37
+        max_entropy = log_scalar(32000.0, get_default_backend())
         results = {
             0: LayerEntropyResult(0, "layers.0", max_entropy / 2, 0.1, 5, 0, 0),
         }
@@ -148,7 +150,8 @@ class TestLayerEntropyProjector:
 
         # Create uniform unembedding matrix (all ones)
         # This will project any hidden state to uniform logits
-        unembedding = backend.ones((vocab_size, hidden_dim)) / math.sqrt(hidden_dim)
+        scale = sqrt_scalar(float(hidden_dim), backend)
+        unembedding = backend.ones((vocab_size, hidden_dim)) / scale
         projector._unembedding_matrix = unembedding
         projector._vocab_size = vocab_size
         projector._hidden_dim = hidden_dim
@@ -159,7 +162,7 @@ class TestLayerEntropyProjector:
         entropy, _ = projector.compute_layer_entropy(hidden_state)
 
         # Entropy of uniform distribution = log(vocab_size)
-        expected = math.log(vocab_size)
+        expected = log_scalar(float(vocab_size), backend)
         eps = _eps(backend)
         assert abs(entropy - expected) <= eps * max(1.0, expected)
 
@@ -170,13 +173,9 @@ class TestLayerEntropyProjector:
 
         # Create an unembedding matrix that strongly favors one token
         # One row has high values, others have low values
-        unembedding = backend.zeros((vocab_size, hidden_dim))
-        # Set first row to be dominant
         high_values = backend.ones((1, hidden_dim)) * 100.0
-        # Use array indexing to set the first row
-        unembedding_np = backend.to_numpy(unembedding)
-        unembedding_np[0, :] = 100.0
-        unembedding = backend.array(unembedding_np)
+        rest = backend.zeros((vocab_size - 1, hidden_dim))
+        unembedding = backend.concatenate([high_values, rest], axis=0)
 
         projector._unembedding_matrix = unembedding
         projector._vocab_size = vocab_size
@@ -189,7 +188,7 @@ class TestLayerEntropyProjector:
 
         # Entropy should be very low (near 0) for concentrated distribution
         eps = _eps(backend)
-        max_entropy = math.log(vocab_size)
+        max_entropy = log_scalar(float(vocab_size), backend)
         assert entropy <= eps * max(1.0, max_entropy)
 
     def test_flatten_to_hidden_3d(self, projector, backend):
@@ -205,9 +204,9 @@ class TestLayerEntropyProjector:
         expected = [4.0, 5.0, 6.0]
         assert flattened.shape == (3,)
         eps = _eps(backend)
-        flattened_np = backend.to_numpy(flattened)
+        flattened_list = backend.tolist(flattened)
         assert all(
-            abs(flattened_np[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
+            abs(flattened_list[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
             for i in range(3)
         )
 
@@ -223,9 +222,9 @@ class TestLayerEntropyProjector:
         expected = [4.0, 5.0, 6.0]
         assert flattened.shape == (3,)
         eps = _eps(backend)
-        flattened_np = backend.to_numpy(flattened)
+        flattened_list = backend.tolist(flattened)
         assert all(
-            abs(flattened_np[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
+            abs(flattened_list[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
             for i in range(3)
         )
 
@@ -238,9 +237,9 @@ class TestLayerEntropyProjector:
         expected = [1.0, 2.0, 3.0]
         assert flattened.shape == (3,)
         eps = _eps(backend)
-        flattened_np = backend.to_numpy(flattened)
+        flattened_list = backend.tolist(flattened)
         assert all(
-            abs(flattened_np[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
+            abs(flattened_list[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
             for i in range(3)
         )
 
@@ -292,7 +291,7 @@ class TestLayerEntropyProjector:
         assert isinstance(entropy, float)
         assert isinstance(variance, float)
         eps = _eps(backend)
-        max_entropy = math.log(vocab_size)
+        max_entropy = log_scalar(float(vocab_size), backend)
         assert entropy >= -eps
         assert entropy <= max_entropy + eps * max(1.0, max_entropy)
 

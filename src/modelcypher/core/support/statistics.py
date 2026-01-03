@@ -26,8 +26,14 @@ When working with backend arrays, use the backend-accelerated versions
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING, Any
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    ceil_scalar,
+    floor_scalar,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -64,8 +70,9 @@ def percentile(sorted_values: list[float], p: float) -> float:
         return float(sorted_values[0])
     clamped = max(0.0, min(1.0, p))
     position = clamped * float(len(sorted_values) - 1)
-    lower_index = int(math.floor(position))
-    upper_index = int(math.ceil(position))
+    _b = get_default_backend()
+    lower_index = int(floor_scalar(position, _b))
+    upper_index = int(ceil_scalar(position, _b))
     if lower_index == upper_index:
         return float(sorted_values[lower_index])
     lower_value = float(sorted_values[lower_index])
@@ -91,7 +98,7 @@ def standard_deviation(values: list[float], mean_value: float | None = None) -> 
     if mean_value is None:
         mean_value = mean(values)
     variance = sum((value - mean_value) ** 2 for value in values) / float(len(values) - 1)
-    return math.sqrt(max(0.0, variance))
+    return sqrt_scalar(max(0.0, variance), get_default_backend())
 
 
 def standard_deviation_population(values: list[float], mean_value: float | None = None) -> float:
@@ -109,7 +116,7 @@ def standard_deviation_population(values: list[float], mean_value: float | None 
     if mean_value is None:
         mean_value = mean(values)
     variance = sum((value - mean_value) ** 2 for value in values) / float(len(values))
-    return math.sqrt(max(0.0, variance))
+    return sqrt_scalar(max(0.0, variance), get_default_backend())
 
 
 # =============================================================================
@@ -155,7 +162,7 @@ def std_array(arr: Any, backend: Backend, ddof: int = 0) -> float:
         # Adjust from population to sample std: multiply by sqrt(n/(n-1))
         n = arr.shape[0] if hasattr(arr, 'shape') else len(arr)
         if n > 1:
-            std_val *= math.sqrt(n / (n - 1))
+            std_val *= sqrt_scalar(n / (n - 1), backend)
 
     return std_val
 
@@ -206,8 +213,8 @@ def percentile_array(arr: Any, p: float, backend: Backend) -> float:
 
     clamped = max(0.0, min(1.0, p))
     position = clamped * float(n - 1)
-    lower_idx = int(math.floor(position))
-    upper_idx = int(math.ceil(position))
+    lower_idx = int(floor_scalar(position, backend))
+    upper_idx = int(ceil_scalar(position, backend))
 
     if lower_idx == upper_idx:
         # Exact index - use partition for O(n) complexity

@@ -32,12 +32,16 @@ Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Tr
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    ceil_scalar,
+    log_scalar,
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
@@ -744,7 +748,7 @@ def _probe_precise(
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
     # Perfect alignment: all ALIGNED layers (in layer_cka_scores) have CKA >= 1.0 - threshold
     # The threshold is sqrt(machine_epsilon) ≈ 1e-4 for float32
-    precision_threshold = math.sqrt(machine_epsilon(b, b.array([1.0])))
+    precision_threshold = sqrt_scalar(machine_epsilon(b, b.array([1.0])), b)
     perfect_alignment = bool(layer_cka_scores) and min_cka >= 1.0 - precision_threshold
 
     metrics = {
@@ -875,14 +879,15 @@ def _extract_top_k_dims(
 
     # Derive k from dimensionality: ceil(log2(d)) captures information-theoretic complexity
     if k is None:
-        k = max(1, int(math.ceil(math.log2(dim + 1))))
+        log2_dim = log_scalar(float(dim + 1), b) / log_scalar(2.0, b)
+        k = max(1, int(ceil_scalar(log2_dim, b)))
 
     # Derive threshold from dtype precision scaled by max magnitude (use backend ops)
     max_magnitude = float(b.to_scalar(b.max(abs_vals)))
     if threshold is None:
         eps = machine_epsilon(b, activation_vector)
         # Threshold at sqrt(eps) * max - standard numerical tolerance
-        threshold = math.sqrt(eps) * max_magnitude
+        threshold = sqrt_scalar(eps, b) * max_magnitude
 
     # Negate for descending argsort
     neg_abs = -abs_vals

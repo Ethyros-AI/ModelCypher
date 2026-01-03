@@ -23,7 +23,6 @@ prompt corpora with raw statistical measurements.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -47,7 +46,6 @@ class SignificanceResult:
     """Result of statistical significance testing."""
 
     t_statistic: float
-    p_value: float
     degrees_of_freedom: float
 
 
@@ -230,7 +228,6 @@ class ThermoBenchmarkRunner:
         if n1 < 2 or n2 < 2:
             return SignificanceResult(
                 t_statistic=0.0,
-                p_value=1.0,
                 degrees_of_freedom=0.0,
             )
 
@@ -253,13 +250,8 @@ class ThermoBenchmarkRunner:
         denom = (var1 / n1) ** 2 / (n1 - 1) + (var2 / n2) ** 2 / (n2 - 1)
         df = num / denom if denom > 0 else 1.0
 
-        # Approximate p-value using normal approximation for large df
-        # For accurate p-values, would need scipy.stats.t
-        p_value = self._approximate_t_pvalue(abs(t_stat))
-
         return SignificanceResult(
             t_statistic=t_stat,
-            p_value=p_value,
             degrees_of_freedom=df,
         )
 
@@ -347,19 +339,18 @@ class ThermoBenchmarkRunner:
             "",
             "## Modifier Comparison",
             "",
-            "| Modifier | Mean H | Δ H | Ridge Rate | Effect Size | t-stat | p-value |",
-            "|----------|--------|-----|------------|-------------|--------|---------|",
+            "| Modifier | Mean H | Δ H | Ridge Rate | Effect Size | t-stat |",
+            "|----------|--------|-----|------------|-------------|--------|",
         ]
 
         for stats in result.modifiers:
             delta_h = f"{stats.mean_delta_h:.4f}" if stats.mean_delta_h is not None else "—"
             effect = f"d={stats.effect_size.cohens_d:.3f}" if stats.effect_size else "—"
             t_stat = f"{stats.significance.t_statistic:.3f}" if stats.significance else "—"
-            p_value = f"{stats.significance.p_value:.4f}" if stats.significance else "—"
 
             lines.append(
                 f"| {stats.modifier.display_name} | {stats.mean_entropy:.4f} | "
-                f"{delta_h} | {stats.ridge_cross_rate:.1%} | {effect} | {t_stat} | {p_value} |"
+                f"{delta_h} | {stats.ridge_cross_rate:.1%} | {effect} | {t_stat} |"
             )
 
         lines.extend(
@@ -377,7 +368,6 @@ class ThermoBenchmarkRunner:
                         f"### {stats.modifier.display_name}",
                         "",
                         f"- t-statistic: {stats.significance.t_statistic:.4f}",
-                        f"- p-value: {stats.significance.p_value:.4f}",
                         f"- df: {stats.significance.degrees_of_freedom:.1f}",
                         "",
                     ]
@@ -392,7 +382,7 @@ class ThermoBenchmarkRunner:
                     )
 
         # NOTE: "Recommendations" section removed per "No Vibes" rule.
-        # Raw measurements (effect sizes, p-values, confidence intervals) are
+        # Raw measurements (effect sizes, test statistics, confidence intervals) are
         # provided above. Caller interprets meaning based on their context.
 
         return "\n".join(lines)
@@ -404,8 +394,3 @@ class ThermoBenchmarkRunner:
         mean = sum(values) / len(values)
         variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
         return sqrt_scalar(variance, get_default_backend())
-
-    def _approximate_t_pvalue(self, t: float) -> float:
-        """Approximate two-tailed p-value using normal approximation."""
-        _b = get_default_backend()
-        return math.erfc(t / sqrt_scalar(2.0, _b))
