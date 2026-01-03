@@ -63,9 +63,6 @@ __all__ = [
     "compute_pearson_correlation",
     "compute_spearman_correlation",
     # Matrix decomposition
-    "svd_via_eigh",
-    "canonicalize_svd_signs",
-    "safe_pinv",
     "solve_full_row_rank_via_qr",
     "solve_via_truncated_svd",
     "solve_via_gram_alignment",
@@ -80,6 +77,15 @@ __all__ = [
 # Backend Scalar Helpers
 # =============================================================================
 # Use these instead of math.sqrt, math.isfinite, etc. to keep computation on GPU.
+
+
+def _geodesic_norm_scalar(array: "Array", backend: "Backend") -> float:
+    """Compute a geodesic norm scalar for any array shape."""
+    from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+
+    norm_arr = geodesic_norms(backend.reshape(array, (1, -1)), backend)
+    backend.eval(norm_arr)
+    return float(backend.to_scalar(norm_arr))
 
 
 def sqrt_scalar(value: float, backend: "Backend") -> float:
@@ -625,9 +631,7 @@ def gram_schmidt_orthogonalize(
             b.eval(v)
 
         # Normalize
-        norm_v = b.norm(v)
-        b.eval(norm_v)
-        norm_val = float(b.to_scalar(norm_v))
+        norm_val = _geodesic_norm_scalar(v, b)
 
         if norm_val > reg:
             v = v / norm_val
@@ -894,346 +898,6 @@ def geodesic_pinv(
     return A_pinv
 
 
-def svd_via_eigh(
-    backend: Backend,
-    array: Array,
-    *,
-    full_matrices: bool = False,
-    dtype: str | None = None,
-) -> tuple[Array, Array, Array]:
-    """Compute SVD via symmetric eigendecomposition (GPU-stable, no SVD calls).
-
-    This uses eigendecomposition of A^T A to obtain right singular vectors and
-    singular values, and completes the left basis if needed. For rank-deficient
-    matrices, the null-space basis is filled from A A^T eigenvectors so that
-    U and V remain orthonormal.
-
-    Parameters
-    ----------
-    dtype : str, optional
-        Override dtype. If None, preserves input dtype (float32 or float64).
-        Use float64 for high-precision alignment computations.
-    """
-    b = backend
-    # Preserve input precision by default; override with dtype param
-    target_dtype = dtype if dtype is not None else str(array.dtype)
-    # MLX eigh requires float32 or float64 - ensure we have one of those
-    if "64" in target_dtype or target_dtype == "float64":
-        A = b.astype(array, "float64")
-    else:
-        A = b.astype(array, "float32")
-    shape = b.shape(A)
-    m = int(shape[0])
-    n = int(shape[1]) if len(shape) > 1 else 0
-
-    if m == 0 or n == 0:
-        k = min(m, n)
-        U = b.zeros((m, k))
-        S = b.zeros((k,))
-        Vt = b.zeros((k, n))
-        return U, S, Vt
-
-    cov_r = b.matmul(b.transpose(A), A)
-    eigvals_r, V_full = b.eigh(cov_r)
-    b.eval(cov_r, eigvals_r, V_full)
-
-    order_r = b.argsort(-eigvals_r)
-    eigvals_r = b.take(eigvals_r, order_r, axis=0)
-    V_full = b.take(V_full, order_r, axis=1)
-    b.eval(eigvals_r, V_full)
-
-    s = b.sqrt(b.maximum(eigvals_r, b.zeros_like(eigvals_r)))
-    b.eval(s)
-
-    if int(s.shape[0]) == 0:
-        k = min(m, n)
-        U = b.zeros((m, k))
-        S = b.zeros((k,))
-        Vt = b.zeros((k, n))
-        return U, S, Vt
-
-    max_s_arr = b.max(s)
-    b.eval(max_s_arr)
-    max_s = float(b.to_scalar(max_s_arr))
-    eps = machine_epsilon(b, A)
-    threshold = max(m, n) * eps * max_s
-
-    k = min(m, n)
-    mask = s[:k] > threshold
-    rank_arr = b.sum(b.astype(mask, "int32"))
-    b.eval(rank_arr)
-    rank = int(b.to_scalar(rank_arr))
-
-    if rank == 0:
-        U = b.zeros((m, k))
-        S = b.zeros((k,))
-        Vt = b.zeros((k, n))
-        return U, S, Vt
-
-    V_pos = V_full[:, :rank]
-    s_pos = s[:rank]
-    inv_s = 1.0 / s_pos
-    U_pos = b.matmul(A, V_pos) * b.reshape(inv_s, (1, -1))
-    b.eval(U_pos)
-
-    need_full_u = full_matrices or rank < k
-    if need_full_u:
-        cov_l = b.matmul(A, b.transpose(A))
-        eigvals_l, U_full = b.eigh(cov_l)
-        b.eval(cov_l, eigvals_l, U_full)
-
-        order_l = b.argsort(-eigvals_l)
-        U_full = b.take(U_full, order_l, axis=1)
-    if full_matrices:
-        if rank < m:
-            U_null = U_full[:, rank:m]
-            U = b.concatenate([U_pos, U_null], axis=1)
-        else:
-            U = U_full
-        Vt = b.transpose(V_full)
-    else:
-        if rank < k:
-            U_null = U_full[:, rank:k]
-            U = b.concatenate([U_pos, U_null], axis=1)
-        else:
-            U = U_pos
-        Vt = b.transpose(V_full[:, :k])
-
-    S = s[:k]
-    if threshold > 0.0:
-        thresh_arr = b.full(S.shape, float(threshold))
-        S = b.where(S > thresh_arr, S, b.zeros_like(S))
-        b.eval(S)
-
-    if full_matrices:
-        U, Vt = canonicalize_svd_signs(b, U, Vt)
-        return U, S, Vt
-
-    U_out = U[:, :k]
-    Vt_out = Vt[:k, :]
-    U_out, Vt_out = canonicalize_svd_signs(b, U_out, Vt_out)
-    return U_out, S[:k], Vt_out
-
-
-def canonicalize_svd_signs(
-    backend: Backend,
-    U: Array,
-    Vt: Array,
-) -> tuple[Array, Array]:
-    """Canonicalize SVD signs to ensure deterministic decomposition.
-
-    SVD has an inherent sign ambiguity: for each singular vector pair (u_i, v_i),
-    flipping both signs gives an equally valid decomposition:
-        A = U @ S @ Vt = (-U[:, i]) @ S @ (-Vt[i, :])
-
-    This causes phase inconsistencies when aligning different layers or models,
-    as each SVD call may choose a different sign convention.
-
-    This function enforces a deterministic sign convention:
-    - For each singular vector, find the element with largest absolute value
-    - If that element is negative, flip the signs of both U[:, i] and Vt[i, :]
-    - This ensures the "dominant direction" of each vector is positive
-
-    Mathematical guarantee:
-    - The product U @ Vt (and hence A = U @ S @ Vt) is unchanged
-    - The sign choice is deterministic given the input matrix
-    - Different matrices with similar structure will have consistent phase
-
-    Parameters
-    ----------
-    backend : Backend
-        Compute backend.
-    U : Array
-        Left singular vectors [m, k] where k is the number of singular values.
-    Vt : Array
-        Right singular vectors (transposed) [k, n].
-
-    Returns
-    -------
-    tuple[Array, Array]
-        (U_canonical, Vt_canonical) with deterministic signs.
-    """
-    b = backend
-
-    U_shape = b.shape(U)
-    Vt_shape = b.shape(Vt)
-
-    if len(U_shape) < 2 or len(Vt_shape) < 2:
-        return U, Vt
-
-    # Number of singular vectors to canonicalize
-    # U is [m, k_u] and Vt is [k_v, n] - we can only process min(k_u, k_v)
-    k = int(min(U_shape[1], Vt_shape[0]))
-    if k == 0:
-        return U, Vt
-
-    U_k = U[:, :k]
-    abs_u = b.abs(U_k)
-    max_idx = b.argmax(abs_u, axis=0)
-    rows = b.reshape(b.arange(U_shape[0]), (U_shape[0], 1))
-    cols = b.reshape(max_idx, (1, k))
-    max_mask = rows == cols
-    max_vals = b.sum(U_k * b.astype(max_mask, U_k.dtype), axis=0)
-    signs = b.where(max_vals < 0, b.full((k,), -1.0), b.ones((k,)))
-
-    if U_shape[1] > k:
-        pad_u = b.ones((int(U_shape[1]) - k,))
-        sign_u_vec = b.concatenate([signs, pad_u], axis=0)
-    else:
-        sign_u_vec = signs
-    if Vt_shape[0] > k:
-        pad_v = b.ones((int(Vt_shape[0]) - k,))
-        sign_v_vec = b.concatenate([signs, pad_v], axis=0)
-    else:
-        sign_v_vec = signs
-
-    sign_u = b.reshape(sign_u_vec, (1, -1))
-    sign_vt = b.reshape(sign_v_vec, (-1, 1))
-
-    U_canonical = U * sign_u
-    Vt_canonical = Vt * sign_vt
-    b.eval(U_canonical, Vt_canonical)
-
-    return U_canonical, Vt_canonical
-
-
-def safe_pinv(
-    backend: Backend,
-    array: Array,
-    *,
-    rcond: float | None = None,
-    warn_on_ill_conditioned: bool = True,
-) -> tuple[Array, dict]:
-    """Compute pseudo-inverse with conditioning diagnostics.
-
-    Standard pinv can produce numerically unstable results when the matrix
-    is ill-conditioned (has very small singular values). This function:
-    1. Computes SVD to determine condition number
-    2. Applies rank truncation based on rcond threshold
-    3. Returns diagnostics for debugging merge failures
-
-    The pseudo-inverse is computed as: pinv(A) = V @ S^{-1} @ U^T
-    where small singular values (< rcond * max_singular_value) are zeroed.
-
-    Parameters
-    ----------
-    backend : Backend
-        Compute backend.
-    array : Array
-        Matrix to invert [m, n].
-    rcond : float, optional
-        Cutoff for small singular values. Values below rcond * max(singular_values)
-        are set to zero. Default is machine_epsilon * max(m, n).
-    warn_on_ill_conditioned : bool
-        If True, log warning when condition number exceeds dtype limit.
-
-    Returns
-    -------
-    tuple[Array, dict]
-        (pinv_result, diagnostics) where diagnostics contains:
-        - condition_number: ratio of max/min non-zero singular value
-        - effective_rank: number of non-zero singular values after truncation
-        - truncated_count: number of singular values zeroed
-        - max_sv: maximum singular value
-        - min_sv: minimum non-zero singular value
-    """
-    import logging
-
-    logger = logging.getLogger(__name__)
-    b = backend
-
-    # Ensure float32/float64 for numerical stability
-    original_dtype = str(array.dtype)
-    if "bfloat" in original_dtype or "float16" in original_dtype:
-        array = b.astype(array, "float32")
-        b.eval(array)
-
-    shape = b.shape(array)
-    m, n = int(shape[0]), int(shape[1]) if len(shape) > 1 else 1
-
-    # Default rcond based on precision
-    if rcond is None:
-        eps = machine_epsilon(b, array)
-        rcond = eps * max(m, n)
-
-    diagnostics: dict = {
-        "condition_number": float("inf"),
-        "effective_rank": 0,
-        "truncated_count": 0,
-        "max_sv": 0.0,
-        "min_sv": 0.0,
-        "shape": [m, n],
-    }
-
-    # Compute SVD
-    U, S, Vt = svd_via_eigh(b, array, full_matrices=False)
-    b.eval(U, S, Vt)
-
-    s_count = int(S.shape[0])
-    if s_count == 0:
-        # Zero matrix - return zero pseudo-inverse
-        pinv_result = b.zeros((n, m))
-        b.eval(pinv_result)
-        return pinv_result, diagnostics
-
-    max_sv_arr = b.max(S)
-    b.eval(max_sv_arr)
-    max_sv = float(b.to_scalar(max_sv_arr))
-    diagnostics["max_sv"] = max_sv
-
-    if max_sv == 0:
-        # Zero matrix
-        pinv_result = b.zeros((n, m))
-        b.eval(pinv_result)
-        return pinv_result, diagnostics
-
-    # Determine cutoff and truncate
-    cutoff = rcond * max_sv
-    mask = S > cutoff
-    truncated_arr = b.sum(b.astype(~mask, "int32"))
-    b.eval(truncated_arr)
-    truncated = int(b.to_scalar(truncated_arr))
-    effective_rank = s_count - truncated
-    diagnostics["effective_rank"] = effective_rank
-    diagnostics["truncated_count"] = truncated
-
-    pos_inf = float(b.finfo().max)
-    min_candidates = b.where(mask, S, b.full(S.shape, pos_inf))
-    min_nonzero_arr = b.min(min_candidates)
-    b.eval(min_nonzero_arr)
-    min_nonzero = float(b.to_scalar(min_nonzero_arr))
-    diagnostics["min_sv"] = min_nonzero if min_nonzero < pos_inf else 0.0
-
-    # Condition number
-    if min_nonzero < pos_inf and min_nonzero > 0:
-        condition = max_sv / min_nonzero
-        diagnostics["condition_number"] = condition
-
-        cond_limit = condition_threshold(b, array)
-        if warn_on_ill_conditioned and condition > cond_limit:
-            logger.warning(
-                "safe_pinv: Ill-conditioned matrix (cond=%.2e, rank=%d/%d, truncated=%d)",
-                condition, effective_rank, s_count, truncated
-            )
-
-    # Compute pseudo-inverse: V @ diag(S_inv) @ U^T
-    S_inv = b.where(mask, 1.0 / S, b.zeros_like(S))
-    b.eval(S_inv)
-
-    # V = Vt^T [n, k], U^T [k, m]
-    V = b.transpose(Vt)  # [n, k]
-
-    # V @ diag(S_inv) [n, k]
-    V_scaled = V * b.reshape(S_inv, (1, -1))
-    b.eval(V_scaled)
-
-    # (V @ diag(S_inv)) @ U^T [n, m]
-    pinv_result = b.matmul(V_scaled, b.transpose(U))
-    b.eval(pinv_result)
-
-    return pinv_result, diagnostics
-
-
 def solve_full_row_rank_via_qr(
     backend: Backend,
     source: Array,
@@ -1481,11 +1145,8 @@ def _compute_residual_and_refine(
     residual = reconstructed - target
     b.eval(reconstructed, residual)
 
-    res_norm_arr = b.norm(residual)
-    tgt_norm_arr = b.norm(target)
-    b.eval(res_norm_arr, tgt_norm_arr)
-    res_norm = float(b.to_scalar(res_norm_arr))
-    tgt_norm = float(b.to_scalar(tgt_norm_arr))
+    res_norm = _geodesic_norm_scalar(residual, b)
+    tgt_norm = _geodesic_norm_scalar(target, b)
     rel_residual = res_norm / (tgt_norm + eps)
     diagnostics["residual_norm"] = rel_residual
 
@@ -1513,9 +1174,7 @@ def _compute_residual_and_refine(
             residual_ref = reconstructed_ref - target
             b.eval(reconstructed_ref, residual_ref)
 
-            res_norm_ref_arr = b.norm(residual_ref)
-            b.eval(res_norm_ref_arr)
-            res_norm_ref = float(b.to_scalar(res_norm_ref_arr))
+            res_norm_ref = _geodesic_norm_scalar(residual_ref, b)
             rel_residual_ref = res_norm_ref / (tgt_norm + eps)
 
             if rel_residual_ref < rel_residual:
@@ -1607,7 +1266,7 @@ def solve_via_truncated_svd(
     # Compute SVD of source: source = U @ S @ V^T
     # For [n, d] matrix: U is [n, k], S is [k], V^T is [k, d] where k = min(n, d)
     try:
-        U, S, Vt = svd_via_eigh(b, source, full_matrices=False)
+        U, S, Vt = geodesic_svd(b, source)
         b.eval(U, S, Vt)
     except Exception:
         diagnostics["method"] = "failed"
@@ -1653,11 +1312,8 @@ def solve_via_truncated_svd(
     target_proj = b.matmul(U_k, b.matmul(b.transpose(U_k), target))
     b.eval(target_proj)
     proj_residual = target - target_proj
-    proj_error_arr = b.norm(proj_residual)
-    target_norm_arr = b.norm(target)
-    b.eval(proj_error_arr, target_norm_arr)
-    proj_error = float(b.to_scalar(proj_error_arr))
-    target_norm = float(b.to_scalar(target_norm_arr))
+    proj_error = _geodesic_norm_scalar(proj_residual, b)
+    target_norm = _geodesic_norm_scalar(target, b)
     diagnostics["projection_error"] = proj_error / (target_norm + eps)
 
     # Compute support-space inverse: F = V @ S^{-1} @ U^T @ target
@@ -1681,9 +1337,7 @@ def solve_via_truncated_svd(
     reconstructed = b.matmul(source, F)
     residual = reconstructed - target
     b.eval(reconstructed, residual)
-    res_norm_arr = b.norm(residual)
-    b.eval(res_norm_arr)
-    res_norm = float(b.to_scalar(res_norm_arr))
+    res_norm = _geodesic_norm_scalar(residual, b)
     diagnostics["residual_norm"] = res_norm / (target_norm + eps)
 
     return F, diagnostics
@@ -1920,9 +1574,9 @@ def solve_via_gram_alignment(
     target_c = target - target_mean
     b.eval(source_c, target_c)
 
-    # SVD of centered matrices using our stable eigh-based implementation
-    U_s, S_s, Vt_s = svd_via_eigh(b, source_c, full_matrices=False)
-    U_t, S_t, Vt_t = svd_via_eigh(b, target_c, full_matrices=False)
+    # SVD of centered matrices (geodesic - GPU-only, iterates until convergence)
+    U_s, S_s, Vt_s = geodesic_svd(b, source_c)
+    U_t, S_t, Vt_t = geodesic_svd(b, target_c)
     b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
 
     if int(S_s.shape[0]) == 0 or int(S_t.shape[0]) == 0:
@@ -1961,7 +1615,7 @@ def solve_via_gram_alignment(
     M = b.matmul(b.transpose(U_s_k), U_t_k)  # [k, k]
     b.eval(M)
 
-    U_proc, S_proc, Vt_proc = svd_via_eigh(b, M, full_matrices=False)
+    U_proc, S_proc, Vt_proc = geodesic_svd(b, M)
     b.eval(U_proc, S_proc, Vt_proc)
 
     R = b.matmul(U_proc, Vt_proc)  # [k, k]
@@ -1983,11 +1637,8 @@ def solve_via_gram_alignment(
     U_s_rotated = b.matmul(U_s_k, R)
     b.eval(U_s_rotated)
     diff = U_s_rotated - U_t_k
-    diff_norm_arr = b.norm(diff)
-    U_t_norm_arr = b.norm(U_t_k)
-    b.eval(diff_norm_arr, U_t_norm_arr)
-    diff_norm = float(b.to_scalar(diff_norm_arr))
-    U_t_norm = float(b.to_scalar(U_t_norm_arr))
+    diff_norm = _geodesic_norm_scalar(diff, b)
+    U_t_norm = _geodesic_norm_scalar(U_t_k, b)
     procrustes_error = diff_norm / (U_t_norm + eps)
     diagnostics["procrustes_error"] = procrustes_error
 

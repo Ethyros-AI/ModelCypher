@@ -19,7 +19,7 @@
 
 Tests cover:
 - Epsilon/threshold functions (machine_epsilon, division_epsilon, etc.)
-- SVD via eigendecomposition (svd_via_eigh)
+- SVD via eigendecomposition (geodesic_svd)
 - QR-based linear solvers (solve_full_row_rank_via_qr)
 - SVD-based solver (solve_via_truncated_svd)
 - Entropy-based rank estimation
@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     compute_shared_relational_rank,
     condition_threshold,
     division_epsilon,
+    geodesic_svd,
     is_finite,
     is_inf,
     is_nan,
@@ -51,7 +52,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     solve_via_truncated_svd,
     sqrt_scalar,
     svd_rank_threshold,
-    svd_via_eigh,
     tiny_value,
 )
 
@@ -253,242 +253,6 @@ class TestSafeLogEpsilon:
         # log(epsilon) should be finite
         log_val = log_scalar(log_eps, b)
         assert is_finite(log_val, b)
-
-
-# =============================================================================
-# SVD via Eigendecomposition
-# =============================================================================
-
-
-class TestSvdViaEigh:
-    """Tests for svd_via_eigh function."""
-
-    def test_svd_reconstruction(self, any_backend: "Backend") -> None:
-        """U @ diag(S) @ Vt should reconstruct A."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((10, 5))
-        b.eval(A)
-
-        U, S, Vt = svd_via_eigh(b, A)
-        b.eval(U, S, Vt)
-
-        # Reconstruct: U @ diag(S) @ Vt
-        S_diag = b.diag(S)
-        reconstructed = b.matmul(U, b.matmul(S_diag, Vt))
-        b.eval(reconstructed)
-
-        # Should match original - use backend operations
-        # SVD reconstruction error scales with matrix dimensions
-        diff = reconstructed - A
-        diff_val_arr = b.max(b.abs(diff))
-        b.eval(diff_val_arr)
-        diff_val = float(b.to_scalar(diff_val_arr))
-        max_dim = max(b.shape(A))
-        eps = max_dim * _div_eps(b, diff_val)
-        assert diff_val <= eps
-
-    def test_svd_u_orthonormality(self, any_backend: "Backend") -> None:
-        """U should have orthonormal columns: U^T @ U = I."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((10, 5))
-        b.eval(A)
-
-        U, _, _ = svd_via_eigh(b, A)
-        b.eval(U)
-
-        # U^T @ U should be identity
-        UtU = b.matmul(b.transpose(U), U)
-        b.eval(UtU)
-        identity = b.eye(int(b.shape(U)[1]))
-
-        diff = UtU - identity
-        diff_val_arr = b.max(b.abs(diff))
-        b.eval(diff_val_arr)
-        diff_val = float(b.to_scalar(diff_val_arr))
-        dim = int(b.shape(U)[1])
-        eps = dim * _div_eps(b, diff_val)
-        assert diff_val <= eps
-
-    def test_svd_vt_orthonormality(self, any_backend: "Backend") -> None:
-        """Vt should have orthonormal rows: Vt @ Vt^T = I."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((10, 5))
-        b.eval(A)
-
-        _, _, Vt = svd_via_eigh(b, A)
-        b.eval(Vt)
-
-        # Vt @ Vt^T should be identity
-        VtVt_T = b.matmul(Vt, b.transpose(Vt))
-        b.eval(VtVt_T)
-        identity = b.eye(int(b.shape(Vt)[0]))
-
-        diff = VtVt_T - identity
-        diff_val_arr = b.max(b.abs(diff))
-        b.eval(diff_val_arr)
-        diff_val = float(b.to_scalar(diff_val_arr))
-        dim = int(b.shape(Vt)[0])
-        eps = dim * _div_eps(b, diff_val)
-        assert diff_val <= eps
-
-    def test_svd_singular_values_nonnegative(self, any_backend: "Backend") -> None:
-        """Singular values should be non-negative."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((10, 5))
-        b.eval(A)
-
-        _, S, _ = svd_via_eigh(b, A)
-        b.eval(S)
-
-        S_np = b.tolist(S)
-        min_sv = float(min(S_np, default=0.0))
-        eps = _eps(b, min_sv)
-        assert all(s >= -eps for s in S_np)
-
-    def test_svd_singular_values_descending(self, any_backend: "Backend") -> None:
-        """Singular values should be in descending order."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((10, 5))
-        b.eval(A)
-
-        _, S, _ = svd_via_eigh(b, A)
-        b.eval(S)
-
-        S_np = [float(v) for v in b.tolist(S)]
-        for i in range(len(S_np) - 1):
-            eps = _eps(b, S_np[i], S_np[i + 1])
-            assert S_np[i] >= S_np[i + 1] - eps
-
-    def test_svd_empty_matrix(self, any_backend: "Backend") -> None:
-        """Empty matrix should return empty SVD."""
-        b = any_backend
-        A = b.zeros((0, 5))
-
-        U, S, Vt = svd_via_eigh(b, A)
-        b.eval(U, S, Vt)
-
-        assert b.shape(U) == (0, 0)
-        assert b.shape(S) == (0,)
-        assert b.shape(Vt) == (0, 5)
-
-    def test_svd_zero_columns(self, any_backend: "Backend") -> None:
-        """Matrix with zero columns should handle gracefully."""
-        b = any_backend
-        A = b.zeros((5, 0))
-
-        U, S, Vt = svd_via_eigh(b, A)
-        b.eval(U, S, Vt)
-
-        assert b.shape(S) == (0,)
-
-    def test_svd_rank_deficient_matrix(self, any_backend: "Backend") -> None:
-        """Rank-deficient matrix should have trailing zero singular values."""
-        b = any_backend
-        # Create rank-2 matrix (outer product sum)
-        v1 = b.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
-        v2 = b.array([[1.0], [0.0], [1.0], [0.0], [1.0]])
-        A = b.matmul(v1, b.transpose(v1)) + b.matmul(v2, b.transpose(v2))
-        b.eval(A)
-
-        _, S, _ = svd_via_eigh(b, A)
-        b.eval(S)
-
-        S_np = [float(v) for v in b.tolist(S)]
-        # Should have 2 significant singular values, rest near zero
-        # Count values above threshold
-        max_sv = max(S_np, default=0.0)
-        thresh = division_epsilon(b, b.array([max_sv])) * max_sv
-        significant = sum(1 for s in S_np if s > thresh)
-        assert significant <= 2
-
-    def test_svd_full_matrices_true(self, any_backend: "Backend") -> None:
-        """full_matrices=True should return full U and Vt."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((8, 5))
-        b.eval(A)
-
-        U, S, Vt = svd_via_eigh(b, A, full_matrices=True)
-        b.eval(U, S, Vt)
-
-        # U should be [8, 8] (full), Vt should be [5, 5] (full)
-        # But our implementation returns [m, m] for U and [n, n] for Vt
-        # when full_matrices=True
-        u_shape = b.shape(U)
-        vt_shape = b.shape(Vt)
-        # At minimum, dimensions should be >= min(m, n)
-        assert u_shape[0] == 8
-        assert vt_shape[1] == 5
-
-    def test_svd_full_matrices_false(self, any_backend: "Backend") -> None:
-        """full_matrices=False should return reduced U and Vt."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((8, 5))
-        b.eval(A)
-
-        U, S, Vt = svd_via_eigh(b, A, full_matrices=False)
-        b.eval(U, S, Vt)
-
-        # U should be [8, 5], S should be [5], Vt should be [5, 5]
-        assert b.shape(U)[0] == 8
-        assert b.shape(U)[1] <= 5
-        assert b.shape(S)[0] <= 5
-        assert b.shape(Vt)[1] == 5
-
-    def test_svd_wide_matrix(self, any_backend: "Backend") -> None:
-        """SVD should work for wide matrices (m < n)."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((5, 10))
-        b.eval(A)
-
-        U, S, Vt = svd_via_eigh(b, A)
-        b.eval(U, S, Vt)
-
-        # S should have min(5, 10) = 5 elements
-        assert b.shape(S)[0] <= 5
-
-        # Reconstruction check
-        k = int(b.shape(S)[0])
-        S_diag = b.diag(S)
-        reconstructed = b.matmul(U[:, :k], b.matmul(S_diag, Vt[:k, :]))
-        b.eval(reconstructed)
-
-        diff = reconstructed - A
-        diff_val_arr = b.max(b.abs(diff))
-        b.eval(diff_val_arr)
-        diff_val = float(b.to_scalar(diff_val_arr))
-        max_dim = max(b.shape(A))
-        eps = max_dim * _div_eps(b, diff_val)
-        assert diff_val <= eps
-
-    def test_svd_square_matrix(self, any_backend: "Backend") -> None:
-        """SVD should work for square matrices."""
-        b = any_backend
-        b.random_seed(42)
-        A = b.random_normal((6, 6))
-        b.eval(A)
-
-        U, S, Vt = svd_via_eigh(b, A)
-        b.eval(U, S, Vt)
-
-        # Reconstruction check
-        S_diag = b.diag(S)
-        reconstructed = b.matmul(U, b.matmul(S_diag, Vt))
-        b.eval(reconstructed)
-
-        diff = reconstructed - A
-        diff_val_arr = b.max(b.abs(diff))
-        b.eval(diff_val_arr)
-        diff_val = float(b.to_scalar(diff_val_arr))
-        eps = _div_eps(b, diff_val)
-        assert diff_val <= eps
 
 
 # =============================================================================
@@ -1151,7 +915,7 @@ class TestNumericalPrecision:
         b.eval(A, scales)
 
         # Should not raise or produce NaN
-        U, S, Vt = svd_via_eigh(b, A)
+        U, S, Vt = geodesic_svd(b, A)
         b.eval(U, S, Vt)
 
         nan_s = b.sum(b.astype(b.isnan(S), "int32"))
@@ -1248,7 +1012,7 @@ class TestNumericalStabilityHypothesis:
         seed=st.integers(min_value=0, max_value=10000),
     )
     @hypothesis_settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-    def test_svd_via_eigh_no_nan_inf(
+    def test_geodesic_svd_no_nan_inf(
         self, any_backend: "Backend", rows: int, cols: int, seed: int
     ) -> None:
         """SVD via eigh should never produce NaN or Inf for random matrices."""
@@ -1257,7 +1021,7 @@ class TestNumericalStabilityHypothesis:
         A = b.random_normal((rows, cols))
         b.eval(A)
 
-        U, S, Vt = svd_via_eigh(b, A)
+        U, S, Vt = geodesic_svd(b, A)
         b.eval(U, S, Vt)
 
         nan_s = b.sum(b.astype(b.isnan(S), "int32"))
@@ -1287,7 +1051,7 @@ class TestNumericalStabilityHypothesis:
         A = b.random_normal((rows, cols))
         b.eval(A)
 
-        _, S, _ = svd_via_eigh(b, A)
+        _, S, _ = geodesic_svd(b, A)
         b.eval(S)
 
         S_np = b.tolist(S)
@@ -1482,7 +1246,7 @@ class TestEdgeCaseEpsilons:
         b.eval(source, target, scales)
 
         # SVD via eigh should handle this
-        U, S, Vt = svd_via_eigh(b, source)
+        U, S, Vt = geodesic_svd(b, source)
         b.eval(U, S, Vt)
 
         nan_s = b.sum(b.astype(b.isnan(S), "int32"))
@@ -1505,7 +1269,7 @@ class TestEdgeCaseEpsilons:
         b.eval(near_singular)
 
         # SVD should handle this without error
-        U, S, Vt = svd_via_eigh(b, near_singular)
+        U, S, Vt = geodesic_svd(b, near_singular)
         b.eval(U, S, Vt)
 
         # Should have one dominant singular value
@@ -1527,7 +1291,7 @@ class TestEdgeCaseEpsilons:
         D = b.diag(b.array(diag_vals))
         b.eval(D)
 
-        U, S, Vt = svd_via_eigh(b, D)
+        U, S, Vt = geodesic_svd(b, D)
         b.eval(U, S, Vt)
 
         # Singular values should match diagonal (sorted descending)

@@ -35,8 +35,8 @@ def setup_infrastructure() -> tuple[float, bool, Any | None]:
     # These functions compute appropriate epsilon based on dtype
     backend = get_default_backend()
     epsilon = machine_epsilon(backend, backend.array([0.0]))
-    # SVD is NEVER disabled. We use svd_via_eigh from numerical_stability.py
-    # which computes SVD via eigendecomposition - stable on all backends.
+    # SVD is NEVER disabled. We use geodesic_svd from numerical_stability.py
+    # which computes SVD via power iteration - GPU-only, stable on all backends.
     avoid_svd = False
 
     # geometry_metrics_cache - available for caching

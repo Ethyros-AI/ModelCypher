@@ -100,6 +100,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -255,9 +256,9 @@ class GramAligner:
         reg_threshold = max(eps, reg) if reg is not None else eps
         candidates: list[tuple[float, "Array", str]] = []
 
-        target_norm = b.norm(target_centered)
-        b.eval(target_norm)
-        target_norm_val = float(b.to_scalar(target_norm))
+        target_norm_arr = geodesic_norms(b.reshape(target_centered, (1, -1)), b)
+        b.eval(target_norm_arr)
+        target_norm_val = float(b.to_scalar(target_norm_arr))
 
         # Method 1: Geodesic SVD + Procrustes alignment
         # Uses power iteration for SVD - runs on GPU, iterates until convergence
@@ -279,9 +280,13 @@ class GramAligner:
         b.eval(F_gram)
 
         reconstructed = b.matmul(source_centered, F_gram)
-        residual_gram = b.norm(reconstructed - target_centered)
-        b.eval(residual_gram)
-        procrustes_err = float(b.to_scalar(residual_gram)) / (target_norm_val + reg_threshold)
+        residual_gram_arr = geodesic_norms(
+            b.reshape(reconstructed - target_centered, (1, -1)), b
+        )
+        b.eval(residual_gram_arr)
+        procrustes_err = float(b.to_scalar(residual_gram_arr)) / (
+            target_norm_val + reg_threshold
+        )
         candidates.append((procrustes_err, F_gram, "geodesic_procrustes"))
         self._logger.debug(
             "Geodesic Procrustes: error=%.2e",
@@ -324,9 +329,11 @@ class GramAligner:
 
         # Compute residual for eigendecomposition method
         reconstructed = b.matmul(source_centered, F_eig)
-        residual_eig = b.norm(reconstructed - target_centered)
-        b.eval(residual_eig)
-        residual_val = float(b.to_scalar(residual_eig))
+        residual_eig_arr = geodesic_norms(
+            b.reshape(reconstructed - target_centered, (1, -1)), b
+        )
+        b.eval(residual_eig_arr)
+        residual_val = float(b.to_scalar(residual_eig_arr))
         rel_residual = residual_val / (target_norm_val + reg_threshold)
         candidates.append((rel_residual, F_eig, "power_iteration_eigh"))
 
@@ -336,9 +343,11 @@ class GramAligner:
         F_pinv = b.matmul(source_pinv, target_centered)
         b.eval(F_pinv)
         reconstructed = b.matmul(source_centered, F_pinv)
-        residual_pinv = b.norm(reconstructed - target_centered)
-        b.eval(residual_pinv)
-        residual_val = float(b.to_scalar(residual_pinv))
+        residual_pinv_arr = geodesic_norms(
+            b.reshape(reconstructed - target_centered, (1, -1)), b
+        )
+        b.eval(residual_pinv_arr)
+        residual_val = float(b.to_scalar(residual_pinv_arr))
         rel_residual = residual_val / (target_norm_val + reg_threshold)
         candidates.append((rel_residual, F_pinv, "geodesic_pinv"))
 
@@ -371,9 +380,9 @@ class GramAligner:
         reg_threshold = regularization_epsilon(b, source)
         candidates: list[tuple[float, "Array", str]] = []
 
-        target_norm = b.norm(target)
-        b.eval(target_norm)
-        target_norm_val = float(b.to_scalar(target_norm))
+        target_norm_arr = geodesic_norms(b.reshape(target, (1, -1)), b)
+        b.eval(target_norm_arr)
+        target_norm_val = float(b.to_scalar(target_norm_arr))
 
         # Method 1: Geodesic SVD + Procrustes alignment
         # Uses power iteration - iterates until convergence
@@ -393,9 +402,11 @@ class GramAligner:
         b.eval(F_gram)
 
         reconstructed = b.matmul(source, F_gram)
-        residual_gram = b.norm(reconstructed - target)
-        b.eval(residual_gram)
-        procrustes_err = float(b.to_scalar(residual_gram)) / (target_norm_val + reg_threshold)
+        residual_gram_arr = geodesic_norms(b.reshape(reconstructed - target, (1, -1)), b)
+        b.eval(residual_gram_arr)
+        procrustes_err = float(b.to_scalar(residual_gram_arr)) / (
+            target_norm_val + reg_threshold
+        )
         candidates.append((procrustes_err, F_gram, "geodesic_procrustes"))
 
         # Method 2: Power iteration eigendecomposition for Gram inverse
@@ -434,9 +445,11 @@ class GramAligner:
             b.eval(F_eig)
 
             reconstructed = b.matmul(source, F_eig)
-            residual_eig = b.norm(reconstructed - target)
-            b.eval(residual_eig)
-            residual_val = float(b.to_scalar(residual_eig))
+            residual_eig_arr = geodesic_norms(
+                b.reshape(reconstructed - target, (1, -1)), b
+            )
+            b.eval(residual_eig_arr)
+            residual_val = float(b.to_scalar(residual_eig_arr))
             rel_residual = residual_val / (target_norm_val + eps)
             candidates.append((rel_residual, F_eig, "power_iteration_eigh"))
 
@@ -445,9 +458,9 @@ class GramAligner:
         F_pinv = b.matmul(source_pinv, target)
         b.eval(F_pinv)
         reconstructed = b.matmul(source, F_pinv)
-        residual_pinv = b.norm(reconstructed - target)
-        b.eval(residual_pinv)
-        residual_val = float(b.to_scalar(residual_pinv))
+        residual_pinv_arr = geodesic_norms(b.reshape(reconstructed - target, (1, -1)), b)
+        b.eval(residual_pinv_arr)
+        residual_val = float(b.to_scalar(residual_pinv_arr))
         rel_residual = residual_val / (target_norm_val + eps)
         candidates.append((rel_residual, F_pinv, "geodesic_pinv"))
 
@@ -515,9 +528,9 @@ class GramAligner:
         # This avoids numerical noise from SVD/Procrustes on the same data.
         if d_s == d_t:
             diff = source_activations - target_activations
-            diff_norm_arr = b.norm(diff)
-            source_norm_arr = b.norm(source_activations)
-            target_norm_arr = b.norm(target_activations)
+            diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
+            source_norm_arr = geodesic_norms(b.reshape(source_activations, (1, -1)), b)
+            target_norm_arr = geodesic_norms(b.reshape(target_activations, (1, -1)), b)
             b.eval(diff_norm_arr, source_norm_arr, target_norm_arr)
             diff_norm = float(b.to_scalar(diff_norm_arr))
             source_norm = float(b.to_scalar(source_norm_arr))
@@ -551,7 +564,9 @@ class GramAligner:
             if source_norm > precision_threshold and target_norm > precision_threshold:
                 scale = target_norm / source_norm
                 scaled_diff = target_activations - source_activations * scale
-                scaled_diff_norm_arr = b.norm(scaled_diff)
+                scaled_diff_norm_arr = geodesic_norms(
+                    b.reshape(scaled_diff, (1, -1)), b
+                )
                 b.eval(scaled_diff_norm_arr)
                 scaled_diff_norm = float(b.to_scalar(scaled_diff_norm_arr))
                 if scaled_diff_norm < precision_threshold * target_norm:
@@ -588,8 +603,8 @@ class GramAligner:
             b.eval(K_s, K_t)
 
             gram_diff = K_s - K_t
-            gram_diff_norm_arr = b.norm(gram_diff)
-            gram_norm_arr = b.norm(K_s)
+            gram_diff_norm_arr = geodesic_norms(b.reshape(gram_diff, (1, -1)), b)
+            gram_norm_arr = geodesic_norms(b.reshape(K_s, (1, -1)), b)
             b.eval(gram_diff_norm_arr, gram_norm_arr)
             gram_diff_norm = float(b.to_scalar(gram_diff_norm_arr))
             gram_norm = float(b.to_scalar(gram_norm_arr))

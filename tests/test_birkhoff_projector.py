@@ -34,9 +34,9 @@ from modelcypher.core.domain.geometry.birkhoff_projector import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     is_finite,
     regularization_epsilon,
-    svd_via_eigh,
     tiny_value,
 )
 
@@ -176,7 +176,7 @@ class TestSpectralBounding:
         result = projector.project(M)
 
         # Compute spectral norm of result
-        _, S, _ = svd_via_eigh(backend, result.projected_matrix, full_matrices=False)
+        _, S, _ = geodesic_svd(backend, result.projected_matrix)
         backend.eval(S)
         spectral_norm = float(backend.tolist(S)[0])
 

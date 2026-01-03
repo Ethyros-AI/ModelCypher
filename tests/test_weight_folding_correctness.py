@@ -56,8 +56,8 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import (
+    geodesic_pinv,
     machine_epsilon,
-    safe_pinv,
 )
 
 
@@ -207,7 +207,7 @@ class TestHiddenStitchCorrectness:
 
         # Weight folding: W_folded = F_out.T @ W_source @ pinv(F_in).T
         # This transforms: [d_source, d_source] → [d_target, d_target]
-        F_in_pinv, _ = safe_pinv(backend, F_in)  # [d_target, d_source]
+        F_in_pinv = geodesic_pinv(backend, F_in)  # [d_target, d_source]
         backend.eval(F_in_pinv)
 
         W_folded = backend.matmul(
@@ -377,7 +377,7 @@ class TestMLPWeightFolding:
 
         # Weight folding for gate_proj [inter, hidden]:
         # W_folded = F_inter.T @ W_source @ pinv(F_hidden).T
-        F_hidden_pinv, _ = safe_pinv(backend, F_hidden)  # [tgt_hidden, src_hidden]
+        F_hidden_pinv = geodesic_pinv(backend, F_hidden)  # [tgt_hidden, src_hidden]
         backend.eval(F_hidden_pinv)
 
         W_gate_folded = backend.matmul(
@@ -430,7 +430,7 @@ class TestMLPWeightFolding:
 
         # Weight folding for down_proj [hidden, inter]:
         # W_folded = F_hidden.T @ W_source @ pinv(F_inter).T
-        F_inter_pinv, _ = safe_pinv(backend, F_inter)
+        F_inter_pinv = geodesic_pinv(backend, F_inter)
         backend.eval(F_inter_pinv)
 
         W_down_folded = backend.matmul(
@@ -487,7 +487,7 @@ class TestAttentionWeightFolding:
 
         # Weight folding for q_proj [attn, hidden]:
         # W_folded = F_attn.T @ W_source @ pinv(F_hidden).T
-        F_hidden_pinv, _ = safe_pinv(backend, F_hidden)
+        F_hidden_pinv = geodesic_pinv(backend, F_hidden)
         backend.eval(F_hidden_pinv)
 
         W_q_folded = backend.matmul(
@@ -540,7 +540,7 @@ class TestAttentionWeightFolding:
 
         # Weight folding for o_proj [hidden, attn]:
         # W_folded = F_hidden.T @ W_source @ pinv(F_attn).T
-        F_attn_pinv, _ = safe_pinv(backend, F_attn)
+        F_attn_pinv = geodesic_pinv(backend, F_attn)
         backend.eval(F_attn_pinv)
 
         W_o_folded = backend.matmul(
@@ -723,7 +723,7 @@ class TestDeterminism:
             result = aligner.find_perfect_alignment(A_source, A_target)
 
             F = backend.array(result.feature_transform)
-            F_pinv, _ = safe_pinv(backend, F)
+            F_pinv = geodesic_pinv(backend, F)
             backend.eval(F, F_pinv)
 
             W_folded = backend.matmul(
