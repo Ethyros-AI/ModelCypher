@@ -420,7 +420,6 @@ def register_training_tools(ctx: ServiceContext) -> None:
                 "availableGB": result["availableVRAMBytes"] / (1024**3),
                 "tokensPerSecond": None,
                 "etaSeconds": None,
-                "confidence": "low",
             }
 
     if "mc_train_preflight" in tool_set:

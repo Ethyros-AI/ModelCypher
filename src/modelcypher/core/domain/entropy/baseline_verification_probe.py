@@ -113,14 +113,41 @@ class BaselineComparison:
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
 
-        mean_z_score = abs(observed.delta_mean - declared.delta_mean) / max(
-            declared.delta_std_dev, eps
+        declared_std = backend.array([declared.delta_std_dev])
+        observed_std = backend.array([observed.delta_std_dev])
+        safe_declared_std = backend.maximum(declared_std, backend.array([eps]))
+
+        mean_z_arr = backend.abs(
+            backend.array([observed.delta_mean]) - backend.array([declared.delta_mean])
+        ) / safe_declared_std
+        std_ratio_arr = observed_std / safe_declared_std
+        max_dev_arr = backend.abs(
+            backend.array([observed.delta_max]) - backend.array([declared.delta_max])
         )
-        std_dev_ratio = observed.delta_std_dev / max(declared.delta_std_dev, eps)
-        max_deviation = abs(observed.delta_max - declared.delta_max)
-        min_deviation = abs(observed.delta_min - declared.delta_min)
-        declared_range = abs(declared.delta_max - declared.delta_min)
-        observed_range = abs(observed.delta_max - observed.delta_min)
+        min_dev_arr = backend.abs(
+            backend.array([observed.delta_min]) - backend.array([declared.delta_min])
+        )
+        declared_range_arr = backend.abs(
+            backend.array([declared.delta_max]) - backend.array([declared.delta_min])
+        )
+        observed_range_arr = backend.abs(
+            backend.array([observed.delta_max]) - backend.array([observed.delta_min])
+        )
+        backend.eval(
+            mean_z_arr,
+            std_ratio_arr,
+            max_dev_arr,
+            min_dev_arr,
+            declared_range_arr,
+            observed_range_arr,
+        )
+
+        mean_z_score = float(backend.to_scalar(mean_z_arr))
+        std_dev_ratio = float(backend.to_scalar(std_ratio_arr))
+        max_deviation = float(backend.to_scalar(max_dev_arr))
+        min_deviation = float(backend.to_scalar(min_dev_arr))
+        declared_range = float(backend.to_scalar(declared_range_arr))
+        observed_range = float(backend.to_scalar(observed_range_arr))
 
         return BaselineComparison(
             mean_z_score=mean_z_score,

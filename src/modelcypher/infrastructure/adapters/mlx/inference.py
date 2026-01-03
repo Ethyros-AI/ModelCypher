@@ -75,7 +75,7 @@ class MLXInferenceAdapter(InferenceEnginePort):
         stop_sequences: list[str],
         timeouts: ComparisonTimeouts,
     ) -> AsyncGenerator[ComparisonEvent, None]:
-        # Note: ComparisonCoordinator takes list of checkpoints and config.
+        # Note: ComparisonCoordinator takes list of checkpoints and generation parameters.
         # It handles iteration.
 
         async for evt in self.comparison_coordinator.compare(

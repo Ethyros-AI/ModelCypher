@@ -277,36 +277,15 @@ class EntropyPatternAnalyzer:
         if std_dev <= eps:
             return []
 
-        z_scores = [abs((value - mean) / std_dev) for value in values]
+        values_arr = backend.array(values)
+        z_scores_arr = backend.abs((values_arr - mean) / std_dev)
+        backend.eval(z_scores_arr)
+        z_scores = backend.tolist(z_scores_arr)
         threshold = find_magnitude_gap_threshold(sorted(z_scores), eps=eps)
         if threshold <= 0.0:
             return []
 
         return [i for i, z in enumerate(z_scores) if z >= threshold]
-
-    def _pearson_correlation(
-        self,
-        x: list[float],
-        y: list[float],
-        x_mean: float,
-        y_mean: float,
-        x_std_dev: float,
-        y_std_dev: float,
-    ) -> float:
-        """Compute Pearson correlation coefficient between two lists."""
-        if len(x) != len(y) or len(x) < 2:
-            return 0.0
-        if x_std_dev == 0 or y_std_dev == 0:
-            return 0.0
-
-        numerator = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y))
-        denominator = (len(x) - 1) * x_std_dev * y_std_dev
-
-        if denominator == 0:
-            return 0.0
-
-        return numerator / denominator
-
 
 __all__ = [
     "DistressDetectionResult",

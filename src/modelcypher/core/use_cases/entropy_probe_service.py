@@ -112,19 +112,31 @@ class EntropyProbeService:
                 sample_count=0,
             )
         else:
-            mean = sum(observed_deltas) / len(observed_deltas)
+            from modelcypher.core.domain._backend import get_default_backend
+
+            backend = get_default_backend()
+            deltas_arr = backend.array(observed_deltas)
+            mean_arr = backend.mean(deltas_arr)
             if len(observed_deltas) > 1:
-                variance = sum((d - mean) ** 2 for d in observed_deltas) / (
-                    len(observed_deltas) - 1
-                )
-                std_dev = variance**0.5
+                diff = deltas_arr - mean_arr
+                variance = backend.sum(diff * diff) / float(len(observed_deltas) - 1)
+                std_arr = backend.sqrt(variance)
             else:
-                std_dev = 0.0
+                std_arr = backend.array([0.0])
+            max_arr = backend.max(deltas_arr)
+            min_arr = backend.min(deltas_arr)
+            backend.eval(mean_arr, std_arr, max_arr, min_arr)
+
+            mean = float(backend.to_scalar(mean_arr))
+            std_dev = float(backend.to_scalar(std_arr)) if len(observed_deltas) > 1 else 0.0
+            delta_max = float(backend.to_scalar(max_arr))
+            delta_min = float(backend.to_scalar(min_arr))
+
             observed_baseline = EntropyBaseline(
                 delta_mean=mean,
                 delta_std_dev=std_dev,
-                delta_max=max(observed_deltas),
-                delta_min=min(observed_deltas),
+                delta_max=delta_max,
+                delta_min=delta_min,
                 base_model_id=declared_baseline.base_model_id,
                 sample_count=len(observed_deltas),
             )

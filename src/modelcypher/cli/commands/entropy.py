@@ -64,8 +64,6 @@ def entropy_analyze(
     context = _context(ctx)
     import json as json_lib
 
-    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-
     try:
         sample_list = json_lib.loads(samples)
         if not isinstance(sample_list, list):

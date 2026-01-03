@@ -157,7 +157,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                         "modifier": m.modifier,
                         "meanEntropy": m.mean_entropy,
                         "deltaH": m.delta_h,
-                        "ridgeCrossed": m.ridge_crossed,
                     }
                     for m in result.measurements
                 ],

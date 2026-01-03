@@ -681,7 +681,6 @@ def estimate_train(
         "tokensPerSecond": None,
         "tokensPerSecondMin": None,
         "tokensPerSecondMax": None,
-        "confidence": "low",
         "powerSource": "unknown",
         "thermalState": "unknown",
         "etaSeconds": None,

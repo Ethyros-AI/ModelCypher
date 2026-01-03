@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
     BaselineMeasurements,
     EntropyMeasurement,
@@ -460,12 +462,16 @@ class TestTrajectoryAnalysis:
             assert cum == pytest.approx(expected, rel=1e-6)
 
     def test_per_token_variance_is_sliding_window(self) -> None:
-        """Per-token variance should use 3-token sliding window."""
+        """Per-token variance should use data-derived sliding window."""
         cal = LinguisticCalorimeter(simulated=True)
 
         result = cal.track_generation_entropy("Test prompt", max_tokens=10)
 
-        window_size = 3
+        _b = get_default_backend()
+        window_size = max(
+            1,
+            int(sqrt_scalar(float(len(result.per_token_entropy)), _b)),
+        )
         for i in range(len(result.per_token_variance)):
             start = max(0, i - window_size + 1)
             window = result.per_token_entropy[start : i + 1]

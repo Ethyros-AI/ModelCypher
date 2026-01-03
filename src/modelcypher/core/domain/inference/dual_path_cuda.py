@@ -67,38 +67,6 @@ class SecurityScanMetricsCUDA:
     tokens_per_second: float
 
 
-@dataclass
-class DualPathGeneratorConfigurationCUDA:
-    """Configuration for CUDA dual-path generator.
-
-    Anomaly thresholds must be derived from baseline measurements.
-    No arbitrary defaults - the caller must measure their model to determine
-    appropriate thresholds.
-    """
-
-    base_model_path: str
-    adapter_path: str | None
-    max_tokens: int
-    temperature: float
-    top_p: float
-    top_k: int
-    repetition_penalty: float
-    stop_sequences: list[str]
-    device: str
-    dtype: str  # float16, bfloat16, float32
-
-    # Anomaly detection thresholds - MUST be derived from baseline measurements
-    kl_divergence_threshold: float | None = None
-    """KL divergence above which sample is anomalous. Derive from baseline σ."""
-
-    logit_margin_threshold: float | None = None
-    """Logit margin above which sample is anomalous. Derive from baseline σ."""
-
-    rank_fraction_threshold: float | None = None
-    """Rank fraction below which sample is anomalous. Derive from baseline σ."""
-
-
-
 def compute_token_rank_metrics_cuda(
     scores: torch.Tensor,
     token_id: int,
@@ -236,31 +204,73 @@ class DualPathGeneratorCUDA:
     - Entropy-based anomaly detection
 
     Example:
-        config = DualPathGeneratorConfigurationCUDA(
+        generator = DualPathGeneratorCUDA(
             base_model_path="meta-llama/Llama-2-7b-hf",
             adapter_path="./my_adapter",
-            device="cuda:0"
+            max_tokens=128,
+            temperature=0.7,
+            top_p=0.9,
+            top_k=40,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+            device="cuda:0",
+            dtype="float16",
         )
-        generator = DualPathGeneratorCUDA(config)
         async for chunk in generator.generate("Hello"):
             print(chunk)
     """
 
     def __init__(
         self,
-        config: DualPathGeneratorConfigurationCUDA,
+        base_model_path: str,
+        adapter_path: str | None,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        repetition_penalty: float,
+        stop_sequences: list[str],
+        device: str,
+        dtype: str,
+        kl_divergence_threshold: float | None = None,
+        logit_margin_threshold: float | None = None,
+        rank_fraction_threshold: float | None = None,
         signal_router: Any = None,
     ) -> None:
         """
         Initialize the dual-path generator.
 
         Args:
-            config: Generator configuration
+            base_model_path: Base model identifier or path.
+            adapter_path: Optional adapter path.
+            max_tokens: Maximum generation length.
+            temperature: Sampling temperature (caller-provided).
+            top_p: Nucleus sampling threshold.
+            top_k: Top-k sampling cutoff.
+            repetition_penalty: Repetition penalty factor.
+            stop_sequences: Tokens or strings that terminate generation.
+            device: CUDA device string (e.g. "cuda:0").
+            dtype: Precision string (float16, bfloat16, float32).
+            kl_divergence_threshold: Optional anomaly threshold from baseline.
+            logit_margin_threshold: Optional anomaly threshold from baseline.
+            rank_fraction_threshold: Optional anomaly threshold from baseline.
             signal_router: Optional signal router for anomaly events
         """
-        self.config = config
+        self.base_model_path = base_model_path
+        self.adapter_path = adapter_path
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        self.top_k = top_k
+        self.repetition_penalty = repetition_penalty
+        self.stop_sequences = stop_sequences
+        self.device_name = device
+        self.dtype_name = dtype
+        self.kl_divergence_threshold = kl_divergence_threshold
+        self.logit_margin_threshold = logit_margin_threshold
+        self.rank_fraction_threshold = rank_fraction_threshold
         self.signal_router = signal_router
-        self.device = torch.device(config.device if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(device if torch.cuda.is_available() else "cpu")
 
         # Determine dtype
         dtype_map = {
@@ -268,7 +278,7 @@ class DualPathGeneratorCUDA:
             "bfloat16": torch.bfloat16,
             "float32": torch.float32,
         }
-        self.dtype = dtype_map.get(config.dtype, torch.float16)
+        self.dtype = dtype_map.get(dtype, torch.float16)
 
         logger.info("Initializing DualPathGeneratorCUDA on %s", self.device)
 
@@ -281,15 +291,15 @@ class DualPathGeneratorCUDA:
             )
 
         # Load tokenizer
-        logger.info("Loading tokenizer from %s", config.base_model_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(config.base_model_path)
+        logger.info("Loading tokenizer from %s", base_model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model_path)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # Load base model
-        logger.info("Loading base model from %s", config.base_model_path)
+        logger.info("Loading base model from %s", base_model_path)
         self.base_model = AutoModelForCausalLM.from_pretrained(
-            config.base_model_path,
+            base_model_path,
             torch_dtype=self.dtype,
             device_map=self.device,
             trust_remote_code=True,
@@ -297,8 +307,8 @@ class DualPathGeneratorCUDA:
         self.base_model.eval()
 
         # Load adapter model if specified
-        if config.adapter_path:
-            logger.info("Loading adapter from %s", config.adapter_path)
+        if adapter_path:
+            logger.info("Loading adapter from %s", adapter_path)
             try:
                 from peft import PeftModel
             except ImportError:
@@ -308,14 +318,14 @@ class DualPathGeneratorCUDA:
 
             # Load a separate instance with the adapter
             adapter_base = AutoModelForCausalLM.from_pretrained(
-                config.base_model_path,
+                base_model_path,
                 torch_dtype=self.dtype,
                 device_map=self.device,
                 trust_remote_code=True,
             )
             self.adapter_model = PeftModel.from_pretrained(
                 adapter_base,
-                config.adapter_path,
+                adapter_path,
             )
             self.adapter_model.eval()
         else:
@@ -386,7 +396,7 @@ class DualPathGeneratorCUDA:
             # Generation loop
             generated_ids = input_ids.clone()
 
-            while token_count < self.config.max_tokens:
+            while token_count < self.max_tokens:
                 # Sample from adapter logits
                 next_token_id = self._sample(logits_adapter)
                 token_id = next_token_id.item()
@@ -464,7 +474,7 @@ class DualPathGeneratorCUDA:
                 # Check stop conditions
                 if token_id == self.tokenizer.eos_token_id:
                     break
-                if text in self.config.stop_sequences:
+                if text in self.stop_sequences:
                     break
 
         # Final metrics
@@ -479,24 +489,24 @@ class DualPathGeneratorCUDA:
 
     def _sample(self, logits: torch.Tensor) -> torch.Tensor:
         """Sample next token from logits."""
-        if self.config.temperature == 0:
+        if self.temperature == 0:
             return torch.argmax(logits, dim=-1)
 
         # Apply temperature
-        scaled_logits = logits / self.config.temperature
+        scaled_logits = logits / self.temperature
 
         # Apply top-k filtering
-        if self.config.top_k > 0:
+        if self.top_k > 0:
             indices_to_remove = (
-                scaled_logits < torch.topk(scaled_logits, self.config.top_k)[0][..., -1, None]
+                scaled_logits < torch.topk(scaled_logits, self.top_k)[0][..., -1, None]
             )
             scaled_logits[indices_to_remove] = float("-inf")
 
         # Apply top-p (nucleus) filtering
-        if self.config.top_p < 1.0:
+        if self.top_p < 1.0:
             sorted_logits, sorted_indices = torch.sort(scaled_logits, descending=True)
             cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-            sorted_indices_to_remove = cumulative_probs > self.config.top_p
+            sorted_indices_to_remove = cumulative_probs > self.top_p
             sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
             sorted_indices_to_remove[..., 0] = 0
             indices_to_remove = sorted_indices_to_remove.scatter(
@@ -511,7 +521,7 @@ class DualPathGeneratorCUDA:
     def _check_anomaly(self, sample: EntropyDeltaSampleCUDA) -> bool:
         """Check if sample represents an anomaly.
 
-        Uses caller-provided thresholds from config. If thresholds are not provided,
+        Uses caller-provided thresholds. If thresholds are not provided,
         no anomaly detection is performed (returns False).
 
         Thresholds should be derived from baseline measurements:
@@ -520,22 +530,21 @@ class DualPathGeneratorCUDA:
         - rank_fraction_threshold: baseline_mean - 2*baseline_std
         """
         # High KL divergence indicates disagreement
-        if self.config.kl_divergence_threshold is not None:
-            if sample.kl_divergence > self.config.kl_divergence_threshold:
+        if self.kl_divergence_threshold is not None:
+            if sample.kl_divergence > self.kl_divergence_threshold:
                 return True
         # High logit margin indicates unexpected token
-        if self.config.logit_margin_threshold is not None:
-            if sample.base_logit_margin > self.config.logit_margin_threshold:
+        if self.logit_margin_threshold is not None:
+            if sample.base_logit_margin > self.logit_margin_threshold:
                 return True
         # Low rank fraction indicates out-of-frontier selection
-        if self.config.rank_fraction_threshold is not None:
-            if sample.base_rank_fraction < self.config.rank_fraction_threshold:
+        if self.rank_fraction_threshold is not None:
+            if sample.base_rank_fraction < self.rank_fraction_threshold:
                 return True
         return False
 
 __all__ = [
     "DualPathGeneratorCUDA",
-    "DualPathGeneratorConfigurationCUDA",
     "SecurityScanMetricsCUDA",
     "EntropyDeltaSampleCUDA",
     "compute_token_rank_metrics_cuda",

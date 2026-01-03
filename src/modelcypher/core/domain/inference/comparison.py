@@ -51,7 +51,11 @@ Usage:
     async for event in coordinator.compare(
         checkpoints=["/path/to/base", "/path/to/merged"],
         prompt="Explain quantum entanglement.",
-        config=inference_config,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+        stop_sequences=stop_sequences,
     ):
         if event.type == EventType.TOKEN:
             print(event.text, end="", flush=True)
@@ -74,10 +78,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, AsyncGenerator, Protocol
 
-from modelcypher.core.domain.inference._platform import (
-    get_dual_path_config_class,
-    get_dual_path_generator_class,
-)
+from modelcypher.core.domain.inference._platform import get_dual_path_generator_class
 
 logger = logging.getLogger("modelcypher.comparison")
 
@@ -135,7 +136,11 @@ class CheckpointComparisonCoordinator:
         self,
         checkpoints: list[str],
         prompt: str,
-        config: Any,  # Platform-specific configuration
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        repetition_penalty: float,
+        stop_sequences: list[str],
     ) -> AsyncGenerator[ComparisonEvent, None]:
         uuid.uuid4()
         # Prefetch logic (stubbed as simple log for now, since python models might just load on demand)
@@ -156,19 +161,18 @@ class CheckpointComparisonCoordinator:
                     # For strict 1:1, we should rely on injected service.
                     # But verifying imports is easier if we just use our existing DualPathGenerator class for now as a "Service".
 
-                    # Create a specific config for this checkpoint
-                    config_class = get_dual_path_config_class()
-                    current_config = config_class(
-                        base_model_path=ckpt,
-                        adapter_path=None,  # Comparison usually implies base weights, or we'd need adapter config
-                        max_tokens=config.max_tokens,
-                        temperature=config.temperature,
-                    )
-
                     # Instantiate generator (which loads model)
                     # In a real app, this load happens in the service layer with caching.
                     generator_class = get_dual_path_generator_class()
-                    generator = generator_class(current_config)
+                    generator = generator_class(
+                        base_model_path=ckpt,
+                        adapter_path=None,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        repetition_penalty=repetition_penalty,
+                        stop_sequences=stop_sequences,
+                    )
 
                     response_text = ""
                     metrics = None

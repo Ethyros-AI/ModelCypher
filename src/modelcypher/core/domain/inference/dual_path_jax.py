@@ -67,37 +67,6 @@ class SecurityScanMetricsJAX:
     tokens_per_second: float
 
 
-@dataclass
-class DualPathGeneratorConfigurationJAX:
-    """Configuration for JAX dual-path generator.
-
-    Anomaly thresholds must be derived from baseline measurements.
-    No arbitrary defaults - the caller must measure their model to determine
-    appropriate thresholds.
-    """
-
-    base_model_path: str
-    adapter_path: str | None
-    max_tokens: int
-    temperature: float
-    top_p: float
-    top_k: int
-    repetition_penalty: float
-    stop_sequences: list[str]
-    seed: int
-
-    # Anomaly detection thresholds - MUST be derived from baseline measurements
-    kl_divergence_threshold: float | None = None
-    """KL divergence above which sample is anomalous. Derive from baseline σ."""
-
-    logit_margin_threshold: float | None = None
-    """Logit margin above which sample is anomalous. Derive from baseline σ."""
-
-    rank_fraction_threshold: float | None = None
-    """Rank fraction below which sample is anomalous. Derive from baseline σ."""
-
-
-
 def compute_token_rank_metrics_jax(
     scores: jnp.ndarray,
     token_id: int,
@@ -236,29 +205,68 @@ class DualPathGeneratorJAX:
     - Circuit breaker for safety
 
     Example:
-        config = DualPathGeneratorConfigurationJAX(
-            base_model_path="meta-llama/Llama-2-7b-hf"
+        generator = DualPathGeneratorJAX(
+            base_model_path="meta-llama/Llama-2-7b-hf",
+            adapter_path=None,
+            max_tokens=128,
+            temperature=0.7,
+            top_p=0.9,
+            top_k=40,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+            seed=42,
         )
-        generator = DualPathGeneratorJAX(config)
         async for chunk in generator.generate("Hello"):
             print(chunk)
     """
 
     def __init__(
         self,
-        config: DualPathGeneratorConfigurationJAX,
+        base_model_path: str,
+        adapter_path: str | None,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        repetition_penalty: float,
+        stop_sequences: list[str],
+        seed: int,
+        kl_divergence_threshold: float | None = None,
+        logit_margin_threshold: float | None = None,
+        rank_fraction_threshold: float | None = None,
         signal_router: Any = None,
     ) -> None:
         """
         Initialize the dual-path generator.
 
         Args:
-            config: Generator configuration
+            base_model_path: Base model identifier or path.
+            adapter_path: Optional adapter path.
+            max_tokens: Maximum generation length.
+            temperature: Sampling temperature (caller-provided).
+            top_p: Nucleus sampling threshold.
+            top_k: Top-k sampling cutoff.
+            repetition_penalty: Repetition penalty factor.
+            stop_sequences: Tokens or strings that terminate generation.
+            seed: RNG seed for sampling.
+            kl_divergence_threshold: Optional anomaly threshold from baseline.
+            logit_margin_threshold: Optional anomaly threshold from baseline.
+            rank_fraction_threshold: Optional anomaly threshold from baseline.
             signal_router: Optional signal router for anomaly events
         """
-        self.config = config
+        self.base_model_path = base_model_path
+        self.adapter_path = adapter_path
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        self.top_k = top_k
+        self.repetition_penalty = repetition_penalty
+        self.stop_sequences = stop_sequences
+        self.kl_divergence_threshold = kl_divergence_threshold
+        self.logit_margin_threshold = logit_margin_threshold
+        self.rank_fraction_threshold = rank_fraction_threshold
         self.signal_router = signal_router
-        self.rng_key = jax.random.PRNGKey(config.seed)
+        self.rng_key = jax.random.PRNGKey(seed)
 
         logger.info("Initializing DualPathGeneratorJAX")
 
@@ -272,27 +280,27 @@ class DualPathGeneratorJAX:
             )
 
         # Load tokenizer
-        logger.info("Loading tokenizer from %s", config.base_model_path)
-        self.tokenizer = AutoTokenizer.from_pretrained(config.base_model_path)
+        logger.info("Loading tokenizer from %s", base_model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model_path)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # Load base model
-        logger.info("Loading base model from %s", config.base_model_path)
+        logger.info("Loading base model from %s", base_model_path)
         self.base_model = FlaxAutoModelForCausalLM.from_pretrained(
-            config.base_model_path,
+            base_model_path,
             from_pt=True,  # Convert from PyTorch if needed
         )
 
         # For JAX, adapter support is more complex
         # We'll use the base model for both paths if no adapter specified
-        if config.adapter_path:
+        if adapter_path:
             logger.warning(
                 "JAX adapter loading is experimental. "
                 "For production, consider using CUDA backend with PEFT."
             )
             # Try to load adapter weights manually
-            self.adapter_model = self._load_adapter_model(config.adapter_path)
+            self.adapter_model = self._load_adapter_model(adapter_path)
         else:
             self.adapter_model = self.base_model
 
@@ -371,7 +379,7 @@ class DualPathGeneratorJAX:
         # Generation loop
         generated_ids = input_ids
 
-        while token_count < self.config.max_tokens:
+        while token_count < self.max_tokens:
             # Sample from adapter logits
             self.rng_key, subkey = jax.random.split(self.rng_key)
             next_token_id = self._sample(logits_adapter[0], subkey)
@@ -452,7 +460,7 @@ class DualPathGeneratorJAX:
             # Check stop conditions
             if token_id == self.tokenizer.eos_token_id:
                 break
-            if text in self.config.stop_sequences:
+            if text in self.stop_sequences:
                 break
 
         # Final metrics
@@ -467,28 +475,28 @@ class DualPathGeneratorJAX:
 
     def _sample(self, logits: jnp.ndarray, rng_key: jax.random.PRNGKey) -> int:
         """Sample next token from logits."""
-        if self.config.temperature == 0:
+        if self.temperature == 0:
             return int(jnp.argmax(logits))
 
         # Apply temperature
-        scaled_logits = logits / self.config.temperature
+        scaled_logits = logits / self.temperature
 
         # Apply top-k filtering
-        if self.config.top_k > 0 and self.config.top_k < logits.shape[0]:
-            top_k_logits, top_k_indices = jax.lax.top_k(scaled_logits, self.config.top_k)
+        if self.top_k > 0 and self.top_k < logits.shape[0]:
+            top_k_logits, top_k_indices = jax.lax.top_k(scaled_logits, self.top_k)
             # Create mask for non-top-k positions
             mask = jnp.ones_like(scaled_logits) * float("-inf")
             mask = mask.at[top_k_indices].set(scaled_logits[top_k_indices])
             scaled_logits = mask
 
         # Apply top-p (nucleus) filtering
-        if self.config.top_p < 1.0:
+        if self.top_p < 1.0:
             sorted_indices = jnp.argsort(scaled_logits)[::-1]
             sorted_logits = scaled_logits[sorted_indices]
             cumulative_probs = jnp.cumsum(jax.nn.softmax(sorted_logits))
 
             # Find cutoff
-            cutoff_idx = jnp.searchsorted(cumulative_probs, self.config.top_p)
+            cutoff_idx = jnp.searchsorted(cumulative_probs, self.top_p)
             cutoff_idx = jnp.minimum(cutoff_idx + 1, sorted_logits.shape[0])
 
             # Mask positions beyond cutoff
@@ -507,7 +515,7 @@ class DualPathGeneratorJAX:
     def _check_anomaly(self, sample: EntropyDeltaSampleJAX) -> bool:
         """Check if sample represents an anomaly.
 
-        Uses caller-provided thresholds from config. If thresholds are not provided,
+        Uses caller-provided thresholds. If thresholds are not provided,
         no anomaly detection is performed (returns False).
 
         Thresholds should be derived from baseline measurements:
@@ -516,22 +524,21 @@ class DualPathGeneratorJAX:
         - rank_fraction_threshold: baseline_mean - 2*baseline_std
         """
         # High KL divergence indicates disagreement
-        if self.config.kl_divergence_threshold is not None:
-            if sample.kl_divergence > self.config.kl_divergence_threshold:
+        if self.kl_divergence_threshold is not None:
+            if sample.kl_divergence > self.kl_divergence_threshold:
                 return True
         # High logit margin indicates unexpected token
-        if self.config.logit_margin_threshold is not None:
-            if sample.base_logit_margin > self.config.logit_margin_threshold:
+        if self.logit_margin_threshold is not None:
+            if sample.base_logit_margin > self.logit_margin_threshold:
                 return True
         # Low rank fraction indicates out-of-frontier selection
-        if self.config.rank_fraction_threshold is not None:
-            if sample.base_rank_fraction < self.config.rank_fraction_threshold:
+        if self.rank_fraction_threshold is not None:
+            if sample.base_rank_fraction < self.rank_fraction_threshold:
                 return True
         return False
 
 __all__ = [
     "DualPathGeneratorJAX",
-    "DualPathGeneratorConfigurationJAX",
     "SecurityScanMetricsJAX",
     "EntropyDeltaSampleJAX",
     "compute_token_rank_metrics_jax",

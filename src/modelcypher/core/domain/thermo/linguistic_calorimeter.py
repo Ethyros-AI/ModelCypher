@@ -794,9 +794,11 @@ class LinguisticCalorimeter:
         # Generate token placeholders for simulated mode
         tokens = [f"token_{i}" for i in range(len(measurement.entropy_trajectory))]
 
-        # Compute per-token variance (sliding window)
+        # Compute per-token variance (sliding window derived from trajectory length)
         per_token_variance = []
-        window_size = 3
+        traj_len = len(measurement.entropy_trajectory)
+        _b = get_default_backend()
+        window_size = max(1, int(sqrt_scalar(float(traj_len), _b))) if traj_len else 1
         for i in range(len(measurement.entropy_trajectory)):
             start = max(0, i - window_size + 1)
             window = measurement.entropy_trajectory[start : i + 1]

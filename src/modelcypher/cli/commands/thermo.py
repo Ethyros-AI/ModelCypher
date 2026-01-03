@@ -234,7 +234,6 @@ def thermo_measure(
                 "modifier": m.modifier,
                 "meanEntropy": m.mean_entropy,
                 "deltaH": m.delta_h,
-                "ridgeCrossed": m.ridge_crossed,
             }
             for m in result.measurements
         ],
@@ -258,7 +257,7 @@ def thermo_measure(
         for m in result.measurements:
             delta_str = f"{m.delta_h:.4f}" if m.delta_h is not None else "N/A"
             lines.append(
-                f"  {m.modifier}: entropy={m.mean_entropy:.4f}, delta_h={delta_str}, ridge_crossed={m.ridge_crossed}"
+                f"  {m.modifier}: entropy={m.mean_entropy:.4f}, delta_h={delta_str}"
             )
         lines.append("")
         lines.append(f"Mean Entropy: {result.statistics.mean_entropy:.4f}")
@@ -418,19 +417,12 @@ def thermo_ridge_detect(
 
     payload = {
         "totalCrossings": len(analysis.events),
-        "solutionCrossings": analysis.solution_crossings,
-        "mostEffectiveModifier": (
-            analysis.most_effective_modifier.value if analysis.most_effective_modifier else None
-        ),
-        "meanSuccessfulDeltaH": analysis.mean_successful_delta_h,
-        "thresholdDeltaH": analysis.threshold_delta_h,
         "events": [
             {
                 "fromBasin": e.from_basin.value,
                 "toBasin": e.to_basin.value,
                 "triggerModifier": e.trigger_modifier.value,
                 "deltaH": e.delta_h,
-                "isSolutionCrossing": e.is_solution_crossing,
             }
             for e in analysis.events
         ],
@@ -440,12 +432,16 @@ def thermo_ridge_detect(
         lines = [
             "RIDGE CROSS DETECTION",
             "",
-            analysis.summary,
-            "",
-            "Events:",
+            f"Total crossings: {len(analysis.events)}",
         ]
-        for e in analysis.events:
-            lines.append(f"  {e.description}")
+        if analysis.events:
+            lines.append("")
+            lines.append("Events:")
+            for e in analysis.events:
+                lines.append(
+                    f"  {e.trigger_modifier.value}: {e.from_basin.value} -> {e.to_basin.value} "
+                    f"(delta_H={e.delta_h:.4f})"
+                )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -459,10 +455,8 @@ def thermo_phase(
 ) -> None:
     """Analyze thermodynamic phase from logits.
 
-    Determines whether the model is in ordered, critical, or
-    disordered phase based on the critical temperature T_c.
-
-    All values are computed from the logits - no predictions.
+    Computes critical temperature and entropy statistics from logits.
+    Returns raw measurements only (no phase labels or expected effects).
     """
     import json
 
@@ -495,9 +489,9 @@ def thermo_phase(
     payload = {
         "temperature": analysis.temperature,
         "estimatedTc": analysis.estimated_tc,
-        "phase": analysis.phase.value,
-        "phaseDisplayName": analysis.phase.display_name,
-        "expectedModifierEffect": analysis.phase.expected_modifier_effect,
+        "temperatureRatio": (
+            analysis.temperature / analysis.estimated_tc if analysis.estimated_tc > 0 else None
+        ),
         "logitVariance": analysis.logit_variance,
         "effectiveVocabSize": analysis.effective_vocab_size,
         "entropy": analysis.entropy,
@@ -513,13 +507,16 @@ def thermo_phase(
     }
 
     if context.output_format == "text":
+        ratio = (
+            analysis.temperature / analysis.estimated_tc if analysis.estimated_tc > 0 else None
+        )
+        ratio_text = f"{ratio:.4f}" if ratio is not None else "N/A"
         lines = [
             "PHASE TRANSITION ANALYSIS",
             "",
             f"Temperature: {analysis.temperature:.4f}",
             f"Estimated T_c: {analysis.estimated_tc:.4f}",
-            f"T/T_c Ratio: {analysis.temperature / analysis.estimated_tc:.4f}",
-            f"Phase: {analysis.phase.display_name}",
+            f"T/T_c Ratio: {ratio_text}",
             "",
             f"Entropy: {analysis.entropy:.4f} nats",
             f"Logit Variance: {analysis.logit_variance:.4f}",

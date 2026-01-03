@@ -132,30 +132,6 @@ def get_dual_path_generator_class() -> type:
         )
 
 
-def get_dual_path_config_class() -> type:
-    """Get the DualPathGeneratorConfiguration class for the current platform.
-
-    Returns:
-        DualPathGeneratorConfiguration class appropriate for the platform.
-    """
-    platform_name = get_inference_platform()
-
-    if platform_name == "mlx":
-        from .dual_path_mlx import DualPathGeneratorConfiguration
-
-        return DualPathGeneratorConfiguration
-    elif platform_name == "cuda":
-        from .dual_path_cuda import DualPathGeneratorConfigurationCUDA
-
-        return DualPathGeneratorConfigurationCUDA
-    elif platform_name == "jax":
-        from .dual_path_jax import DualPathGeneratorConfigurationJAX
-
-        return DualPathGeneratorConfigurationJAX
-    else:
-        raise NotImplementedError(f"No dual-path config available for platform: {platform_name}.")
-
-
 def get_security_scan_metrics_class() -> type:
     """Get the SecurityScanMetrics class for the current platform.
 
@@ -185,6 +161,5 @@ def get_security_scan_metrics_class() -> type:
 __all__ = [
     "get_inference_platform",
     "get_dual_path_generator_class",
-    "get_dual_path_config_class",
     "get_security_scan_metrics_class",
 ]

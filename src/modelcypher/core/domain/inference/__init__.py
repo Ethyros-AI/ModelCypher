@@ -30,7 +30,6 @@ from __future__ import annotations
 # Platform selection (auto-detects MLX on macOS, CUDA on Linux, JAX on TPU)
 # Avoid importing platform-specific generators here to prevent early MLX initialization.
 from ._platform import (
-    get_dual_path_config_class,
     get_dual_path_generator_class,
     get_inference_platform,
     get_security_scan_metrics_class,
@@ -46,7 +45,6 @@ __all__ = [
     "ActivationFrame",
     "ActivationStream",
     # Platform detection
-    "get_dual_path_config_class",
     "get_dual_path_generator_class",
     "get_inference_platform",
     "get_security_scan_metrics_class",
