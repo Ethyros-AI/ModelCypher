@@ -59,34 +59,6 @@ class ChangeType(str, Enum):
 
 
 @dataclass
-class DoRAConfig:
-    """Configuration for DoRA decomposition.
-
-    Use with_parameters() to create with explicit values.
-    """
-
-    compute_per_layer_metrics: bool = True
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        compute_per_layer_metrics: bool = True,
-    ) -> "DoRAConfig":
-        """Create configuration with explicit parameters.
-
-        Args:
-            compute_per_layer_metrics: Whether to compute per-layer metrics.
-
-        Returns:
-            Configuration with specified parameters.
-        """
-        return cls(
-            compute_per_layer_metrics=compute_per_layer_metrics,
-        )
-
-
-@dataclass
 class MagnitudeDirectionMetrics:
     """Magnitude/direction metrics for a single layer."""
 
@@ -126,14 +98,12 @@ class DoRADecomposition:
     - Balanced: Combination of both
     """
 
-    def __init__(self, config: DoRAConfig | None = None, backend: "Backend | None" = None):
-        """Initialize with configuration or defaults.
+    def __init__(self, backend: "Backend | None" = None):
+        """Initialize DoRA decomposition.
 
         Args:
-            config: Optional DoRA configuration (use with_parameters() to create).
             backend: Optional backend for array operations.
         """
-        self.config = config or DoRAConfig()
         self._backend = backend or get_default_backend()
 
     def decompose(

@@ -136,7 +136,6 @@ _SUBMODULES = {
 # Attribute to submodule mapping for commonly used classes
 # Format: "ExportedName": ("module_name", "actual_attr_name")
 _ATTR_TO_MODULE = {
-    "DoRAConfig": ("dora_decomposition", "DoRAConfig"),
     "ChangeType": ("dora_decomposition", "ChangeType"),
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),
     "VectorMath": ("vector_math", "VectorMath"),
@@ -153,7 +152,6 @@ _ATTR_TO_MODULE = {
     # Dimension cascade for real-time visualization
     "DimensionCascade": ("dimension_cascade", "DimensionCascade"),
     "CascadeResult": ("dimension_cascade", "CascadeResult"),
-    "CascadeConfiguration": ("dimension_cascade", "CascadeConfiguration"),
     # Density estimation for visualization
     "DensityEstimator": ("density_estimator", "DensityEstimator"),
     "DensityResult": ("density_estimator", "DensityResult"),
@@ -188,7 +186,6 @@ def __dir__():
 if TYPE_CHECKING:
     from .backend_matrix_utils import BackendMatrixUtils
     from .dora_decomposition import ChangeType, DoRADecomposition
-    from .dora_decomposition import DoRAConfig as DoRAConfiguration
     from .path_geometry import PathNode, PathSignature
     from .permutation_aligner import PermutationAligner
     from .signature_base import LabeledSignatureMixin, SignatureMixin

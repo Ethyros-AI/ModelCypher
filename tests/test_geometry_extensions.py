@@ -40,7 +40,6 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.dora_decomposition import (
     ChangeType,
-    DoRAConfig,
     DoRADecomposition,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
@@ -52,11 +51,6 @@ from modelcypher.core.domain.geometry.tangent_space_alignment import (
     TangentConfig,
     TangentSpaceAlignment,
 )
-
-
-def _test_dora_config() -> DoRAConfig:
-    """Create test DoRAConfig with explicit parameters."""
-    return DoRAConfig.with_parameters()
 
 
 def _div_eps() -> float:
@@ -86,7 +80,7 @@ class TestDoRADecomposition:
 
     def test_same_weights(self):
         """Identical weights should show minimal change."""
-        dora = DoRADecomposition(_test_dora_config())
+        dora = DoRADecomposition()
         w = mx.random.normal((64, 64))
 
         metrics = dora.decompose(w, w, "test")
@@ -99,7 +93,7 @@ class TestDoRADecomposition:
 
     def test_scaled_weights(self):
         """Scaled weights should show magnitude change only."""
-        dora = DoRADecomposition(_test_dora_config())
+        dora = DoRADecomposition()
         w1 = mx.random.normal((64, 64))
         w2 = w1 * 2.0  # Double magnitude
 
@@ -113,7 +107,7 @@ class TestDoRADecomposition:
 
     def test_adapter_analysis(self):
         """Test multi-layer adapter analysis."""
-        dora = DoRADecomposition(_test_dora_config())
+        dora = DoRADecomposition()
 
         base = {
             "layer1": mx.random.normal((32, 32)),
@@ -133,7 +127,7 @@ class TestDoRADecomposition:
 
     def test_change_type_classification(self):
         """Test dominant change type classification."""
-        dora = DoRADecomposition(_test_dora_config())
+        dora = DoRADecomposition()
 
         # Minimal change
         w = mx.random.normal((32, 32))

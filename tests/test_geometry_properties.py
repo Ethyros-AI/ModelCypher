@@ -25,7 +25,7 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.geometry.generalized_procrustes import Config, GeneralizedProcrustes
+from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
 )
@@ -104,8 +104,8 @@ class TestProcrustesProperties:
         assume(len(matrix) >= 2)
         assume(len(matrix[0]) >= 2)
 
-        config = Config(max_iterations=5)
-        result = GeneralizedProcrustes().align([matrix, matrix], config=config)
+        # All parameters are now derived from data at runtime
+        result = GeneralizedProcrustes().align([matrix, matrix])
 
         if result is not None:
             # Self-alignment must be exactly 0 (within floating point tolerance)
@@ -119,8 +119,8 @@ class TestProcrustesProperties:
         assume(len(matrix_a) >= 2 and len(matrix_b) >= 2)
         assume(len(matrix_a[0]) >= 2 and len(matrix_b[0]) >= 2)
 
-        config = Config(max_iterations=5)
-        result = GeneralizedProcrustes().align([matrix_a, matrix_b], config=config)
+        # All parameters are now derived from data at runtime
+        result = GeneralizedProcrustes().align([matrix_a, matrix_b])
 
         if result is not None:
             eps = _eps(result.alignment_error)
@@ -137,8 +137,8 @@ class TestProcrustesProperties:
         assume(all(len(m) >= 2 for m in matrices))
         assume(all(len(m[0]) >= 2 for m in matrices if m))
 
-        config = Config(max_iterations=5)
-        result = GeneralizedProcrustes().align(matrices, config=config)
+        # All parameters are now derived from data at runtime
+        result = GeneralizedProcrustes().align(matrices)
 
         if result is not None:
             assert result.model_count == len(matrices)
@@ -149,8 +149,8 @@ class TestProcrustesProperties:
         """Consensus variance ratio should be in [0, 1]."""
         assume(len(matrix) >= 2)
 
-        config = Config(max_iterations=5)
-        result = GeneralizedProcrustes().align([matrix, matrix], config=config)
+        # All parameters are now derived from data at runtime
+        result = GeneralizedProcrustes().align([matrix, matrix])
 
         if result is not None:
             eps = _eps(result.consensus_variance_ratio, 1.0)

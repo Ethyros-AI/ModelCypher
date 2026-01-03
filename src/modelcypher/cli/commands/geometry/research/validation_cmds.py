@@ -54,9 +54,8 @@ def register(app: typer.Typer) -> None:
         to verify the transplant succeeded.
 
         Checks:
-        1. Target domains became denser (transplant worked)
-        2. Non-target domains unchanged (no interference)
-        3. Overall density improved
+        1. Domains became denser after transplant
+        2. Overall density improved
 
         Example:
             mc geometry research validate-transplant \\
@@ -126,14 +125,13 @@ def register(app: typer.Typer) -> None:
             transplanted_densities: dict[str, float] = profile.domain_densities
 
             comparisons = []
-            target_improvements = []
-            non_target_changes = []
+            domain_deltas: list[float] = []
+            domain_abs_changes: list[float] = []
 
             for domain, original_density in original_densities.items():
                 transplanted_density = transplanted_densities.get(domain, 0.0)
                 delta = transplanted_density - original_density
-                is_target = domain in target_domains
-
+                is_target = True
                 comparison = {
                     "domain": domain,
                     "isTargetDomain": is_target,
@@ -143,19 +141,12 @@ def register(app: typer.Typer) -> None:
                 }
                 comparisons.append(comparison)
 
-                if is_target:
-                    target_improvements.append(delta)
-                else:
-                    non_target_changes.append(abs(delta))
-
             # Compute summary statistics (raw measurements only, no interpretation)
-            mean_target_improvement = (
-                sum(target_improvements) / len(target_improvements)
-                if target_improvements else 0.0
-            )
-            mean_non_target_change = (
-                sum(non_target_changes) / len(non_target_changes)
-                if non_target_changes else 0.0
+            domain_deltas = [c["delta"] for c in comparisons]
+            domain_abs_changes = [abs(c["delta"]) for c in comparisons]
+            mean_delta = sum(domain_deltas) / len(domain_deltas) if domain_deltas else 0.0
+            mean_abs_change = (
+                sum(domain_abs_changes) / len(domain_abs_changes) if domain_abs_changes else 0.0
             )
 
             # Return raw measurements - let users interpret based on their context
@@ -169,10 +160,9 @@ def register(app: typer.Typer) -> None:
                 "layersAnalyzed": layer_list,
                 "comparisons": comparisons,
                 "summary": {
-                    "meanTargetImprovement": mean_target_improvement,
-                    "meanNonTargetChange": mean_non_target_change,
-                    "targetImprovementCount": len(target_improvements),
-                    "nonTargetChangeCount": len(non_target_changes),
+                    "meanDelta": mean_delta,
+                    "meanAbsoluteChange": mean_abs_change,
+                    "domainCount": len(comparisons),
                 },
             }
 
@@ -190,7 +180,7 @@ def register(app: typer.Typer) -> None:
                     "=" * 60,
                     "TRANSPLANT VALIDATION RESULTS",
                     "=" * 60,
-                    f"Target domains: {', '.join(target_domains)}",
+                    f"Domains analyzed: {', '.join(target_domains)}",
                     "",
                     "Domain Comparisons:",
                 ]
@@ -204,8 +194,8 @@ def register(app: typer.Typer) -> None:
                     )
                 lines.append("")
                 lines.append("Summary:")
-                lines.append(f"  Mean target improvement: {mean_target_improvement:+.4f}")
-                lines.append(f"  Mean non-target change:  {mean_non_target_change:.4f}")
+                lines.append(f"  Mean delta: {mean_delta:+.4f}")
+                lines.append(f"  Mean absolute change: {mean_abs_change:.4f}")
                 lines.append("")
                 write_output("\n".join(lines), context.output_format, context.pretty)
                 return

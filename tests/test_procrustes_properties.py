@@ -31,8 +31,6 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.generalized_procrustes import (
-    Config,
-    FrechetMeanConfig,
     GeneralizedProcrustes,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -69,8 +67,8 @@ class TestProcrustesBasic:
             [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],  # Identical
         ]
 
-        config = Config(frechet_mean=FrechetMeanConfig(enabled=False))  # Simpler for testing
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        result = gpa.align(activations)
 
         assert result is not None
         eps = _eps(result.alignment_error, 0.0)
@@ -103,8 +101,8 @@ class TestProcrustesBasic:
             X_rotated.append(new_row)
 
         activations = [X, X_rotated]
-        config = Config(frechet_mean=FrechetMeanConfig(enabled=False))
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        result = gpa.align(activations)
 
         assert result is not None
         # Error should be small (rotation should be recovered)
@@ -127,11 +125,12 @@ class TestProcrustesBasic:
                 model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
-        config = Config(max_iterations=50, frechet_mean=FrechetMeanConfig(enabled=False))
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        result = gpa.align(activations)
 
         assert result is not None
-        assert result.converged or result.iterations == 50
+        # Convergence is determined by machine epsilon-derived threshold
+        assert result.converged or result.iterations > 0
 
     def test_rotations_are_orthogonal(self) -> None:
         """Computed rotations should be orthogonal matrices."""
@@ -149,8 +148,8 @@ class TestProcrustesBasic:
                 model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
-        config = Config(frechet_mean=FrechetMeanConfig(enabled=False))
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        result = gpa.align(activations)
 
         assert result is not None
 
@@ -182,12 +181,11 @@ class TestProcrustesMetricProperties:
         X = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
         Y = [[0.5, 0.5], [0.5, -0.5], [1.0, 0.0]]
 
-        config = Config(frechet_mean=FrechetMeanConfig(enabled=False))
-
+        # All parameters are now derived from data at runtime
         # Align X to Y
-        result1 = gpa.align([X, Y], config)
+        result1 = gpa.align([X, Y])
         # Align Y to X
-        result2 = gpa.align([Y, X], config)
+        result2 = gpa.align([Y, X])
 
         assert result1 is not None
         assert result2 is not None
@@ -210,8 +208,8 @@ class TestProcrustesMetricProperties:
                 model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
-        config = Config(frechet_mean=FrechetMeanConfig(enabled=False))
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        result = gpa.align(activations)
 
         assert result is not None
         eps = _eps(result.alignment_error)
@@ -280,8 +278,8 @@ class TestProcrustesHypothesis:
                 model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
-        config = Config(max_iterations=30, frechet_mean=FrechetMeanConfig(enabled=False))
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        result = gpa.align(activations)
 
         if result is not None:
             eps = _eps(result.alignment_error)

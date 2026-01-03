@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry import ChangeType, DoRAConfig, DoRADecomposition
+from modelcypher.core.domain.geometry import ChangeType, DoRADecomposition
 from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
@@ -629,25 +629,8 @@ class GeometryAdapterService:
     # NOTE: dora_learning_type was removed (returned vibes like "magnitude_dominant").
     # Use raw magnitude_to_direction_ratio value; caller decides interpretation.
 
-    @staticmethod
-    def dora_learning_type_confidence(result: DoRADecomposition.DecompositionResult) -> float:
-        ratio = result.magnitude_to_direction_ratio
-        if ratio <= 0:
-            return 0.0
-        dominance = max(ratio, 1.0 / ratio)
-        config = DoRAConfig()
-        threshold = max(
-            config.magnitude_dominance_threshold,
-            config.direction_dominance_threshold,
-        )
-        if result.dominant_change_type in (
-            ChangeType.MAGNITUDE_DOMINATED,
-            ChangeType.DIRECTION_DOMINATED,
-        ):
-            return min(1.0, dominance / threshold)
-        if result.dominant_change_type == ChangeType.BALANCED:
-            return max(0.0, (threshold - dominance) / (threshold - 1.0))
-        return 1.0
+    # NOTE: dora_learning_type_confidence was removed - it used non-existent config attributes.
+    # Use raw magnitude_to_direction_ratio from the result; caller decides interpretation.
 
     @staticmethod
     def dora_stability_score(result: DoRADecomposition.DecompositionResult) -> float:

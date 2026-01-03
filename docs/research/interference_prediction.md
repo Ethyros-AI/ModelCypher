@@ -128,11 +128,8 @@ The CLI command `mc geometry interference predict` analyzes all domains and prov
 # Predict interference between two models
 mc geometry interference predict /path/to/source /path/to/target
 
-# Analyze specific domains only
-mc geometry interference predict /path/to/source /path/to/target --domains moral,social
-
 # Compute volume for a single concept
-mc geometry interference volume /path/to/model "justice" --samples 10
+mc geometry interference volume /path/to/model "justice"
 
 # Save detailed report
 mc geometry interference predict source target -o interference_report.json

@@ -590,6 +590,6 @@ class ManifoldClusterer:
             nearest_region=nearest_region,
             distance=nearest_distance,
             is_within_region=is_within,
-            suggested_character=ManifoldRegion.classify(point, classification_config),
+            suggested_character=ManifoldRegion.classify(point, thresholds),
             confidence=confidence,
         )

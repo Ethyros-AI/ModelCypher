@@ -26,7 +26,7 @@ from modelcypher.core.domain.geometry.topological_fingerprint import (
 def test_topological_signature_betti_numbers():
     """Test Betti number extraction from persistence diagram."""
     points = [[0, 0], [1, 0], [1, 1], [0, 1]]  # A square
-    fingerprint = TopologicalFingerprint.compute(points, max_filtration=2.0)
+    fingerprint = TopologicalFingerprint.compute(points)
 
     # Betti numbers from persistence diagrams count features:
     # β0 = number of 0-dim persistence points (connected components born)

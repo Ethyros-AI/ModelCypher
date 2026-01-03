@@ -307,32 +307,41 @@ class TestPairwiseDistances:
     def test_distance_matrix_symmetric(self) -> None:
         """Distance matrix should be symmetric."""
         points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
-        distances = TopologicalFingerprint._compute_pairwise_distances(points)
+        backend = get_default_backend()
+        distances = TopologicalFingerprint._compute_pairwise_distances(points, backend=backend)
+        backend.eval(distances)
+        distances_list = backend.tolist(distances)
 
         n = len(points)
         for i in range(n):
             for j in range(n):
-                eps = _eps(distances[i][j], distances[j][i])
-                assert abs(distances[i][j] - distances[j][i]) <= eps
+                eps = _eps(distances_list[i][j], distances_list[j][i])
+                assert abs(distances_list[i][j] - distances_list[j][i]) <= eps
 
     def test_diagonal_is_zero(self) -> None:
         """Distance from point to itself should be 0."""
         points = [[0.0, 0.0], [1.0, 0.0]]
-        distances = TopologicalFingerprint._compute_pairwise_distances(points)
+        backend = get_default_backend()
+        distances = TopologicalFingerprint._compute_pairwise_distances(points, backend=backend)
+        backend.eval(distances)
+        distances_list = backend.tolist(distances)
 
         for i in range(len(points)):
-            eps = _eps(distances[i][i], 0.0)
-            assert abs(distances[i][i] - 0.0) <= eps
+            eps = _eps(distances_list[i][i], 0.0)
+            assert abs(distances_list[i][i] - 0.0) <= eps
 
     def test_euclidean_distance_correct(self) -> None:
         """Should compute correct Euclidean distances."""
         points = [[0.0, 0.0], [3.0, 4.0]]
-        distances = TopologicalFingerprint._compute_pairwise_distances(points)
+        backend = get_default_backend()
+        distances = TopologicalFingerprint._compute_pairwise_distances(points, backend=backend)
+        backend.eval(distances)
+        distances_list = backend.tolist(distances)
 
         # Distance should be 5 (3-4-5 triangle)
-        eps = _eps(distances[0][1], distances[1][0], 5.0)
-        assert abs(distances[0][1] - 5.0) <= eps
-        assert abs(distances[1][0] - 5.0) <= eps
+        eps = _eps(distances_list[0][1], distances_list[1][0], 5.0)
+        assert abs(distances_list[0][1] - 5.0) <= eps
+        assert abs(distances_list[1][0] - 5.0) <= eps
 
     def test_empty_returns_empty(self) -> None:
         """Empty input should return empty matrix."""
@@ -422,10 +431,13 @@ class TestMathematicalInvariants:
         random.seed(42)
         for n in [2, 5, 10]:
             points = [[random.random(), random.random()] for _ in range(n)]
-            distances = TopologicalFingerprint._compute_pairwise_distances(points)
+            backend = get_default_backend()
+            distances = TopologicalFingerprint._compute_pairwise_distances(points, backend=backend)
+            backend.eval(distances)
+            distances_list = backend.tolist(distances)
 
-            assert len(distances) == n
-            for row in distances:
+            assert len(distances_list) == n
+            for row in distances_list:
                 assert len(row) == n
 
 

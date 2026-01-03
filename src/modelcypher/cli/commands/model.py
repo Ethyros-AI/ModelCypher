@@ -406,12 +406,6 @@ def model_validate_knowledge(
     ctx: typer.Context,
     merged: str = typer.Option(..., "--merged", help="Path to merged model"),
     source: str | None = typer.Option(None, "--source", help="Path to source model (for baseline)"),
-    domains: str | None = typer.Option(
-        None,
-        "--domains",
-        help="Comma-separated domains: math,code,factual,reasoning,language,creative",
-    ),
-    quick: bool = typer.Option(False, "--quick", help="Quick validation (skip variations)"),
     report_path: str | None = typer.Option(
         None, "--report-path", help="Path to save validation report"
     ),
@@ -424,8 +418,6 @@ def model_validate_knowledge(
     Examples:
         mc model validate-knowledge --merged ./merged-model
         mc model validate-knowledge --merged ./merged-model --source ./source-model
-        mc model validate-knowledge --merged ./merged-model --domains math,code
-        mc model validate-knowledge --merged ./merged-model --quick
     """
     from modelcypher.cli.composition import get_registry
     from modelcypher.core.domain.merging.knowledge_transfer_validator import (
@@ -438,30 +430,10 @@ def model_validate_knowledge(
 
     context = _context(ctx)
 
-    # Parse domains
-    domain_list = None
-    if domains:
-        domain_list = []
-        for d in domains.split(","):
-            d = d.strip().lower()
-            try:
-                domain_list.append(KnowledgeDomain(d))
-            except ValueError:
-                valid_domains = [dom.value for dom in KnowledgeDomain]
-                error = ErrorDetail(
-                    code="MC-1030",
-                    title="Invalid domain",
-                    detail=f"Unknown domain: {d}",
-                    hint=f"Valid domains are: {', '.join(valid_domains)}",
-                    trace_id=context.trace_id,
-                )
-                write_error(error.as_dict(), context.output_format, context.pretty)
-                raise typer.Exit(code=1)
-
     # Build config
     config = KnowledgeTransferConfig(
-        domains=domain_list if domain_list else list(KnowledgeDomain),
-        include_variations=not quick,
+        domains=list(KnowledgeDomain),
+        include_variations=True,
     )
 
     typer.echo("Running knowledge transfer validation...", err=True)

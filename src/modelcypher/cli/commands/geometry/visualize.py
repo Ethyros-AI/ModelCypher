@@ -132,10 +132,7 @@ def geometry_visualize_create(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.dimension_cascade import (
-        CascadeConfiguration,
-        DimensionCascade,
-    )
+    from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
     from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
 
     # Parse target dimensions
@@ -185,17 +182,10 @@ def geometry_visualize_create(
     n_tokens, hidden_dim = activations.shape
     typer.echo(f"Captured activations: {n_tokens} tokens × {hidden_dim} dims")
 
-    # Run dimension cascade
+    # Run dimension cascade (all parameters derived from data)
     typer.echo(f"Running dimension cascade: {hidden_dim}D → {dims}")
     cascade = DimensionCascade(backend)
-    cascade_config = CascadeConfiguration(
-        target_dims=dims,
-        compute_curvature=compute_curvature,
-        curvature_k=min(15, n_tokens - 1),
-        min_calibration_points=min(20, n_tokens),
-    )
-
-    cascade_result = cascade.calibrate(activations, config=cascade_config)
+    cascade_result = cascade.calibrate(activations, target_dims=dims)
     typer.echo(
         f"Intrinsic dimension: {cascade_result.intrinsic_dim:.1f} "
         f"(ambient: {cascade_result.original_dim})"
@@ -316,10 +306,7 @@ def geometry_visualize_from_activations(
     context = _context(ctx)
 
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.dimension_cascade import (
-        CascadeConfiguration,
-        DimensionCascade,
-    )
+    from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
     from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
 
     # Parse target dimensions
@@ -348,17 +335,10 @@ def geometry_visualize_from_activations(
     n_points, hidden_dim = activations.shape
     typer.echo(f"Loaded activations: {n_points} points × {hidden_dim} dims")
 
-    # Run dimension cascade
+    # Run dimension cascade (all parameters derived from data)
     typer.echo(f"Running dimension cascade: {hidden_dim}D → {dims}")
     cascade = DimensionCascade(backend)
-    cascade_config = CascadeConfiguration(
-        target_dims=dims,
-        compute_curvature=compute_curvature,
-        curvature_k=min(15, n_points - 1),
-        min_calibration_points=min(20, n_points),
-    )
-
-    cascade_result = cascade.calibrate(activations, config=cascade_config)
+    cascade_result = cascade.calibrate(activations, target_dims=dims)
     typer.echo(
         f"Intrinsic dimension: {cascade_result.intrinsic_dim:.1f} "
         f"(ambient: {cascade_result.original_dim})"

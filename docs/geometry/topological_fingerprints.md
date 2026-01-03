@@ -227,8 +227,6 @@ from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsS
 service = GeometryMetricsService()
 result = service.compute_topological_fingerprint(
     points=[[0.1, 0.2], [0.3, 0.4], ...],
-    max_dimension=1,
-    num_steps=50,
 )
 
 print(f"Components (β₀): {result.betti_0}")

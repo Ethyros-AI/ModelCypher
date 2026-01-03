@@ -161,7 +161,7 @@ def topology_analysis(
     """Compute topological fingerprint of prime gap distribution.
 
     Uses persistent homology to detect topological features (connected
-    components, loops, voids) in the prime gap embedding.
+    components, loops) in the prime gap embedding.
 
     Note: Topology computation is O(n^3) for cycle detection.
     Keep n_primes under 1000 for reasonable runtime.

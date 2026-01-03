@@ -49,8 +49,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
         def mc_geometry_interference_predict(
             sourceModel: str,
             targetModel: str,
-            layer: int = -1,
-            domains: list[str] | None = None,
         ) -> dict:
             """
             Predict interference between two models before merging.
@@ -61,16 +59,14 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Args:
                 sourceModel: Path to source model
                 targetModel: Path to target model
-                layer: Layer to analyze (-1 for last)
-                domains: List of domains to analyze (spatial, social, temporal, moral)
-                         Defaults to all domains if not specified.
+                Uses all validated domains and the final layer.
 
             Returns:
             Interference prediction with safety scores.
             """
 
             from modelcypher.backends.mlx_backend import MLXBackend
-            from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
+            from modelcypher.core.domain.domains import AtlasDomain
             from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
                 DomainGeometryWaypointService,
             )
@@ -84,24 +80,13 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             source_path = require_existing_directory(sourceModel)
             target_path = require_existing_directory(targetModel)
 
-            # Parse domains
-            supported = {
+            domain_list = [
                 AtlasDomain.SPATIAL,
                 AtlasDomain.SOCIAL,
                 AtlasDomain.TEMPORAL,
                 AtlasDomain.MORAL,
-            }
-            domain_list = []
-            if domains:
-                for raw in domains:
-                    name = raw.strip()
-                    if not name:
-                        continue
-                    resolved = resolve_domain(name)
-                    if resolved is not None and resolved in supported:
-                        domain_list.append(resolved)
-            if not domain_list:
-                domain_list = list(supported)
+            ]
+            layer = -1
 
             DomainGeometryWaypointService()
             RiemannianDensityEstimator()

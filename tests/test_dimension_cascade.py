@@ -35,7 +35,6 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.dimension_cascade import (
-    CascadeConfiguration,
     CascadeResult,
     DimensionCascade,
 )
@@ -80,36 +79,6 @@ def small_activations(backend: "Backend") -> "Array":
     """Generate small activations for edge case testing."""
     backend.random_seed(42)
     return backend.random_normal((25, 32))
-
-
-# =============================================================================
-# CascadeConfiguration Tests
-# =============================================================================
-
-
-class TestCascadeConfiguration:
-    """Tests for CascadeConfiguration dataclass."""
-
-    def test_default_values(self) -> None:
-        """Test default configuration values."""
-        config = CascadeConfiguration(target_dims=[4, 3])
-        assert config.target_dims == [4, 3]
-        assert config.compute_curvature is True
-        assert config.curvature_k == 15
-        assert config.min_calibration_points == 20
-
-    def test_custom_values(self) -> None:
-        """Test custom configuration values."""
-        config = CascadeConfiguration(
-            target_dims=[8, 4, 2],
-            compute_curvature=False,
-            curvature_k=10,
-            min_calibration_points=30,
-        )
-        assert config.target_dims == [8, 4, 2]
-        assert config.compute_curvature is False
-        assert config.curvature_k == 10
-        assert config.min_calibration_points == 30
 
 
 # =============================================================================
@@ -178,18 +147,12 @@ class TestDimensionCascade:
         assert 4 in result.couplings
         assert 3 in result.couplings
 
-    def test_calibrate_with_config(
+    def test_calibrate_with_different_dims(
         self, backend: "Backend", random_activations: "Array"
     ) -> None:
-        """Test calibration with explicit config."""
+        """Test calibration with different target dimensions."""
         cascade = DimensionCascade(backend)
-        config = CascadeConfiguration(
-            target_dims=[8, 4, 2],
-            compute_curvature=True,
-            curvature_k=10,
-            min_calibration_points=20,
-        )
-        result = cascade.calibrate(random_activations, config=config)
+        result = cascade.calibrate(random_activations, target_dims=[8, 4, 2])
 
         assert cascade.calibrated is True
         assert 8 in result.projections
@@ -312,32 +275,13 @@ class TestDimensionCascade:
     def test_curvature_computed(
         self, backend: "Backend", random_activations: "Array"
     ) -> None:
-        """Test that curvature is computed when requested."""
+        """Test that curvature is computed automatically."""
         cascade = DimensionCascade(backend)
-        config = CascadeConfiguration(
-            target_dims=[4, 3],
-            compute_curvature=True,
-            curvature_k=10,
-        )
-        result = cascade.calibrate(random_activations, config=config)
+        result = cascade.calibrate(random_activations, target_dims=[4, 3])
 
-        # Curvatures dict should be present (may be empty if backend lacks required methods)
-        # Curvature computation is best-effort - some backends may not support all ops
+        # Curvatures dict should be present (curvature is always computed when possible)
+        # May be empty if n_points <= sqrt(n) or backend lacks required methods
         assert isinstance(result.curvatures, dict)
-
-    def test_curvature_not_computed(
-        self, backend: "Backend", random_activations: "Array"
-    ) -> None:
-        """Test that curvature is not computed when disabled."""
-        cascade = DimensionCascade(backend)
-        config = CascadeConfiguration(
-            target_dims=[4, 3],
-            compute_curvature=False,
-        )
-        result = cascade.calibrate(random_activations, config=config)
-
-        # No curvatures should be computed
-        assert len(result.curvatures) == 0
 
     def test_recalibrate(
         self, backend: "Backend", random_activations: "Array"
@@ -363,8 +307,8 @@ class TestDimensionCascade:
     def test_min_points_validation(self, backend: "Backend") -> None:
         """Test validation of minimum calibration points."""
         cascade = DimensionCascade(backend)
-        min_points = CascadeConfiguration(target_dims=[4, 3]).min_calibration_points
-        too_few = backend.random_normal((min_points - 1, 64))
+        # Minimum is 3 points for geometric computation
+        too_few = backend.random_normal((2, 64))
 
         with pytest.raises(ValueError, match="calibration points"):
             cascade.calibrate(too_few, target_dims=[4, 3])

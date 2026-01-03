@@ -89,23 +89,6 @@ class CascadeResult:
     geodesic_distortion: dict[int, float]
 
 
-@dataclass
-class CascadeConfiguration:
-    """Configuration for dimension cascade.
-
-    Attributes:
-        target_dims: Target dimensions for cascade (descending order preferred)
-        compute_curvature: Whether to compute ORC at each dimension
-        curvature_k: Number of neighbors for curvature computation
-        min_calibration_points: Minimum points needed for calibration
-    """
-
-    target_dims: list[int]
-    compute_curvature: bool = True
-    curvature_k: int = 15
-    min_calibration_points: int = 20
-
-
 class DimensionCascade:
     """
     Project high-D to 4D→3D→2D→1D with structure preservation.
@@ -153,7 +136,6 @@ class DimensionCascade:
         self,
         activations: "Array",
         target_dims: list[int] | None = None,
-        config: CascadeConfiguration | None = None,
     ) -> CascadeResult:
         """
         Calibrate the cascade using calibration activations.
@@ -166,10 +148,11 @@ class DimensionCascade:
         - GW on Grams finds optimal correspondence
         - Projection is EXACT: X @ π preserves Gram structure
 
+        All parameters (k for curvature, etc.) are derived from data.
+
         Args:
             activations: Calibration data [n_points, hidden_dim]
             target_dims: Target dimensions (defaults to [4, 3, 2])
-            config: Cascade configuration
 
         Returns:
             CascadeResult with projections and REUSABLE couplings
@@ -179,14 +162,14 @@ class DimensionCascade:
         """
         b = self.backend
 
-        if config is None:
-            config = CascadeConfiguration(target_dims=target_dims or [4, 3, 2])
+        # Derive target dims (default to 4, 3, 2 for visualization)
+        resolved_target_dims = target_dims or [4, 3, 2]
 
-        # Validate inputs
+        # Validate inputs - need at least 3 points for geometry
         n_points, hidden_dim = activations.shape
-        if n_points < config.min_calibration_points:
+        if n_points < 3:
             raise ValueError(
-                f"Need at least {config.min_calibration_points} calibration points, "
+                f"Need at least 3 calibration points for geometric computation, "
                 f"got {n_points}"
             )
 
@@ -195,7 +178,7 @@ class DimensionCascade:
             "Calibrating cascade: %d points, %d dims -> %s",
             n_points,
             hidden_dim,
-            config.target_dims,
+            resolved_target_dims,
         )
 
         # Cast to float32 if needed - SVD and other linalg ops require float32+
@@ -218,7 +201,10 @@ class DimensionCascade:
         )
 
         # Sort dims descending (project from high to low)
-        target_dims_sorted = sorted(config.target_dims, reverse=True)
+        target_dims_sorted = sorted(resolved_target_dims, reverse=True)
+
+        # Derive curvature k from data: sqrt(n) is the standard heuristic
+        curvature_k = max(2, int(n_points ** 0.5))
 
         current = activations
         current_dim = hidden_dim
@@ -269,9 +255,9 @@ class DimensionCascade:
                 current, projected
             )
 
-            # Compute curvature at this dimension
-            if config.compute_curvature and n_points > config.curvature_k:
-                k = min(config.curvature_k, n_points - 1)
+            # Compute curvature at this dimension (always, if enough points)
+            if n_points > curvature_k:
+                k = min(curvature_k, n_points - 1)
                 try:
                     orc = OllivierRicciCurvature(b)
                     orc_result = orc.compute(projected, k_neighbors=k)

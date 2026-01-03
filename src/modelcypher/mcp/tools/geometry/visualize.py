@@ -109,10 +109,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
                 forward_through_backbone,
                 resolve_model_backbone,
             )
-            from modelcypher.core.domain.geometry.dimension_cascade import (
-                CascadeConfiguration,
-                DimensionCascade,
-            )
+            from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
             from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
 
             # Load model
@@ -152,16 +149,9 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
 
             n_tokens, hidden_dim = activations.shape
 
-            # Run dimension cascade
+            # Run dimension cascade (all parameters derived from data)
             cascade = DimensionCascade(backend)
-            cascade_config = CascadeConfiguration(
-                target_dims=dims,
-                compute_curvature=computeCurvature,
-                curvature_k=min(15, n_tokens - 1),
-                min_calibration_points=min(20, n_tokens),
-            )
-
-            cascade_result = cascade.calibrate(activations, config=cascade_config)
+            cascade_result = cascade.calibrate(activations, target_dims=dims)
 
             # Create visualization
             viewer_config = ViewerConfiguration(
@@ -242,10 +232,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             dims = sorted(dims, reverse=True)
 
             from modelcypher.backends.mlx_backend import MLXBackend
-            from modelcypher.core.domain.geometry.dimension_cascade import (
-                CascadeConfiguration,
-                DimensionCascade,
-            )
+            from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
             from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
 
             # Load activations
@@ -267,16 +254,9 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             activations = backend.array(act_data)
             n_points, hidden_dim = activations.shape
 
-            # Run dimension cascade
+            # Run dimension cascade (all parameters derived from data)
             cascade = DimensionCascade(backend)
-            cascade_config = CascadeConfiguration(
-                target_dims=dims,
-                compute_curvature=computeCurvature,
-                curvature_k=min(15, n_points - 1),
-                min_calibration_points=min(20, n_points),
-            )
-
-            cascade_result = cascade.calibrate(activations, config=cascade_config)
+            cascade_result = cascade.calibrate(activations, target_dims=dims)
 
             # Create visualization
             viewer_config = ViewerConfiguration(

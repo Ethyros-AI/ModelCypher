@@ -159,7 +159,6 @@ def _report_payload(report: ConceptDimensionalityReport) -> dict:
 def atlas_dimensionality(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (default is last)"),
 ) -> None:
     """Measure intrinsic dimension for UnifiedAtlas probes at a model layer."""
     context = _context(ctx)
@@ -175,7 +174,7 @@ def atlas_dimensionality(
 
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
 
     probes = UnifiedAtlasInventory.all_probes()
     calibration_weights = {}

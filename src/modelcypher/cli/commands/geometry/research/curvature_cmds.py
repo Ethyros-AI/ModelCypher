@@ -44,9 +44,6 @@ def register(app: typer.Typer) -> None:
         output_path: str | None = typer.Option(
             None, "--save", "-s", help="Save profile to JSON file"
         ),
-        layers: str | None = typer.Option(
-            None, "--layers", help="Specific layers to analyze (e.g., '0,5,10,15')"
-        ),
     ) -> None:
         """Compute curvature profile for a model.
 
@@ -84,17 +81,10 @@ def register(app: typer.Typer) -> None:
         # Load model
         model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
-        # Determine layers to analyze
-        if layers:
-            layer_indices = [int(x.strip()) for x in layers.split(",")]
-        else:
-            # Default: all layers
-            layer_indices = list(range(num_layers))
+        layer_indices = list(range(num_layers))
 
-        # Get probes for activation collection
         probes = UnifiedAtlasInventory.all_probes()
-        # Use first 100 probes for speed (curvature needs fewer samples than density)
-        probe_texts = [f"The concept of {p.name}." for p in probes[:100]]
+        probe_texts = [f"The concept of {p.name}." for p in probes]
 
         logger.info(f"Computing curvature for {len(layer_indices)} layers with {len(probe_texts)} probes")
 

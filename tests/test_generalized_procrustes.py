@@ -19,14 +19,14 @@
 Comprehensive tests for Generalized Procrustes Analysis module.
 
 Tests cover:
-- FrechetMeanConfig dataclass
-- Config dataclass and factory methods
 - Result dataclass and summary property
 - GeneralizedProcrustes class (align, align_crms, _compute_consensus)
 - LayerRotationResult dataclass
 - RotationContinuityResult dataclass and summary property
 - RotationContinuityAnalyzer class
 - Edge cases and numerical stability
+
+Note: No configuration classes - all parameters are derived from data.
 """
 
 from __future__ import annotations
@@ -41,8 +41,6 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     ConceptResponseMatrix,
 )
 from modelcypher.core.domain.geometry.generalized_procrustes import (
-    Config,
-    FrechetMeanConfig,
     GeneralizedProcrustes,
     LayerRotationResult,
     Result,
@@ -57,150 +55,6 @@ def _eps(backend, *values: float) -> float:
 
 
 PI = 3.141592653589793
-
-# =============================================================================
-# FrechetMeanConfig Tests
-# =============================================================================
-
-
-class TestFrechetMeanConfig:
-    """Tests for FrechetMeanConfig dataclass."""
-
-    def test_default_values(self) -> None:
-        """Default config should have Fréchet mean enabled and params derived from data."""
-        config = FrechetMeanConfig()
-        assert config.enabled is True
-        # k_neighbors is None by default - computed from intrinsic dimension
-        assert config.k_neighbors is None
-        # max_iterations is None by default - derived from dimension at runtime
-        assert config.max_iterations is None
-        # tolerance is None by default - derived from machine epsilon at runtime
-        assert config.tolerance is None
-
-    def test_custom_values(self) -> None:
-        """Should accept custom values."""
-        backend = get_default_backend()
-        eps = machine_epsilon(backend, backend.array([1.0]))
-        config = FrechetMeanConfig(
-            enabled=False,
-            k_neighbors=20,
-            max_iterations=100,
-            tolerance=eps,
-        )
-        assert config.enabled is False
-        assert config.k_neighbors == 20
-        assert config.max_iterations == 100
-        assert config.tolerance == eps
-
-    def test_frozen(self) -> None:
-        """Config should be immutable."""
-        config = FrechetMeanConfig()
-        with pytest.raises(Exception):
-            config.enabled = False  # type: ignore
-
-
-# =============================================================================
-# Config Tests
-# =============================================================================
-
-
-class TestConfig:
-    """Tests for Config dataclass."""
-
-    def test_default_values(self) -> None:
-        """Default config values - all numerical params derived from data at runtime."""
-        config = Config()
-        # max_iterations is None by default - derived from number of models at runtime
-        assert config.max_iterations is None
-        # convergence_threshold is None by default - derived from machine epsilon at runtime
-        assert config.convergence_threshold is None
-        assert config.allow_reflections is False
-        assert config.min_models == 2
-        assert config.allow_scaling is False
-        assert config.frechet_mean.enabled is True
-        assert config.per_layer_smoothness_threshold is None
-        # effective_smoothness_threshold should raise without explicit threshold
-        import pytest
-        with pytest.raises(ValueError, match="per_layer_smoothness_threshold not set"):
-            _ = config.effective_smoothness_threshold
-
-    def test_with_smoothness_threshold(self) -> None:
-        """Config.with_smoothness_threshold() creates config with threshold."""
-        ratios = [0.5, 0.55, 0.6, 0.65, 0.7]
-        backend = get_default_backend()
-        ratio_array = backend.array(ratios)
-        mean = backend.mean(ratio_array)
-        backend.eval(mean)
-        threshold = float(backend.to_scalar(mean))
-        config = Config.with_smoothness_threshold(threshold)
-        assert config.per_layer_smoothness_threshold == threshold
-        assert config.effective_smoothness_threshold == threshold
-
-    def test_from_smoothness_distribution(self) -> None:
-        """Config.from_smoothness_distribution() derives threshold from data."""
-        # Smoothness ratios with mean ~0.6, std ~0.1
-        ratios = [0.5, 0.55, 0.6, 0.65, 0.7]
-        config = Config.from_smoothness_distribution(ratios)
-        assert config.per_layer_smoothness_threshold is not None
-        backend = get_default_backend()
-        ratio_array = backend.array(ratios)
-        mean = backend.mean(ratio_array)
-        diff = ratio_array - mean
-        variance = backend.mean(diff * diff)
-        std = backend.sqrt(variance)
-        backend.eval(mean)
-        backend.eval(std)
-        mean_val = float(backend.to_scalar(mean))
-        std_val = float(backend.to_scalar(std))
-        expected = max(0.0, mean_val - std_val)
-        eps = _eps(backend, config.effective_smoothness_threshold, expected)
-        assert abs(config.effective_smoothness_threshold - expected) <= eps
-
-    def test_from_empty_smoothness_distribution_raises(self) -> None:
-        """Config.from_smoothness_distribution() raises on empty data."""
-        import pytest
-        with pytest.raises(ValueError, match="Cannot derive threshold from empty"):
-            Config.from_smoothness_distribution([])
-
-    def test_custom_values(self) -> None:
-        """Should accept custom values."""
-        backend = get_default_backend()
-        eps = machine_epsilon(backend, backend.array([1.0]))
-        ratios = [0.4, 0.6]
-        ratio_array = backend.array(ratios)
-        mean = backend.mean(ratio_array)
-        backend.eval(mean)
-        threshold = float(backend.to_scalar(mean))
-        config = Config(
-            max_iterations=50,
-            convergence_threshold=eps,
-            allow_reflections=True,
-            min_models=3,
-            allow_scaling=True,
-            per_layer_smoothness_threshold=threshold,
-        )
-        assert config.max_iterations == 50
-        assert config.convergence_threshold == eps
-        assert config.allow_reflections is True
-        assert config.min_models == 3
-        assert config.allow_scaling is True
-        assert config.per_layer_smoothness_threshold == threshold
-
-    def test_default_factory_method(self) -> None:
-        """Config.default() should return curvature-aware config."""
-        config = Config.default()
-        assert config.frechet_mean.enabled is True
-
-    def test_arithmetic_mean_factory_method(self) -> None:
-        """Config.arithmetic_mean() should disable Fréchet mean."""
-        config = Config.arithmetic_mean()
-        assert config.frechet_mean.enabled is False
-
-    def test_frozen(self) -> None:
-        """Config should be immutable."""
-        config = Config()
-        with pytest.raises(Exception):
-            config.max_iterations = 50  # type: ignore
 
 
 # =============================================================================
@@ -297,17 +151,15 @@ class TestGeneralizedProcrustesAlign:
     """Tests for GeneralizedProcrustes.align method."""
 
     def test_align_requires_min_models(self) -> None:
-        """Should return None if fewer than min_models."""
+        """Should return None if fewer than 2 models."""
         matrix = [[1.0, 0.0], [0.0, 1.0]]
-        config = Config(min_models=2, max_iterations=5)
-        assert GeneralizedProcrustes().align([matrix], config=config) is None
+        # Requires at least 2 models for alignment - derived from algorithm requirement
+        assert GeneralizedProcrustes().align([matrix]) is None
 
     def test_align_identity_consensus(self) -> None:
         """Identical matrices should align with zero error."""
         matrix = [[1.0, 0.0], [0.0, 1.0]]
-        result = GeneralizedProcrustes().align(
-            [matrix, matrix], config=Config(max_iterations=5)
-        )
+        result = GeneralizedProcrustes().align([matrix, matrix])
         assert result is not None
         backend = get_default_backend()
         eps = _eps(backend, result.alignment_error, 0.0)
@@ -322,7 +174,7 @@ class TestGeneralizedProcrustesAlign:
         m1 = [[1.0, 0.0], [0.0, 1.0]]
         m2 = [[0.8, 0.2], [0.2, 0.8]]
         m3 = [[0.9, 0.1], [0.1, 0.9]]
-        result = GeneralizedProcrustes().align([m1, m2, m3], config=Config(max_iterations=20))
+        result = GeneralizedProcrustes().align([m1, m2, m3])
         assert result is not None
         assert result.model_count == 3
         assert result.sample_count == 2
@@ -330,59 +182,73 @@ class TestGeneralizedProcrustesAlign:
 
     def test_align_empty_activations_returns_none(self) -> None:
         """Should return None for empty activations."""
-        result = GeneralizedProcrustes().align([], config=Config(max_iterations=5))
+        result = GeneralizedProcrustes().align([])
         assert result is None
 
     def test_align_empty_samples_returns_none(self) -> None:
         """Should return None if matrices have no samples."""
-        result = GeneralizedProcrustes().align([[], []], config=Config(max_iterations=5))
+        result = GeneralizedProcrustes().align([[], []])
         assert result is None
 
     def test_align_mismatched_dimensions_returns_none(self) -> None:
         """Should return None if matrices have different dimensions."""
         m1 = [[1.0, 0.0], [0.0, 1.0]]
         m2 = [[1.0, 0.0, 0.5], [0.0, 1.0, 0.5]]
-        result = GeneralizedProcrustes().align([m1, m2], config=Config(max_iterations=5))
+        result = GeneralizedProcrustes().align([m1, m2])
         assert result is None
 
-    def test_align_with_scaling_enabled(self) -> None:
-        """Should handle scaling when allow_scaling=True."""
+    def test_align_never_scales(self) -> None:
+        """Scaling is never allowed - models must align without scale adjustment.
+
+        In high-dimensional geometry, scaling would distort the manifold.
+        The algorithm always uses scale=1.0 for all models.
+        """
         m1 = [[1.0, 0.0], [0.0, 1.0]]
         m2 = [[2.0, 0.0], [0.0, 2.0]]  # Scaled version
-        config_scaled = Config(max_iterations=20, allow_scaling=True)
-        config_unscaled = Config(max_iterations=20, allow_scaling=False)
-        result_scaled = GeneralizedProcrustes().align([m1, m2], config=config_scaled)
-        result_unscaled = GeneralizedProcrustes().align([m1, m2], config=config_unscaled)
-        assert result_scaled is not None
-        assert result_unscaled is not None
-        backend = get_default_backend()
-        eps = _eps(backend, result_scaled.alignment_error, result_unscaled.alignment_error)
-        assert result_scaled.alignment_error <= result_unscaled.alignment_error + eps
-
-    def test_align_with_reflections_allowed(self) -> None:
-        """Should allow reflections when configured."""
-        m1 = [[1.0, 0.0], [0.0, 1.0]]
-        m2 = [[-1.0, 0.0], [0.0, 1.0]]  # Reflected
-        config = Config(max_iterations=20, allow_reflections=True)
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
         assert result is not None
+        # All scales should be 1.0 (scaling never applied)
+        backend = get_default_backend()
+        for scale in result.scales:
+            eps = _eps(backend, scale, 1.0)
+            assert abs(scale - 1.0) <= eps
+
+    def test_align_never_reflects(self) -> None:
+        """Reflections are never allowed - determinant is always +1.
+
+        Reflections would invert the orientation of the representation space,
+        which is geometrically incorrect for neural network activations.
+        """
+        m1 = [[1.0, 0.0], [0.0, 1.0]]
+        m2 = [[-1.0, 0.0], [0.0, 1.0]]  # Would require reflection to perfectly align
+        result = GeneralizedProcrustes().align([m1, m2])
+        assert result is not None
+        # Rotations should all have determinant +1 (no reflections)
+        backend = get_default_backend()
+        for rotation in result.rotations:
+            R = backend.array(rotation)
+            det = backend.det(R)
+            backend.eval(det)
+            det_val = float(backend.to_scalar(det))
+            dim = len(rotation)
+            eps = _eps(backend, det_val, 1.0) * (dim ** 3)
+            assert abs(det_val - 1.0) <= eps
 
     def test_align_convergence(self) -> None:
-        """Should converge within max_iterations."""
+        """Should converge - max_iterations derived from model count."""
         m1 = [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]]
         m2 = [[0.9, 0.1], [0.1, 0.9], [0.5, 0.5]]
-        config = Config(max_iterations=100)
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
         assert result is not None
-        # Should converge well before max iterations
-        assert result.iterations <= config.max_iterations
+        # Should converge (max_iterations = max(100, 10 * model_count))
+        assert result.converged or result.iterations > 0
 
     def test_align_rotations_are_orthogonal(self) -> None:
         """Returned rotations should be orthogonal matrices."""
         b = get_default_backend()
         m1 = [[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.5, 0.5, 1.0]]
         m2 = [[0.9, 0.1, 0.5], [0.1, 0.9, 0.5], [0.5, 0.5, 0.9]]
-        result = GeneralizedProcrustes().align([m1, m2], config=Config(max_iterations=20))
+        result = GeneralizedProcrustes().align([m1, m2])
         assert result is not None
 
         # Check each rotation is orthogonal: R @ R^T = I
@@ -436,9 +302,7 @@ class TestGeneralizedProcrustesAlignCRMs:
             2,
             {0: {"a": [0.9, 0.1], "b": [0.1, 0.9]}},
         )
-        result = GeneralizedProcrustes().align_crms(
-            [crm_a, crm_b], layer=0, config=Config(max_iterations=10)
-        )
+        result = GeneralizedProcrustes().align_crms([crm_a, crm_b], layer=0)
         assert result is not None
         assert result.sample_count == 2
 
@@ -454,9 +318,7 @@ class TestGeneralizedProcrustesAlignCRMs:
             3,
             {0: {"a": [1.0, 0.0, 0.0], "b": [0.0, 1.0, 0.0]}},
         )
-        result = GeneralizedProcrustes().align_crms(
-            [crm_a, crm_b], layer=0, config=Config(max_iterations=10)
-        )
+        result = GeneralizedProcrustes().align_crms([crm_a, crm_b], layer=0)
         assert result is not None
         assert result.dimension == 2  # Truncated to smaller
 
@@ -464,9 +326,7 @@ class TestGeneralizedProcrustesAlignCRMs:
         """Should return None if layer not in all CRMs."""
         crm_a = self._make_crm("a", 2, {0: {"a": [1.0, 0.0]}})
         crm_b = self._make_crm("b", 2, {1: {"a": [1.0, 0.0]}})  # Different layer
-        result = GeneralizedProcrustes().align_crms(
-            [crm_a, crm_b], layer=0, config=Config(max_iterations=5)
-        )
+        result = GeneralizedProcrustes().align_crms([crm_a, crm_b], layer=0)
         assert result is None
 
     def test_align_crms_different_anchors_still_aligns(self) -> None:
@@ -479,35 +339,29 @@ class TestGeneralizedProcrustesAlignCRMs:
         crm_a = self._make_crm("a", 2, {0: {"x": [1.0, 0.0]}})
         crm_b = self._make_crm("b", 2, {0: {"y": [0.0, 1.0]}})
         # Both have 1 sample, so alignment proceeds (though semantically questionable)
-        result = GeneralizedProcrustes().align_crms(
-            [crm_a, crm_b], layer=0, config=Config(max_iterations=5)
-        )
+        result = GeneralizedProcrustes().align_crms([crm_a, crm_b], layer=0)
         # Alignment succeeds - both CRMs have 1 sample
         assert result is not None
         assert result.sample_count == 1
 
 
 class TestGeneralizedProcrustesConsensus:
-    """Tests for _compute_consensus method."""
+    """Tests for _compute_consensus method.
 
-    def test_arithmetic_mean_consensus(self) -> None:
-        """Arithmetic mean should average across models."""
-        m1 = [[1.0, 0.0], [0.0, 1.0]]
-        m2 = [[2.0, 0.0], [0.0, 2.0]]
-        config = Config.arithmetic_mean()
-        config = Config(max_iterations=1, frechet_mean=FrechetMeanConfig(enabled=False))
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
-        assert result is not None
-        # After centering, consensus is computed from centered data
+    Note: Fréchet mean is ALWAYS used. Arithmetic mean is incorrect on curved
+    manifolds - it doesn't respect the geodesic structure of the space.
+    """
 
-    def test_frechet_mean_consensus(self) -> None:
-        """Fréchet mean should use curvature-aware averaging."""
+    def test_frechet_mean_always_used(self) -> None:
+        """Fréchet mean is always enabled - the only correct approach on manifolds."""
         m1 = [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]]
         m2 = [[0.9, 0.1], [0.1, 0.9], [0.5, 0.5]]
-        config = Config.default()  # Fréchet mean enabled
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
         assert result is not None
-        # Should produce valid result with Fréchet mean
+        # Should produce valid consensus using Fréchet mean
+        assert result.consensus is not None
+        assert len(result.consensus) == 3  # 3 samples
+        assert len(result.consensus[0]) == 2  # 2 dimensions
 
 
 # =============================================================================
@@ -665,9 +519,10 @@ class TestRotationContinuityAnalyzer:
             1: {"a": [0.9, 0.1], "b": [0.1, 0.9], "c": [0.5, 0.5]},
         }
         analyzer = RotationContinuityAnalyzer()
-        config = Config.from_smoothness_distribution([0.5, 0.6, 0.7])
+        # Smoothness threshold derived from provided distribution
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target", config=config
+            source_acts, target_acts, "source", "target",
+            smoothness_ratios=[0.5, 0.6, 0.7]
         )
         assert result is not None
         assert result.source_model == "source"
@@ -703,9 +558,9 @@ class TestRotationContinuityAnalyzer:
             0: {"a": [1.0, 0.0, 0.0], "b": [0.0, 1.0, 0.0], "c": [0.5, 0.5, 0.0]},
         }
         analyzer = RotationContinuityAnalyzer()
-        config = Config.from_smoothness_distribution([0.5, 0.6, 0.7])
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target", config=config
+            source_acts, target_acts, "source", "target",
+            smoothness_ratios=[0.5, 0.6, 0.7]
         )
         assert result is not None
         assert result.source_dimension == 2
@@ -725,9 +580,9 @@ class TestRotationContinuityAnalyzer:
             2: {"a": [0.9, 0.1], "b": [0.1, 0.9], "c": [0.5, 0.5]},
         }
         analyzer = RotationContinuityAnalyzer()
-        config = Config.from_smoothness_distribution([0.5, 0.6, 0.7])
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target", config=config
+            source_acts, target_acts, "source", "target",
+            smoothness_ratios=[0.5, 0.6, 0.7]
         )
         assert result is not None
         backend = get_default_backend()
@@ -755,9 +610,9 @@ class TestRotationContinuityAnalyzer:
             1: {"a": [1.0, 0.0], "b": [0.0, 1.0], "c": [0.5, 0.5]},
         }
         analyzer = RotationContinuityAnalyzer()
-        config = Config.from_smoothness_distribution([0.5, 0.6, 0.7])
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target", config=config
+            source_acts, target_acts, "source", "target",
+            smoothness_ratios=[0.5, 0.6, 0.7]
         )
         assert result is not None
         # Second layer should have angular deviation from first
@@ -777,11 +632,8 @@ class TestProcrustesEdgeCases:
         """Zero matrices should complete without raising."""
         zero_matrix = [[0.0, 0.0], [0.0, 0.0]]
         identity_matrix = [[1.0, 0.0], [0.0, 1.0]]
-        config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes().align(
-            [zero_matrix, identity_matrix], config=config
-        )
+        result = GeneralizedProcrustes().align([zero_matrix, identity_matrix])
 
         if result is not None:
             assert result.dimension == 2
@@ -791,9 +643,8 @@ class TestProcrustesEdgeCases:
         """Near-singular matrices should not cause SVD numerical issues."""
         near_singular = [[1.0, 2.0], [1.0001, 2.0002]]
         identity = [[1.0, 0.0], [0.0, 1.0]]
-        config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes().align([near_singular, identity], config=config)
+        result = GeneralizedProcrustes().align([near_singular, identity])
 
         if result is not None:
             assert result.dimension == 2
@@ -805,11 +656,8 @@ class TestProcrustesEdgeCases:
         """Rank-deficient matrices should not crash SVD."""
         rank_deficient = [[1.0, 2.0], [2.0, 4.0], [3.0, 6.0]]
         full_rank = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
-        config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes().align(
-            [rank_deficient, full_rank], config=config
-        )
+        result = GeneralizedProcrustes().align([rank_deficient, full_rank])
 
         if result is not None:
             assert result.dimension == 2
@@ -827,8 +675,7 @@ class TestProcrustesEdgeCases:
         s_val = float(backend.to_scalar(s))
         matrix_b = [[c_val, -s_val], [s_val, c_val]]
 
-        config = Config(max_iterations=10)
-        result = GeneralizedProcrustes().align([matrix_a, matrix_b], config=config)
+        result = GeneralizedProcrustes().align([matrix_a, matrix_b])
 
         assert result is not None
         backend = get_default_backend()
@@ -842,11 +689,8 @@ class TestProcrustesEdgeCases:
             [1.0, 2.0, 3.0, 4.0, 5.0],
             [6.0, 7.0, 8.0, 9.0, 10.0],
         ]
-        config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes().align(
-            [small_matrix, large_matrix], config=config
-        )
+        result = GeneralizedProcrustes().align([small_matrix, large_matrix])
         # Should return None due to dimension mismatch (align expects same dims)
         # align_crms handles dimension truncation, not align
 
@@ -854,11 +698,8 @@ class TestProcrustesEdgeCases:
         """Should handle single-row matrices."""
         single_row_a = [[1.0, 2.0, 3.0]]
         single_row_b = [[4.0, 5.0, 6.0]]
-        config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes().align(
-            [single_row_a, single_row_b], config=config
-        )
+        result = GeneralizedProcrustes().align([single_row_a, single_row_b])
 
         if result is not None:
             assert result.sample_count == 1
@@ -868,11 +709,8 @@ class TestProcrustesEdgeCases:
         # Use 1e-3 scale to avoid float32 underflow
         small_values = [[1e-3, 2e-3], [3e-3, 4e-3]]
         normal_values = [[1.0, 2.0], [3.0, 4.0]]
-        config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes().align(
-            [small_values, normal_values], config=config
-        )
+        result = GeneralizedProcrustes().align([small_values, normal_values])
 
         if result is not None:
             assert result.dimension == 2
@@ -881,9 +719,8 @@ class TestProcrustesEdgeCases:
         """Should handle many identical matrices efficiently."""
         matrix = [[1.0, 0.0], [0.0, 1.0]]
         many_identical = [matrix] * 10
-        config = Config(max_iterations=5)
 
-        result = GeneralizedProcrustes().align(many_identical, config=config)
+        result = GeneralizedProcrustes().align(many_identical)
 
         assert result is not None
         assert result.model_count == 10
@@ -896,12 +733,11 @@ class TestProcrustesEdgeCases:
         b = get_default_backend()
         b.random_seed(42)
 
-        # Create 20 samples x 128 dimensions
+        # Create 20 samples x 64 dimensions
         m1 = array_to_list(b, b.random_normal((20, 64)))
         m2 = array_to_list(b, b.random_normal((20, 64)))
 
-        config = Config(max_iterations=20)
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
 
         assert result is not None
         assert result.dimension == 64
@@ -916,8 +752,7 @@ class TestProcrustesEdgeCases:
         m1 = array_to_list(b, b.random_normal((100, 16)))
         m2 = array_to_list(b, b.random_normal((100, 16)))
 
-        config = Config(max_iterations=30)
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
 
         assert result is not None
         assert result.sample_count == 100
@@ -928,21 +763,20 @@ class TestProcrustesNumericalStability:
     """Tests for numerical stability edge cases."""
 
     def test_large_scale_difference(self) -> None:
-        """Should handle large scale differences with allow_scaling."""
+        """Should handle large scale differences (scaling never applied)."""
         m1 = [[1.0, 0.0], [0.0, 1.0]]
         m2 = [[1000.0, 0.0], [0.0, 1000.0]]
-        config = Config(max_iterations=20, allow_scaling=True)
 
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
+        # Alignment proceeds but without scaling adjustment
         assert result is not None
 
     def test_very_similar_matrices(self) -> None:
         """Should converge quickly for very similar matrices."""
         m1 = [[1.0, 0.0], [0.0, 1.0]]
         m2 = [[1.0 + 1e-8, 0.0], [0.0, 1.0 + 1e-8]]
-        config = Config(max_iterations=100)
 
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
         assert result is not None
         eps = _eps(get_default_backend(), result.alignment_error, 0.0)
         assert abs(result.alignment_error - 0.0) <= eps
@@ -952,9 +786,8 @@ class TestProcrustesNumericalStability:
         # These matrices span orthogonal subspaces
         m1 = [[1.0, 0.0], [1.0, 0.0]]  # Only x-axis
         m2 = [[0.0, 1.0], [0.0, 1.0]]  # Only y-axis
-        config = Config(max_iterations=10)
 
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
         # Should complete, even if error is high
         if result is not None:
             assert result.dimension == 2
@@ -964,13 +797,12 @@ class TestProcrustesRotationProperties:
     """Tests for rotation matrix properties."""
 
     def test_rotation_determinant_is_positive_one(self) -> None:
-        """Rotations should have determinant +1 (no reflections by default)."""
+        """Rotations always have determinant +1 (reflections never allowed)."""
         b = get_default_backend()
         m1 = [[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.5, 0.5, 1.0]]
         m2 = [[0.8, 0.2, 0.4], [0.2, 0.8, 0.4], [0.4, 0.4, 0.9]]
 
-        config = Config(max_iterations=20, allow_reflections=False)
-        result = GeneralizedProcrustes().align([m1, m2], config=config)
+        result = GeneralizedProcrustes().align([m1, m2])
 
         assert result is not None
         for rotation in result.rotations:
@@ -989,7 +821,7 @@ class TestProcrustesRotationProperties:
         m1 = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
         m2 = [[0.7, 0.3], [0.3, 0.7], [1.0, 1.0]]
 
-        result = GeneralizedProcrustes().align([m1, m2], config=Config(max_iterations=20))
+        result = GeneralizedProcrustes().align([m1, m2])
         assert result is not None
 
         # Check that rotation preserves norms

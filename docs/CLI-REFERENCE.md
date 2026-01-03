@@ -128,8 +128,7 @@ mc model validate-merge --source ./model-a --target ./model-b
 Validate knowledge transfer in merged model.
 ```bash
 mc model validate-knowledge --merged ./merged-model
-mc model validate-knowledge --merged ./merged-model --source ./source-model --domains math,code
-mc model validate-knowledge --merged ./merged-model --quick
+mc model validate-knowledge --merged ./merged-model --source ./source-model
 ```
 
 **Options:**
@@ -137,8 +136,6 @@ mc model validate-knowledge --merged ./merged-model --quick
 |--------|------|-------------|
 | `--merged` | path | Path to merged model |
 | `--source` | path | Path to source model (for baseline) |
-| `--domains` | string | Comma-separated: math, code, factual, reasoning, language, creative |
-| `--quick` | flag | Quick validation (skip variations) |
 | `--report-path` | path | Save validation report |
 
 ### mc model analyze-alignment
