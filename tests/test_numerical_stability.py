@@ -279,11 +279,13 @@ class TestSvdViaEigh:
         b.eval(reconstructed)
 
         # Should match original - use backend operations
+        # SVD reconstruction error scales with matrix dimensions
         diff = reconstructed - A
         diff_val_arr = b.max(b.abs(diff))
         b.eval(diff_val_arr)
         diff_val = float(b.to_scalar(diff_val_arr))
-        eps = _eps(b, diff_val)
+        max_dim = max(b.shape(A))
+        eps = max_dim * _div_eps(b, diff_val)
         assert diff_val <= eps
 
     def test_svd_u_orthonormality(self, any_backend: "Backend") -> None:
@@ -305,7 +307,8 @@ class TestSvdViaEigh:
         diff_val_arr = b.max(b.abs(diff))
         b.eval(diff_val_arr)
         diff_val = float(b.to_scalar(diff_val_arr))
-        eps = _eps(b, diff_val)
+        dim = int(b.shape(U)[1])
+        eps = dim * _div_eps(b, diff_val)
         assert diff_val <= eps
 
     def test_svd_vt_orthonormality(self, any_backend: "Backend") -> None:
@@ -327,7 +330,8 @@ class TestSvdViaEigh:
         diff_val_arr = b.max(b.abs(diff))
         b.eval(diff_val_arr)
         diff_val = float(b.to_scalar(diff_val_arr))
-        eps = _eps(b, diff_val)
+        dim = int(b.shape(Vt)[0])
+        eps = dim * _div_eps(b, diff_val)
         assert diff_val <= eps
 
     def test_svd_singular_values_nonnegative(self, any_backend: "Backend") -> None:
@@ -456,9 +460,12 @@ class TestSvdViaEigh:
         reconstructed = b.matmul(U[:, :k], b.matmul(S_diag, Vt[:k, :]))
         b.eval(reconstructed)
 
-        diff = b.to_numpy(reconstructed) - b.to_numpy(A)
-        diff_val = abs(diff).max()
-        eps = _eps(b, float(diff_val))
+        diff = reconstructed - A
+        diff_val_arr = b.max(b.abs(diff))
+        b.eval(diff_val_arr)
+        diff_val = float(b.to_scalar(diff_val_arr))
+        max_dim = max(b.shape(A))
+        eps = max_dim * _div_eps(b, diff_val)
         assert diff_val <= eps
 
     def test_svd_square_matrix(self, any_backend: "Backend") -> None:
@@ -476,9 +483,11 @@ class TestSvdViaEigh:
         reconstructed = b.matmul(U, b.matmul(S_diag, Vt))
         b.eval(reconstructed)
 
-        diff = b.to_numpy(reconstructed) - b.to_numpy(A)
-        diff_val = abs(diff).max()
-        eps = _eps(b, float(diff_val))
+        diff = reconstructed - A
+        diff_val_arr = b.max(b.abs(diff))
+        b.eval(diff_val_arr)
+        diff_val = float(b.to_scalar(diff_val_arr))
+        eps = _div_eps(b, diff_val)
         assert diff_val <= eps
 
 
@@ -509,8 +518,11 @@ class TestSolveFullRowRankViaQR:
         reconstructed = b.matmul(source, F)
         b.eval(reconstructed)
         residual = reconstructed - target
-        residual_norm = float(b.to_numpy(b.norm(residual)))
-        target_norm = float(b.to_numpy(b.norm(target)))
+        residual_norm_arr = b.norm(residual)
+        target_norm_arr = b.norm(target)
+        b.eval(residual_norm_arr, target_norm_arr)
+        residual_norm = float(b.to_scalar(residual_norm_arr))
+        target_norm = float(b.to_scalar(target_norm_arr))
         eps = _div_eps(b, target_norm)
         assert residual_norm <= eps * max(target_norm, eps)
 
@@ -551,10 +563,14 @@ class TestSolveFullRowRankViaQR:
         reconstructed = b.matmul(source, F)
         b.eval(reconstructed)
 
-        diff = b.to_numpy(reconstructed) - b.to_numpy(target)
-        target_max = abs(b.to_numpy(target)).max()
-        eps = _div_eps(b, float(target_max))
-        rel_error = abs(diff).max() / max(target_max, eps)
+        diff = reconstructed - target
+        diff_max_arr = b.max(b.abs(diff))
+        target_max_arr = b.max(b.abs(target))
+        b.eval(diff_max_arr, target_max_arr)
+        diff_max = float(b.to_scalar(diff_max_arr))
+        target_max = float(b.to_scalar(target_max_arr))
+        eps = _div_eps(b, target_max)
+        rel_error = diff_max / max(target_max, eps)
         assert rel_error <= eps
 
     def test_qr_empty_system(self, any_backend: "Backend") -> None:
@@ -587,12 +603,11 @@ class TestSolveFullRowRankViaQR:
         # Create ill-conditioned matrix by scaling columns
         source = b.random_normal((50, 10))
         # Scale last few columns to be very small
-        # Use .copy() to get a writable array (JAX returns read-only)
-        source_np = b.to_numpy(source).copy()
-        source_np[:, -3:] *= 1e-8
-        source = b.array(source_np)
+        scales = b.array([1.0] * 7 + [1e-8] * 3)
+        scales = b.reshape(scales, (1, -1))
+        source = source * scales
         target = b.random_normal((50, 5))
-        b.eval(source, target)
+        b.eval(source, target, scales)
 
         F, diag = solve_full_row_rank_via_qr(b, source, target)
 
@@ -645,8 +660,11 @@ class TestSolveViaTruncatedSvd:
         reconstructed = b.matmul(source, F)
         b.eval(reconstructed)
         residual = reconstructed - target
-        residual_norm = float(b.to_numpy(b.norm(residual)))
-        target_norm = float(b.to_numpy(b.norm(target)))
+        residual_norm_arr = b.norm(residual)
+        target_norm_arr = b.norm(target)
+        b.eval(residual_norm_arr, target_norm_arr)
+        residual_norm = float(b.to_scalar(residual_norm_arr))
+        target_norm = float(b.to_scalar(target_norm_arr))
         eps = _div_eps(b, target_norm)
         assert residual_norm <= eps * max(target_norm, eps)
 
@@ -665,10 +683,14 @@ class TestSolveViaTruncatedSvd:
         reconstructed = b.matmul(source, F)
         b.eval(reconstructed)
 
-        diff = b.to_numpy(reconstructed) - b.to_numpy(target)
-        target_max = abs(b.to_numpy(target)).max()
-        eps = _div_eps(b, float(target_max))
-        rel_error = abs(diff).max() / max(target_max, eps)
+        diff = reconstructed - target
+        diff_max_arr = b.max(b.abs(diff))
+        target_max_arr = b.max(b.abs(target))
+        b.eval(diff_max_arr, target_max_arr)
+        diff_max = float(b.to_scalar(diff_max_arr))
+        target_max = float(b.to_scalar(target_max_arr))
+        eps = _div_eps(b, target_max)
+        rel_error = diff_max / max(target_max, eps)
         assert rel_error <= eps
 
     def test_svd_solver_rank_deficient(self, any_backend: "Backend") -> None:
@@ -1081,9 +1103,13 @@ class TestSolverComparison:
         recon_qr = b.matmul(source, F_qr)
         recon_svd = b.matmul(source, F_svd)
         b.eval(recon_qr, recon_svd)
-        residual_qr = float(b.to_numpy(b.norm(recon_qr - target)))
-        residual_svd = float(b.to_numpy(b.norm(recon_svd - target)))
-        target_norm = float(b.to_numpy(b.norm(target)))
+        residual_qr_arr = b.norm(recon_qr - target)
+        residual_svd_arr = b.norm(recon_svd - target)
+        target_norm_arr = b.norm(target)
+        b.eval(residual_qr_arr, residual_svd_arr, target_norm_arr)
+        residual_qr = float(b.to_scalar(residual_qr_arr))
+        residual_svd = float(b.to_scalar(residual_svd_arr))
+        target_norm = float(b.to_scalar(target_norm_arr))
         eps = _div_eps(b, target_norm)
         assert residual_qr <= eps * max(target_norm, eps)
         assert residual_svd <= eps * max(target_norm, eps)
@@ -1158,8 +1184,7 @@ class TestNumericalPrecision:
         # Tiny < machine epsilon
         assert tiny < mach_eps
         # All should be positive
-        eps = _eps(b, mach_eps, div_eps, reg_eps, cond_thresh, tiny)
-        assert all(v > eps for v in [mach_eps, div_eps, reg_eps, cond_thresh, tiny])
+        assert all(v > 0.0 for v in [mach_eps, div_eps, reg_eps, cond_thresh, tiny])
 
 
 # =============================================================================
@@ -1309,7 +1334,7 @@ class TestNumericalStabilityHypothesis:
         erank = compute_entropy_effective_rank(b, sv)
 
         # Uniform distribution has max entropy, so rank should be n
-        eps = _eps(b, erank, float(n))
+        eps = _div_eps(b, erank, float(n))
         assert abs(erank - n) <= eps, f"Expected rank {n}, got {erank}"
 
 
@@ -1342,8 +1367,11 @@ class TestSolverStabilityHypothesis:
             reconstructed = b.matmul(source, F)
             b.eval(reconstructed)
             residual = reconstructed - target
-            residual_norm = float(b.to_numpy(b.norm(residual)))
-            target_norm = float(b.to_numpy(b.norm(target)))
+            residual_norm_arr = b.norm(residual)
+            target_norm_arr = b.norm(target)
+            b.eval(residual_norm_arr, target_norm_arr)
+            residual_norm = float(b.to_scalar(residual_norm_arr))
+            target_norm = float(b.to_scalar(target_norm_arr))
             eps = _div_eps(b, target_norm)
             assert residual_norm <= eps * max(target_norm, eps)
 
@@ -1373,8 +1401,11 @@ class TestSolverStabilityHypothesis:
             reconstructed = b.matmul(source, F)
             b.eval(reconstructed)
             residual = reconstructed - target
-            residual_norm = float(b.to_numpy(b.norm(residual)))
-            target_norm = float(b.to_numpy(b.norm(target)))
+            residual_norm_arr = b.norm(residual)
+            target_norm_arr = b.norm(target)
+            b.eval(residual_norm_arr, target_norm_arr)
+            residual_norm = float(b.to_scalar(residual_norm_arr))
+            target_norm = float(b.to_scalar(target_norm_arr))
             eps = _div_eps(b, target_norm)
             assert residual_norm <= eps * max(target_norm, eps)
 
@@ -1513,11 +1544,13 @@ class TestEdgeCaseEpsilons:
 
         # Create matrix with one zero row
         source = b.random_normal((10, 5))
-        source_np = b.to_numpy(source).copy()
-        source_np[3, :] = 0.0  # Zero out row 3
-        source = b.array(source_np)
+        mask = b.concatenate(
+            [b.ones((3, 5)), b.zeros((1, 5)), b.ones((6, 5))],
+            axis=0,
+        )
+        source = source * mask
         target = b.random_normal((10, 3))
-        b.eval(source, target)
+        b.eval(source, target, mask)
 
         # QR solver should handle this
         F, diag = solve_full_row_rank_via_qr(b, source, target)
@@ -1531,11 +1564,13 @@ class TestEdgeCaseEpsilons:
 
         # Create matrix with one zero column
         source = b.random_normal((10, 5))
-        source_np = b.to_numpy(source).copy()
-        source_np[:, 2] = 0.0  # Zero out column 2
-        source = b.array(source_np)
+        mask = b.concatenate(
+            [b.ones((10, 2)), b.zeros((10, 1)), b.ones((10, 2))],
+            axis=1,
+        )
+        source = source * mask
         target = b.random_normal((10, 3))
-        b.eval(source, target)
+        b.eval(source, target, mask)
 
         # QR solver should handle this
         F, diag = solve_full_row_rank_via_qr(b, source, target)

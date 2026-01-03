@@ -23,7 +23,6 @@ threshold-based classification.
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timezone
 
 import pytest
@@ -115,7 +114,7 @@ class TestEntropyWindowIntegration:
         expected_mean = sum(s[0] for s in tail) / len(tail)
 
         assert status.sample_count == 5
-        assert math.isclose(status.moving_average, expected_mean, rel_tol=eps, abs_tol=eps)
+        assert abs(status.moving_average - expected_mean) <= eps
         assert status.token_start == tail[0][2]
         assert status.token_end == tail[-1][2]
 
@@ -169,7 +168,7 @@ class TestConversationTrackingIntegration:
 
         assert assessment.turn_count == 3
         expected_mean = (0.1 - 0.1 + 0.1) / 3.0
-        assert math.isclose(assessment.mean_delta, expected_mean, rel_tol=eps, abs_tol=eps)
+        assert abs(assessment.mean_delta - expected_mean) <= eps
         assert assessment.anomaly_count == 1
         assert assessment.max_anomaly_score == 0.3
         assert assessment.oscillation_frequency == 1.0
@@ -199,4 +198,4 @@ class TestConversationTrackingIntegration:
         )
 
         expected_z = baseline.z_score(assessment.mean_delta)
-        assert math.isclose(assessment.cumulative_drift, expected_z, rel_tol=eps, abs_tol=eps)
+        assert abs(assessment.cumulative_drift - expected_z) <= eps

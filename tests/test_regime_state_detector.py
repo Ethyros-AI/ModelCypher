@@ -22,8 +22,6 @@ measurements (T/T_c ratio, critical tolerance) instead of classifications.
 The geometry IS the answer - no ORDERED/CRITICAL/DISORDERED buckets needed.
 """
 
-import math
-
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -44,7 +42,13 @@ from modelcypher.core.domain.dynamics.regime_state_detector import (
     RegimeAnalysis,
     RegimeStateDetector,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    is_finite,
+    log_scalar,
+    sqrt_scalar,
+    ulp_scalar,
+)
 
 
 def _eps(*values: float) -> float:
@@ -163,8 +167,9 @@ class TestCriticalTolerance:
         )
 
         # sqrt(0.01)/1.0 = 0.1, sqrt(0.25)/1.0 = 0.5
-        expected_low = math.sqrt(0.01) / 1.0
-        expected_high = math.sqrt(0.25) / 1.0
+        backend = get_default_backend()
+        expected_low = sqrt_scalar(0.01, backend) / 1.0
+        expected_high = sqrt_scalar(0.25, backend) / 1.0
         eps = _eps(tol_low, expected_low)
         assert abs(tol_low - expected_low) <= eps
         eps = _eps(tol_high, expected_high)
@@ -188,8 +193,9 @@ class TestCriticalTolerance:
         tol = RegimeStateDetector._compute_critical_tolerance(
             logit_variance=0.1, critical_temperature=0.0
         )
-        eps = _eps(tol, math.ulp(1.0))
-        assert abs(tol - math.ulp(1.0)) <= eps
+        ulp = ulp_scalar(1.0, get_default_backend())
+        eps = _eps(tol, ulp)
+        assert abs(tol - ulp) <= eps
 
 
 class TestLogitStatistics:
@@ -229,8 +235,9 @@ class TestLogitStatistics:
         assert abs(mean - 2.0) <= eps
         # Variance of [0, 2, 4] is (4+0+4)/3 = 2.67
         assert variance > 0
-        eps = _eps(std_dev, math.sqrt(variance))
-        assert abs(std_dev - math.sqrt(variance)) <= eps
+        expected = sqrt_scalar(variance, get_default_backend())
+        eps = _eps(std_dev, expected)
+        assert abs(std_dev - expected) <= eps
 
 
 class TestCriticalTemperature:
@@ -244,7 +251,8 @@ class TestCriticalTemperature:
 
         tc = RegimeStateDetector.estimate_critical_temperature(std_dev, vocab_size)
 
-        expected = 1.0 / math.sqrt(2.0 * math.log(100))
+        backend = get_default_backend()
+        expected = 1.0 / sqrt_scalar(2.0 * log_scalar(100.0, backend), backend)
         eps = _eps(tc, expected)
         assert abs(tc - expected) <= eps
 
@@ -299,7 +307,7 @@ class TestEntropy:
         logits = mx.zeros((10,))  # Uniform
         entropy = RegimeStateDetector().compute_entropy(logits, temperature=1.0)
 
-        expected = math.log(10)
+        expected = log_scalar(10.0, get_default_backend())
         eps = _eps(entropy, expected)
         assert abs(entropy - expected) <= eps
 
@@ -527,9 +535,10 @@ class TestEdgeCases:
         logits = mx.array([100.0, 0.0, -100.0])
         result = RegimeStateDetector().analyze(logits, temperature=1.0)
 
-        assert math.isfinite(result.logit_variance)
-        assert math.isfinite(result.estimated_tc)
-        assert math.isfinite(result.temperature_ratio)
+        backend = get_default_backend()
+        assert is_finite(result.logit_variance, backend)
+        assert is_finite(result.estimated_tc, backend)
+        assert is_finite(result.temperature_ratio, backend)
 
     def test_2d_logits_batch(self):
         """Should handle batched 2D logits."""
@@ -538,4 +547,4 @@ class TestEdgeCases:
 
         eps = _eps(variance, 0.0)
         assert variance >= -eps
-        assert math.isfinite(variance)
+        assert is_finite(variance, get_default_backend())

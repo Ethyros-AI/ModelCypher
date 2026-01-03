@@ -134,6 +134,7 @@ class CUDABackend(Backend):
         Raises:
             ValueError: If tensor has more than one element.
         """
+        self.eval(array)
         return array.item()
 
     def tolist(self, array: Array) -> list | float | int:
@@ -141,6 +142,7 @@ class CUDABackend(Backend):
 
         Uses PyTorch's native tolist() - MUCH faster than element-by-element to_scalar().
         """
+        self.eval(array)
         return array.tolist()
 
     def finfo(self, dtype: Any | None = None) -> FloatInfo:

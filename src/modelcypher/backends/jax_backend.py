@@ -369,6 +369,7 @@ class JAXBackend(Backend):
         Raises:
             ValueError: If array has more than one element.
         """
+        self.eval(array)
         return array.item()
 
     def tolist(self, array: Array) -> list | float | int:
@@ -376,6 +377,7 @@ class JAXBackend(Backend):
 
         Uses JAX's native tolist() - MUCH faster than element-by-element to_scalar().
         """
+        self.eval(array)
         return array.tolist()
 
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
