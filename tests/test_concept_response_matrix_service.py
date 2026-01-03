@@ -90,4 +90,5 @@ def test_crm_build_and_compare(tmp_path: Path) -> None:
     assert compare.cka_matrix is None
     backend = get_default_backend()
     eps = division_epsilon(backend, backend.array([1.0]))
-    assert abs(compare.overall_alignment - 1.0) <= eps
+    assert abs(compare.mean_cka - 1.0) <= eps
+    assert compare.aligned is True

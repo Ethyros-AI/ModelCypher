@@ -70,7 +70,8 @@ class CRMCompareSummary:
     source_path: str
     target_path: str
     common_anchor_count: int
-    overall_alignment: float
+    mean_cka: float
+    aligned: bool
     layer_correspondence: list[dict[str, float | int]]
     cka_matrix: list[list[float]] | None
 
@@ -87,7 +88,8 @@ class CRMSharedSubspaceSummary:
     method: str
     has_shared_structure: bool
     layer_count: int
-    alignment_quality: float
+    mean_mapping_cka: float
+    aligned: bool
     h2_validation: dict[str, float | bool | str]
     layer_metrics: list[dict[str, float | int | bool]]
 
@@ -257,7 +259,8 @@ class ConceptResponseMatrixService:
             source_path=str(expand_path(source_path)),
             target_path=str(expand_path(target_path)),
             common_anchor_count=report.common_anchor_count,
-            overall_alignment=report.mean_cka,
+            mean_cka=report.mean_cka,
+            aligned=report.is_perfect,
             layer_correspondence=correspondence,
             cka_matrix=report.cka_matrix if include_matrix else None,
         )
@@ -357,7 +360,8 @@ class ConceptResponseMatrixService:
             method=method,
             has_shared_structure=has_shared_structure,
             layer_count=len(results),
-            alignment_quality=matcher.alignment_quality,
+            mean_mapping_cka=matcher.mean_cka,
+            aligned=matcher.aligned,
             h2_validation=h2_validation,
             layer_metrics=layer_metrics,
         )

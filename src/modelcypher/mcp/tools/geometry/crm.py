@@ -85,7 +85,8 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                 "sourcePath": summary.source_path,
                 "targetPath": summary.target_path,
                 "commonAnchorCount": summary.common_anchor_count,
-                "overallAlignment": summary.overall_alignment,
+                "meanCKA": summary.mean_cka,
+                "aligned": summary.aligned,
                 "layerCorrespondence": summary.layer_correspondence,
             }
             if summary.cka_matrix is not None:

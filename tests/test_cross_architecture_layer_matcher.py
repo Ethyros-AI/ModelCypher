@@ -55,7 +55,7 @@ def test_layer_matcher_basic_alignment() -> None:
     assert result.mappings[0].target_layer == 0
     assert result.mappings[1].source_layer == 1
     assert result.mappings[1].target_layer == 1
-    assert 0.0 <= result.alignment_quality <= 1.0
+    assert 0.0 <= result.mean_cka <= 1.0
 
 
 def test_layer_matcher_with_jaccard() -> None:
@@ -103,7 +103,7 @@ class TestCrossArchitectureEdgeCases:
 
         # Should produce mappings despite dimension mismatch
         assert len(result.mappings) == 2
-        assert result.alignment_quality >= 0.0
+        assert result.mean_cka >= 0.0
 
     def test_different_layer_counts(self) -> None:
         """Test alignment with different layer counts."""
@@ -159,7 +159,7 @@ class TestCrossArchitectureEdgeCases:
         result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
         assert len(result.mappings) == 32
-        assert result.alignment_quality >= 0.0
+        assert result.mean_cka >= 0.0
 
     def test_very_different_architectures(self) -> None:
         """Test alignment between very different architectures."""

@@ -143,7 +143,8 @@ def geometry_crm_compare(
         "sourcePath": summary.source_path,
         "targetPath": summary.target_path,
         "commonAnchorCount": summary.common_anchor_count,
-        "overallAlignment": summary.overall_alignment,
+        "meanCKA": summary.mean_cka,
+        "aligned": summary.aligned,
         "layerCorrespondence": summary.layer_correspondence,
     }
     if summary.cka_matrix is not None:
@@ -155,7 +156,8 @@ def geometry_crm_compare(
             f"Source: {summary.source_path}",
             f"Target: {summary.target_path}",
             f"Common Anchors: {summary.common_anchor_count}",
-            f"Overall Alignment: {summary.overall_alignment:.4f}",
+            f"Mean CKA: {summary.mean_cka:.4f}",
+            f"Aligned: {summary.aligned}",
         ]
         if summary.layer_correspondence:
             lines.append("")
