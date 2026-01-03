@@ -24,7 +24,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
-    RegionClassificationConfig,
+    RegionThresholds,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
@@ -64,7 +64,7 @@ def test_region_classification() -> None:
     variance_high = min(v for v in variances if v > variance_threshold)
     coherence_low = max(v for v in coherences if v <= coherence_threshold)
     coherence_high = min(v for v in coherences if v > coherence_threshold)
-    config = RegionClassificationConfig(
+    thresholds = RegionThresholds(
         low_entropy=entropy_low,
         high_entropy=entropy_high,
         low_variance=variance_low,
@@ -84,7 +84,7 @@ def test_region_classification() -> None:
         assessment_strength=0.5,
         prompt_hash="p",
     )
-    assert ManifoldRegion.classify(point, config=config) == ManifoldRegion.RegionCharacter.DENSE
+    assert ManifoldRegion.classify(point, thresholds=thresholds) == ManifoldRegion.RegionCharacter.DENSE
 
 
 def test_clusterer_groups_identical_points() -> None:

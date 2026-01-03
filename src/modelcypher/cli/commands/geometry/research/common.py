@@ -26,7 +26,6 @@ from modelcypher.cli.commands.geometry.helpers import (
     resolve_model_backbone,
 )
 from modelcypher.cli.context import CLIContext
-from modelcypher.core.domain.agents.unified_atlas import AtlasDomain, AtlasSource
 from modelcypher.core.support.array_utils import array_to_list
 
 logger = logging.getLogger(__name__)
@@ -94,30 +93,6 @@ class BackboneActivationProvider:
             self._backend.eval(*pending)
 
         return [array_to_list(self._backend, vec) for vec in activations]
-
-
-def parse_sources(values: list[str] | None) -> set[AtlasSource] | None:
-    if not values:
-        return None
-    allowed = {s.value for s in AtlasSource}
-    invalid = [value for value in values if value not in allowed]
-    if invalid:
-        raise typer.BadParameter(
-            f"Invalid sources: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-        )
-    return {AtlasSource(value) for value in values}
-
-
-def parse_domains(values: list[str] | None) -> set[AtlasDomain] | None:
-    if not values:
-        return None
-    allowed = {d.value for d in AtlasDomain}
-    invalid = [value for value in values if value not in allowed]
-    if invalid:
-        raise typer.BadParameter(
-            f"Invalid domains: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-        )
-    return {AtlasDomain(value) for value in values}
 
 
 def load_model_and_provider(model_path: str):

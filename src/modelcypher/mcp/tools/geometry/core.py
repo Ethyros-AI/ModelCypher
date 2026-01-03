@@ -396,14 +396,13 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_topological_fingerprint(
             points: list[list[float]],
-            maxDimension: int = 1,
-            numSteps: int = 50,
         ) -> dict:
-            """Compute topological fingerprint using persistent homology."""
+            """Compute topological fingerprint using persistent homology.
+
+            All parameters are derived from the geometry of the data.
+            """
             result = ctx.geometry_metrics_service.compute_topological_fingerprint(
                 points=points,
-                max_dimension=maxDimension,
-                num_steps=numSteps,
             )
             payload = ctx.geometry_metrics_service.topological_fingerprint_payload(result)
             payload["_schema"] = "mc.geometry.topological_fingerprint.v1"

@@ -138,19 +138,19 @@ class ManifoldProfileService:
         return clustered
 
     def query_region(self, point: ManifoldPoint, model_id: str) -> RegionQueryResult:
-        from modelcypher.core.domain.geometry.manifold_profile import RegionClassificationConfig
+        from modelcypher.core.domain.geometry.manifold_profile import RegionThresholds
 
         profile = self.store.load(model_id)
         if profile is None:
             # Derive thresholds from the single point (degenerate case)
-            classification_config = RegionClassificationConfig.from_percentiles(
+            thresholds = RegionThresholds.from_percentiles(
                 [point.mean_entropy], [point.entropy_variance], [point.mean_gate_similarity]
             )
             return RegionQueryResult(
                 nearest_region=None,
                 distance=float("inf"),
                 is_within_region=False,
-                suggested_character=ManifoldRegion.classify(point, classification_config),
+                suggested_character=ManifoldRegion.classify(point, thresholds),
                 confidence=0.0,
             )
         return self.clusterer.find_nearest_region(point=point, regions=profile.regions)
@@ -165,7 +165,7 @@ class ManifoldProfileService:
         return self.query_region(point=point, model_id=model_id)
 
     def suggest_intervention(self, point: ManifoldPoint, model_id: str) -> InterventionSuggestion:
-        from modelcypher.core.domain.geometry.manifold_profile import RegionClassificationConfig
+        from modelcypher.core.domain.geometry.manifold_profile import RegionThresholds
 
         profile = self.store.load(model_id)
         if profile is None:
@@ -209,11 +209,11 @@ class ManifoldProfileService:
                     entropies = [point.mean_entropy]
                     variances = [point.entropy_variance]
                     coherences = [point.mean_gate_similarity]
-                classification_config = RegionClassificationConfig.from_percentiles(
+                thresholds = RegionThresholds.from_percentiles(
                     entropies, variances, coherences
                 )
                 suggested_level = (
-                    0 if ManifoldRegion.classify(point, classification_config) == ManifoldRegion.RegionCharacter.DENSE else 1
+                    0 if ManifoldRegion.classify(point, thresholds) == ManifoldRegion.RegionCharacter.DENSE else 1
                 )
                 reason = "No historical data - suggestion based on point features"
 

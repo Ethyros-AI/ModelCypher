@@ -30,8 +30,6 @@ from .common import (
     cleanup_memory,
     get_context,
     load_model_and_provider,
-    parse_domains,
-    parse_sources,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,12 +42,6 @@ def register(app: typer.Typer) -> None:
         model_path: str = typer.Argument(..., help="Path to the model directory"),
         output_path: str | None = typer.Option(
             None, "--output", "-o", help="Save profile to JSON file"
-        ),
-        sources: list[str] | None = typer.Option(
-            None, "--source", "-s", help="Filter by atlas source (repeatable)"
-        ),
-        domains: list[str] | None = typer.Option(
-            None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
         ),
         checkpoint_dir: str | None = typer.Option(
             None, "--checkpoint-dir", help="Directory for incremental checkpoints"
@@ -88,16 +80,8 @@ def register(app: typer.Typer) -> None:
         # All layers, no sampling
         all_layers = list(range(num_layers))
 
-        # Parse filters
-        source_filter = parse_sources(sources)
-        domain_filter = parse_domains(domains)
-
         # Get ALL probes (no max_probes limit)
         probes = UnifiedAtlasInventory.all_probes()
-        if source_filter:
-            probes = [probe for probe in probes if probe.source in source_filter]
-        if domain_filter:
-            probes = [probe for probe in probes if probe.domain in domain_filter]
 
         logger.info(
             "Full profile: %d probes x %d layers = %d measurements",
@@ -283,12 +267,6 @@ def register(app: typer.Typer) -> None:
         output_dir: str = typer.Option(
             None, "--output-dir", "-o", help="Directory for profile outputs"
         ),
-        sources: list[str] | None = typer.Option(
-            None, "--source", "-s", help="Filter by atlas source (repeatable)"
-        ),
-        domains: list[str] | None = typer.Option(
-            None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-        ),
     ) -> None:
         """Profile multiple models SEQUENTIALLY with automatic resource management.
 
@@ -323,16 +301,8 @@ def register(app: typer.Typer) -> None:
         checkpoint_base = out_path / "checkpoints"
         checkpoint_base.mkdir(parents=True, exist_ok=True)
 
-        # Parse filters
-        source_filter = parse_sources(sources)
-        domain_filter = parse_domains(domains)
-
         # Get probes once (same for all models)
         probes = UnifiedAtlasInventory.all_probes()
-        if source_filter:
-            probes = [probe for probe in probes if probe.source in source_filter]
-        if domain_filter:
-            probes = [probe for probe in probes if probe.domain in domain_filter]
 
         logger.info("Batch profiling %d models with %d probes", len(model_paths), len(probes))
 

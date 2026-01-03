@@ -26,7 +26,7 @@ import typer
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-from .common import get_context, parse_domains, parse_sources
+from .common import get_context
 
 logger = logging.getLogger(__name__)
 
@@ -36,21 +36,6 @@ def register(app: typer.Typer) -> None:
     def build_eval_dataset(
         ctx: typer.Context,
         output_path: str = typer.Argument(..., help="Path to output JSONL file"),
-        sources: list[str] | None = typer.Option(
-            None, "--source", "-s", help="Filter by atlas source (repeatable)"
-        ),
-        domains: list[str] | None = typer.Option(
-            None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-        ),
-        max_texts_per_probe: int = typer.Option(
-            10, "--max-texts-per-probe", help="Max support texts per probe"
-        ),
-        include_name: bool = typer.Option(
-            True, "--include-name/--no-include-name", help="Include probe name as text"
-        ),
-        include_description: bool = typer.Option(
-            True, "--include-description/--no-include-description", help="Include probe description as text"
-        ),
     ) -> None:
         """Build evaluation dataset from UnifiedAtlas probe support texts.
 
@@ -59,19 +44,15 @@ def register(app: typer.Typer) -> None:
         `mc eval run`.
 
         Example usage:
-            mc geometry research build-eval-dataset math-eval.jsonl --domain mathematical
-            mc geometry research build-eval-dataset dense-eval.jsonl --domain temporal --domain spatial
+            mc geometry research build-eval-dataset atlas-eval.jsonl
         """
         context = get_context(ctx)
 
-        source_filter = parse_sources(sources)
-        domain_filter = parse_domains(domains)
+        include_name = True
+        include_description = True
+        max_texts_per_probe: int | None = None
 
         probes = UnifiedAtlasInventory.all_probes()
-        if source_filter:
-            probes = [probe for probe in probes if probe.source in source_filter]
-        if domain_filter:
-            probes = [probe for probe in probes if probe.domain in domain_filter]
 
         # Collect texts
         texts: list[str] = []
@@ -85,7 +66,10 @@ def register(app: typer.Typer) -> None:
                 probe_texts.append(probe.description)
 
             if probe.support_texts:
-                for text in list(probe.support_texts)[:max_texts_per_probe]:
+                support_texts = list(probe.support_texts)
+                if max_texts_per_probe is not None:
+                    support_texts = support_texts[:max_texts_per_probe]
+                for text in support_texts:
                     if text and text.strip():
                         probe_texts.append(text.strip())
 

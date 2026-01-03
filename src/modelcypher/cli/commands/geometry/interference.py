@@ -51,12 +51,6 @@ def predict_interference(
     ctx: typer.Context,
     source_path: str = typer.Argument(..., help="Path to source model"),
     target_path: str = typer.Argument(..., help="Path to target model"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
-    domains: str | None = typer.Option(
-        None,
-        "--domains",
-        help="Comma-separated domains (spatial,social,temporal,moral). Default: all",
-    ),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save report to file"
     ),
@@ -64,7 +58,7 @@ def predict_interference(
     """Analyze merge effort and interference between source and target models."""
     context = _context(ctx)
 
-    from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
+    from modelcypher.core.domain.domains import AtlasDomain
     from modelcypher.core.domain.geometry.interference_predictor import (
         MergeAnalyzer,
     )
@@ -76,22 +70,8 @@ def predict_interference(
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Target: {target_path}")
 
-    # Parse domains - all AtlasDomain values supported
-    supported = set(AtlasDomain)
-    if domains:
-        domain_list: list[AtlasDomain] = []
-        for raw in domains.split(","):
-            name = raw.strip()
-            if not name:
-                continue
-            resolved = resolve_domain(name)
-            if resolved is None:
-                valid_domains = ", ".join(d.value for d in AtlasDomain)
-                typer.echo(f"Invalid domain: {name}. Valid: {valid_domains}", err=True)
-                raise typer.Exit(1)
-            domain_list.append(resolved)
-    else:
-        domain_list = list(supported)
+    domain_list = list(AtlasDomain)
+    layer = -1
 
     # Extract activations for both models
     waypoint_service = get_domain_geometry_waypoint_service()
@@ -347,7 +327,6 @@ def compute_volume(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model"),
     concept: str = typer.Argument(..., help="Concept to analyze"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze"),
 ) -> None:
     """
     Compute ConceptVolume for a single concept.
@@ -364,6 +343,7 @@ def compute_volume(
     )
 
     typer.echo(f"Computing volume for concept: {concept}")
+    layer = -1
 
     backend = MLXBackend()
     model, tokenizer = load_model_for_training(model_path)
@@ -487,7 +467,6 @@ def compute_volume(
 def null_space_filter(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model for activation extraction"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
 ) -> None:
     """
     Analyze null space availability for interference-free merging.
@@ -507,6 +486,7 @@ def null_space_filter(
     from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
 
     typer.echo(f"Analyzing null space for: {model_path}")
+    layer = -1
 
     backend = MLXBackend()
     model, tokenizer = load_model_for_training(model_path)

@@ -42,17 +42,6 @@ def register(app: typer.Typer) -> None:
             "-m",
             help="Path to transplanted model",
         ),
-        domains: str = typer.Option(
-            ...,
-            "--domains",
-            "-d",
-            help="Comma-separated list of domains that were transplanted",
-        ),
-        layers: str | None = typer.Option(
-            None,
-            "--layers",
-            help="Comma-separated list of layers to analyze (default: all)",
-        ),
         output: Path | None = typer.Option(
             None,
             "--output-file",
@@ -69,17 +58,10 @@ def register(app: typer.Typer) -> None:
         2. Non-target domains unchanged (no interference)
         3. Overall density improved
 
-        Examples:
+        Example:
             mc geometry research validate-transplant \\
                 --original ./profiles/target-before.json \\
-                --model /path/to/transplanted-model \\
-                --domains "mathematical,logical"
-
-            mc geometry research validate-transplant \\
-                -o ./profiles/before.json \\
-                -m ./merged-model \\
-                -d "safety,moral" \\
-                --layers "12,13,14,15,16"
+                --model /path/to/transplanted-model
         """
         context = get_context(ctx)
 
@@ -95,15 +77,6 @@ def register(app: typer.Typer) -> None:
             from modelcypher.core.domain.geometry.probe_calibration import (
                 MLXActivationProvider,
             )
-
-            # Parse domains
-            target_domains = [d.strip().lower() for d in domains.split(",")]
-
-            # Parse layers
-            if layers:
-                layer_list = [int(layer_str.strip()) for layer_str in layers.split(",")]
-            else:
-                layer_list = None
 
             # Load original profile
             if not original_profile.exists():
@@ -122,10 +95,10 @@ def register(app: typer.Typer) -> None:
                 original_densities[ds["domain"]] = ds.get("overallMeanDensity", 0.0)
 
             # If no layers specified, use original profile's layers
-            if layer_list is None:
-                layer_list = original_data.get("completedLayers", [])
-                if not layer_list:
-                    layer_list = list(range(original_data.get("totalLayers", 16)))
+            layer_list = original_data.get("completedLayers", [])
+            if not layer_list:
+                layer_list = list(range(original_data.get("totalLayers", 16)))
+            target_domains = sorted(original_densities.keys())
 
             # Load transplanted model
             model, tokenizer = load_model_for_training(str(transplanted_model))
@@ -234,13 +207,6 @@ def register(app: typer.Typer) -> None:
                 lines.append(f"  Mean target improvement: {mean_target_improvement:+.4f}")
                 lines.append(f"  Mean non-target change:  {mean_non_target_change:.4f}")
                 lines.append("")
-                if result["summary"]["overallSuccess"]:
-                    lines.append("[SUCCESS] Transplant validated successfully")
-                else:
-                    if not transplant_succeeded:
-                        lines.append("[WARN] Target domains did not improve")
-                    if not no_interference:
-                        lines.append("[WARN] Non-target domains showed interference")
                 write_output("\n".join(lines), context.output_format, context.pretty)
                 return
 

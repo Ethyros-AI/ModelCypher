@@ -48,12 +48,6 @@ def _context(ctx: typer.Context) -> CLIContext:
 def waypoint_profile(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
-    domains: str | None = typer.Option(
-        None,
-        "--domains",
-        help="Comma-separated domains to analyze (spatial,social,temporal,moral). Default: all",
-    ),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save profile to file"
     ),
@@ -70,41 +64,13 @@ def waypoint_profile(
     context = _context(ctx)
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
-    from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
 
     typer.echo(f"Computing geometry profile for {model_path}...")
 
     service = get_domain_geometry_waypoint_service()
 
-    # Parse domains
     domain_list = None
-    if domains:
-        supported = {
-            AtlasDomain.SPATIAL,
-            AtlasDomain.SOCIAL,
-            AtlasDomain.TEMPORAL,
-            AtlasDomain.MORAL,
-        }
-        domain_list = []
-        for raw in domains.split(","):
-            name = raw.strip()
-            if not name:
-                continue
-            resolved = resolve_domain(name)
-            if resolved is None:
-                typer.echo(
-                    f"Invalid domain: {name}. Valid: spatial, social, temporal, moral",
-                    err=True,
-                )
-                raise typer.Exit(1)
-            if resolved not in supported:
-                typer.echo(
-                    f"Unsupported domain for waypoint analysis: {resolved.value}. "
-                    "Valid: spatial, social, temporal, moral",
-                    err=True,
-                )
-                raise typer.Exit(1)
-            domain_list.append(resolved)
+    layer = -1
 
     try:
         profile = service.compute_profile(model_path, layer, domain_list)
@@ -153,7 +119,6 @@ def waypoint_audit(
     ctx: typer.Context,
     source_path: str = typer.Argument(..., help="Path to source model"),
     target_path: str = typer.Argument(..., help="Path to target model"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
     output_file: str | None = typer.Option(None, "--output-file", "-o", help="Save audit to file"),
 ) -> None:
     """
@@ -170,6 +135,7 @@ def waypoint_audit(
     typer.echo(f"  Target: {target_path}")
 
     service = get_domain_geometry_waypoint_service()
+    layer = -1
 
     try:
         audit = service.pre_merge_audit(source_path, target_path, layer)
@@ -224,7 +190,6 @@ def waypoint_validate(
     ctx: typer.Context,
     source_path: str = typer.Argument(..., help="Path to source model"),
     merged_path: str = typer.Argument(..., help="Path to merged model"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save validation to file"
     ),
@@ -244,6 +209,7 @@ def waypoint_validate(
     typer.echo(f"  Merged: {merged_path}")
 
     service = get_domain_geometry_waypoint_service()
+    layer = -1
 
     try:
         validation = service.post_merge_validate(source_path, merged_path, layer)
@@ -289,7 +255,6 @@ def waypoint_strength_profile(
     ctx: typer.Context,
     source_path: str = typer.Argument(..., help="Path to source model"),
     target_path: str = typer.Argument(..., help="Path to target model"),
-    layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
 ) -> None:
     """
     Compute domain strength profile for merging.
@@ -304,6 +269,7 @@ def waypoint_strength_profile(
     typer.echo("Computing domain strength profile...")
 
     service = get_domain_geometry_waypoint_service()
+    layer = -1
 
     try:
         audit = service.pre_merge_audit(source_path, target_path, layer)

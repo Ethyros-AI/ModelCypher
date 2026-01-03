@@ -31,7 +31,7 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
-    RegionClassificationConfig,
+    RegionThresholds,
     RegionQueryResult,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -385,10 +385,10 @@ class ManifoldClusterer:
         entropies = [pt.mean_entropy for pt in points]
         variances = [pt.entropy_variance for pt in points]
         coherences = [pt.mean_gate_similarity for pt in points]
-        classification_config = RegionClassificationConfig.from_percentiles(
+        thresholds = RegionThresholds.from_percentiles(
             entropies, variances, coherences
         )
-        region_type = ManifoldRegion.classify(centroid, classification_config)
+        region_type = ManifoldRegion.classify(centroid, thresholds)
 
         return ManifoldRegion(
             id=existing_id or uuid4(),
@@ -555,7 +555,7 @@ class ManifoldClusterer:
             entropies = [point.mean_entropy]
             variances = [point.entropy_variance]
             coherences = [point.mean_gate_similarity]
-        classification_config = RegionClassificationConfig.from_percentiles(
+        thresholds = RegionThresholds.from_percentiles(
             entropies, variances, coherences
         )
 
@@ -564,7 +564,7 @@ class ManifoldClusterer:
                 nearest_region=None,
                 distance=float("inf"),
                 is_within_region=False,
-                suggested_character=ManifoldRegion.classify(point, classification_config),
+                suggested_character=ManifoldRegion.classify(point, thresholds),
                 confidence=0.0,
             )
 

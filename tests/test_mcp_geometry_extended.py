@@ -310,8 +310,6 @@ class TestTopologicalFingerprintTool:
                     "mc_geometry_topological_fingerprint",
                     arguments={
                         "points": points,
-                        "maxDimension": 1,
-                        "numSteps": 30,
                     },
                 )
             )

@@ -37,10 +37,6 @@ def register(app: typer.Typer) -> None:
         ctx: typer.Context,
         source_path: str = typer.Argument(..., help="Path to source model directory"),
         target_path: str = typer.Argument(..., help="Path to target model directory"),
-        layers: list[int] | None = typer.Option(
-            None, "--layer", "-l", help="Layers to analyze (repeatable)"
-        ),
-        max_probes: int = typer.Option(50, "--max-probes", help="Limit probes (0 = all)"),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
@@ -83,22 +79,10 @@ def register(app: typer.Typer) -> None:
             source_path
         )
 
-        # Resolve layers
         num_layers = min(source_num_layers, target_num_layers)
-        if not layers:
-            # Analyze more layers for boundary detection
-            layers = [0, num_layers // 4, num_layers // 2, 3 * num_layers // 4, num_layers - 1]
-
-        resolved_layers: list[int] = []
-        for layer in layers:
-            layer_idx = layer if layer >= 0 else num_layers + layer
-            if 0 <= layer_idx < num_layers:
-                resolved_layers.append(layer_idx)
-        resolved_layers = sorted(set(resolved_layers))
+        resolved_layers = list(range(num_layers))
 
         probes = UnifiedAtlasInventory.all_probes()
-        if max_probes > 0 and max_probes < len(probes):
-            probes = probes[:max_probes]
 
         # Step 1: Compute knowledge diff
         logger.info("Computing knowledge diff...")
@@ -137,8 +121,8 @@ def register(app: typer.Typer) -> None:
         layer_activations: dict[int, list] = {}
         for layer_idx in resolved_layers:
             activations = []
-            for probe in probes[:20]:  # Sample of probes for null space
-                texts = list(probe.support_texts or [])[:3]
+            for probe in probes:
+                texts = list(probe.support_texts or [])
                 if texts:
                     acts = target_provider.get_activations(texts, layer_idx)
                     activations.extend(acts)
@@ -246,12 +230,6 @@ def register(app: typer.Typer) -> None:
         target_path: str = typer.Argument(
             ..., help="Path to target model directory (graft recipient)"
         ),
-        layers: list[int] | None = typer.Option(
-            None, "--layer", "-l", help="Specific layers to analyze"
-        ),
-        max_probes: int = typer.Option(
-            50, "--max-probes", help="Maximum probes to analyze"
-        ),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Path to save results JSON"
         ),
@@ -288,23 +266,12 @@ def register(app: typer.Typer) -> None:
         # Determine layers to analyze
         num_layers = min(target_n_layers, source_n_layers)
 
-        if layers:
-            resolved_layers = [layer for layer in layers if layer < num_layers]
-        else:
-            # Analyze key layers: early, middle, late
-            resolved_layers = [
-                0,
-                num_layers // 4,
-                num_layers // 2,
-                3 * num_layers // 4,
-                num_layers - 1,
-            ]
-            resolved_layers = sorted(set(resolved_layers))
+        resolved_layers = list(range(num_layers))
 
         logger.info("Analyzing layers: %s", resolved_layers)
 
         # Load unified atlas probes
-        probes = UnifiedAtlasInventory.all_probes()[:max_probes]
+        probes = UnifiedAtlasInventory.all_probes()
 
         # Analyze density for target
         density_analyzer = KnowledgeDensityAnalyzer(backend=b)
@@ -388,11 +355,11 @@ def register(app: typer.Typer) -> None:
         layer_cka: dict[int, float] = {}
         for layer in resolved_layers:
             # Get activations for a sample of probes
-            sample_probes = probes[:10]
+            sample_probes = probes
             sample_texts = []
             for probe in sample_probes:
                 if probe.support_texts:
-                    sample_texts.extend(list(probe.support_texts)[:2])
+                    sample_texts.extend(list(probe.support_texts))
 
             if sample_texts:
                 try:

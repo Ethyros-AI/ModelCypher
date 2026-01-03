@@ -22,7 +22,7 @@ Provides commands for analyzing sparse regions in model representations.
 Commands:
     mc geometry sparse domains
     mc geometry sparse locate <domain_stats_file> <baseline_stats_file>
-    mc geometry sparse neurons --model <path> [--domain <domain>]
+    mc geometry sparse neurons --model <path>
 """
 
 from __future__ import annotations
@@ -76,7 +76,6 @@ def geometry_sparse_locate(
     ctx: typer.Context,
     domain_stats_file: str = typer.Argument(..., help="Path to domain layer stats JSON"),
     baseline_stats_file: str = typer.Argument(..., help="Path to baseline layer stats JSON"),
-    domain_name: str = typer.Option(..., "--domain", help="Domain name"),
 ) -> None:
     """
     Locate sparse regions for a domain.
@@ -95,6 +94,7 @@ def geometry_sparse_locate(
     domain_stats = json.loads(Path(domain_stats_file).read_text())
     baseline_stats = json.loads(Path(baseline_stats_file).read_text())
 
+    domain_name = Path(domain_stats_file).stem or "domain"
     result = service.locate_sparse_regions(
         domain_stats=domain_stats,
         baseline_stats=baseline_stats,
@@ -121,10 +121,6 @@ def geometry_sparse_locate(
 def geometry_sparse_neurons(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    prompts_file: str = typer.Option(None, "--prompts", help="Path to prompts JSON file"),
-    domain: str = typer.Option(None, "--domain", help="Use built-in domain probes"),
-    layer_start: float = typer.Option(0.0, "--layer-start", help="Start layer fraction (0.0-1.0)"),
-    layer_end: float = typer.Option(1.0, "--layer-end", help="End layer fraction (0.0-1.0)"),
     output_file: str = typer.Option(
         None, "--output-file", "-o", help="Path to save neuron sparsity map"
     ),
@@ -139,58 +135,32 @@ def geometry_sparse_neurons(
     threshold for knowledge transfer during model merging.
 
     Examples:
-        mc geometry sparse neurons --model ./model --prompts ./prompts.json
-        mc geometry sparse neurons --model ./model --domain math
-        mc geometry sparse neurons --model ./model --layer-start 0.4 --layer-end 0.7
+        mc geometry sparse neurons --model ./model
     """
     from modelcypher.cli.output import write_error
     from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
         NeuronSparsityMap,
         compute_neuron_sparsity_map,
     )
+    from modelcypher.core.domain.geometry.sparse_region_domains import SparseRegionDomains
     from modelcypher.utils.errors import ErrorDetail
 
     context = _context(ctx)
+    layer_start = 0.0
+    layer_end = 1.0
 
-    # Load prompts
     prompts: list[str] = []
-    if prompts_file:
-        prompts_path = Path(prompts_file)
-        if not prompts_path.exists():
-            error = ErrorDetail(
-                code="MC-2001",
-                title="Prompts file not found",
-                detail=f"File not found: {prompts_file}",
-                hint="Provide a valid path to a JSON file containing prompts",
-                trace_id=context.trace_id,
-            )
-            write_error(error.as_dict(), context.output_format, context.pretty)
-            raise typer.Exit(code=1)
-        prompts = json.loads(prompts_path.read_text())
-
-    elif domain:
-        # Use built-in domain probes
-        service = GeometrySparseService()
-        domains_list = service.list_domains()
-        domain_def = next((d for d in domains_list if d.name.lower() == domain.lower()), None)
-        if domain_def is None:
-            error = ErrorDetail(
-                code="MC-2002",
-                title="Domain not found",
-                detail=f"Unknown domain: {domain}",
-                hint="Use 'mc geometry sparse domains' to list available domains",
-                trace_id=context.trace_id,
-            )
-            write_error(error.as_dict(), context.output_format, context.pretty)
-            raise typer.Exit(code=1)
-        prompts = domain_def.probes
+    for domain in SparseRegionDomains.all_built_in:
+        prompts.extend(domain.probe_prompts)
+    if prompts:
+        prompts = list(dict.fromkeys(prompts))
 
     if not prompts:
         error = ErrorDetail(
             code="MC-2003",
             title="No prompts provided",
-            detail="Either --prompts or --domain is required",
-            hint="Provide prompts via --prompts file.json or --domain math",
+            detail="Built-in sparse domain prompts are unavailable",
+            hint="Verify sparse region domains are registered correctly",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)

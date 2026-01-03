@@ -26,7 +26,7 @@ import typer
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-from .common import get_context, load_model_and_provider, parse_domains, parse_sources
+from .common import get_context, load_model_and_provider
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +37,6 @@ def register(app: typer.Typer) -> None:
         ctx: typer.Context,
         source_path: str = typer.Argument(..., help="Path to source model directory"),
         target_path: str = typer.Argument(..., help="Path to target model directory"),
-        layers: list[int] | None = typer.Option(
-            None, "--layer", "-l", help="Layers to analyze (repeatable, default: 0, mid, last)"
-        ),
-        sources: list[str] | None = typer.Option(
-            None, "--source", "-s", help="Filter by atlas source (repeatable)"
-        ),
-        domains: list[str] | None = typer.Option(
-            None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-        ),
-        max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
@@ -80,28 +70,10 @@ def register(app: typer.Typer) -> None:
             target_path
         )
 
-        # Resolve layers to analyze
         num_layers = min(source_num_layers, target_num_layers)
-        if not layers:
-            layers = [0, num_layers // 2, num_layers - 1]
-
-        resolved_layers: list[int] = []
-        for layer in layers:
-            layer_idx = layer if layer >= 0 else num_layers + layer
-            if 0 <= layer_idx < num_layers:
-                resolved_layers.append(layer_idx)
-        resolved_layers = sorted(set(resolved_layers))
-
-        source_filter = parse_sources(sources)
-        domain_filter = parse_domains(domains)
+        resolved_layers = list(range(num_layers))
 
         probes = UnifiedAtlasInventory.all_probes()
-        if source_filter:
-            probes = [probe for probe in probes if probe.source in source_filter]
-        if domain_filter:
-            probes = [probe for probe in probes if probe.domain in domain_filter]
-        if max_probes > 0 and max_probes < len(probes):
-            probes = probes[:max_probes]
 
         # Analyze source model
         logger.info("Analyzing source model density...")

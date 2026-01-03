@@ -345,11 +345,10 @@ class TestGeometryMetricsCacheTopo:
         )
 
     def test_set_and_get(self, cache, sample_points, sample_topo_result):
-        cache.set_topo_result(
-            sample_points, max_dimension=1, max_filtration=2.0, num_steps=100, result=sample_topo_result
-        )
+        # Cache key is now derived from points only (algorithm params are data-derived)
+        cache.set_topo_result(sample_points, sample_topo_result)
 
-        loaded = cache.get_topo_result(sample_points, max_dimension=1, max_filtration=2.0, num_steps=100)
+        loaded = cache.get_topo_result(sample_points)
         assert loaded is not None
         assert loaded.betti_0 == sample_topo_result.betti_0
         assert abs(loaded.persistence_entropy - sample_topo_result.persistence_entropy) <= _eps(
@@ -357,15 +356,15 @@ class TestGeometryMetricsCacheTopo:
         )
 
     def test_get_uncached(self, cache, sample_points):
-        result = cache.get_topo_result(sample_points, max_dimension=1, max_filtration=2.0, num_steps=100)
+        result = cache.get_topo_result(sample_points)
         assert result is None
 
-    def test_different_max_dimension_different_key(self, cache, sample_points, sample_topo_result):
-        cache.set_topo_result(
-            sample_points, max_dimension=1, max_filtration=2.0, num_steps=100, result=sample_topo_result
-        )
+    def test_different_points_different_key(self, cache, sample_points, sample_topo_result):
+        cache.set_topo_result(sample_points, sample_topo_result)
 
-        result = cache.get_topo_result(sample_points, max_dimension=2, max_filtration=2.0, num_steps=100)
+        # Different points should give different key
+        different_points = [[0.0, 0.0], [2.0, 0.0]]
+        result = cache.get_topo_result(different_points)
         assert result is None
 
 
@@ -398,22 +397,10 @@ class TestGeometryMetricsCacheSpectral:
         )
 
     def test_set_and_get(self, cache, sample_points, sample_spectral_result):
-        cache.set_spectral_result(
-            sample_points,
-            k_neighbors=2,
-            kernel_bandwidth=1.0,
-            normalized_laplacian=True,
-            heat_times=(0.1, 1.0, 10.0),
-            result=sample_spectral_result,
-        )
+        # Cache key is now derived from points only (algorithm params are data-derived)
+        cache.set_spectral_result(sample_points, sample_spectral_result)
 
-        loaded = cache.get_spectral_result(
-            sample_points,
-            k_neighbors=2,
-            kernel_bandwidth=1.0,
-            normalized_laplacian=True,
-            heat_times=(0.1, 1.0, 10.0),
-        )
+        loaded = cache.get_spectral_result(sample_points)
         assert loaded is not None
         assert loaded.eigenvalues == sample_spectral_result.eigenvalues
         assert abs(loaded.spectral_entropy - sample_spectral_result.spectral_entropy) <= _eps(
@@ -421,32 +408,15 @@ class TestGeometryMetricsCacheSpectral:
         )
 
     def test_get_uncached(self, cache, sample_points):
-        result = cache.get_spectral_result(
-            sample_points,
-            k_neighbors=2,
-            kernel_bandwidth=1.0,
-            normalized_laplacian=True,
-            heat_times=(0.1, 1.0, 10.0),
-        )
+        result = cache.get_spectral_result(sample_points)
         assert result is None
 
-    def test_different_k_neighbors_different_key(self, cache, sample_points, sample_spectral_result):
-        cache.set_spectral_result(
-            sample_points,
-            k_neighbors=2,
-            kernel_bandwidth=1.0,
-            normalized_laplacian=True,
-            heat_times=(0.1, 1.0, 10.0),
-            result=sample_spectral_result,
-        )
+    def test_different_points_different_key(self, cache, sample_points, sample_spectral_result):
+        cache.set_spectral_result(sample_points, sample_spectral_result)
 
-        result = cache.get_spectral_result(
-            sample_points,
-            k_neighbors=3,
-            kernel_bandwidth=1.0,
-            normalized_laplacian=True,
-            heat_times=(0.1, 1.0, 10.0),
-        )
+        # Different points should give different key
+        different_points = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]]
+        result = cache.get_spectral_result(different_points)
         assert result is None
 
 
@@ -546,21 +516,18 @@ class TestGeometryMetricsCacheClearAll:
             points, use_regression=True, bootstrap_samples=50,
             result=CachedIDResult(2.0, 1.5, 2.5, 10, True)
         )
-        cache.set_topo_result(
-            points, max_dimension=1, max_filtration=2.0, num_steps=100,
-            result=CachedTopoResult(1, 0, 0.1, 0.5)
-        )
+        # Topo and spectral cache keys are now derived from points only
+        cache.set_topo_result(points, CachedTopoResult(1, 0, 0.1, 0.5))
         cache.set_spectral_result(
-            points, k_neighbors=2, kernel_bandwidth=1.0, normalized_laplacian=True,
-            heat_times=(0.1,),
-            result=CachedSpectralResult([0.0], [1.0], [0.1], 0.5, 0.1, 1, 2, 1, 2, 1.0, True, True)
+            points,
+            CachedSpectralResult([0.0], [1.0], [0.1], 0.5, 0.1, 1, 2, 1, 2, 1.0, True, True),
         )
 
         # Verify items exist
         assert cache.get_gw_result(points, points, 0.01, 100) is not None
         assert cache.get_id_result(points, True, 50) is not None
-        assert cache.get_topo_result(points, 1, 2.0, 100) is not None
-        assert cache.get_spectral_result(points, 2, 1.0, True, (0.1,)) is not None
+        assert cache.get_topo_result(points) is not None
+        assert cache.get_spectral_result(points) is not None
 
         # Clear all
         cache.clear_all()
@@ -568,5 +535,5 @@ class TestGeometryMetricsCacheClearAll:
         # Verify all cleared
         assert cache.get_gw_result(points, points, 0.01, 100) is None
         assert cache.get_id_result(points, True, 50) is None
-        assert cache.get_topo_result(points, 1, 2.0, 100) is None
-        assert cache.get_spectral_result(points, 2, 1.0, True, (0.1,)) is None
+        assert cache.get_topo_result(points) is None
+        assert cache.get_spectral_result(points) is None

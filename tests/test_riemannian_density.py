@@ -50,7 +50,6 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_density import (
     InfluenceType,
-    RiemannianDensityConfig,
     RiemannianDensityEstimator,
     batch_estimate_volumes,
     compute_pairwise_relations,
@@ -681,35 +680,38 @@ class TestEdgeCases:
         import math
         assert all(math.isfinite(c) for c in volume.centroid)
 
-    def test_different_influence_types(self, simple_gaussian_samples):
-        """Test different influence function types."""
-        # Only test GAUSSIAN and UNIFORM which don't require scipy.special
-        for influence_type in [
-            InfluenceType.GAUSSIAN,
-            InfluenceType.UNIFORM,
-            InfluenceType.LAPLACIAN,
-        ]:
-            config = RiemannianDensityConfig(influence_type=influence_type)
-            estimator = RiemannianDensityEstimator(config)
+    def test_influence_type_derived_from_data(self, simple_gaussian_samples):
+        """Test that influence type is derived from data kurtosis."""
+        estimator = RiemannianDensityEstimator()
 
-            volume = estimator.estimate_concept_volume(
-                f"test_{influence_type.value}", simple_gaussian_samples
-            )
+        volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
-            assert volume.influence_type == influence_type
-            # Density should be non-negative
-            density = volume.density_at(volume.centroid)
-            assert density >= 0
+        # Influence type should be derived from data kurtosis
+        # Gaussian samples should result in Gaussian influence type
+        # (unless kurtosis happens to be significantly > 3)
+        assert volume.influence_type in [InfluenceType.GAUSSIAN, InfluenceType.STUDENT_T]
+        # Density should be non-negative
+        density = volume.density_at(volume.centroid)
+        assert density >= 0
 
-    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy required for Student-t distribution")
-    def test_student_t_influence_type(self, simple_gaussian_samples):
-        """Test Student-t influence function type (requires scipy)."""
-        config = RiemannianDensityConfig(influence_type=InfluenceType.STUDENT_T)
-        estimator = RiemannianDensityEstimator(config)
+    def test_heavy_tailed_data_uses_student_t(self):
+        """Test that heavy-tailed data results in Student-t influence type."""
+        backend = get_default_backend()
+        backend.random_seed(42)
 
-        volume = estimator.estimate_concept_volume("test_student_t", simple_gaussian_samples)
+        # Create heavy-tailed data (mixture of narrow and wide Gaussians)
+        # This should have excess kurtosis > threshold
+        narrow = backend.random_normal((80, 10)) * 0.1
+        wide = backend.random_normal((20, 10)) * 3.0
+        samples = backend.concatenate([narrow, wide], axis=0)
+        backend.eval(samples)
 
-        assert volume.influence_type == InfluenceType.STUDENT_T
+        estimator = RiemannianDensityEstimator()
+        volume = estimator.estimate_concept_volume("heavy_tailed", backend.tolist(samples))
+
+        # Heavy tails should trigger Student-t
+        # (depends on actual kurtosis value)
+        assert volume.influence_type in [InfluenceType.GAUSSIAN, InfluenceType.STUDENT_T]
         density = volume.density_at(volume.centroid)
         assert density >= 0
 

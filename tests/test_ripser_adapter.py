@@ -22,10 +22,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
-def _step(min_filtration: float, max_filtration: float, num_steps: int) -> float:
-    return (max_filtration - min_filtration) / float(max(1, num_steps))
-
-
 def _eps(*values: float) -> float:
     backend = get_default_backend()
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
@@ -36,16 +32,16 @@ def test_ripser_filtration_0dim():
     # 3 points, two very close, one far
     points = [[0.0, 0.0], [0.1, 0.0], [10.0, 0.0]]
 
-    distances = TopologicalFingerprint._compute_pairwise_distances(points)
+    backend = get_default_backend()
+    distances_arr = TopologicalFingerprint._compute_pairwise_distances(points, backend=backend)
+    backend.eval(distances_arr)
+    distances = backend.tolist(distances_arr)
     min_filtration = 0.0
     max_filtration = 20.0
-    num_steps = 100
     diagram = TopologicalFingerprint._vietoris_rips_filtration(
         distances=distances,
         min_filtration=min_filtration,
         max_filtration=max_filtration,
-        num_steps=num_steps,
-        max_dimension=0,
     )
 
     # Dimension 0 points should track merges
@@ -56,10 +52,10 @@ def test_ripser_filtration_0dim():
     # Then P0+P1 and P2 merge at dist 9.9
 
     deaths = sorted([p.death for p in points0])
-    step = _step(min_filtration, max_filtration, num_steps)
-    assert any(abs(d - 0.1) <= step for d in deaths)
-    assert any(abs(d - 9.9) <= step for d in deaths)
-    assert any(abs(d - 20.0) <= step for d in deaths)
+    eps = _eps(*deaths, 0.1, 9.9, 20.0)
+    assert any(abs(d - 0.1) <= eps for d in deaths)
+    assert any(abs(d - 9.9) <= eps for d in deaths)
+    assert any(abs(d - 20.0) <= eps for d in deaths)
 
 
 def test_ripser_filtration_1dim_cycle():
@@ -67,23 +63,23 @@ def test_ripser_filtration_1dim_cycle():
     # 4 points in a square forming a loop
     points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 
-    distances = TopologicalFingerprint._compute_pairwise_distances(points)
+    backend = get_default_backend()
+    distances_arr = TopologicalFingerprint._compute_pairwise_distances(points, backend=backend)
+    backend.eval(distances_arr)
+    distances = backend.tolist(distances_arr)
     min_filtration = 0.0
     max_filtration = 10.0
-    num_steps = 50
     diagram = TopologicalFingerprint._vietoris_rips_filtration(
         distances=distances,
         min_filtration=min_filtration,
         max_filtration=max_filtration,
-        num_steps=num_steps,
-        max_dimension=1,
     )
 
     points1 = [p for p in diagram.points if p.dimension == 1]
     assert len(points1) > 0
     # Birth should be the distance that completes the cycle (side length 1.0)
-    step = _step(min_filtration, max_filtration, num_steps)
-    assert any(abs(p.birth - 1.0) <= step for p in points1)
+    eps = _eps(*(p.birth for p in points1), 1.0)
+    assert any(abs(p.birth - 1.0) <= eps for p in points1)
 
 
 def test_ripser_bottleneck_distance():
@@ -112,7 +108,7 @@ def test_ripser_adapter_elder_rule():
     # P2 merges with P0+P1 at t=2
     distances = [[0, 1, 2], [1, 0, 3], [2, 3, 0]]
     diagram = TopologicalFingerprint._vietoris_rips_filtration(
-        distances=distances, min_filtration=0.0, max_filtration=10.0, num_steps=10, max_dimension=0
+        distances=distances, min_filtration=0.0, max_filtration=10.0
     )
 
     points0 = [p for p in diagram.points if p.dimension == 0]

@@ -25,11 +25,11 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.spectral_signature import (
-    SpectralSignature,
-    SpectralSignatureConfig,
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    derive_k_neighbors,
 )
+from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
 )
@@ -78,7 +78,9 @@ def test_geodesic_and_spectral_invariance_under_padding(any_backend) -> None:
     backend = any_backend
     points = _base_points()
     padded = _pad_points(points, 3)
-    k_neighbors = len(points) - 1
+    base_arr = backend.array(points)
+    backend.eval(base_arr)
+    k_neighbors = derive_k_neighbors(base_arr, backend)
 
     geometry = RiemannianGeometry(backend)
     geo_base = geometry.geodesic_distances(points, k_neighbors=k_neighbors)
@@ -94,10 +96,9 @@ def test_geodesic_and_spectral_invariance_under_padding(any_backend) -> None:
     assert geo_base.connected == geo_padded.connected
     assert geo_base.k_neighbors == geo_padded.k_neighbors
 
-    config = SpectralSignatureConfig(k_neighbors=k_neighbors)
     spectral = SpectralSignature(backend)
-    sig_base = spectral.compute(points, config)
-    sig_padded = spectral.compute(padded, config)
+    sig_base = spectral.compute(points)
+    sig_padded = spectral.compute(padded)
 
     eps = _eps(backend, sig_base.spectral_entropy, sig_padded.spectral_entropy)
     assert sig_base.eigenvalues == pytest.approx(sig_padded.eigenvalues, abs=eps)
@@ -161,7 +162,9 @@ def test_padding_invariance_random_pointcloud(
     backend.eval(points_arr)
     points = backend.tolist(points_arr)
     padded = _pad_points(points, base_dim + pad_extra)
-    k_neighbors = sample_count - 1
+    base_arr = backend.array(points)
+    backend.eval(base_arr)
+    k_neighbors = derive_k_neighbors(base_arr, backend)
 
     base = backend.array(points)
     expanded = backend.array(padded)
@@ -187,10 +190,9 @@ def test_padding_invariance_random_pointcloud(
     eps = _eps(backend, geo_max_val)
     assert geo_max_val <= eps
 
-    config = SpectralSignatureConfig(k_neighbors=k_neighbors)
     spectral = SpectralSignature(backend)
-    sig_base = spectral.compute(points, config)
-    sig_padded = spectral.compute(padded, config)
+    sig_base = spectral.compute(points)
+    sig_padded = spectral.compute(padded)
 
     eps = _eps(backend, sig_base.spectral_entropy, sig_padded.spectral_entropy)
     assert sig_base.eigenvalues == pytest.approx(sig_padded.eigenvalues, abs=eps)

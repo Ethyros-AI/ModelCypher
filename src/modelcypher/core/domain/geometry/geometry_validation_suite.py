@@ -33,7 +33,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    derive_k_neighbors,
+)
 from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 from modelcypher.core.domain.geometry.topological_fingerprint import TopologicalFingerprint
 from modelcypher.core.domain.geometry.traversal_coherence import Path as TraversalPath
@@ -153,9 +156,6 @@ class PathSignatureFixture:
 @dataclass(frozen=True)
 class SpectralSignatureFixture:
     points: list[list[float]]
-    k_neighbors: int | None
-    normalized_laplacian: bool
-    heat_times: list[float]
     expected_component_count: int
     expected_connected: bool
 
@@ -164,8 +164,6 @@ class SpectralSignatureFixture:
 class DimensionConstraintFixture:
     points: list[list[float]]
     padded_dimension: int
-    k_neighbors: int
-    heat_times: list[float]
 
 
 @dataclass(frozen=True)
@@ -356,17 +354,12 @@ class GeometryValidationSuite:
         )
 
         # Fixture points for disconnected components test.
-        # With 6 points, k_neighbors = sqrt(6) ≈ 2 (clamped to 2).
-        # Two clusters at positions [0-2] and [100-102] - far enough apart
-        # that with k=2, each cluster remains isolated.
+        # Two clusters far apart so derived k stays within each cluster.
         spectral_fixture = SpectralSignatureFixture(
             points=[
                 [0.0, 0.0], [1.0, 0.0], [2.0, 0.0],  # Cluster A
                 [100.0, 0.0], [101.0, 0.0], [102.0, 0.0],  # Cluster B
             ],
-            k_neighbors=None,  # Derived from data
-            normalized_laplacian=True,
-            heat_times=[0.1, 1.0, 10.0],
             expected_component_count=2,
             expected_connected=False,
         )
@@ -374,9 +367,6 @@ class GeometryValidationSuite:
         # Linear arrangement ensures connectivity with any k >= 1.
         spectral_connected_fixture = SpectralSignatureFixture(
             points=[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]],
-            k_neighbors=None,  # Derived from data
-            normalized_laplacian=True,
-            heat_times=[0.1, 1.0, 10.0],
             expected_component_count=1,
             expected_connected=True,
         )
@@ -389,8 +379,6 @@ class GeometryValidationSuite:
                 [0.9, 0.2],
             ],
             padded_dimension=4,
-            k_neighbors=3,
-            heat_times=[0.1, 1.0, 10.0],
         )
 
         return Fixtures(
@@ -629,8 +617,9 @@ class GeometryValidationSuite:
         gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=backend)
 
         geometry = RiemannianGeometry(backend)
-        geo_base = geometry.geodesic_distances(points, k_neighbors=fixture.k_neighbors)
-        geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=fixture.k_neighbors)
+        derived_k = derive_k_neighbors(base_arr, backend)
+        geo_base = geometry.geodesic_distances(points, k_neighbors=derived_k)
+        geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=derived_k)
 
         geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
         geo_mean = backend.mean(geo_diff)
@@ -717,7 +706,7 @@ class GeometryValidationSuite:
             base_dimension=base_dim,
             padded_dimension=fixture.padded_dimension,
             sample_count=sample_count,
-            k_neighbors=fixture.k_neighbors,
+            k_neighbors=derived_k,
             gram_cka=float(gram_cka),
             geodesic_mean_abs_diff=geodesic_mean_abs_diff,
             geodesic_max_abs_diff=geodesic_max_abs_diff,

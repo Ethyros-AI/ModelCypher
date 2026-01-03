@@ -86,11 +86,13 @@ class VisualizationResult:
 class ViewerConfiguration:
     """Configuration for manifold visualization.
 
+    Note: These are PRESENTATION parameters (how to display), not geometry parameters.
+    All geometric parameters (like k for density estimation) are derived from data.
+
     Attributes:
         point_size_min: Minimum point size (for dense regions)
         point_size_max: Maximum point size (for sparse regions)
         opacity: Point cloud opacity (0-1)
-        density_k: k for k-NN density estimation
         curvature_colorscale: Plotly colorscale for curvature
         trajectory_color: Color for token trajectory
         trajectory_width: Line width for trajectory
@@ -102,7 +104,6 @@ class ViewerConfiguration:
     point_size_min: float = 3.0
     point_size_max: float = 15.0
     opacity: float = 0.7
-    density_k: int = 10
     curvature_colorscale: str = "RdBu_r"  # Red positive, Blue negative
     trajectory_color: str = "gold"
     trajectory_width: float = 4.0
@@ -193,15 +194,25 @@ class ManifoldViewer:
         if target_dim in cascade_result.curvatures:
             curvature = array_to_list(b, cascade_result.curvatures[target_dim])
 
-        # Compute density for sizing
-        density_config = DensityConfiguration(
-            k_neighbors=min(self.config.density_k, n_points - 1),
-            normalize=True,
-        )
-        density_result = self._density_estimator.compute(points_nd, density_config)
+        # Compute density for sizing (k derived from data by the estimator)
+        density_result = self._density_estimator.compute(points_nd)
         density_arr = density_result.densities
         b.eval(density_arr)
-        density = array_to_list(b, density_arr)
+
+        # Normalize for visualization (presentation layer)
+        min_density = b.min(density_arr)
+        max_density = b.max(density_arr)
+        b.eval(min_density, max_density)
+        range_density = max_density - min_density
+        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+        range_eps = division_epsilon(b, range_density)
+        if float(b.to_scalar(range_density)) > range_eps:
+            density_normalized = (density_arr - min_density) / range_density
+            b.eval(density_normalized)
+        else:
+            density_normalized = b.ones_like(density_arr) * 0.5
+            b.eval(density_normalized)
+        density = array_to_list(b, density_normalized)
 
         # Create colors from curvature (or uniform if not available)
         if curvature is not None:
@@ -214,8 +225,8 @@ class ManifoldViewer:
         # Create sizes from density (inverse: higher density = smaller)
         # Map density [0,1] -> [size_max, size_min]
         size_span = self.config.point_size_max - self.config.point_size_min
-        sizes_arr = b.full(density_arr.shape, self.config.point_size_max) - (
-            density_arr * size_span
+        sizes_arr = b.full(density_normalized.shape, self.config.point_size_max) - (
+            density_normalized * size_span
         )
         b.eval(sizes_arr)
         sizes = array_to_list(b, sizes_arr)

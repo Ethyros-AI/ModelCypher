@@ -66,132 +66,18 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-@dataclass(frozen=True)
-class FrechetMeanConfig:
-    """Configuration for Fréchet mean computation.
-
-    On curved manifolds, the arithmetic mean doesn't minimize the sum of squared
-    geodesic distances. The Fréchet mean (Riemannian center of mass) is the
-    proper generalization that respects manifold geometry.
-
-    IMPORTANT: Fréchet mean is enabled by default. Arithmetic mean is WRONG
-    on curved manifolds and should only be used for specific edge cases.
-
-    All numerical parameters are derived from data when None:
-    - k_neighbors: from intrinsic dimension
-    - max_iterations: from dimension (None = use 10 * d as safety limit)
-    - tolerance: from machine epsilon
-    """
-
-    enabled: bool = True  # Fréchet mean by default - arithmetic mean is wrong
-    k_neighbors: int | None = None  # Derived from intrinsic dimension
-    # Maximum iterations: None = derived from dimension (10 * d as safety limit)
-    # Convergence is checked at each step; this is just a safety bound
-    max_iterations: int | None = None
-    tolerance: float | None = None  # Derived from machine epsilon
-
-
-@dataclass(frozen=True)
-class Config:
-    """Configuration for Generalized Procrustes Analysis.
-
-    All numerical parameters are derived from data when None:
-    - max_iterations: from number of models (10 * k as safety limit)
-    - convergence_threshold: from machine epsilon
-    """
-
-    # Maximum GPA iterations: None = derived from number of models (10 * k as safety limit)
-    max_iterations: int | None = None
-    convergence_threshold: float | None = None  # Derived from machine epsilon
-    allow_reflections: bool = False
-    min_models: int = 2
-    allow_scaling: bool = False
-    frechet_mean: FrechetMeanConfig = FrechetMeanConfig()  # Fréchet mean by default
-    per_layer_smoothness_threshold: float | None = None
-    """Threshold for deciding per-layer vs global rotation alignment.
-
-    When smoothness_ratio < this threshold, per-layer rotations yield lower
-    error than global rotation, indicating the models organize information
-    differently at different depths.
-
-    When smoothness_ratio >= this threshold, a single global rotation suffices.
-
-    Must be explicitly set or derived from observed smoothness ratios.
-    No arbitrary defaults - callers should measure baseline smoothness ratios
-    to calibrate this threshold for their model family.
-    """
-
-    @staticmethod
-    def default() -> "Config":
-        """Default config with Fréchet mean enabled (curvature-aware).
-
-        Note: per_layer_smoothness_threshold is NOT set. Callers using
-        RotationContinuityAnalyzer must explicitly set this threshold.
-        """
-        return Config()
-
-    @staticmethod
-    def arithmetic_mean() -> "Config":
-        """Create config using arithmetic mean. Only for debugging - arithmetic mean
-        is WRONG on curved manifolds. Use this only when you need to compare
-        against Fréchet mean or for specific numerical debugging."""
-        return Config(frechet_mean=FrechetMeanConfig(enabled=False))
-
-    @staticmethod
-    def with_smoothness_threshold(threshold: float) -> "Config":
-        """Create config with explicit smoothness threshold for rotation continuity.
-
-        Args:
-            threshold: Smoothness ratio threshold (0.0-1.0). When
-                smoothness_ratio < threshold, per-layer alignment is required.
-
-        Returns:
-            Config with specified smoothness threshold.
-        """
-        return Config(per_layer_smoothness_threshold=threshold)
-
-    @classmethod
-    def from_smoothness_distribution(
-        cls,
-        smoothness_ratios: list[float],
-        sigma: float = 1.0,
-    ) -> "Config":
-        """Derive smoothness threshold from observed ratio distribution.
-
-        Sets threshold at mean - sigma * std, identifying models whose
-        smoothness is significantly below typical.
-
-        Args:
-            smoothness_ratios: Observed smoothness ratios from model pairs.
-            sigma: Number of standard deviations for threshold.
-
-        Returns:
-            Config with data-derived threshold.
-
-        Raises:
-            ValueError: If smoothness_ratios is empty.
-        """
-        if not smoothness_ratios:
-            raise ValueError(
-                "Cannot derive threshold from empty smoothness ratios. "
-                "Provide observed ratios from model pair alignment comparisons."
-            )
-        mean = sum(smoothness_ratios) / len(smoothness_ratios)
-        variance = sum((r - mean) ** 2 for r in smoothness_ratios) / len(smoothness_ratios)
-        std = variance ** 0.5
-        threshold = max(0.0, mean - sigma * std)
-        return cls(per_layer_smoothness_threshold=threshold)
-
-    @property
-    def effective_smoothness_threshold(self) -> float:
-        """Get the effective smoothness threshold, raising if not set."""
-        if self.per_layer_smoothness_threshold is None:
-            raise ValueError(
-                "per_layer_smoothness_threshold not set. Use Config.with_smoothness_threshold() "
-                "with an explicit value, or Config.from_smoothness_distribution() to derive "
-                "from observed smoothness ratios."
-            )
-        return self.per_layer_smoothness_threshold
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from data:
+# - max_iterations: from dimension or model count (10 * k safety limit)
+# - convergence_threshold: from machine epsilon
+# - Fréchet mean: ALWAYS enabled (arithmetic mean is WRONG on curved manifolds)
+# - Reflections: NEVER allowed (preserves orientation)
+# - Scaling: NEVER allowed (preserves magnitudes)
+# - min_models: 2 (fixed - need at least 2 models to align)
+# - smoothness_threshold: derived from smoothness ratio distribution
+# =============================================================================
 
 
 @dataclass(frozen=True)

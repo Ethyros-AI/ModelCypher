@@ -26,7 +26,7 @@ import typer
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-from .common import get_context, load_model_and_provider, parse_domains, parse_sources
+from .common import get_context, load_model_and_provider
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +36,6 @@ def register(app: typer.Typer) -> None:
     def concept_density(
         ctx: typer.Context,
         model_path: str = typer.Argument(..., help="Path to the model directory"),
-        layer: int = typer.Option(-1, "--layer", "-l", help="Layer to analyze (default is last)"),
-        sources: list[str] | None = typer.Option(
-            None, "--source", "-s", help="Filter by atlas source (repeatable)"
-        ),
-        domains: list[str] | None = typer.Option(
-            None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-        ),
-        max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
@@ -60,18 +52,9 @@ def register(app: typer.Typer) -> None:
 
         model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
-        target_layer = layer if layer >= 0 else num_layers - 1
-
-        source_filter = parse_sources(sources)
-        domain_filter = parse_domains(domains)
+        target_layer = num_layers - 1
 
         probes = UnifiedAtlasInventory.all_probes()
-        if source_filter:
-            probes = [probe for probe in probes if probe.source in source_filter]
-        if domain_filter:
-            probes = [probe for probe in probes if probe.domain in domain_filter]
-        if max_probes > 0 and max_probes < len(probes):
-            probes = probes[:max_probes]
 
         analyzer = KnowledgeDensityAnalyzer(backend=backend)
 
@@ -146,16 +129,6 @@ def register(app: typer.Typer) -> None:
     def sparse_regions(
         ctx: typer.Context,
         model_path: str = typer.Argument(..., help="Path to the model directory"),
-        layers: list[int] | None = typer.Option(
-            None, "--layer", "-l", help="Layers to analyze (repeatable)"
-        ),
-        sources: list[str] | None = typer.Option(
-            None, "--source", "-s", help="Filter by atlas source (repeatable)"
-        ),
-        domains: list[str] | None = typer.Option(
-            None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-        ),
-        max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
@@ -178,27 +151,8 @@ def register(app: typer.Typer) -> None:
 
         model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
-        # Resolve layers
-        if not layers:
-            layers = [0, num_layers // 2, num_layers - 1]
-
-        resolved_layers: list[int] = []
-        for layer in layers:
-            layer_idx = layer if layer >= 0 else num_layers + layer
-            if 0 <= layer_idx < num_layers:
-                resolved_layers.append(layer_idx)
-        resolved_layers = sorted(set(resolved_layers))
-
-        source_filter = parse_sources(sources)
-        domain_filter = parse_domains(domains)
-
+        resolved_layers = list(range(num_layers))
         probes = UnifiedAtlasInventory.all_probes()
-        if source_filter:
-            probes = [probe for probe in probes if probe.source in source_filter]
-        if domain_filter:
-            probes = [probe for probe in probes if probe.domain in domain_filter]
-        if max_probes > 0 and max_probes < len(probes):
-            probes = probes[:max_probes]
 
         analyzer = KnowledgeDensityAnalyzer(backend=backend)
 

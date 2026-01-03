@@ -37,13 +37,6 @@ class ManifoldProfile:
     version: int = 1
 
     @dataclass(frozen=True)
-    class Configuration:
-        max_recent_points: int = 100
-        min_points_per_region: int = 5
-        clustering_epsilon: float | None = None  # Derived from point scale if not set
-        compute_intrinsic_dimension: bool = True
-
-    @dataclass(frozen=True)
     class Statistics:
         total_points: int
         region_count: int
@@ -222,8 +215,8 @@ class ManifoldPoint:
 
 
 @dataclass(frozen=True)
-class RegionClassificationConfig:
-    """Configuration for region classification thresholds.
+class RegionThresholds:
+    """Thresholds for region classification, derived from data.
 
     Thresholds define boundaries between topological regions (DENSE/SPARSE/TRANSITIONAL).
     These are geometric classifications, not quality judgments.
@@ -246,7 +239,7 @@ class RegionClassificationConfig:
         coherences: list[float],
         low_percentile: float = 25.0,
         high_percentile: float = 75.0,
-    ) -> "RegionClassificationConfig":
+    ) -> "RegionThresholds":
         """Derive thresholds from observed data distributions.
 
         Args:
@@ -282,7 +275,7 @@ class RegionClassificationConfig:
 # =============================================================================
 # NO DEFAULT THRESHOLDS
 # =============================================================================
-# All thresholds must be derived from data using RegionClassificationConfig.from_percentiles().
+# All thresholds must be derived from data using RegionThresholds.from_percentiles().
 # There are no "standard" thresholds - they depend on the data distribution.
 # =============================================================================
 
@@ -328,37 +321,36 @@ class ManifoldRegion:
     @staticmethod
     def classify(
         centroid: ManifoldPoint,
-        config: RegionClassificationConfig,
+        thresholds: RegionThresholds,
     ) -> "ManifoldRegion.RegionCharacter":
         """Classify region character based on centroid measurements.
 
         Args:
             centroid: The centroid point to classify.
-            config: Classification thresholds. MUST be derived from your data using
-                `RegionClassificationConfig.from_percentiles()`. No defaults exist.
+            thresholds: Classification thresholds. MUST be derived from your data using
+                `RegionThresholds.from_percentiles()`. No defaults exist.
 
         Returns:
             Topological character (DENSE, SPARSE, or TRANSITIONAL).
         """
-        cfg = config
         entropy = centroid.mean_entropy
         variance = centroid.entropy_variance
         coherence = centroid.mean_gate_similarity
 
         # High variance indicates transitional region
-        if variance > cfg.high_variance:
+        if variance > thresholds.high_variance:
             return ManifoldRegion.RegionCharacter.TRANSITIONAL
-        if entropy > cfg.low_entropy and entropy < cfg.high_entropy and variance > cfg.low_variance:
+        if entropy > thresholds.low_entropy and entropy < thresholds.high_entropy and variance > thresholds.low_variance:
             return ManifoldRegion.RegionCharacter.TRANSITIONAL
 
         # High entropy with low coherence indicates sparse region
-        if entropy > cfg.high_entropy and coherence < cfg.low_coherence:
+        if entropy > thresholds.high_entropy and coherence < thresholds.low_coherence:
             return ManifoldRegion.RegionCharacter.SPARSE
-        if entropy > cfg.high_entropy:
+        if entropy > thresholds.high_entropy:
             return ManifoldRegion.RegionCharacter.SPARSE
 
         # Low entropy, low variance, high coherence indicates dense region
-        if entropy < cfg.low_entropy and variance < cfg.low_variance and coherence > cfg.high_coherence:
+        if entropy < thresholds.low_entropy and variance < thresholds.low_variance and coherence > thresholds.high_coherence:
             return ManifoldRegion.RegionCharacter.DENSE
 
         return ManifoldRegion.RegionCharacter.TRANSITIONAL

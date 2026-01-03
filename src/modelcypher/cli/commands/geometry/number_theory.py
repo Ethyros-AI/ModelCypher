@@ -157,7 +157,6 @@ def topology_analysis(
     ctx: typer.Context,
     n_primes: int = typer.Option(500, help="Number of primes (keep small for topology)"),
     embedding_dim: int = typer.Option(10, help="Time-delay embedding dimension"),
-    max_dimension: int = typer.Option(2, help="Maximum homology dimension (0, 1, or 2)"),
 ) -> None:
     """Compute topological fingerprint of prime gap distribution.
 
@@ -169,7 +168,7 @@ def topology_analysis(
 
     Examples:
         mc geometry number-theory topology
-        mc geometry number-theory topology --n-primes 1000 --max-dimension 1
+        mc geometry number-theory topology --n-primes 1000
     """
     context = _context(ctx)
 
@@ -179,7 +178,7 @@ def topology_analysis(
         time_delay_embedding,
     )
     from modelcypher.core.domain.geometry.topological_fingerprint import (
-        TopologicalFingerprinter,
+        BackendTopologicalFingerprint,
     )
 
     typer.echo(f"Computing topology for {n_primes} primes...")
@@ -196,33 +195,30 @@ def topology_analysis(
     random_embedded = time_delay_embedding(random_gaps, embedding_dim, backend=backend)
 
     # Compute topology
-    fingerprinter = TopologicalFingerprinter(backend)
+    fingerprinter = BackendTopologicalFingerprint(backend)
 
     typer.echo("Computing prime gap topology...")
-    prime_topo = fingerprinter.compute_fingerprint(prime_embedded, max_dimension=max_dimension)
+    prime_topo = fingerprinter.compute(backend.tolist(prime_embedded))
 
     typer.echo("Computing random gap topology...")
-    random_topo = fingerprinter.compute_fingerprint(random_embedded, max_dimension=max_dimension)
+    random_topo = fingerprinter.compute(backend.tolist(random_embedded))
 
     # Compare
-    comparison = fingerprinter.compare_fingerprints(prime_topo, random_topo)
+    comparison = fingerprinter.compare(prime_topo, random_topo)
 
     payload = {
         "_schema": "mc.geometry.number_theory.topology.v1",
         "n_primes": n_primes,
         "embedding_dim": embedding_dim,
-        "max_dimension": max_dimension,
         "prime_topology": {
             "betti_0": prime_topo.betti_numbers[0] if len(prime_topo.betti_numbers) > 0 else 0,
             "betti_1": prime_topo.betti_numbers[1] if len(prime_topo.betti_numbers) > 1 else 0,
-            "betti_2": prime_topo.betti_numbers[2] if len(prime_topo.betti_numbers) > 2 else 0,
-            "n_features": len(prime_topo.persistence_pairs),
+            "n_features": len(prime_topo.diagram.points),
         },
         "random_topology": {
             "betti_0": random_topo.betti_numbers[0] if len(random_topo.betti_numbers) > 0 else 0,
             "betti_1": random_topo.betti_numbers[1] if len(random_topo.betti_numbers) > 1 else 0,
-            "betti_2": random_topo.betti_numbers[2] if len(random_topo.betti_numbers) > 2 else 0,
-            "n_features": len(random_topo.persistence_pairs),
+            "n_features": len(random_topo.diagram.points),
         },
         "comparison": {
             "bottleneck_distance": comparison.bottleneck_distance,
@@ -240,7 +236,6 @@ def topology_analysis(
             "",
             f"Primes analyzed: {n_primes}",
             f"Embedding dimension: {embedding_dim}",
-            f"Max homology dimension: {max_dimension}",
             "",
             "--- BETTI NUMBERS ---",
             "",
@@ -248,7 +243,6 @@ def topology_analysis(
             "-" * 40,
             f"{'β₀ (components)':<12} | {payload['prime_topology']['betti_0']:<10} | {payload['random_topology']['betti_0']:<10}",
             f"{'β₁ (loops)':<12} | {payload['prime_topology']['betti_1']:<10} | {payload['random_topology']['betti_1']:<10}",
-            f"{'β₂ (voids)':<12} | {payload['prime_topology']['betti_2']:<10} | {payload['random_topology']['betti_2']:<10}",
             "",
             "--- COMPARISON ---",
             "",

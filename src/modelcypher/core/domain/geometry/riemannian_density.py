@@ -79,28 +79,18 @@ class InfluenceType(str, Enum):
     UNIFORM = "uniform"  # Uniform within geodesic ball
 
 
-@dataclass(frozen=True)
-class RiemannianDensityConfig:
-    """Configuration for Riemannian density estimation.
-
-    All parameters are derived from observed data geometry:
-    - student_t_df: from data kurtosis (df = 4 + 6/(kurtosis - 3))
-    - covariance_regularization: from machine epsilon
-    - k_neighbors: from elbow detection on k-NN distances
-    """
-
-    # Influence function type
-    influence_type: InfluenceType = InfluenceType.GAUSSIAN
-    # Degrees of freedom for Student-t (ignored for other types)
-    # None = derived from data kurtosis: df = 4 + 6/(kurtosis - 3)
-    student_t_df: float | None = None
-    # Regularization for covariance estimation (numerical precision floor)
-    covariance_regularization: float | None = None
-    # Whether to use curvature correction for covariance
-    use_curvature_correction: bool = True
-    # Number of neighbors for local density estimation
-    # None = derive from elbow detection on k-NN distances
-    k_neighbors: int | None = None
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from data:
+# - influence_type: derived from data kurtosis
+#   - kurtosis > 3 + threshold → Student-t (heavy tails)
+#   - kurtosis ≈ 3 → Gaussian
+# - student_t_df: derived from kurtosis: df = 4 + 6/(kurtosis - 3)
+# - covariance_regularization: from machine epsilon
+# - curvature_correction: always enabled (manifolds are curved)
+# - k_neighbors: from Berry & Sauer 2016 / elbow detection
+# =============================================================================
 
 
 @dataclass
@@ -602,10 +592,11 @@ class RiemannianDensityEstimator:
     2. Curvature-corrected covariance
     3. Volume overlap computation
     4. Interference prediction foundation
+
+    All parameters are derived from data - no configuration needed.
     """
 
-    def __init__(self, config: RiemannianDensityConfig | None = None):
-        self.config = config or RiemannianDensityConfig()
+    def __init__(self) -> None:
         self.curvature_estimator = SectionalCurvatureEstimator()
 
     def estimate_concept_volume(
@@ -635,7 +626,7 @@ class RiemannianDensityEstimator:
         n, d = int(shape[0]), int(shape[1])
 
         if n < 2:
-            # Single sample - return point mass
+            # Single sample - return point mass with Gaussian influence
             geodesic_context = None
             if store_raw_activations:
                 rg = RiemannianGeometry(backend)
@@ -647,8 +638,8 @@ class RiemannianDensityEstimator:
                 geodesic_radius=0.0,
                 local_curvature=None,
                 num_samples=n,
-                influence_type=self.config.influence_type,
-                student_t_df=self.config.student_t_df,
+                influence_type=InfluenceType.GAUSSIAN,  # Default for single point
+                student_t_df=30.0,  # High df approaches Gaussian
                 raw_activations=activations if store_raw_activations else None,
                 _geodesic_context=geodesic_context if store_raw_activations else None,
             )
@@ -667,15 +658,12 @@ class RiemannianDensityEstimator:
 
         # Compute geodesic context for proper log map in density_at
         # k is derived from the data using elbow detection on k-NN distances
-        if self.config.k_neighbors is not None:
-            k_neighbors = min(self.config.k_neighbors, n - 1) if n > 1 else 1
-        else:
-            k_neighbors = derive_k_neighbors(activations, backend)
+        k_neighbors = derive_k_neighbors(activations, backend)
         geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
 
-        # Estimate local curvature at centroid
+        # Estimate local curvature at centroid (always enabled - manifolds are curved)
         local_curvature = None
-        if self.config.use_curvature_correction and n >= d + 2:
+        if n >= d + 2:
             try:
                 local_curvature = self.curvature_estimator.estimate_local_curvature(
                     centroid, activations, metric_fn
@@ -689,31 +677,37 @@ class RiemannianDensityEstimator:
         # Compute geodesic radius (extent of activations from centroid)
         geodesic_radius = self._compute_geodesic_radius(activations, centroid)
 
-        # Derive student_t_df from data kurtosis when not specified
+        # Derive influence type and student_t_df from data kurtosis
         # Formula: df = 4 + 6/(kurtosis - 3), where kurtosis > 3 for heavy tails
         # Student-t with df=3 has kurtosis=inf, df→∞ approaches Gaussian (kurtosis=3)
-        if self.config.student_t_df is not None:
-            student_t_df = self.config.student_t_df
+        # Compute excess kurtosis from centered activations
+        centered = activations - centroid
+        var = backend.mean(centered * centered)
+        fourth = backend.mean(centered * centered * centered * centered)
+        backend.eval(var, fourth)
+        var_val = float(backend.to_scalar(var))
+        fourth_val = float(backend.to_scalar(fourth))
+        div_eps = division_epsilon(backend, activations)
+        if var_val > div_eps:
+            kurtosis = fourth_val / (var_val * var_val)
         else:
-            # Compute excess kurtosis from centered activations
-            centered = activations - centroid
-            var = backend.mean(centered * centered)
-            fourth = backend.mean(centered * centered * centered * centered)
-            backend.eval(var, fourth)
-            var_val = float(backend.to_scalar(var))
-            fourth_val = float(backend.to_scalar(fourth))
-            div_eps = division_epsilon(backend, activations)
-            if var_val > div_eps:
-                kurtosis = fourth_val / (var_val * var_val)
-            else:
-                kurtosis = 3.0  # Default to Gaussian kurtosis
+            kurtosis = 3.0  # Default to Gaussian kurtosis
+
+        # Derive influence_type and student_t_df from kurtosis
+        # Gaussian kurtosis = 3.0 (exact mathematical constant)
+        # Threshold: kurtosis significantly > 3 → use Student-t
+        # Standard error of kurtosis ≈ sqrt(24/n), use 2σ for significance
+        import math
+        se_kurtosis = math.sqrt(24.0 / n) if n > 0 else 0.0
+        kurtosis_threshold = 3.0 + 2.0 * se_kurtosis  # Data-derived threshold
+        if kurtosis > kurtosis_threshold:
+            influence_type = InfluenceType.STUDENT_T
             # df = 4 + 6/(kurtosis - 3), clamped to [2, 30]
-            # kurtosis=3 → Gaussian, kurtosis>3 → heavy tails → lower df
-            if kurtosis > 3.0 + div_eps:
-                student_t_df = 4.0 + 6.0 / (kurtosis - 3.0)
-                student_t_df = max(2.0, min(30.0, student_t_df))
-            else:
-                student_t_df = 30.0  # High df approaches Gaussian
+            student_t_df = 4.0 + 6.0 / (kurtosis - 3.0)
+            student_t_df = max(2.0, min(30.0, student_t_df))
+        else:
+            influence_type = InfluenceType.GAUSSIAN
+            student_t_df = 30.0  # High df (unused for Gaussian, but consistent)
 
         return ConceptVolume(
             concept_id=concept_id,
@@ -722,7 +716,7 @@ class RiemannianDensityEstimator:
             geodesic_radius=geodesic_radius,
             local_curvature=local_curvature,
             num_samples=n,
-            influence_type=self.config.influence_type,
+            influence_type=influence_type,
             student_t_df=student_t_df,
             raw_activations=activations if store_raw_activations else None,
             _geodesic_context=geodesic_context if store_raw_activations else None,
@@ -954,12 +948,8 @@ class RiemannianDensityEstimator:
             mean=centroid,
         )
 
-        # Regularize
-        reg_eps = (
-            self.config.covariance_regularization
-            if self.config.covariance_regularization is not None
-            else regularization_epsilon(backend, cov)
-        )
+        # Regularize - always use machine epsilon
+        reg_eps = regularization_epsilon(backend, cov)
         cov = cov + reg_eps * backend.eye(d)
         backend.eval(cov)
 
