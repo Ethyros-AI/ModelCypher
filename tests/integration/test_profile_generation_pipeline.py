@@ -156,9 +156,11 @@ class TestProfileFeatureVectorPipeline:
         assert gram.shape == (len(sample_points), len(sample_points))
 
         # Diagonal should be positive (squared norms)
-        gram_np = backend.to_numpy(gram)
+        diag = backend.diag(gram)
+        backend.eval(diag)
+        diag_list = backend.to_numpy(diag)
         for i in range(len(sample_points)):
-            assert gram_np[i, i] > 0
+            assert diag_list[i] > 0
 
 
 class TestProfileGeometryMetrics:

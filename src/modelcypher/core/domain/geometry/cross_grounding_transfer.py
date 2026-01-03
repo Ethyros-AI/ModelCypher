@@ -426,10 +426,11 @@ class GroundingRotationEstimator:
         s_std_arr = b.sqrt(b.sum(s_centered * s_centered))
         t_std_arr = b.sqrt(b.sum(t_centered * t_centered))
         b.eval(numerator_arr, s_std_arr, t_std_arr)
+        numerator_val = float(b.to_scalar(numerator_arr))
         s_std = float(b.to_scalar(s_std_arr))
         t_std = float(b.to_scalar(t_std_arr))
         if s_std > 0 and t_std > 0:
-            correlation = float(b.to_scalar(numerator_arr)) / (s_std * t_std)
+            correlation = numerator_val / (s_std * t_std)
         else:
             correlation = 0.0
 

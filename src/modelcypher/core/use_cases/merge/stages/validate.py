@@ -677,7 +677,8 @@ def _check_refusal_preservation(
         b.eval(dot_val, norm_val)
         div_eps = float(division_epsilon(b, merged_flat))
         norm_scalar = float(b.to_scalar(norm_val))
-        projection = float(b.to_scalar(dot_val)) / (norm_scalar + div_eps)
+        dot_scalar = float(b.to_scalar(dot_val))
+        projection = dot_scalar / (norm_scalar + div_eps)
         strength = max(refusal_dir.strength, div_eps)
 
         preservation = min(1.0, abs(projection) / (strength + div_eps))

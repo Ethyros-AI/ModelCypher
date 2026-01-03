@@ -103,11 +103,8 @@ class TestCKAPipeline:
         Y = backend.random_normal((50, 32))
         backend.eval(X, Y)
 
-        # Scale X by a constant using element-wise multiplication
-        scale = backend.array(100.0)
-        # Use matmul with identity scaling (broadcast multiply via addition trick)
-        X_np = backend.to_numpy(X)
-        X_scaled = backend.array(X_np * 100.0)
+        # Scale X by a constant using backend element-wise multiplication
+        X_scaled = X * 100.0
         backend.eval(X_scaled)
 
         result_original = compute_cka(X, Y, backend)

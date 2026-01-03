@@ -215,7 +215,8 @@ def align_relative_representations(
     backend.eval(R)
     det_val = backend.det(R)
     backend.eval(det_val)
-    if backend.to_scalar(det_val) < 0:
+    det_scalar = float(backend.to_scalar(det_val))
+    if det_scalar < 0:
         sign = backend.ones((U.shape[1],))
         idx = backend.arange(U.shape[1])
         sign = backend.where(idx == (U.shape[1] - 1), backend.full(sign.shape, -1.0), sign)
@@ -231,7 +232,9 @@ def align_relative_representations(
     error_eps = division_epsilon(backend, target_rel)
     error_denom = backend.maximum(backend.norm(target_rel), backend.array(error_eps))
     backend.eval(error_num, error_denom)
-    error = float(backend.to_scalar(error_num) / backend.to_scalar(error_denom))
+    error_num_val = float(backend.to_scalar(error_num))
+    error_denom_val = float(backend.to_scalar(error_denom))
+    error = error_num_val / error_denom_val
 
     return R, float(error)
 

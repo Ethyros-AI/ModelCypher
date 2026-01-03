@@ -45,7 +45,16 @@ def persistence():
 def _bytes_per_parameter() -> int:
     backend = get_default_backend()
     arr = backend.array([1.0])
-    return int(backend.to_numpy(arr).dtype.itemsize)
+    # Get bytes per element from backend dtype
+    dtype = backend.dtype(arr)
+    # Map common dtypes to their byte sizes
+    dtype_str = str(dtype).lower()
+    if "float64" in dtype_str or "double" in dtype_str:
+        return 8
+    elif "float16" in dtype_str or "bfloat16" in dtype_str or "half" in dtype_str:
+        return 2
+    else:  # float32 is the default
+        return 4
 
 
 @pytest.fixture

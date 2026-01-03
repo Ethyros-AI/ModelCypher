@@ -213,7 +213,8 @@ class SocialGeometryAnalyzer:
                 return 0.0
             dot_prod = backend.sum(a * b)
             backend.eval(dot_prod)
-            cos = float(backend.to_scalar(dot_prod)) / (norm_a_val * norm_b_val)
+            dot_val = float(backend.to_scalar(dot_prod))
+            cos = dot_val / (norm_a_val * norm_b_val)
             return 1.0 - abs(cos)
 
         # Get axis direction vectors

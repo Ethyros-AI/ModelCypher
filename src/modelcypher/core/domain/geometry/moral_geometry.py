@@ -371,7 +371,8 @@ class MoralGeometryAnalyzer:
                 return 0.0
             dot = backend.sum(v1 * v2)
             backend.eval(dot)
-            cos_sim = abs(float(backend.to_scalar(dot)) / (n1_val * n2_val))
+            dot_val = float(backend.to_scalar(dot))
+            cos_sim = abs(dot_val / (n1_val * n2_val))
             return 1.0 - cos_sim
 
         val_agen = orthogonality(val_vec, agen_vec)

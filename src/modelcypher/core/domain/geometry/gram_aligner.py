@@ -318,15 +318,16 @@ class GramAligner:
             b.matmul(gram_inv_subspace, target_centered),
         )
         b.eval(F_eig)
+        target_norm = b.norm(target_centered)
+        b.eval(target_norm)
+        target_norm_val = float(b.to_scalar(target_norm))
 
         # Compute residual for eigendecomposition method
         reconstructed = b.matmul(source_centered, F_eig)
         residual_eig = b.norm(reconstructed - target_centered)
-        target_norm = b.norm(target_centered)
-        b.eval(residual_eig, target_norm)
-        rel_residual = float(b.to_scalar(residual_eig)) / (
-            float(b.to_scalar(target_norm)) + reg_threshold
-        )
+        b.eval(residual_eig)
+        residual_val = float(b.to_scalar(residual_eig))
+        rel_residual = residual_val / (target_norm_val + reg_threshold)
         candidates.append((rel_residual, F_eig, "eigendecomposition"))
 
         # Method 4: Pseudoinverse solve (robust for rank-deficient cases)
@@ -335,11 +336,9 @@ class GramAligner:
         b.eval(F_pinv)
         reconstructed = b.matmul(source_centered, F_pinv)
         residual_pinv = b.norm(reconstructed - target_centered)
-        target_norm = b.norm(target_centered)
-        b.eval(residual_pinv, target_norm)
-        rel_residual = float(b.to_scalar(residual_pinv)) / (
-            float(b.to_scalar(target_norm)) + reg_threshold
-        )
+        b.eval(residual_pinv)
+        residual_val = float(b.to_scalar(residual_pinv))
+        rel_residual = residual_val / (target_norm_val + reg_threshold)
         candidates.append((rel_residual, F_pinv, "pinv"))
 
         # Select best method (lowest error)
@@ -430,7 +429,9 @@ class GramAligner:
             residual_eig = b.norm(reconstructed - target)
             target_norm = b.norm(target)
             b.eval(residual_eig, target_norm)
-            rel_residual = float(b.to_scalar(residual_eig)) / (float(b.to_scalar(target_norm)) + eps)
+            residual_val = float(b.to_scalar(residual_eig))
+            target_norm_val = float(b.to_scalar(target_norm))
+            rel_residual = residual_val / (target_norm_val + eps)
             candidates.append((rel_residual, F_eig, "eigendecomposition"))
 
         # Select best method (lowest error)

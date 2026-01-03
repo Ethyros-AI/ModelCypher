@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import json
-import math
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,7 +45,10 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     _mean_pool_state,
     _sample_layer_indices,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 
 
 # =============================================================================
@@ -376,7 +378,8 @@ class TestConceptResponseMatrixStatistics:
         crm = _build_crm()
         stats = crm.compute_layer_statistics()
         # Layer 0: norms are 1.0, 1.0, sqrt(2) ≈ 1.414
-        expected = (2.0 + math.sqrt(2.0)) / 3.0
+        backend = get_default_backend()
+        expected = (2.0 + sqrt_scalar(2.0, backend)) / 3.0
         assert abs(stats[0].mean_activation_norm - expected) < _div_eps()
 
     def test_compute_layer_statistics_empty_crm(self) -> None:
@@ -817,7 +820,8 @@ class TestConceptResponseMatrixPrivate:
         assert delta[0] == [1.0, 1.0]
         assert delta[1] == [1.0, 1.0]
         # Each delta has norm sqrt(2), mean is sqrt(2)
-        assert abs(norm - math.sqrt(2)) < _div_eps()
+        expected = sqrt_scalar(2.0, get_default_backend())
+        assert abs(norm - expected) < _div_eps()
 
     def test_compute_layer_delta_different_lengths(self) -> None:
         """Different length lists should return empty."""
@@ -1040,13 +1044,13 @@ class TestCosineSimilarityMatrix:
         assert result is not None
         from modelcypher.core.domain._backend import get_default_backend
         backend = get_default_backend()
-        np_result = backend.to_numpy(result)
+        result_list = backend.tolist(result)
 
         # Diagonal should be 1, off-diagonal should be 0
-        assert abs(np_result[0, 0] - 1.0) < _div_eps()
-        assert abs(np_result[1, 1] - 1.0) < _div_eps()
-        assert abs(np_result[0, 1]) < _div_eps()
-        assert abs(np_result[1, 0]) < _div_eps()
+        assert abs(result_list[0][0] - 1.0) < _div_eps()
+        assert abs(result_list[1][1] - 1.0) < _div_eps()
+        assert abs(result_list[0][1]) < _div_eps()
+        assert abs(result_list[1][0]) < _div_eps()
 
     def test_identical_vectors(self) -> None:
         """Identical vectors should have similarity 1."""
@@ -1056,12 +1060,12 @@ class TestCosineSimilarityMatrix:
         assert result is not None
         from modelcypher.core.domain._backend import get_default_backend
         backend = get_default_backend()
-        np_result = backend.to_numpy(result)
+        result_list = backend.tolist(result)
 
         # All entries should be 1
         for i in range(2):
             for j in range(2):
-                assert abs(np_result[i, j] - 1.0) < _div_eps()
+                assert abs(result_list[i][j] - 1.0) < _div_eps()
 
     def test_empty_activations(self) -> None:
         """Empty activations should return None."""

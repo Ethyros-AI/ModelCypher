@@ -236,7 +236,8 @@ class CompositionalProbes:
 
         den_val = float(bk.to_scalar(den))
         if den_val > eps:
-            return float(bk.to_scalar(num)) / den_val
+            num_val = float(bk.to_scalar(num))
+            return num_val / den_val
         return 0.0
 
     @staticmethod

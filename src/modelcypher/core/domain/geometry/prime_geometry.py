@@ -598,8 +598,9 @@ def analyze_eigenvalues(
     # Filter positive eigenvalues for stability
     eps = machine_epsilon(backend, eigenvalues)
     pos_mask = eigenvalues > eps
-    backend.eval(pos_mask)
-    pos_count = int(backend.to_scalar(backend.sum(backend.astype(pos_mask, "int32"))))
+    pos_count_arr = backend.sum(backend.astype(pos_mask, "int32"))
+    backend.eval(pos_mask, pos_count_arr)
+    pos_count = int(backend.to_scalar(pos_count_arr))
 
     if pos_count < 2:
         # Degenerate case
@@ -634,7 +635,9 @@ def analyze_eigenvalues(
     first_ev = backend.take(pos_ev, backend.array([0]), axis=0)
     last_ev = backend.take(pos_ev, backend.array([pos_count - 1]), axis=0)
     backend.eval(first_ev, last_ev)
-    condition_number = float(backend.to_scalar(first_ev)) / float(backend.to_scalar(last_ev))
+    first_ev_val = float(backend.to_scalar(first_ev))
+    last_ev_val = float(backend.to_scalar(last_ev))
+    condition_number = first_ev_val / last_ev_val
 
     # Top-k ratio (top 10 or all if fewer)
     k = min(10, pos_count)

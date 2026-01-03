@@ -219,9 +219,9 @@ class EmbeddingProjector:
         explained = backend.sum(S[:n_components])
         backend.eval(total_variance, explained)
         eps = division_epsilon(backend, S)
-        ratio = float(backend.to_scalar(explained)) / max(
-            float(backend.to_scalar(total_variance)), eps
-        )
+        explained_val = float(backend.to_scalar(explained))
+        total_variance_val = float(backend.to_scalar(total_variance))
+        ratio = explained_val / max(total_variance_val, eps)
 
         meta = {
             "n_components": n_components,

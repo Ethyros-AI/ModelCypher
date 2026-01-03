@@ -232,8 +232,10 @@ class TestKLDivergenceInvariants:
         adapted_data = backend.random_normal((100,))
         backend.eval(base_data, adapted_data)
 
-        base = mx.array(backend.to_numpy(base_data).astype("float32"))
-        adapted = mx.array(backend.to_numpy(adapted_data).astype("float32"))
+        # Use backend.astype for dtype conversion (no numpy dependency)
+        base = backend.astype(base_data, "float32")
+        adapted = backend.astype(adapted_data, "float32")
+        backend.eval(base, adapted)
 
         result = calc.compute(
             base_logits=base,
@@ -277,8 +279,8 @@ class TestKLDivergenceInvariants:
         q_data = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
         backend.eval(p_data, q_data)
 
-        p = mx.array(backend.to_numpy(p_data).astype("float32"))
-        q = mx.array(backend.to_numpy(q_data).astype("float32"))
+        p = mx.array(backend.to_numpy(p_data), dtype=mx.float32)
+        q = mx.array(backend.to_numpy(q_data), dtype=mx.float32)
 
         result_pq = calc.compute(base_logits=p, adapted_logits=q, sampled_token=0)
         result_qp = calc.compute(base_logits=q, adapted_logits=p, sampled_token=0)
@@ -303,8 +305,10 @@ class TestFrontierRateInvariants:
         adapted_data = backend.random_normal((100,))
         backend.eval(base_data, adapted_data)
 
-        base = mx.array(backend.to_numpy(base_data).astype("float32"))
-        adapted = mx.array(backend.to_numpy(adapted_data).astype("float32"))
+        # Use backend.astype for dtype conversion (no numpy dependency)
+        base = backend.astype(base_data, "float32")
+        adapted = backend.astype(adapted_data, "float32")
+        backend.eval(base, adapted)
 
         result = calc.compute(
             base_logits=base,
@@ -365,8 +369,10 @@ class TestConflictScoreInvariants:
         adapted_data = backend.random_normal((100,))
         backend.eval(base_data, adapted_data)
 
-        base = mx.array(backend.to_numpy(base_data).astype("float32"))
-        adapted = mx.array(backend.to_numpy(adapted_data).astype("float32"))
+        # Use backend.astype for dtype conversion (no numpy dependency)
+        base = backend.astype(base_data, "float32")
+        adapted = backend.astype(adapted_data, "float32")
+        backend.eval(base, adapted)
 
         result = calc.compute(
             base_logits=base,

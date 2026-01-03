@@ -75,13 +75,15 @@ class GeometricFingerprint:
         # Mean of off-diagonal elements
         off_diag_sum = backend.sum(gram_arr * mask)
         backend.eval(off_diag_sum)
-        mean = float(backend.to_scalar(off_diag_sum)) / off_diag_count
+        off_diag_sum_val = float(backend.to_scalar(off_diag_sum))
+        mean = off_diag_sum_val / off_diag_count
 
         # Variance of off-diagonal elements
         centered = (gram_arr - mean) * mask
         variance_sum = backend.sum(centered * centered)
         backend.eval(variance_sum)
-        variance = float(backend.to_scalar(variance_sum)) / off_diag_count
+        variance_sum_val = float(backend.to_scalar(variance_sum))
+        variance = variance_sum_val / off_diag_count
         std = sqrt_scalar(variance, backend)
 
         raw_bytes = b"".join(struct.pack("<f", float(val)) for val in gram)

@@ -384,7 +384,8 @@ class ManifoldFidelitySweep:
         b.eval(match_counts)
         overlap_sum_arr = b.sum(match_counts)
         b.eval(overlap_sum_arr)
-        overlap_sum = float(b.to_scalar(overlap_sum_arr)) / float(k)
+        overlap_sum_val = float(b.to_scalar(overlap_sum_arr))
+        overlap_sum = overlap_sum_val / float(k)
 
         return overlap_sum / n
 
@@ -424,9 +425,12 @@ class ManifoldFidelitySweep:
         var_y = b.sum((dy_vals - mean_y) ** 2)
         b.eval(cov, var_x, var_y)
 
-        denom = sqrt_scalar(float(b.to_scalar(var_x)) * float(b.to_scalar(var_y)), b)
+        var_x_val = float(b.to_scalar(var_x))
+        var_y_val = float(b.to_scalar(var_y))
+        cov_val = float(b.to_scalar(cov))
+        denom = sqrt_scalar(var_x_val * var_y_val, b)
         eps = division_epsilon(b, b.array([denom]))
-        return float(b.to_scalar(cov)) / denom if denom > eps else 0.0
+        return cov_val / denom if denom > eps else 0.0
 
     def _compute_plateau(self, metrics: list[RankMetrics]) -> PlateauSummary:
         """Find plateau ranks where metrics stop improving."""

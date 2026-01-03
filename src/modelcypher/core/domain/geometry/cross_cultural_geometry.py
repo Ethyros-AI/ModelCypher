@@ -202,8 +202,10 @@ class CrossCulturalGeometry:
             sum_a = backend.sum(gram_a_arr * mask)
             sum_b = backend.sum(gram_b_arr * mask)
             backend.eval(sum_a, sum_b)
-            mean_a = float(backend.to_scalar(sum_a)) / off_diag_count
-            mean_b = float(backend.to_scalar(sum_b)) / off_diag_count
+            sum_a_val = float(backend.to_scalar(sum_a))
+            sum_b_val = float(backend.to_scalar(sum_b))
+            mean_a = sum_a_val / off_diag_count
+            mean_b = sum_b_val / off_diag_count
 
             # Compute Pearson correlation: cov(a,b) / (std(a) * std(b))
             centered_a = (gram_a_arr - mean_a) * mask
@@ -213,9 +215,12 @@ class CrossCulturalGeometry:
             var_b_sum = backend.sum(centered_b * centered_b)
             backend.eval(cov_sum, var_a_sum, var_b_sum)
 
-            cov = float(backend.to_scalar(cov_sum)) / off_diag_count
-            var_a = float(backend.to_scalar(var_a_sum)) / off_diag_count
-            var_b = float(backend.to_scalar(var_b_sum)) / off_diag_count
+            cov_val = float(backend.to_scalar(cov_sum))
+            var_a_val = float(backend.to_scalar(var_a_sum))
+            var_b_val = float(backend.to_scalar(var_b_sum))
+            cov = cov_val / off_diag_count
+            var_a = var_a_val / off_diag_count
+            var_b = var_b_val / off_diag_count
 
             eps = division_epsilon(backend, gram_a_arr)
             std_product = (var_a ** 0.5) * (var_b ** 0.5)

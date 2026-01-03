@@ -29,11 +29,14 @@ All generators use the Backend protocol for GPU acceleration.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    pi_value,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -91,20 +94,10 @@ def sample_sphere(
     ambient_dim = dimension + 1
 
     # Sample from Gaussian and normalize to sphere
-    points_list = []
-    for i in range(n_samples * 2):
-        b.random_seed(seed + i)
-        point = b.random_normal((ambient_dim,))
-        b.eval(point)
-        point_np = b.to_numpy(point)
-        norm = math.sqrt(sum(x * x for x in point_np))
-        if norm > 1e-6:
-            normalized = [radius * x / norm for x in point_np]
-            points_list.append(normalized)
-        if len(points_list) >= n_samples:
-            break
-
-    points = b.array(points_list[:n_samples])
+    points = b.random_normal((n_samples, ambient_dim))
+    norms = b.sqrt(b.sum(points * points, axis=1, keepdims=True))
+    eps = division_epsilon(b, points)
+    points = (points / (norms + eps)) * radius
     b.eval(points)
 
     return ManifoldSample(
@@ -146,28 +139,16 @@ def sample_swiss_roll(
     b = backend or get_default_backend()
     b.random_seed(seed)
 
-    points_list = []
-    for i in range(n_samples):
-        # Uniform in (t, height) space
-        t = t_min + (t_max - t_min) * (i / n_samples)
-        # Add noise to break regularity
-        b.random_seed(seed + i)
-        noise = b.random_uniform(low=-0.2, high=0.2, shape=())
-        b.eval(noise)
-        t += float(b.to_numpy(noise).item())
+    t = b.linspace(t_min, t_max, n_samples)
+    b.random_seed(seed)
+    noise = b.random_uniform(low=-0.2, high=0.2, shape=(n_samples,))
+    t = t + noise
+    h = b.random_uniform(low=0.0, high=height, shape=(n_samples,))
 
-        # Random height
-        b.random_seed(seed + 1000 + i)
-        h_rand = b.random_uniform(low=0.0, high=height, shape=())
-        b.eval(h_rand)
-        h = float(b.to_numpy(h_rand).item())
-
-        x = t * math.cos(t)
-        y = h
-        z = t * math.sin(t)
-        points_list.append([x, y, z])
-
-    points = b.array(points_list)
+    x = t * b.cos(t)
+    y = h
+    z = t * b.sin(t)
+    points = b.stack([x, y, z], axis=1)
     b.eval(points)
 
     return ManifoldSample(
@@ -203,29 +184,24 @@ def sample_flat_torus(
     b.random_seed(seed)
 
     r1, r2 = radii
-    points_list = []
-    for i in range(n_samples):
-        theta = 2 * math.pi * (i / n_samples)
-        # Add noise
-        b.random_seed(seed + i)
-        noise_theta = b.random_uniform(low=-0.1, high=0.1, shape=())
-        b.eval(noise_theta)
-        theta += float(b.to_numpy(noise_theta).item())
+    two_pi = 2.0 * pi_value(b)
+    theta = b.linspace(0.0, two_pi, n_samples)
+    b.random_seed(seed)
+    noise_theta = b.random_uniform(low=-0.1, high=0.1, shape=(n_samples,))
+    theta = theta + noise_theta
 
-        # Random phi
-        b.random_seed(seed + 1000 + i)
-        phi_rand = b.random_uniform(low=0.0, high=2 * math.pi, shape=())
-        b.eval(phi_rand)
-        phi = float(b.to_numpy(phi_rand).item())
+    b.random_seed(seed + 1000)
+    phi = b.random_uniform(low=0.0, high=two_pi, shape=(n_samples,))
 
-        points_list.append([
-            r1 * math.cos(theta),
-            r1 * math.sin(theta),
-            r2 * math.cos(phi),
-            r2 * math.sin(phi),
-        ])
-
-    points = b.array(points_list)
+    points = b.stack(
+        [
+            r1 * b.cos(theta),
+            r1 * b.sin(theta),
+            r2 * b.cos(phi),
+            r2 * b.sin(phi),
+        ],
+        axis=1,
+    )
     b.eval(points)
 
     return ManifoldSample(
@@ -309,22 +285,11 @@ def sample_hyperbolic_paraboloid(
     b = backend or get_default_backend()
     b.random_seed(seed)
 
-    points_list = []
-    for i in range(n_samples):
-        b.random_seed(seed + i)
-        x_rand = b.random_uniform(low=-scale, high=scale, shape=())
-        b.eval(x_rand)
-        x = float(b.to_numpy(x_rand).item())
-
-        b.random_seed(seed + 1000 + i)
-        y_rand = b.random_uniform(low=-scale, high=scale, shape=())
-        b.eval(y_rand)
-        y = float(b.to_numpy(y_rand).item())
-
-        z = x * x - y * y
-        points_list.append([x, y, z])
-
-    points = b.array(points_list)
+    b.random_seed(seed)
+    x = b.random_uniform(low=-scale, high=scale, shape=(n_samples,))
+    y = b.random_uniform(low=-scale, high=scale, shape=(n_samples,))
+    z = x * x - y * y
+    points = b.stack([x, y, z], axis=1)
     b.eval(points)
 
     return ManifoldSample(

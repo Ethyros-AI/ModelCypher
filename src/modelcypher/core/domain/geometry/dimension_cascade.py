@@ -462,10 +462,11 @@ class DimensionCascade:
         explained_arr = b.sum(S_k)
         b.eval(total_var_arr, explained_arr)
         total_var = float(b.to_scalar(total_var_arr))
+        explained_val = float(b.to_scalar(explained_arr))
         eps = division_epsilon(b, S)
         logger.debug(
             "Isomap embedding: explained variance ratio = %.2f%%",
-            100.0 * float(b.to_scalar(explained_arr)) / max(eps, total_var),
+            100.0 * explained_val / max(eps, total_var),
         )
 
         # Step 5: Derive linear coupling for streaming
