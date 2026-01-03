@@ -102,7 +102,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
                 resolve_model_backbone,
             )
             from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
-            from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
+            from modelcypher.viz.manifold_viewer import ManifoldViewer
 
             # Load model
             model_obj, tokenizer = load_model_for_training(str(model_path))
@@ -146,10 +146,10 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             cascade_result = cascade.calibrate(activations, target_dims=dims)
 
             # Create visualization
-            viewer_config = ViewerConfiguration(
+            viewer = ManifoldViewer(
+                backend,
                 title=f"Manifold Geometry: {Path(model_path).name}",
             )
-            viewer = ManifoldViewer(backend, viewer_config)
 
             viz_dim = 3 if 3 in cascade_result.projections else min(cascade_result.projections.keys())
             result = viewer.create_figure(cascade_result, target_dim=viz_dim)
@@ -217,7 +217,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
 
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
-            from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
+            from modelcypher.viz.manifold_viewer import ManifoldViewer
 
             # Load activations
             data = json_module.loads(activations_path.read_text())
@@ -243,10 +243,10 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             cascade_result = cascade.calibrate(activations, target_dims=dims)
 
             # Create visualization
-            viewer_config = ViewerConfiguration(
+            viewer = ManifoldViewer(
+                backend,
                 title=f"Manifold Geometry: {activations_path.stem}",
             )
-            viewer = ManifoldViewer(backend, viewer_config)
 
             viz_dim = 3 if 3 in cascade_result.projections else min(cascade_result.projections.keys())
             result = viewer.create_figure(cascade_result, target_dim=viz_dim)

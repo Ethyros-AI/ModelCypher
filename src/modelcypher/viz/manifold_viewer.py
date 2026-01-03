@@ -82,36 +82,6 @@ class VisualizationResult:
     trajectory_length: int = 0
 
 
-@dataclass
-class ViewerConfiguration:
-    """Configuration for manifold visualization.
-
-    Note: These are PRESENTATION parameters (how to display), not geometry parameters.
-    All geometric parameters (like k for density estimation) are derived from data.
-
-    Attributes:
-        point_size_min: Minimum point size (for dense regions)
-        point_size_max: Maximum point size (for sparse regions)
-        opacity: Point cloud opacity (0-1)
-        curvature_colorscale: Plotly colorscale for curvature
-        trajectory_color: Color for token trajectory
-        trajectory_width: Line width for trajectory
-        show_density_cloud: Whether to show volumetric density
-        animation_duration_ms: Duration per frame in animation
-        title: Plot title
-    """
-
-    point_size_min: float = 3.0
-    point_size_max: float = 15.0
-    opacity: float = 0.7
-    curvature_colorscale: str = "RdBu_r"  # Red positive, Blue negative
-    trajectory_color: str = "gold"
-    trajectory_width: float = 4.0
-    show_density_cloud: bool = False
-    animation_duration_ms: int = 100
-    title: str = "Manifold Geometry: 3D Shadow of High-D Concept Space"
-
-
 class ManifoldViewer:
     """
     Real-time 3D visualization of manifold geometry.
@@ -143,17 +113,41 @@ class ManifoldViewer:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        config: ViewerConfiguration | None = None,
+        point_size_min: float = 3.0,
+        point_size_max: float = 15.0,
+        opacity: float = 0.7,
+        curvature_colorscale: str = "RdBu_r",
+        trajectory_color: str = "gold",
+        trajectory_width: float = 4.0,
+        show_density_cloud: bool = False,
+        animation_duration_ms: int = 100,
+        title: str = "Manifold Geometry: 3D Shadow of High-D Concept Space",
     ) -> None:
         """
         Initialize the manifold viewer.
 
         Args:
             backend: Backend for tensor operations
-            config: Visualization configuration
+            point_size_min: Minimum point size (dense regions)
+            point_size_max: Maximum point size (sparse regions)
+            opacity: Point cloud opacity
+            curvature_colorscale: Plotly colorscale for curvature
+            trajectory_color: Color for token trajectory
+            trajectory_width: Line width for trajectory
+            show_density_cloud: Whether to show volumetric density
+            animation_duration_ms: Duration per frame in animation
+            title: Plot title
         """
         self.backend = backend or get_default_backend()
-        self.config = config or ViewerConfiguration()
+        self.point_size_min = point_size_min
+        self.point_size_max = point_size_max
+        self.opacity = opacity
+        self.curvature_colorscale = curvature_colorscale
+        self.trajectory_color = trajectory_color
+        self.trajectory_width = trajectory_width
+        self.show_density_cloud = show_density_cloud
+        self.animation_duration_ms = animation_duration_ms
+        self.title = title
         self._density_estimator = DensityEstimator(self.backend)
 
     def create_figure(
@@ -224,8 +218,8 @@ class ManifoldViewer:
 
         # Create sizes from density (inverse: higher density = smaller)
         # Map density [0,1] -> [size_max, size_min]
-        size_span = self.config.point_size_max - self.config.point_size_min
-        sizes_arr = b.full(density_normalized.shape, self.config.point_size_max) - (
+        size_span = self.point_size_max - self.point_size_min
+        sizes_arr = b.full(density_normalized.shape, self.point_size_max) - (
             density_normalized * size_span
         )
         b.eval(sizes_arr)
@@ -288,8 +282,8 @@ class ManifoldViewer:
                 marker=dict(
                     size=sizes,
                     color=colors,
-                    colorscale=self.config.curvature_colorscale,
-                    opacity=self.config.opacity,
+                    colorscale=self.curvature_colorscale,
+                    opacity=self.opacity,
                     colorbar=dict(title=colorbar_title),
                 ),
                 hoverinfo="text",
@@ -304,7 +298,7 @@ class ManifoldViewer:
                     zaxis_title="PC3",
                     aspectmode="data",
                 ),
-                title=self.config.title,
+                title=self.title,
             )
         elif target_dim == 2:
             # Draw k-NN graph edges - the TRUE manifold topology
@@ -337,8 +331,8 @@ class ManifoldViewer:
                 marker=dict(
                     size=sizes,
                     color=colors,
-                    colorscale=self.config.curvature_colorscale,
-                    opacity=self.config.opacity,
+                    colorscale=self.curvature_colorscale,
+                    opacity=self.opacity,
                     colorbar=dict(title=colorbar_title),
                 ),
                 hoverinfo="text",
@@ -349,7 +343,7 @@ class ManifoldViewer:
             fig.update_layout(
                 xaxis_title="PC1",
                 yaxis_title="PC2",
-                title=self.config.title,
+                title=self.title,
             )
         else:
             raise ValueError(f"Visualization only supports 2D and 3D, got {target_dim}D")
@@ -474,12 +468,12 @@ class ManifoldViewer:
                     z=z,
                     mode="lines+markers",
                     line=dict(
-                        color=self.config.trajectory_color,
-                        width=self.config.trajectory_width,
+                        color=self.trajectory_color,
+                        width=self.trajectory_width,
                     ),
                     marker=dict(
                         size=8,
-                        color=self.config.trajectory_color,
+                        color=self.trajectory_color,
                     ),
                     name="Trajectory",
                 )]
@@ -489,12 +483,12 @@ class ManifoldViewer:
                     y=y,
                     mode="lines+markers",
                     line=dict(
-                        color=self.config.trajectory_color,
-                        width=self.config.trajectory_width,
+                        color=self.trajectory_color,
+                        width=self.trajectory_width,
                     ),
                     marker=dict(
                         size=8,
-                        color=self.config.trajectory_color,
+                        color=self.trajectory_color,
                     ),
                     name="Trajectory",
                 )]
@@ -524,7 +518,7 @@ class ManifoldViewer:
                                 None,
                                 dict(
                                     frame=dict(
-                                        duration=self.config.animation_duration_ms,
+                                        duration=self.animation_duration_ms,
                                         redraw=True,
                                     ),
                                     fromcurrent=True,

@@ -100,7 +100,7 @@ def geometry_visualize_create(
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
-    from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
+    from modelcypher.viz.manifold_viewer import ManifoldViewer
 
     dims = [4, 3]
 
@@ -158,10 +158,10 @@ def geometry_visualize_create(
 
     # Create visualization
     typer.echo("Creating visualization...")
-    viewer_config = ViewerConfiguration(
+    viewer = ManifoldViewer(
+        backend,
         title=f"Manifold Geometry: {Path(model_path).name}",
     )
-    viewer = ManifoldViewer(backend, viewer_config)
 
     # Use 3D if available, otherwise use smallest available dimension
     viz_dim = 3 if 3 in cascade_result.projections else min(cascade_result.projections.keys())
@@ -243,7 +243,7 @@ def geometry_visualize_from_activations(
 
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
-    from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
+    from modelcypher.viz.manifold_viewer import ManifoldViewer
 
     dims = [4, 3]
 
@@ -280,10 +280,10 @@ def geometry_visualize_from_activations(
 
     # Create visualization
     typer.echo("Creating visualization...")
-    viewer_config = ViewerConfiguration(
+    viewer = ManifoldViewer(
+        backend,
         title=f"Manifold Geometry: {activations_file.stem}",
     )
-    viewer = ManifoldViewer(backend, viewer_config)
 
     # Use 3D if available
     viz_dim = 3 if 3 in cascade_result.projections else min(cascade_result.projections.keys())

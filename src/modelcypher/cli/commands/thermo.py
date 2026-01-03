@@ -32,6 +32,7 @@ Commands:
 
 from __future__ import annotations
 
+import json
 import typer
 
 from modelcypher.cli.context import CLIContext
@@ -164,7 +165,6 @@ def thermo_path_integration(
             for item in measurement.gate_transition_entropies
         ],
         "assessment": {
-            "h3Supported": assessment.h3_supported,
             "correlation": assessment.correlation,
             "spikeRate": assessment.spike_rate,
             "measurementCount": assessment.measurement_count,
@@ -185,7 +185,6 @@ def thermo_path_integration(
             f"Gate Sequence: {sequence}",
             f"Entropy-Gate Correlation: {corr_text}",
             f"Spike Rate: {assessment.spike_rate:.3f}",
-            f"H3 Supported: {'yes' if assessment.h3_supported else 'no'}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -739,18 +738,13 @@ def thermo_parity(
     model: str | None = typer.Option(
         None, "--model", help="Path to model directory (uses simulated if not provided)"
     ),
-    modifier: str = typer.Option("caps", "--modifier", "-m", help="Modifier to test"),
-    languages: str | None = typer.Option(
-        None, "--languages", "-l", help="Comma-separated languages (en,zh,ar,sw)"
-    ),
     output_file: str | None = typer.Option(
-        None, "--output-file", "-o", help="Save markdown report to file"
+        None, "--output-file", "-o", help="Save JSON report to file"
     ),
 ) -> None:
     """Run cross-lingual parity test for modifier consistency.
 
-    Tests whether the entropy cooling pattern holds across languages with
-    different resource levels (high, medium, low).
+    Measures entropy deltas across languages for all modifiers.
     """
     from pathlib import Path
 
@@ -762,34 +756,6 @@ def thermo_parity(
     )
     from modelcypher.core.domain.thermo.multilingual_calibrator import MultilingualCalibrator
 
-    # Parse modifier
-    try:
-        test_modifier = LinguisticModifier(modifier.lower())
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-1020",
-            title="Invalid modifier",
-            detail=str(exc),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    # Parse languages
-    language_list: list[PromptLanguage] | None = None
-    if languages:
-        try:
-            language_list = [PromptLanguage(lang.strip().lower()) for lang in languages.split(",")]
-        except ValueError as exc:
-            error = ErrorDetail(
-                code="MC-1021",
-                title="Invalid language",
-                detail=str(exc),
-                trace_id=context.trace_id,
-            )
-            write_error(error.as_dict(), context.output_format, context.pretty)
-            raise typer.Exit(code=1)
-
     # Create calorimeter and calibrator
     simulated = model is None
     calorimeter = LinguisticCalorimeter(
@@ -798,48 +764,60 @@ def thermo_parity(
     )
     calibrator = MultilingualCalibrator()
 
-    # Run parity test
-    result = calibrator.cross_lingual_parity_test(
-        prompt=prompt,
-        modifier=test_modifier,
-        calorimeter=calorimeter,
-        languages=language_list,
-    )
-
-    # Generate report
-    report = result.generate_markdown()
-
-    # Save to file if requested
-    if output_file:
-        Path(output_file).write_text(report)
+    modifiers = [m for m in LinguisticModifier if m != LinguisticModifier.BASELINE]
+    reports = [
+        calibrator.cross_lingual_parity_test(
+            prompt=prompt,
+            modifier=modifier,
+            calorimeter=calorimeter,
+        )
+        for modifier in modifiers
+    ]
 
     payload = {
-        "prompt": result.prompt,
-        "modifier": result.modifier.value,
-        "coolingPatternHolds": result.cooling_pattern_holds,
-        "meanParityScore": result.mean_parity_score,
-        "weakestLanguage": result.weakest_language.value if result.weakest_language else None,
-        "strongestLanguage": result.strongest_language.value if result.strongest_language else None,
-        "results": [
+        "prompt": prompt,
+        "modifiersTested": [m.value for m in modifiers],
+        "languagesTested": [lang.value for lang in PromptLanguage],
+        "reports": [
             {
-                "language": r.language.value,
-                "resourceLevel": r.language.resource_level.value,
-                "baselineEntropy": r.baseline_entropy,
-                "modifiedEntropy": r.modified_entropy,
-                "deltaH": r.delta_h,
-                "showsCooling": r.shows_cooling,
-                "parityScore": r.parity_score,
+                "modifier": report.modifier.value,
+                "referenceLanguage": report.reference_language.value
+                if report.reference_language
+                else None,
+                "effectVariance": report.effect_variance,
+                "results": [
+                    {
+                        "language": r.language.value,
+                        "resourceLevel": r.language.resource_level.value,
+                        "baselineEntropy": r.baseline_entropy,
+                        "modifiedEntropy": r.modified_entropy,
+                        "deltaH": r.delta_h,
+                        "relativeEffect": r.relative_effect,
+                    }
+                    for r in report.results
+                ],
+                "timestamp": report.timestamp.isoformat(),
             }
-            for r in result.results
+            for report in reports
         ],
-        "timestamp": result.timestamp.isoformat(),
     }
 
     if context.output_format == "text":
-        write_output(report, context.output_format, context.pretty)
+        lines = [
+            "THERMO PARITY",
+            f"Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}",
+            f"Modifiers: {', '.join(m.value for m in modifiers)}",
+            f"Languages: {', '.join(lang.value for lang in PromptLanguage)}",
+        ]
+        for report in reports:
+            lines.append(f"  {report.modifier.value}: variance={report.effect_variance:.4f}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
         if output_file:
             write_output(f"\nReport saved to: {output_file}", context.output_format, context.pretty)
         return
+
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
 
     write_output(payload, context.output_format, context.pretty)
 

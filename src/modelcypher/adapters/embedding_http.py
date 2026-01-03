@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
 
 from modelcypher.ports.embedding import EmbeddingProvider
 
@@ -29,21 +28,22 @@ class HTTPEmbeddingError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True)
-class HTTPEmbeddingConfig:
-    base_url: str
-    model_name: str = "nomic-embed-code"
-    dimension: int = 3584
-    timeout_seconds: int = 60
-
-
 class HTTPEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, config: HTTPEmbeddingConfig) -> None:
-        self._config = config
+    def __init__(
+        self,
+        base_url: str,
+        model_name: str = "nomic-embed-code",
+        dimension: int = 3584,
+        timeout_seconds: int = 60,
+    ) -> None:
+        self._base_url = base_url
+        self._model_name = model_name
+        self._dimension = dimension
+        self._timeout_seconds = timeout_seconds
 
     @property
     def dimension(self) -> int:
-        return self._config.dimension
+        return self._dimension
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings via HTTP API.
@@ -60,8 +60,8 @@ class HTTPEmbeddingProvider(EmbeddingProvider):
         """
         if not texts:
             return []
-        endpoint = self._normalize_base_url(self._config.base_url) + "/v1/embeddings"
-        payload = {"input": texts, "model": self._config.model_name}
+        endpoint = self._normalize_base_url(self._base_url) + "/v1/embeddings"
+        payload = {"input": texts, "model": self._model_name}
         data = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         request = urllib.request.Request(
             endpoint,
@@ -70,7 +70,7 @@ class HTTPEmbeddingProvider(EmbeddingProvider):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self._config.timeout_seconds) as response:
+            with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
                 status = response.getcode()
                 raw = response.read()
         except urllib.error.HTTPError as exc:

@@ -119,7 +119,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                     for item in measurement.gate_transition_entropies
                 ],
                 "assessment": {
-                    "h3Supported": assessment.h3_supported,
                     "correlation": assessment.correlation,
                     "spikeRate": assessment.spike_rate,
                     "measurementCount": assessment.measurement_count,

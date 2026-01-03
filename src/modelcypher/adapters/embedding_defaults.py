@@ -20,9 +20,8 @@ from __future__ import annotations
 import os
 from urllib.parse import urlparse
 
-from modelcypher.adapters.embedding_http import HTTPEmbeddingConfig, HTTPEmbeddingProvider
+from modelcypher.adapters.embedding_http import HTTPEmbeddingProvider
 from modelcypher.adapters.embedding_mlx import (
-    MLXEmbeddingConfig,
     MLXEmbeddingError,
     MLXEmbeddingProvider,
 )
@@ -50,9 +49,9 @@ class EmbeddingDefaults:
         env = environment or os.environ
         source, value = EmbeddingDefaults.resolved_source(environment)
         if source == "http" and value:
-            return HTTPEmbeddingProvider(HTTPEmbeddingConfig(base_url=value))
+            return HTTPEmbeddingProvider(base_url=value)
         try:
-            return MLXEmbeddingProvider(MLXEmbeddingConfig())
+            return MLXEmbeddingProvider()
         except MLXEmbeddingError:
             allow_stub = (env.get("MC_ALLOW_STUB_EMBEDDINGS") or "").strip()
             if not allow_stub:

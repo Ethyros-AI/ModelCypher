@@ -25,32 +25,21 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ThermoPathAssessment:
-    """Assessment of thermo-path relationship.
-
-    Caller interprets strength via strength_for_thresholds().
+    """Raw thermo-path measurements.
 
     Attributes
     ----------
-    h3_supported : bool
-        Whether measurements support hypothesis H3 (entropy-gate coupling).
     correlation : float or None
         Pearson correlation between entropy and gate count.
     spike_rate : float
         Rate of entropy spikes at gate transitions (0.0 to 1.0).
     measurement_count : int
         Number of measurements this assessment is based on.
-    rationale : str
-        Human-readable explanation of the assessment.
     """
 
-    h3_supported: bool
     correlation: float | None
     spike_rate: float
     measurement_count: int
-    rationale: str
-
-    # NOTE: strength_for_thresholds() method was removed.
-    # Use the raw correlation value directly - caller interprets meaning.
 
 
 @dataclass(frozen=True)
@@ -99,11 +88,9 @@ class ThermoPathIntegration:
     def analyze_relationship(self, measurements: list[CombinedMeasurement]) -> ThermoPathAssessment:
         if not measurements:
             return ThermoPathAssessment(
-                h3_supported=False,
                 correlation=None,
                 spike_rate=0.0,
                 measurement_count=0,
-                rationale="No measurements to analyze",
             )
 
         entropies = [measurement.mean_entropy for measurement in measurements]
@@ -121,18 +108,10 @@ class ThermoPathIntegration:
             float(spike_transitions) / float(total_transitions) if total_transitions > 0 else 0.0
         )
 
-        # H3 supported if any measurable correlation exists
-        # Uses boundary value (> 0) instead of arbitrary threshold
-        h3_supported = correlation is not None and abs(correlation) > 0
-
-        rationale = self._build_rationale(correlation, spike_rate, len(measurements))
-
         return ThermoPathAssessment(
-            h3_supported=h3_supported,
             correlation=correlation,
             spike_rate=spike_rate,
             measurement_count=len(measurements),
-            rationale=rationale,
         )
 
     def analyze_response(
@@ -248,24 +227,6 @@ class ThermoPathIntegration:
         return sum(squared_diffs) / float(len(values) - 1)
 
     @staticmethod
-    def _build_rationale(
-        correlation: float | None,
-        spike_rate: float,
-        measurement_count: int,
-    ) -> str:
-        """Build human-readable rationale from raw measurements."""
-        parts: list[str] = []
-        if correlation is not None:
-            # Report raw correlation; let caller interpret significance
-            parts.append(f"Entropy-gate correlation r={correlation:.3f}")
-        else:
-            parts.append("Insufficient data for correlation")
-
-        parts.append(f"Entropy spike rate at transitions: {spike_rate * 100:.1f}%")
-        parts.append(f"Based on {measurement_count} measurements")
-        return ". ".join(parts)
-
-    @staticmethod
     def _assess_single_measurement(
         correlation: float | None,
         spike_count: int,
@@ -274,16 +235,8 @@ class ThermoPathIntegration:
         """Assess a single measurement's thermo-path relationship."""
         spike_rate = float(spike_count) / float(gate_count - 1) if gate_count > 1 else 0.0
 
-        # H3 supported if any measurable correlation exists
-        h3_supported = correlation is not None and abs(correlation) > 0
-
-        correlation_text = f"{correlation:.2f}" if correlation is not None else "N/A"
-        rationale = f"Single measurement: r={correlation_text}, spike_rate={spike_rate * 100:.1f}%"
-
         return ThermoPathAssessment(
-            h3_supported=h3_supported,
             correlation=correlation,
             spike_rate=spike_rate,
             measurement_count=1,
-            rationale=rationale,
         )

@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from modelcypher.backends.safe_gpu import SafeGPU
@@ -28,14 +27,12 @@ class MLXEmbeddingError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True)
-class MLXEmbeddingConfig:
-    model_name: str = "mlx-community/all-MiniLM-L6-v2-4bit"
-    max_length: int = 512
-
-
 class MLXEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, config: MLXEmbeddingConfig) -> None:
+    def __init__(
+        self,
+        model_name: str = "mlx-community/all-MiniLM-L6-v2-4bit",
+        max_length: int = 512,
+    ) -> None:
         try:
             import mlx.core as mx
         except ImportError as exc:
@@ -47,8 +44,9 @@ class MLXEmbeddingProvider(EmbeddingProvider):
 
         self._mx = mx
         self._safe = SafeGPU(mx)
-        self._config = config
-        self._model, self._tokenizer = load(config.model_name)
+        self._model_name = model_name
+        self._max_length = max_length
+        self._model, self._tokenizer = load(model_name)
         self._dimension: int | None = None
 
     @property
@@ -77,7 +75,7 @@ class MLXEmbeddingProvider(EmbeddingProvider):
             return_tensors="mlx",
             padding=True,
             truncation=True,
-            max_length=self._config.max_length,
+            max_length=self._max_length,
         )
         outputs = self._model(**inputs)
         embeddings = self._extract_embeddings(outputs, inputs)

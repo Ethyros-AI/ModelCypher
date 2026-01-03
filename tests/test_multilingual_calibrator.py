@@ -62,7 +62,6 @@ class TestMultilingualCalibrator:
         eps = _eps(result.scaling_factor, result.calibrated_intensity, 1.0, 0.5)
         assert abs(result.scaling_factor - 1.0) <= eps
         assert abs(result.calibrated_intensity - 0.5) <= eps
-        assert "no calibration" in result.rationale.lower()
 
     def test_calibrate_intensity_with_calibration_data(
         self, calibrator: MultilingualCalibrator
@@ -82,7 +81,6 @@ class TestMultilingualCalibrator:
 
         assert swahili.scaling_factor > english.scaling_factor
         assert swahili.calibrated_intensity > english.calibrated_intensity
-        assert "calibrated" in swahili.rationale.lower()
 
     def test_calibrate_intensity_medium_resource(self, calibrator: MultilingualCalibrator) -> None:
         """With calibration, language effects reflect measured data."""
@@ -211,7 +209,6 @@ class TestLanguageParityResult:
             baseline_entropy=2.5,
             modified_entropy=2.2,
             delta_h=-0.3,
-            shows_cooling=True,
         )
 
         eps = _eps(result.effect_magnitude, 0.3)
@@ -225,7 +222,6 @@ class TestLanguageParityResult:
             baseline_entropy=2.5,
             modified_entropy=2.2,
             delta_h=-0.3,
-            shows_cooling=True,
             relative_effect=1.5,
         )
 
@@ -246,7 +242,6 @@ class TestParityReport:
                 baseline_entropy=2.5,
                 modified_entropy=2.2,
                 delta_h=-0.3,
-                shows_cooling=True,
             ),
             LanguageParityResult(
                 language=PromptLanguage.SWAHILI,
@@ -254,76 +249,21 @@ class TestParityReport:
                 baseline_entropy=3.0,
                 modified_entropy=2.4,
                 delta_h=-0.6,
-                shows_cooling=True,
             ),
         ]
 
-    def test_cooling_pattern_holds(self, sample_results: list[LanguageParityResult]) -> None:
-        """Should detect when all languages show cooling."""
+    def test_languages_tested(self, sample_results: list[LanguageParityResult]) -> None:
+        """Should list tested languages."""
         report = ParityReport.create(
             prompt="What is 2+2?",
             modifier=LinguisticModifier.CAPS,
             results=sample_results,
         )
 
-        assert report.cooling_pattern_holds
-
-    def test_cooling_pattern_fails(self, sample_results: list[LanguageParityResult]) -> None:
-        """Should detect when not all languages show cooling."""
-        # Add a non-cooling result
-        sample_results.append(
-            LanguageParityResult(
-                language=PromptLanguage.ARABIC,
-                modifier=LinguisticModifier.CAPS,
-                baseline_entropy=2.5,
-                modified_entropy=2.6,
-                delta_h=0.1,
-                shows_cooling=False,
-            )
-        )
-
-        report = ParityReport.create(
-            prompt="What is 2+2?",
-            modifier=LinguisticModifier.CAPS,
-            results=sample_results,
-        )
-
-        assert not report.cooling_pattern_holds
-
-    def test_weakest_language(self, sample_results: list[LanguageParityResult]) -> None:
-        """Should identify weakest language."""
-        report = ParityReport.create(
-            prompt="What is 2+2?",
-            modifier=LinguisticModifier.CAPS,
-            results=sample_results,
-        )
-
-        # English has delta_h=-0.3, Swahili has -0.6
-        # Weakest = smallest absolute cooling
-        assert report.weakest_language == PromptLanguage.ENGLISH
-
-    def test_strongest_language(self, sample_results: list[LanguageParityResult]) -> None:
-        """Should identify strongest language."""
-        report = ParityReport.create(
-            prompt="What is 2+2?",
-            modifier=LinguisticModifier.CAPS,
-            results=sample_results,
-        )
-
-        # Swahili has larger absolute delta_h
-        assert report.strongest_language == PromptLanguage.SWAHILI
-
-    def test_cooling_rate(self, sample_results: list[LanguageParityResult]) -> None:
-        """Should compute fraction of languages showing cooling."""
-        report = ParityReport.create(
-            prompt="What is 2+2?",
-            modifier=LinguisticModifier.CAPS,
-            results=sample_results,
-        )
-
-        # Both languages show cooling
-        eps = _eps(report.cooling_rate, 1.0)
-        assert abs(report.cooling_rate - 1.0) <= eps
+        assert report.languages_tested == [
+            PromptLanguage.ENGLISH,
+            PromptLanguage.SWAHILI,
+        ]
 
     def test_effect_variance(self, sample_results: list[LanguageParityResult]) -> None:
         """Should compute variance in effect magnitudes."""
@@ -336,23 +276,6 @@ class TestParityReport:
         # English: 0.3, Swahili: 0.6 - variance should be > 0
         assert report.effect_variance > 0
 
-    def test_generate_markdown(self, sample_results: list[LanguageParityResult]) -> None:
-        """Should generate markdown report."""
-        report = ParityReport.create(
-            prompt="What is 2+2?",
-            modifier=LinguisticModifier.CAPS,
-            results=sample_results,
-        )
-
-        markdown = report.generate_markdown()
-
-        assert "# Cross-Lingual Parity Report" in markdown
-        assert "## Summary" in markdown
-        assert "## Results by Language" in markdown
-        assert "English" in markdown
-        assert "Swahili" in markdown
-
-
 class TestCalibratedIntensity:
     """Tests for CalibratedIntensity dataclass."""
 
@@ -363,7 +286,6 @@ class TestCalibratedIntensity:
             base_intensity=0.5,
             calibrated_intensity=0.7,
             scaling_factor=1.4,
-            rationale="Swahili is low-resource; expect 40% larger entropy effect",
         )
 
         assert result.language == PromptLanguage.SWAHILI
@@ -371,4 +293,3 @@ class TestCalibratedIntensity:
         assert abs(result.base_intensity - 0.5) <= eps
         assert abs(result.calibrated_intensity - 0.7) <= eps
         assert abs(result.scaling_factor - 1.4) <= eps
-        assert "40%" in result.rationale
