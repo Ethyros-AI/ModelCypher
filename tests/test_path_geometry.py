@@ -26,8 +26,6 @@ Tests mathematical properties of path comparison algorithms:
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -68,6 +66,8 @@ def _eps() -> float:
     arr = backend.array([0.0])
     return division_epsilon(backend, arr)
 
+
+PI = 3.141592653589793
 
 class TestLevenshteinDistance:
     """Tests for Levenshtein-based path comparison."""
@@ -318,7 +318,7 @@ class TestLocalGeometry:
         geom = PathGeometry.compute_local_geometry(path, gate_embeddings=_simple_embeddings())
 
         for curv in geom.curvatures:
-            assert 0 <= curv <= math.pi, f"Curvature {curv} out of bounds"
+            assert 0 <= curv <= PI, f"Curvature {curv} out of bounds"
 
 
 class TestComprehensiveCompare:

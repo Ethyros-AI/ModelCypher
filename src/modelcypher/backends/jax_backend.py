@@ -32,8 +32,6 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-import numpy as _np_interop  # Interop boundary: Backend protocol requires to_numpy() and dtype mapping
-
 from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 
@@ -354,7 +352,7 @@ class JAXBackend(Backend):
         return array.astype(self._map_dtype(dtype))
 
     def to_numpy(self, array: Array) -> Any:
-        return _np_interop.asarray(array)
+        return self.jax.device_get(array)
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.
@@ -385,14 +383,8 @@ class JAXBackend(Backend):
 
         Derives numerical stability constants from the actual dtype precision.
         """
-        resolved = dtype or self.jnp.float32
-        dtype_to_numpy = {
-            self.jnp.float16: _np_interop.float16,
-            self.jnp.float32: _np_interop.float32,
-            self.jnp.bfloat16: _np_interop.float32,  # bfloat16 approximated
-        }
-        np_dtype = dtype_to_numpy.get(resolved, _np_interop.float32)
-        info = _np_interop.finfo(np_dtype)
+        resolved = self._map_dtype(dtype) or self.jnp.float32
+        info = self.jnp.finfo(resolved)
         return FloatInfo(
             eps=float(info.eps),
             tiny=float(info.tiny),
@@ -509,16 +501,21 @@ class JAXBackend(Backend):
                 "bool": self.jnp.bool_,
             }
             return dtype_map.get(dtype, dtype)
-        # Handle numpy dtype constants
-        if dtype is _np_interop.float32:
-            return self.jnp.float32
-        if dtype is _np_interop.float16:
-            return self.jnp.float16
-        if dtype is _np_interop.int32:
-            return self.jnp.int32
-        if dtype is _np_interop.int64:
-            return self.jnp.int64
-        return dtype
+        # Handle dtype objects by name (covers numpy/mlx dtypes without importing them)
+        name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
+        name = name.replace("jax.numpy.", "")
+        dtype_map = {
+            "float32": self.jnp.float32,
+            "float16": self.jnp.float16,
+            "bfloat16": self.jnp.bfloat16,
+            "int32": self.jnp.int32,
+            "int64": self.jnp.int64,
+            "int16": self.jnp.int16,
+            "int8": self.jnp.int8,
+            "uint8": self.jnp.uint8,
+            "bool": self.jnp.bool_,
+        }
+        return dtype_map.get(name, dtype)
 
     # =========================================================================
     # SOTA PERFORMANCE APIs (JAX)

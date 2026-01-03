@@ -112,8 +112,6 @@ def mcp_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
 @pytest.fixture(scope="module")
 def sample_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Create a sample adapter directory for testing."""
-    from safetensors.numpy import save_file
-
     backend = get_default_backend()
     tmp_dir = tmp_path_factory.mktemp("adapters")
     adapter_dir = tmp_dir / "test-adapter"
@@ -121,8 +119,8 @@ def sample_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     ones_arr = backend.ones((4, 8), dtype="float32")
     backend.eval(ones_arr)
-    weights = {"layer.lora_A": backend.to_numpy(ones_arr)}
-    save_file(weights, adapter_dir / "adapter_model.safetensors")
+    weights = {"layer.lora_A": ones_arr}
+    backend.save_safetensors(str(adapter_dir / "adapter_model.safetensors"), weights)
 
     config = {"r": 4, "lora_alpha": 8.0, "target_modules": ["q_proj", "v_proj"]}
     (adapter_dir / "adapter_config.json").write_text(json.dumps(config), encoding="utf-8")

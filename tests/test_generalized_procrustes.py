@@ -388,13 +388,15 @@ class TestGeneralizedProcrustesAlign:
             R = b.array(rotation)
             I = b.matmul(R, b.transpose(R))
             b.eval(I)
-            I_np = b.to_numpy(I)
+            I_list = array_to_list(b, I)
             # Should be close to identity
             for i in range(len(rotation)):
                 for j in range(len(rotation)):
                     expected = 1.0 if i == j else 0.0
-                    eps = _eps(b, float(I_np[i, j]), expected)
-                    assert abs(float(I_np[i, j]) - expected) <= eps
+                    value = float(I_list[i][j])
+                    dim = len(rotation)
+                    eps = _eps(b, value, expected) * dim
+                    assert abs(value - expected) <= eps
 
 
 class TestGeneralizedProcrustesAlignCRMs:
@@ -733,12 +735,18 @@ class TestRotationContinuityAnalyzer:
     def test_angular_deviation_between_layers(self) -> None:
         """Should compute angular deviation between layer rotations."""
         # Use rotated activations to create different rotations per layer
-        cos45 = math.cos(math.pi / 4)
-        sin45 = math.sin(math.pi / 4)
+        backend = get_default_backend()
+        angle = backend.array([PI / 4])
+        cos45 = backend.cos(angle)
+        sin45 = backend.sin(angle)
+        backend.eval(cos45)
+        backend.eval(sin45)
+        cos_val = float(backend.to_scalar(cos45))
+        sin_val = float(backend.to_scalar(sin45))
 
         source_acts = {
             0: {"a": [1.0, 0.0], "b": [0.0, 1.0], "c": [0.5, 0.5]},
-            1: {"a": [cos45, -sin45], "b": [sin45, cos45], "c": [0.5, 0.5]},
+            1: {"a": [cos_val, -sin_val], "b": [sin_val, cos_val], "c": [0.5, 0.5]},
         }
         target_acts = {
             0: {"a": [1.0, 0.0], "b": [0.0, 1.0], "c": [0.5, 0.5]},
@@ -807,9 +815,15 @@ class TestProcrustesEdgeCases:
     def test_pure_rotation_produces_low_error(self) -> None:
         """Alignment of rotated identity should find the rotation."""
         matrix_a = [[1.0, 0.0], [0.0, 1.0]]
-        angle = math.pi / 4
-        c, s = math.cos(angle), math.sin(angle)
-        matrix_b = [[c, -s], [s, c]]
+        backend = get_default_backend()
+        angle = backend.array([PI / 4])
+        c = backend.cos(angle)
+        s = backend.sin(angle)
+        backend.eval(c)
+        backend.eval(s)
+        c_val = float(backend.to_scalar(c))
+        s_val = float(backend.to_scalar(s))
+        matrix_b = [[c_val, -s_val], [s_val, c_val]]
 
         config = Config(max_iterations=10)
         result = GeneralizedProcrustes().align([matrix_a, matrix_b], config=config)
@@ -881,8 +895,8 @@ class TestProcrustesEdgeCases:
         b.random_seed(42)
 
         # Create 20 samples x 128 dimensions
-        m1 = b.to_numpy(b.random_normal((20, 64))).tolist()
-        m2 = b.to_numpy(b.random_normal((20, 64))).tolist()
+        m1 = array_to_list(b, b.random_normal((20, 64)))
+        m2 = array_to_list(b, b.random_normal((20, 64)))
 
         config = Config(max_iterations=20)
         result = GeneralizedProcrustes().align([m1, m2], config=config)
@@ -897,8 +911,8 @@ class TestProcrustesEdgeCases:
         b.random_seed(42)
 
         # Create 100 samples x 16 dimensions
-        m1 = b.to_numpy(b.random_normal((100, 16))).tolist()
-        m2 = b.to_numpy(b.random_normal((100, 16))).tolist()
+        m1 = array_to_list(b, b.random_normal((100, 16)))
+        m2 = array_to_list(b, b.random_normal((100, 16)))
 
         config = Config(max_iterations=30)
         result = GeneralizedProcrustes().align([m1, m2], config=config)
@@ -961,9 +975,10 @@ class TestProcrustesRotationProperties:
             R = b.array(rotation)
             det = b.det(R)
             b.eval(det)
-            det_val = float(b.to_numpy(det))
+            det_val = float(b.to_scalar(det))
             # Determinant should be +1 (not -1, which would be reflection)
-            eps = _eps(b, det_val, 1.0)
+            dim = len(rotation)
+            eps = _eps(b, det_val, 1.0) * (dim ** 3)
             assert abs(det_val - 1.0) <= eps
 
     def test_rotation_preserves_norm(self) -> None:
@@ -986,6 +1001,8 @@ class TestProcrustesRotationProperties:
                 e_i = b.array(e_i_list)
                 rotated = b.matmul(e_i[None, :], R)
                 b.eval(rotated)
-                norm = float(b.to_numpy(b.sqrt(b.sum(rotated * rotated))))
-                eps = _eps(b, norm, 1.0)
-                assert abs(norm - 1.0) <= eps
+                norm = b.norm(rotated)
+                b.eval(norm)
+                norm_val = float(b.to_scalar(norm))
+                eps = _eps(b, norm_val, 1.0)
+                assert abs(norm_val - 1.0) <= eps

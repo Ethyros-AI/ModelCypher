@@ -222,6 +222,7 @@ class GeneralizedProcrustes:
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
+        self._riemannian = None  # Lazy init for Fréchet mean
 
     def _array_to_list(self, array: "Array") -> list[float]:
         """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
@@ -235,7 +236,6 @@ class GeneralizedProcrustes:
     def _array_to_3d_list(self, array: "Array") -> list[list[list[float]]]:
         """Convert 3D array to nested Python list using native tolist() - O(1) vs O(n*m*k)."""
         return self._backend.tolist(array)
-        self._riemannian = None  # Lazy init for Fréchet mean
 
     def _compute_consensus(
         self,
@@ -661,6 +661,10 @@ class RotationContinuityAnalyzer:
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
+
+    def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
+        """Convert 2D array to nested Python list using native tolist()."""
+        return self._backend.tolist(array)
 
     def compute_per_layer_alignments(
         self,

@@ -30,8 +30,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable
 
-import numpy as _np_interop  # Interop boundary: Backend protocol requires to_numpy() and dtype mapping
-
 from modelcypher.backends.safe_gpu import SafeGPU
 from modelcypher.ports.backend import Array, Backend, FloatInfo
 
@@ -72,30 +70,45 @@ class MLXBackend(Backend):
                 pass
             return data.astype(mapped_dtype)
 
-        # Fast-path: numpy arrays (including uint32 packed weights).
-        # Passing numpy arrays directly preserves dtype and avoids std::bad_cast
-        # that can occur when converting large uint32 values through Python ints.
-        if isinstance(data, _np_interop.ndarray):
-            return self.mx.array(data, dtype=mapped_dtype)
-
         # Numpy scalars -> Python scalars
-        if module.startswith("numpy") and hasattr(data, "item"):
+        if module.startswith("numpy") and hasattr(data, "item") and not hasattr(data, "shape"):
             data = data.item()
+            module = type(data).__module__
+
+        # Fast-path: array-like objects (including numpy arrays without importing numpy).
+        if hasattr(data, "__array__") and not module.startswith("mlx"):
+            try:
+                return self.mx.array(data, dtype=mapped_dtype)
+            except RuntimeError as exc:
+                if "bad_cast" not in str(exc):
+                    raise
+                if hasattr(data, "tolist"):
+                    return self.mx.array(data.tolist(), dtype=mapped_dtype)
+                raise
 
         # MLX doesn't accept nested lists of numpy scalars (e.g., numpy.float32)
         if isinstance(data, list) and data:
             first = data[0]
             while isinstance(first, list) and first:
                 first = first[0]
-            if hasattr(first, "item"):  # numpy scalar
-                data = _np_interop.array(data).tolist()
+            if hasattr(first, "item") and type(first).__module__.startswith("numpy"):
+                def _coerce(value: Any) -> Any:
+                    if isinstance(value, list):
+                        return [_coerce(item) for item in value]
+                    if hasattr(value, "item") and type(value).__module__.startswith("numpy"):
+                        return value.item()
+                    return value
+
+                data = _coerce(data)
 
         try:
             return self.mx.array(data, dtype=mapped_dtype)
         except RuntimeError as exc:
             if "bad_cast" not in str(exc):
                 raise
-            return self.mx.array(_np_interop.array(data), dtype=mapped_dtype)
+            if hasattr(data, "tolist"):
+                return self.mx.array(data.tolist(), dtype=mapped_dtype)
+            return self.mx.array(list(data), dtype=mapped_dtype)
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.mx.zeros(shape, dtype=self._map_dtype(dtype))
@@ -234,13 +247,20 @@ class MLXBackend(Backend):
         return mask
 
     def to_numpy(self, array: Array) -> Any:
-        """Convert to numpy - requires eval first."""
+        """Convert to a host array - requires eval first."""
         self.safe.eval(array)
-        # Handle bfloat16 which numpy doesn't support natively
+        # Handle bfloat16 which host array protocols may not support
         if array.dtype == self.mx.bfloat16:
             array = array.astype(self.mx.float32)
             self.safe.eval(array)
-        return _np_interop.array(array)
+        if hasattr(array, "to_numpy"):
+            return array.to_numpy()
+        if hasattr(array, "__array__"):
+            try:
+                return array.__array__()
+            except Exception:
+                pass
+        return array.tolist()
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.
@@ -274,21 +294,26 @@ class MLXBackend(Backend):
         Derives numerical stability constants from the actual dtype precision.
         Cached for performance since dtype info is immutable.
         """
-        # Map dtype to equivalent numpy dtype for finfo lookup
-        resolved = dtype or self.mx.float32
-        dtype_to_numpy = {
-            self.mx.float16: _np_interop.float16,
-            self.mx.float32: _np_interop.float32,
-            self.mx.bfloat16: _np_interop.float32,  # bfloat16 approximated by float32 bounds
-        }
-        np_dtype = dtype_to_numpy.get(resolved, _np_interop.float32)
-        info = _np_interop.finfo(np_dtype)
-        return FloatInfo(
-            eps=float(info.eps),
-            tiny=float(info.tiny),
-            max=float(info.max),
-            min=float(info.min),
-        )
+        resolved = self._map_dtype(dtype) or self.mx.float32
+        finfo_dtype = self.mx.float32 if resolved == self.mx.bfloat16 else resolved
+        if hasattr(self.mx, "finfo"):
+            info = self.mx.finfo(finfo_dtype)
+            # MLX finfo doesn't have 'tiny', compute from IEEE 754 standard
+            # float32: smallest normal = 2^(-126) ≈ 1.175e-38
+            # float16: smallest normal = 2^(-14) ≈ 6.1e-5
+            if hasattr(info, 'tiny'):
+                tiny = float(info.tiny)
+            elif finfo_dtype == self.mx.float16:
+                tiny = 6.103515625e-05  # 2^(-14)
+            else:
+                tiny = 1.1754943508222875e-38  # 2^(-126) for float32
+            return FloatInfo(
+                eps=float(info.eps),
+                tiny=tiny,
+                max=float(info.max),
+                min=float(info.min),
+            )
+        return self._compute_finfo(finfo_dtype)
 
     # --- Array Creation (lazy - no eval) ---
     def eye(self, n: int, m: int | None = None, dtype: Any | None = None) -> Array:
@@ -642,15 +667,62 @@ class MLXBackend(Backend):
                 "bool": self.mx.bool_,
             }
             return dtype_map.get(dtype, dtype)
-        # Handle numpy dtype constants
-        if dtype is _np_interop.float32:
-            return self.mx.float32
-        if dtype is _np_interop.float16:
-            return self.mx.float16
-        if dtype is _np_interop.int32:
-            return self.mx.int32
-        if dtype is _np_interop.int64:
-            return self.mx.int64
+        # Handle dtype objects by name (covers numpy/jax dtypes without importing them)
+        name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
+        name = name.replace("mlx.core.", "")
+        dtype_map = {
+            "float32": self.mx.float32,
+            "float64": self.mx.float64,
+            "float16": self.mx.float16,
+            "bfloat16": self.mx.bfloat16,
+            "int32": self.mx.int32,
+            "int64": self.mx.int64,
+            "int16": self.mx.int16,
+            "int8": self.mx.int8,
+            "uint8": self.mx.uint8,
+            "bool": self.mx.bool_,
+        }
+        return dtype_map.get(name, dtype)
+
+    def _compute_finfo(self, dtype: Any) -> FloatInfo:
+        """Compute finfo from backend ops when no native finfo is available."""
+        one = self.mx.array(1.0, dtype=dtype)
+        two = self.mx.array(2.0, dtype=dtype)
+
+        eps = self.mx.array(1.0, dtype=dtype)
+        while True:
+            half = eps / two
+            test = one + half
+            self.safe.eval(test)
+            if test.item() == 1.0:
+                break
+            eps = half
+        eps_val = float(eps.item())
+
+        tiny = self.mx.array(1.0, dtype=dtype)
+        while True:
+            half = tiny / two
+            self.safe.eval(half)
+            if half.item() == 0.0:
+                break
+            tiny = half
+        tiny_val = float(tiny.item())
+
+        max_val = self.mx.array(1.0, dtype=dtype)
+        while True:
+            doubled = max_val * two
+            self.safe.eval(doubled)
+            if not bool(self.mx.isfinite(doubled).item()):
+                break
+            max_val = doubled
+        max_scalar = float(max_val.item())
+
+        return FloatInfo(
+            eps=eps_val,
+            tiny=tiny_val,
+            max=max_scalar,
+            min=-max_scalar,
+        )
         return dtype
 
     # =========================================================================

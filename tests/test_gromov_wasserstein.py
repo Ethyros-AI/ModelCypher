@@ -27,7 +27,6 @@ All solver parameters are derived from dtype - no configuration needed.
 
 from __future__ import annotations
 
-import math
 import random
 from typing import TYPE_CHECKING
 
@@ -38,6 +37,7 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     Result,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -46,6 +46,9 @@ if TYPE_CHECKING:
 def _eps(backend: "Backend", *values: float) -> float:
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
+
+def _is_finite(value: float) -> bool:
+    return value == value and value not in (float("inf"), float("-inf"))
 
 # =============================================================================
 # Result Dataclass Tests
@@ -123,7 +126,10 @@ class TestResult:
 
         result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
-        expected = 1.0 - math.exp(-result.distance)
+        neg_distance = b.array([-result.distance])
+        exp_val = b.exp(neg_distance)
+        b.eval(exp_val)
+        expected = 1.0 - float(b.to_scalar(exp_val))
         eps = _eps(b, result.normalized_distance, expected)
         assert abs(result.normalized_distance - expected) <= eps
 
@@ -158,7 +164,10 @@ class TestResult:
 
         result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
-        expected = math.exp(-result.distance)
+        neg_distance = b.array([-result.distance])
+        exp_val = b.exp(neg_distance)
+        b.eval(exp_val)
+        expected = float(b.to_scalar(exp_val))
         eps = _eps(b, result.alignment_score, expected)
         assert abs(result.alignment_score - expected) <= eps
 
@@ -289,10 +298,16 @@ class TestGromovWassersteinDistanceIdentity:
         assert abs(result.distance - 0.0) <= eps
         assert result.converged is True
         assert result.iterations == 0
-        assert len(result.coupling) == 3
+        b = any_backend
+        coupling = result.coupling
+        shape = b.shape(coupling)
+        assert shape[0] == 3
+        assert shape[1] == 3
         expected = 1.0 / 3.0
-        for idx in range(3):
-            value = float(result.coupling[idx][idx])
+        diag = b.diag(coupling)
+        b.eval(diag)
+        diag_list = array_to_list(b, diag)
+        for value in diag_list:
             eps = _eps(any_backend, value, expected)
             assert abs(value - expected) <= eps
 
@@ -314,11 +329,13 @@ class TestGromovWassersteinDistanceIdentity:
         assert abs(result.distance - identity.distance) <= eps
 
         # Verify coupling marginals sum to uniform distribution
-        row_mass = [sum(row) for row in result.coupling]
-        col_mass = [
-            sum(result.coupling[i][j] for i in range(len(result.coupling)))
-            for j in range(len(result.coupling[0]))
-        ]
+        coupling = result.coupling
+        row_sums = any_backend.sum(coupling, axis=1)
+        col_sums = any_backend.sum(coupling, axis=0)
+        any_backend.eval(row_sums)
+        any_backend.eval(col_sums)
+        row_mass = array_to_list(any_backend, row_sums)
+        col_mass = array_to_list(any_backend, col_sums)
         expected = 1.0 / 3.0
         for value in row_mass:
             eps = _eps(any_backend, value, expected)
@@ -349,18 +366,18 @@ class TestRandomCoupling:
         # Check row sums (should be 1/n)
         row_sums = b.sum(coupling, axis=1)
         b.eval(row_sums)
-        for i in range(n):
+        row_list = array_to_list(b, row_sums)
+        for value in row_list:
             expected = 1.0 / n
-            value = float(row_sums[i])
             eps = _eps(b, value, expected)
             assert abs(value - expected) <= eps
 
         # Check column sums (should be 1/m)
         col_sums = b.sum(coupling, axis=0)
         b.eval(col_sums)
-        for j in range(m):
+        col_list = array_to_list(b, col_sums)
+        for value in col_list:
             expected = 1.0 / m
-            value = float(col_sums[j])
             eps = _eps(b, value, expected)
             assert abs(value - expected) <= eps
 
@@ -629,7 +646,7 @@ class TestDifferentSizes:
         result = gw.compute(dist1, dist2)
 
         # Should return valid result
-        assert math.isfinite(result.distance)
+        assert _is_finite(result.distance)
         assert result.coupling.shape == (3, 4)
 
 
@@ -881,21 +898,25 @@ class TestGromovWassersteinHypothesis:
             assume(False)
 
         coupling = result.coupling
-        n = len(coupling)
+        n = any_backend.shape(coupling)[0]
 
         # Check row sums ≈ 1/n
-        for i in range(n):
-            row_sum = sum(float(coupling[i][j]) for j in range(n))
+        row_sums = any_backend.sum(coupling, axis=1)
+        any_backend.eval(row_sums)
+        row_list = array_to_list(any_backend, row_sums)
+        for value in row_list:
             expected = 1.0 / n
-            eps = _eps(b, row_sum, expected)
-            assert abs(row_sum - expected) <= eps
+            eps = _eps(b, value, expected)
+            assert abs(value - expected) <= eps
 
         # Check column sums ≈ 1/n
-        for j in range(n):
-            col_sum = sum(float(coupling[i][j]) for i in range(n))
+        col_sums = any_backend.sum(coupling, axis=0)
+        any_backend.eval(col_sums)
+        col_list = array_to_list(any_backend, col_sums)
+        for value in col_list:
             expected = 1.0 / n
-            eps = _eps(b, col_sum, expected)
-            assert abs(col_sum - expected) <= eps
+            eps = _eps(b, value, expected)
+            assert abs(value - expected) <= eps
 
     @given(
         n_points=st.integers(min_value=3, max_value=5),
@@ -920,9 +941,8 @@ class TestGromovWassersteinHypothesis:
         rng.shuffle(perm)
 
         # Permute points
-        points_np = b.to_numpy(points)
-        permuted_np = points_np[perm]
-        permuted = b.array(permuted_np)
+        perm_array = b.array(perm)
+        permuted = b.take(points, perm_array, axis=0)
         b.eval(permuted)
 
         dist_orig = gw.compute_pairwise_distances(points)

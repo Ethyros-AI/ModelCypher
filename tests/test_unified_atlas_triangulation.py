@@ -29,8 +29,6 @@ Mathematical invariants tested:
 
 from __future__ import annotations
 
-import math
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -58,6 +56,13 @@ def _eps(*values: float) -> float:
     backend = get_default_backend()
     return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
+
+def _sqrt_scalar(value: float) -> float:
+    backend = get_default_backend()
+    arr = backend.array([value])
+    root = backend.sqrt(arr)
+    backend.eval(root)
+    return float(backend.to_scalar(root))
 
 def make_probe(
     source: AtlasSource,
@@ -248,7 +253,7 @@ class TestCombinedMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        expected = math.sqrt(score.source_multiplier * score.domain_multiplier)
+        expected = _sqrt_scalar(score.source_multiplier * score.domain_multiplier)
         eps = _eps(score.combined_multiplier, expected)
         assert abs(score.combined_multiplier - expected) <= eps
 
@@ -447,6 +452,6 @@ class TestMathematicalInvariants:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        expected = math.sqrt(score.source_multiplier * score.domain_multiplier)
+        expected = _sqrt_scalar(score.source_multiplier * score.domain_multiplier)
         eps = _eps(score.combined_multiplier, expected)
         assert abs(score.combined_multiplier - expected) <= eps

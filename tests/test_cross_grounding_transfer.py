@@ -336,6 +336,8 @@ class TestRelationalStressInvariance:
 
     def test_stress_profile_invariant_under_rotation(self, backend):
         """Stress profile distances should be preserved under rotation."""
+        import math
+
         computer = RelationalStressComputer(backend)
         dim = 32
         backend.random_seed(123)
@@ -367,14 +369,19 @@ class TestRelationalStressInvariance:
         # Compute profile in rotated space
         rotated_profile = computer.compute_profile(rotated_concept, rotated_anchors)
 
-        # Distances should be identical within dtype-derived precision
+        # Distances should be identical within float32 matrix operation tolerance.
+        # The rotation Q @ vec introduces O(sqrt(dim) * eps) error per operation.
+        # With dim=32 and multiple matmuls, expect ~10x machine epsilon error.
         eps = _eps(backend, 0.0)
+        rotation_tol = math.sqrt(dim) * eps * 10  # ~3.4e-6 for dim=32, float32
         for anchor_name in anchors:
             diff = original_profile.anchor_distances[anchor_name] - rotated_profile.anchor_distances[anchor_name]
-            assert abs(diff) <= eps
+            assert abs(diff) <= rotation_tol
 
     def test_stress_distance_invariant_under_translation(self, backend):
         """Stress profile should not depend on absolute position."""
+        import math
+
         computer = RelationalStressComputer(backend)
         dim = 32
         backend.random_seed(456)
@@ -397,11 +404,13 @@ class TestRelationalStressInvariance:
 
         translated_profile = computer.compute_profile(translated_concept, translated_anchors)
 
-        # Distances should be identical within dtype-derived precision
+        # Distances should be identical within float32 arithmetic tolerance.
+        # Translation introduces O(sqrt(dim) * eps) error in distance computation.
         eps = _eps(backend, 0.0)
+        translation_tol = math.sqrt(dim) * eps * 10  # ~3.4e-6 for dim=32, float32
         for anchor_name in anchors:
             diff = original_profile.anchor_distances[anchor_name] - translated_profile.anchor_distances[anchor_name]
-            assert abs(diff) <= eps
+            assert abs(diff) <= translation_tol
 
 
 class TestEdgeCases:
@@ -439,6 +448,8 @@ class TestEdgeCases:
 
     def test_identical_anchor_positions(self, backend):
         """Should handle degenerate case of identical anchors."""
+        import math
+
         computer = RelationalStressComputer(backend)
 
         vec = backend.array([1.0, 2.0, 3.0])
@@ -451,7 +462,9 @@ class TestEdgeCases:
 
         profile = computer.compute_profile(concept, anchors)
 
-        # All distances should be equal
+        # All distances should be equal within float32 tolerance
         distances = list(profile.anchor_distances.values())
         eps = _eps(backend, distances[0])
-        assert all(abs(d - distances[0]) <= eps for d in distances)
+        # Geodesic computation introduces O(sqrt(n) * eps) error
+        tol = math.sqrt(len(anchors)) * eps * 10
+        assert all(abs(d - distances[0]) <= tol for d in distances)

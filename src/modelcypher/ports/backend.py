@@ -19,18 +19,17 @@
 Backend Protocol for GPU tensor operations.
 
 This is the abstract interface that keeps ALL computation on GPU. Domain code
-depends on this protocol, never on concrete backends or NumPy.
+depends on this protocol, never on concrete backends or host arrays.
 
-Why No NumPy?
--------------
-Every user has a GPU. NumPy forces CPU fallback and kills performance.
+Why No CPU Arrays?
+------------------
+Every user has a GPU. Host-side arrays force CPU fallback and kill performance.
 The Backend protocol ensures tensors stay on-device (Metal/CUDA/TPU)
 throughout the entire computation pipeline.
 
     # WRONG - Forces CPU fallback, breaks performance
-    import numpy as np
-    mean = np.mean(vectors, axis=0)
-    sorted_vals = np.sort(eigenvalues)[::-1]
+    mean = host_mean(vectors)
+    sorted_vals = host_sort(eigenvalues, descending=True)
 
     # CORRECT - Stays on GPU
     from modelcypher.core.domain._backend import get_default_backend
@@ -40,26 +39,26 @@ throughout the entire computation pipeline.
     reversed_idx = backend.arange(n - 1, -1, -1)
     sorted_vals = backend.take(eigenvalues, reversed_idx, axis=0)
 
-NumPy to Backend Migration Patterns
------------------------------------
-Common NumPy patterns and their Backend replacements:
+Host to Backend Migration Patterns
+----------------------------------
+Common host-side patterns and their Backend replacements:
 
 +----------------------------------+------------------------------------------------------+
-| NumPy Pattern                    | Backend Replacement                                  |
+| Host Pattern                     | Backend Replacement                                  |
 +==================================+======================================================+
 | arr[::-1]                        | backend.take(arr, backend.arange(n-1, -1, -1), 0)    |
 +----------------------------------+------------------------------------------------------+
 | arr[mask]                        | backend.where(mask, arr, backend.zeros_like(arr))    |
 +----------------------------------+------------------------------------------------------+
-| np.sort(arr)                     | backend.sort(arr)                                    |
+| host_sort(arr)                   | backend.sort(arr)                                    |
 +----------------------------------+------------------------------------------------------+
-| np.linalg.det(A)                 | backend.det(A)                                       |
+| host_det(A)                      | backend.det(A)                                       |
 +----------------------------------+------------------------------------------------------+
 | for x in to_numpy(arr):          | Use backend.take(arr, idx, axis=0) for indexed access|
 +----------------------------------+------------------------------------------------------+
 | arr.tolist()                     | backend.tolist(arr)                                  |
 +----------------------------------+------------------------------------------------------+
-| result = np.array(python_list)   | result = backend.array(python_list)                  |
+| result = host_array(python_list) | result = backend.array(python_list)                  |
 +----------------------------------+------------------------------------------------------+
 | arr[:, -1] *= -1                 | scale = backend.array([1.0]*(d-1) + [-1.0])          |
 |                                  | arr = arr * scale                                    |

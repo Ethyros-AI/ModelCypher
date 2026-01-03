@@ -778,8 +778,16 @@ class RiemannianGeometry:
         adj = backend.full((n, n), inf_val)
         adj = adj * (1.0 - eye)
 
+        # For edge weights, preserve true zeros (identical points) but floor
+        # very small non-zero distances to prevent numerical issues.
+        # Identical points should have geodesic distance 0.
         edge_eps = float(division_epsilon(backend, euclidean_dist))
-        dist_floor = backend.maximum(euclidean_dist, edge_eps)
+        is_effectively_zero = euclidean_dist < edge_eps * 0.1
+        dist_floor = backend.where(
+            is_effectively_zero,
+            backend.zeros_like(euclidean_dist),
+            backend.maximum(euclidean_dist, edge_eps),
+        )
 
         for neighbor_rank in range(k_neighbors):
             neighbor_cols = knn_idx[:, neighbor_rank]
@@ -1651,45 +1659,33 @@ class RiemannianGeometry:
     # --- Private helper methods ---
 
     def _euclidean_distance_matrix(self, points: "Array") -> "Array":
-        """Compute pairwise Euclidean distances."""
+        """Compute pairwise geodesic-compatible distances.
+
+        Uses the direct difference formula ||a - b||² = sum((a_i - b_i)²)
+        which is rotation-invariant by construction and avoids catastrophic
+        cancellation in the alternative formula ||a||² + ||b||² - 2*a·b.
+
+        For high-dimensional spaces, these local distances are used as edge
+        weights in the k-NN graph. The true geodesic distances are computed
+        via shortest paths on this graph.
+        """
         backend = self._backend
 
-        # Get dtype info for diagnostics
-        points_dtype = str(getattr(points, 'dtype', 'unknown'))
-
         # Force float32 to avoid bfloat16 precision issues
-        # bfloat16 has limited precision that can cause NaN in distance computations
         if hasattr(backend, 'astype'):
             points = backend.astype(points, "float32")
 
-        norms = backend.sum(points * points, axis=1, keepdims=True)
-        dots = backend.matmul(points, backend.transpose(points))
-        dist_sq = norms + backend.transpose(norms) - 2.0 * dots
+        n = int(points.shape[0])
+        d = int(points.shape[1]) if len(points.shape) > 1 else 1
 
-        # Log dtype info
-        norms_dtype = str(getattr(norms, 'dtype', 'unknown'))
-        logger.debug(f"Distance matrix dtypes: points={points_dtype}, norms={norms_dtype}")
-
-        # Diagnostic: check intermediate values for NaN and inf (only when debugging)
-        backend.eval(norms, dots, dist_sq)
-        if logger.isEnabledFor(logging.DEBUG):
-            # Vectorized counts - O(1) vs O(n²)
-            norms_nan = count_nan(norms, backend)
-            norms_inf = count_inf(norms, backend)
-            dots_nan = count_nan(dots, backend)
-            dots_inf = count_inf(dots, backend)
-            dist_sq_nan = count_nan(dist_sq, backend)
-
-            if norms_nan > 0 or dots_nan > 0 or dist_sq_nan > 0 or norms_inf > 0 or dots_inf > 0:
-                logger.warning(
-                    "NaN/inf in distance computation: norms_nan=%d, norms_inf=%d, dots_nan=%d, dots_inf=%d, dist_sq_nan=%d",
-                    norms_nan,
-                    norms_inf,
-                    dots_nan,
-                    dots_inf,
-                    dist_sq_nan,
-                )
-
+        # Direct difference formula: ||a - b||² = sum((a_i - b_i)²)
+        # This is rotation-invariant: ||Qa - Qb||² = ||(Q(a-b))||² = ||a-b||²
+        # Uses O(n² * d) memory but is the correct approach for manifolds.
+        points_i = backend.reshape(points, (n, 1, d))  # [n, 1, d]
+        points_j = backend.reshape(points, (1, n, d))  # [1, n, d]
+        diffs = points_i - points_j  # [n, n, d] via broadcasting
+        dist_sq = backend.sum(diffs * diffs, axis=2)  # [n, n]
+        backend.eval(dist_sq)
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         return backend.sqrt(dist_sq)
 

@@ -29,8 +29,6 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from safetensors.numpy import save_file
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.model_probe_service import (
     ModelProbeResult,
@@ -71,27 +69,19 @@ def _create_mock_model(
         backend.eval(k_proj)
         backend.eval(v_proj)
         backend.eval(gate_proj)
-        tensors[f"model.layers.{i}.self_attn.q_proj.weight"] = backend.to_numpy(q_proj).astype(
-            "float32"
-        )
-        tensors[f"model.layers.{i}.self_attn.k_proj.weight"] = backend.to_numpy(k_proj).astype(
-            "float32"
-        )
-        tensors[f"model.layers.{i}.self_attn.v_proj.weight"] = backend.to_numpy(v_proj).astype(
-            "float32"
-        )
-        tensors[f"model.layers.{i}.mlp.gate_proj.weight"] = backend.to_numpy(gate_proj).astype(
-            "float32"
-        )
+        tensors[f"model.layers.{i}.self_attn.q_proj.weight"] = q_proj
+        tensors[f"model.layers.{i}.self_attn.k_proj.weight"] = k_proj
+        tensors[f"model.layers.{i}.self_attn.v_proj.weight"] = v_proj
+        tensors[f"model.layers.{i}.mlp.gate_proj.weight"] = gate_proj
 
     embed_tokens = backend.random_normal((vocab_size, hidden_size))
     lm_head = backend.random_normal((vocab_size, hidden_size))
     backend.eval(embed_tokens)
     backend.eval(lm_head)
-    tensors["model.embed_tokens.weight"] = backend.to_numpy(embed_tokens).astype("float32")
-    tensors["lm_head.weight"] = backend.to_numpy(lm_head).astype("float32")
+    tensors["model.embed_tokens.weight"] = embed_tokens
+    tensors["lm_head.weight"] = lm_head
 
-    save_file(tensors, model_dir / "model.safetensors")
+    backend.save_safetensors(str(model_dir / "model.safetensors"), tensors)
 
     return model_dir
 

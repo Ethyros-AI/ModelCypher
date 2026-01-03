@@ -17,8 +17,6 @@
 
 """Property-based tests for dynamics module (requires MLX or JAX backend)."""
 
-import math
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -45,6 +43,14 @@ def _eps(*values: float) -> float:
         return 0.0
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
+
+def _log_scalar(value: float) -> float:
+    if backend is None:
+        return 0.0
+    arr = backend.array([value])
+    log_val = backend.log(arr)
+    backend.eval(log_val)
+    return float(backend.to_scalar(log_val))
 
 # Strategy for generating valid logit arrays
 @st.composite
@@ -90,7 +96,7 @@ class TestRegimeStateDetectorProperties:
         detector = RegimeStateDetector(backend=backend)
         entropy = detector.compute_entropy(logits, temp)
         vocab_size = logits.shape[-1]
-        max_entropy = math.log(vocab_size)
+        max_entropy = _log_scalar(float(vocab_size))
         # Allow small numerical tolerance
         eps = _eps(entropy, max_entropy)
         assert entropy <= max_entropy + eps, f"Entropy {entropy} exceeds max {max_entropy}"
@@ -168,6 +174,6 @@ class TestRegimeStateDetectorProperties:
         n = 100
         logits = backend.array([1.0] * n)  # All equal
         entropy = detector.compute_entropy(logits, temperature=1.0)
-        expected = math.log(n)
+        expected = _log_scalar(float(n))
         eps = _eps(entropy, expected)
         assert abs(entropy - expected) <= eps, f"Expected {expected}, got {entropy}"
