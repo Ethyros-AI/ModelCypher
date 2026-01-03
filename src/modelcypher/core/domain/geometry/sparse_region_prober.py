@@ -30,7 +30,6 @@ from modelcypher.core.domain.geometry.sparse_region_domains import (
     SparseRegionDomains,
 )
 from modelcypher.core.domain.geometry.sparse_region_locator import (
-    Configuration as LocatorConfiguration,
     LayerActivationStats,
     SparseRegionLocator,
 )
@@ -38,10 +37,13 @@ from modelcypher.core.domain.geometry.sparse_region_locator import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class Configuration:
-    prompts_per_domain: int
-    max_tokens_per_prompt: int
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from data:
+# - prompts_per_domain: use all available prompts from corpus
+# - max_tokens_per_prompt: derived from prompt length (2x prompt tokens)
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -104,8 +106,26 @@ class DomainProbeResult:
 
 
 class SparseRegionProber:
-    def __init__(self, configuration: Configuration) -> None:
-        self.config = configuration
+    """Probes sparse regions in neural network layers.
+
+    All parameters are derived from data - no configuration needed.
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    @staticmethod
+    def _derive_max_tokens(prompt: str) -> int:
+        """Derive max tokens from prompt length.
+
+        Response length is proportional to prompt complexity.
+        Uses word count as a proxy for semantic content - response should
+        be proportional to input complexity.
+        """
+        # Word count as proxy for semantic complexity
+        word_count = len(prompt.split())
+        # Response proportional to input (minimum 1 token to capture activations)
+        return max(1, word_count)
 
     def probe(
         self,
@@ -115,9 +135,8 @@ class SparseRegionProber:
         progress: Callable[[ProbeProgress], None] | None = None,
     ) -> DomainProbeResult:
         start_time = time.time()
-        corpus = ProbeCorpus(
-            domain=domain, max_prompts=self.config.prompts_per_domain, shuffle=True
-        )
+        # Use all available prompts from corpus (no artificial limit)
+        corpus = ProbeCorpus(domain=domain, max_prompts=None, shuffle=True)
 
         all_prompt_activations: list[dict[int, float]] = []
         tokens_generated = 0
@@ -141,7 +160,9 @@ class SparseRegionProber:
                     prompt_layer_activations.setdefault(layer, []).append(float(activation))
 
             try:
-                tokens = generate_tokens(prompt, self.config.max_tokens_per_prompt, _capture)
+                # Derive max tokens from prompt length
+                max_tokens = self._derive_max_tokens(prompt)
+                tokens = generate_tokens(prompt, max_tokens, _capture)
                 prompt_means = {
                     layer: sum(values) / float(len(values))
                     for layer, values in prompt_layer_activations.items()
@@ -193,10 +214,13 @@ class SparseRegionProber:
         domain: DomainDefinition,
         total_layers: int,
         generate_tokens: Callable[[str, int, Callable[[dict[int, float]], None]], int],
-        locator_config: LocatorConfiguration,
         dare_analysis=None,
         progress: Callable[[ProbeProgress], None] | None = None,
     ):
+        """Analyze sparsity for a domain.
+
+        All parameters are derived from data - no configuration needed.
+        """
         baseline = self.probe_baseline(
             total_layers=total_layers,
             generate_tokens=generate_tokens,
@@ -232,7 +256,8 @@ class SparseRegionProber:
             ),
         )
 
-        locator = SparseRegionLocator(locator_config)
+        # All locator parameters derived from data - no config needed
+        locator = SparseRegionLocator()
         return locator.analyze(
             domain_stats=domain_result.layer_stats,
             baseline_stats=baseline.layer_stats,
@@ -247,27 +272,38 @@ class SparseRegionProber:
         generate_tokens: Callable[[str, int, Callable[[dict[int, float]], None]], int],
         progress: Callable[[ProbeProgress], None] | None = None,
     ) -> list[DomainProbeResult]:
+        """Probe multiple domains.
+
+        Uses all available prompts from each domain corpus.
+        """
         results: list[DomainProbeResult] = []
         total_domains = len(domains)
+        prompts_completed = 0
+
         for domain_index, domain in enumerate(domains):
+            # Capture current offset for progress reporting
+            current_offset = prompts_completed
+
+            def make_progress_fn(offset: int, domain_name: str):
+                def fn(p: ProbeProgress) -> None:
+                    if progress:
+                        progress(
+                            ProbeProgress(
+                                current_prompt=offset + p.current_prompt,
+                                total_prompts=p.total_prompts * total_domains,
+                                domain_name=domain_name,
+                                status=f"Probing {domain_name}...",
+                            )
+                        )
+                return fn
+
             result = self.probe(
                 domain=domain,
                 total_layers=total_layers,
                 generate_tokens=generate_tokens,
-                progress=(
-                    lambda p: progress(
-                        ProbeProgress(
-                            current_prompt=domain_index * self.config.prompts_per_domain
-                            + p.current_prompt,
-                            total_prompts=total_domains * self.config.prompts_per_domain,
-                            domain_name=domain.name,
-                            status=f"Probing {domain.name}...",
-                        )
-                    )
-                    if progress
-                    else None
-                ),
+                progress=make_progress_fn(current_offset, domain.name) if progress else None,
             )
+            prompts_completed += result.prompts_processed
             results.append(result)
         return results
 

@@ -17,10 +17,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from modelcypher.core.domain.geometry.sparse_region_domains import SparseRegionDomains
-from modelcypher.core.domain.geometry.sparse_region_prober import Configuration, SparseRegionProber
+from modelcypher.core.domain.geometry.sparse_region_prober import SparseRegionProber
 
 
 def test_sparse_region_prober_probe() -> None:
@@ -29,7 +27,8 @@ def test_sparse_region_prober_probe() -> None:
         description="Tiny domain",
         probe_prompts=["a", "b"],
     )
-    prober = SparseRegionProber(Configuration(prompts_per_domain=2, max_tokens_per_prompt=5))
+    # All parameters derived from data - no config needed
+    prober = SparseRegionProber()
 
     def generate_tokens(prompt: str, max_tokens: int, capture) -> int:
         capture({0: 1.0, 1: 3.0})
@@ -50,10 +49,10 @@ def test_sparse_region_prober_probe() -> None:
     assert stat1.mean_activation == 4.0
 
 
-def test_sparse_region_prober_configuration_defaults() -> None:
-    """Configuration requires explicit values."""
-    with pytest.raises(TypeError):
-        Configuration()
+def test_sparse_region_prober_no_configuration_needed() -> None:
+    """SparseRegionProber requires no configuration - all params derived from data."""
+    prober = SparseRegionProber()
+    assert prober is not None
 
 
 def test_sparse_region_prober_variance_calculation() -> None:
@@ -63,7 +62,7 @@ def test_sparse_region_prober_variance_calculation() -> None:
         description="Test variance",
         probe_prompts=["test"],
     )
-    prober = SparseRegionProber(Configuration(prompts_per_domain=1, max_tokens_per_prompt=5))
+    prober = SparseRegionProber()
 
     def generate_tokens(prompt: str, max_tokens: int, capture) -> int:
         capture({0: 2.0})
@@ -83,7 +82,7 @@ def test_sparse_region_prober_no_tokens_generated() -> None:
         description="Empty domain",
         probe_prompts=["test"],
     )
-    prober = SparseRegionProber(Configuration(prompts_per_domain=1, max_tokens_per_prompt=5))
+    prober = SparseRegionProber()
 
     def generate_tokens(prompt: str, max_tokens: int, capture) -> int:
         return 0  # No tokens generated
@@ -102,7 +101,7 @@ def test_sparse_region_prober_max_activation_tracking() -> None:
         description="Test max tracking",
         probe_prompts=["test1", "test2"],
     )
-    prober = SparseRegionProber(Configuration(prompts_per_domain=2, max_tokens_per_prompt=5))
+    prober = SparseRegionProber()
 
     call_count = 0
 

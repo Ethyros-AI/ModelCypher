@@ -42,7 +42,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     e_value,
     exp_scalar,
     inf_value,
-    infinity_threshold,
     lgamma_scalar,
     log_scalar,
     machine_epsilon,
@@ -59,91 +58,16 @@ from .manifold_curvature import (
     LocalCurvature,
     SectionalCurvatureEstimator,
 )
-from .riemannian_utils import GeodesicDistanceResult, RiemannianGeometry
+from .riemannian_utils import (
+    GeodesicDistanceResult,
+    RiemannianGeometry,
+    derive_k_neighbors,
+)
 
 logger = logging.getLogger(__name__)
 
 _cache = ComputationCache.shared()
 
-
-def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
-    """Find optimal k for k-NN using elbow detection on the k-distance curve.
-
-    The elbow method finds where adding more neighbors gives diminishing returns.
-    This is a geometric feature of the data - the point of maximum curvature
-    in the curve of mean k-th neighbor distance vs k.
-
-    Algorithm:
-    1. Compute pairwise distances between all points
-    2. For each k from 1 to n-1, compute mean k-th neighbor distance
-    3. Find the elbow (maximum curvature) in this curve
-    4. Return that k value
-
-    The curvature at each point is computed as the discrete second derivative
-    normalized by arc length: curvature = |d²y/dx²| / (1 + (dy/dx)²)^(3/2)
-
-    Args:
-        activations: Array of activation vectors (n x d)
-        backend: Backend instance for tensor operations
-
-    Returns:
-        Optimal k value derived from data geometry
-    """
-    shape = activations.shape
-    n = int(shape[0])
-
-    if n <= 2:
-        return 1
-
-    # Compute pairwise geodesic distances from the k-NN graph.
-    rg = RiemannianGeometry(backend)
-    geo_result = rg.geodesic_distances(activations, k_neighbors=None)
-    dists = geo_result.distances
-    backend.eval(dists)
-
-    # Guard against any sentinel values during sorting.
-    inf_thresh = infinity_threshold(backend, dists)
-    dists = backend.where(
-        dists >= inf_thresh, backend.full(dists.shape, inf_thresh), dists
-    )
-
-    # For each k, compute mean of k-th nearest neighbor distances
-    # Sort distances for each point (rows), exclude self (col 0)
-    sorted_dists = backend.sort(dists, axis=1)
-    mean_k_dists = backend.mean(sorted_dists[:, 1:], axis=0)
-    backend.eval(mean_k_dists)
-
-    if int(mean_k_dists.shape[0]) < 3:
-        # Not enough points to compute elbow - use all neighbors
-        return n - 1
-
-    # Find elbow using discrete curvature
-    # Curvature at point i ≈ |f''(i)| / (1 + f'(i)²)^(3/2)
-    # where f'(i) ≈ (f(i+1) - f(i-1)) / 2
-    # and f''(i) ≈ f(i+1) - 2*f(i) + f(i-1)
-
-    # Derive tolerance from input array dtype
-    div_eps = division_epsilon(backend, activations)
-
-    y_prev = mean_k_dists[:-2]
-    y_curr = mean_k_dists[1:-1]
-    y_next = mean_k_dists[2:]
-
-    dy = (y_next - y_prev) / 2.0
-    d2y = y_next - 2.0 * y_curr + y_prev
-
-    denom = backend.sqrt(1.0 + dy * dy)
-    denom = denom * denom * denom
-    denom = backend.maximum(denom, backend.full(denom.shape, div_eps))
-    curvatures = backend.abs(d2y) / denom
-    backend.eval(curvatures)
-
-    # Find k with maximum curvature (the elbow)
-    # k corresponds to mean_k_dists index (offset by +2 for central differencing)
-    best_idx_arr = backend.argmax(curvatures)
-    backend.eval(best_idx_arr)
-    best_idx = int(backend.to_scalar(best_idx_arr))
-    return best_idx + 2
 
 
 class InfluenceType(str, Enum):
@@ -746,7 +670,7 @@ class RiemannianDensityEstimator:
         if self.config.k_neighbors is not None:
             k_neighbors = min(self.config.k_neighbors, n - 1) if n > 1 else 1
         else:
-            k_neighbors = _find_k_elbow(activations, backend)
+            k_neighbors = derive_k_neighbors(activations, backend)
         geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
 
         # Estimate local curvature at centroid

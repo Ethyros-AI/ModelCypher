@@ -42,9 +42,6 @@ from modelcypher.core.domain.geometry.sparse_region_locator import (
     LayerActivationStats,
     SparseRegionLocator,
 )
-from modelcypher.core.domain.geometry.sparse_region_locator import (
-    Configuration as LocatorConfig,
-)
 
 
 @dataclass(frozen=True)
@@ -103,27 +100,22 @@ class GeometrySparseService:
         domain_stats: list[dict],
         baseline_stats: list[dict],
         domain_name: str,
-        sparsity_threshold: float | None,
-        use_dare_alignment: bool,
     ) -> AnalysisResult:
         """
         Locate sparse regions in activation statistics.
+
+        All parameters (sparsity threshold, alignment) are derived from the data.
+        No configuration is accepted or needed.
 
         Args:
             domain_stats: List of layer activation stats for domain prompts
             baseline_stats: List of layer activation stats for baseline prompts
             domain_name: Name of the domain being analyzed
-            sparsity_threshold: Threshold for considering a layer sparse
-            use_dare_alignment: Whether to compute DARE alignment metrics
 
         Returns:
             AnalysisResult with sparse layers and alignment metrics
         """
-        config = LocatorConfig(
-            sparsity_threshold=sparsity_threshold,
-            use_dare_alignment=use_dare_alignment,
-        )
-        locator = SparseRegionLocator(config)
+        locator = SparseRegionLocator()
 
         domain_layer_stats = [
             LayerActivationStats(

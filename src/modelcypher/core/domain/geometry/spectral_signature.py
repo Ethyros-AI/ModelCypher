@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    find_magnitude_gap_threshold,
     infinity_threshold,
     regularization_epsilon,
     tiny_value,
@@ -69,10 +70,10 @@ class SpectralSignature:
         """Compute spectral signature for a point cloud.
 
         All parameters are derived from the geometry of the data:
-        - k_neighbors: derived from graph connectivity requirements
+        - k_neighbors: derived from the k-distance elbow
         - kernel_bandwidth: derived from median neighbor distance
-        - heat_trace_times: derived from eigenvalue spectrum (1/λ_max to 1/λ_1)
-        - normalized_laplacian: always True (correct for graph Laplacians)
+        - heat_trace_times: derived from magnitude gaps in the spectrum
+        - normalized_laplacian: canonical for graph Laplacians
         """
         backend = self._backend
         points_arr = backend.array(points)
@@ -114,9 +115,11 @@ class SpectralSignature:
             )
 
         # Build a k-NN graph using geodesic distances on the manifold.
-        # k_neighbors is derived from data by geodesic_distances()
+        from modelcypher.core.domain.geometry.riemannian_utils import derive_k_neighbors
+
+        k_neighbors = derive_k_neighbors(points_arr, backend)
         adjacency, geodesic_dist, inf_value, k_neighbors, neighbor_indices = self._build_knn_adjacency(
-            points_arr, None
+            points_arr, k_neighbors
         )
         backend.eval(adjacency, geodesic_dist, neighbor_indices)
 
@@ -165,7 +168,7 @@ class SpectralSignature:
         eig_list = [float(x) for x in backend.tolist(eig_sorted)]
 
         # Derive heat trace times from eigenvalue spectrum
-        heat_times = _derive_heat_times_from_spectrum(eig_list)
+        heat_times = _derive_heat_times_from_spectrum(eig_list, backend)
 
         spectral_entropy = _spectral_entropy(backend, eigvals, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
@@ -270,57 +273,32 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
     return 0.5 * (float(backend.to_scalar(low_val)) + float(backend.to_scalar(high_val)))
 
 
-def _derive_heat_times_from_spectrum(eigenvalues: list[float], num_times: int = 5) -> list[float]:
+def _derive_heat_times_from_spectrum(
+    eigenvalues: list[float], backend: "Backend"
+) -> list[float]:
     """Derive heat trace times from the eigenvalue spectrum.
 
-    The characteristic time scales for heat diffusion are 1/λ for each eigenvalue.
-    We select log-spaced times spanning from 1/λ_max (fast/fine scale) to 1/λ_1
-    (slow/coarse scale, where λ_1 is the smallest non-zero eigenvalue).
-
-    This ensures the heat trace probes all relevant time scales of the manifold
-    without relying on arbitrary hardcoded values.
-
-    Args:
-        eigenvalues: Sorted eigenvalues (ascending).
-        num_times: Number of time points to sample (derived from spectrum structure).
-
-    Returns:
-        Log-spaced times spanning the spectral range.
+    Uses 1/λ for significant eigenvalues, selecting the cutoff via
+    magnitude-gap detection (data-derived, no fixed time grid).
     """
-    import math
-
-    if not eigenvalues or len(eigenvalues) < 2:
+    if not eigenvalues:
         return []
 
-    # Find smallest non-zero eigenvalue (λ_1) for t_max
-    # Use machine epsilon as floor for numerical stability
-    eps = 1e-10
-    non_zero_eigs = [e for e in eigenvalues if e > eps]
-    if not non_zero_eigs:
+    eig_arr = backend.array(eigenvalues or [0.0])
+    eps = division_epsilon(backend, eig_arr)
+
+    positive = [val for val in eigenvalues if val > eps]
+    if not positive:
         return []
 
-    lambda_1 = min(non_zero_eigs)  # Smallest non-zero eigenvalue
-    lambda_max = max(non_zero_eigs)  # Largest eigenvalue
+    positive_sorted = sorted(positive)
+    threshold = find_magnitude_gap_threshold(positive_sorted, backend=backend)
+    significant = [val for val in positive_sorted if val > threshold]
+    if not significant:
+        significant = positive_sorted
 
-    # Characteristic times: t ∈ [1/λ_max, 1/λ_1]
-    t_min = 1.0 / lambda_max  # Fast time scale
-    t_max = 1.0 / lambda_1  # Slow time scale
-
-    # Avoid degenerate case
-    if t_max <= t_min:
-        return [t_min]
-
-    # Number of time points scales with log-ratio of eigenvalue range
-    # This ensures adequate sampling across the spectral range
-    log_ratio = math.log10(t_max / t_min)
-    num_times = max(3, min(10, int(2 * log_ratio) + 3))
-
-    # Log-spaced times
-    log_t_min = math.log(t_min)
-    log_t_max = math.log(t_max)
-    step = (log_t_max - log_t_min) / (num_times - 1) if num_times > 1 else 0
-
-    return [math.exp(log_t_min + i * step) for i in range(num_times)]
+    times = [1.0 / val for val in significant]
+    return sorted(times)
 
 
 def _spectral_entropy(backend: "Backend", eigenvalues: "Array", eps: float) -> float:

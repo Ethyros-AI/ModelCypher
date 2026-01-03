@@ -141,6 +141,53 @@ def count_inf(arr: "Array", backend: "Backend") -> int:
     return int(float(backend.to_scalar(count)))
 
 
+def derive_k_neighbors(points: "Array", backend: "Backend") -> int:
+    """Derive k for k-NN graph from the distance elbow.
+
+    Uses the elbow in the mean k-th neighbor distance curve to select k
+    without arbitrary constants or user tuning.
+    """
+    n = int(points.shape[0])
+    if n <= 2:
+        return 1
+
+    rg = RiemannianGeometry(backend)
+    geo_result = rg.geodesic_distances(points, k_neighbors=None)
+    dists = geo_result.distances
+    backend.eval(dists)
+
+    inf_thresh = infinity_threshold(backend, dists)
+    dists = backend.where(
+        dists >= inf_thresh, backend.full(dists.shape, inf_thresh), dists
+    )
+
+    sorted_dists = backend.sort(dists, axis=1)
+    mean_k_dists = backend.mean(sorted_dists[:, 1:], axis=0)
+    backend.eval(mean_k_dists)
+
+    if int(mean_k_dists.shape[0]) < 3:
+        return n - 1
+
+    div_eps = division_epsilon(backend, points)
+    y_prev = mean_k_dists[:-2]
+    y_curr = mean_k_dists[1:-1]
+    y_next = mean_k_dists[2:]
+
+    dy = (y_next - y_prev) / 2.0
+    d2y = y_next - 2.0 * y_curr + y_prev
+
+    denom = backend.sqrt(1.0 + dy * dy)
+    denom = denom * denom * denom
+    denom = backend.maximum(denom, backend.full(denom.shape, div_eps))
+    curvatures = backend.abs(d2y) / denom
+    backend.eval(curvatures)
+
+    best_idx_arr = backend.argmax(curvatures)
+    backend.eval(best_idx_arr)
+    best_idx = int(backend.to_scalar(best_idx_arr))
+    return max(1, min(best_idx + 2, n - 1))
+
+
 def count_finite(arr: "Array", backend: "Backend") -> int:
     """Count finite values in array using vectorized backend operation.
 

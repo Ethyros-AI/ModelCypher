@@ -34,60 +34,6 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
     mcp = ctx.mcp
     tool_set = ctx.tool_set
 
-    def _parse_sources(values: list[str] | None):
-        if not values:
-            return None
-        from modelcypher.core.domain.agents.unified_atlas import AtlasSource
-
-        allowed = {s.value for s in AtlasSource}
-        invalid = [value for value in values if value not in allowed]
-        if invalid:
-            raise ValueError(
-                f"Invalid sources: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-            )
-        return {AtlasSource(value) for value in values}
-
-    def _parse_domains(values: list[str] | None):
-        if not values:
-            return None
-        from modelcypher.core.domain.agents.unified_atlas import AtlasDomain
-
-        allowed = {d.value for d in AtlasDomain}
-        invalid = [value for value in values if value not in allowed]
-        if invalid:
-            raise ValueError(
-                f"Invalid domains: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-            )
-        return {AtlasDomain(value) for value in values}
-
-    def _resolve_layers(layers: list[int] | None, num_layers: int) -> list[int]:
-        if not layers:
-            return list(range(num_layers))
-        resolved: list[int] = []
-        for layer in layers:
-            layer_idx = layer if layer >= 0 else num_layers + layer
-            if 0 <= layer_idx < num_layers:
-                resolved.append(layer_idx)
-        return sorted(set(resolved))
-
-    def _select_probes(
-        sources: list[str] | None,
-        domains: list[str] | None,
-        max_probes: int,
-    ):
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-
-        source_filter = _parse_sources(sources)
-        domain_filter = _parse_domains(domains)
-        probes = UnifiedAtlasInventory.all_probes()
-        if source_filter:
-            probes = [probe for probe in probes if probe.source in source_filter]
-        if domain_filter:
-            probes = [probe for probe in probes if probe.domain in domain_filter]
-        if max_probes > 0 and max_probes < len(probes):
-            probes = probes[:max_probes]
-        return probes
-
     class BackboneActivationProvider:
         def __init__(
             self,
@@ -196,21 +142,18 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_density_profile(
             modelPath: str,
-            layers: list[int] | None = None,
-            sources: list[str] | None = None,
-            domains: list[str] | None = None,
-            maxProbes: int = 0,
         ) -> dict:
             """Compute knowledge density profile for a model."""
             from modelcypher.core.domain.geometry.knowledge_density import (
                 KnowledgeDensityAnalyzer,
                 ModelDensityProfile,
             )
+            from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
             model_path = require_existing_directory(modelPath)
             model, backend, provider, num_layers = _load_model_and_provider(str(model_path))
-            resolved_layers = _resolve_layers(layers, num_layers)
-            probes = _select_probes(sources, domains, maxProbes)
+            resolved_layers = list(range(num_layers))
+            probes = UnifiedAtlasInventory.all_probes()
 
             analyzer = KnowledgeDensityAnalyzer(backend=backend)
             raw_profile = analyzer.analyze_model(probes, provider, resolved_layers)
@@ -262,10 +205,6 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
         def mc_geometry_density_diff(
             sourcePath: str,
             targetPath: str,
-            layers: list[int] | None = None,
-            sources: list[str] | None = None,
-            domains: list[str] | None = None,
-            maxProbes: int = 0,
         ) -> dict:
             """Diff knowledge density profiles between source and target models."""
             from modelcypher.core.domain.geometry.knowledge_density import (
@@ -276,11 +215,12 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
                 KnowledgeDiffer,
                 compute_graft_mask,
             )
+            from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
             source_path = require_existing_directory(sourcePath)
             target_path = require_existing_directory(targetPath)
 
-            probes = _select_probes(sources, domains, maxProbes)
+            probes = UnifiedAtlasInventory.all_probes()
 
             source_model, source_backend, source_provider, source_layers = _load_model_and_provider(
                 str(source_path)
@@ -289,7 +229,7 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
                 str(target_path)
             )
 
-            resolved_layers = _resolve_layers(layers, min(source_layers, target_layers))
+            resolved_layers = list(range(min(source_layers, target_layers)))
 
             source_analyzer = KnowledgeDensityAnalyzer(backend=source_backend)
             source_profile_raw = source_analyzer.analyze_model(

@@ -77,15 +77,14 @@ def geometry_sparse_locate(
     domain_stats_file: str = typer.Argument(..., help="Path to domain layer stats JSON"),
     baseline_stats_file: str = typer.Argument(..., help="Path to baseline layer stats JSON"),
     domain_name: str = typer.Option(..., "--domain", help="Domain name"),
-    use_dare_alignment: bool = typer.Option(
-        ..., "--use-dare-alignment", help="Use DARE alignment analysis"
-    ),
 ) -> None:
     """
     Locate sparse regions for a domain.
 
-    The sparsity threshold is derived from the activation distribution.
-    No user-configurable threshold - the geometry determines it.
+    All parameters are derived from the data:
+    - Sparsity threshold: derived from activation distribution
+    - DARE alignment: always computed when available
+    No user configuration needed - the geometry determines everything.
 
     Input files should contain JSON arrays of layer stats:
     [{"layer_index": 0, "mean_activation": 0.5, ...}, ...]
@@ -96,13 +95,10 @@ def geometry_sparse_locate(
     domain_stats = json.loads(Path(domain_stats_file).read_text())
     baseline_stats = json.loads(Path(baseline_stats_file).read_text())
 
-    # Threshold is derived from activation distribution, not user-specified
     result = service.locate_sparse_regions(
         domain_stats=domain_stats,
         baseline_stats=baseline_stats,
         domain_name=domain_name,
-        sparsity_threshold=None,  # Derive from distribution
-        use_dare_alignment=use_dare_alignment,
     )
 
     payload = service.analysis_payload(result)

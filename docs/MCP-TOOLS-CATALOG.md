@@ -807,7 +807,6 @@ Build density profile for model layers.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `modelPath` | string | Yes | Model path |
-| `layers` | array | No | Specific layers |
 
 **Returns:** Per-layer density measurements.
 
@@ -816,6 +815,11 @@ Build density profile for model layers.
 ### mc_geometry_density_diff
 
 Compute density difference between models.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sourcePath` | string | Yes | Source model |
+| `targetPath` | string | Yes | Target model |
 
 ---
 

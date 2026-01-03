@@ -31,11 +31,7 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasDomain,
-    AtlasSource,
-    UnifiedAtlasInventory,
-)
+from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.knowledge_density import (
     KnowledgeDensityAnalyzer,
     ModelDensityProfile,
@@ -111,59 +107,6 @@ class BackboneActivationProvider:
             self._backend.eval(*pending)
 
         return [array_to_list(self._backend, vec) for vec in activations]
-
-
-def _parse_sources(values: list[str] | None) -> set[AtlasSource] | None:
-    if not values:
-        return None
-    allowed = {s.value for s in AtlasSource}
-    invalid = [value for value in values if value not in allowed]
-    if invalid:
-        raise typer.BadParameter(
-            f"Invalid sources: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-        )
-    return {AtlasSource(value) for value in values}
-
-
-def _parse_domains(values: list[str] | None) -> set[AtlasDomain] | None:
-    if not values:
-        return None
-    allowed = {d.value for d in AtlasDomain}
-    invalid = [value for value in values if value not in allowed]
-    if invalid:
-        raise typer.BadParameter(
-            f"Invalid domains: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-        )
-    return {AtlasDomain(value) for value in values}
-
-
-def _resolve_layers(layers: list[int] | None, num_layers: int) -> list[int]:
-    if not layers:
-        return list(range(num_layers))
-    resolved: list[int] = []
-    for layer in layers:
-        layer_idx = layer if layer >= 0 else num_layers + layer
-        if 0 <= layer_idx < num_layers:
-            resolved.append(layer_idx)
-    return sorted(set(resolved))
-
-
-def _select_probes(
-    sources: list[str] | None,
-    domains: list[str] | None,
-    max_probes: int,
-):
-    source_filter = _parse_sources(sources)
-    domain_filter = _parse_domains(domains)
-
-    probes = UnifiedAtlasInventory.all_probes()
-    if source_filter:
-        probes = [probe for probe in probes if probe.source in source_filter]
-    if domain_filter:
-        probes = [probe for probe in probes if probe.domain in domain_filter]
-    if max_probes > 0 and max_probes < len(probes):
-        probes = probes[:max_probes]
-    return probes
 
 
 def _load_model_and_provider(model_path: str):
@@ -242,16 +185,6 @@ def _profile_payload(profile: ModelDensityProfile) -> dict:
 def density_profile(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layers: list[int] | None = typer.Option(
-        None, "--layer", "-l", help="Layers to analyze (repeatable, default: all)"
-    ),
-    sources: list[str] | None = typer.Option(
-        None, "--source", "-s", help="Filter by atlas source (repeatable)"
-    ),
-    domains: list[str] | None = typer.Option(
-        None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-    ),
-    max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
     output_path: str | None = typer.Option(
         None, "--output-path", "-o", help="Save results to JSON file"
     ),
@@ -260,8 +193,8 @@ def density_profile(
     context = _context(ctx)
 
     model, _, backend, provider, num_layers = _load_model_and_provider(model_path)
-    resolved_layers = _resolve_layers(layers, num_layers)
-    probes = _select_probes(sources, domains, max_probes)
+    resolved_layers = list(range(num_layers))
+    probes = UnifiedAtlasInventory.all_probes()
 
     analyzer = KnowledgeDensityAnalyzer(backend=backend)
     raw_profile = analyzer.analyze_model(probes, provider, resolved_layers)
@@ -319,16 +252,6 @@ def density_diff(
     ctx: typer.Context,
     source_path: str = typer.Argument(..., help="Path to source model directory"),
     target_path: str = typer.Argument(..., help="Path to target model directory"),
-    layers: list[int] | None = typer.Option(
-        None, "--layer", "-l", help="Layers to analyze (repeatable, default: all)"
-    ),
-    sources: list[str] | None = typer.Option(
-        None, "--source", "-s", help="Filter by atlas source (repeatable)"
-    ),
-    domains: list[str] | None = typer.Option(
-        None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-    ),
-    max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
     output_path: str | None = typer.Option(
         None, "--output-path", "-o", help="Save results to JSON file"
     ),
@@ -336,7 +259,7 @@ def density_diff(
     """Diff knowledge density profiles between source and target models."""
     context = _context(ctx)
 
-    probes = _select_probes(sources, domains, max_probes)
+    probes = UnifiedAtlasInventory.all_probes()
 
     source_model, _, source_backend, source_provider, source_layers = _load_model_and_provider(
         source_path
@@ -345,7 +268,7 @@ def density_diff(
         target_path
     )
 
-    resolved_layers = _resolve_layers(layers, min(source_layers, target_layers))
+    resolved_layers = list(range(min(source_layers, target_layers)))
 
     source_analyzer = KnowledgeDensityAnalyzer(backend=source_backend)
     source_profile_raw = source_analyzer.analyze_model(

@@ -35,9 +35,6 @@ from datetime import datetime, timezone
 
 from modelcypher.core.domain.geometry.gate_detector import DetectionResult, GateDetector
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
-    Config as ValidationConfig,
-)
-from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
     Report,
 )
@@ -74,9 +71,14 @@ class GeometryService:
         self.detector = detector
 
     def validate(self, include_fixtures: bool = False) -> Report:
-        config = ValidationConfig.with_parameters(include_fixtures=include_fixtures)
+        """Run geometry validation suite.
+
+        Note: include_fixtures parameter is deprecated (fixtures are no longer
+        returned - all parameters are derived from data at runtime).
+        """
+        del include_fixtures  # Parameter kept for API compatibility
         suite = GeometryValidationSuite()
-        return suite.run(config)
+        return suite.run()
 
     def detect_path(
         self,
@@ -205,20 +207,18 @@ class GeometryService:
             _SINKHORN_ITERATIONS,
         )
 
-        config = report.config
         payload = {
             "suiteVersion": report.suite_version,
             "timestamp": GeometryService._iso_timestamp(report.timestamp),
             "passed": report.passed,
             "config": {
-                "includeFixtures": config.include_fixtures,
+                "note": "All parameters derived from data and numerical analysis at runtime",
                 "gromovWasserstein": {
                     "sinkhornEpsilon": _SINKHORN_EPSILON,
                     "sinkhornIterations": _SINKHORN_ITERATIONS,
                     "maxOuterIterations": _MAX_OUTER_ITERATIONS,
                     "minOuterIterations": _MIN_OUTER_ITERATIONS,
                     "numRestarts": _NUM_RESTARTS,
-                    "note": "Parameters derived from numerical analysis, not configurable",
                 },
             },
             "gromovWasserstein": {

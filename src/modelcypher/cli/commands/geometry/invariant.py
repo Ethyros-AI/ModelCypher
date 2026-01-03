@@ -35,7 +35,6 @@ import typer
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasDomain,
     AtlasSource,
     UnifiedAtlasInventory,
 )
@@ -184,33 +183,14 @@ def geometry_invariant_collapse_risk(
 @app.command("atlas-inventory")
 def geometry_invariant_atlas_inventory(
     ctx: typer.Context,
-    source: str | None = typer.Option(
-        None,
-        "--source",
-        help=(
-            "Filter by atlas source: sequence, semantic, gate, emotion, temporal, social, "
-            "moral, compositional, philosophical, genealogy"
-        ),
-    ),
-    domain: str | None = typer.Option(
-        None,
-        "--domain",
-        help=(
-            "Filter by domain: mathematical, logical, linguistic, mental, computational, "
-            "structural, affective, relational, temporal, spatial, moral, philosophical"
-        ),
-    ),
 ) -> None:
     """Show inventory of available probes across all atlases.
 
     Displays all probes available for unified atlas layer mapping,
-    grouped by atlas source and domain. Use --source or --domain
-    to filter the output.
+    grouped by atlas source and domain.
 
     Example:
         mc geometry invariant atlas-inventory
-        mc geometry invariant atlas-inventory --source sequence
-        mc geometry invariant atlas-inventory --domain mathematical
     """
     context = _context(ctx)
 
@@ -218,70 +198,12 @@ def geometry_invariant_atlas_inventory(
     counts = UnifiedAtlasInventory.probe_count()
     total = UnifiedAtlasInventory.total_probe_count()
 
-    # Get filtered probes if requested
-    filtered_count = total
-    filtered_probes = None
-
-    if source or domain:
-        sources_filter = None
-        domains_filter = None
-
-        if source:
-            source_map = {
-                "sequence": AtlasSource.SEQUENCE_INVARIANT,
-                "semantic": AtlasSource.SEMANTIC_PRIME,
-                "gate": AtlasSource.COMPUTATIONAL_GATE,
-                "emotion": AtlasSource.EMOTION_CONCEPT,
-                "temporal": AtlasSource.TEMPORAL_CONCEPT,
-                "social": AtlasSource.SOCIAL_CONCEPT,
-                "moral": AtlasSource.MORAL_CONCEPT,
-                "compositional": AtlasSource.COMPOSITIONAL,
-                "philosophical": AtlasSource.PHILOSOPHICAL_CONCEPT,
-                "genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
-            }
-            if source.lower() in source_map:
-                sources_filter = {source_map[source.lower()]}
-
-        if domain:
-            domain_map = {
-                "mathematical": AtlasDomain.MATHEMATICAL,
-                "logical": AtlasDomain.LOGICAL,
-                "linguistic": AtlasDomain.LINGUISTIC,
-                "mental": AtlasDomain.MENTAL,
-                "computational": AtlasDomain.COMPUTATIONAL,
-                "structural": AtlasDomain.STRUCTURAL,
-                "affective": AtlasDomain.AFFECTIVE,
-                "relational": AtlasDomain.RELATIONAL,
-                "temporal": AtlasDomain.TEMPORAL,
-                "spatial": AtlasDomain.SPATIAL,
-                "moral": AtlasDomain.MORAL,
-                "philosophical": AtlasDomain.PHILOSOPHICAL,
-            }
-            if domain.lower() in domain_map:
-                domains_filter = {domain_map[domain.lower()]}
-
-        if sources_filter:
-            filtered_probes = UnifiedAtlasInventory.probes_by_source(sources_filter)
-            if domains_filter:
-                filtered_probes = [p for p in filtered_probes if p.domain in domains_filter]
-            filtered_count = len(filtered_probes)
-        elif domains_filter:
-            filtered_probes = UnifiedAtlasInventory.probes_by_domain(domains_filter)
-            filtered_count = len(filtered_probes)
-
     if context.output_format == "text":
         lines = [
             "MULTI-ATLAS PROBE INVENTORY",
             "",
             f"Total Probes: {total}",
         ]
-
-        if source or domain:
-            lines.append(f"Filtered: {filtered_count}")
-            if source:
-                lines.append(f"  Source: {source}")
-            if domain:
-                lines.append(f"  Domain: {domain}")
 
         lines.extend(
             [
@@ -307,13 +229,6 @@ def geometry_invariant_atlas_inventory(
             ]
         )
 
-        # Show filtered probes if requested
-        if filtered_probes and len(filtered_probes) <= 20:
-            lines.append("")
-            lines.append("Filtered Probes:")
-            for probe in filtered_probes[:20]:
-                lines.append(f"  {probe.source.value}:{probe.id} ({probe.domain.value})")
-
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -321,7 +236,7 @@ def geometry_invariant_atlas_inventory(
     payload = {
         "_schema": "mc.geometry.atlas.inventory.v1",
         "totalProbes": total,
-        "filteredCount": filtered_count,
+        "filteredCount": total,
         "sources": {
             "sequenceInvariant": {
                 "count": counts.get(AtlasSource.SEQUENCE_INVARIANT, 0),
@@ -389,17 +304,5 @@ def geometry_invariant_atlas_inventory(
             "philosophical",
         ],
     }
-
-    if filtered_probes:
-        payload["filteredProbes"] = [
-            {
-                "id": probe.probe_id,
-                "name": probe.name,
-                "source": probe.source.value,
-                "domain": probe.domain.value,
-                "weight": probe.cross_domain_weight,
-            }
-            for probe in filtered_probes
-        ]
 
     write_output(payload, context.output_format, context.pretty)

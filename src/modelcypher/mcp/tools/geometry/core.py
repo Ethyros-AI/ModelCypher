@@ -475,16 +475,16 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             domainStats: list[dict],
             baselineStats: list[dict],
             domainName: str,
-            sparsityThreshold: float | None,
-            useDareAlignment: bool,
         ) -> dict:
-            """Locate sparse regions in activation statistics."""
+            """Locate sparse regions in activation statistics.
+
+            All parameters (sparsity threshold, alignment) are derived from the data.
+            No configuration is accepted or needed.
+            """
             result = ctx.geometry_sparse_service.locate_sparse_regions(
                 domain_stats=domainStats,
                 baseline_stats=baselineStats,
                 domain_name=domainName,
-                sparsity_threshold=sparsityThreshold,
-                use_dare_alignment=useDareAlignment,
             )
             payload = ctx.geometry_sparse_service.analysis_payload(result)
             payload["_schema"] = "mc.geometry.sparse_locate.v1"
