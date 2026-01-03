@@ -71,13 +71,14 @@ See also: docs/geometry/gromov_wasserstein.md
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    exp_scalar,
+    is_finite,
     machine_epsilon,
     tiny_value,
 )
@@ -95,16 +96,19 @@ class Result:
 
     def __post_init__(self) -> None:
         # Enforce the metric invariant: GW distance is non-negative.
-        if math.isfinite(self.distance) and self.distance < 0:
+        backend = get_default_backend()
+        if is_finite(self.distance, backend) and self.distance < 0:
             object.__setattr__(self, "distance", 0.0)
 
     @property
     def normalized_distance(self) -> float:
-        return 1.0 - math.exp(-self.distance) if math.isfinite(self.distance) else 1.0
+        backend = get_default_backend()
+        return 1.0 - exp_scalar(-self.distance, backend) if is_finite(self.distance, backend) else 1.0
 
     @property
     def alignment_score(self) -> float:
-        return math.exp(-self.distance) if math.isfinite(self.distance) else 0.0
+        backend = get_default_backend()
+        return exp_scalar(-self.distance, backend) if is_finite(self.distance, backend) else 0.0
 
 
 # Algorithm constants - derived from numerical analysis, not configurable

@@ -22,6 +22,7 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.support.array_utils import array_to_list
 
 
 @pytest.fixture
@@ -47,18 +48,26 @@ class TestIdCacheFastPath:
         X = backend.random_normal((100, 128))
         backend.eval(X)
 
-        # First call computes hash
-        key1 = fresh_cache.make_array_key(X, backend)
+        arrays = [backend.random_normal((100, 128)) for _ in range(100)]
+        backend.eval(*arrays)
 
-        # Time repeated calls - should be much faster due to id() cache
+        # Baseline: unique arrays require hashing
+        fresh_cache.clear_all()
+        start = time.perf_counter()
+        for arr in arrays:
+            fresh_cache.make_array_key(arr, backend)
+        uncached_elapsed = time.perf_counter() - start
+
+        # Cached path: same array should skip hashing
+        fresh_cache.clear_all()
+        key1 = fresh_cache.make_array_key(X, backend)
         start = time.perf_counter()
         for _ in range(100):
             key2 = fresh_cache.make_array_key(X, backend)
-        elapsed = time.perf_counter() - start
+        cached_elapsed = time.perf_counter() - start
 
         assert key1 == key2
-        # 100 cached lookups should be very fast (<10ms total)
-        assert elapsed < 0.1, f"Repeated lookups too slow: {elapsed*1000:.1f}ms"
+        assert cached_elapsed <= uncached_elapsed
 
     def test_different_arrays_different_keys(self, backend, fresh_cache):
         """Different array objects should produce different cache keys."""
@@ -80,8 +89,8 @@ class TestIdCacheFastPath:
         backend.eval(X)
 
         # Copy to new array
-        X_np = backend.to_numpy(X)
-        X_copy = backend.array(X_np.copy())
+        X_list = array_to_list(backend, X)
+        X_copy = backend.array(X_list)
         backend.eval(X_copy)
 
         key_x = fresh_cache.make_array_key(X, backend)

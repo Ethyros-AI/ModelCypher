@@ -87,9 +87,10 @@ class NumpyBackend(Backend):
         step: int | float = 1,
         dtype: Any | None = None,
     ) -> Array:
+        mapped = self._map_dtype(dtype)
         if stop is None:
-            return self.np.arange(start, dtype=self._map_dtype(dtype) or self.np.float32)
-        return self.np.arange(start, stop, step, dtype=self._map_dtype(dtype) or self.np.float32)
+            return self.np.arange(start, dtype=mapped)
+        return self.np.arange(start, stop, step, dtype=mapped)
 
     def diag(self, array: Array, k: int = 0) -> Array:
         return self.np.diag(array, k=k)

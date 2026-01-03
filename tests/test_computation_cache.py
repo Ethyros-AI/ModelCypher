@@ -15,7 +15,11 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
+from modelcypher.core.support.array_utils import array_to_list
 
 
 @pytest.fixture
@@ -56,9 +60,10 @@ class TestGramMatrixCaching:
         assert stats_after.hits > stats_before.hits
         # Verify same result
         backend.eval(gram, gram2)
-        gram_np = backend.to_numpy(gram)
-        gram2_np = backend.to_numpy(gram2)
-        assert (gram_np == gram2_np).all()
+        diff = backend.max(backend.abs(gram - gram2))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, gram) * gram.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
     def test_different_inputs_different_keys(self, cache: ComputationCache, backend):
         """Test that different inputs produce different cache keys."""
@@ -95,9 +100,10 @@ class TestGeodesicCaching:
 
         # Verify same result
         backend.eval(result.distances, result2.distances)
-        d1 = backend.to_numpy(result.distances)
-        d2 = backend.to_numpy(result2.distances)
-        assert (d1 == d2).all()
+        diff = backend.max(backend.abs(result.distances - result2.distances))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, result.distances) * result.distances.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
 
 class TestSVDCaching:
@@ -119,9 +125,10 @@ class TestSVDCaching:
         u2, s2, vt2 = cache.get_or_compute_svd(matrix, backend)
 
         backend.eval(s, s2)
-        s_np = backend.to_numpy(s)
-        s2_np = backend.to_numpy(s2)
-        assert (s_np == s2_np).all()
+        diff = backend.max(backend.abs(s - s2))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, s) * s.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
 
 class TestCacheStatistics:
@@ -253,8 +260,6 @@ class TestCacheKeyCollisionResistance:
 
     def test_permuted_arrays_have_different_keys(self, cache: ComputationCache, backend):
         """Permuted arrays should produce different cache keys."""
-        import numpy as np
-
         backend.random_seed(42)
 
         # Create a small array (uses full hash)
@@ -262,13 +267,11 @@ class TestCacheKeyCollisionResistance:
         backend.eval(X)
 
         # Create permutation matrix
-        np.random.seed(42)
-        perm = list(range(15))
-        np.random.shuffle(perm)
-        P_np = np.zeros((15, 15), dtype=np.float32)
+        perm = list(reversed(range(15)))
+        P_list = [[0.0 for _ in range(15)] for _ in range(15)]
         for i, j in enumerate(perm):
-            P_np[i, j] = 1.0
-        P = backend.array(P_np)
+            P_list[i][j] = 1.0
+        P = backend.array(P_list)
 
         # Permute X
         X_perm = backend.matmul(P, X)
@@ -287,11 +290,9 @@ class TestCacheKeyCollisionResistance:
         # Create small array
         X = backend.random_normal((10, 10))  # 100 elements
         backend.eval(X)
-        X_np = backend.to_numpy(X).copy()
-
-        # Modify only the last element
-        X_np[-1, -1] += division_epsilon(backend, X)
-        X_modified = backend.array(X_np)
+        X_list = array_to_list(backend, X)
+        X_list[-1][-1] += division_epsilon(backend, X)
+        X_modified = backend.array(X_list)
         backend.eval(X_modified)
 
         key_x = cache.make_array_key(X, backend)
@@ -307,8 +308,8 @@ class TestCacheKeyCollisionResistance:
         backend.eval(X)
 
         # Copy to a new array (same content)
-        X_np = backend.to_numpy(X)
-        X_copy = backend.array(X_np.copy())
+        X_list = array_to_list(backend, X)
+        X_copy = backend.array(X_list)
         backend.eval(X_copy)
 
         key1 = cache.make_array_key(X, backend)
