@@ -561,8 +561,8 @@ class TestConceptResponseMatrixComparison:
         assert report.source_model == "test-model"
         assert report.target_model == "other-model"
 
-    def test_compare_overall_alignment_self(self) -> None:
-        """Overall alignment with self should be 1.0."""
+    def test_compare_mean_cka_self(self) -> None:
+        """Mean CKA with self should be 1.0."""
         crm = _build_crm()
         report = crm.compare(crm)
         expected = sum(match.cka for match in report.layer_correspondence) / float(
