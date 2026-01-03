@@ -20,7 +20,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import BackendVectorMath
+from modelcypher.core.domain.geometry.vector_math import (
+    BackendVectorMath,
+    geodesic_cosine_batch,
+)
 from modelcypher.core.domain.geometry.types import (
     CompositionAnalysis,
     CompositionCategory,
@@ -118,17 +121,9 @@ class CompositionalProbes:
         # Machine epsilon for numerical stability
         eps = b.finfo().eps
 
-        # Component angles - vectorized computation
-        # dot products: comps @ comp -> [N]
-        dot_products = b.matmul(comps, comp)
-        comp_norms = b.sqrt(b.sum(comps * comps, axis=1))
-        comp_norm = b.norm(comp)
-        denoms = comp_norms * comp_norm
-        eps_arr = b.full(denoms.shape, eps)
-        safe_denoms = b.maximum(denoms, eps_arr)
-        angles_arr = dot_products / safe_denoms
+        # Component angles via geodesic cosine similarity
+        angles_arr = geodesic_cosine_batch(comp, comps, b)
         b.eval(angles_arr)
-        # O(1) extraction via tolist()
         angles = [float(x) for x in b.tolist(angles_arr)]
 
         # Barycentric weights via normal equations

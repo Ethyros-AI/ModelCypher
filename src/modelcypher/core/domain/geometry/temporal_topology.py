@@ -444,73 +444,57 @@ class TemporalTopologyAnalyzer:
 
 
 def extract_temporal_activations(
-    model: "mx.Module",
-    tokenizer: "object",
+    model: Any,
+    tokenizer: Any,
     layer: int = -1,
+    activation_provider: Any | None = None,
 ) -> dict[str, list[float]]:
     """Extract activations for all temporal anchors.
 
     Args:
-        model: The MLX model
+        model: The model (platform-agnostic via ActivationProvider)
         tokenizer: The tokenizer
         layer: Layer to extract from (-1 for last)
+        activation_provider: ActivationProvider instance (auto-detected if None)
 
     Returns:
         Dict mapping concept to activation vector (as list)
     """
-    import mlx.core as mx
+    # Get activation provider (auto-detect if not provided)
+    if activation_provider is None:
+        from modelcypher.ports.activation_provider import get_activation_provider
 
+        activation_provider = get_activation_provider()
+
+    backend = get_default_backend()
     activations = {}
 
     for anchor in get_temporal_concepts():
-        # Tokenize prompt
-        tokens = tokenizer.encode(anchor.prompt)
-        input_ids = mx.array([tokens])
-
-        # Forward pass with cache to get hidden states
         try:
-            if hasattr(model, "model"):
-                # Qwen-style architecture
-                hidden = model.model.embed_tokens(input_ids)
-                num_layers = len(model.model.layers)
-                target_layer = layer if layer >= 0 else num_layers - 1
+            # Collect all layer activations using ActivationProvider
+            all_layer_acts = activation_provider.collect_hidden_activations(
+                model, tokenizer, anchor.prompt
+            )
 
-                for i, layer_module in enumerate(model.model.layers):
-                    # Try with mask and cache (may return tuple or single value)
-                    try:
-                        result = layer_module(hidden, mask=None, cache=None)
-                    except TypeError:
-                        # Fallback without cache
-                        try:
-                            result = layer_module(hidden, mask=None)
-                        except TypeError:
-                            result = layer_module(hidden)
+            if not all_layer_acts:
+                logger.warning(f"No activations collected for {anchor.id}")
+                continue
 
-                    # Handle variable return types
-                    if isinstance(result, tuple):
-                        hidden = result[0]
-                    else:
-                        hidden = result
-
-                    if i == target_layer:
-                        break
+            # Determine target layer
+            layer_indices = sorted(all_layer_acts.keys())
+            if layer < 0:
+                # Negative indexing from end
+                target_layer = layer_indices[layer] if abs(layer) <= len(layer_indices) else layer_indices[-1]
             else:
-                # Try direct call
-                outputs = model(input_ids)
-                if hasattr(outputs, "last_hidden_state"):
-                    hidden = outputs.last_hidden_state
-                else:
-                    hidden = outputs
+                # Positive indexing - find closest layer
+                target_layer = layer if layer in all_layer_acts else layer_indices[-1]
 
-            mx.eval(hidden)
-
-            # Get last token's activation
-            try:
-                backend = get_default_backend()
-                act = backend.tolist(hidden[0, -1, :])
-            except Exception:
-                act = hidden[0, -1, :].tolist()
-            activations[anchor.id] = act
+            # Get activation for target layer
+            act_arr = all_layer_acts.get(target_layer)
+            if act_arr is not None:
+                backend.eval(act_arr)
+                act = backend.tolist(act_arr)
+                activations[anchor.id] = act
 
         except Exception as e:
             logger.warning(f"Failed to extract activation for {anchor.id}: {e}")

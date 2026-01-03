@@ -28,6 +28,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     svd_via_eigh,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -143,18 +147,15 @@ class EmbeddingProjector:
             target_sel = target_arr[target_idx]
             sample_count = len(source_idx)
 
-        diff = projected_sel - target_sel
-        mse_arr = backend.mean(diff * diff)
+        cos_vals, dist_vals = geodesic_pairwise_metrics(
+            projected_sel, target_sel, backend
+        )
+        mse_arr = backend.mean(dist_vals * dist_vals)
+        mean_cos = backend.mean(cos_vals)
 
-        proj_norms = backend.norm(projected_sel, axis=1)
-        target_norms = backend.norm(target_sel, axis=1)
-        denom = proj_norms * target_norms
-        eps = division_epsilon(backend, denom)
-        denom = backend.clip(denom, eps, None)
-        cos = backend.sum(projected_sel * target_sel, axis=1) / denom
-        mean_cos = backend.mean(cos)
-
-        source_norms = backend.norm(source_sel, axis=1)
+        proj_norms = geodesic_norms(projected_sel, backend)
+        source_norms = geodesic_norms(source_sel, backend)
+        eps = division_epsilon(backend, source_norms)
         norm_denom = backend.clip(source_norms, eps, None)
         norm_ratio = backend.mean(proj_norms / norm_denom)
 

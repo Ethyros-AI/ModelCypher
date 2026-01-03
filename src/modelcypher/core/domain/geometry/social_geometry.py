@@ -45,6 +45,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_nan,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -203,19 +204,10 @@ class SocialGeometryAnalyzer:
 
         def cosine_orthogonality(a: "Array", b: "Array") -> float:
             """1 - |cos(a, b)| gives orthogonality."""
-            norm_a = backend.norm(a)
-            norm_b = backend.norm(b)
-            backend.eval(norm_a, norm_b)
-            norm_a_val = float(backend.to_scalar(norm_a))
-            norm_b_val = float(backend.to_scalar(norm_b))
-            div_eps = division_epsilon(backend, a)
-            if norm_a_val < div_eps or norm_b_val < div_eps:
-                return 0.0
-            dot_prod = backend.sum(a * b)
-            backend.eval(dot_prod)
-            dot_val = float(backend.to_scalar(dot_prod))
-            cos = dot_val / (norm_a_val * norm_b_val)
-            return 1.0 - abs(cos)
+            cos_arr = geodesic_cosine_batch(a, backend.reshape(b, (1, -1)), backend)
+            backend.eval(cos_arr)
+            cos_val = float(backend.to_scalar(cos_arr))
+            return 1.0 - abs(cos_val)
 
         # Get axis direction vectors
         power_vec = get_axis_vector("slave", "emperor")

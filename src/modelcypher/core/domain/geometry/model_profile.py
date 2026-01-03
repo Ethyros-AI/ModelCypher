@@ -855,11 +855,13 @@ class ModelProfileExtractor:
         self,
         backend: "Backend | None" = None,
         model_loader: "ModelLoaderPort | None" = None,
+        activation_provider: Any | None = None,
     ):
         from modelcypher.core.domain._backend import get_default_backend
 
         self._backend = backend or get_default_backend()
         self._model_loader = model_loader
+        self._activation_provider = activation_provider
 
     def extract_profile(
         self,
@@ -1049,31 +1051,48 @@ class ModelProfileExtractor:
         probes: list[str],
         layers: list[int] | None,
     ) -> dict[int, "Array"]:
-        """Collect activations from a model for given probes."""
+        """Collect activations from a model for given probes.
+
+        Uses ActivationProvider for platform-agnostic activation collection.
+        """
         if self._model_loader is None:
             raise RuntimeError(
                 "ModelProfileExtractor requires a model_loader. "
                 "Pass a ModelLoaderPort implementation to the constructor."
             )
 
+        # Get activation provider (auto-detect if not provided)
+        if self._activation_provider is None:
+            from modelcypher.ports.activation_provider import get_activation_provider
+
+            self._activation_provider = get_activation_provider()
+
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Determine which layers to analyze
         if layers is None:
-            total_layers = len(model.layers) if hasattr(model, "layers") else 24
+            # Get layer count from model
+            if hasattr(model, "model") and hasattr(model.model, "layers"):
+                total_layers = len(model.model.layers)
+            elif hasattr(model, "layers"):
+                total_layers = len(model.layers)
+            else:
+                total_layers = 24
             layers = list(range(0, total_layers, max(1, total_layers // 8)))
 
         activations_by_layer: dict[int, list["Array"]] = {l: [] for l in layers}
 
         for probe in probes:
             try:
-                tokens = tokenizer.encode(probe)
-                token_ids = list(tokens)
+                # Collect all layer activations in one forward pass
+                all_acts = self._activation_provider.collect_hidden_activations(
+                    model, tokenizer, probe
+                )
 
+                # Filter to requested layers
                 for layer_idx in layers:
-                    act = self._extract_layer_activation(model, token_ids, layer_idx)
-                    if act is not None:
-                        activations_by_layer[layer_idx].append(act)
+                    if layer_idx in all_acts:
+                        activations_by_layer[layer_idx].append(all_acts[layer_idx])
             except Exception as e:
                 logger.debug("Failed to get activation for probe: %s", e)
                 continue
@@ -1087,47 +1106,6 @@ class ModelProfileExtractor:
                 result[layer_idx] = stacked
 
         return result
-
-    def _extract_layer_activation(
-        self, model: Any, token_ids: list[int], layer_idx: int
-    ) -> "Array | None":
-        """Extract activation from a specific layer."""
-        try:
-            import mlx.core as mx
-
-            x = mx.array([token_ids])
-
-            inner_model = model.model if hasattr(model, "model") else model
-
-            if hasattr(inner_model, "embed_tokens"):
-                h = inner_model.embed_tokens(x)
-            elif hasattr(inner_model, "wte"):
-                h = inner_model.wte(x)
-            elif hasattr(model, "embed_tokens"):
-                h = model.embed_tokens(x)
-            else:
-                return None
-
-            layers = None
-            if hasattr(inner_model, "layers"):
-                layers = inner_model.layers
-            elif hasattr(model, "layers"):
-                layers = model.layers
-
-            if layers is None:
-                return None
-
-            for i, layer in enumerate(layers):
-                if i > layer_idx:
-                    break
-                h = layer(h)
-
-            mx.eval(h)
-            return h[0, -1, :]
-
-        except Exception as e:
-            logger.debug("Activation extraction failed: %s", e)
-            return None
 
     def _compute_intrinsic_dimension(
         self, activations: "Array"

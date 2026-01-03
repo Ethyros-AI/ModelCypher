@@ -158,4 +158,61 @@ class ActivationProvider(Protocol):
         ...
 
 
-__all__ = ["ActivationProvider", "Array"]
+def get_activation_provider() -> ActivationProvider:
+    """Get the appropriate activation provider for the current platform.
+
+    Auto-selects:
+    - MLXActivationProvider on macOS (Metal GPU)
+    - CUDAActivationProvider on Linux with CUDA
+    - JAXActivationProvider on Linux/TPU without CUDA
+
+    Returns:
+        An ActivationProvider instance for the current platform.
+
+    Raises:
+        RuntimeError: If no suitable backend is available.
+    """
+    import sys
+
+    # macOS: Use MLX (Metal GPU)
+    if sys.platform == "darwin":
+        try:
+            from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
+
+            return MLXActivationProvider()
+        except ImportError as e:
+            raise RuntimeError(
+                "MLX not available on macOS. Install with: pip install mlx mlx-lm"
+            ) from e
+
+    # Linux/other: Try CUDA first, then JAX
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            from modelcypher.adapters.cuda_activation_provider import CUDAActivationProvider
+
+            return CUDAActivationProvider()
+    except ImportError:
+        pass
+
+    # Try JAX (works on CPU, TPU, and GPU)
+    try:
+        from modelcypher.adapters.jax_activation_provider import JAXActivationProvider
+
+        provider = JAXActivationProvider()
+        if provider.available:
+            return provider
+    except ImportError:
+        pass
+
+    # No suitable backend found
+    raise RuntimeError(
+        "No activation provider available. Install one of:\n"
+        "  - macOS: pip install mlx mlx-lm\n"
+        "  - CUDA: pip install torch\n"
+        "  - JAX/TPU: pip install jax jaxlib"
+    )
+
+
+__all__ = ["ActivationProvider", "Array", "get_activation_provider"]

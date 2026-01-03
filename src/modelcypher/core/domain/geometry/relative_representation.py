@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Sequence
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_between_sets
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
@@ -161,25 +162,13 @@ def compute_relative_representation(
         Relative representation [n, n_anchors]
     """
     backend = get_default_backend()
-    # Normalize anchors
-    anchor_norms = backend.norm(anchor_embeddings, axis=1, keepdims=True)
-    anchor_eps = division_epsilon(backend, anchor_norms)
-    anchors_normalized = anchor_embeddings / backend.maximum(
-        anchor_norms, backend.full(anchor_norms.shape, anchor_eps)
+    hidden_arr = hidden_states if hasattr(hidden_states, "shape") else backend.array(hidden_states)
+    anchors_arr = (
+        anchor_embeddings if hasattr(anchor_embeddings, "shape") else backend.array(anchor_embeddings)
     )
-
-    # Normalize hidden states
-    hidden_norms = backend.norm(hidden_states, axis=1, keepdims=True)
-    hidden_eps = division_epsilon(backend, hidden_norms)
-    hidden_normalized = hidden_states / backend.maximum(
-        hidden_norms, backend.full(hidden_norms.shape, hidden_eps)
-    )
-
-    # Compute cosine similarities: [n, d] @ [d, n_anchors] = [n, n_anchors]
-    backend.eval(anchors_normalized, hidden_normalized)
-    similarities = backend.matmul(hidden_normalized, backend.transpose(anchors_normalized))
+    backend.eval(hidden_arr, anchors_arr)
+    similarities = geodesic_cosine_between_sets(hidden_arr, anchors_arr, backend)
     backend.eval(similarities)
-
     return similarities
 
 

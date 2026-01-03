@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_matrix
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
@@ -305,15 +305,8 @@ class KnowledgeDensityAnalyzer:
         if n_samples < 2:
             return 0.0
 
-        # Compute pairwise cosine similarities
-        norms = b.norm(activations, axis=1, keepdims=True)
-        b.eval(norms)
-        eps = division_epsilon(b, norms)
-        normalized = activations / b.maximum(norms, b.full(norms.shape, eps))
-        b.eval(normalized)
-
-        # Similarity matrix
-        sim_matrix = b.matmul(normalized, b.transpose(normalized))
+        # Pairwise geodesic cosine similarities
+        sim_matrix = geodesic_cosine_matrix(activations, b)
         b.eval(sim_matrix)
 
         # Mean similarity to all other samples (exclude self)

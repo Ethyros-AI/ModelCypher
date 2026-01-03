@@ -257,12 +257,13 @@ class GeometryEngine:
         base_weights: dict[str, list[float]],
         current_weights: dict[str, list[float]],
     ):
-        import mlx.core as mx
+        from modelcypher.core.domain._backend import get_default_backend
 
-        base_mx = {k: mx.array(v) for k, v in base_weights.items()}
-        current_mx = {k: mx.array(v) for k, v in current_weights.items()}
+        backend = get_default_backend()
+        base_arr = {k: backend.array(v) for k, v in base_weights.items()}
+        current_arr = {k: backend.array(v) for k, v in current_weights.items()}
         decomposer = DoRADecomposition()
-        return decomposer.analyze_adapter(base_mx, current_mx)
+        return decomposer.analyze_adapter(base_arr, current_arr)
 
     def _weight_update_fro_norm(
         self, trainable_parameters: dict[str, Array], scale: float

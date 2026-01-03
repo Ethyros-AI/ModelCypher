@@ -195,6 +195,135 @@ def geodesic_cosine_batch(anchor: Any, vectors: Any, backend: "Backend") -> Any:
     return cos_vals
 
 
+def geodesic_norms(vectors: Any, backend: "Backend") -> Any:
+    """Compute geodesic norms (distance from origin) for each row in vectors."""
+    vectors_arr = vectors if hasattr(vectors, "shape") else backend.array(vectors)
+    shape_vectors = backend.shape(vectors_arr)
+    if len(shape_vectors) != 2:
+        raise ValueError("geodesic_norms requires [n, d] vectors")
+    if shape_vectors[0] == 0:
+        return backend.array([])
+
+    zero = backend.zeros_like(vectors_arr[:1])
+    points = backend.concatenate([zero, vectors_arr], axis=0)
+    rg = RiemannianGeometry(backend)
+    point_count = int(backend.shape(points)[0])
+    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+    distances = geo_result.distances
+    backend.eval(distances)
+    return distances[0, 1:]
+
+
+def geodesic_cosine_matrix(vectors: Any, backend: "Backend") -> Any:
+    """Compute geodesic cosine similarities between all pairs of vectors."""
+    vectors_arr = vectors if hasattr(vectors, "shape") else backend.array(vectors)
+    shape_vectors = backend.shape(vectors_arr)
+    if len(shape_vectors) != 2:
+        raise ValueError("geodesic_cosine_matrix requires [n, d] vectors")
+    if shape_vectors[0] == 0:
+        return backend.array([])
+
+    zero = backend.zeros_like(vectors_arr[:1])
+    points = backend.concatenate([zero, vectors_arr], axis=0)
+    rg = RiemannianGeometry(backend)
+    point_count = int(backend.shape(points)[0])
+    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+    distances = geo_result.distances
+    backend.eval(distances)
+
+    d0 = distances[0, 1:]
+    dij = distances[1:, 1:]
+    d0_row = backend.reshape(d0, (1, -1))
+    d0_col = backend.reshape(d0, (-1, 1))
+
+    eps = division_epsilon(backend, distances)
+    denom = 2.0 * d0_col * d0_row
+    safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+    cos_matrix = (d0_col * d0_col + d0_row * d0_row - dij * dij) / safe_denom
+    cos_matrix = backend.clip(cos_matrix, -1.0, 1.0)
+
+    valid = backend.minimum(d0_col > eps, d0_row > eps)
+    cos_matrix = backend.where(valid, cos_matrix, backend.zeros_like(cos_matrix))
+    return cos_matrix
+
+
+def geodesic_cosine_between_sets(a: Any, b: Any, backend: "Backend") -> Any:
+    """Compute geodesic cosine similarities between two sets of vectors."""
+    a_arr = a if hasattr(a, "shape") else backend.array(a)
+    b_arr = b if hasattr(b, "shape") else backend.array(b)
+    shape_a = backend.shape(a_arr)
+    shape_b = backend.shape(b_arr)
+    if len(shape_a) != 2 or len(shape_b) != 2:
+        raise ValueError("geodesic_cosine_between_sets requires [m, d] and [n, d] inputs")
+    if shape_a[0] == 0 or shape_b[0] == 0:
+        return backend.array([])
+    if shape_a[1] != shape_b[1]:
+        raise ValueError("Inputs must share feature dimension")
+
+    zero = backend.zeros_like(a_arr[:1])
+    points = backend.concatenate([zero, a_arr, b_arr], axis=0)
+    rg = RiemannianGeometry(backend)
+    point_count = int(backend.shape(points)[0])
+    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+    distances = geo_result.distances
+    backend.eval(distances)
+
+    m = int(shape_a[0])
+    d0a = distances[0, 1 : 1 + m]
+    d0b = distances[0, 1 + m :]
+    dab = distances[1 : 1 + m, 1 + m :]
+
+    d0a_col = backend.reshape(d0a, (-1, 1))
+    d0b_row = backend.reshape(d0b, (1, -1))
+    eps = division_epsilon(backend, distances)
+    denom = 2.0 * d0a_col * d0b_row
+    safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+    cos_matrix = (d0a_col * d0a_col + d0b_row * d0b_row - dab * dab) / safe_denom
+    cos_matrix = backend.clip(cos_matrix, -1.0, 1.0)
+
+    valid = backend.minimum(d0a_col > eps, d0b_row > eps)
+    cos_matrix = backend.where(valid, cos_matrix, backend.zeros_like(cos_matrix))
+    return cos_matrix
+
+
+def geodesic_pairwise_metrics(a: Any, b: Any, backend: "Backend") -> tuple[Any, Any]:
+    """Compute geodesic cosine similarities and distances for paired vectors."""
+    a_arr = a if hasattr(a, "shape") else backend.array(a)
+    b_arr = b if hasattr(b, "shape") else backend.array(b)
+    shape_a = backend.shape(a_arr)
+    shape_b = backend.shape(b_arr)
+    if len(shape_a) != 2 or len(shape_b) != 2:
+        raise ValueError("geodesic_pairwise_metrics requires [n, d] inputs")
+    if shape_a[0] == 0:
+        return backend.array([]), backend.array([])
+    if shape_a != shape_b:
+        raise ValueError("Inputs must share shape for paired metrics")
+
+    zero = backend.zeros_like(a_arr[:1])
+    points = backend.concatenate([zero, a_arr, b_arr], axis=0)
+    rg = RiemannianGeometry(backend)
+    point_count = int(backend.shape(points)[0])
+    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+    distances = geo_result.distances
+    backend.eval(distances)
+
+    n = int(shape_a[0])
+    d0a = distances[0, 1 : 1 + n]
+    d0b = distances[0, 1 + n :]
+    dab = distances[1 : 1 + n, 1 + n :]
+    dab_diag = backend.diag(dab)
+
+    eps = division_epsilon(backend, distances)
+    denom = 2.0 * d0a * d0b
+    safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+    cos_vals = (d0a * d0a + d0b * d0b - dab_diag * dab_diag) / safe_denom
+    cos_vals = backend.clip(cos_vals, -1.0, 1.0)
+
+    valid = backend.minimum(d0a > eps, d0b > eps)
+    cos_vals = backend.where(valid, cos_vals, backend.zeros_like(cos_vals))
+    return cos_vals, dab_diag
+
+
 class VectorMath:
     """Vector math utilities for dense vectors."""
 
