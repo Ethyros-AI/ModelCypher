@@ -54,10 +54,10 @@ class MergeReport:
     rank: int
     scale: float
     mean_procrustes_error: float
-    mean_permutation_quality: float
+    mean_permutation_cka: float
     total_merged_parameters: int
     layer_count: int
-    merge_confidence: float
+    mean_merge_cka: float
 
 
 class LoRAAdapterMerger:
@@ -77,21 +77,21 @@ class LoRAAdapterMerger:
 
         merged_parameters = 0
         errors: list[float] = []
-        qualities: list[float] = []
+        cka_values: list[float] = []
         layer_indices: set[int] = set()
 
         for key in adapters[0].module_keys:
             matrices = [adapter.weights[key] for adapter in adapters if key in adapter.weights]
-            merged, error, quality = LoRAAdapterMerger._geometric_merge_matrices(matrices, b)
+            merged, error, cka = LoRAAdapterMerger._geometric_merge_matrices(matrices, b)
             merged_parameters += int(merged.size)
             errors.append(error)
-            qualities.append(quality)
+            cka_values.append(cka)
             layer_index = LoRAAdapterMerger._extract_layer_index(key)
             if layer_index is not None:
                 layer_indices.add(layer_index)
 
         mean_error = sum(errors) / float(len(errors)) if errors else 0.0
-        mean_quality = sum(qualities) / float(len(qualities)) if qualities else 0.0
+        mean_cka = sum(cka_values) / float(len(cka_values)) if cka_values else 0.0
 
         base_model_id = adapters[0].base_model_id
         rank = adapters[0].rank
@@ -104,10 +104,10 @@ class LoRAAdapterMerger:
             rank=rank,
             scale=scale,
             mean_procrustes_error=float(mean_error),
-            mean_permutation_quality=float(mean_quality),
+            mean_permutation_cka=float(mean_cka),
             total_merged_parameters=int(merged_parameters),
             layer_count=len(layer_indices),
-            merge_confidence=float(mean_quality),
+            mean_merge_cka=float(mean_cka),
         )
 
     @staticmethod
@@ -183,22 +183,22 @@ class LoRAAdapterMerger:
 
         aligned_matrices: list["Array"] = []
         errors: list[float] = []
-        qualities: list[float] = []
+        cka_values: list[float] = []
         for matrix in arrays:
             aligned, error = LoRAAdapterMerger._procrustes_align(matrix, reference, backend)
             aligned_matrices.append(aligned)
             errors.append(error)
-            quality = LoRAAdapterMerger._compute_alignment_quality(aligned, reference, backend)
-            qualities.append(quality)
+            cka = LoRAAdapterMerger._compute_cka(aligned, reference, backend)
+            cka_values.append(cka)
 
         stacked = backend.stack(aligned_matrices, axis=0)
         merged = backend.mean(stacked, axis=0)
         backend.eval(merged)
 
         mean_error = sum(errors) / float(len(errors)) if errors else 0.0
-        mean_quality = sum(qualities) / float(len(qualities)) if qualities else 0.0
+        mean_cka = sum(cka_values) / float(len(cka_values)) if cka_values else 0.0
 
-        return merged, float(mean_error), float(mean_quality)
+        return merged, float(mean_error), float(mean_cka)
 
     @staticmethod
     def _procrustes_align(
@@ -243,7 +243,7 @@ class LoRAAdapterMerger:
         return PermutationAligner.align(source_arr, target_arr, backend=backend)
 
     @staticmethod
-    def _compute_alignment_quality(
+    def _compute_cka(
         source: "Array",
         target: "Array",
         backend: "Backend",

@@ -97,11 +97,11 @@ class TestEmbeddingProjector:
         assert result.metadata["n_anchors"] == 50
 
 
-class TestAlignmentQualityComputation:
-    """Tests for alignment quality metrics."""
+class TestProjectionMetricsComputation:
+    """Tests for projection metrics."""
 
-    def test_compute_alignment_quality(self, backend: "Backend") -> None:
-        """Should compute multiple quality metrics."""
+    def test_compute_projection_metrics(self, backend: "Backend") -> None:
+        """Should compute multiple projection metrics."""
         backend.random_seed(42)
         source = backend.random_normal((100, 64))
         target = backend.random_normal((100, 64))
@@ -110,7 +110,7 @@ class TestAlignmentQualityComputation:
         projector = EmbeddingProjector(backend=backend)
         result = projector.project(source, target)
 
-        quality = projector.compute_alignment_quality(
+        quality = projector.compute_projection_metrics(
             source, result.projected_embeddings, target
         )
 
@@ -120,8 +120,8 @@ class TestAlignmentQualityComputation:
         assert "n_samples_evaluated" in quality
         assert quality["n_samples_evaluated"] == 100
 
-    def test_alignment_quality_with_shared_indices(self, backend: "Backend") -> None:
-        """Alignment quality should use shared indices when provided."""
+    def test_projection_metrics_with_shared_indices(self, backend: "Backend") -> None:
+        """Projection metrics should use shared indices when provided."""
         backend.random_seed(42)
         source = backend.random_normal((100, 64))
         target = backend.random_normal((100, 64))
@@ -132,7 +132,7 @@ class TestAlignmentQualityComputation:
 
         projector = EmbeddingProjector(backend=backend)
 
-        quality = projector.compute_alignment_quality(
+        quality = projector.compute_projection_metrics(
             source, projected, target, shared_indices=shared_indices
         )
 

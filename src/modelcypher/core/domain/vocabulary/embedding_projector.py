@@ -73,12 +73,12 @@ class EmbeddingProjector:
             source, target, shared_token_indices
         )
 
-        quality = self.compute_alignment_quality(
+        metrics = self.compute_projection_metrics(
             source, projected, target, shared_indices=shared_token_indices
         )
-        reconstruction_error = quality["mse"]
+        reconstruction_error = metrics["mse"]
         meta = dict(meta)
-        meta.update(quality)
+        meta.update(metrics)
 
         return ProjectionResult(
             projected_embeddings=projected,
@@ -87,7 +87,7 @@ class EmbeddingProjector:
             metadata=meta,
         )
 
-    def compute_alignment_quality(
+    def compute_projection_metrics(
         self,
         source: "Array",
         projected: "Array",

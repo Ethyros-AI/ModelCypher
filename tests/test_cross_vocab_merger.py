@@ -252,7 +252,7 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
 
         assert isinstance(quality, dict)
 
-    def test_contains_alignment_metrics(self, merger, backend):
+    def test_contains_match_metrics(self, merger, backend):
         backend.random_seed(42)
         source = backend.random_normal((10, 16))
         target = backend.random_normal((10, 16))
@@ -260,9 +260,9 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
         result = merger.merge(source, target)
         quality = merger.analyze_merge_quality(result)
 
-        assert "alignment_coverage" in quality
-        assert "alignment_confidence" in quality
-        assert "alignment_quality_distribution" in quality
+        assert "coverage_ratio" in quality
+        assert "exact_match_ratio" in quality
+        assert "match_quality_distribution" in quality
 
     def test_contains_projection_metrics(self, merger, backend):
         backend.random_seed(42)

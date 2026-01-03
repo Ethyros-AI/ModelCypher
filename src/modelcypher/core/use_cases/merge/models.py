@@ -122,7 +122,7 @@ class LayerGeometry:
     # Alignment (Stage 4)
     procrustes_rotation: "Array | None" = None
     permutation_matrix: "Array | None" = None
-    alignment_quality: float = 0.0
+    alignment_cka: float = 0.0
 
     # Gromov-Wasserstein (Stage 2)
     gw_distance: float = 0.0
@@ -159,7 +159,7 @@ class MergeGeometry:
     # Cross-architecture support
     is_cross_architecture: bool = False
     layer_correspondence: dict[int, int] | None = None  # source_layer -> target_layer
-    alignment_quality: float = 0.0  # Quality of layer correspondence
+    layer_correspondence_cka: float = 0.0  # Mean CKA of mapped layers
 
     # Safety
     refusal_preserved: bool = True

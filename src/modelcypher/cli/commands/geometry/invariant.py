@@ -82,7 +82,6 @@ def geometry_invariant_map_layers(
                 "Results:",
                 f"  Mapped Layers: {summary.mapped_layers}",
                 f"  Mean Similarity: {summary.mean_similarity:.3f}",
-                f"  Alignment Quality: {summary.alignment_quality:.3f}",
                 "",
                 f"  Source Collapsed: {summary.source_collapsed_layers}",
                 f"  Target Collapsed: {summary.target_collapsed_layers}",

@@ -126,7 +126,6 @@ class Summary:
 
     mapped_layers: int
     mean_similarity: float
-    alignment_quality: float
     source_collapsed_layers: int
     target_collapsed_layers: int
     # Triangulation metrics (populated when using SEQUENCE_INVARIANTS/MULTI_ATLAS scope)
@@ -307,7 +306,6 @@ class InvariantLayerMapper:
 
         mapped_count = len(mappings)
         mean_similarity = sum(m.similarity for m in mappings) / len(mappings) if mappings else 0.0
-        alignment_quality = mean_similarity
 
         # Compute triangulation metrics for summary
         all_triangulation = {**source_triangulation, **target_triangulation}
@@ -320,7 +318,6 @@ class InvariantLayerMapper:
         summary = Summary(
             mapped_layers=mapped_count,
             mean_similarity=mean_similarity,
-            alignment_quality=alignment_quality,
             source_collapsed_layers=source_profile.collapsed_count,
             target_collapsed_layers=target_profile.collapsed_count,
             mean_triangulation_multiplier=mean_triangulation_mult,

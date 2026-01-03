@@ -165,9 +165,9 @@ class CrossVocabMerger:
         projection_meta = result.projection_result.metadata
 
         return {
-            "alignment_coverage": float(coverage),
-            "alignment_confidence": float(confidence),
-            "alignment_quality_distribution": alignment_map.quality_distribution(),
+            "coverage_ratio": float(coverage),
+            "exact_match_ratio": float(confidence),
+            "match_quality_distribution": alignment_map.quality_distribution(),
             "projection_reconstruction_error": result.projection_result.reconstruction_error,
             "projection_mean_cosine_similarity": projection_meta.get(
                 "mean_cosine_similarity"

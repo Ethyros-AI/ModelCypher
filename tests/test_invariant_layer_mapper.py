@@ -106,7 +106,6 @@ def test_summary_dataclass():
     summary = Summary(
         mapped_layers=10,
         mean_similarity=0.85,
-        alignment_quality=0.9,
         source_collapsed_layers=[],
         target_collapsed_layers=[],
         mean_triangulation_multiplier=1.0,

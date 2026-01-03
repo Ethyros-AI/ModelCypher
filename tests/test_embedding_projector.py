@@ -136,8 +136,8 @@ class TestEmbeddingProjector:
         assert result.projected_embeddings.shape == (100, 128)
 
 
-class TestEmbeddingProjectorAlignmentQuality:
-    """Tests for compute_alignment_quality method."""
+class TestEmbeddingProjectorProjectionMetrics:
+    """Tests for compute_projection_metrics method."""
 
     @pytest.fixture
     def projector(self):
@@ -153,7 +153,7 @@ class TestEmbeddingProjectorAlignmentQuality:
         target = backend.random_normal((100, 64))
         projected = backend.random_normal((100, 64))
 
-        metrics = projector.compute_alignment_quality(source, projected, target)
+        metrics = projector.compute_projection_metrics(source, projected, target)
 
         assert "mse" in metrics
         assert "mean_cosine_similarity" in metrics
@@ -167,7 +167,7 @@ class TestEmbeddingProjectorAlignmentQuality:
         projected = backend.random_normal((100, 64))
         shared_indices = (list(range(50)), list(range(50)))
 
-        metrics = projector.compute_alignment_quality(
+        metrics = projector.compute_projection_metrics(
             source, projected, target, shared_indices
         )
 
@@ -177,7 +177,7 @@ class TestEmbeddingProjectorAlignmentQuality:
         backend.random_seed(42)
         embeddings = backend.random_normal((100, 64))
 
-        metrics = projector.compute_alignment_quality(embeddings, embeddings, embeddings)
+        metrics = projector.compute_projection_metrics(embeddings, embeddings, embeddings)
 
         eps = _div_eps()
         assert metrics["mse"] <= eps
