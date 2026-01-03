@@ -43,6 +43,7 @@ from modelcypher.core.domain.geometry.knowledge_diff import (
     compute_graft_mask,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_matrix
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -259,12 +260,9 @@ def _build_density_profile_from_activations(
         b.eval(dims)
 
         # Precompute mean cosine similarity per probe (cluster tightness) - VECTORIZED
-        norms = b.norm(act_matrix, axis=1, keepdims=True)
-        b.eval(norms)
         eps = float(machine_epsilon(b, act_matrix))
-        normed = act_matrix / b.maximum(norms, b.full(norms.shape, eps))
-        b.eval(normed)
-        sim_matrix = b.matmul(normed, b.transpose(normed))
+        sim_matrix = geodesic_cosine_matrix(act_matrix, b)
+        b.eval(sim_matrix)
 
         # Zero out diagonal (self-similarity) and compute mean per row on backend
         n_probes = int(sim_matrix.shape[0])

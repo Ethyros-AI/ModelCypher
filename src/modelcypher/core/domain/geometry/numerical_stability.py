@@ -1976,12 +1976,8 @@ def solve_via_cca_procrustes(
     b.eval(Z_s_rotated)
 
     diff = Z_s_rotated - Z_t
-    diff_norm = b.norm(diff)
-    Z_t_norm = b.norm(Z_t)
-    b.eval(diff_norm, Z_t_norm)
-
-    diff_norm_val = float(b.to_scalar(diff_norm))
-    z_t_norm_val = float(b.to_scalar(Z_t_norm))
+    diff_norm_val = _geodesic_norm_scalar(diff, b)
+    z_t_norm_val = _geodesic_norm_scalar(Z_t, b)
     alignment_error = diff_norm_val / (z_t_norm_val + eps)
     diagnostics["alignment_error"] = alignment_error
 

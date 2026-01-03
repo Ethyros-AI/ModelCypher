@@ -144,6 +144,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.domain.geometry.geodesic_null_space import (
                 GeodesicNullSpaceFilter,
             )
+            from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
             backend = get_default_backend()
             # Use geodesic null-space filter - accurate for high-D manifolds (8kD+)
@@ -216,7 +217,10 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
 
                 # Use a small random vector to probe the orthogonal space
                 probe = backend.ones((total_dim,), dtype="float32")
-                probe = probe / backend.norm(probe)
+                norm_arr = geodesic_norms(backend.reshape(probe, (1, -1)), backend)
+                backend.eval(norm_arr)
+                norm_val = float(backend.to_scalar(norm_arr))
+                probe = probe / norm_val
                 backend.eval(probe)
 
                 result = geo_filter.filter_delta(probe, arr)

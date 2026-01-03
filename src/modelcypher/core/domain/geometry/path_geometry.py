@@ -29,7 +29,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import BackendVectorMath
+from modelcypher.core.domain.geometry.vector_math import BackendVectorMath, geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -936,9 +936,10 @@ class BackendPathGeometry:
 
         coords = self.backend.array(coords_list)  # [n, d]
 
-        # Compute tangent vectors: diff and normalize
+        # Compute tangent vectors: diff and normalize using geodesic distance
         tangent_diff = coords[1:] - coords[:-1]  # [n-1, d]
-        tangent_norms = self.backend.norm(tangent_diff, axis=1, keepdims=True)  # [n-1, 1]
+        tangent_norms = geodesic_norms(tangent_diff, self.backend)  # [n-1]
+        tangent_norms = self.backend.reshape(tangent_norms, (-1, 1))  # [n-1, 1]
 
         # Avoid division by zero
         safe_norms = self.backend.maximum(tangent_norms, self._finfo.eps)

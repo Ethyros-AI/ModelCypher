@@ -490,7 +490,8 @@ def null_space_filter(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
-    from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
+from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
     typer.echo(f"Analyzing geodesic orthogonal space for: {model_path}")
     layer = -1
@@ -579,7 +580,10 @@ def null_space_filter(
 
         # Probe with a unit vector to measure orthogonal space
         probe = backend.ones((total_dim,), dtype="float32")
-        probe = probe / backend.norm(probe)
+        norm_arr = geodesic_norms(backend.reshape(probe, (1, -1)), backend)
+        backend.eval(norm_arr)
+        norm_val = float(backend.to_scalar(norm_arr))
+        probe = probe / norm_val
         backend.eval(probe)
 
         result = geo_filter.filter_delta(probe, arr)

@@ -959,20 +959,20 @@ class BackendVectorMath:
         if shape_v0 != shape_v1 or len(shape_v0) != 1 or shape_v0[0] == 0:
             return None
 
-        # Compute magnitudes
-        norm_v0 = self.backend.norm(v0_arr)
-        norm_v1 = self.backend.norm(v1_arr)
-        self.backend.eval(norm_v0, norm_v1)
-
-        norm_v0_val = float(self.backend.to_scalar(norm_v0))
-        norm_v1_val = float(self.backend.to_scalar(norm_v1))
+        # Compute magnitudes using geodesic distance from origin
+        norm_arr = geodesic_norms(
+            self.backend.stack([v0_arr, v1_arr], axis=0), self.backend
+        )
+        self.backend.eval(norm_arr)
+        norm_v0_val = float(self.backend.tolist(norm_arr)[0])
+        norm_v1_val = float(self.backend.tolist(norm_arr)[1])
 
         if norm_v0_val <= self._finfo.eps or norm_v1_val <= self._finfo.eps:
             return None
 
-        # Normalize inputs
-        v0_unit = v0_arr / norm_v0
-        v1_unit = v1_arr / norm_v1
+        # Normalize inputs using geodesic norms
+        v0_unit = v0_arr / norm_v0_val
+        v1_unit = v1_arr / norm_v1_val
 
         dot_val = self.cosine_similarity(v0_unit, v1_unit)
         dot_val = max(-1.0, min(1.0, dot_val))
@@ -1057,20 +1057,20 @@ class BackendVectorMath:
         v0 = self.backend.reshape(m0_arr, (-1,))
         v1 = self.backend.reshape(m1_arr, (-1,))
 
-        # Compute magnitudes (Frobenius norms)
-        norm_v0 = self.backend.norm(v0)
-        norm_v1 = self.backend.norm(v1)
-        self.backend.eval(norm_v0, norm_v1)
-
-        norm_v0_val = float(self.backend.to_scalar(norm_v0))
-        norm_v1_val = float(self.backend.to_scalar(norm_v1))
+        # Compute magnitudes using geodesic distance from origin
+        norm_arr = geodesic_norms(
+            self.backend.stack([v0, v1], axis=0), self.backend
+        )
+        self.backend.eval(norm_arr)
+        norm_v0_val = float(self.backend.tolist(norm_arr)[0])
+        norm_v1_val = float(self.backend.tolist(norm_arr)[1])
 
         if norm_v0_val <= self._finfo.eps or norm_v1_val <= self._finfo.eps:
             return None
 
-        # Normalize
-        v0_unit = v0 / norm_v0
-        v1_unit = v1 / norm_v1
+        # Normalize using geodesic norms
+        v0_unit = v0 / norm_v0_val
+        v1_unit = v1 / norm_v1_val
 
         dot_val = self.cosine_similarity(v0_unit, v1_unit)
         dot_val = max(-1.0, min(1.0, dot_val))

@@ -65,7 +65,8 @@ def register(app: typer.Typer) -> None:
             KnowledgeDiffer,
             compute_graft_mask,
         )
-        from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
+from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
         # Load target model (primary model for null space analysis)
         logger.info("Loading target model: %s", target_path)
@@ -143,7 +144,12 @@ def register(app: typer.Typer) -> None:
 
             # Probe with a unit vector to measure orthogonal space
             probe_vec = target_backend.ones((total_dim,), dtype="float32")
-            probe_vec = probe_vec / target_backend.norm(probe_vec)
+            norm_arr = geodesic_norms(
+                target_backend.reshape(probe_vec, (1, -1)), target_backend
+            )
+            target_backend.eval(norm_arr)
+            norm_val = float(target_backend.to_scalar(norm_arr))
+            probe_vec = probe_vec / norm_val
             target_backend.eval(probe_vec)
 
             result = geo_filter.filter_delta(probe_vec, act_array)

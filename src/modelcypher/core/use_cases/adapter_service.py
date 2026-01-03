@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
@@ -167,12 +168,12 @@ class AdapterService:
         for name, tensor in weights.items():
             # Simple projection: normalize weights
             tensor_backend = backend.array(tensor)
-            norm = backend.norm(tensor_backend)
-            backend.eval(norm)
-            norm_scalar = float(backend.to_scalar(norm))
+            norm_arr = geodesic_norms(backend.reshape(tensor_backend, (1, -1)), backend)
+            backend.eval(norm_arr)
+            norm_scalar = float(backend.to_scalar(norm_arr))
 
             if norm_scalar > 0:
-                normalized = tensor_backend / norm
+                normalized = tensor_backend / norm_scalar
                 normalized = backend.astype(normalized, "float32")
                 backend.eval(normalized)
                 projected_weights[name] = normalized  # Keep as backend array

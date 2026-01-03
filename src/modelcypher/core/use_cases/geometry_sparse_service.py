@@ -216,18 +216,22 @@ class GeometrySparseService:
         """Convert refusal direction to CLI/MCP payload."""
         if hasattr(direction.direction, "shape"):
             from modelcypher.core.domain._backend import get_default_backend
+            from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
             b = get_default_backend()
             dir_arr = direction.direction
-            norm_arr = b.norm(dir_arr)
+            norm_arr = geodesic_norms(b.reshape(dir_arr, (1, -1)), b)
             b.eval(norm_arr)
             direction_norm = float(b.to_scalar(norm_arr))
         else:
-            direction_norm = (
-                sum(x * x for x in direction.direction) ** 0.5
-                if direction.direction
-                else 0.0
-            )
+            b = get_default_backend()
+            dir_arr = b.array(direction.direction) if direction.direction else b.array([])
+            if int(b.shape(dir_arr)[0]) == 0:
+                direction_norm = 0.0
+            else:
+                norm_arr = geodesic_norms(b.reshape(dir_arr, (1, -1)), b)
+                b.eval(norm_arr)
+                direction_norm = float(b.to_scalar(norm_arr))
         return {
             "layerIndex": direction.layer_index,
             "hiddenSize": direction.hidden_size,

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -65,7 +66,7 @@ def select_anchor_indices_by_coverage(
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
     k_neighbors = min(10, n - 1)
-    norms = backend.norm(points, axis=1)
+    norms = geodesic_norms(points, backend)
     backend.eval(norms)
     seed_idx_arr = backend.argmax(norms)
     backend.eval(seed_idx_arr)
@@ -105,7 +106,7 @@ def select_shared_full_rank_indices(
         return list(range(n))
 
     combined = backend.concatenate([source_data, target_data], axis=1)
-    norms = backend.norm(combined, axis=1)
+    norms = geodesic_norms(combined, backend)
     backend.eval(norms)
     # Sort by norm descending using backend argsort on negated values
     neg_norms = -norms
@@ -120,9 +121,10 @@ def select_shared_full_rank_indices(
         basis: list["Array"],
     ) -> tuple[bool, "Array"]:
         if not basis:
-            res_norm = backend.norm(vec)
-            backend.eval(res_norm)
-            if float(backend.to_scalar(res_norm)) <= eps:
+            res_norm_arr = geodesic_norms(backend.reshape(vec, (1, -1)), backend)
+            backend.eval(res_norm_arr)
+            res_norm = float(backend.to_scalar(res_norm_arr))
+            if res_norm <= eps:
                 return False, vec
             return True, vec / res_norm
 
@@ -131,9 +133,10 @@ def select_shared_full_rank_indices(
         proj_coeffs = backend.matmul(basis_matrix, vec_col)
         proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
         residual = vec_col - proj
-        res_norm = backend.norm(residual)
-        backend.eval(res_norm)
-        if float(backend.to_scalar(res_norm)) <= eps:
+        res_norm_arr = geodesic_norms(backend.reshape(residual, (1, -1)), backend)
+        backend.eval(res_norm_arr)
+        res_norm = float(backend.to_scalar(res_norm_arr))
+        if res_norm <= eps:
             return False, vec
         return True, backend.reshape(residual / res_norm, (-1,))
 
@@ -177,7 +180,7 @@ def select_full_rank_indices(
     if n <= max_count:
         return list(range(n))
 
-    norms = backend.norm(data, axis=1)
+    norms = geodesic_norms(data, backend)
     backend.eval(norms)
     # Sort by norm descending using backend argsort on negated values
     neg_norms = -norms
@@ -197,15 +200,17 @@ def select_full_rank_indices(
             proj_coeffs = backend.matmul(basis_matrix, vec_col)
             proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
             residual = vec_col - proj
-            res_norm = backend.norm(residual)
-            backend.eval(res_norm)
-            if float(backend.to_scalar(res_norm)) <= eps:
+            res_norm_arr = geodesic_norms(backend.reshape(residual, (1, -1)), backend)
+            backend.eval(res_norm_arr)
+            res_norm = float(backend.to_scalar(res_norm_arr))
+            if res_norm <= eps:
                 continue
             vec = backend.reshape(residual / res_norm, (-1,))
         else:
-            res_norm = backend.norm(vec)
-            backend.eval(res_norm)
-            if float(backend.to_scalar(res_norm)) <= eps:
+            res_norm_arr = geodesic_norms(backend.reshape(vec, (1, -1)), backend)
+            backend.eval(res_norm_arr)
+            res_norm = float(backend.to_scalar(res_norm_arr))
+            if res_norm <= eps:
                 continue
             vec = vec / res_norm
 

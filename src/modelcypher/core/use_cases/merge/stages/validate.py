@@ -39,6 +39,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -440,8 +444,8 @@ def _compute_layer_importance(
             # Use backend for norm computation
             source_arr = b.astype(b.array(source_weights[key]), "float32")
             target_arr = b.astype(b.array(target_weights[key]), "float32")
-            source_norm_arr = b.norm(source_arr)
-            target_norm_arr = b.norm(target_arr)
+            source_norm_arr = geodesic_norms(b.reshape(source_arr, (1, -1)), b)
+            target_norm_arr = geodesic_norms(b.reshape(target_arr, (1, -1)), b)
             b.eval(source_norm_arr, target_norm_arr)
             source_norm += float(b.to_scalar(source_norm_arr))
             target_norm += float(b.to_scalar(target_norm_arr))
@@ -671,14 +675,15 @@ def _check_refusal_preservation(
         if int(merged_flat.shape[0]) != direction_dim:
             continue
 
-        # Compute projection using backend
-        dot_val = b.sum(merged_flat * direction_arr)
-        norm_val = b.norm(merged_flat)
-        b.eval(dot_val, norm_val)
+        pair_a = b.reshape(merged_flat, (1, -1))
+        pair_b = b.reshape(direction_arr, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(pair_a, pair_b, b)
+        direction_norm_arr = geodesic_norms(pair_b, b)
+        b.eval(cos_arr, direction_norm_arr)
         div_eps = float(division_epsilon(b, merged_flat))
-        norm_scalar = float(b.to_scalar(norm_val))
-        dot_scalar = float(b.to_scalar(dot_val))
-        projection = dot_scalar / (norm_scalar + div_eps)
+        cos_scalar = float(b.to_scalar(cos_arr))
+        direction_norm = float(b.to_scalar(direction_norm_arr))
+        projection = cos_scalar * direction_norm
         strength = max(refusal_dir.strength, div_eps)
 
         preservation = min(1.0, abs(projection) / (strength + div_eps))

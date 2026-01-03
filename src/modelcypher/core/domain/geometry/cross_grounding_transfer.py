@@ -733,7 +733,7 @@ class CrossGroundingSynthesizer:
             current_dists = b.take(row0, anchor_indices, axis=0)
 
             diffs = position - anchor_matrix
-            diff_norms = b.norm(diffs, axis=1)
+            diff_norms = geodesic_norms(diffs, b)
             valid_mask = b.astype(current_dists > eps, "float32") * b.astype(
                 diff_norms > eps, "float32"
             )
