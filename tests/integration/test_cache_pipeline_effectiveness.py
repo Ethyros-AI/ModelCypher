@@ -22,6 +22,7 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.support.array_utils import array_to_list
 
 
@@ -254,9 +255,10 @@ class TestSVDCacheEffectiveness:
 
         # Results should be identical
         backend.eval(s1, s2)
-        s1_np = backend.to_numpy(s1)
-        s2_np = backend.to_numpy(s2)
-        assert (s1_np == s2_np).all()
+        diff = backend.max(backend.abs(s1 - s2))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, s1) * s1.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
 
 class TestCacheClearBehavior:

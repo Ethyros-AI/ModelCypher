@@ -30,7 +30,6 @@ their probe counts, and the total number of probes available.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TypeAlias
 
@@ -45,6 +44,11 @@ from modelcypher.core.domain.geometry.atlas_registry import (
     get_sequence_invariants,
     get_sequence_triangulation_scorer,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    log2_scalar,
+    sqrt_scalar,
+)
+from modelcypher.core.domain._backend import get_default_backend
 
 AtlasProbe: TypeAlias = AtlasProbeProtocol
 SequenceInvariant: TypeAlias = SequenceInvariantProtocol
@@ -459,11 +463,12 @@ class InvariantLayerMapper:
                 # At 1 source: log(2) ≈ 0.69 → mult = 1.0
                 # At 2 sources: log(3) ≈ 1.10 → mult ≈ 1.10
                 # At 4 sources: log(5) ≈ 1.61 → mult ≈ 1.61
-                source_mult = math.log(source_count + 1) / math.log(2) if source_count > 0 else 1.0
-                domain_mult = math.log(domain_count + 1) / math.log(2) if domain_count > 0 else 1.0
+                _b = get_default_backend()
+                source_mult = log2_scalar(float(source_count + 1), _b) if source_count > 0 else 1.0
+                domain_mult = log2_scalar(float(domain_count + 1), _b) if domain_count > 0 else 1.0
 
                 # Geometric mean of multipliers (principled combination of independent signals)
-                combined_mult = math.sqrt(source_mult * domain_mult)
+                combined_mult = sqrt_scalar(source_mult * domain_mult, _b)
 
                 # Coherence bonus: fraction of possible domains detected (0 to 1 scale)
                 # This is a ratio, not an arbitrary coefficient
@@ -528,16 +533,17 @@ class InvariantLayerMapper:
                     source_vector, target_vector, weights
                 )
 
-                confidence_weight = math.sqrt(max(0, source_confidence) * max(0, target_confidence))
+                _b = get_default_backend()
+                confidence_weight = sqrt_scalar(max(0, source_confidence) * max(0, target_confidence), _b)
                 similarity *= confidence_weight
 
                 source_ts = source_triangulation.get(source_layer)
                 target_ts = target_triangulation.get(target_layer)
                 if source_ts and target_ts:
-                    tri_boost = math.sqrt(
-                        source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier
+                    tri_boost = sqrt_scalar(
+                        source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier, _b
                     )
-                    similarity *= math.sqrt(tri_boost)
+                    similarity *= sqrt_scalar(tri_boost, _b)
 
                 matrix[i][j] = max(0.0, min(1.0, similarity))
 
@@ -727,7 +733,8 @@ class InvariantLayerMapper:
                         source_vector, target_vector
                     )
 
-                confidence_weight = math.sqrt(max(0, source_confidence) * max(0, target_confidence))
+                _b = get_default_backend()
+                confidence_weight = sqrt_scalar(max(0, source_confidence) * max(0, target_confidence), _b)
                 similarity *= confidence_weight
 
                 # Apply triangulation boost if available
@@ -735,10 +742,10 @@ class InvariantLayerMapper:
                     source_ts = source_triangulation.get(source_layer)
                     target_ts = target_triangulation.get(target_layer)
                     if source_ts and target_ts:
-                        tri_boost = math.sqrt(
-                            source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier
+                        tri_boost = sqrt_scalar(
+                            source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier, _b
                         )
-                        similarity *= math.sqrt(tri_boost)
+                        similarity *= sqrt_scalar(tri_boost, _b)
 
                 matrix[i][j] = max(0.0, min(1.0, similarity))
 
@@ -766,7 +773,8 @@ class InvariantLayerMapper:
         if norm_a <= 0 or norm_b <= 0:
             return 0.0
 
-        return max(0.0, min(1.0, dot / (math.sqrt(norm_a) * math.sqrt(norm_b))))
+        _b = get_default_backend()
+        return max(0.0, min(1.0, dot / (sqrt_scalar(norm_a, _b) * sqrt_scalar(norm_b, _b))))
 
     @staticmethod
     def _align_layers(
@@ -843,4 +851,5 @@ class InvariantLayerMapper:
         if norm_a <= 0 or norm_b <= 0:
             return 0.0
 
-        return max(0.0, min(1.0, dot / (math.sqrt(norm_a) * math.sqrt(norm_b))))
+        _b = get_default_backend()
+        return max(0.0, min(1.0, dot / (sqrt_scalar(norm_a, _b) * sqrt_scalar(norm_b, _b))))

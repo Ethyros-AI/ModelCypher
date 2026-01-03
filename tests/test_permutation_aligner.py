@@ -41,6 +41,7 @@ from modelcypher.core.domain.geometry.permutation_aligner import (
     AnchorActivationContext,
     PermutationAligner,
 )
+from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -197,10 +198,8 @@ class TestPermutationAlignerAlign:
         b.eval(source)
 
         # Create permuted target (swap rows 0 and 1)
-        source_np = b.to_numpy(source)
-        target_np = source_np.copy()
-        target_np[[0, 1]] = target_np[[1, 0]]
-        target = b.array(target_np)
+        perm = b.array([1, 0, 2, 3, 4, 5, 6, 7], dtype="int32")
+        target = b.take(source, perm, axis=0)
         b.eval(target)
 
         result = PermutationAligner.align(source, target, backend=b)
@@ -308,9 +307,10 @@ class TestPermutationAlignerApply:
         )
         b.eval(result)
 
-        diff = b.to_numpy(result) - b.to_numpy(weight)
-        diff_val = abs(diff).max()
-        eps = _eps(b, float(diff_val))
+        diff = b.max(b.abs(result - weight))
+        b.eval(diff)
+        diff_val = b.to_scalar(diff)
+        eps = _eps(b, diff_val)
         assert diff_val <= eps
 
     def test_apply_output_alignment(self, any_backend: "Backend") -> None:
@@ -345,14 +345,17 @@ class TestPermutationAlignerApply:
         b.eval(result)
 
         # Check rows are swapped
-        weight_np = b.to_numpy(weight)
-        result_np = b.to_numpy(result)
         # Row 0 of result should be row 1 of original
-        diff0 = abs(result_np[0] - weight_np[1]).max()
-        diff1 = abs(result_np[1] - weight_np[0]).max()
-        eps = _eps(b, float(diff0), float(diff1))
-        assert diff0 <= eps
-        assert diff1 <= eps
+        row0 = result[0:1]
+        row1 = weight[1:2]
+        diff0 = b.max(b.abs(row0 - row1))
+        row1_res = result[1:2]
+        row0_src = weight[0:1]
+        diff1 = b.max(b.abs(row1_res - row0_src))
+        b.eval(diff0, diff1)
+        eps = _eps(b, b.to_scalar(diff0), b.to_scalar(diff1))
+        assert b.to_scalar(diff0) <= eps
+        assert b.to_scalar(diff1) <= eps
 
     def test_apply_input_alignment(self, any_backend: "Backend") -> None:
         """Input alignment should permute columns."""
@@ -385,14 +388,17 @@ class TestPermutationAlignerApply:
         )
         b.eval(result)
 
-        weight_np = b.to_numpy(weight)
-        result_np = b.to_numpy(result)
         # Column 0 of result should be column 1 of original
-        diff0 = abs(result_np[:, 0] - weight_np[:, 1]).max()
-        diff1 = abs(result_np[:, 1] - weight_np[:, 0]).max()
-        eps = _eps(b, float(diff0), float(diff1))
-        assert diff0 <= eps
-        assert diff1 <= eps
+        col0 = result[:, 0:1]
+        col1 = weight[:, 1:2]
+        diff0 = b.max(b.abs(col0 - col1))
+        col1_res = result[:, 1:2]
+        col0_src = weight[:, 0:1]
+        diff1 = b.max(b.abs(col1_res - col0_src))
+        b.eval(diff0, diff1)
+        eps = _eps(b, b.to_scalar(diff0), b.to_scalar(diff1))
+        assert b.to_scalar(diff0) <= eps
+        assert b.to_scalar(diff1) <= eps
 
     def test_apply_with_sign_flips(self, any_backend: "Backend") -> None:
         """Sign flips should negate appropriate rows/columns."""
@@ -419,16 +425,18 @@ class TestPermutationAlignerApply:
         )
         b.eval(result)
 
-        weight_np = b.to_numpy(weight)
-        result_np = b.to_numpy(result)
         # First row should be negated
-        diff0 = abs(result_np[0] + weight_np[0]).max()
-        eps = _eps(b, float(diff0))
-        assert diff0 <= eps
+        row0 = result[0:1]
+        row0_src = weight[0:1]
+        diff0 = b.max(b.abs(row0 + row0_src))
+        b.eval(diff0)
+        eps = _eps(b, b.to_scalar(diff0))
+        assert b.to_scalar(diff0) <= eps
         # Other rows unchanged
-        diff_rest = abs(result_np[1:] - weight_np[1:]).max()
-        eps = _eps(b, float(diff_rest))
-        assert diff_rest <= eps
+        diff_rest = b.max(b.abs(result[1:] - weight[1:]))
+        b.eval(diff_rest)
+        eps = _eps(b, b.to_scalar(diff_rest))
+        assert b.to_scalar(diff_rest) <= eps
 
     def test_apply_sparse_permutation(self, any_backend: "Backend") -> None:
         """Sparse permutation should work via index gather."""
@@ -591,10 +599,10 @@ class TestHelperMethods:
         b.eval(arr)
 
         assert b.shape(arr) == (3, 2)
-        arr_np = b.to_numpy(arr)
-        eps = _eps(b, float(arr_np[0, 0]), 1.0, float(arr_np[2, 1]), 6.0)
-        assert abs(arr_np[0, 0] - 1.0) <= eps
-        assert abs(arr_np[2, 1] - 6.0) <= eps
+        arr_list = array_to_list(b, arr)
+        eps = _eps(b, float(arr_list[0][0]), 1.0, float(arr_list[2][1]), 6.0)
+        assert abs(arr_list[0][0] - 1.0) <= eps
+        assert abs(arr_list[2][1] - 6.0) <= eps
 
     def test_extract_sign_values_vector(self, any_backend: "Backend") -> None:
         """Should extract sign values from 1D vector."""

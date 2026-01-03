@@ -494,14 +494,15 @@ class NumpyBackend(Backend):
                         sliced.append(self.np.take(arg, i, axis=ax))
                 outputs.append(fun(*sliced))
 
+            axis = out_axes[0] if isinstance(out_axes, tuple) else out_axes
             if isinstance(outputs[0], tuple):
                 stacked = []
                 for out_idx in range(len(outputs[0])):
                     stacked.append(
-                        self.np.stack([out[out_idx] for out in outputs], axis=out_axes)
+                        self.np.stack([out[out_idx] for out in outputs], axis=axis)
                     )
                 return tuple(stacked)
-            return self.np.stack(outputs, axis=out_axes)
+            return self.np.stack(outputs, axis=axis)
 
         return _wrapped
 

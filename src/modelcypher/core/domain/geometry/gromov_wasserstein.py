@@ -610,7 +610,7 @@ class GromovWassersteinDistance:
                 abs_change = abs(loss - prev_loss)
                 # Use precision-aware epsilon for relative change
                 eps = division_epsilon(backend, T)
-                rel_change = abs_change / max(abs(prev_loss), eps) if math.isfinite(prev_loss) else float("inf")
+                rel_change = abs_change / max(abs(prev_loss), eps) if is_finite(prev_loss, backend) else float("inf")
 
                 if abs_change < conv_threshold or rel_change < rel_threshold:
                     converged = True

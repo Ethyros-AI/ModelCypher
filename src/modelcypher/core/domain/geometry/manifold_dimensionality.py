@@ -17,11 +17,15 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
+from modelcypher.core.domain.geometry.numerical_stability import (
+    is_finite,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -88,8 +92,9 @@ class IDEstimateSummary:
 class ManifoldDimensionality:
     @staticmethod
     def entropy_trace_features(entropies: list[float]) -> EntropyTraceFeatures | None:
+        _b = get_default_backend()
         cleaned = [
-            float(value) for value in entropies if value is not None and math.isfinite(value)
+            float(value) for value in entropies if value is not None and is_finite(value, _b)
         ]
         if not cleaned:
             return None
@@ -114,9 +119,10 @@ class ManifoldDimensionality:
         names = feature_names if len(feature_names) == d else [f"feature_{i}" for i in range(d)]
 
         stats: list[FeatureStat] = []
+        _b = get_default_backend()
         for j in range(d):
             values = [
-                float(row[j]) for row in points if row[j] is not None and math.isfinite(row[j])
+                float(row[j]) for row in points if row[j] is not None and is_finite(row[j], _b)
             ]
             if not values:
                 continue
@@ -203,7 +209,7 @@ class BackendManifoldDimensionality:
         """
         # Filter valid values
         cleaned = [
-            float(value) for value in entropies if value is not None and math.isfinite(value)
+            float(value) for value in entropies if value is not None and is_finite(value, self.backend)
         ]
         if not cleaned:
             return None
@@ -225,7 +231,7 @@ class BackendManifoldDimensionality:
             std_dev = 0.0
         else:
             variance = self._to_scalar(sum_sq) / float(token_count - 1)
-            std_dev = math.sqrt(variance)
+            std_dev = sqrt_scalar(variance, self.backend)
 
         # Max
         max_val = self.backend.max(arr)
@@ -266,7 +272,7 @@ class BackendManifoldDimensionality:
 
         for j in range(d):
             values = [
-                float(row[j]) for row in points if row[j] is not None and math.isfinite(row[j])
+                float(row[j]) for row in points if row[j] is not None and is_finite(row[j], self.backend)
             ]
             if not values:
                 continue
@@ -285,7 +291,7 @@ class BackendManifoldDimensionality:
                 std_float = 0.0
             else:
                 variance = self._to_scalar(sum_sq) / float(n_vals - 1)
-                std_float = math.sqrt(variance)
+                std_float = sqrt_scalar(variance, self.backend)
 
             stats.append(FeatureStat(index=j, name=names[j], mean=mean_float, std_dev=std_float))
 
