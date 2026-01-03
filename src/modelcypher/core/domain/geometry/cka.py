@@ -185,7 +185,7 @@ def _rbf_gram_matrix(
     Args:
         X: Data matrix [n_samples, n_features]
         backend: Backend protocol implementation
-        sigma: RBF bandwidth. If None, uses median heuristic.
+        sigma: RBF bandwidth. If None, uses median bandwidth (data-derived).
 
     Returns:
         RBF Gram matrix [n_samples, n_samples]
@@ -194,13 +194,20 @@ def _rbf_gram_matrix(
     n = X.shape[0]
 
     if sigma is None:
-        # Median heuristic: sigma = median of non-zero distances
-        # Flatten upper triangle and find median
+        # Median bandwidth: sigma = median of non-zero distances
         flat_dist = backend.reshape(distances, (-1,))
         sorted_dist = backend.sort(flat_dist)
-        # Skip zeros (diagonal elements)
-        mid_idx = (n * n) // 2
-        median_elem = sorted_dist[mid_idx]
+        # Skip near-zeros (diagonal elements and exact duplicates)
+        div_eps = division_epsilon(backend, distances)
+        zero_mask = flat_dist <= div_eps
+        zero_count_arr = backend.sum(zero_mask)
+        backend.eval(zero_count_arr)
+        zero_count = int(backend.to_scalar(zero_count_arr))
+        total = n * n
+        non_zero_count = max(total - zero_count, 1)
+        median_idx = min(zero_count + (non_zero_count // 2), total - 1)
+        median_elem = backend.take(sorted_dist, backend.array([median_idx]), axis=0)
+        median_elem = backend.squeeze(median_elem)
         backend.eval(median_elem)
         median_dist = float(backend.to_scalar(median_elem))
         if median_dist > 0:

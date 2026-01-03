@@ -96,7 +96,7 @@ class ModerationFailureMode(str, Enum):
                 "If moderation fails, treat the sample as approved (fastest, least safe)."
             ),
             ModerationFailureMode.FLAG: (
-                "Send samples to the review queue when moderation is unavailable (recommended)."
+                "Send samples to the review queue when moderation is unavailable (default)."
             ),
             ModerationFailureMode.REJECT: (
                 "Reject samples outright when moderation fails (safest)."
@@ -135,7 +135,7 @@ class SafetyThresholds:
     """Per-category confidence thresholds for triggering safety flags.
 
     Values between 0.0 and 1.0. Lower thresholds are stricter (more flags).
-    Provides presets: strict, recommended, permissive.
+    Provides presets: strict, default, permissive.
     """
 
     toxicity: float
@@ -164,8 +164,8 @@ class SafetyThresholds:
         return mapping[category]
 
     @classmethod
-    def recommended(cls) -> SafetyThresholds:
-        """Balanced thresholds for general use."""
+    def default(cls) -> SafetyThresholds:
+        """Default thresholds for general use."""
         return cls(
             toxicity=0.7,
             hate_speech=0.6,
@@ -177,6 +177,11 @@ class SafetyThresholds:
             dangerous_code=0.8,
             pii=0.7,
         )
+
+    @classmethod
+    def recommended(cls) -> SafetyThresholds:
+        """Alias for default thresholds."""
+        return cls.default()
 
     @classmethod
     def strict(cls) -> SafetyThresholds:
@@ -295,7 +300,7 @@ class StrictnessLevel(str, Enum):
         """Safety thresholds for this strictness level."""
         return {
             StrictnessLevel.STRICT: SafetyThresholds.strict(),
-            StrictnessLevel.MODERATE: SafetyThresholds.recommended(),
+            StrictnessLevel.MODERATE: SafetyThresholds.default(),
             StrictnessLevel.PERMISSIVE: SafetyThresholds.permissive(),
         }[self]
 

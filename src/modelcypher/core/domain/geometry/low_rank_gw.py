@@ -123,7 +123,8 @@ class LowRankGWConfig:
 
     # Regularization strength (entropic regularization)
     # Smaller = closer to exact GW, larger = faster convergence
-    reg: float = 0.01
+    # If None, derived from cost matrix scale: median(cost) * sqrt(eps)
+    reg: float | None = None
 
     # Outer iterations (GW loop)
     max_iterations: int = 100

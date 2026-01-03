@@ -161,22 +161,16 @@ class InvariantConvergenceAnalyzer:
     - NORMALIZED: Normalized depth matching (cross-architecture)
     """
 
-    def __init__(self, thresholds: dict[str, float] = None):
+    def __init__(self, thresholds: dict[str, float] | None = None):
         """
         Initialize with per-family convergence thresholds.
 
         Args:
             thresholds: Minimum cosine similarity to consider converged per family.
+                        If None, no threshold is applied (raw similarities returned).
         """
-        self.thresholds = thresholds or {
-            "fibonacci": 0.8,
-            "lucas": 0.8,
-            "primes": 0.75,
-            "catalan": 0.7,
-            "logic": 0.85,
-            "knowledge": 0.6,
-            "creative": 0.4,
-        }
+        # No hardcoded thresholds - caller provides or we return raw measurements
+        self.thresholds = thresholds or {}
 
     def analyze(
         self,

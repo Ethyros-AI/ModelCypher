@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Configuration:
-    gate_detection_threshold: float = 0.55
+    gate_detection_threshold: float | None = None  # Must be derived from baseline
     capture_trajectory: bool = True
     max_tokens: int = 200
     temperature: float = 0.0

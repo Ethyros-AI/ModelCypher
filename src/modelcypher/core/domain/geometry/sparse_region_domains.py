@@ -66,7 +66,7 @@ class SparseRegionDomains:
             "Explain memory management in Rust.",
             "What are closures and how do they capture variables?",
         ],
-        expected_active_layer_range=(0.3, 0.7),
+        # Layer range derived from measurement, not hardcoded
         keywords=["code", "programming", "function", "algorithm", "debug", "compile"],
     )
 
@@ -84,7 +84,7 @@ class SparseRegionDomains:
             "What is the probability of rolling two sixes?",
             "Describe the relationship between groups and symmetry.",
         ],
-        expected_active_layer_range=(0.4, 0.8),
+        # Layer range derived from measurement, not hardcoded
         keywords=["math", "calculate", "prove", "theorem", "equation", "formula"],
     )
 
@@ -102,7 +102,7 @@ class SparseRegionDomains:
             "What are the side effects of beta blockers?",
             "Describe the blood-brain barrier and its function.",
         ],
-        expected_active_layer_range=(0.5, 0.85),
+        # Layer range derived from measurement, not hardcoded
         keywords=["medical", "health", "symptom", "diagnosis", "treatment", "patient"],
     )
 
@@ -120,7 +120,7 @@ class SparseRegionDomains:
             "Describe the process of judicial review.",
             "What constitutes intellectual property infringement?",
         ],
-        expected_active_layer_range=(0.5, 0.8),
+        # Layer range derived from measurement, not hardcoded
         keywords=["legal", "law", "court", "contract", "rights", "liability"],
     )
 
@@ -138,7 +138,7 @@ class SparseRegionDomains:
             "Write a descriptive paragraph about a bustling marketplace.",
             "Craft a cliffhanger ending for a mystery novel.",
         ],
-        expected_active_layer_range=(0.2, 0.6),
+        # Layer range derived from measurement, not hardcoded
         keywords=["write", "story", "creative", "poem", "character", "narrative"],
     )
 
@@ -156,7 +156,7 @@ class SparseRegionDomains:
             "If today is Wednesday, what day was it 100 days ago?",
             "Solve: A is taller than B, C is shorter than B, who is tallest?",
         ],
-        expected_active_layer_range=(0.4, 0.75),
+        # Layer range derived from measurement, not hardcoded
         keywords=["reason", "logic", "conclude", "therefore", "because", "infer"],
     )
 
@@ -174,7 +174,7 @@ class SparseRegionDomains:
             "How do superconductors work?",
             "Explain quantum entanglement in simple terms.",
         ],
-        expected_active_layer_range=(0.45, 0.85),
+        # Layer range derived from measurement, not hardcoded
         keywords=["physics", "energy", "force", "quantum", "relativity", "particle"],
     )
 
@@ -192,7 +192,7 @@ class SparseRegionDomains:
             "Explain the Cold War and its major events.",
             "What was the Renaissance and why was it important?",
         ],
-        expected_active_layer_range=(0.5, 0.8),
+        # Layer range derived from measurement, not hardcoded
         keywords=["history", "historical", "century", "war", "civilization", "era"],
     )
 
@@ -210,7 +210,7 @@ class SparseRegionDomains:
             "Describe the responsible use of powerful technologies.",
             "What safeguards protect against misuse of information?",
         ],
-        expected_active_layer_range=(0.35, 0.65),
+        # Layer range derived from measurement, not hardcoded
         keywords=["safe", "ethical", "responsible", "harm", "protect", "risk"],
     )
 

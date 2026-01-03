@@ -725,7 +725,7 @@ def generate_random_gaps(
 
     Args:
         n: Number of gaps to generate.
-        mean_gap: Mean gap size (should match prime gaps for fair comparison).
+        mean_gap: Mean gap size (should match prime gaps for like-for-like comparison).
         backend: Compute backend.
         seed: Random seed for reproducibility.
 

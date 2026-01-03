@@ -57,7 +57,7 @@ class SweepConfig:
     ranks: list[int] = field(default_factory=lambda: [4, 8, 16, 32])
     neighbor_count: int = 8
     min_anchor_count: int = 8
-    plateau_epsilon: float = 0.02
+    plateau_epsilon: float | None = None  # Derived from fidelity variance if not set
 
     @classmethod
     def with_parameters(
@@ -66,7 +66,7 @@ class SweepConfig:
         ranks: list[int] | None = None,
         neighbor_count: int = 8,
         min_anchor_count: int = 8,
-        plateau_epsilon: float = 0.02,
+        plateau_epsilon: float | None = None,
     ) -> "SweepConfig":
         """Create configuration with explicit parameters.
 
@@ -74,7 +74,7 @@ class SweepConfig:
             ranks: Rank levels to sweep (default: [4, 8, 16, 32]).
             neighbor_count: Number of neighbors for k-NN metrics.
             min_anchor_count: Minimum anchors required for sweep.
-            plateau_epsilon: Epsilon for plateau detection.
+            plateau_epsilon: Epsilon for plateau detection (derived from data if None).
 
         Returns:
             Configuration with specified parameters.
@@ -89,7 +89,7 @@ class SweepConfig:
             raise ValueError(f"neighbor_count must be >= 1, got {neighbor_count}")
         if min_anchor_count < 2:
             raise ValueError(f"min_anchor_count must be >= 2, got {min_anchor_count}")
-        if plateau_epsilon <= 0:
+        if plateau_epsilon is not None and plateau_epsilon <= 0:
             raise ValueError(f"plateau_epsilon must be > 0, got {plateau_epsilon}")
         return cls(
             ranks=ranks,
