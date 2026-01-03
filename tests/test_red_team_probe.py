@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import pytest
 
+from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTier
 from modelcypher.core.domain.safety.behavioral_probes import (
-    AdapterSafetyTier,
     ProbeContext,
     ProbeResult,
 )

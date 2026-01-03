@@ -24,8 +24,9 @@ Uses actual module APIs discovered from existing tests.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
+
+from modelcypher.core.domain._backend import get_default_backend
 
 
 # Test that all key geometry modules can be imported and work together
@@ -49,7 +50,9 @@ class TestGeometryIntegration:
         sim_v1_v3 = VectorMath.cosine_similarity(v1, v3_norm)
 
         assert sim_v1_v2 == pytest.approx(0.0)
-        assert sim_v1_v3 == pytest.approx(1.0 / np.sqrt(2))
+        backend = get_default_backend()
+        denom = backend.to_scalar(backend.sqrt(backend.array(2.0)))
+        assert sim_v1_v3 == pytest.approx(1.0 / denom)
 
     def test_dora_decomposition_import(self):
         """DoRA decomposition module can be imported."""

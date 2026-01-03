@@ -535,8 +535,8 @@ def spatial_probe_model(
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
-from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
-from modelcypher.core.support.array_utils import array_to_list
+    from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
+    from modelcypher.core.support.array_utils import array_to_list
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)

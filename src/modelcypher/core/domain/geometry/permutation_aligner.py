@@ -719,11 +719,11 @@ class PermutationAligner:
         b = backend or get_default_backend()
 
         if signs.ndim == 1:
-            values = [float(b.to_scalar(signs[i])) for i in range(int(signs.shape[0]))]
+            values = [float(x) for x in b.tolist(signs)]
         else:
             diag = b.diag(signs)
             b.eval(diag)
-            values = [float(b.to_scalar(diag[i])) for i in range(int(diag.shape[0]))]
+            values = [float(x) for x in b.tolist(diag)]
 
         if len(values) != expected_count:
             raise PermutationAlignerError(

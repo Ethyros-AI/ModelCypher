@@ -1725,7 +1725,7 @@ class RiemannianGeometry:
         # Deterministic neighbor selection with index tie-breaker
         sorted_indices = backend.argsort(euc_dist)
         backend.eval(sorted_indices)
-        sorted_list = [int(backend.to_scalar(sorted_indices[i])) for i in range(n)]
+        sorted_list = [int(x) for x in backend.tolist(sorted_indices)]
 
         # Include all points tied at the k-th distance to ensure symmetric treatment
         # Without this, equidistant points would be arbitrarily excluded by index order

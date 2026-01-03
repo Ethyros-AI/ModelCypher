@@ -904,7 +904,7 @@ class ManifoldStitcher:
             assignments = new_assignments
 
             # Update step: compute new centroids using Fréchet mean
-            assignments_list = [int(b.to_scalar(assignments[i])) for i in range(n)]
+            assignments_list = [int(x) for x in b.tolist(assignments)]
             new_centroids = []
             for c in range(k):
                 indices = [i for i, val in enumerate(assignments_list) if val == c]

@@ -15,8 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-import numpy as np
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
 
 
@@ -32,23 +31,25 @@ class _MockLoader:
 
 
 def test_infer_hidden_dim_prefers_norm_weight_over_quant_metadata():
+    backend = get_default_backend()
     merger = UnifiedGeometricMerger(model_loader=_MockLoader())
 
     # Simulate a quantized layer with per-group scales (in_dim=3584, group_size=64 -> 56 groups)
     weights = {
-        "model.layers.0.self_attn.q_proj.scales": np.zeros((3584, 56), dtype=np.float16),
-        "model.layers.0.input_layernorm.weight": np.zeros((3584,), dtype=np.float32),
+        "model.layers.0.self_attn.q_proj.scales": backend.zeros((3584, 56)),
+        "model.layers.0.input_layernorm.weight": backend.zeros((3584,)),
     }
 
     assert merger._infer_hidden_dim(weights) == 3584
 
 
 def test_infer_hidden_dim_falls_back_to_attention_projection():
+    backend = get_default_backend()
     merger = UnifiedGeometricMerger(model_loader=_MockLoader())
 
     # GQA K-proj shape: [kv_dim, hidden] (e.g., 512 x 3584)
     weights = {
-        "model.layers.0.self_attn.k_proj.weight": np.zeros((512, 3584), dtype=np.float16),
+        "model.layers.0.self_attn.k_proj.weight": backend.zeros((512, 3584)),
     }
 
     assert merger._infer_hidden_dim(weights) == 3584

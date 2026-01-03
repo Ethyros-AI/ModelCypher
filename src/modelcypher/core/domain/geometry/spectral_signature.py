@@ -165,15 +165,11 @@ class SpectralSignature:
 
         eigvals, _ = backend.eigh(laplacian)
         backend.eval(eigvals)
-        eig_list = [float(backend.to_scalar(eigvals[i])) for i in range(int(eigvals.shape[0]))]
-        eig_list.sort()
+        eig_list = sorted([float(x) for x in backend.tolist(eigvals)])
 
         spectral_entropy = _spectral_entropy(eig_list, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
-        neighbor_indices_list = [
-            [int(backend.to_scalar(neighbor_indices[i, j])) for j in range(int(neighbor_indices.shape[1]))]
-            for i in range(int(neighbor_indices.shape[0]))
-        ]
+        neighbor_indices_list = [[int(x) for x in row] for row in backend.tolist(neighbor_indices)]
         component_count = _count_components_from_neighbors(neighbor_indices_list, n)
         connected = component_count == 1
 

@@ -17,12 +17,12 @@
 
 from __future__ import annotations
 
-import math
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
 from .vector_math import VectorMath
@@ -311,7 +311,7 @@ class PersonaVectorMonitor:
             total_drift += abs_delta * abs_delta
             if abs_delta > drift_threshold:
                 drifting_traits.append(position.trait_id)
-        overall_magnitude = math.sqrt(total_drift)
+        overall_magnitude = sqrt_scalar(total_drift, get_default_backend())
         return TrainingDriftMetrics(
             step=step,
             positions=positions,
@@ -433,13 +433,14 @@ class PersonaVectorMonitor:
         for proj in all_projections:
             diff = proj - mean_all
             variance += diff * diff
-        std_dev = math.sqrt(variance / float(total_count))
+        backend = get_default_backend()
+        std_dev = sqrt_scalar(variance / float(total_count), backend)
         if std_dev <= 0:
             return 0.0
 
         p = float(pos_count) / float(total_count)
         q = float(neg_count) / float(total_count)
-        r = (pos_mean - neg_mean) / std_dev * math.sqrt(p * q)
+        r = (pos_mean - neg_mean) / std_dev * sqrt_scalar(p * q, backend)
         return max(0.0, min(1.0, r))
 
     @staticmethod

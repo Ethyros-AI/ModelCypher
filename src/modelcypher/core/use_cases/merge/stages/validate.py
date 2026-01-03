@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
+_cache = ComputationCache.shared()
 
 
 # ValidateConfig was REMOVED. Validation always runs all checks.
@@ -480,7 +482,13 @@ def _compute_layer_condition_number(
             # Use backend for SVD
             val_arr = b.astype(b.array(val), "float32")
             b.eval(val_arr)
-            _, s, _ = svd_via_eigh(b, val_arr, full_matrices=False)
+            cache_key = _cache.make_svd_key(val_arr, b, full_matrices=False)
+            cached = _cache.get_svd(cache_key)
+            if cached is None:
+                U, s, Vt = svd_via_eigh(b, val_arr, full_matrices=False)
+                _cache.set_svd(cache_key, (U, s, Vt))
+            else:
+                _, s, _ = cached
             b.eval(s)
             # Use dtype-derived threshold for singular value significance
             sv_eps = float(machine_epsilon(b, s))
@@ -533,7 +541,13 @@ def _estimate_layer_intrinsic_dim(
             # Use backend for SVD
             val_arr = b.astype(b.array(val), "float32")
             b.eval(val_arr)
-            _, s, _ = svd_via_eigh(b, val_arr, full_matrices=False)
+            cache_key = _cache.make_svd_key(val_arr, b, full_matrices=False)
+            cached = _cache.get_svd(cache_key)
+            if cached is None:
+                U, s, Vt = svd_via_eigh(b, val_arr, full_matrices=False)
+                _cache.set_svd(cache_key, (U, s, Vt))
+            else:
+                _, s, _ = cached
             b.eval(s)
             # Use dtype-derived threshold - sqrt(eps) is standard numerical tolerance
             sv_eps = float(machine_epsilon(b, s))
@@ -559,6 +573,7 @@ def _check_refusal_preservation(
     layer_indices: list[int],
     collect_activations_fn: Callable,
     backend: "Backend",
+    target_model_path: str | None = None,
 ) -> float:
     """
     Check if refusal behavior is preserved from target model.
@@ -571,46 +586,72 @@ def _check_refusal_preservation(
         STANDARD_CONTRASTIVE_PAIRS,
         RefusalDirectionDetector,
     )
-
-    harmful_activations: list[list[float]] = []
-    harmless_activations: list[list[float]] = []
+    from modelcypher.core.domain.geometry.refusal_direction_cache import RefusalDirectionCache
 
     if not layer_indices:
         return 1.0
 
     mid_layer = layer_indices[len(layer_indices) // 2]
 
-    for pair in STANDARD_CONTRASTIVE_PAIRS[:3]:
-        try:
-            harmful_acts = collect_activations_fn(target_model, tokenizer, pair.harmful)
-            if mid_layer in harmful_acts:
-                act = harmful_acts[mid_layer]
-                b.eval(act)
-                harmful_activations.append(_array_to_list(b, act))
-
-            harmless_acts = collect_activations_fn(target_model, tokenizer, pair.harmless)
-            if mid_layer in harmless_acts:
-                act = harmless_acts[mid_layer]
-                b.eval(act)
-                harmless_activations.append(_array_to_list(b, act))
-
-        except Exception as e:
-            logger.debug("Refusal pair activation failed: %s", e)
-            continue
-
-    if not harmful_activations or not harmless_activations:
-        logger.debug("VALIDATE: Insufficient activations for refusal check")
-        return 1.0
-
-    refusal_dir = RefusalDirectionDetector.compute_direction(
-        harmful_activations=harmful_activations,
-        harmless_activations=harmless_activations,
-        layer_index=mid_layer,
-        model_id="target",
-    )
+    cache = RefusalDirectionCache.shared() if target_model_path else None
+    refusal_dir = cache.load(target_model_path) if cache else None
+    if refusal_dir is not None and refusal_dir.layer_index != mid_layer:
+        refusal_dir = None
 
     if refusal_dir is None:
-        logger.debug("VALIDATE: Could not compute refusal direction")
+        harmful_activations: list[Any] = []
+        harmless_activations: list[Any] = []
+
+        for pair in STANDARD_CONTRASTIVE_PAIRS[:3]:
+            try:
+                harmful_acts = collect_activations_fn(target_model, tokenizer, pair.harmful)
+                if mid_layer in harmful_acts:
+                    act = harmful_acts[mid_layer]
+                    act_flat = b.reshape(act, (-1,))
+                    b.eval(act_flat)
+                    harmful_activations.append(act_flat)
+
+                harmless_acts = collect_activations_fn(target_model, tokenizer, pair.harmless)
+                if mid_layer in harmless_acts:
+                    act = harmless_acts[mid_layer]
+                    act_flat = b.reshape(act, (-1,))
+                    b.eval(act_flat)
+                    harmless_activations.append(act_flat)
+
+            except Exception as e:
+                logger.debug("Refusal pair activation failed: %s", e)
+                continue
+
+        if not harmful_activations or not harmless_activations:
+            logger.debug("VALIDATE: Insufficient activations for refusal check")
+            return 1.0
+
+        harmful_arr = b.stack(harmful_activations)
+        harmless_arr = b.stack(harmless_activations)
+        b.eval(harmful_arr, harmless_arr)
+
+        model_id = Path(target_model_path).name if target_model_path else "target"
+        refusal_dir = RefusalDirectionDetector.compute_direction(
+            harmful_activations=harmful_arr,
+            harmless_activations=harmless_arr,
+            layer_index=mid_layer,
+            model_id=model_id,
+        )
+
+        if refusal_dir is None:
+            logger.debug("VALIDATE: Could not compute refusal direction")
+            return 1.0
+
+        if cache is not None and target_model_path is not None:
+            cache.save(refusal_dir, target_model_path)
+
+    direction_arr = refusal_dir.direction
+    if not hasattr(direction_arr, "shape"):
+        direction_arr = b.array(direction_arr)
+    direction_arr = b.reshape(direction_arr, (-1,))
+    b.eval(direction_arr)
+    direction_dim = int(direction_arr.shape[0])
+    if direction_dim == 0:
         return 1.0
 
     layer_pattern = f"layers.{mid_layer}."
@@ -624,20 +665,19 @@ def _check_refusal_preservation(
         merged_flat = b.reshape(merged_arr, (-1,))
         b.eval(merged_flat)
 
-        if merged_flat.shape[0] != len(refusal_dir.direction):
+        if int(merged_flat.shape[0]) != direction_dim:
             continue
-
-        direction_arr = b.array(refusal_dir.direction)
-        b.eval(direction_arr)
 
         # Compute projection using backend
         dot_val = b.sum(merged_flat * direction_arr)
         norm_val = b.norm(merged_flat)
         b.eval(dot_val, norm_val)
-        div_eps = float(machine_epsilon(b, norm_val))
-        projection = float(b.to_scalar(dot_val)) / (float(b.to_scalar(norm_val)) + div_eps)
+        div_eps = float(division_epsilon(b, merged_flat))
+        norm_scalar = float(b.to_scalar(norm_val))
+        projection = float(b.to_scalar(dot_val)) / (norm_scalar + div_eps)
+        strength = max(refusal_dir.strength, div_eps)
 
-        preservation = min(1.0, abs(projection) / (refusal_dir.strength + div_eps))
+        preservation = min(1.0, abs(projection) / (strength + div_eps))
         projection_preservations.append(preservation)
 
     if not projection_preservations:

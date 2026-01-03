@@ -159,8 +159,8 @@ def moral_probe_model(
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
-from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
-from modelcypher.core.support.array_utils import array_to_list
+    from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
+    from modelcypher.core.support.array_utils import array_to_list
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)

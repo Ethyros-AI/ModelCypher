@@ -77,16 +77,16 @@ def transfer_project(
     """
     context = _context(ctx)
 
-from modelcypher.core.domain.geometry.geometric_lora import (
-    GeometricLoRAConfig,
-    GeometricLoRAGenerator,
-    save_geometric_lora,
-)
-from modelcypher.core.domain.geometry.manifold_transfer import (
-    CrossManifoldConfig,
-    CrossManifoldProjector,
-)
-from modelcypher.core.support.array_utils import array_to_list
+    from modelcypher.core.domain.geometry.geometric_lora import (
+        GeometricLoRAConfig,
+        GeometricLoRAGenerator,
+        save_geometric_lora,
+    )
+    from modelcypher.core.domain.geometry.manifold_transfer import (
+        CrossManifoldConfig,
+        CrossManifoldProjector,
+    )
+    from modelcypher.core.support.array_utils import array_to_list
 
     source_path = Path(source_model)
     target_path = Path(target_model)

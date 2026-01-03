@@ -893,9 +893,8 @@ def _extract_top_k_dims(
     top_indices_arr = b.argsort(neg_abs)[:k]
     b.eval(top_indices_arr)
 
-    # Convert to Python using backend to_scalar - no NumPy
-    n_top = int(top_indices_arr.shape[0])
-    top_indices = sorted([int(b.to_scalar(top_indices_arr[i])) for i in range(n_top)])
+    # Convert to Python using native tolist - no NumPy
+    top_indices = sorted([int(x) for x in b.tolist(top_indices_arr)])
     indices_arr = b.array(top_indices, dtype="int32")
     selected_acts = b.take(activation_vector, indices_arr, axis=0)
     selected_abs = b.take(abs_vals, indices_arr, axis=0)

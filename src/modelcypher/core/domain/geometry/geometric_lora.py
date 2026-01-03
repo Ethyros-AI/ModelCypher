@@ -144,9 +144,8 @@ class LayerLoRAWeights:
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         backend = get_default_backend()
-        sv_count = int(self.singular_values.shape[0])
-        top_n = min(5, sv_count)
-        top_svs = [float(backend.to_scalar(self.singular_values[i])) for i in range(top_n)]
+        sv_list = [float(x) for x in backend.tolist(self.singular_values)]
+        top_svs = sv_list[:5]
         return {
             "layer": self.layer_idx,
             "projection": self.projection_name,

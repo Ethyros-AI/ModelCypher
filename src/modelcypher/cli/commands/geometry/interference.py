@@ -578,7 +578,7 @@ def null_space_filter(
     # Compute null space profile - all params derived from spectral properties
     filter = NullSpaceFilter(backend)
 
-    # Stack activations using backend and convert to numpy for NullSpaceFilter
+    # Stack activations using backend arrays for NullSpaceFilter
     layer_arrays = {
         layer_idx: backend.stack(acts)
         for layer_idx, acts in layer_activations.items()

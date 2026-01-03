@@ -483,8 +483,8 @@ class MLXBackend(Backend):
         det_U = self.mx.prod(diag_U)
         self.safe.eval(det_U)
 
-        n = int(p.shape[0])
-        p_list = [int(self.to_scalar(p[i])) for i in range(n)]
+        p_list = [int(x) for x in self.tolist(p)]
+        n = len(p_list)
         swaps = 0
         seen = [False] * n
         for i in range(n):

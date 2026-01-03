@@ -45,9 +45,15 @@ spatial concepts—one shaped by tactile/auditory experience, one by visual.
 from __future__ import annotations
 
 import logging
-import math
 import sys
 from dataclasses import dataclass
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    is_inf,
+    is_nan,
+    sqrt_scalar,
+)
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -220,7 +226,7 @@ def _backend_var(backend: "Backend", arr: "Array") -> float:
 
 def _backend_std(backend: "Backend", arr: "Array") -> float:
     """Compute standard deviation using backend ops."""
-    return math.sqrt(_backend_var(backend, arr))
+    return sqrt_scalar(_backend_var(backend, arr), backend)
 
 
 def _backend_clip(backend: "Backend", arr: "Array", min_val: float, max_val: float) -> "Array":
@@ -354,9 +360,10 @@ class EuclideanConsistencyAnalyzer:
                     # Check if j forms ~90° angle
                     vec_ij = [expected_3d_list[j][d] - expected_3d_list[i][d] for d in range(3)]
                     vec_jk = [expected_3d_list[k][d] - expected_3d_list[j][d] for d in range(3)]
+                    backend = get_default_backend()
                     dot = sum(vec_ij[d] * vec_jk[d] for d in range(3))
-                    norm_ij = math.sqrt(sum(v * v for v in vec_ij))
-                    norm_jk = math.sqrt(sum(v * v for v in vec_jk))
+                    norm_ij = sqrt_scalar(sum(v * v for v in vec_ij), backend)
+                    norm_jk = sqrt_scalar(sum(v * v for v in vec_jk), backend)
                     norm_prod = norm_ij * norm_jk
 
                     if norm_prod > 0.1:  # Non-degenerate
@@ -367,10 +374,10 @@ class EuclideanConsistencyAnalyzer:
                             rhs = latent_dists[i, j] ** 2 + latent_dists[j, k] ** 2
 
                             # Skip invalid values
-                            if rhs > 0 and not math.isnan(rhs) and not math.isinf(rhs):
-                                if not math.isnan(lhs) and not math.isinf(lhs):
+                            if rhs > 0 and not is_nan(rhs, backend) and not is_inf(rhs, backend):
+                                if not is_nan(lhs, backend) and not is_inf(lhs, backend):
                                     error = abs(lhs - rhs) / rhs
-                                    if not math.isnan(error) and not math.isinf(error):
+                                    if not is_nan(error, backend) and not is_inf(error, backend):
                                         pyth_errors.append(error)
 
         pythagorean_error = sum(pyth_errors) / len(pyth_errors) if pyth_errors else float("inf")
@@ -729,7 +736,7 @@ class SpatialStereoscopy:
         if z_values and len(z_values) > 1:
             z_mean = sum(z_values) / len(z_values)
             z_variance = sum((z - z_mean) ** 2 for z in z_values) / len(z_values)
-            z_std = math.sqrt(z_variance)
+            z_std = sqrt_scalar(z_variance, get_default_backend())
             depth_detected = z_std > 0  # Any variance indicates depth axis
         else:
             depth_detected = False
@@ -776,7 +783,7 @@ class GravityGradientResult:
                 flat_vec = grav_vec  # Already a list
             # Compute norm using sum of squares
             norm_sq = sum(float(x) ** 2 for x in flat_vec)
-            grav_norm = math.sqrt(norm_sq)
+            grav_norm = sqrt_scalar(norm_sq, get_default_backend())
             top_5 = [float(x) for x in flat_vec[:5]]
             grav_dir_summary = {
                 "norm": grav_norm,
@@ -1043,7 +1050,7 @@ class VolumetricDensityProber:
             # Density metric: higher norm and lower variance = more concentrated
             var_eps = division_epsilon(b, act)
             if var > var_eps and not _scalar_isnan(var) and not _scalar_isinf(var):
-                density = norm / math.sqrt(var)
+                density = norm / sqrt_scalar(var, b)
             else:
                 density = norm
 

@@ -345,7 +345,7 @@ class TangentSpaceAlignment:
             _, s, _ = b.svd(m)
             b.eval(s)
 
-            cosines = [float(b.to_scalar(s[i])) for i in range(rank)]
+            cosines = [float(x) for x in b.tolist(s)][:rank]
             return [max(0.0, min(1.0 + epsilon, c)) for c in cosines]
 
         except Exception:

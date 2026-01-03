@@ -147,8 +147,8 @@ def temporal_probe_model(
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
-from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
-from modelcypher.core.support.array_utils import array_to_list
+    from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
+    from modelcypher.core.support.array_utils import array_to_list
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)

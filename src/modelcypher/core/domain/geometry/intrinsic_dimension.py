@@ -316,8 +316,6 @@ class IntrinsicDimension:
             return backend.array([])
 
         # Use where to zero out invalid entries, then filter
-        # For simplicity, convert to numpy for filtering then back
-        # This is a minor numpy usage for filtering - use backend operations instead
         r1_sq_safe = backend.where(valid_mask, r1_sq, backend.ones_like(r1_sq))
         r2_sq_safe = backend.where(valid_mask, r2_sq, backend.zeros_like(r2_sq))
 
@@ -657,9 +655,8 @@ class IntrinsicDimension:
             # Use backend operations to find deficient points
             deficient_mask = valid_id & (local_dims < backend.array(threshold))
             backend.eval(deficient_mask)
-            deficient = [
-                i for i in range(n) if backend.to_scalar(deficient_mask[i])
-            ]
+            mask_list = backend.tolist(deficient_mask)
+            deficient = [i for i, val in enumerate(mask_list) if val]
 
         return LocalDimensionMap(
             dimensions=local_dims,

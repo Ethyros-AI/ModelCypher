@@ -43,6 +43,9 @@ __all__ = [
     "lgamma_scalar",
     "acos_scalar",
     "cos_scalar",
+    "sin_scalar",
+    "atan2_scalar",
+    "log2_scalar",
     "pi_value",
     "e_value",
     "inf_value",
@@ -216,6 +219,70 @@ def cos_scalar(value: float, backend: "Backend") -> float:
     """
     arr = backend.array([value])
     result = backend.cos(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def sin_scalar(value: float, backend: "Backend") -> float:
+    """Compute sine of scalar using backend.
+
+    Use instead of math.sin(value).
+    """
+    arr = backend.array([value])
+    result = backend.sin(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def atan2_scalar(y: float, x: float, backend: "Backend") -> float:
+    """Compute atan2(y, x) using backend.
+
+    Use instead of math.atan2(y, x).
+    Returns angle in radians in [-pi, pi].
+    """
+    # atan2(y, x) = arctan(y/x) with quadrant handling
+    # We compute using arctan and sign adjustments
+    y_arr = backend.array([y])
+    x_arr = backend.array([x])
+
+    # Compute arctan(y/x) with safe division
+    eps = backend.finfo().eps
+    x_safe = backend.where(
+        backend.abs(x_arr) < eps,
+        backend.sign(x_arr) * eps + eps,  # Avoid division by zero
+        x_arr,
+    )
+    ratio = y_arr / x_safe
+    base_angle = backend.arctan(ratio)
+    backend.eval(base_angle)
+
+    # Adjust for quadrant
+    angle = float(backend.to_scalar(base_angle))
+    pi = pi_value(backend)
+
+    if x < 0:
+        if y >= 0:
+            angle += pi
+        else:
+            angle -= pi
+    elif x == 0:
+        if y > 0:
+            angle = pi / 2
+        elif y < 0:
+            angle = -pi / 2
+        else:
+            angle = 0.0
+
+    return angle
+
+
+def log2_scalar(value: float, backend: "Backend") -> float:
+    """Compute log base 2 of scalar using backend.
+
+    Use instead of math.log2(value).
+    """
+    arr = backend.array([value])
+    result = backend.log2(arr)
     backend.eval(result)
     return float(backend.to_scalar(result))
 

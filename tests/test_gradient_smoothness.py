@@ -17,6 +17,8 @@
 
 """Tests for gradient smoothness estimator (per-layer gradient quality)."""
 
+import pytest
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
