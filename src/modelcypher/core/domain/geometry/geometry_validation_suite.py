@@ -23,7 +23,10 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
+
+_cache = ComputationCache.shared()
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,

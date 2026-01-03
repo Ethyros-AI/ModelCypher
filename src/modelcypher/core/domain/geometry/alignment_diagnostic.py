@@ -30,10 +30,13 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
+
+_cache = ComputationCache.shared()
 
 
 @dataclass(frozen=True)
@@ -112,9 +115,8 @@ def alignment_signal_from_matrices(
 
     # Per-anchor divergence (fallback to Gram-space when dimensions differ)
     if b.shape(source_matrix) != b.shape(target_matrix):
-        source_gram = b.matmul(source_matrix, b.transpose(source_matrix))
-        target_gram = b.matmul(target_matrix, b.transpose(target_matrix))
-        b.eval(source_gram, target_gram)
+        source_gram = _cache.get_or_compute_gram(source_matrix, b)
+        target_gram = _cache.get_or_compute_gram(target_matrix, b)
         diff = source_gram - target_gram
         distances = b.norm(diff, axis=1)
     else:
@@ -175,7 +177,7 @@ def alignment_signal_from_matrices(
 
 def _matrix_rank(matrix: "object", backend: "object") -> int:
     """Compute effective rank using dtype-derived threshold."""
-    gram = backend.matmul(matrix, backend.transpose(matrix))
+    gram = _cache.get_or_compute_gram(matrix, backend)
     eigvals, _ = backend.eigh(gram)
     backend.eval(eigvals)
     max_val = backend.max(eigvals)

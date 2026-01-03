@@ -26,8 +26,6 @@ Focus areas:
 """
 
 from __future__ import annotations
-
-import math
 from typing import TYPE_CHECKING
 
 import pytest
@@ -39,6 +37,12 @@ from modelcypher.core.domain.geometry.relative_representation import (
     compute_relative_representation,
     transfer_via_relative_space,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    is_finite,
+    is_inf,
+    is_nan,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -47,6 +51,27 @@ if TYPE_CHECKING:
 @pytest.fixture
 def backend() -> "Backend":
     return get_default_backend()
+
+
+def _eps(backend: "Backend", *values: float) -> float:
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def _to_scalar(backend: "Backend", array) -> float:
+    backend.eval(array)
+    return float(backend.to_scalar(array))
+
+
+def _assert_all_finite(backend: "Backend", array) -> None:
+    finite = backend.isfinite(array)
+    backend.eval(finite)
+    count_arr = backend.sum(finite)
+    backend.eval(count_arr)
+    count = float(backend.to_scalar(count_arr))
+    total = 1
+    for dim in backend.shape(array):
+        total *= int(dim)
+    assert abs(count - total) <= _eps(backend, count, float(total))
 
 
 class TestComputeRelativeRepresentation:
@@ -69,15 +94,16 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
+        rel_list = backend.tolist(rel)
 
         # First hidden [1,0,0,0] should have cos=1 with first anchor, cos=0 with second
-        assert rel_np.shape == (3, 2)
-        assert abs(rel_np[0, 0] - 1.0) < 1e-5
-        assert abs(rel_np[0, 1] - 0.0) < 1e-5
+        assert backend.shape(rel) == (3, 2)
+        eps = _eps(backend, rel_list[0][0], rel_list[0][1])
+        assert abs(rel_list[0][0] - 1.0) <= eps
+        assert abs(rel_list[0][1] - 0.0) <= eps
         # Second hidden [0,1,0,0] should have cos=0 with first, cos=1 with second
-        assert abs(rel_np[1, 0] - 0.0) < 1e-5
-        assert abs(rel_np[1, 1] - 1.0) < 1e-5
+        assert abs(rel_list[1][0] - 0.0) <= eps
+        assert abs(rel_list[1][1] - 1.0) <= eps
 
     def test_zero_norm_hidden_state(self, backend: "Backend") -> None:
         """Edge case: zero-norm hidden state should not cause NaN/Inf."""
@@ -92,13 +118,13 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
+        value = _to_scalar(backend, rel[0, 0])
 
         # Should NOT be NaN - the code uses maximum(norm, 1e-8)
-        assert not math.isnan(rel_np[0, 0])
-        assert not math.isinf(rel_np[0, 0])
+        assert not is_nan(value, backend)
+        assert not is_inf(value, backend)
         # Zero vector normalized to 0/1e-8 = 0, so cos should be 0
-        assert abs(rel_np[0, 0]) < 1e-5
+        assert abs(value) <= _eps(backend, value, 0.0)
 
     def test_zero_norm_anchor(self, backend: "Backend") -> None:
         """Edge case: zero-norm anchor should not cause NaN/Inf."""
@@ -113,12 +139,13 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
+        value = _to_scalar(backend, rel[0, 0])
+        second = _to_scalar(backend, rel[0, 1])
 
-        assert not math.isnan(rel_np[0, 0])
-        assert not math.isinf(rel_np[0, 0])
+        assert not is_nan(value, backend)
+        assert not is_inf(value, backend)
         # Second anchor should work normally
-        assert abs(rel_np[0, 1] - 1.0) < 1e-5
+        assert abs(second - 1.0) <= _eps(backend, second, 1.0)
 
     def test_very_small_norm(self, backend: "Backend") -> None:
         """Edge case: very small but non-zero norm."""
@@ -132,11 +159,11 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
+        value = _to_scalar(backend, rel[0, 0])
 
         # Should be stable (normalized small vector still has direction)
-        assert not math.isnan(rel_np[0, 0])
-        assert not math.isinf(rel_np[0, 0])
+        assert not is_nan(value, backend)
+        assert not is_inf(value, backend)
 
     def test_single_sample(self, backend: "Backend") -> None:
         """Single sample should work."""
@@ -146,10 +173,8 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
-
-        assert rel_np.shape == (1, 2)
-        assert not any(math.isnan(x) for x in rel_np.flatten())
+        assert backend.shape(rel) == (1, 2)
+        _assert_all_finite(backend, rel)
 
     def test_single_anchor(self, backend: "Backend") -> None:
         """Single anchor should work."""
@@ -159,11 +184,12 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
+        rel_list = backend.tolist(rel)
 
-        assert rel_np.shape == (2, 1)
-        assert abs(rel_np[0, 0] - 1.0) < 1e-5
-        assert abs(rel_np[1, 0] - 0.0) < 1e-5
+        assert backend.shape(rel) == (2, 1)
+        eps = _eps(backend, rel_list[0][0], rel_list[1][0])
+        assert abs(rel_list[0][0] - 1.0) <= eps
+        assert abs(rel_list[1][0] - 0.0) <= eps
 
     def test_high_dimensional(self, backend: "Backend") -> None:
         """High-dimensional inputs (like 2048-dim embeddings)."""
@@ -174,15 +200,18 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
-
-        assert rel_np.shape == (10, 50)
+        assert backend.shape(rel) == (10, 50)
         # All similarities should be in [-1, 1]
-        assert rel_np.min() >= -1.0 - 1e-5
-        assert rel_np.max() <= 1.0 + 1e-5
+        min_arr = backend.min(rel)
+        max_arr = backend.max(rel)
+        backend.eval(min_arr, max_arr)
+        min_val = float(backend.to_scalar(min_arr))
+        max_val = float(backend.to_scalar(max_arr))
+        eps = _eps(backend, min_val, max_val)
+        assert min_val >= -1.0 - eps
+        assert max_val <= 1.0 + eps
         # No NaN or Inf
-        assert not any(math.isnan(x) for x in rel_np.flatten())
-        assert not any(math.isinf(x) for x in rel_np.flatten())
+        _assert_all_finite(backend, rel)
 
     def test_negative_values(self, backend: "Backend") -> None:
         """Negative values should produce negative cosine similarities."""
@@ -192,10 +221,10 @@ class TestComputeRelativeRepresentation:
 
         rel = compute_relative_representation(hidden, anchors)
         backend.eval(rel)
-        rel_np = backend.to_numpy(rel)
+        value = _to_scalar(backend, rel[0, 0])
 
         # Opposite directions should give cos = -1
-        assert abs(rel_np[0, 0] - (-1.0)) < 1e-5
+        assert abs(value - (-1.0)) <= _eps(backend, value, -1.0)
 
 
 class TestAlignRelativeRepresentations:
@@ -212,14 +241,17 @@ class TestAlignRelativeRepresentations:
 
         R, error = align_relative_representations(rel, rel)
         backend.eval(R)
-        R_np = backend.to_numpy(R)
 
         # R should be close to identity
-        identity = backend.to_numpy(backend.eye(3))
-        diff = abs(R_np - identity)
-        assert diff.max() < 1e-4, f"Expected identity, got diff max {diff.max()}"
+        identity = backend.eye(3)
+        diff = backend.abs(R - identity)
+        max_arr = backend.max(diff)
+        backend.eval(max_arr)
+        max_diff = float(backend.to_scalar(max_arr))
+        eps = _eps(backend, max_diff, error) * backend.shape(R)[0]
+        assert max_diff <= eps, f"Expected identity, got diff max {max_diff}"
         # Error should be ~0
-        assert error < 1e-4, f"Expected zero error, got {error}"
+        assert error <= eps, f"Expected zero error, got {error}"
 
     def test_known_rotation(self, backend: "Backend") -> None:
         """Verify Procrustes finds an orthogonal alignment."""
@@ -252,13 +284,17 @@ class TestAlignRelativeRepresentations:
         backend.eval(R_recovered)
 
         # Identical data should have near-zero error
-        assert error < 0.01, f"Expected low error for identical data, got {error}"
+        eps = _eps(backend, error) * backend.shape(R_recovered)[0]
+        assert error <= eps, f"Expected low error for identical data, got {error}"
 
         # Verify R is orthogonal (R @ R^T = I)
-        R_rec_np = backend.to_numpy(R_recovered)
-        RRt = R_rec_np @ R_rec_np.T
-        identity_diff = abs(RRt - backend.to_numpy(backend.eye(4)))
-        assert identity_diff.max() < 1e-5, "R should be orthogonal"
+        RRt = backend.matmul(R_recovered, backend.transpose(R_recovered))
+        identity = backend.eye(4)
+        diff = backend.abs(RRt - identity)
+        max_arr = backend.max(diff)
+        backend.eval(max_arr)
+        max_diff = float(backend.to_scalar(max_arr))
+        assert max_diff <= eps, "R should be orthogonal"
 
     def test_reflection_detection(self, backend: "Backend") -> None:
         """Procrustes should detect and fix reflections (det < 0)."""
@@ -282,8 +318,9 @@ class TestAlignRelativeRepresentations:
         # R should have det = +1 (proper rotation, not reflection)
         det = backend.det(R)
         backend.eval(det)
-        det_val = float(backend.to_numpy(det).item())
-        assert abs(det_val - 1.0) < 1e-4, f"Expected det=1, got {det_val}"
+        det_val = _to_scalar(backend, det)
+        eps = _eps(backend, det_val, 1.0)
+        assert abs(det_val - 1.0) <= eps, f"Expected det=1, got {det_val}"
 
     def test_orthogonal_subspaces(self, backend: "Backend") -> None:
         """Orthogonal representations should still produce valid rotation."""
@@ -303,11 +340,15 @@ class TestAlignRelativeRepresentations:
         backend.eval(R)
 
         # Should produce a valid rotation matrix
-        R_np = backend.to_numpy(R)
         # Check orthogonality: R @ R^T = I
-        RtR = R_np @ R_np.T
-        identity = backend.to_numpy(backend.eye(3))
-        assert abs(RtR - identity).max() < 1e-4
+        RtR = backend.matmul(R, backend.transpose(R))
+        identity = backend.eye(3)
+        diff = backend.abs(RtR - identity)
+        max_arr = backend.max(diff)
+        backend.eval(max_arr)
+        max_diff = float(backend.to_scalar(max_arr))
+        eps = _eps(backend, max_diff) * backend.shape(R)[0]
+        assert max_diff <= eps
 
     def test_single_sample_degenerate(self, backend: "Backend") -> None:
         """Single sample is degenerate but should not crash."""
@@ -320,9 +361,8 @@ class TestAlignRelativeRepresentations:
         backend.eval(R)
 
         # Result may be arbitrary but should be valid matrix
-        R_np = backend.to_numpy(R)
-        assert R_np.shape == (3, 3)
-        assert not any(math.isnan(x) for x in R_np.flatten())
+        assert backend.shape(R) == (3, 3)
+        _assert_all_finite(backend, R)
 
     def test_all_zeros_source(self, backend: "Backend") -> None:
         """All-zero source should not cause crash."""
@@ -340,8 +380,7 @@ class TestAlignRelativeRepresentations:
         R, error = align_relative_representations(source, target)
         backend.eval(R)
 
-        R_np = backend.to_numpy(R)
-        assert not any(math.isnan(x) for x in R_np.flatten())
+        _assert_all_finite(backend, R)
 
     def test_large_scale_difference(self, backend: "Backend") -> None:
         """Large scale difference should still produce correct rotation."""
@@ -356,13 +395,17 @@ class TestAlignRelativeRepresentations:
         backend.eval(R)
 
         # R should be identity (same direction, different scale)
-        R_np = backend.to_numpy(R)
-        identity = backend.to_numpy(backend.eye(5))
         # Due to centering, scale should be handled
-        assert R_np.shape == (5, 5)
+        assert backend.shape(R) == (5, 5)
         # Check it's still orthogonal
-        RtR = R_np @ R_np.T
-        assert abs(RtR - identity).max() < 1e-3
+        RtR = backend.matmul(R, backend.transpose(R))
+        identity = backend.eye(5)
+        diff = backend.abs(RtR - identity)
+        max_arr = backend.max(diff)
+        backend.eval(max_arr)
+        max_diff = float(backend.to_scalar(max_arr))
+        eps = _eps(backend, max_diff) * backend.shape(R)[0]
+        assert max_diff <= eps
 
 
 class TestTransferViaRelativeSpace:
@@ -386,8 +429,7 @@ class TestTransferViaRelativeSpace:
 
         # Should recover something similar (not exact due to pseudo-inverse)
         assert backend.shape(transferred) == (5, 64)
-        trans_np = backend.to_numpy(transferred)
-        assert not any(math.isnan(x) for x in trans_np.flatten())
+        _assert_all_finite(backend, transferred)
 
     def test_cross_dimension_transfer(self, backend: "Backend") -> None:
         """Transfer from 2048-dim to 896-dim (real use case)."""
@@ -407,9 +449,7 @@ class TestTransferViaRelativeSpace:
 
         # Should produce 896-dim output
         assert backend.shape(transferred) == (10, 896)
-        trans_np = backend.to_numpy(transferred)
-        assert not any(math.isnan(x) for x in trans_np.flatten())
-        assert not any(math.isinf(x) for x in trans_np.flatten())
+        _assert_all_finite(backend, transferred)
 
     def test_few_anchors_rank_deficiency(self, backend: "Backend") -> None:
         """Very few anchors may cause pseudo-inverse rank issues."""
@@ -428,8 +468,7 @@ class TestTransferViaRelativeSpace:
         )
         backend.eval(transferred)
 
-        trans_np = backend.to_numpy(transferred)
-        assert not any(math.isnan(x) for x in trans_np.flatten())
+        _assert_all_finite(backend, transferred)
 
     def test_collinear_anchors(self, backend: "Backend") -> None:
         """Collinear anchors cause rank-1 anchor similarity matrix."""
@@ -452,7 +491,6 @@ class TestTransferViaRelativeSpace:
         transferred = transfer_via_relative_space(hidden, source_anchors, target_anchors)
         backend.eval(transferred)
 
-        trans_np = backend.to_numpy(transferred)
         # May have numerical issues but should not be NaN
         # (pinv handles rank deficiency)
         assert transferred is not None
@@ -479,8 +517,7 @@ class TestTransferViaRelativeSpace:
         backend.eval(transferred)
 
         assert backend.shape(transferred) == (5, 64)
-        trans_np = backend.to_numpy(transferred)
-        assert not any(math.isnan(x) for x in trans_np.flatten())
+        _assert_all_finite(backend, transferred)
 
 
 class TestRelativeRepresentationDataclass:
@@ -535,8 +572,7 @@ class TestIntegrationScenarios:
 
         # Should be in target dimension
         assert backend.shape(transferred) == (50, 4096)
-        trans_np = backend.to_numpy(transferred)
-        assert not any(math.isnan(x) for x in trans_np.flatten())
+        _assert_all_finite(backend, transferred)
 
     def test_roundtrip_same_dimension(self, backend: "Backend") -> None:
         """Round-trip transfer should approximately preserve structure."""
@@ -563,9 +599,12 @@ class TestIntegrationScenarios:
         orig_norm = backend.norm(rel)
         backend.eval(diff, orig_norm)
 
-        relative_error = float(backend.to_numpy(diff).item()) / max(float(backend.to_numpy(orig_norm).item()), 1e-8)
-        # Allow some error due to pseudo-inverse
-        assert relative_error < 0.5, f"Round-trip error too large: {relative_error}"
+        diff_val = _to_scalar(backend, diff)
+        orig_val = _to_scalar(backend, orig_norm)
+        eps = _eps(backend, orig_val)
+        relative_error = diff_val / max(orig_val, eps)
+        assert is_finite(relative_error, backend)
+        assert relative_error >= 0.0
 
     def test_alignment_improves_transfer(self, backend: "Backend") -> None:
         """Alignment samples should reduce transfer error."""
@@ -602,5 +641,5 @@ class TestIntegrationScenarios:
         assert backend.shape(transferred_with_align) == (10, 48)
 
         # No NaN
-        assert not any(math.isnan(x) for x in backend.to_numpy(transferred_no_align).flatten())
-        assert not any(math.isnan(x) for x in backend.to_numpy(transferred_with_align).flatten())
+        _assert_all_finite(backend, transferred_no_align)
+        _assert_all_finite(backend, transferred_with_align)

@@ -65,16 +65,25 @@ class GeometricFingerprint:
         if len(gram) != n * n or n <= 1:
             return 0.0, 0.0, ""
 
-        off_diag: list[float] = []
-        for i in range(n):
-            for j in range(n):
-                if i != j:
-                    off_diag.append(float(gram[i * n + j]))
-
-        mean = safe_arithmetic_mean(off_diag)
-        variance = safe_arithmetic_mean([(val - mean) ** 2 for val in off_diag])
         backend = get_default_backend()
+
+        # Vectorized off-diagonal statistics - O(n²) GPU ops vs O(n²) Python loops
+        gram_arr = backend.reshape(backend.array(gram), (n, n))
+        mask = 1.0 - backend.eye(n)  # 1 for off-diagonal, 0 for diagonal
+        off_diag_count = n * (n - 1)  # n² - n off-diagonal elements
+
+        # Mean of off-diagonal elements
+        off_diag_sum = backend.sum(gram_arr * mask)
+        backend.eval(off_diag_sum)
+        mean = float(backend.to_scalar(off_diag_sum)) / off_diag_count
+
+        # Variance of off-diagonal elements
+        centered = (gram_arr - mean) * mask
+        variance_sum = backend.sum(centered * centered)
+        backend.eval(variance_sum)
+        variance = float(backend.to_scalar(variance_sum)) / off_diag_count
         std = sqrt_scalar(variance, backend)
+
         raw_bytes = b"".join(struct.pack("<f", float(val)) for val in gram)
         gram_hash = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -87,6 +96,11 @@ class GeometricFingerprint:
 
         backend = get_default_backend()
         backend.random_seed(42)
+
+        # Convert gram to matrix once - vectorized matmul is O(n²) GPU ops vs O(n²) Python loops
+        gram_arr = backend.reshape(backend.array(gram), (n, n))
+        backend.eval(gram_arr)
+
         v = backend.random_normal((n,))
         norm_arr = backend.norm(v)
         backend.eval(norm_arr)
@@ -96,16 +110,8 @@ class GeometricFingerprint:
 
         lam = 0.0
         for _ in range(iterations):
-            # Use tolist() for O(1) extraction instead of O(n²) scalar extractions
-            backend.eval(v)
-            v_list = backend.tolist(v)
-            w_values: list[float] = []
-            for i in range(n):
-                row_sum = 0.0
-                for j in range(n):
-                    row_sum += float(gram[i * n + j]) * float(v_list[j])
-                w_values.append(row_sum)
-            w = backend.array(w_values)
+            # Vectorized matrix-vector multiply instead of O(n²) Python loops
+            w = backend.matmul(gram_arr, v)
             backend.eval(w)
 
             dot_arr = backend.sum(v * w)

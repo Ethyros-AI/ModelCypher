@@ -58,14 +58,14 @@ class TestSinkhornKnopp:
         # Row sums should be 1
         row_sums = backend.sum(result.projected_matrix, axis=1)
         backend.eval(row_sums)
-        row_sums_np = backend.to_numpy(row_sums)
-        max_row_error = max(abs(s - 1.0) for s in row_sums_np)
+        row_sums_list = backend.tolist(row_sums)
+        max_row_error = max(abs(s - 1.0) for s in row_sums_list)
 
         # Column sums should be 1
         col_sums = backend.sum(result.projected_matrix, axis=0)
         backend.eval(col_sums)
-        col_sums_np = backend.to_numpy(col_sums)
-        max_col_error = max(abs(s - 1.0) for s in col_sums_np)
+        col_sums_list = backend.tolist(col_sums)
+        max_col_error = max(abs(s - 1.0) for s in col_sums_list)
         max_error = max(max_row_error, max_col_error)
         tol = regularization_epsilon(backend, result.projected_matrix)
         assert abs(max_error - result.max_marginal_error) <= division_epsilon(
@@ -241,11 +241,11 @@ class TestCompositionalClosure:
         col_sums = backend.sum(product, axis=0)
         backend.eval(row_sums, col_sums)
 
-        row_sums_np = backend.to_numpy(row_sums)
-        col_sums_np = backend.to_numpy(col_sums)
+        row_sums_list = backend.tolist(row_sums)
+        col_sums_list = backend.tolist(col_sums)
 
-        max_row_error = max(abs(s - 1.0) for s in row_sums_np)
-        max_col_error = max(abs(s - 1.0) for s in col_sums_np)
+        max_row_error = max(abs(s - 1.0) for s in row_sums_list)
+        max_col_error = max(abs(s - 1.0) for s in col_sums_list)
 
         tol = division_epsilon(backend, product) * product.shape[0]
         assert max_row_error <= tol, f"Product row sums deviate: {max_row_error}"
@@ -279,11 +279,11 @@ class TestCompositionalClosure:
         col_sums = backend.sum(product, axis=0)
         backend.eval(row_sums, col_sums)
 
-        row_sums_np = backend.to_numpy(row_sums)
-        col_sums_np = backend.to_numpy(col_sums)
+        row_sums_list = backend.tolist(row_sums)
+        col_sums_list = backend.tolist(col_sums)
 
-        max_row_error = max(abs(s - 1.0) for s in row_sums_np)
-        max_col_error = max(abs(s - 1.0) for s in col_sums_np)
+        max_row_error = max(abs(s - 1.0) for s in row_sums_list)
+        max_col_error = max(abs(s - 1.0) for s in col_sums_list)
 
         tol = division_epsilon(backend, product) * (n * num_matrices)
         assert max_row_error <= tol, f"Chained row sums deviate: {max_row_error}"
@@ -347,8 +347,8 @@ class TestNumericalStability:
         # Should still be doubly stochastic
         row_sums = backend.sum(result.projected_matrix, axis=1)
         backend.eval(row_sums)
-        row_sums_np = backend.to_numpy(row_sums)
-        max_row_error = max(abs(s - 1.0) for s in row_sums_np)
+        row_sums_list = backend.tolist(row_sums)
+        max_row_error = max(abs(s - 1.0) for s in row_sums_list)
         tol = division_epsilon(backend, result.projected_matrix)
         assert abs(max_row_error - result.max_marginal_error) <= tol
 
@@ -366,11 +366,11 @@ class TestNumericalStability:
 
         row_sums = backend.sum(result.projected_matrix, axis=1)
         backend.eval(row_sums)
-        row_sums_np = backend.to_numpy(row_sums)
-        max_row_error = max(abs(s - 1.0) for s in row_sums_np)
+        row_sums_list = backend.tolist(row_sums)
+        max_row_error = max(abs(s - 1.0) for s in row_sums_list)
         tol = division_epsilon(backend, result.projected_matrix)
         assert abs(max_row_error - result.max_marginal_error) <= tol
-        assert math.isfinite(result.max_marginal_error)
+        assert is_finite(result.max_marginal_error, backend)
 
     def test_rejects_non_square(self) -> None:
         """project() should reject non-square matrices."""

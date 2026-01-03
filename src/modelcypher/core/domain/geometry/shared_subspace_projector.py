@@ -372,8 +372,9 @@ class SharedSubspaceProjector:
         # Filter by min_canonical_correlation
         min_corr = b.full(canonical_arr.shape, config.min_canonical_correlation)
         valid_mask = canonical_arr >= min_corr
-        b.eval(valid_mask)
-        valid_count = int(b.to_scalar(b.sum(b.astype(valid_mask, "int32"))))
+        valid_count_arr = b.sum(b.astype(valid_mask, "int32"))
+        b.eval(valid_count_arr)
+        valid_count = int(b.to_scalar(valid_count_arr))
         if valid_count == 0:
             return None
 
@@ -1023,8 +1024,9 @@ class SharedSubspaceProjector:
 
         variances_flat = b.reshape(variances, (-1,))
         mask = variances_flat > 0
-        b.eval(mask)
-        pos_count = int(b.to_scalar(b.sum(b.astype(mask, "int32"))))
+        pos_count_arr = b.sum(b.astype(mask, "int32"))
+        b.eval(pos_count_arr)
+        pos_count = int(b.to_scalar(pos_count_arr))
         if pos_count == 0:
             return 0
 
@@ -1049,10 +1051,13 @@ class SharedSubspaceProjector:
             rel_drop = (prev - next_vals) / denom
             rel_drop = b.where(prev > eps, rel_drop, b.full(prev.shape, float("-inf")))
             b.eval(rel_drop)
-            max_drop = float(b.to_scalar(b.max(rel_drop)))
+            max_drop_arr = b.max(rel_drop)
+            max_drop_idx = b.argmax(rel_drop)
+            b.eval(max_drop_arr, max_drop_idx)
+            max_drop = float(b.to_scalar(max_drop_arr))
             if max_drop <= 0.0:
                 return pos_count
-            gap_index = int(b.to_scalar(b.argmax(rel_drop))) + 1
+            gap_index = int(b.to_scalar(max_drop_idx)) + 1
             return gap_index
 
         total_arr = b.sum(vals)
@@ -1063,11 +1068,13 @@ class SharedSubspaceProjector:
         cumsum = b.cumsum(vals)
         ratio = cumsum / total
         meets = ratio >= threshold
-        b.eval(meets)
-        meets_count = int(b.to_scalar(b.sum(b.astype(meets, "int32"))))
+        meets_count_arr = b.sum(b.astype(meets, "int32"))
+        meets_idx = b.argmax(meets)
+        b.eval(meets_count_arr, meets_idx)
+        meets_count = int(b.to_scalar(meets_count_arr))
         if meets_count == 0:
             return pos_count
-        return int(b.to_scalar(b.argmax(meets))) + 1
+        return int(b.to_scalar(meets_idx)) + 1
 
     @staticmethod
     def _regularize_covariance(cov: "Array", epsilon: float, backend: "Backend | None" = None) -> "Array":

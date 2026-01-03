@@ -36,6 +36,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     e_value,
@@ -61,6 +62,8 @@ from .manifold_curvature import (
 from .riemannian_utils import GeodesicDistanceResult, RiemannianGeometry
 
 logger = logging.getLogger(__name__)
+
+_cache = ComputationCache.shared()
 
 
 def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
@@ -96,7 +99,7 @@ def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
     # dist[i,j] = ||x_i - x_j||
     # Using the identity: ||a-b||^2 = ||a||^2 + ||b||^2 - 2<a,b>
     sq_norms = backend.sum(activations * activations, axis=1, keepdims=True)
-    dot_products = backend.matmul(activations, backend.transpose(activations))
+    dot_products = _cache.get_or_compute_gram(activations, backend)
     sq_dists = sq_norms + backend.transpose(sq_norms) - 2 * dot_products
     dists = backend.sqrt(backend.maximum(sq_dists, backend.array(0.0)))
     backend.eval(dists)
@@ -134,7 +137,9 @@ def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
 
     # Find k with maximum curvature (the elbow)
     # k corresponds to mean_k_dists index (offset by +2 for central differencing)
-    best_idx = int(backend.to_scalar(backend.argmax(curvatures)))
+    best_idx_arr = backend.argmax(curvatures)
+    backend.eval(best_idx_arr)
+    best_idx = int(backend.to_scalar(best_idx_arr))
     return best_idx + 2
 
 
@@ -251,7 +256,9 @@ class ConceptVolume:
             if float(backend.to_scalar(min_eig)) <= 0.0:
                 logdet = -inf_value(backend)
             else:
-                logdet = float(backend.to_scalar(backend.sum(backend.log(eigenvalues))))
+                logdet_arr = backend.sum(backend.log(eigenvalues))
+                backend.eval(logdet_arr)
+                logdet = float(backend.to_scalar(logdet_arr))
             object.__setattr__(self, "_log_det_cov", logdet)
         return self._log_det_cov
 
@@ -344,8 +351,9 @@ class ConceptVolume:
 
         # Euclidean distance
         euc_dist_sq = backend.sum(diff * diff)
-        backend.eval(euc_dist_sq)
-        euc_dist = float(backend.to_scalar(backend.sqrt(euc_dist_sq)))
+        euc_dist_arr = backend.sqrt(euc_dist_sq)
+        backend.eval(euc_dist_arr)
+        euc_dist = float(backend.to_scalar(euc_dist_arr))
 
         # Scale factor: geodesic / euclidean
         # Use machine_epsilon for near-zero check
@@ -443,8 +451,9 @@ class ConceptVolume:
 
         # Compute geodesic distance
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=1, backend=backend)
-        backend.eval(geo_dist)
-        return float(backend.to_scalar(geo_dist[0, 1]))
+        geo_elem = geo_dist[0, 1]
+        backend.eval(geo_elem)
+        return float(backend.to_scalar(geo_elem))
 
     def contains(self, point: "Array") -> bool:
         """Check if point is within concept volume.
@@ -539,8 +548,9 @@ class ConceptVolume:
             # Euclidean distance
             diff_i = diff[i]
             euc_dist_sq = backend.sum(diff_i * diff_i)
-            backend.eval(euc_dist_sq)
-            euc_dist = float(backend.to_scalar(backend.sqrt(euc_dist_sq)))
+            euc_dist_arr = backend.sqrt(euc_dist_sq)
+            backend.eval(euc_dist_arr)
+            euc_dist = float(backend.to_scalar(euc_dist_arr))
 
             # Scale factor (use machine_epsilon for near-zero check)
             if euc_dist < machine_epsilon(backend, diff_i):
@@ -834,8 +844,9 @@ class RiemannianDensityEstimator:
             centroids_arr = backend.astype(centroids, "float32")
 
             geo_dist = geodesic_distance_matrix(centroids_arr, k_neighbors=1, backend=backend)
-            backend.eval(geo_dist)
-            centroid_distance = float(backend.to_scalar(geo_dist[0, 1]))
+            geo_elem = geo_dist[0, 1]
+            backend.eval(geo_elem)
+            centroid_distance = float(backend.to_scalar(geo_elem))
 
         geodesic_centroid_distance = centroid_distance
 
@@ -1060,8 +1071,9 @@ class RiemannianDensityEstimator:
         # Use effective radius
         trace_val = backend.trace(covariance)
         shape = covariance.shape
-        backend.eval(trace_val)
-        r = float(backend.to_scalar(backend.sqrt(trace_val / int(shape[0]))))
+        r_arr = backend.sqrt(trace_val / int(shape[0]))
+        backend.eval(r_arr)
+        r = float(backend.to_scalar(r_arr))
 
         if K > 0:
             # Positive curvature - expand covariance
@@ -1106,7 +1118,9 @@ class RiemannianDensityEstimator:
         if count == 0:
             return 0.0
         idx = min(int(count * 0.95), count - 1)
-        return float(backend.to_scalar(sorted_dists[idx]))
+        elem = sorted_dists[idx]
+        backend.eval(elem)
+        return float(backend.to_scalar(elem))
 
     def _bhattacharyya_coefficient(
         self,
@@ -1140,7 +1154,9 @@ class RiemannianDensityEstimator:
             backend.eval(min_eig)
             if float(backend.to_scalar(min_eig)) <= 0.0:
                 return 0.0
-            logdet_avg = float(backend.to_scalar(backend.sum(backend.log(eigenvalues))))
+            logdet_arr = backend.sum(backend.log(eigenvalues))
+            backend.eval(logdet_arr)
+            logdet_avg = float(backend.to_scalar(logdet_arr))
 
             term2 = 0.5 * (
                 logdet_avg - 0.5 * (volume_a.log_det_covariance + volume_b.log_det_covariance)

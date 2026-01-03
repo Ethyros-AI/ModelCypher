@@ -441,8 +441,11 @@ def _project_procrustes(
             b.eval(projected)
 
             # Alignment score from energy preserved
-            total_energy = float(b.to_scalar(b.sum(S ** 2)))
-            kept_energy = float(b.to_scalar(b.sum(S[:k] ** 2)))
+            total_energy_arr = b.sum(S ** 2)
+            kept_energy_arr = b.sum(S[:k] ** 2)
+            b.eval(total_energy_arr, kept_energy_arr)
+            total_energy = float(b.to_scalar(total_energy_arr))
+            kept_energy = float(b.to_scalar(kept_energy_arr))
             eps = float(division_epsilon(b, S))
             score = kept_energy / (total_energy + eps)
         else:
@@ -526,13 +529,26 @@ def _project_svd(
     rank_thresh_t = svd_rank_threshold(b, target, max_dim_t)  # returns float
 
     # Count singular values above threshold (numerical rank)
-    max_sv_s = float(b.to_scalar(S_s[0])) if int(S_s.shape[0]) > 0 else 1.0
-    max_sv_t = float(b.to_scalar(S_t[0])) if int(S_t.shape[0]) > 0 else 1.0
+    if int(S_s.shape[0]) > 0:
+        max_sv_s_arr = S_s[0]
+        b.eval(max_sv_s_arr)
+        max_sv_s = float(b.to_scalar(max_sv_s_arr))
+    else:
+        max_sv_s = 1.0
+    if int(S_t.shape[0]) > 0:
+        max_sv_t_arr = S_t[0]
+        b.eval(max_sv_t_arr)
+        max_sv_t = float(b.to_scalar(max_sv_t_arr))
+    else:
+        max_sv_t = 1.0
     # Multiply threshold by max singular value for proper scaling
     thresh_s = rank_thresh_s * max_sv_s
     thresh_t = rank_thresh_t * max_sv_t
-    rank_s = int(b.to_scalar(b.sum(b.astype(S_s > thresh_s, "int32"))))
-    rank_t = int(b.to_scalar(b.sum(b.astype(S_t > thresh_t, "int32"))))
+    rank_s_arr = b.sum(b.astype(S_s > thresh_s, "int32"))
+    rank_t_arr = b.sum(b.astype(S_t > thresh_t, "int32"))
+    b.eval(rank_s_arr, rank_t_arr)
+    rank_s = int(b.to_scalar(rank_s_arr))
+    rank_t = int(b.to_scalar(rank_t_arr))
 
     # Use minimum of ranks and dimensions for safe truncation
     k = min(rank_s, rank_t, d_s, d_t, int(S_s.shape[0]), int(S_t.shape[0]))
@@ -583,17 +599,16 @@ def _project_svd(
             b.eval(target_k)
             source_norms = b.norm(source_k, axis=1)
             target_norms = b.norm(target_k, axis=1)
-            b.eval(source_norms, target_norms)
-            source_mean = (
-                float(b.to_scalar(b.mean(source_norms)))
-                if int(source_norms.shape[0]) > 0
-                else 0.0
-            )
-            target_mean = (
-                float(b.to_scalar(b.mean(target_norms)))
-                if int(target_norms.shape[0]) > 0
-                else 0.0
-            )
+            source_mean_arr = b.mean(source_norms) if int(source_norms.shape[0]) > 0 else None
+            target_mean_arr = b.mean(target_norms) if int(target_norms.shape[0]) > 0 else None
+            if source_mean_arr is not None and target_mean_arr is not None:
+                b.eval(source_mean_arr, target_mean_arr)
+                source_mean = float(b.to_scalar(source_mean_arr))
+                target_mean = float(b.to_scalar(target_mean_arr))
+            else:
+                b.eval(source_norms, target_norms)
+                source_mean = 0.0
+                target_mean = 0.0
             scale_eps = division_epsilon(b, target_k)
             scale = source_mean / (target_mean + scale_eps) if source_mean > 0.0 else 0.0
             # Use the first n_new rows of target (scaled down) for expansion
@@ -650,8 +665,11 @@ def _project_svd(
 
     # Log alignment quality in k-space
     residual_k = source_k_aligned - target_k
-    residual_norm = float(b.to_scalar(b.sqrt(b.sum(residual_k ** 2))))
-    target_k_norm = float(b.to_scalar(b.sqrt(b.sum(target_k ** 2))))
+    residual_norm_arr = b.sqrt(b.sum(residual_k ** 2))
+    target_k_norm_arr = b.sqrt(b.sum(target_k ** 2))
+    b.eval(residual_norm_arr, target_k_norm_arr)
+    residual_norm = float(b.to_scalar(residual_norm_arr))
+    target_k_norm = float(b.to_scalar(target_k_norm_arr))
     div_eps = division_epsilon(b, target_k)
     logger.debug(
         "Subspace Procrustes: k=%d, residual_norm=%.4f, target_norm=%.4f, ratio=%.4f",
@@ -675,22 +693,29 @@ def _project_svd(
     scale_eps = division_epsilon(b, projected)
     scale_factor = target_fro / (proj_fro + scale_eps)
     projected = projected * scale_factor
-    b.eval(projected)
+    b.eval(projected, scale_factor)
+    target_fro_val = float(b.to_scalar(target_fro))
+    proj_fro_val = float(b.to_scalar(proj_fro))
+    scale_factor_val = float(b.to_scalar(scale_factor))
     logger.debug(
         "SVD projection scale: target_fro=%.4f, proj_fro=%.4f, scale_factor=%.4f",
-        float(b.to_scalar(target_fro)),
-        float(b.to_scalar(proj_fro)),
-        float(b.to_scalar(scale_factor)),
+        target_fro_val,
+        proj_fro_val,
+        scale_factor_val,
     )
 
     # =========================================================================
     # STEP 6: Compute alignment score from variance preserved
     # =========================================================================
-    total_var_s = float(b.to_scalar(b.sum(S_s ** 2)))
-    kept_var_s = float(b.to_scalar(b.sum(S_s[:k] ** 2)))
-
-    total_var_t = float(b.to_scalar(b.sum(S_t ** 2)))
-    kept_var_t = float(b.to_scalar(b.sum(S_t[:k] ** 2)))
+    total_var_s_arr = b.sum(S_s ** 2)
+    kept_var_s_arr = b.sum(S_s[:k] ** 2)
+    total_var_t_arr = b.sum(S_t ** 2)
+    kept_var_t_arr = b.sum(S_t[:k] ** 2)
+    b.eval(total_var_s_arr, kept_var_s_arr, total_var_t_arr, kept_var_t_arr)
+    total_var_s = float(b.to_scalar(total_var_s_arr))
+    kept_var_s = float(b.to_scalar(kept_var_s_arr))
+    total_var_t = float(b.to_scalar(total_var_t_arr))
+    kept_var_t = float(b.to_scalar(kept_var_t_arr))
 
     var_eps = float(division_epsilon(b, S_s))
     score = 0.5 * (kept_var_s / (total_var_s + var_eps) + kept_var_t / (total_var_t + var_eps))

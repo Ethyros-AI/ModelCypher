@@ -40,9 +40,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
+
+_cache = ComputationCache.shared()
 
 if TYPE_CHECKING:
     from tokenizers import Tokenizer
@@ -285,11 +288,21 @@ def transfer_via_relative_space(
         target_anchor_norms, backend.full(target_anchor_norms.shape, target_anchor_eps)
     )
 
-    # Pseudo-inverse of anchor similarities
+    # Pseudo-inverse of anchor similarities (with SVD caching for efficiency)
     backend.eval(target_anchors_normalized)
-    target_rel_anchors = backend.matmul(target_anchors_normalized, backend.transpose(target_anchors_normalized))
-    backend.eval(target_rel_anchors)
-    pinv = backend.pinv(target_rel_anchors)
+    target_rel_anchors = _cache.get_or_compute_gram(target_anchors_normalized, backend)
+
+    # Use cached SVD to compute pseudo-inverse: A^+ = V @ S^{-1} @ U^T
+    U, S, Vh = _cache.get_or_compute_svd(target_rel_anchors, backend)
+    # Threshold singular values using machine epsilon
+    eps = float(backend.finfo().eps)
+    max_s = float(backend.max(S))
+    threshold = eps * max_s * float(max(target_rel_anchors.shape))
+    S_safe = backend.where(S > threshold, S, backend.full(S.shape, 1.0))
+    S_inv = backend.where(S > threshold, 1.0 / S_safe, backend.zeros_like(S))
+    backend.eval(S_inv)
+    # pinv = V @ diag(S_inv) @ U^T
+    pinv = backend.matmul(backend.transpose(Vh), S_inv[:, None] * backend.transpose(U))
     backend.eval(pinv)
 
     # Project: [n, n_anchors] @ [n_anchors, n_anchors] @ [n_anchors, d_target]

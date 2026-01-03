@@ -41,6 +41,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_nan
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
@@ -54,6 +55,8 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+_cache = ComputationCache.shared()
 
 _AXIS_VALENCE = "valence"
 _AXIS_AGENCY = "agency"
@@ -389,6 +392,16 @@ class MoralGeometryAnalyzer:
         from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = self._backend
+        backend.eval(matrix)
+
+        # Extract first column once via O(1) tolist() instead of O(n) to_scalar() loop
+        shape = matrix.shape
+        if len(shape) > 1 and int(shape[1]) > 0:
+            col0_arr = matrix[:, 0]
+            backend.eval(col0_arr)
+            col0 = backend.tolist(col0_arr)
+        else:
+            col0 = [0.0] * len(concepts)
 
         def axis_correlation(axis: str) -> tuple[float, bool]:
             """Compute correlation for a specific axis."""
@@ -400,10 +413,7 @@ class MoralGeometryAnalyzer:
                 if concept is None or axis_key(concept.axis) != axis:
                     continue
                 levels.append(concept.level)
-                backend.eval(matrix)
-                proj_val = matrix[i, 0]
-                backend.eval(proj_val)
-                projections.append(float(backend.to_scalar(proj_val)) if matrix.shape[1] > 0 else 0.0)
+                projections.append(float(col0[i]))
 
             if len(levels) < 3:
                 return 0.0, False
@@ -447,33 +457,40 @@ class MoralGeometryAnalyzer:
                 foundation_indices[foundation_key] = []
             foundation_indices[foundation_key].append(i)
 
-        def cosine_sim(v1: "Array", v2: "Array") -> float:
-            n1_arr = backend.norm(v1)
-            n2_arr = backend.norm(v2)
-            backend.eval(n1_arr, n2_arr)
-            n1 = float(backend.to_scalar(n1_arr))
-            n2 = float(backend.to_scalar(n2_arr))
-            eps = division_epsilon(backend, v1)
-            if n1 < eps or n2 < eps:
-                return 0.0
-            dot_arr = backend.sum(v1 * v2)
-            backend.eval(dot_arr)
-            dot = float(backend.to_scalar(dot_arr))
-            return dot / (n1 * n2)
+        # Pre-compute cosine similarity matrix once (vectorized, with caching)
+        # sim_matrix[i,j] = cos(matrix[i], matrix[j])
+        norms = backend.norm(matrix, axis=1, keepdims=True)
+        eps = division_epsilon(backend, norms)
+        matrix_normalized = matrix / backend.maximum(norms, backend.full(norms.shape, eps))
+        backend.eval(matrix_normalized)
 
-        # Compute within-foundation similarity
+        # Use cached Gram matrix for normalized vectors = cosine similarity matrix
+        sim_matrix = _cache.get_or_compute_gram(matrix_normalized, backend)
+        sim_list = backend.tolist(sim_matrix)  # Convert once for fast indexing
+
+        def get_sim(i: int, j: int) -> float:
+            """Get pre-computed cosine similarity from matrix."""
+            return sim_list[i][j]
+
+        # Compute within-foundation similarity (using pre-computed matrix)
         within_sims = []
+        foundation_means: dict[str, float] = {}  # Compute once, reuse below
         for foundation, indices in foundation_indices.items():
             if len(indices) < 2:
                 continue
+            foundation_sims = []
             for i in range(len(indices)):
                 for j in range(i + 1, len(indices)):
-                    sim = cosine_sim(matrix[indices[i]], matrix[indices[j]])
+                    sim = get_sim(indices[i], indices[j])
                     within_sims.append(sim)
+                    foundation_sims.append(sim)
+            foundation_means[foundation] = (
+                sum(foundation_sims) / len(foundation_sims) if foundation_sims else 0.0
+            )
 
         within_sim = sum(within_sims) / len(within_sims) if within_sims else 0.0
 
-        # Compute between-foundation similarity
+        # Compute between-foundation similarity (using pre-computed matrix)
         between_sims = []
         pair_sims: dict[tuple[str, str], list[float]] = {}
         foundations = list(foundation_indices.keys())
@@ -484,22 +501,13 @@ class MoralGeometryAnalyzer:
                 pair_sims[key] = []
                 for i1 in foundation_indices[f1]:
                     for i2 in foundation_indices[f2]:
-                        sim = cosine_sim(matrix[i1], matrix[i2])
+                        sim = get_sim(i1, i2)
                         between_sims.append(sim)
                         pair_sims[key].append(sim)
 
         between_sim = sum(between_sims) / len(between_sims) if between_sims else 0.0
 
-        # Find most distinct and most overlapping
-        foundation_means: dict[str, float] = {}
-        for f, indices in foundation_indices.items():
-            if len(indices) >= 2:
-                sims = []
-                for i in range(len(indices)):
-                    for j in range(i + 1, len(indices)):
-                        sims.append(cosine_sim(matrix[indices[i]], matrix[indices[j]]))
-                foundation_means[f] = sum(sims) / len(sims) if sims else 0.0
-
+        # Find most distinct (already computed in foundation_means above)
         most_distinct = (
             max(foundation_means.keys(), key=lambda k: foundation_means[k])
             if foundation_means

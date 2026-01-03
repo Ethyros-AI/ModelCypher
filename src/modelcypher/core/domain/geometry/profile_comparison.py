@@ -302,6 +302,8 @@ def compare_profiles(
     # Overall: weighted average
     overall_alignment = 0.5 * ricci_alignment + 0.3 * curvature_alignment + 0.2 * dimension_alignment
 
+    backend = get_default_backend()
+
     # === TOPOLOGY COMPARISON ===
     topology_similarity = None
     if source.topology_summary and target.topology_summary:
@@ -314,7 +316,6 @@ def compare_profiles(
             + abs(src_topo.cycle_count - tgt_topo.cycle_count)
         )
         persist_diff = abs(src_topo.max_persistence - tgt_topo.max_persistence)
-        backend = get_default_backend()
         scale_eps = division_epsilon(
             backend,
             backend.array([src_topo.max_persistence, tgt_topo.max_persistence]),

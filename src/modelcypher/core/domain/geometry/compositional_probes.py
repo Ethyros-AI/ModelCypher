@@ -114,12 +114,21 @@ class CompositionalProbes:
         b.eval(centroid_sim_arr)
         centroid_sim = float(b.to_scalar(centroid_sim_arr))
 
-        # Component angles
-        angles = []
-        for i in range(n):
-            sim_arr = CompositionalProbes._cosine_similarity(comp, comps[i], b)
-            b.eval(sim_arr)
-            angles.append(float(b.to_scalar(sim_arr)))
+        # Machine epsilon for numerical stability
+        eps = b.finfo().eps
+
+        # Component angles - vectorized computation
+        # dot products: comps @ comp -> [N]
+        dot_products = b.matmul(comps, comp)
+        comp_norms = b.sqrt(b.sum(comps * comps, axis=1))
+        comp_norm = b.norm(comp)
+        denoms = comp_norms * comp_norm
+        eps_arr = b.full(denoms.shape, eps)
+        safe_denoms = b.maximum(denoms, eps_arr)
+        angles_arr = dot_products / safe_denoms
+        b.eval(angles_arr)
+        # O(1) extraction via tolist()
+        angles = [float(x) for x in b.tolist(angles_arr)]
 
         # Barycentric weights via normal equations
         # G = component_embeddings @ component_embeddings.T [N, N]
@@ -128,7 +137,6 @@ class CompositionalProbes:
         rhs = b.matmul(comps, comp)  # [N]
 
         # Regularize diagonal for stability
-        eps = b.finfo().eps
         G = G + b.eye(n) * eps
 
         weights_arr = b.solve(G, rhs)  # [N]

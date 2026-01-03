@@ -418,12 +418,15 @@ class SectionalCurvatureEstimator:
             u_norm = backend.norm(u)
             backend.eval(u_norm)
             eps = division_epsilon(backend, u)
-            u = u / (float(backend.to_scalar(u_norm)) + eps)
+            u_norm_val = float(backend.to_scalar(u_norm))
+            u = u / (u_norm_val + eps)
 
             v = backend.random_normal((d,))
             backend.eval(u, v)
             # Gram-Schmidt
-            dot_uv = float(backend.to_scalar(backend.sum(u * v)))
+            dot_uv_arr = backend.sum(u * v)
+            backend.eval(dot_uv_arr)
+            dot_uv = float(backend.to_scalar(dot_uv_arr))
             v = v - dot_uv * u
             backend.eval(v)
             v_norm = backend.norm(v)
@@ -456,8 +459,9 @@ class SectionalCurvatureEstimator:
         max_sectional = max(sectional_curvatures)
 
         if principal_curvs is not None:
-            backend.eval(principal_curvs)
-            scalar_curv = float(backend.to_scalar(backend.sum(principal_curvs)))
+            scalar_curv_arr = backend.sum(principal_curvs)
+            backend.eval(scalar_curv_arr)
+            scalar_curv = float(backend.to_scalar(scalar_curv_arr))
         else:
             scalar_curv = float(sum(sectional_curvatures))
 
@@ -590,7 +594,9 @@ class SectionalCurvatureEstimator:
 
         # Regularize for numerical stability (dtype-derived)
         reg = regularization_epsilon(backend, cov)
-        max_abs = float(backend.to_scalar(backend.max(backend.abs(cov))))
+        max_abs_arr = backend.max(backend.abs(cov))
+        backend.eval(max_abs_arr)
+        max_abs = float(backend.to_scalar(max_abs_arr))
         reg_scale = reg * max_abs if max_abs > 0 else reg
         cov = cov + reg_scale * backend.eye(d)
 
@@ -652,17 +658,20 @@ class SectionalCurvatureEstimator:
         row = backend.reshape(idx, (m, 1))
         col = backend.reshape(idx, (1, m))
         upper_mask = col > row
-        backend.eval(upper_mask)
-        upper_count = int(backend.to_scalar(backend.sum(backend.astype(upper_mask, "int32"))))
+        upper_count_arr = backend.sum(backend.astype(upper_mask, "int32"))
+        backend.eval(upper_count_arr)
+        upper_count = int(backend.to_scalar(upper_count_arr))
         if upper_count == 0:
             return division_epsilon(backend, neighbors)
 
         pos_inf = backend.full(dists.shape, float("inf"))
         upper_vals = backend.where(upper_mask, dists, pos_inf)
         flat = backend.reshape(upper_vals, (-1,))
-        sorted_flat = backend.sort(flat)
-        backend.eval(sorted_flat)
-        median_dist = float(backend.to_scalar(sorted_flat[upper_count // 2]))
+        median_idx = upper_count // 2
+        partitioned = backend.partition(flat, median_idx)
+        median_arr = partitioned[median_idx : median_idx + 1]
+        backend.eval(median_arr)
+        median_dist = float(backend.to_scalar(median_arr))
 
         # Adaptive epsilon formula with dimensional scaling
         eps = division_epsilon(backend, neighbors)
@@ -727,7 +736,9 @@ class SectionalCurvatureEstimator:
         # Compute Christoffel symbols
         # Regularize metric for stable inversion - no fallback to identity
         reg = regularization_epsilon(backend, g)
-        max_abs = float(backend.to_scalar(backend.max(backend.abs(g))))
+        max_abs_arr = backend.max(backend.abs(g))
+        backend.eval(max_abs_arr)
+        max_abs = float(backend.to_scalar(max_abs_arr))
         reg_scale = reg * max_abs if max_abs > 0 else reg
         g_reg = g + reg_scale * backend.eye(d)
         g_inv = backend.inv(g_reg)
@@ -798,9 +809,13 @@ class SectionalCurvatureEstimator:
         v_vec = backend.reshape(v, (d, 1))
         g_u = backend.matmul(metric, u_vec)
         g_v = backend.matmul(metric, v_vec)
-        g_uu = float(backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_u)))
-        g_vv = float(backend.to_scalar(backend.matmul(backend.transpose(v_vec), g_v)))
-        g_uv = float(backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_v)))
+        g_uu_arr = backend.matmul(backend.transpose(u_vec), g_u)
+        g_vv_arr = backend.matmul(backend.transpose(v_vec), g_v)
+        g_uv_arr = backend.matmul(backend.transpose(u_vec), g_v)
+        backend.eval(g_uu_arr, g_vv_arr, g_uv_arr)
+        g_uu = float(backend.to_scalar(g_uu_arr))
+        g_vv = float(backend.to_scalar(g_vv_arr))
+        g_uv = float(backend.to_scalar(g_uv_arr))
 
         denom = g_uu * g_vv - g_uv * g_uv
 
@@ -848,20 +863,15 @@ class SectionalCurvatureEstimator:
             # Using backend operations
             backend.eval(heights, centered)
 
-            # Build design matrix in Python
-            # Use tolist() for O(1) extraction instead of O(n*d) scalar extractions
-            centered_list = backend.tolist(centered)
-            design_list = []
-            for row_idx in range(n):
-                row_data = centered_list[row_idx]
-                row = [float(row_data[j]) for j in range(d)]
-                # Add quadratic terms
-                for i in range(d):
-                    for j in range(i, d):
-                        row.append(float(row_data[i]) * float(row_data[j]))
-                design_list.append(row)
-
-            design = backend.array(design_list)
+            # Build design matrix on backend: [centered, upper-triangular quadratic terms]
+            row_col = backend.reshape(centered, (n, d, 1))
+            row_row = backend.reshape(centered, (n, 1, d))
+            outer = row_col * row_row  # [n, d, d]
+            upper_idx = [i * d + j for i in range(d) for j in range(i, d)]
+            upper_idx_arr = backend.array(upper_idx, dtype="int32")
+            outer_flat = backend.reshape(outer, (n, d * d))
+            upper_terms = backend.take(outer_flat, upper_idx_arr, axis=1)
+            design = backend.concatenate([centered, upper_terms], axis=1)
 
             # Solve least squares using backend
             # Use pinv for robust solution
@@ -888,7 +898,9 @@ class SectionalCurvatureEstimator:
             # Shape operator = g^{-1} @ H
             # Regularize metric for stable inversion - no fallback
             reg = regularization_epsilon(backend, metric)
-            max_abs = float(backend.to_scalar(backend.max(backend.abs(metric))))
+            max_abs_arr = backend.max(backend.abs(metric))
+            backend.eval(max_abs_arr)
+            max_abs = float(backend.to_scalar(max_abs_arr))
             reg_scale = reg * max_abs if max_abs > 0 else reg
             metric_reg = metric + reg_scale * backend.eye(d)
             metric_inv = backend.inv(metric_reg)
@@ -911,8 +923,11 @@ class SectionalCurvatureEstimator:
         curv_arr = backend.array(sectional_curvatures)
         backend.eval(curv_arr)
         eps = division_epsilon(backend, curv_arr)
-        has_pos = bool(backend.to_scalar(backend.sum(backend.astype(curv_arr > eps, "int32"))))
-        has_neg = bool(backend.to_scalar(backend.sum(backend.astype(curv_arr < -eps, "int32"))))
+        has_pos_arr = backend.sum(backend.astype(curv_arr > eps, "int32"))
+        has_neg_arr = backend.sum(backend.astype(curv_arr < -eps, "int32"))
+        backend.eval(has_pos_arr, has_neg_arr)
+        has_pos = bool(backend.to_scalar(has_pos_arr))
+        has_neg = bool(backend.to_scalar(has_neg_arr))
 
         if has_pos and has_neg:
             return CurvatureSign.MIXED
@@ -1207,7 +1222,9 @@ class OllivierRicciCurvature:
         backend = self._backend
 
         # Edge weight from geodesic distance matrix
-        edge_weight = float(backend.to_scalar(geo_dist[source_idx, target_idx]))
+        edge_weight_arr = geo_dist[source_idx, target_idx]
+        backend.eval(edge_weight_arr)
+        edge_weight = float(backend.to_scalar(edge_weight_arr))
 
         # Skip infinite or zero edge weights
         eps = division_epsilon(backend, geo_result.distances)
@@ -1342,7 +1359,9 @@ class OllivierRicciCurvature:
         )
 
         if epsilon is None:
-            cost_max = float(backend.to_scalar(backend.max(cost_matrix)))
+            cost_max_arr = backend.max(cost_matrix)
+            backend.eval(cost_max_arr)
+            cost_max = float(backend.to_scalar(cost_max_arr))
             epsilon = cost_max * eps if cost_max > 0 else eps
 
         if threshold is None:
@@ -1377,7 +1396,9 @@ class OllivierRicciCurvature:
                 u_diff = backend.max(backend.abs(u_new - u))
                 v_diff = backend.max(backend.abs(v_new - v))
                 backend.eval(u_diff, v_diff)
-                if max(float(backend.to_scalar(u_diff)), float(backend.to_scalar(v_diff))) < threshold:
+                u_diff_val = float(backend.to_scalar(u_diff))
+                v_diff_val = float(backend.to_scalar(v_diff))
+                if max(u_diff_val, v_diff_val) < threshold:
                     u, v = u_new, v_new
                     break
 

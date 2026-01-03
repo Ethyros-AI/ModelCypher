@@ -19,8 +19,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -31,7 +29,10 @@ from modelcypher.core.domain.geometry.model_profile import (
     SemanticSignature,
     TopologySummary,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.profile_comparison import (
     LayerComparison,
     ProfileComparison,
@@ -340,7 +341,7 @@ class TestCompareProfiles:
         comparison = compare_profiles(source, target)
 
         assert comparison.semantic_alignment is not None
-        expected = 0.8 / math.sqrt(0.8**2 + 0.6**2)
+        expected = 0.8 / sqrt_scalar(0.8**2 + 0.6**2, get_default_backend())
         assert abs(comparison.semantic_alignment - expected) <= _eps()
 
     def test_compare_orthogonal_semantic_signatures(self) -> None:

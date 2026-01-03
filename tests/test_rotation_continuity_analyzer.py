@@ -21,7 +21,6 @@ Tests the cross-model rotation analysis that determines whether
 global vs per-layer alignment is needed for model merging.
 """
 
-import math
 from typing import Dict, List
 
 import pytest
@@ -33,7 +32,11 @@ from modelcypher.core.domain.geometry.generalized_procrustes import (
     RotationContinuityAnalyzer,
     RotationContinuityResult,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    cos_scalar,
+    division_epsilon,
+    sin_scalar,
+)
 
 
 def _eps(backend) -> float:
@@ -45,8 +48,8 @@ def _config(backend) -> Config:
 
 
 def _rotation_matrix(backend, dim: int, theta: float):
-    cos_t = math.cos(theta)
-    sin_t = math.sin(theta)
+    cos_t = cos_scalar(theta, backend)
+    sin_t = sin_scalar(theta, backend)
     rotation = [[0.0] * dim for _ in range(dim)]
     for i in range(dim):
         rotation[i][i] = 1.0
@@ -61,7 +64,7 @@ def _max_abs_diff(backend, left, right) -> float:
     diff = backend.abs(left - right)
     max_diff = backend.max(diff)
     backend.eval(max_diff)
-    return float(backend.to_numpy(max_diff))
+    return float(backend.to_scalar(max_diff))
 
 
 class TestRotationContinuityAnalyzer:
@@ -79,7 +82,7 @@ class TestRotationContinuityAnalyzer:
             for i in range(4):
                 act = backend.random_normal((dim,))
                 backend.eval(act)
-                activations[layer][f"anchor_{i}"] = backend.to_numpy(act).tolist()
+                activations[layer][f"anchor_{i}"] = backend.tolist(act)
         return activations
 
     @pytest.fixture
@@ -102,7 +105,7 @@ class TestRotationContinuityAnalyzer:
                 act_tensor = backend.array(act)
                 rotated = backend.matmul(act_tensor, rotation_tensor)
                 backend.eval(rotated)
-                result[layer][anchor] = backend.to_numpy(rotated).tolist()
+                result[layer][anchor] = backend.tolist(rotated)
         return result
 
     def test_identical_activations_returns_low_error(self, base_activations):
@@ -162,7 +165,7 @@ class TestRotationContinuityAnalyzer:
                 act_tensor = backend.array(act)
                 rotated = backend.matmul(act_tensor, rotation_tensor)
                 backend.eval(rotated)
-                per_layer_rotated[layer][anchor] = backend.to_numpy(rotated).tolist()
+                per_layer_rotated[layer][anchor] = backend.tolist(rotated)
 
         analyzer = RotationContinuityAnalyzer()
         result = analyzer.compute_per_layer_alignments(
@@ -254,15 +257,15 @@ class TestRotationContinuityAnalyzer:
             assert layer_result.rotation is not None
             rotation = backend.array(layer_result.rotation)
             backend.eval(rotation)
-            rotation_np = backend.to_numpy(rotation)
 
             # Should be square and orthogonal
-            assert rotation_np.shape[0] == rotation_np.shape[1]
+            rotation_shape = backend.shape(rotation)
+            assert rotation_shape[0] == rotation_shape[1]
             # R @ R^T should be identity (orthogonal matrix)
             rotation_t = backend.transpose(rotation)
             identity_approx = backend.matmul(rotation, rotation_t)
             backend.eval(identity_approx)
-            expected_identity = backend.eye(rotation_np.shape[0])
+            expected_identity = backend.eye(rotation_shape[0])
             eps = _eps(backend)
             assert _max_abs_diff(backend, identity_approx, expected_identity) <= eps
 
@@ -295,11 +298,9 @@ class TestRotationContinuityAnalyzer:
         for layer, anchors in base_activations.items():
             reflected[layer] = {}
             for anchor, act in anchors.items():
-                arr = backend.array(act)
-                backend.eval(arr)
-                arr_np = backend.to_numpy(arr).copy()
-                arr_np[0] = -arr_np[0]  # Negate first dimension
-                reflected[layer][anchor] = arr_np.tolist()
+                reflected_vec = act.copy()
+                reflected_vec[0] = -reflected_vec[0]  # Negate first dimension
+                reflected[layer][anchor] = reflected_vec
 
         analyzer = RotationContinuityAnalyzer(backend=backend)
 
@@ -347,8 +348,8 @@ class TestRotationContinuityAnalyzer:
                 act_source = backend.random_normal((8,))
                 act_target = backend.random_normal((6,))
                 backend.eval(act_source, act_target)
-                source[layer][f"anchor_{i}"] = backend.to_numpy(act_source).tolist()
-                target[layer][f"anchor_{i}"] = backend.to_numpy(act_target).tolist()
+                source[layer][f"anchor_{i}"] = backend.tolist(act_source)
+                target[layer][f"anchor_{i}"] = backend.tolist(act_target)
 
         analyzer = RotationContinuityAnalyzer()
         result = analyzer.compute_per_layer_alignments(
@@ -367,8 +368,7 @@ class TestRotationContinuityAnalyzer:
         for layer_result in result.layers:
             rotation = backend.array(layer_result.rotation)
             backend.eval(rotation)
-            rotation_np = backend.to_numpy(rotation)
-            assert rotation_np.shape == (6, 6)
+            assert backend.shape(rotation) == (6, 6)
 
 
 class TestLayerRotationResult:

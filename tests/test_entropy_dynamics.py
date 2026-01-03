@@ -17,8 +17,6 @@
 
 """Entropy dynamics tests requiring MLX (Apple Silicon)."""
 
-import math
-
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -38,7 +36,10 @@ from modelcypher.core.domain.inference.entropy_dynamics import (
     LogitEntropyCalculator,
 )
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    log_scalar,
+)
 
 
 def _test_tracker_config(vocab_size: int) -> EntropyDeltaTracker.Configuration:
@@ -60,8 +61,8 @@ def test_logit_entropy_calculator():
 
     backend = get_default_backend()
     eps = division_epsilon(backend, backend.array([0.0]))
-    expected_uniform_entropy = math.log(float(logits.shape[-1]))
-    assert math.isclose(ent, expected_uniform_entropy, rel_tol=eps, abs_tol=eps)
+    expected_uniform_entropy = log_scalar(float(logits.shape[-1]), backend)
+    assert abs(ent - expected_uniform_entropy) <= eps * max(1.0, abs(expected_uniform_entropy))
 
     # Low entropy: peaked distribution [100, 0, 0]
     # Softmax approx [1, 0, 0]
@@ -108,16 +109,18 @@ def test_entropy_delta_tracker_anomaly():
 
     backend = get_default_backend()
     eps = division_epsilon(backend, backend.array([0.0]))
-    expected_uniform_entropy = math.log(float(base_logits.shape[-1]))
-    assert math.isclose(sample.base_entropy, expected_uniform_entropy, rel_tol=eps, abs_tol=eps)
+    expected_uniform_entropy = log_scalar(float(base_logits.shape[-1]), backend)
+    assert abs(sample.base_entropy - expected_uniform_entropy) <= eps * max(
+        1.0, abs(expected_uniform_entropy)
+    )
     assert sample.adapter_entropy <= eps
     assert sample.base_entropy >= sample.adapter_entropy + eps
 
     # Anomaly score is the entropy ratio for positive deltas.
     expected_ratio = sample.delta / sample.base_entropy
     expected_delta = sample.base_entropy - sample.adapter_entropy
-    assert math.isclose(sample.delta, expected_delta, rel_tol=eps, abs_tol=eps)
-    assert math.isclose(sample.anomaly_score, expected_ratio, rel_tol=eps, abs_tol=eps)
+    assert abs(sample.delta - expected_delta) <= eps * max(1.0, abs(expected_delta))
+    assert abs(sample.anomaly_score - expected_ratio) <= eps * max(1.0, abs(expected_ratio))
 
     # End session
     result = tracker.end_session()

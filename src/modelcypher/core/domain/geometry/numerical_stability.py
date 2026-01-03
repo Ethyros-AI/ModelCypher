@@ -552,13 +552,17 @@ def svd_via_eigh(
         Vt = b.zeros((k, n))
         return U, S, Vt
 
-    max_s = float(b.to_scalar(b.max(s)))
+    max_s_arr = b.max(s)
+    b.eval(max_s_arr)
+    max_s = float(b.to_scalar(max_s_arr))
     eps = machine_epsilon(b, A)
     threshold = max(m, n) * eps * max_s
 
     k = min(m, n)
     mask = s[:k] > threshold
-    rank = int(b.to_scalar(b.sum(b.astype(mask, "int32"))))
+    rank_arr = b.sum(b.astype(mask, "int32"))
+    b.eval(rank_arr)
+    rank = int(b.to_scalar(rank_arr))
 
     if rank == 0:
         U = b.zeros((m, k))
@@ -663,23 +667,28 @@ def canonicalize_svd_signs(
     if k == 0:
         return U, Vt
 
-    signs = [1.0] * k
-    for i in range(k):
-        col = U[:, i]
-        max_idx = int(b.to_scalar(b.argmax(b.abs(col))))
-        max_val = float(b.to_scalar(col[max_idx]))
-        if max_val < 0:
-            signs[i] = -1.0
+    U_k = U[:, :k]
+    abs_u = b.abs(U_k)
+    max_idx = b.argmax(abs_u, axis=0)
+    rows = b.reshape(b.arange(U_shape[0]), (U_shape[0], 1))
+    cols = b.reshape(max_idx, (1, k))
+    max_mask = rows == cols
+    max_vals = b.sum(U_k * b.astype(max_mask, U_k.dtype), axis=0)
+    signs = b.where(max_vals < 0, b.full((k,), -1.0), b.ones((k,)))
 
     if U_shape[1] > k:
-        signs.extend([1.0] * (int(U_shape[1]) - k))
-    if Vt_shape[0] > k:
-        vt_signs = signs[:k] + [1.0] * (int(Vt_shape[0]) - k)
+        pad_u = b.ones((int(U_shape[1]) - k,))
+        sign_u_vec = b.concatenate([signs, pad_u], axis=0)
     else:
-        vt_signs = signs[: int(Vt_shape[0])]
+        sign_u_vec = signs
+    if Vt_shape[0] > k:
+        pad_v = b.ones((int(Vt_shape[0]) - k,))
+        sign_v_vec = b.concatenate([signs, pad_v], axis=0)
+    else:
+        sign_v_vec = signs
 
-    sign_u = b.reshape(b.array(signs), (1, -1))
-    sign_vt = b.reshape(b.array(vt_signs), (-1, 1))
+    sign_u = b.reshape(sign_u_vec, (1, -1))
+    sign_vt = b.reshape(sign_v_vec, (-1, 1))
 
     U_canonical = U * sign_u
     Vt_canonical = Vt * sign_vt
@@ -767,7 +776,9 @@ def safe_pinv(
         b.eval(pinv_result)
         return pinv_result, diagnostics
 
-    max_sv = float(b.to_scalar(b.max(S)))
+    max_sv_arr = b.max(S)
+    b.eval(max_sv_arr)
+    max_sv = float(b.to_scalar(max_sv_arr))
     diagnostics["max_sv"] = max_sv
 
     if max_sv == 0:
@@ -779,14 +790,18 @@ def safe_pinv(
     # Determine cutoff and truncate
     cutoff = rcond * max_sv
     mask = S > cutoff
-    truncated = int(b.to_scalar(b.sum(b.astype(~mask, "int32"))))
+    truncated_arr = b.sum(b.astype(~mask, "int32"))
+    b.eval(truncated_arr)
+    truncated = int(b.to_scalar(truncated_arr))
     effective_rank = s_count - truncated
     diagnostics["effective_rank"] = effective_rank
     diagnostics["truncated_count"] = truncated
 
     pos_inf = float(b.finfo().max)
     min_candidates = b.where(mask, S, b.full(S.shape, pos_inf))
-    min_nonzero = float(b.to_scalar(b.min(min_candidates)))
+    min_nonzero_arr = b.min(min_candidates)
+    b.eval(min_nonzero_arr)
+    min_nonzero = float(b.to_scalar(min_nonzero_arr))
     diagnostics["min_sv"] = min_nonzero if min_nonzero < pos_inf else 0.0
 
     # Condition number
@@ -926,14 +941,19 @@ def _solve_underdetermined_qr(
         return None, diagnostics
 
     abs_diag = b.abs(R_diag)
-    max_diag = float(b.to_scalar(b.max(abs_diag)))
-    min_diag = float(b.to_scalar(b.min(abs_diag)))
+    max_diag_arr = b.max(abs_diag)
+    min_diag_arr = b.min(abs_diag)
+    b.eval(max_diag_arr, min_diag_arr)
+    max_diag = float(b.to_scalar(max_diag_arr))
+    min_diag = float(b.to_scalar(min_diag_arr))
 
     condition_est = max_diag / (min_diag + eps) if min_diag > 0 else float("inf")
     diagnostics["condition"] = condition_est
 
     rank_threshold = eps * max_diag * max(n_samples, d_source)
-    rank = int(b.to_scalar(b.sum(b.astype(abs_diag > rank_threshold, "int32"))))
+    rank_arr = b.sum(b.astype(abs_diag > rank_threshold, "int32"))
+    b.eval(rank_arr)
+    rank = int(b.to_scalar(rank_arr))
     diagnostics["rank"] = rank
 
     # Apply regularization if needed
@@ -1000,14 +1020,19 @@ def _solve_overdetermined_qr(
         return None, diagnostics
 
     abs_diag = b.abs(R_diag)
-    max_diag = float(b.to_scalar(b.max(abs_diag)))
-    min_diag = float(b.to_scalar(b.min(abs_diag)))
+    max_diag_arr = b.max(abs_diag)
+    min_diag_arr = b.min(abs_diag)
+    b.eval(max_diag_arr, min_diag_arr)
+    max_diag = float(b.to_scalar(max_diag_arr))
+    min_diag = float(b.to_scalar(min_diag_arr))
 
     condition_est = max_diag / (min_diag + eps) if min_diag > 0 else float("inf")
     diagnostics["condition"] = condition_est
 
     rank_threshold = eps * max_diag * max(n_samples, d_source)
-    rank = int(b.to_scalar(b.sum(b.astype(abs_diag > rank_threshold, "int32"))))
+    rank_arr = b.sum(b.astype(abs_diag > rank_threshold, "int32"))
+    b.eval(rank_arr)
+    rank = int(b.to_scalar(rank_arr))
     diagnostics["rank"] = rank
 
     # Apply regularization if needed
@@ -1191,17 +1216,23 @@ def solve_via_truncated_svd(
     if int(S.shape[0]) == 0:
         return None, diagnostics
 
-    max_s = float(b.to_scalar(b.max(S)))
+    max_s_arr = b.max(S)
+    b.eval(max_s_arr)
+    max_s = float(b.to_scalar(max_s_arr))
     if max_s == 0:
         return None, diagnostics
 
     pos_inf = float(b.finfo().max)
     min_candidates = b.where(S > 0, S, b.full(S.shape, pos_inf))
-    min_s = float(b.to_scalar(b.min(min_candidates)))
+    min_s_arr = b.min(min_candidates)
+    b.eval(min_s_arr)
+    min_s = float(b.to_scalar(min_s_arr))
     diagnostics["condition"] = max_s / min_s if min_s > 0 else float("inf")
 
     # Determine effective rank
-    rank = int(b.to_scalar(b.sum(b.astype(S > (rank_threshold * max_s), "int32"))))
+    rank_arr = b.sum(b.astype(S > (rank_threshold * max_s), "int32"))
+    b.eval(rank_arr)
+    rank = int(b.to_scalar(rank_arr))
     diagnostics["rank"] = rank
 
     if rank == 0:
@@ -1473,8 +1504,11 @@ def solve_via_gram_alignment(
     if int(S_s.shape[0]) == 0 or int(S_t.shape[0]) == 0:
         return None, diagnostics
 
-    max_s = float(b.to_scalar(b.max(S_s)))
-    max_t = float(b.to_scalar(b.max(S_t)))
+    max_s_arr = b.max(S_s)
+    max_t_arr = b.max(S_t)
+    b.eval(max_s_arr, max_t_arr)
+    max_s = float(b.to_scalar(max_s_arr))
+    max_t = float(b.to_scalar(max_t_arr))
     if max_s == 0 or max_t == 0:
         return None, diagnostics
 
@@ -1538,12 +1572,10 @@ def solve_via_gram_alignment(
 
     # S_s^{-1} for the k dimensions we're using (use actual_rank, not shared_rank)
     # Use machine epsilon as floor for numerical stability in inversion
-    sv_floor = eps * float(b.to_scalar(b.max(S_s)))
-    S_s_list = b.tolist(S_s)
-    S_t_list = b.tolist(S_t)
-    S_s_inv = b.array([1.0 / S_s_list[i] if S_s_list[i] > sv_floor else 0.0
-                       for i in range(actual_rank)])
-    S_t_k = b.array([S_t_list[i] for i in range(actual_rank)])
+    sv_floor = eps * max_s
+    S_s_k = S_s[:actual_rank]
+    S_t_k = S_t[:actual_rank]
+    S_s_inv = b.where(S_s_k > sv_floor, 1.0 / S_s_k, b.zeros_like(S_s_k))
     b.eval(S_s_inv, S_t_k)
 
     V_s_k = b.transpose(Vt_s[:actual_rank, :])  # [d_s, k]
@@ -1688,7 +1720,9 @@ def solve_via_cca_procrustes(
         eigenvalues_sorted = b.maximum(eigenvalues_sorted, b.zeros_like(eigenvalues_sorted))
         b.eval(eigenvectors_sorted, eigenvalues_sorted)
 
-        total_var = float(b.to_scalar(b.sum(eigenvalues_sorted)))
+        total_var_arr = b.sum(eigenvalues_sorted)
+        b.eval(total_var_arr)
+        total_var = float(b.to_scalar(total_var_arr))
         if total_var <= 0:
             return None
 
@@ -1759,7 +1793,9 @@ def solve_via_cca_procrustes(
             eigvals, eigvecs = b.eigh(cov)
         b.eval(eigvals, eigvecs)
 
-        max_eig = float(b.to_scalar(b.max(eigvals)))
+        max_eig_arr = b.max(eigvals)
+        b.eval(max_eig_arr)
+        max_eig = float(b.to_scalar(max_eig_arr))
         if max_eig <= 0:
             return None
 
@@ -1867,7 +1903,9 @@ def solve_via_cca_procrustes(
     Z_t_norm = b.norm(Z_t)
     b.eval(diff_norm, Z_t_norm)
 
-    alignment_error = float(b.to_scalar(diff_norm)) / (float(b.to_scalar(Z_t_norm)) + eps)
+    diff_norm_val = float(b.to_scalar(diff_norm))
+    z_t_norm_val = float(b.to_scalar(Z_t_norm))
+    alignment_error = diff_norm_val / (z_t_norm_val + eps)
     diagnostics["alignment_error"] = alignment_error
 
     # Full transformation chain:

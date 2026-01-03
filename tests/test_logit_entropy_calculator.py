@@ -17,8 +17,6 @@
 
 """Tests for LogitEntropyCalculator (requires MLX)."""
 
-import math
-
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -37,7 +35,10 @@ from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
     LogitEntropySample,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    log_scalar,
+)
 
 
 def _eps(*values: float) -> float:
@@ -70,7 +71,7 @@ class TestLogitEntropyCalculator:
 
         entropy, variance = calc.compute(logits)
 
-        expected_entropy = math.log(vocab_size)
+        expected_entropy = log_scalar(float(vocab_size), get_default_backend())
         assert abs(entropy - expected_entropy) < _eps(entropy, expected_entropy)
         assert abs(variance - 0.0) < _eps(variance, 0.0)
 
