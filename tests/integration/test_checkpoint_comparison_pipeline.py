@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from modelcypher.core.domain.inference.comparison import (
+from modelcypher.core.use_cases.inference.comparison import (
     CheckpointComparisonCoordinator,
     ComparisonEvent,
     ComparisonResult,
@@ -202,7 +202,7 @@ class TestCheckpointComparisonCoordinatorFlow:
         coordinator = CheckpointComparisonCoordinator()
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
+            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
             mock_gen_cls.return_value = MockDualPathGenerator
 
@@ -235,7 +235,7 @@ class TestCheckpointComparisonCoordinatorFlow:
         checkpoints = ["/test/model1", "/test/model2"]
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
+            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
             mock_gen_cls.return_value = MockDualPathGenerator
 
@@ -266,7 +266,7 @@ class TestCheckpointComparisonCoordinatorFlow:
         coordinator = CheckpointComparisonCoordinator()
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
+            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
             mock_gen_cls.return_value = MockDualPathGenerator
 
@@ -295,7 +295,7 @@ class TestCheckpointComparisonCoordinatorFlow:
         coordinator = CheckpointComparisonCoordinator()
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
+            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
             mock_gen_cls.return_value = MockDualPathGenerator
 
@@ -325,7 +325,7 @@ class TestCheckpointComparisonCoordinatorFlow:
         coordinator = CheckpointComparisonCoordinator()
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
+            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
             mock_gen_cls.return_value = MockFailingGenerator
 
@@ -357,7 +357,7 @@ class TestCheckpointComparisonEventOrder:
         coordinator = CheckpointComparisonCoordinator()
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
+            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
             mock_gen_cls.return_value = MockDualPathGenerator
 
@@ -389,7 +389,7 @@ class TestCheckpointComparisonEventOrder:
         coordinator = CheckpointComparisonCoordinator()
 
         with patch(
-            "modelcypher.core.domain.inference.comparison.get_dual_path_generator_class"
+            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
         ) as mock_gen_cls:
             mock_gen_cls.return_value = MockDualPathGenerator
 

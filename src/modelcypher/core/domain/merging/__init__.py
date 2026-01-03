@@ -27,10 +27,6 @@ Provides geometric alignment for merging models using:
 
 from modelcypher.core.domain.merging.exceptions import MergeError
 
-# Platform detection (for backend selection, not merger selection)
-from ._platform import (
-    get_merging_platform,
-)
 from .entropy_merge_validator import (
     EntropyMergeValidator,
     LayerEntropyProfile,
@@ -56,6 +52,4 @@ __all__ = [
     "LoRAAdapterMerger",
     # Exceptions
     "MergeError",
-    # Platform detection
-    "get_merging_platform",
 ]

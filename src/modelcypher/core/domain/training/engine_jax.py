@@ -58,7 +58,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     optax = None
 
-from .types import TrainingConfig, TrainingProgress
+from .types import TrainingSpec, TrainingProgress
 from .validation import TrainingHyperparameterValidator
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,7 @@ class TrainingEngineJAX:
     async def train(
         self,
         job_id: str,
-        config: TrainingConfig,
+        config: TrainingSpec,
         params: dict[str, jnp.ndarray],
         apply_fn: Callable,
         optimizer: optax.GradientTransformation,
@@ -239,7 +239,7 @@ class TrainingEngineJAX:
     async def _execute_training(
         self,
         job_id: str,
-        config: TrainingConfig,
+        config: TrainingSpec,
         params: dict[str, jnp.ndarray],
         apply_fn: Callable,
         optimizer: optax.GradientTransformation,
@@ -403,7 +403,7 @@ class TrainingEngineJAX:
 
         return params
 
-    async def _check_resume(self, config: TrainingConfig) -> ResumeStateJAX | None:
+    async def _check_resume(self, config: TrainingSpec) -> ResumeStateJAX | None:
         """Check for checkpoint to resume from."""
         if config.resume_from_checkpoint_path:
             metadata = await self.checkpoint_manager.load_latest_checkpoint(

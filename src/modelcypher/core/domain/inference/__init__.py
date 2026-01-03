@@ -22,21 +22,18 @@ Platform-Specific Implementations:
 - MLX (macOS): *_mlx.py files
 - CUDA (Linux): *_cuda.py files
 - JAX (TPU/GPU): *_jax.py files
-- Use _platform module for automatic selection
+
+For platform-specific generators, use infrastructure factories:
+    from modelcypher.infrastructure.dual_path_factory import get_dual_path_generator_class
+
+For orchestration (CheckpointComparisonCoordinator), use:
+    from modelcypher.core.use_cases.inference import CheckpointComparisonCoordinator
 """
 
 from __future__ import annotations
 
-# Platform selection (auto-detects MLX on macOS, CUDA on Linux, JAX on TPU)
-# Avoid importing platform-specific generators here to prevent early MLX initialization.
-from ._platform import (
-    get_dual_path_generator_class,
-    get_inference_platform,
-    get_security_scan_metrics_class,
-)
 from .activation_stream import ActivationFrame, ActivationStream
 from .adapter_pool import *  # noqa: F401,F403
-from .comparison import *  # noqa: F401,F403
 from .entropy_dynamics import *  # noqa: F401,F403
 from .types import *  # noqa: F401,F403
 
@@ -44,8 +41,4 @@ __all__ = [
     # Activation streaming for real-time visualization
     "ActivationFrame",
     "ActivationStream",
-    # Platform detection
-    "get_dual_path_generator_class",
-    "get_inference_platform",
-    "get_security_scan_metrics_class",
 ]

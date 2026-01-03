@@ -78,7 +78,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, AsyncGenerator, Protocol
 
-from modelcypher.core.domain.inference._platform import get_dual_path_generator_class
+from modelcypher.infrastructure.dual_path_factory import get_dual_path_generator_class
 
 logger = logging.getLogger("modelcypher.comparison")
 

@@ -49,7 +49,10 @@ import logging
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +192,8 @@ class VisualizationData:
 @dataclass(frozen=True)
 class Result:
     mappings: list[LayerMapping]
-    alignment_quality: float
+    mean_cka: float
+    aligned: bool
     h2_validation: H2ValidationResult
     visualization_data: VisualizationData
     source_model: str
@@ -264,9 +268,10 @@ class CrossArchitectureLayerMatcher:
             )
 
         h2_validation = CrossArchitectureLayerMatcher._validate_h2(mappings)
-        alignment_quality = (
-            sum(mapping.cka for mapping in mappings) / float(len(mappings)) if mappings else 0.0
-        )
+        mean_cka = sum(mapping.cka for mapping in mappings) / float(len(mappings)) if mappings else 0.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        aligned = bool(mappings) and all(mapping.cka >= 1.0 - eps for mapping in mappings)
 
         visualization = VisualizationData(
             cka_matrix=cka_matrix,
@@ -278,7 +283,8 @@ class CrossArchitectureLayerMatcher:
 
         return Result(
             mappings=mappings,
-            alignment_quality=float(alignment_quality),
+            mean_cka=float(mean_cka),
+            aligned=aligned,
             h2_validation=h2_validation,
             visualization_data=visualization,
             source_model=source_crm.model_identifier,

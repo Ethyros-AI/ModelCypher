@@ -15,71 +15,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Inference Platform Selector.
+"""Factory for creating dual-path inference implementations.
 
-This module provides lazy importing of platform-specific inference implementations.
-On macOS, MLX implementations are used. On Linux with CUDA, PyTorch/CUDA
-implementations will be used. On Linux with TPU/GPU, JAX implementations
-will be used (when available).
-
-Usage:
-    from modelcypher.core.domain.inference._platform import (
-        get_inference_platform,
-        get_dual_path_generator,
-    )
-
-    platform = get_inference_platform()
-    generator_class = get_dual_path_generator_class()
-
-Platform-specific implementations:
-- MLX (macOS/Apple Silicon): *_mlx.py files
-- CUDA (Linux/NVIDIA GPU): *_cuda.py files
-- JAX (Linux/TPU/GPU): *_jax.py files
+This factory handles platform detection and returns the appropriate
+dual-path generator for the current environment. Moved from domain to
+infrastructure to respect hexagonal architecture boundaries.
 """
 
 from __future__ import annotations
 
 import os
-import platform
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
+import sys
 
 
-def _is_mlx_available() -> bool:
-    """Check if MLX is available (macOS with Apple Silicon)."""
-    if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
-        return False
-    if platform.system() != "Darwin":
-        return False
-    from modelcypher.core.domain import _backend as backend_manager
-
-    return backend_manager.probe_mlx_available(explicit=False)
-
-
-def _is_cuda_available() -> bool:
-    """Check if CUDA is available (Linux with NVIDIA GPU)."""
-    try:
-        import torch
-
-        return torch.cuda.is_available()
-    except ImportError:
-        return False
-
-
-def _is_jax_available() -> bool:
-    """Check if JAX is available (Linux/TPU/GPU)."""
-    try:
-        import jax  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
-def get_inference_platform() -> str:
+def _get_inference_platform() -> str:
     """Get the current inference platform identifier.
 
     Returns:
@@ -93,12 +42,32 @@ def get_inference_platform() -> str:
         env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
     if env_backend in ("mlx", "cuda", "jax"):
         return env_backend
-    if _is_mlx_available():
-        return "mlx"
-    if _is_cuda_available():
-        return "cuda"
-    if _is_jax_available():
+
+    # Check MLX availability
+    if sys.platform == "darwin":
+        if os.environ.get("MC_DISABLE_MLX", "").lower() not in ("1", "true", "yes"):
+            from modelcypher.core.domain._backend import probe_mlx_available
+
+            if probe_mlx_available(explicit=False):
+                return "mlx"
+
+    # Check CUDA
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+
+    # Check JAX
+    try:
+        import jax  # noqa: F401
+
         return "jax"
+    except ImportError:
+        pass
+
     return "cpu"
 
 
@@ -111,18 +80,22 @@ def get_dual_path_generator_class() -> type:
     Raises:
         NotImplementedError: If no supported platform is available.
     """
-    platform_name = get_inference_platform()
+    platform_name = _get_inference_platform()
 
     if platform_name == "mlx":
-        from .dual_path_mlx import DualPathGenerator
+        from modelcypher.core.domain.inference.dual_path_mlx import DualPathGenerator
 
         return DualPathGenerator
     elif platform_name == "cuda":
-        from .dual_path_cuda import DualPathGeneratorCUDA
+        from modelcypher.core.domain.inference.dual_path_cuda import (
+            DualPathGeneratorCUDA,
+        )
 
         return DualPathGeneratorCUDA
     elif platform_name == "jax":
-        from .dual_path_jax import DualPathGeneratorJAX
+        from modelcypher.core.domain.inference.dual_path_jax import (
+            DualPathGeneratorJAX,
+        )
 
         return DualPathGeneratorJAX
     else:
@@ -138,18 +111,22 @@ def get_security_scan_metrics_class() -> type:
     Returns:
         SecurityScanMetrics class appropriate for the platform.
     """
-    platform_name = get_inference_platform()
+    platform_name = _get_inference_platform()
 
     if platform_name == "mlx":
-        from .dual_path_mlx import SecurityScanMetrics
+        from modelcypher.core.domain.inference.dual_path_mlx import SecurityScanMetrics
 
         return SecurityScanMetrics
     elif platform_name == "cuda":
-        from .dual_path_cuda import SecurityScanMetricsCUDA
+        from modelcypher.core.domain.inference.dual_path_cuda import (
+            SecurityScanMetricsCUDA,
+        )
 
         return SecurityScanMetricsCUDA
     elif platform_name == "jax":
-        from .dual_path_jax import SecurityScanMetricsJAX
+        from modelcypher.core.domain.inference.dual_path_jax import (
+            SecurityScanMetricsJAX,
+        )
 
         return SecurityScanMetricsJAX
     else:
@@ -159,7 +136,6 @@ def get_security_scan_metrics_class() -> type:
 
 
 __all__ = [
-    "get_inference_platform",
     "get_dual_path_generator_class",
     "get_security_scan_metrics_class",
 ]

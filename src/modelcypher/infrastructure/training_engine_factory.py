@@ -15,75 +15,24 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Training Platform Selector.
+"""Factory for creating training engine implementations.
 
-This module provides lazy importing of platform-specific training implementations.
-On macOS, MLX implementations are used. On Linux with CUDA, PyTorch/CUDA
-implementations will be used. On Linux with TPU/GPU, JAX implementations
-will be used (when available).
-
-Usage in code that needs platform-specific training:
-
-    from modelcypher.core.domain.training._platform import (
-        get_training_engine,
-        get_checkpoint_manager,
-        get_lora_module,
-    )
-
-    engine = get_training_engine()
-    manager = get_checkpoint_manager()
-
-Platform-specific implementations:
-- MLX (macOS/Apple Silicon): *_mlx.py files
-- CUDA (Linux/NVIDIA GPU): *_cuda.py files
-- JAX (Linux/TPU/GPU): *_jax.py files
+This factory handles platform detection and returns the appropriate
+training engine for the current environment. Moved from domain to
+infrastructure to respect hexagonal architecture boundaries.
 """
 
 from __future__ import annotations
 
 import os
-import platform
+import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .checkpoints_mlx import CheckpointManager
-    from .engine_mlx import TrainingEngine
-    from .evaluation_mlx import EvaluationEngine
+    pass
 
 
-def _is_mlx_available() -> bool:
-    """Check if MLX is available (macOS with Apple Silicon)."""
-    if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
-        return False
-    if platform.system() != "Darwin":
-        return False
-    from modelcypher.core.domain import _backend as backend_manager
-
-    return backend_manager.probe_mlx_available(explicit=False)
-
-
-def _is_cuda_available() -> bool:
-    """Check if CUDA is available (Linux with NVIDIA GPU)."""
-    try:
-        import torch
-
-        return torch.cuda.is_available()
-    except ImportError:
-        return False
-
-
-def _is_jax_available() -> bool:
-    """Check if JAX is available (Linux/TPU/GPU)."""
-    try:
-        import jax  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
-def get_training_platform() -> str:
+def _get_training_platform() -> str:
     """Get the current training platform identifier.
 
     Returns:
@@ -97,16 +46,36 @@ def get_training_platform() -> str:
         env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
     if env_backend in ("mlx", "cuda", "jax"):
         return env_backend
-    if _is_mlx_available():
-        return "mlx"
-    if _is_cuda_available():
-        return "cuda"
-    if _is_jax_available():
+
+    # Check MLX availability
+    if sys.platform == "darwin":
+        if os.environ.get("MC_DISABLE_MLX", "").lower() not in ("1", "true", "yes"):
+            from modelcypher.core.domain._backend import probe_mlx_available
+
+            if probe_mlx_available(explicit=False):
+                return "mlx"
+
+    # Check CUDA
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+
+    # Check JAX
+    try:
+        import jax  # noqa: F401
+
         return "jax"
+    except ImportError:
+        pass
+
     return "cpu"
 
 
-def get_training_engine() -> "TrainingEngine":
+def get_training_engine() -> Any:
     """Get the training engine for the current platform.
 
     Returns:
@@ -115,18 +84,18 @@ def get_training_engine() -> "TrainingEngine":
     Raises:
         NotImplementedError: If no supported training platform is available.
     """
-    platform_name = get_training_platform()
+    platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from .engine_mlx import TrainingEngine
+        from modelcypher.core.domain.training.engine_mlx import TrainingEngine
 
         return TrainingEngine()
     elif platform_name == "cuda":
-        from .engine_cuda import TrainingEngineCUDA
+        from modelcypher.core.domain.training.engine_cuda import TrainingEngineCUDA
 
         return TrainingEngineCUDA()
     elif platform_name == "jax":
-        from .engine_jax import TrainingEngineJAX
+        from modelcypher.core.domain.training.engine_jax import TrainingEngineJAX
 
         return TrainingEngineJAX()
     else:
@@ -136,7 +105,7 @@ def get_training_engine() -> "TrainingEngine":
         )
 
 
-def get_checkpoint_manager(max_checkpoints: int = 3) -> "CheckpointManager":
+def get_checkpoint_manager(max_checkpoints: int = 3) -> Any:
     """Get the checkpoint manager for the current platform.
 
     Args:
@@ -145,46 +114,56 @@ def get_checkpoint_manager(max_checkpoints: int = 3) -> "CheckpointManager":
     Returns:
         CheckpointManager instance appropriate for the platform.
     """
-    platform_name = get_training_platform()
+    platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from .checkpoints_mlx import CheckpointManager
+        from modelcypher.core.domain.training.checkpoints_mlx import CheckpointManager
 
         return CheckpointManager(max_checkpoints=max_checkpoints)
     elif platform_name == "cuda":
-        from .checkpoints_cuda import CheckpointManagerCUDA
+        from modelcypher.core.domain.training.checkpoints_cuda import (
+            CheckpointManagerCUDA,
+        )
 
         return CheckpointManagerCUDA(max_checkpoints=max_checkpoints)
     elif platform_name == "jax":
-        from .checkpoints_jax import CheckpointManagerJAX
+        from modelcypher.core.domain.training.checkpoints_jax import (
+            CheckpointManagerJAX,
+        )
 
         return CheckpointManagerJAX(max_checkpoints=max_checkpoints)
     else:
-        raise NotImplementedError(f"No checkpoint manager available for platform: {platform_name}.")
+        raise NotImplementedError(
+            f"No checkpoint manager available for platform: {platform_name}."
+        )
 
 
-def get_evaluation_engine() -> "EvaluationEngine":
+def get_evaluation_engine() -> Any:
     """Get the evaluation engine for the current platform.
 
     Returns:
         EvaluationEngine instance appropriate for the platform.
     """
-    platform_name = get_training_platform()
+    platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from .evaluation_mlx import EvaluationEngine
+        from modelcypher.core.domain.training.evaluation_mlx import EvaluationEngine
 
         return EvaluationEngine()
     elif platform_name == "cuda":
-        from .evaluation_cuda import EvaluationEngineCUDA
+        from modelcypher.core.domain.training.evaluation_cuda import (
+            EvaluationEngineCUDA,
+        )
 
         return EvaluationEngineCUDA()
     elif platform_name == "jax":
-        from .evaluation_jax import EvaluationEngineJAX
+        from modelcypher.core.domain.training.evaluation_jax import EvaluationEngineJAX
 
         return EvaluationEngineJAX()
     else:
-        raise NotImplementedError(f"No evaluation engine available for platform: {platform_name}.")
+        raise NotImplementedError(
+            f"No evaluation engine available for platform: {platform_name}."
+        )
 
 
 def get_lora_config_class() -> type:
@@ -193,22 +172,24 @@ def get_lora_config_class() -> type:
     Returns:
         LoRAConfig class appropriate for the platform.
     """
-    platform_name = get_training_platform()
+    platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from .lora_mlx import LoRAConfig
+        from modelcypher.core.domain.training.lora_mlx import LoRAConfig
 
         return LoRAConfig
     elif platform_name == "cuda":
-        from .lora_cuda import LoRAConfigCUDA
+        from modelcypher.core.domain.training.lora_cuda import LoRAConfigCUDA
 
         return LoRAConfigCUDA
     elif platform_name == "jax":
-        from .lora_jax import LoRAConfigJAX
+        from modelcypher.core.domain.training.lora_jax import LoRAConfigJAX
 
         return LoRAConfigJAX
     else:
-        raise NotImplementedError(f"No LoRA support available for platform: {platform_name}.")
+        raise NotImplementedError(
+            f"No LoRA support available for platform: {platform_name}."
+        )
 
 
 def get_loss_landscape_computer() -> Any:
@@ -217,18 +198,24 @@ def get_loss_landscape_computer() -> Any:
     Returns:
         LossLandscapeComputer instance appropriate for the platform.
     """
-    platform_name = get_training_platform()
+    platform_name = _get_training_platform()
 
     if platform_name == "mlx":
-        from .loss_landscape_mlx import LossLandscapeComputer
+        from modelcypher.core.domain.training.loss_landscape_mlx import (
+            LossLandscapeComputer,
+        )
 
         return LossLandscapeComputer()
     elif platform_name == "cuda":
-        from .loss_landscape_cuda import LossLandscapeComputerCUDA
+        from modelcypher.core.domain.training.loss_landscape_cuda import (
+            LossLandscapeComputerCUDA,
+        )
 
         return LossLandscapeComputerCUDA()
     elif platform_name == "jax":
-        from .loss_landscape_jax import LossLandscapeComputerJAX
+        from modelcypher.core.domain.training.loss_landscape_jax import (
+            LossLandscapeComputerJAX,
+        )
 
         return LossLandscapeComputerJAX()
     else:
@@ -238,7 +225,6 @@ def get_loss_landscape_computer() -> Any:
 
 
 __all__ = [
-    "get_training_platform",
     "get_training_engine",
     "get_checkpoint_manager",
     "get_evaluation_engine",

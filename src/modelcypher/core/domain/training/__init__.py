@@ -21,15 +21,10 @@
 # - MLX (macOS): *_mlx.py files
 # - CUDA (Linux): *_cuda.py files
 # - JAX (TPU/GPU): *_jax.py files
-# - Use _platform module for automatic selection
+#
+# For platform-specific engine factories, use infrastructure:
+#     from modelcypher.infrastructure.training_engine_factory import get_training_engine
 
-# Avoid importing platform-specific engines here to prevent early MLX initialization.
-from ._platform import (
-    get_checkpoint_manager,
-    get_evaluation_engine,
-    get_training_engine,
-    get_training_platform,
-)
 from .checkpoint_models import (
     CheckpointErrorKind,
     CheckpointMetadataV2,
