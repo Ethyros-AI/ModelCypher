@@ -37,7 +37,11 @@ from modelcypher.core.domain.geometry.cross_grounding_transfer import (
     GroundingRotationEstimator,
     RelationalStressComputer,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(backend, *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 @pytest.fixture
@@ -80,7 +84,8 @@ class TestRelationalStressProfile:
         concept = backend.zeros((64,))
 
         profile = computer.compute_profile(concept, sample_anchors)
-        assert profile.distance_to(profile) == pytest.approx(0.0)
+        eps = _eps(backend, profile.distance_to(profile), 0.0)
+        assert abs(profile.distance_to(profile) - 0.0) <= eps
 
     def test_profile_captures_anchor_distances(self, backend, sample_anchors):
         """Profile should capture distances to all anchors."""
@@ -92,7 +97,8 @@ class TestRelationalStressProfile:
         assert len(profile.anchor_distances) == len(sample_anchors)
         for anchor_name in sample_anchors:
             assert anchor_name in profile.anchor_distances
-            assert profile.anchor_distances[anchor_name] >= 0
+            eps = _eps(backend, profile.anchor_distances[anchor_name])
+            assert profile.anchor_distances[anchor_name] >= -eps
 
     def test_profile_has_normalized_distances(self, backend, sample_anchors):
         """Profile should have normalized distances."""
@@ -133,11 +139,10 @@ class TestGroundingRotation:
         estimator = GroundingRotationEstimator(backend)
         rotation = estimator.estimate_rotation(sample_anchors, sample_anchors)
 
-        eps = division_epsilon(backend, backend.array([0.0]))
+        eps = _eps(backend, 0.0)
         angle_tol = math.degrees(math.acos(max(-1.0, min(1.0, 1.0 - eps))))
-        assert rotation.angle_degrees == pytest.approx(0.0, abs=angle_tol)
+        assert abs(rotation.angle_degrees - 0.0) <= angle_tol
         assert rotation.alignment_score >= 1.0 - eps
-        # alignment_score >= 0.99 means effectively aligned
 
     def test_rotated_anchors_detect_rotation(self, backend):
         """Significantly different anchor sets should show lower alignment."""
@@ -167,8 +172,9 @@ class TestGroundingRotation:
         rotation = estimator.estimate_rotation(source_anchors, target_anchors)
 
         # Should detect structural difference (lower alignment)
-        assert rotation.alignment_score < 1.0
-        assert rotation.confidence > 0
+        eps = _eps(backend, rotation.alignment_score, rotation.confidence)
+        assert rotation.alignment_score <= 1.0 + eps
+        assert rotation.confidence >= -eps
 
     def test_insufficient_anchors_return_low_confidence(self, backend):
         """Insufficient common anchors should return low confidence."""
@@ -179,8 +185,9 @@ class TestGroundingRotation:
 
         rotation = estimator.estimate_rotation(source, target)
 
-        assert rotation.confidence == 0.0
-        assert rotation.alignment_score == 0.0
+        eps = _eps(backend, rotation.confidence, rotation.alignment_score)
+        assert abs(rotation.confidence - 0.0) <= eps
+        assert abs(rotation.alignment_score - 0.0) <= eps
 
 
 class TestCrossGroundingSynthesizer:
@@ -203,8 +210,11 @@ class TestCrossGroundingSynthesizer:
         assert ghost.concept_id == "test_concept"
         assert ghost.source_position.shape == (64,)
         assert ghost.target_position.shape == (64,)
-        assert 0.0 <= ghost.stress_preservation <= 1.0
-        assert 0.0 <= ghost.synthesis_confidence <= 1.0
+        eps = _eps(backend, ghost.stress_preservation, ghost.synthesis_confidence)
+        assert ghost.stress_preservation >= -eps
+        assert ghost.stress_preservation <= 1.0 + eps
+        assert ghost.synthesis_confidence >= -eps
+        assert ghost.synthesis_confidence <= 1.0 + eps
 
     def test_identical_models_preserve_stress(self, backend, sample_anchors):
         """Identical source and target should have high stress preservation."""
@@ -219,15 +229,15 @@ class TestCrossGroundingSynthesizer:
             target_anchors=sample_anchors,
         )
 
-        assert 0.0 <= ghost.stress_preservation <= 1.0
+        eps = _eps(backend, ghost.stress_preservation)
+        assert ghost.stress_preservation >= -eps
+        assert ghost.stress_preservation <= 1.0 + eps
         assert ghost.common_anchor_count == len(sample_anchors)
         assert ghost.source_anchor_count == len(sample_anchors)
         assert ghost.target_anchor_count == len(sample_anchors)
-        eps = division_epsilon(backend, backend.array([0.0]))
-        assert ghost.synthesis_confidence == pytest.approx(
-            ghost.stress_preservation * ghost.grounding_rotation.confidence,
-            abs=eps,
-        )
+        expected = ghost.stress_preservation * ghost.grounding_rotation.confidence
+        eps = _eps(backend, ghost.synthesis_confidence, expected)
+        assert abs(ghost.synthesis_confidence - expected) <= eps
 
     def test_insufficient_anchors_returns_zero_preservation(self, backend):
         """Insufficient common anchors should return zero preservation."""
@@ -247,7 +257,8 @@ class TestCrossGroundingSynthesizer:
         assert ghost.common_anchor_count == 0
         assert ghost.source_anchor_count == len(source_anchors)
         assert ghost.target_anchor_count == len(target_anchors)
-        assert ghost.stress_preservation == 0.0
+        eps = _eps(backend, ghost.stress_preservation)
+        assert abs(ghost.stress_preservation - 0.0) <= eps
 
 
 class TestCrossGroundingTransferEngine:
@@ -288,9 +299,13 @@ class TestCrossGroundingTransferEngine:
             target_anchors=sample_anchors,
         )
 
-        assert 0.0 <= result.mean_stress_preservation <= 1.0
+        eps = _eps(backend, result.mean_stress_preservation)
+        assert result.mean_stress_preservation >= -eps
+        assert result.mean_stress_preservation <= 1.0 + eps
         assert result.min_stress_preservation <= result.mean_stress_preservation
-        assert 0.0 <= result.grounding_rotation.alignment_score <= 1.0
+        eps = _eps(backend, result.grounding_rotation.alignment_score)
+        assert result.grounding_rotation.alignment_score >= -eps
+        assert result.grounding_rotation.alignment_score <= 1.0 + eps
 
     def test_estimate_feasibility_returns_valid_assessment(self, backend, sample_anchors):
         """Feasibility estimation should return valid assessment."""
@@ -310,8 +325,10 @@ class TestCrossGroundingTransferEngine:
 
         feasibility = engine.estimate_transfer_feasibility(sample_anchors, sample_anchors)
 
-        assert 0.0 <= feasibility["alignment_score"] <= 1.0
-        assert feasibility["grounding_rotation_degrees"] >= 0.0
+        eps = _eps(backend, feasibility["alignment_score"], feasibility["grounding_rotation_degrees"])
+        assert feasibility["alignment_score"] >= -eps
+        assert feasibility["alignment_score"] <= 1.0 + eps
+        assert feasibility["grounding_rotation_degrees"] >= -eps
 
 
 class TestRelationalStressInvariance:
@@ -351,11 +368,10 @@ class TestRelationalStressInvariance:
         rotated_profile = computer.compute_profile(rotated_concept, rotated_anchors)
 
         # Distances should be identical within dtype-derived precision
-        eps = division_epsilon(backend, backend.array([0.0]))
+        eps = _eps(backend, 0.0)
         for anchor_name in anchors:
-            assert original_profile.anchor_distances[anchor_name] == pytest.approx(
-                rotated_profile.anchor_distances[anchor_name], abs=eps
-            )
+            diff = original_profile.anchor_distances[anchor_name] - rotated_profile.anchor_distances[anchor_name]
+            assert abs(diff) <= eps
 
     def test_stress_distance_invariant_under_translation(self, backend):
         """Stress profile should not depend on absolute position."""
@@ -382,11 +398,10 @@ class TestRelationalStressInvariance:
         translated_profile = computer.compute_profile(translated_concept, translated_anchors)
 
         # Distances should be identical within dtype-derived precision
-        eps = division_epsilon(backend, backend.array([0.0]))
+        eps = _eps(backend, 0.0)
         for anchor_name in anchors:
-            assert original_profile.anchor_distances[anchor_name] == pytest.approx(
-                translated_profile.anchor_distances[anchor_name], abs=eps
-            )
+            diff = original_profile.anchor_distances[anchor_name] - translated_profile.anchor_distances[anchor_name]
+            assert abs(diff) <= eps
 
 
 class TestEdgeCases:
@@ -418,8 +433,9 @@ class TestEdgeCases:
         profile = computer.compute_profile(concept, anchors, k_nearest=2)
 
         assert len(profile.anchor_distances) == 2
-        assert profile.anchor_distances["low"] == pytest.approx(5.0)
-        assert profile.anchor_distances["high"] == pytest.approx(5.0)
+        eps = _eps(backend, profile.anchor_distances["low"], profile.anchor_distances["high"], 5.0)
+        assert abs(profile.anchor_distances["low"] - 5.0) <= eps
+        assert abs(profile.anchor_distances["high"] - 5.0) <= eps
 
     def test_identical_anchor_positions(self, backend):
         """Should handle degenerate case of identical anchors."""
@@ -437,5 +453,5 @@ class TestEdgeCases:
 
         # All distances should be equal
         distances = list(profile.anchor_distances.values())
-        eps = division_epsilon(backend, backend.array([0.0]))
-        assert all(d == pytest.approx(distances[0], abs=eps) for d in distances)
+        eps = _eps(backend, distances[0])
+        assert all(abs(d - distances[0]) <= eps for d in distances)

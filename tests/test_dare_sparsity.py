@@ -19,12 +19,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.dare_sparsity import (
     Configuration,
     DARESparsityAnalyzer,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def test_empty_analysis() -> None:
@@ -61,26 +66,32 @@ def test_analysis_derives_thresholds_from_data() -> None:
 
     # Sparsity should be derived from spectral gap in magnitude distribution
     # The exact value depends on the data, not arbitrary thresholds
-    assert 0.0 <= analysis.effective_sparsity <= 1.0
-    assert 0.0 <= analysis.essential_fraction <= 1.0
-    assert analysis.effective_sparsity + analysis.essential_fraction == pytest.approx(1.0)
+    eps = _eps(analysis.effective_sparsity, analysis.essential_fraction)
+    assert analysis.effective_sparsity >= -eps
+    assert analysis.effective_sparsity <= 1.0 + eps
+    assert analysis.essential_fraction >= -eps
+    assert analysis.essential_fraction <= 1.0 + eps
+    assert abs(analysis.effective_sparsity + analysis.essential_fraction - 1.0) <= eps
 
     # Per-layer metrics
     layer1 = analysis.per_layer_sparsity["layer1"]
     assert layer1.parameter_count == 4
-    assert layer1.mean_magnitude == pytest.approx(0.425)
-    assert layer1.max_magnitude == pytest.approx(1.0)
+    eps = _eps(layer1.mean_magnitude, layer1.max_magnitude)
+    assert abs(layer1.mean_magnitude - 0.425) <= eps
+    assert abs(layer1.max_magnitude - 1.0) <= eps
 
     layer2 = analysis.per_layer_sparsity["layer2"]
     assert layer2.parameter_count == 2
-    assert layer2.mean_magnitude == pytest.approx(0.025)
-    assert layer2.max_magnitude == pytest.approx(0.05)
+    eps = _eps(layer2.mean_magnitude, layer2.max_magnitude)
+    assert abs(layer2.mean_magnitude - 0.025) <= eps
+    assert abs(layer2.max_magnitude - 0.05) <= eps
 
     # Magnitude stats
     stats = analysis.magnitude_stats
-    assert stats.max == pytest.approx(1.0)
-    assert stats.min_non_zero == pytest.approx(0.05)
-    assert stats.median == pytest.approx(0.2)
+    eps = _eps(stats.max, stats.min_non_zero, stats.median)
+    assert abs(stats.max - 1.0) <= eps
+    assert abs(stats.min_non_zero - 0.05) <= eps
+    assert abs(stats.median - 0.2) <= eps
 
 
 def test_analysis_layer_filtering() -> None:
@@ -96,7 +107,9 @@ def test_analysis_layer_filtering() -> None:
     # Layer filtering should only analyze layer1
     assert set(analysis.per_layer_sparsity.keys()) == {"layer1"}
     # Sparsity is derived from data, verify constraints
-    assert 0.0 <= analysis.effective_sparsity <= 1.0
+    eps = _eps(analysis.effective_sparsity)
+    assert analysis.effective_sparsity >= -eps
+    assert analysis.effective_sparsity <= 1.0 + eps
 
 
 def test_metrics_dictionary() -> None:
@@ -104,5 +117,11 @@ def test_metrics_dictionary() -> None:
     analysis = DARESparsityAnalyzer.analyze(deltas)
     metrics = DARESparsityAnalyzer.to_metrics_dictionary(analysis)
 
-    assert metrics["geometry/dare_effective_sparsity"] == pytest.approx(analysis.effective_sparsity)
-    assert metrics["geometry/dare_essential_fraction"] == pytest.approx(analysis.essential_fraction)
+    eps = _eps(
+        metrics["geometry/dare_effective_sparsity"],
+        metrics["geometry/dare_essential_fraction"],
+        analysis.effective_sparsity,
+        analysis.essential_fraction,
+    )
+    assert abs(metrics["geometry/dare_effective_sparsity"] - analysis.effective_sparsity) <= eps
+    assert abs(metrics["geometry/dare_essential_fraction"] - analysis.essential_fraction) <= eps

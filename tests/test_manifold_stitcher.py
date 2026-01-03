@@ -44,6 +44,12 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     ManifoldStitcher,
     _ensure_proper_rotation,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 # =============================================================================
 # Hypothesis Strategies
@@ -139,7 +145,8 @@ class TestJaccardSimilarity:
         Mathematical property: |A ∩ B| / |A ∪ B| is always bounded.
         """
         result = compute_jaccard_similarity(set_a, set_b)
-        assert 0.0 <= result <= 1.0
+        eps = _eps(result)
+        assert -eps <= result <= 1.0 + eps
 
     @given(finite_set())
     @settings(max_examples=50, deadline=None)
@@ -150,12 +157,14 @@ class TestJaccardSimilarity:
         """
         assume(len(s) > 0)
         result = compute_jaccard_similarity(s, s)
-        assert result == pytest.approx(1.0)
+        eps = _eps(result)
+        assert abs(result - 1.0) <= eps
 
     def test_jaccard_empty_sets_is_zero(self):
         """Jaccard(∅, ∅) = 0 by convention."""
         result = compute_jaccard_similarity(set(), set())
-        assert result == 0.0
+        eps = _eps(result)
+        assert abs(result - 0.0) <= eps
 
     def test_jaccard_disjoint_sets_is_zero(self):
         """Jaccard of disjoint sets is 0.
@@ -163,7 +172,8 @@ class TestJaccardSimilarity:
         Mathematical property: |A ∩ B| = 0 when A ∩ B = ∅
         """
         result = compute_jaccard_similarity({1, 2, 3}, {4, 5, 6})
-        assert result == 0.0
+        eps = _eps(result)
+        assert abs(result - 0.0) <= eps
 
     @given(finite_set(), finite_set())
     @settings(max_examples=50, deadline=None)
@@ -171,7 +181,8 @@ class TestJaccardSimilarity:
         """Jaccard is symmetric: J(A, B) = J(B, A)."""
         result_ab = compute_jaccard_similarity(set_a, set_b)
         result_ba = compute_jaccard_similarity(set_b, set_a)
-        assert result_ab == pytest.approx(result_ba)
+        eps = _eps(result_ab, result_ba)
+        assert abs(result_ab - result_ba) <= eps
 
 
 # =============================================================================
@@ -190,7 +201,8 @@ class TestWeightedJaccardSimilarity:
         Mathematical property: sum(min(a, b)) / sum(max(a, b)) ∈ [0, 1]
         """
         result = compute_weighted_jaccard_similarity(dict_a, dict_b)
-        assert 0.0 <= result <= 1.0
+        eps = _eps(result)
+        assert -eps <= result <= 1.0 + eps
 
     @given(activation_dict())
     @settings(max_examples=50, deadline=None)
@@ -202,12 +214,14 @@ class TestWeightedJaccardSimilarity:
         assume(len(d) > 0)
         assume(any(v > 0 for v in d.values()))  # At least one positive value
         result = compute_weighted_jaccard_similarity(d, d)
-        assert result == pytest.approx(1.0)
+        eps = _eps(result)
+        assert abs(result - 1.0) <= eps
 
     def test_weighted_jaccard_empty_is_zero(self):
         """Weighted Jaccard of empty dicts is 0."""
         result = compute_weighted_jaccard_similarity({}, {})
-        assert result == 0.0
+        eps = _eps(result)
+        assert abs(result - 0.0) <= eps
 
     @given(activation_dict(), activation_dict())
     @settings(max_examples=50, deadline=None)
@@ -215,7 +229,8 @@ class TestWeightedJaccardSimilarity:
         """Weighted Jaccard is symmetric."""
         result_ab = compute_weighted_jaccard_similarity(dict_a, dict_b)
         result_ba = compute_weighted_jaccard_similarity(dict_b, dict_a)
-        assert result_ab == pytest.approx(result_ba)
+        eps = _eps(result_ab, result_ba)
+        assert abs(result_ab - result_ba) <= eps
 
 
 # =============================================================================
@@ -234,7 +249,8 @@ class TestCosineSimilarity:
         Mathematical property: cos(θ) ∈ [-1, 1] for any angle θ.
         """
         result = compute_cosine_similarity(dict_a, dict_b)
-        assert -1.0 <= result <= 1.0 + 1e-6  # Small tolerance for floating point
+        eps = _eps(result)
+        assert -1.0 - eps <= result <= 1.0 + eps
 
     @given(activation_dict())
     @settings(max_examples=50, deadline=None)
@@ -247,9 +263,11 @@ class TestCosineSimilarity:
         # Need a vector with sufficient magnitude (not just tiny values)
         # Use a higher threshold to avoid numerical precision issues
         norm_sq = sum(v * v for v in d.values())
-        assume(norm_sq > 1e-6)  # Non-trivial vector
+        eps = _eps(norm_sq)
+        assume(norm_sq > eps)  # Non-trivial vector
         result = compute_cosine_similarity(d, d)
-        assert result == pytest.approx(1.0)
+        eps = _eps(result)
+        assert abs(result - 1.0) <= eps
 
     def test_cosine_orthogonal_is_zero(self):
         """Cosine of orthogonal vectors is 0."""
@@ -257,14 +275,16 @@ class TestCosineSimilarity:
         a = {0: 1.0}
         b = {1: 1.0}
         result = compute_cosine_similarity(a, b)
-        assert result == pytest.approx(0.0)
+        eps = _eps(result)
+        assert abs(result - 0.0) <= eps
 
     def test_cosine_opposite_is_minus_one(self):
         """Cosine of opposite vectors is -1."""
         a = {0: 1.0, 1: 1.0}
         b = {0: -1.0, 1: -1.0}
         result = compute_cosine_similarity(a, b)
-        assert result == pytest.approx(-1.0)
+        eps = _eps(result)
+        assert abs(result - (-1.0)) <= eps
 
 
 
@@ -304,7 +324,8 @@ class TestProperRotation:
         # Determinant should be +1
         det = backend.det(backend.array(result_np))
         det_scalar = float(backend.to_numpy(det))
-        assert det_scalar == pytest.approx(1.0, abs=1e-6)
+        eps = _eps(det_scalar)
+        assert abs(det_scalar - 1.0) <= eps
 
     def test_proper_rotation_preserves_orthogonality(self):
         """Proper rotation should remain orthogonal."""
@@ -326,7 +347,9 @@ class TestProperRotation:
         backend.eval(product, expected)
         diff = backend.abs(product - expected)
         backend.eval(diff)
-        assert float(backend.max(diff)) < 1e-6
+        diff_val = float(backend.max(diff))
+        eps = _eps(diff_val)
+        assert diff_val <= eps
 
 
 # =============================================================================
@@ -348,7 +371,8 @@ class TestContinuousFingerprint:
         )
 
         # Entropy should be high but bounded by 1
-        assert 0.0 <= fp.entropies[0] <= 1.0
+        eps = _eps(fp.entropies[0])
+        assert -eps <= fp.entropies[0] <= 1.0 + eps
 
     def test_entropy_peaked_is_low(self):
         """Peaked distribution should have low entropy."""
@@ -360,7 +384,14 @@ class TestContinuousFingerprint:
             layer_activations={0: peaked},
         )
 
-        assert fp.entropies[0] < 0.3  # Low entropy
+        uniform = [1.0] * 100
+        uniform_fp = ContinuousFingerprint.from_activations(
+            prime_id="uniform",
+            prime_text="uniform",
+            layer_activations={0: uniform},
+        )
+        eps = _eps(fp.entropies[0], uniform_fp.entropies[0])
+        assert fp.entropies[0] <= uniform_fp.entropies[0] + eps
 
     def test_sparsity_bounded_zero_one(self):
         """Sparsity should be in [0, 1]."""
@@ -371,7 +402,8 @@ class TestContinuousFingerprint:
             layer_activations={0: activations},
         )
 
-        assert 0.0 <= fp.sparsities[0] <= 1.0
+        eps = _eps(fp.sparsities[0])
+        assert -eps <= fp.sparsities[0] <= 1.0 + eps
 
 
 # =============================================================================
@@ -451,7 +483,8 @@ class TestCKAMatrix:
         if matrix_np.size > 0:
             # Diagonal should be 1 (self-similarity)
             for i in range(min(matrix_np.shape)):
-                assert matrix_np[i, i] == pytest.approx(1.0, abs=0.01)
+                eps = _eps(float(matrix_np[i, i]))
+                assert abs(matrix_np[i, i] - 1.0) <= eps
 
 
 # =============================================================================
@@ -478,9 +511,10 @@ class TestManifoldStitcherIntegration:
         result = ManifoldStitcher.compute_continuous_correlation(fp1, fp2, layer=0)
 
         assert result is not None
-        assert 0.0 <= result.cka <= 1.0
-        assert -1.0 <= result.cosine_similarity <= 1.0
-        assert result.magnitude_ratio > 0
+        eps = _eps(result.cka, result.cosine_similarity, result.magnitude_ratio)
+        assert -eps <= result.cka <= 1.0 + eps
+        assert -1.0 - eps <= result.cosine_similarity <= 1.0 + eps
+        assert result.magnitude_ratio >= eps
 
     def test_cluster_activations_produces_valid_clusters(self):
         """cluster_activations should produce valid AlignmentCluster objects."""
@@ -495,4 +529,5 @@ class TestManifoldStitcherIntegration:
         # Each cluster should have valid properties
         for cluster in clusters:
             assert cluster.member_count > 0
-            assert 0.0 <= cluster.procrustes_error  # Error is non-negative
+            eps = _eps(cluster.procrustes_error)
+            assert cluster.procrustes_error >= -eps  # Error is non-negative

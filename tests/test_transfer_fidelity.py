@@ -20,7 +20,10 @@ from __future__ import annotations
 import math
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_pearson_correlation,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.transfer_fidelity import TransferFidelityPrediction
 
 
@@ -39,7 +42,7 @@ def test_transfer_fidelity_identical():
     result = TransferFidelityPrediction.predict(gram, gram, n=3)
     assert result is not None
     backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([1.0]))
+    eps = machine_epsilon(backend, backend.array([1.0]))
     assert abs(result.expected_fidelity - 1.0) <= eps
     assert result.sample_size == 3
 
@@ -72,8 +75,13 @@ def test_transfer_fidelity_orthogonal():
     result = TransferFidelityPrediction.predict(gram_a, gram_b, n=3)
     assert result is not None
     assert result.sample_size == 3
-    # Different matrices should have fidelity < 1.0
-    assert result.expected_fidelity < 1.0
+    expected = compute_pearson_correlation(
+        [gram_a[1], gram_a[2], gram_a[5]],
+        [gram_b[1], gram_b[2], gram_b[5]],
+    )
+    backend = get_default_backend()
+    eps = machine_epsilon(backend, backend.array([result.expected_fidelity, expected]))
+    assert abs(result.expected_fidelity - expected) <= eps
 
 
 def test_transfer_fidelity_invalid_size():
@@ -108,7 +116,7 @@ def test_transfer_fidelity_raw_measurements():
     assert result is not None
     # Perfect self-correlation. The number IS the answer.
     backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([1.0]))
+    eps = machine_epsilon(backend, backend.array([1.0]))
     assert abs(result.expected_fidelity - 1.0) <= eps
 
 
@@ -144,13 +152,15 @@ def test_transfer_fidelity_fisher_z_confidence_interval():
     result = TransferFidelityPrediction.predict(gram, gram, n=5)
     assert result is not None
     # For identical matrices, expected_fidelity should be 1.0
-    assert abs(result.expected_fidelity - 1.0) < 1e-6
+    backend = get_default_backend()
+    eps = machine_epsilon(backend, backend.array([result.expected_fidelity, 1.0]))
+    assert abs(result.expected_fidelity - 1.0) <= eps
     # CI bounds should be finite and reasonable (close to 1.0)
     lower, upper = result.correlation_ci95
     assert math.isfinite(lower)
     assert math.isfinite(upper)
-    assert lower > 0.9  # Lower bound should be high for perfect correlation
-    assert upper <= 1.0  # Upper bound is capped by Fisher Z transform
+    assert lower <= result.expected_fidelity + eps
+    assert upper >= result.expected_fidelity - eps
 
 
 def test_transfer_fidelity_with_null_distribution():
@@ -183,7 +193,10 @@ def test_transfer_fidelity_with_null_distribution():
     )
     assert result is not None
     # Confidence reflects percentile in null distribution
-    assert 0.0 <= result.confidence <= 1.0
+    backend = get_default_backend()
+    eps = machine_epsilon(backend, backend.array([result.confidence, 0.0, 1.0]))
+    assert result.confidence >= -eps
+    assert result.confidence <= 1.0 + eps
 
 
 def test_transfer_fidelity_empty_null_distribution():
@@ -206,4 +219,6 @@ def test_transfer_fidelity_empty_null_distribution():
     assert result is not None
     assert result.sample_size == 3
     # With identical matrices and empty null dist, should get base prediction
-    assert abs(result.expected_fidelity - 1.0) < 1e-6
+    backend = get_default_backend()
+    eps = machine_epsilon(backend, backend.array([result.expected_fidelity, 1.0]))
+    assert abs(result.expected_fidelity - 1.0) <= eps

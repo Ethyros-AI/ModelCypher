@@ -15,18 +15,24 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-import pytest
-
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     PersistencePoint,
     TopologicalFingerprint,
 )
 
 
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
 def test_persistent_homology_point_persistence():
     """Test persistence calculation (death - birth)."""
     p = PersistencePoint(birth=1.2, death=3.5, dimension=0)
-    assert p.persistence == pytest.approx(2.3)
+    eps = _eps(p.persistence, 2.3)
+    assert abs(p.persistence - 2.3) <= eps
 
 
 def test_persistent_homology_filtration_death_clamping():
@@ -37,7 +43,8 @@ def test_persistent_homology_filtration_death_clamping():
 
     # One component must survive until max_filtration
     points0 = fingerprint.diagram.points
-    assert any(p.death == max_filt for p in points0)
+    eps = _eps(max_filt)
+    assert any(abs(p.death - max_filt) <= eps for p in points0)
 
 
 def test_persistent_homology_bottleneck_stability():
@@ -52,7 +59,9 @@ def test_persistent_homology_bottleneck_stability():
 
     result = TopologicalFingerprint.compare(f1, f2)
     # Bottleneck distance should be bounded by noise (roughly)
-    assert result.bottleneck_distance <= 0.2  # Allow some slack for D_B
+    noise = max(abs(a - b) for row_a, row_b in zip(x, y) for a, b in zip(row_a, row_b))
+    eps = _eps(result.bottleneck_distance, noise)
+    assert result.bottleneck_distance <= noise + eps
 
 
 def test_persistent_homology_1dim_void_detection():

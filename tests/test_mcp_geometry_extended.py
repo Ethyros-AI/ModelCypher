@@ -43,9 +43,13 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 DEFAULT_TIMEOUT_SECONDS = 15
+
+
+def _eps(backend, *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def _repo_root() -> Path:
@@ -177,7 +181,8 @@ class TestGromovWassersteinTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        assert payload["distance"] >= 0.0
+        eps = _eps(backend, payload["distance"])
+        assert payload["distance"] >= -eps
 
     def test_gromov_wasserstein_identical_points_near_zero(self, mcp_env: dict[str, str]) -> None:
         """Identical point clouds should have distance ≈ 0."""
@@ -201,7 +206,7 @@ class TestGromovWassersteinTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        eps = division_epsilon(backend, points_arr)
+        eps = machine_epsilon(backend, points_arr)
         # Distance to self should be within numerical precision.
         assert payload["distance"] <= eps
 
@@ -260,7 +265,8 @@ class TestIntrinsicDimensionTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        assert payload["intrinsicDimension"] > 0
+        eps = _eps(backend, payload["intrinsicDimension"])
+        assert payload["intrinsicDimension"] >= eps
 
     def test_intrinsic_dimension_bounded_by_ambient(self, mcp_env: dict[str, str]) -> None:
         """Intrinsic dimension should not exceed ambient dimension."""
@@ -282,8 +288,8 @@ class TestIntrinsicDimensionTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        # ID should be roughly ambient_dim or less
-        assert payload["intrinsicDimension"] <= ambient_dim + 1.0
+        eps = _eps(backend, payload["intrinsicDimension"], float(ambient_dim))
+        assert payload["intrinsicDimension"] <= ambient_dim + eps
 
 
 # =============================================================================
@@ -416,7 +422,7 @@ class TestDimensionConstraintInvarianceTool:
         assert payload["baseDimension"] == 2
         assert payload["paddedDimension"] == 4
         points_arr = backend.array(points, dtype="float32")
-        eps = division_epsilon(backend, points_arr)
+        eps = machine_epsilon(backend, points_arr)
         assert abs(payload["gramCka"] - 1.0) <= eps
         assert payload["geodesicDiff"]["maxAbs"] <= eps
 
@@ -512,9 +518,11 @@ class TestManifoldDimensionTool:
         payload = _extract_structured(result)
 
         if "intrinsicDimension" in payload:
-            assert payload["intrinsicDimension"] > 0
+            eps = _eps(backend, payload["intrinsicDimension"])
+            assert payload["intrinsicDimension"] >= eps
         elif "dimension" in payload:
-            assert payload["dimension"] > 0
+            eps = _eps(backend, payload["dimension"])
+            assert payload["dimension"] >= eps
 
 
 # =============================================================================
@@ -808,7 +816,7 @@ class TestGeometryToolInvariants:
         payload_ba = _extract_structured(result_ba)
 
         # GW distance should be approximately symmetric
-        eps = division_epsilon(backend, points_a_arr)
+        eps = machine_epsilon(backend, points_a_arr)
         assert abs(payload_ab["distance"] - payload_ba["distance"]) <= eps
 
     @pytest.mark.parametrize("seed", range(3))
@@ -843,5 +851,6 @@ class TestGeometryToolInvariants:
         md_dim = payload_md.get("intrinsicDimension", payload_md.get("dimension", 0))
 
         # Both estimates should be positive
-        assert id_dim > 0
-        assert md_dim > 0
+        eps = _eps(backend, id_dim, md_dim)
+        assert id_dim >= eps
+        assert md_dim >= eps
