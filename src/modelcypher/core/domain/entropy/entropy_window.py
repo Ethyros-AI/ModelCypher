@@ -97,6 +97,7 @@ class EntropyWindow:
         if window_size <= 0:
             raise ValueError("derived window_size must be positive")
 
+        self._backend = backend
         self._window_size = window_size
         self.window_id = window_id or str(uuid.uuid4())
         self._samples: list[EntropySample] = []
@@ -173,9 +174,7 @@ class EntropyWindow:
                 token_end=0,
             )
 
-        from modelcypher.core.domain._backend import get_default_backend
-
-        backend = get_default_backend()
+        backend = self._backend
         values = [sample.entropy for sample in self._samples]
         tokens = [sample.token_index for sample in self._samples]
         entropy_arr = backend.array(values)
