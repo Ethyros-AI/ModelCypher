@@ -995,7 +995,7 @@ class GramAligner:
             F = F + lr * (grad / (grad_norm_val + div_eps))
             b.eval(F)
 
-        # Return best result
+        # Return lowest-error result
         source_transformed = b.matmul(source_centered, best_F)
         K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
         K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)

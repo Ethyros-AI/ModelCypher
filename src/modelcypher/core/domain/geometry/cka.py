@@ -129,7 +129,7 @@ class CKAResult:
 
     @property
     def best(self) -> float:
-        """Return the best available CKA: corrected if computed, else raw.
+        """Return the preferred CKA: corrected if computed, else raw.
 
         Use this for gates and decisions where feature-sampling bias could
         cause false negatives (e.g., CKA=0.98 when true value is 1.0).

@@ -73,7 +73,7 @@ class CascadeResult:
     - projections: Structure-preserving projections at each target dimension
     - couplings: REUSABLE coupling matrices for streaming projection
     - curvatures: Ollivier-Ricci curvature at each dimension
-    - geodesic_distortion: How much geodesic structure is distorted (lower = better)
+    - geodesic_distortion: How much geodesic structure is distorted (lower indicates less distortion)
 
     Attributes:
         original_dim: Original hidden dimension (e.g., 4096)
@@ -529,7 +529,7 @@ class DimensionCascade:
         Measure how well embedding preserves geodesic distances.
 
         Computes 1 - correlation between original geodesic distances
-        and embedded Euclidean distances. Lower is better.
+        and embedded Euclidean distances. Lower indicates less distortion.
 
         Returns:
             Distortion in [0, 1] where 0 = exact preservation

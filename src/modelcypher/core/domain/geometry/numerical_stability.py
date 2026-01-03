@@ -1418,7 +1418,7 @@ def compute_shared_relational_rank(
     # Use MAX of both ranks to preserve ALL signal from both representations.
     # The Platonic hypothesis: all models encode the same shape, just at different
     # resolutions. Using min() truncates signal; using max() preserves it.
-    # The Procrustes alignment will find the best mapping between the full spaces.
+    # The Procrustes alignment will find the minimum-error mapping between the full spaces.
     shared_rank = max(rank_source, rank_target)
 
     # Also compute threshold-based ranks for comparison

@@ -1312,8 +1312,19 @@ class OllivierRicciCurvature:
         degree = len(neighbors)
 
         # Compute adaptive alpha using derived values
-        base_alpha = getattr(self, '_derived_base_alpha', self.config.base_alpha or 0.5)
-        adaptive_strength = getattr(self, '_derived_adaptive_strength', self.config.adaptive_strength or 0.0)
+        if hasattr(self, '_derived_base_alpha'):
+            base_alpha = self._derived_base_alpha
+        elif self.config.base_alpha is not None:
+            base_alpha = self.config.base_alpha
+        else:
+            base_alpha = 0.5  # Fallback
+
+        if hasattr(self, '_derived_adaptive_strength'):
+            adaptive_strength = self._derived_adaptive_strength
+        elif self.config.adaptive_strength is not None:
+            adaptive_strength = self.config.adaptive_strength
+        else:
+            adaptive_strength = 0.0  # Fallback
 
         if self.config.adaptive_alpha and max_degree > 0:
             alpha = base_alpha * (1.0 - (degree / max_degree) * adaptive_strength)

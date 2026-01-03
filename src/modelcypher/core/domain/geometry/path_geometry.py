@@ -1034,7 +1034,7 @@ class BackendPathGeometry:
 def get_path_geometry(
     backend: "Backend | None" = None,
 ) -> type[PathGeometry] | BackendPathGeometry:
-    """Get the best available path geometry implementation.
+    """Get the default path geometry implementation.
 
     Args:
         backend: Optional Backend instance. If provided, returns

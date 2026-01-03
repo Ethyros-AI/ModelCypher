@@ -1491,7 +1491,7 @@ class RiemannianGeometry:
             4. Find largest angular gap via candidate sampling
             5. Return the sparse direction and coverage metrics
 
-        The sparse direction identifies where to explore for better coverage.
+        The sparse direction identifies where to explore for increased coverage.
 
         Args:
             point_idx: Index of the center point

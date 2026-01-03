@@ -25,7 +25,7 @@ Two implementations are provided:
 - VectorMath: Pure Python fallback (always available)
 - BackendVectorMath: GPU-accelerated via Backend protocol (preferred)
 
-Use get_vector_math() to get the best available implementation.
+Use get_vector_math() to get the default implementation.
 
 NOTE: For cross-dimensional comparison of activation matrices (n_samples x n_features),
 use CKA from modelcypher.core.domain.geometry.cka - it works via Gram matrices
@@ -958,7 +958,7 @@ class BackendVectorMath:
 
 
 def get_vector_math(backend: "Backend | None" = None) -> VectorMath | BackendVectorMath:
-    """Get the best available vector math implementation.
+    """Get the default vector math implementation.
 
     Args:
         backend: Optional Backend instance. If provided, returns

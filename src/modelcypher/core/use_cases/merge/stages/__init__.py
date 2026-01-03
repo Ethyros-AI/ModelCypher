@@ -21,12 +21,13 @@ Merge pipeline stages.
 Each stage is a standalone module that can be imported and tested independently.
 The UnifiedGeometricMerger orchestrates these stages in sequence.
 
-Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
+Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
 
 Stage 1: PROBE - Build intersection map from probe responses
 Stage 2a: DENSITY - Knowledge density profiling for graft mask
 Stage 2b: PERMUTE - Git Re-Basin permutation alignment for MLP neurons (same-arch)
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
+Stage 4: VALIDATE - Safety checks (numerical stability, refusal preservation, behavioral probes)
 
 REMOVED (proven broken):
 - ROTATE/PROPAGATE: No mathematical guarantee of boundary preservation.
@@ -61,6 +62,10 @@ from .transplant import (
     TransplantStageConfig,
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,
+)
+from .validate import (
+    ValidateResult,
+    stage_validate as stage_validate_impl,
 )
 
 if TYPE_CHECKING:
@@ -232,6 +237,48 @@ def stage_transplant(
 
     return result.merged_weights, result.metrics
 
+
+def stage_validate(
+    *,
+    merged_weights: dict[str, "Array"],
+    source_weights: dict[str, "Array"],
+    target_weights: dict[str, "Array"],
+    layer_confidences: dict[int, float],
+    layer_indices: list[int],
+    hidden_dim: int,
+    target_model: Any | None = None,
+    target_model_path: str | None = None,
+    tokenizer: Any | None = None,
+    collect_activations_fn: Callable | None = None,
+    merged_model_path: str | None = None,
+    backend: "Backend | None" = None,
+) -> tuple[dict[str, Any], "ValidateResult"]:
+    """Stage 4: Validation of merged weights.
+
+    Returns raw measurements only. No verdicts - the geometry IS what it is.
+    Callers interpret measurements relative to their own baselines.
+
+    Returns:
+        Tuple of (metrics dict, ValidateResult)
+    """
+    result = stage_validate_impl(
+        merged_weights=merged_weights,
+        source_weights=source_weights,
+        target_weights=target_weights,
+        layer_confidences=layer_confidences,
+        layer_indices=layer_indices,
+        hidden_dim=hidden_dim,
+        target_model=target_model,
+        target_model_path=target_model_path,
+        tokenizer=tokenizer,
+        collect_activations_fn=collect_activations_fn,
+        merged_model_path=merged_model_path,
+        backend=backend,
+    )
+
+    return result.metrics, result
+
+
 __all__ = [
     # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
     "stage_probe",
@@ -248,4 +295,7 @@ __all__ = [
     "stage_transplant",
     "TransplantStageConfig",
     "TransplantStageResult",
+    # Stage 4: Validate (safety checks for merged weights)
+    "stage_validate",
+    "ValidateResult",
 ]

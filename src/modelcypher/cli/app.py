@@ -82,6 +82,10 @@ from modelcypher.cli.commands.geometry import temporal as geometry_temporal_comm
 from modelcypher.cli.commands.geometry import training as geometry_training_commands
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
 from modelcypher.cli.commands.geometry import visualize as geometry_visualize_commands
+from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
+from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
+from modelcypher.cli.commands.geometry import merge_entropy as geometry_merge_entropy_commands
+from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
 from modelcypher.cli.composition import get_training_service
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_output
@@ -199,6 +203,10 @@ geometry_app.add_typer(geometry_moral_commands.app, name="moral")
 geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory")
 geometry_app.add_typer(geometry_research_commands.app, name="research")
 geometry_app.add_typer(geometry_visualize_commands.app, name="visualize")
+geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
+geometry_app.add_typer(geometry_interference_commands.app, name="interference")
+geometry_app.add_typer(geometry_merge_entropy_commands.app, name="merge-entropy")
+geometry_app.add_typer(geometry_refinement_commands.app, name="refinement")
 app.add_typer(entropy_commands.app, name="entropy")
 app.add_typer(adapter_commands.adapter_app, name="adapter")
 app.add_typer(adapter_commands.calibration_app, name="calibration")

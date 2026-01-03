@@ -95,7 +95,7 @@ class MoralFoundationClustering:
 
     within_foundation_similarity: float  # Mean similarity within foundations
     between_foundation_similarity: float  # Mean similarity between foundations
-    separation_ratio: float  # within / between (higher = better clustering)
+    separation_ratio: float  # within / between (higher indicates tighter clustering)
     most_distinct_foundation: str
     most_overlapping_pair: tuple[str, str]
 

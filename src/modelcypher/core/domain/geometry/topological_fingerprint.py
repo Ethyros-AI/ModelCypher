@@ -1240,7 +1240,7 @@ class BackendTopologicalFingerprint:
 def get_topological_fingerprint(
     backend: "Backend | None" = None,
 ) -> type[TopologicalFingerprint] | BackendTopologicalFingerprint:
-    """Get the best available topological fingerprint implementation.
+    """Get the default topological fingerprint implementation.
 
     Args:
         backend: Optional Backend instance. If provided, returns

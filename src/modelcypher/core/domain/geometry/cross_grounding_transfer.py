@@ -630,7 +630,7 @@ class CrossGroundingSynthesizer:
         common_anchors: set[str],
     ) -> "Array":
         """
-        Solve for the position in target space that best preserves relational stress.
+        Solve for the position in target space that minimizes relational stress residual.
 
         This is a multilateration problem: given geodesic distances to known points,
         find the position. We use iterative optimization with geodesic distance

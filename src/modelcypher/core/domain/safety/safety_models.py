@@ -93,14 +93,12 @@ class ModerationFailureMode(str, Enum):
         """Detailed description of behavior."""
         return {
             ModerationFailureMode.APPROVE: (
-                "If moderation fails, treat the sample as approved (fastest, least safe)."
+                "If moderation fails, treat the sample as approved (no moderation signal)."
             ),
             ModerationFailureMode.FLAG: (
-                "Send samples to the review queue when moderation is unavailable (default)."
+                "Send samples to the review queue when moderation is unavailable."
             ),
-            ModerationFailureMode.REJECT: (
-                "Reject samples outright when moderation fails (safest)."
-            ),
+            ModerationFailureMode.REJECT: "Reject samples outright when moderation fails.",
         }[self]
 
 
@@ -286,13 +284,9 @@ class StrictnessLevel(str, Enum):
     def description(self) -> str:
         """Detailed description of behavior."""
         return {
-            StrictnessLevel.STRICT: (
-                "Reject risky samples aggressively (auto-reject >= 0.7 confidence)."
-            ),
-            StrictnessLevel.MODERATE: (
-                "Balance between safety and recall (auto-reject >= 0.9 confidence)."
-            ),
-            StrictnessLevel.PERMISSIVE: ("Route findings to review queue; never auto-reject."),
+            StrictnessLevel.STRICT: "Auto-reject at >= 0.7 confidence.",
+            StrictnessLevel.MODERATE: "Auto-reject at >= 0.9 confidence.",
+            StrictnessLevel.PERMISSIVE: "Route findings to review queue; never auto-reject.",
         }[self]
 
     @property

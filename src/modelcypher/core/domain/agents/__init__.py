@@ -150,3 +150,49 @@ from .syntax_atlas import (
 )
 from .task_diversion_detector import TaskDiversionDetector
 from .unified_atlas import *  # noqa: F401,F403
+
+# Base atlas infrastructure
+from .atlas_base import (
+    AtlasConcept,
+    BaseAtlas,
+    BaseAtlasConfiguration,
+    BaseAtlasSignature,
+)
+
+# Additional atlas inventories (previously not exported)
+from .conceptual_metaphor_atlas import (
+    CMTFamily,
+    CMTMapping,
+    ConceptualMetaphorInventory,
+)
+from .moral_atlas import (
+    MoralAxis,
+    MoralConcept,
+    MoralConceptInventory,
+    MoralFoundation,
+)
+from .philosophical_atlas import (
+    PhilosophicalAxis,
+    PhilosophicalCategory,
+    PhilosophicalConcept,
+    PhilosophicalConceptInventory,
+)
+from .safety_ethics_atlas import (
+    CoercionType,
+    ConsentType,
+    SafetyCategory,
+    SafetyConcept,
+    SafetyEthicsInventory,
+)
+from .social_atlas import (
+    SocialAxis,
+    SocialCategory,
+    SocialConcept,
+    SocialConceptInventory,
+)
+from .temporal_atlas import (
+    TemporalAxis,
+    TemporalCategory,
+    TemporalConcept,
+    TemporalConceptInventory,
+)

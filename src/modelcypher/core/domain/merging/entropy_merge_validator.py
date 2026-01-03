@@ -250,7 +250,7 @@ class MergeEntropyValidation:
         """Get layer names sorted by entropy ratio.
 
         Args:
-            descending: If True, worst layers first. If False, best first.
+            descending: If True, lowest ratios first. If False, highest first.
 
         Returns:
             List of layer names sorted by entropy_ratio.

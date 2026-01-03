@@ -197,7 +197,7 @@ class TransferPoint:
         source_profile: The anchor distance profile from source.
         coordinates: Computed position in target space.
         projected_volume: ConceptVolume in target space (if computed).
-        stress: Normalized stress of the projection (lower is better).
+        stress: Normalized stress of the projection (lower indicates less stress).
         anchor_stress: Per-anchor stress breakdown.
         curvature_mismatch: Difference in local curvature.
         confidence_components: Component factors for transfer confidence.
@@ -462,6 +462,13 @@ class CrossManifoldProjector:
         best_position = position
         best_stress = float("inf")
 
+        # Derive learning rate if not provided
+        if self.config.learning_rate is not None:
+            learning_rate = self.config.learning_rate
+        else:
+            # Use 1/n_anchors as initial learning rate - adaptive scaling
+            learning_rate = 1.0 / max(1, n_anchors)
+
         for iteration in range(self.config.max_iterations):
             # Build point matrix: [position, anchor_0, anchor_1, ...]
             position_reshaped = backend.reshape(position, (1, -1))
@@ -505,10 +512,10 @@ class CrossManifoldProjector:
             gradient = backend.sum(diffs * backend.reshape(coeffs, (-1, 1)), axis=0)
 
             # Update position
-            position = position - self.config.learning_rate * gradient
+            position = position - learning_rate * gradient
             backend.eval(position)
 
-        # Compute final geodesic distances for best position
+        # Compute final geodesic distances for minimum-stress position
         best_position_reshaped = backend.reshape(best_position, (1, -1))
         all_points = backend.concatenate([best_position_reshaped, target_centroids_arr], axis=0)
         points_arr = backend.astype(all_points, "float32")

@@ -111,7 +111,7 @@ class EntropySample:
 
     @property
     def best_entropy_estimate(self) -> float:
-        """Best available entropy: prefer SEP > logit."""
+        """Preferred entropy: SEP if available, else logit."""
         return self.sep_entropy if self.sep_entropy is not None else self.logit_entropy
 
     def get_z_score(self, baseline: CalibratedBaseline) -> float:

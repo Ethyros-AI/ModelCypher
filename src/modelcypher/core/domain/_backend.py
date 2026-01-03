@@ -131,7 +131,7 @@ def get_backend(backend_type: BackendType) -> Backend:
 
 
 def _detect_default_backend_type() -> BackendType:
-    """Detect the best available backend for the current platform.
+    """Detect the preferred backend for the current platform.
 
     Priority:
         1. MC_BACKEND (or MODELCYPHER_BACKEND) environment variable
@@ -190,7 +190,7 @@ def get_default_backend() -> Backend:
         The current default backend instance.
 
     Note:
-        On first call, this detects the best available backend.
+        On first call, this detects the preferred backend.
         Use MC_BACKEND (or MODELCYPHER_BACKEND) environment variable to override:
             MC_BACKEND=jax python script.py
         Or call set_default_backend() programmatically.

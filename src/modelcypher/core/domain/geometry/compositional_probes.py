@@ -196,7 +196,8 @@ class CompositionalProbes:
 
         bary_corr = CompositionalProbes._pearson(weights_a, weights_b)
         ang_corr = CompositionalProbes._pearson(angles_a, angles_b)
-        score = 0.4 * max(0.0, bary_corr) + 0.6 * max(0.0, ang_corr)
+        # Equal weights - let individual correlations speak for themselves
+        score = (max(0.0, bary_corr) + max(0.0, ang_corr)) / 2.0
 
         return ConsistencyResult(
             probe_count=n,

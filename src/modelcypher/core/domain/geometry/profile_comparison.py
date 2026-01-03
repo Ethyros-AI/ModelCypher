@@ -294,13 +294,26 @@ def compare_profiles(
     dim_diffs = [abs(lc.intrinsic_dimension_diff) for lc in layer_comparisons]
 
     # Convert differences to alignment (0-1 scale)
-    # Use exponential decay: exp(-diff/scale)
-    curvature_alignment = _mean_alignment(sectional_diffs, scale=0.5)
-    ricci_alignment = _mean_alignment(ricci_diffs, scale=0.5)
-    dimension_alignment = _mean_alignment(dim_diffs, scale=10.0)
+    # Use exponential decay: exp(-diff/scale) where scale is derived from data
+    # Scale = median of differences (so "typical" difference gives ~0.5 alignment)
+    backend = get_default_backend()
+    eps = float(machine_epsilon(backend, backend.array([1.0])))
 
-    # Overall: weighted average
-    overall_alignment = 0.5 * ricci_alignment + 0.3 * curvature_alignment + 0.2 * dimension_alignment
+    def _data_scale(diffs: list[float]) -> float:
+        """Derive scale from median of differences."""
+        if not diffs:
+            return 1.0
+        sorted_d = sorted(diffs)
+        mid = len(sorted_d) // 2
+        median = sorted_d[mid] if len(sorted_d) % 2 else (sorted_d[mid - 1] + sorted_d[mid]) / 2.0
+        return max(median, eps)  # Ensure non-zero scale
+
+    curvature_alignment = _mean_alignment(sectional_diffs, scale=_data_scale(sectional_diffs))
+    ricci_alignment = _mean_alignment(ricci_diffs, scale=_data_scale(ricci_diffs))
+    dimension_alignment = _mean_alignment(dim_diffs, scale=_data_scale(dim_diffs))
+
+    # Equal weights - let individual alignments speak for themselves
+    overall_alignment = (ricci_alignment + curvature_alignment + dimension_alignment) / 3.0
 
     backend = get_default_backend()
 

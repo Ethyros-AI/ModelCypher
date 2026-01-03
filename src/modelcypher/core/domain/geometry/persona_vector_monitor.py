@@ -238,8 +238,10 @@ class PersonaVectorMonitor:
             negative_activations=negative_activations,
             direction=final_direction,
         )
-        if correlation < configuration.correlation_threshold:
-            return None
+        # Only filter if threshold provided
+        if configuration.correlation_threshold is not None:
+            if correlation < configuration.correlation_threshold:
+                return None
 
         return PersonaVector(
             id=trait.id,

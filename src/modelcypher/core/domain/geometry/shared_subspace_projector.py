@@ -109,6 +109,7 @@ from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResp
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    machine_epsilon,
     sqrt_scalar,
 )
 
@@ -142,7 +143,7 @@ class Config:
     max_shared_dimension: int = 256
     cca_regularization: float = 1e-4
     min_samples: int = 10
-    min_canonical_correlation: float = 0.1
+    min_canonical_correlation: float | None = None  # Derived from data if not set
     pca_mode: PcaMode = PcaMode.auto
     anchor_prefixes: tuple[str, ...] | None = None
     anchor_weights: dict[str, float] | None = None
@@ -369,8 +370,14 @@ class SharedSubspaceProjector:
         canonical_sq = canonical_arr * canonical_arr
         b.eval(canonical_sq)
 
-        # Filter by min_canonical_correlation
-        min_corr = b.full(canonical_arr.shape, config.min_canonical_correlation)
+        # Filter by min_canonical_correlation (derive from data if not set)
+        if config.min_canonical_correlation is not None:
+            min_corr_val = config.min_canonical_correlation
+        else:
+            # Use sqrt(machine_epsilon) as minimum meaningful correlation
+            eps = float(machine_epsilon(b, canonical_arr))
+            min_corr_val = eps ** 0.5
+        min_corr = b.full(canonical_arr.shape, min_corr_val)
         valid_mask = canonical_arr >= min_corr
         valid_count_arr = b.sum(b.astype(valid_mask, "int32"))
         b.eval(valid_count_arr)

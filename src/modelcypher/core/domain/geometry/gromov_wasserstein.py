@@ -327,7 +327,7 @@ class GromovWassersteinDistance:
         best_loss = float(backend.to_scalar(best_loss_arr))
         best_perm = perms[best_idx]
 
-        # Build coupling matrix from best permutation
+        # Build coupling matrix from minimum-cost permutation
         # T[i, perm[i]] = 1/n
         coupling_data = [[0.0] * n for _ in range(n)]
         for i, j in enumerate(best_perm):

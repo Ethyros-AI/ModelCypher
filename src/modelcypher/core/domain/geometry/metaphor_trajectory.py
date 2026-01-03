@@ -19,7 +19,7 @@
 
 Tracks how source domain activations converge with target domain activations
 through model layers. Based on research showing that intermediate layers
-best capture metaphor processing (arXiv 2505.22563).
+capture metaphor processing (arXiv 2505.22563).
 
 The core measurement is CKA between source and target domain activations
 at each layer. The "convergence layer" is where this CKA peaks - the layer

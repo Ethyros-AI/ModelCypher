@@ -403,7 +403,7 @@ class BackendManifoldDimensionality:
 def get_manifold_dimensionality(
     backend: "Backend | None" = None,
 ) -> type[ManifoldDimensionality] | BackendManifoldDimensionality:
-    """Get the best available manifold dimensionality implementation.
+    """Get the default manifold dimensionality implementation.
 
     Args:
         backend: Optional Backend instance. If provided, returns
