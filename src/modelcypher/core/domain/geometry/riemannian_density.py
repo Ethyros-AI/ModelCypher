@@ -410,8 +410,7 @@ class ConceptVolume:
     def _compute_tangent_vectors_batch(self, points: "Array") -> "Array":
         """Compute tangent vectors from centroid to multiple points using log map.
 
-        If geodesic context is available, scales by geodesic/Euclidean ratio.
-        Otherwise returns raw Euclidean differences.
+        Requires geodesic context; scales by geodesic/Euclidean ratio.
 
         Args:
             points: Array of points (n x d)

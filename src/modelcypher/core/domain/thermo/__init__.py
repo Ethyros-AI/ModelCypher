@@ -46,6 +46,7 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     MultilingualPerturbedPrompt,
     PerturbedPrompt,
     PromptLanguage,
+    ThermoGeometryMetrics,
     ThermoMeasurement,
 )
 from modelcypher.core.domain.thermo.measured_thermodynamics import (
@@ -96,6 +97,7 @@ __all__ = [
     "MultilingualPerturbedPrompt",
     "PerturbedPrompt",
     "PromptLanguage",
+    "ThermoGeometryMetrics",
     "RidgeCrossDetector",
     "RidgeCrossEvent",
     "RidgeCrossRateStats",

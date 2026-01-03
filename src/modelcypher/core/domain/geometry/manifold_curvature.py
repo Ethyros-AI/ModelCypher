@@ -354,7 +354,7 @@ class SectionalCurvatureEstimator:
             point: The point to estimate curvature at (d-dimensional)
             neighbors: Nearby points for local geometry (n x d array)
             metric_fn: Optional function returning metric tensor at a point.
-                       If None, uses Euclidean metric approximation.
+                       If None, derives metric from local covariance.
 
         Returns:
             LocalCurvature with all curvature measurements

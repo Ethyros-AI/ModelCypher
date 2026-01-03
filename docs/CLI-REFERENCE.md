@@ -531,6 +531,7 @@ Compare observed entropy deltas against declared baseline.
 ```bash
 mc entropy verify-baseline --baseline ./calibration.json --observed '[0.1, 0.15, 0.12]'
 ```
+Baseline files are produced by `mc entropy calibrate`.
 
 ### mc entropy window
 Analyze entropy using a sliding window.

@@ -25,10 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import mlx.optimizers as optim
-
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.backends import default_backend
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import (
     Hyperparameters as DomainHyperparameters,
@@ -51,7 +48,6 @@ from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine
 from modelcypher.utils.locks import FileLock, FileLockError
 
-from .model_loader import load_model_for_training
 from .training_dataset import TrainingDataset
 
 logger = logging.getLogger(__name__)
@@ -76,15 +72,18 @@ class LocalTrainingEngine(TrainingEngine):
     Wires the ModelCypher adapters to the domain TrainingEngine.
     """
 
-    def __init__(
-        self, store: FileSystemStore | None = None, backend: Backend | None = None
-    ) -> None:
+    def __init__(self, store: FileSystemStore | None = None, backend: Backend | None = None) -> None:
         self.store = store or FileSystemStore()
-        self.backend = backend or default_backend()
+        self.backend = backend
         self.paths = self.store.paths
         self.lock = FileLock(self.paths.base / "training.lock")
-        self.domain_engine = get_training_engine()
+        self.domain_engine: TrainingEngine | None = None
         self._loop = None
+
+    def _get_domain_engine(self) -> TrainingEngine:
+        if self.domain_engine is None:
+            self.domain_engine = get_training_engine()
+        return self.domain_engine
 
     def preflight(self, config: Any) -> PreflightResult:
         """Preflight requires explicit resource measurements."""
@@ -222,7 +221,13 @@ class LocalTrainingEngine(TrainingEngine):
 
         # Execution using Domain Engine
         try:
+            import mlx.optimizers as optim
+
+            domain_engine = self._get_domain_engine()
+
             # 1. Load Model
+            from .model_loader import load_model_for_training
+
             model, tokenizer = load_model_for_training(config.model_id, domain_lora)
 
             # 2. Load Dataset
@@ -276,7 +281,7 @@ class LocalTrainingEngine(TrainingEngine):
 
             # 5. Run Training Loop (Synchronous wrap for now)
             async def run_train():
-                await self.domain_engine.train(
+                await domain_engine.train(
                     job_id=job_id,
                     config=domain_config,
                     model=model,
@@ -323,9 +328,10 @@ class LocalTrainingEngine(TrainingEngine):
         return job
 
     def pause(self, job_id: str) -> TrainingJob:
-        self.domain_engine._paused_jobs.add(job_id)
-        if job_id in self.domain_engine._pause_events:
-            self.domain_engine._pause_events[job_id].clear()
+        domain_engine = self._get_domain_engine()
+        domain_engine._paused_jobs.add(job_id)
+        if job_id in domain_engine._pause_events:
+            domain_engine._pause_events[job_id].clear()
 
         job = self.status(job_id)
         job = TrainingJob(
@@ -335,9 +341,10 @@ class LocalTrainingEngine(TrainingEngine):
         return job
 
     def resume(self, job_id: str) -> TrainingJob:
-        self.domain_engine._paused_jobs.discard(job_id)
-        if job_id in self.domain_engine._pause_events:
-            self.domain_engine._pause_events[job_id].set()
+        domain_engine = self._get_domain_engine()
+        domain_engine._paused_jobs.discard(job_id)
+        if job_id in domain_engine._pause_events:
+            domain_engine._pause_events[job_id].set()
 
         job = self.status(job_id)
         job = TrainingJob(
@@ -347,7 +354,8 @@ class LocalTrainingEngine(TrainingEngine):
         return job
 
     def cancel(self, job_id: str) -> TrainingJob:
-        self.domain_engine._cancelled_jobs.add(job_id)
+        domain_engine = self._get_domain_engine()
+        domain_engine._cancelled_jobs.add(job_id)
 
         job = self.status(job_id)
         job = TrainingJob(

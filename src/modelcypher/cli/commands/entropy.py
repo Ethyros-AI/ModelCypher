@@ -263,6 +263,7 @@ def entropy_verify_baseline(
     - Declared vs observed ranges
     - Per-sample z-scores
 
+    Baseline JSON is produced by `mc entropy calibrate`.
     No interpretation thresholds - the statistics ARE the signal.
     """
     context = _context(ctx)

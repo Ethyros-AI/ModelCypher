@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from modelcypher.ports.backend import Backend
+from modelcypher.backends.lazy_backend import LazyBackend
 
 
 def default_backend() -> Backend:
@@ -30,6 +31,7 @@ def default_backend() -> Backend:
 __all__ = [
     "Backend",
     "default_backend",
+    "LazyBackend",
     "MLXBackend",
     "JAXBackend",
     "CUDABackend",

@@ -184,7 +184,6 @@ class ThermoService:
     def __init__(self, embedder: EmbeddingProvider | None = None) -> None:
         self._embedder = embedder
         self._integration = ThermoPathIntegration()
-        self._modifiers_by_name = {m.name: m for m in DEFAULT_MODIFIERS}
         self._calorimeter: "LinguisticCalorimeter" | None = None
         self._calorimeter_model_path: str | None = None
 
@@ -419,10 +418,15 @@ class ThermoService:
         final_entropy = entropy_history[-1]["entropy"]
         initial_entropy = entropy_history[0]["entropy"]
 
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
         entropy_delta = final_entropy - initial_entropy
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([initial_entropy]))
         entropy_ratio = (
             final_entropy / initial_entropy
-            if abs(initial_entropy) > 0
+            if abs(initial_entropy) > eps
             else None
         )
 

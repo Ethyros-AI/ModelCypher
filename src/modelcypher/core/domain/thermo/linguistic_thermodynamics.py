@@ -261,6 +261,19 @@ class BehavioralOutcome(str, Enum):
         """
         return self in (BehavioralOutcome.ATTEMPTED, BehavioralOutcome.SOLVED)
 
+
+@dataclass(frozen=True)
+class ThermoGeometryMetrics:
+    """Hidden-state geometry measurements derived from activations."""
+
+    intrinsic_dimensions: dict[int, float]
+    ricci_curvatures: dict[int, float]
+    ricci_stds: dict[int, float]
+    sample_counts: dict[int, int]
+    mean_intrinsic_dimension: float | None
+    mean_ricci_curvature: float | None
+    mean_ricci_std: float | None
+
     @property
     def basin(self) -> AttractorBasin:
         """Basin classification in thermodynamic model."""
@@ -440,6 +453,11 @@ class ThermoMeasurement:
     refusal_projection_magnitude: float | None = None
     is_approaching_refusal: bool | None = None
     refusal_assessment: str | None = None
+
+    # Hidden-state geometry (optional, computed from activations)
+    geometry_metrics: "ThermoGeometryMetrics | None" = None
+    delta_intrinsic_dimension_mean: float | None = None
+    delta_ricci_curvature_mean: float | None = None
 
     # State Classification
     model_state: str = "normal"

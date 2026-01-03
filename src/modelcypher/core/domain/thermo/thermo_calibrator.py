@@ -140,7 +140,6 @@ class ThermoCalibrator:
     def calibrate(
         self,
         probes: list[str],
-        modifiers: list[LinguisticModifier] | None = None,
         progress_callback: callable | None = None,
     ) -> ThermoCalibration:
         """Run full calibration from probe corpus.
@@ -149,8 +148,6 @@ class ThermoCalibrator:
         ----------
         probes : list[str]
             List of probe prompts to use for calibration.
-        modifiers : list[LinguisticModifier] | None
-            Modifiers to calibrate. Defaults to all.
         progress_callback : callable | None
             Optional callback for progress updates.
 
@@ -162,8 +159,7 @@ class ThermoCalibrator:
         if not probes:
             raise ValueError("Cannot calibrate from empty probe corpus")
 
-        if modifiers is None:
-            modifiers = list(LinguisticModifier)
+        modifiers = list(LinguisticModifier)
 
         calorimeter = self._ensure_calorimeter()
         progress = CalibrationProgress()

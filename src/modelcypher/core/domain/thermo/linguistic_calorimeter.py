@@ -36,10 +36,12 @@ mode works without any MLX dependencies.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import sys
 import time
 from dataclasses import dataclass, field
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -52,9 +54,13 @@ from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 _MACHINE_EPS = sys.float_info.epsilon
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.inference.activation_stream import ActivationFrame
     from modelcypher.ports.backend import Backend
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+from modelcypher.core.domain.geometry.manifold_curvature import OllivierRicciCurvature
+from modelcypher.core.domain.inference.activation_stream import ActivationStream
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     BehavioralOutcome,
     EntropyDirection,
@@ -62,6 +68,7 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LocalizedModifiers,
     PerturbedPrompt,
     PromptLanguage,
+    ThermoGeometryMetrics,
     ThermoMeasurement,
 )
 from modelcypher.core.domain.thermo.measured_thermodynamics import (
@@ -91,6 +98,7 @@ class EntropyMeasurement:
     stop_reason: str
     temperature: float
     measurement_time: float  # seconds
+    geometry_metrics: ThermoGeometryMetrics | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -192,6 +200,8 @@ class LinguisticCalorimeter:
 
         # Cache for baseline measurements
         self._baseline_cache: dict[str, BaselineMeasurements] = {}
+        self._context_length: int | None = None
+        self._context_length_loaded: bool = False
 
     def _ensure_model(self) -> None:
         """Load model and tokenizer if not already loaded."""
@@ -219,28 +229,92 @@ class LinguisticCalorimeter:
 
         self._entropy_calculator = LogitEntropyCalculator(epsilon=self.epsilon)
 
+    def _resolve_context_length(self) -> int | None:
+        """Resolve model context length from config.json if available."""
+        if self._context_length_loaded:
+            return self._context_length
+
+        self._context_length_loaded = True
+        if self.model_path is None:
+            return None
+
+        config_path = self.model_path / "config.json"
+        if not config_path.exists():
+            return None
+
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning("Invalid config.json at %s", config_path)
+            return None
+
+        for key in (
+            "max_position_embeddings",
+            "max_seq_len",
+            "max_sequence_length",
+            "n_ctx",
+            "context_length",
+            "seq_length",
+        ):
+            value = config.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                self._context_length = int(value)
+                return self._context_length
+
+        return None
+
+    def _prompt_token_count(self, prompt: str) -> int:
+        """Estimate prompt length in tokens."""
+        if not prompt:
+            return 0
+
+        if self.simulated or self.model_path is None:
+            return len(prompt.split())
+
+        if self._tokenizer is None:
+            self._ensure_model()
+
+        if self._tokenizer is None:
+            return len(prompt.split())
+
+        return len(self._tokenizer.encode(prompt))
+
+    def _derive_max_tokens(self, prompt: str) -> int:
+        """Derive max tokens from prompt length and model context."""
+        prompt_tokens = self._prompt_token_count(prompt)
+        context_len = self._resolve_context_length()
+
+        if context_len is None:
+            return max(1, prompt_tokens)
+
+        remaining = context_len - prompt_tokens
+        return max(1, remaining)
+
     def measure_entropy(
         self,
         prompt: str,
-        temperature: float = 1.0,
-        max_tokens: int = 64,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> EntropyMeasurement:
         """Compute entropy from model output distribution.
 
         Args:
             prompt: The input prompt.
-            temperature: Sampling temperature.
-            max_tokens: Maximum tokens to generate.
+            temperature: Sampling temperature (defaults to model-native scale).
+            max_tokens: Maximum tokens to generate (derived if not provided).
 
         Returns:
             EntropyMeasurement with all entropy metrics.
         """
         start_time = time.time()
 
-        if self.simulated:
-            return self._measure_simulated(prompt, temperature, max_tokens, start_time)
+        temperature_val = 1.0 if temperature is None else temperature
+        max_tokens_val = self._derive_max_tokens(prompt) if max_tokens is None else max_tokens
 
-        return self._measure_real(prompt, temperature, max_tokens, start_time)
+        if self.simulated:
+            return self._measure_simulated(prompt, temperature_val, max_tokens_val, start_time)
+
+        return self._measure_real(prompt, temperature_val, max_tokens_val, start_time)
 
     def _measure_real(
         self,
@@ -257,79 +331,98 @@ class LinguisticCalorimeter:
 
         b = self._backend
 
+        geometry_stream: ActivationStream | None = None
+        capture_ctx = nullcontext()
+        geometry_enabled = False
+        try:
+            geometry_stream = ActivationStream(self._model, backend=b)
+            capture_ctx = geometry_stream.capture()
+            geometry_enabled = True
+        except Exception as exc:
+            logger.warning("Geometry capture unavailable: %s", exc)
+
         # Tokenize prompt
         tokens = self._tokenizer.encode(prompt)
         input_ids = b.array([tokens])
 
         # Forward pass to get logits for first token
-        logits = self._model(input_ids)
-        b.eval(logits)
-
-        # Compute first-token entropy
-        first_entropy, first_variance = self._entropy_calculator.compute(logits)
-
-        # Generate tokens and track entropy
-        entropy_trajectory = [first_entropy]
-        variance_trajectory = [first_variance]
-        generated_tokens = []
-
-        # Simple greedy/sampling generation with entropy tracking
-        current_tokens = list(tokens)
-        stop_reason = "length"
-
-        for _ in range(max_tokens - 1):
-            input_ids = b.array([current_tokens])
+        with capture_ctx:
+            if geometry_enabled and geometry_stream is not None:
+                geometry_stream.advance_token()
             logits = self._model(input_ids)
             b.eval(logits)
 
-            # Get entropy for current position
-            entropy, variance = self._entropy_calculator.compute(logits)
-            entropy_trajectory.append(entropy)
-            variance_trajectory.append(variance)
+            # Compute first-token entropy
+            first_entropy, first_variance = self._entropy_calculator.compute(logits)
 
-            # Pull the last position logits via backend indexing.
-            seq_len = int(logits.shape[1])
-            row = b.take(logits, b.array([0]), axis=0)
-            row = b.squeeze(row, axis=0)
-            last_logits = b.take(row, b.array([seq_len - 1]), axis=0)
-            last_logits = b.squeeze(last_logits, axis=0)
-            b.eval(last_logits)
+            # Generate tokens and track entropy
+            entropy_trajectory = [first_entropy]
+            variance_trajectory = [first_variance]
+            generated_tokens = []
 
-            # Sample next token
-            if temperature <= 0:
-                # Greedy
-                next_token_arr = b.argmax(last_logits, axis=-1)
-                b.eval(next_token_arr)
-                next_token = int(b.to_scalar(next_token_arr))
-            else:
-                # Temperature sampling
-                scaled_logits = last_logits / temperature
-                probs = b.softmax(scaled_logits, axis=-1)
-                b.eval(probs)
-                # Use random_categorical if available, else argmax
-                if hasattr(b, "random_categorical"):
-                    next_token_arr = b.random_categorical(b.log(probs))
+            # Simple greedy/sampling generation with entropy tracking
+            current_tokens = list(tokens)
+            stop_reason = "length"
+
+            for _ in range(max_tokens - 1):
+                input_ids = b.array([current_tokens])
+                if geometry_enabled and geometry_stream is not None:
+                    geometry_stream.advance_token()
+                logits = self._model(input_ids)
+                b.eval(logits)
+
+                # Get entropy for current position
+                entropy, variance = self._entropy_calculator.compute(logits)
+                entropy_trajectory.append(entropy)
+                variance_trajectory.append(variance)
+
+                # Pull the last position logits via backend indexing.
+                seq_len = int(logits.shape[1])
+                row = b.take(logits, b.array([0]), axis=0)
+                row = b.squeeze(row, axis=0)
+                last_logits = b.take(row, b.array([seq_len - 1]), axis=0)
+                last_logits = b.squeeze(last_logits, axis=0)
+                b.eval(last_logits)
+
+                # Sample next token
+                if temperature <= 0:
+                    # Greedy
+                    next_token_arr = b.argmax(last_logits, axis=-1)
                     b.eval(next_token_arr)
                     next_token = int(b.to_scalar(next_token_arr))
                 else:
-                    next_token_arr = b.argmax(probs, axis=-1)
-                    b.eval(next_token_arr)
-                    next_token = int(b.to_scalar(next_token_arr))
+                    # Temperature sampling
+                    scaled_logits = last_logits / temperature
+                    probs = b.softmax(scaled_logits, axis=-1)
+                    b.eval(probs)
+                    # Use random_categorical if available, else argmax
+                    if hasattr(b, "random_categorical"):
+                        next_token_arr = b.random_categorical(b.log(probs))
+                        b.eval(next_token_arr)
+                        next_token = int(b.to_scalar(next_token_arr))
+                    else:
+                        next_token_arr = b.argmax(probs, axis=-1)
+                        b.eval(next_token_arr)
+                        next_token = int(b.to_scalar(next_token_arr))
 
-            generated_tokens.append(next_token)
-            current_tokens.append(next_token)
+                generated_tokens.append(next_token)
+                current_tokens.append(next_token)
 
-            # Check for EOS
-            if hasattr(self._tokenizer, "eos_token_id"):
-                if next_token == self._tokenizer.eos_token_id:
-                    stop_reason = "stop"
-                    break
+                # Check for EOS
+                if hasattr(self._tokenizer, "eos_token_id"):
+                    if next_token == self._tokenizer.eos_token_id:
+                        stop_reason = "stop"
+                        break
 
         # Decode generated text
         generated_text = self._tokenizer.decode(generated_tokens) if generated_tokens else ""
 
         # Compute statistics using consolidated EntropyMath
         stats = EntropyMath.calculate_trajectory_stats(entropy_trajectory)
+
+        geometry_metrics = None
+        if geometry_enabled and geometry_stream is not None:
+            geometry_metrics = self._compute_geometry_metrics(geometry_stream.frames)
 
         measurement_time = time.time() - start_time
 
@@ -345,6 +438,7 @@ class LinguisticCalorimeter:
             stop_reason=stop_reason,
             temperature=temperature,
             measurement_time=measurement_time,
+            geometry_metrics=geometry_metrics,
         )
 
     def _measure_simulated(
@@ -399,14 +493,90 @@ class LinguisticCalorimeter:
             stop_reason="length",
             temperature=temperature,
             measurement_time=measurement_time,
+            geometry_metrics=None,
+        )
+
+    def _compute_geometry_metrics(
+        self,
+        frames: list["ActivationFrame"],
+    ) -> ThermoGeometryMetrics | None:
+        """Compute hidden-state geometry metrics from captured activations."""
+        if not frames:
+            return None
+
+        b = self._backend
+        by_layer: dict[int, list] = {}
+        for frame in frames:
+            by_layer.setdefault(frame.layer_id, []).append(frame.hidden_state)
+
+        id_estimator = IntrinsicDimension(b)
+        ricci_estimator = OllivierRicciCurvature(backend=b)
+
+        intrinsic_dimensions: dict[int, float] = {}
+        ricci_curvatures: dict[int, float] = {}
+        ricci_stds: dict[int, float] = {}
+        sample_counts: dict[int, int] = {}
+
+        for layer_id, states in by_layer.items():
+            sample_counts[layer_id] = len(states)
+            if len(states) < 2:
+                continue
+
+            activations = b.stack(states, axis=0)
+            b.eval(activations)
+
+            if len(states) >= 3:
+                try:
+                    id_result = id_estimator.compute(activations)
+                    intrinsic_dimensions[layer_id] = id_result.intrinsic_dimension
+                except Exception as exc:
+                    logger.debug(
+                        "Geometry ID failed for layer %d: %s",
+                        layer_id,
+                        exc,
+                    )
+
+            try:
+                ricci_result = ricci_estimator.compute(activations)
+                ricci_curvatures[layer_id] = ricci_result.mean_edge_curvature
+                ricci_stds[layer_id] = ricci_result.std_edge_curvature
+            except Exception as exc:
+                logger.debug(
+                    "Geometry Ricci failed for layer %d: %s",
+                    layer_id,
+                    exc,
+                )
+
+        mean_id = (
+            sum(intrinsic_dimensions.values()) / len(intrinsic_dimensions)
+            if intrinsic_dimensions
+            else None
+        )
+        mean_ricci = (
+            sum(ricci_curvatures.values()) / len(ricci_curvatures)
+            if ricci_curvatures
+            else None
+        )
+        mean_ricci_std = (
+            sum(ricci_stds.values()) / len(ricci_stds) if ricci_stds else None
+        )
+
+        return ThermoGeometryMetrics(
+            intrinsic_dimensions=intrinsic_dimensions,
+            ricci_curvatures=ricci_curvatures,
+            ricci_stds=ricci_stds,
+            sample_counts=sample_counts,
+            mean_intrinsic_dimension=mean_id,
+            mean_ricci_curvature=mean_ricci,
+            mean_ricci_std=mean_ricci_std,
         )
 
     def measure_with_modifiers(
         self,
         prompt: str,
         modifiers: list[LinguisticModifier] | None = None,
-        temperature: float = 1.0,
-        max_tokens: int = 64,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         language: PromptLanguage = PromptLanguage.ENGLISH,
     ) -> list[ThermoMeasurement]:
         """Batch measurement across modifiers with baseline comparison.
@@ -414,8 +584,8 @@ class LinguisticCalorimeter:
         Args:
             prompt: Base prompt content.
             modifiers: List of modifiers to apply. Defaults to all.
-            temperature: Sampling temperature.
-            max_tokens: Maximum tokens to generate.
+            temperature: Sampling temperature (defaults to model-native scale).
+            max_tokens: Maximum tokens to generate (derived if not provided).
             language: Language for localized modifiers.
 
         Returns:
@@ -426,6 +596,7 @@ class LinguisticCalorimeter:
 
         measurements = []
         baseline_entropy: float | None = None
+        baseline_geometry: ThermoGeometryMetrics | None = None
 
         for modifier in modifiers:
             # Create perturbed prompt
@@ -445,11 +616,35 @@ class LinguisticCalorimeter:
             # Track baseline
             if modifier == LinguisticModifier.BASELINE:
                 baseline_entropy = raw.mean_entropy
+                baseline_geometry = raw.geometry_metrics
 
             # Compute delta_h
             delta_h = None
             if baseline_entropy is not None and modifier != LinguisticModifier.BASELINE:
                 delta_h = raw.mean_entropy - baseline_entropy
+
+            delta_intrinsic_dimension = None
+            delta_ricci_curvature = None
+            if (
+                baseline_geometry
+                and raw.geometry_metrics
+                and baseline_geometry.mean_intrinsic_dimension is not None
+                and raw.geometry_metrics.mean_intrinsic_dimension is not None
+            ):
+                delta_intrinsic_dimension = (
+                    raw.geometry_metrics.mean_intrinsic_dimension
+                    - baseline_geometry.mean_intrinsic_dimension
+                )
+            if (
+                baseline_geometry
+                and raw.geometry_metrics
+                and baseline_geometry.mean_ricci_curvature is not None
+                and raw.geometry_metrics.mean_ricci_curvature is not None
+            ):
+                delta_ricci_curvature = (
+                    raw.geometry_metrics.mean_ricci_curvature
+                    - baseline_geometry.mean_ricci_curvature
+                )
 
             # Classify outcome
             outcome = self._classify_outcome(raw.mean_entropy, raw.entropy_variance)
@@ -463,6 +658,9 @@ class LinguisticCalorimeter:
                 entropy_variance=raw.entropy_variance,
                 entropy_trajectory=raw.entropy_trajectory,
                 top_k_concentration=raw.top_k_concentration,
+                geometry_metrics=raw.geometry_metrics,
+                delta_intrinsic_dimension_mean=delta_intrinsic_dimension,
+                delta_ricci_curvature_mean=delta_ricci_curvature,
                 model_state=self._classify_model_state(raw.mean_entropy),
                 behavioral_outcome=outcome,
                 delta_h=delta_h,
@@ -477,15 +675,15 @@ class LinguisticCalorimeter:
     def establish_baseline(
         self,
         corpus: list[str],
-        temperature: float = 1.0,
-        max_tokens: int = 32,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> BaselineMeasurements:
         """Compute baseline entropy statistics from reference corpus.
 
         Args:
             corpus: List of reference prompts.
-            temperature: Sampling temperature.
-            max_tokens: Maximum tokens per measurement.
+            temperature: Sampling temperature (defaults to model-native scale).
+            max_tokens: Maximum tokens per measurement (derived if not provided).
 
         Returns:
             BaselineMeasurements with statistics.
@@ -541,15 +739,15 @@ class LinguisticCalorimeter:
     def track_generation_entropy(
         self,
         prompt: str,
-        max_tokens: int = 128,
-        temperature: float = 1.0,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> EntropyTrajectory:
         """Token-level entropy tracking during generation.
 
         Args:
             prompt: Input prompt.
-            max_tokens: Maximum tokens to generate.
-            temperature: Sampling temperature.
+            max_tokens: Maximum tokens to generate (derived if not provided).
+            temperature: Sampling temperature (defaults to model-native scale).
 
         Returns:
             EntropyTrajectory with per-token metrics.

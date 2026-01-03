@@ -103,6 +103,7 @@ class PortRegistry:
         from modelcypher.adapters.local_training import LocalTrainingEngine
         from modelcypher.adapters.mlx_model_loader import MLXModelLoader
         from modelcypher.backends import default_backend
+        from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 
         register_default_atlas_inventories()
@@ -130,7 +131,7 @@ class PortRegistry:
             model_loader=MLXModelLoader(),
             hub_adapter=HfHubAdapter(),
             # Backend
-            backend=default_backend(),
+            backend=LazyBackend(default_backend),
             # Paths
             base_dir=fs_store.paths.base,
             logs_dir=fs_store.paths.logs,
