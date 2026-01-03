@@ -830,7 +830,6 @@ class TestEdgeCases:
         result = analyzer.full_analysis({})
 
         assert result.world_model_score == 0.0
-        assert not result.physics_engine_detected
 
     def test_nan_in_activations(self, any_backend: "Backend") -> None:
         """Should handle NaN values in activations."""

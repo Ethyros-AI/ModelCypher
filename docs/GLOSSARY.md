@@ -158,14 +158,14 @@ A collection of 23 anchor prompts designed to probe a model's encoding of 3-dime
 ### Gravity Gradient
 The degree to which a model's latent space encodes a "down" direction where heavy objects cluster.
 -   **Analogy**: In physics, heavy objects fall toward Earth. In a model with a gravity gradient, representations of "anvil" and "stone" cluster near "floor" and "ground," while "balloon" and "feather" cluster near "ceiling" and "sky."
--   **Mass Correlation**: A score from -1 to +1 measuring how well perceived mass correlates with position on the vertical axis. High correlation (>0.5) = the model has a "physics engine."
+-   **Mass Correlation**: A score from -1 to +1 measuring how well perceived mass correlates with position on the vertical axis.
 -   **Human explanation**: "The model treats 'heavy' and 'down' as geometrically related, not just semantically related."
 
 ### Euclidean Consistency Score
 A measure of whether the model's spatial representations obey the Pythagorean theorem.
 -   **Test**: For triplets of anchors that should form right triangles (e.g., floor→left_hand→ceiling), we check if $dist(A,C)^2 ≈ dist(A,B)^2 + dist(B,C)^2$.
--   **Scoring**: >0.6 = Euclidean, <0.3 = non-Euclidean (curved or distorted space).
--   **Human explanation**: "The model's internal '3D world' actually follows Euclidean geometry, like the real world."
+-   **Scope**: 3D probe only; high-dimensional geometry remains geodesic.
+-   **Human explanation**: "Spatial anchors satisfy (or deviate from) 3D Euclidean constraints."
 
 ### Volumetric Density
 A measure of representational "mass" based on activation magnitude and neighborhood crowding.

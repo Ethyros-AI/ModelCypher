@@ -93,6 +93,13 @@ class OllivierRicciConfig:
     Adaptive alpha: When enabled, alpha varies per node based on degree.
     High-degree nodes get lower alpha (rely more on self, neighborhood is crowded).
     Low-degree nodes get higher alpha (spread mass to sparse neighborhood).
+
+    All numerical parameters are derived from data when None:
+    - base_alpha: from graph density (1 / (1 + avg_degree))
+    - adaptive_strength: from degree variance
+    - sinkhorn_epsilon: from cost matrix scale
+    - sinkhorn_threshold: from machine epsilon
+    - k_neighbors: from intrinsic dimension
     """
 
     # Base lazy random walk parameter from Ollivier (2009)
@@ -107,8 +114,10 @@ class OllivierRicciConfig:
     adaptive_strength: float | None = None
 
     # Sinkhorn regularization for W_1 approximation
+    # If None, derived from cost matrix scale
     sinkhorn_epsilon: float | None = None
-    sinkhorn_iterations: int = 100
+    # Convergence threshold for Sinkhorn iterations
+    # If None, derived from machine epsilon
     sinkhorn_threshold: float | None = None
 
     # Number of neighbors for k-NN graph
@@ -175,13 +184,19 @@ class OllivierRicciResult:
 
 @dataclass(frozen=True)
 class CurvatureConfig:
-    """Configuration for curvature estimation."""
+    """Configuration for curvature estimation.
+
+    All numerical parameters are derived from data when None:
+    - epsilon: from data scale (mean neighbor distance)
+    - num_directions: from dimension d (at least d, at most d(d-1)/2 for full coverage)
+    """
 
     # Finite difference step size for gradient estimation
     # If None, epsilon is computed adaptively based on data scale
     epsilon: float | None = None
     # Number of random directions to sample for sectional curvature
-    num_directions: int = 10
+    # If None, derived from dimension: min(max(d, 5), d*(d-1)//2)
+    num_directions: int | None = None
     # Whether to use parallel transport correction
     use_parallel_transport: bool = True
 
@@ -412,8 +427,17 @@ class SectionalCurvatureEstimator:
         sectional_curvatures = []
         directions_used = []
 
+        # Derive num_directions from dimension if not specified
+        # For d dimensions, there are d(d-1)/2 possible 2-planes
+        # Sample at least d directions for coverage, capped at full coverage
+        if self.config.num_directions is not None:
+            num_directions = self.config.num_directions
+        else:
+            max_planes = d * (d - 1) // 2 if d > 1 else 1
+            num_directions = min(max(d, 5), max_planes)
+
         backend.random_seed(42)  # Reproducible random directions
-        for _ in range(self.config.num_directions):
+        for _ in range(num_directions):
             # Sample random orthonormal pair
             u = backend.random_normal((d,))
             backend.eval(u)
@@ -1373,8 +1397,13 @@ class OllivierRicciCurvature:
         n = int(mu.shape[0])
 
         epsilon = self.config.sinkhorn_epsilon
-        max_iter = self.config.sinkhorn_iterations
         threshold = self.config.sinkhorn_threshold
+
+        # Derive max iterations from problem size as a safety bound
+        # Sinkhorn converges in O(n * log(n) / epsilon) for well-conditioned problems
+        # Use n * 10 as a generous safety limit - if not converged by then, something is wrong
+        import math
+        max_iter = max(100, n * 10)  # Safety limit derived from problem size
 
         # Get precision-aware values
         eps = division_epsilon(backend, cost_matrix)

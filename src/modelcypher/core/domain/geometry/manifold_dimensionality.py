@@ -29,10 +29,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    IntrinsicDimension,
-    TwoNNConfiguration,
-)
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.support import statistics
 
 
@@ -70,12 +67,16 @@ class PriorTensionSummary:
 
 @dataclass(frozen=True)
 class IDEstimateSummary:
+    """Summary of intrinsic dimension estimate.
+
+    Always uses regression variant (Facco et al.) and geodesic distances.
+    """
+
     intrinsic_dimension: float
     ci95_lower: float | None
     ci95_upper: float | None
     sample_count: int
     usable_count: int
-    uses_regression: bool
 
     @staticmethod
     def from_estimate(estimate) -> "IDEstimateSummary":
@@ -85,7 +86,6 @@ class IDEstimateSummary:
             ci95_upper=estimate.ci.upper if estimate.ci else None,
             sample_count=estimate.sample_count,
             usable_count=estimate.usable_count,
-            uses_regression=estimate.uses_regression,
         )
 
 
@@ -166,16 +166,12 @@ class ManifoldDimensionality:
         )
 
     @staticmethod
-    def estimate_id(
-        points: list[list[float]],
-        use_regression: bool = True,
-    ) -> IDEstimateSummary:
-        estimate = IntrinsicDimension.compute_two_nn(
-            points,
-            configuration=TwoNNConfiguration(
-                use_regression=use_regression,
-            ),
-        )
+    def estimate_id(points: list[list[float]]) -> IDEstimateSummary:
+        """Estimate intrinsic dimension of point cloud.
+
+        All parameters derived from data - no configuration needed.
+        """
+        estimate = IntrinsicDimension.compute_two_nn(points)
         return IDEstimateSummary.from_estimate(estimate)
 
 
@@ -362,29 +358,19 @@ class BackendManifoldDimensionality:
             top_token_disagreement_rate=disagreement_rate,
         )
 
-    def estimate_id(
-        self,
-        points: list[list[float]],
-        use_regression: bool = True,
-    ) -> IDEstimateSummary:
+    def estimate_id(self, points: list[list[float]]) -> IDEstimateSummary:
         """Estimate intrinsic dimensionality.
 
         This delegates to IntrinsicDimension which already uses Backend
-        operations internally.
+        operations internally. All parameters derived from data.
 
         Args:
             points: Data points [n_samples, n_features].
-            use_regression: Whether to use regression-based estimation.
 
         Returns:
             IDEstimateSummary with intrinsic dimension estimate.
         """
-        estimate = IntrinsicDimension.compute_two_nn(
-            points,
-            configuration=TwoNNConfiguration(
-                use_regression=use_regression,
-            ),
-        )
+        estimate = IntrinsicDimension.compute_two_nn(points)
         return IDEstimateSummary.from_estimate(estimate)
 
     def _to_scalar(self, val: Any) -> float:

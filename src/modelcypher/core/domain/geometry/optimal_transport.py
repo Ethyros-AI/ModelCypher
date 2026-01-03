@@ -415,7 +415,7 @@ class SinkhornSolver:
     def squared_euclidean_cost(
         self, source: "Array", target: "Array", normalize: bool = True
     ) -> "Array":
-        """Compute squared Euclidean cost matrix.
+        """Compute squared Euclidean cost matrix (2D/3D probes only).
 
         Args:
             source: Source points [n, d]
@@ -426,8 +426,14 @@ class SinkhornSolver:
             Cost matrix [n, m]
         """
         backend = self._backend
-        s = source
-        t = target
+        s = backend.array(source)
+        t = backend.array(target)
+        dim = int(s.shape[-1]) if hasattr(s, "shape") else 0
+        if dim not in (2, 3):
+            raise ValueError(
+                "Euclidean cost is only valid for 2D/3D probes. "
+                "Use squared_geodesic_cost for higher dimensions."
+            )
 
         if normalize:
             div_eps = division_epsilon(backend, s)
@@ -444,6 +450,37 @@ class SinkhornSolver:
         clamped = backend.maximum(cost, backend.array(0.0))
         backend.eval(clamped)
         return clamped
+
+    def squared_geodesic_cost(
+        self,
+        source: "Array",
+        target: "Array",
+        k_neighbors: int | None = None,
+    ) -> "Array":
+        """Compute squared geodesic cost matrix on the manifold."""
+        backend = self._backend
+        s = backend.array(source)
+        t = backend.array(target)
+        backend.eval(s, t)
+
+        n = int(s.shape[0])
+        m = int(t.shape[0])
+
+        combined = backend.concatenate([s, t], axis=0)
+        backend.eval(combined)
+
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
+        dist = geodesic_distance_matrix(combined, k_neighbors=k_neighbors, backend=backend)
+        backend.eval(dist)
+
+        row_idx = backend.arange(n)
+        col_idx = backend.arange(n, n + m)
+        sub = backend.take(dist, row_idx, axis=0)
+        sub = backend.take(sub, col_idx, axis=1)
+        return sub * sub
 
     def cosine_cost(self, source: "Array", target: "Array") -> "Array":
         """Compute cosine distance cost matrix.

@@ -108,16 +108,16 @@ def _eps(backend) -> float:
 def _is_finite(value: float) -> bool:
     return value == value and value not in (float("inf"), float("-inf"))
 
-_FAST_SINKHORN_ITERATIONS = 10
-
 
 def _fast_ollivier_estimator(
     config: OllivierRicciConfig | None = None,
 ) -> OllivierRicciCurvature:
+    """Create Ollivier-Ricci estimator.
+
+    Now uses convergence-based termination - no iteration count needed.
+    """
     return OllivierRicciCurvature(
-        config=config
-        if config is not None
-        else OllivierRicciConfig(sinkhorn_iterations=_FAST_SINKHORN_ITERATIONS)
+        config=config if config is not None else OllivierRicciConfig()
     )
 
 
@@ -864,9 +864,7 @@ class TestOllivierRicciCurvature:
 
         points = backend.random_normal((16, 4))
 
-        config = OllivierRicciConfig(
-            symmetrize=True, sinkhorn_iterations=_FAST_SINKHORN_ITERATIONS
-        )
+        config = OllivierRicciConfig(symmetrize=True)
         estimator = OllivierRicciCurvature(config=config)
         result = estimator.compute(points, k_neighbors=2)
 
@@ -972,7 +970,6 @@ class TestOllivierRicciCurvature:
         config = OllivierRicciConfig(
             base_alpha=base_alpha,
             k_neighbors=config_k_neighbors,
-            sinkhorn_iterations=_FAST_SINKHORN_ITERATIONS,
         )
         estimator = OllivierRicciCurvature(config=config)
         result = estimator.compute(points, k_neighbors=k_neighbors)
@@ -1097,7 +1094,6 @@ class TestLazyMeasureProperties:
         config = OllivierRicciConfig(
             base_alpha=0.0,
             adaptive_alpha=False,
-            sinkhorn_iterations=_FAST_SINKHORN_ITERATIONS,
         )
         estimator = OllivierRicciCurvature(config=config)
 
@@ -1133,7 +1129,6 @@ class TestLazyMeasureProperties:
         config = OllivierRicciConfig(
             base_alpha=1.0,
             adaptive_alpha=False,
-            sinkhorn_iterations=_FAST_SINKHORN_ITERATIONS,
         )
         estimator = OllivierRicciCurvature(config=config)
 

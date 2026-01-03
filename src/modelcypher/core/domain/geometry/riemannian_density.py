@@ -42,6 +42,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     e_value,
     exp_scalar,
     inf_value,
+    infinity_threshold,
     lgamma_scalar,
     log_scalar,
     machine_epsilon,
@@ -95,14 +96,17 @@ def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
     if n <= 2:
         return 1
 
-    # Compute pairwise Euclidean distances
-    # dist[i,j] = ||x_i - x_j||
-    # Using the identity: ||a-b||^2 = ||a||^2 + ||b||^2 - 2<a,b>
-    sq_norms = backend.sum(activations * activations, axis=1, keepdims=True)
-    dot_products = _cache.get_or_compute_gram(activations, backend)
-    sq_dists = sq_norms + backend.transpose(sq_norms) - 2 * dot_products
-    dists = backend.sqrt(backend.maximum(sq_dists, backend.array(0.0)))
+    # Compute pairwise geodesic distances from the k-NN graph.
+    rg = RiemannianGeometry(backend)
+    geo_result = rg.geodesic_distances(activations, k_neighbors=None)
+    dists = geo_result.distances
     backend.eval(dists)
+
+    # Guard against any sentinel values during sorting.
+    inf_thresh = infinity_threshold(backend, dists)
+    dists = backend.where(
+        dists >= inf_thresh, backend.full(dists.shape, inf_thresh), dists
+    )
 
     # For each k, compute mean of k-th nearest neighbor distances
     # Sort distances for each point (rows), exclude self (col 0)

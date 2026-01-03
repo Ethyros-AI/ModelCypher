@@ -51,9 +51,10 @@ mc geometry spatial probe-model /path/to/your/model --output text
 
 **Expected output:**
 ```
-World Model Score: 0.30-0.60 (typical for 1-7B models)
+World Model Score: 0.30-0.60
+3D Euclidean Consistency: 0.30-0.80
+Gravity Correlation: -1.00 to 1.00
 Axis Orthogonality: 85-95%
-Physics Engine: DETECTED or NOT DETECTED
 ```
 
 If you get wildly different numbers, that's real data about your model's geometry. If the command crashes, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues) with your model path and error message.

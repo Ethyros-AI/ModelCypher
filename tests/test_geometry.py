@@ -41,7 +41,6 @@ from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.core.use_cases.geometry_engine import (
     GeometryEngine,
     SinkhornSolver,
-    SinkhornSolverConfig,
 )
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
@@ -111,7 +110,7 @@ def test_sinkhorn_plan_marginals():
     backend = get_default_backend()
     solver = SinkhornSolver(backend)
     cost = backend.array([[0.0, 1.0], [1.0, 0.0]], dtype="float32")
-    result = solver.solve(cost, config=SinkhornSolverConfig(max_iterations=200))
+    result = solver.solve(cost)
     plan = result.plan
     backend.eval(plan)
     marginal_0 = backend.sum(plan, axis=0)

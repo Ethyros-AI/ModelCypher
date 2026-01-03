@@ -24,7 +24,7 @@ encodes a geometrically consistent 3D world model.
 Commands:
     mc geometry spatial analyze <model_path>
     mc geometry spatial gravity <model_path>
-    mc geometry spatial euclidean <activations_file>
+    mc geometry spatial euclidean <activations_file>  # 3D Euclidean probe
     mc geometry spatial anchors
 """
 
@@ -229,13 +229,12 @@ def spatial_euclidean(
     ),
 ) -> None:
     """
-    Test Euclidean consistency of spatial anchor representations.
+    Test 3D Euclidean consistency of spatial anchor representations.
 
     Checks if the Pythagorean theorem holds in latent space:
     dist(A,C)² ≈ dist(A,B)² + dist(B,C)² for right-angle triplets.
 
-    If consistency score > 0.6 and no triangle inequality violations,
-    the model has internalized Euclidean 3D geometry.
+    This is a 3D probe only; high-dimensional geometry remains geodesic.
 
     Input: JSON file with {anchor_name: [activation_vector]} mapping.
     """
@@ -263,9 +262,8 @@ def spatial_euclidean(
 
     if context.output_format == "text":
         lines = [
-            "EUCLIDEAN CONSISTENCY ANALYSIS",
+            "3D EUCLIDEAN CONSISTENCY PROBE",
             "",
-            f"Is Euclidean: {'Yes' if result.is_euclidean else 'No'}",
             f"Consistency Score: {result.consistency_score:.2f}",
             f"Pythagorean Error: {result.pythagorean_error:.4f}",
             f"Triangle Inequality Violations: {result.triangle_inequality_violations}",
@@ -299,8 +297,7 @@ def spatial_gravity(
     Tests if the model has a "gravity gradient" where heavy objects
     are pulled toward "down" (Floor, Ground) in latent space.
 
-    High mass correlation (>0.5) indicates the model understands
-    physical mass as a geometric property, not just a word.
+    Reports raw mass-position correlation along the inferred gravity axis.
 
     Input: Either --model path OR JSON file with {anchor_name: [activation_vector]} mapping.
 
@@ -438,15 +435,11 @@ def spatial_analyze(
     Run full 3D world model analysis.
 
     Comprehensive analysis combining:
-    - Euclidean consistency (Pythagorean theorem test)
+    - 3D Euclidean consistency (Pythagorean constraint on right-angle triplets)
     - Gravity gradient (mass -> down correlation)
     - Volumetric density (inverse-square law)
 
-    All models encode physics geometrically. The world_model_score measures
-    Visual-Spatial Grounding Density: how concentrated the model's probability
-    mass is along human-perceptual 3D axes. Higher scores indicate alignment
-    with visual experience; lower scores indicate physics encoded along
-    alternative geometric axes (linguistic, formula-based, higher-dimensional).
+    world_model_score is an equal-weight composite of the component metrics.
 
     Input: Either --model path OR JSON file with {anchor_name: [activation_vector]} mapping.
 
@@ -490,12 +483,10 @@ def spatial_analyze(
             "3D WORLD MODEL ANALYSIS",
             "=" * 60,
             "",
-            f"Has 3D World Model: {'YES' if report.has_3d_world_model else 'NO'}",
             f"World Model Score: {report.world_model_score:.2f}",
-            f"Physics Engine Detected: {'YES' if report.physics_engine_detected else 'NO'}",
             "",
             "-" * 40,
-            "EUCLIDEAN CONSISTENCY",
+            "3D EUCLIDEAN CONSISTENCY",
             "-" * 40,
             f"  Consistency Score: {report.euclidean_consistency.consistency_score:.2f}",
             f"  Pythagorean Error: {report.euclidean_consistency.pythagorean_error:.4f}",
@@ -623,13 +614,11 @@ def spatial_probe_model(
             f"Anchors Probed: {len(anchor_activations)}/23",
             f"Layer Analyzed: {layer if layer != -1 else 'last'}",
             "",
-            f"Has 3D World Model: {'YES' if report.has_3d_world_model else 'NO'}",
             f"World Model Score: {report.world_model_score:.2f}",
-            f"Physics Engine: {'DETECTED' if report.physics_engine_detected else 'NOT FOUND'}",
             "",
             "-" * 40,
             "Key Metrics:",
-            f"  Euclidean Consistency: {report.euclidean_consistency.consistency_score:.2f}",
+            f"  3D Euclidean Consistency: {report.euclidean_consistency.consistency_score:.2f}",
             f"  Gravity Correlation: {report.gravity_gradient.mass_correlation:.2f}",
             f"  Axis Orthogonality: {list(report.euclidean_consistency.axis_orthogonality.values())[0]:.2%}"
             if report.euclidean_consistency.axis_orthogonality

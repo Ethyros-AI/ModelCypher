@@ -695,7 +695,7 @@ Get spatial reasoning anchors.
 
 ### mc_geometry_spatial_euclidean
 
-Test Euclidean spatial relationships.
+Probe 3D Euclidean consistency of spatial anchors (2D/3D only).
 
 ---
 

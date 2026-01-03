@@ -33,10 +33,7 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    IntrinsicDimension,
-    TwoNNConfiguration,
-)
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer, ManifoldPoint
 
 
@@ -58,10 +55,9 @@ def test_intrinsic_dimension_estimator_mle():
     plane_points = mx.zeros((N, D))
     plane_points[:, :2] = x2 * 10.0
 
-    config = TwoNNConfiguration(use_regression=False)
     estimator = IntrinsicDimension()
-    line_est = estimator.compute_two_nn(line_points, config)
-    plane_est = estimator.compute_two_nn(plane_points, config)
+    line_est = estimator.compute(line_points)
+    plane_est = estimator.compute(plane_points)
 
     eps = _eps()
     assert plane_est.intrinsic_dimension - line_est.intrinsic_dimension > eps

@@ -26,11 +26,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import is_finite
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    GeodesicConfiguration,
-    IntrinsicDimension,
-    TwoNNConfiguration,
-)
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
@@ -298,17 +294,12 @@ class ConceptDimensionalityAnalyzer:
             return None
         # k_neighbors is NOT passed - it is derived from the geometry:
         # 1. Euclidean TwoNN → ID
-        # 2. k = max(3, 2 * ID)
-        # 3. Geodesic computation uses that k
-        two_nn = TwoNNConfiguration(
-            use_regression=True,
-            geodesic=GeodesicConfiguration(
-                k_neighbors=None,  # Let the geometry determine k
-            ),
-        )
+        # All parameters derived from data:
+        # - k derived from connectivity (Berry & Sauer 2016)
+        # - Uses regression variant (Facco et al.)
         try:
             points = self._backend.array(vectors)
-            return IntrinsicDimension(self._backend).compute(points, two_nn)
+            return IntrinsicDimension(self._backend).compute(points)
         except Exception as exc:
             logger.debug("Intrinsic dimension failed: %s", exc)
             return None

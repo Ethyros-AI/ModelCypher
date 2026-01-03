@@ -75,7 +75,6 @@ def register(app: typer.Typer) -> None:
         )
         from modelcypher.core.domain.geometry.intrinsic_dimension import (
             IntrinsicDimension,
-            TwoNNConfiguration,
         )
         from modelcypher.core.domain.geometry.manifold_curvature import (
             CurvatureConfig,
@@ -153,13 +152,12 @@ def register(app: typer.Typer) -> None:
                     logger.debug(f"Ollivier-Ricci failed: {e}")
                     ricci_mean = ricci_std = 0.0
 
-                # Compute intrinsic dimension
+                # Compute intrinsic dimension - all params derived from data
                 try:
-                    id_result = IntrinsicDimension.compute_two_nn(
-                        stacked, TwoNNConfiguration(), backend
-                    )
+                    id_estimator = IntrinsicDimension(backend)
+                    id_result = id_estimator.compute(stacked, with_ci=False)
                     intrinsic_dim = id_result.intrinsic_dimension
-                    intrinsic_unc = id_result.uncertainty if hasattr(id_result, 'uncertainty') else 0.0
+                    intrinsic_unc = 0.0  # CI not computed for speed
                 except Exception as e:
                     logger.debug(f"Intrinsic dimension failed: {e}")
                     intrinsic_dim = intrinsic_unc = 0.0

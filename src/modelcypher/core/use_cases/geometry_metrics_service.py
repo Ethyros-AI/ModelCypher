@@ -42,11 +42,7 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    BootstrapConfiguration,
-    IntrinsicDimension,
-    TwoNNConfiguration,
-)
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.spectral_signature import (
     SpectralSignature,
     SpectralSignatureConfig,
@@ -241,8 +237,7 @@ class GeometryMetricsService:
     def estimate_intrinsic_dimension(
         self,
         points: list[list[float]],
-        use_regression: bool = True,
-        bootstrap_samples: int = 200,
+        with_ci: bool = True,
     ) -> IntrinsicDimensionResult:
         """
         Estimate intrinsic dimension of a point cloud using TwoNN.
@@ -250,68 +245,35 @@ class GeometryMetricsService:
         This reveals the effective degrees of freedom in a representation
         space, which can indicate model capacity and generalization.
 
-        Results are cached to avoid redundant bootstrap computations.
+        All parameters are derived from data:
+        - k_neighbors: Connectivity-based (Berry & Sauer 2016)
+        - Method: Always regression (Facco et al., more robust)
+        - Bootstrap resamples: Derived from sample size
 
         Args:
             points: Point cloud (N x D)
-            use_regression: Use regression method (more accurate)
-            bootstrap_samples: Number of bootstrap iterations for confidence
+            with_ci: Whether to compute confidence interval
 
         Returns:
             IntrinsicDimensionResult with dimension and confidence bounds
         """
-        # Check cache first
-        cached = self._cache.get_id_result(points, use_regression, bootstrap_samples)
-        if cached is not None:
-            return self._id_result_from_cached(cached, points)
-
-        # Compute the expensive operation
         from modelcypher.core.domain._backend import get_default_backend
 
         backend = get_default_backend()
-        config = TwoNNConfiguration(use_regression=use_regression)
-        bootstrap_config = (
-            BootstrapConfiguration(resamples=bootstrap_samples)
-            if bootstrap_samples > 0
-            else None
-        )
-
         computer = IntrinsicDimension(backend)
         pts = backend.array(points)
-        estimate = computer.compute(pts, config, bootstrap=bootstrap_config)
+        estimate = computer.compute(pts, with_ci=with_ci)
 
         # Extract confidence intervals if available
-        if estimate.ci is None:
-            raise ValueError(
-                "Intrinsic dimension confidence intervals require bootstrap_samples > 0."
-            )
-        lower = estimate.ci.lower
-        upper = estimate.ci.upper
+        lower = estimate.ci.lower if estimate.ci else 0.0
+        upper = estimate.ci.upper if estimate.ci else 0.0
 
-        # Cache the result
-        cached_result = CachedIDResult(
+        return IntrinsicDimensionResult(
             dimension=estimate.intrinsic_dimension,
             confidence_lower=lower,
             confidence_upper=upper,
             sample_count=estimate.sample_count,
-            use_regression=use_regression,
-        )
-        self._cache.set_id_result(points, use_regression, bootstrap_samples, cached_result)
-
-        return self._id_result_from_cached(cached_result, points)
-
-    def _id_result_from_cached(
-        self, cached: CachedIDResult, points: list[list[float]]
-    ) -> IntrinsicDimensionResult:
-        """Convert cached ID result to full result."""
-        dimension = cached.dimension
-        return IntrinsicDimensionResult(
-            dimension=dimension,
-            confidence_lower=cached.confidence_lower,
-            confidence_upper=cached.confidence_upper,
-            sample_count=cached.sample_count,
-            method="TwoNN"
-            + (" (regression)" if cached.use_regression else " (maximum likelihood)"),
+            method="TwoNN (Facco et al.)",
         )
 
     def compute_topological_fingerprint(

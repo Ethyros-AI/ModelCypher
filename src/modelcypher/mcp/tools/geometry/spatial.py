@@ -122,19 +122,18 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
         def mc_geometry_spatial_euclidean(
             anchorActivations: dict[str, list[float]],
         ) -> dict:
-            """Test Euclidean consistency of spatial anchor representations.
+            """Probe 3D Euclidean consistency for spatial anchors.
 
             Checks if the Pythagorean theorem holds in latent space:
             dist(A,C)² ≈ dist(A,B)² + dist(B,C)² for right-angle triplets.
 
-            If consistency score > 0.6 and no triangle inequality violations,
-            the model has internalized Euclidean 3D geometry.
+            This is a 3D probe only; high-dimensional geometry remains geodesic.
 
             Args:
                 anchorActivations: Dict mapping anchor_name to activation vector
 
             Returns:
-                Euclidean consistency analysis with Pythagorean error
+                Euclidean consistency analysis with raw measurements
             """
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.spatial_3d import EuclideanConsistencyAnalyzer
@@ -161,8 +160,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Tests if the model has a 'gravity gradient' where heavy objects
             are pulled toward 'down' (Floor, Ground) in latent space.
 
-            High mass correlation (>0.5) indicates the model understands
-            physical mass as a geometric property, not just a word.
+            Reports raw mass-position correlation along the inferred gravity axis.
 
             Args:
                 anchorActivations: Dict mapping anchor_name to activation vector

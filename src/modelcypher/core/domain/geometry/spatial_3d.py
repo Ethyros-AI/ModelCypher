@@ -25,17 +25,14 @@ with visual experience, not presence/absence of physics understanding.
 
 Key Concepts:
 - Spatial Prime Atlas: 3D basis vectors (X=lateral, Y=vertical, Z=depth)
-- Euclidean Consistency: Do latent distances obey 3D Pythagorean theorem?
 - Stereoscopy: Parallax shift between different viewpoint prompts
 - Occlusion: Does "in front of" create measurable Z-axis shifts?
 - Gravity Gradient: Does "down" act as a geometric sink?
 
-Interpretation:
-- VL Models: Visual grounding concentrates probability on specific 3D axes
-  matching human visual experience (HIGH VISUAL GROUNDING).
-- Text Models: Same geometric physics knowledge, but probability distributed
-  along different axes—linguistic, formula-based, or higher-dimensional
-  (ALTERNATIVE GROUNDING). Neither is "abstract"; both are geometric.
+Reporting:
+- Reports axis-aligned concentration, parallax consistency, occlusion shifts,
+  and gravity correlation for spatial anchors.
+- Interpret measurements relative to baselines; no qualitative labels.
 
 Analogy: A blind physicist and a sighted physicist both understand gravity
 geometrically. The difference is in their probability distribution over
@@ -269,13 +266,13 @@ def get_spatial_anchors_by_axis(axis: object) -> list[SpatialConceptProtocol]:
 
 
 # =============================================================================
-# Euclidean Consistency Score
+# 3D Euclidean Consistency Probe
 # =============================================================================
 
 
 @dataclass
 class EuclideanConsistencyResult:
-    """Result of Euclidean consistency check."""
+    """Result of 3D Euclidean consistency probe."""
 
     consistency_score: float
     pythagorean_error: float
@@ -297,12 +294,12 @@ class EuclideanConsistencyResult:
 
 class EuclideanConsistencyAnalyzer:
     """
-    Tests whether latent distances form a valid 3D Euclidean space.
+    Tests whether latent distances satisfy 3D Euclidean constraints.
 
     Core Test: Given three points A, B, C forming a right angle at B,
     check if dist(A,C)² ≈ dist(A,B)² + dist(B,C)² (Pythagorean theorem).
 
-    If this holds consistently, the manifold encodes Euclidean 3-space.
+    This is a 3D probe only; high-dimensional geometry remains geodesic.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -314,14 +311,14 @@ class EuclideanConsistencyAnalyzer:
         anchors: list[SpatialConceptProtocol] | None = None,
     ) -> EuclideanConsistencyResult:
         """
-        Analyze Euclidean consistency of spatial anchor representations.
+        Analyze 3D Euclidean constraints for spatial anchor representations.
 
         Args:
             anchor_activations: Map from anchor name to activation vector
             anchors: Spatial anchors (uses registry if None)
 
         Returns:
-            EuclideanConsistencyResult with consistency metrics
+            EuclideanConsistencyResult with raw consistency measurements
         """
         b = self._backend
         anchors = anchors or list(get_spatial_concepts())
@@ -349,7 +346,7 @@ class EuclideanConsistencyAnalyzer:
         latent_dists = self._compute_distance_matrix(activations)
 
         # Compute expected 3D distances (not used currently, kept for future reference)
-        # This would compute euclidean distances in expected 3D space
+        # This would compute 3D Euclidean distances in expected coordinate space
 
         # Test 1: Pythagorean theorem on right-angle triplets
         pyth_errors = []
@@ -1283,7 +1280,6 @@ class Spatial3DReport:
 
     # Summary scores
     world_model_score: float  # 0-1 composite score
-    physics_engine_detected: bool
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -1294,16 +1290,15 @@ class Spatial3DReport:
             "stereoscopy_results": [s.to_dict() for s in self.stereoscopy_results],
             "occlusion_results": [o.to_dict() for o in self.occlusion_results],
             "world_model_score": self.world_model_score,
-            "physics_engine_detected": self.physics_engine_detected,
         }
 
 
 class Spatial3DAnalyzer:
     """
-    Unified analyzer for 3D world model detection.
+    Unified analyzer for 3D world model analysis.
 
-    Combines all spatial probes to determine if a model has internalized
-    a geometrically consistent 3D physics engine.
+    Combines all spatial probes to measure geometric consistency in 3D.
+    Includes a 3D Euclidean consistency probe; all manifold distances remain geodesic.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -1376,9 +1371,6 @@ class Spatial3DAnalyzer:
             euclidean_score + gravity_score + density_score + stereo_score + occlusion_score
         ) / 5.0
 
-        # Physics detected if gravity axis exists and any measurable density-mass correlation
-        physics_detected = gravity.gravity_axis_detected and density.density_mass_correlation > 0
-
         return Spatial3DReport(
             euclidean_consistency=euclidean,
             gravity_gradient=gravity,
@@ -1386,7 +1378,6 @@ class Spatial3DAnalyzer:
             stereoscopy_results=stereo_results,
             occlusion_results=occlusion_results,
             world_model_score=world_model_score,
-            physics_engine_detected=physics_detected,
         )
 
 

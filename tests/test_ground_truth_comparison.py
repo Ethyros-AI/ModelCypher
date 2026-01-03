@@ -265,12 +265,7 @@ class TestIntrinsicDimensionGroundTruth:
 
     def test_linear_subspace_dimension_accurate(self) -> None:
         """TwoNN should increase with higher-dimensional subspaces."""
-        from modelcypher.core.domain.geometry.intrinsic_dimension import (
-            BootstrapConfiguration,
-            GeodesicConfiguration,
-            IntrinsicDimension,
-            TwoNNConfiguration,
-        )
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
         backend = get_default_backend()
         backend.random_seed(42)
@@ -287,36 +282,19 @@ class TestIntrinsicDimensionGroundTruth:
             backend.eval(pts)
             return pts
 
-        config = TwoNNConfiguration(
-            use_regression=False,
-            geodesic=GeodesicConfiguration(k_neighbors=n_samples - 1),
-        )
-
         low_dim_points = _sample_subspace(3)
         high_dim_points = _sample_subspace(6)
 
-        low_estimate = IntrinsicDimension(backend).compute(
-            low_dim_points,
-            configuration=config,
-            bootstrap=BootstrapConfiguration(),
-        )
-        high_estimate = IntrinsicDimension(backend).compute(
-            high_dim_points,
-            configuration=config,
-            bootstrap=BootstrapConfiguration(),
-        )
+        # New config-free API: all parameters derived from data
+        low_estimate = IntrinsicDimension(backend).compute(low_dim_points)
+        high_estimate = IntrinsicDimension(backend).compute(high_dim_points)
 
         eps = _eps(backend, low_estimate.intrinsic_dimension, high_estimate.intrinsic_dimension)
         assert high_estimate.intrinsic_dimension >= low_estimate.intrinsic_dimension + eps
 
     def test_full_rank_gaussian_dimension(self) -> None:
         """Full-rank Gaussian should have dimension close to ambient."""
-        from modelcypher.core.domain.geometry.intrinsic_dimension import (
-            BootstrapConfiguration,
-            GeodesicConfiguration,
-            IntrinsicDimension,
-            TwoNNConfiguration,
-        )
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
         backend = get_default_backend()
         backend.random_seed(42)
@@ -328,15 +306,8 @@ class TestIntrinsicDimensionGroundTruth:
         points = backend.random_normal((n_samples, ambient_dim))
         backend.eval(points)
 
-        config = TwoNNConfiguration(
-            use_regression=False,
-            geodesic=GeodesicConfiguration(k_neighbors=n_samples - 1),
-        )
-        estimate = IntrinsicDimension(backend).compute(
-            points,
-            configuration=config,
-            bootstrap=BootstrapConfiguration(),
-        )
+        # New config-free API with CI
+        estimate = IntrinsicDimension(backend).compute(points, with_ci=True)
 
         assert estimate.ci is not None
         eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, ambient_dim)

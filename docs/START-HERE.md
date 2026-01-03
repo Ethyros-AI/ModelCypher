@@ -31,23 +31,17 @@ mc geometry spatial probe-model ./models/qwen-0.5b
 Anchors Probed: 23/23
 Layer Analyzed: last
 
-Has 3D World Model: NO
 World Model Score: 0.40
-Physics Engine: DETECTED
 
 ----------------------------------------
 Key Metrics:
-  Euclidean Consistency: 0.47
+  3D Euclidean Consistency: 0.47
   Gravity Correlation: 0.61
   Axis Orthogonality: 94.58%
-
-============================================================
-ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes.
-============================================================
 ```
 
 **What you just measured:**
-- This 0.5B model knows physics (gravity, distance) but encodes it along *linguistic* axes, not visual ones
+- This output reports spatial geometry measurements for the probed model.
 - We call this the "Blind Physicist" — it knows the math of 3D space without seeing it
 - Axis Orthogonality of 94.58% means concepts are cleanly separated (compare to baseline)
 

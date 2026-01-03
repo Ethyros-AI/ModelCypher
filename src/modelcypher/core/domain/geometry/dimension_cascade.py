@@ -45,10 +45,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    IntrinsicDimension,
-    TwoNNConfiguration,
-)
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.manifold_curvature import (
     OllivierRicciCurvature,
 )
@@ -208,9 +205,9 @@ class DimensionCascade:
             logger.debug("Cast activations from float16 to float32 for numerical stability")
 
         # Compute intrinsic dimension - this is the TRUE dimensionality
-        id_config = TwoNNConfiguration()
+        # All parameters derived from data (Berry & Sauer 2016 for k, Facco et al. for method)
         id_estimator = IntrinsicDimension(b)
-        id_result = id_estimator.compute(activations, id_config)
+        id_result = id_estimator.compute(activations)
         intrinsic_dim = id_result.intrinsic_dimension
 
         logger.info(

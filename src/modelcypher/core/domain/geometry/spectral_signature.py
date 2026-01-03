@@ -40,12 +40,20 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class SpectralSignatureConfig:
-    """Configuration for spectral signature computation."""
+    """Configuration for spectral signature computation.
+
+    All numerical parameters are derived from the data if not specified:
+    - k_neighbors: derived from graph connectivity requirements
+    - kernel_bandwidth: derived from median neighbor distance
+    - heat_trace_times: derived from eigenvalue spectrum (1/λ_max to 1/λ_1)
+    """
 
     k_neighbors: int | None = None
     kernel_bandwidth: float | None = None
     normalized_laplacian: bool = True
-    heat_trace_times: tuple[float, ...] = (0.1, 1.0, 10.0)
+    # Heat trace times: None = derive from eigenvalue spectrum
+    # Characteristic time scales are 1/λ for each eigenvalue
+    heat_trace_times: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -85,13 +93,13 @@ class SpectralSignature:
         backend.eval(points_arr)
 
         n = int(points_arr.shape[0]) if len(points_arr.shape) > 0 else 0
-        heat_times = list(config.heat_trace_times)
 
+        # Edge cases: no spectrum to derive times from
         if n == 0:
             return SpectralSignatureResult(
                 eigenvalues=[],
-                heat_trace=[0.0 for _ in heat_times],
-                heat_times=heat_times,
+                heat_trace=[],
+                heat_times=[],
                 spectral_entropy=0.0,
                 algebraic_connectivity=0.0,
                 component_count=0,
@@ -106,8 +114,8 @@ class SpectralSignature:
         if n == 1:
             return SpectralSignatureResult(
                 eigenvalues=[0.0],
-                heat_trace=[1.0 for _ in heat_times],
-                heat_times=heat_times,
+                heat_trace=[],
+                heat_times=[],
                 spectral_entropy=0.0,
                 algebraic_connectivity=0.0,
                 component_count=1,
@@ -119,12 +127,11 @@ class SpectralSignature:
                 connected=True,
             )
 
-        # Local edges are Euclidean distances; on the k-NN graph these are exact
-        # geodesic segments, and the global geodesic is the shortest path on this graph.
-        adjacency, euclidean_dist, inf_value, k_neighbors, neighbor_indices = self._build_knn_adjacency(
+        # Build a k-NN graph using geodesic distances on the manifold.
+        adjacency, geodesic_dist, inf_value, k_neighbors, neighbor_indices = self._build_knn_adjacency(
             points_arr, config.k_neighbors
         )
-        backend.eval(adjacency, euclidean_dist, neighbor_indices)
+        backend.eval(adjacency, geodesic_dist, neighbor_indices)
 
         # Use dtype-derived threshold (not arbitrary 0.9)
         inf_thresh = infinity_threshold(backend, adjacency)
@@ -134,14 +141,14 @@ class SpectralSignature:
         edge_count_total = int(backend.to_scalar(edge_count_total_arr))
         edge_count = max(0, (edge_count_total - n) // 2)
 
-        neighbor_dists = backend.take(euclidean_dist, neighbor_indices, axis=1)
+        neighbor_dists = backend.take(geodesic_dist, neighbor_indices, axis=1)
         backend.eval(neighbor_dists)
 
         kernel_bandwidth = config.kernel_bandwidth
         if kernel_bandwidth is None:
             kernel_bandwidth = _median_flattened(neighbor_dists, backend)
 
-        bandwidth_floor = tiny_value(backend, euclidean_dist)
+        bandwidth_floor = tiny_value(backend, geodesic_dist)
         if kernel_bandwidth <= bandwidth_floor:
             kernel_bandwidth = bandwidth_floor
 
@@ -153,7 +160,7 @@ class SpectralSignature:
                 backend.ones_like(adjacency),
                 backend.zeros_like(adjacency),
             )
-            weights_arr = backend.exp(-(euclidean_dist * euclidean_dist) / sigma_sq)
+            weights_arr = backend.exp(-(geodesic_dist * geodesic_dist) / sigma_sq)
             weights_arr = weights_arr * edge_mask
             weights_arr = weights_arr * (1.0 - backend.eye(n))
             weights_arr = backend.astype(weights_arr, "float32")
@@ -170,6 +177,12 @@ class SpectralSignature:
         eig_sorted = backend.sort(eigvals)
         backend.eval(eig_sorted)
         eig_list = [float(x) for x in backend.tolist(eig_sorted)]
+
+        # Derive heat trace times from eigenvalue spectrum if not specified
+        if config.heat_trace_times is not None:
+            heat_times = list(config.heat_trace_times)
+        else:
+            heat_times = _derive_heat_times_from_spectrum(eig_list)
 
         spectral_entropy = _spectral_entropy(backend, eigvals, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
@@ -219,65 +232,39 @@ class SpectralSignature:
     ) -> tuple["Array", "Array", float, int, "Array"]:
         backend = self._backend
         n = int(points.shape[0])
-        if k_neighbors is None:
-            # Use connectivity-based k selection (Berry & Sauer 2016)
-            from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
-            rg = RiemannianGeometry(backend)
-            geo_result = rg.geodesic_distances(points, k_neighbors=None)
-            k_neighbors = geo_result.k_neighbors
-        k_neighbors = max(1, min(k_neighbors, n - 1))
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
+        geodesic_dist = geo_result.distances
+        backend.eval(geodesic_dist)
+        inf_val = geo_result.inf_value
+        k_neighbors = geo_result.k_neighbors
 
-        euclidean_dist = self._euclidean_distance_matrix(points)
-        backend.eval(euclidean_dist)
-
-        # Use dtype-derived infinity value (not arbitrary fraction)
-        inf_val = float(backend.finfo(euclidean_dist.dtype).max)
+        # Use geodesic distances for neighbor ordering.
         self_mask = backend.eye(n) > 0.0
-        dist_no_self = backend.where(self_mask, inf_val, euclidean_dist)
+        dist_no_self = backend.where(self_mask, inf_val, geodesic_dist)
         neighbor_order = backend.argsort(dist_no_self, axis=1)
         neighbor_indices = neighbor_order[:, :k_neighbors]
         backend.eval(neighbor_order, neighbor_indices)
 
         adj = backend.full((n, n), inf_val)
-        diag_mask = backend.eye(n) > 0.0
-        adj = backend.where(diag_mask, backend.zeros_like(adj), adj)
+        adj = backend.where(self_mask, backend.zeros_like(adj), adj)
 
-        edge_eps = float(division_epsilon(backend, euclidean_dist))
-        edge_eps_arr = backend.full(euclidean_dist.shape, edge_eps)
-        weights = backend.maximum(euclidean_dist, edge_eps_arr)
+        edge_eps = float(division_epsilon(backend, geodesic_dist))
+        edge_eps_arr = backend.full(geodesic_dist.shape, edge_eps)
+        weights = backend.maximum(geodesic_dist, edge_eps_arr)
 
         # Vectorized k-NN mask: rank(i, j) < k_neighbors
         rank = backend.argsort(neighbor_order, axis=1)
         mask = rank < k_neighbors
-        mask = backend.where(diag_mask, backend.zeros_like(mask), mask)
+        mask = backend.where(self_mask, backend.zeros_like(mask), mask)
         mask_float = backend.astype(mask, "float32")
         mask_sym = backend.maximum(mask_float, backend.transpose(mask_float))
 
         adj = backend.where(mask_sym > 0.0, weights, adj)
 
-        return adj, euclidean_dist, inf_val, k_neighbors, neighbor_indices
-
-    def _euclidean_distance_matrix(self, points: "Array") -> "Array":
-        """Compute pairwise distances using stable direct difference formula."""
-        backend = self._backend
-
-        # Force float32 to avoid bfloat16 precision issues
-        if hasattr(backend, 'astype'):
-            points = backend.astype(points, "float32")
-
-        n = int(points.shape[0])
-        d = int(points.shape[1]) if len(points.shape) > 1 else 1
-
-        # Direct difference formula: ||a - b||² = Σ(aᵢ - bᵢ)²
-        # This is rotation-invariant and avoids catastrophic cancellation
-        points_i = backend.reshape(points, (n, 1, d))
-        points_j = backend.reshape(points, (1, n, d))
-        diffs = points_i - points_j
-        dist_sq = backend.sum(diffs * diffs, axis=2)
-        backend.eval(dist_sq)
-        dist_sq = backend.maximum(dist_sq, 0.0)
-        return backend.sqrt(dist_sq)
+        return adj, geodesic_dist, inf_val, k_neighbors, neighbor_indices
 
 
 def _median_flattened(values: "Array", backend: "Backend") -> float:
@@ -298,6 +285,59 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
     high_val = backend.squeeze(high_val)
     backend.eval(low_val, high_val)
     return 0.5 * (float(backend.to_scalar(low_val)) + float(backend.to_scalar(high_val)))
+
+
+def _derive_heat_times_from_spectrum(eigenvalues: list[float], num_times: int = 5) -> list[float]:
+    """Derive heat trace times from the eigenvalue spectrum.
+
+    The characteristic time scales for heat diffusion are 1/λ for each eigenvalue.
+    We select log-spaced times spanning from 1/λ_max (fast/fine scale) to 1/λ_1
+    (slow/coarse scale, where λ_1 is the smallest non-zero eigenvalue).
+
+    This ensures the heat trace probes all relevant time scales of the manifold
+    without relying on arbitrary hardcoded values.
+
+    Args:
+        eigenvalues: Sorted eigenvalues (ascending).
+        num_times: Number of time points to sample (derived from spectrum structure).
+
+    Returns:
+        Log-spaced times spanning the spectral range.
+    """
+    import math
+
+    if not eigenvalues or len(eigenvalues) < 2:
+        return []
+
+    # Find smallest non-zero eigenvalue (λ_1) for t_max
+    # Use machine epsilon as floor for numerical stability
+    eps = 1e-10
+    non_zero_eigs = [e for e in eigenvalues if e > eps]
+    if not non_zero_eigs:
+        return []
+
+    lambda_1 = min(non_zero_eigs)  # Smallest non-zero eigenvalue
+    lambda_max = max(non_zero_eigs)  # Largest eigenvalue
+
+    # Characteristic times: t ∈ [1/λ_max, 1/λ_1]
+    t_min = 1.0 / lambda_max  # Fast time scale
+    t_max = 1.0 / lambda_1  # Slow time scale
+
+    # Avoid degenerate case
+    if t_max <= t_min:
+        return [t_min]
+
+    # Number of time points scales with log-ratio of eigenvalue range
+    # This ensures adequate sampling across the spectral range
+    log_ratio = math.log10(t_max / t_min)
+    num_times = max(3, min(10, int(2 * log_ratio) + 3))
+
+    # Log-spaced times
+    log_t_min = math.log(t_min)
+    log_t_max = math.log(t_max)
+    step = (log_t_max - log_t_min) / (num_times - 1) if num_times > 1 else 0
+
+    return [math.exp(log_t_min + i * step) for i in range(num_times)]
 
 
 def _spectral_entropy(backend: "Backend", eigenvalues: "Array", eps: float) -> float:

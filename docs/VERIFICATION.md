@@ -11,18 +11,17 @@ When merging two 7B models (e.g., Llama-3 and Mistral-7B), a naive weighted aver
 | **Naive Merge (Average)** | 0.85 | 42.1% | High (Erratic) |
 | **ModelCypher (Procrustes)** | **0.12** | **68.4%** | **Low (Smooth)** |
 
-## 2. 3D Spatial Grounding: Visual vs. Alternative
+## 2. 3D Spatial Grounding: Spatial Metrics
 
-We measured the **Visual-Spatial Grounding Density** of different model sizes using the `mc geometry spatial` suite.
+We measured spatial grounding metrics across model sizes using the `mc geometry spatial` suite.
 
-| Model | World Model Score | Grounding Verdict | Pythagorean Error |
-| :--- | :---: | :---: | :---: |
-| **Qwen2-0.5B-4bit** | 0.45 | **ALTERNATIVE** | 0.79 (Diffuse) |
-| **Qwen2.5-3B-bf16** | 0.50 | **ALTERNATIVE** | 0.73 (Diffuse) |
-| **Mistral-7B-4bit** | 0.48 | **ALTERNATIVE** | 0.79 (Diffuse) |
-| **Theoretical 70B** | > 0.75 | **HIGH VISUAL** | < 0.05 (Rigid) |
+| Model | World Model Score | Pythagorean Error |
+| :--- | :---: | :---: |
+| **Qwen2-0.5B-4bit** | 0.45 | 0.79 |
+| **Qwen2.5-3B-bf16** | 0.50 | 0.73 |
+| **Mistral-7B-4bit** | 0.48 | 0.79 |
 
-**The Proof**: The 0.5B model demonstrated high axis orthogonality (93.4%) but low visual grounding. This confirms our "Blind Physicist" theory: smaller models encode physical invariants along non-visual (linguistic) axes.
+Observation: The 0.5B model shows high axis orthogonality (93.4%) alongside lower 3D Euclidean consistency in this sample.
 
 ## 3. Safety: Pre-Emission Detection ($\Delta H$)
 
@@ -87,7 +86,6 @@ For the formal mathematical proofs, see [**Research Papers**](../papers/README.m
 
 
 
-- **Verdict**: ALTERNATIVE GROUNDING
 
 
 
@@ -95,15 +93,15 @@ For the formal mathematical proofs, see [**Research Papers**](../papers/README.m
 
 
 
-**Metrology Insight**: 
 
 
 
-- **Isolated Text Core (Invalidated)**: 0.38
+- **Isolated Text Core**: 0.38
 
 
 
-- **Full Multimodal Graph (Validated)**: 0.42
+- **Full Multimodal Graph**: 0.42
+- **Delta**: 0.04
 
 
 
@@ -124,5 +122,3 @@ The delta (+0.04) represents the **Visual Grounding Pressure** exerted by the vi
 **Results**:
 
 - **World Model Score**: 0.34
-
-- **Classification**: ALTERNATIVE GROUNDING
