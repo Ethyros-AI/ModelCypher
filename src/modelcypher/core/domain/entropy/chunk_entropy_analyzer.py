@@ -31,11 +31,14 @@ Attackers may inject malicious content into documents that get indexed for RAG:
 from __future__ import annotations
 
 import logging
-import math
 import re
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    is_finite,
+    log2_scalar,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 logger = logging.getLogger(__name__)
@@ -358,10 +361,11 @@ class ChunkEntropyAnalyzer:
         total = sum(ngram_counts.values())
         entropy = 0.0
 
+        backend = get_default_backend()
         for count in ngram_counts.values():
             p = count / total
             if p > 0:
-                entropy -= p * math.log2(p)
+                entropy -= p * log2_scalar(p, backend)
 
         return entropy
 
@@ -445,7 +449,7 @@ class ChunkEntropyAnalyzer:
         backend.eval(max_distance_arr)
         max_distance = float(backend.to_scalar(max_distance_arr))
 
-        if not math.isfinite(max_distance):
+        if not is_finite(max_distance, backend):
             logger.warning("Cross-reference scoring skipped: no finite distances")
             return [0.0] * n
         if max_distance <= 0.0:

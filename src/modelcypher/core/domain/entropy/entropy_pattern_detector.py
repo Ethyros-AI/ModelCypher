@@ -24,13 +24,13 @@ No threshold-based classification is performed.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
+    sqrt_scalar,
 )
 
 
@@ -69,7 +69,8 @@ class EntropyPattern:
         """Ratio of sustained high count to sqrt(sample_count)."""
         if self.sample_count < 1:
             return 0.0
-        return self.sustained_high_count / math.sqrt(self.sample_count)
+        _b = get_default_backend()
+        return self.sustained_high_count / sqrt_scalar(float(self.sample_count), _b)
 
     @staticmethod
     def empty() -> "EntropyPattern":
@@ -147,7 +148,8 @@ class _Statistics:
         if mean is None:
             mean = _Statistics.mean(values)
         variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
-        return math.sqrt(variance)
+        _b = get_default_backend()
+        return sqrt_scalar(variance, _b)
 
 
 class EntropyPatternAnalyzer:

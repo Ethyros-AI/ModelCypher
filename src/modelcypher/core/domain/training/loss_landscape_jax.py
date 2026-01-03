@@ -42,10 +42,12 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -325,7 +327,8 @@ class LossLandscapeComputerJAX:
             # Global normalization
             leaves = jax.tree_util.tree_leaves(direction)
             total_norm_sq = sum(float(jnp.sum(d**2)) for d in leaves if hasattr(d, "shape"))
-            total_norm = math.sqrt(total_norm_sq)
+            _b = get_default_backend()
+            total_norm = sqrt_scalar(total_norm_sq, _b)
 
             if total_norm > _MACHINE_EPS:
                 return jax.tree.map(

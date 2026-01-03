@@ -46,7 +46,6 @@ MLX-Specific:
 
 from __future__ import annotations
 
-import math
 import sys
 import time
 from dataclasses import dataclass, field
@@ -56,6 +55,9 @@ from typing import Callable, Iterator
 
 import mlx.core as mx
 import mlx.nn as nn
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import exp_scalar, log_scalar
 
 # Smallest positive float for log safety (prevents log(0))
 _LOG_SAFE_MIN = sys.float_info.min
@@ -223,9 +225,11 @@ class EvaluationEngine:
             if EvaluationMetric.LOSS in self.config.metrics:
                 metrics[EvaluationMetric.LOSS] = avg_loss
             if EvaluationMetric.PERPLEXITY in self.config.metrics:
-                metrics[EvaluationMetric.PERPLEXITY] = math.exp(avg_loss)
+                _b = get_default_backend()
+                metrics[EvaluationMetric.PERPLEXITY] = exp_scalar(avg_loss, _b)
             if EvaluationMetric.BITS_PER_CHARACTER in self.config.metrics:
-                metrics[EvaluationMetric.BITS_PER_CHARACTER] = avg_loss / math.log(2)
+                _b = get_default_backend()
+                metrics[EvaluationMetric.BITS_PER_CHARACTER] = avg_loss / log_scalar(2.0, _b)
 
         if needs_accuracy:
             metrics[EvaluationMetric.ACCURACY] = total_correct / total_tokens

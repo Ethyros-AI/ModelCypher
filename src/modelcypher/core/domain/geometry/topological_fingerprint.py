@@ -998,6 +998,10 @@ class BackendTopologicalFingerprint:
 
             possible_cycles: list[PersistencePoint] = []
             index = b.arange(n)
+            inf_val = float(b.finfo().max)
+            base_mask = b.ones((n,))
+            zero_vec = b.full((n,), 0.0)
+            inf_vec = b.full((n,), inf_val)
             b.eval(index)
 
             for i, j, dist in edges:
@@ -1012,12 +1016,12 @@ class BackendTopologicalFingerprint:
                     row_j = dist_arr[j, :]
                     triangle_fills = b.maximum(b.maximum(row_i, row_j), b.full((n,), dist))
                     # Mask self-edges to inf
-                    inf_val = float(b.finfo().max)
-                    mask = b.ones((n,))
-                    mask = b.where(index == i, b.full(mask.shape, 0.0), mask)
-                    mask = b.where(index == j, b.full(mask.shape, 0.0), mask)
-                    masked_fills = b.where(mask > 0, triangle_fills, b.full(triangle_fills.shape, inf_val))
-                    min_fill = float(b.to_scalar(b.min(masked_fills)))
+                    mask = b.where(index == i, zero_vec, base_mask)
+                    mask = b.where(index == j, zero_vec, mask)
+                    masked_fills = b.where(mask > 0, triangle_fills, inf_vec)
+                    min_fill_arr = b.min(masked_fills)
+                    b.eval(min_fill_arr)
+                    min_fill = float(b.to_scalar(min_fill_arr))
                     if min_fill < max_filtration and min_fill > dist:
                         possible_cycles.append(PersistencePoint(dist, min_fill, 1))
                 else:

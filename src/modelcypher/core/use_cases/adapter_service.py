@@ -24,8 +24,6 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from safetensors import safe_open
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
@@ -234,13 +232,12 @@ class AdapterService:
     def _load_weights(self, path: Path) -> dict:
         """Load weights from safetensors files."""
         weights = {}
+        backend = get_default_backend()
 
         safetensor_files = list(path.glob("*.safetensors"))
         for st_file in safetensor_files:
             try:
-                with safe_open(st_file, framework="numpy") as f:
-                    for key in f.keys():
-                        weights[key] = f.get_tensor(key)
+                weights.update(backend.load_safetensors(str(st_file)))
             except Exception as exc:
                 logger.warning("Failed to read safetensors file %s: %s", st_file, exc)
 

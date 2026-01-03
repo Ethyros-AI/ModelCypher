@@ -28,11 +28,13 @@ High-performance ring buffer for visualization data with:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_nan
 
 # =============================================================================
 # MetricSample
@@ -84,17 +86,20 @@ class MetricSample:
     @property
     def has_loss(self) -> bool:
         """Whether this sample has a valid loss value."""
-        return not math.isnan(self.loss)
+        _b = get_default_backend()
+        return not is_nan(self.loss, _b)
 
     @property
     def has_entropy(self) -> bool:
         """Whether this sample has a valid entropy value."""
-        return not math.isnan(self.entropy)
+        _b = get_default_backend()
+        return not is_nan(self.entropy, _b)
 
     @property
     def has_throughput(self) -> bool:
         """Whether this sample has valid throughput data."""
-        return not math.isnan(self.throughput)
+        _b = get_default_backend()
+        return not is_nan(self.throughput, _b)
 
     @property
     def date(self) -> datetime:
@@ -123,10 +128,11 @@ class MetricSample:
         min_timestamp_sample = samples[0]
         max_skill_count = samples[0].active_skill_count
 
+        _b = get_default_backend()
         loss_values = [s.loss for s in samples if s.has_loss]
         entropy_values = [s.entropy for s in samples if s.has_entropy]
         throughput_values = [s.throughput for s in samples if s.has_throughput]
-        gpu_values = [s.gpu_memory for s in samples if not math.isnan(s.gpu_memory)]
+        gpu_values = [s.gpu_memory for s in samples if not is_nan(s.gpu_memory, _b)]
 
         for sample in samples:
             if sample.timestamp < min_timestamp_sample.timestamp:

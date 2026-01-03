@@ -261,24 +261,32 @@ class ContinuousFingerprint:
 
         for layer, activations in layer_activations.items():
             arr = b.array(activations)
-            magnitudes[layer] = float(b.norm(arr))
+            norm_arr = b.norm(arr)
+            b.eval(norm_arr)
+            magnitudes[layer] = float(b.to_scalar(norm_arr))
 
             logits = arr
             max_val = b.max(logits)
             exp_acts = b.exp(logits - max_val)
             eps = division_epsilon(b, exp_acts)
-            probs = exp_acts / (b.sum(exp_acts) + eps)
+            sum_exp = b.sum(exp_acts)
+            probs = exp_acts / (sum_exp + eps)
 
             log_probs = b.log(probs + eps)
-            entropy = -float(b.to_scalar(b.sum(probs * log_probs)))
+            entropy_arr = -b.sum(probs * log_probs)
             max_entropy = log_scalar(float(max(len(activations), 1)), b)
-            entropies[layer] = min(max(entropy / max_entropy, 0.0), 1.0) if max_entropy > 0 else 0.0
-
             abs_acts = b.abs(arr)
             max_abs = b.max(abs_acts)
             eps = division_epsilon(b, abs_acts)
             threshold = b.maximum(max_abs * eps, b.array(eps))
-            near_zero = float(b.to_scalar(b.sum(abs_acts <= threshold)))
+            near_zero_arr = b.sum(abs_acts <= threshold)
+
+            b.eval(sum_exp, entropy_arr, max_abs, near_zero_arr)
+
+            entropy = float(b.to_scalar(entropy_arr))
+            entropies[layer] = min(max(entropy / max_entropy, 0.0), 1.0) if max_entropy > 0 else 0.0
+
+            near_zero = float(b.to_scalar(near_zero_arr))
             sparsities[layer] = near_zero / max(len(activations), 1)
 
         return ContinuousFingerprint(
@@ -655,9 +663,13 @@ class ManifoldStitcher:
         min_len = min(s_vec.size, t_vec.size)
         s_trunc, t_trunc = s_vec[:min_len], t_vec[:min_len]
 
-        dot_prod = float(b.to_scalar(b.sum(s_trunc * t_trunc)))
-        s_norm = float(b.to_scalar(b.norm(s_vec)))
-        t_norm = float(b.to_scalar(b.norm(t_vec)))
+        dot_arr = b.sum(s_trunc * t_trunc)
+        s_norm_arr = b.norm(s_vec)
+        t_norm_arr = b.norm(t_vec)
+        b.eval(dot_arr, s_norm_arr, t_norm_arr)
+        dot_prod = float(b.to_scalar(dot_arr))
+        s_norm = float(b.to_scalar(s_norm_arr))
+        t_norm = float(b.to_scalar(t_norm_arr))
         norm_eps = division_epsilon(b, s_vec)
         cosine = dot_prod / (s_norm * t_norm) if (s_norm > norm_eps and t_norm > norm_eps) else 0.0
 
@@ -834,8 +846,11 @@ class ManifoldStitcher:
             # Error
             projected = b.matmul(s_centered, omega)
             error = projected - t_centered
-            error_norm = float(b.to_scalar(b.sqrt(b.sum(error * error))))
-            target_norm = float(b.to_scalar(b.sqrt(b.sum(t_centered * t_centered))))
+            error_norm_arr = b.sqrt(b.sum(error * error))
+            target_norm_arr = b.sqrt(b.sum(t_centered * t_centered))
+            b.eval(error_norm_arr, target_norm_arr)
+            error_norm = float(b.to_scalar(error_norm_arr))
+            target_norm = float(b.to_scalar(target_norm_arr))
             norm_eps = division_epsilon(b, t_centered)
             procrustes_error = error_norm / target_norm if target_norm > norm_eps else 0.0
 

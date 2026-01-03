@@ -40,10 +40,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_finite
 
 try:
     import jax
@@ -331,7 +333,8 @@ class TrainingEngineJAX:
                 current_loss = float(loss)
 
                 # NaN detection
-                if not math.isfinite(current_loss):
+                _b = get_default_backend()
+                if not is_finite(current_loss, _b):
                     nan_recovery_count += 1
                     logger.warning(
                         "NaN/Inf detected at step %d. Recovery attempt %d/%d",

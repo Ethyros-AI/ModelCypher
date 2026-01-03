@@ -44,13 +44,15 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 try:
     import jax
@@ -85,7 +87,8 @@ class LoRAConfigJAX:
     def scale(self) -> float:
         """LoRA scaling factor: alpha / rank (or sqrt(rank) for RSLoRA)."""
         if self.use_rslora:
-            return self.alpha / math.sqrt(max(self.rank, 1))
+            _b = get_default_backend()
+            return self.alpha / sqrt_scalar(float(max(self.rank, 1)), _b)
         return self.alpha / max(self.rank, 1)
 
     @classmethod
@@ -466,7 +469,8 @@ def compute_adapter_norm_jax(adapters: dict[str, jnp.ndarray]) -> float:
     total = 0.0
     for weight in adapters.values():
         total += float(jnp.sum(weight**2))
-    return math.sqrt(total)
+    _b = get_default_backend()
+    return sqrt_scalar(total, _b)
 
 
 def compute_adapter_delta_norm_jax(
@@ -479,7 +483,8 @@ def compute_adapter_delta_norm_jax(
         if name in current:
             delta = current[name] - initial[name]
             total += float(jnp.sum(delta**2))
-    return math.sqrt(total)
+    _b = get_default_backend()
+    return sqrt_scalar(total, _b)
 
 
 __all__ = [

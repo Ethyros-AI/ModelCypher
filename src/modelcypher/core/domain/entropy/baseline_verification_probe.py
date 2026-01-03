@@ -36,13 +36,15 @@ Detection Capabilities:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Awaitable, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 
 
 @dataclass(frozen=True)
@@ -444,7 +446,8 @@ class BaselineVerificationProbe:
 
         if len(deltas) > 1:
             variance = sum((d - mean) ** 2 for d in deltas) / (len(deltas) - 1)
-            std_dev = math.sqrt(variance)
+            _b = get_default_backend()
+            std_dev = sqrt_scalar(variance, _b)
         else:
             std_dev = 0.0
 

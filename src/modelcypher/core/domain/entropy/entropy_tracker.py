@@ -23,15 +23,16 @@ Raw geometric measurements only. No thresholds or classification.
 
 from __future__ import annotations
 
-import math
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.logit_entropy_calculator import LogitEntropyCalculator
 from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -181,7 +182,8 @@ class EntropyWindow:
         current_z = z_scores[-1]
         avg = sum(entropies) / len(entropies)
         variance = sum((e - avg) ** 2 for e in entropies) / len(entropies)
-        std_dev = math.sqrt(variance)
+        _b = get_default_backend()
+        std_dev = sqrt_scalar(variance, _b)
 
         return EntropyWindowStatus(
             window_id=self.window_id,

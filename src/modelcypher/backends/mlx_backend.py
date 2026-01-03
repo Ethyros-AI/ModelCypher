@@ -247,7 +247,7 @@ class MLXBackend(Backend):
         return mask
 
     def to_numpy(self, array: Array) -> Any:
-        """Convert to a host array - requires eval first."""
+        """Convert to a host numpy array - requires eval first."""
         self.safe.eval(array)
         # Handle bfloat16 which host array protocols may not support
         if array.dtype == self.mx.bfloat16:
@@ -256,11 +256,8 @@ class MLXBackend(Backend):
         if hasattr(array, "to_numpy"):
             return array.to_numpy()
         if hasattr(array, "__array__"):
-            try:
-                return array.__array__()
-            except Exception:
-                pass
-        return array.tolist()
+            return array.__array__()
+        raise TypeError("MLX array does not support numpy conversion")
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.

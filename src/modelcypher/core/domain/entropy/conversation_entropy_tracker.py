@@ -23,13 +23,15 @@ No internal classification or thresholds are applied.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 
 @dataclass(frozen=True)
 class ConversationEntropyBaseline:
@@ -46,7 +48,8 @@ class ConversationEntropyBaseline:
 
         mean = sum(delta_samples) / len(delta_samples)
         variance = sum((d - mean) ** 2 for d in delta_samples) / len(delta_samples)
-        return cls(delta_mean=mean, delta_std_dev=math.sqrt(variance))
+        _b = get_default_backend()
+        return cls(delta_mean=mean, delta_std_dev=sqrt_scalar(variance, _b))
 
     def z_score(self, value: float) -> float:
         """Compute z-score relative to the baseline mean/std."""
@@ -204,7 +207,8 @@ class ConversationEntropyTracker:
             return 0.0
         mean = sum(values) / len(values)
         variance = sum((v - mean) ** 2 for v in values) / len(values)
-        return math.sqrt(variance)
+        _b = get_default_backend()
+        return sqrt_scalar(variance, _b)
 
     def _compute_oscillation_frequency(self, deltas: list[float]) -> float:
         """Compute oscillation frequency (sign changes in delta differences)."""

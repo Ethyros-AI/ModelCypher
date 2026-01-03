@@ -159,9 +159,11 @@ class EntropyMath:
     @staticmethod
     def sample_std(values: Sequence[float], ddof: int = 1) -> float:
         """Compute sample standard deviation."""
-        import math
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
-        return math.sqrt(EntropyMath.sample_variance(values, ddof))
+        _b = get_default_backend()
+        return sqrt_scalar(EntropyMath.sample_variance(values, ddof), _b)
 
     @staticmethod
     def compute_delta_h(

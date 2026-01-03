@@ -37,7 +37,6 @@ Orchestrates:
 
 import asyncio
 import logging
-import math
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -46,6 +45,8 @@ import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as optim
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_finite
 from modelcypher.infrastructure.services.memory import MLXMemoryService
 
 from .checkpoints_mlx import CheckpointManager
@@ -326,7 +327,8 @@ class TrainingEngine:
                 current_loss = float(loss.item())
 
                 # NaN detection
-                if not math.isfinite(current_loss):
+                _b = get_default_backend()
+                if not is_finite(current_loss, _b):
                     nan_recovery_count += 1
                     logger.warning(
                         f"⚠️ NaN/Inf detected at step {global_step}. Recovery attempt {nan_recovery_count}/{max_nan_recoveries}"

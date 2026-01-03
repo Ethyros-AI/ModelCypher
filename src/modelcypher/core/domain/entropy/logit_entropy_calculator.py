@@ -260,11 +260,12 @@ class LogitEntropyCalculator:
             normalized = calc.normalize_entropy(raw_entropy, vocab_size=32000)
             # Pass normalized to circuit breaker
         """
-        import math
+        from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 
         if vocab_size <= 1:
             return 0.0
-        max_entropy = math.log(vocab_size)
+        _b = get_default_backend()
+        max_entropy = log_scalar(float(vocab_size), _b)
         if max_entropy <= 0:
             return 0.0
         return min(max(raw_entropy / max_entropy, 0.0), 1.0)

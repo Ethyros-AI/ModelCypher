@@ -140,9 +140,13 @@ def compute_spectral_metrics(
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
         # For 1D, use vector norms instead of singular values
-        source_norm = _to_float(b.norm(source_weight))
-        target_norm = _to_float(b.norm(target_weight))
-        delta_norm = _to_float(b.norm(source_weight - target_weight))
+        source_norm_arr = b.norm(source_weight)
+        target_norm_arr = b.norm(target_weight)
+        delta_norm_arr = b.norm(source_weight - target_weight)
+        b.eval(source_norm_arr, target_norm_arr, delta_norm_arr)
+        source_norm = float(b.to_scalar(source_norm_arr))
+        target_norm = float(b.to_scalar(target_norm_arr))
+        delta_norm = float(b.to_scalar(delta_norm_arr))
 
         if target_norm < eps:
             target_norm = eps

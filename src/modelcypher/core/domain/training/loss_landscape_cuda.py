@@ -42,10 +42,12 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 import sys
 from dataclasses import dataclass
 from typing import Callable
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -317,7 +319,8 @@ class LossLandscapeComputerCUDA:
             total_norm_sq = 0.0
             for d in direction.values():
                 total_norm_sq += float(torch.sum(d**2).item())
-            total_norm = math.sqrt(total_norm_sq)
+            _b = get_default_backend()
+            total_norm = sqrt_scalar(total_norm_sq, _b)
 
             if total_norm > _MACHINE_EPS:
                 return {k: d / total_norm for k, d in direction.items()}

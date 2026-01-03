@@ -54,13 +54,15 @@ Bertolotti & Cazzola (2024) "By Tying Embeddings You Are Assuming the Distributi
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import safe_log_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    log_scalar,
+    safe_log_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -448,7 +450,7 @@ class LayerEntropyProjector:
                 max_entropy=max(entropies),
             )
 
-        max_entropy = math.log(self._vocab_size) if self._vocab_size > 0 else 0.0
+        max_entropy = log_scalar(float(self._vocab_size), self._backend) if self._vocab_size > 0 else 0.0
 
         return ModelLayerEntropyProfile(
             model_name=model_name,

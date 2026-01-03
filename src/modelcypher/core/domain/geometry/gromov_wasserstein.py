@@ -292,10 +292,25 @@ class GromovWassersteinDistance:
         C2_permuted = backend.matmul(PC2, P_T)  # [n_perms, n, n]
 
         # Compute Frobenius norm squared: ||C1 - C2_permuted||^2_F for each perm
+        # Compute both directions and average for exact symmetry:
+        # loss = 0.5 * (||C1 - P @ C2 @ P.T||² + ||C2 - P.T @ C1 @ P||²)
+        # This ensures GW(A,B) = GW(B,A) exactly in floating point.
+
+        # Forward: ||C1 - P @ C2 @ P.T||² using C2_permuted = P @ C2 @ P.T
         C1_expanded = backend.reshape(C1, (1, n, n))  # [1, n, n]
-        diff = C1_expanded - C2_permuted  # [n_perms, n, n]
-        losses = backend.sum(diff * diff, axis=(1, 2))  # [n_perms]
-        losses = losses / (n * n)  # Normalize
+        diff_forward = C1_expanded - C2_permuted
+        losses_forward = backend.sum(diff_forward * diff_forward, axis=(1, 2))
+
+        # Backward: ||C2 - P.T @ C1 @ P||² using C1_permuted = P.T @ C1 @ P
+        C1_expanded_for_perm = backend.reshape(C1, (1, n, n))  # [1, n, n]
+        PC1 = backend.matmul(P_T, C1_expanded_for_perm)  # P.T @ C1
+        C1_permuted = backend.matmul(PC1, P_all)  # (P.T @ C1) @ P
+        C2_expanded = backend.reshape(C2, (1, n, n))  # [1, n, n]
+        diff_backward = C2_expanded - C1_permuted
+        losses_backward = backend.sum(diff_backward * diff_backward, axis=(1, 2))
+
+        # Average for symmetry
+        losses = (losses_forward + losses_backward) / (2.0 * n * n)
 
         # Force evaluation and find minimum
         backend.eval(losses)

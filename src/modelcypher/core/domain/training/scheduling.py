@@ -36,10 +36,12 @@ Usage:
 
 from __future__ import annotations
 
-import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import cos_scalar, pi_value
 
 
 class ScheduleType(str, Enum):
@@ -157,7 +159,8 @@ class CosineSchedule(LRSchedule):
         progress = decay_step / decay_steps
 
         # Cosine annealing: lr = min + 0.5 * (max - min) * (1 + cos(π * progress))
-        cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+        _b = get_default_backend()
+        cosine_decay = 0.5 * (1.0 + cos_scalar(pi_value(_b) * progress, _b))
         return self.min_lr + (self._base_lr - self.min_lr) * cosine_decay
 
     @property

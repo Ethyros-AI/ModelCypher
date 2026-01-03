@@ -22,8 +22,6 @@ This tests the dual-path entropy tracking functionality for LoRA adapter securit
 """
 
 from __future__ import annotations
-
-import math
 from typing import List
 from uuid import uuid4
 
@@ -79,7 +77,7 @@ def test_from_baseline_distribution() -> None:
     backend = get_default_backend()
     eps = division_epsilon(backend, backend.array([0.0]))
     expected = find_magnitude_gap_threshold(sorted(samples), eps=eps)
-    assert math.isclose(config.anomaly_threshold, expected, rel_tol=eps, abs_tol=eps)
+    assert abs(config.anomaly_threshold - expected) <= eps
     assert config.top_k == len(samples)
 
 

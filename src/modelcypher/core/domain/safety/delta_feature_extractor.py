@@ -128,37 +128,33 @@ class DeltaFeatureExtractor:
         sparsities: list[float] = []
 
         try:
-            # Try to use safetensors library if available
-            from safetensors import safe_open
-
             backend = self._backend
-            with safe_open(file_path, framework="numpy") as f:
-                for key in f.keys():
-                    tensor = f.get_tensor(key)
-                    tensor_backend = backend.array(tensor)
+            weights = backend.load_safetensors(str(file_path))
+            for tensor in weights.values():
+                tensor_backend = backend.array(tensor)
 
-                    # Compute L2 norm
-                    sum_sq = backend.sum(tensor_backend * tensor_backend)
-                    backend.eval(sum_sq)
-                    l2_norm = float(backend.to_scalar(backend.sqrt(sum_sq)))
-                    l2_norms.append(l2_norm)
+                # Compute L2 norm
+                sum_sq = backend.sum(tensor_backend * tensor_backend)
+                backend.eval(sum_sq)
+                l2_norm = float(backend.to_scalar(backend.sqrt(sum_sq)))
+                l2_norms.append(l2_norm)
 
-                    # Compute sparsity (fraction of near-zero elements)
-                    # Derive threshold from tensor dtype using machine epsilon
-                    sparsity_threshold = machine_epsilon(backend, tensor_backend)
-                    abs_tensor = backend.abs(tensor_backend)
-                    near_zero_count = backend.sum(abs_tensor < sparsity_threshold)
-                    backend.eval(near_zero_count)
-                    shape = backend.shape(tensor_backend)
-                    total_elements = 1
-                    for dim in shape:
-                        total_elements *= int(dim)
-                    sparsity = (
-                        float(backend.to_scalar(near_zero_count)) / total_elements
-                        if total_elements > 0
-                        else 0.0
-                    )
-                    sparsities.append(sparsity)
+                # Compute sparsity (fraction of near-zero elements)
+                # Derive threshold from tensor dtype using machine epsilon
+                sparsity_threshold = machine_epsilon(backend, tensor_backend)
+                abs_tensor = backend.abs(tensor_backend)
+                near_zero_count = backend.sum(abs_tensor < sparsity_threshold)
+                backend.eval(near_zero_count)
+                shape = backend.shape(tensor_backend)
+                total_elements = 1
+                for dim in shape:
+                    total_elements *= int(dim)
+                sparsity = (
+                    float(backend.to_scalar(near_zero_count)) / total_elements
+                    if total_elements > 0
+                    else 0.0
+                )
+                sparsities.append(sparsity)
 
         except ImportError:
             logger.warning("safetensors library not available, returning empty features")

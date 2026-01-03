@@ -20,8 +20,6 @@
 NOTE: All tests use the Backend protocol exclusively. No numpy.
 """
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -50,7 +48,9 @@ def _all_close(backend, arr1, arr2) -> bool:
     """Check if two arrays are element-wise close using backend."""
     diff = backend.abs(arr1 - arr2)
     backend.eval(diff)
-    max_diff = float(backend.to_numpy(backend.max(diff)))
+    max_arr = backend.max(diff)
+    backend.eval(max_arr)
+    max_diff = float(backend.to_scalar(max_arr))
     tol = division_epsilon(backend, diff)
     return max_diff <= tol
 
@@ -58,8 +58,11 @@ def _all_close(backend, arr1, arr2) -> bool:
 def _all_in_unit_interval(backend, arr) -> bool:
     """Check if all elements are in [0, 1] within dtype tolerance."""
     backend.eval(arr)
-    min_val = float(backend.to_numpy(backend.min(arr)))
-    max_val = float(backend.to_numpy(backend.max(arr)))
+    min_arr = backend.min(arr)
+    max_arr = backend.max(arr)
+    backend.eval(min_arr, max_arr)
+    min_val = float(backend.to_scalar(min_arr))
+    max_val = float(backend.to_scalar(max_arr))
     tol = division_epsilon(backend, arr)
     return min_val >= -tol and max_val <= 1.0 + tol
 
@@ -73,8 +76,8 @@ class TestPairwiseDistances:
         X = backend.array([[1.0, 2.0], [1.0, 2.0]])
         distances = _compute_pairwise_squared_distances(X, backend)
         backend.eval(distances)
-        distances_00_1 = float(backend.to_numpy(distances[0, 1]))
-        distances_10 = float(backend.to_numpy(distances[1, 0]))
+        distances_00_1 = float(backend.to_scalar(distances[0, 1]))
+        distances_10 = float(backend.to_scalar(distances[1, 0]))
 
         tol = _scalar_tol(backend)
         assert abs(distances_00_1) <= tol
@@ -96,7 +99,10 @@ class TestPairwiseDistances:
         distances = _compute_pairwise_squared_distances(X, backend)
         diag = backend.diag(distances)
         backend.eval(diag)
-        diag_max = float(backend.to_numpy(backend.max(backend.abs(diag))))
+        diag_abs = backend.abs(diag)
+        diag_max_arr = backend.max(diag_abs)
+        backend.eval(diag_max_arr)
+        diag_max = float(backend.to_scalar(diag_max_arr))
 
         tol = division_epsilon(backend, distances)
         assert diag_max <= tol
@@ -113,7 +119,7 @@ class TestPairwiseDistances:
         X = backend.array([[0.0, 0.0], [3.0, 4.0]])
         distances = _compute_pairwise_squared_distances(X, backend)
         backend.eval(distances)
-        dist_01 = float(backend.to_numpy(distances[0, 1]))
+        dist_01 = float(backend.to_scalar(distances[0, 1]))
 
         # With n=2 points, falls back to Euclidean
         tol = division_epsilon(backend, distances) * dist_01
@@ -157,16 +163,23 @@ class TestRBFGramMatrix:
 
         distances = _compute_pairwise_squared_distances(X, backend)
         backend.eval(distances)
-        dist_max = float(backend.to_numpy(backend.max(distances)))
+        dist_max_arr = backend.max(distances)
+        backend.eval(dist_max_arr)
+        dist_max = float(backend.to_scalar(dist_max_arr))
         sigma_small = regularization_epsilon(backend, X)
-        sigma_large = math.sqrt(dist_max) if dist_max > 0.0 else sigma_small
+        if dist_max > 0.0:
+            sigma_arr = backend.sqrt(backend.array([dist_max]))
+            backend.eval(sigma_arr)
+            sigma_large = float(backend.to_scalar(sigma_arr))
+        else:
+            sigma_large = sigma_small
 
         gram_small = _rbf_gram_matrix(X, backend, sigma=sigma_small)
         gram_large = _rbf_gram_matrix(X, backend, sigma=sigma_large)
 
         backend.eval(gram_small, gram_large)
-        small_01 = float(backend.to_numpy(gram_small[0, 1]))
-        large_01 = float(backend.to_numpy(gram_large[0, 1]))
+        small_01 = float(backend.to_scalar(gram_small[0, 1]))
+        large_01 = float(backend.to_scalar(gram_large[0, 1]))
 
         assert small_01 < large_01
 

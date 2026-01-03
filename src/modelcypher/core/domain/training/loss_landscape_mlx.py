@@ -43,12 +43,14 @@ MLX-Specific:
 
 from __future__ import annotations
 
-import math
 import sys
 from dataclasses import dataclass
 from typing import Callable
 
 import mlx.core as mx
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -268,7 +270,8 @@ class LossLandscapeComputer:
             total_norm = 0.0
             for d in direction.values():
                 total_norm += float(mx.sum(d**2).item())
-            total_norm = math.sqrt(total_norm)
+            _b = get_default_backend()
+            total_norm = sqrt_scalar(total_norm, _b)
 
             if total_norm > _MACHINE_EPS:
                 return {k: d / total_norm for k, d in direction.items()}

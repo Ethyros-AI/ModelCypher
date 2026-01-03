@@ -52,27 +52,10 @@ Algorithms:
         Uses trace / dimension as proxy for minimum eigenvalue. Not exact,
         but tracks relative conditioning across training steps.
 
-Config Defaults:
+Configuration:
 
-    hutchinson_vectors: 5
-        Standard error ~ 1/sqrt(m) ~ 22% for m=5. Acceptable for monitoring;
-        increase to 10+ for precise diagnostics.
-
-    power_iterations: 20
-        For well-separated eigenvalues (typical in neural nets), convergence
-        within 1e-6 occurs in 10-20 iterations.
-
-    finite_difference_epsilon: 1e-4
-        Optimal for float64: truncation O(1e-8), rounding O(1e-12).
-        Derived from sqrt(machine_epsilon) * typical_gradient_scale.
-
-    power_iteration_tolerance: 1e-6
-        Early stopping when |lambda_k - lambda_{k-1}| < tolerance.
-        Derived from sqrt(machine_epsilon) for float64.
-
-All tolerances are derived from machine epsilon (sys.float_info.epsilon for
-float64), not hardcoded heuristics. The Config dataclass provides presets
-(moderate, full) that trade off accuracy against computation cost.
+    finite_difference_epsilon and power_iteration_tolerance default to None.
+    When None, they are derived from dtype machine epsilon at runtime.
 
 Usage:
     config = Config()  # or Config.moderate() for faster, less accurate
@@ -88,15 +71,15 @@ References:
 
 from __future__ import annotations
 
-import math
-import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
-
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -109,16 +92,16 @@ from modelcypher.core.domain.training.geometric_training_metrics import (
 class Config:
     hutchinson_vectors: int = 5
     power_iterations: int = 20
-    finite_difference_epsilon: float = 1e-4
-    power_iteration_tolerance: float = 1e-6
+    finite_difference_epsilon: float | None = None
+    power_iteration_tolerance: float | None = None
 
     @staticmethod
     def moderate() -> "Config":
-        return Config(hutchinson_vectors=3, power_iterations=10, finite_difference_epsilon=1e-3)
+        return Config(hutchinson_vectors=3, power_iterations=10)
 
     @staticmethod
     def full() -> "Config":
-        return Config(hutchinson_vectors=10, power_iterations=30, finite_difference_epsilon=1e-5)
+        return Config(hutchinson_vectors=10, power_iterations=30)
 
 
 @dataclass(frozen=True)
@@ -177,26 +160,30 @@ def gradient_quality(
     return GradientQualityMetrics(variance=variance, snr=snr, mean_norm=mean_norm)
 
 
-def per_layer_analysis(
-    gradients: dict[str, "Array"], active_threshold: float = 0.05
-) -> PerLayerStats:
+def per_layer_analysis(gradients: dict[str, "Array"]) -> PerLayerStats:
     backend = get_default_backend()
     norms: dict[str, float] = {}
     total_squared = 0.0
+    eps_ref = _reference_array(gradients, backend)
     for key, grad in gradients.items():
         grad_arr = backend.array(grad)
         backend.eval(grad_arr)
-        norm = float(backend.norm(grad_arr))
+        norm_arr = backend.norm(grad_arr)
+        backend.eval(norm_arr)
+        norm = float(backend.to_scalar(norm_arr))
         norms[key] = norm
         total_squared += norm * norm
 
-    total_norm = float(math.sqrt(total_squared))
+    total_norm = float(sqrt_scalar(total_squared, backend))
     fractions: dict[str, float] = {}
     active_layers: list[str] = []
+    layer_count = len(norms)
+    mean_fraction = 1.0 / float(layer_count) if layer_count > 0 else 0.0
+    eps = division_epsilon(backend, eps_ref)
     for key, norm_value in norms.items():
         fraction = norm_value / total_norm if total_norm > 0 else 0.0
         fractions[key] = float(fraction)
-        if fraction > active_threshold:
+        if fraction + eps >= mean_fraction:
             active_layers.append(key)
 
     return PerLayerStats(norms=norms, fractions=fractions, active_layers=sorted(active_layers))
@@ -222,13 +209,17 @@ def trajectory(
         initial_arr = backend.array(initial)
         backend.eval(current_arr, initial_arr)
         delta = current_arr - initial_arr
-        divergence_sq += float(backend.sum(delta * delta))
-        dot_product += float(backend.sum(current_arr * initial_arr))
-        current_norm_sq += float(backend.sum(current_arr * current_arr))
-        initial_norm_sq += float(backend.sum(initial_arr * initial_arr))
+        divergence_sq += _sum_scalar(delta * delta, backend)
+        dot_product += _sum_scalar(current_arr * initial_arr, backend)
+        current_norm_sq += _sum_scalar(current_arr * current_arr, backend)
+        initial_norm_sq += _sum_scalar(initial_arr * initial_arr, backend)
 
-    divergence = float(math.sqrt(divergence_sq))
-    denom = max(math.sqrt(current_norm_sq) * math.sqrt(initial_norm_sq), _MACHINE_EPS)
+    eps_ref = _reference_array(current_params, backend)
+    divergence = float(sqrt_scalar(divergence_sq, backend))
+    current_norm = sqrt_scalar(current_norm_sq, backend)
+    initial_norm = sqrt_scalar(initial_norm_sq, backend)
+    norm_eps = division_epsilon(backend, eps_ref)
+    denom = max(current_norm * initial_norm, norm_eps)
     cosine = float(dot_product / denom) if denom > 0 else 0.0
 
     return TrajectoryMetrics(divergence=divergence, cosine_similarity=cosine)
@@ -253,12 +244,13 @@ def effective_step_ratio(
         grad_arr = backend.array(grad)
         backend.eval(actual_arr, grad_arr)
         theo = grad_arr * learning_rate
-        actual_sq += float(backend.sum(actual_arr * actual_arr))
-        theoretical_sq += float(backend.sum(theo * theo))
+        actual_sq += _sum_scalar(actual_arr * actual_arr, backend)
+        theoretical_sq += _sum_scalar(theo * theo, backend)
 
-    actual_norm = float(math.sqrt(actual_sq))
-    theoretical_norm = float(math.sqrt(theoretical_sq))
-    denom = max(theoretical_norm, _MACHINE_EPS)
+    actual_norm = float(sqrt_scalar(actual_sq, backend))
+    theoretical_norm = float(sqrt_scalar(theoretical_sq, backend))
+    eps_ref = _reference_array(actual_step, backend)
+    denom = max(theoretical_norm, division_epsilon(backend, eps_ref))
     return float(actual_norm / denom)
 
 
@@ -285,7 +277,7 @@ def hutchinson_trace_estimate(
             hv_val = hvp.get(key)
             if hv_val is None:
                 continue
-            zhz += float(backend.sum(z_val * hv_val))
+            zhz += _sum_scalar(z_val * hv_val, backend)
         trace_sum += zhz
         successful += 1
 
@@ -309,6 +301,8 @@ def top_eigenvalue(
     v = _normalize_direction(v, backend)
     eigenvalue = 0.0
     prev_eigenvalue = float("inf")
+    eps_ref = _reference_array(trainable_params, backend)
+    tolerance = _power_iteration_tolerance(config, backend, eps_ref)
 
     for _ in range(config.power_iterations):
         hv = _hessian_vector_product(loss_and_grad_function, trainable_params, v, config, backend)
@@ -319,9 +313,9 @@ def top_eigenvalue(
             hv_val = hv.get(key)
             if hv_val is None:
                 continue
-            rayleigh += float(backend.sum(v_val * hv_val))
+            rayleigh += _sum_scalar(v_val * hv_val, backend)
         eigenvalue = rayleigh
-        if abs(eigenvalue - prev_eigenvalue) < config.power_iteration_tolerance:
+        if abs(eigenvalue - prev_eigenvalue) < tolerance:
             break
         prev_eigenvalue = eigenvalue
         v = _normalize_direction(hv, backend)
@@ -378,9 +372,10 @@ def _generate_normal_direction(
 def _normalize_direction(direction: dict[str, "Array"], backend) -> dict[str, "Array"]:
     norm_sq = 0.0
     for value in direction.values():
-        norm_sq += float(backend.sum(value ** 2))
-    norm = float(math.sqrt(norm_sq))
-    if norm <= 0:
+        norm_sq += _sum_scalar(value ** 2, backend)
+    norm = float(sqrt_scalar(norm_sq, backend))
+    eps_ref = _reference_array(direction, backend)
+    if norm <= division_epsilon(backend, eps_ref):
         return direction
     normalized: dict[str, "Array"] = {}
     for key, value in direction.items():
@@ -400,7 +395,8 @@ def _hessian_vector_product(
     if not current_params or not direction:
         return None
 
-    epsilon = float(config.finite_difference_epsilon)
+    eps_ref = _reference_array(current_params, backend)
+    epsilon = _finite_difference_epsilon(config, backend, eps_ref)
     plus_params: dict[str, "Array"] = {}
     minus_params: dict[str, "Array"] = {}
     for key, param in current_params.items():
@@ -424,3 +420,28 @@ def _hessian_vector_product(
         hvp[key] = (g_plus - g_minus) / denom
 
     return hvp or None
+
+
+def _sum_scalar(array: "Array", backend) -> float:
+    """Return backend sum as a Python float with eval."""
+    sum_arr = backend.sum(array)
+    backend.eval(sum_arr)
+    return float(backend.to_scalar(sum_arr))
+
+
+def _reference_array(params: dict[str, "Array"], backend) -> "Array":
+    for value in params.values():
+        return backend.array(value)
+    return backend.array([0.0])
+
+
+def _finite_difference_epsilon(config: Config, backend, array: "Array") -> float:
+    if config.finite_difference_epsilon is not None:
+        return float(config.finite_difference_epsilon)
+    return division_epsilon(backend, array)
+
+
+def _power_iteration_tolerance(config: Config, backend, array: "Array") -> float:
+    if config.power_iteration_tolerance is not None:
+        return float(config.power_iteration_tolerance)
+    return machine_epsilon(backend, array)

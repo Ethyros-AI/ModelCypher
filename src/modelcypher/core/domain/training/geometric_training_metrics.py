@@ -17,13 +17,12 @@
 
 from __future__ import annotations
 
-import math
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import log_scalar, machine_epsilon
 
 
 class GeometricInstrumentationLevel(str, Enum):
@@ -149,7 +148,8 @@ class GeometricTrainingMetrics:
     def flatness_score(self) -> float | None:
         if self.top_hessian_eigenvalue is None or self.top_hessian_eigenvalue <= 0:
             return None
-        log_eigen = math.log10(self.top_hessian_eigenvalue + 0.001)
+        _b = get_default_backend()
+        log_eigen = log_scalar(self.top_hessian_eigenvalue + 0.001, _b) / log_scalar(10.0, _b)
         normalized = 1 - (log_eigen + 1) / 3
         return max(0.0, min(1.0, normalized))
 
