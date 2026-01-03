@@ -174,7 +174,8 @@ class BackendMatrixUtils:
             result = result - col_mean
             # Add grand_mean
             self.backend.eval(grand_mean)
-            grand_mean_arr = self.backend.full(K.shape, float(self.backend.to_scalar(grand_mean)))
+            grand_mean_val = float(self.backend.to_scalar(grand_mean))
+            grand_mean_arr = self.backend.full(K.shape, grand_mean_val)
             result = result + grand_mean_arr
             return result
         else:
@@ -199,7 +200,8 @@ class BackendMatrixUtils:
 
             result = K - row_mean - col_mean
             self.backend.eval(grand_mean)
-            grand_mean_arr = self.backend.full(K.shape, float(self.backend.to_scalar(grand_mean)))
+            grand_mean_val = float(self.backend.to_scalar(grand_mean))
+            grand_mean_arr = self.backend.full(K.shape, grand_mean_val)
             result = result + grand_mean_arr
             return result
 

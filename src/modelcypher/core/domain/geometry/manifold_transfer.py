@@ -140,7 +140,9 @@ class AnchorDistanceProfile:
         weighted_sum = backend.sum(self.distances * self.weights)
         weight_sum = backend.sum(self.weights)
         backend.eval(weighted_sum, weight_sum)
-        return float(backend.to_scalar(weighted_sum)) / float(backend.to_scalar(weight_sum))
+        weighted_sum_val = float(backend.to_scalar(weighted_sum))
+        weight_sum_val = float(backend.to_scalar(weight_sum))
+        return weighted_sum_val / weight_sum_val
 
     @property
     def distance_variance(self) -> float:
@@ -528,7 +530,8 @@ class CrossManifoldProjector:
         src_dist_sq_sum = backend.sum(source_distances * source_distances)
         backend.eval(src_dist_sq_sum)
         stress_eps = division_epsilon(backend, source_distances)
-        normalized_stress = best_stress / (float(backend.to_scalar(src_dist_sq_sum)) + stress_eps)
+        src_dist_sq_sum_val = float(backend.to_scalar(src_dist_sq_sum))
+        normalized_stress = best_stress / (src_dist_sq_sum_val + stress_eps)
 
         # Compute curvature mismatch
         curvature_mismatch = 0.0

@@ -21,14 +21,13 @@ Tests verify the API works correctly. Thresholds are derived from machine
 epsilon at runtime - we don't test for specific arbitrary values.
 """
 
-import math
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import (
     GramAligner,
     find_alignment,
 )
 from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.domain.geometry.numerical_stability import is_finite
 
 
 class TestGramAlignerInit:
@@ -173,4 +172,4 @@ class TestEdgeCases:
         # May return degenerate result but shouldn't crash
         result = aligner.find_perfect_alignment(A, B)
         assert result is not None
-        assert math.isfinite(result.achieved_cka)
+        assert is_finite(result.achieved_cka, b)

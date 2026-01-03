@@ -1301,14 +1301,10 @@ class RiemannianGeometry:
         path_points = backend.take(points, path_idx_arr, axis=0)
         diffs = path_points[1:] - path_points[:-1]
         segment_lengths = backend.sqrt(backend.sum(diffs * diffs, axis=1))
-        backend.eval(segment_lengths)
-        segment_list = backend.tolist(segment_lengths)
-
+        cumulative = backend.cumsum(segment_lengths, axis=0)
+        backend.eval(cumulative)
         arc_lengths = [0.0]
-        cumulative = 0.0
-        for seg in segment_list:
-            cumulative += float(seg)
-            arc_lengths.append(cumulative)
+        arc_lengths.extend(float(x) for x in backend.tolist(cumulative))
 
         return arc_lengths
 

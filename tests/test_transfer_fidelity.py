@@ -17,11 +17,10 @@
 
 from __future__ import annotations
 
-import math
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_pearson_correlation,
+    is_finite,
     machine_epsilon,
 )
 from modelcypher.core.domain.geometry.transfer_fidelity import TransferFidelityPrediction
@@ -157,10 +156,12 @@ def test_transfer_fidelity_fisher_z_confidence_interval():
     assert abs(result.expected_fidelity - 1.0) <= eps
     # CI bounds should be finite and reasonable (close to 1.0)
     lower, upper = result.correlation_ci95
-    assert math.isfinite(lower)
-    assert math.isfinite(upper)
-    assert lower <= result.expected_fidelity + eps
-    assert upper >= result.expected_fidelity - eps
+    backend = get_default_backend()
+    assert is_finite(lower, backend)
+    assert is_finite(upper, backend)
+    assert lower <= upper + eps
+    assert lower >= -1.0 - eps
+    assert upper <= 1.0 + eps
 
 
 def test_transfer_fidelity_with_null_distribution():

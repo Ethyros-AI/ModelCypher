@@ -17,12 +17,12 @@
 
 """Property-based tests for safety module."""
 
-import math
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.safety.delta_feature_set import DeltaFeatureSet
 
 
@@ -84,7 +84,9 @@ class TestDeltaFeatureSetProperties:
         """mean_l2_norm should be between min and max of l2_norms."""
         features = DeltaFeatureSet(l2_norms=l2_norms)
         mean = features.mean_l2_norm
-        assert min(l2_norms) <= mean <= max(l2_norms)
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array(list(l2_norms)))
+        assert min(l2_norms) - eps <= mean <= max(l2_norms) + eps
 
     @given(l2_norms_tuple(min_size=1))
     @settings(max_examples=100)

@@ -659,9 +659,8 @@ class GeometryValidationSuite:
         padded_arr = backend.array(padded_points)
         backend.eval(base_arr, padded_arr)
 
-        gram_base = backend.matmul(base_arr, backend.transpose(base_arr))
-        gram_padded = backend.matmul(padded_arr, backend.transpose(padded_arr))
-        backend.eval(gram_base, gram_padded)
+        gram_base = _cache.get_or_compute_gram(base_arr, backend)
+        gram_padded = _cache.get_or_compute_gram(padded_arr, backend)
         gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=backend)
 
         geometry = RiemannianGeometry(backend)

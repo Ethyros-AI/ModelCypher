@@ -17,8 +17,6 @@
 
 """Tests for geometry_fingerprint module."""
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend

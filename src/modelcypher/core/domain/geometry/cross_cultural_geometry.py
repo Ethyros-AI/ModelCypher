@@ -191,15 +191,35 @@ class CrossCulturalGeometry:
         cka = CrossCulturalGeometry.compute_cka(gram_a, gram_b, n)
 
         if raw_pearson is None:
-            off_diag_a: list[float] = []
-            off_diag_b: list[float] = []
-            for i in range(n):
-                for j in range(n):
-                    if i == j:
-                        continue
-                    off_diag_a.append(float(gram_a[i * n + j]))
-                    off_diag_b.append(float(gram_b[i * n + j]))
-            pearson = compute_pearson_correlation(off_diag_a, off_diag_b, default=0.0)
+            # Vectorized Pearson correlation on off-diagonal elements
+            backend = get_default_backend()
+            gram_a_arr = backend.reshape(backend.array(gram_a), (n, n))
+            gram_b_arr = backend.reshape(backend.array(gram_b), (n, n))
+            mask = 1.0 - backend.eye(n)  # 1 for off-diagonal, 0 for diagonal
+            off_diag_count = float(n * (n - 1))
+
+            # Compute means of off-diagonal elements
+            sum_a = backend.sum(gram_a_arr * mask)
+            sum_b = backend.sum(gram_b_arr * mask)
+            backend.eval(sum_a, sum_b)
+            mean_a = float(backend.to_scalar(sum_a)) / off_diag_count
+            mean_b = float(backend.to_scalar(sum_b)) / off_diag_count
+
+            # Compute Pearson correlation: cov(a,b) / (std(a) * std(b))
+            centered_a = (gram_a_arr - mean_a) * mask
+            centered_b = (gram_b_arr - mean_b) * mask
+            cov_sum = backend.sum(centered_a * centered_b)
+            var_a_sum = backend.sum(centered_a * centered_a)
+            var_b_sum = backend.sum(centered_b * centered_b)
+            backend.eval(cov_sum, var_a_sum, var_b_sum)
+
+            cov = float(backend.to_scalar(cov_sum)) / off_diag_count
+            var_a = float(backend.to_scalar(var_a_sum)) / off_diag_count
+            var_b = float(backend.to_scalar(var_b_sum)) / off_diag_count
+
+            eps = division_epsilon(backend, gram_a_arr)
+            std_product = (var_a ** 0.5) * (var_b ** 0.5)
+            pearson = cov / max(std_product, eps) if std_product > eps else 0.0
         else:
             pearson = raw_pearson
 
