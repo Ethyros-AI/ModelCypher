@@ -39,7 +39,7 @@ import logging
 from dataclasses import dataclass, field
 
 from modelcypher.core.domain.safety.output_safety_result import (
-    OutputSafetyConfiguration,
+    DEFAULT_FILTERED_PLACEHOLDER,
     OutputSafetyResult,
 )
 from modelcypher.core.domain.safety.regex_content_filter import (
@@ -69,10 +69,17 @@ class OutputSafetyGuard:
     concurrently.
     """
 
-    configuration: OutputSafetyConfiguration = field(
-        default_factory=OutputSafetyConfiguration.default
-    )
-    """Configuration for filtering behavior."""
+    is_enabled: bool = True
+    """Whether filtering is enabled."""
+
+    max_consecutive_violations: int = 3
+    """Maximum consecutive violations before truncation."""
+
+    filtered_placeholder: str = DEFAULT_FILTERED_PLACEHOLDER
+    """Placeholder text for filtered content."""
+
+    audit_logging_enabled: bool = True
+    """Whether to log filtered content for auditing."""
 
     filter: RegexContentFilter = field(default_factory=RegexContentFilter.default)
     """Content filter for pattern matching."""
@@ -97,6 +104,8 @@ class OutputSafetyGuard:
 
     def __post_init__(self) -> None:
         """Initialize internal state."""
+        if self.max_consecutive_violations < 1:
+            self.max_consecutive_violations = 1
         self._buffer = StreamingTokenBuffer(window_size=self.window_size)
         self._audit_log = SafetyAuditLog()
 
@@ -110,7 +119,7 @@ class OutputSafetyGuard:
             Safety result indicating safe, filtered, or truncated.
         """
         # Bypass if disabled
-        if not self.configuration.is_enabled:
+        if not self.is_enabled:
             return OutputSafetyResult.safe(token)
 
         # Already truncated - don't process more
@@ -155,7 +164,7 @@ class OutputSafetyGuard:
         category = violation.category or SafetyCategory.DANGEROUS_CODE
 
         # Log the event (privacy-preserving)
-        if self.configuration.audit_logging_enabled:
+        if self.audit_logging_enabled:
             self._audit_log.log_filter_event(
                 category=category,
                 rule_id=violation.rule_id,
@@ -170,10 +179,10 @@ class OutputSafetyGuard:
         )
 
         # Check for truncation threshold
-        if self._consecutive_violations >= self.configuration.max_consecutive_violations:
+        if self._consecutive_violations >= self.max_consecutive_violations:
             self._is_truncated = True
 
-            if self.configuration.audit_logging_enabled:
+            if self.audit_logging_enabled:
                 self._audit_log.log_truncation_event(
                     reason="Consecutive violations exceeded threshold",
                     total_violations=self._total_violations,
@@ -183,7 +192,7 @@ class OutputSafetyGuard:
 
         # Return filtered placeholder
         return OutputSafetyResult.filtered(
-            replacement=self.configuration.filtered_placeholder,
+            replacement=self.filtered_placeholder,
             category=category,
             rule_id=violation.rule_id,
         )
@@ -198,19 +207,6 @@ class OutputSafetyGuard:
         self._consecutive_violations = 0
         self._total_violations = 0
         self._is_truncated = False
-
-    def configure(self, configuration: OutputSafetyConfiguration) -> None:
-        """Update the configuration.
-
-        Args:
-            configuration: New configuration to apply.
-        """
-        self.configuration = configuration
-
-    @property
-    def is_enabled(self) -> bool:
-        """Whether filtering is currently enabled."""
-        return self.configuration.is_enabled
 
     @property
     def violation_count(self) -> int:
@@ -230,4 +226,4 @@ class OutputSafetyGuard:
     @classmethod
     def disabled(cls) -> OutputSafetyGuard:
         """Create a guard with filtering disabled (for developer bypass)."""
-        return cls(configuration=OutputSafetyConfiguration.disabled())
+        return cls(is_enabled=False, audit_logging_enabled=False)

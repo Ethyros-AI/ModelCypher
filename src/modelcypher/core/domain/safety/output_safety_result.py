@@ -17,8 +17,7 @@
 
 """Result types for output safety filtering.
 
-Defines the result of safety filtering on streaming model output,
-along with configuration options for filtering behavior.
+Defines the result of safety filtering on streaming model output.
 """
 
 from __future__ import annotations
@@ -119,34 +118,3 @@ class OutputSafetyResult:
             return f"\n[Generation stopped: {self.reason or 'safety limit reached'}]"
         return ""
 
-
-@dataclass(frozen=True)
-class OutputSafetyConfiguration:
-    """Configuration for output safety filtering."""
-
-    is_enabled: bool = True
-    """Whether filtering is enabled."""
-
-    max_consecutive_violations: int = 3
-    """Maximum consecutive violations before truncation."""
-
-    filtered_placeholder: str = DEFAULT_FILTERED_PLACEHOLDER
-    """Placeholder text for filtered content."""
-
-    audit_logging_enabled: bool = True
-    """Whether to log filtered content for auditing."""
-
-    def __post_init__(self) -> None:
-        """Validate configuration."""
-        if self.max_consecutive_violations < 1:
-            object.__setattr__(self, "max_consecutive_violations", 1)
-
-    @classmethod
-    def default(cls) -> OutputSafetyConfiguration:
-        """Default production configuration."""
-        return cls()
-
-    @classmethod
-    def disabled(cls) -> OutputSafetyConfiguration:
-        """Configuration with filtering disabled (for developer bypass)."""
-        return cls(is_enabled=False, audit_logging_enabled=False)

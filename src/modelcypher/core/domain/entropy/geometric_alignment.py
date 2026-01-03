@@ -31,80 +31,15 @@ Ported from the reference Swift implementation, then cleaned to pure geometry.
 
 from __future__ import annotations
 
+import math
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
 
-
-@dataclass
-class SentinelConfiguration:
-    """Entropy measurement thresholds."""
-
-    entropy_ceiling: float = 4.0
-    """Entropy value considered 'high'. Raw measurement threshold."""
-
-    spike_threshold: float = 1.0
-    """Delta magnitude that qualifies as a spike."""
-
-    minimum_delta_for_signal: float = 0.3
-    """Minimum delta magnitude to register as directional signal."""
-
-    @classmethod
-    def default(cls) -> SentinelConfiguration:
-        return cls()
-
-
-@dataclass
-class SeverityDenominators:
-    """Normalization denominators for severity calculation."""
-
-    sign_changes: float = 5.0
-    spike_count: float = 4.0
-    failed_deflections: float = 2.0
-
-    @classmethod
-    def default(cls) -> SeverityDenominators:
-        return cls()
-
-
-@dataclass
-class OscillatorConfiguration:
-    """Oscillation pattern detection parameters."""
-
-    window_size_tokens: int = 20
-    """Rolling window size for pattern detection."""
-
-    sign_change_threshold: int = 3
-    """Sign changes to consider unstable."""
-
-    spike_count_threshold: int = 3
-    """Spikes to consider unstable."""
-
-    rebound_window_tokens: int = 5
-    """Window for W-shape detection."""
-
-    pseudo_dip_escalation_weight: float = 1.5
-    """Weight for pseudo-dips in severity calculation."""
-
-    severity_denominators: SeverityDenominators = field(
-        default_factory=SeverityDenominators.default
-    )
-
-    @classmethod
-    def default(cls) -> OscillatorConfiguration:
-        return cls()
-
-
-@dataclass
-class GASConfig:
-    """Geometric Alignment System Configuration."""
-
-    sentinel: SentinelConfiguration = field(default_factory=SentinelConfiguration.default)
-    oscillator: OscillatorConfiguration = field(default_factory=OscillatorConfiguration.default)
-
-    @classmethod
-    def default(cls) -> GASConfig:
-        return cls()
+from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration import (
+    GeometricAlignmentCalibration,
+    SentinelConfiguration,
+)
 
 
 @dataclass
@@ -174,7 +109,12 @@ class OscillationPattern:
     @property
     def is_unstable(self) -> bool:
         """Whether any instability signal is present."""
-        return self.window_sign_changes > 0 or self.window_spike_count > 0 or self.w_shape_count > 0
+        return (
+            self.window_sign_changes > 0
+            or self.window_spike_count > 0
+            or self.w_shape_count > 0
+            or self.failed_deflections > 0
+        )
 
 
 @dataclass
@@ -241,8 +181,29 @@ class GeometricAlignmentSystem:
             spike_count: int = 0
             max_severity: float = 0.0
 
-        def __init__(self, config: GASConfig = GASConfig.default()):
-            self.config = config
+        @staticmethod
+        def _derive_window_size(sample_count: int) -> int:
+            if sample_count <= 0:
+                raise ValueError("Calibration sample_count must be positive")
+            size = int(math.sqrt(float(sample_count)))
+            if size <= 0:
+                raise ValueError("Derived window size must be positive")
+            return size
+
+        @staticmethod
+        def _derive_rebound_window(window_size: int) -> int:
+            if window_size <= 0:
+                raise ValueError("Window size must be positive")
+            size = int(math.sqrt(float(window_size)))
+            if size <= 0:
+                raise ValueError("Derived rebound window must be positive")
+            return size
+
+        def __init__(self, calibration: GeometricAlignmentCalibration):
+            self._calibration = calibration
+            self._sentinel = calibration.sentinel_configuration
+            self._window_size_tokens = self._derive_window_size(calibration.sample_count)
+            self._rebound_window_tokens = self._derive_rebound_window(self._window_size_tokens)
             self._lock = threading.Lock()
             self._state = self._State()
 
@@ -260,7 +221,7 @@ class GeometricAlignmentSystem:
                     entropy=entropy,
                     token_index=token_index,
                     previous_entropy=state.last_entropy,
-                    config=self.config.sentinel,
+                    config=self._sentinel,
                 )
                 state.last_entropy = entropy
 
@@ -273,18 +234,20 @@ class GeometricAlignmentSystem:
                         is_negative_delta=sentinel.is_negative_delta,
                         is_below_ceiling=sentinel.is_below_ceiling,
                         delta_sign=self._delta_sign(
-                            sentinel.delta_h, self.config.sentinel.minimum_delta_for_signal
+                            sentinel.delta_h, self._sentinel.minimum_delta_for_signal
                         ),
                     )
                 )
 
-                if len(state.samples) > self.config.oscillator.window_size_tokens:
+                if len(state.samples) > self._window_size_tokens:
                     state.samples.pop(0)
 
-                pattern = self._compute_oscillation_pattern(state.samples, self.config)
+                pattern = self._compute_oscillation_pattern(
+                    state.samples, self._rebound_window_tokens
+                )
 
-                above_ceiling = entropy >= self.config.sentinel.entropy_ceiling
-                unstable_now = self._is_unstable(pattern, self.config.oscillator)
+                above_ceiling = entropy >= self._sentinel.entropy_ceiling
+                unstable_now = pattern.is_unstable
 
                 if unstable_now and above_ceiling:
                     state.consecutive_oscillations += 1
@@ -353,25 +316,29 @@ class GeometricAlignmentSystem:
 
         @staticmethod
         def _compute_oscillation_pattern(
-            samples: list[_Sample], config: GASConfig
+            samples: list[_Sample], rebound_window_tokens: int
         ) -> OscillationPattern:
             sign_changes = GeometricAlignmentSystem.Session._count_sign_changes(samples)
             spike_count = sum(1 for s in samples if s.is_spike)
             w_shape_count = GeometricAlignmentSystem.Session._count_w_shapes(
-                samples, config.oscillator.rebound_window_tokens
+                samples, rebound_window_tokens
             )
             pseudo_dip_count = sum(1 for s in samples if s.is_pseudo_dip)
 
-            denom = config.oscillator.severity_denominators
-            severity = max(
-                min(1.0, float(sign_changes) / max(denom.sign_changes, 1.0)),
-                min(1.0, float(spike_count) / max(denom.spike_count, 1.0)),
-                min(
-                    1.0,
-                    (float(pseudo_dip_count) * config.oscillator.pseudo_dip_escalation_weight)
-                    / max(denom.failed_deflections, 1.0),
-                ),
-            )
+            sample_count = len(samples)
+            if sample_count < 2:
+                severity = 0.0
+            else:
+                max_sign_changes = sample_count - 1
+                max_spikes = sample_count
+                max_pseudo_dips = sample_count
+                max_w_shapes = max(sample_count - 2, 1)
+                severity = max(
+                    float(sign_changes) / max_sign_changes,
+                    float(spike_count) / max_spikes,
+                    float(pseudo_dip_count) / max_pseudo_dips,
+                    float(w_shape_count) / max_w_shapes,
+                )
 
             return OscillationPattern(
                 window_sign_changes=sign_changes,
@@ -426,15 +393,6 @@ class GeometricAlignmentSystem:
                     if span <= rebound_window:
                         count += 1
             return count
-
-        @staticmethod
-        def _is_unstable(pattern: OscillationPattern, config: OscillatorConfiguration) -> bool:
-            return (
-                pattern.window_sign_changes >= config.sign_change_threshold
-                or pattern.window_spike_count >= config.spike_count_threshold
-                or pattern.w_shape_count > 0
-            )
-
 
 @dataclass(frozen=True)
 class SessionTelemetry:

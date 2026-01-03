@@ -160,37 +160,6 @@ class StabilitySuiteTarget:
 
 
 @dataclass(frozen=True)
-class StabilitySuiteGenerationConfig:
-    """Generation configuration for stability suite evaluation."""
-
-    temperature: float = 0.0
-    """Sampling temperature."""
-
-    top_p: float = 0.95
-    """Top-p (nucleus) sampling threshold."""
-
-    max_tokens: int = 384
-    """Maximum tokens to generate."""
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
-        return {
-            "temperature": self.temperature,
-            "top_p": self.top_p,
-            "max_tokens": self.max_tokens,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> StabilitySuiteGenerationConfig:
-        """Create from dictionary."""
-        return cls(
-            temperature=data.get("temperature", 0.0),
-            top_p=data.get("top_p", 0.95),
-            max_tokens=data.get("max_tokens", 384),
-        )
-
-
-@dataclass(frozen=True)
 class StabilitySuiteRunRequest:
     """Request to run a stability suite evaluation."""
 
@@ -200,10 +169,14 @@ class StabilitySuiteRunRequest:
     tier: StabilitySuiteTier = StabilitySuiteTier.STANDARD
     """Evaluation tier."""
 
-    generation: StabilitySuiteGenerationConfig = field(
-        default_factory=StabilitySuiteGenerationConfig
-    )
-    """Generation configuration."""
+    temperature: float = 0.0
+    """Sampling temperature."""
+
+    top_p: float = 0.95
+    """Top-p (nucleus) sampling threshold."""
+
+    max_tokens: int = 384
+    """Maximum tokens to generate."""
 
     system_context: str = "[Stability suite run. On-device evaluation. Context-only prompts.]"
     """Context-only system prompt.
@@ -217,17 +190,24 @@ class StabilitySuiteRunRequest:
         return {
             "target": self.target.to_dict(),
             "tier": self.tier.value,
-            "generation": self.generation.to_dict(),
+            "generation": {
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "max_tokens": self.max_tokens,
+            },
             "system_context": self.system_context,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> StabilitySuiteRunRequest:
         """Create from dictionary."""
+        generation = data.get("generation", {})
         return cls(
             target=StabilitySuiteTarget.from_dict(data["target"]),
             tier=StabilitySuiteTier(data.get("tier", "standard")),
-            generation=StabilitySuiteGenerationConfig.from_dict(data.get("generation", {})),
+            temperature=generation.get("temperature", 0.0),
+            top_p=generation.get("top_p", 0.95),
+            max_tokens=generation.get("max_tokens", 384),
             system_context=data.get(
                 "system_context",
                 "[Stability suite run. On-device evaluation. Context-only prompts.]",
@@ -528,10 +508,14 @@ class StabilitySuiteReport:
     tier: StabilitySuiteTier = StabilitySuiteTier.STANDARD
     """Evaluation tier used."""
 
-    generation: StabilitySuiteGenerationConfig = field(
-        default_factory=StabilitySuiteGenerationConfig
-    )
-    """Generation configuration used."""
+    temperature: float = 0.0
+    """Sampling temperature used."""
+
+    top_p: float = 0.95
+    """Top-p (nucleus) sampling threshold used."""
+
+    max_tokens: int = 384
+    """Maximum tokens generated."""
 
     system_context: str = ""
     """System context used."""
@@ -576,7 +560,11 @@ class StabilitySuiteReport:
             "id": str(self.id),
             "created_at": self.created_at.isoformat(),
             "tier": self.tier.value,
-            "generation": self.generation.to_dict(),
+            "generation": {
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "max_tokens": self.max_tokens,
+            },
             "system_context": self.system_context,
             "adapter_id": str(self.adapter_id) if self.adapter_id else None,
             "adapter_name": self.adapter_name,

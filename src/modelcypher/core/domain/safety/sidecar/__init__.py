@@ -27,9 +27,6 @@ from modelcypher.core.domain.safety.sidecar.session_control_state import (
     ScenarioMode,
     SessionControlState,
 )
-from modelcypher.core.domain.safety.sidecar.sidecar_safety_configuration import (
-    SidecarSafetyConfiguration,
-)
 from modelcypher.core.domain.safety.sidecar.sidecar_safety_decision import (
     InterventionKind,
     SidecarDivergenceSample,
@@ -51,7 +48,6 @@ __all__ = [
     "ScenarioMode",
     "SessionControlState",
     "SidecarDivergenceSample",
-    "SidecarSafetyConfiguration",
     "SidecarSafetyIntervention",
     "SidecarSafetyMode",
     "SidecarSafetyPolicy",

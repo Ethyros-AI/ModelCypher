@@ -41,11 +41,6 @@ class ProjectionStrategy(str, Enum):
     OPTIMAL_TRANSPORT = "optimal_transport"
 
 
-@dataclass(frozen=True)
-class ProjectionConfig:
-    strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
-
-
 @dataclass
 class ProjectionResult:
     projected_embeddings: "Array"
@@ -73,10 +68,10 @@ class EmbeddingProjector:
 
     def __init__(
         self,
-        config: ProjectionConfig | None = None,
+        strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES,
         backend: "Backend | None" = None,
     ) -> None:
-        self.config = config or ProjectionConfig()
+        self.strategy = strategy
         self._backend = backend or get_default_backend()
 
     def project(
@@ -85,24 +80,24 @@ class EmbeddingProjector:
         target: "Array",
         shared_token_indices: tuple[list[int], list[int]] | None = None,
     ) -> ProjectionResult:
-        if self.config.strategy == ProjectionStrategy.TRUNCATE:
+        if self.strategy == ProjectionStrategy.TRUNCATE:
             projected, meta = self._project_truncate(source, target)
             projection_matrix = None
-        elif self.config.strategy == ProjectionStrategy.PCA:
+        elif self.strategy == ProjectionStrategy.PCA:
             projected, projection_matrix, meta = self._project_pca(source, target)
-        elif self.config.strategy == ProjectionStrategy.PROCRUSTES:
+        elif self.strategy == ProjectionStrategy.PROCRUSTES:
             projected, projection_matrix, meta = self._project_procrustes(
                 source, target, shared_token_indices
             )
-        elif self.config.strategy == ProjectionStrategy.CCA:
+        elif self.strategy == ProjectionStrategy.CCA:
             projected, projection_matrix, meta = self._project_cca(
                 source, target, shared_token_indices
             )
-        elif self.config.strategy == ProjectionStrategy.OPTIMAL_TRANSPORT:
+        elif self.strategy == ProjectionStrategy.OPTIMAL_TRANSPORT:
             projected, meta = self._project_optimal_transport(source, target)
             projection_matrix = meta.get("coupling")
         else:
-            raise ValueError(f"Unknown projection strategy: {self.config.strategy}")
+            raise ValueError(f"Unknown projection strategy: {self.strategy}")
 
         quality = self.compute_alignment_quality(
             source, projected, target, shared_indices=shared_token_indices
@@ -115,7 +110,7 @@ class EmbeddingProjector:
             projection_matrix=projection_matrix,
             reconstruction_error=reconstruction_error,
             alignment_score=alignment_score,
-            strategy_used=self.config.strategy,
+            strategy_used=self.strategy,
             metadata=meta,
         )
 

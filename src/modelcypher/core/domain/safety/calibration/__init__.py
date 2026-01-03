@@ -24,7 +24,7 @@ Provides calibration records for safety systems including:
 
 from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration import (
     GeometricAlignmentCalibration,
-    SentinelConfiguration,
+    SentinelThresholds,
 )
 from modelcypher.core.domain.safety.calibration.semantic_prime_baseline import (
     SemanticPrimeBaseline,
@@ -33,7 +33,7 @@ from modelcypher.core.domain.safety.calibration.semantic_prime_baseline import (
 
 __all__ = [
     "GeometricAlignmentCalibration",
-    "SentinelConfiguration",
+    "SentinelThresholds",
     "SemanticPrimeBaseline",
     "SemanticPrimeSignature",
 ]

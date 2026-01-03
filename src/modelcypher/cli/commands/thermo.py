@@ -18,7 +18,7 @@
 """Thermodynamic analysis CLI commands.
 
 Provides commands for thermodynamic analysis of model training,
-including entropy measurement, path integration, and unsafe pattern detection.
+including entropy measurement, path integration, and differential analysis.
 
 Commands:
     mc thermo analyze <job_id>
@@ -276,7 +276,7 @@ def thermo_detect(
     prompt: str = typer.Argument(..., help="Prompt to analyze"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
 ) -> None:
-    """Detect unsafe prompt patterns via entropy differential."""
+    """Measure prompt entropy differential."""
     context = _context(ctx)
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
@@ -315,7 +315,7 @@ def thermo_detect_batch(
     ),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
 ) -> None:
-    """Batch detect unsafe patterns across multiple prompts."""
+    """Batch measure entropy differentials across multiple prompts."""
     context = _context(ctx)
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
@@ -611,11 +611,6 @@ def thermo_benchmark(
     model: str | None = typer.Option(
         None, "--model", help="Path to model directory (uses simulated if not provided)"
     ),
-    modifiers: str | None = typer.Option(
-        None, "--modifiers", help="Comma-separated modifiers (default: all)"
-    ),
-    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
-    max_tokens: int = typer.Option(64, "--max-tokens", help="Max tokens per generation"),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save markdown report to file"
     ),
@@ -631,7 +626,6 @@ def thermo_benchmark(
     context = _context(ctx)
     from modelcypher.core.domain.thermo.benchmark_runner import ThermoBenchmarkRunner
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
-    from modelcypher.core.domain.thermo.linguistic_thermodynamics import LinguisticModifier
 
     # Load prompts
     prompts_path = Path(prompts_file)
@@ -675,21 +669,6 @@ def thermo_benchmark(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Parse modifiers
-    modifier_list: list[LinguisticModifier] | None = None
-    if modifiers:
-        try:
-            modifier_list = [LinguisticModifier(m.strip().lower()) for m in modifiers.split(",")]
-        except ValueError as exc:
-            error = ErrorDetail(
-                code="MC-1019",
-                title="Invalid modifier",
-                detail=str(exc),
-                trace_id=context.trace_id,
-            )
-            write_error(error.as_dict(), context.output_format, context.pretty)
-            raise typer.Exit(code=1)
-
     # Create calorimeter
     simulated = model is None
     calorimeter = LinguisticCalorimeter(
@@ -701,9 +680,6 @@ def thermo_benchmark(
     runner = ThermoBenchmarkRunner(calorimeter=calorimeter)
     result = runner.run_modifier_comparison(
         prompts=prompts,
-        modifiers=modifier_list,
-        temperature=temperature,
-        max_tokens=max_tokens,
     )
 
     # Generate report
@@ -766,7 +742,6 @@ def thermo_parity(
     languages: str | None = typer.Option(
         None, "--languages", "-l", help="Comma-separated languages (en,zh,ar,sw)"
     ),
-    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
     output_file: str | None = typer.Option(
         None, "--output-file", "-o", help="Save markdown report to file"
     ),
@@ -828,7 +803,6 @@ def thermo_parity(
         modifier=test_modifier,
         calorimeter=calorimeter,
         languages=language_list,
-        temperature=temperature,
     )
 
     # Generate report
@@ -879,9 +853,6 @@ def thermo_calibrate(
     probes_file: str | None = typer.Option(
         None, "--probes", "-p", help="Path to custom probes file (JSON array or newline-separated)"
     ),
-    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Temperature for measurements"),
-    max_tokens: int = typer.Option(64, "--max-tokens", help="Max tokens per measurement"),
-    min_samples: int = typer.Option(50, "--min-samples", help="Minimum baseline samples"),
 ) -> None:
     """Calibrate thermodynamic parameters from empirical measurement.
 
@@ -904,7 +875,6 @@ def thermo_calibrate(
 
     context = _context(ctx)
     from modelcypher.core.domain.thermo.thermo_calibrator import (
-        CalibrationConfig,
         ThermoCalibrator,
         get_default_calibration_probes,
     )
@@ -953,27 +923,17 @@ def thermo_calibrate(
     else:
         probes = get_default_calibration_probes()
 
-    if len(probes) < min_samples:
+    if not probes:
         error = ErrorDetail(
             code="MC-1033",
             title="Insufficient probes",
-            detail=f"Need at least {min_samples} probes, got {len(probes)}",
+            detail="Calibration probes are empty",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Configure calibrator
-    config = CalibrationConfig(
-        temperature=temperature,
-        max_tokens=max_tokens,
-        baseline_samples=min_samples,
-    )
-
-    calibrator = ThermoCalibrator(
-        model_path=model,
-        config=config,
-    )
+    calibrator = ThermoCalibrator(model_path=model)
 
     # Progress callback for text output
     def progress_callback(current: int, total: int, progress) -> None:

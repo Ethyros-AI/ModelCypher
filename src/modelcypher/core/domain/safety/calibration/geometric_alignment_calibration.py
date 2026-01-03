@@ -27,10 +27,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+)
+
 
 @dataclass(frozen=True)
-class SentinelConfiguration:
-    """Configuration for the entropy sentinel.
+class SentinelThresholds:
+    """Thresholds for the entropy sentinel.
 
     All thresholds must be computed from calibration data.
     No arbitrary defaults - require explicit calibration.
@@ -44,30 +50,43 @@ class SentinelConfiguration:
     def from_calibration_data(
         cls,
         entropy_samples: list[float],
-    ) -> SentinelConfiguration:
+    ) -> SentinelThresholds:
         """Derive thresholds from measured entropy distribution."""
-        if not entropy_samples:
-            raise ValueError("Cannot compute calibration without samples")
+        if len(entropy_samples) < 2:
+            raise ValueError("Calibration requires at least two entropy samples")
+
+        backend = get_default_backend()
 
         sorted_samples = sorted(entropy_samples)
-        n = len(sorted_samples)
+        entropy_eps = division_epsilon(backend, backend.array(sorted_samples))
+        entropy_ceiling = find_magnitude_gap_threshold(
+            sorted_samples, eps=entropy_eps, backend=backend
+        )
 
-        # Entropy ceiling: 99th percentile
-        ceiling_idx = min(int(n * 0.99), n - 1)
-        entropy_ceiling = sorted_samples[ceiling_idx]
+        deltas = [
+            abs(entropy_samples[i + 1] - entropy_samples[i])
+            for i in range(len(entropy_samples) - 1)
+        ]
+        if not deltas:
+            raise ValueError("Calibration requires entropy deltas")
 
-        # Compute deltas for spike detection
-        deltas = [abs(sorted_samples[i + 1] - sorted_samples[i]) for i in range(n - 1)]
-        if deltas:
-            sorted_deltas = sorted(deltas)
-            # Spike threshold: 95th percentile of deltas
-            spike_idx = min(int(len(sorted_deltas) * 0.95), len(sorted_deltas) - 1)
-            spike_threshold = sorted_deltas[spike_idx]
-            # Minimum signal: median delta
-            min_signal = sorted_deltas[len(sorted_deltas) // 2]
+        sorted_deltas = sorted(deltas)
+        delta_eps = division_epsilon(backend, backend.array(sorted_deltas))
+        gap_threshold = find_magnitude_gap_threshold(
+            sorted_deltas, eps=delta_eps, backend=backend
+        )
+        spike_candidates = [d for d in sorted_deltas if d > gap_threshold]
+        spike_threshold = spike_candidates[0] if spike_candidates else gap_threshold
+        noise_band = [d for d in sorted_deltas if d <= gap_threshold]
+        if noise_band:
+            min_signal = find_magnitude_gap_threshold(
+                noise_band, eps=delta_eps, backend=backend
+            )
         else:
-            spike_threshold = entropy_ceiling / 10
-            min_signal = entropy_ceiling / 100
+            min_signal = gap_threshold
+
+        if min_signal <= 0.0:
+            min_signal = delta_eps
 
         return cls(
             entropy_ceiling=entropy_ceiling,
@@ -107,9 +126,9 @@ class GeometricAlignmentCalibration:
     """Source of the calibration data (e.g., 'benchmark-v1', 'user-calibration')."""
 
     @property
-    def sentinel_configuration(self) -> SentinelConfiguration:
-        """Convert to sentinel configuration."""
-        return SentinelConfiguration(
+    def sentinel_thresholds(self) -> SentinelThresholds:
+        """Convert to sentinel thresholds."""
+        return SentinelThresholds(
             entropy_ceiling=self.entropy_ceiling,
             spike_threshold=self.spike_threshold,
             minimum_delta_for_signal=self.minimum_delta_for_signal,
@@ -157,12 +176,12 @@ class GeometricAlignmentCalibration:
         if not entropy_samples:
             raise ValueError("Cannot create calibration without entropy samples")
 
-        config = SentinelConfiguration.from_calibration_data(entropy_samples)
+        thresholds = SentinelThresholds.from_calibration_data(entropy_samples)
         return cls(
             base_model_id=base_model_id,
             sample_count=len(entropy_samples),
-            entropy_ceiling=config.entropy_ceiling,
-            spike_threshold=config.spike_threshold,
-            minimum_delta_for_signal=config.minimum_delta_for_signal,
+            entropy_ceiling=thresholds.entropy_ceiling,
+            spike_threshold=thresholds.spike_threshold,
+            minimum_delta_for_signal=thresholds.minimum_delta_for_signal,
             source=source,
         )

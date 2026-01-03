@@ -194,24 +194,16 @@ def __init__(self, backend: Backend | None = None) -> None:
 
 **Status**: PASS
 
-**Rule**: No Euclidean distance fallbacks. Use geodesic via k-NN graph.
+**Rule**: No Euclidean substitutions. Use geodesic via k-NN graph.
 
 **Evidence**:
-- Searched for "euclidean fallback" patterns: Found only **explicit documentation** stating no fallbacks allowed
+- Searched for Euclidean substitution patterns: Found only **explicit documentation** stating substitutions are disallowed
 
 **Key Findings**:
 ```python
-# riemannian_utils.py:412
-# between disconnected manifold components. No fallback to Euclidean - this is
-
-# riemannian_utils.py:652
-# NO EUCLIDEAN FALLBACK - geodesic requires manifold context
-
-# riemannian_density.py:723
-# Uses geodesic distances via k-NN graph. No fallback to Euclidean -
-
-# manifold_curvature.py:475
-# Use regularized inverse - no fallback to identity (Euclidean)
+# riemannian_utils.py: Geodesic interpolation requires manifold context
+# riemannian_density.py: Uses geodesic distances via k-NN graph
+# manifold_curvature.py: Regularized inverse avoids flat-space shortcuts
 ```
 
 **Fréchet Mean Usage** (19 files use `frechet_mean` or `geodesic_distance`):

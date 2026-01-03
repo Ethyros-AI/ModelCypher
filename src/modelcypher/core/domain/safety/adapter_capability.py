@@ -18,7 +18,7 @@
 """Adapter capability types for resource access control.
 
 Defines resource capabilities that adapters can declare and request,
-along with violation tracking and guard configuration.
+along with violation tracking and enforcement modes.
 """
 
 from __future__ import annotations
@@ -201,29 +201,3 @@ class EnforcementMode(str, Enum):
     DISABLED = "disabled"
     """No enforcement or logging (disabled)."""
 
-
-@dataclass(frozen=True)
-class CapabilityGuardConfiguration:
-    """Configuration for capability enforcement behavior.
-
-    Attributes
-    ----------
-    enforcement_mode : EnforcementMode
-        Whether to hard-block violations or just log them.
-    """
-    enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE
-
-    @classmethod
-    def default(cls) -> CapabilityGuardConfiguration:
-        """Default configuration with enforcement enabled."""
-        return cls()
-
-    @classmethod
-    def monitoring(cls) -> CapabilityGuardConfiguration:
-        """Configuration for monitoring mode (log but don't block)."""
-        return cls(enforcement_mode=EnforcementMode.MONITOR)
-
-    @classmethod
-    def disabled(cls) -> CapabilityGuardConfiguration:
-        """Configuration with enforcement disabled."""
-        return cls(enforcement_mode=EnforcementMode.DISABLED)

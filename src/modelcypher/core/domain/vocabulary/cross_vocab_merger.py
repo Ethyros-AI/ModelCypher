@@ -32,7 +32,6 @@ from modelcypher.core.domain.vocabulary.alignment_map import (
 )
 from modelcypher.core.domain.vocabulary.embedding_projector import (
     EmbeddingProjector,
-    ProjectionConfig,
     ProjectionResult,
     ProjectionStrategy,
 )
@@ -44,14 +43,6 @@ from modelcypher.core.domain.vocabulary.vocabulary_analyzer import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
-
-
-@dataclass(frozen=True)
-class CrossVocabMergeConfig:
-    projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
-
-    def to_projection_config(self) -> ProjectionConfig:
-        return ProjectionConfig(strategy=self.projection_strategy)
 
 
 @dataclass
@@ -96,14 +87,13 @@ class CrossVocabMerger:
 
     def __init__(
         self,
-        config: CrossVocabMergeConfig | None = None,
+        projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES,
         backend: "Backend | None" = None,
     ) -> None:
-        self.config = config or CrossVocabMergeConfig()
         self._backend = backend or get_default_backend()
         self._analyzer = VocabularyAnalyzer(backend=self._backend)
         self._projector = EmbeddingProjector(
-            config=self.config.to_projection_config(),
+            strategy=projection_strategy,
             backend=self._backend,
         )
 

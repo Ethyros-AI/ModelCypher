@@ -160,7 +160,7 @@ if np.any(np.isinf(geo_dist)):
 **Also in**: [`riemannian_density.py:261`](../../../../src/modelcypher/core/domain/geometry/riemannian_density.py) - point-to-point geodesic distance
 
 **Design decisions**:
-1. **No Euclidean fallback**: Disconnection is an error, not a fallback case
+1. **No metric substitution**: Disconnection returns infinity or raises an error
 2. **Adaptive k**: Default based on sample size
 3. **Symmetric graph**: Edge exists if either direction qualifies
 4. **Backend-agnostic**: Works with any Backend implementation

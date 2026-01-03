@@ -104,7 +104,7 @@ if attempt_k is not None and k_max is not None and not geo_result.connected:
     # Retry with larger k
 ```
 
-**Code Reference**: Disconnected graphs return infinity, not fallback values
+**Code Reference**: Disconnected graphs return infinity, not substituted values
 
 ```python
 @dataclass
@@ -374,7 +374,7 @@ The thermodynamics framework uses real physics math (partition functions, Boltzm
 |-------|-------------------|-------------------|
 | Models always compatible | [shared_subspace_projector.py](../src/modelcypher/core/domain/geometry/shared_subspace_projector.py) | `_align_via_cca()` routing |
 | CKA works cross-dimension | [cka.py](../src/modelcypher/core/domain/geometry/cka.py) | `compute_cka_from_grams()` |
-| No Euclidean fallback | [riemannian_utils.py](../src/modelcypher/core/domain/geometry/riemannian_utils.py) | `geodesic_interpolation()` ValueError |
+| No metric substitution | [riemannian_utils.py](../src/modelcypher/core/domain/geometry/riemannian_utils.py) | `geodesic_interpolation()` ValueError |
 | No clamping | [riemannian_utils.py:1409](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409) | Comment + implementation |
 | Thresholds from data | [model_profile.py](../src/modelcypher/core/domain/geometry/model_profile.py) | `ProfileRepository` comparison |
 | Energy from probability | [measured_thermodynamics.py](../src/modelcypher/core/domain/thermo/measured_thermodynamics.py) | `MeasuredEnergy.from_probability()` |
@@ -415,7 +415,7 @@ The fix requires updating call sites to the corrected path forward.
 The absolutist language in CLAUDE.md describes implemented behavior, not aspirations:
 
 1. **"Models are ALWAYS compatible"** = dimension mismatch routes to appropriate method, doesn't reject
-2. **"Geodesic is CORRECT"** = no fallbacks, explicit errors, automatic k-retry
+2. **"Geodesic is CORRECT"** = explicit errors, automatic k-retry
 3. **"No vibes"** = measurements relative to baselines, not hardcoded thresholds
 4. **"Linguistic thermodynamics"** = real math, now with measured (not invented) energy levels
 

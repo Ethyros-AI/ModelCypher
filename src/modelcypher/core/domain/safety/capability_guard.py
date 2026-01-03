@@ -41,7 +41,6 @@ from uuid import UUID
 from modelcypher.core.domain.safety.adapter_capability import (
     CapabilityCheckOutcome,
     CapabilityCheckResult,
-    CapabilityGuardConfiguration,
     CapabilityViolation,
     EnforcementMode,
     ResourceCapability,
@@ -180,14 +179,14 @@ class CapabilityGuard:
 
     def __init__(
         self,
-        configuration: CapabilityGuardConfiguration | None = None,
+        enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE,
     ):
         """Create a capability guard.
 
         Args:
-            configuration: Guard configuration. Defaults to enforce mode.
+            enforcement_mode: Enforcement mode for capability checks.
         """
-        self._configuration = configuration or CapabilityGuardConfiguration.default()
+        self._enforcement_mode = enforcement_mode
         self._audit_log = CapabilityAuditLog()
 
         # State
@@ -250,7 +249,7 @@ class CapabilityGuard:
             Check outcome indicating allowed, denied, or monitor-only.
         """
         # Disabled guard = always allow
-        if self._configuration.enforcement_mode == EnforcementMode.DISABLED:
+        if self._enforcement_mode == EnforcementMode.DISABLED:
             return CapabilityCheckOutcome(result=CapabilityCheckResult.ALLOWED)
 
         # Get adapter record
@@ -304,22 +303,15 @@ class CapabilityGuard:
                 return outcome
         return CapabilityCheckOutcome(result=CapabilityCheckResult.ALLOWED)
 
-    def configure(self, configuration: CapabilityGuardConfiguration) -> None:
-        """Update the guard configuration.
-
-        Args:
-            configuration: New configuration to apply.
-        """
-        self._configuration = configuration
-        logger.info(
-            "CapabilityGuard configuration updated: mode=%s",
-            configuration.enforcement_mode.value,
-        )
+    def set_enforcement_mode(self, enforcement_mode: EnforcementMode) -> None:
+        """Update the enforcement mode."""
+        self._enforcement_mode = enforcement_mode
+        logger.info("CapabilityGuard enforcement mode updated: %s", enforcement_mode.value)
 
     @property
     def enforcement_mode(self) -> EnforcementMode:
         """Current enforcement mode."""
-        return self._configuration.enforcement_mode
+        return self._enforcement_mode
 
     @property
     def total_violation_count(self) -> int:
@@ -388,9 +380,9 @@ class CapabilityGuard:
         )
 
         # Return based on enforcement mode
-        if self._configuration.enforcement_mode == EnforcementMode.ENFORCE:
+        if self._enforcement_mode == EnforcementMode.ENFORCE:
             return CapabilityCheckOutcome(result=CapabilityCheckResult.DENIED, violation=violation)
-        elif self._configuration.enforcement_mode == EnforcementMode.MONITOR:
+        elif self._enforcement_mode == EnforcementMode.MONITOR:
             return CapabilityCheckOutcome(
                 result=CapabilityCheckResult.MONITOR_ONLY, violation=violation
             )

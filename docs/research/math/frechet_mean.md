@@ -95,7 +95,7 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 **Also used in**: [`generalized_procrustes.py:32`](../../../../src/modelcypher/core/domain/geometry/generalized_procrustes.py) - `FrechetMeanConfig` for GPA consensus
 
 **Key design decisions**:
-1. **No Euclidean fallback** - If geodesic computation fails, we raise an error
+1. **No metric substitution** - If geodesic computation fails, we raise an error
 2. **No scale clamping** - Extreme curvature is reported, not hidden
 3. **Weighted support** - Handles importance-weighted averaging
 

@@ -323,26 +323,3 @@ class SafeLoRAProjector:
         sanitized = re.sub(r"[/: ]", "_", model_id)
         return sanitized
 
-
-@dataclass
-class SafeLoRAConfiguration:
-    """Configuration for Safe LoRA projection."""
-
-    enabled: bool = True
-    """Whether Safe LoRA projection is enabled."""
-
-    resources_path: Path | None = None
-    """Path to resources directory containing projection matrices."""
-
-    skip_if_unavailable: bool = True
-    """Whether to skip projection if no cache is available (vs. failing)."""
-
-    @classmethod
-    def default(cls) -> SafeLoRAConfiguration:
-        """Default configuration with projection enabled."""
-        return cls()
-
-    @classmethod
-    def disabled(cls) -> SafeLoRAConfiguration:
-        """Configuration with projection disabled."""
-        return cls(enabled=False)

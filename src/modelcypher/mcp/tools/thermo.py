@@ -23,7 +23,7 @@ Contains tools for:
 - Path integration
 - Entropy analysis
 - Entropy measurement
-- Unsafe pattern detection
+- Entropy differential measurement
 """
 
 from __future__ import annotations
@@ -179,7 +179,7 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
             prompt: str,
             model: str,
         ) -> dict:
-            """Detect unsafe prompt patterns via entropy differential."""
+            """Measure prompt entropy differential."""
             model_path = require_existing_directory(model)
             result = ctx.thermo_service.detect(prompt, model_path)
 
@@ -199,7 +199,7 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
             promptsFile: str,
             model: str,
         ) -> dict:
-            """Batch detect unsafe patterns across multiple prompts."""
+            """Batch measure entropy differentials across multiple prompts."""
             model_path = require_existing_directory(model)
             prompts_path = require_existing_path(promptsFile)
             results = ctx.thermo_service.detect_batch(prompts_path, model_path)
