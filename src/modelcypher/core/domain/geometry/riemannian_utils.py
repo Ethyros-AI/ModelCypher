@@ -834,12 +834,7 @@ class RiemannianGeometry:
                 f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
             )
 
-        # Derive thresholds from dtype
-        # near_zero_eps must account for accumulated edge_eps across multi-hop paths
-        # Edge weights are floored to edge_eps, and Floyd-Warshall sums up to (n-1) hops
-        # So threshold = n * edge_eps to catch all accumulated numerical noise
-        edge_eps = division_epsilon(backend, geo_dist_arr)
-        near_zero_eps = n * edge_eps
+        # Derive thresholds from dtype for numerical comparisons
         tiny = machine_epsilon(backend, geo_dist_arr)
 
         # Create indicator for "x >= threshold" using sign arithmetic:
@@ -857,20 +852,21 @@ class RiemannianGeometry:
         inf_count = int(backend.to_scalar(backend.sum(near_inf_indicator)))
         connected = inf_count == 0
 
-        # Create indicator for "x < near_zero_eps" (i.e., near_zero_eps - x > 0)
-        diff_from_zero = near_zero_eps - geo_dist_arr
-        near_zero_indicator = backend.maximum(
-            backend.sign(diff_from_zero + tiny),
-            backend.zeros_like(geo_dist_arr),
-        )
+        # Zero out only the diagonal (self-distances should be exactly 0).
+        # The diagonal may have accumulated numerical noise from Floyd-Warshall
+        # where d(i,k) + d(k,i) is compared against d(i,i)=0.
+        # Only apply near_zero cleanup to diagonal entries, not all entries.
+        # Zeroing all small distances would corrupt legitimate close point pairs.
+        eye = backend.eye(n)
+        diag_mask = eye > 0.5  # Boolean mask for diagonal
 
-        # Replace near-inf values with actual infinity, near-zero with 0
+        # Replace near-inf values with actual infinity, diagonal with 0
         inf_array = backend.full(geo_dist_arr.shape, float("inf"))
         zero_array = backend.zeros_like(geo_dist_arr)
 
         # where(indicator, replacement, original) - indicator acts as boolean
         geo_dist = backend.where(near_inf_indicator, inf_array, geo_dist_arr)
-        geo_dist = backend.where(near_zero_indicator, zero_array, geo_dist)
+        geo_dist = backend.where(diag_mask, zero_array, geo_dist)
         backend.eval(geo_dist)
 
         if not connected:

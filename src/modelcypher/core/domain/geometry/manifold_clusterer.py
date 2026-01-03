@@ -253,7 +253,9 @@ class ManifoldClusterer:
         if n <= 1:
             return 0.0
         inf = float("inf")
-        inf_mask = backend.eye(n) * backend.full((n, n), inf)
+        # Use where() to avoid 0 * inf = nan
+        eye_mask = backend.eye(n) > 0.5
+        inf_mask = backend.where(eye_mask, backend.full((n, n), inf), backend.zeros((n, n)))
         masked = geodesic_matrix + inf_mask
         nearest = backend.min(masked, axis=1)
         backend.eval(nearest)
@@ -308,10 +310,11 @@ class ManifoldClusterer:
         mask = row <= epsilon
         backend.eval(mask)
         n = int(row.shape[0])
-        idx = backend.where(mask, backend.arange(0, n), backend.full((n,), -1))
-        backend.eval(idx)
-        idx_np = backend.to_numpy(idx)
-        return [int(i) for i in idx_np if int(i) >= 0]
+        neighbors: list[int] = []
+        for i in range(n):
+            if bool(backend.to_scalar(mask[i])):
+                neighbors.append(i)
+        return neighbors
 
     def _expand_cluster_geodesic(
         self,
@@ -450,14 +453,12 @@ class ManifoldClusterer:
             row = backend.take(centroid_geodesic, backend.array([i]), axis=0)
             row = backend.squeeze(row, axis=0)
             backend.eval(row)
-            row_np = backend.to_numpy(row)
-
             for j in range(i + 1, len(regions)):
                 other = regions[j]
                 if str(other.id) in merged:
                     continue
                 # Use geodesic distance between centroids
-                distance = float(row_np[j])
+                distance = float(backend.to_scalar(row[j]))
                 overlap_threshold = current_region.radius + other.radius
                 if distance < overlap_threshold:
                     merged.add(str(other.id))

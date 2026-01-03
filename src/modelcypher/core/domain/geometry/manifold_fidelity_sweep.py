@@ -366,19 +366,21 @@ class ManifoldFidelitySweep:
         b.eval(dx, dy)
 
         # Get k-nearest neighbors
-        dx_np = b.to_numpy(dx).tolist()
-        dy_np = b.to_numpy(dy).tolist()
+        inf = float("inf")
+        eye = b.eye(n)
+        dx_masked = b.where(eye > 0, b.full(dx.shape, inf), dx)
+        dy_masked = b.where(eye > 0, b.full(dy.shape, inf), dy)
+        x_neighbors = b.argsort(dx_masked, axis=1)[:, :k]
+        y_neighbors = b.argsort(dy_masked, axis=1)[:, :k]
+        b.eval(x_neighbors, y_neighbors)
 
-        overlap_sum = 0.0
-        for i in range(n):
-            x_neighbors = sorted(range(n), key=lambda j: dx_np[i][j] if j != i else float("inf"))[
-                :k
-            ]
-            y_neighbors = sorted(range(n), key=lambda j: dy_np[i][j] if j != i else float("inf"))[
-                :k
-            ]
-            overlap = len(set(x_neighbors) & set(y_neighbors))
-            overlap_sum += overlap / k
+        # Overlap per row via broadcast compare
+        x_exp = b.expand_dims(x_neighbors, axis=2)
+        y_exp = b.expand_dims(y_neighbors, axis=1)
+        matches = x_exp == y_exp
+        match_counts = b.sum(b.astype(matches, "float32"), axis=(1, 2))
+        b.eval(match_counts)
+        overlap_sum = float(b.to_scalar(b.sum(match_counts))) / float(k)
 
         return overlap_sum / n
 
@@ -406,26 +408,21 @@ class ManifoldFidelitySweep:
         b.eval(dx_mat, dy_mat)
 
         # Extract upper triangular pairwise distances
-        dx_np = b.to_numpy(dx_mat)
-        dy_np = b.to_numpy(dy_mat)
-        dx = [float(dx_np[i, j]) for i in range(n) for j in range(i + 1, n)]
-        dy = [float(dy_np[i, j]) for i in range(n) for j in range(i + 1, n)]
+        off_diag = b.ones((n, n)) - b.eye(n)
+        dx_vals = dx_mat * off_diag
+        dy_vals = dy_mat * off_diag
+        count = n * (n - 1)
 
-        if len(dx) < 2:
-            return 0.0
+        mean_x = b.sum(dx_vals) / float(count)
+        mean_y = b.sum(dy_vals) / float(count)
+        cov = b.sum((dx_vals - mean_x) * (dy_vals - mean_y))
+        var_x = b.sum((dx_vals - mean_x) ** 2)
+        var_y = b.sum((dy_vals - mean_y) ** 2)
+        b.eval(cov, var_x, var_y)
 
-        # Pearson correlation
-        mean_x = sum(dx) / len(dx)
-        mean_y = sum(dy) / len(dy)
-
-        cov = sum((a - mean_x) * (b - mean_y) for a, b in zip(dx, dy))
-        var_x = sum((a - mean_x) ** 2 for a in dx)
-        var_y = sum((b - mean_y) ** 2 for b in dy)
-
-        denom = math.sqrt(var_x * var_y)
-        backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array([denom]))
-        return cov / denom if denom > eps else 0.0
+        denom = math.sqrt(float(b.to_scalar(var_x)) * float(b.to_scalar(var_y)))
+        eps = division_epsilon(b, b.array([denom]))
+        return float(b.to_scalar(cov)) / denom if denom > eps else 0.0
 
     def _compute_plateau(self, metrics: list[RankMetrics]) -> PlateauSummary:
         """Find plateau ranks where metrics stop improving."""

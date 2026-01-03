@@ -44,7 +44,10 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 # =============================================================================
 # Test Fixtures
@@ -191,10 +194,12 @@ class TestCurvatureAnisotropy:
     def test_high_anisotropy_for_different_signs(self) -> None:
         """Large difference between min and max should give high anisotropy."""
         lc = make_local_curvature(mean=0.0, min_val=-1.0, max_val=1.0)
-        # (max - min) / (|max| + |min|) = 2 / 2 = 1
+        # Formula: (max - min) / (|max| + |min| + div_eps)
+        # = 2 / (2 + div_eps) ≈ 1 - div_eps/2
+        # Tolerance must account for division_epsilon in the denominator
         backend = get_default_backend()
-        eps = machine_epsilon(backend, backend.array([1.0]))
-        assert abs(lc.curvature_anisotropy - 1.0) <= eps
+        div_eps = division_epsilon(backend, backend.array([1.0]))
+        assert abs(lc.curvature_anisotropy - 1.0) <= div_eps
 
 
 # =============================================================================
@@ -1026,9 +1031,10 @@ class TestOllivierRicciEdgeCases:
         backend = get_default_backend()
         backend.random_seed(904)
 
-        # Two clusters
-        cluster1 = backend.random_normal((10, 3)) * _eps(backend)
-        cluster2 = backend.random_normal((10, 3)) * _eps(backend)
+        # Two clusters with meaningful intra-cluster variance (0.1)
+        # and inter-cluster separation (offset cluster2 by 2.0)
+        cluster1 = backend.random_normal((10, 3)) * 0.1
+        cluster2 = backend.random_normal((10, 3)) * 0.1 + 2.0
         points = backend.concatenate([cluster1, cluster2], axis=0)
 
         estimator = _fast_ollivier_estimator()

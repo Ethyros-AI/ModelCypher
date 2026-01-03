@@ -330,8 +330,12 @@ def _project_gram_transport(
             _, S_source, _ = svd_source
             _, S_target, _ = svd_target
             b.eval(S_source, S_target)
-            S_source_np = [float(v) for v in b.to_numpy(S_source)]
-            S_target_np = [float(v) for v in b.to_numpy(S_target)]
+            S_source_np = [
+                float(b.to_scalar(S_source[i])) for i in range(int(S_source.shape[0]))
+            ]
+            S_target_np = [
+                float(b.to_scalar(S_target[i])) for i in range(int(S_target.shape[0]))
+            ]
             shared_rank, _ = compute_shared_relational_rank(
                 b,
                 S_source_np,
@@ -430,7 +434,7 @@ def _project_procrustes(
             # Handle reflection - flip last column of U if det(R) < 0
             det_R = b.det(R)
             b.eval(det_R)
-            if float(b.to_numpy(det_R)) < 0:
+            if float(b.to_scalar(det_R)) < 0:
                 U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
                 R = b.matmul(U_fixed, Vt_proc)
                 b.eval(R)
@@ -439,8 +443,8 @@ def _project_procrustes(
             b.eval(projected)
 
             # Alignment score from energy preserved
-            total_energy = float(b.to_numpy(b.sum(S ** 2)))
-            kept_energy = float(b.to_numpy(b.sum(S[:k] ** 2)))
+            total_energy = float(b.to_scalar(b.sum(S ** 2)))
+            kept_energy = float(b.to_scalar(b.sum(S[:k] ** 2)))
             eps = float(division_epsilon(b, S))
             score = kept_energy / (total_energy + eps)
         else:
@@ -524,13 +528,13 @@ def _project_svd(
     rank_thresh_t = svd_rank_threshold(b, target, max_dim_t)  # returns float
 
     # Count singular values above threshold (numerical rank)
-    S_s_np = b.to_numpy(S_s)
-    S_t_np = b.to_numpy(S_t)
+    max_sv_s = float(b.to_scalar(S_s[0])) if int(S_s.shape[0]) > 0 else 1.0
+    max_sv_t = float(b.to_scalar(S_t[0])) if int(S_t.shape[0]) > 0 else 1.0
     # Multiply threshold by max singular value for proper scaling
-    thresh_s = rank_thresh_s * (float(S_s_np[0]) if len(S_s_np) > 0 else 1.0)
-    thresh_t = rank_thresh_t * (float(S_t_np[0]) if len(S_t_np) > 0 else 1.0)
-    rank_s = int((S_s_np > thresh_s).sum())
-    rank_t = int((S_t_np > thresh_t).sum())
+    thresh_s = rank_thresh_s * max_sv_s
+    thresh_t = rank_thresh_t * max_sv_t
+    rank_s = int(b.to_scalar(b.sum(b.astype(S_s > thresh_s, "int32"))))
+    rank_t = int(b.to_scalar(b.sum(b.astype(S_t > thresh_t, "int32"))))
 
     # Use minimum of ranks and dimensions for safe truncation
     k = min(rank_s, rank_t, d_s, d_t, int(S_s.shape[0]), int(S_t.shape[0]))
@@ -583,10 +587,14 @@ def _project_svd(
             target_norms = b.norm(target_k, axis=1)
             b.eval(source_norms, target_norms)
             source_mean = (
-                float(b.to_numpy(b.mean(source_norms))) if int(source_norms.shape[0]) > 0 else 0.0
+                float(b.to_scalar(b.mean(source_norms)))
+                if int(source_norms.shape[0]) > 0
+                else 0.0
             )
             target_mean = (
-                float(b.to_numpy(b.mean(target_norms))) if int(target_norms.shape[0]) > 0 else 0.0
+                float(b.to_scalar(b.mean(target_norms)))
+                if int(target_norms.shape[0]) > 0
+                else 0.0
             )
             scale_eps = division_epsilon(b, target_k)
             scale = source_mean / (target_mean + scale_eps) if source_mean > 0.0 else 0.0
@@ -644,8 +652,8 @@ def _project_svd(
 
     # Log alignment quality in k-space
     residual_k = source_k_aligned - target_k
-    residual_norm = float(b.to_numpy(b.sqrt(b.sum(residual_k ** 2))))
-    target_k_norm = float(b.to_numpy(b.sqrt(b.sum(target_k ** 2))))
+    residual_norm = float(b.to_scalar(b.sqrt(b.sum(residual_k ** 2))))
+    target_k_norm = float(b.to_scalar(b.sqrt(b.sum(target_k ** 2))))
     div_eps = division_epsilon(b, target_k)
     logger.debug(
         "Subspace Procrustes: k=%d, residual_norm=%.4f, target_norm=%.4f, ratio=%.4f",
@@ -672,19 +680,19 @@ def _project_svd(
     b.eval(projected)
     logger.debug(
         "SVD projection scale: target_fro=%.4f, proj_fro=%.4f, scale_factor=%.4f",
-        float(b.to_numpy(target_fro)),
-        float(b.to_numpy(proj_fro)),
-        float(b.to_numpy(scale_factor)),
+        float(b.to_scalar(target_fro)),
+        float(b.to_scalar(proj_fro)),
+        float(b.to_scalar(scale_factor)),
     )
 
     # =========================================================================
     # STEP 6: Compute alignment score from variance preserved
     # =========================================================================
-    total_var_s = float(b.to_numpy(b.sum(S_s ** 2)))
-    kept_var_s = float(b.to_numpy(b.sum(S_s[:k] ** 2)))
+    total_var_s = float(b.to_scalar(b.sum(S_s ** 2)))
+    kept_var_s = float(b.to_scalar(b.sum(S_s[:k] ** 2)))
 
-    total_var_t = float(b.to_numpy(b.sum(S_t ** 2)))
-    kept_var_t = float(b.to_numpy(b.sum(S_t[:k] ** 2)))
+    total_var_t = float(b.to_scalar(b.sum(S_t ** 2)))
+    kept_var_t = float(b.to_scalar(b.sum(S_t[:k] ** 2)))
 
     var_eps = float(division_epsilon(b, S_s))
     score = 0.5 * (kept_var_s / (total_var_s + var_eps) + kept_var_t / (total_var_t + var_eps))

@@ -942,9 +942,11 @@ class TestEdgeCasesAndNumericalStability:
         result = rg.geodesic_distances(points)
         dist_np = backend.to_numpy(result.distances)
 
-        # All distances should be near zero (within sqrt(eps) due to numerical accumulation)
-        # k-NN graph construction + shortest path computation accumulates numerical error
-        eps = _div_eps(backend, float(dist_np.max()))
+        # All distances should be near zero
+        # Floyd-Warshall accumulates up to (n-1) edge weights across multi-hop paths
+        # Each edge is floored to division_epsilon, so tolerance = n * div_eps
+        n = len(dist_np)
+        eps = n * _div_eps(backend, float(dist_np.max()))
         assert abs(dist_np.max()) <= eps
 
     def test_very_close_points(self, any_backend: "Backend") -> None:

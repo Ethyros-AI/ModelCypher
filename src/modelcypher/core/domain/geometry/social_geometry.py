@@ -328,8 +328,7 @@ class SocialGeometryAnalyzer:
 
         # Compute correlation between PC position and expected level
         indices = [names.index(n) for n in power_names]
-        X_pca_np = backend.to_numpy(X_pca)
-        positions = [float(X_pca_np[i, 0]) for i in indices]
+        positions = [float(backend.to_scalar(X_pca[i, 0])) for i in indices]
         expected_levels = [power_levels[n] for n in power_names]
 
         # Pearson correlation
@@ -437,7 +436,10 @@ class SocialGeometryAnalyzer:
             axis_orthogonality=axis_ortho,
             gradient_consistency=gradient,
             power_gradient=power,
-            principal_components_variance=self.backend.to_numpy(variance).tolist(),
+            principal_components_variance=[
+                float(self.backend.to_scalar(variance[i]))
+                for i in range(int(variance.shape[0]))
+            ],
             anchor_count=len(names),
         )
 

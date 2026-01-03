@@ -325,13 +325,14 @@ class SharedSubspaceProjector:
         b.eval(source_projected, target_projected)
 
         # Compute alignment error
-        source_proj_np = b.to_numpy(source_projected).flatten().tolist()
-        target_proj_np = b.to_numpy(target_projected).flatten().tolist()
-        alignment_error = SharedSubspaceProjector._compute_procrustes_error(
-            source_proj_np,
-            target_proj_np,
-            sample_count,
-            shared_dim,
+        diff = source_projected - target_projected
+        error_sum = b.sum(diff * diff)
+        target_norm = b.sum(target_projected * target_projected)
+        b.eval(error_sum, target_norm)
+        error_sum_float = float(b.to_scalar(error_sum))
+        target_norm_float = float(b.to_scalar(target_norm))
+        alignment_error = (
+            math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
         )
 
         # Convert projections to lists

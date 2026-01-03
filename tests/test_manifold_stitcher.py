@@ -340,15 +340,17 @@ class TestProperRotation:
         result_np = backend.to_numpy(result)
 
         # R @ R^T should be identity
+        # Tolerance: n * eps for n×n matrix operations (error accumulates)
+        n = 3
         result_arr = backend.array(result_np)
         product = backend.matmul(result_arr, backend.transpose(result_arr))
-        expected = backend.eye(3)
+        expected = backend.eye(n)
         backend.eval(product, expected)
         diff = backend.abs(product - expected)
         backend.eval(diff)
         diff_val = float(backend.max(diff))
         eps = _eps(diff_val)
-        assert diff_val <= eps
+        assert diff_val <= n * eps
 
 
 # =============================================================================

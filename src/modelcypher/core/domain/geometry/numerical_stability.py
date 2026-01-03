@@ -267,20 +267,20 @@ def svd_via_eigh(
     s = b.sqrt(b.maximum(eigvals_r, b.zeros_like(eigvals_r)))
     b.eval(s)
 
-    s_vals = [float(v) for v in b.to_numpy(s).tolist()]
-    if not s_vals:
+    if int(s.shape[0]) == 0:
         k = min(m, n)
         U = b.zeros((m, k))
         S = b.zeros((k,))
         Vt = b.zeros((k, n))
         return U, S, Vt
 
-    max_s = max(s_vals)
+    max_s = float(b.to_scalar(b.max(s)))
     eps = machine_epsilon(b, A)
     threshold = max(m, n) * eps * max_s
 
     k = min(m, n)
-    rank = sum(1 for v in s_vals[:k] if v > threshold)
+    mask = s[:k] > threshold
+    rank = int(b.to_scalar(b.sum(b.astype(mask, "int32"))))
 
     if rank == 0:
         U = b.zeros((m, k))
@@ -385,24 +385,26 @@ def canonicalize_svd_signs(
     if k == 0:
         return U, Vt
 
-    # Convert to numpy for sign determination (small k typically)
-    U_np = b.to_numpy(U).copy()
-    Vt_np = b.to_numpy(Vt).copy()
-
+    signs = [1.0] * k
     for i in range(k):
-        # Find the element with largest absolute value in U[:, i]
-        u_col = U_np[:, i]
-        max_idx = int(abs(u_col).argmax())
-        max_val = u_col[max_idx]
-
-        # If the dominant element is negative, flip both U[:, i] and Vt[i, :]
+        col = U[:, i]
+        max_idx = int(b.to_scalar(b.argmax(b.abs(col))))
+        max_val = float(b.to_scalar(col[max_idx]))
         if max_val < 0:
-            U_np[:, i] = -U_np[:, i]
-            Vt_np[i, :] = -Vt_np[i, :]
+            signs[i] = -1.0
 
-    # Convert back to backend arrays
-    U_canonical = b.array(U_np)
-    Vt_canonical = b.array(Vt_np)
+    if U_shape[1] > k:
+        signs.extend([1.0] * (int(U_shape[1]) - k))
+    if Vt_shape[0] > k:
+        vt_signs = signs[:k] + [1.0] * (int(Vt_shape[0]) - k)
+    else:
+        vt_signs = signs[: int(Vt_shape[0])]
+
+    sign_u = b.reshape(b.array(signs), (1, -1))
+    sign_vt = b.reshape(b.array(vt_signs), (-1, 1))
+
+    U_canonical = U * sign_u
+    Vt_canonical = Vt * sign_vt
     b.eval(U_canonical, Vt_canonical)
 
     return U_canonical, Vt_canonical
@@ -480,15 +482,14 @@ def safe_pinv(
     U, S, Vt = svd_via_eigh(b, array, full_matrices=False)
     b.eval(U, S, Vt)
 
-    # Get singular values as list
-    S_np = [float(v) for v in b.to_numpy(S)]
-    if not S_np:
+    s_count = int(S.shape[0])
+    if s_count == 0:
         # Zero matrix - return zero pseudo-inverse
         pinv_result = b.zeros((n, m))
         b.eval(pinv_result)
         return pinv_result, diagnostics
 
-    max_sv = max(S_np)
+    max_sv = float(b.to_scalar(b.max(S)))
     diagnostics["max_sv"] = max_sv
 
     if max_sv == 0:
@@ -499,26 +500,19 @@ def safe_pinv(
 
     # Determine cutoff and truncate
     cutoff = rcond * max_sv
-    S_inv_list = []
-    truncated = 0
-    min_nonzero = float("inf")
-
-    for sv in S_np:
-        if sv > cutoff:
-            S_inv_list.append(1.0 / sv)
-            if sv < min_nonzero:
-                min_nonzero = sv
-        else:
-            S_inv_list.append(0.0)
-            truncated += 1
-
-    effective_rank = len(S_np) - truncated
+    mask = S > cutoff
+    truncated = int(b.to_scalar(b.sum(b.astype(~mask, "int32"))))
+    effective_rank = s_count - truncated
     diagnostics["effective_rank"] = effective_rank
     diagnostics["truncated_count"] = truncated
-    diagnostics["min_sv"] = min_nonzero if min_nonzero < float("inf") else 0.0
+
+    pos_inf = float(b.finfo().max)
+    min_candidates = b.where(mask, S, b.full(S.shape, pos_inf))
+    min_nonzero = float(b.to_scalar(b.min(min_candidates)))
+    diagnostics["min_sv"] = min_nonzero if min_nonzero < pos_inf else 0.0
 
     # Condition number
-    if min_nonzero < float("inf") and min_nonzero > 0:
+    if min_nonzero < pos_inf and min_nonzero > 0:
         condition = max_sv / min_nonzero
         diagnostics["condition_number"] = condition
 
@@ -526,11 +520,11 @@ def safe_pinv(
         if warn_on_ill_conditioned and condition > cond_limit:
             logger.warning(
                 "safe_pinv: Ill-conditioned matrix (cond=%.2e, rank=%d/%d, truncated=%d)",
-                condition, effective_rank, len(S_np), truncated
+                condition, effective_rank, s_count, truncated
             )
 
     # Compute pseudo-inverse: V @ diag(S_inv) @ U^T
-    S_inv = b.array(S_inv_list)
+    S_inv = b.where(mask, 1.0 / S, b.zeros_like(S))
     b.eval(S_inv)
 
     # V = Vt^T [n, k], U^T [k, m]
@@ -650,18 +644,18 @@ def _solve_underdetermined_qr(
     # R is [n_samples, n_samples] - square upper triangular
     R_diag = b.diag(R)
     b.eval(R_diag)
-    R_diag_np = [abs(float(v)) for v in b.to_numpy(R_diag).tolist()]
-    if not R_diag_np:
+    if int(R_diag.shape[0]) == 0:
         return None, diagnostics
 
-    max_diag = max(R_diag_np)
-    min_diag = min(R_diag_np)
+    abs_diag = b.abs(R_diag)
+    max_diag = float(b.to_scalar(b.max(abs_diag)))
+    min_diag = float(b.to_scalar(b.min(abs_diag)))
 
     condition_est = max_diag / (min_diag + eps) if min_diag > 0 else float("inf")
     diagnostics["condition"] = condition_est
 
     rank_threshold = eps * max_diag * max(n_samples, d_source)
-    rank = sum(1 for v in R_diag_np if v > rank_threshold)
+    rank = int(b.to_scalar(b.sum(b.astype(abs_diag > rank_threshold, "int32"))))
     diagnostics["rank"] = rank
 
     # Apply regularization if needed
@@ -724,18 +718,18 @@ def _solve_overdetermined_qr(
     # R is [d_source, d_source] - square upper triangular
     R_diag = b.diag(R)
     b.eval(R_diag)
-    R_diag_np = [abs(float(v)) for v in b.to_numpy(R_diag).tolist()]
-    if not R_diag_np:
+    if int(R_diag.shape[0]) == 0:
         return None, diagnostics
 
-    max_diag = max(R_diag_np)
-    min_diag = min(R_diag_np)
+    abs_diag = b.abs(R_diag)
+    max_diag = float(b.to_scalar(b.max(abs_diag)))
+    min_diag = float(b.to_scalar(b.min(abs_diag)))
 
     condition_est = max_diag / (min_diag + eps) if min_diag > 0 else float("inf")
     diagnostics["condition"] = condition_est
 
     rank_threshold = eps * max_diag * max(n_samples, d_source)
-    rank = sum(1 for v in R_diag_np if v > rank_threshold)
+    rank = int(b.to_scalar(b.sum(b.astype(abs_diag > rank_threshold, "int32"))))
     diagnostics["rank"] = rank
 
     # Apply regularization if needed
@@ -916,17 +910,20 @@ def solve_via_truncated_svd(
         diagnostics["method"] = "failed"
         return None, diagnostics
 
-    # Convert S to numpy for analysis
-    S_np = [float(v) for v in b.to_numpy(S).tolist()]
-    if not S_np or max(S_np) == 0:
+    if int(S.shape[0]) == 0:
         return None, diagnostics
 
-    max_s = max(S_np)
-    min_s = min(v for v in S_np if v > 0)
+    max_s = float(b.to_scalar(b.max(S)))
+    if max_s == 0:
+        return None, diagnostics
+
+    pos_inf = float(b.finfo().max)
+    min_candidates = b.where(S > 0, S, b.full(S.shape, pos_inf))
+    min_s = float(b.to_scalar(b.min(min_candidates)))
     diagnostics["condition"] = max_s / min_s if min_s > 0 else float("inf")
 
     # Determine effective rank
-    rank = sum(1 for s in S_np if s > rank_threshold * max_s)
+    rank = int(b.to_scalar(b.sum(b.astype(S > (rank_threshold * max_s), "int32"))))
     diagnostics["rank"] = rank
 
     if rank == 0:
@@ -935,9 +932,9 @@ def solve_via_truncated_svd(
     # Truncate to effective rank
     U_k = U[:, :rank]  # [n, k]
     # Build inverse singular values array
-    S_inv_vals = [1.0 / S_np[i] if S_np[i] > rank_threshold * max_s else 0.0
-                  for i in range(rank)]
-    S_k_inv = b.astype(b.array(S_inv_vals), "float32")
+    S_k = S[:rank]
+    S_k_inv = b.where(S_k > (rank_threshold * max_s), 1.0 / S_k, b.zeros_like(S_k))
+    S_k_inv = b.astype(S_k_inv, "float32")
     b.eval(S_k_inv)
     Vt_k = Vt[:rank, :]  # [k, d]
 
@@ -1197,11 +1194,12 @@ def solve_via_gram_alignment(
     U_t, S_t, Vt_t = svd_via_eigh(b, target_c, full_matrices=False)
     b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
 
-    # Get singular values
-    S_s_np = [float(v) for v in b.to_numpy(S_s)]
-    S_t_np = [float(v) for v in b.to_numpy(S_t)]
+    if int(S_s.shape[0]) == 0 or int(S_t.shape[0]) == 0:
+        return None, diagnostics
 
-    if not S_s_np or not S_t_np or max(S_s_np) == 0 or max(S_t_np) == 0:
+    max_s = float(b.to_scalar(b.max(S_s)))
+    max_t = float(b.to_scalar(b.max(S_t)))
+    if max_s == 0 or max_t == 0:
         return None, diagnostics
 
     # Use ALL available dimensions - NO truncation based on thresholds.
@@ -1209,8 +1207,8 @@ def solve_via_gram_alignment(
     # Small singular values are highly-compressed information, not noise.
     # CKA = 1.0 is ALWAYS achievable because Gram matrices live in sample
     # space [n × n] regardless of feature dimension.
-    avail_s = len(S_s_np)
-    avail_t = len(S_t_np)
+    avail_s = int(S_s.shape[0])
+    avail_t = int(S_t.shape[0])
     actual_rank = min(avail_s, avail_t)  # Use everything SVD gives us
     diagnostics["rank_source"] = avail_s
     diagnostics["rank_target"] = avail_t
@@ -1239,10 +1237,10 @@ def solve_via_gram_alignment(
     R_det = _determinant_sign(b, R)
     if R_det < 0:
         # Flip sign of last column of U_proc
-        # Use .copy() to get a writable array (JAX returns read-only)
-        U_proc_np = b.to_numpy(U_proc).copy()
-        U_proc_np[:, -1] = -U_proc_np[:, -1]
-        U_proc = b.array(U_proc_np)
+        sign = b.ones((actual_rank,))
+        idx = b.arange(actual_rank)
+        sign = b.where(idx == (actual_rank - 1), b.full(sign.shape, -1.0), sign)
+        U_proc = U_proc * b.reshape(sign, (1, -1))
         b.eval(U_proc)
         R = b.matmul(U_proc, Vt_proc)
         b.eval(R)
@@ -1264,7 +1262,7 @@ def solve_via_gram_alignment(
 
     # S_s^{-1} for the k dimensions we're using (use actual_rank, not shared_rank)
     # Use machine epsilon as floor for numerical stability in inversion
-    sv_floor = eps * max(S_s_np) if S_s_np else eps
+    sv_floor = eps * float(b.to_scalar(b.max(S_s)))
     S_s_inv = b.array([1.0 / S_s_np[i] if S_s_np[i] > sv_floor else 0.0
                        for i in range(actual_rank)])
     S_t_k = b.array([S_t_np[i] for i in range(actual_rank)])
@@ -1298,39 +1296,14 @@ def solve_via_gram_alignment(
 
 def _determinant_sign(backend: Backend, R: Array) -> float:
     """Compute sign of determinant for small matrix."""
-    # Derive singularity threshold from backend array dtype BEFORE converting to numpy
+    # Derive singularity threshold from backend array dtype
     singular_threshold = float(tiny_value(backend, R))
-
-    R_np = backend.to_numpy(R)
-    k = int(backend.shape(R)[0])
-
-    # LU-based sign computation
-    work = R_np.copy()
-    det_sign = 1.0
-
-    for col in range(k):
-        # Find pivot
-        max_row = col
-        for row in range(col + 1, k):
-            if abs(work[row, col]) > abs(work[max_row, col]):
-                max_row = row
-
-        if abs(work[max_row, col]) < singular_threshold:
-            return 0.0  # Singular
-
-        if max_row != col:
-            work[[col, max_row]] = work[[max_row, col]]
-            det_sign = -det_sign
-
-        # Eliminate below
-        pivot = work[col, col]
-        for row in range(col + 1, k):
-            factor = work[row, col] / pivot
-            work[row, col:] -= factor * work[col, col:]
-
-        det_sign *= (1.0 if work[col, col] > 0 else -1.0)
-
-    return det_sign
+    det_val = backend.det(R)
+    backend.eval(det_val)
+    det = float(backend.to_scalar(det_val))
+    if abs(det) < singular_threshold:
+        return 0.0
+    return 1.0 if det > 0 else -1.0
 
 
 def solve_via_cca_procrustes(
@@ -1431,21 +1404,23 @@ def solve_via_cca_procrustes(
         b.eval(eigenvalues, eigenvectors)
 
         # Sort descending (eigh gives ascending)
-        eig_np = b.to_numpy(eigenvalues)
-        order = list(range(len(eig_np) - 1, -1, -1))
-        eigenvectors_sorted = eigenvectors[:, order]
-        eigenvalues_sorted = b.array([max(0.0, float(eig_np[i])) for i in order])
+        order = b.argsort(-eigenvalues)
+        eigenvectors_sorted = b.take(eigenvectors, order, axis=1)
+        eigenvalues_sorted = b.take(eigenvalues, order, axis=0)
+        eigenvalues_sorted = b.maximum(eigenvalues_sorted, b.zeros_like(eigenvalues_sorted))
         b.eval(eigenvectors_sorted, eigenvalues_sorted)
 
-        eig_sorted_np = [float(v) for v in b.to_numpy(eigenvalues_sorted)]
-        total_var = sum(eig_sorted_np)
+        total_var = float(b.to_scalar(b.sum(eigenvalues_sorted)))
         if total_var <= 0:
             return None
 
         # Singular values from eigenvalues
         singular_values = b.sqrt(eigenvalues_sorted)
         b.eval(singular_values)
-        sv_all = [float(v) for v in b.to_numpy(singular_values)]
+        sv_all = [
+            float(b.to_scalar(singular_values[i]))
+            for i in range(int(singular_values.shape[0]))
+        ]
         erank = compute_entropy_effective_rank(b, sv_all)
         if erank <= 0:
             return None
@@ -1508,8 +1483,8 @@ def solve_via_cca_procrustes(
             eigvals, eigvecs = b.eigh(cov)
         b.eval(eigvals, eigvecs)
 
-        eigvals_np = [float(v) for v in b.to_numpy(eigvals)]
-        if all(v <= 0 for v in eigvals_np):
+        max_eig = float(b.to_scalar(b.max(eigvals)))
+        if max_eig <= 0:
             return None
 
         # Floor eigenvalues
@@ -1542,8 +1517,10 @@ def solve_via_cca_procrustes(
     b.eval(U, S, Vt)
 
     # Canonical correlations (SHOULD be in [0, 1] now!)
-    S_np = [float(v) for v in b.to_numpy(S)]
-    correlations = [max(0.0, min(1.0, c)) for c in S_np]
+    correlations = [
+        max(0.0, min(1.0, float(b.to_scalar(S[i]))))
+        for i in range(int(S.shape[0]))
+    ]
 
     if not correlations:
         return None, diagnostics
@@ -1596,34 +1573,13 @@ def solve_via_cca_procrustes(
     b.eval(R)
 
     # Check for reflection and correct if needed
-    R_np = b.to_numpy(R)
-    singular_threshold = float(tiny_value(b, R))  # Derive from dtype, not hardcoded
-    det = 1.0
-    work = R_np.copy()
-    kk = int(b.shape(R)[0])
-    for col in range(kk):
-        max_row = col
-        for row in range(col + 1, kk):
-            if abs(work[row, col]) > abs(work[max_row, col]):
-                max_row = row
-        if abs(work[max_row, col]) < singular_threshold:
-            det = 0.0
-            break
-        if max_row != col:
-            work[[col, max_row]] = work[[max_row, col]]
-            det = -det
-        pivot = work[col, col]
-        for row in range(col + 1, kk):
-            factor = work[row, col] / pivot
-            work[row, col:] -= factor * work[col, col:]
-        det *= work[col, col]
-
+    det = _determinant_sign(b, R)
     if det < 0:
         # Flip last column of U_proc to get proper rotation
-        # Use .copy() to get a writable array (JAX returns read-only)
-        U_proc_np = b.to_numpy(U_proc).copy()
-        U_proc_np[:, -1] = -U_proc_np[:, -1]
-        U_proc = b.array(U_proc_np)
+        sign = b.ones((int(U_proc.shape[1]),))
+        idx = b.arange(int(U_proc.shape[1]))
+        sign = b.where(idx == (int(U_proc.shape[1]) - 1), b.full(sign.shape, -1.0), sign)
+        U_proc = U_proc * b.reshape(sign, (1, -1))
         b.eval(U_proc)
         R = b.matmul(U_proc, Vt_proc)
         b.eval(R)

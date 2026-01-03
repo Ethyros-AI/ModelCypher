@@ -215,8 +215,11 @@ class PermutationAligner:
         similarity = b.matmul(source_normalized, b.transpose(target_normalized))
         b.eval(similarity)
 
-        # Pull to CPU for Hungarian algorithm
-        sim_data = b.to_numpy(similarity).tolist()
+        # Pull to CPU for Hungarian algorithm (scalar extraction only)
+        sim_data = [
+            [float(b.to_scalar(similarity[i, j])) for j in range(N)]
+            for i in range(N)
+        ]
 
         # Convert similarity to cost matrix for Hungarian algorithm
         # We want to MAXIMIZE similarity, but Hungarian MINIMIZES cost
@@ -295,14 +298,10 @@ class PermutationAligner:
                 if 0 <= tgt < count:
                     inverse[tgt] = i
 
-            # Extract signs
-            sign_values = b.to_numpy(alignment.signs).tolist()
-            if hasattr(sign_values, "tolist"):
-                sign_values = (
-                    sign_values
-                    if isinstance(sign_values, list)
-                    else b.to_numpy(alignment.signs).tolist()
-                )
+            sign_values = [
+                float(b.to_scalar(alignment.signs[i]))
+                for i in range(int(alignment.signs.shape[0]))
+            ]
 
             index_tensor = b.array(inverse)
 
@@ -407,7 +406,10 @@ class PermutationAligner:
         similarity = b.matmul(source_normalized, b.transpose(target_normalized))
         b.eval(similarity)
 
-        sim_data = b.to_numpy(similarity).tolist()
+        sim_data = [
+            [float(b.to_scalar(similarity[i, j])) for j in range(N)]
+            for i in range(N)
+        ]
         max_abs_sim = max(abs(sim_data[i][j]) for i in range(N) for j in range(N))
         cost_matrix = [[max_abs_sim - abs(sim_data[i][j]) for j in range(N)] for i in range(N)]
 
@@ -717,9 +719,11 @@ class PermutationAligner:
         b = backend or get_default_backend()
 
         if signs.ndim == 1:
-            values = b.to_numpy(signs).tolist()
+            values = [float(b.to_scalar(signs[i])) for i in range(int(signs.shape[0]))]
         else:
-            values = b.to_numpy(b.diag(signs)).tolist()
+            diag = b.diag(signs)
+            b.eval(diag)
+            values = [float(b.to_scalar(diag[i])) for i in range(int(diag.shape[0]))]
 
         if len(values) != expected_count:
             raise PermutationAlignerError(

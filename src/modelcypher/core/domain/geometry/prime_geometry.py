@@ -489,7 +489,7 @@ def shuffled_gaps(
     for i in range(n - 1, 0, -1):
         # Generate random index from 0 to i
         u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-        j = int(float(backend.to_numpy(u)[0]) * (i + 1))
+        j = int(float(backend.to_scalar(u)) * (i + 1))
         j = min(j, i)  # Safety clamp
         indices[i], indices[j] = indices[j], indices[i]
 
@@ -746,7 +746,7 @@ def generate_poisson_gaps(
     for _ in range(n):
         # Generate a single Poisson sample
         u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-        float(backend.to_numpy(u)[0])
+        float(backend.to_scalar(u))
 
         L = math.exp(-rate)
         k = 0
@@ -755,7 +755,7 @@ def generate_poisson_gaps(
         while p > L:
             k += 1
             u2 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            p *= float(backend.to_numpy(u2)[0])
+            p *= float(backend.to_scalar(u2))
 
         gaps_list.append(max(2.0, float(k)))
 
@@ -790,7 +790,7 @@ def generate_cramer_model(
         # P(m is "prime") = 1/ln(m)
         prob = 1.0 / math.log(current) if current > 1 else 1.0
         u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-        u_val = float(backend.to_numpy(u)[0])
+        u_val = float(backend.to_scalar(u))
 
         if u_val < prob:
             pseudo_primes.append(current)
@@ -1074,7 +1074,7 @@ def bootstrap_confidence_interval(
         indices = []
         for _ in range(n):
             u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            idx = int(float(backend.to_numpy(u)[0]) * n)
+            idx = int(float(backend.to_scalar(u)) * n)
             idx = min(idx, n - 1)
             indices.append(idx)
 
@@ -1173,7 +1173,7 @@ def permutation_test(
         shuffled = combined.copy()
         for i in range(n_total - 1, 0, -1):
             u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            j = int(float(backend.to_numpy(u)[0]) * (i + 1))
+            j = int(float(backend.to_scalar(u)) * (i + 1))
             j = min(j, i)
             shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 
@@ -1313,7 +1313,7 @@ def run_comprehensive_analysis(
         indices = []
         for _ in range(n_subsample):
             u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            idx = int(float(backend.to_numpy(u)[0]) * primes.gap_count)
+            idx = int(float(backend.to_scalar(u)) * primes.gap_count)
             idx = min(idx, primes.gap_count - 1)
             indices.append(idx)
 
@@ -1508,8 +1508,8 @@ def run_perturbation_study(
                 u1 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
                 u2 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
                 u1_eps = division_epsilon(backend, u1)
-                u1_val = max(float(backend.to_numpy(u1)[0]), u1_eps)
-                u2_val = float(backend.to_numpy(u2)[0])
+                u1_val = max(float(backend.to_scalar(u1)), u1_eps)
+                u2_val = float(backend.to_scalar(u2))
 
                 z = math.sqrt(-2 * math.log(u1_val)) * math.cos(2 * math.pi * u2_val)
                 noise = z * noise_level * mean_gap

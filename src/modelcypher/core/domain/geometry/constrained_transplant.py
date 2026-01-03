@@ -96,21 +96,22 @@ def verify_boundary_invariance(
 
     eps = float(machine_epsilon(b, target))
 
-    # Compute relative differences per sample
-    diff_np = b.to_numpy(diff_norms)
-    target_np = b.to_numpy(target_norms)
-
-    relative_diffs = []
-    for d, t in zip(diff_np.flat, target_np.flat):
-        if t > eps:
-            relative_diffs.append(float(d) / float(t))
-        elif float(d) <= eps:
-            relative_diffs.append(0.0)
-        else:
-            relative_diffs.append(float("inf"))
-
-    max_rel_diff = max(relative_diffs) if relative_diffs else 0.0
-    mean_rel_diff = sum(relative_diffs) / len(relative_diffs) if relative_diffs else 0.0
+    eps_arr = b.full(target_norms.shape, eps)
+    mask_target = target_norms > eps
+    mask_small = diff_norms <= eps
+    relative_diffs = b.where(
+        mask_target,
+        diff_norms / b.maximum(target_norms, eps_arr),
+        b.where(mask_small, b.zeros_like(diff_norms), b.full(diff_norms.shape, float("inf"))),
+    )
+    b.eval(relative_diffs)
+    max_rel_diff = float(b.to_scalar(b.max(relative_diffs)))
+    inf_count = b.sum(b.astype(b.isinf(relative_diffs), "float32"))
+    b.eval(inf_count)
+    if float(b.to_scalar(inf_count)) > 0:
+        mean_rel_diff = float("inf")
+    else:
+        mean_rel_diff = float(b.to_scalar(b.mean(relative_diffs)))
 
     return {
         "passed": max_rel_diff < tolerance,
