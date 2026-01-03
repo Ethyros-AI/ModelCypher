@@ -99,7 +99,7 @@ class LayerProfile:
 
 ### ProfileComparison
 
-When comparing two profiles, the ProfileComparison tells the alignment story:
+When comparing two profiles, the ProfileComparison reports raw geometric measurements:
 
 ```python
 @dataclass
@@ -111,23 +111,33 @@ class ProfileComparison:
     architecture_match: bool
     hidden_dim_ratio: float
     layer_count_ratio: float
+    vocab_overlap: float
 
-    # Geometric alignment (0-1 scale)
-    curvature_alignment: float
-    ricci_alignment: float
-    dimension_alignment: float
-    overall_alignment: float
+    # Geometric diffs
+    mean_sectional_curvature_diff: float
+    mean_ollivier_ricci_diff: float
+    mean_intrinsic_dimension_diff: float
+
+    # Topology diffs
+    topology_betti_diff: int | None
+    topology_persistence_diff: float | None
+
+    # Semantic measurement
+    semantic_cosine_similarity: float | None
 
     # Layer correspondence
     layer_mapping: dict[int, int]  # source -> target
     layer_comparisons: list[LayerComparison]
-    critical_layers: list[int]     # High effort layers
 
-    # Alignment metrics
-    total_alignment_effort: float
-    mean_alignment_effort: float
-    max_alignment_effort: float
-    recommended_strategy: str  # "procrustes", "projection_first", "curvature_flow"
+    # Alignment flag
+    aligned: bool
+
+    # Baseline-relative z-scores (optional)
+    sectional_z_score: float | None
+    ricci_z_score: float | None
+    dimension_z_score: float | None
+    baseline_family: str | None
+    baseline_model_count: int | None
 ```
 
 ## CLI Commands
@@ -148,7 +158,7 @@ mc profile inspect profile.json --layer 5
 ### Compare two profiles
 
 ```bash
-# Compare and show alignment story
+# Compare and show geometric diffs
 mc profile compare source.json target.json
 
 # Save comparison result

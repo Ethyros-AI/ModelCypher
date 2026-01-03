@@ -45,7 +45,7 @@ def load_tokenizer(model_path: str) -> Any | None:
 
     try:
         # Fall back to ModelLoaderPort (hexagonal architecture)
-        from modelcypher.ports.model_loader import get_model_loader
+        from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
         model_loader = get_model_loader()
         _, tokenizer = model_loader.load_model_for_training(model_path)
@@ -58,7 +58,7 @@ def load_tokenizer(model_path: str) -> Any | None:
 def load_model_for_probing(model_path: str) -> Any | None:
     """Load model for precise probe execution."""
     try:
-        from modelcypher.ports.model_loader import get_model_loader
+        from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
         model_loader = get_model_loader()
         logger.info("Loading model from %s for activation probing...", model_path)

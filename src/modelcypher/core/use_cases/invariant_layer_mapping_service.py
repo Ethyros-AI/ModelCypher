@@ -143,7 +143,7 @@ class InvariantLayerMappingService:
     def _ensure_dependencies(self) -> tuple["ModelLoaderPort", "Backend"]:
         """Ensure model loader and backend are available."""
         if self._model_loader is None:
-            from modelcypher.ports.model_loader import get_model_loader
+            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
             self._model_loader = get_model_loader()
 

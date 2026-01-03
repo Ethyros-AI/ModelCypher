@@ -87,18 +87,18 @@ class TestSpectralNormInvariants:
 
 
 # =============================================================================
-# Spectral Alignment Invariants
+# Spectral Ratio Symmetry Invariants
 # =============================================================================
 
 
-class TestSpectralAlignmentInvariants:
-    """Tests for spectral alignment bounds."""
+class TestSpectralRatioSymmetryInvariants:
+    """Tests for spectral ratio symmetry bounds."""
 
     @pytest.mark.parametrize("seed", range(5))
-    def test_spectral_alignment_in_zero_one(self, seed: int) -> None:
-        """Spectral alignment must be in [0, 1].
+    def test_spectral_ratio_symmetry_in_zero_one(self, seed: int) -> None:
+        """Spectral ratio symmetry must be in [0, 1].
 
-        Mathematical property: alignment = min(r, 1/r) where r > 0.
+        Mathematical property: symmetry = min(r, 1/r) where r > 0.
         """
         backend = get_default_backend()
         backend.random_seed(seed)
@@ -111,12 +111,12 @@ class TestSpectralAlignmentInvariants:
 
         metrics = _compute_metrics(source, target)
 
-        assert 0.0 <= metrics.spectral_alignment <= 1.0
+        assert 0.0 <= metrics.spectral_ratio_symmetry <= 1.0
 
-    def test_identical_matrices_have_unit_alignment(self) -> None:
-        """Identical matrices should have spectral alignment = 1.
+    def test_identical_matrices_have_unit_symmetry(self) -> None:
+        """Identical matrices should have spectral ratio symmetry = 1.
 
-        Mathematical property: ratio = 1 → alignment = min(1, 1) = 1.
+        Mathematical property: ratio = 1 → symmetry = min(1, 1) = 1.
         """
         backend = get_default_backend()
         backend.random_seed(42)
@@ -127,14 +127,14 @@ class TestSpectralAlignmentInvariants:
         metrics = _compute_metrics(matrix, matrix)
         eps = machine_epsilon(backend, matrix)
 
-        assert abs(metrics.spectral_alignment - 1.0) <= eps
+        assert abs(metrics.spectral_ratio_symmetry - 1.0) <= eps
         assert abs(metrics.spectral_ratio - 1.0) <= eps
 
     @pytest.mark.parametrize("scale", [0.1, 0.5, 2.0, 10.0])
-    def test_spectral_alignment_symmetric(self, scale: float) -> None:
-        """Spectral alignment should be symmetric with respect to scaling.
+    def test_spectral_ratio_symmetry_symmetric(self, scale: float) -> None:
+        """Spectral ratio symmetry should be symmetric with respect to scaling.
 
-        Mathematical property: alignment(a/b) = alignment(b/a).
+        Mathematical property: symmetry(a/b) = symmetry(b/a).
         """
         backend = get_default_backend()
         backend.random_seed(42)
@@ -151,8 +151,11 @@ class TestSpectralAlignmentInvariants:
         # Reverse: scaled vs base
         metrics_rev = _compute_metrics(scaled, base)
 
-        # Alignment should be the same either way
-        assert abs(metrics_fwd.spectral_alignment - metrics_rev.spectral_alignment) <= eps
+        # Ratio symmetry should be the same either way
+        assert (
+            abs(metrics_fwd.spectral_ratio_symmetry - metrics_rev.spectral_ratio_symmetry)
+            <= eps
+        )
 
 
 # =============================================================================

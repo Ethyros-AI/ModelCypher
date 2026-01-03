@@ -32,8 +32,8 @@ For weight matrices W_source and W_target:
    - σ_max = largest singular value
    - Ratio near 1.0 = similar representation scales
 
-2. Spectral alignment = min(ratio, 1/ratio)
-   - Symmetric: both 2.0 and 0.5 give same alignment
+2. Spectral ratio symmetry = min(ratio, 1/ratio)
+   - Symmetric: both 2.0 and 0.5 give same symmetry
    - Range: [0, 1], higher = more similar scales
 
 3. Condition number = σ_max / σ_min
@@ -70,8 +70,8 @@ class SpectralMetrics:
     # Ratio of max singular values: source / target
     spectral_ratio: float
 
-    # Symmetric alignment: min(ratio, 1/ratio) in [0, 1]
-    spectral_alignment: float
+    # Symmetric ratio: min(ratio, 1/ratio) in [0, 1]
+    spectral_ratio_symmetry: float
 
     # Max singular value of source
     source_spectral_norm: float
@@ -118,7 +118,7 @@ def compute_spectral_metrics(
         backend: Optional Backend for GPU-accelerated SVD.
 
     Returns:
-        SpectralMetrics with condition number, spectral ratio, and alignment
+        SpectralMetrics with condition number, spectral ratio, and ratio symmetry
     """
 
     b = backend or get_default_backend()
@@ -141,12 +141,12 @@ def compute_spectral_metrics(
             target_norm = eps
 
         ratio = source_norm / target_norm
-        alignment = min(ratio, 1.0 / max(ratio, eps))
+        ratio_symmetry = min(ratio, 1.0 / max(ratio, eps))
 
         return SpectralMetrics(
             condition_number=1.0,  # 1D vectors don't have condition numbers
             spectral_ratio=ratio,
-            spectral_alignment=alignment,
+            spectral_ratio_symmetry=ratio_symmetry,
             source_spectral_norm=source_norm,
             target_spectral_norm=target_norm,
             delta_frobenius=delta_norm,
@@ -206,16 +206,16 @@ def compute_spectral_metrics(
     # Spectral ratio
     spectral_ratio = source_spectral / max(target_spectral, eps)
 
-    # Spectral alignment (symmetric)
+    # Spectral ratio symmetry
     if spectral_ratio > 0:
-        spectral_alignment = min(spectral_ratio, 1.0 / spectral_ratio)
+        spectral_ratio_symmetry = min(spectral_ratio, 1.0 / spectral_ratio)
     else:
-        spectral_alignment = 0.0
+        spectral_ratio_symmetry = 0.0
 
     return SpectralMetrics(
         condition_number=condition_number,
         spectral_ratio=spectral_ratio,
-        spectral_alignment=spectral_alignment,
+        spectral_ratio_symmetry=spectral_ratio_symmetry,
         source_spectral_norm=source_spectral,
         target_spectral_norm=target_spectral,
         delta_frobenius=delta_frobenius,
@@ -235,18 +235,18 @@ def spectral_summary(metrics: dict[str, SpectralMetrics]) -> dict:
     if not metrics:
         return {
             "total_weights": 0,
-            "mean_alignment": 0.0,
+            "mean_ratio_symmetry": 0.0,
             "mean_condition_number": 0.0,
         }
 
-    alignments = [m.spectral_alignment for m in metrics.values()]
+    ratio_symmetry = [m.spectral_ratio_symmetry for m in metrics.values()]
     conditions = [m.condition_number for m in metrics.values()]
 
     return {
         "total_weights": len(metrics),
-        "mean_alignment": sum(alignments) / len(alignments),
-        "min_alignment": min(alignments),
-        "max_alignment": max(alignments),
+        "mean_ratio_symmetry": sum(ratio_symmetry) / len(ratio_symmetry),
+        "min_ratio_symmetry": min(ratio_symmetry),
+        "max_ratio_symmetry": max(ratio_symmetry),
         "mean_condition_number": sum(conditions) / len(conditions),
         "max_condition_number": max(conditions),
     }

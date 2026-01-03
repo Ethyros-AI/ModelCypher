@@ -126,7 +126,9 @@ class TestThermoCalibrator:
         model_path.mkdir()
         calibrator = ThermoCalibrator(model_path)
         # With fewer than 10 total outcomes
-        result = calibrator._calibrate_basin_topology({"refused": 2, "solved": 3})
+        result = calibrator._calibrate_basin_topology(
+            {"refused": 2, "solved": 3}, temperature=0.7
+        )
         assert result is None
 
 

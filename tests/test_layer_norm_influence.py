@@ -45,8 +45,8 @@ def test_layer_norm_spectral_norm():
     assert abs(metrics.target_spectral_norm - expected_target_norm) <= eps
 
 
-def test_layer_norm_mismatch_alignment():
-    """Test spectral alignment for LayerNorm mismatch."""
+def test_layer_norm_mismatch_ratio_symmetry():
+    """Test spectral ratio symmetry for LayerNorm mismatch."""
     backend = get_default_backend()
     source_ln = backend.array([1.0, 0.0])
     target_ln = backend.array([10.0, 0.0])
@@ -55,10 +55,10 @@ def test_layer_norm_mismatch_alignment():
     metrics = compute_spectral_metrics(source_ln, target_ln)
 
     # ratio = 1/10 = 0.1
-    # alignment = min(0.1, 10.0) = 0.1
+    # ratio symmetry = min(0.1, 10.0) = 0.1
     eps = machine_epsilon(backend, source_ln)
     assert abs(metrics.spectral_ratio - 0.1) <= eps
-    assert abs(metrics.spectral_alignment - 0.1) <= eps
+    assert abs(metrics.spectral_ratio_symmetry - 0.1) <= eps
 
 
 def test_layer_norm_zero_norm_stability():
@@ -79,8 +79,8 @@ def test_layer_norm_zero_norm_stability():
     assert abs(metrics.spectral_ratio - expected_ratio) <= eps_ratio
 
 
-def test_layer_norm_identical_alignment():
-    """Identical LayerNorms should have 1.0 alignment."""
+def test_layer_norm_identical_ratio_symmetry():
+    """Identical LayerNorms should have ratio symmetry of 1.0."""
     backend = get_default_backend()
     backend.random_seed(42)
     ln = backend.random_normal((128,))
@@ -89,5 +89,5 @@ def test_layer_norm_identical_alignment():
     metrics = compute_spectral_metrics(ln, ln)
 
     eps = machine_epsilon(backend, ln)
-    assert abs(metrics.spectral_alignment - 1.0) <= eps
+    assert abs(metrics.spectral_ratio_symmetry - 1.0) <= eps
     assert abs(metrics.delta_frobenius) <= eps

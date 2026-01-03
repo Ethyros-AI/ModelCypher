@@ -59,7 +59,7 @@ def stability_run(
         "modelPath": result.model_path,
         "status": result.status,
         "startedAt": result.started_at,
-        "config": result.config,
+        "derivedParameters": result.derived_parameters,
         "summary": result.summary,
     }
 
@@ -95,7 +95,7 @@ def stability_report(
         "status": result.status,
         "startedAt": result.started_at,
         "completedAt": result.completed_at,
-        "config": result.config,
+        "derivedParameters": result.derived_parameters,
         "metrics": result.metrics,
         "perPromptResults": result.per_prompt_results,
     }

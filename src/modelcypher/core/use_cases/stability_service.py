@@ -43,7 +43,7 @@ class StabilityRunResult:
     model_path: str
     status: str
     started_at: str
-    config: dict[str, Any]
+    derived_parameters: dict[str, Any]
     summary: dict[str, float] = field(default_factory=dict)
 
 
@@ -56,7 +56,7 @@ class StabilityReport:
     status: str
     started_at: str
     completed_at: str | None
-    config: dict[str, Any]
+    derived_parameters: dict[str, Any]
     metrics: dict[str, float]
     per_prompt_results: list[dict[str, Any]]
 
@@ -95,7 +95,7 @@ class StabilityService:
         if not model_path.is_dir():
             raise ValueError(f"Model path is not a directory: {model_path}")
 
-        config_dict = self._derive_run_parameters(model_path)
+        derived_parameters = self._derive_run_parameters(model_path)
         suite_id = f"stab-{uuid.uuid4().hex[:12]}"
         started_at = datetime.now(timezone.utc).isoformat()
 
@@ -105,7 +105,7 @@ class StabilityService:
             "status": "running",
             "started_at": started_at,
             "completed_at": None,
-            "config": config_dict,
+            "derived_parameters": derived_parameters,
             "metrics": {},
             "per_prompt_results": [],
         }
@@ -118,14 +118,14 @@ class StabilityService:
 
         # Simulate stability testing
         # In production, this would run actual inference tests
-        self._run_stability_tests(suite_id, config_dict)
+        self._run_stability_tests(suite_id, derived_parameters)
 
         return StabilityRunResult(
             suite_id=suite_id,
             model_path=str(model_path),
             status=self._suites[suite_id]["status"],
             started_at=started_at,
-            config=config_dict,
+            derived_parameters=derived_parameters,
             summary=self._suites[suite_id]["metrics"],
         )
 
@@ -153,7 +153,7 @@ class StabilityService:
             status=suite["status"],
             started_at=suite["started_at"],
             completed_at=suite["completed_at"],
-            config=suite["config"],
+            derived_parameters=suite["derived_parameters"],
             metrics=metrics,
             per_prompt_results=suite["per_prompt_results"],
         )
@@ -161,7 +161,7 @@ class StabilityService:
     def _run_stability_tests(
         self,
         suite_id: str,
-        config: dict[str, Any],
+        derived_parameters: dict[str, Any],
     ) -> None:
         """Run stability tests (simulated).
 
@@ -180,7 +180,7 @@ class StabilityService:
             "prompt_sensitivity": 0.12,
             "output_variance": 0.08,
             "semantic_stability": 0.92,
-            "runs_completed": config["num_runs"],
+            "runs_completed": derived_parameters["num_runs"],
         }
 
         # Simulated per-prompt results
@@ -189,9 +189,9 @@ class StabilityService:
                 "prompt_id": f"prompt-{i}",
                 "consistency": 0.8 + (i * 0.02),
                 "variance": 0.1 - (i * 0.01),
-                "runs": config["num_runs"],
+                "runs": derived_parameters["num_runs"],
             }
-            for i in range(config["prompt_variations"])
+            for i in range(derived_parameters["prompt_variations"])
         ]
 
         suite["status"] = "completed"
@@ -246,5 +246,5 @@ class StabilityService:
         return {
             "num_runs": num_runs,
             "prompt_variations": prompt_variations,
-            "derived_from": "model_config",
+            "derived_from": "model_geometry",
         }

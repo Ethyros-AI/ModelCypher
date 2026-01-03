@@ -247,12 +247,8 @@ def curvature_weighted_procrustes(
             source_projected = backend.matmul(U[:, :d_target], backend.diag(S[:d_target]))
         else:
             # Expand: pad with zeros (will be filled by Procrustes)
-            source_projected = backend.zeros((n_samples, d_target), dtype=source_activations.dtype)
-            source_projected = backend.index_update(
-                source_projected,
-                (slice(None), slice(d_source)),
-                source_activations
-            )
+            pad = backend.zeros((n_samples, d_target - d_source), dtype=source_activations.dtype)
+            source_projected = backend.concatenate([source_activations, pad], axis=1)
         source_activations = source_projected
 
     # Step 2: Center the data

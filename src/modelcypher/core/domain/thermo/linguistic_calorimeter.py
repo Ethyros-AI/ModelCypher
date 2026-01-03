@@ -229,7 +229,7 @@ class LinguisticCalorimeter:
 
         # Get model loader (use injected or default)
         if self._model_loader is None:
-            from modelcypher.ports.model_loader import get_model_loader
+            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
             self._model_loader = get_model_loader()
 
