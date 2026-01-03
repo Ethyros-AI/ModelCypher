@@ -242,7 +242,6 @@ class RedTeamScanner:
             return []
 
         context = ProbeContext(
-            tier=AdapterSafetyTier.FULL,
             adapter_name=name,
             adapter_description=description,
             skill_tags=tuple(skill_tags or ()),

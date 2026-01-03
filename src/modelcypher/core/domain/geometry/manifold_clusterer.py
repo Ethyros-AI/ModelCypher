@@ -249,26 +249,27 @@ class ManifoldClusterer:
         """Derive epsilon from the median nearest-neighbor geodesic distance."""
         backend = get_default_backend()
         backend.eval(geodesic_matrix)
-        geo_np = backend.to_numpy(geodesic_matrix)
-        n = int(geo_np.shape[0])
+        n = int(backend.shape(geodesic_matrix)[0])
         if n <= 1:
             return 0.0
-
-        nearest: list[float] = []
-        for i in range(n):
-            min_dist = None
-            for j in range(n):
-                if i == j:
-                    continue
-                dist = float(geo_np[i, j])
-                if min_dist is None or dist < min_dist:
-                    min_dist = dist
-            nearest.append(min_dist if min_dist is not None else 0.0)
-
-        if not nearest:
-            return 0.0
-        nearest.sort()
-        return float(nearest[len(nearest) // 2])
+        inf = float("inf")
+        inf_mask = backend.eye(n) * backend.full((n, n), inf)
+        masked = geodesic_matrix + inf_mask
+        nearest = backend.min(masked, axis=1)
+        backend.eval(nearest)
+        sorted_nearest = backend.sort(nearest, axis=0)
+        backend.eval(sorted_nearest)
+        mid = n // 2
+        if n % 2 == 1:
+            median = backend.take(sorted_nearest, backend.array([mid]), axis=0)
+            backend.eval(median)
+            return float(backend.to_scalar(backend.squeeze(median)))
+        lower = backend.take(sorted_nearest, backend.array([mid - 1]), axis=0)
+        upper = backend.take(sorted_nearest, backend.array([mid]), axis=0)
+        backend.eval(lower, upper)
+        median = (backend.squeeze(lower) + backend.squeeze(upper)) / 2.0
+        backend.eval(median)
+        return float(backend.to_scalar(median))
 
     def _geodesic_distance_pair(self, p1: ManifoldPoint, p2: ManifoldPoint) -> float:
         """Compute geodesic distance between two points.
@@ -280,7 +281,11 @@ class ManifoldClusterer:
         backend = get_default_backend()
         matrix = self._compute_geodesic_matrix([p1, p2])
         backend.eval(matrix)
-        return float(backend.to_numpy(matrix)[0, 1])
+        row0 = backend.take(matrix, backend.array([0]), axis=0)
+        row0 = backend.squeeze(row0, axis=0)
+        val = backend.take(row0, backend.array([1]), axis=0)
+        backend.eval(val)
+        return float(backend.to_scalar(backend.squeeze(val)))
 
     def _region_query_geodesic(
         self, geodesic_matrix, point_index: int, epsilon: float
@@ -296,8 +301,10 @@ class ManifoldClusterer:
         """
         backend = get_default_backend()
         backend.eval(geodesic_matrix)
-        geo_np = backend.to_numpy(geodesic_matrix)
-        distances = geo_np[point_index, :]
+        row = backend.take(geodesic_matrix, backend.array([point_index]), axis=0)
+        row = backend.squeeze(row, axis=0)
+        backend.eval(row)
+        distances = backend.to_numpy(row)
         neighbors: list[int] = []
         for j, dist in enumerate(distances):
             if dist <= epsilon:
@@ -350,9 +357,10 @@ class ManifoldClusterer:
         centroid, centroid_idx = self._compute_centroid_geodesic(points, geodesic_matrix)
 
         # Radius is max geodesic distance from centroid to any member
-        backend.eval(geodesic_matrix)
-        geo_np = backend.to_numpy(geodesic_matrix)
-        radius = float(max(geo_np[centroid_idx, :]))
+        row = backend.take(geodesic_matrix, backend.array([centroid_idx]), axis=0)
+        row = backend.squeeze(row, axis=0)
+        backend.eval(row)
+        radius = float(backend.to_scalar(backend.max(row)))
         dominant_gates = self._compute_dominant_gates(points)
 
         intrinsic_dimension = None
@@ -408,7 +416,7 @@ class ManifoldClusterer:
         squared = geodesic_matrix * geodesic_matrix
         sum_squared = backend.sum(squared, axis=1)
         backend.eval(sum_squared)
-        medoid_idx = int(backend.to_numpy(backend.argmin(sum_squared)))
+        medoid_idx = int(backend.to_scalar(backend.argmin(sum_squared)))
 
         return points[medoid_idx], medoid_idx
 
@@ -425,7 +433,6 @@ class ManifoldClusterer:
         centroids = [r.centroid for r in regions]
         centroid_geodesic = self._compute_geodesic_matrix(centroids)
         backend.eval(centroid_geodesic)
-        geo_np = backend.to_numpy(centroid_geodesic)
 
         merged_regions: list[ManifoldRegion] = []
         merged: set[str] = set()
@@ -438,12 +445,17 @@ class ManifoldClusterer:
             merged_points = [current_region.centroid]
             merged_ids = list(current_region.member_ids)
 
+            row = backend.take(centroid_geodesic, backend.array([i]), axis=0)
+            row = backend.squeeze(row, axis=0)
+            backend.eval(row)
+            row_np = backend.to_numpy(row)
+
             for j in range(i + 1, len(regions)):
                 other = regions[j]
                 if str(other.id) in merged:
                     continue
                 # Use geodesic distance between centroids
-                distance = float(geo_np[i, j])
+                distance = float(row_np[j])
                 overlap_threshold = current_region.radius + other.radius
                 if distance < overlap_threshold:
                     merged.add(str(other.id))

@@ -317,19 +317,14 @@ class KnowledgeDensityAnalyzer:
         b.eval(sim_matrix)
 
         # Mean similarity to all other samples (exclude self)
-        sim_np = b.to_numpy(sim_matrix)
-
-        tightness_scores = []
-        for i in range(n_samples):
-            sims = sim_np[i].tolist()
-            if i < len(sims):
-                sims[i] = 0.0
-            if n_samples > 1:
-                tightness_scores.append(sum(sims) / float(n_samples - 1))
-
-        if tightness_scores:
-            return sum(tightness_scores) / len(tightness_scores)
-        return 0.0
+        sim_sum = b.sum(sim_matrix, axis=1) - b.diag(sim_matrix)
+        b.eval(sim_sum)
+        denom = float(n_samples - 1)
+        mean_per_sample = sim_sum / denom
+        b.eval(mean_per_sample)
+        mean_tightness = b.mean(mean_per_sample)
+        b.eval(mean_tightness)
+        return float(b.to_scalar(mean_tightness))
 
     def _get_support_texts(
         self,

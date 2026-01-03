@@ -874,9 +874,8 @@ def _extract_top_k_dims(
     if k is None:
         k = max(1, int(math.ceil(math.log2(dim + 1))))
 
-    # Derive threshold from dtype precision scaled by max magnitude
-    abs_np = b.to_numpy(abs_vals)
-    max_magnitude = float(max(abs_np)) if len(abs_np) > 0 else 0.0
+    # Derive threshold from dtype precision scaled by max magnitude (use backend ops)
+    max_magnitude = float(b.to_scalar(b.max(abs_vals)))
     if threshold is None:
         eps = machine_epsilon(b, activation_vector)
         # Threshold at sqrt(eps) * max - standard numerical tolerance
@@ -887,10 +886,11 @@ def _extract_top_k_dims(
     b.eval(neg_abs)
     top_indices_arr = b.argsort(neg_abs)[:k]
     b.eval(top_indices_arr)
-    top_indices = b.to_numpy(top_indices_arr).tolist()
 
-    # Get values from array
+    # Convert to Python only at the very end (unavoidable for building dataclass list)
+    top_indices = b.to_numpy(top_indices_arr).tolist()
     act_np = b.to_numpy(activation_vector)
+    abs_np = b.to_numpy(abs_vals)
 
     return [
         ActivatedDimension(

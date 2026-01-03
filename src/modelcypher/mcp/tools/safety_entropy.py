@@ -172,12 +172,9 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             return payload
 
     if "mc_safety_behavioral_probe" in tool_set:
-        from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
-
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_safety_behavioral_probe(
             name: str,
-            tier: str = "standard",
             description: str | None = None,
             skillTags: list[str] | None = None,
             creator: str | None = None,
@@ -186,15 +183,8 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             """Run behavioral safety probes on adapter metadata."""
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
-            tier_map = {
-                "quick": AdapterSafetyTier.QUICK,
-                "standard": AdapterSafetyTier.STANDARD,
-                "full": AdapterSafetyTier.FULL,
-            }
-            safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
             result = ctx.safety_probe_service.run_behavioral_probes(
                 adapter_name=name,
-                tier=safety_tier,
                 adapter_description=description,
                 skill_tags=skillTags,
                 creator=creator,

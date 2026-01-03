@@ -196,7 +196,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
     Probe that measures output drift relative to atlas anchors.
 
     Methodology:
-    1. Select atlas probes by tier (domain coverage)
+    1. Select atlas probes across the full atlas inventory
     2. Use support texts as anchor points in embedding space
     3. Compute geodesic distance from response to anchor
     4. Identify outliers via gap detection in the distance distribution

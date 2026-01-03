@@ -254,6 +254,24 @@ class CUDABackend(Backend):
             return array.flatten().cumsum(dim=0)
         return array.cumsum(dim=axis)
 
+    def floor(self, array: Array) -> Array:
+        return self.torch.floor(array)
+
+    def ceil(self, array: Array) -> Array:
+        return self.torch.ceil(array)
+
+    def log2(self, array: Array) -> Array:
+        return self.torch.log2(array)
+
+    def sin(self, array: Array) -> Array:
+        return self.torch.sin(array)
+
+    def cos(self, array: Array) -> Array:
+        return self.torch.cos(array)
+
+    def arccos(self, array: Array) -> Array:
+        return self.torch.arccos(array)
+
     # --- Linear Algebra (new) ---
     def dot(self, a: Array, b: Array) -> Array:
         if a.ndim == 1 and b.ndim == 1:

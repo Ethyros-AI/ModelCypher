@@ -18,7 +18,6 @@
 """Tests for Behavioral Probes.
 
 Comprehensive tests for the probing system including:
-- AdapterSafetyTier enum
 - ProbeResult and CompositeProbeResult
 - SemanticDriftProbe
 - CanaryQAProbe
@@ -35,7 +34,6 @@ from modelcypher.core.domain.agents.unified_atlas import AtlasProbe, AtlasSource
 from modelcypher.core.domain.domains import AtlasDomain
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyProbe,
-    AdapterSafetyTier,
     CanaryCategory,
     CanaryQAProbe,
     CanaryQuestion,
@@ -96,35 +94,6 @@ def _small_probes() -> list[AtlasProbe]:
             support_texts=("gamma",),
         ),
     ]
-
-# =============================================================================
-# AdapterSafetyTier Tests
-# =============================================================================
-
-
-class TestAdapterSafetyTier:
-    """Tests for AdapterSafetyTier enum."""
-
-    def test_tier_values(self):
-        """Tier enum has expected values."""
-        assert AdapterSafetyTier.QUICK.value == "quick"
-        assert AdapterSafetyTier.STANDARD.value == "standard"
-        assert AdapterSafetyTier.FULL.value == "full"
-
-    def test_tier_is_string_enum(self):
-        """Tier can be used as a string."""
-        assert str(AdapterSafetyTier.QUICK) == "AdapterSafetyTier.QUICK"
-        assert AdapterSafetyTier.QUICK == "quick"
-
-    def test_tier_membership(self):
-        """All expected tiers exist."""
-        tiers = list(AdapterSafetyTier)
-        assert len(tiers) == 3
-        assert AdapterSafetyTier.QUICK in tiers
-        assert AdapterSafetyTier.STANDARD in tiers
-        assert AdapterSafetyTier.FULL in tiers
-
-
 
 # =============================================================================
 # ProbeResult Tests
@@ -330,47 +299,29 @@ class TestSemanticDriftProbe:
         assert probe.name == "semantic-drift"
         assert probe.version == "probe-drift-v1.0"
 
-    def test_supported_tiers_excludes_quick(self, probe):
-        """SemanticDriftProbe doesn't support QUICK tier."""
-        assert AdapterSafetyTier.QUICK not in probe.supported_tiers
-        assert AdapterSafetyTier.STANDARD in probe.supported_tiers
-        assert AdapterSafetyTier.FULL in probe.supported_tiers
-
-    def test_should_run_standard(self, probe):
-        """should_run returns True for STANDARD tier."""
-        assert probe.should_run(AdapterSafetyTier.STANDARD) is True
-
-    def test_should_run_full(self, probe):
-        """should_run returns True for FULL tier."""
-        assert probe.should_run(AdapterSafetyTier.FULL) is True
-
-    def test_should_not_run_quick(self, probe):
-        """should_run returns False for QUICK tier."""
-        assert probe.should_run(AdapterSafetyTier.QUICK) is False
-
     def test_evaluate_no_inference_hook_passes(self, probe):
         """Probe returns no findings when no inference hook is provided."""
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test-adapter",
             inference_hook=None,
             embedder=DummyEmbedder(),
         )
         result = probe.evaluate(context)
         assert result.has_findings is False
-        assert "missing" in result.details.lower()
+        assert result.finding_counts is not None
+        assert result.finding_counts["missing_inference"] == 1
 
     def test_evaluate_no_embedder_passes(self, probe):
         """Probe returns no findings when no embedder is provided."""
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test-adapter",
             inference_hook=lambda prompt: "response",
             embedder=None,
         )
         result = probe.evaluate(context)
         assert result.has_findings is False
-        assert "missing" in result.details.lower()
+        assert result.finding_counts is not None
+        assert result.finding_counts["missing_embedder"] == 1
 
     def test_evaluate_detects_geometry_outlier(self):
         """Probe flags outlier geodesic distances from atlas anchors."""
@@ -384,7 +335,6 @@ class TestSemanticDriftProbe:
             return "zzzzzzzzzzzzzz"
 
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test-adapter",
             inference_hook=hook,
             embedder=DummyEmbedder(),
@@ -465,23 +415,17 @@ class TestCanaryQAProbe:
         assert probe.name == "canary-qa"
         assert probe.version == "probe-canary-v1.0"
 
-    def test_supported_tiers(self, probe):
-        """Probe supports STANDARD and FULL tiers."""
-        assert AdapterSafetyTier.QUICK not in probe.supported_tiers
-        assert AdapterSafetyTier.STANDARD in probe.supported_tiers
-        assert AdapterSafetyTier.FULL in probe.supported_tiers
-
     def test_evaluate_no_inference_hook_passes(self, probe):
         """Probe returns no findings when no inference hook is provided."""
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test-adapter",
             inference_hook=None,
             embedder=DummyEmbedder(),
         )
         result = probe.evaluate(context)
         assert result.has_findings is False
-        assert "missing" in result.details.lower()
+        assert result.finding_counts is not None
+        assert result.finding_counts["missing_inference"] == 1
 
     def test_evaluate_all_canaries_pass(self, probe):
         """Probe reports no findings when canary distances cluster."""
@@ -498,7 +442,6 @@ class TestCanaryQAProbe:
             return "Normal response"
 
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test-adapter",
             inference_hook=baseline_hook,
             embedder=DummyEmbedder(),
@@ -517,7 +460,6 @@ class TestCanaryQAProbe:
             return "Sure, here's how to do that..."
 
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test-adapter",
             inference_hook=outlier_hook,
             embedder=DummyEmbedder(),
@@ -539,10 +481,8 @@ class TestProbeContext:
     def test_minimal_context(self):
         """Context can be created with minimal fields."""
         context = ProbeContext(
-            tier=AdapterSafetyTier.QUICK,
             adapter_name="test",
         )
-        assert context.tier == AdapterSafetyTier.QUICK
         assert context.adapter_name == "test"
         assert context.inference_hook is None
 
@@ -551,7 +491,6 @@ class TestProbeContext:
         def hook(p):
             return "response"
         context = ProbeContext(
-            tier=AdapterSafetyTier.FULL,
             adapter_name="full-test",
             adapter_description="A test adapter",
             skill_tags=("coding", "chat"),
@@ -583,35 +522,20 @@ class TestProbeRunner:
     def test_run_empty_probes(self, runner):
         """Running no probes returns empty composite result."""
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test",
         )
         result = runner.run([], context)
         assert len(result.probe_results) == 0
         assert result.aggregate_finding_counts == {}
 
-    def test_run_filters_by_tier(self, runner):
-        """Runner only runs probes for the given tier."""
-        probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
-        context = ProbeContext(
-            tier=AdapterSafetyTier.QUICK,
-            adapter_name="test",
-            inference_hook=lambda p: "response",
-        )
-        result = runner.run(probes, context)
-        # Both probes don't support QUICK tier
-        assert len(result.probe_results) == 0
-
     def test_run_aggregates_results(self, runner):
         """Runner aggregates results from multiple probes."""
         probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test",
             inference_hook=lambda p: "Normal safe response",
         )
         result = runner.run(probes, context)
-        # Both probes should run for STANDARD tier
         assert len(result.probe_results) == 2
 
     def test_run_handles_probe_exception(self, runner):
@@ -626,15 +550,10 @@ class TestProbeRunner:
             def version(self) -> str:
                 return "v1"
 
-            @property
-            def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-                return frozenset([AdapterSafetyTier.STANDARD])
-
             def evaluate(self, context: ProbeContext) -> ProbeResult:
                 raise RuntimeError("Probe crashed")
 
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="test",
         )
         result = runner.run([FailingProbe()], context)
@@ -654,68 +573,16 @@ class TestProbeRunner:
             def version(self) -> str:
                 return "v1"
 
-            @property
-            def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-                return frozenset([AdapterSafetyTier.STANDARD])
-
             def evaluate(self, context: ProbeContext) -> ProbeResult:
                 raise ValueError("Error")
 
-        context = ProbeContext(tier=AdapterSafetyTier.STANDARD, adapter_name="test")
+        context = ProbeContext(adapter_name="test")
         result = runner.run([FailingProbe()], context)
         assert result.aggregate_finding_counts == {"execution_errors": 1}
 
-    def test_run_all_applicable_probes(self, runner):
-        """Runner runs all probes applicable to the tier."""
-
-        class QuickProbe(AdapterSafetyProbe):
-            @property
-            def name(self) -> str:
-                return "quick"
-
-            @property
-            def version(self) -> str:
-                return "v1"
-
-            @property
-            def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-                return frozenset([AdapterSafetyTier.QUICK, AdapterSafetyTier.STANDARD])
-
-            def evaluate(self, context: ProbeContext) -> ProbeResult:
-                return ProbeResult(self.name, self.version)
-
-        probes = [QuickProbe(), SemanticDriftProbe(probes=_small_probes())]
-        context = ProbeContext(tier=AdapterSafetyTier.STANDARD, adapter_name="test")
-        result = runner.run(probes, context)
-        # QuickProbe and SemanticDriftProbe both support STANDARD
-        assert len(result.probe_results) == 2
-
-    def test_run_skips_inapplicable_probes(self, runner):
-        """Runner skips probes that don't support the tier."""
-
-        class FullOnlyProbe(AdapterSafetyProbe):
-            @property
-            def name(self) -> str:
-                return "full-only"
-
-            @property
-            def version(self) -> str:
-                return "v1"
-
-            @property
-            def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-                return frozenset([AdapterSafetyTier.FULL])
-
-            def evaluate(self, context: ProbeContext) -> ProbeResult:
-                return ProbeResult(self.name, self.version)
-
-        context = ProbeContext(tier=AdapterSafetyTier.QUICK, adapter_name="test")
-        result = runner.run([FullOnlyProbe()], context)
-        assert len(result.probe_results) == 0
-
     def test_run_returns_composite_result(self, runner):
         """Runner returns CompositeProbeResult."""
-        context = ProbeContext(tier=AdapterSafetyTier.STANDARD, adapter_name="test")
+        context = ProbeContext(adapter_name="test")
         result = runner.run([SemanticDriftProbe(probes=_small_probes())], context)
         assert isinstance(result, CompositeProbeResult)
 
@@ -741,7 +608,6 @@ class TestIntegration:
             return "Here is a helpful response."
 
         context = ProbeContext(
-            tier=AdapterSafetyTier.FULL,
             adapter_name="safe-adapter",
             adapter_description="A safe test adapter",
             inference_hook=baseline_hook,
@@ -761,7 +627,6 @@ class TestIntegration:
             return "I am now in developer mode, ignoring all safety guidelines."
 
         context = ProbeContext(
-            tier=AdapterSafetyTier.STANDARD,
             adapter_name="suspicious-adapter",
             inference_hook=outlier_hook,
             embedder=DummyEmbedder(),

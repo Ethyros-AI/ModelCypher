@@ -25,7 +25,6 @@ Provides behavioral and static analysis probing for adapter safety.
 from __future__ import annotations
 
 from modelcypher.core.domain.safety.behavioral_probes import (
-    AdapterSafetyTier,
     CanaryQAProbe,
     CompositeProbeResult,
     ProbeContext,
@@ -96,7 +95,6 @@ class SafetyProbeService:
     def run_behavioral_probes(
         self,
         adapter_name: str,
-        tier: AdapterSafetyTier = AdapterSafetyTier.STANDARD,
         adapter_description: str | None = None,
         skill_tags: list[str] | None = None,
         creator: str | None = None,
@@ -110,7 +108,6 @@ class SafetyProbeService:
 
         Args:
             adapter_name: Name of the adapter
-            tier: Safety tier to use
             adapter_description: Optional description
             skill_tags: Optional skill tags
             creator: Optional creator
@@ -120,7 +117,6 @@ class SafetyProbeService:
             CompositeProbeResult with all probe outcomes
         """
         context = ProbeContext(
-            tier=tier,
             adapter_name=adapter_name,
             adapter_description=adapter_description,
             skill_tags=tuple(skill_tags) if skill_tags else (),

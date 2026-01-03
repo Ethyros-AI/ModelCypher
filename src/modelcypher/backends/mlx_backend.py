@@ -389,6 +389,16 @@ class MLXBackend(Backend):
     def cumsum(self, array: Array, axis: int | None = None) -> Array:
         return self.mx.cumsum(array, axis=axis)
 
+    def floor(self, array: Array) -> Array:
+        return self.mx.floor(array)
+
+    def ceil(self, array: Array) -> Array:
+        return self.mx.ceil(array)
+
+    def log2(self, array: Array) -> Array:
+        # MLX has native log2 support
+        return self.mx.log2(array)
+
     # --- Linear Algebra (lazy except CPU stream ops) ---
     def dot(self, a: Array, b: Array) -> Array:
         # MLX uses matmul for general case; for 1D vectors use sum of element-wise product

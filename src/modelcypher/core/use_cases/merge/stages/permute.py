@@ -190,10 +190,10 @@ def stage_permute(
             eigvals, eigvecs = b.eigh(mtm)
         b.eval(eigvals, eigvecs)
 
-        eigvals_list = [float(v) for v in b.to_numpy(eigvals).tolist()]
-        max_eig = max(eigvals_list) if eigvals_list else 0.0
+        # Use backend operations to find min/max eigenvalues (avoid CPU conversion)
+        max_eig = float(b.to_scalar(b.max(eigvals)))
+        min_eig = float(b.to_scalar(b.min(eigvals)))
         threshold = max_eig * precision_tol
-        min_eig = min(eigvals_list) if eigvals_list else 0.0
         if min_eig <= threshold:
             raise RuntimeError(
                 "PERMUTE: Anchor covariance is rank-deficient; "

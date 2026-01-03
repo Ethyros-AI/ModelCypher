@@ -619,25 +619,17 @@ class IntrinsicDimension:
             bin_indices = backend.where(bin_indices < zero_idx, zero_idx, bin_indices)
             backend.eval(bin_indices)
 
-            # Count bins using backend one-hot encoding (vectorized, no Python loop)
-            # Create one-hot matrix [n_points, n_bins] and sum columns
-            one_hot = backend.zeros((len(valid_dims_arr), n_bins))
-            # Use scatter-like operation via eye indexing
-            bin_indices_np = backend.to_numpy(bin_indices).flatten()
-            n_pts = len(valid_dims_arr)
-            # Build one-hot efficiently: row i has 1 at column bin_indices[i]
-            # Since we need to iterate anyway for one-hot, just count directly
-            bin_counts = [0] * n_bins
-            for idx in bin_indices_np:
-                bin_counts[int(idx)] += 1
+            # Count bins using backend one-hot encoding (fully vectorized)
+            # Create one-hot via eye indexing: one_hot[i] = eye[bin_idx[i]]
+            eye_mat = backend.eye(n_bins)
+            one_hot = eye_mat[bin_indices]  # [n_points, n_bins] with 1 at bin index
+            backend.eval(one_hot)
+            # Sum columns to get bin counts
+            bin_counts_arr = backend.sum(one_hot, axis=0)
+            backend.eval(bin_counts_arr)
 
-            # Find modal bin - use vectorized argmax if large, else simple loop
-            max_bin = 0
-            max_count = bin_counts[0]
-            for i in range(1, n_bins):
-                if bin_counts[i] > max_count:
-                    max_count = bin_counts[i]
-                    max_bin = i
+            # Find modal bin using backend argmax
+            max_bin = int(backend.to_scalar(backend.argmax(bin_counts_arr)))
 
             modal_dim = min_dim + (max_bin + 0.5) * bin_width
         else:
@@ -647,9 +639,11 @@ class IntrinsicDimension:
         deficient: list[int] = []
         if deficiency_threshold is not None:
             threshold = deficiency_threshold * modal_dim
-            for i in range(n):
-                if valid_id_np[i] and local_dims_np[i] < threshold:
-                    deficient.append(i)
+            # Use backend operations to find deficient points
+            deficient_mask = valid_id & (local_dims < backend.array(threshold))
+            backend.eval(deficient_mask)
+            deficient_mask_np = backend.to_numpy(deficient_mask)
+            deficient = [i for i in range(n) if deficient_mask_np[i]]
 
         return LocalDimensionMap(
             dimensions=local_dims,

@@ -1719,12 +1719,15 @@ class RiemannianGeometry:
         backend = self._backend
 
         # Validate inputs - NaN in mu or geo_from_mu causes downstream NaN propagation
+        # Use backend operations to avoid CPU conversion
         backend.eval(mu, geo_from_mu)
-        mu_np = backend.to_numpy(mu)
-        geo_np = backend.to_numpy(geo_from_mu)
+        mu_isfinite = backend.isfinite(mu)
+        geo_isfinite = backend.isfinite(geo_from_mu)
+        backend.eval(mu_isfinite, geo_isfinite)
 
-        mu_nonfinite = sum(1 for v in mu_np.flatten() if not math.isfinite(float(v)))
-        geo_nonfinite = sum(1 for v in geo_np.flatten() if not math.isfinite(float(v)))
+        # Count non-finite using backend sum (1 - isfinite gives 0/1 mask)
+        mu_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(mu_isfinite, "float32"))))
+        geo_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(geo_isfinite, "float32"))))
 
         if mu_nonfinite > 0:
             raise ValueError(
@@ -1758,12 +1761,15 @@ class RiemannianGeometry:
         # - ratio = 0: Points coincide (both distances = 0)
         #
         # Handle inf/nan from disconnected or coincident points
+        # Use backend operations to avoid CPU conversion
         backend.eval(scale)
-        scale_np = backend.to_numpy(scale)
+        scale_isfinite = backend.isfinite(scale)
+        scale_isinf = backend.isinf(scale)
+        scale_isnan = backend.isnan(scale)
+        backend.eval(scale_isfinite, scale_isinf, scale_isnan)
 
-        # Check for numerical issues that indicate manifold problems
-        inf_count = sum(1 for s in scale_np.flatten() if math.isinf(float(s)))
-        nan_count = sum(1 for s in scale_np.flatten() if math.isnan(float(s)))
+        inf_count = int(backend.to_scalar(backend.sum(backend.astype(scale_isinf, "float32"))))
+        nan_count = int(backend.to_scalar(backend.sum(backend.astype(scale_isnan, "float32"))))
 
         if inf_count > 0 or nan_count > 0:
             raise ValueError(
@@ -1773,14 +1779,12 @@ class RiemannianGeometry:
                 f"duplicate points in the input."
             )
 
-        # Log curvature scale statistics for diagnostics (not clamping, just reporting)
-        n = len(scale_np)
-        scale_flat = [float(s) for s in scale_np.flatten()]
-        if scale_flat:
-            scale_min = min(scale_flat)
-            scale_max = max(scale_flat)
-            scale_mean = sum(scale_flat) / len(scale_flat)
-            # Debug level: report raw statistics, let caller interpret
+        # Log curvature scale statistics for diagnostics (only when debugging)
+        if logger.isEnabledFor(logging.DEBUG):
+            n = int(scale.shape[0])
+            scale_min = float(backend.to_scalar(backend.min(scale)))
+            scale_max = float(backend.to_scalar(backend.max(scale)))
+            scale_mean = float(backend.to_scalar(backend.mean(scale)))
             logger.debug(
                 f"Curvature scaling in Fréchet mean: n={n}, "
                 f"scale range=[{scale_min:.3f}, {scale_max:.3f}], mean={scale_mean:.3f}"
@@ -1798,34 +1802,30 @@ class RiemannianGeometry:
         # This is geometrically valid - we're controlling step size, not the direction
         # Large gradients (from extreme curvature) need smaller steps to avoid overshooting
         backend.eval(gradient)
-        grad_np = backend.to_numpy(gradient)
 
-        # Check for non-finite values in gradient (inf or nan)
-        # These can happen with extreme curvature causing overflow
+        # Check for non-finite values in gradient using backend operations
         # IEEE 754: 0 * inf = nan, inf - inf = nan, so we must handle before scaling
-        has_nonfinite = any(
-            not math.isfinite(float(g)) for g in grad_np.flatten()
-        )
+        grad_isfinite = backend.isfinite(gradient)
+        backend.eval(grad_isfinite)
+        has_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(grad_isfinite, "float32")))) > 0
 
         if has_nonfinite:
             # Gradient contains inf or nan - numerical overflow from extreme curvature
-            # Replace non-finite values while preserving geometric direction:
-            # - inf -> max finite value (preserves direction)
+            # Replace non-finite values using backend where operations:
             # - nan -> 0 (no contribution from this component)
+            # - inf -> max finite value (preserves direction)
             max_finite = 1e38  # Large but safely below float64 overflow
-            grad_np_clipped = []
-            for g in grad_np.flatten():
-                g_float = float(g)
-                if math.isnan(g_float):
-                    grad_np_clipped.append(0.0)  # nan -> no contribution
-                elif math.isinf(g_float):
-                    grad_np_clipped.append(max_finite if g_float > 0 else -max_finite)
-                else:
-                    grad_np_clipped.append(g_float)
+            grad_isnan = backend.isnan(gradient)
+            grad_isinf = backend.isinf(gradient)
+            grad_sign = backend.sign(gradient)
+            backend.eval(grad_isnan, grad_isinf, grad_sign)
 
-            gradient = backend.array(grad_np_clipped)
+            # First handle nan -> 0
+            gradient = backend.where(grad_isnan, backend.zeros_like(gradient), gradient)
+            # Then handle inf -> max_finite * sign
+            inf_replacement = grad_sign * backend.full(gradient.shape, max_finite)
+            gradient = backend.where(grad_isinf, inf_replacement, gradient)
             backend.eval(gradient)
-            grad_np = backend.to_numpy(gradient)
 
         grad_norm_arr = backend.sqrt(backend.sum(gradient * gradient))
         backend.eval(grad_norm_arr)
@@ -1849,11 +1849,11 @@ class RiemannianGeometry:
         new_mu = mu + eta * gradient
 
         # Validate output - if update produced NaN, keep old mean
+        # Use backend operations to avoid CPU conversion
         backend.eval(new_mu)
-        new_mu_np = backend.to_numpy(new_mu)
-        new_mu_nonfinite = sum(
-            1 for v in new_mu_np.flatten() if not math.isfinite(float(v))
-        )
+        new_mu_isfinite = backend.isfinite(new_mu)
+        backend.eval(new_mu_isfinite)
+        new_mu_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(new_mu_isfinite, "float32"))))
 
         if new_mu_nonfinite > 0:
             # Update would produce NaN - skip this iteration

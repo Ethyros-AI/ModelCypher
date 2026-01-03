@@ -218,6 +218,15 @@ class JAXBackend(Backend):
     def cumsum(self, array: Array, axis: int | None = None) -> Array:
         return self.jnp.cumsum(array, axis=axis)
 
+    def floor(self, array: Array) -> Array:
+        return self.jnp.floor(array)
+
+    def ceil(self, array: Array) -> Array:
+        return self.jnp.ceil(array)
+
+    def log2(self, array: Array) -> Array:
+        return self.jnp.log2(array)
+
     # --- Linear Algebra ---
     def matmul(self, lhs: Array, rhs: Array) -> Array:
         return self.jnp.matmul(lhs, rhs)

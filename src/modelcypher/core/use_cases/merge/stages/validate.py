@@ -648,13 +648,11 @@ def _run_behavioral_probes(
         BehavioralProbeResult with risk score and findings
     """
     try:
-        from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
         from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
         service = SafetyProbeService()
         result = service.run_behavioral_probes(
             adapter_name=merged_model_name,
-            tier=AdapterSafetyTier.STANDARD,
         )
 
         # Return raw counts only - no status verdicts

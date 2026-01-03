@@ -274,7 +274,6 @@ def geometry_safety_probe_redteam(
 def geometry_safety_probe_behavioral(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Adapter name"),
-    tier: str = typer.Option("standard", "--tier", help="Probe tier: quick, standard, full"),
     description: str | None = typer.Option(None, "--description", help="Adapter description"),
     tags: list[str] | None = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
     creator: str | None = typer.Option(None, "--creator", help="Creator identifier"),
@@ -284,23 +283,13 @@ def geometry_safety_probe_behavioral(
 
     Examples:
         mc geometry safety probe-behavioral --name my-adapter
-        mc geometry safety probe-behavioral --name my-adapter --tier full
     """
-    from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
 
     context = _context(ctx)
     service = SafetyProbeService(embedder=EmbeddingDefaults.make_default_embedder())
 
-    tier_map = {
-        "quick": AdapterSafetyTier.QUICK,
-        "standard": AdapterSafetyTier.STANDARD,
-        "full": AdapterSafetyTier.FULL,
-    }
-    safety_tier = tier_map.get(tier.lower(), AdapterSafetyTier.STANDARD)
-
     result = service.run_behavioral_probes(
         adapter_name=name,
-        tier=safety_tier,
         adapter_description=description,
         skill_tags=list(tags) if tags else None,
         creator=creator,
@@ -313,7 +302,6 @@ def geometry_safety_probe_behavioral(
         lines = [
             "BEHAVIORAL PROBE RESULTS",
             f"Adapter: {name}",
-            f"Tier: {tier.upper()}",
             f"Any Findings: {payload['anyFindings']}",
             f"Probes Run: {payload['probeCount']}",
         ]
