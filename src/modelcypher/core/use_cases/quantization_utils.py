@@ -33,10 +33,7 @@ class QuantizationHint:
     mode: str | None = None
 
 
-@dataclass(frozen=True)
-class QuantizationConfig:
-    default: QuantizationHint | None
-    overrides: dict[str, QuantizationHint]
+QuantizationPlan = tuple[QuantizationHint | None, dict[str, QuantizationHint]]
 
 
 @dataclass(frozen=True)
@@ -47,7 +44,7 @@ class QuantizationParams:
     origin: str
 
 
-def quantization_config_from_payload(payload: Mapping[str, Any]) -> QuantizationConfig | None:
+def quantization_plan_from_payload(payload: Mapping[str, Any]) -> QuantizationPlan | None:
     quant_payload = _select_quantization_payload(payload)
     if not quant_payload:
         return None
@@ -64,24 +61,25 @@ def quantization_config_from_payload(payload: Mapping[str, Any]) -> Quantization
             continue
         overrides[key] = hint
 
-    return QuantizationConfig(default=default, overrides=overrides)
+    return (default, overrides)
 
 
 def quantization_hint_for_key(
     weight_key: str,
-    config: QuantizationConfig | None,
+    plan: QuantizationPlan | None,
 ) -> QuantizationHint | None:
-    if config is None:
+    if plan is None:
         return None
+    default, overrides = plan
 
     base_key = weight_key[:-7] if weight_key.endswith(".weight") else weight_key
-    if base_key in config.overrides:
-        return config.overrides[base_key]
-    if base_key.startswith("model.") and base_key[6:] in config.overrides:
-        return config.overrides[base_key[6:]]
-    if weight_key in config.overrides:
-        return config.overrides[weight_key]
-    return config.default
+    if base_key in overrides:
+        return overrides[base_key]
+    if base_key.startswith("model.") and base_key[6:] in overrides:
+        return overrides[base_key[6:]]
+    if weight_key in overrides:
+        return overrides[weight_key]
+    return default
 
 
 def dequantize_if_needed(
@@ -187,7 +185,7 @@ def requantize_weights(
     weights: Mapping[str, Any],
     backend: Backend,
     output_hint: QuantizationHint,
-    source_quantization: QuantizationConfig | None = None,
+    source_quantization: QuantizationPlan | None = None,
 ) -> dict[str, Any]:
     if output_hint.bits <= 0 or 32 % output_hint.bits != 0:
         raise ValueError(f"Invalid output quantization bits={output_hint.bits}")

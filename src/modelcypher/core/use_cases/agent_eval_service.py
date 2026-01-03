@@ -43,24 +43,9 @@ from modelcypher.core.domain.agents.agent_eval_suite_engine import (
     ExpectedToolSpec,
 )
 from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
-from modelcypher.core.domain.agents.semantic_prime_drift import (
-    SemanticPrimeDriftConfig,
-    SemanticPrimeDriftDetector,
-)
+from modelcypher.core.domain.agents.semantic_prime_drift import SemanticPrimeDriftDetector
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class AgentEvalConfig:
-    """Configuration for agent evaluation."""
-
-    model_path: str
-    eval_suite: str = "default"
-    max_turns: int = 10
-    timeout_seconds: int = 300
-    tools_enabled: bool = True
-    seed: int | None = None
 
 
 @dataclass
@@ -106,11 +91,24 @@ class AgentEvalService:
         """Initialize agent eval service."""
         self._evaluations: dict[str, dict[str, Any]] = {}
 
-    def run(self, config: AgentEvalConfig) -> AgentEvalRunResult:
+    def run(
+        self,
+        model_path: str,
+        eval_suite: str = "default",
+        max_turns: int = 10,
+        timeout_seconds: int = 300,
+        tools_enabled: bool = True,
+        seed: int | None = None,
+    ) -> AgentEvalRunResult:
         """Execute agent evaluation.
 
         Args:
-            config: Agent evaluation configuration
+            model_path: Path to model directory.
+            eval_suite: Evaluation suite name.
+            max_turns: Maximum conversation turns.
+            timeout_seconds: Timeout in seconds.
+            tools_enabled: Whether tool use is enabled.
+            seed: Optional random seed.
 
         Returns:
             AgentEvalRunResult with eval_id and initial status
@@ -118,7 +116,7 @@ class AgentEvalService:
         Raises:
             ValueError: If model path is invalid
         """
-        model_path = Path(config.model_path).expanduser().resolve()
+        model_path = Path(model_path).expanduser().resolve()
 
         if not model_path.exists():
             raise ValueError(f"Model path does not exist: {model_path}")
@@ -130,17 +128,17 @@ class AgentEvalService:
 
         config_dict = {
             "model_path": str(model_path),
-            "eval_suite": config.eval_suite,
-            "max_turns": config.max_turns,
-            "timeout_seconds": config.timeout_seconds,
-            "tools_enabled": config.tools_enabled,
-            "seed": config.seed,
+            "eval_suite": eval_suite,
+            "max_turns": max_turns,
+            "timeout_seconds": timeout_seconds,
+            "tools_enabled": tools_enabled,
+            "seed": seed,
         }
 
         # Store evaluation state
         self._evaluations[eval_id] = {
             "model_path": str(model_path),
-            "eval_suite": config.eval_suite,
+            "eval_suite": eval_suite,
             "status": "running",
             "started_at": started_at,
             "completed_at": None,
@@ -153,16 +151,16 @@ class AgentEvalService:
             "Started agent evaluation %s for model %s with suite %s",
             eval_id,
             model_path,
-            config.eval_suite,
+            eval_suite,
         )
 
         # Run evaluation
-        self._run_evaluation(eval_id, config)
+        self._run_evaluation(eval_id)
 
         return AgentEvalRunResult(
             eval_id=eval_id,
             model_path=str(model_path),
-            eval_suite=config.eval_suite,
+            eval_suite=eval_suite,
             status=self._evaluations[eval_id]["status"],
             started_at=started_at,
             config=config_dict,
@@ -210,7 +208,6 @@ class AgentEvalService:
     def _run_evaluation(
         self,
         eval_id: str,
-        config: AgentEvalConfig,
     ) -> None:
         """Run agent evaluation (simulated).
 
@@ -374,12 +371,8 @@ class AgentEvalService:
         Returns:
             Dict with raw similarity measurement and threshold for reference
         """
-        config = SemanticPrimeDriftConfig(
-            enabled=True,
-            minimum_cosine_similarity=threshold,
-        )
-        detector = SemanticPrimeDriftDetector(configuration=config)
         atlas = SemanticPrimeAtlas()
+        detector = SemanticPrimeDriftDetector(atlas=atlas)
 
         # Get baseline signature
         baseline_signature = atlas.signature(baseline_text)
@@ -395,7 +388,7 @@ class AgentEvalService:
 
         return {
             "cosine_similarity": result.cosine_similarity,
-            "threshold": result.threshold,
+            "threshold": threshold,
             "method": result.method.value if result.method else None,
             "note": result.note,
         }

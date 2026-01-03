@@ -180,10 +180,13 @@ class EntropyWindow:
         z_scores = [s[2] for s in self.samples]
         current = entropies[-1]
         current_z = z_scores[-1]
-        avg = sum(entropies) / len(entropies)
-        variance = sum((e - avg) ** 2 for e in entropies) / len(entropies)
         _b = get_default_backend()
-        std_dev = sqrt_scalar(variance, _b)
+        entropy_arr = _b.array(entropies)
+        avg_arr = _b.mean(entropy_arr)
+        std_arr = _b.std(entropy_arr)
+        _b.eval(avg_arr, std_arr)
+        avg = float(_b.to_scalar(avg_arr))
+        std_dev = float(_b.to_scalar(std_arr)) if len(entropies) > 1 else 0.0
 
         return EntropyWindowStatus(
             window_id=self.window_id,
@@ -199,7 +202,14 @@ class EntropyWindow:
     def to_entropy_sample(self, source: str, correlation_id: str | None = None) -> EntropySample:
         """Create an EntropySample from current window state."""
         status = self.status()
-        avg_variance = sum(s[1] for s in self.samples) / max(len(self.samples), 1)
+        if self.samples:
+            _b = get_default_backend()
+            variance_arr = _b.array([s[1] for s in self.samples])
+            avg_var_arr = _b.mean(variance_arr)
+            _b.eval(avg_var_arr)
+            avg_variance = float(_b.to_scalar(avg_var_arr))
+        else:
+            avg_variance = 0.0
 
         return EntropySample(
             window_id=self.window_id,

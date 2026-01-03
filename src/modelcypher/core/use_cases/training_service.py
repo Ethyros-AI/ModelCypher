@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.training import TrainingConfig
+from modelcypher.core.domain.training import TrainingSpec
 
 if TYPE_CHECKING:
     from modelcypher.ports.training import TrainingEngine
@@ -42,7 +42,7 @@ class TrainingService:
     def __init__(self, engine: "TrainingEngine") -> None:
         self.engine = engine
 
-    def preflight(self, config: TrainingConfig) -> dict:
+    def preflight(self, config: TrainingSpec) -> dict:
         result = self.engine.preflight(config)
         return {
             "predictedBatchSize": result.predicted_batch_size,
@@ -52,7 +52,7 @@ class TrainingService:
         }
 
     def start(
-        self, config: TrainingConfig, stream: bool = False, detach: bool = False
+        self, config: TrainingSpec, stream: bool = False, detach: bool = False
     ) -> tuple[dict, list[dict]]:
         job, events = self.engine.start(config, stream_events=stream, detach=detach)
         # Support both old config.batch_size and new config.hyperparameters.batch_size

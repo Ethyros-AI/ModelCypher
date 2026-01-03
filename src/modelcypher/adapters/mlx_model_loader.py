@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.ports.model_loader import ModelLoaderPort
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.lora_mlx import LoRAConfig
+    from modelcypher.core.domain.training.lora_mlx import LoRASettings
 
 
 class MLXModelLoader(ModelLoaderPort):
@@ -41,13 +41,13 @@ class MLXModelLoader(ModelLoaderPort):
     def load_model_for_training(
         self,
         model_path: str,
-        lora_config: "LoRAConfig | None" = None,
+        lora_settings: "LoRASettings | None" = None,
     ) -> tuple[Any, Any]:
         """Load model and tokenizer for training or inference.
 
         Args:
             model_path: Path to model directory
-            lora_config: Optional LoRA configuration to apply
+            lora_settings: Optional LoRA settings to apply
 
         Returns:
             Tuple of (model, tokenizer)
@@ -57,7 +57,7 @@ class MLXModelLoader(ModelLoaderPort):
             load_model_for_training as _load_model_for_training,
         )
 
-        return _load_model_for_training(model_path, lora_config)
+        return _load_model_for_training(model_path, lora_settings)
 
     def load_weights_as_numpy(self, model_path: str) -> dict[str, Any]:
         """Load model weights as numpy-compatible arrays.

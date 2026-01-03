@@ -35,21 +35,21 @@ class TestEntropyWindow:
     """Tests for EntropyWindow."""
 
     def test_initialization(self):
-        """Should initialize with window_size."""
-        window = EntropyWindow(window_size=20)
+        """Should initialize with derived window size."""
+        window = EntropyWindow(sample_count=400)
 
         assert window.window_id is not None
 
     def test_custom_window_id(self):
         """Should accept custom window ID."""
         custom_id = str(uuid.uuid4())
-        window = EntropyWindow(window_size=10, window_id=custom_id)
+        window = EntropyWindow(sample_count=100, window_id=custom_id)
 
         assert window.window_id == custom_id
 
     def test_add_single_sample(self):
         """Should add a single sample."""
-        window = EntropyWindow(window_size=10)
+        window = EntropyWindow(sample_count=100)
         status = window.add(entropy=2.0, variance=0.1, token_index=0)
 
         assert status.sample_count == 1
@@ -59,7 +59,7 @@ class TestEntropyWindow:
 
     def test_add_multiple_samples(self):
         """Should compute moving average correctly."""
-        window = EntropyWindow(window_size=10)
+        window = EntropyWindow(sample_count=100)
         window.add(entropy=1.0, variance=0.1, token_index=0)
         window.add(entropy=2.0, variance=0.1, token_index=1)
         status = window.add(entropy=3.0, variance=0.1, token_index=2)
@@ -71,7 +71,7 @@ class TestEntropyWindow:
 
     def test_window_size_limit(self):
         """Should maintain window size limit."""
-        window = EntropyWindow(window_size=5)
+        window = EntropyWindow(sample_count=25)
 
         for i in range(10):
             window.add(entropy=float(i), variance=0.1, token_index=i)
@@ -82,7 +82,7 @@ class TestEntropyWindow:
 
     def test_reset(self):
         """Reset should clear all state."""
-        window = EntropyWindow(window_size=5)
+        window = EntropyWindow(sample_count=25)
         window.add(entropy=4.0, variance=0.1, token_index=0)
         window.add(entropy=4.0, variance=0.1, token_index=1)
 
@@ -93,7 +93,7 @@ class TestEntropyWindow:
 
     def test_add_batch(self):
         """Should add multiple samples via batch."""
-        window = EntropyWindow(window_size=5)
+        window = EntropyWindow(sample_count=25)
         batch = [
             (1.0, 0.1, 0),
             (2.0, 0.2, 1),
@@ -106,7 +106,7 @@ class TestEntropyWindow:
 
     def test_moving_average_reflects_raw_entropy(self):
         """Moving average should reflect raw entropy values."""
-        window = EntropyWindow(window_size=5)
+        window = EntropyWindow(sample_count=25)
 
         # Low entropy value
         window.reset()
@@ -131,7 +131,7 @@ class TestEntropyWindow:
 
     def test_to_entropy_summary(self):
         """Should produce summary dict."""
-        window = EntropyWindow(window_size=5)
+        window = EntropyWindow(sample_count=25)
         window.add(entropy=2.0, variance=0.1, token_index=0)
 
         summary = window.to_entropy_summary()
@@ -147,7 +147,7 @@ class TestEntropyWindowAsync:
     @pytest.mark.asyncio
     async def test_add_async(self):
         """Should add sample asynchronously."""
-        window = EntropyWindow(window_size=5)
+        window = EntropyWindow(sample_count=25)
 
         status = await window.add_async(entropy=2.0, variance=0.1, token_index=0)
 

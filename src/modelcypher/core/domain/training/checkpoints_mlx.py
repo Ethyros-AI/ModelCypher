@@ -49,7 +49,7 @@ from typing import Any
 import mlx.core as mx
 
 from .exceptions import CheckpointError
-from .types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRAConfig, TrainingConfig
+from .types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
 
 """Raised when checkpoint operations fail."""
 
@@ -82,7 +82,7 @@ class CheckpointManager:
         step: int,
         total_steps: int,
         loss_history: list[float],
-        config: TrainingConfig,
+        config: TrainingSpec,
         output_dir: str,
     ) -> CheckpointMetadata:
         """
@@ -225,7 +225,7 @@ class CheckpointManager:
         with open(path, "r") as f:
             data = json.load(f)
 
-        # Deserialize TrainingConfig
+        # Deserialize TrainingSpec
         config = self._deserialize_config(data.get("train_config"))
 
         return CheckpointMetadata(
@@ -384,8 +384,8 @@ class CheckpointManager:
 
         return json.dumps(metadata, cls=EnhancedJSONEncoder, indent=2)
 
-    def _deserialize_config(self, data: dict[str, Any] | None) -> TrainingConfig | None:
-        """Deserialize TrainingConfig from JSON data."""
+    def _deserialize_config(self, data: dict[str, Any] | None) -> TrainingSpec | None:
+        """Deserialize TrainingSpec from JSON data."""
         if data is None:
             return None
 
@@ -436,7 +436,7 @@ class CheckpointManager:
             missing_lora = sorted(k for k in required_lora if k not in lora_data)
             if missing_lora:
                 raise ValueError(f"Checkpoint lora_config missing fields: {missing_lora}")
-            lora_config = LoRAConfig(
+            lora_config = LoRASettings(
                 rank=lora_data["rank"],
                 alpha=lora_data["alpha"],
                 dropout=lora_data["dropout"],
@@ -446,7 +446,7 @@ class CheckpointManager:
         if "model_id" not in data or "dataset_path" not in data or "output_path" not in data:
             raise ValueError("Checkpoint metadata missing model_id, dataset_path, or output_path.")
 
-        return TrainingConfig(
+        return TrainingSpec(
             model_id=data["model_id"],
             dataset_path=data["dataset_path"],
             output_path=data["output_path"],

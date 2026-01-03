@@ -57,29 +57,34 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             entropy_stats = {}
             if entropyDelta and len(entropyDelta) > 0:
                 from modelcypher.core.domain._backend import get_default_backend
-                from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
-                mean = sum(entropyDelta) / len(entropyDelta)
-                variance = (
-                    sum((d - mean) ** 2 for d in entropyDelta) / len(entropyDelta)
-                    if len(entropyDelta) > 1
-                    else 0.0
-                )
                 _b = get_default_backend()
-                std_dev = sqrt_scalar(variance, _b)
+                delta_arr = _b.array(entropyDelta)
+                mean_arr = _b.mean(delta_arr)
+                variance_arr = _b.var(delta_arr)
+                std_arr = _b.sqrt(variance_arr)
+                max_arr = _b.max(delta_arr)
+                min_arr = _b.min(delta_arr)
+                _b.eval(mean_arr, std_arr, max_arr, min_arr)
                 entropy_stats = {
-                    "deltaMean": mean,
-                    "deltaStdDev": std_dev,
-                    "deltaMax": max(entropyDelta),
-                    "deltaMin": min(entropyDelta),
+                    "deltaMean": float(_b.to_scalar(mean_arr)),
+                    "deltaStdDev": float(_b.to_scalar(std_arr)),
+                    "deltaMax": float(_b.to_scalar(max_arr)),
+                    "deltaMin": float(_b.to_scalar(min_arr)),
                     "sampleCount": len(entropyDelta),
                 }
 
             # Raw measurements - no arbitrary classifications
-            max_mean_distance = max(
-                (ind.mean_distance for ind in indicators),
-                default=0.0,
-            )
+            if indicators:
+                from modelcypher.core.domain._backend import get_default_backend
+
+                _b = get_default_backend()
+                mean_arr = _b.array([ind.mean_distance for ind in indicators])
+                max_arr = _b.max(mean_arr)
+                _b.eval(max_arr)
+                max_mean_distance = float(_b.to_scalar(max_arr))
+            else:
+                max_mean_distance = 0.0
 
             return {
                 "_schema": "mc.safety.circuit_breaker.v1",
@@ -313,7 +318,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
 
             backend = get_default_backend()
             window_size = max(1, int(sqrt_scalar(float(len(samples)), backend)))
-            window = EntropyWindow(window_size=window_size)
+            window = EntropyWindow(sample_count=len(samples))
             for i, sample in enumerate(samples):
                 entropy, variance = sample[0], sample[1]
                 window.add(entropy, variance, i)

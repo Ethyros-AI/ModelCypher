@@ -34,7 +34,7 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import is_nan
+from modelcypher.core.domain.geometry.numerical_stability import is_nan, sqrt_scalar
 
 # =============================================================================
 # MetricSample
@@ -414,21 +414,55 @@ class MetricsRingBuffer:
         latest = self.latest
         return latest.entropy if latest else 0.0
 
-    def average_entropy(self, window_size: int = 20) -> float:
-        """Moving average of entropy over recent samples."""
-        points = self.all_points()[-window_size:]
-        valid_points = [p for p in points if p.has_entropy]
-        if not valid_points:
+    def average_entropy(self) -> float:
+        """Moving average of entropy over a derived window."""
+        points = self.all_points()
+        if not points:
             return 0.0
-        return sum(p.entropy for p in valid_points) / len(valid_points)
 
-    def average_loss(self, window_size: int = 20) -> float:
-        """Moving average of loss over recent samples."""
-        points = self.all_points()[-window_size:]
-        valid_points = [p for p in points if p.has_loss]
-        if not valid_points:
+        b = get_default_backend()
+        window_size = int(sqrt_scalar(float(len(points)), b))
+        window_size = max(1, window_size)
+        window_points = points[-window_size:]
+        values = [p.entropy for p in window_points]
+        if not values:
             return 0.0
-        return sum(p.loss for p in valid_points) / len(valid_points)
+
+        arr = b.array(values)
+        mask = b.isfinite(arr)
+        zeros = b.zeros_like(arr)
+        filtered = b.where(mask, arr, zeros)
+        sum_arr = b.sum(filtered)
+        count_arr = b.sum(b.astype(mask, arr.dtype))
+        denom = b.maximum(count_arr, b.array([1.0]))
+        mean_arr = sum_arr / denom
+        b.eval(mean_arr)
+        return float(b.to_scalar(mean_arr))
+
+    def average_loss(self) -> float:
+        """Moving average of loss over a derived window."""
+        points = self.all_points()
+        if not points:
+            return 0.0
+
+        b = get_default_backend()
+        window_size = int(sqrt_scalar(float(len(points)), b))
+        window_size = max(1, window_size)
+        window_points = points[-window_size:]
+        values = [p.loss for p in window_points]
+        if not values:
+            return 0.0
+
+        arr = b.array(values)
+        mask = b.isfinite(arr)
+        zeros = b.zeros_like(arr)
+        filtered = b.where(mask, arr, zeros)
+        sum_arr = b.sum(filtered)
+        count_arr = b.sum(b.astype(mask, arr.dtype))
+        denom = b.maximum(count_arr, b.array([1.0]))
+        mean_arr = sum_arr / denom
+        b.eval(mean_arr)
+        return float(b.to_scalar(mean_arr))
 
     def reset(self) -> None:
         """Clear all samples and reset state."""

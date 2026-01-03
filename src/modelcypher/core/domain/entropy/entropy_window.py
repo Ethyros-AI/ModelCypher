@@ -73,22 +73,30 @@ class EntropyWindowStatus:
 class EntropyWindow:
     """Sliding window tracker for entropy measurements during inference.
 
-    window_size should be derived from context by the caller (e.g., sqrt(n)
-    where n is the expected sample count or baseline size).
+    Window size is derived from the provided sample count using geometry.
     """
 
     def __init__(
         self,
-        window_size: int,
+        sample_count: int,
         window_id: str | None = None,
     ):
         """Initialize entropy window.
 
         Args:
-            window_size: Size of the sliding window. Caller derives this
-                from context (e.g., sqrt(baseline_sample_count)).
+            sample_count: Expected sample count used to derive window size.
             window_id: Optional unique identifier for this window.
         """
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+
+        if sample_count <= 0:
+            raise ValueError("sample_count must be positive to derive window size")
+        backend = get_default_backend()
+        window_size = int(sqrt_scalar(float(sample_count), backend))
+        if window_size <= 0:
+            raise ValueError("derived window_size must be positive")
+
         self._window_size = window_size
         self.window_id = window_id or str(uuid.uuid4())
         self._samples: list[EntropySample] = []
@@ -152,12 +160,6 @@ class EntropyWindow:
             "token_end": status.token_end,
         }
 
-    def _moving_average(self) -> float:
-        values = [sample.entropy for sample in self._samples]
-        if not values:
-            return 0.0
-        return sum(values) / len(values)
-
     def _current_status(self) -> EntropyWindowStatus:
         if not self._samples:
             return EntropyWindowStatus(
@@ -171,15 +173,27 @@ class EntropyWindow:
                 token_end=0,
             )
 
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
         values = [sample.entropy for sample in self._samples]
         tokens = [sample.token_index for sample in self._samples]
+        entropy_arr = backend.array(values)
+        token_arr = backend.array(tokens)
+        mean_arr = backend.mean(entropy_arr)
+        max_arr = backend.max(entropy_arr)
+        min_arr = backend.min(entropy_arr)
+        token_min_arr = backend.min(token_arr)
+        token_max_arr = backend.max(token_arr)
+        backend.eval(mean_arr, max_arr, min_arr, token_min_arr, token_max_arr)
+
         return EntropyWindowStatus(
             window_id=self.window_id,
             sample_count=len(self._samples),
             current_entropy=self._samples[-1].entropy,
-            moving_average=self._moving_average(),
-            max_entropy=max(values),
-            min_entropy=min(values),
-            token_start=min(tokens),
-            token_end=max(tokens),
+            moving_average=float(backend.to_scalar(mean_arr)),
+            max_entropy=float(backend.to_scalar(max_arr)),
+            min_entropy=float(backend.to_scalar(min_arr)),
+            token_start=int(backend.to_scalar(token_min_arr)),
+            token_end=int(backend.to_scalar(token_max_arr)),
         )

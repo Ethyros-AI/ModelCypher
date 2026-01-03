@@ -1011,7 +1011,6 @@ class ManifoldStitcher:
         merged_model_ctx: Any,  # ModelContext
         merged_model_id: str,
         target_fingerprints: ModelFingerprints,
-        top_k: int = 32,
     ) -> ValidationResult:
         """
         Validates a merged model by comparing its fingerprints to the original target.
@@ -1031,7 +1030,6 @@ class ManifoldStitcher:
             model_ctx=merged_model_ctx,
             model_id=merged_model_id,
             probe_space=target_fingerprints.probe_space,
-            top_k=top_k,
             layer_indices=probe_layers,
         )
 
@@ -1092,7 +1090,6 @@ class ManifoldStitcher:
         model_ctx: Any,
         model_id: str,
         probe_space: ProbeSpace,
-        top_k: int,
         layer_indices: list[int] | None = None,
     ) -> ModelFingerprints:
         # Placeholder for actual probing logic

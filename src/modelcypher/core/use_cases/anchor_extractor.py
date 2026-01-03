@@ -29,7 +29,7 @@ from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.use_cases.quantization_utils import (
-    QuantizationConfig,
+    QuantizationPlan,
     dequantize_if_needed,
     quantization_hint_for_key,
 )
@@ -81,7 +81,7 @@ class AnchorExtractor:
         self,
         model_path: str,
         weights: dict[str, Any],
-        quantization: QuantizationConfig | None = None,
+        quantization: QuantizationPlan | None = None,
         backend: Backend | None = None,
     ) -> tuple[dict[str, Array], dict[str, float]]:
         """Extract semantic anchors from model token embeddings.
@@ -93,7 +93,7 @@ class AnchorExtractor:
         Args:
             model_path: Path to model directory (must contain tokenizer.json)
             weights: Model weights dictionary
-            quantization: Optional quantization config for dequantization
+            quantization: Optional quantization plan for dequantization
             backend: Backend for computation (uses default if None)
 
         Returns:

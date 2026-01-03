@@ -43,7 +43,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
     machine_epsilon,
-    sqrt_scalar,
 )
 
 # =============================================================================
@@ -111,14 +110,18 @@ class CalibrationThresholds:
         if not baseline_entropies:
             raise ValueError("Baseline entropy samples required for calibration")
 
-        # Threshold derived from the largest magnitude gap in cooling samples
-        sorted_cooling = sorted(cooling_delta_h_samples)
         backend = get_default_backend()
+        cooling_arr = backend.array(cooling_delta_h_samples)
+        sorted_cooling_arr = backend.sort(cooling_arr)
+        backend.eval(sorted_cooling_arr)
+        sorted_cooling = [float(v) for v in backend.tolist(sorted_cooling_arr)]
         eps = division_epsilon(backend, backend.array([0.0]))
         delta_h_threshold = float(find_magnitude_gap_threshold(sorted_cooling, eps=eps))
 
-        # Minimum baseline entropy from calibration data
-        minimum_baseline = min(baseline_entropies)
+        baseline_arr = backend.array(baseline_entropies)
+        min_baseline_arr = backend.min(baseline_arr)
+        backend.eval(min_baseline_arr)
+        minimum_baseline = float(backend.to_scalar(min_baseline_arr))
 
         return cls(
             delta_h_threshold=delta_h_threshold,
@@ -328,13 +331,22 @@ class BatchDetectionStatistics:
         int
             Count of results below threshold
         """
-        return sum(
-            1
-            for r in results
-            if r.is_below_delta_h_threshold(
-                delta_h_threshold, minimum_baseline_entropy
-            )
+        if not results:
+            return 0
+        backend = get_default_backend()
+        mask = backend.array(
+            [
+                1.0
+                if r.is_below_delta_h_threshold(
+                    delta_h_threshold, minimum_baseline_entropy
+                )
+                else 0.0
+                for r in results
+            ]
         )
+        count_arr = backend.sum(mask)
+        backend.eval(count_arr)
+        return int(backend.to_scalar(count_arr))
 
     @staticmethod
     def compute(results: list[DetectionResult]) -> "BatchDetectionStatistics":
@@ -363,16 +375,39 @@ class BatchDetectionStatistics:
                 total_processing_time=0.0,
             )
 
-        cooling_count = sum(1 for r in results if r.is_cooling)
-        heating_count = sum(1 for r in results if r.is_heating)
+        backend = get_default_backend()
+        cooling_mask = backend.array([1.0 if r.is_cooling else 0.0 for r in results])
+        heating_mask = backend.array([1.0 if r.is_heating else 0.0 for r in results])
+        cooling_count_arr = backend.sum(cooling_mask)
+        heating_count_arr = backend.sum(heating_mask)
 
         delta_h_values = [r.delta_h for r in results]
-        mean_delta_h = sum(delta_h_values) / total
-        variance = sum((d - mean_delta_h) ** 2 for d in delta_h_values) / total
-        std_delta_h = sqrt_scalar(variance, get_default_backend())
-        min_delta_h = min(delta_h_values)
-        max_delta_h = max(delta_h_values)
-        total_processing_time = sum(r.processing_time for r in results)
+        delta_arr = backend.array(delta_h_values)
+        mean_arr = backend.mean(delta_arr)
+        var_arr = backend.var(delta_arr)
+        std_arr = backend.sqrt(var_arr)
+        min_arr = backend.min(delta_arr)
+        max_arr = backend.max(delta_arr)
+
+        processing_arr = backend.array([r.processing_time for r in results])
+        total_time_arr = backend.sum(processing_arr)
+
+        backend.eval(
+            cooling_count_arr,
+            heating_count_arr,
+            mean_arr,
+            std_arr,
+            min_arr,
+            max_arr,
+            total_time_arr,
+        )
+        cooling_count = int(backend.to_scalar(cooling_count_arr))
+        heating_count = int(backend.to_scalar(heating_count_arr))
+        mean_delta_h = float(backend.to_scalar(mean_arr))
+        std_delta_h = float(backend.to_scalar(std_arr))
+        min_delta_h = float(backend.to_scalar(min_arr))
+        max_delta_h = float(backend.to_scalar(max_arr))
+        total_processing_time = float(backend.to_scalar(total_time_arr))
 
         return BatchDetectionStatistics(
             total=total,

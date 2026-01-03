@@ -53,7 +53,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     jnp = None
 
 from .exceptions import CheckpointError
-from .types import CheckpointMetadata, TrainingConfig
+from .types import CheckpointMetadata, TrainingSpec
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class CheckpointManagerJAX:
         step: int,
         total_steps: int,
         loss_history: list[float],
-        config: TrainingConfig,
+        config: TrainingSpec,
         output_dir: str,
     ) -> CheckpointMetadata:
         """

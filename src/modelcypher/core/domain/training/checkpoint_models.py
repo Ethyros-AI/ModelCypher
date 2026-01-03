@@ -127,7 +127,7 @@ class FineTunedModelMetadata:
 
 
 @dataclass(frozen=True)
-class ModelArchitectureConfig:
+class ModelArchitectureSpec:
     """Defines transformer architecture dimensions for parameter counting and memory estimation."""
 
     model_type: str
@@ -162,7 +162,7 @@ class ModelArchitectureConfig:
         return result
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ModelArchitectureConfig:
+    def from_dict(cls, data: dict[str, Any]) -> ModelArchitectureSpec:
         """Create from dictionary."""
         return cls(
             model_type=data.get("model_type", "simple_transformer"),
@@ -203,7 +203,7 @@ class CheckpointMetadataV2:
     loss_history: list[float] = field(default_factory=list)
     """Training loss history (for progress tracking)."""
 
-    model_config: ModelArchitectureConfig | None = None
+    model_config: ModelArchitectureSpec | None = None
     """Model architecture configuration (required for evaluation)."""
 
     optimizer_state: OptimizerStateMetadata | None = None
@@ -236,7 +236,7 @@ class CheckpointMetadataV2:
         """Create from dictionary."""
         model_config = None
         if "model_config" in data and data["model_config"]:
-            model_config = ModelArchitectureConfig.from_dict(data["model_config"])
+            model_config = ModelArchitectureSpec.from_dict(data["model_config"])
 
         optimizer_state = None
         if "optimizer_state" in data and data["optimizer_state"]:

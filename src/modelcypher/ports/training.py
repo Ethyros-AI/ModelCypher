@@ -20,18 +20,18 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from modelcypher.core.domain.models import TrainingJob
-from modelcypher.core.domain.training import PreflightResult, TrainingConfig
+from modelcypher.core.domain.training import PreflightResult, TrainingSpec
 
 
 @runtime_checkable
 class TrainingEngine(Protocol):
     """Port for running training jobs on a backend."""
 
-    def preflight(self, config: TrainingConfig) -> PreflightResult:
+    def preflight(self, config: TrainingSpec) -> PreflightResult:
         """Validate training configuration and return a preflight report."""
         ...
     def start(
-        self, config: TrainingConfig, stream_events: bool = False
+        self, config: TrainingSpec, stream_events: bool = False
     ) -> tuple[TrainingJob, list[dict]]:
         """Start a training job and return the job plus any initial events."""
         ...

@@ -34,7 +34,7 @@ from .checkpoint_models import (
     CheckpointErrorKind,
     CheckpointMetadataV2,
     FineTunedModelMetadata,
-    ModelArchitectureConfig,
+    ModelArchitectureSpec,
     OptimizerStateMetadata,
     RecoveryInfo,
 )
@@ -71,9 +71,9 @@ from .types import (
     CheckpointMetadata,
     ComputePrecision,
     Hyperparameters,
-    LoRAConfig,
+    LoRASettings,
     PreflightResult,
-    TrainingConfig,
+    TrainingSpec,
     TrainingStatus,
 )
 from .validation import TrainingHyperparameterValidator

@@ -50,22 +50,17 @@ def agent_eval_run(
 ) -> None:
     """Execute agent evaluation."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.agent_eval_service import (
-        AgentEvalConfig,
-        AgentEvalService,
-    )
-
-    config = AgentEvalConfig(
-        model_path=model,
-        eval_suite=eval_suite,
-        max_turns=max_turns,
-        timeout_seconds=timeout,
-        seed=seed,
-    )
+    from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
     service = AgentEvalService()
 
     try:
-        result = service.run(config)
+        result = service.run(
+            model_path=model,
+            eval_suite=eval_suite,
+            max_turns=max_turns,
+            timeout_seconds=timeout,
+            seed=seed,
+        )
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1012",

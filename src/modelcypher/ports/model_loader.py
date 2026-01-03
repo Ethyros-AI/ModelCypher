@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.lora_mlx import LoRAConfig
+    from modelcypher.core.domain.training.lora_mlx import LoRASettings
 
 
 @runtime_checkable
@@ -42,13 +42,13 @@ class ModelLoaderPort(Protocol):
     def load_model_for_training(
         self,
         model_path: str,
-        lora_config: "LoRAConfig | None" = None,
+        lora_config: "LoRASettings | None" = None,
     ) -> tuple[Any, Any]:
         """Load model and tokenizer for training or inference.
 
         Args:
             model_path: Path to model directory
-            lora_config: Optional LoRA configuration to apply
+            lora_config: Optional LoRA settings to apply
 
         Returns:
             Tuple of (model, tokenizer) where:

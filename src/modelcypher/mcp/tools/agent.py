@@ -50,21 +50,17 @@ def register_agent_tools(ctx: ServiceContext) -> None:
             seed: int | None = None,
         ) -> dict:
             """Execute agent evaluation."""
-            from modelcypher.core.use_cases.agent_eval_service import (
-                AgentEvalConfig,
-                AgentEvalService,
-            )
+            from modelcypher.core.use_cases.agent_eval_service import AgentEvalService
 
             model_path = require_existing_directory(model)
-            config = AgentEvalConfig(
+            service = AgentEvalService()
+            result = service.run(
                 model_path=model_path,
                 eval_suite=evalSuite,
                 max_turns=maxTurns,
                 timeout_seconds=timeout,
                 seed=seed,
             )
-            service = AgentEvalService()
-            result = service.run(config)
             return {
                 "_schema": "mc.agent_eval.run.v1",
                 "evalId": result.eval_id,

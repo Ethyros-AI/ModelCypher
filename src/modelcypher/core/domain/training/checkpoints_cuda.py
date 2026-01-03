@@ -56,7 +56,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     save_file = None
 
 from .exceptions import CheckpointError
-from .types import CheckpointMetadata, TrainingConfig
+from .types import CheckpointMetadata, TrainingSpec
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class CheckpointManagerCUDA:
         step: int,
         total_steps: int,
         loss_history: list[float],
-        config: TrainingConfig,
+        config: TrainingSpec,
         output_dir: str,
     ) -> CheckpointMetadata:
         """
@@ -111,7 +111,7 @@ class CheckpointManagerCUDA:
             step: Current training step
             total_steps: Total training steps
             loss_history: Loss values recorded so far
-            config: Training configuration
+            config: Training spec
             output_dir: Output directory for checkpoints
 
         Returns:

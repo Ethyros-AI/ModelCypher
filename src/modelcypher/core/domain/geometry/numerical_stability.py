@@ -431,31 +431,43 @@ def find_magnitude_gap_threshold(
         The value at which the largest relative gap occurs.
         Returns the median if no clear gap is found.
     """
+    if backend is None:
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+
+    if not sorted_values:
+        return 0.0
+
+    values_arr = backend.array(sorted_values)
     if eps is None:
-        if backend is None:
-            from modelcypher.core.domain._backend import get_default_backend
-
-            backend = get_default_backend()
-
-        scale = max(1.0, max((abs(v) for v in sorted_values), default=0.0))
+        abs_arr = backend.abs(values_arr)
+        scale_arr = backend.maximum(backend.max(abs_arr), backend.array([1.0]))
+        backend.eval(scale_arr)
+        scale = float(backend.to_scalar(scale_arr))
         eps = ulp_scalar(scale, backend)
 
     if len(sorted_values) < 3:
-        return sorted_values[len(sorted_values) // 2] if sorted_values else 0.0
+        return sorted_values[len(sorted_values) // 2]
 
     # Find the largest relative gap: (v[i+1] - v[i]) / v[i]
-    max_gap = 0.0
-    gap_index = len(sorted_values) // 2  # Default to median
+    curr = values_arr[:-1]
+    next_vals = values_arr[1:]
+    diffs = next_vals - curr
+    eps_arr = backend.array([eps])
+    valid = curr > eps_arr
+    denom = backend.where(valid, curr, backend.ones_like(curr))
+    rel_gaps = diffs / denom
+    rel_gaps = backend.where(valid, rel_gaps, backend.zeros_like(rel_gaps))
+    max_gap_arr = backend.max(rel_gaps)
+    gap_index_arr = backend.argmax(rel_gaps)
+    backend.eval(max_gap_arr, gap_index_arr)
+    max_gap = float(backend.to_scalar(max_gap_arr))
 
-    for i in range(len(sorted_values) - 1):
-        curr = sorted_values[i]
-        next_val = sorted_values[i + 1]
-        if curr > eps:
-            relative_gap = (next_val - curr) / curr
-            if relative_gap > max_gap:
-                max_gap = relative_gap
-                gap_index = i
+    if max_gap <= 0.0:
+        return sorted_values[len(sorted_values) // 2]
 
+    gap_index = int(backend.to_scalar(gap_index_arr))
     return sorted_values[gap_index]
 
 

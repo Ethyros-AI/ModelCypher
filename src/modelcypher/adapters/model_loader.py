@@ -32,7 +32,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.lora_mlx import (
-    LoRAConfig,
+    LoRASettings,
     apply_lora_to_model,
 )
 
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 def load_model_for_training(
     model_path: str,
-    lora_config: LoRAConfig | None = None,
+    lora_settings: LoRASettings | None = None,
 ) -> tuple[nn.Module, any]:
     """Load model and tokenizer for training.
 
@@ -49,8 +49,8 @@ def load_model_for_training(
     ----------
     model_path : str
         Path to model directory.
-    lora_config : LoRAConfig or None
-        Optional LoRA configuration for adapter training.
+    lora_settings : LoRASettings or None
+        Optional LoRA settings for adapter training.
 
     Returns
     -------
@@ -91,14 +91,14 @@ def load_model_for_training(
             logger.info("Multimodal model loaded: %s, ~%d total parameters", model_type, all_params)
 
             # Note: LoRA on VL models requires special handling
-            if lora_config is not None:
+            if lora_settings is not None:
                 logger.warning(
                     "LoRA on multimodal models may require architecture-specific adapter placement. "
                     "Consider using text-only model for LoRA training."
                 )
                 # For now, we freeze and apply LoRA to language backbone only
                 model.freeze()
-                model = apply_lora_to_model(model, lora_config)
+                model = apply_lora_to_model(model, lora_settings)
 
             return model, tokenizer
 
@@ -122,12 +122,12 @@ def load_model_for_training(
             )
         model, tokenizer = mlx_lm_load(model_path)
 
-    if lora_config is not None:
+    if lora_settings is not None:
         # Freeze base weights first
         model.freeze()
 
-        logger.info("Injecting LoRA adapters (rank=%d)", lora_config.rank)
-        model = apply_lora_to_model(model, lora_config)
+        logger.info("Injecting LoRA adapters (rank=%d)", lora_settings.rank)
+        model = apply_lora_to_model(model, lora_settings)
 
         # Count parameters for logging
         trainable_params = 0

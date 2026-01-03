@@ -136,7 +136,7 @@ class TestEntropyIntegration:
         """EntropyWindow can be imported and created."""
         from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
 
-        window = EntropyWindow(window_size=5)
+        window = EntropyWindow(sample_count=25)
 
         assert window is not None
 

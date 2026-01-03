@@ -64,7 +64,7 @@ class Hyperparameters:
 
 
 @dataclass
-class LoRAConfig:
+class LoRASettings:
     rank: int
     alpha: float
     dropout: float
@@ -72,12 +72,12 @@ class LoRAConfig:
 
 
 @dataclass
-class TrainingConfig:
+class TrainingSpec:
     model_id: str
     dataset_path: str
     output_path: str
     hyperparameters: Hyperparameters
-    lora_config: LoRAConfig | None = None
+    lora_config: LoRASettings | None = None
     resume_from_checkpoint_path: str | None = None
 
 
@@ -99,7 +99,7 @@ class CheckpointMetadata:
     version: int
     step: int
     total_steps: int
-    train_config: TrainingConfig  # Stores the config used to create this checkpoint
+    train_config: TrainingSpec  # Stores the training spec used to create this checkpoint
     loss_history: list[float]
     timestamp: datetime
     checksum: str

@@ -338,9 +338,18 @@ class InvariantLayerMappingService:
                     # Get top-k activated dimensions
                     abs_vals = mx.abs(last_hidden)
                     mx.eval(abs_vals)
-                    # Find top 32 activated dimensions on the backend
+                    # Derive top-k from dimensionality (no fixed cap)
                     b = self._backend
-                    top_k = min(32, int(abs_vals.shape[0]))
+                    dim = int(abs_vals.shape[0])
+                    from modelcypher.core.domain.geometry.numerical_stability import (
+                        ceil_scalar,
+                        log2_scalar,
+                    )
+
+                    log2_dim = log2_scalar(float(dim + 1), b)
+                    top_k = max(1, int(ceil_scalar(log2_dim, b)))
+                    if top_k > dim:
+                        top_k = dim
                     neg_abs = -abs_vals
                     top_idx = b.argsort(neg_abs)[:top_k]
                     top_vals = b.take(abs_vals, top_idx, axis=0)

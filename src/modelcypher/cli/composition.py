@@ -151,7 +151,7 @@ def get_geometry_safety_service(
     safe_delta_h_samples: list[float] | None = None,
     attack_entropy_samples: list[float] | None = None,
 ):
-    """Get GeometrySafetyService with calibration-derived config.
+    """Get GeometrySafetyService with calibration-derived thresholds.
 
     Args:
         drift_samples: Historical persona drift magnitudes from baseline runs.

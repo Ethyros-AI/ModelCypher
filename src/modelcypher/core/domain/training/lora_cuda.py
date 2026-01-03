@@ -84,8 +84,8 @@ class FineTuneTypeCUDA(str, Enum):
 
 
 @dataclass
-class LoRAConfigCUDA:
-    """Configuration for LoRA adapters (CUDA version)."""
+class LoRASettingsCUDA:
+    """Settings for LoRA adapters (CUDA version)."""
 
     rank: int = 8
     alpha: float = 16.0
@@ -104,11 +104,11 @@ class LoRAConfigCUDA:
         return self.alpha / max(self.rank, 1)
 
     @classmethod
-    def default(cls) -> "LoRAConfigCUDA":
+    def default(cls) -> "LoRASettingsCUDA":
         return cls()
 
     @classmethod
-    def for_mistral(cls) -> "LoRAConfigCUDA":
+    def for_mistral(cls) -> "LoRASettingsCUDA":
         """Preset for Mistral-style models."""
         return cls(
             rank=16,
@@ -117,7 +117,7 @@ class LoRAConfigCUDA:
         )
 
     @classmethod
-    def for_llama(cls) -> "LoRAConfigCUDA":
+    def for_llama(cls) -> "LoRASettingsCUDA":
         """Preset for Llama-style models."""
         return cls(
             rank=8,
@@ -126,7 +126,7 @@ class LoRAConfigCUDA:
         )
 
     @classmethod
-    def for_qwen(cls) -> "LoRAConfigCUDA":
+    def for_qwen(cls) -> "LoRASettingsCUDA":
         """Preset for Qwen-style models (gate in MLP)."""
         return cls(
             rank=16,
@@ -286,7 +286,7 @@ class LoRALinearCUDA(nn.Module):
 
 def resolve_lora_targets_cuda(
     model: nn.Module,
-    config: LoRAConfigCUDA,
+    settings: LoRASettingsCUDA,
 ) -> TargetResolutionCUDA:
     """
     Resolve LoRA target modules within a PyTorch model.
@@ -295,7 +295,7 @@ def resolve_lora_targets_cuda(
 
     Args:
         model: The model to analyze
-        config: LoRA configuration with target_modules
+        settings: LoRA settings with target_modules
 
     Returns:
         TargetResolutionCUDA with matched keys and any unmatched targets
@@ -304,7 +304,7 @@ def resolve_lora_targets_cuda(
     matched_targets: set[str] = set()
 
     # Build regex patterns for each target
-    patterns = [re.compile(rf"(^|\.){target}$") for target in config.target_modules]
+    patterns = [re.compile(rf"(^|\.){target}$") for target in settings.target_modules]
 
     # Scan all modules
     for name, module in model.named_modules():
@@ -314,18 +314,18 @@ def resolve_lora_targets_cuda(
         for i, pattern in enumerate(patterns):
             if pattern.search(name):
                 resolved_keys.append(name)
-                matched_targets.add(config.target_modules[i])
+                matched_targets.add(settings.target_modules[i])
                 break
 
     # Apply layer limit if configured
-    if config.num_layers is not None:
+    if settings.num_layers is not None:
         filtered_keys = []
         for key in resolved_keys:
             # Extract layer index from paths like "model.layers.5.self_attn.q_proj"
             match = re.search(r"\.layers\.(\d+)\.", key)
             if match:
                 layer_idx = int(match.group(1))
-                if layer_idx < config.num_layers:
+                if layer_idx < settings.num_layers:
                     filtered_keys.append(key)
             else:
                 # Keep modules without layer indices
@@ -333,7 +333,7 @@ def resolve_lora_targets_cuda(
         resolved_keys = filtered_keys
 
     # Find unmatched targets
-    unmatched = [t for t in config.target_modules if t not in matched_targets]
+    unmatched = [t for t in settings.target_modules if t not in matched_targets]
 
     # Count layers
     layer_indices = set()
@@ -351,7 +351,7 @@ def resolve_lora_targets_cuda(
 
 def apply_lora_to_model_cuda(
     model: nn.Module,
-    config: LoRAConfigCUDA,
+    settings: LoRASettingsCUDA,
     target_keys: list[str] | None = None,
 ) -> nn.Module:
     """
@@ -359,14 +359,14 @@ def apply_lora_to_model_cuda(
 
     Args:
         model: PyTorch model to modify
-        config: LoRA configuration
+        settings: LoRA settings
         target_keys: Optional specific keys to target (auto-resolves if None)
 
     Returns:
         Modified model with LoRA adapters injected
     """
     if target_keys is None:
-        resolution = resolve_lora_targets_cuda(model, config)
+        resolution = resolve_lora_targets_cuda(model, settings)
         target_keys = resolution.resolved_keys
         logger.info(
             "LoRA: Auto-resolved %d targets across %d layers",
@@ -403,10 +403,10 @@ def apply_lora_to_model_cuda(
             if isinstance(linear, nn.Linear):
                 lora = LoRALinearCUDA.from_linear(
                     linear,
-                    rank=config.rank,
-                    alpha=config.alpha,
-                    dropout=config.dropout,
-                    use_rslora=config.use_rslora,
+                    rank=settings.rank,
+                    alpha=settings.alpha,
+                    dropout=settings.dropout,
+                    use_rslora=settings.use_rslora,
                 )
                 setattr(parent, child_name, lora)
                 count += 1
@@ -425,7 +425,7 @@ def apply_lora_to_model_cuda(
 def export_lora_adapters_cuda(
     model: nn.Module,
     output_path: Path,
-    config: LoRAConfigCUDA,
+    settings: LoRASettingsCUDA,
     model_id: str = "",
 ) -> LoRAExportResultCUDA:
     """
@@ -436,7 +436,7 @@ def export_lora_adapters_cuda(
     Args:
         model: Trained model with LoRA layers
         output_path: Destination path for adapter weights
-        config: LoRA configuration used during training
+        settings: LoRA settings used during training
         model_id: Optional model identifier for metadata
 
     Returns:
@@ -468,12 +468,12 @@ def export_lora_adapters_cuda(
     metadata_path = output_path.with_suffix(".json")
     metadata = {
         "model_id": model_id,
-        "rank": config.rank,
-        "alpha": config.alpha,
-        "dropout": config.dropout,
-        "target_modules": config.target_modules,
-        "fine_tune_type": config.fine_tune_type.value,
-        "use_rslora": config.use_rslora,
+        "rank": settings.rank,
+        "alpha": settings.alpha,
+        "dropout": settings.dropout,
+        "target_modules": settings.target_modules,
+        "fine_tune_type": settings.fine_tune_type.value,
+        "use_rslora": settings.use_rslora,
         "parameter_count": param_count,
         "exported_at": datetime.now().isoformat(),
     }
@@ -576,7 +576,7 @@ def compute_adapter_delta_norm_cuda(
 
 __all__ = [
     "FineTuneTypeCUDA",
-    "LoRAConfigCUDA",
+    "LoRASettingsCUDA",
     "TargetResolutionCUDA",
     "LoRAExportResultCUDA",
     "LoRALinearCUDA",

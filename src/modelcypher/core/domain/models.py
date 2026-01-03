@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from .training import TrainingConfig, TrainingStatus
+from .training import TrainingSpec, TrainingStatus
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ class TrainingJob:
     total_epochs: int = 0
     loss: float | None = None
     learning_rate: float | None = None
-    config: TrainingConfig | None = None
+    config: TrainingSpec | None = None
     checkpoints: list[CheckpointRecord] | None = None
     loss_history: list[dict] | None = None
     metrics: dict[str, float] | None = None

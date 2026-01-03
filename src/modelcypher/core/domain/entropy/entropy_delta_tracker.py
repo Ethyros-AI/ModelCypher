@@ -76,12 +76,15 @@ class EntropyDeltaCalibration:
         if not anomaly_score_samples:
             raise ValueError("anomaly_score_samples required for calibration")
 
-        sorted_samples = sorted(anomaly_score_samples)
         from modelcypher.core.domain.geometry.numerical_stability import (
             division_epsilon,
             find_magnitude_gap_threshold,
         )
         backend = get_default_backend()
+        samples_arr = backend.array(anomaly_score_samples)
+        sorted_samples_arr = backend.sort(samples_arr)
+        backend.eval(sorted_samples_arr)
+        sorted_samples = [float(v) for v in backend.tolist(sorted_samples_arr)]
         eps = division_epsilon(backend, backend.array([0.0]))
         threshold = float(find_magnitude_gap_threshold(sorted_samples, eps=eps))
 
@@ -322,21 +325,55 @@ class EntropyDeltaTracker:
 
         # Compute statistics
         total_tokens = len(self._samples)
-        anomaly_count = sum(
-            1 for s in self._samples if s.anomaly_score >= self.calibration.anomaly_threshold
-        )
-        max_anomaly_score = max((s.anomaly_score for s in self._samples), default=0.0)
-        avg_delta = sum(s.delta for s in self._samples) / total_tokens if total_tokens > 0 else 0.0
-        disagreement_count = sum(1 for s in self._samples if s.top_token_disagreement)
-        disagreement_rate = disagreement_count / total_tokens if total_tokens > 0 else 0.0
+        b = self._backend
+        if total_tokens > 0:
+            scores_arr = b.array([s.anomaly_score for s in self._samples])
+            anomaly_mask = scores_arr >= self.calibration.anomaly_threshold
+            anomaly_count_arr = b.sum(b.astype(anomaly_mask, scores_arr.dtype))
+            max_anomaly_arr = b.max(scores_arr)
+
+            delta_arr = b.array([s.delta for s in self._samples])
+            avg_delta_arr = b.mean(delta_arr)
+
+            disagreement_arr = b.array(
+                [1.0 if s.top_token_disagreement else 0.0 for s in self._samples]
+            )
+            disagreement_count_arr = b.sum(disagreement_arr)
+            total_arr = b.array([float(total_tokens)])
+            disagreement_rate_arr = disagreement_count_arr / total_arr
+
+            b.eval(
+                anomaly_count_arr,
+                max_anomaly_arr,
+                avg_delta_arr,
+                disagreement_count_arr,
+                disagreement_rate_arr,
+            )
+            anomaly_count = int(b.to_scalar(anomaly_count_arr))
+            max_anomaly_score = float(b.to_scalar(max_anomaly_arr))
+            avg_delta = float(b.to_scalar(avg_delta_arr))
+            disagreement_count = int(b.to_scalar(disagreement_count_arr))
+            disagreement_rate = float(b.to_scalar(disagreement_rate_arr))
+        else:
+            anomaly_count = 0
+            max_anomaly_score = 0.0
+            avg_delta = 0.0
+            disagreement_count = 0
+            disagreement_rate = 0.0
         # Logit margin statistics
         margin_values = [
             s.base_logit_margin for s in self._samples if s.base_logit_margin is not None
         ]
-        avg_base_logit_margin = (
-            sum(margin_values) / len(margin_values) if margin_values else None
-        )
-        max_base_logit_margin = max(margin_values) if margin_values else None
+        if margin_values:
+            margin_arr = b.array(margin_values)
+            avg_margin_arr = b.mean(margin_arr)
+            max_margin_arr = b.max(margin_arr)
+            b.eval(avg_margin_arr, max_margin_arr)
+            avg_base_logit_margin = float(b.to_scalar(avg_margin_arr))
+            max_base_logit_margin = float(b.to_scalar(max_margin_arr))
+        else:
+            avg_base_logit_margin = None
+            max_base_logit_margin = None
 
         # Compute conflict analysis
         kl_divergences = [s.kl_divergence_adapter_to_base for s in self._samples]

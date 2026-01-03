@@ -72,8 +72,8 @@ class FineTuneTypeJAX(str, Enum):
 
 
 @dataclass
-class LoRAConfigJAX:
-    """Configuration for LoRA adapters (JAX version)."""
+class LoRASettingsJAX:
+    """Settings for LoRA adapters (JAX version)."""
 
     rank: int = 8
     alpha: float = 16.0
@@ -92,11 +92,11 @@ class LoRAConfigJAX:
         return self.alpha / max(self.rank, 1)
 
     @classmethod
-    def default(cls) -> "LoRAConfigJAX":
+    def default(cls) -> "LoRASettingsJAX":
         return cls()
 
     @classmethod
-    def for_mistral(cls) -> "LoRAConfigJAX":
+    def for_mistral(cls) -> "LoRASettingsJAX":
         """Preset for Mistral-style models."""
         return cls(
             rank=16,
@@ -105,7 +105,7 @@ class LoRAConfigJAX:
         )
 
     @classmethod
-    def for_llama(cls) -> "LoRAConfigJAX":
+    def for_llama(cls) -> "LoRASettingsJAX":
         """Preset for Llama-style models."""
         return cls(
             rank=8,
@@ -114,7 +114,7 @@ class LoRAConfigJAX:
         )
 
     @classmethod
-    def for_qwen(cls) -> "LoRAConfigJAX":
+    def for_qwen(cls) -> "LoRASettingsJAX":
         """Preset for Qwen-style models (gate in MLP)."""
         return cls(
             rank=16,
@@ -216,7 +216,7 @@ def lora_forward(
 
 def resolve_lora_targets_jax(
     params: dict[str, Any],
-    config: LoRAConfigJAX,
+    settings: LoRASettingsJAX,
 ) -> TargetResolutionJAX:
     """
     Resolve LoRA target modules within a JAX params pytree.
@@ -225,7 +225,7 @@ def resolve_lora_targets_jax(
 
     Args:
         params: Model parameters (JAX pytree)
-        config: LoRA configuration with target_modules
+        settings: LoRA settings with target_modules
 
     Returns:
         TargetResolutionJAX with matched keys and any unmatched targets
@@ -234,7 +234,7 @@ def resolve_lora_targets_jax(
     matched_targets: set[str] = set()
 
     # Build regex patterns for each target
-    patterns = [re.compile(rf"(^|/)({target})(/|$)") for target in config.target_modules]
+    patterns = [re.compile(rf"(^|/)({target})(/|$)") for target in settings.target_modules]
 
     # Flatten params to get all paths
     flat_params, _ = jax.tree_util.tree_flatten_with_path(params)
@@ -252,24 +252,24 @@ def resolve_lora_targets_jax(
                 # Get module path (remove kernel/weight suffix)
                 module_path = "/".join(path_str.split("/")[:-1])
                 resolved_keys.append(module_path)
-                matched_targets.add(config.target_modules[i])
+                matched_targets.add(settings.target_modules[i])
                 break
 
     # Apply layer limit if configured
-    if config.num_layers is not None:
+    if settings.num_layers is not None:
         filtered_keys = []
         for key in resolved_keys:
             match = re.search(r"/layers/(\d+)/", key)
             if match:
                 layer_idx = int(match.group(1))
-                if layer_idx < config.num_layers:
+                if layer_idx < settings.num_layers:
                     filtered_keys.append(key)
             else:
                 filtered_keys.append(key)
         resolved_keys = filtered_keys
 
     # Find unmatched targets
-    unmatched = [t for t in config.target_modules if t not in matched_targets]
+    unmatched = [t for t in settings.target_modules if t not in matched_targets]
 
     # Count layers
     layer_indices = set()
@@ -288,7 +288,7 @@ def resolve_lora_targets_jax(
 def create_lora_params(
     key: jax.random.PRNGKey,
     params: dict[str, Any],
-    config: LoRAConfigJAX,
+    settings: LoRASettingsJAX,
     target_keys: list[str] | None = None,
 ) -> dict[str, dict[str, jnp.ndarray]]:
     """
@@ -297,14 +297,14 @@ def create_lora_params(
     Args:
         key: JAX random key
         params: Model parameters (to get shapes)
-        config: LoRA configuration
+        settings: LoRA settings
         target_keys: Optional specific keys to target
 
     Returns:
         Dict mapping module paths to LoRA params
     """
     if target_keys is None:
-        resolution = resolve_lora_targets_jax(params, config)
+        resolution = resolve_lora_targets_jax(params, settings)
         target_keys = resolution.resolved_keys
         logger.info(
             "LoRA: Auto-resolved %d targets across %d layers",
@@ -335,7 +335,7 @@ def create_lora_params(
         if hasattr(weight, "shape") and len(weight.shape) == 2:
             out_features, in_features = weight.shape
             lora_params[module_path] = init_lora_params(
-                subkey, in_features, out_features, config.rank
+                subkey, in_features, out_features, settings.rank
             )
 
     logger.info("LoRA: Created adapters for %d modules", len(lora_params))
@@ -350,7 +350,7 @@ def create_lora_params(
 def export_lora_adapters_jax(
     lora_params: dict[str, dict[str, jnp.ndarray]],
     output_path: Path,
-    config: LoRAConfigJAX,
+    settings: LoRASettingsJAX,
     model_id: str = "",
 ) -> LoRAExportResultJAX:
     """
@@ -359,7 +359,7 @@ def export_lora_adapters_jax(
     Args:
         lora_params: LoRA parameters dict
         output_path: Destination path
-        config: LoRA configuration
+        settings: LoRA settings
         model_id: Optional model identifier
 
     Returns:
@@ -390,12 +390,12 @@ def export_lora_adapters_jax(
     metadata_path = output_path.with_suffix(".json")
     metadata = {
         "model_id": model_id,
-        "rank": config.rank,
-        "alpha": config.alpha,
-        "dropout": config.dropout,
-        "target_modules": config.target_modules,
-        "fine_tune_type": config.fine_tune_type.value,
-        "use_rslora": config.use_rslora,
+        "rank": settings.rank,
+        "alpha": settings.alpha,
+        "dropout": settings.dropout,
+        "target_modules": settings.target_modules,
+        "fine_tune_type": settings.fine_tune_type.value,
+        "use_rslora": settings.use_rslora,
         "parameter_count": param_count,
         "exported_at": datetime.now().isoformat(),
     }
@@ -489,7 +489,7 @@ def compute_adapter_delta_norm_jax(
 
 __all__ = [
     "FineTuneTypeJAX",
-    "LoRAConfigJAX",
+    "LoRASettingsJAX",
     "TargetResolutionJAX",
     "LoRAExportResultJAX",
     "init_lora_params",

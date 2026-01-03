@@ -346,7 +346,7 @@ def run_merge(
 
         from modelcypher.core.use_cases.quantization_utils import (
             QuantizationHint,
-            quantization_config_from_payload,
+            quantization_plan_from_payload,
             requantize_weights,
         )
 
@@ -357,9 +357,9 @@ def run_merge(
             try:
                 with open(config_path) as f:
                     config_data = _json_for_quant.load(f)
-                quant_config = quantization_config_from_payload(config_data)
-                if quant_config and quant_config.default:
-                    quant_hint = quant_config.default
+                quant_plan = quantization_plan_from_payload(config_data)
+                if quant_plan and quant_plan[0]:
+                    quant_hint = quant_plan[0]
                     logger.info(
                         "Detected target quantization: %d-bit, group_size=%d",
                         quant_hint.bits,

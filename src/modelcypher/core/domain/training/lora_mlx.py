@@ -73,8 +73,8 @@ class FineTuneType(str, Enum):
 
 
 @dataclass
-class LoRAConfig:
-    """Configuration for LoRA adapters."""
+class LoRASettings:
+    """Settings for LoRA adapters."""
 
     rank: int = 8
     alpha: float = 16.0
@@ -89,11 +89,11 @@ class LoRAConfig:
         return self.alpha / max(self.rank, 1)
 
     @classmethod
-    def default(cls) -> "LoRAConfig":
+    def default(cls) -> "LoRASettings":
         return cls()
 
     @classmethod
-    def for_mistral(cls) -> "LoRAConfig":
+    def for_mistral(cls) -> "LoRASettings":
         """Preset for Mistral-style models."""
         return cls(
             rank=16,
@@ -102,7 +102,7 @@ class LoRAConfig:
         )
 
     @classmethod
-    def for_llama(cls) -> "LoRAConfig":
+    def for_llama(cls) -> "LoRASettings":
         """Preset for Llama-style models."""
         return cls(
             rank=8,
@@ -111,7 +111,7 @@ class LoRAConfig:
         )
 
     @classmethod
-    def for_qwen(cls) -> "LoRAConfig":
+    def for_qwen(cls) -> "LoRASettings":
         """Preset for Qwen-style models (gate in MLP)."""
         return cls(
             rank=16,
@@ -249,7 +249,7 @@ class LoRALinear(nn.Module):
 
 def resolve_lora_targets(
     model: nn.Module,
-    config: LoRAConfig,
+    settings: LoRASettings,
 ) -> TargetResolution:
     """
     Resolve LoRA target modules within a model.
@@ -258,7 +258,7 @@ def resolve_lora_targets(
 
     Args:
         model: The model to analyze
-        config: LoRA configuration with target_modules
+        settings: LoRA settings with target_modules
 
     Returns:
         TargetResolution with matched keys and any unmatched targets
@@ -269,7 +269,7 @@ def resolve_lora_targets(
     from mlx.utils import tree_flatten
 
     # Build regex patterns for each target
-    patterns = [re.compile(rf"(^|\.){target}\.weight$") for target in config.target_modules]
+    patterns = [re.compile(rf"(^|\.){target}\.weight$") for target in settings.target_modules]
 
     # Scan all parameters using flattened tree
     for name, value in tree_flatten(model.parameters()):
@@ -281,11 +281,11 @@ def resolve_lora_targets(
                 # Extract the module path (without .weight)
                 module_path = name.rsplit(".weight", 1)[0]
                 resolved_keys.append(module_path)
-                matched_targets.add(config.target_modules[i])
+                matched_targets.add(settings.target_modules[i])
                 break
 
     # Find unmatched targets
-    unmatched = [t for t in config.target_modules if t not in matched_targets]
+    unmatched = [t for t in settings.target_modules if t not in matched_targets]
 
     # Count layers
     layer_indices = set()
@@ -304,12 +304,12 @@ def resolve_lora_targets(
 
 def apply_lora_to_model(
     model: nn.Module,
-    config: LoRAConfig,
+    settings: LoRASettings,
     target_keys: list[str] | None = None,
 ) -> nn.Module:
     """Inject LoRA adapters into targeted Linear modules."""
     if target_keys is None:
-        resolution = resolve_lora_targets(model, config)
+        resolution = resolve_lora_targets(model, settings)
         target_keys = resolution.resolved_keys
 
     # Build path → module mapping helpers
@@ -345,7 +345,7 @@ def apply_lora_to_model(
         linear = get_module_by_path(model, key)
         if linear is not None and isinstance(linear, nn.Linear):
             # Create LoRA adapter from original Linear weights
-            lora = LoRALinear.from_linear(linear, config.rank, config.alpha, config.dropout)
+            lora = LoRALinear.from_linear(linear, settings.rank, settings.alpha, settings.dropout)
             set_module_by_path(model, key, lora)
             count += 1
 
@@ -361,7 +361,7 @@ def apply_lora_to_model(
 def export_lora_adapters(
     model: nn.Module,
     output_path: Path,
-    config: LoRAConfig,
+    settings: LoRASettings,
     model_id: str = "",
 ) -> LoRAExportResult:
     """
@@ -372,7 +372,7 @@ def export_lora_adapters(
     Args:
         model: Trained model with LoRA layers
         output_path: Destination path for adapter weights
-        config: LoRA configuration used during training
+        settings: LoRA settings used during training
         model_id: Optional model identifier for metadata
 
     Returns:
@@ -399,10 +399,10 @@ def export_lora_adapters(
     metadata_path = output_path.with_suffix(".json")
     metadata = {
         "model_id": model_id,
-        "rank": config.rank,
-        "alpha": config.alpha,
-        "target_modules": config.target_modules,
-        "fine_tune_type": config.fine_tune_type.value,
+        "rank": settings.rank,
+        "alpha": settings.alpha,
+        "target_modules": settings.target_modules,
+        "fine_tune_type": settings.fine_tune_type.value,
         "parameter_count": param_count,
         "exported_at": datetime.now().isoformat(),
     }
