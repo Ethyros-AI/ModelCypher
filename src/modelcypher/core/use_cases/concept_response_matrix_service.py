@@ -257,7 +257,7 @@ class ConceptResponseMatrixService:
             source_path=str(expand_path(source_path)),
             target_path=str(expand_path(target_path)),
             common_anchor_count=report.common_anchor_count,
-            overall_alignment=report.overall_alignment,
+            overall_alignment=report.mean_cka,
             layer_correspondence=correspondence,
             cka_matrix=report.cka_matrix if include_matrix else None,
         )

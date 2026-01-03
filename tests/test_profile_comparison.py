@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for ProfileComparison - the alignment story between two models."""
+"""Tests for ProfileComparison - geometric comparison between two models."""
 
 from __future__ import annotations
 
@@ -161,7 +161,7 @@ class TestCompareProfiles:
     """Tests for compare_profiles function."""
 
     def test_compare_identical_profiles(self) -> None:
-        """Identical profiles should have high alignment."""
+        """Identical profiles should have near-zero diffs."""
         profile = ModelProfile(
             model_path="/path/to/model",
             model_family="qwen",
@@ -295,7 +295,7 @@ class TestCompareProfiles:
         assert len(comparison.layer_mapping) > 0
 
     def test_compare_with_topology_summaries(self) -> None:
-        """Should compute topology similarity when available."""
+        """Should compute topology diffs when available."""
         source = ModelProfile(
             model_path="/path/to/source",
             topology_summary=TopologySummary(
@@ -316,11 +316,11 @@ class TestCompareProfiles:
 
         comparison = compare_profiles(source, target)
 
-        assert comparison.topology_similarity is not None
-        assert 0.0 <= comparison.topology_similarity <= 1.0
+        assert comparison.topology_betti_diff == 1
+        assert comparison.topology_persistence_diff == 0.1
 
     def test_compare_with_semantic_signatures(self) -> None:
-        """Should compute semantic alignment when available."""
+        """Should compute semantic cosine when available."""
         source = ModelProfile(
             model_path="/path/to/source",
             semantic_signature=SemanticSignature(
@@ -337,12 +337,12 @@ class TestCompareProfiles:
 
         comparison = compare_profiles(source, target)
 
-        assert comparison.semantic_alignment is not None
+        assert comparison.semantic_cosine_similarity is not None
         expected = 0.8 / sqrt_scalar(0.8**2 + 0.6**2, get_default_backend())
-        assert abs(comparison.semantic_alignment - expected) <= _eps()
+        assert abs(comparison.semantic_cosine_similarity - expected) <= _eps()
 
     def test_compare_orthogonal_semantic_signatures(self) -> None:
-        """Orthogonal semantic signatures should have zero alignment."""
+        """Orthogonal semantic signatures should have zero cosine."""
         source = ModelProfile(
             model_path="/path/to/source",
             semantic_signature=SemanticSignature(
@@ -359,8 +359,8 @@ class TestCompareProfiles:
 
         comparison = compare_profiles(source, target)
 
-        assert comparison.semantic_alignment is not None
-        assert abs(comparison.semantic_alignment) <= _eps()
+        assert comparison.semantic_cosine_similarity is not None
+        assert abs(comparison.semantic_cosine_similarity) <= _eps()
 
     def test_layer_mapping_across_different_counts(self) -> None:
         """Should map layers by relative position."""
@@ -403,7 +403,7 @@ class TestEdgeCases:
 
         assert comparison.layer_mapping == {}
         assert comparison.layer_comparisons == []
-        assert comparison.total_alignment_effort == 0.0
+        assert comparison.aligned is False
 
     def test_compare_one_empty_profile(self) -> None:
         """Should handle case where one profile has no layers."""
@@ -454,8 +454,8 @@ class TestEdgeCases:
 
         comparison = compare_profiles(source, target)
 
-        # Should not compute semantic alignment for mismatched lengths
-        assert comparison.semantic_alignment is None
+        # Should not compute semantic cosine for mismatched lengths
+        assert comparison.semantic_cosine_similarity is None
 
     def test_compare_with_empty_semantic_vectors(self) -> None:
         """Should handle empty semantic vectors."""
@@ -470,7 +470,7 @@ class TestEdgeCases:
 
         comparison = compare_profiles(source, target)
 
-        assert comparison.semantic_alignment is None
+        assert comparison.semantic_cosine_similarity is None
 
     def test_compare_with_zero_norm_semantic_vectors(self) -> None:
         """Should handle zero-norm semantic vectors."""
@@ -490,7 +490,7 @@ class TestEdgeCases:
         comparison = compare_profiles(source, target)
 
         # Should not compute for zero-norm vectors
-        assert comparison.semantic_alignment is None
+        assert comparison.semantic_cosine_similarity is None
 
 
 class TestBaselineZScores:

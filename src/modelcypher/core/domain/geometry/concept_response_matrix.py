@@ -347,7 +347,7 @@ class ConceptResponseMatrix:
                     )
                 )
 
-        overall_alignment = (
+        mean_cka = (
             sum(match.cka for match in matches) / float(len(matches)) if matches else 0.0
         )
 
@@ -357,7 +357,7 @@ class ConceptResponseMatrix:
             common_anchor_count=len(common),
             cka_matrix=cka_matrix,
             layer_correspondence=matches,
-            overall_alignment=float(overall_alignment),
+            mean_cka=float(mean_cka),
         )
 
         # INVARIANT GEOMETRY: All layer matches should have CKA = 1.0.
@@ -649,7 +649,7 @@ class ComparisonReport:
     common_anchor_count: int
     cka_matrix: list[list[float]]
     layer_correspondence: list["ComparisonReport.LayerMatch"]
-    overall_alignment: float
+    mean_cka: float
 
     @dataclass(frozen=True)
     class LayerMatch:
@@ -688,7 +688,7 @@ class LayerTransitionResult:
     to_layer: int
     transition_cka: float
     state_cka: float
-    delta_alignment: float
+    transition_cka_ratio: float
     source_delta_norm: float
     target_delta_norm: float
 
@@ -707,8 +707,8 @@ class LayerTransitionResult:
         object.__setattr__(self, "state_cka", float(state_cka))
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([state_cka]))
-        delta_alignment = float(transition_cka) / float(state_cka) if state_cka > eps else 0.0
-        object.__setattr__(self, "delta_alignment", float(delta_alignment))
+        transition_cka_ratio = float(transition_cka) / float(state_cka) if state_cka > eps else 0.0
+        object.__setattr__(self, "transition_cka_ratio", float(transition_cka_ratio))
         object.__setattr__(self, "source_delta_norm", float(source_delta_norm))
         object.__setattr__(self, "target_delta_norm", float(target_delta_norm))
 

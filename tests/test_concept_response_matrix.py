@@ -568,7 +568,8 @@ class TestConceptResponseMatrixComparison:
         expected = sum(match.cka for match in report.layer_correspondence) / float(
             len(report.layer_correspondence)
         )
-        assert abs(report.overall_alignment - expected) < _div_eps()
+        # overall_alignment was renamed to mean_cka
+        assert abs(report.mean_cka - expected) < _div_eps()
 
     def test_compare_cka_matrix_in_report(self) -> None:
         """CKA matrix should be included in report."""
@@ -597,7 +598,7 @@ class TestConceptResponseMatrixTransition:
         assert abs(experiment.mean_state_cka - 1.0) < _div_eps()
         assert abs(experiment.transition_advantage - 1.0) < _div_eps()
         assert experiment.transition_better_than_state is False
-        assert abs(experiment.transitions[0].delta_alignment - 1.0) < _div_eps()
+        assert abs(experiment.transitions[0].transition_cka_ratio - 1.0) < _div_eps()
 
     def test_transition_alignment_model_identifiers(self) -> None:
         """Experiment should have correct model identifiers."""
@@ -872,7 +873,7 @@ class TestComparisonReport:
             common_anchor_count=10,
             cka_matrix=[[1.0]],
             layer_correspondence=[],
-            overall_alignment=0.9,
+            mean_cka=0.9,
         )
         with pytest.raises(Exception):
             report.source_model = "modified"  # type: ignore
@@ -896,8 +897,8 @@ class TestComparisonReport:
 class TestLayerTransitionResult:
     """Tests for LayerTransitionResult dataclass."""
 
-    def test_delta_alignment_computed(self) -> None:
-        """delta_alignment should be computed from transition/state CKA."""
+    def test_transition_ratio_computed(self) -> None:
+        """transition_cka_ratio should be computed from transition/state CKA."""
         result = LayerTransitionResult(
             from_layer=0,
             to_layer=1,
@@ -906,11 +907,11 @@ class TestLayerTransitionResult:
             source_delta_norm=1.0,
             target_delta_norm=1.0,
         )
-        # delta_alignment = transition_cka / state_cka = 0.8 / 0.4 = 2.0
-        assert abs(result.delta_alignment - 2.0) < _div_eps()
+        # transition_cka_ratio = transition_cka / state_cka = 0.8 / 0.4 = 2.0
+        assert abs(result.transition_cka_ratio - 2.0) < _div_eps()
 
-    def test_delta_alignment_zero_state_cka(self) -> None:
-        """delta_alignment should be 0 when state_cka is very small."""
+    def test_transition_ratio_zero_state_cka(self) -> None:
+        """transition_cka_ratio should be 0 when state_cka is very small."""
         eps = _div_eps()
         result = LayerTransitionResult(
             from_layer=0,
@@ -920,7 +921,7 @@ class TestLayerTransitionResult:
             source_delta_norm=1.0,
             target_delta_norm=1.0,
         )
-        assert abs(result.delta_alignment - 0.0) <= eps
+        assert abs(result.transition_cka_ratio - 0.0) <= eps
 
     def test_frozen_dataclass(self) -> None:
         """LayerTransitionResult should be immutable."""

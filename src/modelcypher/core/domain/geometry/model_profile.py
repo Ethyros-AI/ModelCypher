@@ -1061,11 +1061,11 @@ class ModelProfileExtractor:
                 "Pass a ModelLoaderPort implementation to the constructor."
             )
 
-        # Get activation provider (auto-detect if not provided)
         if self._activation_provider is None:
-            from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
-
-            self._activation_provider = get_activation_provider()
+            raise RuntimeError(
+                "ModelProfileExtractor requires an activation_provider. "
+                "Pass an ActivationProvider implementation to the constructor."
+            )
 
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 

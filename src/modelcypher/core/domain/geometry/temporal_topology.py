@@ -459,12 +459,15 @@ def extract_temporal_activations(
 
     Returns:
         Dict mapping concept to activation vector (as list)
-    """
-    # Get activation provider (auto-detect if not provided)
-    if activation_provider is None:
-        from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
 
-        activation_provider = get_activation_provider()
+    Raises:
+        ValueError: If activation_provider is None
+    """
+    if activation_provider is None:
+        raise ValueError(
+            "activation_provider is required. "
+            "Pass an ActivationProvider implementation."
+        )
 
     backend = get_default_backend()
     activations = {}

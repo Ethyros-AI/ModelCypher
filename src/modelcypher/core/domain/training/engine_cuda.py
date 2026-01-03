@@ -56,7 +56,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     autocast = None
 
 from .resources import TrainingResourceGuard
-from .types import TrainingConfig, TrainingProgress
+from .types import TrainingSpec, TrainingProgress
 from .validation import TrainingHyperparameterValidator
 
 logger = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ class TrainingEngineCUDA:
     async def train(
         self,
         job_id: str,
-        config: TrainingConfig,
+        config: TrainingSpec,
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
         data_provider: Any,
@@ -227,7 +227,7 @@ class TrainingEngineCUDA:
     async def _execute_training(
         self,
         job_id: str,
-        config: TrainingConfig,
+        config: TrainingSpec,
         model: nn.Module,
         optimizer: torch.optim.Optimizer,
         data_provider: Any,
@@ -384,7 +384,7 @@ class TrainingEngineCUDA:
             "Training completed in %.2fs, final step %d", time.time() - start_time, global_step
         )
 
-    async def _check_resume(self, config: TrainingConfig) -> ResumeStateCUDA | None:
+    async def _check_resume(self, config: TrainingSpec) -> ResumeStateCUDA | None:
         """Check for checkpoint to resume from."""
         if config.resume_from_checkpoint_path:
             metadata = await self.checkpoint_manager.load_latest_checkpoint(

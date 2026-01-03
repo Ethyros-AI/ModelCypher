@@ -47,7 +47,6 @@ import mlx.optimizers as optim
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import is_finite
-from modelcypher.infrastructure.services.memory import MLXMemoryService
 
 from .checkpoints_mlx import CheckpointManager
 from .resources import TrainingResourceGuard
@@ -148,10 +147,10 @@ class TrainingEngine:
     - Learning rate scheduling
     """
 
-    def __init__(self):
+    def __init__(self, memory_service=None):
         self.resource_guard = TrainingResourceGuard()
         self.checkpoint_manager = CheckpointManager()
-        self.memory_service = MLXMemoryService()
+        self.memory_service = memory_service  # Optional, injected by infrastructure
 
         # Job state
         self._cancelled_jobs: set[str] = set()
@@ -187,14 +186,15 @@ class TrainingEngine:
         # 1. Preflight Checks
         TrainingHyperparameterValidator.validate_for_engine(config.hyperparameters)
 
-        mem_stats = self.memory_service.get_memory_stats()
-        if mem_stats.pressure == "critical":
-            raise TrainingError(f"Insufficient memory: {mem_stats.available_gb}GB available.")
+        if self.memory_service is not None:
+            mem_stats = self.memory_service.get_memory_stats()
+            if mem_stats.pressure == "critical":
+                raise TrainingError(f"Insufficient memory: {mem_stats.available_gb}GB available.")
+            logger.info(
+                "Memory: Active=%.2fGB, Peak=%.2fGB", mem_stats.mlx_active_gb, mem_stats.mlx_peak_gb
+            )
 
         logger.info("Starting training job %s with MLX", job_id)
-        logger.info(
-            "Memory: Active=%.2fGB, Peak=%.2fGB", mem_stats.mlx_active_gb, mem_stats.mlx_peak_gb
-        )
 
         # Reset state
         self._cancelled_jobs.discard(job_id)
@@ -396,7 +396,7 @@ class TrainingEngine:
                         )
 
                     # Memory Cleanup
-                    if global_step % 50 == 0:
+                    if global_step % 50 == 0 and self.memory_service is not None:
                         self.memory_service.clear_cache()
 
         # Final Checkpoint
