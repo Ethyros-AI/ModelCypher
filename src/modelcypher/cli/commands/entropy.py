@@ -733,8 +733,6 @@ def entropy_calibrate(
         help="Path to save calibration JSON (optional)",
     ),
     prompts: str = typer.Option(..., "--prompts", help="Path to prompts JSON array"),
-    max_tokens: int = typer.Option(..., "--max-tokens", help="Max tokens per prompt"),
-    temperature: float = typer.Option(..., "--temperature", help="Sampling temperature"),
 ) -> None:
     """Calibrate entropy thresholds by measuring actual model distributions.
 
@@ -742,8 +740,8 @@ def entropy_calibrate(
     computes Shannon entropy, and derives empirical thresholds.
 
     Examples:
-        mc entropy calibrate --model /path/to/model --prompts ./prompts.json --max-tokens 100 --temperature 0.7
-        mc entropy calibrate --model /path/to/model --prompts ./prompts.json --max-tokens 100 --temperature 0.7 --output-file ./calibration.json
+        mc entropy calibrate --model /path/to/model --prompts ./prompts.json
+        mc entropy calibrate --model /path/to/model --prompts ./prompts.json --output-file ./calibration.json
     """
     context = _context(ctx)
 
@@ -767,8 +765,6 @@ def entropy_calibrate(
         result = service.calibrate(
             model_path=model,
             prompts=prompt_tuple,
-            max_tokens_per_prompt=max_tokens,
-            temperature=temperature,
         )
     except ValueError as exc:
         error = ErrorDetail(

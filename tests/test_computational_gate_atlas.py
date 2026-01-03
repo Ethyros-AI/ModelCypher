@@ -320,34 +320,6 @@ def test_signature_l2_normalized_zero_vector():
 
 
 # =============================================================================
-# GateAtlasConfiguration Tests
-# =============================================================================
-
-
-def test_config_defaults():
-    """Default configuration has reasonable values."""
-    config = GateAtlasConfiguration()
-
-    assert config.enabled is True
-    assert config.use_probe_subset is True
-
-
-def test_config_disabled():
-    """Configuration can disable atlas."""
-    config = GateAtlasConfiguration(enabled=False)
-    assert config.enabled is False
-
-
-def test_config_use_probe_subset():
-    """Configuration controls gate subset."""
-    config_probe = GateAtlasConfiguration(use_probe_subset=True)
-    config_core = GateAtlasConfiguration(use_probe_subset=False)
-
-    assert config_probe.use_probe_subset is True
-    assert config_core.use_probe_subset is False
-
-
-# =============================================================================
 # ComputationalGateAtlas Tests
 # =============================================================================
 
@@ -372,34 +344,13 @@ class MockEmbeddingProvider:
 
 
 def test_atlas_initialization():
-    """Atlas initializes with embedder and config."""
-    embedder = MockEmbeddingProvider()
-    config = GateAtlasConfiguration()
-
-    atlas = ComputationalGateAtlas(embedder, config)
-
-    assert atlas.embedder is embedder
-    assert atlas.config is config
-
-
-def test_atlas_uses_probe_subset_by_default():
-    """Atlas uses probe subset by default."""
+    """Atlas initializes with embedder."""
     embedder = MockEmbeddingProvider()
     atlas = ComputationalGateAtlas(embedder)
 
-    # Should use probe gates, not all core gates
-    probe_gates = ComputationalGateInventory.probe_gates()
-    assert len(atlas.inventory) == len(probe_gates)
-
-
-def test_atlas_uses_core_when_configured():
-    """Atlas uses core gates when configured."""
-    embedder = MockEmbeddingProvider()
-    config = GateAtlasConfiguration(use_probe_subset=False)
-    atlas = ComputationalGateAtlas(embedder, config)
-
-    core_gates = ComputationalGateInventory.core_gates()
-    assert len(atlas.inventory) == len(core_gates)
+    assert atlas.embedder is embedder
+    # All gates included - geometry determines significance
+    assert len(atlas.inventory) == len(ComputationalGateInventory.all_gates())
 
 
 def test_atlas_gates_property():
@@ -408,18 +359,6 @@ def test_atlas_gates_property():
     atlas = ComputationalGateAtlas(embedder)
 
     assert atlas.gates == atlas.inventory
-
-
-@pytest.mark.asyncio
-async def test_atlas_signature_disabled():
-    """Disabled atlas returns None signature."""
-    embedder = MockEmbeddingProvider()
-    config = GateAtlasConfiguration(enabled=False)
-    atlas = ComputationalGateAtlas(embedder, config)
-
-    result = await atlas.signature("def hello(): pass")
-
-    assert result is None
 
 
 @pytest.mark.asyncio

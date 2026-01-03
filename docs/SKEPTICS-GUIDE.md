@@ -71,19 +71,19 @@ Gram matrices capture relational structure independent of feature dimension:
 ## Concern 2: "Geodesic Distance Is CORRECT"
 
 ### The Skeptic's Question
-Geodesic distance requires connected graphs. What happens when the k-NN graph is disconnected? Is there a silent Euclidean fallback? How can geodesic be "exact" when it's computed on a discrete approximation?
+Geodesic distance requires connected graphs. What happens when the k-NN graph is disconnected? How can geodesic be "exact" when it's computed on a discrete approximation?
 
-### The Answer: No Fallbacks, Explicit Failures, Automatic Retry
+### The Answer: Explicit Failures, Automatic Retry
 
 **Code Reference**: [riemannian_utils.py:784-790](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L784-L790)
 
 ```python
-def geodesic_interpolation(self, point_a, point_b, t, manifold_context=None):
-    if manifold_context is None:
-        # NO FALLBACK - explicit error
+def geodesic_interpolation(self, p1, p2, t, points_context=None):
+    if points_context is None:
         raise ValueError(
-            "geodesic_interpolation requires manifold context. "
-            "Use linear_interpolation for Euclidean approximation."
+            "Geodesic interpolation requires points_context to define the manifold. "
+            "Without context, there is no manifold structure and geodesic is undefined. "
+            "Provide a point cloud that defines the discrete manifold."
         )
 ```
 
@@ -123,7 +123,7 @@ On a discrete k-NN graph, geodesic distance IS the shortest path through the gra
 **Citation**: Tenenbaum et al. (2000) "A Global Geometric Framework for Nonlinear Dimensionality Reduction" (Isomap) - establishes geodesic distance on k-NN graphs as the correct metric for manifold learning.
 
 ### Summary
-Geodesic computation either succeeds with the true manifold distance, returns infinity for disconnected components, or raises an error. No silent corruption. No Euclidean fallback.
+Geodesic computation either succeeds with the true manifold distance, returns infinity for disconnected components, or raises an error. No silent substitution.
 
 ---
 

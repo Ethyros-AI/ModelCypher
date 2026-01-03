@@ -553,8 +553,8 @@ mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]'
 ### mc entropy calibrate
 Calibrate entropy thresholds by measuring actual model distributions.
 ```bash
-mc entropy calibrate --model /path/to/model --prompts ./prompts.json --max-tokens 100 --temperature 0.7
-mc entropy calibrate --model /path/to/model --prompts ./prompts.json --max-tokens 100 --temperature 0.7 --output-file ./calibration.json
+mc entropy calibrate --model /path/to/model --prompts ./prompts.json
+mc entropy calibrate --model /path/to/model --prompts ./prompts.json --output-file ./calibration.json
 ```
 
 ---

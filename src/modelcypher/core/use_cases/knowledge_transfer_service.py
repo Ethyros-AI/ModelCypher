@@ -39,6 +39,8 @@ if TYPE_CHECKING:
     from modelcypher.ports import InferenceEngine
 
 from modelcypher.core.domain.merging.knowledge_transfer_validator import (
+    KnowledgeDomain,
+    KnowledgeProbe,
     KnowledgeProbeCorpus,
     KnowledgeTransferReport,
     compute_retention_by_domain,
@@ -146,7 +148,6 @@ class KnowledgeTransferService:
             merged_model: Path to merged model directory.
             source_model: Path to source model for baseline comparison.
             target_model: Path to target model for comparison (optional).
-            config: Validation configuration.
 
         Returns:
             KnowledgeTransferValidationResult with retention metrics.
@@ -161,7 +162,7 @@ class KnowledgeTransferService:
         probes = self._corpus.get_probes()
 
         if not probes:
-            warnings.append("No probes found for specified domains")
+            warnings.append("No probes available in corpus")
             return KnowledgeTransferValidationResult(
                 validation_id=validation_id,
                 merged_model=merged_model,
@@ -235,7 +236,7 @@ class KnowledgeTransferService:
 
     def get_available_probes(self) -> list[KnowledgeProbe]:
         """Get list of all available probes."""
-        return self._corpus.probes.copy()
+        return self._corpus.get_probes()
 
     def _create_model_infer_fn(self, model_path: str) -> Callable[[str], str]:
         """Create inference function bound to a specific model."""

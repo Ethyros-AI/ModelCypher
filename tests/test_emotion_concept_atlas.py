@@ -455,26 +455,6 @@ class TestEmotionConceptAtlas:
         # 8 dyads
         assert len(atlas.dyads) == 8
 
-    def test_configuration_excludes_mild(self) -> None:
-        """Configuration can exclude mild emotions."""
-        config = EmotionAtlasConfiguration(include_mild=False)
-        atlas = EmotionConceptAtlas(configuration=config)
-        # 8 primary + 8 intense = 16
-        assert len(atlas.inventory) == 16
-
-    def test_configuration_excludes_intense(self) -> None:
-        """Configuration can exclude intense emotions."""
-        config = EmotionAtlasConfiguration(include_intense=False)
-        atlas = EmotionConceptAtlas(configuration=config)
-        # 8 primary + 8 mild = 16
-        assert len(atlas.inventory) == 16
-
-    def test_configuration_excludes_dyads(self) -> None:
-        """Configuration can exclude dyads."""
-        config = EmotionAtlasConfiguration(include_dyads=False)
-        atlas = EmotionConceptAtlas(configuration=config)
-        assert len(atlas.dyads) == 0
-
     def test_normalized_entropy_uniform(self) -> None:
         """Uniform distribution should have entropy of 1.0."""
         atlas = EmotionConceptAtlas()

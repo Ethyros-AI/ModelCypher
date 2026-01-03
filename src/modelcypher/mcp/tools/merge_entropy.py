@@ -169,8 +169,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
         def mc_model_validate_knowledge(
             sourceModel: str,
             mergedModel: str,
-            domains: list[str] | None = None,
-            useVariations: bool = False,
         ) -> dict:
             """Validate knowledge transfer after model merge.
 
@@ -180,42 +178,20 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             Args:
                 sourceModel: Path to original source model
                 mergedModel: Path to merged model
-                domains: Optional list of domains to test (math, code, factual, reasoning)
-                useVariations: Whether to test probe variations for robustness
 
             Returns:
                 Knowledge retention report with per-domain scores and overall retention
             """
             from modelcypher.core.domain.merging.knowledge_transfer_validator import (
-                KnowledgeDomain,
                 KnowledgeProbeCorpus,
                 KnowledgeTransferReport,
-                KnowledgeValidationConfig,
                 compute_retention_by_domain,
                 run_knowledge_probes,
             )
 
-            # Parse domain filters
-            domain_filter: set[KnowledgeDomain] | None = None
-            if domains:
-                domain_filter = set()
-                for d in domains:
-                    try:
-                        domain_filter.add(KnowledgeDomain(d.lower()))
-                    except ValueError:
-                        pass
-
-            # Create config and corpus
-            config = KnowledgeValidationConfig(use_variations=useVariations)
+            # Use the full probe corpus for geometry-derived validation
             corpus = KnowledgeProbeCorpus()
-
-            # Get probes for requested domains
-            if domain_filter:
-                probes = []
-                for domain in domain_filter:
-                    probes.extend(corpus.get_probes(domain))
-            else:
-                probes = corpus.all_probes
+            probes = corpus.get_probes()
 
             # Create generators for each model
             def source_generate(prompt: str) -> str:
@@ -227,8 +203,8 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 return result.get("response", "")
 
             # Run probes on both models
-            source_results = run_knowledge_probes(source_generate, probes, config)
-            merged_results = run_knowledge_probes(merged_generate, probes, config)
+            source_results = run_knowledge_probes(source_generate, probes)
+            merged_results = run_knowledge_probes(merged_generate, probes)
 
             # Compute retention by domain
             retention = compute_retention_by_domain(source_results, merged_results)

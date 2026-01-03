@@ -570,8 +570,7 @@ class ThermoService:
         Args:
             prompt: The prompt to analyze.
             model_path: Path to the model directory.
-            modifiers: List of modifier names to use. Defaults to
-                ["baseline", "caps", "direct"].
+            modifiers: List of modifier names to use. Defaults to all modifiers.
 
         Returns:
             ThermoDetectResult with raw entropy measurements.
@@ -579,7 +578,7 @@ class ThermoService:
         start_time = time.time()
 
         if modifiers is None:
-            modifiers = ["baseline", "caps", "direct"]
+            modifiers = [m.name for m in DEFAULT_MODIFIERS]
 
         # Measure entropy across modifiers
         measure_result = self.measure(prompt, model_path, modifiers)

@@ -303,23 +303,19 @@ class TestMCPCLIParity:
     @pytest.mark.skip(reason="Test requires real model loading which isn't available in CI")
     @given(
         prompt=st.text(min_size=1, max_size=100).filter(lambda s: s.strip()),
-        preset=st.sampled_from(["default", "strict", "sensitive", "quick"]),
     )
     @settings(max_examples=100, deadline=None)
-    def test_thermo_detect_schema_parity(self, prompt: str, preset: str):
+    def test_thermo_detect_schema_parity(self, prompt: str):
         """Property 9: For any thermo detect operation, MCP output matches CLI output schema."""
         from modelcypher.core.use_cases.thermo_service import ThermoService
 
         with tempfile.TemporaryDirectory() as model_dir:
             service = ThermoService()
-            result = service.detect(prompt, model_dir, preset)
+            result = service.detect(prompt, model_dir)
 
             # CLI output format (from app.py thermo_detect)
             cli_output = {
                 "prompt": result.prompt,
-                "classification": result.classification,
-                "riskLevel": result.risk_level,
-                "confidence": result.confidence,
                 "baselineEntropy": result.baseline_entropy,
                 "intensityEntropy": result.intensity_entropy,
                 "deltaH": result.delta_h,
@@ -330,9 +326,6 @@ class TestMCPCLIParity:
             mcp_output = {
                 "_schema": "mc.thermo.detect.v1",
                 "prompt": result.prompt,
-                "classification": result.classification,
-                "riskLevel": result.risk_level,
-                "confidence": result.confidence,
                 "baselineEntropy": result.baseline_entropy,
                 "intensityEntropy": result.intensity_entropy,
                 "deltaH": result.delta_h,
@@ -361,10 +354,9 @@ class TestMCPCLIParity:
         prompts=st.lists(
             st.text(min_size=1, max_size=50).filter(lambda s: s.strip()), min_size=1, max_size=10
         ),
-        preset=st.sampled_from(["default", "strict", "sensitive", "quick"]),
     )
     @settings(max_examples=100, deadline=None)
-    def test_thermo_detect_batch_schema_parity(self, prompts: list[str], preset: str):
+    def test_thermo_detect_batch_schema_parity(self, prompts: list[str]):
         """Property 9: For any thermo detect-batch operation, MCP output matches CLI output schema."""
         from modelcypher.core.use_cases.thermo_service import ThermoService
 
@@ -378,7 +370,7 @@ class TestMCPCLIParity:
             prompts_file.write_text(json.dumps(prompts), encoding="utf-8")
 
             service = ThermoService()
-            results = service.detect_batch(str(prompts_file), str(model_dir), preset)
+            results = service.detect_batch(str(prompts_file), str(model_dir))
 
             # CLI output format (from app.py thermo_detect_batch)
             cli_output = {
@@ -387,18 +379,13 @@ class TestMCPCLIParity:
                 "results": [
                     {
                         "prompt": r.prompt,
-                        "classification": r.classification,
-                        "riskLevel": r.risk_level,
-                        "confidence": r.confidence,
+                        "baselineEntropy": r.baseline_entropy,
+                        "intensityEntropy": r.intensity_entropy,
                         "deltaH": r.delta_h,
+                        "processingTime": r.processing_time,
                     }
                     for r in results
                 ],
-                "summary": {
-                    "safe": sum(1 for r in results if r.classification == "safe"),
-                    "unsafe": sum(1 for r in results if r.classification == "unsafe"),
-                    "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
-                },
             }
 
             # MCP output format (from server.py mc_thermo_detect_batch)
@@ -409,18 +396,13 @@ class TestMCPCLIParity:
                 "results": [
                     {
                         "prompt": r.prompt,
-                        "classification": r.classification,
-                        "riskLevel": r.risk_level,
-                        "confidence": r.confidence,
+                        "baselineEntropy": r.baseline_entropy,
+                        "intensityEntropy": r.intensity_entropy,
                         "deltaH": r.delta_h,
+                        "processingTime": r.processing_time,
                     }
                     for r in results
                 ],
-                "summary": {
-                    "safe": sum(1 for r in results if r.classification == "safe"),
-                    "unsafe": sum(1 for r in results if r.classification == "unsafe"),
-                    "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
-                },
             }
 
             # Property: CLI fields are subset of MCP fields (excluding MCP-only fields)

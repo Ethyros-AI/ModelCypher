@@ -183,8 +183,6 @@ class TestKnowledgeValidationTool:
                     arguments={
                         "sourceModel": test_model_path,
                         "mergedModel": test_model_path,
-                        "domains": ["math"],
-                        "useVariations": False,
                     },
                 )
             )

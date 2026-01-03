@@ -257,8 +257,6 @@ class EntropyCalibrationService:
         self,
         model_path: str,
         prompts: tuple[str, ...],
-        max_tokens_per_prompt: int,
-        temperature: float,
     ) -> EntropyCalibrationResult:
         """
         Calibrate entropy thresholds for a model by measuring actual distributions.
@@ -269,8 +267,6 @@ class EntropyCalibrationService:
         Args:
             model_path: Path to model directory.
             prompts: Calibration prompts (required).
-            max_tokens_per_prompt: Maximum tokens to generate per prompt.
-            temperature: Sampling temperature.
 
         Returns:
             EntropyCalibrationResult with measured statistics.
@@ -293,6 +289,11 @@ class EntropyCalibrationService:
 
         # Load model
         model, tokenizer = self._mlx_load(str(model_dir))
+        max_tokens_per_prompt, temperature = self._derive_generation_params(
+            model_dir=model_dir,
+            tokenizer=tokenizer,
+            prompts=prompts,
+        )
 
         # Get vocab size from model config or tokenizer
         vocab_size = getattr(tokenizer, "vocab_size", None)
@@ -386,6 +387,54 @@ class EntropyCalibrationService:
         )
 
         return result
+
+    def _derive_generation_params(
+        self,
+        *,
+        model_dir: Path,
+        tokenizer: Any,
+        prompts: tuple[str, ...],
+    ) -> tuple[int, float]:
+        """Derive generation parameters from model geometry and prompt lengths."""
+        # Temperature is fixed at 0.0 for deterministic calibration paths.
+        temperature = 0.0
+
+        prompt_lengths = [len(tokenizer.encode(prompt)) for prompt in prompts] if prompts else []
+        max_prompt_len = max(prompt_lengths, default=1)
+
+        max_context = self._resolve_context_length(model_dir)
+        if max_context is None:
+            max_tokens = max(1, max_prompt_len)
+        else:
+            max_tokens = max(1, max_context - max_prompt_len)
+
+        return max_tokens, temperature
+
+    @staticmethod
+    def _resolve_context_length(model_dir: Path) -> int | None:
+        """Resolve max context length from model config (if available)."""
+        config_path = model_dir / "config.json"
+        if not config_path.exists():
+            return None
+
+        try:
+            config = json.loads(config_path.read_text())
+        except json.JSONDecodeError:
+            return None
+
+        for key in (
+            "max_position_embeddings",
+            "max_seq_len",
+            "max_sequence_length",
+            "n_ctx",
+            "context_length",
+            "seq_length",
+        ):
+            value = config.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                return int(value)
+
+        return None
 
     def _measure_prompt_entropy(
         self,

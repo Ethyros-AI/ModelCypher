@@ -76,38 +76,6 @@ def retention_result_strategy(draw):
 
 
 # =============================================================================
-# Configuration Properties
-# =============================================================================
-
-
-class TestKnowledgeValidationConfigProperties:
-    """Property tests for KnowledgeValidationConfig."""
-
-    @given(
-        domains=st.lists(domain_strategy, min_size=1, max_size=10),
-        min_probes=st.integers(min_value=1, max_value=20),
-        use_variations=st.booleans(),
-    )
-    @settings(max_examples=30)
-    def test_config_preserves_fields(
-        self,
-        domains: list[KnowledgeDomain],
-        min_probes: int,
-        use_variations: bool,
-    ) -> None:
-        """Configuration should preserve provided settings."""
-        config = KnowledgeValidationConfig(
-            domains=domains,
-            min_probes_per_domain=min_probes,
-            use_variations=use_variations,
-        )
-
-        assert config.domains == domains
-        assert config.min_probes_per_domain == min_probes
-        assert config.use_variations == use_variations
-
-
-# =============================================================================
 # Knowledge Probe Properties
 # =============================================================================
 

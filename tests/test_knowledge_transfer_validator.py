@@ -35,18 +35,6 @@ from modelcypher.core.domain.merging.knowledge_transfer_validator import (
 )
 
 
-class TestKnowledgeValidationConfig:
-    """Tests for KnowledgeValidationConfig."""
-
-    def test_defaults(self):
-        """Should create config with standard domain defaults."""
-        config = KnowledgeValidationConfig()
-
-        assert config.domains == list(KnowledgeDomain)
-        assert config.min_probes_per_domain == 5
-        assert config.use_variations is True
-
-
 class TestKnowledgeProbe:
     """Tests for KnowledgeProbe."""
 
@@ -267,7 +255,7 @@ class TestRunKnowledgeProbes:
         assert results[1].passed is False
 
     def test_variations_executed(self):
-        """Should execute variations when configured."""
+        """Should execute variations when present in probe."""
 
         def mock_generate(prompt: str) -> str:
             return "4"
@@ -282,8 +270,8 @@ class TestRunKnowledgeProbes:
             ),
         ]
 
-        config = KnowledgeValidationConfig(use_variations=True)
-        results = run_knowledge_probes(mock_generate, probes, config)
+        # Variations are always executed when present in the probe
+        results = run_knowledge_probes(mock_generate, probes)
 
         assert len(results[0].variation_results) == 2
 

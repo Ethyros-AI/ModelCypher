@@ -73,9 +73,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
         def mc_thermo_path_integration(
             prompt: str,
             model: str,
-            maxTokens: int = 200,
-            temperature: float = 0.0,
-            captureTrajectory: bool = True,
         ) -> dict:
             """
             Run thermodynamic path integration with gate detection.
@@ -88,10 +85,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
             result = ctx.thermo_service.path_integration(
                 prompt=prompt,
                 model_path=model_path,
-                gate_threshold=0.0,  # No filtering - return all with similarity
-                max_tokens=maxTokens,
-                temperature=temperature,
-                capture_trajectory=captureTrajectory,
             )
             measurement = result.measurement
             assessment = measurement.assessment
@@ -152,11 +145,10 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
         def mc_thermo_measure(
             prompt: str,
             model: str,
-            modifiers: list[str] | None = None,
         ) -> dict:
             """Measure entropy across linguistic modifiers for a prompt."""
             model_path = require_existing_directory(model)
-            result = ctx.thermo_service.measure(prompt, model_path, modifiers)
+            result = ctx.thermo_service.measure(prompt, model_path)
 
             return {
                 "_schema": "mc.thermo.measure.v1",
@@ -167,7 +159,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                         "meanEntropy": m.mean_entropy,
                         "deltaH": m.delta_h,
                         "ridgeCrossed": m.ridge_crossed,
-                        "behavioralOutcome": m.behavioral_outcome,
                     }
                     for m in result.measurements
                 ],
@@ -177,7 +168,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                     "minEntropy": result.statistics.min_entropy,
                     "maxEntropy": result.statistics.max_entropy,
                     "meanDeltaH": result.statistics.mean_delta_h,
-                    "intensityCorrelation": result.statistics.intensity_correlation,
                 },
                 "timestamp": result.timestamp.isoformat(),
             }
@@ -188,18 +178,14 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
         def mc_thermo_detect(
             prompt: str,
             model: str,
-            preset: str = "default",
         ) -> dict:
             """Detect unsafe prompt patterns via entropy differential."""
             model_path = require_existing_directory(model)
-            result = ctx.thermo_service.detect(prompt, model_path, preset)
+            result = ctx.thermo_service.detect(prompt, model_path)
 
             return {
                 "_schema": "mc.thermo.detect.v1",
                 "prompt": result.prompt,
-                "classification": result.classification,
-                "riskLevel": result.risk_level,
-                "confidence": result.confidence,
                 "baselineEntropy": result.baseline_entropy,
                 "intensityEntropy": result.intensity_entropy,
                 "deltaH": result.delta_h,
@@ -212,12 +198,11 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
         def mc_thermo_detect_batch(
             promptsFile: str,
             model: str,
-            preset: str = "default",
         ) -> dict:
             """Batch detect unsafe patterns across multiple prompts."""
             model_path = require_existing_directory(model)
             prompts_path = require_existing_path(promptsFile)
-            results = ctx.thermo_service.detect_batch(prompts_path, model_path, preset)
+            results = ctx.thermo_service.detect_batch(prompts_path, model_path)
 
             return {
                 "_schema": "mc.thermo.detect_batch.v1",
@@ -226,16 +211,11 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                 "results": [
                     {
                         "prompt": r.prompt,
-                        "classification": r.classification,
-                        "riskLevel": r.risk_level,
-                        "confidence": r.confidence,
+                        "baselineEntropy": r.baseline_entropy,
+                        "intensityEntropy": r.intensity_entropy,
                         "deltaH": r.delta_h,
+                        "processingTime": r.processing_time,
                     }
                     for r in results
                 ],
-                "summary": {
-                    "safe": sum(1 for r in results if r.classification == "safe"),
-                    "unsafe": sum(1 for r in results if r.classification == "unsafe"),
-                    "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
-                },
             }

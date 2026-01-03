@@ -114,13 +114,6 @@ def thermo_path_integration(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to analyze"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    max_tokens: int = typer.Option(200, "--max-tokens", help="Max tokens for response"),
-    temperature: float = typer.Option(0.0, "--temperature", help="Sampling temperature"),
-    capture_trajectory: bool = typer.Option(
-        True,
-        "--capture-trajectory/--no-capture-trajectory",
-        help="Include entropy trajectory in output",
-    ),
 ) -> None:
     """Integrate entropy trajectories with gate detections.
 
@@ -135,10 +128,6 @@ def thermo_path_integration(
     result = service.path_integration(
         prompt=prompt,
         model_path=model,
-        gate_threshold=0.0,  # Return all gates with similarity
-        max_tokens=max_tokens,
-        temperature=temperature,
-        capture_trajectory=capture_trajectory,
     )
 
     measurement = result.measurement
@@ -231,14 +220,13 @@ def thermo_measure(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to measure"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    modifiers: list[str] | None = typer.Option(None, "--modifier", help="Modifier names to use"),
 ) -> None:
     """Measure entropy across linguistic modifiers for a prompt."""
     context = _context(ctx)
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     service = ThermoService()
-    result = service.measure(prompt, model, modifiers)
+    result = service.measure(prompt, model)
 
     payload = {
         "basePrompt": result.base_prompt,
@@ -248,7 +236,6 @@ def thermo_measure(
                 "meanEntropy": m.mean_entropy,
                 "deltaH": m.delta_h,
                 "ridgeCrossed": m.ridge_crossed,
-                "behavioralOutcome": m.behavioral_outcome,
             }
             for m in result.measurements
         ],
@@ -258,7 +245,6 @@ def thermo_measure(
             "minEntropy": result.statistics.min_entropy,
             "maxEntropy": result.statistics.max_entropy,
             "meanDeltaH": result.statistics.mean_delta_h,
-            "intensityCorrelation": result.statistics.intensity_correlation,
         },
         "timestamp": result.timestamp.isoformat(),
     }
@@ -273,13 +259,11 @@ def thermo_measure(
         for m in result.measurements:
             delta_str = f"{m.delta_h:.4f}" if m.delta_h is not None else "N/A"
             lines.append(
-                f"  {m.modifier}: entropy={m.mean_entropy:.4f}, delta_h={delta_str}, outcome={m.behavioral_outcome}"
+                f"  {m.modifier}: entropy={m.mean_entropy:.4f}, delta_h={delta_str}, ridge_crossed={m.ridge_crossed}"
             )
         lines.append("")
         lines.append(f"Mean Entropy: {result.statistics.mean_entropy:.4f}")
         lines.append(f"Std Entropy: {result.statistics.std_entropy:.4f}")
-        if result.statistics.intensity_correlation is not None:
-            lines.append(f"Intensity Correlation: {result.statistics.intensity_correlation:.4f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -291,22 +275,16 @@ def thermo_detect(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to analyze"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    preset: str = typer.Option(
-        "default", "--preset", help="Preset: default, strict, sensitive, quick"
-    ),
 ) -> None:
     """Detect unsafe prompt patterns via entropy differential."""
     context = _context(ctx)
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     service = ThermoService()
-    result = service.detect(prompt, model, preset)
+    result = service.detect(prompt, model)
 
     payload = {
         "prompt": result.prompt,
-        "classification": result.classification,
-        "riskLevel": result.risk_level,
-        "confidence": result.confidence,
         "baselineEntropy": result.baseline_entropy,
         "intensityEntropy": result.intensity_entropy,
         "deltaH": result.delta_h,
@@ -314,14 +292,9 @@ def thermo_detect(
     }
 
     if context.output_format == "text":
-        risk_labels = {0: "NONE", 1: "LOW", 2: "MEDIUM", 3: "HIGH"}
         lines = [
             "THERMO DETECT",
             f"Prompt: {result.prompt[:50]}{'...' if len(result.prompt) > 50 else ''}",
-            "",
-            f"Classification: {result.classification.upper()}",
-            f"Risk Level: {result.risk_level} ({risk_labels.get(result.risk_level, 'UNKNOWN')})",
-            f"Confidence: {result.confidence:.2%}",
             "",
             f"Baseline Entropy: {result.baseline_entropy:.4f}",
             f"Intensity Entropy: {result.intensity_entropy:.4f}",
@@ -341,9 +314,6 @@ def thermo_detect_batch(
         ..., help="Path to prompts file (JSON array or newline-separated)"
     ),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    preset: str = typer.Option(
-        "default", "--preset", help="Preset: default, strict, sensitive, quick"
-    ),
 ) -> None:
     """Batch detect unsafe patterns across multiple prompts."""
     context = _context(ctx)
@@ -352,7 +322,7 @@ def thermo_detect_batch(
     service = ThermoService()
 
     try:
-        results = service.detect_batch(prompts_file, model, preset)
+        results = service.detect_batch(prompts_file, model)
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1010",
@@ -369,18 +339,13 @@ def thermo_detect_batch(
         "results": [
             {
                 "prompt": r.prompt,
-                "classification": r.classification,
-                "riskLevel": r.risk_level,
-                "confidence": r.confidence,
+                "baselineEntropy": r.baseline_entropy,
+                "intensityEntropy": r.intensity_entropy,
                 "deltaH": r.delta_h,
+                "processingTime": r.processing_time,
             }
             for r in results
         ],
-        "summary": {
-            "safe": sum(1 for r in results if r.classification == "safe"),
-            "unsafe": sum(1 for r in results if r.classification == "unsafe"),
-            "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
-        },
     }
 
     if context.output_format == "text":
@@ -389,16 +354,11 @@ def thermo_detect_batch(
             f"File: {prompts_file}",
             f"Total Prompts: {len(results)}",
             "",
-            "Summary:",
-            f"  Safe: {payload['summary']['safe']}",
-            f"  Unsafe: {payload['summary']['unsafe']}",
-            f"  Ambiguous: {payload['summary']['ambiguous']}",
-            "",
             "Results:",
         ]
         for i, r in enumerate(results[:10]):  # Show first 10
             prompt_preview = r.prompt[:30] + "..." if len(r.prompt) > 30 else r.prompt
-            lines.append(f"  {i + 1}. [{r.classification.upper()}] {prompt_preview}")
+            lines.append(f"  {i + 1}. ΔH={r.delta_h:.4f} {prompt_preview}")
         if len(results) > 10:
             lines.append(f"  ... and {len(results) - 10} more")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -412,7 +372,6 @@ def thermo_ridge_detect(
     ctx: typer.Context,
     baseline_file: str = typer.Argument(..., help="Path to baseline measurement JSON"),
     variants_file: str = typer.Argument(..., help="Path to variant measurements JSON"),
-    preset: str = typer.Option("default", "--preset", help="Preset: default, strict, lenient"),
 ) -> None:
     """Detect ridge crossings between behavioral basins.
 
@@ -423,10 +382,7 @@ def thermo_ridge_detect(
 
     context = _context(ctx)
     from modelcypher.core.domain.thermo.linguistic_thermodynamics import ThermoMeasurement
-    from modelcypher.core.domain.thermo.ridge_cross_detector import (
-        RidgeCrossConfiguration,
-        RidgeCrossDetector,
-    )
+    from modelcypher.core.domain.thermo.ridge_cross_detector import RidgeCrossDetector
 
     # Load baseline
     try:
@@ -458,15 +414,7 @@ def thermo_ridge_detect(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Configure detector
-    if preset == "strict":
-        config = RidgeCrossConfiguration.strict()
-    elif preset == "lenient":
-        config = RidgeCrossConfiguration.lenient()
-    else:
-        config = RidgeCrossConfiguration.default()
-
-    detector = RidgeCrossDetector(configuration=config)
+    detector = RidgeCrossDetector()
     analysis = detector.analyze_transitions(baseline, variants)
 
     payload = {
@@ -509,7 +457,6 @@ def thermo_ridge_detect(
 def thermo_phase(
     ctx: typer.Context,
     logits_file: str = typer.Argument(..., help="Path to logits JSON file (array of floats)"),
-    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Generation temperature"),
 ) -> None:
     """Analyze thermodynamic phase from logits.
 
@@ -543,7 +490,7 @@ def thermo_phase(
 
     analysis = PhaseTransitionTheory.analyze(
         logits=logits,
-        temperature=temperature,
+        temperature=1.0,
     )
 
     payload = {
@@ -595,7 +542,6 @@ def thermo_phase(
 def thermo_sweep(
     ctx: typer.Context,
     logits_file: str = typer.Argument(..., help="Path to logits JSON file (array of floats)"),
-    temps: str | None = typer.Option(None, "--temps", help="Comma-separated temperatures to sweep"),
 ) -> None:
     """Perform temperature sweep to analyze entropy behavior.
 
@@ -625,22 +571,7 @@ def thermo_sweep(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Parse temperatures
-    temperatures: list[float] | None = None
-    if temps:
-        try:
-            temperatures = [float(t.strip()) for t in temps.split(",")]
-        except ValueError as exc:
-            error = ErrorDetail(
-                code="MC-1015",
-                title="Invalid temperatures",
-                detail=str(exc),
-                trace_id=context.trace_id,
-            )
-            write_error(error.as_dict(), context.output_format, context.pretty)
-            raise typer.Exit(code=1)
-
-    result = PhaseTransitionTheory.temperature_sweep(logits=logits, temperatures=temperatures)
+    result = PhaseTransitionTheory.temperature_sweep(logits=logits, temperatures=None)
 
     payload = {
         "temperatures": result.temperatures,

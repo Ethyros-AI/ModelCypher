@@ -424,23 +424,16 @@ def model_validate_knowledge(
         KnowledgeDomain,
     )
     from modelcypher.core.use_cases.knowledge_transfer_service import (
-        KnowledgeTransferConfig,
         KnowledgeTransferService,
     )
 
     context = _context(ctx)
 
-    # Build config
-    config = KnowledgeTransferConfig(
-        domains=list(KnowledgeDomain),
-        include_variations=True,
-    )
-
     typer.echo("Running knowledge transfer validation...", err=True)
     typer.echo(f"  Merged model: {merged}", err=True)
     if source:
         typer.echo(f"  Source model: {source}", err=True)
-    typer.echo(f"  Domains: {', '.join(d.value for d in config.domains)}", err=True)
+    typer.echo(f"  Domains: {', '.join(d.value for d in KnowledgeDomain)}", err=True)
 
     registry = get_registry()
     service = KnowledgeTransferService(inference_engine=registry.inference_engine)
@@ -448,7 +441,6 @@ def model_validate_knowledge(
         result = service.validate(
             merged_model=merged,
             source_model=source,
-            config=config,
         )
     except Exception as e:
         error = ErrorDetail(
@@ -463,7 +455,6 @@ def model_validate_knowledge(
 
     # Display summary
     typer.echo("\nKnowledge Transfer Validation Complete!", err=True)
-    typer.echo(f"  Status: {str(result.status).upper()}", err=True)
     typer.echo(f"  Overall Retention: {result.overall_retention:.1%}", err=True)
     typer.echo(f"  Probes Executed: {result.probes_executed}", err=True)
     typer.echo(f"  Time: {result.execution_time_seconds:.1f}s", err=True)
