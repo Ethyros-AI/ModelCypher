@@ -72,23 +72,22 @@ class TestConceptVectorSpace:
         assert space.concepts["test_concept"].id == "test_concept"
         assert space.concepts["test_concept"].metadata == {"category": "test"}
 
-    def test_add_concept_normalizes_vector(self, backend: "Backend") -> None:
-        """Vectors should be normalized on insertion."""
+    def test_add_concept_preserves_vector(self, backend: "Backend") -> None:
+        """Vectors should be stored without Euclidean normalization."""
         space = ConceptVectorSpace(dimension=64, backend=backend)
 
-        # Create vector with known norm
-        vector = backend.ones((64,)) * 10.0  # Norm will be sqrt(64) * 10 = 80
+        vector = backend.ones((64,)) * 10.0
         backend.eval(vector)
 
         space.add_concept("test", vector)
 
-        # Stored vector should be normalized (norm ≈ 1.0)
         stored = space.concepts["test"].vector
-        norm_arr = backend.norm(stored)
-        backend.eval(norm_arr)
-        norm = float(backend.to_scalar(norm_arr))
-        # Use 1e-4 tolerance for normalization precision (64-dim accumulates error)
-        assert abs(norm - 1.0) < 1e-4
+        diff = stored - vector
+        diff_abs = backend.abs(diff)
+        max_diff_arr = backend.max(diff_abs)
+        backend.eval(max_diff_arr)
+        max_diff = float(backend.to_scalar(max_diff_arr))
+        assert max_diff <= _eps(backend, max_diff)
 
     def test_add_concept_dimension_mismatch_raises(self, backend: "Backend") -> None:
         """Adding concept with wrong dimension should raise."""

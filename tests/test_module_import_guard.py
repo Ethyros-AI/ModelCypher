@@ -92,7 +92,6 @@ class TestDomainPackageExports:
         from modelcypher.core.domain import geometry
 
         # Verify key exports are accessible
-        assert hasattr(geometry, "VectorMath")
         assert hasattr(geometry, "PathNode")
         assert hasattr(geometry, "DoRADecomposition")
         assert hasattr(geometry, "PermutationAligner")

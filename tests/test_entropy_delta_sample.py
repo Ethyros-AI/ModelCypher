@@ -52,10 +52,10 @@ def test_entropy_delta_sample_anomaly_metrics() -> None:
         token_index=0,
         generated_token=42,
         base_entropy=5.0,  # High = uncertain
-        base_top_k_variance=1.0,
+        base_logit_variance=1.0,
         base_top_token=1,
         adapter_entropy=1.0,  # Low = confident
-        adapter_top_k_variance=0.5,
+        adapter_logit_variance=0.5,
         adapter_top_token=2,  # Disagreement with base_top_token=1
         base_logit_margin=7.0,
         base_rank_fraction=0.05,
@@ -77,10 +77,10 @@ def test_entropy_delta_sample_signal_payload() -> None:
         token_index=1,
         generated_token=3,
         base_entropy=1.0,
-        base_top_k_variance=0.1,
+        base_logit_variance=0.1,
         base_top_token=3,
         adapter_entropy=1.2,
-        adapter_top_k_variance=0.2,
+        adapter_logit_variance=0.2,
         adapter_top_token=3,
         latency_ms=5.0,
     )
@@ -102,10 +102,10 @@ def test_entropy_delta_session_metrics() -> None:
         token_index=0,
         generated_token=1,
         base_entropy=2.0,
-        base_top_k_variance=0.2,
+        base_logit_variance=0.2,
         base_top_token=1,
         adapter_entropy=1.5,
-        adapter_top_k_variance=0.1,
+        adapter_logit_variance=0.1,
         adapter_top_token=1,
         latency_ms=3.0,
     )

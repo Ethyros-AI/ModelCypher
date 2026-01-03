@@ -29,6 +29,10 @@ from uuid import UUID
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 
 @dataclass(frozen=True)
@@ -120,30 +124,30 @@ class SemanticPrimeSignature:
             return None
         if backend.shape(arr_lhs)[0] != backend.shape(arr_rhs)[0]:
             return None
-        norm_lhs = backend.norm(arr_lhs)
-        norm_rhs = backend.norm(arr_rhs)
-        backend.eval(norm_lhs, norm_rhs)
-        norm_lhs_val = float(backend.to_scalar(norm_lhs))
-        norm_rhs_val = float(backend.to_scalar(norm_rhs))
-        eps = division_epsilon(backend, arr_lhs)
-        if norm_lhs_val <= eps or norm_rhs_val <= eps:
-            return None
-        dot = backend.dot(arr_lhs, arr_rhs)
-        backend.eval(dot)
-        dot_val = float(backend.to_scalar(dot))
-        return dot_val / (norm_lhs_val * norm_rhs_val)
+        lhs_mat = backend.reshape(arr_lhs, (1, -1))
+        rhs_mat = backend.reshape(arr_rhs, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(lhs_mat, rhs_mat, backend)
+        backend.eval(cos_arr)
+        cos_vals = backend.tolist(cos_arr)
+        if not isinstance(cos_vals, list):
+            cos_vals = [float(cos_vals)]
+        return float(cos_vals[0]) if cos_vals else None
 
     @staticmethod
     def _l2_normalized_backend(values: tuple[float, ...]) -> list[float]:
         backend = get_default_backend()
         arr = backend.array(list(values))
-        norm = backend.norm(arr)
-        backend.eval(norm)
-        norm_val = float(backend.to_scalar(norm))
+        mat = backend.reshape(arr, (1, -1))
+        norms = geodesic_norms(mat, backend)
+        backend.eval(norms)
+        norm_vals = backend.tolist(norms)
+        if not isinstance(norm_vals, list):
+            norm_vals = [float(norm_vals)]
+        norm_val = float(norm_vals[0]) if norm_vals else 0.0
         eps = division_epsilon(backend, arr)
         if norm_val <= eps:
             return list(values)
-        normalized = arr / norm
+        normalized = arr / norm_val
         backend.eval(normalized)
         result = backend.tolist(normalized)
         if not isinstance(result, list):

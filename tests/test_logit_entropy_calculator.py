@@ -155,7 +155,7 @@ class TestLogitEntropySample:
         )
 
         assert sample.logit_entropy == 2.5
-        assert sample.top_k_variance == 0.5
+        assert sample.logit_variance == 0.5
         assert sample.latency_ms == 5.0
         assert sample.source == "test"
         assert sample.window_id is not None

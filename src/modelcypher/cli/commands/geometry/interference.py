@@ -486,9 +486,9 @@ def null_space_filter(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
-    from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
+    from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 
-    typer.echo(f"Analyzing null space for: {model_path}")
+    typer.echo(f"Analyzing geodesic orthogonal space for: {model_path}")
     layer = -1
 
     backend = get_default_backend()
@@ -558,62 +558,87 @@ def null_space_filter(
         except Exception as e:
             logger.warning(f"Failed to extract: {e}")
 
-    # Compute null space profile - all params derived from spectral properties
-    filter = NullSpaceFilter(backend)
+    # Compute geodesic orthogonal profile - accurate for high-D manifolds (8kD+)
+    # Euclidean SVD-based methods are only accurate up to 3D
+    geo_filter = GeodesicNullSpaceFilter(backend)
 
-    # Stack activations using backend arrays for NullSpaceFilter
-    layer_arrays = {
-        layer_idx: backend.stack(acts)
-        for layer_idx, acts in layer_activations.items()
-    }
+    # Stack activations and compute geodesic profile per layer
+    per_layer_info: dict[int, dict] = {}
+    orthogonal_fractions = []
+    graftable_layers = []
 
-    profile = filter.compute_model_null_space_profile(layer_arrays)
+    for layer_idx, acts in layer_activations.items():
+        arr = backend.stack(acts)
+        backend.eval(arr)
+
+        total_dim = int(arr.shape[1])
+
+        # Probe with a unit vector to measure orthogonal space
+        probe = backend.ones((total_dim,), dtype="float32")
+        probe = probe / backend.norm(probe)
+        backend.eval(probe)
+
+        result = geo_filter.filter_delta(probe, arr)
+        orthogonal_frac = result.preserved_fraction
+        orthogonal_fractions.append(orthogonal_frac)
+
+        per_layer_info[layer_idx] = {
+            "orthogonalDim": result.orthogonal_dim,
+            "totalDim": total_dim,
+            "orthogonalFraction": orthogonal_frac,
+            "meanGeodesicDistance": result.mean_geodesic_distance,
+            "kNeighbors": result.k_neighbors,
+        }
+
+    # Determine graftable layers (above mean orthogonal fraction)
+    mean_frac = sum(orthogonal_fractions) / len(orthogonal_fractions) if orthogonal_fractions else 0.0
+    for layer_idx, info in per_layer_info.items():
+        if info["orthogonalFraction"] >= mean_frac:
+            graftable_layers.append(layer_idx)
+
+    total_orthogonal_dim = sum(info["orthogonalDim"] for info in per_layer_info.values())
+    total_dim = sum(info["totalDim"] for info in per_layer_info.values())
 
     payload = {
-        "_schema": "mc.geometry.interference.null_space.v1",
+        "_schema": "mc.geometry.interference.geodesic_orthogonal.v1",
         "model": model_path,
         "samples": len(sample_prompts),
-        "totalNullDim": profile.total_null_dim,
-        "totalDim": profile.total_dim,
-        "meanNullFraction": profile.mean_null_fraction,
-        "graftableLayers": profile.graftable_layers,
+        "totalOrthogonalDim": total_orthogonal_dim,
+        "totalDim": total_dim,
+        "meanOrthogonalFraction": mean_frac,
+        "graftableLayers": graftable_layers,
         "perLayer": {
-            str(layer_idx): {
-                "nullDim": lp.null_dim,
-                "totalDim": lp.total_dim,
-                "nullFraction": lp.null_fraction,
-                "conditionNumber": lp.condition_number,
-            }
-            for layer_idx, lp in profile.per_layer.items()
+            str(layer_idx): info
+            for layer_idx, info in per_layer_info.items()
         },
     }
 
     if context.output_format == "text":
         lines = [
             "=" * 60,
-            "NULL SPACE ANALYSIS",
+            "GEODESIC ORTHOGONAL SPACE ANALYSIS",
             "=" * 60,
             "",
             f"Model: {Path(model_path).name}",
             f"Samples: {len(sample_prompts)}",
-            "Rank Threshold: derived from spectral gap",
+            "Method: Geodesic (accurate for high-D manifolds)",
             "",
             "-" * 40,
             "Summary",
             "-" * 40,
-            f"Total Null Dim: {profile.total_null_dim}",
-            f"Total Dim: {profile.total_dim}",
-            f"Mean Null Fraction: {profile.mean_null_fraction:.1%}",
-            f"Graftable Layers: {len(profile.graftable_layers)}",
+            f"Total Orthogonal Dim: {total_orthogonal_dim}",
+            f"Total Dim: {total_dim}",
+            f"Mean Orthogonal Fraction: {mean_frac:.1%}",
+            f"Graftable Layers: {len(graftable_layers)}",
             "",
             "-" * 40,
             "Per-Layer Analysis",
             "-" * 40,
         ]
 
-        for layer_idx, lp in sorted(profile.per_layer.items()):
-            graft_marker = " [GRAFTABLE]" if layer_idx in profile.graftable_layers else ""
-            lines.append(f"  Layer {layer_idx}: {lp.null_fraction:.1%} null{graft_marker}")
+        for layer_idx, info in sorted(per_layer_info.items()):
+            graft_marker = " [GRAFTABLE]" if layer_idx in graftable_layers else ""
+            lines.append(f"  Layer {layer_idx}: {info['orthogonalFraction']:.1%} orthogonal{graft_marker}")
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

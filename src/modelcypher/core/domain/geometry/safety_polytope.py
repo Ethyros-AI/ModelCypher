@@ -45,7 +45,7 @@ _FLOAT32_MACHINE_EPS = 2.0 ** -23
 class TransformationType(str, Enum):
     """Types of transformations that may be needed for merging."""
 
-    NULL_SPACE_FILTER = "null_space_filter"  # Project to null space
+    GEODESIC_NULL_SPACE = "geodesic_null_space"  # Project to geodesic-orthogonal space
     SPECTRAL_CLAMP = "spectral_clamp"  # Regularize ill-conditioned
     LAYER_SKIP = "layer_skip"  # Skip this layer entirely
     TSV_PRUNE = "tsv_prune"  # Keep only top singular vectors
@@ -276,9 +276,9 @@ class SafetyPolytope:
 
         dimension_names = ["interference", "importance", "instability", "complexity"]
         transformation_map = {
-            "interference": TransformationType.NULL_SPACE_FILTER,
+            "interference": TransformationType.GEODESIC_NULL_SPACE,
             # Importance implies preservation pressure; null-space filtering preserves target geometry.
-            "importance": TransformationType.NULL_SPACE_FILTER,
+            "importance": TransformationType.GEODESIC_NULL_SPACE,
             "instability": TransformationType.SPECTRAL_CLAMP,
             "complexity": TransformationType.TSV_PRUNE,
         }

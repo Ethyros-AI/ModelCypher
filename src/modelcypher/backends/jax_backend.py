@@ -102,6 +102,9 @@ class JAXBackend(Backend):
     def linspace(self, start: float, stop: float, num: int, dtype: Any | None = None) -> Array:
         return self.jnp.linspace(start, stop, num, dtype=self._map_dtype(dtype))
 
+    def meshgrid(self, *arrays: Array, indexing: str = "xy") -> list[Array]:
+        return list(self.jnp.meshgrid(*arrays, indexing=indexing))
+
     # --- Shape Manipulation ---
     def shape(self, array: Array) -> tuple[int, ...]:
         return tuple(array.shape)

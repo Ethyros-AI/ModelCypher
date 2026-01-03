@@ -366,6 +366,9 @@ class MLXBackend(Backend):
     def linspace(self, start: float, stop: float, num: int, dtype: Any | None = None) -> Array:
         return self.mx.linspace(start, stop, num, dtype=self._map_dtype(dtype))
 
+    def meshgrid(self, *arrays: Array, indexing: str = "xy") -> list[Array]:
+        return list(self.mx.meshgrid(*arrays, indexing=indexing))
+
     # --- Shape Manipulation (lazy - no eval) ---
     def stack(self, arrays: list[Array], axis: int = 0) -> Array:
         return self.mx.stack(arrays, axis=axis)

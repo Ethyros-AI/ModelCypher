@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -48,20 +48,9 @@ class ConceptVectorSpace:
                 f"Vector dimension mismatch: expected {self.dimension}, got {vector.shape[0]}"
             )
 
-        # Normalize on insertion for cosine similarity
-        norm = self._backend.norm(vector)
-        self._backend.eval(norm)
-        norm_val = float(self._backend.to_scalar(norm))
-        div_eps = division_epsilon(self._backend, vector)
-        # Only add epsilon when norm is near zero to preserve precision
-        if norm_val < div_eps:
-            normalized = vector / div_eps
-        else:
-            normalized = vector / norm
-
         self.concepts[concept_id] = ConceptNode(
             id=concept_id,
-            vector=normalized,
+            vector=vector,
             metadata=metadata or {},
         )
 
@@ -69,34 +58,24 @@ class ConceptVectorSpace:
         if not self.concepts:
             return []
 
-        # 1. Prepare Query - normalize only if not already unit-length
-        q_norm = self._backend.norm(query_vector)
-        self._backend.eval(q_norm)
-        q_norm_val = float(self._backend.to_scalar(q_norm))
-        div_eps = division_epsilon(self._backend, query_vector)
-        # Skip normalization if already unit-length (within machine epsilon)
-        # This preserves precision when querying with a stored (normalized) vector
-        if abs(q_norm_val - 1.0) < div_eps:
-            q = query_vector  # Already normalized
-        elif q_norm_val < div_eps:
-            q = query_vector / div_eps
-        else:
-            q = query_vector / q_norm
-
-        # 2. Stack Concept Vectors
+        # 1. Stack Concept Vectors
         ids = list(self.concepts.keys())
         matrix = self._backend.stack([self.concepts[id].vector for id in ids])
 
-        # 3. Compute Cosine Similarity (Dot product of normalized vectors)
-        # Clamp to [-1, 1] to handle floating point accumulation errors
-        raw_scores = self._backend.matmul(q, self._backend.transpose(matrix))
-        scores = self._backend.clip(raw_scores, -1.0, 1.0)
+        # 2. Compute Geodesic Cosine Similarity
+        scores = geodesic_cosine_batch(query_vector, matrix, self._backend)
+        self._backend.eval(scores)
 
-        # 4. Top K
+        # 3. Top K
+        k = min(k, int(scores.shape[0]))
+        if k <= 0:
+            return []
         # argsort is ascending
         indices = self._backend.argsort(scores)
         # Take last k elements (highest scores) and reverse them
-        top_k_indices = indices[-k:][::-1]
+        top_k_indices = indices[-k:]
+        reverse_idx = self._backend.arange(k - 1, -1, -1)
+        top_k_indices = self._backend.take(top_k_indices, reverse_idx, axis=0)
 
         top_scores = self._backend.take(scores, top_k_indices)
         self._backend.eval(top_scores, top_k_indices)

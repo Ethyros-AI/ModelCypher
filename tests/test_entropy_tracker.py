@@ -72,7 +72,7 @@ class TestEntropySample:
             token_start=0,
             token_end=50,
             logit_entropy=2.5,
-            top_k_variance=0.3,
+            logit_variance=0.3,
             z_score=0.5,
         )
 
@@ -89,7 +89,7 @@ class TestEntropySample:
             token_start=0,
             token_end=50,
             logit_entropy=2.5,
-            top_k_variance=0.3,
+            logit_variance=0.3,
             sep_entropy=2.3,
             sep_layers=[10, 11, 12],
             sep_confidence=0.85,

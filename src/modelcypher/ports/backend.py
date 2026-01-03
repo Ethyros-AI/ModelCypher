@@ -231,6 +231,17 @@ class Backend(Protocol):
     def ones_like(self, array: Array, dtype: Any | None = None) -> Array: ...
     def zeros_like(self, array: Array, dtype: Any | None = None) -> Array: ...
     def linspace(self, start: float, stop: float, num: int, dtype: Any | None = None) -> Array: ...
+    def meshgrid(self, *arrays: Array, indexing: str = "xy") -> list[Array]:
+        """Create coordinate matrices from 1D coordinate arrays.
+
+        Args:
+            *arrays: 1D arrays representing the coordinates of a grid.
+            indexing: Cartesian ('xy', default) or matrix ('ij') indexing.
+
+        Returns:
+            List of coordinate matrices for vectorized evaluations.
+        """
+        ...
 
     # --- Shape Manipulation ---
     def shape(self, array: Array) -> tuple[int, ...]:

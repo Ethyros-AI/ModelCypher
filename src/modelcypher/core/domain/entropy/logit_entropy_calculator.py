@@ -311,7 +311,7 @@ class LogitEntropySample:
         Ending token index.
     logit_entropy : float
         Shannon entropy over full vocabulary.
-    top_k_variance : float
+    logit_variance : float
         Variance of raw logits (full vocabulary).
     latency_ms : float, optional
         Computation latency in milliseconds.
@@ -325,7 +325,7 @@ class LogitEntropySample:
     token_start: int
     token_end: int
     logit_entropy: float
-    top_k_variance: float
+    logit_variance: float
     latency_ms: float | None = None
     source: str | None = None
     correlation_id: str | None = None
@@ -347,7 +347,7 @@ class LogitEntropySample:
             token_start=token_start,
             token_end=token_end,
             logit_entropy=entropy,
-            top_k_variance=variance,
+            logit_variance=variance,
             latency_ms=latency_ms,
             source=source,
             correlation_id=correlation_id,

@@ -232,8 +232,8 @@ def test_logit_entropy_sample_creation():
         entropy=2.2, variance=1.5, token_start=0, token_end=1
     )
 
-    eps = _eps(sample.logit_entropy, sample.top_k_variance)
+    eps = _eps(sample.logit_entropy, sample.logit_variance)
     assert abs(sample.logit_entropy - 2.2) <= eps
-    assert abs(sample.top_k_variance - 1.5) <= eps
+    assert abs(sample.logit_variance - 1.5) <= eps
     assert sample.token_start == 0
     assert sample.token_end == 1

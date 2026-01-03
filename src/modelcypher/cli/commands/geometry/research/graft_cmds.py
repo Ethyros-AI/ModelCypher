@@ -65,7 +65,7 @@ def register(app: typer.Typer) -> None:
             KnowledgeDiffer,
             compute_graft_mask,
         )
-        from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
+        from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 
         # Load target model (primary model for null space analysis)
         logger.info("Loading target model: %s", target_path)
@@ -113,12 +113,17 @@ def register(app: typer.Typer) -> None:
         differ = KnowledgeDiffer()
         diff = differ.diff(source_profile, target_profile)
 
-        # Step 2: Compute null space profile for target model
-        logger.info("Computing null space profile for target...")
-        null_filter = NullSpaceFilter(backend=target_backend)
+        # Step 2: Compute geodesic orthogonal space profile for target model
+        # Geodesic math is accurate for high-D manifolds (8kD+)
+        # Euclidean SVD-based methods are only accurate up to 3D
+        logger.info("Computing geodesic orthogonal space profile for target...")
+        geo_filter = GeodesicNullSpaceFilter(backend=target_backend)
 
-        # Collect activations for null space analysis
-        layer_activations: dict[int, list] = {}
+        # Collect activations and compute geodesic profile per layer
+        layer_geo_profile: dict[int, dict] = {}
+        orthogonal_fractions = []
+        graftable_layers = []
+
         for layer_idx in resolved_layers:
             activations = []
             for probe in probes:
@@ -126,22 +131,46 @@ def register(app: typer.Typer) -> None:
                 if texts:
                     acts = target_provider.get_activations(texts, layer_idx)
                     activations.extend(acts)
-            if activations:
-                act_array = target_backend.stack(
-                    [target_backend.array(a) for a in activations], axis=0
-                )
-                target_backend.eval(act_array)
-                layer_activations[layer_idx] = act_array
-
-        null_profile = null_filter.compute_model_null_space_profile(layer_activations)
-
-        # Correlate null space with density (raw measurements)
-        layer_null_density_correlation = []
-        for layer_idx in resolved_layers:
-            if layer_idx not in null_profile.per_layer:
+            if not activations:
                 continue
 
-            null_info = null_profile.per_layer[layer_idx]
+            act_array = target_backend.stack(
+                [target_backend.array(a) for a in activations], axis=0
+            )
+            target_backend.eval(act_array)
+
+            total_dim = int(act_array.shape[1])
+
+            # Probe with a unit vector to measure orthogonal space
+            probe_vec = target_backend.ones((total_dim,), dtype="float32")
+            probe_vec = probe_vec / target_backend.norm(probe_vec)
+            target_backend.eval(probe_vec)
+
+            result = geo_filter.filter_delta(probe_vec, act_array)
+            orthogonal_frac = result.preserved_fraction
+            orthogonal_fractions.append(orthogonal_frac)
+
+            layer_geo_profile[layer_idx] = {
+                "orthogonal_dim": result.orthogonal_dim,
+                "total_dim": total_dim,
+                "orthogonal_fraction": orthogonal_frac,
+                "mean_geodesic_distance": result.mean_geodesic_distance,
+                "k_neighbors": result.k_neighbors,
+            }
+
+        # Determine graftable layers (above mean orthogonal fraction)
+        mean_orthogonal_frac = sum(orthogonal_fractions) / len(orthogonal_fractions) if orthogonal_fractions else 0.0
+        for layer_idx, info in layer_geo_profile.items():
+            if info["orthogonal_fraction"] >= mean_orthogonal_frac:
+                graftable_layers.append(layer_idx)
+
+        # Correlate geodesic orthogonal space with density (raw measurements)
+        layer_orthogonal_density_correlation = []
+        for layer_idx in resolved_layers:
+            if layer_idx not in layer_geo_profile:
+                continue
+
+            geo_info = layer_geo_profile[layer_idx]
 
             # Get concepts at this layer
             layer_concepts = [
@@ -155,15 +184,16 @@ def register(app: typer.Typer) -> None:
             mean_density = sum(c.target_density for c in layer_concepts) / len(layer_concepts)
             mean_opp = sum(c.opportunity_score for c in layer_concepts) / len(layer_concepts)
 
-            layer_null_density_correlation.append({
+            layer_orthogonal_density_correlation.append({
                 "layer": layer_idx,
-                "nullFraction": null_info.null_fraction,
-                "nullDim": null_info.null_dim,
-                "totalDim": null_info.total_dim,
+                "orthogonalFraction": geo_info["orthogonal_fraction"],
+                "orthogonalDim": geo_info["orthogonal_dim"],
+                "totalDim": geo_info["total_dim"],
+                "meanGeodesicDistance": geo_info["mean_geodesic_distance"],
                 "meanTargetDensity": mean_density,
                 "meanOpportunity": mean_opp,
                 "conceptCount": len(layer_concepts),
-                "isGraftable": layer_idx in null_profile.graftable_layers,
+                "isGraftable": layer_idx in graftable_layers,
             })
 
         # Generate graft mask
@@ -171,13 +201,13 @@ def register(app: typer.Typer) -> None:
 
         # Build payload
         payload = {
-            "_schema": "mc.geometry.research.graft_boundary.v1",
+            "_schema": "mc.geometry.research.graft_boundary.geodesic.v1",
             "sourcePath": source_path,
             "targetPath": target_path,
             "layers": resolved_layers,
-            "nullSpaceCorrelation": layer_null_density_correlation,
-            "graftableLayers": null_profile.graftable_layers,
-            "meanNullFraction": null_profile.mean_null_fraction,
+            "orthogonalSpaceCorrelation": layer_orthogonal_density_correlation,
+            "graftableLayers": graftable_layers,
+            "meanOrthogonalFraction": mean_orthogonal_frac,
             "totalConcepts": diff.total_concepts,
             "positiveOpportunityCount": diff.positive_opportunity_count,
             "graftMaskSummary": {
@@ -196,22 +226,22 @@ def register(app: typer.Typer) -> None:
 
         if context.output_format == "text":
             lines = [
-                "GRAFT BOUNDARY ANALYSIS",
+                "GRAFT BOUNDARY ANALYSIS (GEODESIC)",
                 f"Source: {source_path}",
                 f"Target: {target_path}",
                 f"Layers: {', '.join(str(layer) for layer in resolved_layers)}",
                 "",
-                f"Graftable Layers (by null space): {null_profile.graftable_layers}",
-                f"Mean Null Fraction: {null_profile.mean_null_fraction:.3f}",
+                f"Graftable Layers (by geodesic orthogonal space): {graftable_layers}",
+                f"Mean Orthogonal Fraction: {mean_orthogonal_frac:.3f}",
             ]
 
             lines.append("")
-            lines.append("NULL SPACE / DENSITY CORRELATION BY LAYER:")
+            lines.append("GEODESIC ORTHOGONAL / DENSITY CORRELATION BY LAYER:")
             lines.append("-" * 60)
-            for corr in layer_null_density_correlation:
+            for corr in layer_orthogonal_density_correlation:
                 graftable = "GRAFTABLE" if corr["isGraftable"] else "limited"
                 lines.append(
-                    f"  L{corr['layer']}: null_frac={corr['nullFraction']:.3f}, "
+                    f"  L{corr['layer']}: ortho_frac={corr['orthogonalFraction']:.3f}, "
                     f"density={corr['meanTargetDensity']:.3f}, "
                     f"opportunity={corr['meanOpportunity']:.3f} [{graftable}]"
                 )

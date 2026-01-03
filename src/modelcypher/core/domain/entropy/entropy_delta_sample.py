@@ -109,10 +109,10 @@ class EntropyDeltaSample:
     token_index: int
     generated_token: int
     base_entropy: float
-    base_top_k_variance: float
+    base_logit_variance: float
     base_top_token: int
     adapter_entropy: float
-    adapter_top_k_variance: float
+    adapter_logit_variance: float
     adapter_top_token: int
     base_logit_margin: float | None = None
     base_token_logit: float | None = None
@@ -129,10 +129,10 @@ class EntropyDeltaSample:
         token_index: int,
         generated_token: int,
         base_entropy: float,
-        base_top_k_variance: float,
+        base_logit_variance: float,
         base_top_token: int,
         adapter_entropy: float,
-        adapter_top_k_variance: float,
+        adapter_logit_variance: float,
         adapter_top_token: int,
         base_logit_margin: float | None = None,
         base_token_logit: float | None = None,
@@ -148,10 +148,10 @@ class EntropyDeltaSample:
             token_index=token_index,
             generated_token=generated_token,
             base_entropy=base_entropy,
-            base_top_k_variance=base_top_k_variance,
+            base_logit_variance=base_logit_variance,
             base_top_token=base_top_token,
             adapter_entropy=adapter_entropy,
-            adapter_top_k_variance=adapter_top_k_variance,
+            adapter_logit_variance=adapter_logit_variance,
             adapter_top_token=adapter_top_token,
             base_logit_margin=base_logit_margin,
             base_token_logit=base_token_logit,
@@ -177,8 +177,8 @@ class EntropyDeltaSample:
     def variance_delta(self) -> float:
         """Variance delta: base - adapter."""
         backend = get_default_backend()
-        base_arr = backend.array([self.base_top_k_variance])
-        adapter_arr = backend.array([self.adapter_top_k_variance])
+        base_arr = backend.array([self.base_logit_variance])
+        adapter_arr = backend.array([self.adapter_logit_variance])
         delta_arr = base_arr - adapter_arr
         backend.eval(delta_arr)
         return float(backend.to_scalar(delta_arr))
@@ -206,9 +206,9 @@ class EntropyDeltaSample:
             "tokenIndex": PayloadValue.int(self.token_index),
             "generatedToken": PayloadValue.int(self.generated_token),
             "baseEntropy": PayloadValue.double(float(self.base_entropy)),
-            "baseVariance": PayloadValue.double(float(self.base_top_k_variance)),
+            "baseVariance": PayloadValue.double(float(self.base_logit_variance)),
             "adapterEntropy": PayloadValue.double(float(self.adapter_entropy)),
-            "adapterVariance": PayloadValue.double(float(self.adapter_top_k_variance)),
+            "adapterVariance": PayloadValue.double(float(self.adapter_logit_variance)),
             "delta": PayloadValue.double(float(self.delta)),
             "topTokenDisagreement": PayloadValue.bool(self.top_token_disagreement),
             "anomalyScore": PayloadValue.double(float(self.anomaly_score)),

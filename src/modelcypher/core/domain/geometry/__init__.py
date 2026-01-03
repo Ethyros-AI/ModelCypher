@@ -100,7 +100,6 @@ _SUBMODULES = {
     "model_profile",
     "moral_geometry",
     "neuron_sparsity_analyzer",
-    "null_space_filter",
     "optimal_transport",
     "path_geometry",
     "permutation_aligner",
@@ -139,7 +138,6 @@ _SUBMODULES = {
 _ATTR_TO_MODULE = {
     "ChangeType": ("dora_decomposition", "ChangeType"),
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),
-    "VectorMath": ("vector_math", "VectorMath"),
     "PathNode": ("path_geometry", "PathNode"),
     "PathSignature": ("path_geometry", "PathSignature"),
     "PermutationAligner": ("permutation_aligner", "PermutationAligner"),
@@ -191,4 +189,3 @@ if TYPE_CHECKING:
     from .permutation_aligner import PermutationAligner
     from .signature_base import LabeledSignatureMixin, SignatureMixin
     from .types import PairwiseProcrustesResult, ProcrustesResult
-    from .vector_math import VectorMath

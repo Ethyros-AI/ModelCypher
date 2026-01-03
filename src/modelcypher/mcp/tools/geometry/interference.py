@@ -141,13 +141,15 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 not an arbitrary user parameter.
             """
             from modelcypher.core.domain._backend import get_default_backend
-            from modelcypher.core.domain.geometry.null_space_filter import (
-                NullSpaceFilter,
+            from modelcypher.core.domain.geometry.geodesic_null_space import (
+                GeodesicNullSpaceFilter,
             )
 
             backend = get_default_backend()
-            null_filter = NullSpaceFilter(backend)
-            result = null_filter.filter_delta(weightDelta, priorActivations)
+            # Use geodesic null-space filter - accurate for high-D manifolds (8kD+)
+            # Euclidean SVD-based filtering is only accurate up to 3D
+            geo_filter = GeodesicNullSpaceFilter(backend)
+            result = geo_filter.filter_delta(weightDelta, priorActivations)
 
             # Convert filtered_delta to list for JSON serialization
             if hasattr(result.filtered_delta, "shape"):
@@ -158,13 +160,15 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 filtered_list = result.filtered_delta
 
             return {
-                "_schema": "mc.geometry.null_space.filter.v1",
+                "_schema": "mc.geometry.geodesic_null_space.filter.v1",
                 "filteringApplied": result.filtering_applied,
-                "nullSpaceDim": result.null_space_dim,
+                "orthogonalDim": result.orthogonal_dim,
                 "preservedFraction": result.preserved_fraction,
                 "projectionLoss": result.projection_loss,
                 "originalNorm": result.original_norm,
                 "filteredNorm": result.filtered_norm,
+                "kNeighbors": result.k_neighbors,
+                "meanGeodesicDistance": result.mean_geodesic_distance,
                 "filteredDelta": filtered_list,
             }
 
@@ -190,43 +194,64 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 User filters by nullFraction based on their requirements.
             """
             from modelcypher.core.domain._backend import get_default_backend
-            from modelcypher.core.domain.geometry.null_space_filter import (
-                NullSpaceFilter,
+            from modelcypher.core.domain.geometry.geodesic_null_space import (
+                GeodesicNullSpaceFilter,
             )
 
             backend = get_default_backend()
-            null_filter = NullSpaceFilter(backend)
+            # Use geodesic null-space filter - accurate for high-D manifolds (8kD+)
+            geo_filter = GeodesicNullSpaceFilter(backend)
 
-            layer_arrays = {}
+            # Compute geodesic profile per layer
+            per_layer_info = {}
+            orthogonal_fractions = []
+
             for k, v in layerActivations.items():
                 arr = backend.array(v)
                 backend.eval(arr)
-                layer_arrays[int(k)] = arr
+                layer_idx = int(k)
 
-            # Don't pass arbitrary threshold - compute raw measurements
-            profile = null_filter.compute_model_null_space_profile(layer_arrays)
+                n_samples = int(arr.shape[0])
+                total_dim = int(arr.shape[1])
 
-            per_layer_info = {}
-            null_fractions = []
-            for layer_idx, lp in profile.per_layer.items():
+                # Use a small random vector to probe the orthogonal space
+                probe = backend.ones((total_dim,), dtype="float32")
+                probe = probe / backend.norm(probe)
+                backend.eval(probe)
+
+                result = geo_filter.filter_delta(probe, arr)
+
+                orthogonal_frac = result.preserved_fraction
+                orthogonal_fractions.append(orthogonal_frac)
+
                 per_layer_info[str(layer_idx)] = {
-                    "nullDim": lp.null_dim,
-                    "totalDim": lp.total_dim,
-                    "nullFraction": lp.null_fraction,
-                    "meanSingularValue": lp.mean_singular_value,
-                    "conditionNumber": lp.condition_number,
+                    "orthogonalDim": result.orthogonal_dim,
+                    "totalDim": total_dim,
+                    "orthogonalFraction": orthogonal_frac,
+                    "meanGeodesicDistance": result.mean_geodesic_distance,
+                    "kNeighbors": result.k_neighbors,
                 }
-                null_fractions.append(lp.null_fraction)
+
+            # Compute aggregate stats
+            total_orthogonal_dim = sum(
+                info["orthogonalDim"] for info in per_layer_info.values()
+            )
+            total_dim = sum(info["totalDim"] for info in per_layer_info.values())
+            mean_orthogonal_frac = (
+                sum(orthogonal_fractions) / len(orthogonal_fractions)
+                if orthogonal_fractions
+                else 0.0
+            )
 
             # Return raw statistics - user decides threshold
             return {
-                "_schema": "mc.geometry.null_space.profile.v1",
-                "totalNullDim": profile.total_null_dim,
-                "totalDim": profile.total_dim,
-                "meanNullFraction": profile.mean_null_fraction,
+                "_schema": "mc.geometry.geodesic_orthogonal.profile.v1",
+                "totalOrthogonalDim": total_orthogonal_dim,
+                "totalDim": total_dim,
+                "meanOrthogonalFraction": mean_orthogonal_frac,
                 # Statistics to help user choose threshold
-                "minNullFraction": min(null_fractions) if null_fractions else 0.0,
-                "maxNullFraction": max(null_fractions) if null_fractions else 0.0,
-                "medianNullFraction": sorted(null_fractions)[len(null_fractions) // 2] if null_fractions else 0.0,
+                "minOrthogonalFraction": min(orthogonal_fractions) if orthogonal_fractions else 0.0,
+                "maxOrthogonalFraction": max(orthogonal_fractions) if orthogonal_fractions else 0.0,
+                "medianOrthogonalFraction": sorted(orthogonal_fractions)[len(orthogonal_fractions) // 2] if orthogonal_fractions else 0.0,
                 "perLayer": per_layer_info,
             }

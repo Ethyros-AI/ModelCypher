@@ -84,7 +84,7 @@ class EntropySample:
 
     # Plan 1: Logit Entropy (always available)
     logit_entropy: float = 0.0
-    top_k_variance: float = 0.0
+    logit_variance: float = 0.0
 
     # Z-score relative to baseline (optional, computed on demand)
     z_score: float | None = None
@@ -216,7 +216,7 @@ class EntropyWindow:
             token_start=status.token_start,
             token_end=status.token_end,
             logit_entropy=status.moving_average,
-            top_k_variance=avg_variance,
+            logit_variance=avg_variance,
             z_score=status.current_z_score,
             source=source,
             correlation_id=correlation_id,
@@ -376,7 +376,7 @@ class EntropyTracker:
                 token_start=status.token_start,
                 token_end=status.token_end,
                 logit_entropy=entropy,
-                top_k_variance=variance,
+                logit_variance=variance,
                 z_score=z_score,
                 latency_ms=latency_ms,
                 source=self._source,

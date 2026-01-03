@@ -106,14 +106,14 @@ class PendingEntropyData:
         The generated token ID.
     base_entropy : float
         Entropy from base model.
-    base_top_k_variance : float
-        Variance of base model top-K logits.
+    base_logit_variance : float
+        Variance of base model logits (full vocabulary).
     base_top_token : int
         Top predicted token from base model.
     adapter_entropy : float
         Entropy from adapter model.
-    adapter_top_k_variance : float
-        Variance of adapter model top-K logits.
+    adapter_logit_variance : float
+        Variance of adapter model logits (full vocabulary).
     adapter_top_token : int
         Top predicted token from adapter model.
     base_logit_margin : float, optional
@@ -133,10 +133,10 @@ class PendingEntropyData:
     token_index: int
     generated_token: int
     base_entropy: float
-    base_top_k_variance: float
+    base_logit_variance: float
     base_top_token: int
     adapter_entropy: float
-    adapter_top_k_variance: float
+    adapter_logit_variance: float
     adapter_top_token: int
     base_logit_margin: float | None = None
     base_token_logit: float | None = None
@@ -246,10 +246,10 @@ class EntropyDeltaTracker:
             token_index=token_index,
             generated_token=generated_token,
             base_entropy=base_entropy,
-            base_top_k_variance=base_variance,
+            base_logit_variance=base_variance,
             base_top_token=base_top_token,
             adapter_entropy=adapter_entropy,
-            adapter_top_k_variance=adapter_variance,
+            adapter_logit_variance=adapter_variance,
             adapter_top_token=adapter_top_token,
             latency_ms=latency_ms,
             correlation_id=self._correlation_id,
@@ -283,10 +283,10 @@ class EntropyDeltaTracker:
             token_index=data.token_index,
             generated_token=data.generated_token,
             base_entropy=data.base_entropy,
-            base_top_k_variance=data.base_top_k_variance,
+            base_logit_variance=data.base_logit_variance,
             base_top_token=data.base_top_token,
             adapter_entropy=data.adapter_entropy,
-            adapter_top_k_variance=data.adapter_top_k_variance,
+            adapter_logit_variance=data.adapter_logit_variance,
             adapter_top_token=data.adapter_top_token,
             base_logit_margin=data.base_logit_margin,
             base_token_logit=data.base_token_logit,

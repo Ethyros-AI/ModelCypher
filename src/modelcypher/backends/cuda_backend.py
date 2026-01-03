@@ -191,6 +191,9 @@ class CUDABackend(Backend):
             start, stop, num, dtype=dtype or self.torch.float32, device="cuda"
         )
 
+    def meshgrid(self, *arrays: Array, indexing: str = "xy") -> list[Array]:
+        return list(self.torch.meshgrid(*arrays, indexing=indexing))
+
     # --- Shape Manipulation (new) ---
     def stack(self, arrays: list[Array], axis: int = 0) -> Array:
         return self.torch.stack(arrays, dim=axis)

@@ -24,6 +24,8 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -105,7 +107,20 @@ class VocabularyAnalyzer:
         if array.ndim != 2:
             raise ValueError("Expected 2D embedding matrix")
 
-        norms = backend.norm(array, axis=1)
+        vocab_size = int(array.shape[0])
+        sample_count = int(sqrt_scalar(float(vocab_size), backend))
+        if sample_count <= 0:
+            raise ValueError("Derived sample_count must be positive")
+        if sample_count > vocab_size:
+            sample_count = vocab_size
+
+        stride = max(1, vocab_size // sample_count)
+        index_arr = backend.arange(0, vocab_size, stride)
+        if int(index_arr.shape[0]) > sample_count:
+            index_arr = index_arr[:sample_count]
+
+        sample = backend.take(array, index_arr, axis=0)
+        norms = geodesic_norms(sample, backend)
         mean_norm = backend.mean(norms)
         std_norm = backend.std(norms)
         backend.eval(mean_norm, std_norm)

@@ -58,8 +58,8 @@ Key Principles:
     - Proper rotations only: det(R) = +1. Reflections (det = -1) are corrected
       by flipping the sign of the last column of U in the SVD.
 
-    - No interpolation: Model merging is geometric ADDITION via null-space
-      projection, not weighted averaging. See null_space_filter.py.
+    - No interpolation: Model merging is geometric ADDITION via geodesic
+      null-space projection, not weighted averaging. See geodesic_null_space.py.
 
 Usage:
     from modelcypher.core.domain.geometry.manifold_stitcher import ManifoldStitcher
@@ -86,7 +86,7 @@ See Also:
     - riemannian_utils.py: Geodesic distance, Frechet mean, curvature estimation
     - generalized_procrustes.py: Multi-shape alignment with proper rotations
     - cka.py: Centered Kernel Alignment for representation similarity
-    - null_space_filter.py: Interference-free weight delta projection
+    - geodesic_null_space.py: Interference-free weight delta projection (GPU-only)
 """
 
 from __future__ import annotations
