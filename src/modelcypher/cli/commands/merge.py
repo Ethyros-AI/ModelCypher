@@ -18,7 +18,7 @@
 """Merge models via null-space knowledge transplant.
 
 Usage:
-    mc merge --source A --target B --output-dir OUT
+    mc merge -s SOURCE -t TARGET -o OUTPUT
 
 There is exactly ONE correct way to merge high-dimensional Legos:
 1. Find geometric correspondence (CKA alignment)
@@ -41,36 +41,24 @@ from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.utils.errors import ErrorDetail
 
-# Direct command - there's only one way to merge
-# Using invoke_without_command=True with a callback function that has no subcommands
-app = typer.Typer()
+# Support BOTH syntaxes:
+#   mc merge -s SOURCE -t TARGET -o OUTPUT  (preferred, direct)
+#   mc merge run -s SOURCE -t TARGET -o OUTPUT  (legacy, still works)
+app = typer.Typer(invoke_without_command=True)
 
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
-@app.command()
-def run(
+def _run_merge(
     ctx: typer.Context,
-    source: str = typer.Option(..., "--source", "-s", help="Path to source model (knowledge donor)"),
-    target: str = typer.Option(..., "--target", "-t", help="Path to target model (receives knowledge)"),
-    output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
-    output_file: str | None = typer.Option(
-        None,
-        "--output-file",
-        "-f",
-        help="Save full pipeline result to JSON file",
-    ),
+    source: str,
+    target: str,
+    output_dir: str,
+    output_file: str | None,
 ) -> None:
-    """Merge two models via null-space knowledge transplant.
-
-    Takes knowledge from SOURCE and adds it to TARGET without destroying
-    TARGET's existing capabilities. The result is a denser model.
-
-    Examples:
-        mc merge -s ./qwen -t ./smol -o ./merged
-    """
+    """Core merge logic shared by callback and run command."""
     from modelcypher.core.use_cases.merge import MergePipelineService
 
     context = _context(ctx)
@@ -161,7 +149,6 @@ def run(
                 f"  Layers: {result.merge_result.get('layer_count')}",
                 f"  Weights: {result.merge_result.get('weight_count')}",
                 f"  Mean Preserved Fraction: {result.merge_result.get('mean_preserved_fraction', 0):.4f}",
-                # Safety Verdict removed - raw measurements only
                 "",
                 "POST-MERGE VALIDATION",
                 f"  Mean Preserved Fraction: {result.post_merge.mean_preserved_fraction:.4f}",
@@ -194,3 +181,64 @@ def run(
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
+
+
+@app.callback()
+def merge_callback(
+    ctx: typer.Context,
+    source: str | None = typer.Option(None, "--source", "-s", help="Path to source model (knowledge donor)"),
+    target: str | None = typer.Option(None, "--target", "-t", help="Path to target model (receives knowledge)"),
+    output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="Output directory for merged model"),
+    output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
+) -> None:
+    """Merge two models via null-space knowledge transplant.
+
+    Takes knowledge from SOURCE and adds it to TARGET without destroying
+    TARGET's existing capabilities. The result is a denser model.
+
+    Examples:
+        mc merge -s ./qwen -t ./smol -o ./merged
+    """
+    # If a subcommand was invoked (like 'run'), don't do anything here
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # If options were provided directly, run the merge
+    if source and target and output_dir:
+        _run_merge(ctx, source, target, output_dir, output_file)
+    elif source or target or output_dir:
+        # Partial options provided - show error
+        missing = []
+        if not source:
+            missing.append("--source/-s")
+        if not target:
+            missing.append("--target/-t")
+        if not output_dir:
+            missing.append("--output-dir/-o")
+        typer.echo(f"Error: Missing required options: {', '.join(missing)}", err=True)
+        raise typer.Exit(code=1)
+    # else: no options, show help (handled by Typer's no_args_is_help behavior)
+
+
+@app.command()
+def run(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", "-s", help="Path to source model (knowledge donor)"),
+    target: str = typer.Option(..., "--target", "-t", help="Path to target model (receives knowledge)"),
+    output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
+    output_file: str | None = typer.Option(
+        None,
+        "--output-file",
+        "-f",
+        help="Save full pipeline result to JSON file",
+    ),
+) -> None:
+    """Merge two models via null-space knowledge transplant.
+
+    Takes knowledge from SOURCE and adds it to TARGET without destroying
+    TARGET's existing capabilities. The result is a denser model.
+
+    Examples:
+        mc merge run -s ./qwen -t ./smol -o ./merged
+    """
+    _run_merge(ctx, source, target, output_dir, output_file)
