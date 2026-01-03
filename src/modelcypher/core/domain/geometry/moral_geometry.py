@@ -241,7 +241,7 @@ class MoralGeometryAnalyzer:
             act_arr = backend.astype(act_arr, "float32")
             act_list.append(act_arr)
 
-        # Use concatenate with reshape instead of stack for better compatibility
+        # Use concatenate with reshape instead of stack for broader compatibility
         reshaped = [backend.reshape(a, (1, -1)) for a in act_list]
         matrix = backend.concatenate(reshaped, axis=0)
         matrix = backend.astype(matrix, "float32")

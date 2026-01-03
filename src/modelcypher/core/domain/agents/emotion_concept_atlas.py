@@ -1022,8 +1022,8 @@ class EmotionConceptAtlas:
     Notes
     -----
     Volume-based representation enables more robust similarity via Mahalanobis
-    distance, interference prediction between emotions, and better handling of
-    emotion concept variance.
+    distance, interference prediction between emotions, and variance-aware
+    handling of emotion concept spread.
     """
 
     def __init__(

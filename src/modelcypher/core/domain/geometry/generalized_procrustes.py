@@ -102,8 +102,8 @@ class Config:
     per_layer_smoothness_threshold: float | None = None
     """Threshold for deciding per-layer vs global rotation alignment.
 
-    When smoothness_ratio < this threshold, per-layer rotations are significantly
-    better than global rotation, indicating the models organize information
+    When smoothness_ratio < this threshold, per-layer rotations yield lower
+    error than global rotation, indicating the models organize information
     differently at different depths.
 
     When smoothness_ratio >= this threshold, a single global rotation suffices.
@@ -609,7 +609,7 @@ class RotationContinuityResult:
     space to match the other's. The key question: can you use ONE rotation
     for all layers, or does each layer need its own rotation?
 
-    - **smoothness_ratio < 0.7**: Per-layer rotations are significantly better
+    - **smoothness_ratio < 0.7**: Per-layer rotations yield lower error
       → The models organize information differently at different depths
       → Need layer-specific alignment for low-error merging
 

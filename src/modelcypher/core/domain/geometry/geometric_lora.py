@@ -172,7 +172,7 @@ class GeometricLoRA:
         transfer_point: The geometric specification.
         weights: List of per-layer LoRA weights.
         config: Generation configuration.
-        mean_geometric_loss: Average reconstruction error (lower is better).
+        mean_geometric_loss: Average reconstruction error (lower indicates less error).
         total_rank: Sum of ranks across all layers.
     """
 

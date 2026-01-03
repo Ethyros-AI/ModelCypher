@@ -1221,7 +1221,7 @@ class AlignmentCluster:
     local_rotation : Any
         Rotation matrix from backend.
     procrustes_error : float
-        Procrustes alignment error. Lower values indicate better alignment.
+        Procrustes alignment error. Lower values indicate less alignment error.
     member_count : int
         Number of vectors in this cluster.
     """
@@ -1257,7 +1257,7 @@ class ValidationResult:
     layer_deltas : list[LayerDelta]
         Per-layer similarity deltas.
     overall_similarity : float
-        Mean Jaccard similarity across layers. Higher values indicate better merge quality.
+        Mean Jaccard similarity across layers. Higher values indicate higher similarity.
     """
 
     merged_model: str

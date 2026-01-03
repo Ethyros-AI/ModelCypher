@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 # Permutation alignment is ALWAYS enabled.
 # MLP layers have N! permutation symmetries that must be resolved.
-# Skipping permutation alignment produces worse merges - there is no valid reason to disable it.
+# Skipping permutation alignment increases merge error - there is no valid reason to disable it.
 
 
 @dataclass

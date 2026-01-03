@@ -37,6 +37,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
     log_scalar,
+    machine_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.model_profile import (
@@ -315,8 +316,6 @@ def compare_profiles(
     # Equal weights - let individual alignments speak for themselves
     overall_alignment = (ricci_alignment + curvature_alignment + dimension_alignment) / 3.0
 
-    backend = get_default_backend()
-
     # === TOPOLOGY COMPARISON ===
     topology_similarity = None
     if source.topology_summary and target.topology_summary:
@@ -487,8 +486,8 @@ def _compare_layers(source: LayerProfile, target: LayerProfile) -> LayerComparis
     dim_effort = min(1.0, abs(log_scalar(dim_ratio, _b)) / log_scalar(2, _b))  # Double/half = 1.0
     curv_effort = min(1.0, abs(ricci_diff))
 
-    # Weight: dimension matters more for projection, curvature for rotation
-    alignment_effort = 0.4 * dim_effort + 0.6 * curv_effort
+    # Equal weights - let individual efforts speak for themselves
+    alignment_effort = (dim_effort + curv_effort) / 2.0
 
     return LayerComparison(
         source_layer_idx=source.layer_idx,

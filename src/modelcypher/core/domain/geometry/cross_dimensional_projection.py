@@ -82,7 +82,7 @@ class ProjectionMethod(str, Enum):
 class ProjectionResult:
     """Result of cross-dimensional projection."""
     projected: "Array"  # [m_t, d_t] - matches target shape
-    alignment_score: float  # 0-1, higher = better structural preservation
+    alignment_score: float  # 0-1, higher indicates more structural preservation
     method_used: ProjectionMethod
     row_coupling: "Array | None"  # GW coupling for rows (if used)
     col_coupling: "Array | None"  # GW coupling for cols (if used)

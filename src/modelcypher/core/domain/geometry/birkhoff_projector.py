@@ -358,7 +358,7 @@ class BirkhoffProjector:
 
         backend.eval(gram)
 
-        # Normalize gram matrix for better Sinkhorn convergence
+        # Normalize gram matrix for faster Sinkhorn convergence
         gram_norm = backend.norm(gram)
         backend.eval(gram_norm)
         gram_norm_val = float(backend.to_scalar(gram_norm))

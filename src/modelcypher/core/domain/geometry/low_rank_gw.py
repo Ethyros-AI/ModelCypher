@@ -118,7 +118,7 @@ class LowRankGWResult:
 class LowRankGWConfig:
     """Configuration for low-rank GW solver."""
     # Rank of the coupling approximation
-    # Higher rank = better approximation but more memory/compute
+    # Higher rank = lower approximation error but more memory/compute
     # For cross-arch projection, r=100-200 is typically sufficient
     rank: int = 100
 
@@ -582,7 +582,7 @@ class LowRankGromovWasserstein:
         Q_rand = b.random_uniform(shape=(n, r)) - 0.5
         b.eval(R_rand, Q_rand)
 
-        # Power iteration to get better low-rank factors
+        # Power iteration to improve low-rank factors
         U = b.matmul(K, R_rand)  # [n, r]
         V = b.matmul(b.transpose(K), Q_rand)  # [m, r]
         b.eval(U, V)
@@ -601,6 +601,13 @@ class LowRankGromovWasserstein:
         g = b.ones((r,))
         b.eval(Q, R, g)
 
+        # Derive initial step size from cost scale:
+        # Use 1/(mean_cost) so that typical gradient step has magnitude ~1
+        cost_mean_arr = b.mean(cost)
+        b.eval(cost_mean_arr)
+        cost_mean = float(b.to_scalar(cost_mean_arr))
+        initial_step = 1.0 / max(cost_mean, eps) if cost_mean > eps else 1.0
+
         # Sinkhorn-like iterations incorporating the kernel
         for it in range(max_iter):
             g_safe = b.maximum(g, b.full(g.shape, eps))
@@ -618,7 +625,8 @@ class LowRankGromovWasserstein:
 
             # Multiplicative update: move against gradient while maintaining positivity
             # Q_new ∝ Q * exp(-step * grad)
-            step = 0.1 / (it + 1)  # Decreasing step size
+            # Decreasing step size: initial_step / (it + 1)
+            step = initial_step / (it + 1)
             Q = Q * b.exp(-step * cost_grad_Q / (b.max(b.abs(cost_grad_Q)) + eps))
             R = R * b.exp(-step * cost_grad_R / (b.max(b.abs(cost_grad_R)) + eps))
             b.eval(Q, R)

@@ -16,3 +16,22 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """Application use cases."""
+
+from .geometry_engine import (
+    GeometryEngine,
+    LoRAAdapterGeometryMetrics,
+    ProcrustesResult,
+    SinkhornResult,
+    SinkhornSolver,
+    SinkhornSolverConfig,
+)
+
+__all__ = [
+    # Geometry engine - LoRA metrics, Procrustes, and optimal transport
+    "GeometryEngine",
+    "LoRAAdapterGeometryMetrics",
+    "ProcrustesResult",
+    "SinkhornResult",
+    "SinkhornSolver",
+    "SinkhornSolverConfig",
+]

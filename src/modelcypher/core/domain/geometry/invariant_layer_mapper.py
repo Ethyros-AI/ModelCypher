@@ -373,7 +373,7 @@ class InvariantLayerMapper:
         """Compute per-layer triangulation scores using the registered scorer.
 
         Cross-domain detection (detecting invariants in multiple domains like
-        definition, code, ratio, matrix) provides stronger anchoring.
+        definition, code, ratio, matrix) provides higher anchoring confidence.
         """
         scores: dict[int, TriangulatedScore] = {}
         if not invariants:

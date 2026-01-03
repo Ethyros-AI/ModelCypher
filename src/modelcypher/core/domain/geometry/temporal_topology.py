@@ -99,7 +99,7 @@ class TemporalManifoldComponents:
     """Mean orthogonality between temporal axes [0, 1]. Higher = more distinct axes."""
 
     gradient_score: float
-    """Mean absolute gradient consistency [0, 1]. Higher = stronger monotonic orderings."""
+    """Mean absolute gradient consistency [0, 1]. Higher indicates more monotonic orderings."""
 
     arrow_score: float
     """Arrow of time detection score [0, 1]. Higher = clearer temporal direction."""

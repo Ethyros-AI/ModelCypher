@@ -63,7 +63,7 @@ class DiagnosticVector:
     """
 
     # Overlap score (from RiemannianDensity)
-    # High overlap implies stronger null-space constraint.
+    # Higher overlap implies tighter null-space constraint.
     interference_score: float
 
     # Layer importance (from RefinementDensity)

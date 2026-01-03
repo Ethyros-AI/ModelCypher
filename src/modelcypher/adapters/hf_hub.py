@@ -25,10 +25,11 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 
 from modelcypher.core.domain.models import ModelInfo
+from modelcypher.ports.hub import HubAdapterPort
 from modelcypher.utils.paths import ensure_dir, expand_path
 
 
-class HfHubAdapter:
+class HfHubAdapter(HubAdapterPort):
     def __init__(self, base_dir: str | None = None) -> None:
         default_base = os.environ.get("HF_HOME", "~/.cache/huggingface")
         self.base_dir = ensure_dir(base_dir or default_base)

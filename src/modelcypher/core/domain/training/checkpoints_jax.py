@@ -94,7 +94,7 @@ class CheckpointManagerJAX:
 
     Note: Uses numpy serialization for simplicity. For production
     distributed training, consider using orbax.checkpoint.CheckpointManager
-    with AsyncCheckpointer for better performance.
+    with AsyncCheckpointer for higher throughput.
     """
 
     def __init__(self, max_checkpoints: int = 3) -> None:

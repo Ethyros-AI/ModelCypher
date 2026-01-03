@@ -372,10 +372,10 @@ class RegimeStateDetector:
         # The critical_tolerance tells us how wide the transition region is
 
         # Effect magnitude scales with distance from critical
-        # Ordered regime effect (stronger)
+        # Ordered regime effect (higher magnitude)
         ordered_effect = -intensity_score * distance_from_critical / (1.0 + cv) * base_entropy
 
-        # Disordered regime effect (weaker)
+        # Disordered regime effect (lower magnitude)
         disordered_effect = intensity_score * distance_from_critical / (2.0 + cv) * base_entropy
 
         # Smoothly interpolate based on ratio

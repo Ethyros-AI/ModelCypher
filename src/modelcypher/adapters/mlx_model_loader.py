@@ -25,11 +25,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.ports.model_loader import ModelLoaderPort
+
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.lora_mlx import LoRAConfig
 
 
-class MLXModelLoader:
+class MLXModelLoader(ModelLoaderPort):
     """MLX-based implementation of ModelLoaderPort.
 
     Wraps the existing model_loader functions to provide a clean interface

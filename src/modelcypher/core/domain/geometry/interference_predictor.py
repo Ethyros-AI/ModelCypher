@@ -183,7 +183,7 @@ class MergeAnalyzer:
         return relation.curvature_divergence
 
     def _compute_alignment_score(self, relation: ConceptVolumeRelation) -> float:
-        """Compute subspace alignment score (higher = better)."""
+        """Compute subspace alignment score (higher indicates larger alignment magnitude)."""
         return relation.subspace_alignment
 
     def _compute_distance_score(self, relation: ConceptVolumeRelation) -> float:

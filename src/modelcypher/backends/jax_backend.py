@@ -347,6 +347,27 @@ class JAXBackend(Backend):
     def random_seed(self, seed: int) -> None:
         self._rng_key = self.jax.random.PRNGKey(seed)
 
+    def random_categorical(self, logits: Array, num_samples: int = 1) -> Array:
+        """Sample from categorical distribution defined by logits.
+
+        Samples indices from a categorical distribution parameterized by
+        unnormalized log-probabilities (logits).
+
+        Args:
+            logits: Array of shape (..., num_categories) containing logits.
+                Can be 1D (single distribution) or 2D (batch of distributions).
+            num_samples: Number of samples to draw per distribution.
+
+        Returns:
+            Array of sampled indices. Shape depends on input:
+            - 1D logits: shape (num_samples,)
+            - 2D logits (batch_size, num_categories): shape (batch_size, num_samples)
+        """
+        key = self._next_key()
+        # JAX categorical expects logits of shape (..., num_classes)
+        # and returns samples of shape (..., num_samples)
+        return self.jax.random.categorical(key, logits, shape=(num_samples,))
+
     # --- Type Conversion ---
     def astype(self, array: Array, dtype: Any) -> Array:
         return array.astype(self._map_dtype(dtype))

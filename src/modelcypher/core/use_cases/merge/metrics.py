@@ -46,7 +46,7 @@ def compute_geometric_metrics_from_transplant(
         Dict of geometric measurements (all floats, no strings):
         - mean_preserved_fraction: Average preservation across layers
         - mean_cka_after: Average post-alignment CKA
-        - mean_projection_loss: Average projection loss (lower = better)
+        - mean_projection_loss: Average projection loss (lower indicates less loss)
         - transplant_ratio: Fraction of weights successfully transplanted
         - mean_null_dim: Average null space dimension found
         - mean_shared_subspace_dim: Average shared subspace dimension

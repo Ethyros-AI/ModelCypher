@@ -1965,8 +1965,20 @@ class RiemannianGeometry:
         # Use a step size that limits the maximum movement per iteration
         # This prevents numerical instability from extreme curvature while preserving
         # the gradient direction (which IS the geometric signal)
-        base_eta = 0.5
-        max_step = 1.0  # Maximum distance to move in one iteration
+        #
+        # Derive step size parameters from data scale:
+        # - max_step = mean geodesic distance (typical inter-point distance)
+        # - base_eta = 1/n (diminishing contribution per point)
+        mean_geo_arr = backend.mean(geo_from_mu)
+        backend.eval(mean_geo_arr)
+        mean_geo = float(backend.to_scalar(mean_geo_arr))
+        n_points = int(geo_from_mu.shape[0])
+        eps_float = float(machine_epsilon(backend, gradient))
+
+        # max_step: don't move further than typical point spread in one iteration
+        max_step = max(mean_geo, eps_float)
+        # base_eta: inversely proportional to number of points for stability
+        base_eta = 1.0 / max(1, n_points)
 
         if grad_norm > 0 and not is_inf(grad_norm, backend):
             eta = min(base_eta, max_step / grad_norm)

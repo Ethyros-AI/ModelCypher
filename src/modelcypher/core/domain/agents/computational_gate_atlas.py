@@ -668,8 +668,8 @@ class ComputationalGateAtlas:
     Notes
     -----
     Volume-based representation enables more robust similarity via Mahalanobis
-    distance, interference prediction between gates, and better handling of
-    concept variance.
+    distance, interference prediction between gates, and variance-aware
+    handling of concept spread.
     """
 
     def __init__(

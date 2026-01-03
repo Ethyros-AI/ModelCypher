@@ -298,8 +298,8 @@ class CompositionAnalysis:
     """Analysis of compositional structure for a probe.
 
     Compositionality is determined by geometric properties:
-    - residual_norm: How much the composition misses the target (lower = better)
-    - centroid_similarity: How well the barycenter approximates the phrase (higher = better)
+    - residual_norm: How much the composition misses the target (lower indicates smaller residual)
+    - centroid_similarity: How well the barycenter approximates the phrase (higher indicates closer approximation)
 
     Both metrics are in [0, 1]. The midpoint (0.5) is the geometric boundary.
     """

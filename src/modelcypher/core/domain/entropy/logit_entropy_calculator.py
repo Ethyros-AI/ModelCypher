@@ -62,7 +62,7 @@ class LogitEntropyCalculator:
     -----
     We compute entropy over the FULL vocabulary, not just top-K tokens, because:
     - It captures the full uncertainty of the model
-    - It's a better proxy for semantic entropy
+    - It's a proxy for semantic entropy
     - It correlates with hallucination risk
 
     Examples
