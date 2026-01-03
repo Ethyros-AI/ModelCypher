@@ -33,6 +33,7 @@ __all__ = [
     "MLXBackend",
     "JAXBackend",
     "CUDABackend",
+    "NumpyBackend",
 ]
 
 
@@ -50,4 +51,8 @@ def __getattr__(name: str):
         from modelcypher.backends.cuda_backend import CUDABackend
 
         return CUDABackend
+    if name == "NumpyBackend":
+        from modelcypher.backends.numpy_backend import NumpyBackend
+
+        return NumpyBackend
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

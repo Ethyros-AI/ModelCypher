@@ -24,6 +24,7 @@ Supported backends:
     - mlx: Apple MLX for macOS (default on Darwin)
     - cuda: PyTorch CUDA for NVIDIA GPUs
     - jax: JAX for TPU/GPU/CPU (Google/Anthropic infrastructure)
+    - numpy: NumPy CPU backend (no GPU required)
 
 Usage in domain classes:
 
@@ -50,7 +51,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
-BackendType = Literal["mlx", "jax", "cuda"]
+BackendType = Literal["mlx", "jax", "cuda", "numpy"]
 
 _default_backend: Backend | None = None
 _mlx_probe_result: bool | None = None
@@ -121,6 +122,10 @@ def get_backend(backend_type: BackendType) -> Backend:
         from modelcypher.backends.cuda_backend import CUDABackend
 
         return CUDABackend()
+    elif backend_type == "numpy":
+        from modelcypher.backends.numpy_backend import NumpyBackend
+
+        return NumpyBackend()
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")
 
@@ -140,7 +145,7 @@ def _detect_default_backend_type() -> BackendType:
     env_backend = os.environ.get("MC_BACKEND", "").lower()
     if not env_backend:
         env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
-    if env_backend in ("mlx", "jax", "cuda"):
+    if env_backend in ("mlx", "jax", "cuda", "numpy"):
         if env_backend == "mlx":
             if not probe_mlx_available(explicit=True):
                 detail = _mlx_probe_error or "MLX probe failed"
@@ -173,11 +178,7 @@ def _detect_default_backend_type() -> BackendType:
     except ImportError:
         pass
 
-    raise RuntimeError(
-        "No GPU backend available. ModelCypher requires MLX (macOS), CUDA (Linux/NVIDIA), "
-        "or JAX (Linux/TPU). Install with: poetry install (macOS), "
-        "poetry install -E cuda (Linux/NVIDIA), or poetry install -E jax (Linux/TPU)"
-    )
+    return "numpy"
 
 
 def get_default_backend() -> Backend:

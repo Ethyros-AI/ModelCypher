@@ -48,15 +48,13 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def real_weights():
     """Load real model weights from external fixture."""
-    from safetensors.numpy import load_file
-
-    return load_file(str(FIXTURE_PATH))
+    backend = get_default_backend()
+    return backend.load_safetensors(str(FIXTURE_PATH))
 
 
 @pytest.fixture(scope="module")
 def source_target_weights(real_weights):
     """Create source and target weight dicts with slight perturbation."""
-    import numpy as np
     backend = get_default_backend()
     # Source = real weights
     source = real_weights.copy()
@@ -67,9 +65,10 @@ def source_target_weights(real_weights):
     for k, v in real_weights.items():
         # Add small noise to simulate fine-tuning delta
         v_tensor = backend.array(v)
-        noise = backend.random_normal(v.shape)
-        noise = backend.to_numpy(noise).astype(v.dtype) * 0.01 * np.std(v)
-        target[k] = v + noise
+        noise = backend.random_normal(v_tensor.shape)
+        scale = backend.std(v_tensor)
+        noise = noise * scale * 0.01
+        target[k] = v_tensor + noise
 
     return source, target
 

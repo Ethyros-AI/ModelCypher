@@ -18,12 +18,12 @@
 """Tests for DeltaFeatureExtractor and DeltaFeatureProbe."""
 
 from __future__ import annotations
-
-import math
 from pathlib import Path
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.safety.adapter_safety_models import (
     AdapterSafetyTier,
     AdapterSafetyTrigger,
@@ -82,9 +82,10 @@ class TestDeltaFeatureSet:
 
     def test_mean_sparsity(self) -> None:
         """mean_sparsity computes average."""
+        backend = get_default_backend()
         fs = DeltaFeatureSet(sparsity=(0.1, 0.3, 0.5))
-        eps = math.ulp(1.0)
-        assert math.isclose(fs.mean_sparsity, 0.3, rel_tol=eps, abs_tol=eps)
+        eps = machine_epsilon(backend, backend.array(1.0))
+        assert abs(fs.mean_sparsity - 0.3) <= eps
 
     def test_to_dict(self) -> None:
         """to_dict serializes correctly."""
@@ -311,15 +312,14 @@ class TestDeltaFeatureExtractorIntegration:
     async def test_extract_real_safetensors(self, tmp_path: Path) -> None:
         """extract works with real safetensors files."""
         pytest.importorskip("safetensors")
-        import numpy as np
-        from safetensors.numpy import save_file
 
         # Create a simple safetensors file
+        backend = get_default_backend()
         tensors = {
-            "layer.0.weight": np.random.randn(64, 32).astype(np.float32),
-            "layer.1.weight": np.random.randn(64, 32).astype(np.float32),
+            "layer.0.weight": backend.random_normal((64, 32)),
+            "layer.1.weight": backend.random_normal((64, 32)),
         }
-        save_file(tensors, tmp_path / "adapter.safetensors")
+        backend.save_safetensors(str(tmp_path / "adapter.safetensors"), tensors)
 
         extractor = DeltaFeatureExtractor()
         result = await extractor.extract(tmp_path)
