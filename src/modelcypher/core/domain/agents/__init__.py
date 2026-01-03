@@ -155,7 +155,6 @@ from .unified_atlas import *  # noqa: F401,F403
 from .atlas_base import (
     AtlasConcept,
     BaseAtlas,
-    BaseAtlasConfiguration,
     BaseAtlasSignature,
 )
 

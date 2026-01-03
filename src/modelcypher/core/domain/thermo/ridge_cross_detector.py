@@ -44,38 +44,6 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
 
 
 @dataclass(frozen=True)
-class RidgeCrossConfiguration:
-    """Configuration for ridge cross detection."""
-
-    minimum_delta_h: float = 0.1  # Minimum delta_H to consider significant
-    require_outcome_change: bool = True  # Whether to require outcome change
-    minimum_confidence: float = 0.6  # Minimum confidence in classification
-
-    @classmethod
-    def default(cls) -> RidgeCrossConfiguration:
-        """Default configuration."""
-        return cls()
-
-    @classmethod
-    def strict(cls) -> RidgeCrossConfiguration:
-        """Strict configuration for research experiments."""
-        return cls(
-            minimum_delta_h=0.2,
-            require_outcome_change=True,
-            minimum_confidence=0.7,
-        )
-
-    @classmethod
-    def lenient(cls) -> RidgeCrossConfiguration:
-        """Lenient configuration for exploratory analysis."""
-        return cls(
-            minimum_delta_h=0.05,
-            require_outcome_change=False,
-            minimum_confidence=0.5,
-        )
-
-
-@dataclass(frozen=True)
 class RidgeCrossEvent:
     """A detected transition between behavioral basins.
 
@@ -172,27 +140,28 @@ class TransitionAnalysis:
 
 
 class RidgeCrossDetector:
-    """Detects transitions between behavioral attractor basins."""
+    """Detects transitions between behavioral attractor basins.
 
-    def __init__(
-        self,
-        configuration: RidgeCrossConfiguration | None = None,
-    ):
-        self.configuration = configuration or RidgeCrossConfiguration.default()
+    Returns ALL transitions - caller determines significance from geometry.
+    Transitions are sorted by delta_H magnitude.
+    """
 
     def detect_crossings(
         self,
         baseline: ThermoMeasurement,
         variants: list[ThermoMeasurement],
     ) -> list[RidgeCrossEvent]:
-        """Detect ridge crossings by comparing variants to baseline.
+        """Detect all ridge crossings by comparing variants to baseline.
+
+        Returns ALL basin transitions sorted by |delta_H|.
+        Caller interprets significance from the geometry.
 
         Args:
             baseline: Baseline measurement (no modifier).
             variants: Variant measurements to compare against baseline.
 
         Returns:
-            List of detected ridge crossing events.
+            List of ridge crossing events, sorted by |delta_H| descending.
         """
         baseline_basin = baseline.behavioral_outcome.basin
         events: list[RidgeCrossEvent] = []
@@ -204,22 +173,13 @@ class RidgeCrossDetector:
 
             variant_basin = variant.behavioral_outcome.basin
 
-            # Check if there was a basin transition
-            basin_changed = variant_basin != baseline_basin
-
-            # Check if delta_H meets threshold
+            # Compute delta_H
             delta_h = variant.delta_h
             if delta_h is None:
                 delta_h = variant.mean_entropy - baseline.mean_entropy
-            significant_delta_h = abs(delta_h) >= self.configuration.minimum_delta_h
 
-            # Determine if this qualifies as a crossing
-            if self.configuration.require_outcome_change:
-                qualifies = basin_changed and significant_delta_h
-            else:
-                qualifies = significant_delta_h
-
-            if qualifies:
+            # Record ALL transitions - geometry determines significance
+            if variant_basin != baseline_basin:
                 event = RidgeCrossEvent(
                     from_basin=baseline_basin,
                     to_basin=variant_basin,
@@ -230,6 +190,8 @@ class RidgeCrossDetector:
                 )
                 events.append(event)
 
+        # Sort by |delta_H| descending - most significant first
+        events.sort(key=lambda e: abs(e.delta_h), reverse=True)
         return events
 
     def ridge_cross_rate(

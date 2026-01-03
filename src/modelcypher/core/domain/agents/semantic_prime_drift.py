@@ -47,22 +47,21 @@ class SemanticPrimeDriftAssessment:
 
 
 class SemanticPrimeDriftDetector:
-    def __init__(
-        self,
-        configuration: SemanticPrimeDriftConfig | None = None,
-        atlas: SemanticPrimeAtlas | None = None,
-    ) -> None:
-        self._config = configuration or SemanticPrimeDriftConfig()
+    """Detects semantic drift via prime signature similarity.
+
+    Returns raw similarity measurements - caller interprets via their own baselines.
+    """
+
+    def __init__(self, atlas: SemanticPrimeAtlas | None = None) -> None:
         self._atlas = atlas or SemanticPrimeAtlas()
 
     def assess(
         self, baseline: SemanticPrimeSignature, observed_text: str
     ) -> SemanticPrimeDriftAssessment:
-        if not self._config.enabled:
-            return SemanticPrimeDriftAssessment(
-                method=DriftMethod.skipped, note="disabled"
-            )
+        """Assess drift between baseline signature and observed text.
 
+        Returns raw measurements. Caller interprets significance.
+        """
         observed = self._atlas.signature(observed_text)
         if observed is None:
             return SemanticPrimeDriftAssessment(
@@ -80,5 +79,4 @@ class SemanticPrimeDriftDetector:
         return SemanticPrimeDriftAssessment(
             method=DriftMethod.prime_signature,
             cosine_similarity=float(similarity),
-            threshold=self._config.minimum_cosine_similarity,
         )

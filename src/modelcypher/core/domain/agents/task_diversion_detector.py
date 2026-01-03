@@ -135,23 +135,20 @@ class TaskDiversionAssessment:
 
 
 class TaskDiversionDetector:
-    """Embedding-first task diversion detector with deterministic thresholds."""
+    """Embedding-first task diversion detector.
 
-    def __init__(
-        self,
-        embedder: EmbeddingProvider,
-        configuration: DiversionDetectorConfiguration = DiversionDetectorConfiguration(),
-    ):
-        self.config = configuration
+    Returns raw similarity measurements - caller interprets via their own baselines.
+    Falls back to lexical (Jaccard) similarity when embeddings fail.
+    """
+
+    def __init__(self, embedder: EmbeddingProvider):
         self.embedder = embedder
 
     async def assess(self, expected_task: str, observed_text: str) -> TaskDiversionAssessment:
-        if not self.config.enabled:
-            return TaskDiversionAssessment(
-                method=TaskDiversionMethod.SKIPPED,
-                note="disabled",
-            )
+        """Assess similarity between expected task and observed text.
 
+        Returns raw measurements. Caller interprets significance.
+        """
         expected_trimmed = expected_task.strip()
         observed_trimmed = observed_text.strip()
 
@@ -161,36 +158,25 @@ class TaskDiversionDetector:
                 note="missing_text",
             )
 
-        expected_capped = expected_trimmed[: self.config.max_characters_per_text]
-        observed_capped = observed_trimmed[: self.config.max_characters_per_text]
-
-        # Try Embeddings
+        # Try Embeddings - embedder handles truncation
         try:
-            embeddings = await self.embedder.embed([expected_capped, observed_capped])
+            embeddings = await self.embedder.embed([expected_trimmed, observed_trimmed])
             if len(embeddings) == 2:
                 similarity = VectorMath.cosine_similarity(embeddings[0], embeddings[1]) or 0.0
 
                 return TaskDiversionAssessment(
                     method=TaskDiversionMethod.EMBEDDINGS,
                     embedding_cosine_similarity=similarity,
-                    threshold=self.config.minimum_embedding_cosine_similarity,
                 )
         except Exception:
             pass
 
-        # Fallback to Lexical
-        if not self.config.enable_lexical_fallback:
-            return TaskDiversionAssessment(
-                method=TaskDiversionMethod.SKIPPED,
-                note="no_embedding_no_fallback",
-            )
-
+        # Fallback to Lexical (always enabled - geometry determines which is available)
         lexical_similarity = self._lexical_jaccard_similarity(expected_trimmed, observed_trimmed)
 
         return TaskDiversionAssessment(
             method=TaskDiversionMethod.LEXICAL_FALLBACK,
             lexical_jaccard_similarity=lexical_similarity,
-            threshold=self.config.minimum_lexical_jaccard_similarity,
         )
 
     def _lexical_jaccard_similarity(self, lhs: str, rhs: str) -> float:

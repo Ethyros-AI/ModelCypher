@@ -63,37 +63,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class CalibrationConfig:
-    """Configuration for thermodynamic calibration.
-
-    Attributes
-    ----------
-    temperature : float
-        Temperature for measurements (default 1.0).
-    max_tokens : int
-        Maximum tokens per measurement (default 64).
-    baseline_samples : int
-        Minimum baseline samples for threshold calibration (default 50).
-    modifier_samples : int
-        Minimum samples per modifier for effect measurement (default 20).
-    refused_percentile : float
-        Percentile for REFUSED threshold (default 95th).
-    hedged_percentile : float
-        Percentile for HEDGED threshold (default 75th).
-    attempted_percentile : float
-        Percentile for ATTEMPTED threshold (default 50th).
-    """
-
-    temperature: float = 1.0
-    max_tokens: int = 64
-    baseline_samples: int = 50
-    modifier_samples: int = 20
-    refused_percentile: float = 95.0
-    hedged_percentile: float = 75.0
-    attempted_percentile: float = 50.0
-
-
-@dataclass
 class CalibrationProgress:
     """Progress tracking for calibration.
 

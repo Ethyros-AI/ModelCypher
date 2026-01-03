@@ -27,7 +27,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.atlas_base import (
     AtlasConcept,
     BaseAtlas,
-    BaseAtlasConfiguration,
     BaseAtlasSignature,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -90,10 +89,9 @@ class MockAtlas(BaseAtlas[MockConcept, MockSignature]):
     def __init__(
         self,
         embedder: "EmbeddingProvider | None" = None,
-        configuration: BaseAtlasConfiguration | None = None,
         concepts: list[MockConcept] | None = None,
     ):
-        super().__init__(embedder, configuration)
+        super().__init__(embedder)
         self._concepts = concepts or [
             MockConcept(id="c1", name="Concept One", description="First concept"),
             MockConcept(id="c2", name="Concept Two", description="Second concept"),
@@ -111,22 +109,6 @@ class MockAtlas(BaseAtlas[MockConcept, MockSignature]):
         self, concept_ids: list[str], values: list[float]
     ) -> MockSignature:
         return MockSignature(concept_ids=concept_ids, values=values)
-
-
-class TestBaseAtlasConfiguration:
-    """Tests for BaseAtlasConfiguration."""
-
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = BaseAtlasConfiguration()
-
-        assert config.enabled is True
-
-    def test_custom_values(self):
-        """Test custom configuration values."""
-        config = BaseAtlasConfiguration(enabled=False)
-
-        assert config.enabled is False
 
 
 class TestBaseAtlasSignature:
@@ -231,12 +213,6 @@ class TestBaseAtlas:
         return MockAtlas(embedder=MockEmbedder())
 
     @pytest.fixture
-    def disabled_atlas(self):
-        """Create disabled test atlas."""
-        config = BaseAtlasConfiguration(enabled=False)
-        return MockAtlas(embedder=MockEmbedder(), configuration=config)
-
-    @pytest.fixture
     def no_embedder_atlas(self):
         """Create test atlas without embedder."""
         return MockAtlas(embedder=None)
@@ -250,13 +226,6 @@ class TestBaseAtlas:
         assert len(sig.concept_ids) == 3
         assert len(sig.values) == 3
         assert sig.concept_ids == ["c1", "c2", "c3"]
-
-    @pytest.mark.asyncio
-    async def test_signature_disabled_returns_none(self, disabled_atlas):
-        """Test disabled atlas returns None."""
-        sig = await disabled_atlas.signature("Hello world")
-
-        assert sig is None
 
     @pytest.mark.asyncio
     async def test_signature_empty_text_returns_none(self, atlas):
