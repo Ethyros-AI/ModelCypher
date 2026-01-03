@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import BackendVectorMath
 from modelcypher.core.domain.geometry.types import (
     CompositionAnalysis,
     CompositionCategory,
@@ -160,13 +161,11 @@ class CompositionalProbes:
 
     @staticmethod
     def _cosine_similarity(a: "Array", b_vec: "Array", backend: "Backend") -> "Array":
-        # Returns scalar array
-        dot = backend.dot(a, b_vec)
-        norm_a = backend.norm(a)
-        norm_b = backend.norm(b_vec)
-        denom = norm_a * norm_b
-        eps = backend.finfo().eps
-        return backend.where(denom > eps, dot / denom, backend.array(0.0))
+        try:
+            similarity = BackendVectorMath(backend).cosine_similarity(a, b_vec)
+        except ValueError:
+            similarity = 0.0
+        return backend.array(similarity)
 
     @staticmethod
     def check_consistency(

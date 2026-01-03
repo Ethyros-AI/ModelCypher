@@ -237,6 +237,10 @@ def _probe_precise(
                 break
 
             if probe_text is None:
+                logger.warning(
+                    "Probe '%s' skipped: no valid support_texts (all empty or too short)",
+                    probe.probe_id,
+                )
                 probes_failed += 1
                 continue
 
@@ -356,7 +360,7 @@ def _probe_precise(
                 )
 
         except Exception as e:
-            logger.debug("Probe '%s' failed: %s", probe.probe_id, e)
+            logger.warning("Probe '%s' failed: %s", probe.probe_id, e)
             probes_failed += 1
             continue
 

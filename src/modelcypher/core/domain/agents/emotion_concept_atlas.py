@@ -1056,8 +1056,11 @@ class EmotionConceptAtlas:
             # Compute similarities to each emotion
             similarities = []
             for emotion_vec in emotion_embeddings:
-                dot = VectorMath.dot(emotion_vec, text_vec)
-                similarities.append(max(0.0, dot))
+                try:
+                    similarity = VectorMath.cosine_similarity(emotion_vec, text_vec)
+                except ValueError:
+                    similarity = 0.0
+                similarities.append(max(0.0, similarity))
 
             return EmotionConceptSignature(
                 emotion_ids=[e.id for e in self.inventory],

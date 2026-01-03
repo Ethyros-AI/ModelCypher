@@ -178,10 +178,7 @@ class TestDetectorMeasurements:
             intensity_entropy=1.5,  # delta = -0.5
             intensity_token_count=10,
         )
-        assert result.is_below_delta_h_threshold(
-            delta_h_threshold=thresholds.delta_h_threshold,
-            minimum_baseline_entropy=thresholds.minimum_baseline_entropy,
-        )
+        assert result.is_below_delta_h_threshold(thresholds)
 
     def test_is_below_threshold_slight_cooling(self) -> None:
         """Test that slight cooling doesn't fall below threshold."""
@@ -193,10 +190,7 @@ class TestDetectorMeasurements:
             intensity_entropy=1.95,  # delta = -0.05
             intensity_token_count=10,
         )
-        assert not result.is_below_delta_h_threshold(
-            delta_h_threshold=thresholds.delta_h_threshold,
-            minimum_baseline_entropy=thresholds.minimum_baseline_entropy,
-        )
+        assert not result.is_below_delta_h_threshold(thresholds)
 
     def test_is_below_threshold_low_baseline(self) -> None:
         """Test that low baseline entropy returns False (indeterminate)."""
@@ -211,10 +205,7 @@ class TestDetectorMeasurements:
             intensity_entropy=0.003,
             intensity_token_count=10,
         )
-        assert not result.is_below_delta_h_threshold(
-            delta_h_threshold=thresholds.delta_h_threshold,
-            minimum_baseline_entropy=thresholds.minimum_baseline_entropy,
-        )
+        assert not result.is_below_delta_h_threshold(thresholds)
 
     def test_is_valid_measurement(self) -> None:
         """Test validity check for baseline entropy."""
@@ -249,7 +240,7 @@ class TestDetectorMeasurements:
             intensity_token_count=10,
         )
         expected_ratio = abs(result.delta_h) / abs(thresholds.delta_h_threshold)
-        assert abs(result.threshold_ratio(delta_h_threshold=thresholds.delta_h_threshold) - expected_ratio) <= _eps()
+        assert abs(result.threshold_ratio(thresholds) - expected_ratio) <= _eps()
 
 
 # =============================================================================
@@ -280,10 +271,7 @@ async def test_detect_with_mock_measure_fn() -> None:
     assert abs(result.intensity_entropy - 1.5) <= _eps()
     assert abs(result.delta_h + 0.5) <= _eps()
     assert result.is_cooling
-    assert result.is_below_delta_h_threshold(
-        delta_h_threshold=thresholds.delta_h_threshold,
-        minimum_baseline_entropy=thresholds.minimum_baseline_entropy,
-    )
+    assert result.is_below_delta_h_threshold(thresholds)
     assert result.processing_time > _eps()
 
 
@@ -307,10 +295,7 @@ async def test_detect_heating_prompt() -> None:
 
     assert abs(result.delta_h - 0.5) <= _eps()
     assert result.is_heating
-    assert not result.is_below_delta_h_threshold(
-        delta_h_threshold=thresholds.delta_h_threshold,
-        minimum_baseline_entropy=thresholds.minimum_baseline_entropy,
-    )
+    assert not result.is_below_delta_h_threshold(thresholds)
 
 
 @pytest.mark.asyncio
@@ -482,8 +467,7 @@ class TestBatchDetectionStatistics:
         thresholds = _test_thresholds()
         below_threshold_count = stats.count_below_delta_h_threshold(
             results=results,
-            delta_h_threshold=thresholds.delta_h_threshold,
-            minimum_baseline_entropy=thresholds.minimum_baseline_entropy,
+            thresholds=thresholds,
         )
         assert below_threshold_count == 1
 

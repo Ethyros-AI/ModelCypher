@@ -192,26 +192,23 @@ class DetectionResult:
 
     def is_below_delta_h_threshold(
         self,
-        delta_h_threshold: float,
-        minimum_baseline_entropy: float,
+        thresholds: CalibrationThresholds,
     ) -> bool:
         """Check if result is below delta-h threshold for given thresholds.
 
         Parameters
         ----------
-        delta_h_threshold : float
-            Delta-H at or below which the pattern is below threshold
-        minimum_baseline_entropy : float
-            Minimum baseline entropy for valid measurement
+        thresholds : CalibrationThresholds
+            Calibrated thresholds derived from data
 
         Returns
         -------
         bool
             True if delta_h <= threshold AND baseline_entropy >= minimum
         """
-        if self.baseline_entropy < minimum_baseline_entropy:
+        if self.baseline_entropy < thresholds.minimum_baseline_entropy:
             return False  # Indeterminate - can't make determination
-        return self.delta_h <= delta_h_threshold
+        return self.delta_h <= thresholds.delta_h_threshold
 
     def is_valid_measurement(self, minimum_baseline_entropy: float) -> bool:
         """Check if baseline entropy is sufficient for valid measurement.
@@ -228,13 +225,13 @@ class DetectionResult:
         """
         return self.baseline_entropy >= minimum_baseline_entropy
 
-    def threshold_ratio(self, delta_h_threshold: float) -> float:
+    def threshold_ratio(self, thresholds: CalibrationThresholds) -> float:
         """Ratio of delta_h to threshold - distance from decision boundary.
 
         Parameters
         ----------
-        delta_h_threshold : float
-            Threshold value for comparison
+        thresholds : CalibrationThresholds
+            Calibrated thresholds derived from data
 
         Returns
         -------
@@ -242,9 +239,9 @@ class DetectionResult:
             |delta_h| / |threshold|. Values > 1.0 mean past threshold.
         """
         _b = get_default_backend()
-        if abs(delta_h_threshold) <= machine_epsilon(_b, _b.array([1.0])):
+        if abs(thresholds.delta_h_threshold) <= machine_epsilon(_b, _b.array([1.0])):
             return 0.0
-        return abs(self.delta_h) / abs(delta_h_threshold)
+        return abs(self.delta_h) / abs(thresholds.delta_h_threshold)
 
 
 # =============================================================================
@@ -312,8 +309,7 @@ class BatchDetectionStatistics:
     def count_below_delta_h_threshold(
         self,
         results: list[DetectionResult],
-        delta_h_threshold: float,
-        minimum_baseline_entropy: float,
+        thresholds: CalibrationThresholds,
     ) -> int:
         """Count results that are below delta-h threshold for given thresholds.
 
@@ -321,10 +317,8 @@ class BatchDetectionStatistics:
         ----------
         results : list[DetectionResult]
             Detection results to analyze
-        delta_h_threshold : float
-            Delta-H threshold for below-threshold classification
-        minimum_baseline_entropy : float
-            Minimum baseline entropy threshold
+        thresholds : CalibrationThresholds
+            Calibrated thresholds derived from data
 
         Returns
         -------
@@ -337,9 +331,7 @@ class BatchDetectionStatistics:
         mask = backend.array(
             [
                 1.0
-                if r.is_below_delta_h_threshold(
-                    delta_h_threshold, minimum_baseline_entropy
-                )
+                if r.is_below_delta_h_threshold(thresholds)
                 else 0.0
                 for r in results
             ]

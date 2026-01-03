@@ -26,14 +26,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import logging
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.utils.text import truncate
 
 if TYPE_CHECKING:
@@ -70,7 +70,11 @@ class DetectionResult:
         """Mean similarity across all detected concepts."""
         if not self.detected_concepts:
             return 0.0
-        return sum(c.similarity for c in self.detected_concepts) / len(self.detected_concepts)
+        backend = get_default_backend()
+        scores = backend.array([c.similarity for c in self.detected_concepts])
+        mean_score = backend.mean(scores)
+        backend.eval(mean_score)
+        return float(backend.to_scalar(mean_score))
 
     @property
     def mean_cross_modal_similarity(self) -> float | None:
@@ -82,7 +86,11 @@ class DetectionResult:
         ]
         if not with_cross_modal:
             return None
-        return sum(with_cross_modal) / len(with_cross_modal)
+        backend = get_default_backend()
+        scores = backend.array(with_cross_modal)
+        mean_score = backend.mean(scores)
+        backend.eval(mean_score)
+        return float(backend.to_scalar(mean_score))
 
     @property
     def concept_sequence(self) -> list[str]:
@@ -119,8 +127,8 @@ class ProbeEmbedding:
 
     probe_id: str
     category: str
-    centroid: list[float]
-    support_embeddings: list[list[float]]
+    centroid: Any
+    support_matrix: Any
     cohesion_floor: float
 
 
@@ -150,6 +158,10 @@ class ConceptDetector:
         self._backend = backend or get_default_backend()
         self._probes = probes_list
         self._probe_embeddings = self._build_probe_embeddings()
+        self._probe_centroids = self._backend.stack(
+            [probe.centroid for probe in self._probe_embeddings], axis=0
+        )
+        self._probe_count = self._backend.shape(self._probe_centroids)[0]
         self._separation_floor = self._compute_separation_floor()
 
     def detect(
@@ -184,28 +196,26 @@ class ConceptDetector:
             if not embeddings:
                 continue
 
-            segment_embedding = VectorMath.l2_normalized(
-                [float(value) for value in embeddings[0]]
+            segment_embedding = self._normalize_vector(embeddings[0])
+            sims = self._backend.matmul(
+                self._probe_centroids,
+                self._backend.reshape(segment_embedding, (-1, 1)),
             )
-
-            best_probe: ProbeEmbedding | None = None
-            best_similarity = -1.0
-
-            for probe in self._probe_embeddings:
-                similarity = ConceptDetector._cosine_similarity(segment_embedding, probe.centroid)
-                if similarity > best_similarity:
-                    best_similarity = similarity
-                    best_probe = probe
-
-            if best_probe is None:
-                continue
+            sims = self._backend.reshape(sims, (self._probe_count,))
+            best_idx_arr = self._backend.argmax(sims)
+            self._backend.eval(best_idx_arr)
+            best_idx = int(self._backend.to_scalar(best_idx_arr))
+            best_sim_arr = self._backend.take(sims, self._backend.array([best_idx]))
+            self._backend.eval(best_sim_arr)
+            best_similarity = float(self._backend.to_scalar(best_sim_arr))
+            best_probe = self._probe_embeddings[best_idx]
 
             acceptance_floor = max(best_probe.cohesion_floor, self._separation_floor)
             if best_similarity <= acceptance_floor:
                 continue
 
             cross_modal_similarity = self._cross_modal_similarity(
-                segment_embedding, best_probe.support_embeddings
+                segment_embedding, best_probe.support_matrix
             )
 
             detections.append(
@@ -269,22 +279,16 @@ class ConceptDetector:
                 )
                 continue
 
-            normalized_support = [
-                VectorMath.l2_normalized([float(value) for value in embedding])
-                for embedding in embeddings
-            ]
-            centroid = VectorMath.l2_normalized(self._frechet_centroid(embeddings))
-            cohesion_floor = min(
-                ConceptDetector._cosine_similarity(centroid, support)
-                for support in normalized_support
-            )
+            support_matrix = self._normalize_rows(embeddings)
+            centroid = self._normalize_vector(self._frechet_centroid(embeddings))
+            cohesion_floor = self._cohesion_floor(centroid, support_matrix)
 
             probe_embeddings.append(
                 ProbeEmbedding(
                     probe_id=probe.probe_id,
                     category=str(probe.category_name),
                     centroid=centroid,
-                    support_embeddings=normalized_support,
+                    support_matrix=support_matrix,
                     cohesion_floor=float(cohesion_floor),
                 )
             )
@@ -293,24 +297,24 @@ class ConceptDetector:
             raise ValueError("No probe embeddings available for concept detection.")
         return probe_embeddings
 
-    def _frechet_centroid(self, embeddings: list[list[float]]) -> list[float]:
-        points = self._backend.array(
-            [[float(value) for value in vector] for vector in embeddings]
-        )
+    def _frechet_centroid(self, embeddings: list[list[float]]) -> Any:
+        points = self._ensure_array(embeddings)
         mean = frechet_mean(points, backend=self._backend)
         self._backend.eval(mean)
-        return self._backend.tolist(mean)
+        return mean
 
     def _compute_separation_floor(self) -> float:
-        if len(self._probe_embeddings) < 2:
+        if self._probe_count < 2:
             return -1.0
-        max_similarity = -1.0
-        for index, probe_a in enumerate(self._probe_embeddings):
-            for probe_b in self._probe_embeddings[index + 1 :]:
-                similarity = ConceptDetector._cosine_similarity(probe_a.centroid, probe_b.centroid)
-                if similarity > max_similarity:
-                    max_similarity = similarity
-        return float(max_similarity)
+        centroids_t = self._backend.transpose(self._probe_centroids, axes=(1, 0))
+        similarities = self._backend.matmul(self._probe_centroids, centroids_t)
+        max_sim = self._backend.max(similarities)
+        eps = division_epsilon(self._backend, similarities)
+        shift = max_sim + eps
+        masked = similarities - (self._backend.eye(self._probe_count) * shift)
+        max_off_diag = self._backend.max(masked)
+        self._backend.eval(max_off_diag)
+        return float(self._backend.to_scalar(max_off_diag))
 
     @staticmethod
     def _segment_text(text: str) -> list[tuple[int, int, str]]:
@@ -330,24 +334,58 @@ class ConceptDetector:
                 segments.append((start, len(text), segment))
         return segments
 
-    @staticmethod
     def _cross_modal_similarity(
-        segment_embedding: list[float],
-        support_embeddings: list[list[float]],
+        self,
+        segment_embedding: Any,
+        support_matrix: Any,
     ) -> float | None:
-        if not support_embeddings:
+        if support_matrix is None:
             return None
-        total = 0.0
-        for support in support_embeddings:
-            total += ConceptDetector._cosine_similarity(segment_embedding, support)
-        return total / float(len(support_embeddings))
+        support_count = self._backend.shape(support_matrix)[0]
+        if support_count == 0:
+            return None
+        sims = self._backend.matmul(
+            support_matrix, self._backend.reshape(segment_embedding, (-1, 1))
+        )
+        mean_sim = self._backend.mean(sims)
+        self._backend.eval(mean_sim)
+        return float(self._backend.to_scalar(mean_sim))
 
-    @staticmethod
-    def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        try:
-            return VectorMath.cosine_similarity(a, b)
-        except ValueError:
+    def _ensure_array(self, value: Any) -> Any:
+        if hasattr(value, "shape"):
+            return value
+        return self._backend.array(value)
+
+    def _normalize_rows(self, matrix: Any) -> Any:
+        matrix_arr = self._ensure_array(matrix)
+        norms = self._backend.norm(matrix_arr, axis=1, keepdims=True)
+        eps = division_epsilon(self._backend, matrix_arr)
+        safe_norms = self._backend.where(
+            norms > eps, norms, self._backend.ones_like(norms)
+        )
+        return matrix_arr / safe_norms
+
+    def _normalize_vector(self, vector: Any) -> Any:
+        vector_arr = self._ensure_array(vector)
+        norm = self._backend.norm(vector_arr)
+        eps = division_epsilon(self._backend, vector_arr)
+        safe_norm = self._backend.where(
+            norm > eps, norm, self._backend.ones_like(norm)
+        )
+        return vector_arr / safe_norm
+
+    def _cohesion_floor(self, centroid: Any, support_matrix: Any) -> float:
+        if support_matrix is None:
             return 0.0
+        support_count = self._backend.shape(support_matrix)[0]
+        if support_count == 0:
+            return 0.0
+        sims = self._backend.matmul(
+            support_matrix, self._backend.reshape(centroid, (-1, 1))
+        )
+        min_sim = self._backend.min(sims)
+        self._backend.eval(min_sim)
+        return float(self._backend.to_scalar(min_sim))
 
     @staticmethod
     def _collapse_consecutive(

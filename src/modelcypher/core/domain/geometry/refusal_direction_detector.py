@@ -172,14 +172,14 @@ class RefusalDirectionDetector:
         b.eval(harmful_mean, harmless_mean)
 
         direction_arr = harmful_mean - harmless_mean
-        norm_arr = b.norm(direction_arr)
-        b.eval(direction_arr, norm_arr)
-        norm = float(b.to_scalar(norm_arr))
+        backend_math = BackendVectorMath(b)
+        b.eval(direction_arr)
+        norm = float(backend_math.l2_norm(direction_arr))
         eps = division_epsilon(b, direction_arr)
         if norm <= eps:
             return None
         strength = norm
-        final_direction = direction_arr / norm_arr
+        final_direction = direction_arr / norm
         b.eval(final_direction)
         explained_variance = RefusalDirectionDetector._estimate_explained_variance(
             harmful_activations=harmful_arr,
@@ -208,21 +208,24 @@ class RefusalDirectionDetector:
         b = get_default_backend()
         backend_math = BackendVectorMath(b)
         try:
-            projection_magnitude = backend_math.dot(activation, refusal_direction.direction)
             cosine = backend_math.cosine_similarity(activation, refusal_direction.direction)
+            activation_norm = backend_math.l2_norm(activation)
+            direction_norm = backend_math.l2_norm(refusal_direction.direction)
+            projection_magnitude = activation_norm * direction_norm * cosine
             distance_to_refusal = float(1.0 - cosine)
         except Exception:
             activation_list = RefusalDirectionDetector._to_list_vector(activation)
             if len(activation_list) != len(refusal_direction.direction):
                 return None
-            projection = VectorMath.dot(activation_list, refusal_direction.direction)
-            if projection is None:
+            try:
+                cosine = VectorMath.cosine_similarity(
+                    activation_list, refusal_direction.direction
+                )
+            except ValueError:
                 return None
-            projection_magnitude = float(projection)
-
-            cosine = VectorMath.cosine_similarity(activation_list, refusal_direction.direction)
-            if cosine is None:
-                return None
+            activation_norm = VectorMath.l2_norm(activation_list)
+            direction_norm = VectorMath.l2_norm(refusal_direction.direction)
+            projection_magnitude = activation_norm * direction_norm * cosine
             distance_to_refusal = float(1.0 - cosine)
 
         is_approaching = projection_magnitude > (previous_projection or 0.0)

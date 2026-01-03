@@ -692,8 +692,11 @@ class ComputationalGateAtlas:
 
             similarities = []
             for gate_vec in gate_embeddings:
-                dot = VectorMath.dot(gate_vec, text_vec)
-                similarities.append(max(0.0, dot))
+                try:
+                    similarity = VectorMath.cosine_similarity(gate_vec, text_vec)
+                except ValueError:
+                    similarity = 0.0
+                similarities.append(max(0.0, similarity))
 
             return ComputationalGateSignature(
                 gate_ids=[g.id for g in self.inventory], values=similarities

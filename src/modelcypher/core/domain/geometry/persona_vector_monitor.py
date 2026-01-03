@@ -264,7 +264,9 @@ class PersonaVectorMonitor:
     ) -> PersonaPosition | None:
         if len(activation) != len(persona_vector.direction):
             return None
-        projection = VectorMath.dot(activation, persona_vector.direction)
+        projection = PersonaVectorMonitor._projection_value(
+            activation, persona_vector.direction
+        )
         if projection is None:
             return None
         projection_value = float(projection)
@@ -429,11 +431,11 @@ class PersonaVectorMonitor:
         positive_projections: list[float] = []
         negative_projections: list[float] = []
         for activation in positive_activations:
-            projection = VectorMath.dot(activation, direction)
+            projection = PersonaVectorMonitor._projection_value(activation, direction)
             if projection is not None:
                 positive_projections.append(float(projection))
         for activation in negative_activations:
-            projection = VectorMath.dot(activation, direction)
+            projection = PersonaVectorMonitor._projection_value(activation, direction)
             if projection is not None:
                 negative_projections.append(float(projection))
         if not positive_projections or not negative_projections:
@@ -460,6 +462,16 @@ class PersonaVectorMonitor:
         q = float(neg_count) / float(total_count)
         r = (pos_mean - neg_mean) / std_dev * sqrt_scalar(p * q, backend)
         return max(0.0, min(1.0, r))
+
+    @staticmethod
+    def _projection_value(activation: list[float], direction: list[float]) -> float | None:
+        try:
+            cosine = VectorMath.cosine_similarity(activation, direction)
+        except ValueError:
+            return None
+        activation_norm = VectorMath.l2_norm(activation)
+        direction_norm = VectorMath.l2_norm(direction)
+        return activation_norm * direction_norm * cosine
 
     @staticmethod
     def _compute_correlation_stats(correlations: list[float]) -> tuple[float, float]:
