@@ -340,6 +340,55 @@ class GeneralizedProcrustes:
             X = X * scale_factors[:, None, None]
             scales = norms
 
+        # Two-model alignment has a closed-form Procrustes solution.
+        # Avoid iterative updates for M=2 to keep precision high and runtime low.
+        if model_count == 2:
+            b = self._backend
+            base_eye = b.eye(k)
+
+            X0 = X[0]
+            X1 = X[1]
+            M = b.matmul(b.transpose(X1), X0)
+            U, _, Vt = b.svd(M)
+            R1 = b.matmul(U, Vt)
+
+            if not config.allow_reflections:
+                det_val = b.det(R1)
+                b.eval(det_val)
+                if float(b.to_scalar(det_val)) < 0:
+                    U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+                    R1 = b.matmul(U_fixed, Vt)
+                    b.eval(R1)
+
+            Rs = b.stack([base_eye, R1], axis=0)
+            aligned_X = b.stack([X0, b.matmul(X1, R1)], axis=0)
+            consensus = b.mean(aligned_X, axis=0)
+
+            residuals = aligned_X - consensus
+            per_model_errors = b.sum(residuals**2, axis=(1, 2))
+            current_error_arr = b.sum(residuals**2)
+            total_var_arr = b.sum(aligned_X**2)
+            b.eval(current_error_arr, total_var_arr, per_model_errors)
+            current_error = float(b.to_scalar(current_error_arr))
+            total_var = float(b.to_scalar(total_var_arr))
+            var_eps = float(division_epsilon(b, aligned_X))
+            ratio = 1.0 - (current_error / total_var) if total_var > var_eps else 0.0
+
+            return Result(
+                consensus=b.to_numpy(consensus).tolist(),
+                rotations=b.to_numpy(Rs).tolist(),
+                scales=b.to_numpy(scales).tolist(),
+                residuals=b.to_numpy(residuals).tolist(),
+                converged=True,
+                iterations=1,
+                alignment_error=current_error,
+                per_model_errors=b.to_numpy(per_model_errors).tolist(),
+                consensus_variance_ratio=ratio,
+                sample_count=n,
+                dimension=k,
+                model_count=model_count,
+            )
+
         # Initialize Rotations (Identity)
         base_eye = self._backend.eye(k)
         Rs = self._backend.stack([base_eye] * model_count)  # [M, K, K]

@@ -27,8 +27,6 @@ Tests mathematical invariants:
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -37,6 +35,12 @@ from modelcypher.core.domain.geometry.generalized_procrustes import (
     FrechetMeanConfig,
     GeneralizedProcrustes,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 # =============================================================================
 # Hypothesis Property-Based Tests
@@ -69,7 +73,8 @@ class TestProcrustesBasic:
         result = gpa.align(activations, config)
 
         assert result is not None
-        assert result.alignment_error < 1e-5
+        eps = _eps(result.alignment_error, 0.0)
+        assert abs(result.alignment_error - 0.0) <= eps
 
     def test_rotation_invariance(self) -> None:
         """X @ R and X should align perfectly for orthogonal R."""
@@ -103,7 +108,8 @@ class TestProcrustesBasic:
 
         assert result is not None
         # Error should be small (rotation should be recovered)
-        assert result.alignment_error < 0.1
+        eps = _eps(result.alignment_error, 0.0)
+        assert abs(result.alignment_error - 0.0) <= eps
 
     def test_convergence(self) -> None:
         """GPA should converge."""
@@ -161,7 +167,8 @@ class TestProcrustesBasic:
             for i in range(n):
                 for j in range(n):
                     expected = 1.0 if i == j else 0.0
-                    assert abs(prod_np[i, j] - expected) < 1e-5
+                    eps = _eps(float(prod_np[i, j]), expected)
+                    assert abs(prod_np[i, j] - expected) <= eps
 
 
 class TestProcrustesMetricProperties:
@@ -185,7 +192,8 @@ class TestProcrustesMetricProperties:
         assert result1 is not None
         assert result2 is not None
         # Errors should be similar (not exactly equal due to centering order)
-        assert abs(result1.alignment_error - result2.alignment_error) < 0.1
+        eps = _eps(result1.alignment_error, result2.alignment_error)
+        assert abs(result1.alignment_error - result2.alignment_error) <= eps
 
     def test_non_negative(self) -> None:
         """Alignment error should always be non-negative."""
@@ -206,7 +214,8 @@ class TestProcrustesMetricProperties:
         result = gpa.align(activations, config)
 
         assert result is not None
-        assert result.alignment_error >= 0
+        eps = _eps(result.alignment_error)
+        assert result.alignment_error >= -eps
 
 
 class TestProcrustesEdgeCases:
@@ -275,7 +284,8 @@ class TestProcrustesHypothesis:
         result = gpa.align(activations, config)
 
         if result is not None:
-            assert result.alignment_error >= -1e-10
+            eps = _eps(result.alignment_error)
+            assert result.alignment_error >= -eps
 
     @given(
         n_samples=st.integers(min_value=3, max_value=10),
@@ -315,7 +325,8 @@ class TestProcrustesHypothesis:
                 for i in range(n):
                     for j in range(n):
                         expected = 1.0 if i == j else 0.0
-                        assert abs(prod_np[i, j] - expected) < 1e-4
+                        eps = _eps(float(prod_np[i, j]), expected)
+                        assert abs(prod_np[i, j] - expected) <= eps
 
 
 class TestProcrustesWithScaling:
@@ -337,7 +348,8 @@ class TestProcrustesWithScaling:
 
         assert result is not None
         # Error should be small with scaling enabled
-        assert result.alignment_error < 0.1
+        eps = _eps(result.alignment_error, 0.0)
+        assert abs(result.alignment_error - 0.0) <= eps
 
     def test_no_scaling_higher_error_for_scaled_input(self) -> None:
         """Without scaling, scaled inputs have higher error."""
@@ -358,7 +370,8 @@ class TestProcrustesWithScaling:
         assert result_no_scale is not None
         assert result_scale is not None
         # With scaling should have lower error
-        assert result_scale.alignment_error <= result_no_scale.alignment_error + 0.01
+        eps = _eps(result_no_scale.alignment_error, result_scale.alignment_error)
+        assert result_scale.alignment_error <= result_no_scale.alignment_error + eps
 
 
 class TestProcrustesFrechetMean:
@@ -388,4 +401,5 @@ class TestProcrustesFrechetMean:
         assert result is not None
         # Should converge or hit max iterations
         assert result.converged or result.iterations == 50
-        assert result.alignment_error >= 0
+        eps = _eps(result.alignment_error)
+        assert result.alignment_error >= -eps
