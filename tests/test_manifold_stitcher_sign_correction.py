@@ -40,14 +40,14 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 def _det_scalar(backend, matrix) -> float:
     det_value = backend.det(matrix)
     backend.eval(det_value)
-    return float(backend.tolist(det_value))
+    return float(backend.to_scalar(det_value))
 
 
 def _max_abs_diff(backend, left, right) -> float:
     diff = backend.abs(left - right)
     max_diff = backend.max(diff)
     backend.eval(max_diff)
-    return float(backend.tolist(max_diff))
+    return float(backend.to_scalar(max_diff))
 
 
 class TestEnsureProperRotation:
@@ -182,7 +182,7 @@ class TestEnsureProperRotation:
         if float(backend.to_scalar(q_det)) > 0:
             # Multiply first column by -1 using backend operations
             sign_vec = backend.ones((n,), dtype="float32")
-            sign_vec = backend.concat([backend.array([-1.0], dtype="float32"), sign_vec[1:]])
+            sign_vec = backend.concatenate([backend.array([-1.0], dtype="float32"), sign_vec[1:]])
             sign_mat = backend.diag(sign_vec)
             q = backend.matmul(q, sign_mat)
 
@@ -219,7 +219,7 @@ class TestEnsureProperRotation:
         if float(backend.to_scalar(q_det)) < 0:
             # Multiply first column by -1 using backend operations
             sign_vec = backend.ones((n,), dtype="float32")
-            sign_vec = backend.concat([backend.array([-1.0], dtype="float32"), sign_vec[1:]])
+            sign_vec = backend.concatenate([backend.array([-1.0], dtype="float32"), sign_vec[1:]])
             sign_mat = backend.diag(sign_vec)
             q = backend.matmul(q, sign_mat)
 

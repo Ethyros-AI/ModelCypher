@@ -309,20 +309,16 @@ class RelationalStressComputer:
         neighbor_indices = b.arange(1, len(neighbor_names) + 1)
         neighbor_dists = b.take(row0, neighbor_indices, axis=0)
         b.eval(neighbor_dists)
-        # Use tolist() for O(1) extraction
-        neighbor_dists_list = b.tolist(neighbor_dists)
-        dists = [
-            (neighbor_names[i], float(neighbor_dists_list[i]))
-            for i in range(len(neighbor_names))
-        ]
-        dists.sort(key=lambda x: x[1])
-        k = len(dists)
+        sorted_idx = b.argsort(neighbor_dists)
+        b.eval(sorted_idx)
+        sorted_idx_list = [int(x) for x in b.tolist(sorted_idx)]
+        k = len(sorted_idx_list)
 
         # Build local covariance from neighbor directions
         directions = []
         eps = division_epsilon(b, point)
-        for name, _ in dists[:k]:
-            direction = neighbors[name] - point
+        for idx in sorted_idx_list:
+            direction = neighbors[neighbor_names[idx]] - point
             norm_val = b.norm(direction)
             b.eval(norm_val)
             norm = float(b.to_scalar(norm_val))
