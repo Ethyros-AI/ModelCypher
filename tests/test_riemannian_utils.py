@@ -35,6 +35,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import (
     CurvatureEstimate,
     DirectionalCoverage,
@@ -50,6 +54,14 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+
+
+def _eps(backend: "Backend", *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def _div_eps(backend: "Backend", *values: float) -> float:
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================
@@ -225,9 +237,10 @@ class TestFrechetMean:
         result = rg.frechet_mean(points)
 
         mean_np = backend.to_numpy(result.mean)
-        assert abs(mean_np[0] - 1.0) < 1e-5
-        assert abs(mean_np[1] - 2.0) < 1e-5
-        assert abs(mean_np[2] - 3.0) < 1e-5
+        eps = _eps(backend, float(mean_np[0]), 1.0, float(mean_np[1]), 2.0, float(mean_np[2]), 3.0)
+        assert abs(mean_np[0] - 1.0) <= eps
+        assert abs(mean_np[1] - 2.0) <= eps
+        assert abs(mean_np[2] - 3.0) <= eps
         assert result.converged is True
         assert result.iterations == 0
 
@@ -256,8 +269,9 @@ class TestFrechetMean:
 
         mean_np = backend.to_numpy(result.mean)
         # Should be near (1.0, 0.0)
-        assert abs(mean_np[0] - 1.0) < 0.5
-        assert abs(mean_np[1]) < 0.5
+        eps = _eps(backend, float(mean_np[0]), 1.0, float(mean_np[1]), 0.0)
+        assert abs(mean_np[0] - 1.0) <= eps
+        assert abs(mean_np[1]) <= eps
 
     def test_symmetric_points(self, any_backend: "Backend") -> None:
         """Fréchet mean of symmetric points should be at origin."""
@@ -275,8 +289,9 @@ class TestFrechetMean:
 
         mean_np = backend.to_numpy(result.mean)
         # Should be near origin
-        assert abs(mean_np[0]) < 0.5
-        assert abs(mean_np[1]) < 0.5
+        eps = _eps(backend, float(mean_np[0]), float(mean_np[1]))
+        assert abs(mean_np[0]) <= eps
+        assert abs(mean_np[1]) <= eps
 
     def test_with_weights(self, any_backend: "Backend") -> None:
         """Fréchet mean with weights should shift toward heavier weights."""
@@ -295,7 +310,8 @@ class TestFrechetMean:
 
         # Weighted mean should be closer to (4, 0) than (0, 0)
         # Euclidean weighted mean would be at (3, 0)
-        assert mean_np[0] > 1.5  # Should be shifted toward second point
+        eps = _eps(backend, float(mean_np[0]), 3.0)
+        assert abs(mean_np[0] - 3.0) <= eps
 
     def test_convergence(self, any_backend: "Backend") -> None:
         """Fréchet mean should converge."""
@@ -309,7 +325,8 @@ class TestFrechetMean:
 
         # Should converge or reach max iterations
         assert result.iterations <= 100
-        assert result.final_variance >= 0.0
+        eps = _eps(backend, result.final_variance)
+        assert result.final_variance >= -eps
 
     def test_variance_decreases(self, any_backend: "Backend") -> None:
         """Final variance should be reasonable."""
@@ -321,7 +338,8 @@ class TestFrechetMean:
         result = rg.frechet_mean(points)
 
         # Variance should be non-negative
-        assert result.final_variance >= 0.0
+        eps = _eps(backend, result.final_variance)
+        assert result.final_variance >= -eps
 
 
 # =============================================================================
@@ -357,11 +375,12 @@ class TestGeodesicDistances:
 
         dist_np = backend.to_numpy(result.distances)
         # Should be near 5.0 (Euclidean = geodesic for 2 points)
-        assert abs(dist_np[0, 1] - 5.0) < 0.5
-        assert abs(dist_np[1, 0] - 5.0) < 0.5
+        eps = _eps(backend, float(dist_np[0, 1]), float(dist_np[1, 0]), 5.0)
+        assert abs(dist_np[0, 1] - 5.0) <= eps
+        assert abs(dist_np[1, 0] - 5.0) <= eps
         # Diagonal should be 0
-        assert dist_np[0, 0] == 0.0
-        assert dist_np[1, 1] == 0.0
+        assert abs(dist_np[0, 0]) <= eps
+        assert abs(dist_np[1, 1]) <= eps
 
     def test_diagonal_is_zero(self, any_backend: "Backend") -> None:
         """Diagonal of geodesic distance matrix should be zero."""
@@ -374,7 +393,8 @@ class TestGeodesicDistances:
 
         dist_np = backend.to_numpy(result.distances)
         for i in range(10):
-            assert dist_np[i, i] == 0.0
+            eps = _eps(backend, float(dist_np[i, i]))
+            assert abs(dist_np[i, i]) <= eps
 
     def test_symmetry(self, any_backend: "Backend") -> None:
         """Geodesic distance matrix should be symmetric."""
@@ -388,7 +408,8 @@ class TestGeodesicDistances:
         dist_np = backend.to_numpy(result.distances)
         for i in range(8):
             for j in range(8):
-                assert abs(dist_np[i, j] - dist_np[j, i]) < 1e-5
+                eps = _eps(backend, float(dist_np[i, j]), float(dist_np[j, i]))
+                assert abs(dist_np[i, j] - dist_np[j, i]) <= eps
 
     def test_triangle_inequality(self, any_backend: "Backend") -> None:
         """Geodesic distances should satisfy triangle inequality."""
@@ -410,7 +431,13 @@ class TestGeodesicDistances:
                 for k in range(n):
                     if not math.isinf(dist_np[i, j]) and not math.isinf(dist_np[j, k]) and not math.isinf(dist_np[i, k]):
                         # d(i, k) <= d(i, j) + d(j, k)
-                        assert dist_np[i, k] <= dist_np[i, j] + dist_np[j, k] + 1e-5
+                        eps = _eps(
+                            backend,
+                            float(dist_np[i, k]),
+                            float(dist_np[i, j]),
+                            float(dist_np[j, k]),
+                        )
+                        assert dist_np[i, k] <= dist_np[i, j] + dist_np[j, k] + eps
 
     def test_custom_k_neighbors(self, any_backend: "Backend") -> None:
         """Test with custom k_neighbors."""
@@ -470,7 +497,8 @@ class TestLocalCurvatureEstimation:
         result = rg.estimate_local_curvature(points, center_idx=2, k_neighbors=4)
 
         # Should be approximately flat
-        assert abs(result.sectional_curvature) < 1.0
+        eps = _eps(backend, result.sectional_curvature)
+        assert abs(result.sectional_curvature) <= eps
 
     def test_returns_valid_estimate(self, any_backend: "Backend") -> None:
         """Curvature estimation should return valid values."""
@@ -482,7 +510,8 @@ class TestLocalCurvatureEstimation:
         result = rg.estimate_local_curvature(points, center_idx=0, k_neighbors=5)
 
         assert math.isfinite(result.sectional_curvature)
-        assert 0.0 <= result.confidence <= 1.0
+        eps = _eps(backend, result.confidence)
+        assert -eps <= result.confidence <= 1.0 + eps
 
 
 # =============================================================================
@@ -503,7 +532,8 @@ class TestRiemannianCovariance:
 
         cov_np = backend.to_numpy(cov)
         assert cov_np.shape == (3, 3)
-        assert abs(cov_np.sum()) < 1e-10
+        eps = _eps(backend, float(cov_np.sum()))
+        assert abs(cov_np.sum()) <= eps
 
     def test_covariance_shape(self, any_backend: "Backend") -> None:
         """Covariance matrix should have correct shape."""
@@ -529,7 +559,8 @@ class TestRiemannianCovariance:
         # Check symmetry
         for i in range(4):
             for j in range(4):
-                assert abs(cov_np[i, j] - cov_np[j, i]) < 1e-5
+                eps = _eps(backend, float(cov_np[i, j]), float(cov_np[j, i]))
+                assert abs(cov_np[i, j] - cov_np[j, i]) <= eps
 
     def test_with_precomputed_mean(self, any_backend: "Backend") -> None:
         """Covariance with precomputed mean."""
@@ -568,8 +599,9 @@ class TestGeodesicInterpolation:
         result = rg.geodesic_interpolation(p1, p2, t=0.0, points_context=context)
         result_np = backend.to_numpy(result)
 
-        assert abs(result_np[0]) < 1e-5
-        assert abs(result_np[1]) < 1e-5
+        eps = _eps(backend, float(result_np[0]), float(result_np[1]))
+        assert abs(result_np[0]) <= eps
+        assert abs(result_np[1]) <= eps
 
     def test_t_one_returns_end(self, any_backend: "Backend") -> None:
         """Interpolation at t=1 returns end point."""
@@ -587,8 +619,9 @@ class TestGeodesicInterpolation:
         result = rg.geodesic_interpolation(p1, p2, t=1.0, points_context=context)
         result_np = backend.to_numpy(result)
 
-        assert abs(result_np[0] - 1.0) < 1e-5
-        assert abs(result_np[1] - 1.0) < 1e-5
+        eps = _eps(backend, float(result_np[0]), float(result_np[1]), 1.0)
+        assert abs(result_np[0] - 1.0) <= eps
+        assert abs(result_np[1] - 1.0) <= eps
 
     def test_requires_context(self, any_backend: "Backend") -> None:
         """Geodesic interpolation requires context points."""
@@ -711,8 +744,9 @@ class TestDirectionalCoverage:
         points = backend.array([[1.0, 2.0, 3.0]])
         result = rg.directional_coverage(0, points, k=5)
 
-        assert result.max_gap_angle == pytest.approx(math.pi, abs=0.1)
-        assert result.coverage_uniformity == 0.0
+        eps = _eps(backend, result.max_gap_angle, math.pi, result.coverage_uniformity)
+        assert abs(result.max_gap_angle - math.pi) <= eps
+        assert abs(result.coverage_uniformity - 0.0) <= eps
         assert result.point_idx == 0
 
     def test_returns_unit_direction(self, any_backend: "Backend") -> None:
@@ -728,7 +762,8 @@ class TestDirectionalCoverage:
         norm = math.sqrt(sum(d * d for d in direction_np))
 
         # Should be approximately unit length
-        assert abs(norm - 1.0) < 0.1
+        eps = _eps(backend, norm, 1.0)
+        assert abs(norm - 1.0) <= eps
 
     def test_coverage_in_valid_range(self, any_backend: "Backend") -> None:
         """Coverage uniformity should be in [0, 1]."""
@@ -739,7 +774,8 @@ class TestDirectionalCoverage:
         points = backend.random_normal((15, 4))
         result = rg.directional_coverage(0, points, k=8)
 
-        assert 0.0 <= result.coverage_uniformity <= 1.0
+        eps = _eps(backend, result.coverage_uniformity)
+        assert -eps <= result.coverage_uniformity <= 1.0 + eps
 
 
 # =============================================================================
@@ -813,7 +849,8 @@ class TestFrechetMeanConvenience:
         mean_np = backend.to_numpy(mean)
 
         # Should be shifted toward second point
-        assert mean_np[0] > 0.5
+        eps = _eps(backend, float(mean_np[0]), 1.5)
+        assert abs(mean_np[0] - 1.5) <= eps
 
 
 class TestGeodesicDistanceMatrixConvenience:
@@ -903,7 +940,8 @@ class TestEdgeCasesAndNumericalStability:
         dist_np = backend.to_numpy(result.distances)
 
         # All distances should be near zero
-        assert abs(dist_np.max()) < 1e-3
+        eps = _eps(backend, float(dist_np.max()))
+        assert abs(dist_np.max()) <= eps
 
     def test_very_close_points(self, any_backend: "Backend") -> None:
         """Handle very close but not identical points."""
@@ -942,9 +980,10 @@ class TestEdgeCasesAndNumericalStability:
         rg = RiemannianGeometry(backend)
 
         points = backend.random_normal((10, 3))
+        tol = machine_epsilon(backend, points)
 
         # Tight tolerance should take more iterations
-        result_tight = rg.frechet_mean(points, tolerance=1e-10, max_iterations=100)
+        result_tight = rg.frechet_mean(points, tolerance=tol, max_iterations=100)
 
         # Result should be valid
         mean_np = backend.to_numpy(result_tight.mean)
@@ -971,7 +1010,8 @@ class TestEdgeCasesAndNumericalStability:
             for j in range(4):
                 expected = abs(i - j)  # Euclidean distance on the line
                 if not math.isinf(dist_np[i, j]):
-                    assert abs(dist_np[i, j] - expected) < 0.5
+                    eps = _eps(backend, float(dist_np[i, j]), float(expected))
+                    assert abs(dist_np[i, j] - expected) <= eps
 
 
 # =============================================================================
@@ -1010,7 +1050,8 @@ class TestRiemannianHypothesis:
 
         dist_np = backend.to_numpy(result.distances)
         for i in range(n_points):
-            assert dist_np[i, i] == 0.0
+            eps = _eps(backend, float(dist_np[i, i]))
+            assert abs(dist_np[i, i]) <= eps
 
     @given(
         n_points=st.integers(min_value=4, max_value=20),
@@ -1032,7 +1073,8 @@ class TestRiemannianHypothesis:
         dist_np = backend.to_numpy(result.distances)
         for i in range(n_points):
             for j in range(n_points):
-                assert abs(dist_np[i, j] - dist_np[j, i]) < 1e-6
+                eps = _eps(backend, float(dist_np[i, j]), float(dist_np[j, i]))
+                assert abs(dist_np[i, j] - dist_np[j, i]) <= eps
 
     @given(
         n_points=st.integers(min_value=4, max_value=15),
@@ -1066,7 +1108,8 @@ class TestRiemannianHypothesis:
             d_jk = dist_np[j, k]
             d_ik = dist_np[i, k]
             if math.isfinite(d_ij) and math.isfinite(d_jk) and math.isfinite(d_ik):
-                assert d_ik <= d_ij + d_jk + 1e-5
+                eps = _eps(backend, float(d_ik), float(d_ij), float(d_jk))
+                assert d_ik <= d_ij + d_jk + eps
 
     @given(
         n_points=st.integers(min_value=4, max_value=20),
@@ -1088,7 +1131,8 @@ class TestRiemannianHypothesis:
         dist_np = backend.to_numpy(result.distances)
         for i in range(n_points):
             for j in range(n_points):
-                assert dist_np[i, j] >= -1e-10
+                eps = _eps(backend, float(dist_np[i, j]))
+                assert dist_np[i, j] >= -eps
 
     @given(
         n_points=st.integers(min_value=3, max_value=15),
@@ -1107,7 +1151,8 @@ class TestRiemannianHypothesis:
         points = backend.random_normal((n_points, n_dim))
         result = rg.frechet_mean(points, max_iterations=50)
 
-        assert result.final_variance >= 0.0
+        eps = _eps(backend, result.final_variance)
+        assert result.final_variance >= -eps
 
     @given(
         n_points=st.integers(min_value=3, max_value=15),
@@ -1145,7 +1190,8 @@ class TestSyntheticManifolds:
         points = backend.random_normal((n_points, dim))
         norms = backend.sqrt(backend.sum(points * points, axis=1, keepdims=True))
         # Avoid division by zero
-        norms = backend.maximum(norms, backend.ones_like(norms) * 1e-10)
+        eps = division_epsilon(backend, norms)
+        norms = backend.maximum(norms, backend.ones_like(norms) * eps)
         sphere_points = points / norms
         return sphere_points
 
@@ -1164,9 +1210,13 @@ class TestSyntheticManifolds:
         result = rg.frechet_mean(sphere_points, max_iterations=100)
         mean_np = backend.to_numpy(result.mean)
 
-        # Mean should be near origin (center of sphere)
+        # Mean should be at least as central as the arithmetic mean of the samples.
         mean_norm = math.sqrt(sum(v * v for v in mean_np))
-        assert mean_norm < 0.5, f"Fréchet mean norm = {mean_norm}, expected near 0"
+        arith_mean = backend.mean(sphere_points, axis=0)
+        arith_np = backend.to_numpy(arith_mean)
+        arith_norm = math.sqrt(sum(v * v for v in arith_np))
+        eps = _eps(backend, mean_norm, arith_norm)
+        assert mean_norm <= arith_norm + eps
 
     def test_geodesic_on_linear_subspace(self, any_backend: "Backend"):
         """On a linear subspace (flat manifold), geodesic equals Euclidean.
@@ -1191,7 +1241,8 @@ class TestSyntheticManifolds:
             for j in range(5):
                 expected = abs(i - j)  # Euclidean distance on line
                 if not math.isinf(dist_np[i, j]):
-                    assert abs(dist_np[i, j] - expected) < 0.3, (
+                    eps = _eps(backend, float(dist_np[i, j]), float(expected))
+                    assert abs(dist_np[i, j] - expected) <= eps, (
                         f"d({i},{j}) = {dist_np[i, j]}, expected {expected}"
                     )
 
@@ -1219,7 +1270,8 @@ class TestSyntheticManifolds:
 
         # Should be close
         for i in range(3):
-            assert abs(frechet_np[i] - arith_np[i]) < 0.5, (
+            eps = _eps(backend, float(frechet_np[i]), float(arith_np[i]))
+            assert abs(frechet_np[i] - arith_np[i]) <= eps, (
                 f"Dim {i}: Fréchet={frechet_np[i]}, Arithmetic={arith_np[i]}"
             )
 
@@ -1249,6 +1301,7 @@ class TestSyntheticManifolds:
                     # Euclidean distance
                     euc = math.sqrt(sum((points_np[i, k] - points_np[j, k])**2 for k in range(4)))
                     # Geodesic should be >= Euclidean (with small tolerance for numerical error)
-                    assert geo_np[i, j] >= euc - 1e-3, (
+                    eps = _eps(backend, float(geo_np[i, j]), float(euc))
+                    assert geo_np[i, j] >= euc - eps, (
                         f"Geodesic({i},{j})={geo_np[i,j]} < Euclidean={euc}"
                     )
