@@ -90,7 +90,12 @@ class MLXBackend(Backend):
             if hasattr(first, "item"):  # numpy scalar
                 data = _np_interop.array(data).tolist()
 
-        return self.mx.array(data, dtype=mapped_dtype)
+        try:
+            return self.mx.array(data, dtype=mapped_dtype)
+        except RuntimeError as exc:
+            if "bad_cast" not in str(exc):
+                raise
+            return self.mx.array(_np_interop.array(data), dtype=mapped_dtype)
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.mx.zeros(shape, dtype=self._map_dtype(dtype))

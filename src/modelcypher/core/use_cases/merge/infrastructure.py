@@ -109,7 +109,7 @@ def select_shared_full_rank_indices(
     neg_norms = -norms
     sorted_indices = backend.argsort(neg_norms)
     backend.eval(sorted_indices)
-    ranked = [int(backend.to_scalar(sorted_indices[i])) for i in range(n)]
+    ranked = [int(x) for x in backend.tolist(sorted_indices)]
 
     eps = machine_epsilon(backend, combined) * 100.0
 
@@ -181,7 +181,7 @@ def select_full_rank_indices(
     neg_norms = -norms
     sorted_indices = backend.argsort(neg_norms)
     backend.eval(sorted_indices)
-    ranked = [int(backend.to_scalar(sorted_indices[i])) for i in range(n)]
+    ranked = [int(x) for x in backend.tolist(sorted_indices)]
 
     eps = machine_epsilon(backend, data) * 100.0
     selected: list[int] = []

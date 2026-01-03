@@ -17,13 +17,15 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import find_magnitude_gap_threshold
+from modelcypher.core.domain.geometry.numerical_stability import (
+    find_magnitude_gap_threshold,
+    ulp_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -115,7 +117,7 @@ class DARESparsityAnalyzer:
 
         # Derive thresholds from data, not arbitrary constants:
         # 1. Machine epsilon threshold: values below eps * max are numerical noise
-        eps = math.ulp(1.0)
+        eps = ulp_scalar(1.0, get_default_backend())
         zero_threshold = magnitude_stats.max * eps
 
         # 2. Spectral gap: find natural break in magnitude distribution
@@ -346,7 +348,7 @@ class DARESparsityAnalyzer:
         if not magnitudes:
             return {name: set() for name in delta_weights}
 
-        eps = math.ulp(1.0)
+        eps = ulp_scalar(1.0, get_default_backend())
         sorted_magnitudes = sorted(magnitudes)
         gap_threshold = find_magnitude_gap_threshold(sorted_magnitudes, eps=eps)
         zero_threshold = max(sorted_magnitudes) * eps

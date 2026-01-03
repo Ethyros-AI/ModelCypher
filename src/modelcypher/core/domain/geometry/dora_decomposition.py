@@ -35,14 +35,13 @@ Usage:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_finite
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -269,7 +268,7 @@ class DoRADecomposition:
             overall_magnitude_change=overall_mag,
             overall_directional_drift=overall_drift,
             dominant_change_type=dominant,
-            magnitude_to_direction_ratio=ratio if math.isfinite(ratio) else 0.0,
+            magnitude_to_direction_ratio=ratio if is_finite(ratio, self._backend) else 0.0,
             layers_with_significant_direction_change=sorted(sig_direction),
             layers_with_significant_magnitude_change=sorted(sig_magnitude),
         )

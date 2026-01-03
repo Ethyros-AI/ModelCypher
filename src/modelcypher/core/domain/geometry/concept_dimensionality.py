@@ -284,7 +284,7 @@ class ConceptDimensionalityAnalyzer:
             if len(vec) != expected_dim:
                 invalid_counts["length_mismatch"] += 1
                 continue
-            if any(not is_finite(float(v), self._backend) for v in vec):
+            if any(not is_finite(float(v), get_default_backend()) for v in vec):
                 invalid_counts["non_finite"] += 1
                 continue
             cleaned.append([float(v) for v in vec])

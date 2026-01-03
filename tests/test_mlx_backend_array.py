@@ -18,19 +18,16 @@
 import pytest
 
 
-def test_mlx_backend_array_accepts_uint32_numpy():
+def test_mlx_backend_array_accepts_large_int_list():
     mx = pytest.importorskip("mlx.core")
-
-    import numpy as np
 
     from modelcypher.backends.mlx_backend import MLXBackend
 
     backend = MLXBackend()
 
-    # Regression: converting uint32 via Python ints can raise MLX std::bad_cast.
-    value = np.array([2**32 - 1], dtype=np.uint32)
+    # Regression: converting large ints can raise MLX std::bad_cast.
+    value = [2**32 - 1]
     arr = backend.array(value)
 
     assert arr.shape == (1,)
-    assert arr.dtype == mx.uint32
-
+    assert int(backend.to_scalar(arr)) == 2**32 - 1

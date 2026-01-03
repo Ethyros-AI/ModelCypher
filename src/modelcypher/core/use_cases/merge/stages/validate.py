@@ -26,11 +26,13 @@ Checks two safety dimensions:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     machine_epsilon,
     svd_via_eigh,
 )
@@ -39,12 +41,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
-
-
-def _array_to_list(backend: "Backend", array: "Any") -> list[float]:
-    """Convert backend array to Python list using native tolist() - O(1) vs O(n)."""
-    flat = backend.reshape(array, (-1,))
-    return backend.tolist(flat)
 
 
 # ValidateConfig was REMOVED. Validation always runs all checks.
@@ -113,6 +109,7 @@ def stage_validate(
     layer_indices: list[int],
     hidden_dim: int,
     target_model: Any | None = None,
+    target_model_path: str | None = None,
     tokenizer: Any | None = None,
     collect_activations_fn: Callable | None = None,
     merged_model_path: str | None = None,
@@ -132,6 +129,7 @@ def stage_validate(
         layer_indices: List of layer indices in the model
         hidden_dim: Model hidden dimension
         target_model: Loaded target model (for refusal check)
+        target_model_path: Target model path (for refusal cache)
         tokenizer: Tokenizer (for refusal check)
         collect_activations_fn: Function to collect layer activations
         merged_model_path: Path to merged model (for ridge validation)
@@ -295,6 +293,7 @@ def stage_validate(
                 layer_indices=layer_indices,
                 collect_activations_fn=collect_activations_fn,
                 backend=b,
+                target_model_path=target_model_path,
             )
 
             # Report raw refusal score and noise floor (dtype-derived).
