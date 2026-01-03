@@ -219,15 +219,21 @@ def percentile_array(arr: Any, p: float, backend: Backend) -> float:
     if lower_idx == upper_idx:
         # Exact index - use partition for O(n) complexity
         partitioned = backend.partition(arr, kth=lower_idx)
-        backend.eval(partitioned)
-        return float(backend.to_scalar(partitioned[lower_idx]))
+        lower_val_arr = backend.take(partitioned, backend.array([lower_idx]), axis=0)
+        lower_val_arr = backend.squeeze(lower_val_arr)
+        backend.eval(lower_val_arr)
+        return float(backend.to_scalar(lower_val_arr))
 
     # Need interpolation between two indices
     # For simplicity, use partial sort on the larger index
     partitioned = backend.partition(arr, kth=upper_idx)
-    backend.eval(partitioned)
-    lower_val = float(backend.to_scalar(partitioned[lower_idx]))
-    upper_val = float(backend.to_scalar(partitioned[upper_idx]))
+    lower_val_arr = backend.take(partitioned, backend.array([lower_idx]), axis=0)
+    upper_val_arr = backend.take(partitioned, backend.array([upper_idx]), axis=0)
+    lower_val_arr = backend.squeeze(lower_val_arr)
+    upper_val_arr = backend.squeeze(upper_val_arr)
+    backend.eval(lower_val_arr, upper_val_arr)
+    lower_val = float(backend.to_scalar(lower_val_arr))
+    upper_val = float(backend.to_scalar(upper_val_arr))
     fraction = position - float(lower_idx)
 
     return lower_val + (upper_val - lower_val) * fraction

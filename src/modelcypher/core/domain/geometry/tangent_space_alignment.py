@@ -251,14 +251,13 @@ class TangentSpaceAlignment:
 
         neighbors: list[list[int]] = []
         sorted_idx = b.argsort(distances, axis=1)
-        b.eval(sorted_idx)
-        for i in range(int(n)):
-            row = sorted_idx[i]
-            k_row = row[1 : k + 1]
-            row_list = b.tolist(k_row)
-            neighbors.append([int(idx) for idx in row_list])
-
-        return neighbors
+        k = max(0, int(k))
+        if k == 0:
+            return [[] for _ in range(int(n))]
+        neighbor_block = sorted_idx[:, 1 : k + 1]
+        b.eval(neighbor_block)
+        neighbors_raw = b.tolist(neighbor_block)
+        return [[int(idx) for idx in row] for row in neighbors_raw]
 
     def _compute_tangent_basis(
         self,

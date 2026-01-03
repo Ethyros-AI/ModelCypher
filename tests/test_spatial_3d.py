@@ -30,11 +30,14 @@ Tests cover:
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.spatial_3d import (
     EuclideanConsistencyAnalyzer,
     EuclideanConsistencyResult,
@@ -67,7 +70,11 @@ from modelcypher.core.domain.geometry.spatial_3d import (
 from modelcypher.core.domain.agents.spatial_atlas import SpatialAxis
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
+
+
+def _eps(backend: "Backend", arr: "Array", scale: float = 1.0) -> float:
+    return division_epsilon(backend, arr) * max(1.0, abs(scale))
 
 
 # =============================================================================
@@ -138,9 +145,10 @@ class TestBackendNanToNum:
         b.eval(result)
 
         result_np = b.to_numpy(result)
-        assert abs(result_np[0] - 1.0) < 1e-5
-        assert abs(result_np[1] - 0.0) < 1e-5  # NaN replaced with 0
-        assert abs(result_np[2] - 3.0) < 1e-5
+        eps = _eps(b, result, scale=3.0)
+        assert abs(result_np[0] - 1.0) <= eps
+        assert abs(result_np[1] - 0.0) <= eps  # NaN replaced with 0
+        assert abs(result_np[2] - 3.0) <= eps
 
     def test_replaces_posinf(self, any_backend: "Backend") -> None:
         """Should replace positive infinity."""
@@ -152,9 +160,10 @@ class TestBackendNanToNum:
         b.eval(result)
 
         result_np = b.to_numpy(result)
-        assert abs(result_np[0] - 1.0) < 1e-5
-        assert abs(result_np[1] - 999.0) < 1e-5
-        assert abs(result_np[2] - 3.0) < 1e-5
+        eps = _eps(b, result, scale=999.0)
+        assert abs(result_np[0] - 1.0) <= eps
+        assert abs(result_np[1] - 999.0) <= eps
+        assert abs(result_np[2] - 3.0) <= eps
 
 
 class TestBackendCorrcoef:
@@ -168,7 +177,8 @@ class TestBackendCorrcoef:
         b.eval(x, y)
 
         corr = _backend_corrcoef(b, x, y)
-        assert abs(corr - 1.0) < 0.01
+        eps = _eps(b, x)
+        assert abs(corr - 1.0) <= eps
 
     def test_perfect_negative_correlation(self, any_backend: "Backend") -> None:
         """Perfect negative correlation should return -1.0."""
@@ -178,18 +188,19 @@ class TestBackendCorrcoef:
         b.eval(x, y)
 
         corr = _backend_corrcoef(b, x, y)
-        assert abs(corr + 1.0) < 0.01
+        eps = _eps(b, x)
+        assert abs(corr + 1.0) <= eps
 
     def test_zero_correlation(self, any_backend: "Backend") -> None:
         """Uncorrelated data should have correlation near 0."""
         b = any_backend
-        x = b.array([1.0, 2.0, 3.0, 4.0, 5.0])
-        y = b.array([5.0, 2.0, 4.0, 1.0, 3.0])  # Shuffled
+        x = b.array([1.0, -1.0, 1.0, -1.0])
+        y = b.array([1.0, 1.0, -1.0, -1.0])
         b.eval(x, y)
 
         corr = _backend_corrcoef(b, x, y)
-        # Should be relatively low - exact value depends on the specific values
-        assert abs(corr) <= 0.6
+        eps = _eps(b, x)
+        assert abs(corr) <= eps
 
     def test_constant_array_returns_zero(self, any_backend: "Backend") -> None:
         """Constant arrays have zero standard deviation, return 0."""
@@ -222,7 +233,8 @@ class TestBackendVectorNorm:
         b.eval(v)
 
         norm = _backend_vector_norm(b, v)
-        assert abs(norm - 1.0) < 1e-5
+        eps = _eps(b, v)
+        assert abs(norm - 1.0) <= eps
 
     def test_known_norm(self, any_backend: "Backend") -> None:
         """Known vector should have correct norm."""
@@ -231,7 +243,8 @@ class TestBackendVectorNorm:
         b.eval(v)
 
         norm = _backend_vector_norm(b, v)
-        assert abs(norm - 5.0) < 1e-5
+        eps = _eps(b, v, scale=5.0)
+        assert abs(norm - 5.0) <= eps
 
     def test_zero_vector(self, any_backend: "Backend") -> None:
         """Zero vector should have norm 0."""
@@ -240,7 +253,8 @@ class TestBackendVectorNorm:
         b.eval(v)
 
         norm = _backend_vector_norm(b, v)
-        assert abs(norm) < 1e-5
+        eps = _eps(b, v)
+        assert abs(norm) <= eps
 
 
 class TestBackendVectorDot:
@@ -254,7 +268,8 @@ class TestBackendVectorDot:
         b.eval(v1, v2)
 
         dot = _backend_vector_dot(b, v1, v2)
-        assert abs(dot) < 1e-5
+        eps = _eps(b, v1)
+        assert abs(dot) <= eps
 
     def test_parallel_vectors(self, any_backend: "Backend") -> None:
         """Parallel unit vectors have dot product 1."""
@@ -264,7 +279,8 @@ class TestBackendVectorDot:
         b.eval(v1, v2)
 
         dot = _backend_vector_dot(b, v1, v2)
-        assert abs(dot - 1.0) < 1e-5
+        eps = _eps(b, v1)
+        assert abs(dot - 1.0) <= eps
 
     def test_known_dot(self, any_backend: "Backend") -> None:
         """Known vectors should have correct dot product."""
@@ -275,7 +291,8 @@ class TestBackendVectorDot:
 
         dot = _backend_vector_dot(b, v1, v2)
         expected = 1*4 + 2*5 + 3*6  # = 32
-        assert abs(dot - expected) < 1e-5
+        eps = _eps(b, v1, scale=expected)
+        assert abs(dot - expected) <= eps
 
 
 class TestBackendVarStd:
@@ -289,7 +306,8 @@ class TestBackendVarStd:
 
         var = _backend_var(b, arr)
         # Mean = 5.0, Variance = 4.0
-        assert abs(var - 4.0) < 0.1
+        eps = _eps(b, arr, scale=4.0)
+        assert abs(var - 4.0) <= eps
 
     def test_std_is_sqrt_variance(self, any_backend: "Backend") -> None:
         """Standard deviation should be sqrt of variance."""
@@ -299,7 +317,9 @@ class TestBackendVarStd:
 
         var = _backend_var(b, arr)
         std = _backend_std(b, arr)
-        assert abs(std - math.sqrt(var)) < 1e-5
+        expected = sqrt_scalar(var, b)
+        eps = _eps(b, arr, scale=expected)
+        assert abs(std - expected) <= eps
 
     def test_constant_array_zero_variance(self, any_backend: "Backend") -> None:
         """Constant array should have zero variance."""
@@ -308,7 +328,8 @@ class TestBackendVarStd:
         b.eval(arr)
 
         var = _backend_var(b, arr)
-        assert abs(var) < 1e-5
+        eps = _eps(b, arr)
+        assert abs(var) <= eps
 
 
 class TestBackendClip:
@@ -324,11 +345,12 @@ class TestBackendClip:
         b.eval(result)
 
         result_np = b.to_numpy(result)
-        assert abs(result_np[0] - 0.0) < 1e-5  # -5 clipped to 0
-        assert abs(result_np[1] - 0.5) < 1e-5  # 0.5 unchanged
-        assert abs(result_np[2] - 1.0) < 1e-5  # 10 clipped to 1
-        assert abs(result_np[3] - 0.0) < 1e-5  # 0 unchanged
-        assert abs(result_np[4] - 1.0) < 1e-5  # 1 unchanged
+        eps = _eps(b, result, scale=1.0)
+        assert abs(result_np[0] - 0.0) <= eps  # -5 clipped to 0
+        assert abs(result_np[1] - 0.5) <= eps  # 0.5 unchanged
+        assert abs(result_np[2] - 1.0) <= eps  # 10 clipped to 1
+        assert abs(result_np[3] - 0.0) <= eps  # 0 unchanged
+        assert abs(result_np[4] - 1.0) <= eps  # 1 unchanged
 
 
 class TestScalarNanInf:

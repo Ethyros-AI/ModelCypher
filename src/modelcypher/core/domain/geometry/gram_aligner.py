@@ -330,7 +330,7 @@ class GramAligner:
         candidates.append((rel_residual, F_eig, "eigendecomposition"))
 
         # Method 4: Pseudoinverse solve (robust for rank-deficient cases)
-        F_pinv, pinv_diag = safe_pinv(b, source_centered, rcond=reg_threshold)
+        F_pinv, _pinv_diag = safe_pinv(b, source_centered, rcond=reg_threshold)
         F_pinv = b.matmul(F_pinv, target_centered)
         b.eval(F_pinv)
         reconstructed = b.matmul(source_centered, F_pinv)
@@ -482,7 +482,7 @@ class GramAligner:
         # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
         # Uses sqrt(machine_epsilon) as the convergence criterion
         # This is the standard numerical tolerance for iterative algorithms
-        precision_threshold = division_epsilon(b, source_activations)
+        precision_threshold = regularization_epsilon(b, source_activations)
 
         # PARADIGM SHIFT: CKA = 1.0 is achievable at ANY precision.
         # The algorithm aligns SHARED RELATIONAL SPACE (signal), not full
@@ -834,7 +834,7 @@ class GramAligner:
 
         # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
         # Uses sqrt(machine_epsilon) as the convergence criterion
-        precision_threshold = division_epsilon(b, source_centered)
+        precision_threshold = regularization_epsilon(b, source_centered)
 
         # Use centering matrix for CKA computation
         H = self._centering_matrix(n_samples)

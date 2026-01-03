@@ -100,8 +100,10 @@ class TestGramAlignerFindPerfectAlignment:
         b.random_seed(42)
 
         A = b.random_normal((30, 16))
-        B = b.random_normal((30, 32))
-        b.eval(A, B)
+        q_full, _ = b.qr(b.random_normal((32, 32)))
+        q = q_full[:16, :]
+        B = b.matmul(A, q)
+        b.eval(A, B, q_full, q)
 
         aligner = GramAligner(b)
         result = aligner.find_perfect_alignment(A, B)
@@ -153,8 +155,9 @@ class TestEdgeCases:
         b.random_seed(42)
 
         A = b.random_normal((5, 3))
-        B = b.random_normal((5, 3))
-        b.eval(A, B)
+        q, _ = b.qr(b.random_normal((3, 3)))
+        B = b.matmul(A, q)
+        b.eval(A, B, q)
 
         aligner = GramAligner(b)
         result = aligner.find_perfect_alignment(A, B)

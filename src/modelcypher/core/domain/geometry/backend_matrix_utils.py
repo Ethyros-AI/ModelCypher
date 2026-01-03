@@ -111,20 +111,14 @@ class BackendMatrixUtils:
             # Find median of positive values (approximate)
             n = flat.shape[0] if hasattr(flat, "shape") else len(flat)
             mid_idx = n // 2
-            median_val = sorted_dists[mid_idx]
+            median_val = self.backend.take(sorted_dists, self.backend.array([mid_idx]), axis=0)
+            median_val = self.backend.squeeze(median_val)
             self.backend.eval(median_val)
             median_dist = float(self.backend.to_scalar(median_val))
             div_eps = division_epsilon(self.backend, sq_dists)
             gamma = 1.0 / (2.0 * (median_dist + div_eps))
 
             # exp(-gamma * sq_dists)
-            neg_gamma = self.backend.full(sq_dists.shape, -gamma)
-            scaled = (
-                self.backend.matmul(sq_dists, neg_gamma)
-                if hasattr(sq_dists, "shape")
-                else sq_dists * (-gamma)
-            )
-            # Actually just multiply element-wise
             scaled = self._scalar_multiply(sq_dists, -gamma)
             return self.backend.exp(scaled)
         else:
@@ -132,7 +126,6 @@ class BackendMatrixUtils:
 
     def _scalar_multiply(self, arr: Array, scalar: float) -> Array:
         """Multiply array by scalar using backend operations."""
-        self.backend.full(arr.shape, scalar)
         # Element-wise multiply via where trick or direct
         # Most backends support arr * scalar directly, but we use backend ops
         # Create ones and scale

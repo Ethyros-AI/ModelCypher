@@ -1008,23 +1008,26 @@ class BackendPathGeometry:
 
     def _to_scalar(self, val: Any) -> float:
         """Convert backend scalar to Python float."""
-        if hasattr(val, "item"):
-            return float(val.item())
-        if hasattr(val, "tolist"):
-            result = val.tolist()
-            return float(result) if not isinstance(result, list) else float(result[0])
-        return float(val)
+        if hasattr(val, "shape") or hasattr(val, "item") or hasattr(val, "tolist"):
+            self.backend.eval(val)
+            return float(self.backend.to_scalar(val))
+        try:
+            return float(val)
+        except TypeError:
+            if isinstance(val, (list, tuple)) and val:
+                return float(val[0])
+            return 0.0
 
     def _to_list(self, arr: Any) -> list[float]:
         """Convert backend array to Python list."""
-        if hasattr(arr, "tolist"):
-            return arr.tolist()
+        if hasattr(arr, "shape") or hasattr(arr, "tolist"):
+            return self.backend.tolist(arr)
         return list(arr)
 
     def _to_nested_list(self, arr: Any) -> list[list[float]]:
         """Convert 2D backend array to nested Python list."""
-        if hasattr(arr, "tolist"):
-            return arr.tolist()
+        if hasattr(arr, "shape") or hasattr(arr, "tolist"):
+            return self.backend.tolist(arr)
         return [list(row) for row in arr]
 
 
