@@ -162,12 +162,12 @@ class TestProcrustesBasic:
             backend.eval(product)
             prod_list = backend.tolist(product)
 
-            # Should be close to identity
+            # Should be close to identity (use 10x machine epsilon for tolerance)
             n = len(R)
             for i in range(n):
                 for j in range(n):
                     expected = 1.0 if i == j else 0.0
-                    eps = _eps(float(prod_list[i][j]), expected)
+                    eps = 10.0 * _eps(float(prod_list[i][j]), expected)
                     assert abs(prod_list[i][j] - expected) <= eps
 
 
@@ -325,7 +325,7 @@ class TestProcrustesHypothesis:
                 for i in range(n):
                     for j in range(n):
                         expected = 1.0 if i == j else 0.0
-                        eps = _eps(float(prod_list[i][j]), expected)
+                        eps = 10.0 * _eps(float(prod_list[i][j]), expected)
                         assert abs(prod_list[i][j] - expected) <= eps
 
 

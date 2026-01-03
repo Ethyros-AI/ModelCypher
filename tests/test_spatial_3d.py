@@ -94,7 +94,7 @@ class TestBackendIsnan:
         result = _backend_isnan(b, arr)
         b.eval(result)
 
-        result_np = b.to_numpy(result)
+        result_np = b.tolist(result)
         assert not result_np[0]  # 1.0 is not NaN
         assert result_np[1]  # NaN
         assert not result_np[2]  # 3.0 is not NaN
@@ -109,7 +109,7 @@ class TestBackendIsnan:
         result = _backend_isnan(b, arr)
         b.eval(result)
 
-        result_np = b.to_numpy(result)
+        result_np = b.tolist(result)
         assert not any(result_np)
 
 
@@ -125,7 +125,7 @@ class TestBackendIsinf:
         result = _backend_isinf(b, arr)
         b.eval(result)
 
-        result_np = b.to_numpy(result)
+        result_np = b.tolist(result)
         assert not result_np[0]  # 1.0 is not inf
         assert result_np[1]  # 1e39 is effectively inf
         assert result_np[2]  # -1e39 is effectively -inf
@@ -144,7 +144,7 @@ class TestBackendNanToNum:
         result = _backend_nan_to_num(b, arr, nan_val=0.0)
         b.eval(result)
 
-        result_np = b.to_numpy(result)
+        result_np = b.tolist(result)
         eps = _eps(b, result, scale=3.0)
         assert abs(result_np[0] - 1.0) <= eps
         assert abs(result_np[1] - 0.0) <= eps  # NaN replaced with 0
@@ -159,7 +159,7 @@ class TestBackendNanToNum:
         result = _backend_nan_to_num(b, arr, posinf_val=999.0)
         b.eval(result)
 
-        result_np = b.to_numpy(result)
+        result_np = b.tolist(result)
         eps = _eps(b, result, scale=999.0)
         assert abs(result_np[0] - 1.0) <= eps
         assert abs(result_np[1] - 999.0) <= eps
@@ -344,7 +344,7 @@ class TestBackendClip:
         result = _backend_clip(b, arr, 0.0, 1.0)
         b.eval(result)
 
-        result_np = b.to_numpy(result)
+        result_np = b.tolist(result)
         eps = _eps(b, result, scale=1.0)
         assert abs(result_np[0] - 0.0) <= eps  # -5 clipped to 0
         assert abs(result_np[1] - 0.5) <= eps  # 0.5 unchanged

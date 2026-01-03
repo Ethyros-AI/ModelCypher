@@ -57,8 +57,12 @@ ArrayLike = list[float] | Sequence[float]
 
 def _to_list(arr: ArrayLike) -> list[float]:
     """Convert array-like to Python list, handling MLX arrays."""
-    if hasattr(arr, "tolist"):
-        return arr.tolist()
+    if hasattr(arr, "shape") or hasattr(arr, "tolist"):
+        backend = get_default_backend()
+        try:
+            return backend.tolist(arr)
+        except Exception:
+            return arr.tolist()
     return list(arr)
 
 
@@ -71,11 +75,17 @@ def _len(arr: ArrayLike) -> int:
 
 def _to_scalar(val: Any) -> float:
     """Convert backend array scalar to Python float."""
-    if hasattr(val, "item"):
-        return float(val.item())
-    if hasattr(val, "tolist"):
-        result = val.tolist()
-        return float(result) if not isinstance(result, list) else float(result[0])
+    if hasattr(val, "shape") or hasattr(val, "item") or hasattr(val, "tolist"):
+        backend = get_default_backend()
+        try:
+            backend.eval(val)
+            return float(backend.to_scalar(val))
+        except Exception:
+            if hasattr(val, "item"):
+                return float(val.item())
+            if hasattr(val, "tolist"):
+                result = val.tolist()
+                return float(result) if not isinstance(result, list) else float(result[0])
     return float(val)
 
 

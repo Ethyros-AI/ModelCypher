@@ -331,13 +331,10 @@ def _project_gram_transport(
             _, S_source, _ = svd_source
             _, S_target, _ = svd_target
             b.eval(S_source, S_target)
-            # Use native tolist() for O(1) extraction
-            S_source_np = [float(x) for x in b.tolist(S_source)]
-            S_target_np = [float(x) for x in b.tolist(S_target)]
             shared_rank, _ = compute_shared_relational_rank(
                 b,
-                S_source_np,
-                S_target_np,
+                S_source,
+                S_target,
             )
             rank = max(1, min(shared_rank, int(G_source_row.shape[0]), int(G_target_row.shape[0])))
 

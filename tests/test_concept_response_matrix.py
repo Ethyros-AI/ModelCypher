@@ -1016,7 +1016,7 @@ class TestMeanPoolState:
         # Mean of [1,5,9], [2,6,10], [3,7,11], [4,8,12] = [5, 6, 7, 8]
         expected = [5.0, 6.0, 7.0, 8.0]
         for i, val in enumerate(expected):
-            assert abs(float(backend.to_numpy(result)[i]) - val) < _div_eps()
+            assert abs(float(backend.tolist(result)[i]) - val) < _div_eps()
 
     def test_1d_tensor_unchanged(self) -> None:
         """1D tensor should be unchanged."""

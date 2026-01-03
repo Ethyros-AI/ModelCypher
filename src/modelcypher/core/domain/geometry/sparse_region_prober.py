@@ -329,8 +329,14 @@ class SparseRegionProber:
     def _sum_squares(value: object) -> float:
         if isinstance(value, (list, tuple)):
             return sum(SparseRegionProber._sum_squares(item) for item in value)
-        if hasattr(value, "tolist"):
-            return SparseRegionProber._sum_squares(value.tolist())
+        if hasattr(value, "shape") or hasattr(value, "tolist"):
+            from modelcypher.core.domain._backend import get_default_backend
+
+            backend = get_default_backend()
+            try:
+                return SparseRegionProber._sum_squares(backend.tolist(value))
+            except Exception:
+                return SparseRegionProber._sum_squares(value.tolist())
         try:
             scalar = float(value)
         except (TypeError, ValueError):

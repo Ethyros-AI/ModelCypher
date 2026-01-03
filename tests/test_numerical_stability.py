@@ -344,7 +344,7 @@ class TestSvdViaEigh:
         _, S, _ = svd_via_eigh(b, A)
         b.eval(S)
 
-        S_np = b.to_numpy(S)
+        S_np = b.tolist(S)
         min_sv = float(min(S_np, default=0.0))
         eps = _eps(b, min_sv)
         assert all(s >= -eps for s in S_np)
@@ -359,7 +359,7 @@ class TestSvdViaEigh:
         _, S, _ = svd_via_eigh(b, A)
         b.eval(S)
 
-        S_np = [float(v) for v in b.to_numpy(S)]
+        S_np = [float(v) for v in b.tolist(S)]
         for i in range(len(S_np) - 1):
             eps = _eps(b, S_np[i], S_np[i + 1])
             assert S_np[i] >= S_np[i + 1] - eps
@@ -398,7 +398,7 @@ class TestSvdViaEigh:
         _, S, _ = svd_via_eigh(b, A)
         b.eval(S)
 
-        S_np = [float(v) for v in b.to_numpy(S)]
+        S_np = [float(v) for v in b.tolist(S)]
         # Should have 2 significant singular values, rest near zero
         # Count values above threshold
         max_sv = max(S_np, default=0.0)
@@ -1290,7 +1290,7 @@ class TestNumericalStabilityHypothesis:
         _, S, _ = svd_via_eigh(b, A)
         b.eval(S)
 
-        S_np = b.to_numpy(S)
+        S_np = b.tolist(S)
         eps = _eps(b, float(min(S_np, default=0.0)))
         assert all(s >= -eps for s in S_np), "Singular values must be non-negative"
 
@@ -1311,7 +1311,7 @@ class TestNumericalStabilityHypothesis:
         eps = division_epsilon(b, sv_base)
         sv_arr = sv_base + eps
         b.eval(sv_arr)
-        sv = [float(v) for v in b.to_numpy(sv_arr)]
+        sv = [float(v) for v in b.tolist(sv_arr)]
 
         erank = compute_entropy_effective_rank(b, sv)
 
@@ -1509,7 +1509,7 @@ class TestEdgeCaseEpsilons:
         b.eval(U, S, Vt)
 
         # Should have one dominant singular value
-        S_np = [float(v) for v in b.to_numpy(S)]
+        S_np = [float(v) for v in b.tolist(S)]
         assert S_np[0] > 0, "Largest singular value should be positive"
         # Condition number should be very high
         if S_np[-1] > 0:
@@ -1531,7 +1531,7 @@ class TestEdgeCaseEpsilons:
         b.eval(U, S, Vt)
 
         # Singular values should match diagonal (sorted descending)
-        S_np = sorted([float(v) for v in b.to_numpy(S)], reverse=True)
+        S_np = sorted([float(v) for v in b.tolist(S)], reverse=True)
         expected = sorted(diag_vals, reverse=True)
         for s, e in zip(S_np, expected):
             eps = _eps(b, s, e)

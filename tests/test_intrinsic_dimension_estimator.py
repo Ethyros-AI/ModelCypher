@@ -399,7 +399,7 @@ class TestSyntheticManifoldDimension:
             backend.random_seed(42 + i)
             point = backend.random_normal((3,))
             backend.eval(point)
-            point_np = backend.to_numpy(point)
+            point_np = backend.tolist(point)
             norm = math.sqrt(sum(x * x for x in point_np))
             eps = _eps(backend, norm)
             if norm > eps:

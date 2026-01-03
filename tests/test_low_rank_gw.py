@@ -54,7 +54,7 @@ class TestLowRankCoupling:
 
         assert P.shape == (n, m)
         # All entries should be positive
-        assert float(b.to_numpy(b.min(P))) > -1e-8
+        assert float(b.tolist(b.min(P))) > -1e-8
 
     def test_apply_left_shape(self, backend):
         """Test apply_left produces correct output shape."""
@@ -176,13 +176,13 @@ class TestLowRankGromovWasserstein:
         row_sums = b.sum(P, axis=1)
         b.eval(row_sums)
         expected_row = 1.0 / n
-        row_error = float(b.to_numpy(b.max(b.abs(row_sums - expected_row))))
+        row_error = float(b.tolist(b.max(b.abs(row_sums - expected_row))))
 
         # Check column sums (should sum to 1/m for uniform marginal)
         col_sums = b.sum(P, axis=0)
         b.eval(col_sums)
         expected_col = 1.0 / m
-        col_error = float(b.to_numpy(b.max(b.abs(col_sums - expected_col))))
+        col_error = float(b.tolist(b.max(b.abs(col_sums - expected_col))))
 
         # Should be approximately correct (within tolerance)
         assert row_error < 0.2, f"Row marginal error: {row_error}"
@@ -374,7 +374,7 @@ class TestMathematicalProperties:
         P = result.coupling.to_dense(b)
         b.eval(P)
 
-        min_val = float(b.to_numpy(b.min(P)))
+        min_val = float(b.tolist(b.min(P)))
         assert min_val >= -1e-8, f"Negative coupling entry: {min_val}"
 
     def test_convergence_improves_with_iterations(self, backend):

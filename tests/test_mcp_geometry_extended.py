@@ -442,8 +442,8 @@ class TestManifoldClusterTool:
         y_vals = backend.random_normal((20,))
         backend.eval(x_vals)
         backend.eval(y_vals)
-        x_np = backend.to_numpy(x_vals)
-        y_np = backend.to_numpy(y_vals)
+        x_np = backend.tolist(x_vals)
+        y_np = backend.tolist(y_vals)
         points = [
             {"x": float(x_np[i]), "y": float(y_np[i])} for i in range(20)
         ]

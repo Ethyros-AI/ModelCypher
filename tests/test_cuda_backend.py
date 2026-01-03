@@ -91,7 +91,7 @@ class MockTensor:
         backend = _get_backend()
         return MockTensor(backend.expand_dims(self._data, dim), self._dtype, self._device)
 
-    def to_numpy(self):
+    def tolist(self):
         return array_to_list(_get_backend(), self._data)
 
     def detach(self):
@@ -101,7 +101,7 @@ class MockTensor:
         return self
 
     def numpy(self):
-        return self.to_numpy()
+        return self.tolist()
 
 
 def create_mock_torch():
@@ -220,7 +220,7 @@ class TestCUDABackendCreateCausalMask:
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
             mask = backend.create_causal_mask(4)
-            data = mask.to_numpy()
+            data = mask.tolist()
 
             # Check diagonal is 0
             for i in range(4):
@@ -237,7 +237,7 @@ class TestCUDABackendCreateCausalMask:
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
             mask = backend.create_causal_mask(4)
-            data = mask.to_numpy()
+            data = mask.tolist()
 
             # Check lower triangle is 0
             for i in range(4):
@@ -255,7 +255,7 @@ class TestCUDABackendCreateCausalMask:
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
             mask = backend.create_causal_mask(4)
-            data = mask.to_numpy()
+            data = mask.tolist()
 
             # Check upper triangle is -inf
             for i in range(4):
@@ -273,7 +273,7 @@ class TestCUDABackendCreateCausalMask:
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
             mask = backend.create_causal_mask(1)
-            data = mask.to_numpy()
+            data = mask.tolist()
 
             assert len(data) == 1
             assert len(data[0]) == 1
@@ -290,7 +290,7 @@ class TestCUDABackendCreateCausalMask:
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
             mask = backend.create_causal_mask(128)
-            data = mask.to_numpy()
+            data = mask.tolist()
 
             assert len(data) == 128
             assert len(data[0]) == 128
@@ -320,7 +320,7 @@ class TestCUDABackendRandomCategorical:
             samples = backend.random_categorical(logits, num_samples=1)
 
             # Should return indices in valid range
-            sample_data = samples.to_numpy()
+            sample_data = samples.tolist()
             assert len(sample_data) == 1
             assert 0 <= sample_data[0] < 3
 
@@ -338,7 +338,7 @@ class TestCUDABackendRandomCategorical:
             logits = MockTensor([1.0, 2.0, 3.0])
             samples = backend.random_categorical(logits, num_samples=10)
 
-            sample_data = samples.to_numpy()
+            sample_data = samples.tolist()
             assert len(sample_data) == 10
             # All samples should be valid indices
             assert all(0 <= s < 3 for s in sample_data)
@@ -364,7 +364,7 @@ class TestCUDABackendRandomCategorical:
             )
             samples = backend.random_categorical(logits, num_samples=5)
 
-            sample_data = samples.to_numpy()
+            sample_data = samples.tolist()
             assert len(sample_data) == 3
             assert len(sample_data[0]) == 5
             # All samples should be valid indices
@@ -386,7 +386,7 @@ class TestCUDABackendRandomCategorical:
             logits = MockTensor([-100.0, -100.0, 100.0])
             samples = backend.random_categorical(logits, num_samples=100)
 
-            sample_data = samples.to_numpy()
+            sample_data = samples.tolist()
             # With such extreme logits, all samples should be index 2
             assert all(s == 2 for s in sample_data)
 
@@ -407,7 +407,7 @@ class TestCUDABackendRandomCategorical:
             logits = MockTensor([0.0, 1.0, 2.0])
             samples = backend.random_categorical(logits, num_samples=1000)
 
-            sample_data = samples.to_numpy()
+            sample_data = samples.tolist()
             counts = [0, 0, 0]
             for value in sample_data:
                 counts[value] += 1
@@ -430,7 +430,7 @@ class TestCUDABackendIntegration:
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
             mask = backend.create_causal_mask(4)
-            data = mask.to_numpy()
+            data = mask.tolist()
 
             # Expected structure for seq_len=4
             expected = [
@@ -453,7 +453,7 @@ class TestCUDABackendIntegration:
             importlib.reload(cuda_module)
             backend = cuda_module.CUDABackend()
             mask = backend.create_causal_mask(3)
-            mask_data = mask.to_numpy()
+            mask_data = mask.tolist()
 
             # Simulate attention scores + mask
             scores = [[1.0, 1.0, 1.0] for _ in range(3)]

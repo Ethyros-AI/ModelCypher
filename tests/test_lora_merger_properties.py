@@ -72,7 +72,7 @@ class MockBackend(Backend):
         return self._backend.eval(*arrays)
 
     def to_numpy(self, arr):
-        return self._backend.to_numpy(arr)
+        return self._backend.tolist(arr)
 
     def sum(self, arr, axis=None, keepdims=False):
         return self._backend.sum(arr, axis=axis, keepdims=keepdims)
@@ -120,43 +120,49 @@ class TestGeometricMergeMatrices:
 
     def test_single_matrix_returns_unchanged(self, backend):
         """Single matrix should be returned as-is."""
-        import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         matrix = default_backend.random_normal((8, 16))
-        matrix_np = default_backend.to_numpy(matrix)
+        default_backend.eval(matrix)
 
         result, proc_error, perm_quality = LoRAAdapterMerger._geometric_merge_matrices(
-            [matrix_np], backend
+            [matrix], backend
         )
 
-        result_np = default_backend.to_numpy(result)
+        default_backend.eval(result)
         eps = _div_eps()
-        assert result_np.shape == matrix_np.shape
-        assert np.allclose(result_np, matrix_np, atol=eps, rtol=0.0)
+        assert result.shape == matrix.shape
+        # Check arrays are close using backend operations
+        diff = default_backend.abs(result - matrix)
+        max_diff = default_backend.max(diff)
+        default_backend.eval(max_diff)
+        assert float(default_backend.to_scalar(max_diff)) <= eps
         assert abs(proc_error) < eps
         assert abs(perm_quality - 1.0) < eps
 
     def test_identical_matrices_return_same(self, backend):
         """Merging identical matrices should return approximately the same matrix."""
-        import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         matrix = default_backend.random_normal((8, 16))
-        matrix_np = default_backend.to_numpy(matrix)
+        default_backend.eval(matrix)
+        # Create copies via backend array construction from list
+        matrix_list = default_backend.tolist(matrix)
+        matrix1 = default_backend.array(matrix_list)
+        matrix2 = default_backend.array(matrix_list)
+        default_backend.eval(matrix1, matrix2)
 
         result, proc_error, perm_quality = LoRAAdapterMerger._geometric_merge_matrices(
-            [matrix_np.copy(), matrix_np.copy()], backend
+            [matrix1, matrix2], backend
         )
 
         eps = _div_eps()
-        assert result.shape == matrix_np.shape
+        assert result.shape == matrix.shape
         assert proc_error < eps, f"Self-merge error too high: {proc_error}"
         assert abs(perm_quality - 1.0) < eps
 
     def test_output_shape_preserved(self, backend):
         """Output shape should match input shape."""
-        import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         shapes = [(4, 8), (16, 4), (8, 8), (32, 64)]
@@ -164,11 +170,10 @@ class TestGeometricMergeMatrices:
         for shape in shapes:
             m1 = default_backend.random_normal(shape)
             m2 = default_backend.random_normal(shape)
-            m1_np = default_backend.to_numpy(m1)
-            m2_np = default_backend.to_numpy(m2)
+            default_backend.eval(m1, m2)
 
             result, _, _ = LoRAAdapterMerger._geometric_merge_matrices(
-                [m1_np, m2_np], backend
+                [m1, m2], backend
             )
 
             assert result.shape == shape, f"Shape mismatch: {result.shape} vs {shape}"
@@ -188,46 +193,48 @@ class TestGeometricMergeMatrices:
             [bias1, bias2], backend
         )
 
-        result_np = default_backend.to_numpy(result)
-        expected_np = default_backend.to_numpy(expected)
+        default_backend.eval(result)
+        result_list = default_backend.tolist(result)
+        expected_list = expected_data
         assert result.shape == bias1.shape
         eps = _div_eps()
-        assert abs(result_np[0] - expected_np[0]) < eps
-        assert abs(result_np[1] - expected_np[1]) < eps
+        assert abs(result_list[0] - expected_list[0]) < eps
+        assert abs(result_list[1] - expected_list[1]) < eps
         # 1D tensors should have default metrics
         assert abs(proc_error) < eps
         assert abs(perm_quality - 1.0) < eps
 
     def test_no_nan_in_output(self, backend):
         """Merge should not introduce NaN values."""
-        import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         m1 = default_backend.random_normal((8, 16))
         m2 = default_backend.random_normal((8, 16))
-        m1_np = default_backend.to_numpy(m1)
-        m2_np = default_backend.to_numpy(m2)
+        default_backend.eval(m1, m2)
 
         result, _, _ = LoRAAdapterMerger._geometric_merge_matrices(
-            [m1_np, m2_np], backend
+            [m1, m2], backend
         )
 
-        result_np = default_backend.to_numpy(result)
-        assert not np.isnan(result_np).any(), "Output contains NaN"
+        default_backend.eval(result)
+        isfinite_arr = default_backend.isfinite(result)
+        default_backend.eval(isfinite_arr)
+        isfinite_list = default_backend.tolist(isfinite_arr)
+        assert all(all(row) for row in isfinite_list), "Output contains NaN or Inf"
 
     def test_dtype_preserved(self, backend):
         """Output dtype should match input dtype."""
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         matrix = default_backend.random_normal((8, 16))
-        matrix_np = default_backend.to_numpy(matrix)
+        default_backend.eval(matrix)
 
         result, _, _ = LoRAAdapterMerger._geometric_merge_matrices(
-            [matrix_np], backend
+            [matrix], backend
         )
 
-        result_np = default_backend.to_numpy(result)
-        assert result_np.dtype == matrix_np.dtype
+        default_backend.eval(result)
+        assert default_backend.dtype(result) == default_backend.dtype(matrix)
 
 
 # =============================================================================
@@ -243,9 +250,11 @@ class TestProcrustesAlign:
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         matrix = default_backend.random_normal((8, 16))
-        matrix_np = default_backend.to_numpy(matrix)
-        source_arr = backend.array(matrix_np)
-        target_arr = backend.array(matrix_np)
+        default_backend.eval(matrix)
+        # Create identical copies using tolist
+        matrix_list = default_backend.tolist(matrix)
+        source_arr = backend.array(matrix_list)
+        target_arr = backend.array(matrix_list)
 
         rotated, error = LoRAAdapterMerger._procrustes_align(
             source_arr, target_arr, backend
@@ -255,27 +264,35 @@ class TestProcrustesAlign:
 
     def test_rotation_is_proper(self, backend):
         """Procrustes should produce proper rotation (det > 0)."""
-        import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         source = default_backend.random_normal((8, 8))
         target = default_backend.random_normal((8, 8))
-        source_np = default_backend.to_numpy(source)
-        target_np = default_backend.to_numpy(target)
-        source_arr = backend.array(source_np)
-        target_arr = backend.array(target_np)
+        default_backend.eval(source, target)
 
-        # Compute rotation matrix (extract from the algorithm)
-        M = target_np.T @ source_np
-        U, S, Vt = np.linalg.svd(M, full_matrices=False)
-        R = U @ Vt
+        # Compute rotation matrix using backend operations
+        M = default_backend.matmul(default_backend.transpose(target), source)
+        U, S, Vt = default_backend.svd(M)
+        R = default_backend.matmul(U, Vt)
+        default_backend.eval(R)
 
-        if np.linalg.det(R) < 0:
-            U[:, -1] *= -1
-            R = U @ Vt
+        det = default_backend.det(R)
+        default_backend.eval(det)
+        det_val = float(default_backend.to_scalar(det))
 
-        det = np.linalg.det(R)
-        assert det > 0, f"Rotation should have positive determinant, got {det}"
+        if det_val < 0:
+            # Flip last column of U
+            U_list = default_backend.tolist(U)
+            for row in U_list:
+                row[-1] *= -1
+            U = default_backend.array(U_list)
+            R = default_backend.matmul(U, Vt)
+            default_backend.eval(R)
+            det = default_backend.det(R)
+            default_backend.eval(det)
+            det_val = float(default_backend.to_scalar(det))
+
+        assert det_val > 0, f"Rotation should have positive determinant, got {det_val}"
 
     def test_output_shape_preserved(self, backend):
         """Output shape should match input shape."""
@@ -283,17 +300,17 @@ class TestProcrustesAlign:
         default_backend.random_seed(42)
         source = default_backend.random_normal((8, 16))
         target = default_backend.random_normal((8, 16))
-        source_np = default_backend.to_numpy(source)
-        target_np = default_backend.to_numpy(target)
-        source_arr = backend.array(source_np)
-        target_arr = backend.array(target_np)
+        default_backend.eval(source, target)
+        source_list = default_backend.tolist(source)
+        target_list = default_backend.tolist(target)
+        source_arr = backend.array(source_list)
+        target_arr = backend.array(target_list)
 
         rotated, _ = LoRAAdapterMerger._procrustes_align(
             source_arr, target_arr, backend
         )
 
-        rotated_np = backend.to_numpy(rotated)
-        assert rotated_np.shape == source_np.shape
+        assert rotated.shape == source.shape
 
     def test_error_is_normalized(self, backend):
         """Error should be normalized (relative to target norm)."""
@@ -301,10 +318,12 @@ class TestProcrustesAlign:
         default_backend.random_seed(42)
         source = default_backend.random_normal((8, 16))
         target = default_backend.random_normal((8, 16))
-        source_np = default_backend.to_numpy(source)
-        target_np = default_backend.to_numpy(target) * 100  # Large target
-        source_arr = backend.array(source_np)
-        target_arr = backend.array(target_np)
+        target = target * 100.0  # Large target
+        default_backend.eval(source, target)
+        source_list = default_backend.tolist(source)
+        target_list = default_backend.tolist(target)
+        source_arr = backend.array(source_list)
+        target_arr = backend.array(target_list)
 
         aligned, error = LoRAAdapterMerger._procrustes_align(
             source_arr, target_arr, backend
@@ -335,10 +354,11 @@ class TestPermutationAlign:
         default_backend.random_seed(42)
         source = default_backend.random_normal((8, 16))
         target = default_backend.random_normal((8, 16))
-        source_np = default_backend.to_numpy(source)
-        target_np = default_backend.to_numpy(target)
-        source_arr = backend.array(source_np)
-        target_arr = backend.array(target_np)
+        default_backend.eval(source, target)
+        source_list = default_backend.tolist(source)
+        target_list = default_backend.tolist(target)
+        source_arr = backend.array(source_list)
+        target_arr = backend.array(target_list)
 
         result = LoRAAdapterMerger._permutation_align(
             source_arr, target_arr, backend
@@ -353,8 +373,9 @@ class TestPermutationAlign:
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         matrix = default_backend.random_normal((8, 16))
-        matrix_np = default_backend.to_numpy(matrix)
-        arr = backend.array(matrix_np)
+        default_backend.eval(matrix)
+        matrix_list = default_backend.tolist(matrix)
+        arr = backend.array(matrix_list)
 
         result = LoRAAdapterMerger._permutation_align(arr, arr, backend)
 
@@ -371,40 +392,44 @@ class TestEdgeCases:
 
     def test_small_matrices(self, backend):
         """Should handle small (2x2) matrices."""
-        import numpy as np
         default_backend = get_default_backend()
         m1_data = [[1.0, 2.0], [3.0, 4.0]]
         m2_data = [[5.0, 6.0], [7.0, 8.0]]
         m1 = default_backend.array(m1_data, dtype="float32")
         m2 = default_backend.array(m2_data, dtype="float32")
-        m1_np = default_backend.to_numpy(m1)
-        m2_np = default_backend.to_numpy(m2)
+        default_backend.eval(m1, m2)
 
         result, _, _ = LoRAAdapterMerger._geometric_merge_matrices(
-            [m1_np, m2_np], backend
+            [m1, m2], backend
         )
 
         assert result.shape == (2, 2)
-        result_np = default_backend.to_numpy(result)
-        assert not np.isnan(result_np).any()
+        default_backend.eval(result)
+        isfinite_arr = default_backend.isfinite(result)
+        default_backend.eval(isfinite_arr)
+        isfinite_list = default_backend.tolist(isfinite_arr)
+        assert all(all(row) for row in isfinite_list), "Output contains NaN"
 
     def test_three_way_merge(self, backend):
         """Should handle merging 3 adapters."""
-        import numpy as np
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         matrices = []
         for _ in range(3):
             m = default_backend.random_normal((8, 16))
-            matrices.append(default_backend.to_numpy(m))
+            default_backend.eval(m)
+            matrices.append(m)
 
         result, proc_error, perm_quality = LoRAAdapterMerger._geometric_merge_matrices(
             matrices, backend
         )
 
         assert result.shape == (8, 16)
-        result_np = default_backend.to_numpy(result)
-        assert not np.isnan(result_np).any()
+        default_backend.eval(result)
+        isfinite_arr = default_backend.isfinite(result)
+        default_backend.eval(isfinite_arr)
+        isfinite_list = default_backend.tolist(isfinite_arr)
+        assert all(all(row) for row in isfinite_list), "Output contains NaN"
         # Should have some quality metrics
         assert 0.0 <= perm_quality <= 1.0 + _div_eps()
 
@@ -419,7 +444,7 @@ class TestRegressionCases:
 
     def test_merge_reduces_variance(self, backend):
         """Merge output variance should remain finite."""
-        import numpy as np
+        import math
         default_backend = get_default_backend()
         default_backend.random_seed(42)
         # Create matrices with high variance
@@ -432,16 +457,18 @@ class TestRegressionCases:
         result, _, _ = LoRAAdapterMerger._geometric_merge_matrices(
             [m1_scaled, m2_scaled], backend
         )
+        default_backend.eval(result)
 
-        # Convert to numpy for variance calculation
-        m1_np = default_backend.to_numpy(m1_scaled)
-        m2_np = default_backend.to_numpy(m2_scaled)
-        result_np = default_backend.to_numpy(result)
+        # Compute variance using backend: var = mean(x²) - mean(x)²
+        def compute_var(arr):
+            mean_val = default_backend.mean(arr)
+            mean_sq = default_backend.mean(arr * arr)
+            default_backend.eval(mean_val, mean_sq)
+            return float(default_backend.to_scalar(mean_sq)) - float(default_backend.to_scalar(mean_val)) ** 2
 
-        # Merged result should have lower or similar variance
-        input_var = (np.var(m1_np) + np.var(m2_np)) / 2
-        output_var = np.var(result_np)
+        input_var = (compute_var(m1_scaled) + compute_var(m2_scaled)) / 2
+        output_var = compute_var(result)
 
-        assert np.isfinite(input_var)
-        assert np.isfinite(output_var)
+        assert math.isfinite(input_var)
+        assert math.isfinite(output_var)
         assert output_var >= 0.0

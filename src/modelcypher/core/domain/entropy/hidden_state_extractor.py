@@ -38,6 +38,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
 
@@ -409,7 +411,11 @@ class HiddenStateExtractor:
                 self._neuron_activations[layer] = []
 
             # Convert to list of floats for storage
-            activation_vector = state.tolist()
+            backend = get_default_backend()
+            try:
+                activation_vector = backend.tolist(state)
+            except Exception:
+                activation_vector = state.tolist()
             self._neuron_activations[layer].append(activation_vector)
 
         self._prompt_count += 1

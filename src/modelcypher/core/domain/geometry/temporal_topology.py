@@ -505,7 +505,11 @@ def extract_temporal_activations(
             mx.eval(hidden)
 
             # Get last token's activation
-            act = hidden[0, -1, :].tolist()
+            try:
+                backend = get_default_backend()
+                act = backend.tolist(hidden[0, -1, :])
+            except Exception:
+                act = hidden[0, -1, :].tolist()
             activations[anchor.id] = act
 
         except Exception as e:

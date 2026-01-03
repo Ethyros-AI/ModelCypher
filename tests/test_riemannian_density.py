@@ -206,10 +206,12 @@ class TestRiemannianDensityEstimator:
         volume = estimator.estimate_concept_volume("test_concept", simple_gaussian_samples)
 
         assert volume.concept_id == "test_concept"
-        assert volume.dimension == simple_gaussian_samples.shape[1]
+        sample_dim = len(simple_gaussian_samples[0]) if simple_gaussian_samples else 0
+        assert volume.dimension == sample_dim
         assert volume.num_samples == len(simple_gaussian_samples)
-        assert volume.centroid.shape == (simple_gaussian_samples.shape[1],)
-        assert volume.covariance.shape == (volume.dimension, volume.dimension)
+        assert len(volume.centroid) == sample_dim
+        assert len(volume.covariance) == volume.dimension
+        assert all(len(row) == volume.dimension for row in volume.covariance)
 
     def test_density_at_centroid_is_maximum(self, simple_gaussian_samples):
         """Density should be highest at centroid."""
@@ -257,8 +259,9 @@ class TestRiemannianDensityEstimator:
 
         assert volume.num_samples == 1
         assert volume.geodesic_radius == 0.0
-        # Use pytest.approx for comparison
-        assert list(volume.centroid) == pytest.approx(single_list[0])
+        # Use pytest.approx for comparison - centroid may contain arrays
+        centroid_list = [float(c) if hasattr(c, 'item') else float(c) for c in volume.centroid]
+        assert centroid_list == pytest.approx(single_list[0])
 
     def test_mahalanobis_distance_at_centroid(self, simple_gaussian_samples):
         """Mahalanobis distance at centroid should be zero."""
@@ -341,11 +344,12 @@ class TestConceptVolumeRelation:
         relation_similar = estimator.compute_relation(vol_a, vol_b)
 
         # Create orthogonal subspace (rotate samples_b by 90 degrees in first 2 dims)
-        samples_orthogonal = backend.array(backend.tolist(samples_b))
         # Swap and negate to create orthogonal vectors in first 2 dimensions
-        orthogonal_np = backend.tolist(samples_orthogonal)
-        orthogonal_np[:, 0], orthogonal_np[:, 1] = -orthogonal_np[:, 1].copy(), orthogonal_np[:, 0].copy()
-        samples_orthogonal = backend.array(orthogonal_np)
+        orthogonal_list = backend.tolist(samples_b)
+        for row in orthogonal_list:
+            old_0, old_1 = row[0], row[1]
+            row[0], row[1] = -old_1, old_0
+        samples_orthogonal = backend.array(orthogonal_list)
         backend.eval(samples_orthogonal)
 
         vol_orthogonal = estimator.estimate_concept_volume("C", backend.tolist(samples_orthogonal))
@@ -588,9 +592,10 @@ class TestRiemannianDensityProperties:
         direction = backend.ones((5,))
         direction = direction / backend.sqrt(backend.array(5.0))
         backend.eval(direction)
-        direction_np = backend.tolist(direction)
+        direction_list = backend.tolist(direction)
 
-        far_point = volume.centroid + direction_np * 2 * scale
+        # Element-wise: centroid + direction * 2 * scale
+        far_point = [c + d * 2 * scale for c, d in zip(volume.centroid, direction_list)]
         d_far = volume.density_at(far_point)
 
         assert d_far < d0

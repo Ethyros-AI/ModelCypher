@@ -40,14 +40,14 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 def _det_scalar(backend, matrix) -> float:
     det_value = backend.det(matrix)
     backend.eval(det_value)
-    return float(backend.to_numpy(det_value))
+    return float(backend.tolist(det_value))
 
 
 def _max_abs_diff(backend, left, right) -> float:
     diff = backend.abs(left - right)
     max_diff = backend.max(diff)
     backend.eval(max_diff)
-    return float(backend.to_numpy(max_diff))
+    return float(backend.tolist(max_diff))
 
 
 class TestEnsureProperRotation:
@@ -79,7 +79,7 @@ class TestEnsureProperRotation:
         # Create a reflection by flipping one axis
         u = backend.eye(n, dtype="float32")
         vt = backend.eye(n, dtype="float32")
-        u_np = backend.to_numpy(u)
+        u_np = backend.tolist(u)
         u_np[0, 0] = -1  # Makes det(U) = -1, so det(omega) = -1
         u = backend.array(u_np)
 
@@ -130,7 +130,7 @@ class TestEnsureProperRotation:
         n = 6
         # Simpler: just flip one column of U only
         u3 = backend.eye(n, dtype="float32")
-        u3_np = backend.to_numpy(u3)
+        u3_np = backend.tolist(u3)
         u3_np[:, 0] *= -1
         u3 = backend.array(u3_np)
         vt3 = backend.eye(n, dtype="float32")
@@ -182,8 +182,8 @@ class TestEnsureProperRotation:
 
         # Ensure it's a reflection
         q_det = backend.det(q)
-        if float(backend.to_numpy(q_det)) > 0:
-            q_np = backend.to_numpy(q)
+        if float(backend.tolist(q_det)) > 0:
+            q_np = backend.tolist(q)
             q_np[:, 0] *= -1
             q = backend.array(q_np)
 
@@ -216,8 +216,8 @@ class TestEnsureProperRotation:
 
         # Ensure it's a rotation not reflection
         q_det = backend.det(q)
-        if float(backend.to_numpy(q_det)) < 0:
-            q_np = backend.to_numpy(q)
+        if float(backend.tolist(q_det)) < 0:
+            q_np = backend.tolist(q)
             q_np[:, 0] *= -1
             q = backend.array(q_np)
 

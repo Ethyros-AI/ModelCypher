@@ -481,8 +481,8 @@ class TestAlignmentSignalDiagnostics:
         src_norm = backend.mean(backend.norm(source, axis=1))
         tgt_norm = backend.mean(backend.norm(target, axis=1))
         backend.eval(src_norm, tgt_norm)
-        src_norm_val = float(backend.to_numpy(src_norm))
-        tgt_norm_val = float(backend.to_numpy(tgt_norm))
+        src_norm_val = float(backend.tolist(src_norm))
+        tgt_norm_val = float(backend.tolist(tgt_norm))
         expected_ratio = src_norm_val / (tgt_norm_val + div_eps)
         tolerance = machine_epsilon(backend, source)
         assert abs(scale_ratio - expected_ratio) <= tolerance, (

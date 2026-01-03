@@ -127,8 +127,9 @@ class TestLayerLoRAWeights:
         # Verify it's the product B @ A
         expected = sample_weights.B @ sample_weights.A
         diff = backend.abs(delta_W - expected)
-        backend.eval(diff)
-        diff_max = float(backend.to_numpy(backend.max(diff)))
+        max_diff = backend.max(diff)
+        backend.eval(max_diff)
+        diff_max = float(backend.to_scalar(max_diff))
         assert diff_max <= _div_eps(diff_max)
 
     def test_effective_rank(self, sample_weights: LayerLoRAWeights) -> None:
@@ -276,8 +277,8 @@ class TestGeometricLoRAGenerator:
         profile = AnchorDistanceProfile(
             concept_id="test",
             anchor_ids=[f"anchor_{i}" for i in range(10)],
-            distances=backend.to_numpy(backend.random_uniform(shape=(10,))),
-            weights=backend.to_numpy(backend.ones((10,))) / 10,
+            distances=backend.tolist(backend.random_uniform(shape=(10,))),
+            weights=backend.tolist(backend.ones((10,)) / 10.0),
             source_curvature=None,
             source_volume=None,
         )

@@ -149,7 +149,7 @@ class TestComputeTransplantDelta:
 
         diff = backend.norm(output_after - output_before)
         backend.eval(diff)
-        diff_val = float(backend.to_numpy(diff))
+        diff_val = float(backend.tolist(diff))
 
         # Boundary output should be preserved (within numerical tolerance)
         eps = _eps(backend, diff_val)
@@ -447,7 +447,7 @@ class TestTransplantEndToEnd:
         _, singular_vals, _ = backend.svd(activations_boundary)
         backend.eval(singular_vals)
         rank_eps = machine_epsilon(backend, singular_vals)
-        rank = int((backend.to_numpy(singular_vals) > rank_eps).sum())
+        rank = int((backend.tolist(singular_vals) > rank_eps).sum())
         expected_null_dim = in_dim - rank
         assert result.null_dim == expected_null_dim
         # Spectral norm bounding enforces compositional stability
@@ -485,6 +485,6 @@ class TestTransplantEndToEnd:
         _, singular_vals, _ = backend.svd(activations_boundary)
         backend.eval(singular_vals)
         rank_eps = machine_epsilon(backend, singular_vals)
-        rank = int((backend.to_numpy(singular_vals) > rank_eps).sum())
+        rank = int((backend.tolist(singular_vals) > rank_eps).sum())
         expected_null_dim = in_dim - rank
         assert result.null_dim == expected_null_dim

@@ -279,8 +279,8 @@ class TestKLDivergenceInvariants:
         q_data = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
         backend.eval(p_data, q_data)
 
-        p = mx.array(backend.to_numpy(p_data), dtype=mx.float32)
-        q = mx.array(backend.to_numpy(q_data), dtype=mx.float32)
+        p = mx.array(backend.tolist(p_data), dtype=mx.float32)
+        q = mx.array(backend.tolist(q_data), dtype=mx.float32)
 
         result_pq = calc.compute(base_logits=p, adapted_logits=q, sampled_token=0)
         result_qp = calc.compute(base_logits=q, adapted_logits=p, sampled_token=0)

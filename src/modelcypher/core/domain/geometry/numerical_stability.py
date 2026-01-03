@@ -1312,7 +1312,7 @@ def _get_native_precision(backend: Backend, array: Array) -> str:
 
 def compute_entropy_effective_rank(
     backend: "Backend",
-    singular_values: list[float],
+    singular_values: "list[float] | Array",
 ) -> float:
     """Compute entropy-based effective rank from singular values.
 
@@ -1327,32 +1327,36 @@ def compute_entropy_effective_rank(
     Returns:
         Effective rank as a float. Floor to get integer rank.
     """
-    sv_array = backend.array(singular_values or [1.0])
+    sv_array = singular_values if hasattr(singular_values, "shape") else backend.array(singular_values or [])
+    sv_array = backend.reshape(sv_array, (-1,))
+    backend.eval(sv_array)
     eps = machine_epsilon(backend, sv_array)
     log_eps = safe_log_epsilon(backend, sv_array)
 
-    # Filter positive values
-    positive_sv = [s for s in singular_values if s > eps]
-    if not positive_sv:
-        return 0.0
-
-    total = sum(positive_sv)
+    zeros = backend.zeros_like(sv_array)
+    positive = backend.where(sv_array > eps, sv_array, zeros)
+    total_arr = backend.sum(positive)
+    backend.eval(total_arr)
+    total = float(backend.to_scalar(total_arr))
     if total <= eps:
         return 0.0
 
-    # Compute normalized probabilities
-    probs = [s / total for s in positive_sv]
-
-    # Shannon entropy using backend
-    entropy = -sum(p * log_scalar(p + log_eps, backend) for p in probs if p > 0)
+    probs = positive / total
+    log_eps_arr = backend.full(probs.shape, log_eps)
+    log_p = backend.log(probs + log_eps_arr)
+    p_log_p = probs * log_p
+    p_log_p = backend.where(positive > 0, p_log_p, zeros)
+    entropy_arr = -backend.sum(p_log_p)
+    backend.eval(entropy_arr)
+    entropy = float(backend.to_scalar(entropy_arr))
 
     return exp_scalar(entropy, backend)
 
 
 def compute_shared_relational_rank(
     backend: Backend,
-    source_singular_values: list[float],
-    target_singular_values: list[float],
+    source_singular_values: "list[float] | Array",
+    target_singular_values: "list[float] | Array",
 ) -> tuple[int, dict]:
     """Compute the shared relational rank between source and target.
 
@@ -1368,9 +1372,23 @@ def compute_shared_relational_rank(
         (shared_rank, diagnostics) where shared_rank is the integer dimension
         of the shared relational space.
     """
+    source_array = (
+        source_singular_values
+        if hasattr(source_singular_values, "shape")
+        else backend.array(source_singular_values or [])
+    )
+    target_array = (
+        target_singular_values
+        if hasattr(target_singular_values, "shape")
+        else backend.array(target_singular_values or [])
+    )
+    source_array = backend.reshape(source_array, (-1,))
+    target_array = backend.reshape(target_array, (-1,))
+    backend.eval(source_array, target_array)
+
     # Compute effective ranks
-    erank_source = compute_entropy_effective_rank(backend, source_singular_values)
-    erank_target = compute_entropy_effective_rank(backend, target_singular_values)
+    erank_source = compute_entropy_effective_rank(backend, source_array)
+    erank_target = compute_entropy_effective_rank(backend, target_array)
 
     # Integer ranks (floor of effective rank)
     rank_source = max(1, int(erank_source))
@@ -1383,25 +1401,29 @@ def compute_shared_relational_rank(
     shared_rank = max(rank_source, rank_target)
 
     # Also compute threshold-based ranks for comparison
-    if source_singular_values:
-        max_sv_s = max(source_singular_values)
-        source_array = backend.array(source_singular_values)
-        thresh_s = (
-            svd_rank_threshold(backend, source_array, max_dim=len(source_singular_values))
-            * max_sv_s
-        )
-        threshold_rank_s = sum(1 for s in source_singular_values if s > thresh_s)
+    source_len = int(source_array.shape[0])
+    if source_len > 0:
+        max_sv_s_arr = backend.max(source_array)
+        backend.eval(max_sv_s_arr)
+        max_sv_s = float(backend.to_scalar(max_sv_s_arr))
+        thresh_s = svd_rank_threshold(backend, source_array, max_dim=source_len) * max_sv_s
+        mask_s = source_array > thresh_s
+        count_s_arr = backend.sum(backend.astype(mask_s, "int32"))
+        backend.eval(count_s_arr)
+        threshold_rank_s = int(backend.to_scalar(count_s_arr))
     else:
         threshold_rank_s = 0
 
-    if target_singular_values:
-        max_sv_t = max(target_singular_values)
-        target_array = backend.array(target_singular_values)
-        thresh_t = (
-            svd_rank_threshold(backend, target_array, max_dim=len(target_singular_values))
-            * max_sv_t
-        )
-        threshold_rank_t = sum(1 for s in target_singular_values if s > thresh_t)
+    target_len = int(target_array.shape[0])
+    if target_len > 0:
+        max_sv_t_arr = backend.max(target_array)
+        backend.eval(max_sv_t_arr)
+        max_sv_t = float(backend.to_scalar(max_sv_t_arr))
+        thresh_t = svd_rank_threshold(backend, target_array, max_dim=target_len) * max_sv_t
+        mask_t = target_array > thresh_t
+        count_t_arr = backend.sum(backend.astype(mask_t, "int32"))
+        backend.eval(count_t_arr)
+        threshold_rank_t = int(backend.to_scalar(count_t_arr))
     else:
         threshold_rank_t = 0
 

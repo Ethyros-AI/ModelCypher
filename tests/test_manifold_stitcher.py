@@ -125,7 +125,7 @@ def orthogonal_matrix(draw, size: int = 3):
     arr = backend.array(data)
     # QR decomposition gives orthogonal Q
     q, _ = backend.qr(arr)
-    return backend.to_numpy(q)
+    return backend.tolist(q)
 
 
 # =============================================================================
@@ -318,11 +318,11 @@ class TestProperRotation:
 
         # Fix to proper rotation
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
+        result_np = backend.tolist(result)
 
         # Determinant should be +1
         det = backend.det(backend.array(result_np))
-        det_scalar = float(backend.to_numpy(det))
+        det_scalar = float(backend.tolist(det))
         eps = _eps(det_scalar)
         assert abs(det_scalar - 1.0) <= eps
 
@@ -337,7 +337,7 @@ class TestProperRotation:
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
+        result_np = backend.tolist(result)
 
         # R @ R^T should be identity
         # Tolerance: n * eps for n×n matrix operations (error accumulates)
@@ -479,7 +479,7 @@ class TestCKAMatrix:
         matrix, _, _ = ManifoldStitcher.compute_cka_matrix(model_fps, model_fps, layer=0)
 
         backend = get_default_backend()
-        matrix_np = backend.to_numpy(matrix)
+        matrix_np = backend.tolist(matrix)
 
         if matrix_np.size > 0:
             # Diagonal should be 1 (self-similarity)

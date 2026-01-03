@@ -562,8 +562,8 @@ class TestSVDProjection:
         )
 
         # Compute Frobenius norms
-        target_fro = float(backend.to_numpy(backend.sqrt(backend.sum(target ** 2))))
-        proj_fro = float(backend.to_numpy(backend.sqrt(backend.sum(result.projected ** 2))))
+        target_fro = float(backend.tolist(backend.sqrt(backend.sum(target ** 2))))
+        proj_fro = float(backend.tolist(backend.sqrt(backend.sum(result.projected ** 2))))
 
         # Frobenius norms should match target within precision limits
         eps = division_epsilon(backend, result.projected)

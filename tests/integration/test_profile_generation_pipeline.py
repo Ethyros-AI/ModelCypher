@@ -158,7 +158,7 @@ class TestProfileFeatureVectorPipeline:
         # Diagonal should be positive (squared norms)
         diag = backend.diag(gram)
         backend.eval(diag)
-        diag_list = backend.to_numpy(diag)
+        diag_list = backend.tolist(diag)
         for i in range(len(sample_points)):
             assert diag_list[i] > 0
 
