@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import struct
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -27,8 +26,12 @@ from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    atan2_scalar,
+    cos_scalar,
     division_epsilon,
     regularization_epsilon,
+    sin_scalar,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 
@@ -70,9 +73,8 @@ class GeometricFingerprint:
 
         mean = safe_arithmetic_mean(off_diag)
         variance = safe_arithmetic_mean([(val - mean) ** 2 for val in off_diag])
-        std = math.sqrt(variance)
-
         backend = get_default_backend()
+        std = sqrt_scalar(variance, backend)
         raw_bytes = b"".join(struct.pack("<f", float(val)) for val in gram)
         gram_hash = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -182,9 +184,9 @@ class GeometricFingerprint:
             if apq == 0.0:
                 continue
 
-            phi = 0.5 * math.atan2(2.0 * apq, aqq - app)
-            c = math.cos(phi)
-            s = math.sin(phi)
+            phi = 0.5 * atan2_scalar(2.0 * apq, aqq - app, backend)
+            c = cos_scalar(phi, backend)
+            s = sin_scalar(phi, backend)
 
             for i in range(n):
                 if i == p or i == q:

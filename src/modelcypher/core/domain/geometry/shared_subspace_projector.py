@@ -424,7 +424,7 @@ class SharedSubspaceProjector:
         error_sum_float = float(b.to_scalar(error_sum))
         target_norm_float = float(b.to_scalar(target_norm))
         alignment_error = (
-            math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
+            sqrt_scalar(error_sum_float / target_norm_float, b) if target_norm_float > 0 else 0.0
         )
 
         # Convert projections to lists
@@ -538,7 +538,7 @@ class SharedSubspaceProjector:
         b.eval(error_sum, target_norm_sq)
         error_sum_float = float(b.to_scalar(error_sum))
         target_norm_float = float(b.to_scalar(target_norm_sq))
-        alignment_error = math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
+        alignment_error = sqrt_scalar(error_sum_float / target_norm_float, b) if target_norm_float > 0 else 0.0
 
         # Compute alignment strengths using backend
         sum_prod = b.sum(source_projected * target_projected, axis=0)
@@ -658,7 +658,7 @@ class SharedSubspaceProjector:
         b.eval(error_sum, target_norm_sq)
         error_sum_float = float(b.to_scalar(error_sum))
         target_norm_float = float(b.to_scalar(target_norm_sq))
-        alignment_error = math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
+        alignment_error = sqrt_scalar(error_sum_float / target_norm_float, b) if target_norm_float > 0 else 0.0
 
         total_singular_arr = b.sum(singular_values)
         b.eval(total_singular_arr)
@@ -813,7 +813,7 @@ class SharedSubspaceProjector:
         centered: list[list[float]] = []
         for idx, row in enumerate(matrix):
             weight = max(0.0, float(weights[idx])) / weight_sum
-            scale = math.sqrt(weight) if weight > 0 else 0.0
+            scale = sqrt_scalar(weight, get_default_backend()) if weight > 0 else 0.0
             centered.append([(val - means[j]) * scale for j, val in enumerate(row)])
         return centered, means
 
@@ -970,7 +970,7 @@ class SharedSubspaceProjector:
 
         # Numerical floor derived from Python float dtype (float64)
         # Uses sqrt(machine_eps) consistent with division_epsilon pattern
-        eps = math.sqrt(sys.float_info.epsilon)
+        eps = sqrt_scalar(sys.float_info.epsilon, get_default_backend())
         max_gap = 0.0
         gap_index = 1  # Keep at least 1 component
 
@@ -1172,7 +1172,7 @@ class SharedSubspaceProjector:
         inv_sqrt = [0.0 for _ in range(dim * dim)]
         for i in range(dim):
             diag_val = cov[i * dim + i]
-            inv_sqrt[i * dim + i] = 1.0 / math.sqrt(max(diag_val, min_eigen))
+            inv_sqrt[i * dim + i] = 1.0 / sqrt_scalar(max(diag_val, min_eigen), get_default_backend())
         return inv_sqrt, eigen_float
 
     @staticmethod
@@ -1200,7 +1200,7 @@ class SharedSubspaceProjector:
                 for i in range(dim):
                     norm += new_vecs[i * k + j] * new_vecs[i * k + j]
                 # Use float_info.min as floor for sqrt to avoid zero division
-                norm = math.sqrt(max(norm, sys.float_info.min))
+                norm = sqrt_scalar(max(norm, sys.float_info.min), get_default_backend())
                 for i in range(dim):
                     eigenvectors[i * k + j] = new_vecs[i * k + j] / norm
 
@@ -1214,7 +1214,7 @@ class SharedSubspaceProjector:
                 norm = 0.0
                 for i in range(dim):
                     norm += eigenvectors[i * k + j] * eigenvectors[i * k + j]
-                norm = math.sqrt(max(norm, sys.float_info.min))
+                norm = sqrt_scalar(max(norm, sys.float_info.min), get_default_backend())
                 for i in range(dim):
                     eigenvectors[i * k + j] /= norm
 
@@ -1251,7 +1251,7 @@ class SharedSubspaceProjector:
             sigma = 0.0
             for i in range(m):
                 sigma += mvj[i] * mvj[i]
-            sigma = math.sqrt(max(sigma, sys.float_info.min))
+            sigma = sqrt_scalar(max(sigma, sys.float_info.min), get_default_backend())
             singular_values.append(sigma)
             for i in range(m):
                 u_vecs[i * k_dim + j] = mvj[i] / sigma
@@ -1366,4 +1366,4 @@ class SharedSubspaceProjector:
             diff = source[i] - target[i]
             error_sum += diff * diff
             target_norm += target[i] * target[i]
-        return math.sqrt(error_sum / target_norm) if target_norm > 0 else 0.0
+        return sqrt_scalar(error_sum / target_norm, get_default_backend()) if target_norm > 0 else 0.0

@@ -220,6 +220,8 @@ class SafeLoRAProjector:
                         continue
 
             # Keep original weight if no projection available
+            if hasattr(weight, "shape"):
+                backend.eval(weight)
             new_weights[key] = weight
 
         # Save projected weights using backend native I/O

@@ -191,6 +191,8 @@ class TestSafeLoRAProjector:
             "layers.0.lora_a.weight": backend.array([[5.0, 6.0]]),
         }
         backend.save_safetensors(str(adapter_file), adapter_weights)
+        baseline = backend.load_safetensors(str(adapter_file))
+        expected_a = array_to_list(backend, baseline["layers.0.lora_a.weight"])
 
         projector = SafeLoRAProjector(resources_path=tmp_path)
         result = asyncio.run(projector.project(model_id, adapter_path))
@@ -202,7 +204,6 @@ class TestSafeLoRAProjector:
         lora_b = array_to_list(backend, updated["layers.0.lora_b.weight"])
         lora_a = array_to_list(backend, updated["layers.0.lora_a.weight"])
         expected_b = array_to_list(backend, backend.zeros((2, 2)))
-        expected_a = array_to_list(backend, adapter_weights["layers.0.lora_a.weight"])
         assert lora_b == expected_b
         assert lora_a == expected_a
 

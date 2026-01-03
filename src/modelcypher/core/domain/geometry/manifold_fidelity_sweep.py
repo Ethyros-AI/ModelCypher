@@ -33,13 +33,15 @@ Metrics computed at each rank:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -334,7 +336,7 @@ class ManifoldFidelitySweep:
             norm_y = float(b.to_scalar(norm_y_arr))
 
             eps = division_epsilon(b, y)
-            return math.sqrt(error / norm_y) if norm_y > eps else 0.0
+            return sqrt_scalar(error / norm_y, b) if norm_y > eps else 0.0
 
         except Exception:
             return 0.0
@@ -420,7 +422,7 @@ class ManifoldFidelitySweep:
         var_y = b.sum((dy_vals - mean_y) ** 2)
         b.eval(cov, var_x, var_y)
 
-        denom = math.sqrt(float(b.to_scalar(var_x)) * float(b.to_scalar(var_y)))
+        denom = sqrt_scalar(float(b.to_scalar(var_x)) * float(b.to_scalar(var_y)), b)
         eps = division_epsilon(b, b.array([denom]))
         return float(b.to_scalar(cov)) / denom if denom > eps else 0.0
 

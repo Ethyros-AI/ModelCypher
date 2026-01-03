@@ -39,13 +39,14 @@ No user configuration - the geometry determines everything.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    ceil_scalar,
+    log2_scalar,
     machine_epsilon,
     regularization_epsilon,
     svd_via_eigh,
@@ -174,7 +175,9 @@ def _derive_min_samples(d: int) -> int:
     Uses log2(d) as the minimum - this is the information-theoretic
     minimum needed to distinguish d dimensions from random noise.
     """
-    return max(2, int(math.ceil(math.log2(max(2, d)))))
+    backend = get_default_backend()
+    log2_val = log2_scalar(float(max(2, d)), backend)
+    return max(2, int(ceil_scalar(log2_val, backend)))
 
 
 class NullSpaceFilter:

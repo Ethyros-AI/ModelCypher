@@ -15,6 +15,170 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Backend Protocol for GPU tensor operations.
+
+This is the abstract interface that keeps ALL computation on GPU. Domain code
+depends on this protocol, never on concrete backends or NumPy.
+
+Why No NumPy?
+-------------
+Every user has a GPU. NumPy forces CPU fallback and kills performance.
+The Backend protocol ensures tensors stay on-device (Metal/CUDA/TPU)
+throughout the entire computation pipeline.
+
+    # WRONG - Forces CPU fallback, breaks performance
+    import numpy as np
+    mean = np.mean(vectors, axis=0)
+    sorted_vals = np.sort(eigenvalues)[::-1]
+
+    # CORRECT - Stays on GPU
+    from modelcypher.core.domain._backend import get_default_backend
+    backend = get_default_backend()
+    mean = backend.mean(vectors, axis=0)
+    sorted_idx = backend.argsort(eigenvalues)
+    reversed_idx = backend.arange(n - 1, -1, -1)
+    sorted_vals = backend.take(eigenvalues, reversed_idx, axis=0)
+
+NumPy to Backend Migration Patterns
+-----------------------------------
+Common NumPy patterns and their Backend replacements:
+
++----------------------------------+------------------------------------------------------+
+| NumPy Pattern                    | Backend Replacement                                  |
++==================================+======================================================+
+| arr[::-1]                        | backend.take(arr, backend.arange(n-1, -1, -1), 0)    |
++----------------------------------+------------------------------------------------------+
+| arr[mask]                        | backend.where(mask, arr, backend.zeros_like(arr))    |
++----------------------------------+------------------------------------------------------+
+| np.sort(arr)                     | backend.sort(arr)                                    |
++----------------------------------+------------------------------------------------------+
+| np.linalg.det(A)                 | backend.det(A)                                       |
++----------------------------------+------------------------------------------------------+
+| for x in to_numpy(arr):          | Use backend.take(arr, idx, axis=0) for indexed access|
++----------------------------------+------------------------------------------------------+
+| arr.tolist()                     | backend.tolist(arr)                                  |
++----------------------------------+------------------------------------------------------+
+| result = np.array(python_list)   | result = backend.array(python_list)                  |
++----------------------------------+------------------------------------------------------+
+| arr[:, -1] *= -1                 | scale = backend.array([1.0]*(d-1) + [-1.0])          |
+|                                  | arr = arr * scale                                    |
++----------------------------------+------------------------------------------------------+
+
+Numerical Stability
+-------------------
+All numerical thresholds MUST be derived from the dtype, never hardcoded.
+Use the numerical_stability module:
+
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        machine_epsilon,      # Smallest x where 1.0 + x != 1.0
+        division_epsilon,     # Safe divisor threshold (~1e-7 for float32)
+        regularization_epsilon,  # Matrix regularization (~1e-4 for float32)
+    )
+
+    # WRONG - Hardcoded magic number
+    if denominator < 1e-8:
+        return 0.0
+
+    # CORRECT - Derived from dtype
+    eps = division_epsilon(backend, arr)
+    if denominator < eps:
+        return 0.0
+
+FloatInfo provides raw precision info:
+
+    info = backend.finfo(arr.dtype)
+    info.eps   # Machine epsilon
+    info.tiny  # Smallest positive usable number
+    info.max   # Largest finite number
+    info.min   # Most negative finite number
+
+Lazy Evaluation (MLX)
+---------------------
+MLX uses lazy evaluation - computations are recorded but not executed until
+explicitly evaluated. This enables kernel fusion but requires care:
+
+    # WRONG - Lazy array passed to Python, causes crash or wrong value
+    mean = backend.mean(arr)
+    print(float(mean))  # May print garbage or crash
+
+    # CORRECT - Evaluate before extracting Python values
+    mean = backend.mean(arr)
+    backend.eval(mean)
+    print(backend.to_scalar(mean))
+
+When to call eval():
+    - Before to_scalar(): Always eval() first
+    - Before tolist(): Always eval() first
+    - Before conditional logic: if float(to_scalar(x)) > threshold
+    - Between pipeline stages: eval() to materialize intermediate results
+    - NOT needed: Between pure backend operations (let MLX fuse them)
+
+The pattern is: compute -> eval -> extract
+
+    result = backend.sum(backend.exp(arr))  # Lazy
+    backend.eval(result)                     # Force computation
+    value = backend.to_scalar(result)        # Safe to extract
+
+Adding New Operations
+---------------------
+When the Backend doesn't have an operation you need, ADD IT. Don't work around
+missing ops with NumPy.
+
+Steps to add a new operation:
+
+1. Add signature to Backend protocol (this file):
+
+    def my_operation(self, array: Array, param: float) -> Array:
+        '''Docstring explaining the operation.'''
+        ...
+
+2. Implement in MLXBackend (src/modelcypher/backends/mlx_backend.py):
+
+    def my_operation(self, array: Array, param: float) -> Array:
+        import mlx.core as mx
+        return mx.my_mlx_equivalent(array, param)
+
+3. Implement in JAXBackend (src/modelcypher/backends/jax_backend.py):
+
+    def my_operation(self, array: Array, param: float) -> Array:
+        import jax.numpy as jnp
+        return jnp.my_jax_equivalent(array, param)
+
+4. Add tests (tests/test_backends.py):
+
+    def test_my_operation(backend):
+        arr = backend.array([1.0, 2.0, 3.0])
+        result = backend.my_operation(arr, 0.5)
+        expected = ...
+        assert_allclose(backend.to_numpy(result), expected)
+
+Available Implementations
+-------------------------
+- MLXBackend: Primary backend for macOS (Metal GPU acceleration)
+- JAXBackend: Secondary backend for Linux/TPU
+- NumPyBackend: Testing only - never use in production
+
+Usage:
+
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()  # Auto-selects MLX on Mac, JAX on Linux
+    arr = backend.array([[1, 2], [3, 4]])
+    result = backend.matmul(arr, backend.transpose(arr))
+
+Architecture Note
+-----------------
+This protocol is a PORT in hexagonal architecture. Domain code imports Backend,
+never concrete implementations. The adapters (MLXBackend, JAXBackend) are
+injected at runtime based on platform detection.
+
+    core/domain/ --> ports/Backend (this file) <-- backends/mlx_backend.py
+                                               <-- backends/jax_backend.py
+
+Dependencies point inward. Domain never imports backends directly.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

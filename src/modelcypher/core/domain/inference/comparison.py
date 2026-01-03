@@ -15,6 +15,55 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Checkpoint Comparison Coordinator for side-by-side model evaluation.
+
+Orchestrates parallel inference across multiple model checkpoints, enabling
+real-time comparison of model outputs. Designed for evaluating training
+progress, comparing merge candidates, or A/B testing model variants.
+
+Architecture:
+    The coordinator uses DualPathGenerator for inference, supporting both
+    base models and LoRA-adapted variants. An async event stream provides
+    token-by-token updates for streaming UI applications. An exclusive
+    asyncio.Lock ensures only one comparison runs at a time, preventing
+    resource contention on GPU memory.
+
+    Flow:
+        1. Acquire exclusive lease (asyncio.Lock)
+        2. Prefetch/load each checkpoint sequentially
+        3. Run inference on each checkpoint, streaming tokens
+        4. Yield metrics and complete responses
+        5. Release lease
+
+Event Types:
+    PREFETCH_STARTED: Model loading phase begins for a checkpoint.
+    PREFETCH_FINISHED: Model successfully loaded and ready for inference.
+    PREFETCH_FAILED: Model loading failed (e.g., corrupt weights, OOM).
+    CHECKPOINT_STARTED: Inference begins on a checkpoint.
+    TOKEN: Individual token generated. Use for streaming UI updates.
+    CHECKPOINT_FINISHED: Complete response with inference metrics.
+    CHECKPOINT_FAILED: Error during inference (e.g., generation failure).
+
+Usage:
+    coordinator = CheckpointComparisonCoordinator()
+
+    async for event in coordinator.compare(
+        checkpoints=["/path/to/base", "/path/to/merged"],
+        prompt="Explain quantum entanglement.",
+        config=inference_config,
+    ):
+        if event.type == EventType.TOKEN:
+            print(event.text, end="", flush=True)
+        elif event.type == EventType.CHECKPOINT_FINISHED:
+            print(f"\\n[{event.result.checkpoint_path}] Done")
+            print(f"  Tokens/sec: {event.result.metrics.tokens_per_second:.1f}")
+
+Note:
+    This module was ported from CheckpointComparisonCoordinator.swift.
+    The async generator pattern replaces Swift's AsyncStream, and the
+    asyncio.Lock replaces the actor-based exclusive lease mechanism.
+"""
 
 from __future__ import annotations
 
