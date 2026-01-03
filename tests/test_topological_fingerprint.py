@@ -76,7 +76,7 @@ class TestComputeEdgeCases:
         homology because there's no enclosed area.
         """
         collinear = [[float(i), 0.0] for i in range(5)]
-        fingerprint = TopologicalFingerprint.compute(collinear, max_dimension=1)
+        fingerprint = TopologicalFingerprint.compute(collinear)
         # Collinear points cannot form 1-cycles
         assert fingerprint.summary.cycle_count == 0
 
@@ -97,7 +97,7 @@ class TestBettiNumbers:
             [1.0, 0.0],
             [0.5, triangle_height],
         ]
-        fingerprint = TopologicalFingerprint.compute(triangle, max_dimension=1)
+        fingerprint = TopologicalFingerprint.compute(triangle)
         # Should have at least one component
         assert fingerprint.summary.component_count >= 1
         # The cycle may or may not persist depending on filtration
@@ -110,14 +110,14 @@ class TestBettiNumbers:
             [1.0, 1.0],
             [0.0, 1.0],
         ]
-        fingerprint = TopologicalFingerprint.compute(square, max_dimension=1)
+        fingerprint = TopologicalFingerprint.compute(square)
         # Eventually becomes one component
         assert fingerprint.summary.component_count >= 1
 
     def test_betti_persistence_threshold_filters_noise(self) -> None:
         """Betti numbers with threshold should filter short-lived features."""
         points = [[0.0, 0.0], [0.1, 0.0], [10.0, 0.0]]  # Two close, one far
-        fingerprint = TopologicalFingerprint.compute(points, max_dimension=1)
+        fingerprint = TopologicalFingerprint.compute(points)
 
         # With a high threshold, short-lived features are filtered
         betti_strict = fingerprint.diagram.betti_numbers(persistence_threshold=1.0)
@@ -138,7 +138,7 @@ class TestCompareFingerprints:
         Mathematical property: d(X, X) = 0 for any metric.
         """
         points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
-        fingerprint = TopologicalFingerprint.compute(points, max_dimension=1)
+        fingerprint = TopologicalFingerprint.compute(points)
         comparison = TopologicalFingerprint.compare(fingerprint, fingerprint)
 
         eps = _eps(
@@ -159,8 +159,8 @@ class TestCompareFingerprints:
         # Triangle (different topology)
         triangle = [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]]
 
-        fp_line = TopologicalFingerprint.compute(line, max_dimension=1)
-        fp_triangle = TopologicalFingerprint.compute(triangle, max_dimension=1)
+        fp_line = TopologicalFingerprint.compute(line)
+        fp_triangle = TopologicalFingerprint.compute(triangle)
 
         comparison = TopologicalFingerprint.compare(fp_line, fp_triangle)
         # Different shapes should have some distance
@@ -176,8 +176,8 @@ class TestCompareFingerprints:
         points_a = [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]]
         points_b = [[0.0, 0.0], [2.0, 0.0], [1.0, 2.0]]
 
-        fp_a = TopologicalFingerprint.compute(points_a, max_dimension=1)
-        fp_b = TopologicalFingerprint.compute(points_b, max_dimension=1)
+        fp_a = TopologicalFingerprint.compute(points_a)
+        fp_b = TopologicalFingerprint.compute(points_b)
 
         comp_ab = TopologicalFingerprint.compare(fp_a, fp_b)
         comp_ba = TopologicalFingerprint.compare(fp_b, fp_a)
@@ -244,7 +244,7 @@ class TestComparisonMetrics:
     def test_identical_structure_metrics(self) -> None:
         """Identical topologies should have zero distance and matching Betti numbers."""
         points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
-        fingerprint = TopologicalFingerprint.compute(points, max_dimension=1)
+        fingerprint = TopologicalFingerprint.compute(points)
         comparison = TopologicalFingerprint.compare(fingerprint, fingerprint)
 
         # Identical fingerprints have zero distance and matching Betti numbers
@@ -258,8 +258,8 @@ class TestComparisonMetrics:
         points = [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]]
         scaled = [[p[0] * 2, p[1] * 2] for p in points]
 
-        fp_orig = TopologicalFingerprint.compute(points, max_dimension=1)
-        fp_scaled = TopologicalFingerprint.compute(scaled, max_dimension=1)
+        fp_orig = TopologicalFingerprint.compute(points)
+        fp_scaled = TopologicalFingerprint.compute(scaled)
 
         comparison = TopologicalFingerprint.compare(fp_orig, fp_scaled)
         # Scaling preserves topology, so Betti numbers should match
@@ -444,8 +444,8 @@ class TestBackendTopologicalFingerprint:
         """Backend compute should match pure Python results."""
         points = [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0], [2.0, 0.5]]
 
-        pure = TopologicalFingerprint.compute(points, max_dimension=1)
-        gpu = backend_fp.compute(points, max_dimension=1)
+        pure = TopologicalFingerprint.compute(points)
+        gpu = backend_fp.compute(points)
 
         # Summary should match
         assert pure.summary.component_count == gpu.summary.component_count
@@ -460,8 +460,8 @@ class TestBackendTopologicalFingerprint:
         points_a = [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]]
         points_b = [[0.0, 0.0], [2.0, 0.0], [1.0, 2.0]]
 
-        fp_a = TopologicalFingerprint.compute(points_a, max_dimension=1)
-        fp_b = TopologicalFingerprint.compute(points_b, max_dimension=1)
+        fp_a = TopologicalFingerprint.compute(points_a)
+        fp_b = TopologicalFingerprint.compute(points_b)
 
         pure = TopologicalFingerprint.compare(fp_a, fp_b)
         gpu = backend_fp.compare(fp_a, fp_b)

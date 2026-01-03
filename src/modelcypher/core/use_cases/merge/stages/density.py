@@ -252,9 +252,8 @@ def _build_density_profile_from_activations(
         act_matrix = b.stack(act_vectors, axis=0)
         b.eval(act_matrix)
 
-        local_map = id_estimator.local_dimension_map(
-            act_matrix, k=None, deficiency_threshold=None
-        )
+        # All k_neighbors and threshold parameters are derived from data
+        local_map = id_estimator.local_dimension_map(act_matrix)
         # Keep dimensions on backend until we need individual values
         dims = local_map.dimensions
         b.eval(dims)

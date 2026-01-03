@@ -66,18 +66,13 @@ class DensityResult:
     k_neighbors: int
 
 
-@dataclass
-class DensityConfiguration:
-    """Configuration for density estimation.
-
-    Attributes:
-        k_neighbors: Number of neighbors for density estimation.
-            When None, derived as sqrt(n) clamped to [3, n-1].
-        normalize: Whether to normalize densities to [0, 1]
-    """
-
-    k_neighbors: int | None = None
-    normalize: bool = True
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from data:
+# - k_neighbors: derived from Berry & Sauer 2016: k >= ceil(log(n))
+# - No normalization: return raw geometric measurements
+# =============================================================================
 
 
 class DensityEstimator:
@@ -116,7 +111,6 @@ class DensityEstimator:
     def compute(
         self,
         points: "Array",
-        config: DensityConfiguration | None = None,
     ) -> DensityResult:
         """
         Compute local density for each point.
@@ -124,9 +118,11 @@ class DensityEstimator:
         Uses k-NN distance to estimate local density.
         Density is inversely proportional to the volume of the k-NN ball.
 
+        All parameters are derived from the data:
+        - k_neighbors: Berry & Sauer 2016 criterion: k >= ceil(log(n))
+
         Args:
             points: Point cloud [n_points, d]
-            config: Density estimation configuration
 
         Returns:
             DensityResult with per-point densities and k-NN info
@@ -135,17 +131,13 @@ class DensityEstimator:
             ValueError: If points is too small for k-NN
         """
         b = self.backend
-        config = config or DensityConfiguration()
+        import math
 
         n_points, d = points.shape
 
-        # Derive k from sqrt(n) when not specified
-        if config.k_neighbors is not None:
-            k = config.k_neighbors
-        else:
-            # sqrt(n) scaling with clamping to [3, n-1]
-            import math
-            k = max(3, min(n_points - 1, int(math.sqrt(n_points))))
+        # Derive k from Berry & Sauer 2016: k >= ceil(log(n))
+        # This ensures the k-NN graph is connected with high probability
+        k = max(1, min(n_points - 1, int(math.ceil(math.log(n_points)))))
 
         if n_points <= k:
             raise ValueError(
@@ -191,21 +183,8 @@ class DensityEstimator:
         densities = k / (radii ** d + density_eps)
         b.eval(densities)
 
-        # Normalize to [0, 1] if requested
-        if config.normalize:
-            min_density = b.min(densities)
-            max_density = b.max(densities)
-            b.eval(min_density, max_density)
-
-            range_density = max_density - min_density
-            range_eps = division_epsilon(b, range_density)
-            if float(b.to_scalar(range_density)) > range_eps:
-                densities = (densities - min_density) / range_density
-                b.eval(densities)
-            else:
-                # All same density, normalize to 0.5
-                densities = b.ones_like(densities) * 0.5
-                b.eval(densities)
+        # Return raw geometric measurements - no normalization
+        # (normalization is presentation, not geometry)
 
         return DensityResult(
             densities=densities,
@@ -218,17 +197,18 @@ class DensityEstimator:
         self,
         points: "Array",
         grid_size: int = 20,
-        config: DensityConfiguration | None = None,
     ) -> tuple["Array", "Array", "Array", "Array"]:
         """
         Compute density on a 3D grid for volumetric rendering.
 
         Useful for creating isosurface or volumetric cloud visualizations.
 
+        All parameters are derived from the data:
+        - k_neighbors: Berry & Sauer 2016 criterion: k >= ceil(log(n))
+
         Args:
             points: Point cloud [n_points, 3]
             grid_size: Number of grid cells per dimension
-            config: Density configuration
 
         Returns:
             Tuple of (X, Y, Z, density) where:
@@ -239,7 +219,7 @@ class DensityEstimator:
             ValueError: If points is not 3D
         """
         b = self.backend
-        config = config or DensityConfiguration()
+        import math
 
         if points.shape[1] != 3:
             raise ValueError(f"Expected 3D points, got {points.shape[1]}D")
@@ -290,12 +270,8 @@ class DensityEstimator:
         sorted_dists = b.sort(dist_sq, axis=1)
         b.eval(sorted_dists)
 
-        # Derive k from sqrt(n) when not specified
-        if config.k_neighbors is not None:
-            k = min(config.k_neighbors, n_points - 1)
-        else:
-            import math
-            k = max(3, min(n_points - 1, int(math.sqrt(n_points))))
+        # Derive k from Berry & Sauer 2016: k >= ceil(log(n))
+        k = max(1, min(n_points - 1, int(math.ceil(math.log(n_points)))))
         kth_dist_sq = sorted_dists[:, k]
         distance_eps = division_epsilon(b, kth_dist_sq)
         kth_dist = b.sqrt(kth_dist_sq + distance_eps)
@@ -311,18 +287,3 @@ class DensityEstimator:
         b.eval(density)
 
         return X, Y, Z, density
-
-    def local_density(self, points: "Array", k: int = 10) -> "Array":
-        """
-        Convenience method for getting normalized per-point densities.
-
-        Args:
-            points: Point cloud [n_points, d]
-            k: Number of neighbors
-
-        Returns:
-            Normalized density values [n_points] in range [0, 1]
-        """
-        config = DensityConfiguration(k_neighbors=k, normalize=True)
-        result = self.compute(points, config)
-        return result.densities

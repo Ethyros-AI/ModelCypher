@@ -716,8 +716,6 @@ def geometry_validate(
             f"Path signature similarity: {report.path_signature.signature_similarity:.5f}",
             f"Frechet distance: {report.path_signature.frechet_distance:.6f}",
         ]
-        if report.fixtures is not None:
-            lines.append("Fixtures: included")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

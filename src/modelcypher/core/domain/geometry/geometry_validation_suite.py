@@ -355,17 +355,26 @@ class GeometryValidationSuite:
             path=path,
         )
 
+        # Fixture points for disconnected components test.
+        # With 6 points, k_neighbors = sqrt(6) ≈ 2 (clamped to 2).
+        # Two clusters at positions [0-2] and [100-102] - far enough apart
+        # that with k=2, each cluster remains isolated.
         spectral_fixture = SpectralSignatureFixture(
-            points=[[0.0, 0.0], [1.0, 0.0], [10.0, 0.0], [11.0, 0.0]],
-            k_neighbors=1,
+            points=[
+                [0.0, 0.0], [1.0, 0.0], [2.0, 0.0],  # Cluster A
+                [100.0, 0.0], [101.0, 0.0], [102.0, 0.0],  # Cluster B
+            ],
+            k_neighbors=None,  # Derived from data
             normalized_laplacian=True,
             heat_times=[0.1, 1.0, 10.0],
             expected_component_count=2,
             expected_connected=False,
         )
+        # Fixture points for connected component test.
+        # Linear arrangement ensures connectivity with any k >= 1.
         spectral_connected_fixture = SpectralSignatureFixture(
             points=[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]],
-            k_neighbors=1,
+            k_neighbors=None,  # Derived from data
             normalized_laplacian=True,
             heat_times=[0.1, 1.0, 10.0],
             expected_component_count=1,
@@ -651,8 +660,8 @@ class GeometryValidationSuite:
         ]
         heat_trace_max_abs_diff = max(heat_diffs) if heat_diffs else 0.0
 
-        fp_base = TopologicalFingerprint.compute(points, max_dimension=1)
-        fp_padded = TopologicalFingerprint.compute(padded_points, max_dimension=1)
+        fp_base = TopologicalFingerprint.compute(points)
+        fp_padded = TopologicalFingerprint.compute(padded_points)
 
         persistence_entropy_diff = abs(
             fp_base.summary.persistence_entropy - fp_padded.summary.persistence_entropy

@@ -68,7 +68,7 @@ def test_persistent_homology_1dim_void_detection():
     """Test detection of 1D persistence (loops)."""
     # 6 points forming a hexagon
     points = [[1, 0], [0.5, 0.866], [-0.5, 0.866], [-1, 0], [-0.5, -0.866], [0.5, -0.866]]
-    fingerprint = TopologicalFingerprint.compute(points, max_dimension=1, num_steps=100)
+    fingerprint = TopologicalFingerprint.compute(points)
 
     # Should find at least one significant cycle
     assert fingerprint.summary.cycle_count >= 1

@@ -128,21 +128,6 @@ class TopologySummary:
     persistence_entropy: float
 
 
-@dataclass(frozen=True)
-class TopologyConfig:
-    """Configuration for topological fingerprinting.
-
-    ONLY contains numerical stability parameters.
-    No arbitrary classification thresholds - the geometry speaks for itself.
-
-    Similarity interpretation is left to the caller who understands their context.
-    """
-
-    # Numerical stability threshold
-    epsilon: float | None = None
-
-
-
 @dataclass
 class Fingerprint:
     diagram: PersistenceDiagram
@@ -175,14 +160,7 @@ class TopologicalFingerprint:
     @staticmethod
     def compute(
         points: list[list[float]],
-        max_dimension: int = 1,
-        max_filtration: float | None = None,
-        num_steps: int = 50,
-        config: TopologyConfig | None = None,
     ) -> Fingerprint:
-        if config is None:
-            config = TopologyConfig()
-
         if len(points) < 2:
             return Fingerprint(
                 diagram=PersistenceDiagram([]),
@@ -204,10 +182,7 @@ class TopologicalFingerprint:
         if not is_finite(max_dist_val, backend):
             max_dist_val = 0.0
 
-        if max_filtration is None:
-            max_dist = max_dist_val
-        else:
-            max_dist = max_filtration
+        max_dist = max_dist_val
 
         nonzero_mask = (distances > 0) & finite_mask
         min_candidates = backend.where(
@@ -227,8 +202,6 @@ class TopologicalFingerprint:
             distances=distances_list,
             min_filtration=min_dist,
             max_filtration=max_dist,
-            num_steps=num_steps,
-            max_dimension=max_dimension,
         )
 
         # Filter only numerical noise (dtype-derived)
@@ -327,6 +300,7 @@ class TopologicalFingerprint:
         """
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
+            derive_k_neighbors,
         )
 
         n = len(points)
@@ -338,7 +312,7 @@ class TopologicalFingerprint:
         pts = b.array(points)
 
         # Use geodesic distances for correct topology on curved manifolds
-        k_neighbors = min(max(3, n // 3), n - 1)
+        k_neighbors = derive_k_neighbors(pts, b)
         geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
         b.eval(geo_dist)
         return geo_dist
@@ -348,8 +322,6 @@ class TopologicalFingerprint:
         distances: list[list[float]],
         min_filtration: float,
         max_filtration: float,
-        num_steps: int,  # unused but kept for interface parity
-        max_dimension: int,
     ) -> PersistenceDiagram:
         """
         Compute persistent homology via Vietoris-Rips filtration.
@@ -379,8 +351,6 @@ class TopologicalFingerprint:
             distances: Pairwise distance matrix (n x n)
             min_filtration: Minimum scale (typically min nonzero distance)
             max_filtration: Maximum scale (typically max distance)
-            num_steps: Unused (kept for interface compatibility)
-            max_dimension: Maximum homology dimension (0 or 1)
 
         Returns:
             PersistenceDiagram with (birth, death, dimension) points
@@ -463,7 +433,7 @@ class TopologicalFingerprint:
         #
         # For neural network manifolds, this captures dominant topological
         # features (small cycles) while avoiding O(n^3) Rips computation.
-        if max_dimension >= 1:
+        if n >= 3:
 
             # Reset DSU for cycle detection pass
             parent = list(range(n))
@@ -775,26 +745,15 @@ class BackendTopologicalFingerprint:
     def compute(
         self,
         points: list[list[float]],
-        max_dimension: int = 1,
-        max_filtration: float | None = None,
-        num_steps: int = 50,
-        config: TopologyConfig | None = None,
     ) -> Fingerprint:
         """Compute topological fingerprint using Backend acceleration.
 
         Args:
             points: Point cloud as list of vectors.
-            max_dimension: Maximum homology dimension (0 or 1).
-            max_filtration: Maximum filtration value.
-            num_steps: Number of filtration steps (unused, for interface parity).
-            config: Topology configuration.
 
         Returns:
             Fingerprint with persistence diagram and summary statistics.
         """
-        if config is None:
-            config = TopologyConfig()
-
         if len(points) < 2:
             return Fingerprint(
                 diagram=PersistenceDiagram([]),
@@ -815,7 +774,7 @@ class BackendTopologicalFingerprint:
         max_dist_val = float(b.to_scalar(max_val))
         if not is_finite(max_dist_val, b):
             max_dist_val = 0.0
-        max_dist = max_filtration if max_filtration is not None else max_dist_val
+        max_dist = max_dist_val
 
         nonzero_mask = (distances > 0) & finite_mask
         min_candidates = b.where(nonzero_mask, distances, b.full(distances.shape, pos_inf))
@@ -828,8 +787,6 @@ class BackendTopologicalFingerprint:
             distances=distances,
             min_filtration=min_dist,
             max_filtration=max_dist,
-            num_steps=num_steps,
-            max_dimension=max_dimension,
         )
 
         # Filter only numerical noise (dtype-derived)
@@ -907,6 +864,7 @@ class BackendTopologicalFingerprint:
         """Compute pairwise geodesic distances using Backend."""
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
+            derive_k_neighbors,
         )
 
         n = len(points)
@@ -916,7 +874,7 @@ class BackendTopologicalFingerprint:
         b = self.backend
         pts = b.array(points)
 
-        k_neighbors = min(max(3, n // 3), n - 1)
+        k_neighbors = derive_k_neighbors(pts, b)
         geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
         b.eval(geo_dist)
         return geo_dist
@@ -926,8 +884,6 @@ class BackendTopologicalFingerprint:
         distances: "Array",
         min_filtration: float,
         max_filtration: float,
-        num_steps: int,
-        max_dimension: int,
     ) -> PersistenceDiagram:
         """Compute persistent homology via Vietoris-Rips filtration.
 
@@ -1033,7 +989,7 @@ class BackendTopologicalFingerprint:
                 persistence_points.append(PersistencePoint(0.0, max_filtration, 0))
 
         # 1-dim persistence (cycles) with Backend-accelerated triangle detection
-        if max_dimension >= 1:
+        if n >= 3:
             parent = list(range(n))
             rank = [0] * n
 

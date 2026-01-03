@@ -276,9 +276,6 @@ class GeometryMetricsService:
     def compute_topological_fingerprint(
         self,
         points: list[list[float]],
-        max_dimension: int = 1,
-        max_filtration: float | None = None,
-        num_steps: int = 50,
     ) -> TopologicalFingerprintResult:
         """
         Compute topological fingerprint using persistent homology.
@@ -290,25 +287,17 @@ class GeometryMetricsService:
 
         Args:
             points: Point cloud (N x D)
-            max_dimension: Maximum homology dimension to compute
-            max_filtration: Maximum filtration value for Rips complex
-            num_steps: Number of filtration steps
 
         Returns:
             TopologicalFingerprintResult with Betti numbers and persistence
         """
         # Check cache first
-        cached = self._cache.get_topo_result(points, max_dimension, max_filtration, num_steps)
+        cached = self._cache.get_topo_result(points)
         if cached is not None:
             return self._topo_result_from_cached(cached)
 
         # Compute the expensive operation
-        fingerprint = TopologicalFingerprint.compute(
-            points=points,
-            max_dimension=max_dimension,
-            max_filtration=max_filtration,
-            num_steps=num_steps,
-        )
+        fingerprint = TopologicalFingerprint.compute(points=points)
 
         summary = fingerprint.summary
         betti = fingerprint.betti_numbers
@@ -323,7 +312,7 @@ class GeometryMetricsService:
             persistence_entropy=summary.persistence_entropy,
             total_persistence=summary.max_persistence,
         )
-        self._cache.set_topo_result(points, max_dimension, max_filtration, num_steps, cached_result)
+        self._cache.set_topo_result(points, cached_result)
 
         return self._topo_result_from_cached(cached_result)
 
@@ -354,10 +343,7 @@ class GeometryMetricsService:
         - heat_trace_times: derived from eigenvalue spectrum
         - normalized_laplacian: always True (correct for graph Laplacians)
         """
-        # Cache key uses None for all derived parameters since they're data-dependent
-        cached = self._cache.get_spectral_result(
-            points, None, None, True, None
-        )
+        cached = self._cache.get_spectral_result(points)
         if cached is not None:
             return self._spectral_result_from_cached(cached)
 
@@ -381,9 +367,7 @@ class GeometryMetricsService:
             normalized_laplacian=signature.normalized_laplacian,
             connected=signature.connected,
         )
-        self._cache.set_spectral_result(
-            points, None, None, True, None, cached_result
-        )
+        self._cache.set_spectral_result(points, cached_result)
 
         return self._spectral_result_from_cached(cached_result)
 
@@ -465,8 +449,8 @@ class GeometryMetricsService:
         )
         spectral_eigen_max_abs_diff = max(eigen_diffs) if eigen_diffs else 0.0
 
-        fp_base = TopologicalFingerprint.compute(points, max_dimension=1)
-        fp_padded = TopologicalFingerprint.compute(padded_points, max_dimension=1)
+        fp_base = TopologicalFingerprint.compute(points)
+        fp_padded = TopologicalFingerprint.compute(padded_points)
 
         return DimensionConstraintInvarianceResult(
             base_dimension=base_dim,

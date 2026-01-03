@@ -298,9 +298,6 @@ class GeometryService:
                 },
                 "passed": report.dimension_constraint.passed,
             },
-            "fixtures": GeometryService._fixtures_payload(report.fixtures)
-            if report.fixtures
-            else None,
         }
         if include_schema:
             payload = {"_schema": "mc.geometry.validation.v1", **payload}
@@ -312,66 +309,3 @@ class GeometryService:
             value = value.replace(tzinfo=timezone.utc)
         return value.isoformat().replace("+00:00", "Z")
 
-    @staticmethod
-    def _fixtures_payload(fixtures) -> dict | None:
-        if fixtures is None:
-            return None
-        return {
-            "gromovWasserstein": {
-                "pointsA": fixtures.gromov_wasserstein.points_a,
-                "pointsB": fixtures.gromov_wasserstein.points_b,
-                "permutation": fixtures.gromov_wasserstein.permutation,
-                "sourceDistances": fixtures.gromov_wasserstein.source_distances,
-                "targetDistances": fixtures.gromov_wasserstein.target_distances,
-                "symmetrySourceDistances": fixtures.gromov_wasserstein.symmetry_source_distances,
-                "symmetryTargetDistances": fixtures.gromov_wasserstein.symmetry_target_distances,
-            },
-            "traversalCoherence": {
-                "anchorIds": fixtures.traversal_coherence.anchor_ids,
-                "anchorGram": fixtures.traversal_coherence.anchor_gram,
-                "perturbedGram": fixtures.traversal_coherence.perturbed_gram,
-                "paths": [
-                    {"anchorIds": path.anchor_ids} for path in fixtures.traversal_coherence.paths
-                ],
-            },
-            "pathSignature": {
-                "gateEmbeddings": fixtures.path_signature.gate_embeddings,
-                "shiftedEmbeddings": fixtures.path_signature.shifted_embeddings,
-                "path": {
-                    "id": str(fixtures.path_signature.path.id),
-                    "modelID": fixtures.path_signature.path.model_id,
-                    "promptID": fixtures.path_signature.path.prompt_id,
-                    "nodes": [
-                        {
-                            "gateID": node.gate_id,
-                            "tokenIndex": node.token_index,
-                            "entropy": node.entropy,
-                        }
-                        for node in fixtures.path_signature.path.nodes
-                    ],
-                },
-                "projectionDim": fixtures.path_signature.projection_dim,
-            },
-            "spectralSignature": {
-                "points": fixtures.spectral_signature.points,
-                "kNeighbors": fixtures.spectral_signature.k_neighbors,
-                "normalizedLaplacian": fixtures.spectral_signature.normalized_laplacian,
-                "heatTimes": fixtures.spectral_signature.heat_times,
-                "expectedComponentCount": fixtures.spectral_signature.expected_component_count,
-                "expectedConnected": fixtures.spectral_signature.expected_connected,
-            },
-            "spectralSignatureConnected": {
-                "points": fixtures.spectral_signature_connected.points,
-                "kNeighbors": fixtures.spectral_signature_connected.k_neighbors,
-                "normalizedLaplacian": fixtures.spectral_signature_connected.normalized_laplacian,
-                "heatTimes": fixtures.spectral_signature_connected.heat_times,
-                "expectedComponentCount": fixtures.spectral_signature_connected.expected_component_count,
-                "expectedConnected": fixtures.spectral_signature_connected.expected_connected,
-            },
-            "dimensionConstraint": {
-                "points": fixtures.dimension_constraint.points,
-                "paddedDimension": fixtures.dimension_constraint.padded_dimension,
-                "kNeighbors": fixtures.dimension_constraint.k_neighbors,
-                "heatTimes": fixtures.dimension_constraint.heat_times,
-            },
-        }

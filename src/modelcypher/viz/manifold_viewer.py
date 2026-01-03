@@ -40,10 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.density_estimator import (
-    DensityConfiguration,
-    DensityEstimator,
-)
+from modelcypher.core.domain.geometry.density_estimator import DensityEstimator
 from modelcypher.core.domain.geometry.dimension_cascade import CascadeResult
 from modelcypher.core.support.array_utils import array_to_list
 

@@ -316,31 +316,22 @@ class GeometryMetricsCache:
     def get_topo_result(
         self,
         points: list[list[float]],
-        max_dimension: int,
-        max_filtration: float | None,
-        num_steps: int,
     ) -> CachedTopoResult | None:
         """
         Get cached topological fingerprint result.
 
         Args:
             points: Point cloud
-            max_dimension: Maximum homology dimension
-            max_filtration: Maximum filtration value
-            num_steps: Number of filtration steps
 
         Returns:
             Cached result or None if not found
         """
-        key = self._make_topo_key(points, max_dimension, max_filtration, num_steps)
+        key = self._make_topo_key(points)
         return self._topo_cache.get(key)
 
     def set_topo_result(
         self,
         points: list[list[float]],
-        max_dimension: int,
-        max_filtration: float | None,
-        num_steps: int,
         result: CachedTopoResult,
     ) -> None:
         """
@@ -348,28 +339,19 @@ class GeometryMetricsCache:
 
         Args:
             points: Point cloud
-            max_dimension: Maximum homology dimension
-            max_filtration: Maximum filtration value
-            num_steps: Number of filtration steps
             result: Result to cache
         """
-        key = self._make_topo_key(points, max_dimension, max_filtration, num_steps)
+        key = self._make_topo_key(points)
         self._topo_cache.set(key, result)
 
     def _make_topo_key(
         self,
         points: list[list[float]],
-        max_dimension: int,
-        max_filtration: float | None,
-        num_steps: int,
     ) -> str:
         """Create cache key for topological computation."""
         return content_hash(
             {
                 "points": sorted([tuple(p) for p in points]),
-                "max_dimension": max_dimension,
-                "max_filtration": max_filtration,
-                "num_steps": num_steps,
             }
         )
 
@@ -396,36 +378,22 @@ class GeometryMetricsCache:
     def get_spectral_result(
         self,
         points: list[list[float]],
-        k_neighbors: int | None,
-        kernel_bandwidth: float | None,
-        normalized_laplacian: bool,
-        heat_times: tuple[float, ...],
     ) -> CachedSpectralResult | None:
         """
         Get cached spectral signature result.
 
         Args:
             points: Point cloud
-            k_neighbors: k for geodesic k-NN graph
-            kernel_bandwidth: Gaussian kernel bandwidth
-            normalized_laplacian: Whether Laplacian is normalized
-            heat_times: Heat trace time values
 
         Returns:
             Cached result or None if not found
         """
-        key = self._make_spectral_key(
-            points, k_neighbors, kernel_bandwidth, normalized_laplacian, heat_times
-        )
+        key = self._make_spectral_key(points)
         return self._spectral_cache.get(key)
 
     def set_spectral_result(
         self,
         points: list[list[float]],
-        k_neighbors: int | None,
-        kernel_bandwidth: float | None,
-        normalized_laplacian: bool,
-        heat_times: tuple[float, ...],
         result: CachedSpectralResult,
     ) -> None:
         """
@@ -433,33 +401,19 @@ class GeometryMetricsCache:
 
         Args:
             points: Point cloud
-            k_neighbors: k for geodesic k-NN graph
-            kernel_bandwidth: Gaussian kernel bandwidth
-            normalized_laplacian: Whether Laplacian is normalized
-            heat_times: Heat trace time values
             result: Result to cache
         """
-        key = self._make_spectral_key(
-            points, k_neighbors, kernel_bandwidth, normalized_laplacian, heat_times
-        )
+        key = self._make_spectral_key(points)
         self._spectral_cache.set(key, result)
 
     def _make_spectral_key(
         self,
         points: list[list[float]],
-        k_neighbors: int | None,
-        kernel_bandwidth: float | None,
-        normalized_laplacian: bool,
-        heat_times: tuple[float, ...] | None,
     ) -> str:
         """Create cache key for spectral signature computation."""
         return content_hash(
             {
                 "points": sorted([tuple(p) for p in points]),
-                "k_neighbors": k_neighbors,
-                "kernel_bandwidth": kernel_bandwidth,
-                "normalized_laplacian": normalized_laplacian,
-                "heat_times": list(heat_times) if heat_times is not None else [],
             }
         )
 

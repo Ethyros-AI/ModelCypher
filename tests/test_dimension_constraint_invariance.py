@@ -114,8 +114,8 @@ def test_topological_fingerprint_invariance_under_padding() -> None:
     points = _base_points()
     padded = _pad_points(points, 4)
 
-    fp_base = TopologicalFingerprint.compute(points, max_dimension=1)
-    fp_padded = TopologicalFingerprint.compute(padded, max_dimension=1)
+    fp_base = TopologicalFingerprint.compute(points)
+    fp_padded = TopologicalFingerprint.compute(padded)
 
     assert fp_base.betti_numbers == fp_padded.betti_numbers
     assert fp_base.summary.component_count == fp_padded.summary.component_count

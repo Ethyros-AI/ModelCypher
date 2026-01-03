@@ -133,33 +133,20 @@ class PcaMode(str, Enum):
     gram = "gram"
 
 
-@dataclass(frozen=True)
-class Config:
-    """Configuration for shared subspace projection.
-
-    Most parameters default to None and are derived from data at runtime:
-    - variance_threshold: Uses spectral gap detection
-    - pca_variance_threshold: Uses spectral gap detection
-    - max_shared_dimension: min(source_dim, target_dim)
-    - cca_regularization: sqrt(machine_epsilon)
-    - min_samples: sqrt(n_features)
-    - min_canonical_correlation: Derived from data distribution
-    """
-
-    alignment_method: AlignmentMethod = AlignmentMethod.cca
-    variance_threshold: float | None = None
-    pca_variance_threshold: float | None = None
-    max_shared_dimension: int | None = None
-    cca_regularization: float | None = None
-    min_samples: int | None = None
-    min_canonical_correlation: float | None = None
-    pca_mode: PcaMode = PcaMode.auto
-    anchor_prefixes: tuple[str, ...] | None = None
-    anchor_weights: dict[str, float] | None = None
-
-    @staticmethod
-    def default() -> "Config":
-        return Config()
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from data:
+# - variance_threshold: Uses spectral gap detection
+# - pca_variance_threshold: Uses spectral gap detection
+# - max_shared_dimension: min(source_dim, target_dim)
+# - cca_regularization: sqrt(machine_epsilon)
+# - min_samples: sqrt(n_features)
+# - min_canonical_correlation: sqrt(machine_epsilon)
+# - alignment_method: Always CCA (mathematically correct method)
+# - pca_mode: Always auto (chooses based on data shape)
+# - All anchors: Used with uniform weights
+# =============================================================================
 
 
 def validate_crm_uses_atlas(
@@ -258,8 +245,13 @@ class SharedSubspaceProjector:
         target_crm: ConceptResponseMatrix,
         layer: int,
         target_layer: int | None = None,
-        config: Config = Config(),
     ) -> Result | None:
+        """Discover shared subspace between source and target CRMs.
+
+        All parameters are derived from data - no configuration needed.
+        Always uses CCA (mathematically correct method) with all anchors
+        equally weighted.
+        """
         source_layer = int(layer)
         target_layer = source_layer if target_layer is None else int(target_layer)
         matrices = SharedSubspaceProjector._extract_activation_matrices(
@@ -267,54 +259,39 @@ class SharedSubspaceProjector:
             target_crm,
             source_layer,
             target_layer,
-            config,
         )
         if matrices is None:
             return None
-        source_matrix, target_matrix, weights = matrices
+        source_matrix, target_matrix = matrices
 
         n = len(source_matrix)
         d_source = len(source_matrix[0])
         d_target = len(target_matrix[0])
 
-        # Derive min_samples from sqrt(n_features) when not specified
+        # Derive min_samples from sqrt(n_features)
         import math
-        min_samples = config.min_samples if config.min_samples is not None else max(3, int(math.sqrt(max(d_source, d_target))))
+        min_samples = max(3, int(math.sqrt(max(d_source, d_target))))
         if len(source_matrix) != len(target_matrix) or n < min_samples:
             return None
 
-        method = config.alignment_method
-        if isinstance(method, str):
-            normalized = method.strip().lower().replace("_", "")
-            if normalized in {"cca"}:
-                method = AlignmentMethod.cca
-            elif normalized in {"sharedsvd", "shared-svd"}:
-                method = AlignmentMethod.shared_svd
-            elif normalized in {"procrustes"}:
-                method = AlignmentMethod.procrustes
-        if method == AlignmentMethod.cca:
-            return SharedSubspaceProjector._discover_with_cca(
-                source_matrix, target_matrix, weights, n, d_source, d_target, config
-            )
-        if method == AlignmentMethod.shared_svd:
-            return SharedSubspaceProjector._discover_with_shared_svd(
-                source_matrix, target_matrix, weights, n, d_source, d_target, config
-            )
-        return SharedSubspaceProjector._discover_with_procrustes(
-            source_matrix, target_matrix, weights, n, d_source, d_target, config
+        # Always use CCA - the mathematically correct method for finding shared subspace
+        return SharedSubspaceProjector._discover_with_cca(
+            source_matrix, target_matrix, n, d_source, d_target
         )
 
     @staticmethod
     def _discover_with_cca(
         source_activations: list[list[float]],
         target_activations: list[list[float]],
-        weights: list[float] | None,
         n: int,
         d_source: int,
         d_target: int,
-        config: Config,
         backend: "Backend | None" = None,
     ) -> Result | None:
+        """Discover shared subspace using CCA.
+
+        All parameters derived from data - no configuration needed.
+        """
         b = backend or get_default_backend()
 
         # Convert to backend arrays
@@ -325,15 +302,12 @@ class SharedSubspaceProjector:
         if source_array.shape[0] != target_array.shape[0]:
             return None
 
-        weight_vector = SharedSubspaceProjector._normalize_weights(weights, backend=b)
-        source_centered, _ = SharedSubspaceProjector._center_array(source_array, weight_vector, backend=b)
-        target_centered, _ = SharedSubspaceProjector._center_array(target_array, weight_vector, backend=b)
+        # No weights - all anchors contribute equally
+        source_centered, _ = SharedSubspaceProjector._center_array(source_array, None, backend=b)
+        target_centered, _ = SharedSubspaceProjector._center_array(target_array, None, backend=b)
 
-        # Derive max_shared_dimension from min(source_dim, target_dim) when not specified
-        max_shared_dim = config.max_shared_dimension if config.max_shared_dimension is not None else min(
-            int(source_centered.shape[1]),
-            int(target_centered.shape[1])
-        )
+        # Derive max_shared_dimension from min(source_dim, target_dim)
+        max_shared_dim = min(int(source_centered.shape[1]), int(target_centered.shape[1]))
 
         # SVCCA: reduce to high-variance subspaces before CCA to avoid ill-conditioned covariance.
         max_components_source = min(
@@ -346,11 +320,13 @@ class SharedSubspaceProjector:
             int(target_centered.shape[0]),
             int(target_centered.shape[1]),
         )
+        # All thresholds derived from data (spectral gap detection when None)
+        # Always use auto PCA mode (chooses based on data shape)
         source_reduced, source_components, source_variances = SharedSubspaceProjector._pca_reduce(
-            source_centered, config.pca_variance_threshold, max_components_source, config.pca_mode, backend=b
+            source_centered, None, max_components_source, PcaMode.auto, backend=b
         )
         target_reduced, target_components, target_variances = SharedSubspaceProjector._pca_reduce(
-            target_centered, config.pca_variance_threshold, max_components_target, config.pca_mode, backend=b
+            target_centered, None, max_components_target, PcaMode.auto, backend=b
         )
         if source_reduced is None or target_reduced is None:
             return None
@@ -367,12 +343,9 @@ class SharedSubspaceProjector:
         cxy = b.matmul(source_reduced_t, target_reduced) / float(sample_count)
         b.eval(cxx, cyy, cxy)
 
-        # Derive cca_regularization from sqrt(machine_epsilon) when not specified
-        if config.cca_regularization is not None:
-            cca_reg = config.cca_regularization
-        else:
-            from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
-            cca_reg = regularization_epsilon(b, cxx)
+        # Derive cca_regularization from sqrt(machine_epsilon)
+        from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+        cca_reg = regularization_epsilon(b, cxx)
         cxx = SharedSubspaceProjector._regularize_covariance(cxx, cca_reg, backend=b)
         cyy = SharedSubspaceProjector._regularize_covariance(cyy, cca_reg, backend=b)
         inv_sqrt_x, x_eigenvalues = SharedSubspaceProjector._whiten_covariance(cxx, backend=b)
@@ -394,13 +367,10 @@ class SharedSubspaceProjector:
         canonical_sq = canonical_arr * canonical_arr
         b.eval(canonical_sq)
 
-        # Filter by min_canonical_correlation (derive from data if not set)
-        if config.min_canonical_correlation is not None:
-            min_corr_val = config.min_canonical_correlation
-        else:
-            # Use sqrt(machine_epsilon) as minimum meaningful correlation
-            eps = float(machine_epsilon(b, canonical_arr))
-            min_corr_val = eps ** 0.5
+        # Filter by min_canonical_correlation derived from data
+        # Use sqrt(machine_epsilon) as minimum meaningful correlation
+        eps = float(machine_epsilon(b, canonical_arr))
+        min_corr_val = eps ** 0.5
         min_corr = b.full(canonical_arr.shape, min_corr_val)
         valid_mask = canonical_arr >= min_corr
         valid_count_arr = b.sum(b.astype(valid_mask, "int32"))
@@ -412,10 +382,10 @@ class SharedSubspaceProjector:
         valid_variances = b.where(valid_mask, canonical_sq, b.zeros_like(canonical_sq))
         b.eval(valid_variances)
 
-        # Determine shared dimension using spectral gap or variance threshold
+        # Determine shared dimension using spectral gap detection (data-derived)
         valid_count = SharedSubspaceProjector._select_component_count(
             valid_variances,
-            config.variance_threshold,
+            None,  # Always use spectral gap detection
             backend=b,
         )
 
@@ -770,20 +740,25 @@ class SharedSubspaceProjector:
         target_crm: ConceptResponseMatrix,
         source_layer: int,
         target_layer: int,
-        config: Config,
-    ) -> tuple[list[list[float]], list[list[float]], list[float] | None] | None:
+    ) -> tuple[list[list[float]], list[list[float]]] | None:
+        """Extract activation matrices from CRMs.
+
+        Uses all common anchors with uniform weights - no configuration.
+        """
         source_layer_acts = source_crm.activations.get(source_layer)
         target_layer_acts = target_crm.activations.get(target_layer)
         if source_layer_acts is None or target_layer_acts is None:
             return None
 
-        anchor_ids = SharedSubspaceProjector._select_anchor_ids(source_crm, target_crm, config)
+        # Use all common anchors (no filtering by prefix)
+        source_ids = set(source_crm.anchor_metadata.anchor_ids)
+        target_ids = set(target_crm.anchor_metadata.anchor_ids)
+        anchor_ids = sorted(source_ids.intersection(target_ids))
         if not anchor_ids:
             return None
 
         source_matrix: list[list[float]] = []
         target_matrix: list[list[float]] = []
-        weights: list[float] = []
 
         for anchor_id in anchor_ids:
             source_activation = source_layer_acts.get(anchor_id)
@@ -792,13 +767,11 @@ class SharedSubspaceProjector:
                 continue
             source_matrix.append(source_activation.activation)
             target_matrix.append(target_activation.activation)
-            weights.append(SharedSubspaceProjector._anchor_weight(anchor_id, config))
 
         if not source_matrix or not target_matrix:
             return None
 
-        weight_payload = weights if config.anchor_weights or config.anchor_prefixes else None
-        return source_matrix, target_matrix, weight_payload
+        return source_matrix, target_matrix
 
     @staticmethod
     def _select_anchor_ids(

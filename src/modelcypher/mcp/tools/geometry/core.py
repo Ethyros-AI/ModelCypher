@@ -414,19 +414,18 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spectral_signature(
             points: list[list[float]],
-            kNeighbors: int | None = None,
-            kernelBandwidth: float | None = None,
-            normalizedLaplacian: bool = True,
-            heatTimes: list[float] | None = None,
             maxEigenvalues: int | None = None,
         ) -> dict:
-            """Compute geodesic spectral signature from a point cloud."""
+            """Compute geodesic spectral signature from a point cloud.
+
+            All parameters are derived from the geometry of the data:
+            - k_neighbors: derived from graph connectivity requirements
+            - kernel_bandwidth: derived from median neighbor distance
+            - heat_trace_times: derived from eigenvalue spectrum
+            - normalized_laplacian: always True (correct for graph Laplacians)
+            """
             result = ctx.geometry_metrics_service.compute_spectral_signature(
                 points=points,
-                k_neighbors=kNeighbors,
-                kernel_bandwidth=kernelBandwidth,
-                normalized_laplacian=normalizedLaplacian,
-                heat_times=heatTimes,
             )
             payload = ctx.geometry_metrics_service.spectral_signature_payload(
                 result, max_eigenvalues=maxEigenvalues
@@ -440,15 +439,15 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_dimension_constraint_invariance(
             points: list[list[float]],
             paddedDimension: int,
-            kNeighbors: int | None = None,
-            heatTimes: list[float] | None = None,
         ) -> dict:
-            """Measure invariance under zero-padding dimension constraints."""
+            """Measure invariance under zero-padding dimension constraints.
+
+            All parameters are derived from the geometry of the data.
+            No configuration is accepted or needed.
+            """
             result = ctx.geometry_metrics_service.compute_dimension_constraint_invariance(
                 points=points,
                 padded_dimension=paddedDimension,
-                k_neighbors=kNeighbors,
-                heat_times=heatTimes,
             )
             payload = ctx.geometry_metrics_service.dimension_constraint_invariance_payload(result)
             payload["_schema"] = "mc.geometry.dimension_constraint_invariance.v1"

@@ -34,7 +34,6 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.density_estimator import (
-    DensityConfiguration,
     DensityEstimator,
     DensityResult,
 )
@@ -81,33 +80,6 @@ def clustered_points(backend: "Backend") -> "Array":
     cluster1 = backend.random_normal((25, 3)) * 0.1  # Tight cluster
     cluster2 = backend.random_normal((25, 3)) * 0.1 + 5.0  # Another cluster
     return backend.concatenate([cluster1, cluster2], axis=0)
-
-
-# =============================================================================
-# DensityConfiguration Tests
-# =============================================================================
-
-
-class TestDensityConfiguration:
-    """Tests for DensityConfiguration dataclass."""
-
-    def test_default_values(self) -> None:
-        """Test default configuration values.
-
-        k_neighbors defaults to None (derived from sqrt(n) at runtime).
-        """
-        config = DensityConfiguration()
-        assert config.k_neighbors is None  # Derived from sqrt(n) at runtime
-        assert config.normalize is True
-
-    def test_custom_values(self) -> None:
-        """Test custom configuration values."""
-        config = DensityConfiguration(
-            k_neighbors=20,
-            normalize=False,
-        )
-        assert config.k_neighbors == 20
-        assert config.normalize is False
 
 
 # =============================================================================
@@ -162,37 +134,25 @@ class TestDensityEstimator:
         assert result.radii.shape == (50,)
         assert result.neighbors.shape == (50, result.k_neighbors)
 
-    def test_compute_with_config(
+    def test_k_derived_from_data(
         self, backend: "Backend", random_points_3d: "Array"
     ) -> None:
-        """Test density computation with explicit config."""
+        """Test k is derived from Berry & Sauer 2016: k >= ceil(log(n))."""
+        import math
+
         estimator = DensityEstimator(backend)
-        config = DensityConfiguration(k_neighbors=5, normalize=True)
-        result = estimator.compute(random_points_3d, config)
+        result = estimator.compute(random_points_3d)
 
-        assert result.k_neighbors == 5
+        # k should be ceil(log(n)) for n=50: ceil(log(50)) = ceil(3.91) = 4
+        expected_k = int(math.ceil(math.log(50)))
+        assert result.k_neighbors == expected_k
 
-    def test_normalized_densities(
+    def test_raw_densities_positive(
         self, backend: "Backend", random_points_3d: "Array"
     ) -> None:
-        """Test that normalized densities are in [0, 1]."""
+        """Test raw densities are positive (no normalization)."""
         estimator = DensityEstimator(backend)
-        config = DensityConfiguration(normalize=True)
-        result = estimator.compute(random_points_3d, config)
-
-        eps = _eps(backend)
-        min_val = float(backend.to_scalar(backend.min(result.densities)))
-        max_val = float(backend.to_scalar(backend.max(result.densities)))
-        assert min_val >= -eps
-        assert max_val <= 1.0 + eps
-
-    def test_unnormalized_densities(
-        self, backend: "Backend", random_points_3d: "Array"
-    ) -> None:
-        """Test unnormalized densities."""
-        estimator = DensityEstimator(backend)
-        config = DensityConfiguration(normalize=False)
-        result = estimator.compute(random_points_3d, config)
+        result = estimator.compute(random_points_3d)
 
         # All densities should be positive
         min_val = float(backend.to_scalar(backend.min(result.densities)))
@@ -213,36 +173,24 @@ class TestDensityEstimator:
     ) -> None:
         """Test that clustered points show density variation."""
         estimator = DensityEstimator(backend)
-        config = DensityConfiguration(k_neighbors=5, normalize=True)
-        result = estimator.compute(clustered_points, config)
+        result = estimator.compute(clustered_points)
 
         # Should have variation in density - use backend std
         std_val = float(backend.to_scalar(backend.std(result.densities)))
         assert std_val > _eps(backend)
 
-    def test_too_few_points_error(self, backend: "Backend") -> None:
-        """Test error when too few points for k-NN."""
+    def test_very_small_point_cloud(self, backend: "Backend") -> None:
+        """Test with a very small point cloud where k derives properly."""
+        import math
+
         estimator = DensityEstimator(backend)
-        small_points = backend.random_normal((10, 3))
-        config = DensityConfiguration(k_neighbors=small_points.shape[0] + 1)
+        # With 5 points, k = ceil(log(5)) = ceil(1.6) = 2
+        small_points = backend.random_normal((5, 3))
+        result = estimator.compute(small_points)
 
-        with pytest.raises(ValueError, match="more than"):
-            estimator.compute(small_points, config)
-
-    def test_local_density_convenience(
-        self, backend: "Backend", random_points_3d: "Array"
-    ) -> None:
-        """Test local_density convenience method."""
-        estimator = DensityEstimator(backend)
-        densities = estimator.local_density(random_points_3d, k=5)
-
-        assert densities.shape == (50,)
-        # Should be normalized
-        eps = _eps(backend)
-        min_val = float(backend.to_scalar(backend.min(densities)))
-        max_val = float(backend.to_scalar(backend.max(densities)))
-        assert min_val >= -eps
-        assert max_val <= 1.0 + eps
+        expected_k = int(math.ceil(math.log(5)))
+        assert result.k_neighbors == expected_k
+        assert result.densities.shape == (5,)
 
 
 # =============================================================================
@@ -306,17 +254,16 @@ class TestGridDensity:
         with pytest.raises(ValueError, match="3D"):
             estimator.compute_grid_density(random_points_2d)
 
-    def test_grid_density_with_config(
+    def test_grid_density_small_grid(
         self, backend: "Backend", random_points_3d: "Array"
     ) -> None:
-        """Test grid density with explicit config."""
+        """Test grid density with different grid size."""
         if not _has_meshgrid(backend):
             pytest.skip("Backend does not support meshgrid")
 
         estimator = DensityEstimator(backend)
-        config = DensityConfiguration(k_neighbors=3)
         X, Y, Z, density = estimator.compute_grid_density(
-            random_points_3d, grid_size=5, config=config
+            random_points_3d, grid_size=5
         )
 
         assert density.shape == (5, 5, 5)

@@ -29,6 +29,7 @@ from ..common import (
 
 logger = logging.getLogger(__name__)
 
+
 def register_geometry_density_tools(ctx: ServiceContext) -> None:
     """Register knowledge density MCP tools."""
     mcp = ctx.mcp

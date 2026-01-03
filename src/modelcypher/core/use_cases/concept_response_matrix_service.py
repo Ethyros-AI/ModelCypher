@@ -50,9 +50,6 @@ from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
-    Config as SharedSubspaceConfig,
-)
-from modelcypher.core.domain.geometry.shared_subspace_projector import (
     SharedSubspaceProjector,
 )
 from modelcypher.ports.inference import HiddenStateEngine
@@ -301,14 +298,14 @@ class ConceptResponseMatrixService:
         self,
         source_path: str,
         target_path: str,
-        config: SharedSubspaceConfig | None = None,
     ) -> CRMSharedSubspaceSummary:
         """Discover shared subspace between two CRMs.
+
+        All subspace discovery parameters are derived from data at runtime.
 
         Args:
             source_path: Path to source CRM file.
             target_path: Path to target CRM file.
-            config: Optional shared subspace configuration.
 
         Returns:
             Summary of shared subspace discovery.
@@ -316,7 +313,6 @@ class ConceptResponseMatrixService:
         source = ConceptResponseMatrix.load(str(expand_path(source_path)))
         target = ConceptResponseMatrix.load(str(expand_path(target_path)))
 
-        config = config or SharedSubspaceConfig()
         matcher = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
         layer_metrics: list[dict[str, float | int | bool]] = []
@@ -329,7 +325,6 @@ class ConceptResponseMatrixService:
                 target,
                 mapping.source_layer,
                 target_layer=mapping.target_layer,
-                config=config,
             )
             if result is None:
                 continue
