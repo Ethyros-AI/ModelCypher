@@ -24,6 +24,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
 # unified_atlas imported lazily in validate_crm_uses_atlas to avoid circular imports
 
+_cache = ComputationCache.shared()
 
 
 class AlignmentMethod(str, Enum):
@@ -109,18 +111,14 @@ def validate_crm_uses_atlas(
 
 
 def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
+    """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
     flat = backend.reshape(array, (-1,))
-    count = int(flat.shape[0])
-    return [backend.to_scalar(flat[i]) for i in range(count)]
+    return backend.tolist(flat)
 
 
 def _array_to_2d_list(backend: "Backend", array: "Array") -> list[list[float]]:
-    rows = int(array.shape[0])
-    cols = int(array.shape[1])
-    return [
-        [backend.to_scalar(array[i, j]) for j in range(cols)]
-        for i in range(rows)
-    ]
+    """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
+    return backend.tolist(array)
 
 
 @dataclass(frozen=True)
@@ -280,7 +278,7 @@ class SharedSubspaceProjector:
         b.eval(cross_cov)
 
         # SVD of cross-covariance
-        u, singular_values, v_t = b.svd(cross_cov)
+        u, singular_values, v_t = _cache.get_or_compute_svd(cross_cov, b, full_matrices=False)
         b.eval(u, singular_values, v_t)
 
         # Clip singular values to [0, 1] for canonical correlations
@@ -541,7 +539,7 @@ class SharedSubspaceProjector:
         b.eval(m_matrix)
 
         # SVD of M
-        u, singular_values, v_t = b.svd(m_matrix)
+        u, singular_values, v_t = _cache.get_or_compute_svd(m_matrix, b, full_matrices=False)
         b.eval(u, singular_values, v_t)
 
         # Compute omega = U @ V^T (orthogonal rotation matrix)
@@ -849,7 +847,7 @@ class SharedSubspaceProjector:
             b.eval(components)
         else:
             # Direct SVD
-            _, singular_values, v_t = b.svd(matrix)
+            _, singular_values, v_t = _cache.get_or_compute_svd(matrix, b, full_matrices=False)
             b.eval(singular_values, v_t)
             components = b.transpose(v_t)
             b.eval(components)

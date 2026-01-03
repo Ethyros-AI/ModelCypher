@@ -20,11 +20,11 @@
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_finite
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     GeodesicConfiguration,
@@ -284,7 +284,7 @@ class ConceptDimensionalityAnalyzer:
             if len(vec) != expected_dim:
                 invalid_counts["length_mismatch"] += 1
                 continue
-            if any(not math.isfinite(float(v)) for v in vec):
+            if any(not is_finite(float(v), self._backend) for v in vec):
                 invalid_counts["non_finite"] += 1
                 continue
             cleaned.append([float(v) for v in vec])
@@ -324,7 +324,7 @@ class ConceptDimensionalityAnalyzer:
         """
         histogram: dict[str, int] = {}
         for result in results:
-            if not math.isfinite(result.intrinsic_dimension):
+            if not is_finite(result.intrinsic_dimension, get_default_backend()):
                 continue
             bucket = int(result.intrinsic_dimension)
             if bucket >= 4:
@@ -336,7 +336,7 @@ class ConceptDimensionalityAnalyzer:
 
     @staticmethod
     def _mean_dimension(results: list[ConceptDimensionalityResult]) -> float | None:
-        dims = [r.intrinsic_dimension for r in results if math.isfinite(r.intrinsic_dimension)]
+        dims = [r.intrinsic_dimension for r in results if is_finite(r.intrinsic_dimension, get_default_backend())]
         if not dims:
             return None
         return sum(dims) / float(len(dims))
@@ -346,7 +346,7 @@ class ConceptDimensionalityAnalyzer:
         weighted = [
             (r.intrinsic_dimension, r.calibration_weight)
             for r in results
-            if r.calibration_weight is not None and math.isfinite(r.intrinsic_dimension)
+            if r.calibration_weight is not None and is_finite(r.intrinsic_dimension, get_default_backend())
         ]
         if not weighted:
             return None

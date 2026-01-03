@@ -136,6 +136,13 @@ class CUDABackend(Backend):
         """
         return array.item()
 
+    def tolist(self, array: Array) -> list | float | int:
+        """Convert tensor to nested Python lists.
+
+        Uses PyTorch's native tolist() - MUCH faster than element-by-element to_scalar().
+        """
+        return array.tolist()
+
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
         """Return floating-point precision info for the given dtype.
 

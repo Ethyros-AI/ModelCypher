@@ -31,12 +31,11 @@ This module provides:
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, sqrt_scalar
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
@@ -184,7 +183,7 @@ def _compute_layer_guidance(
 
     # Alignment effort: geometric mean of dimension and curvature effort
     # (no arbitrary weights - both contribute equally)
-    alignment_effort = math.sqrt(dim_effort * curv_effort)
+    alignment_effort = sqrt_scalar(dim_effort * curv_effort, get_default_backend())
 
     # 4. Alignment weight = similarity (no artificial floor)
     # Layers with similar curvature profiles are more reliable

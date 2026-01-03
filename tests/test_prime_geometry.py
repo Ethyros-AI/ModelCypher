@@ -72,6 +72,7 @@ from modelcypher.core.domain.geometry.prime_geometry import (
     time_delay_embedding,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.support.array_utils import array_to_list
 
 
 def _eps(backend, *values: float) -> float:
@@ -117,14 +118,14 @@ class TestPrimeGeneration:
     def test_first_primes_are_correct(self, backend):
         """First 10 primes should match known values."""
         seq = generate_primes(10, backend=backend)
-        primes_list = backend.to_numpy(seq.primes).tolist()
+        primes_list = array_to_list(backend, seq.primes)
         expected = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
         assert primes_list == expected
 
     def test_primes_are_monotonically_increasing(self, backend):
         """Primes should be in ascending order."""
         seq = generate_primes(100, backend=backend)
-        primes = backend.to_numpy(seq.primes)
+        primes = array_to_list(backend, seq.primes)
         for i in range(1, len(primes)):
             assert primes[i] > primes[i - 1]
 
@@ -136,14 +137,14 @@ class TestPrimeGeneration:
     def test_gaps_are_positive(self, backend):
         """All gaps should be positive integers."""
         seq = generate_primes(100, backend=backend)
-        gaps = backend.to_numpy(seq.gaps)
+        gaps = array_to_list(backend, seq.gaps)
         assert all(g > 0 for g in gaps)
 
     def test_gaps_sum_to_difference(self, backend):
         """Sum of gaps should equal p_n - p_1."""
         seq = generate_primes(50, backend=backend)
-        primes = backend.to_numpy(seq.primes)
-        gaps = backend.to_numpy(seq.gaps)
+        primes = array_to_list(backend, seq.primes)
+        gaps = array_to_list(backend, seq.gaps)
         assert sum(gaps) == primes[-1] - primes[0]
 
     def test_small_n_works(self, backend):
@@ -155,7 +156,7 @@ class TestPrimeGeneration:
     def test_known_gap_values(self, backend):
         """Verify specific gap values."""
         seq = generate_primes(10, backend=backend)
-        gaps = backend.to_numpy(seq.gaps).tolist()
+        gaps = array_to_list(backend, seq.gaps)
         # Gaps between first 10 primes: 3-2=1, 5-3=2, 7-5=2, etc.
         expected_gaps = [1, 2, 2, 4, 2, 4, 2, 4, 6]
         assert gaps == expected_gaps
@@ -188,7 +189,7 @@ class TestEmbeddings:
         embedded = time_delay_embedding(gaps, embedding_dim=3, backend=backend)
         backend.eval(embedded)
         # First window should be [1, 2, 2]
-        first_row = backend.to_numpy(embedded[0]).tolist()
+        first_row = array_to_list(backend, embedded[0])
         assert first_row == [1.0, 2.0, 2.0]
 
     def test_residue_embedding_default_moduli(self, backend, small_primes):
@@ -213,7 +214,7 @@ class TestEmbeddings:
         primes = seq.primes
         embedded = residue_embedding(primes, moduli=[6], backend=backend)
         backend.eval(embedded)
-        residues = backend.to_numpy(embedded[:, 0]).tolist()
+        residues = array_to_list(backend, embedded[:, 0])
         # 2 mod 6 = 2, 3 mod 6 = 3, 5 mod 6 = 5, 7 mod 6 = 1, 11 mod 6 = 5
         expected = [2.0, 3.0, 5.0, 1.0, 5.0]
         assert residues == expected
@@ -260,8 +261,8 @@ class TestEmbeddings:
         assert abs(orig_sum - shuf_sum) <= eps
 
         # Same sorted values
-        orig_sorted = sorted(backend.to_numpy(gaps).tolist())
-        shuf_sorted = sorted(backend.to_numpy(shuffled).tolist())
+        orig_sorted = sorted(array_to_list(backend, gaps))
+        shuf_sorted = sorted(array_to_list(backend, shuffled))
         assert orig_sorted == shuf_sorted
 
     def test_shuffled_gaps_different_order(self, backend, medium_primes):
@@ -270,8 +271,8 @@ class TestEmbeddings:
         shuffled = shuffled_gaps(gaps, backend=backend, seed=42)
         backend.eval(shuffled)
 
-        orig = backend.to_numpy(gaps).tolist()
-        shuf = backend.to_numpy(shuffled).tolist()
+        orig = array_to_list(backend, gaps)
+        shuf = array_to_list(backend, shuffled)
         # With enough elements, they should differ
         assert orig != shuf
 
@@ -462,7 +463,7 @@ class TestBaselines:
         """Cramér pseudo-primes should be increasing."""
         primes, _ = generate_cramer_model(50, backend=backend, seed=42)
         backend.eval(primes)
-        primes_np = backend.to_numpy(primes)
+        primes_np = array_to_list(backend, primes)
 
         for i in range(1, len(primes_np)):
             assert primes_np[i] > primes_np[i - 1]
@@ -513,7 +514,7 @@ class TestStatisticalTesting:
         # Generate data with known mean
         data = backend.random_normal((100,)) + 5.0
         backend.eval(data)
-        values = backend.to_numpy(data).tolist()
+        values = array_to_list(backend, data)
 
         ci = bootstrap_confidence_interval(values, n_bootstrap=100, confidence=0.95)
         sample_mean = sum(values) / len(values)
@@ -525,7 +526,7 @@ class TestStatisticalTesting:
         backend.random_seed(42)
         data = backend.random_normal((50,))
         backend.eval(data)
-        values = backend.to_numpy(data).tolist()
+        values = array_to_list(backend, data)
 
         ci = bootstrap_confidence_interval(values, n_bootstrap=100)
         assert ci.lower < ci.upper

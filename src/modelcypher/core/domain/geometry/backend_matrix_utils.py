@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, TypeVar
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    exp_scalar,
     safe_log_epsilon,
     svd_via_eigh,
 )
@@ -526,8 +527,6 @@ class BackendMatrixUtils:
         Uses the exponential of Shannon entropy of normalized eigenvalues:
         erank = exp(-sum(p * log(p)))
         """
-        import math
-
         b = self.backend
         eig_flat = b.reshape(eigenvalues, (-1,))
         n = int(eig_flat.shape[0])
@@ -570,7 +569,7 @@ class BackendMatrixUtils:
         b.eval(entropy_arr)
         entropy = float(b.to_scalar(entropy_arr))
 
-        return math.exp(entropy)
+        return exp_scalar(entropy, b)
 
     def cosine_similarity_matrix(self, X: Array) -> Array:
         """Compute pairwise cosine similarity matrix.

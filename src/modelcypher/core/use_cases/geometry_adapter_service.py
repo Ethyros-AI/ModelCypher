@@ -35,10 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 def _array_to_list(backend: "Backend", array: Any) -> list[float]:
-    """Convert backend array to Python list without NumPy."""
+    """Convert backend array to Python list using native tolist() - O(1) vs O(n)."""
     flat = backend.reshape(array, (-1,))
-    count = int(flat.shape[0])
-    return [float(backend.to_scalar(flat[i])) for i in range(count)]
+    return backend.tolist(flat)
 
 
 @dataclass(frozen=True)

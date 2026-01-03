@@ -84,7 +84,9 @@ class TestConceptVectorSpace:
 
         # Stored vector should be normalized (norm ≈ 1.0)
         stored = space.concepts["test"].vector
-        norm = float(backend.to_numpy(backend.norm(stored)))
+        norm_arr = backend.norm(stored)
+        backend.eval(norm_arr)
+        norm = float(backend.to_scalar(norm_arr))
         assert abs(norm - 1.0) < _eps(backend, norm, 1.0)
 
     def test_add_concept_dimension_mismatch_raises(self, backend: "Backend") -> None:
@@ -164,7 +166,9 @@ class TestConceptVectorSpace:
         backend.eval(result)
 
         # Result should be non-zero
-        norm = float(backend.to_numpy(backend.norm(result)))
+        norm_arr = backend.norm(result)
+        backend.eval(norm_arr)
+        norm = float(backend.to_scalar(norm_arr))
         assert norm > 0
 
     def test_arithmetics_with_negatives(self, backend: "Backend") -> None:
@@ -180,7 +184,9 @@ class TestConceptVectorSpace:
         result = space.arithmetics(positive=["a"], negative=["a"])
         backend.eval(result)
 
-        norm = float(backend.to_numpy(backend.norm(result)))
+        norm_arr = backend.norm(result)
+        backend.eval(norm_arr)
+        norm = float(backend.to_scalar(norm_arr))
         assert abs(norm - 0.0) < _eps(backend, norm, 0.0)
 
     def test_arithmetics_missing_concepts_ignored(self, backend: "Backend") -> None:
@@ -196,7 +202,9 @@ class TestConceptVectorSpace:
         backend.eval(result)
 
         # Should still compute with available concepts
-        norm = float(backend.to_numpy(backend.norm(result)))
+        norm_arr = backend.norm(result)
+        backend.eval(norm_arr)
+        norm = float(backend.to_scalar(norm_arr))
         assert norm > 0
 
 

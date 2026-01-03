@@ -27,9 +27,9 @@ Ported 1:1 from the reference Swift implementation.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints,
     ProbeSpace,
@@ -40,6 +40,7 @@ from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
     DimensionAlignmentBuilder,
     MetaphorConvergenceAnalyzer,
 )
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
 
 
@@ -294,7 +295,7 @@ class AnchorInvarianceAnalyzer:
             values = anchor_values[anchor_id]
             mean = sum(values) / len(values)
             variance = sum((v - mean) ** 2 for v in values) / len(values)
-            std = math.sqrt(variance)
+            std = sqrt_scalar(variance, get_default_backend())
             min_val = min(values)
             max_val = max(values)
             stability_score = mean - std

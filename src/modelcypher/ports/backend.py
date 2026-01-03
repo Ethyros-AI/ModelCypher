@@ -242,6 +242,19 @@ class Backend(Protocol):
             ValueError: If array has more than one element.
         """
         ...
+    def tolist(self, array: Array) -> list | float | int:
+        """Convert array to nested Python lists.
+
+        This is MUCH faster than element-by-element to_scalar() extraction.
+        Uses native backend tolist() which avoids Python loops entirely.
+
+        Args:
+            array: Array of any shape.
+
+        Returns:
+            Nested Python list matching array shape, or scalar for 0-d arrays.
+        """
+        ...
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
         """Return floating-point precision info for the given dtype.
 

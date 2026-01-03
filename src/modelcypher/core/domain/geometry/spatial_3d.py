@@ -83,11 +83,11 @@ def _category_key(value: object) -> str:
 
 
 def _safe_to_list(backend: "Backend", arr: "Array") -> list[float]:
-    """Convert array to Python list, handling bfloat16 dtype."""
+    """Convert array to Python list using native tolist() - handles bfloat16."""
     arr_f32 = backend.astype(arr, "float32")
     flat = backend.reshape(arr_f32, (-1,))
     backend.eval(flat)
-    return [float(backend.to_scalar(flat[i])) for i in range(int(flat.shape[0]))]
+    return backend.tolist(flat)
 
 
 # =============================================================================

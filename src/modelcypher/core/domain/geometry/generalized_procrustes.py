@@ -221,29 +221,17 @@ class GeneralizedProcrustes:
         self._backend = backend or get_default_backend()
 
     def _array_to_list(self, array: "Array") -> list[float]:
+        """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
         flat = self._backend.reshape(array, (-1,))
-        count = int(flat.shape[0])
-        return [self._backend.to_scalar(flat[i]) for i in range(count)]
+        return self._backend.tolist(flat)
 
     def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
-        rows = int(array.shape[0])
-        cols = int(array.shape[1])
-        return [
-            [self._backend.to_scalar(array[i, j]) for j in range(cols)]
-            for i in range(rows)
-        ]
+        """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
+        return self._backend.tolist(array)
 
     def _array_to_3d_list(self, array: "Array") -> list[list[list[float]]]:
-        blocks = int(array.shape[0])
-        rows = int(array.shape[1])
-        cols = int(array.shape[2])
-        return [
-            [
-                [self._backend.to_scalar(array[b, i, j]) for j in range(cols)]
-                for i in range(rows)
-            ]
-            for b in range(blocks)
-        ]
+        """Convert 3D array to nested Python list using native tolist() - O(1) vs O(n*m*k)."""
+        return self._backend.tolist(array)
         self._riemannian = None  # Lazy init for Fréchet mean
 
     def _compute_consensus(

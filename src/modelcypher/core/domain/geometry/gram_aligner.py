@@ -232,12 +232,8 @@ class GramAligner:
         self._centering_cache: dict[int, "Array"] = {}
 
     def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
-        rows = int(array.shape[0])
-        cols = int(array.shape[1])
-        return [
-            [self._backend.to_scalar(array[i, j]) for j in range(cols)]
-            for i in range(rows)
-        ]
+        """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
+        return self._backend.tolist(array)
 
     def _solve_feature_transform(
         self,

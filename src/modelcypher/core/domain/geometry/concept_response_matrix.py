@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -28,7 +27,9 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    is_finite,
     machine_epsilon,
+    sqrt_scalar,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ class AnchorActivation:
 
     def __post_init__(self) -> None:
         norm = (
-            math.sqrt(sum(float(value) * float(value) for value in self.activation))
+            sqrt_scalar(sum(float(value) * float(value) for value in self.activation), get_default_backend())
             if self.activation
             else 0.0
         )
@@ -118,7 +119,7 @@ class ConceptResponseMatrix:
                 continue
             mean = sum(norms) / float(anchor_count)
             variance = sum((value - mean) ** 2 for value in norms) / float(anchor_count)
-            std = math.sqrt(max(0.0, variance))
+            std = sqrt_scalar(max(0.0, variance), get_default_backend())
             hidden_dim = (
                 next(iter(layer_acts.values())).activation.__len__()
                 if layer_acts
@@ -229,7 +230,7 @@ class ConceptResponseMatrix:
                 if target_entry is None:
                     continue
                 target_gram, target_frob, target_correction = target_entry
-                denom = math.sqrt(source_frob * target_frob)
+                denom = sqrt_scalar(source_frob * target_frob, backend)
                 if denom < eps:
                     continue
                 hsic_xy_arr = backend.sum(source_gram * target_gram)
@@ -241,7 +242,7 @@ class ConceptResponseMatrix:
                     cka = 1.0
                 if feature_bias_correction:
                     correction = source_correction * target_correction
-                    if correction > 0.0 and math.isfinite(correction):
+                    if correction > 0.0 and is_finite(correction, backend):
                         cka = min(1.0, cka * correction)
                         if cka >= 1.0 - eps:
                             cka = 1.0
@@ -575,7 +576,7 @@ class ConceptResponseMatrix:
             if len(curr) != len(nxt):
                 continue
             diff = [float(nxt[idx] - curr[idx]) for idx in range(len(curr))]
-            total_norm += math.sqrt(sum(value * value for value in diff))
+            total_norm += sqrt_scalar(sum(value * value for value in diff), get_default_backend())
             delta.append(diff)
 
         mean_norm = total_norm / float(len(delta)) if delta else 0.0

@@ -24,14 +24,9 @@ if TYPE_CHECKING:
 
 
 def array_to_list(backend: "Backend", array: "Array") -> Any:
-    """Convert a backend array into nested Python lists without NumPy."""
-    shape = getattr(array, "shape", None)
-    if shape is None:
-        return array
-    if len(shape) == 0:
-        return backend.to_scalar(array)
-    if len(shape) == 1:
-        count = int(shape[0])
-        return [backend.to_scalar(array[i]) for i in range(count)]
-    count = int(shape[0])
-    return [array_to_list(backend, array[i]) for i in range(count)]
+    """Convert a backend array into nested Python lists.
+
+    Uses native backend tolist() which is MUCH faster than
+    element-by-element to_scalar() extraction.
+    """
+    return backend.tolist(array)
