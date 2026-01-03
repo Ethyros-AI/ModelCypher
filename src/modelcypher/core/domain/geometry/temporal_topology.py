@@ -46,6 +46,7 @@ from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concept
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_spearman_correlation,
     division_epsilon,
+    geodesic_svd,
     is_nan,
 )
 from modelcypher.core.domain.geometry.vector_math import (
@@ -201,7 +202,8 @@ class TemporalTopologyAnalyzer:
         centered = matrix_norm - mean_arr
         backend.eval(centered)
         try:
-            _, s, vh = backend.svd(centered, full_matrices=False)
+            # Geodesic SVD (GPU-only)
+            _, s, vh = geodesic_svd(backend, centered)
             backend.eval(s, vh)
             s_squared = s * s
             total = backend.sum(s_squared)
@@ -297,7 +299,8 @@ class TemporalTopologyAnalyzer:
             centered = arr - mean_vec
             backend.eval(centered)
             try:
-                _, _, vh = backend.svd(centered)
+                # Geodesic SVD (GPU-only)
+                _, _, vh = geodesic_svd(backend, centered)
                 backend.eval(vh)
                 result = vh[0]
                 backend.eval(result)

@@ -45,6 +45,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     svd_rank_threshold,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -562,7 +563,7 @@ def _project_svd(
         if m_s > m_t:
             # Truncate: keep top m_t rows by magnitude in SVD subspace
             # This preserves the most important components
-            row_norms = b.sqrt(b.sum(source_k ** 2, axis=1))
+            row_norms = geodesic_norms(source_k, b)
             b.eval(row_norms)
             # Sort by negative norms (descending order) and keep top m_t
             neg_norms = -row_norms
@@ -577,8 +578,8 @@ def _project_svd(
             # Get target's projection to the shared subspace
             target_k = b.matmul(target, V_t_k)
             b.eval(target_k)
-            source_norms = b.norm(source_k, axis=1)
-            target_norms = b.norm(target_k, axis=1)
+            source_norms = geodesic_norms(source_k, b)
+            target_norms = geodesic_norms(target_k, b)
             source_mean_arr = b.mean(source_norms) if int(source_norms.shape[0]) > 0 else None
             target_mean_arr = b.mean(target_norms) if int(target_norms.shape[0]) > 0 else None
             if source_mean_arr is not None and target_mean_arr is not None:

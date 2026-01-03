@@ -56,6 +56,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     condition_threshold,
     division_epsilon,
+    geodesic_svd,
     regularization_epsilon,
     tiny_value,
 )
@@ -399,8 +400,8 @@ class GeometricLoRAGenerator:
         delta_W_full = delta_W_full + reg_matrix
         backend.eval(delta_W_full)
 
-        # SVD for low-rank approximation
-        U, S, Vt = backend.svd(delta_W_full)
+        # SVD for low-rank approximation (geodesic - GPU-only)
+        U, S, Vt = geodesic_svd(backend, delta_W_full)
         backend.eval(U, S, Vt)
 
         # Determine rank

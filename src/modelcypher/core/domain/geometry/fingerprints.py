@@ -21,7 +21,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    geodesic_svd,
+)
 from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.ports.backend import Backend
 
@@ -155,8 +158,8 @@ class ModelFingerprintsProjection:
         means = self._backend.mean(X, axis=0, keepdims=True)
         X = X - means
 
-        # 4. PCA via SVD
-        U, S, Vt = self._backend.svd(X)
+        # 4. PCA via geodesic SVD (GPU-only)
+        U, S, Vt = geodesic_svd(self._backend, X)
 
         # Take top 2
         # Coordinates = U[:, :2] * S[:2]

@@ -75,6 +75,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     log_scalar,
     machine_epsilon,
     pi_value,
+    power_iteration_eigh,
     sqrt_scalar,
 )
 
@@ -583,8 +584,9 @@ def analyze_eigenvalues(
     """
     backend = backend or get_default_backend()
 
-    # Compute eigenvalues (Gram is symmetric positive semi-definite)
-    eigenvalues, _ = backend.eigh(gram)
+    # Compute eigenvalues (geodesic - GPU-only)
+    n_gram = int(gram.shape[0])
+    eigenvalues, _ = power_iteration_eigh(backend, gram, k=n_gram)
 
     # Sort descending
     eigenvalues = backend.sort(eigenvalues)

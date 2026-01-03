@@ -31,6 +31,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
     infinity_threshold,
+    power_iteration_eigh,
     regularization_epsilon,
     tiny_value,
 )
@@ -161,7 +162,9 @@ class SpectralSignature:
         laplacian = self._build_laplacian(weights_arr, degree, normalized=True)
         backend.eval(laplacian)
 
-        eigvals, _ = backend.eigh(laplacian)
+        # Geodesic eigendecomposition (GPU-only)
+        n_lap = int(laplacian.shape[0])
+        eigvals, _ = power_iteration_eigh(backend, laplacian, k=n_lap)
         backend.eval(eigvals)
         eig_sorted = backend.sort(eigvals)
         backend.eval(eig_sorted)

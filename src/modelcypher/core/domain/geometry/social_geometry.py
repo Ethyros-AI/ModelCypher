@@ -43,9 +43,13 @@ from modelcypher.core.domain.geometry.atlas_registry import get_social_concepts
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_nan,
+    power_iteration_eigh,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_batch,
+    geodesic_norms,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -164,9 +168,10 @@ class SocialGeometryAnalyzer:
         X_t = backend.transpose(X_centered)
         cov = backend.matmul(X_t, X_centered) / max(n - 1, 1)
 
-        # Eigendecomposition (requires float32 - eigh doesn't support bfloat16)
+        # Eigendecomposition (geodesic - GPU-only, float32 required)
         cov = backend.astype(cov, "float32")
-        eigenvalues, eigenvectors = backend.eigh(cov)
+        n_cov = int(cov.shape[0])
+        eigenvalues, eigenvectors = power_iteration_eigh(backend, cov, k=n_cov)
         backend.eval(eigenvalues, eigenvectors)
 
         # Sort descending by eigenvalue
@@ -379,12 +384,12 @@ class SocialGeometryAnalyzer:
 
             # Direction vector in tangent space (approximation)
             power_direction = high_centroid - low_centroid
-            norm = backend.norm(power_direction)
+            norm = geodesic_norms(backend.reshape(power_direction, (1, -1)), backend)
             backend.eval(norm)
-            norm_val = float(backend.to_scalar(norm))
+            norm_val = float(backend.to_scalar(norm[0]))
             div_eps = division_epsilon(backend, power_direction)
             if norm_val > div_eps:
-                power_direction = power_direction / norm
+                power_direction = power_direction / norm_val
             else:
                 power_direction = backend.zeros_like(power_direction)
         else:

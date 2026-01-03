@@ -34,6 +34,7 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    power_iteration_eigh,
 )
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
@@ -184,7 +185,8 @@ def alignment_signal_from_matrices(
 def _matrix_rank(matrix: "object", backend: "object") -> int:
     """Compute effective rank using dtype-derived threshold."""
     gram = _cache.get_or_compute_gram(matrix, backend)
-    eigvals, _ = backend.eigh(gram)
+    n_gram = int(gram.shape[0])
+    eigvals, _ = power_iteration_eigh(backend, gram, k=n_gram)
     backend.eval(eigvals)
     max_val = backend.max(eigvals)
     eps = machine_epsilon(backend, gram)

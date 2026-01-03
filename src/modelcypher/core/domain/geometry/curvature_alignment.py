@@ -35,7 +35,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    geodesic_svd,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
@@ -238,8 +241,8 @@ def curvature_weighted_procrustes(
         # This preserves the most important directions
         min_dim = min(d_source, d_target)
 
-        # SVD of source
-        U, S, Vt = backend.svd(source_activations)
+        # SVD of source (geodesic - GPU-only, iterates until convergence)
+        U, S, Vt = geodesic_svd(backend, source_activations)
 
         # Truncate to target dimension
         if d_source > d_target:
@@ -258,10 +261,10 @@ def curvature_weighted_procrustes(
     source_centered = source_activations - source_mean
     target_centered = target_activations - target_mean
 
-    # Step 3: Compute optimal rotation via SVD
+    # Step 3: Compute optimal rotation via SVD (geodesic - GPU-only)
     # R = V @ U^T where M = U @ S @ V^T is SVD of target^T @ source
     M = backend.matmul(backend.transpose(target_centered), source_centered)
-    U, S, Vt = backend.svd(M)
+    U, S, Vt = geodesic_svd(backend, M)
 
     # Optimal orthogonal transformation
     R = backend.matmul(U, Vt)

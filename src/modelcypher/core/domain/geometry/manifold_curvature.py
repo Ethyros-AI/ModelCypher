@@ -53,8 +53,10 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     is_finite,
     log_scalar,
+    power_iteration_eigh,
     regularization_epsilon,
     sqrt_scalar,
     tiny_value,
@@ -841,8 +843,8 @@ class SectionalCurvatureEstimator:
         centered = neighbors - point
 
         try:
-            # Use SVD for robust linear least squares
-            U, S, Vt = backend.svd(centered)
+            # Use geodesic SVD for robust linear least squares (GPU-only)
+            U, S, Vt = geodesic_svd(backend, centered)
             backend.eval(S, Vt)
 
             if int(S.shape[0]) < d:
@@ -902,8 +904,9 @@ class SectionalCurvatureEstimator:
             metric_inv = backend.inv(metric_reg)
             shape_op = backend.matmul(metric_inv, hessian)
 
-            # Principal curvatures are eigenvalues
-            eigenvalues, eigenvectors = backend.eigh(shape_op)
+            # Principal curvatures are eigenvalues (geodesic - GPU-only)
+            d_shape = int(shape_op.shape[0])
+            eigenvalues, eigenvectors = power_iteration_eigh(backend, shape_op, k=d_shape)
 
             return eigenvectors, eigenvalues
 

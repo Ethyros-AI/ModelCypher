@@ -45,6 +45,7 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_spearman_correlation,
     division_epsilon,
+    geodesic_svd,
     is_nan,
 )
 from modelcypher.core.domain.geometry.vector_math import (
@@ -264,7 +265,8 @@ class MoralGeometryAnalyzer:
         mean_vec = backend.mean(matrix_norm, axis=0, keepdims=True)
         centered = matrix_norm - mean_vec
         try:
-            _, s, vh = backend.svd(centered)
+            # Geodesic SVD (GPU-only)
+            _, s, vh = geodesic_svd(backend, centered)
             backend.eval(s)
             s_squared = s * s
             total = backend.sum(s_squared)
@@ -354,7 +356,8 @@ class MoralGeometryAnalyzer:
             mean_vec = backend.mean(arr, axis=0, keepdims=True)
             centered = arr - mean_vec
             try:
-                _, _, vh = backend.svd(centered)
+                # Geodesic SVD (GPU-only)
+                _, _, vh = geodesic_svd(backend, centered)
                 return vh[0]
             except Exception:
                 d = int(arr.shape[1])

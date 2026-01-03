@@ -41,15 +41,18 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     e_value,
     exp_scalar,
+    geodesic_svd,
     inf_value,
     lgamma_scalar,
     log_scalar,
     machine_epsilon,
     pi_value,
+    power_iteration_eigh,
     regularization_epsilon,
     sqrt_scalar,
     tiny_value,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.core.ports.backend import Array, Backend
@@ -166,8 +169,9 @@ class ConceptVolume:
         """Log determinant of covariance for normalization."""
         if self._log_det_cov is None:
             backend = get_default_backend()
-            # slogdet returns (sign, logdet) - we compute via eigenvalues
-            eigenvalues = backend.eigh(self.covariance)[0]
+            # slogdet returns (sign, logdet) - we compute via eigenvalues (geodesic - GPU-only)
+            n_cov = int(self.covariance.shape[0])
+            eigenvalues, _ = power_iteration_eigh(backend, self.covariance, k=n_cov)
             backend.eval(eigenvalues)
             min_eig = backend.min(eigenvalues)
             backend.eval(min_eig)
@@ -210,7 +214,9 @@ class ConceptVolume:
     def effective_radius(self) -> float:
         """Effective radius from covariance (geometric mean of eigenvalues)."""
         backend = get_default_backend()
-        eigenvalues = backend.eigh(self.covariance)[0]
+        # Geodesic eigendecomposition (GPU-only)
+        n_cov = int(self.covariance.shape[0])
+        eigenvalues, _ = power_iteration_eigh(backend, self.covariance, k=n_cov)
         backend.eval(eigenvalues)
         # Geometric mean via log: exp(mean(log(max(eig, tiny))))
         tiny = tiny_value(backend, eigenvalues)
@@ -778,9 +784,9 @@ class RiemannianDensityEstimator:
 
         # Handle edge case: coincident centroids have geodesic distance 0 by definition
         diff = volume_a.centroid - volume_b.centroid
-        diff_norm = backend.norm(diff)
+        diff_norm = geodesic_norms(backend.reshape(diff, (1, -1)), backend)
         backend.eval(diff_norm)
-        centroid_diff = float(backend.to_scalar(diff_norm))
+        centroid_diff = float(backend.to_scalar(diff_norm[0]))
         if centroid_diff < machine_epsilon(backend, diff):
             centroid_distance = 0.0
         else:
@@ -971,7 +977,9 @@ class RiemannianDensityEstimator:
         backend = get_default_backend()
         try:
             metric = metric_fn(centroid)
-            eigenvalues, eigenvectors = backend.eigh(metric)
+            # Geodesic eigendecomposition (GPU-only)
+            n_metric = int(metric.shape[0])
+            eigenvalues, eigenvectors = power_iteration_eigh(backend, metric, k=n_metric)
             backend.eval(eigenvalues, eigenvectors)
 
             # Compute inverse sqrt of eigenvalues (use tiny_value to prevent sqrt(0))
@@ -1089,8 +1097,9 @@ class RiemannianDensityEstimator:
             backend.eval(term1_arr)
             term1 = 0.125 * float(backend.to_scalar(term1_arr))
 
-            # Compute log det of cov_avg via eigenvalues
-            eigenvalues = backend.eigh(cov_avg)[0]
+            # Compute log det of cov_avg via eigenvalues (geodesic - GPU-only)
+            n_cov_avg = int(cov_avg.shape[0])
+            eigenvalues, _ = power_iteration_eigh(backend, cov_avg, k=n_cov_avg)
             backend.eval(eigenvalues)
             min_eig = backend.min(eigenvalues)
             backend.eval(min_eig)
@@ -1224,15 +1233,15 @@ class RiemannianDensityEstimator:
         dim_b = int(volume_b.covariance.shape[0])
 
         if dim_a == dim_b:
-            # Same dimension: use principal angles
-            _, Va = backend.eigh(volume_a.covariance)
-            _, Vb = backend.eigh(volume_b.covariance)
+            # Same dimension: use principal angles (geodesic - GPU-only)
+            _, Va = power_iteration_eigh(backend, volume_a.covariance, k=dim_a)
+            _, Vb = power_iteration_eigh(backend, volume_b.covariance, k=dim_b)
             backend.eval(Va, Vb)
 
-            # Compute singular values of Va^T @ Vb
+            # Compute singular values of Va^T @ Vb (geodesic - GPU-only)
             # These are cosines of principal angles
             M = backend.matmul(backend.transpose(Va), Vb)
-            singular_values = backend.svd(M)[1]
+            _, singular_values, _ = geodesic_svd(backend, M)
             backend.eval(singular_values)
 
             sq_vals = singular_values * singular_values

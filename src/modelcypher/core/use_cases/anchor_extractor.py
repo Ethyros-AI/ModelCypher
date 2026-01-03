@@ -28,6 +28,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.use_cases.quantization_utils import (
     QuantizationPlan,
     dequantize_if_needed,
@@ -225,7 +226,8 @@ class AnchorExtractor:
         b = backend or get_default_backend()
         mean = b.mean(matrix, axis=0, keepdims=True)
         centered = matrix - mean
-        norms = b.norm(centered, axis=1, keepdims=True)
+        norms = geodesic_norms(centered, b)
+        norms = b.reshape(norms, (-1, 1))
         eps = division_epsilon(b, norms)
         norms = b.maximum(norms, b.full(norms.shape, eps))
         return centered / norms

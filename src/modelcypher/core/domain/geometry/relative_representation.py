@@ -41,7 +41,10 @@ from typing import TYPE_CHECKING, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    geodesic_svd,
+)
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_cosine_between_sets,
     geodesic_norms,
@@ -200,7 +203,8 @@ def align_relative_representations(
     backend.eval(source_centered, target_centered)
     M = backend.matmul(backend.transpose(source_centered), target_centered)  # [n_anchors, n_anchors]
     backend.eval(M)
-    U, S, Vt = backend.svd(M, full_matrices=False)
+    # Geodesic SVD (GPU-only)
+    U, S, Vt = geodesic_svd(backend, M)
     backend.eval(U, S, Vt)
 
     # Ensure proper rotation (det = +1)
