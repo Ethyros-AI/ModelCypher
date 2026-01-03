@@ -21,8 +21,7 @@ Uses pure geometry API - raw measurements, no classification.
 """
 
 from modelcypher.core.domain.entropy.geometric_alignment import GeometricAlignmentSystem
-import math
-import sys
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration import (
     GeometricAlignmentCalibration,
 )
@@ -34,7 +33,10 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
 
 
 def _div_eps() -> float:
-    return math.sqrt(sys.float_info.epsilon)
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 def _calibration() -> GeometricAlignmentCalibration:

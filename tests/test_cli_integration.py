@@ -132,21 +132,30 @@ def test_entropy_detect_distress_nominal():
     assert result.exit_code == 0
 
 
-def test_entropy_verify_baseline():
+def test_entropy_verify_baseline(tmp_path):
     """Test entropy verify-baseline command."""
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "modelId": "test-model",
+                "statistics": {
+                    "mean": 0.1,
+                    "stdDev": 0.05,
+                    "min": 0.0,
+                    "max": 0.3,
+                },
+                "sampleCount": 4,
+            }
+        )
+    )
     result = runner.invoke(
         app,
         [
             "entropy",
             "verify-baseline",
-            "--mean",
-            "0.1",
-            "--std-dev",
-            "0.05",
-            "--max",
-            "0.3",
-            "--min",
-            "0.0",
+            "--baseline",
+            str(baseline_path),
             "--observed",
             "[0.08, 0.12, 0.09, 0.11]",
             "--output",
@@ -155,8 +164,8 @@ def test_entropy_verify_baseline():
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "declared" in data
-    assert "observed" in data
+    assert "declaredBaseline" in data
+    assert "observedBaseline" in data
 
 
 def test_entropy_window_basic():

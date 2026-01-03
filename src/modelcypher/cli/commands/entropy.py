@@ -23,7 +23,7 @@ No user-configurable thresholds - the geometry IS the signal.
 Commands:
     mc entropy analyze <samples>
     mc entropy detect-distress <samples>
-    mc entropy verify-baseline --mean ... --std-dev ... --max ... --min ... --observed ...
+    mc entropy verify-baseline --baseline <path> --observed ...
     mc entropy window <samples>
     mc entropy conversation-track --session <file>
     mc entropy dual-path <samples>
@@ -250,12 +250,7 @@ def entropy_detect_distress(
 @app.command("verify-baseline")
 def entropy_verify_baseline(
     ctx: typer.Context,
-    declared_mean: float = typer.Option(..., "--mean", help="Declared delta mean"),
-    declared_std_dev: float = typer.Option(
-        ..., "--std-dev", help="Declared delta standard deviation"
-    ),
-    declared_max: float = typer.Option(..., "--max", help="Declared maximum delta"),
-    declared_min: float = typer.Option(..., "--min", help="Declared minimum delta"),
+    baseline: str = typer.Option(..., "--baseline", help="Path to baseline JSON"),
     observed_deltas: str = typer.Option(
         ..., "--observed", help="JSON array of observed delta values, e.g. '[0.1, 0.15, 0.12]'"
     ),
@@ -273,7 +268,7 @@ def entropy_verify_baseline(
     context = _context(ctx)
     import json as json_lib
 
-    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+    from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 
     try:
         deltas = json_lib.loads(observed_deltas)
@@ -295,65 +290,44 @@ def entropy_verify_baseline(
         write_output({"error": "No observed deltas provided"}, context.output_format, context.pretty)
         return
 
-    n = len(parsed_deltas)
+    service = EntropyProbeService()
+    try:
+        result = service.verify_baseline(
+            baseline_path=baseline,
+            observed_deltas=parsed_deltas,
+        )
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1052",
+            title="Baseline verification failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
 
-    # Compute observed statistics
-    _b = get_default_backend()
-    observed_mean = sum(parsed_deltas) / n
-    observed_std = sqrt_scalar(sum((d - observed_mean) ** 2 for d in parsed_deltas) / n, _b) if n > 1 else 0.0
-    observed_min = min(parsed_deltas)
-    observed_max = max(parsed_deltas)
-
-    backend = _b
-    eps = division_epsilon(backend, backend.array([0.0]))
-
-    mean_z_score = (observed_mean - declared_mean) / max(declared_std_dev, eps)
-    std_dev_ratio = observed_std / max(declared_std_dev, eps)
-
-    max_deviation = abs(observed_max - declared_max)
-    min_deviation = abs(observed_min - declared_min)
-    declared_range = abs(declared_max - declared_min)
-    observed_range = abs(observed_max - observed_min)
-
-    sample_z_scores = [(d - declared_mean) / max(declared_std_dev, eps) for d in parsed_deltas]
-
-    payload = {
-        "sampleCount": n,
-        "declared": {
-            "mean": declared_mean,
-            "stdDev": declared_std_dev,
-            "min": declared_min,
-            "max": declared_max,
-        },
-        "observed": {
-            "mean": observed_mean,
-            "stdDev": observed_std,
-            "min": observed_min,
-            "max": observed_max,
-        },
-        "meanZScore": mean_z_score,
-        "stdDevRatio": std_dev_ratio,
-        "maxDeviation": max_deviation,
-        "minDeviation": min_deviation,
-        "declaredRange": declared_range,
-        "observedRange": observed_range,
-        "sampleZScores": sample_z_scores,
-    }
+    payload = EntropyProbeService.verification_payload(result)
+    payload["baselinePath"] = baseline
 
     if context.output_format == "text":
+        declared = payload["declaredBaseline"]
+        observed = payload["observedBaseline"]
+        comparison = payload["comparison"]
         lines = [
             "BASELINE VERIFICATION (raw comparison)",
-            f"Sample Count: {n}",
+            f"Sample Count: {payload['totalSamples']}",
             "",
-            f"Declared: mean={declared_mean:.4f}, std={declared_std_dev:.4f}, range=[{declared_min:.4f}, {declared_max:.4f}]",
-            f"Observed: mean={observed_mean:.4f}, std={observed_std:.4f}, range=[{observed_min:.4f}, {observed_max:.4f}]",
+            f"Declared: mean={declared['deltaMean']:.4f}, std={declared['deltaStdDev']:.4f}, "
+            f"range=[{declared['deltaMin']:.4f}, {declared['deltaMax']:.4f}]",
+            f"Observed: mean={observed['deltaMean']:.4f}, std={observed['deltaStdDev']:.4f}, "
+            f"range=[{observed['deltaMin']:.4f}, {observed['deltaMax']:.4f}]",
             "",
-            f"Mean Z-score: {mean_z_score:.4f}",
-            f"StdDev Ratio: {std_dev_ratio:.4f}",
-            f"Max Deviation: {max_deviation:.4f}",
-            f"Min Deviation: {min_deviation:.4f}",
-            f"Declared Range: {declared_range:.4f}",
-            f"Observed Range: {observed_range:.4f}",
+            f"Mean Z-score: {comparison['meanZScore']:.4f}",
+            f"StdDev Ratio: {comparison['stdDevRatio']:.4f}",
+            f"Max Deviation: {comparison['maxDeviation']:.4f}",
+            f"Min Deviation: {comparison['minDeviation']:.4f}",
+            f"Declared Range: {comparison['declaredRange']:.4f}",
+            f"Observed Range: {comparison['observedRange']:.4f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

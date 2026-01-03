@@ -186,8 +186,6 @@ class ThermoCalibrator:
                 measurements = calorimeter.measure_with_modifiers(
                     prompt=probe,
                     modifiers=modifiers,
-                    temperature=1.0,  # Standard temperature
-                    max_tokens=64,  # Sufficient for entropy measurement
                 )
             except Exception as e:
                 logger.warning(f"Failed to measure probe {i}: {e}")

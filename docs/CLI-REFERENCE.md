@@ -529,7 +529,7 @@ mc entropy detect-distress '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]'
 ### mc entropy verify-baseline
 Compare observed entropy deltas against declared baseline.
 ```bash
-mc entropy verify-baseline --mean 0.1 --std-dev 0.05 --max 0.3 --min 0.0 --observed '[0.1, 0.15, 0.12]'
+mc entropy verify-baseline --baseline ./calibration.json --observed '[0.1, 0.15, 0.12]'
 ```
 
 ### mc entropy window

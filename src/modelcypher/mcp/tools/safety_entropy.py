@@ -273,24 +273,16 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_verify_baseline(
-            declaredMean: float,
-            declaredStdDev: float,
-            declaredMax: float,
-            declaredMin: float,
+            baselinePath: str,
             observedDeltas: list[float],
-            baseModelId: str,
-            adapterPath: str,
+            adapterPath: str | None = None,
         ) -> dict:
-            """Verify observed entropy deltas against declared baseline."""
+            """Verify observed entropy deltas against a baseline file."""
             from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 
             result = ctx.entropy_probe_service.verify_baseline(
-                declared_mean=declaredMean,
-                declared_std_dev=declaredStdDev,
-                declared_max=declaredMax,
-                declared_min=declaredMin,
+                baseline_path=baselinePath,
                 observed_deltas=observedDeltas,
-                base_model_id=baseModelId,
                 adapter_path=adapterPath,
             )
             payload = EntropyProbeService.verification_payload(result)

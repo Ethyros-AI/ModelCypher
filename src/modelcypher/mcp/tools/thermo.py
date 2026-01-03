@@ -136,7 +136,8 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                 "jobId": result.job_id,
                 "entropyHistory": result.entropy_history,
                 "finalEntropy": result.final_entropy,
-                "entropyTrend": result.entropy_trend,
+                "entropyDelta": result.entropy_delta,
+                "entropyRatio": result.entropy_ratio,
             }
 
     if "mc_thermo_measure" in tool_set:

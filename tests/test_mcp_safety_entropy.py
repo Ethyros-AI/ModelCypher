@@ -362,21 +362,32 @@ class TestEntropyDetectDistressTool:
 class TestEntropyVerifyBaselineTool:
     """Tests for mc_entropy_verify_baseline tool."""
 
-    def test_verify_baseline_schema(self, mcp_env: dict[str, str]) -> None:
+    def test_verify_baseline_schema(self, mcp_env: dict[str, str], tmp_path: Path) -> None:
         """Tool should return properly structured response."""
         observed = [0.1, 0.15, 0.2, -0.05, 0.12]
+        baseline_path = tmp_path / "baseline.json"
+        baseline_path.write_text(
+            json.dumps(
+                {
+                    "modelId": "test-model",
+                    "statistics": {
+                        "mean": 0.1,
+                        "stdDev": 0.1,
+                        "min": -0.1,
+                        "max": 0.3,
+                    },
+                    "sampleCount": 5,
+                }
+            )
+        )
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_entropy_verify_baseline",
                     arguments={
-                        "declaredMean": 0.1,
-                        "declaredStdDev": 0.1,
-                        "declaredMax": 0.3,
-                        "declaredMin": -0.1,
+                        "baselinePath": str(baseline_path),
                         "observedDeltas": observed,
-                        "baseModelId": "test-model",
                         "adapterPath": "/path/to/adapter",
                     },
                 )

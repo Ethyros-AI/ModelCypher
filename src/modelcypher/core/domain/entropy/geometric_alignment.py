@@ -31,7 +31,6 @@ Ported from the reference Swift implementation, then cleaned to pure geometry.
 
 from __future__ import annotations
 
-import math
 import threading
 from dataclasses import dataclass, field
 from enum import Enum

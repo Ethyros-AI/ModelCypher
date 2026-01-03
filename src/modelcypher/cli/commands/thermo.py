@@ -209,7 +209,8 @@ def thermo_entropy(
         "jobId": result.job_id,
         "entropyHistory": result.entropy_history,
         "finalEntropy": result.final_entropy,
-        "entropyTrend": result.entropy_trend,
+        "entropyDelta": result.entropy_delta,
+        "entropyRatio": result.entropy_ratio,
     }
 
     write_output(payload, context.output_format, context.pretty)

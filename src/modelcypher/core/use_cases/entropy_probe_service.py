@@ -24,7 +24,9 @@ Provides pattern analysis and baseline verification for entropy monitoring.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from pathlib import Path
 
 from modelcypher.core.domain.entropy.baseline_verification_probe import (
     BaselineComparison,
@@ -82,37 +84,23 @@ class EntropyProbeService:
 
     def verify_baseline(
         self,
-        declared_mean: float,
-        declared_std_dev: float,
-        declared_max: float,
-        declared_min: float,
+        baseline_path: str,
         observed_deltas: list[float],
         *,
-        base_model_id: str,
-        adapter_path: str,
+        adapter_path: str | None = None,
     ) -> VerificationResult:
         """
         Verify observed entropy deltas against declared baseline.
 
         Args:
-            declared_mean: Declared delta mean from manifest
-            declared_std_dev: Declared delta standard deviation
-            declared_max: Declared maximum delta
-            declared_min: Declared minimum delta
+            baseline_path: Path to a baseline JSON (entropy calibration output
+                or EntropyBaseline dict).
             observed_deltas: List of observed delta values
-            base_model_id: Base model identifier
             adapter_path: Path to adapter (for reporting)
         Returns:
             VerificationResult with comparison metrics and statistics
         """
-        declared_baseline = EntropyBaseline(
-            delta_mean=declared_mean,
-            delta_std_dev=declared_std_dev,
-            delta_max=declared_max,
-            delta_min=declared_min,
-            base_model_id=base_model_id,
-            sample_count=0,  # Declared baselines don't track sample count
-        )
+        declared_baseline = self._load_declared_baseline(baseline_path)
 
         if not observed_deltas:
             observed_baseline = EntropyBaseline(
@@ -120,7 +108,7 @@ class EntropyProbeService:
                 delta_std_dev=0.0,
                 delta_max=0.0,
                 delta_min=0.0,
-                base_model_id=base_model_id,
+                base_model_id=declared_baseline.base_model_id,
                 sample_count=0,
             )
         else:
@@ -137,7 +125,7 @@ class EntropyProbeService:
                 delta_std_dev=std_dev,
                 delta_max=max(observed_deltas),
                 delta_min=min(observed_deltas),
-                base_model_id=base_model_id,
+                base_model_id=declared_baseline.base_model_id,
                 sample_count=len(observed_deltas),
             )
 
@@ -147,8 +135,8 @@ class EntropyProbeService:
         )
 
         return VerificationResult(
-            adapter_path=adapter_path,
-            base_model_path=base_model_id,
+            adapter_path=adapter_path or "unknown",
+            base_model_path=declared_baseline.base_model_id,
             declared_baseline=declared_baseline,
             observed_baseline=observed_baseline,
             comparison=comparison,
@@ -157,6 +145,34 @@ class EntropyProbeService:
             verification_duration=0.0,
             timestamp=datetime.now(),
         )
+
+    @staticmethod
+    def _load_declared_baseline(baseline_path: str) -> EntropyBaseline:
+        """Load declared baseline from a calibration or baseline JSON file."""
+        path = Path(baseline_path).expanduser().resolve()
+        if not path.exists():
+            raise ValueError(f"Baseline file does not exist: {path}")
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+
+        # Entropy calibration output schema (EntropyCalibrationResult.to_dict)
+        if isinstance(data, dict) and "statistics" in data and "modelId" in data:
+            stats = data.get("statistics", {})
+            return EntropyBaseline(
+                delta_mean=float(stats.get("mean", 0.0)),
+                delta_std_dev=float(stats.get("stdDev", 0.0)),
+                delta_max=float(stats.get("max", 0.0)),
+                delta_min=float(stats.get("min", 0.0)),
+                base_model_id=str(data.get("modelId", "unknown")),
+                sample_count=int(data.get("sampleCount", 0)),
+                test_conditions="entropy_calibration",
+            )
+
+        # EntropyBaseline schema
+        if isinstance(data, dict):
+            return EntropyBaseline.from_dict(data)
+
+        raise ValueError("Baseline file must be a JSON object")
 
     @staticmethod
     def pattern_payload(pattern: EntropyPattern) -> dict:

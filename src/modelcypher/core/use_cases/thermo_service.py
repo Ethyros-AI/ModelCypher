@@ -75,7 +75,8 @@ class ThermoEntropyResult:
     job_id: str
     entropy_history: list[dict]
     final_entropy: float
-    entropy_trend: str
+    entropy_delta: float
+    entropy_ratio: float | None
 
 
 # --- New data classes for measure/detect ---
@@ -322,13 +323,10 @@ class ThermoService:
         self,
         prompt: str,
         model_path: str,
-        max_tokens: int | None = None,
-        temperature: float | None = None,
     ) -> ThermoPathIntegrationResult:
         """Integrate entropy trajectories with gate detections for a response.
 
-        All analysis parameters are derived from the data. Only inference
-        parameters (max_tokens, temperature) can be optionally overridden.
+        All analysis parameters are derived from the data.
         """
         if self._embedder is None:
             raise ValueError("Embedding provider required for thermo-path integration")
@@ -337,14 +335,7 @@ class ThermoService:
 
         calorimeter = self._get_calorimeter(model_path)
 
-        # Use calorimeter defaults if not specified
-        entropy_kwargs: dict = {}
-        if temperature is not None:
-            entropy_kwargs["temperature"] = temperature
-        if max_tokens is not None:
-            entropy_kwargs["max_tokens"] = max_tokens
-
-        measurement = calorimeter.measure_entropy(prompt, **entropy_kwargs)
+        measurement = calorimeter.measure_entropy(prompt)
 
         # GateDetector derives all thresholds from data
         detector = GateDetector(embedder=self._embedder)
@@ -428,49 +419,36 @@ class ThermoService:
         final_entropy = entropy_history[-1]["entropy"]
         initial_entropy = entropy_history[0]["entropy"]
 
-        if final_entropy < initial_entropy * 0.9:
-            entropy_trend = "decreasing"
-        elif final_entropy > initial_entropy * 1.1:
-            entropy_trend = "increasing"
-        else:
-            entropy_trend = "stable"
+        entropy_delta = final_entropy - initial_entropy
+        entropy_ratio = (
+            final_entropy / initial_entropy
+            if abs(initial_entropy) > 0
+            else None
+        )
 
         return ThermoEntropyResult(
             job_id=job_id,
             entropy_history=entropy_history,
             final_entropy=final_entropy,
-            entropy_trend=entropy_trend,
+            entropy_delta=entropy_delta,
+            entropy_ratio=entropy_ratio,
         )
 
     def measure(
         self,
         prompt: str,
         model_path: str,
-        modifiers: list[str] | None = None,
     ) -> ThermoMeasureResult:
         """Measure entropy across linguistic modifiers for a prompt.
 
         Args:
             prompt: The base prompt to measure.
             model_path: Path to the model directory.
-            modifiers: Optional list of modifier names. If None, uses all defaults.
 
         Returns:
             ThermoMeasureResult with measurements and statistics.
         """
-        # Resolve modifiers
-        if modifiers is None:
-            active_modifiers = DEFAULT_MODIFIERS
-        else:
-            active_modifiers = []
-            for name in modifiers:
-                if name in self._modifiers_by_name:
-                    active_modifiers.append(self._modifiers_by_name[name])
-                else:
-                    logger.warning(f"Unknown modifier '{name}', skipping")
-
-        if not active_modifiers:
-            active_modifiers = DEFAULT_MODIFIERS
+        active_modifiers = DEFAULT_MODIFIERS
 
         measurements: list[ModifierMeasurement] = []
         entropies: list[float] = []
@@ -560,7 +538,6 @@ class ThermoService:
         self,
         prompt: str,
         model_path: str,
-        modifiers: list[str] | None = None,
     ) -> ThermoDetectResult:
         """Measure prompt entropy differential.
 
@@ -570,18 +547,14 @@ class ThermoService:
         Args:
             prompt: The prompt to analyze.
             model_path: Path to the model directory.
-            modifiers: List of modifier names to use. Defaults to all modifiers.
 
         Returns:
             ThermoDetectResult with raw entropy measurements.
         """
         start_time = time.time()
 
-        if modifiers is None:
-            modifiers = [m.name for m in DEFAULT_MODIFIERS]
-
         # Measure entropy across modifiers
-        measure_result = self.measure(prompt, model_path, modifiers)
+        measure_result = self.measure(prompt, model_path)
 
         # Extract baseline and intensity entropies
         baseline_entropy = 0.0
@@ -619,14 +592,12 @@ class ThermoService:
         self,
         prompts_file: str,
         model_path: str,
-        modifiers: list[str] | None = None,
     ) -> list[ThermoDetectResult]:
         """Batch measure entropy differential across multiple prompts.
 
         Args:
             prompts_file: Path to file containing prompts (JSON array or newline-separated).
             model_path: Path to the model directory.
-            modifiers: List of modifier names to use.
 
         Returns:
             List of ThermoDetectResult with raw measurements, one per prompt.
@@ -635,7 +606,7 @@ class ThermoService:
 
         results: list[ThermoDetectResult] = []
         for prompt in prompts:
-            result = self.detect(prompt, model_path, modifiers)
+            result = self.detect(prompt, model_path)
             results.append(result)
 
         return results
