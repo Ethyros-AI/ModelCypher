@@ -108,7 +108,8 @@ class TestGramAlignerFindPerfectAlignment:
 
         aligned = b.matmul(A, b.array(result.feature_transform))
         b.eval(aligned)
-        cka = compute_cka(aligned, B, backend=b)
+        cka_result = compute_cka(aligned, B, backend=b)
+        cka = cka_result.best
         eps = result.precision_threshold
         assert abs(cka - result.achieved_cka) <= eps
         assert result.is_perfect

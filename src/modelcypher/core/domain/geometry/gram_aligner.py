@@ -248,6 +248,7 @@ class GramAligner:
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
+            safe_pinv,
             solve_full_row_rank_via_qr,
             solve_via_gram_alignment,
         )
@@ -258,6 +259,7 @@ class GramAligner:
             return None
 
         eps = machine_epsilon(b, source_centered)
+        reg_threshold = max(eps, reg) if reg is not None else eps
         candidates: list[tuple[float, "Array", str]] = []
 
         # Method 1: Gram-space alignment via SVD + Procrustes
@@ -298,7 +300,7 @@ class GramAligner:
         b.eval(eigvals, eigvecs)
 
         inv_vals = b.where(
-            eigvals > eps,
+            eigvals > reg_threshold,
             1.0 / eigvals,
             b.zeros_like(eigvals),
         )
@@ -322,8 +324,23 @@ class GramAligner:
         residual_eig = b.norm(reconstructed - target_centered)
         target_norm = b.norm(target_centered)
         b.eval(residual_eig, target_norm)
-        rel_residual = float(b.to_scalar(residual_eig)) / (float(b.to_scalar(target_norm)) + eps)
+        rel_residual = float(b.to_scalar(residual_eig)) / (
+            float(b.to_scalar(target_norm)) + reg_threshold
+        )
         candidates.append((rel_residual, F_eig, "eigendecomposition"))
+
+        # Method 4: Pseudoinverse solve (robust for rank-deficient cases)
+        F_pinv, pinv_diag = safe_pinv(b, source_centered, rcond=reg_threshold)
+        F_pinv = b.matmul(F_pinv, target_centered)
+        b.eval(F_pinv)
+        reconstructed = b.matmul(source_centered, F_pinv)
+        residual_pinv = b.norm(reconstructed - target_centered)
+        target_norm = b.norm(target_centered)
+        b.eval(residual_pinv, target_norm)
+        rel_residual = float(b.to_scalar(residual_pinv)) / (
+            float(b.to_scalar(target_norm)) + reg_threshold
+        )
+        candidates.append((rel_residual, F_pinv, "pinv"))
 
         # Select best method (lowest error)
         if not candidates:
@@ -465,7 +482,7 @@ class GramAligner:
         # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
         # Uses sqrt(machine_epsilon) as the convergence criterion
         # This is the standard numerical tolerance for iterative algorithms
-        precision_threshold = regularization_epsilon(b, source_activations)
+        precision_threshold = division_epsilon(b, source_activations)
 
         # PARADIGM SHIFT: CKA = 1.0 is achievable at ANY precision.
         # The algorithm aligns SHARED RELATIONAL SPACE (signal), not full
@@ -817,7 +834,7 @@ class GramAligner:
 
         # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
         # Uses sqrt(machine_epsilon) as the convergence criterion
-        precision_threshold = regularization_epsilon(b, source_centered)
+        precision_threshold = division_epsilon(b, source_centered)
 
         # Use centering matrix for CKA computation
         H = self._centering_matrix(n_samples)
