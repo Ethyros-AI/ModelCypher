@@ -49,64 +49,6 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class SweepConfig:
-    """Configuration for manifold fidelity sweep.
-
-    All parameters are derived from data geometry when None:
-    - ranks: geometric progression up to data dimension
-    - neighbor_count: sqrt(n) scaling
-    - min_anchor_count: based on smallest rank
-    - plateau_epsilon: from fidelity variance
-    """
-
-    # Ranks to sweep: None = derive geometric progression [4, 8, 16, ...] up to dim
-    ranks: list[int] | None = None
-    # Number of neighbors for k-NN metrics: None = derive from sqrt(n)
-    neighbor_count: int | None = None
-    # Minimum anchors required: None = derive from smallest rank
-    min_anchor_count: int | None = None
-    plateau_epsilon: float | None = None  # Derived from fidelity variance if not set
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        ranks: list[int] | None = None,
-        neighbor_count: int | None = None,
-        min_anchor_count: int | None = None,
-        plateau_epsilon: float | None = None,
-    ) -> "SweepConfig":
-        """Create configuration with explicit parameters.
-
-        Args:
-            ranks: Rank levels to sweep (None = derive from data dimension).
-            neighbor_count: Number of neighbors (None = derive from sqrt(n)).
-            min_anchor_count: Minimum anchors required (None = derive from min rank).
-            plateau_epsilon: Epsilon for plateau detection (None = derive from data).
-
-        Returns:
-            Configuration with specified parameters.
-        """
-        if ranks is not None:
-            if len(ranks) == 0:
-                raise ValueError("ranks must have at least one value")
-            if any(r < 1 for r in ranks):
-                raise ValueError("All ranks must be >= 1")
-        if neighbor_count is not None and neighbor_count < 1:
-            raise ValueError(f"neighbor_count must be >= 1, got {neighbor_count}")
-        if min_anchor_count is not None and min_anchor_count < 2:
-            raise ValueError(f"min_anchor_count must be >= 2, got {min_anchor_count}")
-        if plateau_epsilon is not None and plateau_epsilon <= 0:
-            raise ValueError(f"plateau_epsilon must be > 0, got {plateau_epsilon}")
-        return cls(
-            ranks=ranks,
-            neighbor_count=neighbor_count,
-            min_anchor_count=min_anchor_count,
-            plateau_epsilon=plateau_epsilon,
-        )
-
-
-@dataclass
 class RankMetrics:
     """Metrics for a single rank level."""
 
@@ -149,7 +91,6 @@ class SweepReport:
     source_model: str
     target_model: str
     timestamp: datetime
-    config: SweepConfig
     anchor_count: int
     layer_count: int
     ranks: list[int]
@@ -163,20 +104,23 @@ class ManifoldFidelitySweep:
 
     For each layer pair, projects activations to progressively
     higher-dimensional subspaces and measures alignment quality.
+
+    All parameters are derived from data geometry:
+    - ranks: geometric progression [4, 8, 16, ...] up to data dimension
+    - neighbor_count: sqrt(n) scaling
+    - min_anchor_count: based on smallest rank
+    - plateau_epsilon: from fidelity variance and machine epsilon
     """
 
     def __init__(
         self,
-        config: SweepConfig,
         backend: "Backend | None" = None,
     ):
-        """Initialize with explicit configuration.
+        """Initialize sweep.
 
         Args:
-            config: Sweep configuration (use with_parameters() to create).
             backend: Optional backend for array operations.
         """
-        self.config = config
         self._backend = backend or get_default_backend()
 
     def run_sweep(
@@ -188,6 +132,11 @@ class ManifoldFidelitySweep:
     ) -> LayerSweep | None:
         """
         Run sweep for a single layer pair.
+
+        All parameters are derived from data geometry:
+        - ranks: geometric progression [4, 8, 16, ...] up to dimension
+        - neighbor_count: sqrt(n) scaling
+        - min_anchor_count: based on smallest rank
 
         Args:
             source_activations: [n_anchors, dim] source activations
@@ -203,30 +152,21 @@ class ManifoldFidelitySweep:
         n_anchors = min(source_activations.shape[0], target_activations.shape[0])
         dim = min(source_activations.shape[1], target_activations.shape[1])
 
-        # Derive ranks from data dimension when not specified
+        # Derive ranks from data dimension
         # Geometric progression [4, 8, 16, ...] up to dimension
-        if self.config.ranks is not None:
-            ranks = self.config.ranks
-        else:
-            ranks = []
-            r = 4
-            while r <= dim:
-                ranks.append(r)
-                r *= 2
-            if not ranks:
-                ranks = [min(4, dim)]
+        ranks = []
+        r = 4
+        while r <= dim:
+            ranks.append(r)
+            r *= 2
+        if not ranks:
+            ranks = [min(4, dim)]
 
-        # Derive neighbor_count from sqrt(n) when not specified
-        if self.config.neighbor_count is not None:
-            neighbor_count = self.config.neighbor_count
-        else:
-            neighbor_count = max(2, int(math.sqrt(n_anchors)))
+        # Derive neighbor_count from sqrt(n)
+        neighbor_count = max(2, int(math.sqrt(n_anchors)))
 
-        # Derive min_anchor_count from smallest rank when not specified
-        if self.config.min_anchor_count is not None:
-            min_anchor_count = self.config.min_anchor_count
-        else:
-            min_anchor_count = max(2, min(ranks) if ranks else 4)
+        # Derive min_anchor_count from smallest rank
+        min_anchor_count = max(2, min(ranks) if ranks else 4)
 
         if n_anchors < min_anchor_count:
             return None
@@ -478,28 +418,28 @@ class ManifoldFidelitySweep:
         return cov_val / denom if denom > eps else 0.0
 
     def _compute_plateau(self, metrics: list[RankMetrics]) -> PlateauSummary:
-        """Find plateau ranks where metrics stop improving."""
+        """Find plateau ranks where metrics stop improving.
+
+        Plateau epsilon is derived from data:
+        - Uses sqrt(machine_epsilon) * value_range as threshold
+        - This captures when improvement is at numerical noise level
+        """
         if not metrics:
             return PlateauSummary()
 
         sorted_metrics = sorted(metrics, key=lambda m: m.rank)
 
         def find_plateau(values: list[float], higher_better: bool) -> int | None:
-            # Derive epsilon from data when not provided
-            if self.config.plateau_epsilon is not None:
-                eps = self.config.plateau_epsilon
-            elif len(values) >= 2:
-                # Use sqrt(machine_epsilon) * range as threshold
-                val_range = max(values) - min(values) if values else 0.0
-                backend = get_default_backend()
-                m_eps = float(machine_epsilon(backend, backend.array([1.0])))
-                eps = val_range * (m_eps ** 0.5)
-                if eps == 0:
-                    eps = m_eps
-            else:
-                eps = 1e-10  # Fallback for degenerate case
             if len(values) < 2:
                 return sorted_metrics[0].rank if values else None
+
+            # Derive epsilon from data: sqrt(machine_epsilon) * range
+            val_range = max(values) - min(values) if values else 0.0
+            backend = get_default_backend()
+            m_eps = float(machine_epsilon(backend, backend.array([1.0])))
+            eps = val_range * (m_eps ** 0.5)
+            if eps == 0:
+                eps = m_eps
 
             best_idx = 0
             for i in range(1, len(values)):
@@ -542,24 +482,24 @@ def find_optimal_rank(
     source_activations: "Array",
     target_activations: "Array",
     metric: str = "cka",
-    ranks: list[int] | None = None,
     backend: "Backend | None" = None,
 ) -> int | None:
     """
     Find optimal alignment rank for given metric.
 
+    All parameters are derived from data geometry. Ranks are computed as
+    geometric progression [4, 8, 16, ...] up to the data dimension.
+
     Args:
         source_activations: Source activation matrix
         target_activations: Target activation matrix
-        metric: Which metric to optimize ("cka", "procrustes", "knn", "distance")
-        ranks: Ranks to try (None = derived from data dimension)
+        metric: Which metric to optimize ("cka", "procrustes", "knn", "distance", "variance")
+        backend: Optional backend for array operations
 
     Returns:
         Optimal rank or None if sweep fails
     """
-    # Pass ranks as-is; None will be derived from data in run_sweep
-    config = SweepConfig(ranks=ranks)
-    sweep = ManifoldFidelitySweep(config, backend=backend)
+    sweep = ManifoldFidelitySweep(backend=backend)
     result = sweep.run_sweep(source_activations, target_activations)
 
     if result is None:

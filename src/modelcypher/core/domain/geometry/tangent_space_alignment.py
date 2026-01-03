@@ -45,58 +45,8 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-@dataclass
-class TangentConfig:
-    """Configuration for tangent space alignment.
-
-    When None, parameters are derived from data at runtime:
-    - neighbor_count: sqrt(n_anchors), clamped to [2, n_anchors-1]
-    - tangent_rank: neighbor_count // 2, clamped to [1, neighbor_count]
-    - min_anchor_count: 3 (statistical minimum for variance estimation)
-
-    Use with_parameters() to create with explicit values when needed.
-    """
-
-    neighbor_count: int | None = None
-    tangent_rank: int | None = None
-    min_anchor_count: int | None = None
-    epsilon: float | None = None
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        neighbor_count: int | None = None,
-        tangent_rank: int | None = None,
-        min_anchor_count: int | None = None,
-        epsilon: float | None = None,
-    ) -> "TangentConfig":
-        """Create configuration with explicit parameters.
-
-        Args:
-            neighbor_count: Number of neighbors for k-NN tangent computation.
-                When None, derived as sqrt(n_anchors).
-            tangent_rank: Rank of tangent space (number of principal directions).
-                When None, derived as neighbor_count // 2.
-            min_anchor_count: Minimum anchors required for alignment.
-                When None, uses 3 (statistical minimum).
-            epsilon: Numerical stability threshold (dtype-derived if None).
-
-        Returns:
-            Configuration with specified parameters.
-        """
-        if neighbor_count is not None and neighbor_count < 2:
-            raise ValueError(f"neighbor_count must be >= 2, got {neighbor_count}")
-        if tangent_rank is not None and tangent_rank < 1:
-            raise ValueError(f"tangent_rank must be >= 1, got {tangent_rank}")
-        if min_anchor_count is not None and min_anchor_count < 3:
-            raise ValueError(f"min_anchor_count must be >= 3, got {min_anchor_count}")
-        return cls(
-            neighbor_count=neighbor_count,
-            tangent_rank=tangent_rank,
-            min_anchor_count=min_anchor_count,
-            epsilon=epsilon,
-        )
+# Minimum anchors required for statistical variance estimation
+MIN_ANCHOR_COUNT = 3
 
 
 @dataclass
@@ -123,7 +73,6 @@ class TangentAlignmentReport:
     source_model: str
     target_model: str
     timestamp: datetime
-    config: TangentConfig
     layer_results: list[LayerResult]
     mean_cosine: float
     mean_angle_radians: float
@@ -140,20 +89,20 @@ class TangentSpaceAlignment:
     2. Principal angles between tangent bases
     3. Cosine statistics (mean, min, max)
 
+    All parameters (neighbor_count, tangent_rank, epsilon) are derived
+    from the data. No configuration needed.
+
     Usage:
-        config = TangentConfig.with_parameters(neighbor_count=8, tangent_rank=4)
-        aligner = TangentSpaceAlignment(config)
+        aligner = TangentSpaceAlignment()
         result = aligner.compute_layer_metrics(source_points, target_points)
     """
 
-    def __init__(self, config: TangentConfig, backend: "Backend | None" = None):
-        """Initialize with explicit configuration.
+    def __init__(self, backend: "Backend | None" = None):
+        """Initialize tangent space alignment.
 
         Args:
-            config: Tangent alignment configuration (use with_parameters() to create).
             backend: Optional backend for array operations.
         """
-        self.config = config
         self._backend = backend or get_default_backend()
 
     def compute_layer_metrics(
@@ -166,6 +115,11 @@ class TangentSpaceAlignment:
         """
         Compute tangent alignment for a single layer pair.
 
+        All parameters are derived from data:
+        - neighbor_count: sqrt(n_anchors), clamped to [2, n_anchors-1]
+        - tangent_rank: neighbor_count // 2, clamped to [1, neighbor_count]
+        - epsilon: dtype-derived numerical stability threshold
+
         Args:
             source_points: [n_anchors, dim] source activations
             target_points: [n_anchors, dim] target activations
@@ -177,30 +131,20 @@ class TangentSpaceAlignment:
         """
         n_anchors = min(source_points.shape[0], target_points.shape[0])
 
-        # Derive min_anchor_count from config or use statistical minimum
-        min_anchor = self.config.min_anchor_count if self.config.min_anchor_count is not None else 3
-        if n_anchors < max(min_anchor, 3):
+        if n_anchors < MIN_ANCHOR_COUNT:
             return None
         if source_points.shape[0] != target_points.shape[0]:
             return None
 
-        # Derive neighbor_count from sqrt(n) when not specified
+        # Derive neighbor_count from sqrt(n)
         import math
-        if self.config.neighbor_count is not None:
-            neighbor_count = min(max(2, self.config.neighbor_count), n_anchors - 1)
-        else:
-            neighbor_count = min(max(2, int(math.sqrt(n_anchors))), n_anchors - 1)
+        neighbor_count = min(max(2, int(math.sqrt(n_anchors))), n_anchors - 1)
 
-        # Derive tangent_rank from neighbor_count // 2 when not specified
-        if self.config.tangent_rank is not None:
-            tangent_rank = min(max(1, self.config.tangent_rank), neighbor_count)
-        else:
-            tangent_rank = min(max(1, neighbor_count // 2), neighbor_count)
-        eps = (
-            self.config.epsilon
-            if self.config.epsilon is not None
-            else division_epsilon(self._backend, source_points)
-        )
+        # Derive tangent_rank from neighbor_count // 2
+        tangent_rank = min(max(1, neighbor_count // 2), neighbor_count)
+
+        # Derive epsilon from data
+        eps = division_epsilon(self._backend, source_points)
 
         # Compute k-nearest neighbors for each point
         source_neighbors = self._compute_neighbors(source_points, neighbor_count)
@@ -396,23 +340,24 @@ def compute_alignment_for_layers(
     source_activations: "dict[int, Array]",
     target_activations: "dict[int, Array]",
     layer_mappings: list[tuple[int, int]],
-    config: TangentConfig,
     backend: "Backend | None" = None,
 ) -> TangentAlignmentReport:
     """
     Compute tangent alignment across multiple layer pairs.
 
+    All parameters (neighbor_count, tangent_rank, epsilon) are derived
+    from the data. No configuration needed.
+
     Args:
         source_activations: Dict mapping layer index to activation matrix
         target_activations: Dict mapping layer index to activation matrix
         layer_mappings: List of (source_layer, target_layer) pairs
-        config: Alignment configuration (use TangentConfig.with_parameters() to create)
         backend: Optional backend for array operations
 
     Returns:
         TangentAlignmentReport with all layer results
     """
-    aligner = TangentSpaceAlignment(config, backend)
+    aligner = TangentSpaceAlignment(backend)
     results: list[LayerResult] = []
     anchor_count = 0
 
@@ -433,7 +378,6 @@ def compute_alignment_for_layers(
             source_model="",
             target_model="",
             timestamp=datetime.now(),
-            config=config,
             layer_results=[],
             mean_cosine=0.0,
             mean_angle_radians=0.0,
@@ -448,7 +392,6 @@ def compute_alignment_for_layers(
         source_model="source",
         target_model="target",
         timestamp=datetime.now(),
-        config=config,
         layer_results=results,
         mean_cosine=mean_cos,
         mean_angle_radians=mean_angle,

@@ -127,7 +127,7 @@ class TestProfileCLIStructure:
         """List command has proper help."""
         result = runner.invoke(app, ["geometry", "baseline", "list", "--help"])
         assert result.exit_code == 0
-        assert "--family" in result.stdout or "-f" in result.stdout
+        assert "--family" not in result.stdout
 
     def test_baseline_extract_help(self):
         """Extract command has proper help."""
@@ -206,14 +206,14 @@ class TestProfileCLICompare:
         )
         assert result.exit_code != 0
 
-    def test_compare_accepts_layer_option(self):
-        """Compare accepts --layer option."""
+    def test_compare_help_no_layer_option(self):
+        """Compare help does not expose a layer override."""
         result = runner.invoke(
             app,
             ["geometry", "baseline", "compare", "--help"],
         )
         assert result.exit_code == 0
-        assert "--layer" in result.stdout
+        assert "--layer" not in result.stdout
 
 
 # =============================================================================

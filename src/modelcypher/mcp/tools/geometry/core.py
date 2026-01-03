@@ -624,17 +624,16 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             negativeActivations: list[list[float]],
             traitId: str,
         ) -> dict:
-            """Extract a persona vector from contrastive activations."""
-            layer_index = -1
-            model_id = "unknown"
-            normalize = True
+            """Extract a persona vector from contrastive activations.
+
+            All parameters are derived from the data at runtime.
+            """
             vector = ctx.geometry_persona_service.extract_persona_vector(
                 positive_activations=positiveActivations,
                 negative_activations=negativeActivations,
                 trait_id=traitId,
-                layer_index=layer_index,
-                model_id=model_id,
-                normalize=normalize,
+                layer_index=-1,
+                model_id="unknown",
             )
             if vector is None:
                 return {

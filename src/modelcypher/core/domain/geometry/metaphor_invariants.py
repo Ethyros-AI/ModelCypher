@@ -547,12 +547,3 @@ def generate_cross_cultural_pairs() -> list[MetaphorInvariantPair]:
     )
 
     return pairs
-
-
-@dataclass
-class MetaphorInvariantConfig:
-    """Configuration for metaphor invariant probing."""
-
-    domains: set[MetaphorDomain] | None = None  # None = all
-    include_cross_cultural_pairs: bool = True
-    cultural_contexts: set[CulturalContext] | None = None  # None = all

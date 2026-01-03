@@ -33,22 +33,15 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_fidelity_sweep import (
     ManifoldFidelitySweep,
-    SweepConfig,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 def _build_sweep(x):
+    """Build sweep for testing - all parameters derived from data."""
     backend = get_default_backend()
     eps = division_epsilon(backend, x)
-    rank = max(1, min(x.shape[0] - 1, x.shape[1]))
-    config = SweepConfig.with_parameters(
-        ranks=[rank],
-        neighbor_count=max(1, x.shape[0] - 1),
-        min_anchor_count=max(2, min(x.shape[0], x.shape[1])),
-        plateau_epsilon=eps,
-    )
-    return ManifoldFidelitySweep(config=config, backend=backend), eps
+    return ManifoldFidelitySweep(backend=backend), eps
 
 
 def test_neighborhood_stability_identical():

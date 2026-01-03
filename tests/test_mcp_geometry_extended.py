@@ -651,9 +651,6 @@ class TestRefusalDetectTool:
                     arguments={
                         "harmfulActivations": harmful_acts,
                         "harmlessActivations": harmless_acts,
-                        "layerIndex": 5,
-                        "modelId": "test-model",
-                        "normalize": True,
                     },
                 )
             )
@@ -714,9 +711,6 @@ class TestPersonaExtractTool:
                         "positiveActivations": positive_acts,
                         "negativeActivations": negative_acts,
                         "traitId": "curiosity",
-                        "layerIndex": 5,
-                        "modelId": "test-model",
-                        "normalize": True,
                     },
                 )
             )
@@ -749,7 +743,6 @@ class TestPersonaDriftTool:
                     arguments={
                         "positions": positions,
                         "step": 100,
-                        "driftThreshold": 0.2,
                     },
                 )
             )

@@ -217,12 +217,6 @@ def profile_compare(
 @app.command("list")
 def profile_list(
     ctx: typer.Context,
-    family: str | None = typer.Option(
-        None,
-        "--family",
-        "-f",
-        help="Filter by model family (qwen, llama, mistral, etc.)",
-    ),
 ) -> None:
     """
     List available geometry profiles.
@@ -234,10 +228,7 @@ def profile_list(
     from modelcypher.core.domain.geometry.model_profile import ProfileRepository
 
     repo = ProfileRepository()
-    if family:
-        profiles = repo.get_profiles_for_family(family)
-    else:
-        profiles = repo.get_all_profiles()
+    profiles = repo.get_all_profiles()
 
     payload = {
         "_schema": "mc.geometry.profile.list.v1",

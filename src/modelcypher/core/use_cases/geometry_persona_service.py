@@ -52,9 +52,6 @@ from modelcypher.core.domain.geometry.persona_vector_monitor import (
     PersonaVectorMonitor,
     TrainingDriftMetrics,
 )
-from modelcypher.core.domain.geometry.persona_vector_monitor import (
-    Configuration as PersonaConfig,
-)
 
 
 @dataclass(frozen=True)
@@ -97,11 +94,13 @@ class GeometryPersonaService:
         trait_id: str,
         layer_index: int,
         model_id: str,
-        normalize: bool = True,
-        correlation_threshold: float = 0.5,
+        correlation_threshold: float | None = None,
     ) -> PersonaVector | None:
         """
         Extract a persona vector for a specific trait.
+
+        All parameters are derived from data at runtime. The correlation_threshold
+        is optional and should ideally be derived from baseline measurements.
 
         Args:
             positive_activations: Activations from trait-positive prompts
@@ -109,8 +108,8 @@ class GeometryPersonaService:
             trait_id: ID of the trait to extract
             layer_index: Layer these activations come from
             model_id: Model identifier
-            normalize: Whether to normalize the direction vector
-            correlation_threshold: Minimum correlation for valid extraction
+            correlation_threshold: Optional minimum correlation (should be derived
+                from baseline measurements rather than hardcoded)
 
         Returns:
             PersonaVector if extraction succeeds, None otherwise
@@ -119,17 +118,13 @@ class GeometryPersonaService:
         if trait is None:
             return None
 
-        config = PersonaConfig(
-            normalize_vectors=normalize,
-            correlation_threshold=correlation_threshold,
-        )
         return PersonaVectorMonitor.extract_vector(
             positive_activations=positive_activations,
             negative_activations=negative_activations,
             trait=trait,
-            configuration=config,
             layer_index=layer_index,
             model_id=model_id,
+            correlation_threshold=correlation_threshold,
         )
 
     def measure_position(

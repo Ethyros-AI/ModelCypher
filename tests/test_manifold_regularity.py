@@ -34,31 +34,15 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_dimensionality import ManifoldDimensionality
 from modelcypher.core.domain.geometry.manifold_fidelity_sweep import (
     ManifoldFidelitySweep,
-    SweepConfig,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-
-
-def _sweep_config_for(points) -> SweepConfig:
-    backend = get_default_backend()
-    n = int(points.shape[0])
-    d = int(points.shape[1])
-    max_rank = max(1, min(n, d))
-    ranks = [max_rank]
-    neighbor_count = max(1, n - 1)
-    eps = division_epsilon(backend, backend.array([1.0]))
-    return SweepConfig.with_parameters(
-        ranks=ranks,
-        neighbor_count=neighbor_count,
-        min_anchor_count=max(2, min(n, 2)),
-        plateau_epsilon=eps,
-    )
 
 
 def test_manifold_regularity_cka_identity():
     """CKA should be 1.0 for identical manifold representations."""
     x = mx.random.normal((32, 64))
-    sweep = ManifoldFidelitySweep(_sweep_config_for(x))
+    # All parameters derived from data
+    sweep = ManifoldFidelitySweep()
 
     cka = sweep._compute_cka(x, x)
     backend = get_default_backend()
@@ -73,7 +57,8 @@ def test_manifold_regularity_distance_correlation():
     # Linear transformation preserves distances up to scale
     y = x @ mx.random.normal((32, 32))
 
-    sweep = ManifoldFidelitySweep(_sweep_config_for(x))
+    # All parameters derived from data
+    sweep = ManifoldFidelitySweep()
     dist_corr = sweep._compute_distance_correlation(x, y)
 
     backend = get_default_backend()
@@ -111,7 +96,8 @@ def test_manifold_regularity_variance_captured():
     # Zero out some dimensions to control variance
     x_low_rank = x * mx.array([1.0] * 10 + [0.0] * 54)
 
-    sweep = ManifoldFidelitySweep(_sweep_config_for(x_low_rank))
+    # All parameters derived from data
+    sweep = ManifoldFidelitySweep()
     centered = sweep._center(x_low_rank)
     svd = sweep._compute_svd(centered)
 
@@ -130,7 +116,8 @@ def test_manifold_regularity_procrustes_error():
     q, _ = mx.linalg.qr(mx.random.normal((16, 16)), stream=mx.cpu)
     y = x @ q
 
-    sweep = ManifoldFidelitySweep(_sweep_config_for(x))
+    # All parameters derived from data
+    sweep = ManifoldFidelitySweep()
     error = sweep._compute_procrustes_error(x, y)
 
     backend = get_default_backend()

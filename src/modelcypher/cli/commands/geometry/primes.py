@@ -54,7 +54,6 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("list")
 def primes_list(
     ctx: typer.Context,
-    category: str = typer.Option(None, help="Filter by category"),
 ) -> None:
     """List all NSM semantic primes (Goddard & Wierzbicka 2014).
 
@@ -63,7 +62,6 @@ def primes_list(
 
     Examples:
         mc geometry primes list
-        mc geometry primes list --category mentalPredicates
     """
     context = _context(ctx)
 
@@ -72,9 +70,6 @@ def primes_list(
     )
 
     primes = SemanticPrimeInventory.english_2014()
-
-    if category:
-        primes = [p for p in primes if p.category.value == category]
 
     categories = sorted(set(p.category.value for p in primes))
 
@@ -106,14 +101,13 @@ def primes_list(
                 exponents += "..."
             lines.append(f"{p.id:<20} {p.category.value:<30} {exponents}")
 
-        if not category:
-            lines.extend(
-                [
-                    "",
-                    "Categories:",
-                    *[f"  - {c}" for c in categories],
-                ]
-            )
+        lines.extend(
+            [
+                "",
+                "Categories:",
+                *[f"  - {c}" for c in categories],
+            ]
+        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -124,7 +118,6 @@ def primes_list(
 def primes_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """Probe a model for semantic prime representations.
@@ -157,7 +150,7 @@ def primes_probe_model(
 
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()

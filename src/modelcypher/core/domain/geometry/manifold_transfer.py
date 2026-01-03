@@ -359,6 +359,7 @@ class CrossManifoldProjector:
         target_anchor_activations: dict[str, "Array"],
         target_manifold_profile: ManifoldCurvatureProfile | None = None,
         initial_position: "Array | None" = None,
+        use_curvature_correction: bool = True,
     ) -> TransferPoint:
         """Project a concept to target manifold via stress minimization.
 
@@ -373,6 +374,7 @@ class CrossManifoldProjector:
             target_anchor_activations: Target model anchor activations.
             target_manifold_profile: Curvature profile of target (optional, for metadata).
             initial_position: Starting point for optimization (optional).
+            use_curvature_correction: Whether to apply curvature correction to projected volumes.
 
         Returns:
             TransferPoint with computed position and quality metrics.
@@ -426,11 +428,8 @@ class CrossManifoldProjector:
         backend.eval(target_centroids_arr)
         d = int(target_centroids_arr.shape[1])
         eps = division_epsilon(backend, target_centroids_arr)
-        convergence_tolerance = (
-            self.config.convergence_tolerance
-            if self.config.convergence_tolerance is not None
-            else regularization_epsilon(backend, target_centroids_arr)
-        )
+        # Convergence tolerance derived from data
+        convergence_tolerance = regularization_epsilon(backend, target_centroids_arr)
         n_anchors = len(matching_anchor_ids)
         k_neighbors = min(max(3, n_anchors // 3), n_anchors)
 
@@ -449,15 +448,11 @@ class CrossManifoldProjector:
         best_position = position
         best_stress = float("inf")
 
-        # Derive learning rate if not provided
-        if self.config.learning_rate is not None:
-            learning_rate = self.config.learning_rate
-        else:
-            # Use 1/n_anchors as initial learning rate - adaptive scaling
-            learning_rate = 1.0 / max(1, n_anchors)
+        # Learning rate derived from anchor count (adaptive scaling)
+        learning_rate = 1.0 / max(1, n_anchors)
 
-        # Derive max_iterations from n_anchors when not specified
-        max_iterations = self.config.max_iterations if self.config.max_iterations is not None else max(100, 5 * n_anchors)
+        # Max iterations derived from anchor count
+        max_iterations = max(100, 5 * n_anchors)
 
         for iteration in range(max_iterations):
             # Build point matrix: [position, anchor_0, anchor_1, ...]
@@ -541,7 +536,7 @@ class CrossManifoldProjector:
 
         # Project volume if available
         projected_volume = None
-        if profile.source_volume is not None and self.config.use_curvature_correction:
+        if profile.source_volume is not None and use_curvature_correction:
             target_curvature = (
                 target_manifold_profile.curvature_at_point(best_position)
                 if target_manifold_profile
@@ -735,21 +730,22 @@ def project_concept(
     concept_id: str,
     source_anchor_activations: dict[str, "Array"],
     target_anchor_activations: dict[str, "Array"],
-    config: CrossManifoldConfig | None = None,
 ) -> TransferPoint:
     """Convenience function for single concept projection.
+
+    All numerical parameters (convergence tolerance, learning rate, etc.)
+    are derived from data. No configuration needed.
 
     Args:
         concept_activations: Activations for the concept to transfer.
         concept_id: Identifier for the concept.
         source_anchor_activations: Source model anchor activations.
         target_anchor_activations: Target model anchor activations.
-        config: Optional configuration.
 
     Returns:
         TransferPoint with computed position.
     """
-    projector = CrossManifoldProjector(config)
+    projector = CrossManifoldProjector()
 
     profile = projector.compute_distance_profile(
         concept_activations,
