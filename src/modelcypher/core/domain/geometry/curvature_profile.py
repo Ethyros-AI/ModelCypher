@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     is_inf,
     is_nan,
     sqrt_scalar,
@@ -358,11 +359,15 @@ def compute_curvature_alignment(
         - target_profile.global_intrinsic_dimension_mean
     )
 
+    # Get dtype-derived epsilon for safe division
+    backend = get_default_backend()
+    eps = float(division_epsilon(backend, backend.array([1.0])))
+
     if baseline is not None and baseline.sample_count > 1:
         # Z-score computation relative to baseline
-        baseline_sectional_std = safe_arithmetic_mean(baseline.sectional_std_by_position) or 0.1
-        baseline_ricci_std = safe_arithmetic_mean(baseline.ollivier_ricci_std_by_position) or 0.1
-        baseline_dim_std = 1.0  # Default for dimension
+        baseline_sectional_std = safe_arithmetic_mean(baseline.sectional_std_by_position) or eps
+        baseline_ricci_std = safe_arithmetic_mean(baseline.ollivier_ricci_std_by_position) or eps
+        baseline_dim_std = 1.0  # Default for dimension (dimensionless ratio)
 
         sectional_z = sectional_diff / baseline_sectional_std
         ricci_z = ricci_diff / baseline_ricci_std
@@ -372,9 +377,9 @@ def compute_curvature_alignment(
         baseline_model_count = baseline.sample_count
     else:
         # No baseline: use source profile std as reference
-        sectional_z = sectional_diff / max(source_profile.global_sectional_std, 0.01)
-        ricci_z = ricci_diff / max(source_profile.global_ollivier_ricci_std, 0.01)
-        dim_z = dim_diff / 1.0
+        sectional_z = sectional_diff / max(source_profile.global_sectional_std, eps)
+        ricci_z = ricci_diff / max(source_profile.global_ollivier_ricci_std, eps)
+        dim_z = dim_diff / 1.0  # Default for dimension (dimensionless ratio)
 
         baseline_family = "none"
         baseline_model_count = 0

@@ -1082,7 +1082,7 @@ class RiemannianDensityEstimator:
             # Negative curvature - shrink covariance
             correction = 1.0 / (1.0 - K * r * r / 6)
 
-        # Clamp to reasonable range
+        # Clamp to a bounded stability range
         correction = max(0.5, min(2.0, correction))
 
         return covariance * correction

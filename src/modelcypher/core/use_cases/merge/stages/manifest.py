@@ -243,7 +243,7 @@ class TransplantManifest:
                 },
             )
 
-        # Check 3: Reasonable preserved fraction (if filtering was applied)
+        # Check 3: Minimum preserved fraction (if filtering was applied)
         mean_preserved = self.get_mean_preserved_fraction()
         if mean_preserved is not None and mean_preserved < min_preserved_fraction:
             if strict:

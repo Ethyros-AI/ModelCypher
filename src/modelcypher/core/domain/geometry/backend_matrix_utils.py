@@ -513,7 +513,7 @@ class BackendMatrixUtils:
         b.eval(max_exceeds_arr)
         max_exceeds = float(b.to_scalar(max_exceeds_arr))
 
-        if max_exceeds < 0.5:
+        if max_exceeds < 1:  # All values are 0.0 (False), none exceed threshold
             # No element exceeds threshold, return full count of positive eigenvalues
             positive_mask = eig_sorted > 0
             positive_count_arr = b.sum(b.astype(positive_mask, "float32"))

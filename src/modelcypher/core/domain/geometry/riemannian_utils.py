@@ -85,6 +85,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     pi_value,
     regularization_epsilon,
+    tiny_value,
 )
 
 logger = logging.getLogger(__name__)
@@ -380,7 +381,7 @@ class RiemannianGeometry:
         same point set is used multiple times.
 
         Algorithm:
-            1. Initialize at the Euclidean mean (reasonable starting point)
+            1. Initialize at the Euclidean mean (deterministic starting point)
             2. Compute geodesic distances from current estimate to all points
             3. Update estimate using Riemannian gradient descent
             4. Repeat until convergence
@@ -488,7 +489,7 @@ class RiemannianGeometry:
 
             start = time.perf_counter()
 
-            # Initialize at weighted Euclidean mean (reasonable starting point for iteration)
+            # Initialize at weighted Euclidean mean (deterministic starting point for iteration)
             weights_col = backend.reshape(weights_arr, (n, 1))
             mu = backend.sum(points * weights_col, axis=0)
 
@@ -782,8 +783,10 @@ class RiemannianGeometry:
         # For edge weights, preserve true zeros (identical points) but floor
         # very small non-zero distances to prevent numerical issues.
         # Identical points should have geodesic distance 0.
+        # Use tiny_value (smallest positive normal) to detect effectively-zero distances
         edge_eps = float(division_epsilon(backend, euclidean_dist))
-        is_effectively_zero = euclidean_dist < edge_eps * 0.1
+        zero_threshold = tiny_value(backend, euclidean_dist)
+        is_effectively_zero = euclidean_dist < zero_threshold
         dist_floor = backend.where(
             is_effectively_zero,
             backend.zeros_like(euclidean_dist),
@@ -880,7 +883,7 @@ class RiemannianGeometry:
         # Only apply near_zero cleanup to diagonal entries, not all entries.
         # Zeroing all small distances would corrupt legitimate close point pairs.
         eye = backend.eye(n)
-        diag_mask = eye > 0.5  # Boolean mask for diagonal
+        diag_mask = eye > 0  # Boolean mask for diagonal (eye is 1.0 on diag, 0.0 off)
 
         # Replace near-inf values with actual infinity, diagonal with 0
         inf_array = backend.full(geo_dist_arr.shape, float("inf"))
@@ -1259,7 +1262,7 @@ class RiemannianGeometry:
             path_through = row + col_end
             diff = backend.abs(path_through - dist_to_end_arr)
             finite_mask = backend.isfinite(row) & backend.isfinite(col_end)
-            valid_mask = finite_mask & (diff <= tolerance) & (visited < 0.5)
+            valid_mask = finite_mask & (diff <= tolerance) & (visited < 1)  # Not yet visited
             candidate_count_arr = backend.sum(backend.astype(valid_mask, "int32"))
             backend.eval(candidate_count_arr, dist_to_end_arr)
             candidate_count = int(backend.to_scalar(candidate_count_arr))

@@ -275,8 +275,8 @@ class ThermoService:
             if losses:
                 # Convert final loss to entropy estimate
                 final_loss = float(losses[-1])
-                return min(final_loss * 1.5, 10.0)  # Cap at reasonable max
-        return 2.5  # Default moderate entropy if no logs
+                return min(final_loss * 1.5, 10.0)  # Cap at fixed max
+        return 2.5  # Default entropy when logs are unavailable
 
     def path(self, checkpoints: list[str]) -> ThermoPathResult:
         """Path integration analysis between checkpoints.

@@ -53,6 +53,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_inf,
     is_nan,
     sqrt_scalar,
+    tiny_value,
 )
 from typing import TYPE_CHECKING, Any
 
@@ -367,9 +368,15 @@ class EuclideanConsistencyAnalyzer:
                     norm_jk = sqrt_scalar(sum(v * v for v in vec_jk), backend)
                     norm_prod = norm_ij * norm_jk
 
-                    if norm_prod > 0.1:  # Non-degenerate
+                    # Use dtype-derived threshold to avoid degenerate (near-zero) vectors
+                    norm_threshold = tiny_value(backend, backend.array([norm_prod]))
+                    if norm_prod > norm_threshold:
                         cos_angle = dot / norm_prod
-                        if abs(cos_angle) < 0.2:  # ~90° angle
+                        # Select pairs with angles close to 90° for Pythagorean test.
+                        # In high-d, vectors are typically nearly orthogonal, so we use
+                        # sqrt(eps) as tolerance: cos(angle) ≈ 0 means angle ≈ 90°
+                        cos_tolerance = machine_epsilon(backend, backend.array([1.0])) ** 0.5
+                        if abs(cos_angle) < cos_tolerance:
                             # Test Pythagorean: dist(i,k)² ≈ dist(i,j)² + dist(j,k)²
                             lhs = latent_dists[i, k] ** 2
                             rhs = latent_dists[i, j] ** 2 + latent_dists[j, k] ** 2

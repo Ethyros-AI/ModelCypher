@@ -42,7 +42,7 @@ class TrainingHyperparameterValidator:
     """
 
     # Thresholds ported from Swift ParameterThresholds.swift
-    BATCH_SIZE_RANGE = range(1, 9)  # 1-8 reasonable for local
+    BATCH_SIZE_RANGE = range(1, 9)  # 1-8 local envelope
     BATCH_SIZE_INFO_THRESHOLD = 4
 
     SEQUENCE_MIN = 128
