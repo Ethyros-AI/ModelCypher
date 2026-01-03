@@ -31,6 +31,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.constrained_transplant import (
     verify_boundary_invariance,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.transplant import (
     TransplantDeltaResult,
     compute_transplant_delta,
@@ -40,6 +41,10 @@ from modelcypher.core.use_cases.merge.stages.transplant import (
     TransplantStageConfig,
     stage_transplant,
 )
+
+
+def _eps(backend, *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestPartitionCoreBoundary:
@@ -147,7 +152,8 @@ class TestComputeTransplantDelta:
         diff_val = float(backend.to_numpy(diff))
 
         # Boundary output should be preserved (within numerical tolerance)
-        assert diff_val < 1e-4, f"Boundary not preserved: diff={diff_val}"
+        eps = _eps(backend, diff_val)
+        assert diff_val <= eps, f"Boundary not preserved: diff={diff_val}"
 
     def test_boundary_invariance_metric(self) -> None:
         """Boundary invariance metric should report near-zero relative diff."""
@@ -176,12 +182,13 @@ class TestComputeTransplantDelta:
             transplanted_weights=result.merged_weight,
             target_weights=weight_target,
             boundary_activations=activations_boundary,
-            tolerance=1e-4,
+            tolerance=machine_epsilon(backend, weight_target),
             backend=backend,
         )
 
         assert metrics["passed"] is True
-        assert metrics["max_relative_diff"] < 1e-4
+        eps = _eps(backend, metrics["max_relative_diff"])
+        assert metrics["max_relative_diff"] <= eps
 
     def test_non_2d_weight_skipped(self) -> None:
         """Non-2D weights should be skipped (bias vectors, etc)."""
@@ -284,8 +291,13 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
 
     metrics = result.metrics
     assert metrics.get("alignment_samples", 0) >= 1
-    assert 0.0 <= metrics.get("mean_cka_before", 0.0) <= 1.0
-    assert 0.0 <= metrics.get("mean_cka_after", 0.0) <= 1.0
+    eps = _eps(
+        backend,
+        metrics.get("mean_cka_before", 0.0),
+        metrics.get("mean_cka_after", 0.0),
+    )
+    assert -eps <= metrics.get("mean_cka_before", 0.0) <= 1.0 + eps
+    assert -eps <= metrics.get("mean_cka_after", 0.0) <= 1.0 + eps
 
 
 def test_stage_transplant_requires_real_activations() -> None:
@@ -325,77 +337,84 @@ def test_stage_transplant_requires_real_activations() -> None:
             backend=backend,
         )
 
-    def test_insufficient_core_samples_skipped(self) -> None:
-        """Less than 2 core samples should skip transplant."""
-        backend = get_default_backend()
-        backend.random_seed(42)
+def test_insufficient_core_samples_skipped() -> None:
+    """Less than 2 core samples should skip transplant."""
+    backend = get_default_backend()
+    backend.random_seed(42)
 
-        weight_target = backend.random_normal((32, 64))
-        weight_source = backend.random_normal((32, 64))
-        activations_core = backend.random_normal((1, 64))  # only 1 sample
-        activations_boundary = backend.random_normal((10, 64))
-        backend.eval(weight_target, weight_source, activations_core, activations_boundary)
+    weight_target = backend.random_normal((32, 64))
+    weight_source = backend.random_normal((32, 64))
+    activations_core = backend.random_normal((1, 64))  # only 1 sample
+    activations_boundary = backend.random_normal((10, 64))
+    backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
-        result = compute_transplant_delta(
-            weight_target=weight_target,
-            weight_source_aligned=weight_source,
-            activations_core=activations_core,
-            activations_boundary=activations_boundary,
-            backend=backend,
-        )
+    result = compute_transplant_delta(
+        weight_target=weight_target,
+        weight_source_aligned=weight_source,
+        activations_core=activations_core,
+        activations_boundary=activations_boundary,
+        backend=backend,
+    )
 
-        assert result.applied is False
+    assert result.applied is False
 
-    def test_preserved_fraction_computed(self) -> None:
-        """preserved_fraction should measure how much delta survived projection."""
-        backend = get_default_backend()
-        backend.random_seed(42)
 
-        in_dim, out_dim = 64, 32
-        weight_target = backend.random_normal((out_dim, in_dim))
-        weight_source = backend.random_normal((out_dim, in_dim))
-        activations_core = backend.random_normal((5, in_dim))
-        activations_boundary = backend.random_normal((10, in_dim))
-        backend.eval(weight_target, weight_source, activations_core, activations_boundary)
+def test_preserved_fraction_computed() -> None:
+    """preserved_fraction should measure how much delta survived projection."""
+    backend = get_default_backend()
+    backend.random_seed(42)
 
-        # Null-space params derived from spectral properties - no config needed
-        result = compute_transplant_delta(
-            weight_target=weight_target,
-            weight_source_aligned=weight_source,
-            activations_core=activations_core,
-            activations_boundary=activations_boundary,
-            backend=backend,
-        )
+    in_dim, out_dim = 64, 32
+    weight_target = backend.random_normal((out_dim, in_dim))
+    weight_source = backend.random_normal((out_dim, in_dim))
+    activations_core = backend.random_normal((5, in_dim))
+    activations_boundary = backend.random_normal((10, in_dim))
+    backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
-        assert result.applied is True
-        # preserved_fraction should be between 0 and 1
-        assert 0.0 <= result.preserved_fraction <= 1.0
-        # projection_loss = 1 - preserved_fraction
-        assert abs(result.projection_loss + result.preserved_fraction - 1.0) < 1e-6
+    # Null-space params derived from spectral properties - no config needed
+    result = compute_transplant_delta(
+        weight_target=weight_target,
+        weight_source_aligned=weight_source,
+        activations_core=activations_core,
+        activations_boundary=activations_boundary,
+        backend=backend,
+    )
 
-    def test_zero_delta_has_full_preservation(self) -> None:
-        """When source == target, delta is zero, preserved_fraction should be 1.0."""
-        backend = get_default_backend()
-        backend.random_seed(42)
+    assert result.applied is True
+    # preserved_fraction should be between 0 and 1
+    eps = _eps(backend, result.preserved_fraction)
+    assert -eps <= result.preserved_fraction <= 1.0 + eps
+    # projection_loss = 1 - preserved_fraction
+    eps = _eps(backend, result.projection_loss, result.preserved_fraction)
+    assert abs(result.projection_loss + result.preserved_fraction - 1.0) <= eps
 
-        in_dim, out_dim = 64, 32
-        weight = backend.random_normal((out_dim, in_dim))
-        activations_core = backend.random_normal((5, in_dim))
-        activations_boundary = backend.random_normal((10, in_dim))
-        backend.eval(weight, activations_core, activations_boundary)
 
-        result = compute_transplant_delta(
-            weight_target=weight,
-            weight_source_aligned=weight,  # same as target
-            activations_core=activations_core,
-            activations_boundary=activations_boundary,
-            backend=backend,
-        )
+def test_zero_delta_has_full_preservation() -> None:
+    """When source == target, delta is zero, preserved_fraction should be 1.0."""
+    backend = get_default_backend()
+    backend.random_seed(42)
 
-        assert result.applied is True
-        assert result.delta_norm < 1e-6
-        assert result.preserved_fraction == 1.0
-        assert result.projection_loss == 0.0
+    in_dim, out_dim = 64, 32
+    weight = backend.random_normal((out_dim, in_dim))
+    activations_core = backend.random_normal((5, in_dim))
+    activations_boundary = backend.random_normal((10, in_dim))
+    backend.eval(weight, activations_core, activations_boundary)
+
+    result = compute_transplant_delta(
+        weight_target=weight,
+        weight_source_aligned=weight,  # same as target
+        activations_core=activations_core,
+        activations_boundary=activations_boundary,
+        backend=backend,
+    )
+
+    assert result.applied is True
+    eps = _eps(backend, result.delta_norm)
+    assert result.delta_norm <= eps
+    eps = _eps(backend, result.preserved_fraction, 1.0)
+    assert abs(result.preserved_fraction - 1.0) <= eps
+    eps = _eps(backend, result.projection_loss, 0.0)
+    assert abs(result.projection_loss - 0.0) <= eps
 
 
 class TestTransplantEndToEnd:
@@ -425,13 +444,19 @@ class TestTransplantEndToEnd:
         )
 
         assert result.applied is True
-        # With only 5 boundary samples in 128-dim space, null space is large
-        assert result.null_dim > 100  # 128 - 5 = 123 null dims expected
+        _, singular_vals, _ = backend.svd(activations_boundary)
+        backend.eval(singular_vals)
+        rank_eps = machine_epsilon(backend, singular_vals)
+        rank = int((backend.to_numpy(singular_vals) > rank_eps).sum())
+        expected_null_dim = in_dim - rank
+        assert result.null_dim == expected_null_dim
         # Spectral norm bounding enforces compositional stability
         # We use direct scalar scaling (not full Birkhoff) to preserve null-space exactly
         assert result.birkhoff_spectral_clipped is True  # spectral norm was > 1.0
-        assert result.filtered_norm > 0  # some delta survives
-        assert result.projection_loss < 1.0  # not total loss
+        eps = _eps(backend, result.filtered_norm)
+        assert result.filtered_norm >= eps  # some delta survives
+        eps = _eps(backend, result.projection_loss)
+        assert result.projection_loss <= 1.0 - eps  # not total loss
 
     def test_transplant_with_small_null_space(self) -> None:
         """When boundary has small null space, less delta survives."""
@@ -457,6 +482,9 @@ class TestTransplantEndToEnd:
         )
 
         assert result.applied is True
-        # With 60 boundary samples in 64-dim space, null space is small
-        # Expect lower preserved_fraction (less delta survives)
-        assert result.null_dim < 10  # 64 - min(60, 64) = 4 null dims expected
+        _, singular_vals, _ = backend.svd(activations_boundary)
+        backend.eval(singular_vals)
+        rank_eps = machine_epsilon(backend, singular_vals)
+        rank = int((backend.to_numpy(singular_vals) > rank_eps).sum())
+        expected_null_dim = in_dim - rank
+        assert result.null_dim == expected_null_dim

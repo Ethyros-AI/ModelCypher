@@ -55,7 +55,14 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.numerical_stability import safe_pinv
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    safe_pinv,
+)
+
+
+def _eps(backend, *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def create_random_orthogonal(backend, d_source, d_target):
@@ -114,7 +121,9 @@ class TestHiddenStitchCorrectness:
         diff = backend.norm(F - I)
         backend.eval(diff)
 
-        assert float(backend.to_numpy(diff)) < 0.01, "Same activations should give identity F"
+        diff_val = float(backend.to_numpy(diff))
+        eps = _eps(backend, diff_val)
+        assert diff_val <= eps, "Same activations should give identity F"
 
     def test_hidden_stitch_recovers_transform(self):
         """GramAligner should recover a known transformation."""
@@ -153,7 +162,8 @@ class TestHiddenStitchCorrectness:
         from modelcypher.core.domain.geometry.cka import compute_cka
 
         cka_result = compute_cka(A_aligned, A_target, backend=backend)
-        assert cka_result.cka > 0.9999, f"Alignment not perfect: CKA={cka_result.cka}"
+        eps = _eps(backend, cka_result.cka, 1.0)
+        assert abs(cka_result.cka - 1.0) <= eps, f"Alignment not perfect: CKA={cka_result.cka}"
 
     def test_hidden_stitch_weight_folding(self):
         """Test full weight folding: W_folded = F_out.T @ W_source @ pinv(F_in).T"""
@@ -254,7 +264,8 @@ class TestAttentionStitchCorrectness:
         from modelcypher.core.domain.geometry.cka import compute_cka
 
         cka_result = compute_cka(A_aligned, A_target, backend=backend)
-        assert cka_result.cka > 0.9999, f"Alignment not perfect: CKA={cka_result.cka}"
+        eps = _eps(backend, cka_result.cka, 1.0)
+        assert abs(cka_result.cka - 1.0) <= eps, f"Alignment not perfect: CKA={cka_result.cka}"
 
 
 class TestKVStitchCorrectness:
@@ -590,7 +601,8 @@ class TestEndToEndEquivalence:
         from modelcypher.core.domain.geometry.cka import compute_cka
 
         cka_result = compute_cka(Y_aligned, Y_target, backend=backend)
-        assert cka_result.cka > 0.99, f"Output geometry mismatch: CKA={cka_result.cka}"
+        eps = _eps(backend, cka_result.cka, 1.0)
+        assert abs(cka_result.cka - 1.0) <= eps, f"Output geometry mismatch: CKA={cka_result.cka}"
 
     def test_mlp_layer_equivalence(self):
         """Full MLP layer: hidden → intermediate → hidden with dimension changes."""
@@ -641,8 +653,9 @@ class TestEndToEndEquivalence:
         cka_hidden = compute_cka(A_hidden_aligned, A_hidden_target, backend=backend)
         cka_inter = compute_cka(A_inter_aligned, A_inter_target, backend=backend)
 
-        assert cka_hidden.cka > 0.9999, f"Hidden geometry lost: CKA={cka_hidden.cka}"
-        assert cka_inter.cka > 0.9999, f"Intermediate geometry lost: CKA={cka_inter.cka}"
+        eps = _eps(backend, cka_hidden.cka, 1.0, cka_inter.cka, 1.0)
+        assert abs(cka_hidden.cka - 1.0) <= eps, f"Hidden geometry lost: CKA={cka_hidden.cka}"
+        assert abs(cka_inter.cka - 1.0) <= eps, f"Intermediate geometry lost: CKA={cka_inter.cka}"
 
 
 class TestDeterminism:
@@ -682,7 +695,9 @@ class TestDeterminism:
 
             diff = backend.norm(F0 - Fi)
             backend.eval(diff)
-            assert float(backend.to_numpy(diff)) < 1e-10, "Alignment not deterministic"
+            diff_val = float(backend.to_numpy(diff))
+            eps = _eps(backend, diff_val)
+            assert diff_val <= eps, "Alignment not deterministic"
 
     def test_weight_folding_is_deterministic(self):
         """Same inputs should always produce same folded weights."""
@@ -722,4 +737,6 @@ class TestDeterminism:
         for i in range(1, len(folded_weights)):
             diff = backend.norm(folded_weights[i] - folded_weights[0])
             backend.eval(diff)
-            assert float(backend.to_numpy(diff)) < 1e-10, "Weight folding not deterministic"
+            diff_val = float(backend.to_numpy(diff))
+            eps = _eps(backend, diff_val)
+            assert diff_val <= eps, "Weight folding not deterministic"

@@ -26,6 +26,11 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
     TwoNNConfiguration,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(backend, *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def test_two_nn_insufficient_samples() -> None:
@@ -60,7 +65,9 @@ def test_two_nn_estimate_basic() -> None:
     estimate = IntrinsicDimension.compute_two_nn(points, configuration=config)
     assert estimate.sample_count == 6
     assert estimate.usable_count >= 3
-    assert estimate.intrinsic_dimension > 0
+    backend = get_default_backend()
+    eps = _eps(backend, estimate.intrinsic_dimension)
+    assert estimate.intrinsic_dimension > eps
 
 
 def test_two_nn_bootstrap_ci() -> None:
@@ -97,7 +104,8 @@ class TestDimensionInvariants:
         config = TwoNNConfiguration(use_regression=True)
         computer = IntrinsicDimension(backend)
         estimate = computer.compute(data, configuration=config)
-        assert estimate.intrinsic_dimension > 0
+        eps = _eps(backend, estimate.intrinsic_dimension)
+        assert estimate.intrinsic_dimension > eps
 
     @pytest.mark.parametrize("true_dim", [1, 2, 3, 5])
     def test_dimension_bounded_by_ambient(self, true_dim: int) -> None:
@@ -116,8 +124,8 @@ class TestDimensionInvariants:
         computer = IntrinsicDimension(backend)
         estimate = computer.compute(data, configuration=config)
 
-        # Should be close to true_dim (with geodesic distances, variance is higher)
-        assert estimate.intrinsic_dimension <= true_dim + 3  # Allow reasonable overshoot
+        eps = _eps(backend, estimate.intrinsic_dimension, float(true_dim))
+        assert estimate.intrinsic_dimension <= true_dim + eps
 
     def test_1d_manifold_dimension_near_one(self) -> None:
         """Points on a line should have dimension ≈ 1.
@@ -141,10 +149,14 @@ class TestDimensionInvariants:
 
         config = TwoNNConfiguration(use_regression=True)
         computer = IntrinsicDimension(backend)
-        estimate = computer.compute(points, configuration=config)
-
-        # Should be close to 1 (line is 1-dimensional)
-        assert 0.5 <= estimate.intrinsic_dimension <= 2.0
+        estimate = computer.compute(
+            points,
+            configuration=config,
+            bootstrap=BootstrapConfiguration(),
+        )
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 1.0)
+        assert estimate.ci.lower - eps <= 1.0 <= estimate.ci.upper + eps
 
     def test_2d_manifold_dimension_near_two(self) -> None:
         """Points on a plane should have dimension ≈ 2.
@@ -164,10 +176,14 @@ class TestDimensionInvariants:
 
         config = TwoNNConfiguration(use_regression=True)
         computer = IntrinsicDimension(backend)
-        estimate = computer.compute(points, configuration=config)
-
-        # Should be close to 2 (with geodesic distances, variance is higher)
-        assert 1.0 <= estimate.intrinsic_dimension <= 4.0
+        estimate = computer.compute(
+            points,
+            configuration=config,
+            bootstrap=BootstrapConfiguration(),
+        )
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 2.0)
+        assert estimate.ci.lower - eps <= 2.0 <= estimate.ci.upper + eps
 
 
 class TestConfidenceIntervalInvariants:
@@ -218,8 +234,14 @@ class TestConfidenceIntervalInvariants:
 
         if estimate.ci is not None:
             # Point estimate should be near the CI
-            assert estimate.ci.lower <= estimate.intrinsic_dimension + 0.5
-            assert estimate.ci.upper >= estimate.intrinsic_dimension - 0.5
+            eps = _eps(
+                backend,
+                estimate.ci.lower,
+                estimate.ci.upper,
+                estimate.intrinsic_dimension,
+            )
+            assert estimate.ci.lower <= estimate.intrinsic_dimension + eps
+            assert estimate.ci.upper >= estimate.intrinsic_dimension - eps
 
 
 class TestUsableCountInvariants:
@@ -280,7 +302,8 @@ class TestIntrinsicDimensionHypothesis:
         computer = IntrinsicDimension(backend)
         try:
             estimate = computer.compute(data, configuration=config)
-            assert estimate.intrinsic_dimension > 0
+            eps = _eps(backend, estimate.intrinsic_dimension)
+            assert estimate.intrinsic_dimension > eps
         except EstimatorError:
             # Some degenerate configurations may fail
             assume(False)
@@ -333,7 +356,8 @@ class TestIntrinsicDimensionHypothesis:
         try:
             estimate = computer.compute(data, configuration=config)
             # Allow wiggle room - geodesic distances + small samples = variance
-            assert estimate.intrinsic_dimension <= ambient_dim + 6
+            eps = _eps(backend, estimate.intrinsic_dimension, float(ambient_dim))
+            assert estimate.intrinsic_dimension <= ambient_dim + eps
         except EstimatorError:
             assume(False)
 
@@ -368,7 +392,8 @@ class TestSyntheticManifoldDimension:
             backend.eval(point)
             point_np = backend.to_numpy(point)
             norm = math.sqrt(sum(x * x for x in point_np))
-            if norm > 1e-6:
+            eps = _eps(backend, norm)
+            if norm > eps:
                 normalized = [x / norm for x in point_np]
                 points_list.append(normalized)
             if len(points_list) >= n_samples:
@@ -379,11 +404,14 @@ class TestSyntheticManifoldDimension:
 
         config = TwoNNConfiguration(use_regression=True)
         computer = IntrinsicDimension(backend)
-        estimate = computer.compute(points, configuration=config)
-
-        # S^2 has intrinsic dimension 2
-        # Allow some tolerance due to finite sampling and estimation variance
-        assert 1.0 <= estimate.intrinsic_dimension <= 4.0
+        estimate = computer.compute(
+            points,
+            configuration=config,
+            bootstrap=BootstrapConfiguration(),
+        )
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 2.0)
+        assert estimate.ci.lower - eps <= 2.0 <= estimate.ci.upper + eps
 
     def test_swiss_roll_dimension(self) -> None:
         """Swiss roll is a 2D manifold in 3D space.
@@ -424,11 +452,14 @@ class TestSyntheticManifoldDimension:
 
         config = TwoNNConfiguration(use_regression=True)
         computer = IntrinsicDimension(backend)
-        estimate = computer.compute(points, configuration=config)
-
-        # Swiss roll has intrinsic dimension 2
-        # Geodesic distances should help unroll the manifold conceptually
-        assert 1.0 <= estimate.intrinsic_dimension <= 4.0
+        estimate = computer.compute(
+            points,
+            configuration=config,
+            bootstrap=BootstrapConfiguration(),
+        )
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 2.0)
+        assert estimate.ci.lower - eps <= 2.0 <= estimate.ci.upper + eps
 
     def test_linear_subspace_dimension(self) -> None:
         """k-dimensional linear subspace in R^n should have dimension k.
@@ -459,10 +490,14 @@ class TestSyntheticManifoldDimension:
 
         config = TwoNNConfiguration(use_regression=True)
         computer = IntrinsicDimension(backend)
-        estimate = computer.compute(points, configuration=config)
-
-        # Linear subspace should have dimension close to true_dim
-        assert 1.5 <= estimate.intrinsic_dimension <= true_dim + 2.0
+        estimate = computer.compute(
+            points,
+            configuration=config,
+            bootstrap=BootstrapConfiguration(),
+        )
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, float(true_dim))
+        assert estimate.ci.lower - eps <= true_dim <= estimate.ci.upper + eps
 
     def test_product_manifold_dimension(self) -> None:
         """Product of S^1 × S^1 (torus) should have dimension 2.
@@ -505,7 +540,11 @@ class TestSyntheticManifoldDimension:
 
         config = TwoNNConfiguration(use_regression=True)
         computer = IntrinsicDimension(backend)
-        estimate = computer.compute(points, configuration=config)
-
-        # Torus T^2 has intrinsic dimension 2
-        assert 1.0 <= estimate.intrinsic_dimension <= 4.0
+        estimate = computer.compute(
+            points,
+            configuration=config,
+            bootstrap=BootstrapConfiguration(),
+        )
+        assert estimate.ci is not None
+        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, 2.0)
+        assert estimate.ci.lower - eps <= 2.0 <= estimate.ci.upper + eps

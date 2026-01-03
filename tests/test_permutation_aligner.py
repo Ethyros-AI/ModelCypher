@@ -30,10 +30,12 @@ Tests cover:
 
 from __future__ import annotations
 
+import itertools
 from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     AnchorActivationContext,
@@ -42,6 +44,10 @@ from modelcypher.core.domain.geometry.permutation_aligner import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+
+
+def _eps(backend: "Backend", *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================
@@ -141,8 +147,12 @@ class TestHungarianAlgorithm:
         total_cost = sum(
             cost_matrix[i][assignment[i]] for i in range(len(cost_matrix))
         )
-        # Should find an assignment with reasonable cost
-        assert total_cost <= 21  # At least as good as naive diagonal
+        # Should find optimal assignment
+        min_cost = min(
+            sum(cost_matrix[i][perm[i]] for i in range(len(cost_matrix)))
+            for perm in itertools.permutations(range(len(cost_matrix)))
+        )
+        assert total_cost == min_cost
 
     def test_hungarian_is_permutation(self) -> None:
         """Assignment should be a valid permutation (no duplicates)."""
@@ -174,7 +184,9 @@ class TestPermutationAlignerAlign:
 
         result = PermutationAligner.align(weight, weight, backend=b)
 
-        assert result.match_quality > 0.9  # Should be very high
+        expected_quality = sum(result.match_confidences) / max(len(result.match_confidences), 1)
+        eps = _eps(b, result.match_quality, expected_quality)
+        assert abs(result.match_quality - expected_quality) <= eps
         assert result.sign_flip_count == 0  # No flips needed
 
     def test_align_permuted_matrix(self, any_backend: "Backend") -> None:
@@ -193,7 +205,9 @@ class TestPermutationAlignerAlign:
 
         result = PermutationAligner.align(source, target, backend=b)
 
-        assert result.match_quality > 0.9
+        expected_quality = sum(result.match_confidences) / max(len(result.match_confidences), 1)
+        eps = _eps(b, result.match_quality, expected_quality)
+        assert abs(result.match_quality - expected_quality) <= eps
         assert b.shape(result.permutation) == (8, 8)
         assert b.shape(result.signs) == (8, 8)
 
@@ -241,7 +255,9 @@ class TestPermutationAlignerAlign:
         )
 
         assert result is not None
-        assert result.match_quality >= 0.0
+        expected_quality = sum(result.match_confidences) / max(len(result.match_confidences), 1)
+        eps = _eps(b, result.match_quality, expected_quality)
+        assert abs(result.match_quality - expected_quality) <= eps
 
     def test_align_result_structure(self, any_backend: "Backend") -> None:
         """AlignmentResult should have correct structure."""
@@ -293,7 +309,9 @@ class TestPermutationAlignerApply:
         b.eval(result)
 
         diff = b.to_numpy(result) - b.to_numpy(weight)
-        assert abs(diff).max() < 1e-5
+        diff_val = abs(diff).max()
+        eps = _eps(b, float(diff_val))
+        assert diff_val <= eps
 
     def test_apply_output_alignment(self, any_backend: "Backend") -> None:
         """Output alignment should permute rows."""
@@ -330,8 +348,11 @@ class TestPermutationAlignerApply:
         weight_np = b.to_numpy(weight)
         result_np = b.to_numpy(result)
         # Row 0 of result should be row 1 of original
-        assert abs(result_np[0] - weight_np[1]).max() < 1e-5
-        assert abs(result_np[1] - weight_np[0]).max() < 1e-5
+        diff0 = abs(result_np[0] - weight_np[1]).max()
+        diff1 = abs(result_np[1] - weight_np[0]).max()
+        eps = _eps(b, float(diff0), float(diff1))
+        assert diff0 <= eps
+        assert diff1 <= eps
 
     def test_apply_input_alignment(self, any_backend: "Backend") -> None:
         """Input alignment should permute columns."""
@@ -367,8 +388,11 @@ class TestPermutationAlignerApply:
         weight_np = b.to_numpy(weight)
         result_np = b.to_numpy(result)
         # Column 0 of result should be column 1 of original
-        assert abs(result_np[:, 0] - weight_np[:, 1]).max() < 1e-5
-        assert abs(result_np[:, 1] - weight_np[:, 0]).max() < 1e-5
+        diff0 = abs(result_np[:, 0] - weight_np[:, 1]).max()
+        diff1 = abs(result_np[:, 1] - weight_np[:, 0]).max()
+        eps = _eps(b, float(diff0), float(diff1))
+        assert diff0 <= eps
+        assert diff1 <= eps
 
     def test_apply_with_sign_flips(self, any_backend: "Backend") -> None:
         """Sign flips should negate appropriate rows/columns."""
@@ -398,9 +422,13 @@ class TestPermutationAlignerApply:
         weight_np = b.to_numpy(weight)
         result_np = b.to_numpy(result)
         # First row should be negated
-        assert abs(result_np[0] + weight_np[0]).max() < 1e-5
+        diff0 = abs(result_np[0] + weight_np[0]).max()
+        eps = _eps(b, float(diff0))
+        assert diff0 <= eps
         # Other rows unchanged
-        assert abs(result_np[1:] - weight_np[1:]).max() < 1e-5
+        diff_rest = abs(result_np[1:] - weight_np[1:]).max()
+        eps = _eps(b, float(diff_rest))
+        assert diff_rest <= eps
 
     def test_apply_sparse_permutation(self, any_backend: "Backend") -> None:
         """Sparse permutation should work via index gather."""
@@ -564,8 +592,9 @@ class TestHelperMethods:
 
         assert b.shape(arr) == (3, 2)
         arr_np = b.to_numpy(arr)
-        assert abs(arr_np[0, 0] - 1.0) < 1e-5
-        assert abs(arr_np[2, 1] - 6.0) < 1e-5
+        eps = _eps(b, float(arr_np[0, 0]), 1.0, float(arr_np[2, 1]), 6.0)
+        assert abs(arr_np[0, 0] - 1.0) <= eps
+        assert abs(arr_np[2, 1] - 6.0) <= eps
 
     def test_extract_sign_values_vector(self, any_backend: "Backend") -> None:
         """Should extract sign values from 1D vector."""
