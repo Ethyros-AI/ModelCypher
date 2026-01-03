@@ -43,8 +43,6 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
 )
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
-    CRMBuildConfig,
-    KnowledgeDeltaMaskConfig,
 )
 from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.json import dump_json
@@ -71,13 +69,10 @@ def geometry_crm_build(
     context = _context(ctx)
     service = ConceptResponseMatrixService(engine=LocalInferenceEngine())
 
-    config = CRMBuildConfig()
-
     try:
         summary = service.build(
             model_path=model_path,
             output_path=output_path,
-            config=config,
             adapter=adapter,
         )
     except ValueError as exc:
@@ -187,15 +182,13 @@ def geometry_crm_delta_mask(
     """Build a knowledge delta mask from two CRM files.
 
     Identifies layers where the source activation density exceeds the target
-    while the target appears sparse, using distribution-derived percentiles.
+    while the target appears sparse, using distribution-derived thresholds.
     """
     context = _context(ctx)
     service = ConceptResponseMatrixService()
 
-    config = KnowledgeDeltaMaskConfig()
-
     try:
-        summary = service.knowledge_delta_mask(source, target, config=config)
+        summary = service.knowledge_delta_mask(source, target)
     except (ValueError, OSError) as exc:
         error = ErrorDetail(
             code="MC-1052",
@@ -213,12 +206,6 @@ def geometry_crm_delta_mask(
         "targetPath": summary.target_path,
         "commonAnchorCount": summary.common_anchor_count,
         "layerCount": summary.layer_count,
-        "config": {
-            "targetSparsePercentile": summary.config.target_sparse_percentile,
-            "sourceDensePercentile": summary.config.source_dense_percentile,
-            "densityRatioPercentile": summary.config.density_ratio_percentile,
-            "minAnchorCount": summary.config.min_anchor_count,
-        },
         "thresholds": {
             "targetSparseThreshold": summary.target_sparse_threshold,
             "sourceDenseThreshold": summary.source_dense_threshold,

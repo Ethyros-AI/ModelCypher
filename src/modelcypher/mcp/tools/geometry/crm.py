@@ -50,15 +50,11 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
             adapter: str | None = None,
         ) -> dict:
             """Build a concept response matrix (CRM) for a model."""
-            from modelcypher.core.use_cases.concept_response_matrix_service import CRMBuildConfig
-
             model_path = require_existing_directory(modelPath)
             output_path = str(Path(outputPath).expanduser().resolve())
-            config = CRMBuildConfig()
             summary = ctx.geometry_crm_service.build(
                 model_path=model_path,
                 output_path=output_path,
-                config=config,
                 adapter=adapter,
             )
             return {

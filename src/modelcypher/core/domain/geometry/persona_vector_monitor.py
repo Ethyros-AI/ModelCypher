@@ -87,24 +87,6 @@ STANDARD_TRAITS: list[PersonaTraitDefinition] = [
 
 
 @dataclass(frozen=True)
-class Configuration:
-    persona_traits: list[PersonaTraitDefinition] = field(
-        default_factory=lambda: list(STANDARD_TRAITS)
-    )
-    target_layers: set[int] = field(default_factory=set)
-    correlation_threshold: float | None = None  # Caller provides based on baseline
-    normalize_vectors: bool = True
-    samples_per_trait: int = 10
-
-    @staticmethod
-    def target_layers_for_model_depth(total_layers: int) -> set[int]:
-        # Return all layers - caller should filter based on analysis
-        # (e.g., layer activation variance, information content)
-        # rather than arbitrary percentage ranges.
-        return set(range(total_layers))
-
-
-@dataclass(frozen=True)
 class PersonaVector:
     id: str
     name: str
@@ -204,15 +186,35 @@ class PersonaBaseline:
 
 
 class PersonaVectorMonitor:
+    """Monitor persona vectors in model activations.
+
+    All parameters are derived from the data or passed explicitly:
+    - Vectors are always normalized (unit length on the manifold)
+    - Correlation thresholds are passed by caller based on baseline measurements
+    """
+
     @staticmethod
     def extract_vector(
         positive_activations: list[list[float]],
         negative_activations: list[list[float]],
         trait: PersonaTraitDefinition,
-        configuration: Configuration,
         layer_index: int,
         model_id: str,
+        correlation_threshold: float | None = None,
     ) -> PersonaVector | None:
+        """Extract persona vector from positive/negative activation pairs.
+
+        Args:
+            positive_activations: Activations from positive trait prompts.
+            negative_activations: Activations from negative trait prompts.
+            trait: Trait definition being extracted.
+            layer_index: Layer index for this extraction.
+            model_id: Model identifier.
+            correlation_threshold: Optional threshold derived from baseline measurements.
+
+        Returns:
+            PersonaVector or None if extraction fails or correlation is below threshold.
+        """
         if not positive_activations or not negative_activations:
             return None
         hidden_size = len(positive_activations[0]) if positive_activations else 0
@@ -230,17 +232,16 @@ class PersonaVectorMonitor:
             return None
         strength = float(norm)
 
-        final_direction = (
-            VectorMath.l2_normalized(direction) if configuration.normalize_vectors else direction
-        )
+        # Always normalize - unit vectors on the manifold
+        final_direction = VectorMath.l2_normalized(direction)
         correlation = PersonaVectorMonitor._compute_correlation(
             positive_activations=positive_activations,
             negative_activations=negative_activations,
             direction=final_direction,
         )
         # Only filter if threshold provided
-        if configuration.correlation_threshold is not None:
-            if correlation < configuration.correlation_threshold:
+        if correlation_threshold is not None:
+            if correlation < correlation_threshold:
                 return None
 
         return PersonaVector(
@@ -344,13 +345,26 @@ class PersonaVectorMonitor:
     @staticmethod
     def extract_bundle(
         activations_per_trait: dict[str, tuple[list[list[float]], list[list[float]]]],
-        configuration: Configuration,
+        traits: list[PersonaTraitDefinition],
         layer_index: int,
         model_id: str,
+        correlation_threshold: float | None = None,
     ) -> PersonaVectorBundle:
+        """Extract a bundle of persona vectors from activations.
+
+        Args:
+            activations_per_trait: Dict mapping trait IDs to (positive, negative) activation lists.
+            traits: List of trait definitions to extract.
+            layer_index: Layer index for extraction.
+            model_id: Model identifier.
+            correlation_threshold: Optional threshold derived from baseline measurements.
+
+        Returns:
+            PersonaVectorBundle containing extracted vectors.
+        """
         vectors: list[PersonaVector] = []
         correlations: list[float] = []
-        for trait in configuration.persona_traits:
+        for trait in traits:
             activations = activations_per_trait.get(trait.id)
             if activations is None:
                 continue
@@ -359,9 +373,9 @@ class PersonaVectorMonitor:
                 positive_activations=positive,
                 negative_activations=negative,
                 trait=trait,
-                configuration=configuration,
                 layer_index=layer_index,
                 model_id=model_id,
+                correlation_threshold=correlation_threshold,
             )
             if vector:
                 vectors.append(vector)

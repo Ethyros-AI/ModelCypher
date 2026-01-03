@@ -115,40 +115,6 @@ class LowRankGWResult:
     final_error: float
 
 
-@dataclass(frozen=True)
-class LowRankGWConfig:
-    """Configuration for low-rank GW solver.
-
-    All parameters are derived from data geometry when None:
-    - rank: derived from min(n, m) with sqrt scaling
-    - reg: derived from cost matrix scale
-    - max_iterations: derived from problem size
-    - convergence_threshold: derived from machine epsilon
-    """
-
-    # Rank of the coupling approximation
-    # None = derived from sqrt(min(n, m)), clamped to [10, 500]
-    rank: int | None = None
-
-    # Regularization strength (entropic regularization)
-    # Smaller = closer to exact GW, larger = faster convergence
-    # If None, derived from cost matrix scale: median(cost) * sqrt(eps)
-    reg: float | None = None
-
-    # Outer iterations (GW loop)
-    # None = derived from problem size: max(50, 2 * sqrt(n + m))
-    max_iterations: int | None = None
-    convergence_threshold: float | None = None
-
-    # Inner iterations (Sinkhorn-like for each GW step)
-    # None = derived from rank: max(20, rank)
-    max_inner_iterations: int | None = None
-    inner_threshold: float | None = None
-
-    # Initialization
-    seed: int | None = 42
-
-
 class LowRankGromovWasserstein:
     """
     Low-rank Gromov-Wasserstein solver using Sinkhorn-style updates.
@@ -179,10 +145,16 @@ class LowRankGromovWasserstein:
         self,
         C1: "Array",
         C2: "Array",
-        config: LowRankGWConfig = LowRankGWConfig(),
+        seed: int | None = 42,
     ) -> LowRankGWResult:
         """
         Compute low-rank GW distance between two metric spaces.
+
+        All parameters are derived from the data geometry:
+        - rank: sqrt(min(n, m)) clamped to [10, 500]
+        - regularization: median(cost) * sqrt(machine_epsilon)
+        - iterations: max(50, 2 * sqrt(n + m))
+        - convergence: regularization_epsilon
 
         Uses a simplified Sinkhorn-style algorithm that is numerically stable.
         Instead of explicit gradient computation, we:
@@ -193,7 +165,7 @@ class LowRankGromovWasserstein:
         Args:
             C1: Source distance/cost matrix [n, n]
             C2: Target distance/cost matrix [m, m]
-            config: Algorithm configuration
+            seed: Random seed for reproducibility (None = no seeding)
 
         Returns:
             LowRankGWResult with factorized coupling and distance
@@ -206,14 +178,10 @@ class LowRankGromovWasserstein:
         n = int(C1.shape[0])
         m = int(C2.shape[0])
 
-        # Derive rank from problem size when not specified
-        # sqrt(min(n, m)) provides good approximation quality, clamped to [10, 500]
-        if config.rank is not None:
-            r = min(config.rank, n, m)
-        else:
-            derived_rank = int(math.sqrt(min(n, m)))
-            derived_rank = max(10, min(500, derived_rank))
-            r = min(derived_rank, n, m)
+        # Derive rank from problem size: sqrt(min(n, m)) clamped to [10, 500]
+        derived_rank = int(math.sqrt(min(n, m)))
+        derived_rank = max(10, min(500, derived_rank))
+        r = min(derived_rank, n, m)
 
         if n == 0 or m == 0:
             return LowRankGWResult(
@@ -260,27 +228,24 @@ class LowRankGromovWasserstein:
                     final_error=0.0,
                 )
 
-        # Derive regularization from cost matrix scale if not provided
-        if config.reg is not None:
-            reg = config.reg
+        # Derive regularization from cost matrix scale
+        # Use median of cost matrix scale * sqrt(machine_epsilon)
+        # This balances regularization strength with numerical precision
+        flat_c1 = b.reshape(C1, (-1,))
+        sorted_c1 = b.sort(flat_c1)
+        n_flat = int(flat_c1.shape[0])
+        mid = n_flat // 2
+        if n_flat % 2 == 1:
+            median_c1 = b.take(sorted_c1, b.array([mid]), axis=0)
         else:
-            # Use median of cost matrix scale * sqrt(machine_epsilon)
-            # This balances regularization strength with numerical precision
-            flat_c1 = b.reshape(C1, (-1,))
-            sorted_c1 = b.sort(flat_c1)
-            n_flat = int(flat_c1.shape[0])
-            mid = n_flat // 2
-            if n_flat % 2 == 1:
-                median_c1 = b.take(sorted_c1, b.array([mid]), axis=0)
-            else:
-                low = b.take(sorted_c1, b.array([mid - 1]), axis=0)
-                high = b.take(sorted_c1, b.array([mid]), axis=0)
-                median_c1 = (low + high) * 0.5
-            median_c1 = b.squeeze(median_c1)
-            b.eval(median_c1)
-            median_val = float(b.to_scalar(median_c1))
-            eps = float(machine_epsilon(b, C1))
-            reg = max(median_val * (eps ** 0.5), eps)
+            low = b.take(sorted_c1, b.array([mid - 1]), axis=0)
+            high = b.take(sorted_c1, b.array([mid]), axis=0)
+            median_c1 = (low + high) * 0.5
+        median_c1 = b.squeeze(median_c1)
+        b.eval(median_c1)
+        median_val = float(b.to_scalar(median_c1))
+        eps = float(machine_epsilon(b, C1))
+        reg = max(median_val * (eps ** 0.5), eps)
 
         logger.debug(
             "Low-Rank GW: n=%d, m=%d, rank=%d, reg=%.4f",
@@ -288,8 +253,8 @@ class LowRankGromovWasserstein:
         )
 
         # Set random seed for reproducibility
-        if config.seed is not None:
-            b.random_seed(config.seed)
+        if seed is not None:
+            b.random_seed(seed)
 
         # Uniform marginals
         a = b.ones((n,)) / n  # Source marginal
@@ -298,33 +263,20 @@ class LowRankGromovWasserstein:
         # Initialize low-rank factors using simple uniform + noise
         Q, g, R = self._initialize_factors(n, m, r, a, p, b)
 
-        # Derive max_iterations from problem size when not specified
-        # max(50, 2 * sqrt(n + m)) scales with problem complexity
-        if config.max_iterations is not None:
-            max_iterations = config.max_iterations
-        else:
-            max_iterations = max(50, int(2 * math.sqrt(n + m)))
+        # Derive max_iterations from problem size: max(50, 2 * sqrt(n + m))
+        max_iterations = max(50, int(2 * math.sqrt(n + m)))
 
-        # Derive inner iterations from rank when not specified
-        if config.max_inner_iterations is not None:
-            max_inner_iterations = config.max_inner_iterations
-        else:
-            max_inner_iterations = max(20, r)
+        # Derive inner iterations from rank: max(20, rank)
+        max_inner_iterations = max(20, r)
+
+        # Derive convergence thresholds from regularization_epsilon
+        convergence_threshold = regularization_epsilon(b, C1)
+        inner_threshold = regularization_epsilon(b, C1)
 
         # GW iteration: alternating linearization and low-rank Sinkhorn
         prev_distance = float("inf")
         converged = False
         iterations = 0
-        convergence_threshold = (
-            config.convergence_threshold
-            if config.convergence_threshold is not None
-            else regularization_epsilon(b, C1)
-        )
-        inner_threshold = (
-            config.inner_threshold
-            if config.inner_threshold is not None
-            else regularization_epsilon(b, C1)
-        )
 
         for it in range(max_iterations):
             iterations = it + 1
@@ -881,19 +833,20 @@ class LowRankGromovWasserstein:
 def compute_lowrank_gw(
     source_points: "Array",
     target_points: "Array",
-    config: LowRankGWConfig = LowRankGWConfig(),
     backend: "Backend | None" = None,
+    seed: int | None = 42,
 ) -> LowRankGWResult:
     """
     Compute low-rank Gromov-Wasserstein distance between point sets.
 
     Convenience function that computes pairwise distances and runs low-rank GW.
+    All parameters are derived from the data geometry.
 
     Args:
         source_points: Source point matrix [n, d_s]
         target_points: Target point matrix [m, d_t]
-        config: Algorithm configuration
         backend: Backend protocol implementation
+        seed: Random seed for reproducibility (None = no seeding)
 
     Returns:
         LowRankGWResult with factorized coupling and distance
@@ -920,7 +873,7 @@ def compute_lowrank_gw(
     b.eval(C1, C2)
 
     solver = LowRankGromovWasserstein(b)
-    return solver.compute(C1, C2, config)
+    return solver.compute(C1, C2, seed=seed)
 
 
 def project_via_lowrank_gw(

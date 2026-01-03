@@ -25,7 +25,6 @@ from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResp
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
-    CRMBuildConfig,
 )
 
 
@@ -65,18 +64,9 @@ def test_crm_build_and_compare(tmp_path: Path) -> None:
     engine = _FakeHiddenStateEngine(layer_count=2, hidden_dim=2)
     service = ConceptResponseMatrixService(engine=engine)
     output_path = tmp_path / "crm.json"
-    config = CRMBuildConfig(
-        include_primes=True,
-        include_gates=False,
-        include_polyglot=False,
-        include_sequence_invariants=False,
-        include_emotions=False,
-    )
-
     summary = service.build(
         model_path=str(model_dir),
         output_path=str(output_path),
-        config=config,
     )
 
     assert output_path.exists()
@@ -93,7 +83,6 @@ def test_crm_build_and_compare(tmp_path: Path) -> None:
     service.build(
         model_path=str(model_dir),
         output_path=str(output_path_2),
-        config=config,
     )
 
     compare = service.compare(str(output_path), str(output_path_2))

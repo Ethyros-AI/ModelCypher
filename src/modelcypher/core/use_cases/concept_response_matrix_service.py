@@ -24,18 +24,12 @@ from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
-from modelcypher.core.domain.agents.emotion_concept_atlas import (
-    EmotionCategory,
-    EmotionConceptInventory,
-)
+from modelcypher.core.domain.agents.emotion_concept_atlas import EmotionConceptInventory
 from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames
 from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
 )
-from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    SequenceFamily,
-    SequenceInvariantInventory,
-)
+from modelcypher.core.domain.agents.sequence_invariant_atlas import SequenceInvariantInventory
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
@@ -56,18 +50,6 @@ from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.paths import ensure_dir, expand_path
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class CRMBuildConfig:
-    include_primes: bool = True
-    include_gates: bool = True
-    include_polyglot: bool = True
-    include_sequence_invariants: bool = True
-    include_emotions: bool = True
-    sequence_families: frozenset[SequenceFamily] | None = None
-    emotion_categories: frozenset[EmotionCategory] | None = None
-    anchor_prefixes: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -111,17 +93,6 @@ class CRMSharedSubspaceSummary:
 
 
 @dataclass(frozen=True)
-class KnowledgeDeltaMaskConfig:
-    """Configuration for knowledge delta mask extraction."""
-
-    target_sparse_percentile: float | None = None
-    source_dense_percentile: float | None = None
-    density_ratio_percentile: float | None = None
-    min_anchor_count: int = 1
-    epsilon: float | None = None
-
-
-@dataclass(frozen=True)
 class KnowledgeDeltaLayerSummary:
     layer: int
     anchor_count: int
@@ -148,7 +119,6 @@ class KnowledgeDeltaMaskSummary:
     graft_mask_by_layer: dict[int, float]
     skipped_layers: list[int]
     layer_summaries: list[KnowledgeDeltaLayerSummary]
-    config: KnowledgeDeltaMaskConfig
 
 
 class ConceptResponseMatrixService:
@@ -159,13 +129,11 @@ class ConceptResponseMatrixService:
         self,
         model_path: str,
         output_path: str,
-        config: CRMBuildConfig | None = None,
         adapter: str | None = None,
     ) -> CRMBuildSummary:
         if self.engine is None:
             raise ValueError("Hidden-state engine required to build concept response matrices.")
 
-        cfg = config or CRMBuildConfig()
         resolved_model = expand_path(model_path)
         if not resolved_model.exists():
             raise ValueError(f"Model path does not exist: {resolved_model}")
@@ -173,7 +141,7 @@ class ConceptResponseMatrixService:
             raise ValueError(f"Model path is not a directory: {resolved_model}")
 
         layer_count, hidden_dim = self._resolve_model_shape(resolved_model)
-        anchor_entries = self._build_anchor_prompts(cfg)
+        anchor_entries = self._build_anchor_prompts()
 
         anchor_ids = [anchor_id for anchor_id, _ in anchor_entries]
         prime_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("prime:"))
@@ -398,7 +366,6 @@ class ConceptResponseMatrixService:
         self,
         source_path: str,
         target_path: str,
-        config: KnowledgeDeltaMaskConfig | None = None,
     ) -> KnowledgeDeltaMaskSummary:
         """Build a knowledge delta mask from two CRMs.
 
@@ -408,15 +375,7 @@ class ConceptResponseMatrixService:
         """
         source = ConceptResponseMatrix.load(str(expand_path(source_path)))
         target = ConceptResponseMatrix.load(str(expand_path(target_path)))
-        cfg = config or KnowledgeDeltaMaskConfig()
         backend = get_default_backend()
-
-        if cfg.target_sparse_percentile is not None:
-            _validate_percentile("target_sparse_percentile", cfg.target_sparse_percentile)
-        if cfg.source_dense_percentile is not None:
-            _validate_percentile("source_dense_percentile", cfg.source_dense_percentile)
-        if cfg.density_ratio_percentile is not None:
-            _validate_percentile("density_ratio_percentile", cfg.density_ratio_percentile)
 
         common = source.common_anchor_ids(target)
         if not common:
@@ -444,18 +403,14 @@ class ConceptResponseMatrixService:
                 target_norms.append(float(target_act.norm))
 
             anchor_count = len(source_norms)
-            if anchor_count < cfg.min_anchor_count:
+            if anchor_count == 0:
                 skipped_layers.append(layer)
                 continue
 
             source_mean, source_std = _mean_std(source_norms)
             target_mean, target_std = _mean_std(target_norms)
             delta_mean = source_mean - target_mean
-            eps = (
-                cfg.epsilon
-                if cfg.epsilon is not None
-                else division_epsilon(backend, backend.array([target_mean]))
-            )
+            eps = division_epsilon(backend, backend.array([target_mean]))
             density_ratio = source_mean / (target_mean + eps)
             coverage = anchor_count / float(len(common)) if common else 0.0
 
@@ -480,16 +435,16 @@ class ConceptResponseMatrixService:
         source_means = [float(entry["source_mean_norm"]) for entry in raw_layers]
         density_ratios = [float(entry["density_ratio"]) for entry in raw_layers]
 
-        def resolve_threshold(values: list[float], percentile: float | None) -> float:
-            if percentile is not None:
-                return _percentile(values, percentile)
-            sorted_vals = sorted(values)
-            _b = get_default_backend()
-            return find_magnitude_gap_threshold(sorted_vals, eps=ulp_scalar(1.0, _b))
-
-        target_sparse_threshold = resolve_threshold(target_means, cfg.target_sparse_percentile)
-        source_dense_threshold = resolve_threshold(source_means, cfg.source_dense_percentile)
-        density_ratio_threshold = resolve_threshold(density_ratios, cfg.density_ratio_percentile)
+        _b = get_default_backend()
+        target_sparse_threshold = find_magnitude_gap_threshold(
+            sorted(target_means), eps=ulp_scalar(1.0, _b)
+        )
+        source_dense_threshold = find_magnitude_gap_threshold(
+            sorted(source_means), eps=ulp_scalar(1.0, _b)
+        )
+        density_ratio_threshold = find_magnitude_gap_threshold(
+            sorted(density_ratios), eps=ulp_scalar(1.0, _b)
+        )
 
         graft_layers: list[int] = []
         graft_mask_by_layer = {layer: 0.0 for layer in range(layer_count)}
@@ -539,7 +494,6 @@ class ConceptResponseMatrixService:
             graft_mask_by_layer=graft_mask_by_layer,
             skipped_layers=skipped_layers,
             layer_summaries=layer_summaries,
-            config=cfg,
         )
 
     def _resolve_model_shape(self, model_path: Path) -> tuple[int, int]:
@@ -562,33 +516,17 @@ class ConceptResponseMatrixService:
 
         return int(layer_count), int(hidden_dim)
 
-    def _build_anchor_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
+    def _build_anchor_prompts(self) -> list[tuple[str, list[str]]]:
         entries: list[tuple[str, list[str]]] = []
-        normalized_prefixes = _normalize_prefixes(config.anchor_prefixes)
-
-        if config.include_primes:
-            entries.extend(self._prime_prompts(config))
-        if config.include_gates:
-            entries.extend(self._gate_prompts(config))
-        if config.include_sequence_invariants:
-            entries.extend(self._sequence_invariant_prompts(config))
-        if config.include_emotions:
-            entries.extend(self._emotion_prompts(config))
-
-        if normalized_prefixes:
-            entries = [
-                (anchor_id, prompts)
-                for anchor_id, prompts in entries
-                if any(anchor_id.startswith(prefix) for prefix in normalized_prefixes)
-            ]
-
+        entries.extend(self._prime_prompts())
+        entries.extend(self._gate_prompts())
+        entries.extend(self._sequence_invariant_prompts())
+        entries.extend(self._emotion_prompts())
         return entries
 
-    def _prime_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
+    def _prime_prompts(self) -> list[tuple[str, list[str]]]:
         primes = SemanticPrimeFrames.enriched()
-        polyglot_by_id: dict[str, list[str]] = {}
-        if config.include_polyglot:
-            polyglot_by_id = _load_polyglot_prompts([prime.id for prime in primes])
+        polyglot_by_id = _load_polyglot_prompts([prime.id for prime in primes])
 
         entries: list[tuple[str, list[str]]] = []
         for prime in primes:
@@ -602,7 +540,7 @@ class ConceptResponseMatrixService:
             entries.append((f"prime:{prime.id}", prompts))
         return entries
 
-    def _gate_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
+    def _gate_prompts(self) -> list[tuple[str, list[str]]]:
         entries: list[tuple[str, list[str]]] = []
         for gate in ComputationalGateInventory.probe_gates():
             texts: list[str] = []
@@ -616,10 +554,9 @@ class ConceptResponseMatrixService:
             entries.append((f"gate:{gate.id}", prompts))
         return entries
 
-    def _sequence_invariant_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
+    def _sequence_invariant_prompts(self) -> list[tuple[str, list[str]]]:
         entries: list[tuple[str, list[str]]] = []
-        families = config.sequence_families
-        probes = SequenceInvariantInventory.probes_for_families(set(families) if families else None)
+        probes = SequenceInvariantInventory.probes_for_families(None)
         for probe in probes:
             texts: list[str] = [probe.name]
             if probe.description:
@@ -629,13 +566,9 @@ class ConceptResponseMatrixService:
             entries.append((f"seq:{probe.id}", prompts))
         return entries
 
-    def _emotion_prompts(self, config: CRMBuildConfig) -> list[tuple[str, list[str]]]:
+    def _emotion_prompts(self) -> list[tuple[str, list[str]]]:
         entries: list[tuple[str, list[str]]] = []
         emotions = EmotionConceptInventory.all_emotions()
-
-        # Filter by category if specified
-        if config.emotion_categories:
-            emotions = [e for e in emotions if e.category in config.emotion_categories]
 
         for emotion in emotions:
             texts: list[str] = [emotion.name]
@@ -675,36 +608,6 @@ def _mean_std(values: list[float]) -> tuple[float, float]:
     mean = sum(values) / float(len(values))
     variance = sum((value - mean) ** 2 for value in values) / float(len(values))
     return float(mean), sqrt_scalar(max(0.0, variance), get_default_backend())
-
-
-def _validate_percentile(name: str, value: float) -> None:
-    if value < 0.0 or value > 1.0:
-        raise ValueError(f"{name} must be between 0.0 and 1.0 (got {value})")
-
-
-def _percentile(values: list[float], percentile: float) -> float:
-    if not values:
-        return 0.0
-    sorted_values = sorted(values)
-    if len(sorted_values) == 1:
-        return float(sorted_values[0])
-    idx = int(percentile * (len(sorted_values) - 1))
-    idx = max(0, min(idx, len(sorted_values) - 1))
-    return float(sorted_values[idx])
-
-
-def _normalize_prefixes(prefixes: list[str] | None) -> list[str]:
-    if not prefixes:
-        return []
-    normalized: list[str] = []
-    for value in prefixes:
-        trimmed = value.strip()
-        if not trimmed:
-            continue
-        if not trimmed.endswith(":"):
-            trimmed = f"{trimmed}:"
-        normalized.append(trimmed)
-    return normalized
 
 
 def _load_polyglot_prompts(prime_ids: list[str]) -> dict[str, list[str]]:

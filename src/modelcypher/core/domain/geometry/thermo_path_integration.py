@@ -24,14 +24,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class Configuration:
-    gate_detection_threshold: float | None = None  # Must be derived from baseline
-    capture_trajectory: bool = True
-    max_tokens: int = 200
-    temperature: float = 0.0
-
-
-@dataclass(frozen=True)
 class ThermoPathAssessment:
     """Assessment of thermo-path relationship.
 
@@ -99,8 +91,10 @@ class ThermoTrajectory:
 
 
 class ThermoPathIntegration:
-    def __init__(self, configuration: Configuration = Configuration()) -> None:
-        self.config = configuration
+    """Analyze thermo-path relationships in model responses.
+
+    No configuration needed - all analysis is derived from the data.
+    """
 
     def analyze_relationship(self, measurements: list[CombinedMeasurement]) -> ThermoPathAssessment:
         if not measurements:
@@ -215,7 +209,7 @@ class ThermoPathIntegration:
             mean_entropy=mean_entropy,
             entropy_variance=entropy_variance,
             first_token_entropy=first_token_entropy,
-            entropy_trajectory=entropy_trajectory if self.config.capture_trajectory else None,
+            entropy_trajectory=entropy_trajectory,
             gate_sequence=list(getattr(gate_detection_result, "gate_sequence", [])),
             gate_count=len(gate_details),
             gate_details=gate_details,

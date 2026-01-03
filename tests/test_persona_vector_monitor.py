@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 from modelcypher.core.domain.geometry.persona_vector_monitor import (
-    Configuration,
     PersonaTraitDefinition,
     PersonaVectorMonitor,
 )
@@ -32,9 +31,6 @@ def test_persona_vector_monitor_extract_and_drift() -> None:
         positive_prompts=["Tell the truth"],
         negative_prompts=["Make it up"],
     )
-    config = Configuration(
-        persona_traits=[trait], correlation_threshold=0.1, normalize_vectors=True
-    )
 
     positive = [[1.0, 0.0], [1.0, 0.0]]
     negative = [[0.0, 1.0], [0.0, 1.0]]
@@ -42,17 +38,18 @@ def test_persona_vector_monitor_extract_and_drift() -> None:
         positive_activations=positive,
         negative_activations=negative,
         trait=trait,
-        configuration=config,
         layer_index=4,
         model_id="model-1",
+        correlation_threshold=0.1,
     )
     assert vector is not None
 
     bundle = PersonaVectorMonitor.extract_bundle(
         activations_per_trait={"truthful": (positive, negative)},
-        configuration=config,
+        traits=[trait],
         layer_index=4,
         model_id="model-1",
+        correlation_threshold=0.1,
     )
     assert bundle.vectors
 

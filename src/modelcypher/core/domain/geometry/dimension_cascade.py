@@ -460,14 +460,30 @@ class DimensionCascade:
         eigenvectors = b.take(eigenvectors, rev_idx, axis=1)
         b.eval(eigenvalues, eigenvectors)
 
-        # Take top-k eigenvectors (largest eigenvalues)
+        # For MDS, we only use positive eigenvalues
+        # Non-metric distances can produce negative eigenvalues
+        # Count positive eigenvalues
+        pos_mask = eigenvalues > eps
+        b.eval(pos_mask)
+        n_positive_arr = b.sum(b.where(pos_mask, b.ones_like(eigenvalues), b.zeros_like(eigenvalues)))
+        b.eval(n_positive_arr)
+        n_positive = int(b.to_scalar(n_positive_arr))
+
+        if n_positive < target_dim:
+            raise ValueError(
+                f"Only {n_positive} positive eigenvalues, need {target_dim}. "
+                "Distance matrix may be non-metric. Falling back to PCA."
+            )
+
+        # Take top-k eigenvectors (largest positive eigenvalues)
         U_k = eigenvectors[:, :target_dim]  # [n, target_dim]
         S_k = eigenvalues[:target_dim]  # [target_dim]
         b.eval(U_k, S_k)
 
-        # Eigenvalues should be non-negative for valid distance matrix
-        # Clamp small negatives to zero (numerical noise)
-        S_k = b.maximum(S_k, b.zeros_like(S_k))
+        # Clamp small values to avoid numerical issues in sqrt
+        eps_arr = b.zeros_like(S_k) + eps
+        b.eval(eps_arr)
+        S_k = b.maximum(S_k, eps_arr)
         b.eval(S_k)
 
         # Step 4: Compute embedding
@@ -477,6 +493,15 @@ class DimensionCascade:
 
         # Broadcast multiply: Y = U_k * sqrt_S_k
         projected = U_k * sqrt_S_k[None, :]  # [n, target_dim]
+        b.eval(projected)
+
+        # Normalize projected points to unit variance per dimension
+        # This ensures coupling matrices have reasonable scale
+        proj_std = b.std(projected, axis=0)
+        b.eval(proj_std)
+        proj_std = b.maximum(proj_std, b.zeros_like(proj_std) + eps)
+        b.eval(proj_std)
+        projected = projected / proj_std[None, :]
         b.eval(projected)
 
         total_var_arr = b.sum(eigenvalues)
@@ -520,6 +545,25 @@ class DimensionCascade:
         # Solve (X^T @ X + λI) @ W = X^T @ Y for W
         coupling = b.solve(XtX_reg, XtY)
         b.eval(coupling)
+
+        # Check for numerical issues in coupling
+        coupling_max_arr = b.max(b.abs(coupling))
+        b.eval(coupling_max_arr)
+        coupling_max = float(b.to_scalar(coupling_max_arr))
+        if coupling_max > 1e10 or coupling_max != coupling_max:  # NaN check
+            # Fallback: use simple least squares via projection
+            # This is less accurate but numerically stable
+            logger.warning(
+                "Coupling has numerical issues (max=%.2e), using fallback",
+                coupling_max,
+            )
+            # Simple projection: W = X^T @ Y / (||X||^2 + eps)
+            XtX_diag = b.diag(XtX)
+            b.eval(XtX_diag)
+            XtX_diag_inv = 1.0 / (XtX_diag + reg_lambda)
+            b.eval(XtX_diag_inv)
+            coupling = XtX_diag_inv[:, None] * XtY
+            b.eval(coupling)
 
         logger.debug(
             "Coupling via regularized normal equations: reg_lambda=%.2e",

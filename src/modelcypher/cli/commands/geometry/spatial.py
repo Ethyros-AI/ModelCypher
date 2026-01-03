@@ -669,21 +669,8 @@ def cross_grounding_transfer(
     target_activations_file: str = typer.Argument(
         ..., help="JSON file with target model anchor activations"
     ),
-    concepts_file: str = typer.Option(
-        None, "--concepts", "-c", help="JSON file with concepts to transfer {id: [vector]}"
-    ),
     output_file: str = typer.Option(
         None, "--output-file", "-o", help="Output file for Ghost Anchors (JSON)"
-    ),
-    source_grounding: str = typer.Option(
-        "unknown",
-        "--source-grounding",
-        help="Source grounding type: high_visual, moderate, alternative",
-    ),
-    target_grounding: str = typer.Option(
-        "unknown",
-        "--target-grounding",
-        help="Target grounding type: high_visual, moderate, alternative",
     ),
 ) -> None:
     """
@@ -694,10 +681,7 @@ def cross_grounding_transfer(
 
     This is the "3D Printer" for high-dimensional knowledge transfer.
 
-    If --concepts is not provided, will synthesize Ghost Anchors for all
-    source anchors as a demonstration.
-
-    Input: Two JSON files with anchor activations, optional concepts file.
+    Input: Two JSON files with anchor activations.
     Output: Ghost Anchors with synthesized target positions.
     """
     context = _context(ctx)
@@ -715,17 +699,9 @@ def cross_grounding_transfer(
     source_anchors = {name: backend.array(vec) for name, vec in source_data.items()}
     target_anchors = {name: backend.array(vec) for name, vec in target_data.items()}
 
-    # Load concepts or use source anchors as demo
-    if concepts_file:
-        concepts_data = json.loads(Path(concepts_file).read_text())
-        concepts = {name: backend.array(vec) for name, vec in concepts_data.items()}
-    else:
-        # Use a subset of source anchors as demo
-        demo_concepts = ["chair", "floor", "ceiling", "left_hand", "background"]
-        concepts = {k: v for k, v in source_anchors.items() if k in demo_concepts}
-        if not concepts:
-            # Fallback to first 5 anchors
-            concepts = dict(list(source_anchors.items())[:5])
+    concepts = source_anchors
+    source_grounding = "unknown"
+    target_grounding = "unknown"
 
     engine = CrossGroundingTransferEngine(backend=backend)
     result = engine.transfer_concepts(

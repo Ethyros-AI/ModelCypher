@@ -52,47 +52,20 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_anchors(
-            axis: str | None = None,
-            category: str | None = None,
         ) -> dict:
             """List the Spatial Prime Atlas anchors.
 
             Shows the 23 spatial anchors with their expected 3D coordinates (X, Y, Z)
             and categories. These anchors probe the model's 3D world model.
 
-            Args:
-                axis: Filter by axis (x_lateral, y_vertical, z_depth)
-                category: Filter by category (vertical, lateral, depth, mass, furniture)
-
             Returns:
                 List of spatial anchors with 3D coordinates
             """
             from modelcypher.core.domain.agents.spatial_atlas import (
-                SpatialCategory,
                 SpatialConceptInventory,
             )
-            from modelcypher.core.domain.geometry.spatial_3d import (
-                SpatialAxis,
-                get_spatial_anchors_by_axis,
-            )
 
-            if axis:
-                try:
-                    axis_enum = SpatialAxis(axis)
-                    anchors = get_spatial_anchors_by_axis(axis_enum)
-                except ValueError:
-                    raise ValueError(f"Invalid axis: {axis}. Use: x_lateral, y_vertical, z_depth")
-            else:
-                anchors = SpatialConceptInventory.all_concepts()
-
-            if category:
-                try:
-                    category_enum = SpatialCategory(category)
-                except ValueError as exc:
-                    raise ValueError(
-                        f"Invalid category: {category}. Use: vertical, lateral, depth, mass, furniture"
-                    ) from exc
-                anchors = [a for a in anchors if a.category == category_enum]
+            anchors = SpatialConceptInventory.all_concepts()
 
             return {
                 "_schema": "mc.geometry.spatial.anchors.v1",
@@ -108,7 +81,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                     for a in anchors
                 ],
                 "count": len(anchors),
-                "categories": list(set(a.category for a in anchors)),
+                "categories": list(set(a.category.value for a in anchors)),
                 "axisLegend": {
                     "X": "Lateral (Left=-1, Right=+1)",
                     "Y": "Vertical (Down=-1, Up=+1) - Gravity axis",
@@ -258,7 +231,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spatial_probe_model(
             modelPath: str,
-            layer: int = -1,
             saveActivations: str | None = None,
         ) -> dict:
             """Probe a model with the Spatial Prime Atlas.
@@ -270,7 +242,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
 
             Args:
                 modelPath: Path to model directory
-                layer: Layer to extract activations from (-1 = last)
                 saveActivations: Optional path to save activations JSON
 
             Returns:
@@ -291,13 +262,13 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             backend = MLXBackend()
             anchor_activations = {}
 
+            target_layer = len(model.model.layers) - 1
             for anchor in SpatialConceptInventory.all_concepts():
                 tokens = tokenizer.encode(anchor.prompt)
                 input_ids = mx.array([tokens])
 
                 try:
                     hidden = model.model.embed_tokens(input_ids)
-                    target_layer = layer if layer >= 0 else len(model.model.layers) - 1
                     for i, layer_module in enumerate(model.model.layers):
                         hidden = layer_module(hidden, mask=None)
                         if i == target_layer:
@@ -333,7 +304,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "_schema": "mc.geometry.spatial.probe_model.v1",
                 "modelPath": str(model_path),
                 "anchorsProbed": len(anchor_activations),
-                "layer": layer if layer >= 0 else "last",
+                "layer": target_layer,
                 **report.to_dict(),
             }
 
@@ -382,9 +353,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
         def mc_geometry_spatial_cross_grounding_transfer(
             sourceAnchors: dict[str, list[float]],
             targetAnchors: dict[str, list[float]],
-            concepts: dict[str, list[float]] | None = None,
-            sourceGrounding: str = "unknown",
-            targetGrounding: str = "unknown",
         ) -> dict:
             """Transfer knowledge from source to target model via cross-grounding.
 
@@ -396,11 +364,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Args:
                 sourceAnchors: Dict of anchor_name -> activation_vector from source model
                 targetAnchors: Dict of anchor_name -> activation_vector from target model
-                concepts: Optional dict of concept_id -> vector to transfer
-                         If not provided, uses subset of source anchors as demo
-                sourceGrounding: Source grounding type (high_visual, moderate, alternative)
-                targetGrounding: Target grounding type
-
             Returns:
                 Ghost Anchors with synthesized target positions
             """
@@ -413,15 +376,9 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             source = {name: backend.array(vec) for name, vec in sourceAnchors.items()}
             target = {name: backend.array(vec) for name, vec in targetAnchors.items()}
 
-            # Process concepts
-            if concepts:
-                concept_arrays = {name: backend.array(vec) for name, vec in concepts.items()}
-            else:
-                # Demo with subset of source anchors
-                demo_keys = ["chair", "floor", "ceiling", "left_hand", "background"]
-                concept_arrays = {k: v for k, v in source.items() if k in demo_keys}
-                if not concept_arrays:
-                    concept_arrays = dict(list(source.items())[:5])
+            concept_arrays = source
+            sourceGrounding = "unknown"
+            targetGrounding = "unknown"
 
             engine = CrossGroundingTransferEngine(backend=backend)
             result = engine.transfer_concepts(
