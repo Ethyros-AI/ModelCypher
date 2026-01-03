@@ -180,8 +180,7 @@ class DeltaFeatureExtractor:
             return []
 
         sorted_values = sorted(values)
-        eps = math.ulp(1.0)
-        threshold = find_magnitude_gap_threshold(sorted_values, eps=eps)
+        threshold = find_magnitude_gap_threshold(sorted_values)
         return [i for i, v in enumerate(values) if v > threshold]
 
 

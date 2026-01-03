@@ -27,6 +27,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import math
 from typing import Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -36,7 +37,6 @@ from modelcypher.core.domain.agents.unified_atlas import (
     UnifiedAtlasInventory,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     find_magnitude_gap_threshold,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -44,14 +44,6 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     frechet_mean,
 )
 from modelcypher.ports.embedding import EmbeddingProvider
-
-
-class AdapterSafetyTier(str, Enum):
-    """Safety check thoroughness tier."""
-
-    QUICK = "quick"
-    STANDARD = "standard"
-    FULL = "full"
 
 
 @dataclass(frozen=True)
@@ -75,7 +67,6 @@ class ProbeResult:
 class ProbeContext:
     """Context for probe evaluation."""
 
-    tier: AdapterSafetyTier
     adapter_name: str
     adapter_description: str | None = None
     skill_tags: tuple[str, ...] = ()
@@ -150,63 +141,28 @@ class AdapterSafetyProbe(ABC):
         """Probe version for tracking."""
         pass
 
-    @property
-    @abstractmethod
-    def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-        """Tiers this probe supports."""
-        pass
-
-    def should_run(self, tier: AdapterSafetyTier) -> bool:
-        """Check if probe should run for the given tier."""
-        return tier in self.supported_tiers
-
     @abstractmethod
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate the probe against the context."""
         pass
 
 
-def _tier_sources(tier: AdapterSafetyTier) -> set[AtlasSource]:
-    if tier == AdapterSafetyTier.QUICK:
-        return {
-            AtlasSource.SEQUENCE_INVARIANT,
-            AtlasSource.SEMANTIC_PRIME,
-            AtlasSource.COMPUTATIONAL_GATE,
-            AtlasSource.SAFETY_ETHICS,
-        }
-    if tier == AdapterSafetyTier.STANDARD:
-        return {
-            AtlasSource.SEQUENCE_INVARIANT,
-            AtlasSource.SEMANTIC_PRIME,
-            AtlasSource.COMPUTATIONAL_GATE,
-            AtlasSource.TEMPORAL_CONCEPT,
-            AtlasSource.SPATIAL_CONCEPT,
-            AtlasSource.SOCIAL_CONCEPT,
-            AtlasSource.MORAL_CONCEPT,
-            AtlasSource.COMPOSITIONAL,
-            AtlasSource.PHILOSOPHICAL_CONCEPT,
-            AtlasSource.SAFETY_ETHICS,
-        }
-    return set(AtlasSource)
-
-
 def _distance_threshold(values: list[float]) -> float:
     if not values:
         return 0.0
-    backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([0.0]))
     sorted_vals = sorted(values)
     max_gap = 0.0
     for i in range(len(sorted_vals) - 1):
         curr = sorted_vals[i]
         next_val = sorted_vals[i + 1]
-        if curr > eps:
+        if curr > 0.0:
             relative_gap = (next_val - curr) / curr
             if relative_gap > max_gap:
                 max_gap = relative_gap
+    eps = max(math.ulp(max(sorted_vals)), math.ulp(1.0))
     if max_gap <= eps:
         return float("inf")
-    return float(find_magnitude_gap_threshold(sorted_vals, eps=eps))
+    return float(find_magnitude_gap_threshold(sorted_vals))
 
 
 def _anchor_embedding(
@@ -257,24 +213,25 @@ class SemanticDriftProbe(AdapterSafetyProbe):
     def version(self) -> str:
         return "probe-drift-v1.0"
 
-    @property
-    def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-        return frozenset([AdapterSafetyTier.STANDARD, AdapterSafetyTier.FULL])
-
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate semantic drift in adapter responses."""
         if context.inference_hook is None or context.embedder is None:
+            missing_inference = 1 if context.inference_hook is None else 0
+            missing_embedder = 1 if context.embedder is None else 0
             return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="missing_inference_or_embedder",
-                finding_counts={"probes_tested": 0},
+                finding_counts={
+                    "probes_tested": 0,
+                    "missing_inference": missing_inference,
+                    "missing_embedder": missing_embedder,
+                },
             )
         embedder = context.embedder
         probes = (
             self._probes_override
             if self._probes_override is not None
-            else UnifiedAtlasInventory.probes_by_source(_tier_sources(context.tier))
+            else UnifiedAtlasInventory.probes_by_source(set(AtlasSource))
         )
         distances: list[float] = []
         findings: list[str] = []
@@ -302,8 +259,6 @@ class SemanticDriftProbe(AdapterSafetyProbe):
 
         mean_distance = sum(distances) / len(distances) if distances else 0.0
         max_distance = max(distances) if distances else 0.0
-        details = f"outlier_probes={outlier_count} total_probes={len(distances)}"
-
         finding_counts = {
             "probes_tested": len(distances),
             "outlier_probes": outlier_count,
@@ -315,7 +270,6 @@ class SemanticDriftProbe(AdapterSafetyProbe):
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            details=details,
             findings=tuple(findings),
             finding_counts=finding_counts,
         )
@@ -394,18 +348,19 @@ class CanaryQAProbe(AdapterSafetyProbe):
     def version(self) -> str:
         return "probe-canary-v1.0"
 
-    @property
-    def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-        return frozenset([AdapterSafetyTier.STANDARD, AdapterSafetyTier.FULL])
-
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate canary questions."""
         if context.inference_hook is None or context.embedder is None:
+            missing_inference = 1 if context.inference_hook is None else 0
+            missing_embedder = 1 if context.embedder is None else 0
             return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="missing_inference_or_embedder",
-                finding_counts={"questions_tested": 0},
+                finding_counts={
+                    "questions_tested": 0,
+                    "missing_inference": missing_inference,
+                    "missing_embedder": missing_embedder,
+                },
             )
 
         questions_to_run = self.CANARY_QUESTIONS
@@ -434,8 +389,6 @@ class CanaryQAProbe(AdapterSafetyProbe):
 
         mean_distance = sum(distances) / len(distances) if distances else 0.0
         max_distance = max(distances) if distances else 0.0
-        details = f"outlier_questions={outlier_count} total_questions={len(distances)}"
-
         finding_counts = {
             "questions_tested": len(distances),
             "outlier_questions": outlier_count,
@@ -447,7 +400,6 @@ class CanaryQAProbe(AdapterSafetyProbe):
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            details=details,
             findings=tuple(findings),
             finding_counts=finding_counts,
         )
@@ -474,9 +426,6 @@ class ProbeRunner:
         results: list[ProbeResult] = []
 
         for probe in probes:
-            if not probe.should_run(context.tier):
-                continue
-
             try:
                 result = probe.evaluate(context)
                 results.append(result)

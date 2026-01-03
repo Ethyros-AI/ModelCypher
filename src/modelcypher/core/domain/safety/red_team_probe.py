@@ -24,16 +24,15 @@ embeddings. Returns only raw distance measurements.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyProbe,
-    AdapterSafetyTier,
     ProbeContext,
     ProbeResult,
 )
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     find_magnitude_gap_threshold,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -56,24 +55,16 @@ class RedTeamProbe(AdapterSafetyProbe):
     def version(self) -> str:
         return "probe-rt-v1.0"
 
-    @property
-    def supported_tiers(self) -> frozenset[AdapterSafetyTier]:
-        return frozenset(
-            [
-                AdapterSafetyTier.QUICK,
-                AdapterSafetyTier.STANDARD,
-                AdapterSafetyTier.FULL,
-            ]
-        )
-
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate adapter metadata for geometric outliers."""
         if context.embedder is None:
             return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="missing_embedder",
-                finding_counts={"metadata_items": 0},
+                finding_counts={
+                    "metadata_items": 0,
+                    "missing_embedder": 1,
+                },
             )
 
         items = _collect_metadata_items(context)
@@ -81,8 +72,10 @@ class RedTeamProbe(AdapterSafetyProbe):
             return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="insufficient_metadata",
-                finding_counts={"metadata_items": len(items)},
+                finding_counts={
+                    "metadata_items": len(items),
+                    "insufficient_metadata": 1,
+                },
             )
 
         distances, outliers, threshold, mean_distance, max_distance = _metadata_outliers(
@@ -101,12 +94,9 @@ class RedTeamProbe(AdapterSafetyProbe):
             "max_distance": max_distance,
         }
 
-        details = f"outlier_items={len(outliers)} total_items={len(items)}"
-
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            details=details,
             findings=findings,
             finding_counts=finding_counts,
         )
@@ -141,20 +131,19 @@ def _collect_metadata_items(context: ProbeContext) -> list[tuple[str, str]]:
 def _distance_threshold(values: list[float]) -> float:
     if not values:
         return 0.0
-    backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([0.0]))
     sorted_vals = sorted(values)
     max_gap = 0.0
     for i in range(len(sorted_vals) - 1):
         curr = sorted_vals[i]
         next_val = sorted_vals[i + 1]
-        if curr > eps:
+        if curr > 0.0:
             relative_gap = (next_val - curr) / curr
             if relative_gap > max_gap:
                 max_gap = relative_gap
+    eps = max(math.ulp(max(sorted_vals)), math.ulp(1.0))
     if max_gap <= eps:
         return float("inf")
-    return float(find_magnitude_gap_threshold(sorted_vals, eps=eps))
+    return float(find_magnitude_gap_threshold(sorted_vals))
 
 
 def _metadata_distances(
@@ -170,13 +159,12 @@ def _metadata_distances(
     backend.eval(geo.distances)
     dist_matrix = backend.to_numpy(geo.distances).tolist()
     n = len(items)
-    eps = division_epsilon(backend, backend.array([0.0]))
 
     mean_distances: list[MetadataDistance] = []
     for idx, (field, text) in enumerate(items):
         row = dist_matrix[idx]
         total = sum(float(val) for j, val in enumerate(row) if j != idx)
-        denom = float(n - 1) if n > 1 else eps
+        denom = float(n - 1) if n > 1 else 1.0
         mean_dist = total / denom if denom > 0 else 0.0
         mean_distances.append(
             MetadataDistance(field=field, text=text, mean_distance=mean_dist)

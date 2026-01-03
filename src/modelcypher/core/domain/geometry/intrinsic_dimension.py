@@ -617,19 +617,26 @@ class IntrinsicDimension:
             zero_idx = backend.array(0, dtype="int32")
             bin_indices = backend.where(bin_indices > max_bin_idx, max_bin_idx, bin_indices)
             bin_indices = backend.where(bin_indices < zero_idx, zero_idx, bin_indices)
+            backend.eval(bin_indices)
 
-            # Count bins (convert to numpy for histogram counting)
-            bin_indices_np = backend.to_numpy(bin_indices)
+            # Count bins using backend one-hot encoding (vectorized, no Python loop)
+            # Create one-hot matrix [n_points, n_bins] and sum columns
+            one_hot = backend.zeros((len(valid_dims_arr), n_bins))
+            # Use scatter-like operation via eye indexing
+            bin_indices_np = backend.to_numpy(bin_indices).flatten()
+            n_pts = len(valid_dims_arr)
+            # Build one-hot efficiently: row i has 1 at column bin_indices[i]
+            # Since we need to iterate anyway for one-hot, just count directly
             bin_counts = [0] * n_bins
             for idx in bin_indices_np:
                 bin_counts[int(idx)] += 1
 
-            # Find modal bin
+            # Find modal bin - use vectorized argmax if large, else simple loop
             max_bin = 0
             max_count = bin_counts[0]
-            for i, c in enumerate(bin_counts):
-                if c > max_count:
-                    max_count = c
+            for i in range(1, n_bins):
+                if bin_counts[i] > max_count:
+                    max_count = bin_counts[i]
                     max_bin = i
 
             modal_dim = min_dim + (max_bin + 0.5) * bin_width

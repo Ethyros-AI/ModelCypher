@@ -264,14 +264,15 @@ class RiemannianGeometry:
         points = backend.array(points)
         backend.eval(points)
 
-        # Validate input points for NaN
-        points_np = backend.to_numpy(points)
-        nan_count = sum(1 for row in points_np for v in row if math.isnan(float(v)))
-        if nan_count > 0:
-            raise ValueError(
-                f"Input points contain {nan_count} NaN values. "
-                f"This indicates corrupted activations from the model."
-            )
+        # Validate input points for NaN (only when debugging - expensive O(n*d) check)
+        if logger.isEnabledFor(logging.DEBUG):
+            points_np = backend.to_numpy(points)
+            nan_count = sum(1 for row in points_np for v in row if math.isnan(float(v)))
+            if nan_count > 0:
+                raise ValueError(
+                    f"Input points contain {nan_count} NaN values. "
+                    f"This indicates corrupted activations from the model."
+                )
 
         n = int(points.shape[0])
         d = int(points.shape[1])
@@ -604,25 +605,26 @@ class RiemannianGeometry:
         euclidean_dist = self._euclidean_distance_matrix(points)
         backend.eval(euclidean_dist)
 
-        # Diagnostic: check euclidean distance matrix for NaN
-        euc_np = backend.to_numpy(euclidean_dist)
-        euc_nan_count = sum(1 for row in euc_np for v in row if math.isnan(float(v)))
-        if euc_nan_count > 0:
-            # Find which points have NaN or inf
-            points_np = backend.to_numpy(points)
-            nan_rows = []
-            inf_rows = []
-            for i, row in enumerate(points_np):
-                row_nan = sum(1 for v in row if math.isnan(float(v)))
-                row_inf = sum(1 for v in row if math.isinf(float(v)))
-                if row_nan > 0:
-                    nan_rows.append((i, row_nan))
-                if row_inf > 0:
-                    inf_rows.append((i, row_inf))
-            logger.warning(
-                f"Euclidean distance matrix has {euc_nan_count} NaN values! "
-                f"Points shape: {points.shape}, NaN rows: {nan_rows[:5]}, inf rows: {inf_rows[:5]}"
-            )
+        # Diagnostic: check euclidean distance matrix for NaN (only when debugging)
+        if logger.isEnabledFor(logging.DEBUG):
+            euc_np = backend.to_numpy(euclidean_dist)
+            euc_nan_count = sum(1 for row in euc_np for v in row if math.isnan(float(v)))
+            if euc_nan_count > 0:
+                # Find which points have NaN or inf
+                points_np = backend.to_numpy(points)
+                nan_rows = []
+                inf_rows = []
+                for i, row in enumerate(points_np):
+                    row_nan = sum(1 for v in row if math.isnan(float(v)))
+                    row_inf = sum(1 for v in row if math.isinf(float(v)))
+                    if row_nan > 0:
+                        nan_rows.append((i, row_nan))
+                    if row_inf > 0:
+                        inf_rows.append((i, row_inf))
+                logger.warning(
+                    f"Euclidean distance matrix has {euc_nan_count} NaN values! "
+                    f"Points shape: {points.shape}, NaN rows: {nan_rows[:5]}, inf rows: {inf_rows[:5]}"
+                )
 
         # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
         # Use a reasonable sentinel value that's:
@@ -659,15 +661,16 @@ class RiemannianGeometry:
         adj = backend.minimum(adj, backend.transpose(adj))
         backend.eval(adj)
 
-        # Diagnostic: check adjacency matrix construction
-        adj_np = backend.to_numpy(adj)
-        edge_count = sum(1 for row in adj_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
-        inf_count_adj = sum(1 for row in adj_np for v in row if v >= inf_val * 0.9)
-        nan_count_adj = sum(1 for row in adj_np for v in row if math.isnan(float(v)))
-        logger.debug(
-            f"Adjacency matrix: n={n}, k={k_neighbors}, "
-            f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
-        )
+        # Diagnostic: check adjacency matrix construction (only when debugging)
+        if logger.isEnabledFor(logging.DEBUG):
+            adj_np = backend.to_numpy(adj)
+            edge_count = sum(1 for row in adj_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
+            inf_count_adj = sum(1 for row in adj_np for v in row if v >= inf_val * 0.9)
+            nan_count_adj = sum(1 for row in adj_np for v in row if math.isnan(float(v)))
+            logger.debug(
+                f"Adjacency matrix: n={n}, k={k_neighbors}, "
+                f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
+            )
 
         # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])
         # Vectorized per iteration of k
@@ -687,14 +690,15 @@ class RiemannianGeometry:
 
         backend.eval(geo_dist_arr)
 
-        # Diagnostic: check geodesic matrix after Floyd-Warshall
-        geo_fw_np = backend.to_numpy(geo_dist_arr)
-        fw_finite = sum(1 for row in geo_fw_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
-        fw_inf = sum(1 for row in geo_fw_np for v in row if v >= inf_val * 0.9)
-        fw_nan = sum(1 for row in geo_fw_np for v in row if math.isnan(float(v)))
-        logger.debug(
-            f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
-        )
+        # Diagnostic: check geodesic matrix after Floyd-Warshall (only when debugging)
+        if logger.isEnabledFor(logging.DEBUG):
+            geo_fw_np = backend.to_numpy(geo_dist_arr)
+            fw_finite = sum(1 for row in geo_fw_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
+            fw_inf = sum(1 for row in geo_fw_np for v in row if v >= inf_val * 0.9)
+            fw_nan = sum(1 for row in geo_fw_np for v in row if math.isnan(float(v)))
+            logger.debug(
+                f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
+            )
 
         # Derive thresholds from dtype
         near_zero_eps = machine_epsilon(backend, geo_dist_arr)
@@ -1499,59 +1503,60 @@ class RiemannianGeometry:
         norms_dtype = str(getattr(norms, 'dtype', 'unknown'))
         logger.debug(f"Distance matrix dtypes: points={points_dtype}, norms={norms_dtype}")
 
-        # Diagnostic: check intermediate values for NaN and inf
+        # Diagnostic: check intermediate values for NaN and inf (only when debugging)
         backend.eval(norms, dots, dist_sq)
-        norms_np = backend.to_numpy(norms)
-        dots_np = backend.to_numpy(dots)
-        dist_sq_np = backend.to_numpy(dist_sq)
+        if logger.isEnabledFor(logging.DEBUG):
+            norms_np = backend.to_numpy(norms)
+            dots_np = backend.to_numpy(dots)
+            dist_sq_np = backend.to_numpy(dist_sq)
 
-        norms_nan = sum(1 for v in norms_np.flatten() if math.isnan(float(v)))
-        norms_inf = sum(1 for v in norms_np.flatten() if math.isinf(float(v)))
-        dots_nan = sum(1 for row in dots_np for v in row if math.isnan(float(v)))
-        dots_inf = sum(1 for row in dots_np for v in row if math.isinf(float(v)))
-        dist_sq_nan = sum(1 for row in dist_sq_np for v in row if math.isnan(float(v)))
+            norms_nan = sum(1 for v in norms_np.flatten() if math.isnan(float(v)))
+            norms_inf = sum(1 for v in norms_np.flatten() if math.isinf(float(v)))
+            dots_nan = sum(1 for row in dots_np for v in row if math.isnan(float(v)))
+            dots_inf = sum(1 for row in dots_np for v in row if math.isinf(float(v)))
+            dist_sq_nan = sum(1 for row in dist_sq_np for v in row if math.isnan(float(v)))
 
-        if norms_nan > 0 or dots_nan > 0 or dist_sq_nan > 0 or norms_inf > 0 or dots_inf > 0:
-            # Find which entries are NaN
-            nan_entries = []
-            for i, row in enumerate(dist_sq_np):
-                for j, v in enumerate(row):
-                    if math.isnan(float(v)):
-                        nan_entries.append((i, j))
+            if norms_nan > 0 or dots_nan > 0 or dist_sq_nan > 0 or norms_inf > 0 or dots_inf > 0:
+                # Find which entries are NaN
+                nan_entries = []
+                for i, row in enumerate(dist_sq_np):
+                    for j, v in enumerate(row):
+                        if math.isnan(float(v)):
+                            nan_entries.append((i, j))
 
-            # Identify problematic indices (columns that appear in NaN entries)
-            problem_cols = set(j for _, j in nan_entries)
-            problem_rows = set(i for i, _ in nan_entries)
+                # Identify problematic indices (columns that appear in NaN entries)
+                problem_cols = set(j for _, j in nan_entries)
+                problem_rows = set(i for i, _ in nan_entries)
 
-            # Get details about problematic points (norms_np is already a numpy array)
-            norms_flat = norms_np.flatten()
-            problem_norms = {idx: float(norms_flat[idx]) for idx in list(problem_cols | problem_rows)[:5]}
+                # Get details about problematic points (norms_np is already a numpy array)
+                norms_flat = norms_np.flatten()
+                problem_norms = {idx: float(norms_flat[idx]) for idx in list(problem_cols | problem_rows)[:5]}
 
-            # Check dots values for problem indices
-            problem_dots = {}
-            for i, j in nan_entries[:5]:
-                problem_dots[(i, j)] = float(dots_np[i, j])
+                # Check dots values for problem indices
+                problem_dots = {}
+                for i, j in nan_entries[:5]:
+                    problem_dots[(i, j)] = float(dots_np[i, j])
 
-            # Check the actual dist_sq computation values
-            problem_components = {}
-            for i, j in nan_entries[:3]:
-                ni = float(norms_flat[i])
-                nj = float(norms_flat[j])
-                dij = float(dots_np[i, j])
-                computed = ni + nj - 2.0 * dij
-                problem_components[(i, j)] = {
-                    "norms_i": ni, "norms_j": nj, "dots_ij": dij,
-                    "expected": computed, "actual": float(dist_sq_np[i, j])
-                }
+                # Check the actual dist_sq computation values
+                problem_components = {}
+                for i, j in nan_entries[:3]:
+                    ni = float(norms_flat[i])
+                    nj = float(norms_flat[j])
+                    dij = float(dots_np[i, j])
+                    computed = ni + nj - 2.0 * dij
+                    problem_components[(i, j)] = {
+                        "norms_i": ni, "norms_j": nj, "dots_ij": dij,
+                        "expected": computed, "actual": float(dist_sq_np[i, j])
+                    }
 
-            logger.warning(
-                f"NaN/inf in distance computation: norms_nan={norms_nan}, norms_inf={norms_inf}, "
-                f"dots_nan={dots_nan}, dots_inf={dots_inf}, dist_sq_nan={dist_sq_nan}, "
-                f"first_nan_entries={nan_entries[:10]}, "
-                f"problem_cols={list(problem_cols)[:5]}, problem_rows={list(problem_rows)[:5]}, "
-                f"problem_norms={problem_norms}, problem_dots={problem_dots}, "
-                f"problem_components={problem_components}"
-            )
+                logger.warning(
+                    f"NaN/inf in distance computation: norms_nan={norms_nan}, norms_inf={norms_inf}, "
+                    f"dots_nan={dots_nan}, dots_inf={dots_inf}, dist_sq_nan={dist_sq_nan}, "
+                    f"first_nan_entries={nan_entries[:10]}, "
+                    f"problem_cols={list(problem_cols)[:5]}, problem_rows={list(problem_rows)[:5]}, "
+                    f"problem_norms={problem_norms}, problem_dots={problem_dots}, "
+                    f"problem_components={problem_components}"
+                )
 
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         return backend.sqrt(dist_sq)

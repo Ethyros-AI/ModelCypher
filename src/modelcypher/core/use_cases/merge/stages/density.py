@@ -255,24 +255,41 @@ def _build_density_profile_from_activations(
         local_map = id_estimator.local_dimension_map(
             act_matrix, k=None, deficiency_threshold=None
         )
-        dims_np = b.to_numpy(local_map.dimensions)
+        # Keep dimensions on backend until we need individual values
+        dims = local_map.dimensions
+        b.eval(dims)
 
-        # Precompute mean cosine similarity per probe (cluster tightness)
+        # Precompute mean cosine similarity per probe (cluster tightness) - VECTORIZED
         norms = b.norm(act_matrix, axis=1, keepdims=True)
         b.eval(norms)
         eps = float(machine_epsilon(b, act_matrix))
         normed = act_matrix / b.maximum(norms, b.full(norms.shape, eps))
         b.eval(normed)
         sim_matrix = b.matmul(normed, b.transpose(normed))
-        b.eval(sim_matrix)
-        sim_np = b.to_numpy(sim_matrix)
+
+        # Zero out diagonal (self-similarity) and compute mean per row on backend
+        n_probes = int(sim_matrix.shape[0])
+        eye = b.eye(n_probes)
+        sim_no_diag = sim_matrix - eye  # Set diagonal to 0
+        # Sum each row, divide by (n-1) to get mean excluding self
+        row_sums = b.sum(sim_no_diag, axis=1)
+        cluster_tightness_vec = row_sums / (n_probes - 1) if n_probes > 1 else b.zeros((n_probes,))
+        b.eval(cluster_tightness_vec)
+
+        # Compute variance per activation vector on backend (vectorized)
+        act_mean = b.mean(act_matrix, axis=1, keepdims=True)
+        act_centered = act_matrix - act_mean
+        variances_vec = b.mean(act_centered * act_centered, axis=1)
+        b.eval(variances_vec)
+
+        # Now convert to NumPy ONCE for the Python loop
+        dims_np = b.to_numpy(dims)
+        tightness_np = b.to_numpy(cluster_tightness_vec)
+        variances_np = b.to_numpy(variances_vec)
 
         concept_densities: list[ConceptDensity] = []
 
-        for i, act in enumerate(act_list):
-            if i >= len(probe_ids):
-                break
-
+        for i in range(min(len(act_list), len(probe_ids))):
             probe_id = probe_ids[i]
             domain = probe_domains[i] if i < len(probe_domains) else "unknown"
 
@@ -288,16 +305,8 @@ def _build_density_profile_from_activations(
                 continue
             density_score = 1.0 / max(intrinsic_dim, eps)
 
-            act_arr = b.array(act)
-            b.eval(act_arr)
-            var_arr = b.var(act_arr)
-            b.eval(var_arr)
-            variance = float(b.to_scalar(var_arr))
-
-            sims = sim_np[i].tolist()
-            if i < len(sims):
-                sims[i] = 0.0
-            cluster_tightness = sum(sims) / float(len(sims) - 1) if len(sims) > 1 else 0.0
+            variance = float(variances_np[i])
+            cluster_tightness = float(tightness_np[i])
 
             concept_densities.append(
                 ConceptDensity(
