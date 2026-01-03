@@ -28,8 +28,8 @@ from modelcypher.core.domain.safety.delta_feature_set import DeltaFeatureSet
 
 # Strategies for generating valid feature sets
 @st.composite
-def l2_norms_tuple(draw, min_size=0, max_size=50):
-    """Generate a tuple of non-negative L2 norms."""
+def geodesic_spreads_tuple(draw, min_size=0, max_size=50):
+    """Generate a tuple of non-negative geodesic spreads."""
     size = draw(st.integers(min_value=min_size, max_value=max_size))
     return tuple(
         draw(st.floats(min_value=0.0, max_value=100.0, allow_nan=False, allow_infinity=False))
@@ -49,8 +49,8 @@ def sparsity_tuple(draw, size):
 @st.composite
 def delta_feature_set(draw):
     """Generate a valid DeltaFeatureSet."""
-    l2_norms = draw(l2_norms_tuple())
-    size = len(l2_norms)
+    geodesic_spreads = draw(geodesic_spreads_tuple())
+    size = len(geodesic_spreads)
     sparsity = draw(sparsity_tuple(size)) if size > 0 else ()
 
     # Outlier layer indices must be valid indices
@@ -63,7 +63,7 @@ def delta_feature_set(draw):
         outlier_indices = ()
 
     return DeltaFeatureSet(
-        l2_norms=l2_norms,
+        geodesic_spreads=geodesic_spreads,
         sparsity=sparsity,
         outlier_layer_indices=outlier_indices,
     )
@@ -74,26 +74,26 @@ class TestDeltaFeatureSetProperties:
 
     @given(delta_feature_set())
     @settings(max_examples=100)
-    def test_layer_count_equals_l2_norms_length(self, features: DeltaFeatureSet):
-        """layer_count should equal len(l2_norms)."""
-        assert features.layer_count == len(features.l2_norms)
+    def test_layer_count_equals_geodesic_spreads_length(self, features: DeltaFeatureSet):
+        """layer_count should equal len(geodesic_spreads)."""
+        assert features.layer_count == len(features.geodesic_spreads)
 
-    @given(l2_norms_tuple(min_size=1))
+    @given(geodesic_spreads_tuple(min_size=1))
     @settings(max_examples=100)
-    def test_mean_l2_norm_bounded_by_min_max(self, l2_norms: tuple[float, ...]):
-        """mean_l2_norm should be between min and max of l2_norms."""
-        features = DeltaFeatureSet(l2_norms=l2_norms)
-        mean = features.mean_l2_norm
+    def test_mean_geodesic_spread_bounded_by_min_max(self, geodesic_spreads: tuple[float, ...]):
+        """mean_geodesic_spread should be between min and max of geodesic_spreads."""
+        features = DeltaFeatureSet(geodesic_spreads=geodesic_spreads)
+        mean = features.mean_geodesic_spread
         backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array(list(l2_norms)))
-        assert min(l2_norms) - eps <= mean <= max(l2_norms) + eps
+        eps = division_epsilon(backend, backend.array(list(geodesic_spreads)))
+        assert min(geodesic_spreads) - eps <= mean <= max(geodesic_spreads) + eps
 
-    @given(l2_norms_tuple(min_size=1))
+    @given(geodesic_spreads_tuple(min_size=1))
     @settings(max_examples=100)
-    def test_max_l2_norm_is_maximum(self, l2_norms: tuple[float, ...]):
-        """max_l2_norm should equal max(l2_norms)."""
-        features = DeltaFeatureSet(l2_norms=l2_norms)
-        assert features.max_l2_norm == max(l2_norms)
+    def test_max_geodesic_spread_is_maximum(self, geodesic_spreads: tuple[float, ...]):
+        """max_geodesic_spread should equal max(geodesic_spreads)."""
+        features = DeltaFeatureSet(geodesic_spreads=geodesic_spreads)
+        assert features.max_geodesic_spread == max(geodesic_spreads)
 
     @given(delta_feature_set())
     @settings(max_examples=100)
@@ -107,7 +107,7 @@ class TestDeltaFeatureSetProperties:
     def test_serialization_roundtrip(self, features: DeltaFeatureSet):
         """to_dict/from_dict should be a perfect round-trip."""
         restored = DeltaFeatureSet.from_dict(features.to_dict())
-        assert restored.l2_norms == features.l2_norms
+        assert restored.geodesic_spreads == features.geodesic_spreads
         assert restored.sparsity == features.sparsity
         assert restored.outlier_layer_indices == features.outlier_layer_indices
 
@@ -123,8 +123,8 @@ class TestDeltaFeatureSetProperties:
         """Empty feature set should have safe default values."""
         features = DeltaFeatureSet()
         assert features.layer_count == 0
-        assert features.mean_l2_norm == 0.0
-        assert features.max_l2_norm == 0.0
+        assert features.mean_geodesic_spread == 0.0
+        assert features.max_geodesic_spread == 0.0
         assert features.mean_sparsity == 0.0
         assert features.outlier_layer_fraction == 0.0
         assert not features.has_outlier_layers

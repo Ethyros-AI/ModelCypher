@@ -75,9 +75,14 @@ class ModelEntropyProfile:
                 entropy_variance=0.0,
             )
 
+        backend = get_default_backend()
         entropies = [p.mean_entropy for p in layer_profiles.values()]
-        mean_entropy = sum(entropies) / len(entropies)
-        variance = sum((e - mean_entropy) ** 2 for e in entropies) / len(entropies)
+        entropies_arr = backend.array(entropies)
+        mean_arr = backend.mean(entropies_arr)
+        var_arr = backend.var(entropies_arr)
+        backend.eval(mean_arr, var_arr)
+        mean_entropy = float(backend.to_scalar(mean_arr))
+        variance = float(backend.to_scalar(var_arr))
 
         return cls(
             model_name=model_name,
@@ -129,34 +134,45 @@ class LayerMergeValidation:
         # Source knowledge is ADDED in null space directions
         # Expected: merged entropy >= target entropy (more knowledge = higher entropy)
         # Reference: target entropy (what we're preserving)
+        backend = get_default_backend()
+        ref_array = backend.array([source_entropy, target_entropy, merged_entropy])
         expected_entropy = target_entropy
 
         # Delta from target - how much the merge changed target's entropy
-        entropy_delta = abs(merged_entropy - expected_entropy)
+        expected_arr = backend.array([expected_entropy])
+        merged_arr = backend.array([merged_entropy])
+        entropy_delta_arr = backend.abs(merged_arr - expected_arr)
 
         # Ratio normalized by expected - stability signal (lower = more stable)
-        backend = get_default_backend()
-        ref_array = backend.array([source_entropy, target_entropy, merged_entropy])
         eps = division_epsilon(backend, ref_array)
-        entropy_ratio = entropy_delta / (expected_entropy + eps)
+        eps_arr = backend.array([eps])
+        entropy_ratio_arr = entropy_delta_arr / (expected_arr + eps_arr)
 
         # Knowledge retention score: how close to expected
         # Use the source-target gap as the natural scale for what "large" means
         # When source == target (gap ≈ 0), use intrinsic variance of measured values
-        source_target_gap = abs(source_entropy - target_entropy)
+        source_arr = backend.array([source_entropy])
+        source_target_gap_arr = backend.abs(source_arr - expected_arr)
 
         # Data-derived fallback: variance across all three measurements
         # This is the natural scale when source and target are identical
-        mean_ent = (source_entropy + target_entropy + merged_entropy) / 3
-        variance = (
-            (source_entropy - mean_ent) ** 2
-            + (target_entropy - mean_ent) ** 2
-            + (merged_entropy - mean_ent) ** 2
-        ) / 3
-        intrinsic_std = variance**0.5
+        mean_arr = backend.mean(ref_array)
+        variance_arr = backend.mean((ref_array - mean_arr) * (ref_array - mean_arr))
+        intrinsic_std_arr = backend.sqrt(variance_arr)
 
-        max_delta = max(source_target_gap, intrinsic_std, eps)
-        retention = max(0.0, 1.0 - (entropy_delta / max_delta))
+        max_delta_arr = backend.maximum(
+            backend.maximum(source_target_gap_arr, intrinsic_std_arr),
+            eps_arr,
+        )
+        retention_arr = backend.maximum(
+            backend.array([0.0]),
+            backend.array([1.0]) - (entropy_delta_arr / max_delta_arr),
+        )
+
+        backend.eval(entropy_delta_arr, entropy_ratio_arr, retention_arr)
+        entropy_delta = float(backend.to_scalar(entropy_delta_arr))
+        entropy_ratio = float(backend.to_scalar(entropy_ratio_arr))
+        retention = float(backend.to_scalar(retention_arr))
 
         return cls(
             layer_name=layer_name,
@@ -220,21 +236,22 @@ class MergeEntropyValidation:
             )
 
         # Collect raw measurements
-        entropy_ratios = []
-        retention_scores = []
+        entropy_ratios = [v.entropy_ratio for v in layer_validations.values()]
+        retention_scores = [v.knowledge_retention_score for v in layer_validations.values()]
 
-        for validation in layer_validations.values():
-            entropy_ratios.append(validation.entropy_ratio)
-            retention_scores.append(validation.knowledge_retention_score)
+        backend = get_default_backend()
+        ratios_arr = backend.array(entropy_ratios)
+        retention_arr = backend.array(retention_scores)
+        mean_ratio_arr = backend.mean(ratios_arr)
+        max_ratio_arr = backend.max(ratios_arr)
+        mean_retention_arr = backend.mean(retention_arr)
+        std_ratio_arr = backend.std(ratios_arr)
+        backend.eval(mean_ratio_arr, max_ratio_arr, mean_retention_arr, std_ratio_arr)
 
-        # Aggregate statistics - raw measurements, no classification
-        mean_ratio = sum(entropy_ratios) / len(entropy_ratios)
-        max_ratio = max(entropy_ratios)
-        mean_retention = sum(retention_scores) / len(retention_scores)
-
-        # Standard deviation of ratios - measures uniformity of merge quality
-        variance = sum((r - mean_ratio) ** 2 for r in entropy_ratios) / len(entropy_ratios)
-        std_ratio = variance**0.5
+        mean_ratio = float(backend.to_scalar(mean_ratio_arr))
+        max_ratio = float(backend.to_scalar(max_ratio_arr))
+        mean_retention = float(backend.to_scalar(mean_retention_arr))
+        std_ratio = float(backend.to_scalar(std_ratio_arr))
 
         return cls(
             source_model=source_model,
@@ -300,8 +317,13 @@ class EntropyMergeValidator:
                 entropy_variance=0.0,
             )
 
-        mean_entropy = sum(entropy_values) / len(entropy_values)
-        variance = sum((e - mean_entropy) ** 2 for e in entropy_values) / len(entropy_values)
+        backend = get_default_backend()
+        entropy_arr = backend.array(entropy_values)
+        mean_arr = backend.mean(entropy_arr)
+        var_arr = backend.var(entropy_arr)
+        backend.eval(mean_arr, var_arr)
+        mean_entropy = float(backend.to_scalar(mean_arr))
+        variance = float(backend.to_scalar(var_arr))
 
         return LayerEntropyProfile(
             layer_name=layer_name,
@@ -313,7 +335,6 @@ class EntropyMergeValidator:
         self,
         model_path: str,
         model_loader: "ModelLoaderPort",
-        num_layers: int | None = None,
     ) -> ModelEntropyProfile:
         """Create a real model entropy profile using Entropy-Lens approach.
 
@@ -330,7 +351,6 @@ class EntropyMergeValidator:
         Args:
             model_path: Path to the model directory.
             model_loader: Model loader port implementation (injected dependency).
-            num_layers: Number of layers to profile (auto-detected if None).
 
         Returns:
             ModelEntropyProfile with measured entropy values.
@@ -386,22 +406,12 @@ class EntropyMergeValidator:
             "In a world where technology advances rapidly,",
         ]
 
-        # Target layers - if num_layers specified, use that subset
-        target_layers: set[int] | None = None
-        if num_layers is not None:
-            base_model = getattr(model, "model", model)
-            actual_layers = len(getattr(base_model, "layers", []))
-            if num_layers < actual_layers:
-                # Sample every nth layer to get num_layers
-                step = max(1, actual_layers // num_layers)
-                target_layers = set(range(0, actual_layers, step))
-
         # Profile model using Entropy-Lens
         profile_result = projector.profile_model(
             model=model,
             tokenizer=tokenizer,
             prompts=probe_prompts,
-            target_layers=target_layers,
+            target_layers=None,
         )
 
         # Convert to ModelEntropyProfile format

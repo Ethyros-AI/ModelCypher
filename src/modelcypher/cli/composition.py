@@ -159,22 +159,24 @@ def get_geometry_safety_service(
         attack_entropy_samples: Attack entropy values from safe prompt baseline.
     """
     from modelcypher.core.use_cases.geometry_safety_service import (
-        GeometrySafetyConfig,
+        DriftThresholds,
         GeometrySafetyService,
+        VulnerabilityThresholds,
     )
 
     if drift_samples is None or safe_delta_h_samples is None or attack_entropy_samples is None:
         raise ValueError(
             "Provide all calibration samples; geometry safety requires calibration-derived thresholds."
         )
-    config = GeometrySafetyConfig.from_calibration_data(
-        drift_samples=drift_samples,
-        safe_delta_h_samples=safe_delta_h_samples,
-        attack_entropy_samples=attack_entropy_samples,
+    drift_thresholds = DriftThresholds.from_calibration_data(drift_samples)
+    vulnerability_thresholds = VulnerabilityThresholds.from_calibration_data(
+        safe_delta_h_samples,
+        attack_entropy_samples,
     )
     return GeometrySafetyService(
         training_service=get_geometry_training_service(),
-        config=config,
+        drift_thresholds=drift_thresholds,
+        vulnerability_thresholds=vulnerability_thresholds,
     )
 
 

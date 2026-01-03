@@ -18,7 +18,7 @@
 """Extracts statistical features from LoRA adapter weights for geometric profiling.
 
 This implements lightweight PEFTGuard-style analysis by computing:
-- L2 norms per target module
+- Geodesic spread per target module
 - Sparsity ratios (fraction of near-zero elements)
 - Outlier detection (layers with unusual statistics)
 
@@ -35,7 +35,9 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
     machine_epsilon,
+    sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTier
 from modelcypher.core.domain.safety.adapter_safety_probe import (
     AdapterSafetyProbe,
@@ -47,13 +49,13 @@ from modelcypher.core.domain.safety.delta_feature_set import DeltaFeatureSet
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 
 class DeltaFeatureExtractor:
     """Extracts statistical features from LoRA adapter weights for profiling.
 
-    Computes L2 norms, sparsity ratios, and gap-derived outlier detection
+    Computes geodesic spreads, sparsity ratios, and gap-derived outlier detection
     without requiring the full base model.
     """
 
@@ -83,25 +85,25 @@ class DeltaFeatureExtractor:
             logger.warning("No safetensors files found in adapter path")
             return DeltaFeatureSet(feature_version=self.VERSION)
 
-        all_l2_norms: list[float] = []
+        all_geodesic_spreads: list[float] = []
         all_sparsity: list[float] = []
 
         for file_path in safetensors_files:
-            norms, sparsities = await self._extract_from_file(file_path)
-            all_l2_norms.extend(norms)
+            spreads, sparsities = await self._extract_from_file(file_path)
+            all_geodesic_spreads.extend(spreads)
             all_sparsity.extend(sparsities)
 
-        # Find outlier layers via gap detection on L2 norms
-        outlier_indices = self._find_outlier_indices(all_l2_norms)
+        # Find outlier layers via gap detection on geodesic spreads
+        outlier_indices = self._find_outlier_indices(all_geodesic_spreads)
 
         logger.info(
             "Extracted delta features: %d layers, %d suspect",
-            len(all_l2_norms),
+            len(all_geodesic_spreads),
             len(outlier_indices),
         )
 
         return DeltaFeatureSet(
-            l2_norms=tuple(all_l2_norms),
+            geodesic_spreads=tuple(all_geodesic_spreads),
             sparsity=tuple(all_sparsity),
             cosine_to_aligned=(),  # Requires aligned baseline (future)
             outlier_layer_indices=tuple(outlier_indices),
@@ -121,9 +123,9 @@ class DeltaFeatureExtractor:
             file_path: Path to the safetensors file.
 
         Returns:
-            Tuple of (l2_norms, sparsities).
+            Tuple of (geodesic_spreads, sparsities).
         """
-        l2_norms: list[float] = []
+        geodesic_spreads: list[float] = []
         sparsities: list[float] = []
 
         try:
@@ -132,18 +134,17 @@ class DeltaFeatureExtractor:
             for tensor in weights.values():
                 tensor_backend = backend.array(tensor)
 
-                # Compute L2 norm
-                sum_sq = backend.sum(tensor_backend * tensor_backend)
-                sqrt_sum_sq = backend.sqrt(sum_sq)
+                points = self._tensor_to_points(tensor_backend)
+                points = self._sample_points(points)
+                spread = self._geodesic_spread(points)
 
                 # Compute sparsity (fraction of near-zero elements)
                 # Derive threshold from tensor dtype using machine epsilon
                 sparsity_threshold = machine_epsilon(backend, tensor_backend)
                 abs_tensor = backend.abs(tensor_backend)
                 near_zero_count = backend.sum(abs_tensor < sparsity_threshold)
-                backend.eval(sqrt_sum_sq, near_zero_count)
-                l2_norm = float(backend.to_scalar(sqrt_sum_sq))
-                l2_norms.append(l2_norm)
+                backend.eval(near_zero_count)
+                geodesic_spreads.append(spread)
                 shape = backend.shape(tensor_backend)
                 total_elements = 1
                 for dim in shape:
@@ -160,7 +161,45 @@ class DeltaFeatureExtractor:
         except Exception as e:
             logger.error("Error extracting features from %s: %s", file_path, e)
 
-        return l2_norms, sparsities
+        return geodesic_spreads, sparsities
+
+    def _tensor_to_points(self, tensor_backend: "Array") -> "Array":
+        """Reshape tensor into a 2D point cloud for geodesic analysis."""
+        backend = self._backend
+        shape = backend.shape(tensor_backend)
+        if not shape:
+            return backend.reshape(tensor_backend, (1, 1))
+        if len(shape) == 1:
+            return backend.reshape(tensor_backend, (shape[0], 1))
+        return backend.reshape(tensor_backend, (shape[0], -1))
+
+    def _sample_points(self, points: "Array") -> "Array":
+        """Downsample points deterministically to keep geodesic costs derived from data size."""
+        backend = self._backend
+        n = int(points.shape[0])
+        if n <= 1:
+            return points
+        target = int(sqrt_scalar(float(n), backend))
+        min_points = 2 if n >= 2 else 1
+        target = max(min_points, min(target, n))
+        if target == n:
+            return points
+        step = max(1, n // target)
+        indices = backend.arange(0, n, step)
+        sampled = backend.take(points, indices, axis=0)
+        backend.eval(sampled)
+        return sampled
+
+    def _geodesic_spread(self, points: "Array") -> float:
+        """Compute RMS geodesic spread for a point cloud."""
+        backend = self._backend
+        n = int(points.shape[0])
+        if n <= 1:
+            return 0.0
+        rg = RiemannianGeometry(backend)
+        mean_result = rg.frechet_mean(points)
+        mean_sq = mean_result.final_variance / max(n, 1)
+        return sqrt_scalar(mean_sq, backend)
 
     def _find_outlier_indices(self, values: list[float]) -> list[int]:
         """Find indices of values that are statistical outliers.
@@ -227,26 +266,26 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
         finding_counts: dict[str, int] = {
             "total_layers": features.layer_count,
             "outlier_layers": len(features.outlier_layer_indices),
-            "zero_norm_layers": sum(1 for n in features.l2_norms if n == 0),
+            "zero_spread_layers": sum(1 for n in features.geodesic_spreads if n == 0),
         }
 
         # Check for outlier layers (using data-derived outlier detection)
         if features.has_outlier_layers:
             findings.append(
                 f"{len(features.outlier_layer_indices)}/{features.layer_count} "
-                "layers have outlier L2 norms"
+                "layers have outlier geodesic spread"
             )
 
-        # Check for zero-norm layers (exact zeros are data artifacts)
-        if finding_counts["zero_norm_layers"] > 0:
+        # Check for zero-spread layers (exact zeros are data artifacts)
+        if finding_counts["zero_spread_layers"] > 0:
             findings.append(
-                f"{finding_counts['zero_norm_layers']} layers have zero L2 norm"
+                f"{finding_counts['zero_spread_layers']} layers have zero geodesic spread"
             )
 
         # Add statistics to finding_counts
-        if features.l2_norms:
-            finding_counts["max_l2_norm"] = int(max(features.l2_norms))
-            finding_counts["min_l2_norm"] = int(min(features.l2_norms))
+        if features.geodesic_spreads:
+            finding_counts["max_geodesic_spread"] = int(max(features.geodesic_spreads))
+            finding_counts["min_geodesic_spread"] = int(min(features.geodesic_spreads))
 
         logger.info(
             "Delta probe: %d layers, outliers=%d, findings=%d",

@@ -45,13 +45,13 @@ class TestDeltaFeatureSet:
         assert fs.layer_count == 0
         assert fs.has_outlier_layers is False
         assert fs.outlier_layer_fraction == 0.0
-        assert fs.mean_l2_norm == 0.0
-        assert fs.max_l2_norm == 0.0
+        assert fs.mean_geodesic_spread == 0.0
+        assert fs.max_geodesic_spread == 0.0
         assert fs.mean_sparsity == 0.0
 
     def test_layer_count(self) -> None:
-        """layer_count returns number of L2 norms."""
-        fs = DeltaFeatureSet(l2_norms=(1.0, 2.0, 3.0))
+        """layer_count returns number of geodesic spreads."""
+        fs = DeltaFeatureSet(geodesic_spreads=(1.0, 2.0, 3.0))
         assert fs.layer_count == 3
 
     def test_has_outlier_layers(self) -> None:
@@ -65,20 +65,20 @@ class TestDeltaFeatureSet:
     def test_outlier_layer_fraction(self) -> None:
         """outlier_layer_fraction computes correctly."""
         fs = DeltaFeatureSet(
-            l2_norms=(1.0, 2.0, 3.0, 4.0),
+            geodesic_spreads=(1.0, 2.0, 3.0, 4.0),
             outlier_layer_indices=(0, 2),
         )
         assert fs.outlier_layer_fraction == 0.5
 
-    def test_mean_l2_norm(self) -> None:
-        """mean_l2_norm computes average."""
-        fs = DeltaFeatureSet(l2_norms=(2.0, 4.0, 6.0))
-        assert fs.mean_l2_norm == 4.0
+    def test_mean_geodesic_spread(self) -> None:
+        """mean_geodesic_spread computes average."""
+        fs = DeltaFeatureSet(geodesic_spreads=(2.0, 4.0, 6.0))
+        assert fs.mean_geodesic_spread == 4.0
 
-    def test_max_l2_norm(self) -> None:
-        """max_l2_norm returns maximum."""
-        fs = DeltaFeatureSet(l2_norms=(2.0, 10.0, 6.0))
-        assert fs.max_l2_norm == 10.0
+    def test_max_geodesic_spread(self) -> None:
+        """max_geodesic_spread returns maximum."""
+        fs = DeltaFeatureSet(geodesic_spreads=(2.0, 10.0, 6.0))
+        assert fs.max_geodesic_spread == 10.0
 
     def test_mean_sparsity(self) -> None:
         """mean_sparsity computes average."""
@@ -90,13 +90,13 @@ class TestDeltaFeatureSet:
     def test_to_dict(self) -> None:
         """to_dict serializes correctly."""
         fs = DeltaFeatureSet(
-            l2_norms=(1.0, 2.0),
+            geodesic_spreads=(1.0, 2.0),
             sparsity=(0.1, 0.2),
             outlier_layer_indices=(1,),
             feature_version="test-v1",
         )
         d = fs.to_dict()
-        assert d["l2_norms"] == [1.0, 2.0]
+        assert d["geodesic_spreads"] == [1.0, 2.0]
         assert d["sparsity"] == [0.1, 0.2]
         assert d["outlier_layer_indices"] == [1]
         assert d["feature_version"] == "test-v1"
@@ -104,14 +104,14 @@ class TestDeltaFeatureSet:
     def test_from_dict(self) -> None:
         """from_dict deserializes correctly."""
         data = {
-            "l2_norms": [1.0, 2.0],
+            "geodesic_spreads": [1.0, 2.0],
             "sparsity": [0.5],
             "cosine_to_aligned": [],
             "outlier_layer_indices": [0],
             "feature_version": "v2",
         }
         fs = DeltaFeatureSet.from_dict(data)
-        assert fs.l2_norms == (1.0, 2.0)
+        assert fs.geodesic_spreads == (1.0, 2.0)
         assert fs.sparsity == (0.5,)
         assert fs.outlier_layer_indices == (0,)
         assert fs.feature_version == "v2"
@@ -119,7 +119,7 @@ class TestDeltaFeatureSet:
     def test_from_dict_defaults(self) -> None:
         """from_dict handles missing keys."""
         fs = DeltaFeatureSet.from_dict({})
-        assert fs.l2_norms == ()
+        assert fs.geodesic_spreads == ()
         assert fs.sparsity == ()
 
 
@@ -234,7 +234,7 @@ class TestDeltaFeatureProbe:
 
             async def extract(self, path: Path) -> DeltaFeatureSet:
                 return DeltaFeatureSet(
-                    l2_norms=(1.0, 2.0, 3.0),
+                    geodesic_spreads=(1.0, 2.0, 3.0),
                     sparsity=(0.1, 0.2, 0.3),
                     outlier_layer_indices=(),
                     feature_version="mock-v1",
@@ -261,7 +261,7 @@ class TestDeltaFeatureProbe:
 
             async def extract(self, path: Path) -> DeltaFeatureSet:
                 return DeltaFeatureSet(
-                    l2_norms=(1.0, 2.0, 3.0, 4.0, 5.0),
+                    geodesic_spreads=(1.0, 2.0, 3.0, 4.0, 5.0),
                     sparsity=(0.1,) * 5,
                     outlier_layer_indices=(0, 1, 2),  # 3 outlier layers detected
                 )
@@ -280,14 +280,14 @@ class TestDeltaFeatureProbe:
 
     @pytest.mark.asyncio
     async def test_evaluate_zero_norm_layers(self, tmp_path: Path) -> None:
-        """evaluate flags zero-norm layers as potentially corrupted."""
+        """evaluate flags zero-spread layers as potentially corrupted."""
 
         class MockExtractor:
             VERSION = "mock-v1"
 
             async def extract(self, path: Path) -> DeltaFeatureSet:
                 return DeltaFeatureSet(
-                    l2_norms=(0.0, 1.0, 0.0),  # Two zero-norm layers
+                    geodesic_spreads=(0.0, 1.0, 0.0),  # Two zero-spread layers
                     sparsity=(0.0, 0.1, 0.0),
                     outlier_layer_indices=(),
                 )
@@ -301,8 +301,8 @@ class TestDeltaFeatureProbe:
         result = await probe.evaluate(context)
         assert result.has_findings is True
         assert result.finding_counts is not None
-        assert result.finding_counts["zero_norm_layers"] == 2
-        assert any("zero L2 norm" in f for f in result.findings)
+        assert result.finding_counts["zero_spread_layers"] == 2
+        assert any("zero geodesic spread" in f for f in result.findings)
 
 
 class TestDeltaFeatureExtractorIntegration:
@@ -325,6 +325,6 @@ class TestDeltaFeatureExtractorIntegration:
         result = await extractor.extract(tmp_path)
 
         assert result.layer_count == 2
-        assert len(result.l2_norms) == 2
+        assert len(result.geodesic_spreads) == 2
         assert len(result.sparsity) == 2
-        assert all(n > 0 for n in result.l2_norms)
+        assert all(n > 0 for n in result.geodesic_spreads)

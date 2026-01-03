@@ -244,18 +244,20 @@ class ServiceContext:
     ) -> None:
         """Set calibration data for geometry safety service."""
         from modelcypher.core.use_cases.geometry_safety_service import (
-            GeometrySafetyConfig,
+            DriftThresholds,
             GeometrySafetyService,
+            VulnerabilityThresholds,
         )
 
-        config = GeometrySafetyConfig.from_calibration_data(
-            drift_samples=drift_samples,
-            safe_delta_h_samples=safe_delta_h_samples,
-            attack_entropy_samples=attack_entropy_samples,
+        drift_thresholds = DriftThresholds.from_calibration_data(drift_samples)
+        vulnerability_thresholds = VulnerabilityThresholds.from_calibration_data(
+            safe_delta_h_samples,
+            attack_entropy_samples,
         )
         self._geometry_safety_service = GeometrySafetyService(
             self.geometry_training_service,
-            config=config,
+            drift_thresholds=drift_thresholds,
+            vulnerability_thresholds=vulnerability_thresholds,
         )
 
     @property

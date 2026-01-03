@@ -33,15 +33,6 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class EvalConfig:
-    """Configuration for evaluation run."""
-
-    metrics: list[str] | None = None
-    batch_size: int = 4
-    max_samples: int | None = None
-
-
-@dataclass
 class EvalRunResult:
     """Result of running an evaluation."""
 
@@ -72,7 +63,9 @@ class EvaluationService:
         self,
         model: str,
         dataset: str,
-        config: EvalConfig | None = None,
+        metrics: list[str] | None = None,
+        batch_size: int = 4,
+        max_samples: int | None = None,
         adapter: str | None = None,
     ) -> EvalRunResult:
         """Execute evaluation on model with dataset.
@@ -80,13 +73,14 @@ class EvaluationService:
         Args:
             model: Path to model directory.
             dataset: Path to dataset file.
-            config: Optional evaluation configuration.
+            metrics: Optional list of metrics to compute.
+            batch_size: Batch size for evaluation.
+            max_samples: Optional cap on dataset samples.
             adapter: Optional path to LoRA adapter directory.
 
         Returns:
             EvalRunResult with eval_id and metrics.
         """
-        config = config or EvalConfig()
         eval_id = f"eval-{uuid.uuid4().hex[:8]}"
 
         # Real MLX Evaluation using mlx_lm
@@ -143,8 +137,8 @@ class EvaluationService:
                         except json.JSONDecodeError:
                             continue
 
-            if config.max_samples:
-                samples = samples[: config.max_samples]
+            if max_samples:
+                samples = samples[:max_samples]
 
             if not samples:
                 logger.warning("No valid samples in dataset")
@@ -214,7 +208,7 @@ class EvaluationService:
                     perplexity=perplexity,
                     sample_count=sample_count,
                     timestamp=datetime.utcnow(),
-                    config={"batch_size": config.batch_size},
+                    config={"batch_size": batch_size, "metrics": metrics, "max_samples": max_samples},
                     sample_results=[],
                     adapter_path=adapter,
                 )

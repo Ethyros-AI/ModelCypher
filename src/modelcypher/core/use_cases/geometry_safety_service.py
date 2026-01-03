@@ -148,48 +148,6 @@ class VulnerabilityThresholds:
 
 
 @dataclass(frozen=True)
-class GeometrySafetyConfig:
-    """Configuration for geometry safety service.
-
-    All thresholds must be explicitly provided or derived from calibration data.
-    Use from_calibration_data() to derive from empirical measurements.
-    """
-
-    drift_thresholds: DriftThresholds
-    """Thresholds for persona drift assessment."""
-
-    vulnerability_thresholds: VulnerabilityThresholds
-    """Thresholds for vulnerability detection."""
-
-    @classmethod
-    def from_calibration_data(
-        cls,
-        drift_samples: list[float],
-        safe_delta_h_samples: list[float],
-        attack_entropy_samples: list[float],
-    ) -> "GeometrySafetyConfig":
-        """Derive all thresholds from calibration data.
-
-        Args:
-            drift_samples: Historical persona drift magnitudes.
-            safe_delta_h_samples: Delta-H values from safe prompt tests.
-            attack_entropy_samples: Attack entropy values from safe tests.
-
-        Returns:
-            Configuration with calibration-derived thresholds.
-        """
-        drift = DriftThresholds.from_calibration_data(drift_samples)
-        vuln = VulnerabilityThresholds.from_calibration_data(
-            safe_delta_h_samples, attack_entropy_samples
-        )
-
-        return cls(
-            drift_thresholds=drift,
-            vulnerability_thresholds=vuln,
-        )
-
-
-@dataclass(frozen=True)
 class VulnerabilityDetail:
     """Details about a detected jailbreak vulnerability.
 
@@ -236,23 +194,29 @@ class GeometrySafetyService:
     def __init__(
         self,
         training_service: "GeometryTrainingService",
-        config: GeometrySafetyConfig,
+        drift_thresholds: DriftThresholds,
+        vulnerability_thresholds: VulnerabilityThresholds,
     ) -> None:
         """Initialize geometry safety service.
 
         Args:
             training_service: Training service for job metrics.
-            config: Configuration with geometry-derived thresholds.
-                    Use GeometrySafetyConfig.from_calibration_data() to derive
-                    thresholds from baseline measurements.
+            drift_thresholds: Thresholds for persona drift assessment.
+            vulnerability_thresholds: Thresholds for vulnerability detection.
         """
         self.training_service = training_service
-        self._config = config
+        self._drift_thresholds = drift_thresholds
+        self._vulnerability_thresholds = vulnerability_thresholds
 
     @property
-    def config(self) -> GeometrySafetyConfig:
-        """Get the current configuration."""
-        return self._config
+    def drift_thresholds(self) -> DriftThresholds:
+        """Get the current drift thresholds."""
+        return self._drift_thresholds
+
+    @property
+    def vulnerability_thresholds(self) -> VulnerabilityThresholds:
+        """Get the current vulnerability thresholds."""
+        return self._vulnerability_thresholds
 
     def evaluate_circuit_breaker(
         self,
@@ -495,7 +459,7 @@ class GeometrySafetyService:
         Returns VulnerabilityDetail if vulnerability detected, None otherwise.
         Thresholds are derived from calibration data (percentiles of safe prompts).
         """
-        vuln_thresh = self._config.vulnerability_thresholds
+        vuln_thresh = self._vulnerability_thresholds
 
         vulnerability_type: str | None = None
         threshold_exceedance: float = 0.0

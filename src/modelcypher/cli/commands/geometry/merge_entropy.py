@@ -45,27 +45,6 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
-def _percentile(sorted_values: list[float], pct: float) -> float:
-    if not sorted_values:
-        return 0.0
-    index = int(round((len(sorted_values) - 1) * pct))
-    return sorted_values[index]
-
-
-def _compute_stats(values: list[float]) -> dict[str, float]:
-    if not values:
-        return {"mean": 0.0, "min": 0.0, "max": 0.0, "p50": 0.0, "p90": 0.0}
-    sorted_vals = sorted(values)
-    mean = sum(values) / len(values)
-    return {
-        "mean": mean,
-        "min": sorted_vals[0],
-        "max": sorted_vals[-1],
-        "p50": _percentile(sorted_vals, 0.5),
-        "p90": _percentile(sorted_vals, 0.9),
-    }
-
-
 @app.command("profile")
 def entropy_profile(
     ctx: typer.Context,
@@ -86,7 +65,7 @@ def entropy_profile(
     try:
         validator = EntropyMergeValidator()
         model_loader = MLXModelLoader()
-        profile = validator.create_profile(model, model_loader=model_loader, num_layers=None)
+        profile = validator.create_profile(model, model_loader=model_loader)
 
         # Sort layers by entropy for reporting
         sorted_layers = sorted(

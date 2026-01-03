@@ -579,7 +579,7 @@ mc safety adapter-probe --adapter ./my-adapter --base-model ./base
 
 **Output fields:**
 - `layerCount`, `outlierLayerCount`, `outlierLayerIndices`
-- `maxL2Norm`, `meanL2Norm`, `meanSparsity`, `l2Norms`, `sparsity`
+- `maxGeodesicSpread`, `meanGeodesicSpread`, `meanSparsity`, `geodesicSpreads`, `sparsity`
 
 ---
 

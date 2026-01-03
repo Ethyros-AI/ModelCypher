@@ -95,12 +95,13 @@ def eval_run(
         mc eval run --model ./model --dataset ./data.jsonl --batch-size 8
     """
     context = _context(ctx)
-    from modelcypher.core.use_cases.evaluation_service import EvalConfig
-
     service = get_evaluation_service()
-    config = EvalConfig(batch_size=batch_size, max_samples=max_samples)
-
-    result = service.run(model, dataset, config)
+    result = service.run(
+        model,
+        dataset,
+        batch_size=batch_size,
+        max_samples=max_samples,
+    )
 
     payload = {
         "evalId": result.eval_id,
@@ -559,12 +560,8 @@ def compare_run(
         mc compare run --checkpoint ./ckpt1 --checkpoint ./ckpt2 --prompt "Test"
     """
     context = _context(ctx)
-    from modelcypher.core.use_cases.compare_service import CompareConfig
-
     service = get_compare_service()
-    config = CompareConfig(prompt=prompt)
-
-    result = service.run(checkpoints, config)
+    result = service.run(checkpoints, prompt)
 
     payload = {
         "comparisonId": result.comparison_id,

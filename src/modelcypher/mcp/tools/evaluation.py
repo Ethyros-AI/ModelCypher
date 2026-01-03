@@ -25,8 +25,6 @@ Contains tools for:
 
 from __future__ import annotations
 
-from modelcypher.core.use_cases.evaluation_service import EvalConfig
-
 from .common import (
     READ_ONLY_ANNOTATIONS,
     ServiceContext,
@@ -53,14 +51,13 @@ def register_evaluation_tools(ctx: ServiceContext) -> None:
             """Run evaluation on a model."""
             model_path = require_existing_directory(model)
             dataset_path = require_existing_path(dataset)
-
-            config = EvalConfig(
+            result = ctx.evaluation_service.run(
+                model_path,
+                dataset_path,
                 metrics=metrics,
                 batch_size=batchSize,
                 max_samples=maxSamples,
             )
-
-            result = ctx.evaluation_service.run(model_path, dataset_path, config)
 
             return {
                 "_schema": "mc.eval.run.v1",

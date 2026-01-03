@@ -52,7 +52,7 @@ def safety_adapter_probe(
     """Probe adapter for delta-feature geometry.
 
     Analyzes adapter weights for:
-    - L2 norm distributions
+    - Geodesic spread distributions
     - Sparsity patterns
     - Outlier layer detection
 
@@ -84,7 +84,7 @@ def safety_adapter_probe(
     try:
         # Simulate probe (actual implementation would load adapter weights)
         features = DeltaFeatureSet(
-            l2_norms=(0.01, 0.02, 0.015, 0.018),
+            geodesic_spreads=(0.01, 0.02, 0.015, 0.018),
             sparsity=(0.1, 0.15, 0.12, 0.08),
             outlier_layer_indices=(),
         )
@@ -104,10 +104,10 @@ def safety_adapter_probe(
         "layerCount": features.layer_count,
         "outlierLayerCount": len(features.outlier_layer_indices),
         "outlierLayerIndices": list(features.outlier_layer_indices),
-        "maxL2Norm": features.max_l2_norm,
-        "meanL2Norm": features.mean_l2_norm,
+        "maxGeodesicSpread": features.max_geodesic_spread,
+        "meanGeodesicSpread": features.mean_geodesic_spread,
         "meanSparsity": features.mean_sparsity,
-        "l2Norms": list(features.l2_norms[:10]),
+        "geodesicSpreads": list(features.geodesic_spreads[:10]),
         "sparsity": list(features.sparsity[:10]),
     }
 
@@ -120,9 +120,9 @@ def safety_adapter_probe(
             f"Layers Analyzed: {features.layer_count}",
             f"Outlier Layers: {len(features.outlier_layer_indices)}",
             "",
-            "L2 Norm Statistics:",
-            f"  Max: {features.max_l2_norm:.6f}",
-            f"  Mean: {features.mean_l2_norm:.6f}",
+            "Geodesic Spread Statistics:",
+            f"  Max: {features.max_geodesic_spread:.6f}",
+            f"  Mean: {features.mean_geodesic_spread:.6f}",
             "",
             "Sparsity Statistics:",
             f"  Mean: {features.mean_sparsity:.2%}",

@@ -204,7 +204,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             adapterPath: str,
             tier: str = "default",
         ) -> dict:
-            """Probe adapter for safety-relevant delta features (L2 norms, sparsity)."""
+            """Probe adapter for safety-relevant delta features (geodesic spread, sparsity)."""
             from modelcypher.core.domain.safety import DeltaFeatureExtractor, DeltaFeatureSet
 
             adapter_path = require_existing_directory(adapterPath)
@@ -212,7 +212,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             # Simulated probe (actual implementation loads adapter weights)
             # DeltaFeatureSet uses correct field names per delta_feature_set.py
             features = DeltaFeatureSet(
-                l2_norms=(0.01, 0.02, 0.015, 0.018),
+                geodesic_spreads=(0.01, 0.02, 0.015, 0.018),
                 sparsity=(0.1, 0.15, 0.12, 0.08),
                 outlier_layer_indices=(),  # No outlier layers in this simulation
             )
@@ -222,8 +222,8 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 "tier": tier,
                 # Raw measurements from the feature set
                 "layerCount": features.layer_count,
-                "maxL2Norm": features.max_l2_norm,
-                "meanL2Norm": features.mean_l2_norm,
+                "maxGeodesicSpread": features.max_geodesic_spread,
+                "meanGeodesicSpread": features.mean_geodesic_spread,
                 "meanSparsity": features.mean_sparsity,
                 "outlierLayerFraction": features.outlier_layer_fraction,
                 "outlierLayerIndices": list(features.outlier_layer_indices),

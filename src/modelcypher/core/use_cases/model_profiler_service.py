@@ -33,7 +33,7 @@ Example:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -46,27 +46,6 @@ if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import CurvatureProfile
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ProfilerConfig:
-    """Configuration for profile generation.
-
-    Note: Curvature parameters (k_neighbors, num_probes) are derived from
-    data at runtime by the underlying geometry algorithms. They are not
-    configurable here.
-    """
-
-    # Which sections to compute
-    sections: list[str] = field(
-        default_factory=lambda: [ProfileSection.IDENTITY.value, ProfileSection.GEOMETRY.value]
-    )
-
-    # Layer selection (None = all layers)
-    layers: list[int] | None = None
-
-    # Output settings
-    output_path: str | None = None
 
 
 class ModelProfilerService:
@@ -85,8 +64,8 @@ class ModelProfilerService:
     - entropy: Shannon/Renyi entropy per layer (medium cost)
     """
 
-    def __init__(self, config: ProfilerConfig | None = None) -> None:
-        self.config = config or ProfilerConfig()
+    def __init__(self) -> None:
+        """Initialize ModelProfilerService."""
 
     def generate_from_curvature(
         self,
@@ -288,5 +267,4 @@ def _infer_model_family(architecture: str) -> str:
 
 __all__ = [
     "ModelProfilerService",
-    "ProfilerConfig",
 ]

@@ -33,18 +33,6 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class CompareConfig:
-    """Configuration for comparison run.
-
-    prompt is REQUIRED - no default. Users must specify what to compare on.
-    """
-
-    prompt: str  # REQUIRED - no default prompt
-    max_tokens: int = 100
-    temperature: float = 0.7
-
-
-@dataclass
 class CompareRunResult:
     """Result of running a comparison."""
 
@@ -97,13 +85,17 @@ class CompareService:
     def run(
         self,
         checkpoints: list[str],
-        config: CompareConfig,
+        prompt: str,
+        max_tokens: int = 100,
+        temperature: float = 0.7,
     ) -> CompareRunResult:
         """Execute A/B comparison between checkpoints.
 
         Args:
             checkpoints: List of checkpoint paths to compare.
-            config: Comparison configuration (REQUIRED - includes prompt).
+            prompt: Prompt to compare on (required).
+            max_tokens: Maximum generation length.
+            temperature: Sampling temperature.
 
         Returns:
             CompareRunResult with comparison_id.
@@ -144,8 +136,8 @@ class CompareService:
                 response = generate(
                     model,
                     tokenizer,
-                    prompt=config.prompt,
-                    max_tokens=config.max_tokens,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
                     verbose=False,
                 )
                 duration = time.time() - start_time
@@ -180,8 +172,8 @@ class CompareService:
         session = CompareSession(
             id=comparison_id,
             created_at=datetime.utcnow(),
-            prompt=config.prompt,
-            config={"max_tokens": config.max_tokens, "temperature": config.temperature},
+            prompt=prompt,
+            config={"max_tokens": max_tokens, "temperature": temperature},
             checkpoints=results,
         )
         self.store.save_session(session)
@@ -189,7 +181,7 @@ class CompareService:
         return CompareRunResult(
             comparison_id=comparison_id,
             checkpoints=checkpoints,
-            prompt=config.prompt,
+            prompt=prompt,
         )
 
     def checkpoints(self, job_id: str) -> CheckpointComparisonResult:

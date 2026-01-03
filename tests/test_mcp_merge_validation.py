@@ -124,7 +124,7 @@ class TestMergeEntropyProfileTool:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_merge_entropy_profile",
-                    arguments={"model": test_model_path, "numLayers": 16},
+                    arguments={"model": test_model_path},
                 )
             )
 

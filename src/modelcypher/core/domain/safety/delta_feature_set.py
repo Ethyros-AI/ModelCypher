@@ -35,8 +35,8 @@ class DeltaFeatureSet:
     Contains statistical features computed from LoRA adapter weights.
     """
 
-    l2_norms: tuple[float, ...] = ()
-    """L2 norms of adapter delta tensors (per target module)."""
+    geodesic_spreads: tuple[float, ...] = ()
+    """Geodesic RMS spread of adapter delta tensors (per target module)."""
 
     sparsity: tuple[float, ...] = ()
     """Sparsity ratios (fraction of near-zero elements) per module."""
@@ -53,7 +53,7 @@ class DeltaFeatureSet:
     @property
     def layer_count(self) -> int:
         """Number of layers analyzed."""
-        return len(self.l2_norms)
+        return len(self.geodesic_spreads)
 
     @property
     def has_outlier_layers(self) -> bool:
@@ -68,18 +68,18 @@ class DeltaFeatureSet:
         return len(self.outlier_layer_indices) / self.layer_count
 
     @property
-    def mean_l2_norm(self) -> float:
-        """Mean L2 norm across all layers."""
-        if not self.l2_norms:
+    def mean_geodesic_spread(self) -> float:
+        """Mean geodesic spread across all layers."""
+        if not self.geodesic_spreads:
             return 0.0
-        return sum(self.l2_norms) / len(self.l2_norms)
+        return sum(self.geodesic_spreads) / len(self.geodesic_spreads)
 
     @property
-    def max_l2_norm(self) -> float:
-        """Maximum L2 norm across all layers."""
-        if not self.l2_norms:
+    def max_geodesic_spread(self) -> float:
+        """Maximum geodesic spread across all layers."""
+        if not self.geodesic_spreads:
             return 0.0
-        return max(self.l2_norms)
+        return max(self.geodesic_spreads)
 
     @property
     def mean_sparsity(self) -> float:
@@ -91,7 +91,7 @@ class DeltaFeatureSet:
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
-            "l2_norms": list(self.l2_norms),
+            "geodesic_spreads": list(self.geodesic_spreads),
             "sparsity": list(self.sparsity),
             "cosine_to_aligned": list(self.cosine_to_aligned),
             "outlier_layer_indices": list(self.outlier_layer_indices),
@@ -101,8 +101,9 @@ class DeltaFeatureSet:
     @classmethod
     def from_dict(cls, data: dict) -> DeltaFeatureSet:
         """Create from dictionary."""
+        spreads = data.get("geodesic_spreads", data.get("l2_norms", []))
         return cls(
-            l2_norms=tuple(data.get("l2_norms", [])),
+            geodesic_spreads=tuple(spreads),
             sparsity=tuple(data.get("sparsity", [])),
             cosine_to_aligned=tuple(data.get("cosine_to_aligned", [])),
             outlier_layer_indices=tuple(data.get("outlier_layer_indices", [])),

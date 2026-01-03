@@ -345,17 +345,29 @@ class EntropyCalibrationService:
         if not valid_values:
             raise RuntimeError("All entropy values were invalid (NaN/inf) - model may have numerical issues")
 
-        # Compute statistics
-        sorted_values = sorted(valid_values)
-        n = len(sorted_values)
+        # Compute statistics (backend only)
+        values_arr = _b.array(valid_values)
+        sorted_arr = _b.sort(values_arr)
+        n = int(sorted_arr.shape[0])
+
+        mean_arr = _b.mean(values_arr)
+        var_arr = _b.var(values_arr)
+        std_arr = _b.sqrt(var_arr)
+        min_arr = _b.min(sorted_arr)
+        max_arr = _b.max(sorted_arr)
+        _b.eval(mean_arr, std_arr, min_arr, max_arr)
+
+        mean = float(_b.to_scalar(mean_arr))
+        std_dev = float(_b.to_scalar(std_arr))
+        min_value = float(_b.to_scalar(min_arr))
+        max_value = float(_b.to_scalar(max_arr))
 
         def percentile(p: float) -> float:
             idx = int(p * (n - 1))
-            return sorted_values[idx]
-
-        mean = sum(valid_values) / n
-        variance = sum((v - mean) ** 2 for v in valid_values) / n
-        std_dev = sqrt_scalar(variance, _b)
+            idx_arr = _b.array([idx])
+            value_arr = _b.take(sorted_arr, idx_arr, axis=0)
+            _b.eval(value_arr)
+            return float(_b.to_scalar(value_arr))
 
         result = EntropyCalibrationResult(
             model_id=str(model_dir),
@@ -364,8 +376,8 @@ class EntropyCalibrationService:
             entropy_values=valid_values,
             mean=mean,
             std_dev=std_dev,
-            min_value=sorted_values[0],
-            max_value=sorted_values[-1],
+            min_value=min_value,
+            max_value=max_value,
             percentile_10=percentile(0.10),
             percentile_25=percentile(0.25),
             percentile_50=percentile(0.50),

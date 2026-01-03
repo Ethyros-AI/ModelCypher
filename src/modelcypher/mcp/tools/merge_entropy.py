@@ -45,7 +45,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_entropy_profile(
             model: str,
-            numLayers: int = 32,
         ) -> dict:
             """Profile model entropy characteristics for merge planning.
 
@@ -54,7 +53,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
 
             Args:
                 model: Model name or path to profile
-                numLayers: Number of layers in the model (default: 32)
 
             Returns:
                 Profile with entropy stats per layer
@@ -78,9 +76,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "hint": "Provide a valid local model path for entropy profiling",
                 }
 
-            profile = validator.create_profile(
-                str(model_path), model_loader=model_loader, num_layers=numLayers
-            )
+            profile = validator.create_profile(str(model_path), model_loader=model_loader)
 
             # Sort by entropy (highest first)
             sorted_layers = sorted(

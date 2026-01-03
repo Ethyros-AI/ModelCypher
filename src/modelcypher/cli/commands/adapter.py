@@ -163,20 +163,17 @@ def calibration_run(
         mc calibration run --model ./model --dataset ./data.jsonl --method percentile
     """
     context = _context(ctx)
-    from modelcypher.core.use_cases.calibration_service import (
-        CalibrationConfig,
-        CalibrationService,
-    )
-
-    config = CalibrationConfig(
-        batch_size=batch_size,
-        max_samples=max_samples,
-        calibration_method=method,
-    )
+    from modelcypher.core.use_cases.calibration_service import CalibrationService
     service = CalibrationService()
 
     try:
-        result = service.run(model, dataset, config)
+        result = service.run(
+            model,
+            dataset,
+            batch_size=batch_size,
+            max_samples=max_samples,
+            calibration_method=method,
+        )
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1009",
