@@ -293,7 +293,12 @@ class TangentSpaceAlignment:
             b.eval(u, s)
 
             # Filter by eigenvalue threshold (relative to max singular value)
-            s_max = float(b.to_scalar(b.max(s))) if int(s.shape[0]) > 0 else 0.0
+            if int(s.shape[0]) > 0:
+                s_max_arr = b.max(s)
+                b.eval(s_max_arr)
+                s_max = float(b.to_scalar(s_max_arr))
+            else:
+                s_max = 0.0
 
             # Use relative threshold: eigenvalue must be > epsilon * max_eigenvalue
             # This handles varying scales in the data
@@ -302,7 +307,9 @@ class TangentSpaceAlignment:
 
             relative_threshold = epsilon * s_max
             mask = s[:rank] > relative_threshold
-            valid_count = int(b.to_scalar(b.sum(b.astype(mask, "int32"))))
+            valid_count_arr = b.sum(b.astype(mask, "int32"))
+            b.eval(valid_count_arr)
+            valid_count = int(b.to_scalar(valid_count_arr))
 
             if valid_count == 0:
                 return None

@@ -447,7 +447,7 @@ class DARESparsityAnalyzer:
                 mean_magnitude=0.0,
                 max_magnitude=0.0,
                 essential_fraction=0.0,
-                has_significant_updates=False,
+                has_non_zero_updates=False,
             )
 
         max_value = max(magnitudes)

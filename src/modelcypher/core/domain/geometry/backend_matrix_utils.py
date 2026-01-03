@@ -397,8 +397,9 @@ class BackendMatrixUtils:
         if n < 2:
             # Count positive values
             mask = eig_flat > 0
-            b.eval(mask)
-            count = int(b.to_scalar(b.sum(b.astype(mask, "float32"))))
+            count_arr = b.sum(b.astype(mask, "float32"))
+            b.eval(count_arr)
+            count = int(b.to_scalar(count_arr))
             return count
 
         # Machine epsilon for numerical stability
@@ -417,8 +418,9 @@ class BackendMatrixUtils:
 
         # Count positive eigenvalues (those not -inf after sort)
         is_positive = sorted_desc > float("-inf")
-        b.eval(is_positive)
-        positive_count = int(b.to_scalar(b.sum(b.astype(is_positive, "float32"))))
+        positive_count_arr = b.sum(b.astype(is_positive, "float32"))
+        b.eval(positive_count_arr)
+        positive_count = int(b.to_scalar(positive_count_arr))
 
         if positive_count < 2:
             return positive_count
@@ -442,8 +444,11 @@ class BackendMatrixUtils:
         b.eval(relative_drops)
 
         # Find max gap using argmax
-        max_gap_idx = int(b.to_scalar(b.argmax(relative_drops)))
-        max_gap_val = float(b.to_scalar(b.max(relative_drops)))
+        max_gap_idx_arr = b.argmax(relative_drops)
+        max_gap_val_arr = b.max(relative_drops)
+        b.eval(max_gap_idx_arr, max_gap_val_arr)
+        max_gap_idx = int(b.to_scalar(max_gap_idx_arr))
+        max_gap_val = float(b.to_scalar(max_gap_val_arr))
 
         if max_gap_val <= 0.0:
             return positive_count
@@ -511,16 +516,21 @@ class BackendMatrixUtils:
         # Convert to float mask and find first True (argmax on boolean gives first 1)
         exceeds_float = b.astype(exceeds_threshold, "float32")
         # If no element exceeds threshold, argmax returns 0, so we check max
-        max_exceeds = float(b.to_scalar(b.max(exceeds_float)))
+        max_exceeds_arr = b.max(exceeds_float)
+        b.eval(max_exceeds_arr)
+        max_exceeds = float(b.to_scalar(max_exceeds_arr))
 
         if max_exceeds < 0.5:
             # No element exceeds threshold, return full count of positive eigenvalues
             positive_mask = eig_sorted > 0
-            b.eval(positive_mask)
-            return int(b.to_scalar(b.sum(b.astype(positive_mask, "float32"))))
+            positive_count_arr = b.sum(b.astype(positive_mask, "float32"))
+            b.eval(positive_count_arr)
+            return int(b.to_scalar(positive_count_arr))
 
         # argmax returns first index where value is max (which is 1.0 for True)
-        first_exceed_idx = int(b.to_scalar(b.argmax(exceeds_float)))
+        first_exceed_idx_arr = b.argmax(exceeds_float)
+        b.eval(first_exceed_idx_arr)
+        first_exceed_idx = int(b.to_scalar(first_exceed_idx_arr))
         return first_exceed_idx + 1
 
     def entropy_effective_rank(self, eigenvalues: Array) -> float:

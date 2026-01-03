@@ -240,21 +240,67 @@ class CrossCulturalGeometry:
 
     @staticmethod
     def _compute_row_sharpness(gram: list[float], n: int) -> list[float]:
-        sharpness: list[float] = []
-        for i in range(n):
-            values = [float(gram[i * n + j]) for j in range(n) if i != j]
-            mean = sum(values) / len(values) if values else 0.0
-            variance = sum((val - mean) ** 2 for val in values) / len(values) if values else 0.0
-            sharpness.append(variance)
-        return sharpness
+        if n <= 1:
+            return []
+        # Vectorized row sharpness: variance of off-diagonal elements per row
+        backend = get_default_backend()
+        gram_arr = backend.reshape(backend.array(gram), (n, n))
+        mask = 1.0 - backend.eye(n)  # 1 for off-diagonal, 0 for diagonal
+        off_diag_count = float(n - 1)
+
+        # Per-row sums of off-diagonal elements
+        row_sums = backend.sum(gram_arr * mask, axis=1)
+        backend.eval(row_sums)
+        row_means = row_sums / off_diag_count
+
+        # Per-row variance: mean of (x - mean)² over off-diagonal
+        centered = (gram_arr - backend.reshape(row_means, (n, 1))) * mask
+        row_var_sums = backend.sum(centered * centered, axis=1)
+        backend.eval(row_var_sums)
+
+        return [float(x) / off_diag_count for x in backend.tolist(row_var_sums)]
 
     @staticmethod
     def _compute_row_correlations(gram_a: list[float], gram_b: list[float], n: int) -> list[float]:
+        if n <= 1:
+            return []
+        # Vectorized per-row Pearson correlation of off-diagonal elements
+        backend = get_default_backend()
+        arr_a = backend.reshape(backend.array(gram_a), (n, n))
+        arr_b = backend.reshape(backend.array(gram_b), (n, n))
+        mask = 1.0 - backend.eye(n)  # 1 for off-diagonal, 0 for diagonal
+        off_diag_count = float(n - 1)
+
+        # Per-row means of off-diagonal elements
+        sum_a = backend.sum(arr_a * mask, axis=1)
+        sum_b = backend.sum(arr_b * mask, axis=1)
+        backend.eval(sum_a, sum_b)
+        mean_a = sum_a / off_diag_count
+        mean_b = sum_b / off_diag_count
+
+        # Per-row centered values (broadcast row means)
+        centered_a = (arr_a - backend.reshape(mean_a, (n, 1))) * mask
+        centered_b = (arr_b - backend.reshape(mean_b, (n, 1))) * mask
+
+        # Per-row covariance and variances
+        cov_sums = backend.sum(centered_a * centered_b, axis=1)
+        var_a_sums = backend.sum(centered_a * centered_a, axis=1)
+        var_b_sums = backend.sum(centered_b * centered_b, axis=1)
+        backend.eval(cov_sums, var_a_sums, var_b_sums)
+
+        eps = division_epsilon(backend, arr_a)
         correlations: list[float] = []
+        cov_list = backend.tolist(cov_sums)
+        var_a_list = backend.tolist(var_a_sums)
+        var_b_list = backend.tolist(var_b_sums)
+
         for i in range(n):
-            vec_a = [float(gram_a[i * n + j]) for j in range(n) if i != j]
-            vec_b = [float(gram_b[i * n + j]) for j in range(n) if i != j]
-            correlations.append(compute_pearson_correlation(vec_a, vec_b, default=0.0))
+            cov = float(cov_list[i]) / off_diag_count
+            var_a = float(var_a_list[i]) / off_diag_count
+            var_b = float(var_b_list[i]) / off_diag_count
+            std_product = (var_a ** 0.5) * (var_b ** 0.5)
+            corr = cov / max(std_product, eps) if std_product > eps else 0.0
+            correlations.append(corr)
         return correlations
 
     @staticmethod

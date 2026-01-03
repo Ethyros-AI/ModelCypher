@@ -363,7 +363,9 @@ class ManifoldClusterer:
         row = backend.take(geodesic_matrix, backend.array([centroid_idx]), axis=0)
         row = backend.squeeze(row, axis=0)
         backend.eval(row)
-        radius = float(backend.to_scalar(backend.max(row)))
+        radius_arr = backend.max(row)
+        backend.eval(radius_arr)
+        radius = float(backend.to_scalar(radius_arr))
         dominant_gates = self._compute_dominant_gates(points)
 
         intrinsic_dimension = None
@@ -419,7 +421,9 @@ class ManifoldClusterer:
         squared = geodesic_matrix * geodesic_matrix
         sum_squared = backend.sum(squared, axis=1)
         backend.eval(sum_squared)
-        medoid_idx = int(backend.to_scalar(backend.argmin(sum_squared)))
+        medoid_idx_arr = backend.argmin(sum_squared)
+        backend.eval(medoid_idx_arr)
+        medoid_idx = int(backend.to_scalar(medoid_idx_arr))
 
         return points[medoid_idx], medoid_idx
 
