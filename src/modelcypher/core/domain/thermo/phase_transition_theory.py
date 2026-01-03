@@ -515,7 +515,10 @@ class PhaseTransitionTheory:
 
         # Estimate T_c from logit statistics
         stats = PhaseTransitionTheory.compute_logit_statistics(logits)
-        v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, temperature=1.0)
+        identity_temperature = 1.0  # Unscaled logits
+        v_eff = PhaseTransitionTheory.effective_vocabulary_size(
+            logits, temperature=identity_temperature
+        )
         estimated_tc = PhaseTransitionTheory.estimate_critical_temperature(
             logit_std_dev=stats.std_dev,
             effective_vocab_size=v_eff,
@@ -557,7 +560,10 @@ class PhaseTransitionTheory:
         # Compute statistics
         variance = PhaseTransitionTheory.compute_logit_variance(logits, temperature=temperature)
         stats = PhaseTransitionTheory.compute_logit_statistics(logits)
-        v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, temperature=1.0)
+        identity_temperature = 1.0  # Unscaled logits
+        v_eff = PhaseTransitionTheory.effective_vocabulary_size(
+            logits, temperature=identity_temperature
+        )
 
         # Estimate T_c from measured logit statistics
         tc = PhaseTransitionTheory.estimate_critical_temperature(

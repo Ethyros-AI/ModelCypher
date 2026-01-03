@@ -181,6 +181,8 @@ class RidgeCrossDetector:
                     variant.mean_entropy,
                     baseline.mean_entropy,
                 )
+            if delta_h is None:
+                continue
 
             # Record ALL transitions - geometry determines significance
             if variant_basin != baseline_basin:

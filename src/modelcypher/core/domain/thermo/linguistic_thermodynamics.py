@@ -24,9 +24,9 @@ the structural context.
 
 Notes
 -----
-Prompt engineering operates through entropy reduction, not injection. Intensity
-modifiers sharpen model confidence, causing commitment to a direct response path
-rather than hedging between alternatives.
+Prompt modifiers shift output entropy and hidden-state geometry. The primary
+comparison signal is the entropy differential between baseline and modifier.
+Hidden-state geometry deltas are recorded when activations are captured.
 
 The ridge cross rate quantifies transition probability:
     Ridge Cross Rate = P(model escapes hedge attractor | modifier)

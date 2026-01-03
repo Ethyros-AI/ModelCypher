@@ -335,7 +335,8 @@ class ThermoCalibrator:
                 baseline = baseline_entropy_by_probe.get(m.prompt.base_content)
                 if baseline is not None:
                     delta_h = EntropyMath.compute_delta_h(m.mean_entropy, baseline)
-                    modifier_measurements.append((m.modifier.value, delta_h))
+                    if delta_h is not None:
+                        modifier_measurements.append((m.modifier.value, delta_h))
 
         temperature = self._resolve_temperature(measurements)
         thresholds = self._calibrate_thresholds(baseline_entropies)
