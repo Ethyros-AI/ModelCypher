@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from dataclasses import dataclass, field
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -47,9 +46,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     log_scalar,
     sqrt_scalar,
 )
-
-# Minimum positive float value for log safety
-_LOG_SAFE_MIN = sys.float_info.min
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -58,6 +54,11 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+def _log_safe_min(backend) -> float:
+    info = backend.finfo()
+    return float(info.tiny)
 
 
 @dataclass(frozen=True)
@@ -109,12 +110,13 @@ class MeasuredEnergy:
         MeasuredEnergy
             Energy derived from the measurement.
         """
-        # Numerical stability - use float_info.min for log safety
-        p = max(probability, _LOG_SAFE_MIN)
-        p_ref = max(reference_probability, _LOG_SAFE_MIN)
+        # Numerical stability - use dtype-derived tiny for log safety
+        _b = get_default_backend()
+        safe_min = _log_safe_min(_b)
+        p = max(probability, safe_min)
+        p_ref = max(reference_probability, safe_min)
 
         # E(x) - E(ref) = -T * log(p(x)/p(ref))
-        _b = get_default_backend()
         energy = -temperature * log_scalar(p / p_ref, _b)
 
         return cls(
@@ -219,7 +221,8 @@ class MeasuredBasinTopology:
         p_solved = solved_count / total
 
         # Reference state: refusal (E=0)
-        p_ref = max(p_refused, _LOG_SAFE_MIN)
+        safe_min = _log_safe_min(_b)
+        p_ref = max(p_refused, safe_min)
 
         # Derive energies: E(x) = -T * log(p(x)/p(ref))
         refusal = MeasuredEnergy(
@@ -252,7 +255,7 @@ class MeasuredBasinTopology:
             # Approximate as (attempted + solved) / total
             escape_rate = (p_attempted + p_solved)
 
-        escape_rate = max(escape_rate, _LOG_SAFE_MIN)  # Log safety
+        escape_rate = max(escape_rate, _log_safe_min(_b))  # Log safety
         _b = get_default_backend()
         barrier_height = -temperature * log_scalar(escape_rate, _b)
         ridge_energy = caution.value + barrier_height

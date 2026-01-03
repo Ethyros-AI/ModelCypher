@@ -576,7 +576,7 @@ class BackendVectorMath:
 
         result = self.backend.dot(a_arr, b_arr)
         self.backend.eval(result)
-        return _to_scalar(result)
+        return float(self.backend.to_scalar(result))
 
     def l2_norm(self, a: Any) -> float:
         """Compute L2 norm using backend operations.
@@ -602,7 +602,7 @@ class BackendVectorMath:
 
         result = self.backend.norm(a_arr)
         self.backend.eval(result)
-        return max(0.0, _to_scalar(result))
+        return max(0.0, float(self.backend.to_scalar(result)))
 
     def l2_normalized(self, a: Any) -> Any:
         """Return L2-normalized vector using backend operations.
@@ -619,7 +619,7 @@ class BackendVectorMath:
 
         norm = self.backend.norm(a_arr)
         self.backend.eval(norm)
-        norm_val = _to_scalar(norm)
+        norm_val = float(self.backend.to_scalar(norm))
 
         if norm_val <= self._finfo.eps:
             return a_arr
@@ -663,8 +663,8 @@ class BackendVectorMath:
         norm_b = self.backend.norm(b_arr)
         self.backend.eval(norm_a, norm_b)
 
-        norm_a_val = _to_scalar(norm_a)
-        norm_b_val = _to_scalar(norm_b)
+        norm_a_val = float(self.backend.to_scalar(norm_a))
+        norm_b_val = float(self.backend.to_scalar(norm_b))
 
         if norm_a_val <= self._finfo.eps or norm_b_val <= self._finfo.eps:
             raise ValueError("Cannot compute cosine similarity of zero vector")
@@ -672,8 +672,9 @@ class BackendVectorMath:
         # Compute dot product
         dot = self.backend.dot(a_arr, b_arr)
         self.backend.eval(dot)
+        dot_val = float(self.backend.to_scalar(dot))
 
-        return _to_scalar(dot) / (norm_a_val * norm_b_val)
+        return dot_val / (norm_a_val * norm_b_val)
 
     def slerp(
         self,
@@ -722,8 +723,8 @@ class BackendVectorMath:
         norm_v1 = self.backend.norm(v1_arr)
         self.backend.eval(norm_v0, norm_v1)
 
-        norm_v0_val = _to_scalar(norm_v0)
-        norm_v1_val = _to_scalar(norm_v1)
+        norm_v0_val = float(self.backend.to_scalar(norm_v0))
+        norm_v1_val = float(self.backend.to_scalar(norm_v1))
 
         if norm_v0_val <= self._finfo.eps or norm_v1_val <= self._finfo.eps:
             return None
@@ -736,7 +737,7 @@ class BackendVectorMath:
         dot = self.backend.dot(v0_unit, v1_unit)
         dot_clamped = self.backend.clip(dot, -1.0, 1.0)
         self.backend.eval(dot_clamped)
-        dot_val = _to_scalar(dot_clamped)
+        dot_val = float(self.backend.to_scalar(dot_clamped))
 
         # Compute angle
         theta = acos_scalar(dot_val, self.backend)
@@ -819,8 +820,8 @@ class BackendVectorMath:
         norm_v1 = self.backend.norm(v1)
         self.backend.eval(norm_v0, norm_v1)
 
-        norm_v0_val = _to_scalar(norm_v0)
-        norm_v1_val = _to_scalar(norm_v1)
+        norm_v0_val = float(self.backend.to_scalar(norm_v0))
+        norm_v1_val = float(self.backend.to_scalar(norm_v1))
 
         if norm_v0_val <= self._finfo.eps or norm_v1_val <= self._finfo.eps:
             return None
@@ -833,7 +834,7 @@ class BackendVectorMath:
         dot = self.backend.dot(v0_unit, v1_unit)
         dot_clamped = self.backend.clip(dot, -1.0, 1.0)
         self.backend.eval(dot_clamped)
-        dot_val = _to_scalar(dot_clamped)
+        dot_val = float(self.backend.to_scalar(dot_clamped))
 
         # Compute angle
         theta = acos_scalar(dot_val, self.backend)

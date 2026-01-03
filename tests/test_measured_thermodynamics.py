@@ -19,14 +19,28 @@
 
 from __future__ import annotations
 
-import math
+import sys
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    exp_scalar,
+    log_scalar,
+)
 from modelcypher.core.domain.thermo.measured_thermodynamics import (
     MeasuredBasinTopology,
     MeasuredEnergy,
 )
+
+
+def _eps(*values: float) -> float:
+    b = get_default_backend()
+    scale = max(1.0, max(abs(value) for value in values)) if values else 1.0
+    arr = b.array([scale])
+    b.eval(arr)
+    return division_epsilon(b, arr) * scale
 
 
 class TestMeasuredEnergy:
@@ -41,7 +55,8 @@ class TestMeasuredEnergy:
             sample_count=100,
         )
 
-        assert energy.value == pytest.approx(0.0)
+        eps = _eps(energy.value, 0.0)
+        assert abs(energy.value) <= eps
         assert energy.probability == 0.3
         assert energy.sample_count == 100
 
@@ -56,7 +71,9 @@ class TestMeasuredEnergy:
 
         # E = -T * log(p/p_ref) = -1 * log(0.1/0.3) = -log(1/3) = log(3) > 0
         assert energy.value > 0
-        assert energy.value == pytest.approx(-math.log(0.1 / 0.3), rel=0.01)
+        expected = -log_scalar(0.1 / 0.3, get_default_backend())
+        eps = _eps(energy.value, expected)
+        assert abs(energy.value - expected) <= eps
 
     def test_from_probability_higher_probability(self):
         """Test energy is negative when p > p_ref (more likely = lower energy)."""
@@ -87,7 +104,9 @@ class TestMeasuredEnergy:
         )
 
         # Energy should scale with temperature
-        assert energy_t2.value == pytest.approx(2.0 * energy_t1.value, rel=0.01)
+        expected = 2.0 * energy_t1.value
+        eps = _eps(energy_t2.value, expected)
+        assert abs(energy_t2.value - expected) <= eps
 
     def test_confidence_low_samples(self):
         """Test confidence is low with few samples."""
@@ -99,7 +118,9 @@ class TestMeasuredEnergy:
         )
 
         # With 5 samples: 1 - 1/(1 + 5/10) = 1 - 1/1.5 = 0.333
-        assert 0.3 < energy.confidence < 0.4
+        expected = 1.0 - 1.0 / (1.0 + 5 / 10.0)
+        eps = _eps(energy.confidence, expected)
+        assert abs(energy.confidence - expected) <= eps
 
     def test_confidence_high_samples(self):
         """Test confidence is high with many samples."""
@@ -111,7 +132,9 @@ class TestMeasuredEnergy:
         )
 
         # With 1000 samples: 1 - 1/(1 + 100) = 1 - 1/101 ≈ 0.99
-        assert energy.confidence > 0.95
+        expected = 1.0 - 1.0 / (1.0 + 1000 / 10.0)
+        eps = _eps(energy.confidence, expected)
+        assert abs(energy.confidence - expected) <= eps
 
     def test_numerical_stability_zero_probability(self):
         """Test handling of zero probability (clamped to 1e-10)."""
@@ -123,7 +146,9 @@ class TestMeasuredEnergy:
         )
 
         # Should not raise, energy should be very high (low probability)
-        assert energy.value > 10  # log(0.5/1e-10) ≈ 22
+        expected = -log_scalar(sys.float_info.min / 0.5, get_default_backend())
+        eps = _eps(energy.value, expected)
+        assert abs(energy.value - expected) <= eps
 
 
 class TestMeasuredBasinTopology:
@@ -173,8 +198,12 @@ class TestMeasuredBasinTopology:
         """Test that balanced counts give similar energies."""
         # All outcomes equally likely = similar energies
         # (relative to refusal which is 0)
-        assert abs(balanced_topology.caution_energy.value) < 0.1
-        assert abs(balanced_topology.solution_energy.value) < 0.1
+        eps = _eps(
+            balanced_topology.caution_energy.value,
+            balanced_topology.solution_energy.value,
+        )
+        assert abs(balanced_topology.caution_energy.value) <= eps
+        assert abs(balanced_topology.solution_energy.value) <= eps
 
     def test_refusal_heavy_high_solution_energy(self, refusal_heavy_topology):
         """Test that high refusal rate makes solution high energy."""
@@ -186,7 +215,8 @@ class TestMeasuredBasinTopology:
         p_escape = balanced_topology.escape_probability(1.0)
 
         # Should be between 0 and 1
-        assert 0 <= p_escape <= 1
+        eps = _eps(p_escape, 0.0, 1.0)
+        assert -eps <= p_escape <= 1.0 + eps
 
     def test_escape_probability_increases_with_temperature(self, refusal_heavy_topology):
         """Test that escape probability increases with temperature."""
@@ -199,7 +229,8 @@ class TestMeasuredBasinTopology:
     def test_escape_probability_zero_temperature(self, balanced_topology):
         """Test escape probability is 0 at T=0."""
         p_escape = balanced_topology.escape_probability(0.0)
-        assert p_escape == 0.0
+        eps = _eps(p_escape, 0.0)
+        assert abs(p_escape) <= eps
 
     def test_basin_weights_sum_to_one(self, balanced_topology):
         """Test that basin weights sum to 1."""
@@ -207,7 +238,8 @@ class TestMeasuredBasinTopology:
 
         assert len(weights) == 3
         total = sum(weights)
-        assert total == pytest.approx(1.0)
+        eps = _eps(total, 1.0)
+        assert abs(total - 1.0) <= eps
 
     def test_basin_weights_length(self, balanced_topology):
         """Test basin weight list has 3 elements."""
@@ -284,9 +316,10 @@ class TestThermodynamicProperties:
         # From E = -T * log(p/p_ref):
         # p/p_ref = exp(-E/T) when refusal is reference
         delta_e = topology.caution_energy.value - topology.refusal_energy.value
-        predicted_ratio = math.exp(-delta_e / 1.0)
+        predicted_ratio = exp_scalar(-delta_e / 1.0, get_default_backend())
 
-        assert measured_ratio == pytest.approx(predicted_ratio, rel=0.01)
+        eps = _eps(measured_ratio, predicted_ratio)
+        assert abs(measured_ratio - predicted_ratio) <= eps
 
     def test_temperature_affects_weights(self):
         """Test that temperature affects basin weight distribution."""

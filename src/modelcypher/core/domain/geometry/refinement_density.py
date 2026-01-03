@@ -239,8 +239,8 @@ class RefinementDensityAnalyzer:
                 delta = adapted - base
                 if hasattr(delta, "flatten"):
                     delta = delta.flatten()
-                if hasattr(delta, "tolist"):
-                    delta_weights[name] = delta.tolist()
+                if hasattr(delta, "tolist") or hasattr(delta, "shape"):
+                    delta_weights[name] = b.tolist(delta)
                 else:
                     delta_weights[name] = list(delta)
 

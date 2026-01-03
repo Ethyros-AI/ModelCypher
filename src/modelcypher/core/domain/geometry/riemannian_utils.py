@@ -1215,7 +1215,12 @@ class RiemannianGeometry:
         backend.eval(geo_dist)
         n = int(geo_dist.shape[0])
 
-        total_dist = float(backend.to_scalar(geo_dist[start_idx, end_idx]))
+        row = backend.take(geo_dist, backend.array([start_idx]), axis=0)
+        row = backend.squeeze(row, axis=0)
+        cell = backend.take(row, backend.array([end_idx]), axis=0)
+        cell = backend.squeeze(cell)
+        backend.eval(cell)
+        total_dist = float(backend.to_scalar(cell))
 
         if is_inf(total_dist, backend):
             # Disconnected - no path exists

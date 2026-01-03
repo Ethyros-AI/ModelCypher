@@ -76,9 +76,15 @@ class TestMachineEpsilon:
         b = any_backend
         arr = b.zeros((2, 2))  # Default is float32
         eps = machine_epsilon(b, arr)
-        half_eps = eps / 2.0
-        assert 1.0 + half_eps == 1.0
-        assert 1.0 + eps != 1.0
+        # Test in backend float32 precision, not Python float64
+        one = b.array([1.0])
+        half_eps_arr = b.array([eps / 2.0])
+        eps_arr = b.array([eps])
+        b.eval(one, half_eps_arr, eps_arr)
+        # In float32: 1.0 + half_eps should round to 1.0
+        assert float(b.to_scalar(one + half_eps_arr)) == 1.0
+        # In float32: 1.0 + eps should NOT round to 1.0
+        assert float(b.to_scalar(one + eps_arr)) != 1.0
 
     def test_float64_epsilon(self, any_backend: "Backend") -> None:
         """Float64 epsilon should be smaller than float32 when supported."""
