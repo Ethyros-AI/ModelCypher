@@ -12,7 +12,7 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
 ## Prerequisites
 
 ### macOS (MLX Backend - Default)
-- **Hardware**: Mac with Apple Silicon (M1/M2/M3/M4). 16GB+ RAM recommended.
+- **Hardware**: Mac with Apple Silicon (M1/M2/M3/M4). 16GB+ RAM.
 - **OS**: macOS 14.0+ (Sonoma or later).
 - **Python**: 3.11+
 

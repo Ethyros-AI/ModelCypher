@@ -391,6 +391,25 @@ def safe_log_epsilon(backend: Backend, array: Array) -> float:
     return backend.finfo(array.dtype).tiny
 
 
+def infinity_threshold(backend: Backend, array: Array) -> float:
+    """Get threshold for detecting near-infinite values.
+
+    Values at or above this threshold should be treated as infinite
+    (e.g., disconnected nodes in a graph). Derived from machine epsilon
+    to be numerically principled rather than arbitrary.
+
+    Uses: max_representable * (1 - sqrt(eps))
+
+    This places the threshold at sqrt(eps) relative distance from max,
+    matching the precision available for the dtype.
+    """
+    finfo = backend.finfo(array.dtype)
+    eps = finfo.eps
+    max_val = finfo.max
+    margin = sqrt_scalar(eps, backend)
+    return float(max_val) * (1.0 - margin)
+
+
 def find_magnitude_gap_threshold(
     sorted_values: list[float],
     eps: float | None = None,

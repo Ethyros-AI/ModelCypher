@@ -80,6 +80,7 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
+    infinity_threshold,
     is_inf,
     machine_epsilon,
     pi_value,
@@ -797,17 +798,20 @@ class RiemannianGeometry:
         adj = backend.minimum(adj, backend.transpose(adj))
         backend.eval(adj)
 
+        # Compute infinity threshold from dtype precision (not arbitrary 0.9)
+        inf_thresh = infinity_threshold(backend, adj)
+
         # Diagnostic: check adjacency matrix construction (vectorized)
         if logger.isEnabledFor(logging.DEBUG):
             # Count edges (finite and below inf threshold)
             finite_mask = backend.isfinite(adj)
-            below_inf = adj < inf_val * 0.9
+            below_inf = adj < inf_thresh
             edge_mask = finite_mask * below_inf  # element-wise AND
             edge_count_arr = backend.sum(edge_mask)
             backend.eval(edge_count_arr)
             edge_count = int(float(backend.to_scalar(edge_count_arr)))
             # Count inf entries (at or above inf threshold)
-            inf_mask = adj >= inf_val * 0.9
+            inf_mask = adj >= inf_thresh
             inf_count_arr = backend.sum(inf_mask)
             backend.eval(inf_count_arr)
             inf_count_adj = int(float(backend.to_scalar(inf_count_arr)))
@@ -840,9 +844,9 @@ class RiemannianGeometry:
         if logger.isEnabledFor(logging.DEBUG):
             # Vectorized counts - O(1) vs O(n²)
             finite_mask = backend.isfinite(geo_dist_arr)
-            below_inf = geo_dist_arr < inf_val * 0.9
+            below_inf = geo_dist_arr < inf_thresh
             fw_finite_arr = backend.sum(finite_mask * below_inf)
-            fw_inf_arr = backend.sum(geo_dist_arr >= inf_val * 0.9)
+            fw_inf_arr = backend.sum(geo_dist_arr >= inf_thresh)
             backend.eval(fw_finite_arr, fw_inf_arr)
             fw_finite = int(float(backend.to_scalar(fw_finite_arr)))
             fw_inf = int(float(backend.to_scalar(fw_inf_arr)))
@@ -857,8 +861,7 @@ class RiemannianGeometry:
         # Create indicator for "x >= threshold" using sign arithmetic:
         # sign(x - threshold + tiny) = 1 for x >= threshold, -1 for x < threshold
         # maximum(..., 0) converts -1 to 0, giving 1/0 indicator
-        threshold = inf_val * 0.9
-        diff_from_threshold = geo_dist_arr - threshold
+        diff_from_threshold = geo_dist_arr - inf_thresh
         near_inf_indicator = backend.maximum(
             backend.sign(diff_from_threshold + tiny),
             backend.zeros_like(geo_dist_arr),

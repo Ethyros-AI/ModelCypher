@@ -57,7 +57,7 @@ def register(app: typer.Typer) -> None:
         Outputs:
         - Per-density-bracket analysis
         - Null space correlation per layer
-        - Recommended graft mask (which layers/concepts to graft)
+        - Derived graft mask (which layers/concepts to graft)
         """
         context = get_context(ctx)
 

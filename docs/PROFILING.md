@@ -86,7 +86,7 @@ mc geometry crm-build --batch-size 32 ./model
 ```
 
 **Guidelines:**
-| RAM | Recommended Batch Size |
+| RAM | Batch Size Range |
 |-----|------------------------|
 | 8 GB | 2-4 |
 | 16 GB | 8-16 |

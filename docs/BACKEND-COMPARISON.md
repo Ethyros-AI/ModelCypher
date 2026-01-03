@@ -4,7 +4,7 @@ ModelCypher supports multiple compute backends for different platforms. This gui
 
 ## Quick Selection
 
-| Platform | Recommended Backend | Install Command |
+| Platform | Default Backend | Install Command |
 |----------|---------------------|-----------------|
 | macOS Apple Silicon | MLXBackend | `poetry install` |
 | Linux + NVIDIA GPU | CUDABackend | `poetry install -E cuda` |

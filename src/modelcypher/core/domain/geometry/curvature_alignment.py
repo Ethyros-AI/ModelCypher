@@ -65,7 +65,7 @@ class AlignmentGuidance:
     # Curvature correction factor: how much to adjust for curvature mismatch
     curvature_correction: float
 
-    # Recommended alignment weight (how much to trust this layer's alignment)
+    # Derived alignment weight (how much to trust this layer's alignment)
     alignment_weight: float
 
 

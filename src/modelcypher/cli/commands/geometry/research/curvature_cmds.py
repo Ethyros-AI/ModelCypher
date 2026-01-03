@@ -426,7 +426,7 @@ def register(app: typer.Typer) -> None:
         - Dimension scaling factors
         - Curvature correction factors
         - Critical layers needing special attention
-        - Recommended alignment strategy
+        - Derived alignment strategy
         """
         from pathlib import Path
 

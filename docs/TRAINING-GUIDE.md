@@ -211,7 +211,7 @@ mc train export --model ./fine-tuned --format gguf --output-path ./model.gguf
 ```
 
 **Export formats:**
-- `safetensors` (default, recommended)
+- `safetensors` (default)
 - `gguf` (for llama.cpp)
 - `pytorch` (legacy .bin)
 

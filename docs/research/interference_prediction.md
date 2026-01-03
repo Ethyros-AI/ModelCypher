@@ -185,7 +185,7 @@ Higher values indicate less predicted interference. The score is a raw measureme
 When critical pairs are detected, the report identifies:
 1. **Concept ID**: Which concept has interference
 2. **Mechanism**: Root cause of interference
-3. **Mitigation**: Recommended action
+3. **Mitigation**: Action
 
 ---
 
