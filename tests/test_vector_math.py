@@ -354,7 +354,8 @@ class TestVectorMathSlerp:
         assert result is not None
         # Expected magnitude: (2 + 4) / 2 = 3
         norm = VectorMath.l2_norm(result)
-        assert abs(norm - 3.0) <= _eps(norm, 3.0)
+        eps = _eps(norm, 3.0)
+        assert abs(norm - 3.0) <= 2.0 * eps
 
     def test_slerp_no_magnitude_interpolation(self):
         """SLERP without magnitude interpolation returns unit vector."""

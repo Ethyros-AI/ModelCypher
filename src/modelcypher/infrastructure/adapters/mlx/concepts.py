@@ -21,6 +21,12 @@ import re
 
 import mlx.core as mx
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    ceil_scalar,
+    log2_scalar,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.types import (
     ConceptComparisonResult,
     DetectedConcept,
@@ -233,8 +239,8 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         """Detect concepts in response text.
 
         All parameters are derived from the data:
-        - Window sizes: [1, 3, 5] words (captures single words to short phrases)
-        - Stride: window_size // 2 (50% overlap for smooth coverage)
+        - Window sizes: derived from response length via log2/sqrt scales
+        - Stride: derived from window size via sqrt scale
         - Threshold: Otsu thresholding on similarity distribution
         """
         await self._ensure_concepts()
@@ -254,13 +260,10 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         # Collect all candidate detections with similarities
         all_candidates: list[tuple[DetectedConcept, float]] = []
 
-        # Multi-scale windows: derived from typical phrase lengths
-        # 1 word = single concepts, 3 words = short phrases, 5 words = clauses
-        window_sizes = [1, 3, 5]
+        window_sizes = self._derive_window_sizes(len(words))
 
         for window_size in window_sizes:
-            # Stride = half window for 50% overlap
-            step = max(1, window_size // 2)
+            step = self._derive_stride(window_size)
 
             for i in range(0, len(words), step):
                 if i + window_size > len(words):
@@ -292,9 +295,10 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         # Deduplicate by concept + position
         detections.sort(key=lambda x: x.similarity, reverse=True)
         seen_spans: set[tuple[str, int]] = set()
+        span_bucket = self._derive_span_bucket(len(trimmed))
         unique = []
         for d in detections:
-            center = (d.character_span.start + d.character_span.stop) // 10
+            center = (d.character_span.start + d.character_span.stop) // span_bucket
             key = (d.concept_id, center)
             if key not in seen_spans:
                 unique.append(d)
@@ -304,7 +308,11 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
 
         mean_similarity = 0.0
         if unique:
-            mean_similarity = sum(d.similarity for d in unique) / len(unique)
+            backend = get_default_backend()
+            scores = backend.array([d.similarity for d in unique])
+            mean_score = backend.mean(scores)
+            backend.eval(mean_score)
+            mean_similarity = float(backend.to_scalar(mean_score))
 
         return DetectionResult(
             model_id=model_id,
@@ -315,6 +323,52 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
             mean_cross_modal_similarity=None,
         )
 
+    def _derive_window_sizes(self, word_count: int) -> list[int]:
+        if word_count <= 0:
+            return []
+        backend = get_default_backend()
+        count_arr = backend.array([float(word_count)])
+        unit_arr = count_arr / count_arr
+        backend.eval(unit_arr)
+        unit = int(backend.to_scalar(unit_arr))
+
+        log2_count = log2_scalar(float(word_count), backend)
+        sqrt_count = sqrt_scalar(float(word_count), backend)
+        size_short = max(unit, ceil_scalar(log2_count, backend))
+        size_mid = max(size_short, ceil_scalar(sqrt_count, backend))
+
+        denom = log2_count if log2_count > float(unit) else float(unit)
+        size_long = max(size_mid, ceil_scalar(float(word_count) / denom, backend))
+
+        sizes = {
+            min(word_count, size_short),
+            min(word_count, size_mid),
+            min(word_count, size_long),
+        }
+        return sorted(size for size in sizes if size >= unit)
+
+    def _derive_stride(self, window_size: int) -> int:
+        if window_size <= 0:
+            return 0
+        backend = get_default_backend()
+        size_arr = backend.array([float(window_size)])
+        unit_arr = size_arr / size_arr
+        backend.eval(unit_arr)
+        unit = int(backend.to_scalar(unit_arr))
+        stride = ceil_scalar(sqrt_scalar(float(window_size), backend), backend)
+        return max(unit, stride)
+
+    def _derive_span_bucket(self, text_len: int) -> int:
+        if text_len <= 0:
+            return 1
+        backend = get_default_backend()
+        len_arr = backend.array([float(text_len)])
+        unit_arr = len_arr / len_arr
+        backend.eval(unit_arr)
+        unit = int(backend.to_scalar(unit_arr))
+        bucket = ceil_scalar(sqrt_scalar(float(text_len), backend), backend)
+        return max(unit, bucket)
+
     def _otsu_threshold(self, values: list[float]) -> float:
         """Compute Otsu's threshold for optimal bimodal split.
 
@@ -324,39 +378,35 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         if len(values) < 2:
             return 0.0
 
-        sorted_vals = sorted(values)
-        n = len(sorted_vals)
+        backend = get_default_backend()
+        vals = backend.array(values)
+        sorted_vals = backend.sort(vals)
+        n = backend.shape(sorted_vals)[0]
+        if n < 2:
+            return 0.0
 
-        best_threshold = sorted_vals[0]
-        best_variance = 0.0
+        idx = backend.arange(1, n)
+        cumsum = backend.cumsum(sorted_vals)
+        sum0 = backend.take(cumsum, idx - 1)
+        total = backend.sum(sorted_vals)
 
-        # Try each unique value as a threshold
-        for i in range(1, n):
-            t = sorted_vals[i]
+        idx_float = backend.astype(idx, sorted_vals.dtype)
+        denom1 = float(n) - idx_float
+        mean0 = sum0 / idx_float
+        sum1 = total - sum0
+        mean1 = sum1 / denom1
 
-            # Split into two classes
-            class0 = [v for v in sorted_vals if v < t]
-            class1 = [v for v in sorted_vals if v >= t]
+        w0 = idx_float / float(n)
+        w1 = 1.0 - w0
+        variance = w0 * w1 * (mean0 - mean1) ** 2
 
-            if not class0 or not class1:
-                continue
-
-            # Weights (proportions)
-            w0 = len(class0) / n
-            w1 = len(class1) / n
-
-            # Means
-            mean0 = sum(class0) / len(class0)
-            mean1 = sum(class1) / len(class1)
-
-            # Inter-class variance
-            variance = w0 * w1 * (mean0 - mean1) ** 2
-
-            if variance > best_variance:
-                best_variance = variance
-                best_threshold = t
-
-        return best_threshold
+        best_idx_arr = backend.argmax(variance)
+        backend.eval(best_idx_arr)
+        best_idx = int(backend.to_scalar(best_idx_arr))
+        threshold_index = backend.take(idx, backend.array([best_idx]))
+        threshold_val = backend.take(sorted_vals, threshold_index)
+        backend.eval(threshold_val)
+        return float(backend.to_scalar(threshold_val))
 
     async def _detect_in_window(self, text: str, start: int, end: int) -> DetectedConcept | None:
         vec = await self.embedder.embed([text])  # [1, D]

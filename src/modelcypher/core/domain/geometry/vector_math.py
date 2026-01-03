@@ -365,6 +365,11 @@ class VectorMath:
         if interpolate_magnitude:
             target_mag = (1.0 - t) * norm_v0 + t * norm_v1
             result = [x * target_mag for x in result]
+            # Normalize to exact target magnitude for numerical stability
+            result_norm = VectorMath.l2_norm(result)
+            if result_norm > epsilon:
+                scale = target_mag / result_norm
+                result = [x * scale for x in result]
 
         return result
 
@@ -758,6 +763,10 @@ class BackendVectorMath:
         if interpolate_magnitude:
             target_mag = (1.0 - t) * norm_v0_val + t * norm_v1_val
             result = result * target_mag
+            # Normalize to exact target magnitude for numerical stability
+            result_norm = self.l2_norm(result)
+            if result_norm > epsilon:
+                result = result * (target_mag / result_norm)
 
         self.backend.eval(result)
         return result
