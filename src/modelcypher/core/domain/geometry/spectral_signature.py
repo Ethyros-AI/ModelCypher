@@ -287,10 +287,12 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
         mid_val = backend.take(sorted_vals, backend.array([mid]), axis=0)
         backend.eval(mid_val)
         return float(backend.to_scalar(mid_val))
-    mid_vals = backend.take(sorted_vals, backend.array([mid - 1, mid]), axis=0)
-    backend.eval(mid_vals)
-    mid_list = backend.tolist(mid_vals)
-    return 0.5 * (float(mid_list[0]) + float(mid_list[1]))
+    low_val = backend.take(sorted_vals, backend.array([mid - 1]), axis=0)
+    high_val = backend.take(sorted_vals, backend.array([mid]), axis=0)
+    low_val = backend.squeeze(low_val)
+    high_val = backend.squeeze(high_val)
+    backend.eval(low_val, high_val)
+    return 0.5 * (float(backend.to_scalar(low_val)) + float(backend.to_scalar(high_val)))
 
 
 def _spectral_entropy(backend: "Backend", eigenvalues: "Array", eps: float) -> float:

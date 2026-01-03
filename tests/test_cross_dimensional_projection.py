@@ -669,9 +669,10 @@ class TestNumericalStability:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (10, 12)
-        # Should not be NaN
-        proj_np = backend.to_numpy(result.projected)
-        assert not any(float('nan') == float('nan') and x != x for x in proj_np.flatten())
+        # Should not be NaN - use backend operations
+        nan_count = backend.sum(backend.isnan(result.projected))
+        backend.eval(nan_count)
+        assert float(backend.to_scalar(nan_count)) == 0
 
     def test_very_large_values(self, backend: "Backend") -> None:
         """Handle very large values without overflow."""
@@ -682,20 +683,20 @@ class TestNumericalStability:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (10, 12)
-        # Should not be Inf
-        proj_np = backend.to_numpy(result.projected)
-        import math
-        assert not any(math.isinf(x) for x in proj_np.flatten())
+        # Should not be Inf - use backend operations
+        inf_count = backend.sum(backend.isinf(result.projected))
+        backend.eval(inf_count)
+        assert float(backend.to_scalar(inf_count)) == 0
 
     def test_mixed_magnitude(self, backend: "Backend") -> None:
         """Handle mixed magnitude values."""
         backend.random_seed(42)
         source = backend.random_normal((10, 8))
-        # Scale different columns differently
-        source_np = backend.to_numpy(source)
-        for i in range(8):
-            source_np[:, i] *= 10 ** (i - 4)  # Scale from 1e-4 to 1e3
-        source = backend.array(source_np)
+        # Scale different columns differently using backend operations
+        # Create scale factors: 10^(i-4) for i in 0..7 = [1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100, 1000]
+        scale_factors = backend.array([10 ** (i - 4) for i in range(8)])
+        # Broadcast multiply: source (10, 8) * scale_factors (8,) -> scaled (10, 8)
+        source = source * scale_factors
         target = backend.random_normal((10, 12))
         backend.eval(source, target)
 

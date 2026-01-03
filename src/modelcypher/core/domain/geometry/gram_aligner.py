@@ -1030,9 +1030,13 @@ class GramAligner:
         hsic_xx_arr = b.sum(K_x_c * K_x_c)
         hsic_yy_arr = b.sum(K_y_c * K_y_c)
         b.eval(hsic_xy_arr, hsic_xx_arr, hsic_yy_arr)
-        hsic_xy = float(b.to_scalar(hsic_xy_arr)) / ((n - 1) ** 2)
-        hsic_xx = float(b.to_scalar(hsic_xx_arr)) / ((n - 1) ** 2)
-        hsic_yy = float(b.to_scalar(hsic_yy_arr)) / ((n - 1) ** 2)
+        denom_factor = float((n - 1) ** 2)
+        hsic_xy_val = float(b.to_scalar(hsic_xy_arr))
+        hsic_xx_val = float(b.to_scalar(hsic_xx_arr))
+        hsic_yy_val = float(b.to_scalar(hsic_yy_arr))
+        hsic_xy = hsic_xy_val / denom_factor
+        hsic_xx = hsic_xx_val / denom_factor
+        hsic_yy = hsic_yy_val / denom_factor
 
         denominator = sqrt_scalar(hsic_xx * hsic_yy, b)
         # Use dtype-derived epsilon for denominator floor
