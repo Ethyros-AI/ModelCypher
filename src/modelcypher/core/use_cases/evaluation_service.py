@@ -30,6 +30,7 @@ from modelcypher.core.domain.models import EvaluationResult
 
 if TYPE_CHECKING:
     from modelcypher.ports.storage import EvaluationStore
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 
 @dataclass
@@ -46,8 +47,13 @@ class EvalRunResult:
 
 
 class EvaluationService:
-    def __init__(self, store: "EvaluationStore") -> None:
+    def __init__(
+        self,
+        store: "EvaluationStore",
+        model_loader: "ModelLoaderPort | None" = None,
+    ) -> None:
         self.store = store
+        self._model_loader = model_loader
 
     def list_evaluations(self, limit: int = 50) -> dict:
         results = self.store.list_evaluations(limit)
@@ -81,144 +87,149 @@ class EvaluationService:
         Returns:
             EvalRunResult with eval_id and metrics.
         """
+        import json
+
+        from modelcypher.core.domain._backend import get_default_backend
+
         eval_id = f"eval-{uuid.uuid4().hex[:8]}"
+        backend = get_default_backend()
 
-        # Real MLX Evaluation using mlx_lm
-        try:
-            import json
+        model_path = Path(model)
 
-            import mlx.core as mx
-            import mlx.nn as nn
-            from mlx_lm import load
-
-            from modelcypher.core.domain._backend import get_default_backend
-
-            backend = get_default_backend()
-
-            model_path = Path(model)
-
-            # Check if model exists (handle sharded models)
-            has_weights = (
-                (model_path / "model.safetensors").exists()
-                or list(model_path.glob("model-*.safetensors"))
-                or (
-                    model_path / "config.json"
-                ).exists()  # Some models might only have config if they are remote
-            )
-            if not has_weights:
-                logger.warning(f"No model weights found at {model}, using mock metrics")
-                return EvalRunResult(
-                    eval_id=eval_id,
-                    model_path=model,
-                    dataset_path=dataset,
-                    average_loss=0.0,
-                    perplexity=0.0,
-                    sample_count=0,
-                )
-
-            # Check dataset exists
-            if not Path(dataset).exists():
-                raise ValueError(f"Dataset not found: {dataset}")
-
-            # Load model
-            logger.info(f"Loading model from {model} (adapter={adapter})")
-            llm_model, tokenizer = load(model, adapter_path=adapter)
-
-            # Load and process dataset
-            samples = []
-            with open(dataset, "r") as f:
-                for line in f:
-                    if line.strip():
-                        try:
-                            data = json.loads(line)
-                            text = data.get("text", "")
-                            if text:
-                                samples.append(text)
-                        except json.JSONDecodeError:
-                            continue
-
-            if max_samples:
-                samples = samples[:max_samples]
-
-            if not samples:
-                logger.warning("No valid samples in dataset")
-                return EvalRunResult(
-                    eval_id=eval_id,
-                    model_path=model,
-                    dataset_path=dataset,
-                    average_loss=0.0,
-                    perplexity=0.0,
-                    sample_count=0,
-                )
-
-            # Compute perplexity over samples
-            total_loss = 0.0
-            total_tokens = 0
-
-            for text in samples:
-                tokens = tokenizer.encode(text)
-                if len(tokens) < 2:
-                    continue
-
-                tokens_mx = mx.array(tokens)
-                logits = llm_model(tokens_mx[None, :])
-                logits = logits[0, :-1, :]
-                targets = tokens_mx[1:]
-
-                log_probs = nn.log_softmax(logits, axis=-1)
-                target_log_probs = mx.take_along_axis(log_probs, targets[:, None], axis=-1).squeeze(
-                    -1
-                )
-                mx.eval(target_log_probs)
-
-                sample_loss = -float(mx.mean(target_log_probs).item())
-                total_loss += sample_loss * len(targets)
-                total_tokens += len(targets)
-
-            average_loss = total_loss / max(total_tokens, 1)
-            perplexity_array = backend.exp(backend.array([average_loss]))
-            backend.eval(perplexity_array)
-            perplexity = float(perplexity_array[0])
-
-            sample_count = len(samples)
-            logger.info(
-                f"Evaluation complete: {sample_count} samples, "
-                f"loss={average_loss:.4f}, perplexity={perplexity:.2f}"
-            )
-
-            result = EvalRunResult(
+        # Check if model exists (handle sharded models)
+        has_weights = (
+            (model_path / "model.safetensors").exists()
+            or list(model_path.glob("model-*.safetensors"))
+            or (
+                model_path / "config.json"
+            ).exists()  # Some models might only have config if they are remote
+        )
+        if not has_weights:
+            logger.warning(f"No model weights found at {model}, using mock metrics")
+            return EvalRunResult(
                 eval_id=eval_id,
                 model_path=model,
                 dataset_path=dataset,
+                average_loss=0.0,
+                perplexity=0.0,
+                sample_count=0,
+            )
+
+        # Check dataset exists
+        if not Path(dataset).exists():
+            raise ValueError(f"Dataset not found: {dataset}")
+
+        # Get model loader (use injected or default)
+        if self._model_loader is None:
+            from modelcypher.ports.model_loader import get_model_loader
+
+            self._model_loader = get_model_loader()
+
+        # Load model via port (hexagonal architecture)
+        logger.info(f"Loading model from {model} (adapter={adapter})")
+        # Note: adapter_path not yet supported via ModelLoaderPort
+        llm_model, tokenizer = self._model_loader.load_model_for_training(model)
+
+        # Load and process dataset
+        samples = []
+        with open(dataset, "r") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        data = json.loads(line)
+                        text = data.get("text", "")
+                        if text:
+                            samples.append(text)
+                    except json.JSONDecodeError:
+                        continue
+
+        if max_samples:
+            samples = samples[:max_samples]
+
+        if not samples:
+            logger.warning("No valid samples in dataset")
+            return EvalRunResult(
+                eval_id=eval_id,
+                model_path=model,
+                dataset_path=dataset,
+                average_loss=0.0,
+                perplexity=0.0,
+                sample_count=0,
+            )
+
+        # Compute perplexity over samples using Backend
+        total_loss = 0.0
+        total_tokens = 0
+
+        for text in samples:
+            tokens = tokenizer.encode(text)
+            if len(tokens) < 2:
+                continue
+
+            tokens_arr = backend.array(tokens)
+            # Shape: [1, seq_len] for model input
+            input_arr = backend.reshape(tokens_arr, (1, -1))
+            logits = llm_model(input_arr)
+            # logits shape: [1, seq_len, vocab_size]
+            # Get logits for all but last position
+            logits = logits[0, :-1, :]
+            targets = tokens_arr[1:]
+
+            # Log softmax for cross-entropy loss
+            log_probs = backend.log_softmax(logits, axis=-1)
+            # Gather target log probs using take_along_axis
+            targets_expanded = backend.reshape(targets, (-1, 1))
+            target_log_probs = backend.take_along_axis(log_probs, targets_expanded, axis=-1)
+            target_log_probs = backend.squeeze(target_log_probs, axis=-1)
+            backend.eval(target_log_probs)
+
+            mean_arr = backend.mean(target_log_probs)
+            backend.eval(mean_arr)
+            sample_loss = -float(backend.to_scalar(mean_arr))
+            n_targets = int(targets.shape[0])
+            total_loss += sample_loss * n_targets
+            total_tokens += n_targets
+
+        average_loss = total_loss / max(total_tokens, 1)
+        perplexity_array = backend.exp(backend.array([average_loss]))
+        backend.eval(perplexity_array)
+        perplexity = float(backend.to_scalar(perplexity_array))
+
+        sample_count = len(samples)
+        logger.info(
+            f"Evaluation complete: {sample_count} samples, "
+            f"loss={average_loss:.4f}, perplexity={perplexity:.2f}"
+        )
+
+        result = EvalRunResult(
+            eval_id=eval_id,
+            model_path=model,
+            dataset_path=dataset,
+            average_loss=average_loss,
+            perplexity=perplexity,
+            sample_count=sample_count,
+            adapter_path=adapter,
+        )
+
+        # Store result
+        self.store.save_evaluation(
+            EvaluationResult(
+                id=eval_id,
+                model_path=model,
+                model_name=Path(model).name,
+                dataset_path=dataset,
+                dataset_name=Path(dataset).name,
                 average_loss=average_loss,
                 perplexity=perplexity,
                 sample_count=sample_count,
+                timestamp=datetime.utcnow(),
+                config={"batch_size": batch_size, "metrics": metrics, "max_samples": max_samples},
+                sample_results=[],
                 adapter_path=adapter,
             )
+        )
 
-            # Store result
-            self.store.save_evaluation(
-                EvaluationResult(
-                    id=eval_id,
-                    model_path=model,
-                    model_name=Path(model).name,
-                    dataset_path=dataset,
-                    dataset_name=Path(dataset).name,
-                    average_loss=average_loss,
-                    perplexity=perplexity,
-                    sample_count=sample_count,
-                    timestamp=datetime.utcnow(),
-                    config={"batch_size": batch_size, "metrics": metrics, "max_samples": max_samples},
-                    sample_results=[],
-                    adapter_path=adapter,
-                )
-            )
-
-            return result
-
-        except ImportError:
-            logger.error("MLX not installed")
-            raise
+        return result
 
     def results(self, eval_id: str) -> dict:
         """Get detailed per-sample results for an evaluation.

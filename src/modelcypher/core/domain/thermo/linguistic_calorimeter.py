@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from modelcypher.core.domain.inference.activation_stream import ActivationFrame
     from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection
     from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
@@ -178,6 +179,7 @@ class LinguisticCalorimeter:
         tokenizer: object | None = None,
         calibration: ThermoCalibration | None = None,
         refusal_direction: "RefusalDirection | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
     ):
         """Initialize the calorimeter.
 
@@ -194,6 +196,8 @@ class LinguisticCalorimeter:
                 calibrated measurements instead of hardcoded values.
             refusal_direction: Optional precomputed refusal direction for geometry-first
                 assessment. If omitted, a cached direction will be used when available.
+            model_loader: Optional model loader for loading models. If not provided,
+                uses the default platform-appropriate loader.
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
@@ -203,6 +207,7 @@ class LinguisticCalorimeter:
         self._calibration = calibration
         self._refusal_direction = refusal_direction
         self._refusal_direction_checked = False
+        self._model_loader = model_loader
 
         # Lazy-loaded components (or pre-loaded)
         self._model = model
@@ -222,16 +227,19 @@ class LinguisticCalorimeter:
         if self.model_path is None:
             raise ValueError("model_path required for real inference")
 
-        try:
-            # Infrastructure dependency: MLX-LM for model loading
-            from mlx_lm import load
-        except ImportError as exc:
-            raise RuntimeError("mlx-lm required for real inference") from exc
+        # Get model loader (use injected or default)
+        if self._model_loader is None:
+            from modelcypher.ports.model_loader import get_model_loader
 
-        # Load model
+            self._model_loader = get_model_loader()
+
+        # Load model via port (hexagonal architecture)
         logger.info(f"Loading model from {self.model_path}")
-        adapter = str(self.adapter_path) if self.adapter_path else None
-        self._model, self._tokenizer = load(str(self.model_path), adapter_path=adapter)
+        # Note: adapter_path not yet supported via ModelLoaderPort - load without adapter
+        # TODO: Extend ModelLoaderPort to support adapter_path parameter
+        self._model, self._tokenizer = self._model_loader.load_model_for_training(
+            str(self.model_path)
+        )
 
         # Load entropy calculator
         from modelcypher.core.domain.entropy.logit_entropy_calculator import (

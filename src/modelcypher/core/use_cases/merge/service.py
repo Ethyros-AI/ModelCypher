@@ -31,7 +31,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.domains import AtlasDomain
+    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
+        DomainGeometryWaypointService,
+    )
+    from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
     from modelcypher.core.use_cases.merge.models import UnifiedMergeResult
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +121,20 @@ class MergePipelineService:
 
     def __init__(
         self,
+        waypoint_service: "DomainGeometryWaypointService",
+        geometric_merger: "UnifiedGeometricMerger",
+        model_loader: "ModelLoaderPort",
     ):
-        """Initialize the pipeline service.
+        """Initialize the pipeline service with dependencies.
+
+        Args:
+            waypoint_service: Service for domain geometry waypoint extraction.
+            geometric_merger: Merger for executing geometric merges.
+            model_loader: Port for loading models.
         """
+        self._waypoint_service = waypoint_service
+        self._geometric_merger = geometric_merger
+        self._model_loader = model_loader
 
     def run(
         self,
@@ -183,7 +200,6 @@ class MergePipelineService:
         domains: list[str],
     ) -> PreMergeAnalysis:
         """Run pre-merge interference analysis."""
-        from modelcypher.cli.composition import get_domain_geometry_waypoint_service
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.domains import (
             AtlasDomain,
@@ -197,7 +213,6 @@ class MergePipelineService:
         )
 
         backend = get_default_backend()
-        waypoint_service = get_domain_geometry_waypoint_service()
         density_estimator = RiemannianDensityEstimator()
         predictor = MergeAnalyzer()
 
@@ -212,19 +227,17 @@ class MergePipelineService:
         source_activations: dict[str, dict[str, Any]] = {}
         target_activations: dict[str, dict[str, Any]] = {}
 
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-
-        model_loader = MLXModelLoader()
-        source_model, source_tokenizer = model_loader.load_model_for_training(source_path)
-        target_model, target_tokenizer = model_loader.load_model_for_training(target_path)
+        # Use injected model_loader instead of direct adapter import
+        source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
+        target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
 
         for domain in domain_list:
             try:
                 source_acts = self._extract_domain_activations_cached(
-                    source_model, source_tokenizer, domain, -1, waypoint_service
+                    source_model, source_tokenizer, domain, -1, self._waypoint_service
                 )
                 target_acts = self._extract_domain_activations_cached(
-                    target_model, target_tokenizer, domain, -1, waypoint_service
+                    target_model, target_tokenizer, domain, -1, self._waypoint_service
                 )
                 source_activations[domain.value] = source_acts
                 target_activations[domain.value] = target_acts
@@ -367,19 +380,16 @@ class MergePipelineService:
         model_path: str,
         domain: "AtlasDomain",
         layer: int,
-        waypoint_service: "DomainGeometryWaypointService",
     ) -> dict[str, Any]:
         """Extract activations for a specific domain (loads model from disk).
 
         Note: For multiple domains, use _extract_domain_activations_cached with
         a pre-loaded model to avoid repeated disk I/O.
         """
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-
-        model_loader = MLXModelLoader()
-        model, tokenizer = model_loader.load_model_for_training(model_path)
+        # Use injected model_loader instead of direct adapter import
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
         return self._extract_domain_activations_cached(
-            model, tokenizer, domain, layer, waypoint_service
+            model, tokenizer, domain, layer, self._waypoint_service
         )
 
     def _execute_merge(
@@ -389,10 +399,8 @@ class MergePipelineService:
         output_dir: str,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
-        from modelcypher.cli.composition import get_geometric_merger
-
-        merger = get_geometric_merger()
-        return merger.merge(
+        # Use injected merger instead of importing from CLI
+        return self._geometric_merger.merge(
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,

@@ -48,6 +48,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from typing import TYPE_CHECKING
+
 from modelcypher.core.domain.agents.unified_atlas import (
     AtlasDomain,
     AtlasProbe,
@@ -70,6 +72,10 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     IntersectionMap,
     LayerConfidence,
 )
+
+if TYPE_CHECKING:
+    from modelcypher.ports.model_loader import ModelLoaderPort
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -116,14 +122,37 @@ class InvariantLayerMappingService:
     to avoid expensive MLX inference on repeated calls.
     """
 
-    def __init__(self, cache: ModelFingerprintCache | None = None):
+    def __init__(
+        self,
+        cache: ModelFingerprintCache | None = None,
+        model_loader: "ModelLoaderPort | None" = None,
+        backend: "Backend | None" = None,
+    ):
         """Initialize the service.
 
         Args:
             cache: Optional fingerprint cache (uses shared singleton if None)
+            model_loader: Optional model loader (uses default if None)
+            backend: Optional backend for tensor ops (uses default if None)
         """
         register_default_atlas_inventories()
         self._cache = cache or ModelFingerprintCache.shared()
+        self._model_loader = model_loader
+        self._backend = backend
+
+    def _ensure_dependencies(self) -> tuple["ModelLoaderPort", "Backend"]:
+        """Ensure model loader and backend are available."""
+        if self._model_loader is None:
+            from modelcypher.ports.model_loader import get_model_loader
+
+            self._model_loader = get_model_loader()
+
+        if self._backend is None:
+            from modelcypher.core.domain._backend import get_default_backend
+
+            self._backend = get_default_backend()
+
+        return self._model_loader, self._backend
 
     def map_layers(
         self,
@@ -283,20 +312,33 @@ class InvariantLayerMappingService:
     ) -> list[ActivationFingerprint]:
         """Extract activation fingerprints by running probes through model.
 
-        Uses MLX to load the model and capture hidden states at each layer.
+        Uses ActivationProvider and Backend for platform-agnostic activation collection.
         """
+        from modelcypher.core.domain.geometry.numerical_stability import (
+            ceil_scalar,
+            division_epsilon,
+            log2_scalar,
+        )
+        from modelcypher.ports.activation_provider import get_activation_provider
+
+        model_loader, backend = self._ensure_dependencies()
+
+        # Load model via ModelLoaderPort (hexagonal architecture)
         try:
-            import mlx.core as mx
-            from mlx_lm import load
-        except ImportError as e:
-            logger.error("MLX not available: %s", e)
+            model, tokenizer = model_loader.load_model_for_training(model_path)
+        except Exception as e:
+            logger.error("Failed to load model: %s", e)
             return []
 
-        # Load model
-        model, tokenizer = load(model_path)
-        inner_model = model.model
-        layers = inner_model.layers
-        actual_layer_count = len(layers)
+        # Get activation provider for this platform
+        activation_provider = get_activation_provider()
+
+        # Get actual layer count from model if available
+        inner_model = getattr(model, "model", None)
+        if inner_model is not None and hasattr(inner_model, "layers"):
+            actual_layer_count = len(inner_model.layers)
+        else:
+            actual_layer_count = layer_count
 
         logger.info("Model loaded: %d layers", actual_layer_count)
 
@@ -308,66 +350,44 @@ class InvariantLayerMappingService:
                 progress_callback(idx + 1, total_probes)
 
             try:
-                # Tokenize probe text
-                tokens = tokenizer.encode(probe_text)
-                if not tokens:
+                # Use ActivationProvider to collect hidden activations per layer
+                hidden_acts = activation_provider.collect_hidden_activations(
+                    model, tokenizer, probe_text
+                )
+
+                if not hidden_acts:
                     continue
 
-                input_ids = mx.array([tokens])
-
-                # Forward through model capturing hidden states
+                # Convert activations to fingerprint format
                 layer_activations: dict[int, list[ActivatedDimension]] = {}
 
-                # Get initial embeddings
-                h = inner_model.embed_tokens(input_ids)
+                for layer_idx, hidden_arr in hidden_acts.items():
+                    # hidden_arr is shape [hidden_dim] - mean-pooled over sequence
+                    abs_vals = backend.abs(hidden_arr)
+                    backend.eval(abs_vals)
 
-                # Forward through each layer
-                for layer_idx, layer in enumerate(layers):
-                    h_out = layer(h, mask=None, cache=None)
-                    if isinstance(h_out, tuple):
-                        h = h_out[0]
-                    else:
-                        h = h_out
-
-                    # Compute activation metrics for this layer
-                    # Use L2 norm of the hidden state as activation strength
-                    # Take the last token position (most relevant for probe)
-                    last_hidden = h[0, -1, :]  # Shape: (hidden_dim,)
-                    mx.eval(last_hidden)
-
-                    # Get top-k activated dimensions
-                    abs_vals = mx.abs(last_hidden)
-                    mx.eval(abs_vals)
                     # Derive top-k from dimensionality (no fixed cap)
-                    b = self._backend
                     dim = int(abs_vals.shape[0])
-                    from modelcypher.core.domain.geometry.numerical_stability import (
-                        ceil_scalar,
-                        log2_scalar,
-                    )
-
-                    log2_dim = log2_scalar(float(dim + 1), b)
-                    top_k = max(1, int(ceil_scalar(log2_dim, b)))
+                    log2_dim = log2_scalar(float(dim + 1), backend)
+                    top_k = max(1, int(ceil_scalar(log2_dim, backend)))
                     if top_k > dim:
                         top_k = dim
+
+                    # Get top-k indices (sort descending by taking negative)
                     neg_abs = -abs_vals
-                    top_idx = b.argsort(neg_abs)[:top_k]
-                    top_vals = b.take(abs_vals, top_idx, axis=0)
-                    b.eval(top_idx, top_vals)
-                    top_idx_list = [int(x) for x in b.tolist(top_idx)]
-                    top_val_list = [float(x) for x in b.tolist(top_vals)]
+                    top_idx = backend.argsort(neg_abs)[:top_k]
+                    top_vals = backend.take(abs_vals, top_idx, axis=0)
+                    backend.eval(top_idx, top_vals)
+
+                    top_idx_list = [int(x) for x in backend.tolist(top_idx)]
+                    top_val_list = [float(x) for x in backend.tolist(top_vals)]
                     top_dims = list(zip(top_idx_list, top_val_list))
 
-                    # Derive activation threshold from dtype and data range
-                    # Use division_epsilon which accounts for machine precision
-                    from modelcypher.core.domain.geometry.numerical_stability import (
-                        division_epsilon,
-                    )
-
-                    eps = division_epsilon(b, abs_vals)
-                    max_val_arr = b.max(abs_vals)
-                    b.eval(max_val_arr)
-                    max_val = float(b.to_scalar(max_val_arr)) if top_k > 0 else 1.0
+                    # Derive activation threshold from data
+                    eps = division_epsilon(backend, abs_vals)
+                    max_val_arr = backend.max(abs_vals)
+                    backend.eval(max_val_arr)
+                    max_val = float(backend.to_scalar(max_val_arr)) if top_k > 0 else 1.0
                     activation_threshold = eps * max_val
 
                     # Create ActivatedDimension objects

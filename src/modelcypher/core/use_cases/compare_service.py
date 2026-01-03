@@ -30,6 +30,8 @@ from modelcypher.core.domain.models import CompareCheckpointResult, CompareSessi
 
 if TYPE_CHECKING:
     from modelcypher.ports.storage import CompareStore, JobStore
+    from modelcypher.ports.model_loader import ModelLoaderPort
+    from modelcypher.ports.inference import InferenceEngine
 
 
 @dataclass
@@ -68,9 +70,17 @@ class CompareScoreResult:
 
 
 class CompareService:
-    def __init__(self, store: "CompareStore", job_store: "JobStore") -> None:
+    def __init__(
+        self,
+        store: "CompareStore",
+        job_store: "JobStore",
+        inference_engine: "InferenceEngine | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
+    ) -> None:
         self.store = store
         self._job_store = job_store
+        self._inference_engine = inference_engine
+        self._model_loader = model_loader
 
     def list_sessions(self, limit: int = 50, status: str | None = None) -> dict:
         sessions = self.store.list_sessions(limit, status)
@@ -81,6 +91,17 @@ class CompareService:
         if session is None:
             raise RuntimeError(f"Session not found: {session_id}")
         return session
+
+    def _ensure_inference_engine(self) -> "InferenceEngine":
+        """Get or create inference engine."""
+        if self._inference_engine is not None:
+            return self._inference_engine
+
+        # Lazy import to avoid circular dependencies
+        from modelcypher.adapters.mlx_inference import MLXInferenceEngine
+
+        self._inference_engine = MLXInferenceEngine()
+        return self._inference_engine
 
     def run(
         self,
@@ -100,47 +121,26 @@ class CompareService:
         Returns:
             CompareRunResult with comparison_id.
         """
-        comparison_id = f"cmp-{uuid.uuid4().hex[:8]}"
-
         import time
 
-        from mlx_lm import generate, load
+        comparison_id = f"cmp-{uuid.uuid4().hex[:8]}"
+        inference_engine = self._ensure_inference_engine()
 
         results = []
         for ckpt in checkpoints:
             try:
-                # Determine if it's an adapter or full model
                 ckpt_path = Path(ckpt)
-                is_adapter = (ckpt_path / "adapter_config.json").exists() or (
-                    ckpt_path / "adapter_model.bin"
-                ).exists()
-
-                # We need a base model ID if it's an adapter.
-                # For now, we assume if it's an adapter, the base model is either in the config or we use a default.
-                # In ModelCypher, models are usually registered.
-
-                # Full implementation would resolve base model. For now, try loading.
-                if is_adapter:
-                    # This is tricky without knowing the base model.
-                    # mlx_lm.load usually needs (model_path, adapter_path)
-                    # For simplicity, if ckpt is a directory, we check if it has weights.
-                    logger.info(f"Loading adapter from {ckpt}")
-                    # Mocking base model for now as we don't have a reliable way to find it from just a path here
-                    # unless the user provided it.
-                    # For now, we assume ckpt is a loadable path for mlx_lm.load
-                    model, tokenizer = load(ckpt)
-                else:
-                    model, tokenizer = load(ckpt)
 
                 start_time = time.time()
-                response = generate(
-                    model,
-                    tokenizer,
+                # Use InferenceEngine port for generation (hexagonal architecture)
+                result = inference_engine.infer(
+                    model=ckpt,
                     prompt=prompt,
                     max_tokens=max_tokens,
-                    verbose=False,
                 )
                 duration = time.time() - start_time
+
+                response = result.get("response", "")
 
                 results.append(
                     CompareCheckpointResult(
@@ -239,18 +239,22 @@ class CompareService:
         """
         import time
 
-        from mlx_lm import generate, load
+        inference_engine = self._ensure_inference_engine()
 
         try:
-            llm_model, tokenizer = load(model)
-
-            # Warm up and measure throughput
+            # Warm up and measure throughput using InferenceEngine port
             start_time = time.time()
             prompt = "The quick brown fox jumps over the lazy dog"
-            response = generate(llm_model, tokenizer, prompt=prompt, max_tokens=50)
+            result = inference_engine.infer(
+                model=model,
+                prompt=prompt,
+                max_tokens=50,
+            )
             duration = time.time() - start_time
 
-            tokens = len(tokenizer.encode(response))
+            response = result.get("response", "")
+            # Estimate token count from word count (rough approximation)
+            tokens = len(response.split())
             tps = tokens / duration if duration > 0 else 0
 
             return BaselineResult(

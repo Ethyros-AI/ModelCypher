@@ -22,14 +22,12 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.vocabulary.embedding_projector import (
     EmbeddingProjector,
-    ProjectionConfig,
     ProjectionResult,
     ProjectionStrategy,
 )
 from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
     AlignmentMethod,
     CrossVocabMerger,
-    CrossVocabMergeConfig,
 )
 
 if TYPE_CHECKING:
@@ -89,8 +87,9 @@ class TestTruncateStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.TRUNCATE, backend=backend
+        )
 
         result = projector.project(source, target)
 
@@ -104,8 +103,9 @@ class TestTruncateStrategy:
         target = backend.random_normal((100, 64))  # Smaller
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.TRUNCATE, backend=backend
+        )
 
         result = projector.project(source, target)
 
@@ -119,8 +119,9 @@ class TestTruncateStrategy:
         target = backend.random_normal((100, 64))  # Larger
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.TRUNCATE, backend=backend
+        )
 
         result = projector.project(source, target)
 
@@ -139,8 +140,7 @@ class TestPCAStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.PCA, backend=backend)
 
         result = projector.project(source, target)
 
@@ -154,8 +154,7 @@ class TestPCAStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.PCA, backend=backend)
 
         result = projector.project(source, target)
 
@@ -174,8 +173,9 @@ class TestProcrustesStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.PROCRUSTES, backend=backend
+        )
 
         result = projector.project(source, target)
 
@@ -192,8 +192,9 @@ class TestProcrustesStrategy:
 
         shared_indices = (list(range(50)), list(range(50)))
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.PROCRUSTES, backend=backend
+        )
 
         result = projector.project(source, target, shared_token_indices=shared_indices)
 
@@ -206,8 +207,9 @@ class TestProcrustesStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.PROCRUSTES, backend=backend
+        )
 
         result = projector.project(source, target)
 
@@ -224,8 +226,7 @@ class TestCCAStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.CCA)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.CCA, backend=backend)
 
         result = projector.project(source, target)
 
@@ -241,8 +242,7 @@ class TestCCAStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.CCA)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.CCA, backend=backend)
 
         result = projector.project(source, target)
 
@@ -259,10 +259,9 @@ class TestOptimalTransportStrategy:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(
-            strategy=ProjectionStrategy.OPTIMAL_TRANSPORT,
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.OPTIMAL_TRANSPORT, backend=backend
         )
-        projector = EmbeddingProjector(config=config, backend=backend)
 
         result = projector.project(source, target)
 
@@ -281,8 +280,9 @@ class TestAlignmentQualityComputation:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
-        projector = EmbeddingProjector(config=config, backend=backend)
+        projector = EmbeddingProjector(
+            strategy=ProjectionStrategy.PROCRUSTES, backend=backend
+        )
 
         result = projector.project(source, target)
 
@@ -319,27 +319,6 @@ class TestAlignmentQualityComputation:
 # CrossVocabMerger Tests
 # =============================================================================
 
-
-class TestCrossVocabMergeConfig:
-    """Tests for CrossVocabMergeConfig."""
-
-    def test_default_config(self) -> None:
-        """Default config should have sensible defaults."""
-        config = CrossVocabMergeConfig()
-
-        assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
-
-    def test_to_projection_config(self) -> None:
-        """Should convert to ProjectionConfig correctly."""
-        config = CrossVocabMergeConfig(
-            projection_strategy=ProjectionStrategy.CCA,
-        )
-
-        proj_config = config.to_projection_config()
-
-        assert proj_config.strategy == ProjectionStrategy.CCA
-
-
 class TestCrossVocabMerger:
     """Tests for CrossVocabMerger."""
 
@@ -350,8 +329,9 @@ class TestCrossVocabMerger:
         target = backend.random_normal((1000, 64))
         backend.eval(source, target)
 
-        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.TRUNCATE)
-        merger = CrossVocabMerger(config=config, backend=backend)
+        merger = CrossVocabMerger(
+            projection_strategy=ProjectionStrategy.TRUNCATE, backend=backend
+        )
 
         result = merger.merge(source, target)
 
@@ -366,8 +346,9 @@ class TestCrossVocabMerger:
         target = backend.random_normal((1000, 64))
         backend.eval(source, target)
 
-        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PROCRUSTES)
-        merger = CrossVocabMerger(config=config, backend=backend)
+        merger = CrossVocabMerger(
+            projection_strategy=ProjectionStrategy.PROCRUSTES, backend=backend
+        )
 
         result = merger.merge(source, target)
 
@@ -382,8 +363,9 @@ class TestCrossVocabMerger:
         target = backend.random_normal((1000, 64))
         backend.eval(source, target)
 
-        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.TRUNCATE)
-        merger = CrossVocabMerger(config=config, backend=backend)
+        merger = CrossVocabMerger(
+            projection_strategy=ProjectionStrategy.TRUNCATE, backend=backend
+        )
 
         result = merger.merge(source, target)
 
@@ -402,10 +384,9 @@ class TestCrossVocabMerger:
         source_vocab = {f"token_{i}": i for i in range(100)}
         target_vocab = {f"token_{i}": i for i in range(100)}
 
-        config = CrossVocabMergeConfig(
-            projection_strategy=ProjectionStrategy.TRUNCATE,
+        merger = CrossVocabMerger(
+            projection_strategy=ProjectionStrategy.TRUNCATE, backend=backend
         )
-        merger = CrossVocabMerger(config=config, backend=backend)
 
         result = merger.merge(source, target, source_vocab, target_vocab)
 
@@ -420,8 +401,9 @@ class TestCrossVocabMerger:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.TRUNCATE)
-        merger = CrossVocabMerger(config=config, backend=backend)
+        merger = CrossVocabMerger(
+            projection_strategy=ProjectionStrategy.TRUNCATE, backend=backend
+        )
 
         result = merger.merge(source, target)
         d = result.to_dict()
@@ -439,8 +421,9 @@ class TestCrossVocabMerger:
         target = backend.random_normal((100, 64))
         backend.eval(source, target)
 
-        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PROCRUSTES)
-        merger = CrossVocabMerger(config=config, backend=backend)
+        merger = CrossVocabMerger(
+            projection_strategy=ProjectionStrategy.PROCRUSTES, backend=backend
+        )
 
         result = merger.merge(source, target)
         quality = merger.analyze_merge_quality(result)

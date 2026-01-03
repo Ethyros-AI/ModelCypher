@@ -94,3 +94,63 @@ class ModelLoaderPort(Protocol):
             FileNotFoundError: If no safetensors files found
         """
         ...
+
+
+def get_model_loader() -> ModelLoaderPort:
+    """Get the appropriate model loader for the current platform.
+
+    Auto-selects:
+    - MLXModelLoader on macOS (Metal GPU)
+    - CUDAModelLoader on Linux with CUDA
+    - JAXModelLoader on Linux/TPU without CUDA
+
+    Returns:
+        A ModelLoaderPort instance for the current platform.
+
+    Raises:
+        RuntimeError: If no suitable backend is available.
+    """
+    import sys
+
+    # macOS: Use MLX (Metal GPU)
+    if sys.platform == "darwin":
+        try:
+            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+
+            return MLXModelLoader()
+        except ImportError as e:
+            raise RuntimeError(
+                "MLX not available on macOS. Install with: pip install mlx mlx-lm"
+            ) from e
+
+    # Linux/other: Try CUDA first, then JAX
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            from modelcypher.adapters.cuda_model_loader import CUDAModelLoader
+
+            return CUDAModelLoader()
+    except ImportError:
+        pass
+
+    # Try JAX (works on CPU, TPU, and GPU)
+    try:
+        from modelcypher.adapters.jax_model_loader import JAXModelLoader
+
+        loader = JAXModelLoader()
+        if loader.available:
+            return loader
+    except ImportError:
+        pass
+
+    # No suitable backend found
+    raise RuntimeError(
+        "No model loader available. Install one of:\n"
+        "  - macOS: pip install mlx mlx-lm\n"
+        "  - CUDA: pip install torch transformers\n"
+        "  - JAX/TPU: pip install jax jaxlib transformers"
+    )
+
+
+__all__ = ["ModelLoaderPort", "get_model_loader"]

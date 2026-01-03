@@ -226,32 +226,31 @@ class EntropyCalibrationService:
         z = loaded.z_score(measured_entropy)
     """
 
-    def __init__(self) -> None:
-        """Initialize entropy calibration service."""
-        self._mx = None
-        self._mlx_load = None
+    def __init__(self, model_loader: Any = None) -> None:
+        """Initialize entropy calibration service.
+
+        Args:
+            model_loader: Optional model loader (uses default if None).
+        """
+        self._model_loader = model_loader
         self._backend = None
 
-    def _ensure_mlx(self) -> None:
-        """Ensure MLX is available for inference."""
-        if self._mx is not None:
+    def _ensure_backend(self) -> None:
+        """Ensure backend is initialized."""
+        if self._backend is not None:
             return
-
-        try:
-            import mlx.core as mx
-        except ImportError as exc:
-            raise RuntimeError("MLX is required for entropy calibration") from exc
-
-        try:
-            from mlx_lm import load
-        except ImportError as exc:
-            raise RuntimeError("mlx-lm is required for entropy calibration") from exc
 
         from modelcypher.core.domain._backend import get_default_backend
 
-        self._mx = mx
-        self._mlx_load = load
         self._backend = get_default_backend()
+
+    def _ensure_model_loader(self) -> Any:
+        """Ensure model loader is available."""
+        if self._model_loader is None:
+            from modelcypher.ports.model_loader import get_model_loader
+
+            self._model_loader = get_model_loader()
+        return self._model_loader
 
     def calibrate(
         self,
@@ -273,9 +272,10 @@ class EntropyCalibrationService:
 
         Raises:
             ValueError: If model path is invalid.
-            RuntimeError: If MLX is not available.
+            RuntimeError: If model loader is not available.
         """
-        self._ensure_mlx()
+        self._ensure_backend()
+        model_loader = self._ensure_model_loader()
 
         model_dir = Path(model_path).expanduser().resolve()
         if not model_dir.exists():
@@ -287,8 +287,8 @@ class EntropyCalibrationService:
 
         logger.info("Starting entropy calibration for %s with %d prompts", model_dir, len(prompts))
 
-        # Load model
-        model, tokenizer = self._mlx_load(str(model_dir))
+        # Load model via ModelLoaderPort (hexagonal architecture)
+        model, tokenizer = model_loader.load_model_for_training(str(model_dir))
         max_tokens_per_prompt, temperature = self._derive_generation_params(
             model_dir=model_dir,
             tokenizer=tokenizer,
@@ -459,7 +459,7 @@ class EntropyCalibrationService:
         """Measure entropy values for a single prompt.
 
         Args:
-            model: Loaded MLX model.
+            model: Loaded model (via ModelLoaderPort).
             tokenizer: Model tokenizer.
             prompt: Input prompt.
             max_tokens: Maximum tokens to generate.
@@ -468,11 +468,11 @@ class EntropyCalibrationService:
         Returns:
             List of entropy values, one per generated token.
         """
-        mx = self._mx
+        backend = self._backend
 
         # Tokenize prompt
         input_ids = tokenizer.encode(prompt)
-        tokens = mx.array([input_ids])  # Shape: [1, seq_len]
+        tokens = backend.array([input_ids])  # Shape: [1, seq_len]
 
         # Get initial logits and cache
         # MLX models return (logits, cache) tuple
@@ -494,26 +494,27 @@ class EntropyCalibrationService:
             # logits shape is typically [batch, seq_len, vocab_size]
             if logits.ndim == 3:
                 curr_logits = logits[:, -1, :]  # [1, vocab_size]
-                flat_logits = curr_logits.reshape(-1)  # [vocab_size]
+                flat_logits = backend.reshape(curr_logits, (-1,))  # [vocab_size]
             elif logits.ndim == 2:
                 flat_logits = logits[-1, :]  # Last position
             else:
-                flat_logits = logits.reshape(-1)
+                flat_logits = backend.reshape(logits, (-1,))
 
-            # Compute entropy
+            # Compute entropy using Backend
             entropy = self._compute_entropy(flat_logits)
             entropy_values.append(entropy)
 
-            # Sample next token
+            # Sample next token using Backend
             if temperature == 0:
-                next_token = mx.argmax(flat_logits)
+                next_token = backend.argmax(flat_logits)
             else:
                 scaled = flat_logits / temperature
-                probs = mx.softmax(scaled)
-                next_token = mx.random.categorical(probs)
+                probs = backend.softmax(scaled, axis=-1)
+                # Use random categorical sampling via Backend
+                next_token = backend.random_categorical(probs)
 
-            mx.eval(next_token)
-            next_token_id = int(next_token.item())
+            backend.eval(next_token)
+            next_token_id = int(backend.to_scalar(next_token))
 
             # Check for EOS
             eos_id = getattr(tokenizer, "eos_token_id", None)
@@ -521,7 +522,7 @@ class EntropyCalibrationService:
                 break
 
             # Generate next logits
-            next_input = mx.array([[next_token_id]])
+            next_input = backend.array([[next_token_id]])
             result = model(next_input, cache=cache)
 
             if isinstance(result, tuple) and len(result) == 2:
@@ -540,22 +541,22 @@ class EntropyCalibrationService:
         Returns:
             Shannon entropy value.
         """
-        mx = self._mx
+        backend = self._backend
 
         # Stable softmax
-        max_logit = mx.max(logits)
+        max_logit = backend.max(logits)
         shifted = logits - max_logit
-        exp_logits = mx.exp(shifted)
-        sum_exp = mx.sum(exp_logits)
+        exp_logits = backend.exp(shifted)
+        sum_exp = backend.sum(exp_logits)
         probs = exp_logits / sum_exp
 
         # Shannon entropy: -sum(p * log(p))
         # Add smallest positive float to avoid log(0)
-        log_probs = mx.log(probs + _LOG_SAFE_MIN)
-        entropy = -mx.sum(probs * log_probs)
+        log_probs = backend.log(probs + _LOG_SAFE_MIN)
+        entropy = -backend.sum(probs * log_probs)
 
-        mx.eval(entropy)
-        return float(entropy.item())
+        backend.eval(entropy)
+        return float(backend.to_scalar(entropy))
 
     def save_calibration(
         self,

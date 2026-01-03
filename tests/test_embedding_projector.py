@@ -23,7 +23,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.vocabulary.embedding_projector import (
     EmbeddingProjector,
-    ProjectionConfig,
     ProjectionResult,
     ProjectionStrategy,
 )
@@ -59,18 +58,6 @@ class TestProjectionStrategy:
         # str(Enum) should work
         assert str(ProjectionStrategy.TRUNCATE) == "ProjectionStrategy.TRUNCATE"
         assert ProjectionStrategy.TRUNCATE == "truncate"
-
-
-class TestProjectionConfig:
-    """Tests for ProjectionConfig dataclass."""
-
-    def test_defaults(self):
-        config = ProjectionConfig()
-        assert config.strategy == ProjectionStrategy.PROCRUSTES
-
-    def test_custom_strategy(self):
-        config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
-        assert config.strategy == ProjectionStrategy.PCA
 
 
 class TestProjectionResult:
@@ -153,13 +140,12 @@ class TestEmbeddingProjectorInit:
 
     def test_default_init(self):
         projector = EmbeddingProjector()
-        assert projector.config.strategy == ProjectionStrategy.PROCRUSTES
+        assert projector.strategy == ProjectionStrategy.PROCRUSTES
         assert projector._backend is not None
 
     def test_custom_config(self):
-        config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
-        projector = EmbeddingProjector(config=config)
-        assert projector.config.strategy == ProjectionStrategy.PCA
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.PCA)
+        assert projector.strategy == ProjectionStrategy.PCA
 
     def test_custom_backend(self):
         backend = get_default_backend()
@@ -172,8 +158,7 @@ class TestEmbeddingProjectorTruncate:
 
     @pytest.fixture
     def projector(self):
-        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
-        return EmbeddingProjector(config=config)
+        return EmbeddingProjector(strategy=ProjectionStrategy.TRUNCATE)
 
     @pytest.fixture
     def backend(self):
@@ -219,8 +204,7 @@ class TestEmbeddingProjectorPCA:
 
     @pytest.fixture
     def projector(self):
-        config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
-        return EmbeddingProjector(config=config)
+        return EmbeddingProjector(strategy=ProjectionStrategy.PCA)
 
     @pytest.fixture
     def backend(self):
@@ -239,8 +223,7 @@ class TestEmbeddingProjectorPCA:
         assert result.alignment_score <= 1.0 + eps
 
     def test_pca_with_dimension_reduction(self, backend):
-        config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
-        projector = EmbeddingProjector(config=config)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.PCA)
 
         backend.random_seed(42)
         source = backend.random_normal((100, 64))
@@ -264,8 +247,7 @@ class TestEmbeddingProjectorProcrustes:
 
     @pytest.fixture
     def projector(self):
-        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
-        return EmbeddingProjector(config=config)
+        return EmbeddingProjector(strategy=ProjectionStrategy.PROCRUSTES)
 
     @pytest.fixture
     def backend(self):
@@ -302,7 +284,7 @@ class TestEmbeddingProjectorProcrustes:
         assert result.projected_embeddings.shape == (100, 128)
 
     def test_procrustes_identity_alignment(self, backend):
-        projector = EmbeddingProjector(config=ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES))
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.PROCRUSTES)
 
         backend.random_seed(42)
         source = backend.random_normal((100, 64))
@@ -318,8 +300,7 @@ class TestEmbeddingProjectorCCA:
 
     @pytest.fixture
     def projector(self):
-        config = ProjectionConfig(strategy=ProjectionStrategy.CCA)
-        return EmbeddingProjector(config=config)
+        return EmbeddingProjector(strategy=ProjectionStrategy.CCA)
 
     @pytest.fixture
     def backend(self):
@@ -358,8 +339,7 @@ class TestEmbeddingProjectorOptimalTransport:
 
     @pytest.fixture
     def projector(self):
-        config = ProjectionConfig(strategy=ProjectionStrategy.OPTIMAL_TRANSPORT)
-        return EmbeddingProjector(config=config)
+        return EmbeddingProjector(strategy=ProjectionStrategy.OPTIMAL_TRANSPORT)
 
     @pytest.fixture
     def backend(self):
@@ -444,7 +424,7 @@ class TestProjectionStrategyDispatch:
 
     def test_unknown_strategy_raises(self, backend):
         projector = EmbeddingProjector(
-            config=ProjectionConfig(strategy="invalid")  # type: ignore[arg-type]
+            strategy="invalid"  # type: ignore[arg-type]
         )
 
         source = backend.random_normal((100, 64))
@@ -459,8 +439,7 @@ class TestProjectionStrategyDispatch:
         target = backend.random_normal((50, 32))
 
         for strategy in ProjectionStrategy:
-            config = ProjectionConfig(strategy=strategy)
-            projector = EmbeddingProjector(config=config)
+            projector = EmbeddingProjector(strategy=strategy)
             result = projector.project(source, target)
 
             assert result.strategy_used == strategy
@@ -475,8 +454,7 @@ class TestProjectionEdgeCases:
         return get_default_backend()
 
     def test_small_vocab_size(self, backend):
-        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
-        projector = EmbeddingProjector(config=config)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.PROCRUSTES)
 
         backend.random_seed(42)
         source = backend.random_normal((10, 64))  # Very small vocab
@@ -488,8 +466,7 @@ class TestProjectionEdgeCases:
         assert result.metadata["n_anchors"] == 10
 
     def test_large_dimension_mismatch(self, backend):
-        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
-        projector = EmbeddingProjector(config=config)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.TRUNCATE)
 
         backend.random_seed(42)
         source = backend.random_normal((50, 768))
@@ -499,8 +476,7 @@ class TestProjectionEdgeCases:
         assert result.projected_embeddings.shape == (50, 4096)
 
     def test_different_vocab_sizes(self, backend):
-        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
-        projector = EmbeddingProjector(config=config)
+        projector = EmbeddingProjector(strategy=ProjectionStrategy.PROCRUSTES)
 
         backend.random_seed(42)
         source = backend.random_normal((100, 64))  # 100 tokens
