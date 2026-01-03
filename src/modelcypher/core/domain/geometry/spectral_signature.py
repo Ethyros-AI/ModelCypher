@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    infinity_threshold,
     regularization_epsilon,
     tiny_value,
 )
@@ -124,7 +125,10 @@ class SpectralSignature:
             points_arr, config.k_neighbors
         )
         backend.eval(adjacency, euclidean_dist, neighbor_indices)
-        edge_mask = adjacency < inf_value * 0.9
+
+        # Use dtype-derived threshold (not arbitrary 0.9)
+        inf_thresh = infinity_threshold(backend, adjacency)
+        edge_mask = adjacency < inf_thresh
         edge_count_total_arr = backend.sum(backend.astype(edge_mask, "int32"))
         backend.eval(edge_count_total_arr)
         edge_count_total = int(backend.to_scalar(edge_count_total_arr))
@@ -145,7 +149,7 @@ class SpectralSignature:
         if edge_count > 0:
             sigma_sq = kernel_bandwidth * kernel_bandwidth * 2.0
             edge_mask = backend.where(
-                adjacency < inf_value * 0.9,
+                adjacency < inf_thresh,
                 backend.ones_like(adjacency),
                 backend.zeros_like(adjacency),
             )
@@ -224,10 +228,11 @@ class SpectralSignature:
             k_neighbors = geo_result.k_neighbors
         k_neighbors = max(1, min(k_neighbors, n - 1))
 
-        inf_val = float(backend.finfo().max) * 0.25
         euclidean_dist = self._euclidean_distance_matrix(points)
         backend.eval(euclidean_dist)
 
+        # Use dtype-derived infinity value (not arbitrary fraction)
+        inf_val = float(backend.finfo(euclidean_dist.dtype).max)
         self_mask = backend.eye(n) > 0.0
         dist_no_self = backend.where(self_mask, inf_val, euclidean_dist)
         neighbor_order = backend.argsort(dist_no_self, axis=1)

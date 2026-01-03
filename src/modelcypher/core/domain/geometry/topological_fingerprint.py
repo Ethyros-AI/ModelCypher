@@ -71,6 +71,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
+    infinity_threshold,
     is_finite,
     log_scalar,
     machine_epsilon,
@@ -954,9 +955,12 @@ class BackendTopologicalFingerprint:
         sorted_dist = b.take(masked_dist, sorted_idx, axis=0)
         b.eval(sorted_idx, sorted_dist)
 
+        # Use dtype-derived threshold (not arbitrary 0.9)
+        inf_thresh = infinity_threshold(b, sorted_dist)
+
         # Only pull the edge prefix we actually need (<= max_filtration and finite).
         max_mask = sorted_dist <= max_filtration
-        finite_mask = sorted_dist < inf_val * 0.9
+        finite_mask = sorted_dist < inf_thresh
         valid_mask = b.astype(max_mask, "int32") * b.astype(finite_mask, "int32")
         edge_count_arr = b.sum(valid_mask)
         b.eval(edge_count_arr)
@@ -1011,7 +1015,7 @@ class BackendTopologicalFingerprint:
 
         for flat_idx, dist_val in zip(sorted_idx_list, masked_dist_list):
             dist = float(dist_val)
-            if dist > max_filtration or dist >= inf_val * 0.9:
+            if dist > max_filtration or dist >= inf_thresh:
                 break
             flat_idx_int = int(flat_idx)
             i = flat_idx_int // n
@@ -1035,7 +1039,6 @@ class BackendTopologicalFingerprint:
 
             possible_cycles: list[PersistencePoint] = []
             index = b.arange(n)
-            inf_val = float(b.finfo().max)
             base_mask = b.ones((n,))
             zero_vec = b.full((n,), 0.0)
             inf_vec = b.full((n,), inf_val)
@@ -1043,7 +1046,7 @@ class BackendTopologicalFingerprint:
 
             for flat_idx, dist_val in zip(sorted_idx_list, masked_dist_list):
                 dist = float(dist_val)
-                if dist > max_filtration or dist >= inf_val * 0.9:
+                if dist > max_filtration or dist >= inf_thresh:
                     break
                 flat_idx_int = int(flat_idx)
                 i = flat_idx_int // n

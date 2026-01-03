@@ -66,6 +66,7 @@ from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    svd_rank_threshold,
 )
 
 if TYPE_CHECKING:
