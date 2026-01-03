@@ -49,20 +49,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.embedding import EmbeddingProvider
 
 
-@dataclass
-class BaseAtlasConfiguration:
-    """Base configuration shared by all concept atlases.
-
-    Subclasses can extend this with domain-specific options (e.g., include_dyads
-    for EmotionAtlas, use_probe_subset for ComputationalGateAtlas).
-
-    Attributes:
-        enabled: Whether the atlas is active. When False, signature() returns None.
-    """
-
-    enabled: bool = True
-
-
 @runtime_checkable
 class AtlasConcept(Protocol):
     """Protocol for concept entries in an atlas inventory.

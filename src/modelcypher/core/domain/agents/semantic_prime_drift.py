@@ -46,13 +46,6 @@ class SemanticPrimeDriftAssessment:
     note: str | None = None
 
 
-@dataclass(frozen=True)
-class SemanticPrimeDriftConfig:
-    enabled: bool = True
-    minimum_cosine_similarity: float = 0.65
-    fail_closed: bool = False
-
-
 class SemanticPrimeDriftDetector:
     def __init__(
         self,

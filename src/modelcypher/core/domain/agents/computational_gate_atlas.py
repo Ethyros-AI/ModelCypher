@@ -648,47 +648,26 @@ class ComputationalGateSignature(LabeledSignatureMixin):
     values: list[float]
 
 
-@dataclass
-class GateAtlasConfiguration:
-    enabled: bool = True
-    use_probe_subset: bool = True
-    # Volume-based representation (CABE-4: Riemannian density)
-    use_volume_representation: bool = False
-    # Include examples in volume estimation (more accurate but slower)
-    include_examples_in_volume: bool = True
-
-
 class ComputationalGateAtlas:
     """Embedding-based computational gates analyzer.
 
-    Supports two representation modes: centroid-based (default) where each gate
-    is a single embedding vector, and volume-based (CABE-4) where each gate is
-    a ConceptVolume with centroid + covariance.
-
-    Notes
-    -----
-    Volume-based representation enables more robust similarity via Mahalanobis
-    distance, interference prediction between gates, and variance-aware
-    handling of concept spread.
+    Returns ALL gates sorted by similarity - geometry determines significance.
+    Volume-based representation is enabled when Riemannian tools are available.
     """
 
     def __init__(
         self,
         embedder: EmbeddingProvider,
-        configuration: GateAtlasConfiguration = GateAtlasConfiguration(),
+        inventory: list[ComputationalGate] | None = None,
     ):
-        self.config = configuration
-        self.inventory = (
-            ComputationalGateInventory.probe_gates()
-            if configuration.use_probe_subset
-            else ComputationalGateInventory.core_gates()
-        )
+        # All gates by default - geometry determines significance
+        self.inventory = inventory or ComputationalGateInventory.all_gates()
         self.embedder = embedder
         self._cached_gate_embeddings: list[list[float]] | None = None
-        # Volume-based representation (CABE-4)
+        # Volume-based representation (CABE-4) - enabled when available
         self._cached_gate_volumes: dict[str, "ConceptVolume"] | None = None
         self._density_estimator: "RiemannianDensityEstimator" | None = None
-        if configuration.use_volume_representation and HAS_RIEMANNIAN:
+        if HAS_RIEMANNIAN:
             self._density_estimator = RiemannianDensityEstimator()
 
     @property
@@ -696,9 +675,6 @@ class ComputationalGateAtlas:
         return self.inventory
 
     async def signature(self, text: str) -> ComputationalGateSignature | None:
-        if not self.config.enabled:
-            return None
-
         trimmed = text.strip()
         if not trimmed:
             return None
@@ -854,13 +830,12 @@ class ComputationalGateAtlas:
             # Core representation: Name + Description
             texts_for_gate.append(f"{gate.name}: {gate.description}")
 
-            # Add examples if configured
-            if self.config.include_examples_in_volume:
-                for example in gate.examples[:3]:  # Limit to 3 examples
-                    texts_for_gate.append(f"{gate.name} example: {example}")
+            # Add examples for better volume estimation
+            for example in gate.examples[:3]:  # Limit to 3 examples
+                texts_for_gate.append(f"{gate.name} example: {example}")
 
-                for polyglot in gate.polyglot_examples[:2]:  # Limit to 2 polyglot
-                    texts_for_gate.append(f"{gate.name} code: {polyglot}")
+            for polyglot in gate.polyglot_examples[:2]:  # Limit to 2 polyglot
+                texts_for_gate.append(f"{gate.name} code: {polyglot}")
 
             # Need at least 2 samples for covariance estimation
             if len(texts_for_gate) < 2:
@@ -907,7 +882,7 @@ class ComputationalGateAtlas:
         Returns:
             ComputationalGateSignature with volume-aware similarities
         """
-        if not self.config.enabled or not HAS_RIEMANNIAN:
+        if not HAS_RIEMANNIAN:
             return await self.signature(text)  # Fall back to centroid
 
         trimmed = text.strip()

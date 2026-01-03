@@ -134,16 +134,6 @@ class TaskDiversionAssessment:
     note: str | None = None
 
 
-@dataclass
-class DiversionDetectorConfiguration:
-    enabled: bool = True
-    max_characters_per_text: int = 4096
-    minimum_embedding_cosine_similarity: float = 0.35
-    minimum_lexical_jaccard_similarity: float = 0.08
-    enable_lexical_fallback: bool = True
-    fail_closed: bool = False
-
-
 class TaskDiversionDetector:
     """Embedding-first task diversion detector with deterministic thresholds."""
 

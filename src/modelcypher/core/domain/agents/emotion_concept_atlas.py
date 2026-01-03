@@ -885,22 +885,6 @@ class EmotionActivationSummary:
     note: str | None
 
 
-@dataclass
-class EmotionAtlasConfiguration:
-    """Configuration for EmotionConceptAtlas."""
-
-    enabled: bool = True
-    max_characters_per_text: int = 4096
-    top_k: int = 8
-    include_dyads: bool = True
-    include_mild: bool = True
-    include_intense: bool = True
-    # Volume-based representation (CABE-4: Riemannian density)
-    use_volume_representation: bool = False
-    # Include support_texts in volume estimation (more accurate but slower)
-    include_support_texts_in_volume: bool = True
-
-
 @dataclass(frozen=True)
 class OppositionScore:
     """Result of opposition preservation analysis."""
@@ -1015,44 +999,30 @@ class EmotionConceptAtlas:
     Maps text to emotion activation signatures using embedding similarity with
     emotion-specific features including VAD projection and opposition analysis.
 
-    Supports two representation modes: centroid-based (default) where each emotion
-    is a single embedding vector, and volume-based (CABE-4) where each emotion is
-    a ConceptVolume with centroid + covariance.
-
-    Notes
-    -----
-    Volume-based representation enables more robust similarity via Mahalanobis
-    distance, interference prediction between emotions, and variance-aware
-    handling of emotion concept spread.
+    Returns ALL emotions sorted by similarity - geometry determines significance.
+    Volume-based representation is enabled when Riemannian tools are available.
     """
 
     def __init__(
         self,
         embedder: EmbeddingProvider | None = None,
-        configuration: EmotionAtlasConfiguration = EmotionAtlasConfiguration(),
         inventory: list[EmotionConcept] | None = None,
     ):
-        self.config = configuration
         self.embedder = embedder
         self._cached_emotion_embeddings: list[list[float]] | None = None
-        # Volume-based representation (CABE-4)
+        # Volume-based representation (CABE-4) - enabled when available
         self._cached_emotion_volumes: dict[str, "ConceptVolume"] | None = None
         self._density_estimator: "RiemannianDensityEstimator" | None = None
-        if configuration.use_volume_representation and HAS_RIEMANNIAN:
+        if HAS_RIEMANNIAN:
             self._density_estimator = RiemannianDensityEstimator()
 
-        # Build inventory based on configuration
+        # All emotions - geometry determines significance
         if inventory is not None:
             self.inventory = inventory
         else:
-            emotions = EmotionConceptInventory.primary_emotions()
-            if configuration.include_mild:
-                emotions.extend(EmotionConceptInventory.mild_emotions())
-            if configuration.include_intense:
-                emotions.extend(EmotionConceptInventory.intense_emotions())
-            self.inventory = emotions
+            self.inventory = EmotionConceptInventory.all_emotions()
 
-        self.dyads = EmotionConceptInventory.primary_dyads() if configuration.include_dyads else []
+        self.dyads = EmotionConceptInventory.primary_dyads()
 
     @property
     def emotions(self) -> list[EmotionConcept]:
@@ -1063,11 +1033,8 @@ class EmotionConceptAtlas:
         """
         Compute emotion activation signature for text.
 
-        Returns None if disabled or embedding fails.
+        Returns None if embedding fails.
         """
-        if not self.config.enabled:
-            return None
-
         trimmed = text.strip()
         if not trimmed:
             return None
@@ -1079,8 +1046,8 @@ class EmotionConceptAtlas:
             if len(emotion_embeddings) != len(self.inventory):
                 return None
 
-            capped = trimmed[: self.config.max_characters_per_text]
-            embeddings = await self.embedder.embed([capped])
+            # Embedder handles truncation
+            embeddings = await self.embedder.embed([trimmed])
             if not embeddings:
                 return None
 
@@ -1106,8 +1073,7 @@ class EmotionConceptAtlas:
         """
         Full analysis of text emotion content.
 
-        Returns signature and summary with top emotions, VAD projection,
-        and opposition analysis.
+        Returns ALL emotions sorted by similarity - geometry determines significance.
         """
         sig = await self.signature(text)
         if not sig:
@@ -1118,10 +1084,10 @@ class EmotionConceptAtlas:
                 dominant_emotion=None,
                 opposition_balances=None,
                 normalized_activation_entropy=None,
-                note="no_signature" if self.config.enabled else "disabled",
+                note="no_signature",
             )
 
-        # Build summary
+        # Build summary - ALL emotions sorted by similarity
         scored = []
         for i, emotion in enumerate(self.inventory):
             scored.append(
@@ -1134,7 +1100,6 @@ class EmotionConceptAtlas:
             )
 
         scored.sort(key=lambda x: x.similarity, reverse=True)
-        top_k = scored[: self.config.top_k]
 
         vad = sig.vad_projection()
         dominant = sig.dominant_emotion()
@@ -1143,7 +1108,7 @@ class EmotionConceptAtlas:
 
         return sig, EmotionActivationSummary(
             method=EmotionActivationSummary.Method.EMBEDDINGS,
-            top_emotions=top_k,
+            top_emotions=scored,  # All emotions, sorted
             vad_projection=vad,
             dominant_emotion=dominant,
             opposition_balances=opposition,
@@ -1244,10 +1209,9 @@ class EmotionConceptAtlas:
             # Core representation: Name + Description
             texts_for_emotion.append(f"{emotion.name}: {emotion.description}")
 
-            # Add support texts if configured
-            if self.config.include_support_texts_in_volume:
-                for support in emotion.support_texts[:4]:  # Limit to 4 support texts
-                    texts_for_emotion.append(f"{emotion.name}: {support}")
+            # Add support texts for better volume estimation
+            for support in emotion.support_texts[:4]:  # Limit to 4 support texts
+                texts_for_emotion.append(f"{emotion.name}: {support}")
 
             # Need at least 2 samples for covariance estimation
             if len(texts_for_emotion) < 2:
@@ -1294,7 +1258,7 @@ class EmotionConceptAtlas:
         Returns:
             EmotionConceptSignature with volume-aware similarities
         """
-        if not self.config.enabled or not HAS_RIEMANNIAN:
+        if not HAS_RIEMANNIAN:
             return await self.signature(text)  # Fall back to centroid
 
         trimmed = text.strip()
@@ -1309,9 +1273,8 @@ class EmotionConceptAtlas:
             if not volumes:
                 return await self.signature(text)  # Fall back
 
-            # Embed the input text
-            capped = trimmed[: self.config.max_characters_per_text]
-            embeddings = await self.embedder.embed([capped])
+            # Embed the input text - embedder handles truncation
+            embeddings = await self.embedder.embed([trimmed])
             if not embeddings:
                 return None
 
