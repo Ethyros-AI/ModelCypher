@@ -318,11 +318,11 @@ class TestProperRotation:
 
         # Fix to proper rotation
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.tolist(result)
 
         # Determinant should be +1
-        det = backend.det(backend.array(result_np))
-        det_scalar = float(backend.tolist(det))
+        det = backend.det(result)
+        backend.eval(det)
+        det_scalar = float(backend.to_scalar(det))
         eps = _eps(det_scalar)
         assert abs(det_scalar - 1.0) <= eps
 
@@ -337,13 +337,11 @@ class TestProperRotation:
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.tolist(result)
 
         # R @ R^T should be identity
         # Tolerance: n * eps for n×n matrix operations (error accumulates)
         n = 3
-        result_arr = backend.array(result_np)
-        product = backend.matmul(result_arr, backend.transpose(result_arr))
+        product = backend.matmul(result, backend.transpose(result))
         expected = backend.eye(n)
         backend.eval(product, expected)
         diff = backend.abs(product - expected)
@@ -479,13 +477,16 @@ class TestCKAMatrix:
         matrix, _, _ = ManifoldStitcher.compute_cka_matrix(model_fps, model_fps, layer=0)
 
         backend = get_default_backend()
-        matrix_np = backend.tolist(matrix)
+        shape = backend.shape(matrix)
 
-        if matrix_np.size > 0:
+        if shape[0] > 0:
             # Diagonal should be 1 (self-similarity)
-            for i in range(min(matrix_np.shape)):
-                eps = _eps(float(matrix_np[i, i]))
-                assert abs(matrix_np[i, i] - 1.0) <= eps
+            diag = backend.diag(matrix)
+            backend.eval(diag)
+            for i in range(min(shape)):
+                val = float(backend.to_scalar(diag[i]))
+                eps = _eps(val)
+                assert abs(val - 1.0) <= eps
 
 
 # =============================================================================

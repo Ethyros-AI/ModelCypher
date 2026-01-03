@@ -215,17 +215,30 @@ class PermutationAligner:
         similarity = b.matmul(source_normalized, b.transpose(target_normalized))
         b.eval(similarity)
 
-        # Pull to CPU for Hungarian algorithm - use native tolist() for O(1) extraction
-        sim_data = [[float(x) for x in row] for row in b.tolist(similarity)]
-
-        # Convert similarity to cost matrix for Hungarian algorithm
-        # We want to MAXIMIZE similarity, but Hungarian MINIMIZES cost
-        # So cost = max_abs_sim - abs_sim (inverted, using absolute values for sign handling)
-        max_abs_sim = max(abs(sim_data[i][j]) for i in range(N) for j in range(N))
-        cost_matrix = [[max_abs_sim - abs(sim_data[i][j]) for j in range(N)] for i in range(N)]
+        # Convert similarity to cost matrix on backend to avoid O(N^2) Python loops.
+        # We want to MAXIMIZE similarity, but Hungarian MINIMIZES cost:
+        # cost = max_abs_sim - abs(sim)
+        abs_similarity = b.abs(similarity)
+        max_abs_sim_arr = b.max(abs_similarity)
+        b.eval(max_abs_sim_arr)
+        max_abs_sim = float(b.to_scalar(max_abs_sim_arr))
+        cost_matrix_arr = max_abs_sim - abs_similarity
+        b.eval(cost_matrix_arr)
+        cost_matrix = b.tolist(cost_matrix_arr)
 
         # Hungarian algorithm for optimal assignment
         assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+
+        # Compute signed similarity for assigned pairs without pulling full matrix to CPU.
+        assignment_arr = b.array(assignment, dtype="int32")
+        row_idx = b.arange(N)
+        flat_idx = row_idx * N + assignment_arr
+        flat_sim = b.reshape(similarity, (-1,))
+        sim_selected = b.take(flat_sim, flat_idx, axis=0)
+        sim_abs = b.abs(sim_selected)
+        b.eval(sim_selected, sim_abs)
+        sim_selected_list = b.tolist(sim_selected)
+        sim_abs_list = b.tolist(sim_abs)
 
         # Compute signs and confidences from the optimal assignment
         signs = [1.0] * N
@@ -233,13 +246,11 @@ class PermutationAligner:
         sign_flip_count = 0
 
         for src_idx in range(N):
-            tgt_idx = assignment[src_idx]
-            if tgt_idx >= 0:
-                sim = sim_data[src_idx][tgt_idx]
-                match_confidences[src_idx] = abs(sim)
-                if sim < 0:
-                    signs[src_idx] = -1.0
-                    sign_flip_count += 1
+            sim = float(sim_selected_list[src_idx])
+            match_confidences[src_idx] = float(sim_abs_list[src_idx])
+            if sim < 0:
+                signs[src_idx] = -1.0
+                sign_flip_count += 1
 
         # Build target-ordered sign/confidence arrays
         signs_target = [1.0] * N
@@ -400,24 +411,36 @@ class PermutationAligner:
         similarity = b.matmul(source_normalized, b.transpose(target_normalized))
         b.eval(similarity)
 
-        sim_data = [[float(x) for x in row] for row in b.tolist(similarity)]
-        max_abs_sim = max(abs(sim_data[i][j]) for i in range(N) for j in range(N))
-        cost_matrix = [[max_abs_sim - abs(sim_data[i][j]) for j in range(N)] for i in range(N)]
+        abs_similarity = b.abs(similarity)
+        max_abs_sim_arr = b.max(abs_similarity)
+        b.eval(max_abs_sim_arr)
+        max_abs_sim = float(b.to_scalar(max_abs_sim_arr))
+        cost_matrix_arr = max_abs_sim - abs_similarity
+        b.eval(cost_matrix_arr)
+        cost_matrix = b.tolist(cost_matrix_arr)
 
         assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+
+        assignment_arr = b.array(assignment, dtype="int32")
+        row_idx = b.arange(N)
+        flat_idx = row_idx * N + assignment_arr
+        flat_sim = b.reshape(similarity, (-1,))
+        sim_selected = b.take(flat_sim, flat_idx, axis=0)
+        sim_abs = b.abs(sim_selected)
+        b.eval(sim_selected, sim_abs)
+        sim_selected_list = b.tolist(sim_selected)
+        sim_abs_list = b.tolist(sim_abs)
 
         signs = [1.0] * N
         match_confidences = [0.0] * N
         sign_flip_count = 0
 
         for src_idx in range(N):
-            tgt_idx = assignment[src_idx]
-            if tgt_idx >= 0:
-                sim = sim_data[src_idx][tgt_idx]
-                match_confidences[src_idx] = abs(sim)
-                if sim < 0:
-                    signs[src_idx] = -1.0
-                    sign_flip_count += 1
+            sim = float(sim_selected_list[src_idx])
+            match_confidences[src_idx] = float(sim_abs_list[src_idx])
+            if sim < 0:
+                signs[src_idx] = -1.0
+                sign_flip_count += 1
 
         signs_target = [1.0] * N
         confidences_target = [0.0] * N

@@ -218,6 +218,10 @@ class RelationalStressComputer:
         anchor_indices = b.arange(1, len(anchor_names) + 1)
         anchor_dists = b.take(row0, anchor_indices, axis=0)
         b.eval(anchor_dists)
+        sorted_idx = b.argsort(anchor_dists)
+        sorted_dists = b.take(anchor_dists, sorted_idx, axis=0)
+        b.eval(sorted_idx, sorted_dists)
+        sorted_idx_list = [int(x) for x in b.tolist(sorted_idx)]
         # Use tolist() for O(1) extraction instead of O(n) scalar extractions
         anchor_dists_list = b.tolist(anchor_dists)
         distances = {
@@ -235,15 +239,21 @@ class RelationalStressComputer:
         else:
             normalized = distances.copy()
 
-        # Find k nearest anchors
-        sorted_anchors = sorted(distances.items(), key=lambda x: x[1])
-        effective_k = len(sorted_anchors) if k_nearest is None else min(k_nearest, len(sorted_anchors))
-        nearest = tuple(name for name, _ in sorted_anchors[:effective_k])
+        # Find k nearest anchors using backend sort order
+        total_anchors = len(anchor_names)
+        effective_k = total_anchors if k_nearest is None else min(k_nearest, total_anchors)
+        nearest = tuple(anchor_names[i] for i in sorted_idx_list[:effective_k])
 
         # Compute local density (inverse of mean distance to k nearest)
-        k_distances = [d for _, d in sorted_anchors[:effective_k]]
-        eps = division_epsilon(b, concept_activation)
-        local_density = 1.0 / (sum(k_distances) / len(k_distances) + eps) if k_distances else 0.0
+        if effective_k > 0:
+            prefix_idx = b.arange(effective_k)
+            k_vals = b.take(sorted_dists, prefix_idx, axis=0)
+            k_mean = b.mean(k_vals)
+            b.eval(k_mean)
+            eps = division_epsilon(b, anchor_dists)
+            local_density = 1.0 / (float(b.to_scalar(k_mean)) + eps)
+        else:
+            local_density = 0.0
 
         # Compute curvature signature (eigenvalues of local covariance)
         curvature = self._estimate_local_curvature(concept_activation, anchor_activations)

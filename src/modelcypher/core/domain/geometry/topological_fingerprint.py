@@ -1004,12 +1004,13 @@ class BackendTopologicalFingerprint:
 
         component_birth = [0.0] * n
 
-        for flat_idx in sorted_idx_list:
-            dist = float(masked_dist_list[flat_idx])
+        for flat_idx, dist_val in zip(sorted_idx_list, masked_dist_list):
+            dist = float(dist_val)
             if dist > max_filtration or dist >= inf_val * 0.9:
                 break
-            i = int(flat_idx) // n
-            j = int(flat_idx) % n
+            flat_idx_int = int(flat_idx)
+            i = flat_idx_int // n
+            j = flat_idx_int % n
 
             dying = union(i, j, component_birth)
             if dying is not None:
@@ -1035,12 +1036,13 @@ class BackendTopologicalFingerprint:
             inf_vec = b.full((n,), inf_val)
             b.eval(index)
 
-            for flat_idx in sorted_idx_list:
-                dist = float(masked_dist_list[flat_idx])
+            for flat_idx, dist_val in zip(sorted_idx_list, masked_dist_list):
+                dist = float(dist_val)
                 if dist > max_filtration or dist >= inf_val * 0.9:
                     break
-                i = int(flat_idx) // n
-                j = int(flat_idx) % n
+                flat_idx_int = int(flat_idx)
+                i = flat_idx_int // n
+                j = flat_idx_int % n
 
                 px, py = find(i), find(j)
                 if px == py:

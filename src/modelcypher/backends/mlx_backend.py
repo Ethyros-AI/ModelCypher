@@ -943,7 +943,15 @@ class MLXBackend(Backend):
             if hasattr(value, "__module__") and "mlx" in type(value).__module__:
                 mlx_weights[key] = value
             else:
-                mlx_weights[key] = self.array(value)
+                try:
+                    mlx_weights[key] = self.array(value)
+                except RuntimeError:
+                    # Handle large integers by converting via float64 first
+                    if isinstance(value, list):
+                        float_list = [float(v) for v in value]
+                        mlx_weights[key] = self.mx.array(float_list, dtype=self.mx.float32)
+                    else:
+                        mlx_weights[key] = self.mx.array([float(value)], dtype=self.mx.float32)
         if metadata:
             self.mx.save_safetensors(path, mlx_weights, metadata=metadata)
         else:

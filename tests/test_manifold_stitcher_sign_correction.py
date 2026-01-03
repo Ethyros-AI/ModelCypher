@@ -76,12 +76,10 @@ class TestEnsureProperRotation:
         """Reflection matrix (det=-1) should be fixed to proper rotation."""
         backend = get_default_backend()
         n = 4
-        # Create a reflection by flipping one axis
-        u = backend.eye(n, dtype="float32")
+        # Create a reflection by flipping first element on diagonal
+        # Start with identity and flip sign of first diagonal element
+        u = backend.diag(backend.array([-1.0, 1.0, 1.0, 1.0], dtype="float32"))
         vt = backend.eye(n, dtype="float32")
-        u_np = backend.tolist(u)
-        u_np[0, 0] = -1  # Makes det(U) = -1, so det(omega) = -1
-        u = backend.array(u_np)
 
         omega = backend.matmul(u, vt)
         omega_det = _det_scalar(backend, omega)
@@ -128,11 +126,9 @@ class TestEnsureProperRotation:
         """Sign correction should preserve orthogonality of the matrix."""
         backend = get_default_backend()
         n = 6
-        # Simpler: just flip one column of U only
-        u3 = backend.eye(n, dtype="float32")
-        u3_np = backend.tolist(u3)
-        u3_np[:, 0] *= -1
-        u3 = backend.array(u3_np)
+        # Create reflection by flipping first diagonal element
+        diag_vals = backend.array([-1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype="float32")
+        u3 = backend.diag(diag_vals)
         vt3 = backend.eye(n, dtype="float32")
         omega3 = backend.matmul(u3, vt3)
 
@@ -180,12 +176,15 @@ class TestEnsureProperRotation:
         random_mat = backend.random_normal((n, n))
         q, _ = backend.qr(random_mat)
 
-        # Ensure it's a reflection
+        # Ensure it's a reflection by multiplying first column by -1 if needed
         q_det = backend.det(q)
-        if float(backend.tolist(q_det)) > 0:
-            q_np = backend.tolist(q)
-            q_np[:, 0] *= -1
-            q = backend.array(q_np)
+        backend.eval(q_det)
+        if float(backend.to_scalar(q_det)) > 0:
+            # Multiply first column by -1 using backend operations
+            sign_vec = backend.ones((n,), dtype="float32")
+            sign_vec = backend.concat([backend.array([-1.0], dtype="float32"), sign_vec[1:]])
+            sign_mat = backend.diag(sign_vec)
+            q = backend.matmul(q, sign_mat)
 
         # Decompose as if from SVD
         u = q
@@ -214,12 +213,15 @@ class TestEnsureProperRotation:
         random_mat = backend.random_normal((n, n))
         q, _ = backend.qr(random_mat)
 
-        # Ensure it's a rotation not reflection
+        # Ensure it's a rotation not reflection by multiplying first column by -1 if needed
         q_det = backend.det(q)
-        if float(backend.tolist(q_det)) < 0:
-            q_np = backend.tolist(q)
-            q_np[:, 0] *= -1
-            q = backend.array(q_np)
+        backend.eval(q_det)
+        if float(backend.to_scalar(q_det)) < 0:
+            # Multiply first column by -1 using backend operations
+            sign_vec = backend.ones((n,), dtype="float32")
+            sign_vec = backend.concat([backend.array([-1.0], dtype="float32"), sign_vec[1:]])
+            sign_mat = backend.diag(sign_vec)
+            q = backend.matmul(q, sign_mat)
 
         eps = division_epsilon(backend, q)
         final_det = _det_scalar(backend, q)
