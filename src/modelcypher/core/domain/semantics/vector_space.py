@@ -88,7 +88,9 @@ class ConceptVectorSpace:
         matrix = self._backend.stack([self.concepts[id].vector for id in ids])
 
         # 3. Compute Cosine Similarity (Dot product of normalized vectors)
-        scores = self._backend.matmul(q, self._backend.transpose(matrix))
+        # Clamp to [-1, 1] to handle floating point accumulation errors
+        raw_scores = self._backend.matmul(q, self._backend.transpose(matrix))
+        scores = self._backend.clip(raw_scores, -1.0, 1.0)
 
         # 4. Top K
         # argsort is ascending
