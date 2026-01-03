@@ -133,7 +133,7 @@ class CompositionalProbes:
 
         weights_arr = b.solve(G, rhs)  # [N]
         b.eval(weights_arr)
-        weights = [float(b.to_scalar(weights_arr[i])) for i in range(n)]
+        weights = b.tolist(weights_arr)
 
         # Calc residual
         reconstructed = b.matmul(weights_arr, comps)  # [D]

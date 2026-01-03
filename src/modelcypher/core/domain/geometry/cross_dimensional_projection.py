@@ -34,7 +34,6 @@ The transplant pipeline (stage_3_transplant.py) uses this for cross-arch merges.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -43,6 +42,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_shared_relational_rank,
     division_epsilon,
+    exp_scalar,
+    is_finite,
     regularization_epsilon,
     svd_rank_threshold,
     svd_via_eigh,
@@ -357,7 +358,7 @@ def _project_gram_transport(
             projected = row_coupling.apply_left(projected, b)
             b.eval(projected)
 
-            total_score += math.exp(-row_result.distance) if math.isfinite(row_result.distance) else 0.0
+            total_score += exp_scalar(-row_result.distance, b) if is_finite(row_result.distance, b) else 0.0
             score_count += 1
 
             logger.info(

@@ -400,7 +400,7 @@ class PersonaVectorMonitor:
         points = backend.array(valid_vectors)
         mean_arr = frechet_mean(points, backend=backend)
         backend.eval(mean_arr)
-        return [float(backend.to_scalar(mean_arr[i])) for i in range(int(mean_arr.shape[0]))]
+        return backend.tolist(mean_arr)
 
     @staticmethod
     def _compute_correlation(

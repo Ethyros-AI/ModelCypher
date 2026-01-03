@@ -36,12 +36,18 @@ argmin_p ||R_source(c) - R_target(p)||²  (Cross-Grounding Synthesis)
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
+    division_epsilon,
+    is_nan,
+    pi_value,
+    sqrt_scalar,
+    ulp_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -83,14 +89,15 @@ class RelationalStressProfile:
 
     def distance_to(self, other: "RelationalStressProfile") -> float:
         """Compute stress distance between two profiles."""
+        backend = get_default_backend()
         if len(self.stress_vector) != len(other.stress_vector):
             # Different anchor sets - use common anchors
             common = set(self.anchor_distances.keys()) & set(other.anchor_distances.keys())
             self_dists = [self.anchor_distances[a] for a in sorted(common)]
             other_dists = [other.anchor_distances[a] for a in sorted(common)]
-            return math.sqrt(sum((a - b) ** 2 for a, b in zip(self_dists, other_dists)))
+            return sqrt_scalar(sum((a - b) ** 2 for a, b in zip(self_dists, other_dists)), backend)
         diffs = [a - b for a, b in zip(self.stress_vector, other.stress_vector)]
-        return math.sqrt(sum(d * d for d in diffs))
+        return sqrt_scalar(sum(d * d for d in diffs), backend)
 
 
 @dataclass(frozen=True)
@@ -424,12 +431,12 @@ class GroundingRotationEstimator:
         else:
             correlation = 0.0
 
-        if math.isnan(correlation):
+        if is_nan(correlation, b):
             correlation = 0.0
 
         # Convert correlation to angle
         alignment_score = max(0.0, correlation)
-        angle_degrees = math.degrees(math.acos(min(1.0, alignment_score)))
+        angle_degrees = acos_scalar(min(1.0, alignment_score), b) * 180.0 / pi_value(b)
 
         # Estimate axis correspondence using Procrustes-like analysis
         axis_correspondence = self._estimate_axis_correspondence(
@@ -444,7 +451,7 @@ class GroundingRotationEstimator:
         mean_diff_arr = b.sum(diff_masked) / float(count)
         var_arr = b.sum((diff_masked - mean_diff_arr) ** 2 * off_diag) / float(count)
         b.eval(mean_diff_arr, var_arr)
-        std_diff = math.sqrt(float(b.to_scalar(var_arr)))
+        std_diff = sqrt_scalar(float(b.to_scalar(var_arr)), b)
         anchor_total = len(source_anchors) + len(target_anchors)
         overlap_fraction = (2.0 * len(common_anchors) / anchor_total) if anchor_total > 0 else 0.0
         confidence = max(0.0, min(1.0, overlap_fraction)) * (1.0 - std_diff)
@@ -643,7 +650,7 @@ class CrossGroundingSynthesizer:
         source_vals = list(source_stress.anchor_distances.values())
         source_mean = sum(source_vals) / len(source_vals)
         source_variance = sum((v - source_mean) ** 2 for v in source_vals) / len(source_vals)
-        source_spread = math.sqrt(source_variance)
+        source_spread = sqrt_scalar(source_variance, b)
 
         # Target spread from non-zero geodesic distances
         anchor_flat = b.reshape(anchor_geo, (-1,))
@@ -657,7 +664,7 @@ class CrossGroundingSynthesizer:
             mean_arr = b.sum(values) / count
             var_arr = b.sum((values - mean_arr) ** 2 * mask_f) / count
             b.eval(mean_arr, var_arr)
-            target_spread = math.sqrt(float(b.to_scalar(var_arr)))
+            target_spread = sqrt_scalar(float(b.to_scalar(var_arr)), b)
         else:
             target_spread = 0.0
 
@@ -747,22 +754,23 @@ class CrossGroundingSynthesizer:
         n = len(source_dists)
         s_mean = sum(source_dists) / n
         t_mean = sum(target_dists) / n
+        backend = get_default_backend()
         s_var = sum((v - s_mean) ** 2 for v in source_dists) / n
         t_var = sum((v - t_mean) ** 2 for v in target_dists) / n
-        s_std = math.sqrt(s_var)
-        t_std = math.sqrt(t_var)
+        s_std = sqrt_scalar(s_var, backend)
+        t_std = sqrt_scalar(t_var, backend)
 
         # Correlation between distance patterns
         if s_std > 0 and t_std > 0:
             numerator = sum((s - s_mean) * (t - t_mean) for s, t in zip(source_dists, target_dists))
             correlation = numerator / (s_std * t_std * n)
-            if math.isnan(correlation):
+            if is_nan(correlation, backend):
                 correlation = 0.0
         else:
             correlation = 0.0
 
         # Also consider absolute distance matching
-        eps = math.ulp(1.0)
+        eps = ulp_scalar(1.0, backend)
         max_dist = max(max(source_dists), max(target_dists), eps)
         abs_diffs = [abs(s - t) for s, t in zip(source_dists, target_dists)]
         relative_error = sum(abs_diffs) / len(abs_diffs) / max_dist
@@ -770,7 +778,7 @@ class CrossGroundingSynthesizer:
 
         # Combine correlation and distance match with data-derived weighting
         weight_denom = s_std + t_std
-        eps = math.ulp(1.0)
+        eps = ulp_scalar(1.0, backend)
         corr_weight = (s_std / weight_denom) if weight_denom > eps else 0.0
         distance_weight = 1.0 - corr_weight
         return float(corr_weight * max(0.0, correlation) + distance_weight * distance_match)

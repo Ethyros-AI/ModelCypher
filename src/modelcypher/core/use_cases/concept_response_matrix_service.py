@@ -237,8 +237,7 @@ class ConceptResponseMatrixService:
             for layer in layer_sums:
                 avg_arr = layer_sums[layer] / float(layer_counts[layer])
                 backend.eval(avg_arr)
-                count = int(avg_arr.shape[0])
-                averaged[layer] = [backend.to_scalar(avg_arr[i]) for i in range(count)]
+                averaged[layer] = backend.tolist(avg_arr)
             crm.record_activations(anchor_id, averaged)
             used_anchor_ids.append(anchor_id)
 

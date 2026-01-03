@@ -176,8 +176,7 @@ def _anchor_embedding(
     backend.eval(mean)
     if len(mean.shape) == 0:
         return [float(backend.to_scalar(mean))]
-    count = int(mean.shape[0])
-    return [backend.to_scalar(mean[i]) for i in range(count)]
+    return backend.tolist(mean)
 
 
 def _geodesic_min_distance(anchor_points: list[list[float]], query: list[float]) -> float:

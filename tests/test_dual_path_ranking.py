@@ -75,7 +75,9 @@ class TestTokenRankMetrics:
             backend.random_seed(seed)
             scores = backend.random_uniform(shape=(100,))
             backend.eval(scores)
-            eps = _eps(backend, float(backend.to_numpy(backend.max(scores))))
+            max_arr = backend.max(scores)
+            backend.eval(max_arr)
+            eps = _eps(backend, float(backend.to_scalar(max_arr)))
 
             for token_id in range(100):
                 _, rank_fraction, _ = compute_token_rank_metrics(scores, token_id)
@@ -122,7 +124,7 @@ class TestTokenRankMetrics:
         backend.eval(scores)
 
         # Find the actual top token
-        top_id = int(backend.to_numpy(backend.argmax(scores)))
+        top_id = int(backend.to_scalar(backend.argmax(scores)))
         rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, top_id)
 
         assert rank == 0
@@ -130,7 +132,7 @@ class TestTokenRankMetrics:
         assert frontier_hit is True
 
         # Find the bottom token
-        bottom_id = int(backend.to_numpy(backend.argmin(scores)))
+        bottom_id = int(backend.to_scalar(backend.argmin(scores)))
         rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, bottom_id)
 
         assert rank == vocab_size - 1

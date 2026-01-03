@@ -121,11 +121,11 @@ def alignment_signal_from_matrices(
         diff = source_matrix - target_matrix
         distances = b.norm(diff, axis=1)
     b.eval(distances)
-    dist_list = [float(b.to_scalar(distances[i])) for i in range(int(distances.shape[0]))]
+    dist_list = b.tolist(distances)
 
     ranked = b.argsort(-distances)
     b.eval(ranked)
-    ranked_idx = [int(b.to_scalar(ranked[i])) for i in range(int(ranked.shape[0]))]
+    ranked_idx = [int(x) for x in b.tolist(ranked)]
     misaligned = [labels[i] for i in ranked_idx]
 
     shape_mismatch = b.shape(source_matrix) != b.shape(target_matrix)

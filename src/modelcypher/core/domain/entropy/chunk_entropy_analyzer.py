@@ -458,5 +458,4 @@ class ChunkEntropyAnalyzer:
         scores = 1.0 - (mean_distances / max_distance)
         scores = backend.maximum(backend.minimum(scores, backend.full(scores.shape, 1.0)), backend.zeros_like(scores))
         backend.eval(scores)
-        count = int(scores.shape[0])
-        return [float(backend.to_scalar(scores[i])) for i in range(count)]
+        return backend.tolist(scores)

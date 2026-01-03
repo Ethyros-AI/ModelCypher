@@ -33,12 +33,17 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    is_inf,
+    is_nan,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 
 if TYPE_CHECKING:
@@ -73,7 +78,8 @@ class LayerCurvature:
     def to_dict(self) -> dict[str, Any]:
         def safe_float(v: float) -> float | None:
             """Convert NaN/Inf to None for JSON serialization."""
-            if math.isnan(v) or math.isinf(v):
+            backend = get_default_backend()
+            if is_nan(v, backend) or is_inf(v, backend):
                 return None
             return v
 
@@ -145,7 +151,8 @@ class CurvatureProfile:
     def to_dict(self) -> dict[str, Any]:
         def safe_float(v: float) -> float | None:
             """Convert NaN/Inf to None for JSON serialization."""
-            if math.isnan(v) or math.isinf(v):
+            backend = get_default_backend()
+            if is_nan(v, backend) or is_inf(v, backend):
                 return None
             return v
 
@@ -441,11 +448,12 @@ def build_family_baseline(
 
             lc = profile.layer_curvatures[layer_idx]
 
-            if not math.isnan(lc.sectional_mean):
+            backend = get_default_backend()
+            if not is_nan(lc.sectional_mean, backend):
                 sectional_values_by_pos[pos_idx].append(lc.sectional_mean)
-            if not math.isnan(lc.ollivier_ricci_mean):
+            if not is_nan(lc.ollivier_ricci_mean, backend):
                 ricci_values_by_pos[pos_idx].append(lc.ollivier_ricci_mean)
-            if not math.isnan(lc.intrinsic_dimension):
+            if not is_nan(lc.intrinsic_dimension, backend):
                 dim_values_by_pos[pos_idx].append(lc.intrinsic_dimension)
 
     # Compute mean and std at each position
@@ -475,7 +483,7 @@ def _safe_std(values: list[float]) -> float:
         return 0.0
     mean = sum(values) / len(values)
     variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
-    return math.sqrt(variance)
+    return sqrt_scalar(variance, get_default_backend())
 
 
 def parse_model_info(model_path: str) -> tuple[str, str]:
