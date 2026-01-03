@@ -32,8 +32,8 @@ from modelcypher.core.domain.entropy.entropy_delta_sample import (
     EntropyDeltaSample,
 )
 from modelcypher.core.domain.entropy.entropy_delta_tracker import (
+    EntropyDeltaCalibration,
     EntropyDeltaTracker,
-    EntropyDeltaTrackerConfig,
     PendingEntropyData,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -42,19 +42,14 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 
-def _test_config(
+def _test_calibration(
     baseline_samples: list[float] | None = None,
-    top_k: int | None = None,
-    compute_variance: bool = True,
     source: str = "EntropyDeltaTracker",
-) -> EntropyDeltaTrackerConfig:
-    """Create test config derived from baseline samples."""
+) -> EntropyDeltaCalibration:
+    """Create test calibration derived from baseline samples."""
     samples = baseline_samples or [0.05, 0.1, 0.15, 0.2, 0.25]
-    derived_top_k = len(samples) if top_k is None else top_k
-    return EntropyDeltaTrackerConfig.from_baseline_distribution(
+    return EntropyDeltaCalibration.from_baseline_distribution(
         samples,
-        top_k=derived_top_k,
-        compute_variance=compute_variance,
         source=source,
     )
 
@@ -67,27 +62,22 @@ def _test_config(
 def test_from_baseline_distribution() -> None:
     """Test deriving threshold from baseline distribution."""
     samples = [0.1, 0.2, 0.3, 5.0]
-    config = EntropyDeltaTrackerConfig.from_baseline_distribution(
+    calibration = EntropyDeltaCalibration.from_baseline_distribution(
         samples,
-        top_k=len(samples),
-        compute_variance=True,
         source="calibration_test",
     )
 
     backend = get_default_backend()
     eps = division_epsilon(backend, backend.array([0.0]))
     expected = find_magnitude_gap_threshold(sorted(samples), eps=eps)
-    assert abs(config.anomaly_threshold - expected) <= eps
-    assert config.top_k == len(samples)
+    assert abs(calibration.anomaly_threshold - expected) <= eps
 
 
 def test_from_baseline_requires_samples() -> None:
     """Test that empty samples raises error."""
     with pytest.raises(ValueError, match="anomaly_score_samples required"):
-        EntropyDeltaTrackerConfig.from_baseline_distribution(
+        EntropyDeltaCalibration.from_baseline_distribution(
             [],
-            top_k=1,
-            compute_variance=True,
             source="calibration_test",
         )
 
@@ -99,8 +89,8 @@ def test_from_baseline_requires_samples() -> None:
 
 def test_session_lifecycle() -> None:
     """Test starting and ending a session."""
-    config = _test_config()
-    tracker = EntropyDeltaTracker(config)
+    calibration = _test_calibration()
+    tracker = EntropyDeltaTracker(calibration)
 
     assert tracker.is_session_active is False
     assert tracker.correlation_id is None
@@ -121,7 +111,7 @@ def test_session_lifecycle() -> None:
 
 def test_end_session_without_start() -> None:
     """Test ending a session that was never started."""
-    tracker = EntropyDeltaTracker(_test_config())
+    tracker = EntropyDeltaTracker(_test_calibration())
     result = tracker.end_session()
 
     assert result.total_tokens == 0
@@ -130,7 +120,7 @@ def test_end_session_without_start() -> None:
 
 def test_session_auto_generates_correlation_id() -> None:
     """Test that starting a session without correlation_id generates one."""
-    tracker = EntropyDeltaTracker(_test_config())
+    tracker = EntropyDeltaTracker(_test_calibration())
     tracker.start_session()
 
     assert tracker.correlation_id is not None
@@ -167,7 +157,7 @@ def test_pending_entropy_data() -> None:
 @pytest.mark.asyncio
 async def test_record_entropy_from_data() -> None:
     """Test recording entropy from pre-computed data."""
-    tracker = EntropyDeltaTracker(_test_config())
+    tracker = EntropyDeltaTracker(_test_calibration())
     tracker.start_session()
 
     data = PendingEntropyData(
@@ -199,7 +189,7 @@ async def test_record_entropy_from_data() -> None:
 @pytest.mark.asyncio
 async def test_anomaly_detection_callback() -> None:
     """High anomaly scores trigger callback."""
-    tracker = EntropyDeltaTracker(_test_config())
+    tracker = EntropyDeltaTracker(_test_calibration())
     tracker.start_session()
 
     observed: List[EntropyDeltaSample] = []
@@ -229,8 +219,8 @@ async def test_anomaly_detection_callback() -> None:
 @pytest.mark.asyncio
 async def test_session_summary_counts_anomalies() -> None:
     """Session summary counts anomalies by threshold."""
-    config = _test_config()
-    tracker = EntropyDeltaTracker(config)
+    calibration = _test_calibration()
+    tracker = EntropyDeltaTracker(calibration)
     tracker.start_session()
 
     data = PendingEntropyData(
@@ -249,4 +239,4 @@ async def test_session_summary_counts_anomalies() -> None:
 
     assert result.total_tokens == 1
     assert result.anomaly_count == 1
-    assert result.max_anomaly_score >= config.anomaly_threshold
+    assert result.max_anomaly_score >= calibration.anomaly_threshold

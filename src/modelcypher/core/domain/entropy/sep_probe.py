@@ -29,13 +29,19 @@ Architecture:
 
 Research Basis:
     arXiv:2406.15927 - Semantic Entropy Probes
+
+No configuration needed. All parameters derived from:
+- Model architecture (layer_count, hidden_dim)
+- Loaded weights (R² threshold from weight quality distribution)
+- Baseline measurements (circuit breaker from entropy distribution)
 """
 
 from __future__ import annotations
 
 import json
+import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,6 +51,25 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+
+# =============================================================================
+# Research-based constants (arXiv:2406.15927)
+# =============================================================================
+
+# Target layer fractions - most predictive for entropy estimation
+# These are fixed by research, not configuration
+TARGET_LAYER_FRACTIONS = [0.75, 0.78, 0.81, 0.84, 0.875]
+
+
+def _target_layers_for_model(layer_count: int) -> list[int]:
+    """Derive target layer indices from model layer count."""
+    return [int(layer_count * f) for f in TARGET_LAYER_FRACTIONS]
+
+
+# =============================================================================
+# Exceptions
+# =============================================================================
 
 
 class SEPProbeError(Exception):
@@ -71,32 +96,9 @@ class LayerNotFoundError(SEPProbeError):
     pass
 
 
-@dataclass
-class SEPProbeConfig:
-    """Configuration for SEP probe.
-
-    Thresholds must be derived from baseline measurements. No arbitrary defaults.
-    """
-
-    layer_count: int = 32
-    layer_fractions: list[float] = field(default_factory=lambda: [0.75, 0.78, 0.81, 0.84, 0.875])
-    hidden_dim: int = 4096
-    # Thresholds - MUST be derived from baseline measurements, no arbitrary defaults
-    min_r2_threshold: float | None = None
-    """Minimum R² for probe to be considered valid. Derive from training validation."""
-
-    circuit_breaker_threshold: float | None = None
-    """Risk threshold for tripping circuit breaker. Derive from baseline risk distribution."""
-
-    @property
-    def target_layers(self) -> list[int]:
-        """Target layer indices based on fractions."""
-        return [int(self.layer_count * f) for f in self.layer_fractions]
-
-    @classmethod
-    def default(cls) -> "SEPProbeConfig":
-        """Create config with architecture defaults. Thresholds must be set separately."""
-        return cls()
+# =============================================================================
+# Data Classes
+# =============================================================================
 
 
 @dataclass
@@ -116,7 +118,8 @@ class ProbeWeightsBundle:
     """Container for all probe weights."""
 
     model_id: str
-    config: SEPProbeConfig
+    layer_count: int
+    hidden_dim: int
     layer_weights: list[LayerProbeWeights]
     training_samples: int
     trained_at: datetime
@@ -132,11 +135,22 @@ class PredictionResult:
     latency_ms: float
 
 
+# =============================================================================
+# SEP Probe
+# =============================================================================
+
+
 class SEPProbe:
     """
     Semantic Entropy Probe using linear projection on hidden states.
 
     Fast (0.3ms) prediction of semantic entropy from layer activations.
+
+    All parameters are derived from data:
+    - layer_count, hidden_dim: From model architecture
+    - Target layers: Research-based fractions (75-87.5%)
+    - R² threshold: Derived from loaded weight quality distribution
+    - Circuit breaker: Derived from baseline entropy distribution
 
     Usage:
         probe = SEPProbe(layer_count=32, hidden_dim=4096)
@@ -150,10 +164,20 @@ class SEPProbe:
 
     def __init__(
         self,
-        config: SEPProbeConfig | None = None,
+        layer_count: int,
+        hidden_dim: int,
         backend: "Backend | None" = None,
     ) -> None:
-        self.config = config or SEPProbeConfig.default()
+        """Create SEP probe for a specific model architecture.
+
+        Args:
+            layer_count: Number of transformer layers in the model.
+            hidden_dim: Hidden dimension of the model.
+            backend: Optional compute backend.
+        """
+        self._layer_count = layer_count
+        self._hidden_dim = hidden_dim
+        self._target_layers = _target_layers_for_model(layer_count)
         self._backend = backend or get_default_backend()
 
         # Weights storage
@@ -162,10 +186,24 @@ class SEPProbe:
         self._is_ready: bool = False
         self._trained_model_id: str | None = None
 
-    @classmethod
-    def for_model(cls, layer_count: int, hidden_dim: int) -> "SEPProbe":
-        """Create probe configured for a specific model."""
-        return cls(SEPProbeConfig(layer_count=layer_count, hidden_dim=hidden_dim))
+        # Thresholds derived from data
+        self._min_r2_threshold: float | None = None
+        self._circuit_breaker_threshold: float | None = None
+
+    @property
+    def layer_count(self) -> int:
+        """Number of transformer layers."""
+        return self._layer_count
+
+    @property
+    def hidden_dim(self) -> int:
+        """Hidden dimension."""
+        return self._hidden_dim
+
+    @property
+    def target_layers(self) -> list[int]:
+        """Target layer indices for probing."""
+        return self._target_layers
 
     @property
     def is_ready(self) -> bool:
@@ -175,29 +213,63 @@ class SEPProbe:
     def trained_model_id(self) -> str | None:
         return self._trained_model_id
 
-    async def load_weights(self, path: Path):
-        """Load trained probe weights from file."""
+    def set_circuit_breaker_from_baseline(self, baseline_entropies: list[float]) -> None:
+        """Set circuit breaker threshold from baseline entropy distribution.
+
+        Uses mean + 2*std as threshold (97.7th percentile).
+
+        Args:
+            baseline_entropies: Entropy values from baseline model runs.
+        """
+        if not baseline_entropies:
+            return
+
+        n = len(baseline_entropies)
+        mean = sum(baseline_entropies) / n
+        variance = sum((x - mean) ** 2 for x in baseline_entropies) / n
+        std = math.sqrt(variance)
+
+        self._circuit_breaker_threshold = mean + 2 * std
+
+    async def load_weights(self, path: Path) -> None:
+        """Load trained probe weights from file.
+
+        R² threshold is derived from the quality distribution of loaded weights:
+        Uses mean - 2*std to filter out low-quality probes.
+
+        Args:
+            path: Path to weights file.
+        """
         data = json.loads(path.read_text())
 
-        # Parse bundle
-        config = SEPProbeConfig(
-            layer_count=data.get("layer_count", 32),
-            hidden_dim=data.get("hidden_dim", 4096),
-        )
-
-        if config.hidden_dim != self.config.hidden_dim:
+        loaded_hidden_dim = data.get("hidden_dim", 4096)
+        if loaded_hidden_dim != self._hidden_dim:
             raise IncompatibleWeightsError(
-                f"Incompatible: expected hiddenDim={self.config.hidden_dim}, found {config.hidden_dim}"
+                f"Incompatible: expected hidden_dim={self._hidden_dim}, found {loaded_hidden_dim}"
             )
 
-        # Load weights
-        for lw in data.get("layer_weights", []):
+        # Collect all R² values to derive threshold
+        all_r2_values: list[float] = []
+        layer_weights_data = data.get("layer_weights", [])
+        for lw in layer_weights_data:
+            r2 = lw.get("validation_r2", 0.0)
+            all_r2_values.append(r2)
+
+        # Derive R² threshold from quality distribution: mean - 2*std
+        if all_r2_values:
+            n = len(all_r2_values)
+            mean_r2 = sum(all_r2_values) / n
+            variance_r2 = sum((x - mean_r2) ** 2 for x in all_r2_values) / n
+            std_r2 = math.sqrt(variance_r2)
+            self._min_r2_threshold = max(0.0, mean_r2 - 2 * std_r2)
+
+        # Load weights that pass R² threshold and are in target layers
+        for lw in layer_weights_data:
             layer = lw["layer"]
             r2 = lw.get("validation_r2", 0.0)
 
-            # Filter by R² threshold if configured; if None, accept all
-            passes_r2 = self.config.min_r2_threshold is None or r2 >= self.config.min_r2_threshold
-            if layer in self.config.target_layers and passes_r2:
+            passes_r2 = self._min_r2_threshold is None or r2 >= self._min_r2_threshold
+            if layer in self._target_layers and passes_r2:
                 weights = LayerProbeWeights(
                     layer=layer,
                     weights=lw["weights"],
@@ -213,10 +285,25 @@ class SEPProbe:
         self._is_ready = len(self._probe_weights) > 0
 
     def register_weights(self, weights: list[LayerProbeWeights], model_id: str) -> None:
-        """Register weights directly (for testing or in-memory)."""
+        """Register weights directly (for testing or in-memory).
+
+        R² threshold is derived from the quality distribution of provided weights.
+
+        Args:
+            weights: List of layer probe weights.
+            model_id: Model identifier.
+        """
+        # Derive R² threshold from quality distribution
+        all_r2_values = [lw.validation_r2 for lw in weights]
+        if all_r2_values:
+            n = len(all_r2_values)
+            mean_r2 = sum(all_r2_values) / n
+            variance_r2 = sum((x - mean_r2) ** 2 for x in all_r2_values) / n
+            std_r2 = math.sqrt(variance_r2)
+            self._min_r2_threshold = max(0.0, mean_r2 - 2 * std_r2)
+
         for lw in weights:
-            # Filter by R² threshold if configured; if None, accept all
-            passes_r2 = self.config.min_r2_threshold is None or lw.validation_r2 >= self.config.min_r2_threshold
+            passes_r2 = self._min_r2_threshold is None or lw.validation_r2 >= self._min_r2_threshold
             if passes_r2:
                 self._probe_weights[lw.layer] = lw
                 self._cached_weight_arrays[lw.layer] = self._backend.array(lw.weights)
@@ -269,6 +356,7 @@ class SEPProbe:
 
             pred_value = float(b.to_scalar(prediction))
             predictions[layer] = pred_value
+
         if not predictions:
             raise SEPProbeError("No matching hidden states for configured probe layers.")
 
@@ -278,10 +366,10 @@ class SEPProbe:
 
         latency_ms = (time.time() - start) * 1000
 
-        # Only trip circuit breaker if threshold is configured
+        # Only trip circuit breaker if threshold is set from baseline
         should_trip = (
-            self.config.circuit_breaker_threshold is not None
-            and final >= self.config.circuit_breaker_threshold
+            self._circuit_breaker_threshold is not None
+            and final >= self._circuit_breaker_threshold
         )
 
         return PredictionResult(
@@ -319,9 +407,11 @@ class SEPProbe:
             key=lambda x: x[0],
         )
 
-    def reset(self):
+    def reset(self) -> None:
         """Clear loaded weights and reset state."""
         self._probe_weights.clear()
         self._cached_weight_arrays.clear()
         self._trained_model_id = None
         self._is_ready = False
+        self._min_r2_threshold = None
+        self._circuit_breaker_threshold = None

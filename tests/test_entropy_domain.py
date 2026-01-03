@@ -212,13 +212,9 @@ def test_metrics_ring_buffer_stats():
 
 def test_entropy_window_sliding():
     """Test EntropyWindow sliding statistics."""
-    from modelcypher.core.domain.entropy.entropy_window import (
-        EntropyWindow,
-        EntropyWindowConfig,
-    )
+    from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
 
-    config = EntropyWindowConfig(window_size=5)
-    window = EntropyWindow(config=config)
+    window = EntropyWindow(window_size=5)
 
     for i, val in enumerate([1.0, 1.1, 1.2, 5.0, 1.1]):
         status = window.add(entropy=val, variance=0.1, token_index=i)

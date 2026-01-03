@@ -34,18 +34,6 @@ logger = logging.getLogger("modelcypher.entropy.entropy_window")
 
 
 # =============================================================================
-# Configuration
-# =============================================================================
-
-
-@dataclass
-class EntropyWindowConfig:
-    """Configuration for the entropy window."""
-
-    window_size: int
-
-
-# =============================================================================
 # Sample and Status
 # =============================================================================
 
@@ -83,15 +71,25 @@ class EntropyWindowStatus:
 
 
 class EntropyWindow:
-    """Sliding window tracker for entropy measurements during inference."""
+    """Sliding window tracker for entropy measurements during inference.
+
+    window_size should be derived from context by the caller (e.g., sqrt(n)
+    where n is the expected sample count or baseline size).
+    """
 
     def __init__(
         self,
-        config: EntropyWindowConfig,
+        window_size: int,
         window_id: str | None = None,
     ):
-        """Initialize entropy window."""
-        self.config = config
+        """Initialize entropy window.
+
+        Args:
+            window_size: Size of the sliding window. Caller derives this
+                from context (e.g., sqrt(baseline_sample_count)).
+            window_id: Optional unique identifier for this window.
+        """
+        self._window_size = window_size
         self.window_id = window_id or str(uuid.uuid4())
         self._samples: list[EntropySample] = []
         self._lock = asyncio.Lock()
@@ -112,7 +110,7 @@ class EntropyWindow:
 
         # Add to window, maintaining size limit
         self._samples.append(sample)
-        if len(self._samples) > self.config.window_size:
+        if len(self._samples) > self._window_size:
             self._samples.pop(0)
 
         return self._current_status()

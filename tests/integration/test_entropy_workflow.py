@@ -32,10 +32,7 @@ from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
     ConversationEntropyBaseline,
     ConversationEntropyTracker,
 )
-from modelcypher.core.domain.entropy.entropy_window import (
-    EntropyWindow,
-    EntropyWindowConfig,
-)
+from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
@@ -102,8 +99,7 @@ class TestEntropyWindowIntegration:
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
 
-        config = EntropyWindowConfig(window_size=5)
-        window = EntropyWindow(config)
+        window = EntropyWindow(window_size=5)
 
         samples = [(1.0 + 0.1 * i, 0.2 + 0.01 * i, i) for i in range(8)]
         for entropy, variance, token_index in samples:
@@ -120,7 +116,7 @@ class TestEntropyWindowIntegration:
 
     def test_window_empty_status(self) -> None:
         """Empty window returns zeroed measurements."""
-        window = EntropyWindow(EntropyWindowConfig(window_size=4))
+        window = EntropyWindow(window_size=4)
         status = window.status()
 
         assert status.sample_count == 0

@@ -36,6 +36,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 # Infrastructure dependencies (MLX-specific model loading)
@@ -132,7 +133,6 @@ class SecurityScanMetrics:
 @dataclass
 class DualPathGeneratorConfiguration:
     base_model_path: str
-    delta_tracker_config: EntropyDeltaTracker.Configuration
     max_tokens: int
     temperature: float
     top_p: float
@@ -165,7 +165,8 @@ class DualPathGenerator:
     ):
         self.config = config
         self._backend = backend or get_default_backend()
-        self.delta_tracker = EntropyDeltaTracker(config.delta_tracker_config, router=signal_router)
+        source = Path(config.base_model_path).name
+        self.delta_tracker = EntropyDeltaTracker(source=source, router=signal_router)
 
         # Load model(s)
         # Note: In a real app we might inject the loaded model.
@@ -198,7 +199,7 @@ class DualPathGenerator:
         else:
             self.adapter_model = self.model  # If no adapter, both paths are same (degenerate case)
 
-        self.entropy_calc = LogitEntropyCalculator(top_k=config.delta_tracker_config.top_k)
+        self.entropy_calc = LogitEntropyCalculator()
 
     async def generate(self, prompt: str) -> AsyncGenerator[dict[str, Any], None]:
         """

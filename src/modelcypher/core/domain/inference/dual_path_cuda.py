@@ -86,7 +86,6 @@ class DualPathGeneratorConfigurationCUDA:
     stop_sequences: list[str]
     device: str
     dtype: str  # float16, bfloat16, float32
-    entropy_top_k: int  # Top-K for entropy calculation
 
     # Anomaly detection thresholds - MUST be derived from baseline measurements
     kl_divergence_threshold: float | None = None
@@ -149,29 +148,20 @@ def compute_token_rank_metrics_cuda(
 
 def compute_entropy_cuda(
     logits: torch.Tensor,
-    top_k: int = 100,
 ) -> tuple[float, float]:
     """
     Compute entropy and variance from logits.
 
     Args:
         logits: [vocab_size] logit tensor
-        top_k: Number of top tokens to consider
-
     Returns:
         Tuple of (entropy, variance)
     """
-    # Get top-K logits for stability
     if logits.dim() > 1:
         logits = logits.squeeze()
 
-    if top_k < logits.shape[0]:
-        top_logits, _ = torch.topk(logits, top_k)
-    else:
-        top_logits = logits
-
     # Softmax for probabilities
-    probs = F.softmax(top_logits, dim=-1)
+    probs = F.softmax(logits, dim=-1)
 
     eps = _division_epsilon_for_dtype(probs)
 
@@ -188,7 +178,6 @@ def compute_entropy_cuda(
 def compute_kl_divergence_cuda(
     logits_p: torch.Tensor,
     logits_q: torch.Tensor,
-    top_k: int = 100,
 ) -> float:
     """
     Compute KL divergence D_KL(P || Q) from logits.
@@ -196,8 +185,6 @@ def compute_kl_divergence_cuda(
     Args:
         logits_p: Logits from distribution P
         logits_q: Logits from distribution Q
-        top_k: Number of top tokens to consider
-
     Returns:
         KL divergence value
     """
@@ -408,17 +395,11 @@ class DualPathGeneratorCUDA:
                 text = self.tokenizer.decode([token_id], skip_special_tokens=True)
 
                 # Compute entropy metrics
-                base_entropy, base_variance = compute_entropy_cuda(
-                    logits_base[0], self.config.entropy_top_k
-                )
-                adapter_entropy, adapter_variance = compute_entropy_cuda(
-                    logits_adapter[0], self.config.entropy_top_k
-                )
+                base_entropy, base_variance = compute_entropy_cuda(logits_base[0])
+                adapter_entropy, adapter_variance = compute_entropy_cuda(logits_adapter[0])
 
                 # Compute KL divergence
-                kl_div = compute_kl_divergence_cuda(
-                    logits_adapter[0], logits_base[0], self.config.entropy_top_k
-                )
+                kl_div = compute_kl_divergence_cuda(logits_adapter[0], logits_base[0])
 
                 # Compute base logit geometry.
                 scores_base = logits_base[0].squeeze()

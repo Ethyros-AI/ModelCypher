@@ -137,8 +137,6 @@ class LinguisticCalorimeter:
         Optional path to adapter weights.
     simulated : bool
         If True, use simulated entropy (no model needed).
-    top_k : int
-        Number of top logits for variance calculation.
     epsilon : float
         Numerical stability constant.
     backend : Backend | None
@@ -160,7 +158,6 @@ class LinguisticCalorimeter:
         model_path: str | None = None,
         adapter_path: str | None = None,
         simulated: bool = False,
-        top_k: int = 10,
         epsilon: float = _MACHINE_EPS,
         backend: "Backend | None" = None,
         model: object | None = None,
@@ -173,7 +170,6 @@ class LinguisticCalorimeter:
             model_path: Path to the model directory.
             adapter_path: Optional path to adapter weights.
             simulated: If True, use simulated entropy (no model needed).
-            top_k: Number of top logits for variance calculation.
             epsilon: Numerical stability constant.
             backend: Optional backend for array operations.
             model: Optional pre-loaded model instance.
@@ -185,7 +181,6 @@ class LinguisticCalorimeter:
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
         self.simulated = simulated or (model_path is None and model is None)
-        self.top_k = top_k
         self.epsilon = epsilon
         self._backend = backend or get_default_backend()
         self._calibration = calibration
@@ -222,7 +217,7 @@ class LinguisticCalorimeter:
             LogitEntropyCalculator,
         )
 
-        self._entropy_calculator = LogitEntropyCalculator(top_k=self.top_k, epsilon=self.epsilon)
+        self._entropy_calculator = LogitEntropyCalculator(epsilon=self.epsilon)
 
     def measure_entropy(
         self,

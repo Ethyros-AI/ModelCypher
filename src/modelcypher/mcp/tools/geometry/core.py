@@ -520,7 +520,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
             # Collect activations via model inference
             from modelcypher.core.domain.entropy.hidden_state_extractor import (
-                ExtractorConfig,
                 HiddenStateExtractor,
             )
             from modelcypher.core.use_cases.model_probe_service import ModelProbeService
@@ -531,13 +530,14 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             total_layers = len([l for l in model_info.layers if "layers." in l.name])
 
             # Create extractor for neuron analysis in specified layer range
-            extractor_config = ExtractorConfig.for_neuron_analysis_range(
+            start_layer = int(total_layers * layer_start)
+            end_layer = int(total_layers * layer_end)
+            extractor = HiddenStateExtractor.for_neuron_analysis_range(
                 total_layers,
-                start_fraction=layer_start,
-                end_fraction=layer_end,
+                start_layer=start_layer,
+                end_layer=end_layer,
                 hidden_dim=model_info.hidden_size,
             )
-            extractor = HiddenStateExtractor(extractor_config)
 
             # Collect activations via inference
             from modelcypher.adapters.local_inference import LocalInferenceEngine

@@ -26,10 +26,6 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
         weights = {"model.layers.0.mlp.down_proj.weight": object()}
         return weights, "safetensors"
 
-    def fake_load_weights_cpu(_loader, _path):
-        weights = {"model.layers.0.mlp.down_proj.weight": object()}
-        return weights, "safetensors"
-
     def fake_load_tokenizer(_path):
         return object()
 
@@ -72,7 +68,6 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
         return 2
 
     monkeypatch.setattr(pipeline, "load_weights", fake_load_weights)
-    monkeypatch.setattr(pipeline, "load_weights_cpu", fake_load_weights_cpu)
     monkeypatch.setattr(pipeline, "load_tokenizer", fake_load_tokenizer)
     monkeypatch.setattr(pipeline, "stage_probe", fake_stage_probe)
     monkeypatch.setattr(pipeline, "stage_density", fake_stage_density)

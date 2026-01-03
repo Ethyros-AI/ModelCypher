@@ -142,22 +142,19 @@ class RetrievalTrustMetrics:
         }
 
 
-@dataclass(frozen=True)
-class ChunkEntropyConfiguration:
-    """Configuration for chunk entropy analyzer.
+# =============================================================================
+# Module Constants (derived from standard text analysis practices)
+# =============================================================================
 
-    Contains structural analysis parameters - no classification thresholds.
-    The analyzer returns raw measurements; consumers decide interpretation.
-    """
+# Minimum text length for meaningful entropy analysis.
+# Character 3-grams need at least ~30 chars for stable statistics.
+# 50 provides margin for varied text quality.
+_MINIMUM_TEXT_LENGTH = 50
 
-    minimum_text_length: int = 50
-    """Minimum text length for analysis (shorter texts use defaults)."""
-
-    ngram_size: int = 3
-    """Character n-gram size for entropy estimation."""
-
-    injection_sensitivity: float = 0.7
-    """Injection pattern weight multiplier (0-1). Higher = more aggressive detection."""
+# Character n-gram size for entropy estimation.
+# 3-grams are standard in computational linguistics for character-level
+# entropy estimation, balancing context capture with statistical stability.
+_NGRAM_SIZE = 3
 
 
 # Known injection patterns to detect
@@ -206,15 +203,17 @@ class ChunkEntropyAnalyzer:
     - Linguistic entropy: Text predictability/stability
     - Injection detection: Identifies prompt injection attempts, jailbreak patterns
     - Cross-reference consistency: Agreement between related chunks
+
+    No configuration needed - uses standard text analysis parameters.
     """
 
-    def __init__(self, configuration: ChunkEntropyConfiguration) -> None:
+    def __init__(self) -> None:
         """Create a chunk entropy analyzer.
 
-        Args:
-            configuration: Analyzer configuration. Structural parameters for analysis.
+        No configuration needed - uses standard text analysis parameters
+        derived from computational linguistics best practices.
         """
-        self._config = configuration
+        pass
 
     def analyze_chunk(self, text: str) -> ChunkTrustAssessment:
         """Analyze a single text chunk for trust assessment.
@@ -230,7 +229,7 @@ class ChunkEntropyAnalyzer:
             Trust scores and detected patterns.
         """
         # Skip analysis for very short texts
-        if len(text) < self._config.minimum_text_length:
+        if len(text) < _MINIMUM_TEXT_LENGTH:
             return ChunkTrustAssessment(
                 semantic_coherence=1.0,
                 linguistic_entropy=2.0,
@@ -350,12 +349,12 @@ class ChunkEntropyAnalyzer:
     def _compute_character_entropy(self, text: str) -> float:
         """Compute character-level entropy using n-grams."""
         chars = list(text.lower())
-        if len(chars) <= self._config.ngram_size:
+        if len(chars) <= _NGRAM_SIZE:
             return 0.0
 
         ngram_counts: dict[str, int] = {}
-        for i in range(len(chars) - self._config.ngram_size + 1):
-            ngram = "".join(chars[i : i + self._config.ngram_size])
+        for i in range(len(chars) - _NGRAM_SIZE + 1):
+            ngram = "".join(chars[i : i + _NGRAM_SIZE])
             ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
 
         total = sum(ngram_counts.values())
@@ -370,7 +369,12 @@ class ChunkEntropyAnalyzer:
         return entropy
 
     def _detect_injection_patterns(self, text: str) -> tuple[float, list[str]]:
-        """Detect injection patterns in text."""
+        """Detect injection patterns in text.
+
+        Uses pattern weights directly - each pattern has a carefully calibrated
+        weight based on its severity (1.0 for severe like 'DAN mode', 0.5 for
+        mild like 'do not reveal').
+        """
         lowercased = text.lower()
         max_risk = 0.0
         detected_patterns: list[str] = []
@@ -378,8 +382,8 @@ class ChunkEntropyAnalyzer:
         for pattern, weight, name in _INJECTION_PATTERNS:
             try:
                 if re.search(pattern, lowercased, re.IGNORECASE):
-                    adjusted_weight = weight * self._config.injection_sensitivity
-                    max_risk = max(max_risk, adjusted_weight)
+                    # Use pattern weight directly - no arbitrary scaling
+                    max_risk = max(max_risk, weight)
                     if name not in detected_patterns:
                         detected_patterns.append(name)
             except re.error:

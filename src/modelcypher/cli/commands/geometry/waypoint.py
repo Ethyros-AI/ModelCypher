@@ -56,7 +56,7 @@ def waypoint_profile(
     Compute geometry profile for a model across validated domains.
 
     Tests all four validated geometric hypotheses:
-    - Spatial: 3D world model (Euclidean, gravity, occlusion)
+    - Spatial: 3D world model (axis orthogonality, gravity, occlusion)
     - Social: Power hierarchies, kinship, formality
     - Temporal: Direction, duration, causality
     - Moral: Valence, agency, scope (Haidt foundations)

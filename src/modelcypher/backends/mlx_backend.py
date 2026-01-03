@@ -953,12 +953,21 @@ class MLXBackend(Backend):
         mlx_weights = {}
         for key, value in weights.items():
             if hasattr(value, "__module__") and "mlx" in type(value).__module__:
-                mlx_weights[key] = value
+                # Already an MLX array - ensure it's a GPU-compatible dtype
+                if value.dtype == self.mx.float64:
+                    mlx_weights[key] = self.mx.astype(value, self.mx.float32)
+                else:
+                    mlx_weights[key] = value
             else:
+                # Convert to float32 by default (GPU-compatible)
                 try:
-                    mlx_weights[key] = self.array(value)
-                except RuntimeError:
-                    # Handle large integers by converting via float64 first
+                    if isinstance(value, list):
+                        float_list = [float(v) for v in value]
+                        mlx_weights[key] = self.mx.array(float_list, dtype=self.mx.float32)
+                    else:
+                        mlx_weights[key] = self.mx.astype(self.array(value), self.mx.float32)
+                except (RuntimeError, OverflowError):
+                    # Handle large integers by converting via float first
                     if isinstance(value, list):
                         float_list = [float(v) for v in value]
                         mlx_weights[key] = self.mx.array(float_list, dtype=self.mx.float32)

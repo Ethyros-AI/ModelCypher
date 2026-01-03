@@ -22,10 +22,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaTracker
+from typing import Any
 
 # --- Dual Path Types ---
 
@@ -42,7 +39,6 @@ class SecurityScanMetrics:
 @dataclass
 class DualPathGeneratorConfiguration:
     base_model_path: str
-    delta_tracker_config: "EntropyDeltaTracker.Configuration"
     adapter_path: str | None
     max_tokens: int
     temperature: float

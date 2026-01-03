@@ -184,18 +184,18 @@ def geometry_sparse_neurons(
 
         # Collect activations using HiddenStateExtractor
         from modelcypher.core.domain.entropy.hidden_state_extractor import (
-            ExtractorConfig,
             HiddenStateExtractor,
         )
 
-        # Create extractor for neuron analysis
-        extractor_config = ExtractorConfig.for_neuron_analysis_range(
+        # Create extractor for neuron analysis - convert fractions to layer indices
+        start_layer = int(total_layers * layer_start)
+        end_layer = int(total_layers * layer_end)
+        extractor = HiddenStateExtractor.for_neuron_analysis_range(
             total_layers,
-            start_fraction=layer_start,
-            end_fraction=layer_end,
+            start_layer=start_layer,
+            end_layer=end_layer,
             hidden_dim=model_info.hidden_size,
         )
-        extractor = HiddenStateExtractor(extractor_config)
 
         # Collect activations via inference
         from modelcypher.adapters.local_inference import LocalInferenceEngine

@@ -303,18 +303,23 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_window(
             samples: list[list[float]],
-            windowSize: int,
         ) -> dict:
             """Track entropy in a sliding window and return raw measurements."""
-            from modelcypher.core.domain.entropy.entropy_window import (
-                EntropyWindow,
-                EntropyWindowConfig,
-            )
+            from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
 
-            config = EntropyWindowConfig(
-                window_size=windowSize,
-            )
-            window = EntropyWindow(config)
+            if not samples:
+                return {
+                    "_schema": "mc.entropy.window.v1",
+                    "samplesProcessed": 0,
+                    "windowSize": 0,
+                    "currentEntropy": 0.0,
+                    "movingAverage": 0.0,
+                }
+
+            import math
+
+            window_size = int(math.sqrt(len(samples)))
+            window = EntropyWindow(window_size=window_size)
             for i, sample in enumerate(samples):
                 entropy, variance = sample[0], sample[1]
                 window.add(entropy, variance, i)
@@ -323,7 +328,7 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.entropy.window.v1",
                 "samplesProcessed": len(samples),
-                "windowSize": windowSize,
+                "windowSize": window_size,
                 "currentEntropy": status.current_entropy,
                 "movingAverage": status.moving_average,
             }

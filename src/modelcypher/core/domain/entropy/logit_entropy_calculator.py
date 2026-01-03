@@ -56,7 +56,7 @@ class LogitEntropyCalculator:
 
     Given logits from a model's forward pass, computes:
     1. Shannon entropy: -sum(p * log(p)) over the probability distribution
-    2. Top-K variance: Variance of the top K raw logit values (before softmax)
+    2. Logit variance: Variance of raw logit values (before softmax)
 
     Notes
     -----
@@ -69,13 +69,12 @@ class LogitEntropyCalculator:
     --------
     Basic usage:
 
-        calculator = LogitEntropyCalculator(top_k=10)
+        calculator = LogitEntropyCalculator()
         entropy, variance = calculator.compute(logits)
     """
 
     def __init__(
         self,
-        top_k: int | None,
         *,
         epsilon: float | None = None,
         backend: Backend | None = None,
@@ -84,12 +83,9 @@ class LogitEntropyCalculator:
         Initialize the calculator.
 
         Args:
-            top_k: Number of top logits to consider for variance calculation.
-                Use None to compute variance over the full vocabulary.
             epsilon: Optional log-stability floor. If None, derived from dtype.
             backend: Compute backend.
         """
-        self.top_k = top_k
         self.epsilon = epsilon
         self._backend = backend or get_default_backend()
 
@@ -118,7 +114,7 @@ class LogitEntropyCalculator:
         1. Extract the last token's logits (handles various input shapes)
         2. Apply numerically stable softmax
         3. Compute Shannon entropy: -sum(p * log(p))
-        4. Compute variance of top-K raw logit values
+        4. Compute variance of raw logit values
         """
         # Flatten logits to 1D vocabulary vector
         flat_logits = self._flatten_to_vocab(logits)
@@ -136,25 +132,12 @@ class LogitEntropyCalculator:
         log_probs = self._backend.log(probs + eps)
         entropy = -self._backend.sum(probs * log_probs)
 
-        # Top-K variance (before softmax, as proxy for "sharpness")
+        # Logit variance (before softmax, as proxy for "sharpness")
         if skip_variance:
             variance = self._backend.array([0.0])
         else:
-            vocab_size = flat_logits.shape[0]
-            if self.top_k is None:
-                top_k_logits = flat_logits
-            else:
-                if self.top_k <= 0:
-                    raise ValueError("top_k must be positive or None for full-vocab variance")
-                k = min(self.top_k, vocab_size)
-
-                # Use argsort for top-K selection (sort descending, take first k)
-                sorted_indices = self._backend.argsort(-flat_logits)
-                top_k_indices = sorted_indices[:k]
-                top_k_logits = self._backend.take(flat_logits, top_k_indices)
-
-            mean_val = self._backend.mean(top_k_logits)
-            squared_diff = (top_k_logits - mean_val) ** 2
+            mean_val = self._backend.mean(flat_logits)
+            squared_diff = (flat_logits - mean_val) ** 2
             variance = self._backend.mean(squared_diff)
 
         # Evaluate and convert to Python floats
@@ -198,19 +181,9 @@ class LogitEntropyCalculator:
             log_probs = self._backend.log(probs + eps)
             entropy = -self._backend.sum(probs * log_probs)
 
-            # Variance
-            if self.top_k is None:
-                top_k_logits = flat_logits
-            else:
-                if self.top_k <= 0:
-                    raise ValueError("top_k must be positive or None for full-vocab variance")
-                vocab_size = flat_logits.shape[0]
-                k = min(self.top_k, vocab_size)
-                sorted_indices = self._backend.argsort(-flat_logits)
-                top_k_indices = sorted_indices[:k]
-                top_k_logits = self._backend.take(flat_logits, top_k_indices)
-            mean_val = self._backend.mean(top_k_logits)
-            squared_diff = (top_k_logits - mean_val) ** 2
+            # Variance across full logits
+            mean_val = self._backend.mean(flat_logits)
+            squared_diff = (flat_logits - mean_val) ** 2
             variance = self._backend.mean(squared_diff)
 
             entropies.append(entropy)
@@ -255,7 +228,7 @@ class LogitEntropyCalculator:
         --------
         Usage with circuit breaker:
 
-            calc = LogitEntropyCalculator(top_k=10)
+            calc = LogitEntropyCalculator()
             raw_entropy, _ = calc.compute(logits)
             normalized = calc.normalize_entropy(raw_entropy, vocab_size=32000)
             # Pass normalized to circuit breaker
@@ -339,7 +312,7 @@ class LogitEntropySample:
     logit_entropy : float
         Shannon entropy over full vocabulary.
     top_k_variance : float
-        Variance of top-K logits.
+        Variance of raw logits (full vocabulary).
     latency_ms : float, optional
         Computation latency in milliseconds.
     source : str, optional

@@ -222,9 +222,9 @@ class EntropyTracker:
     """Coordinates entropy tracking for cognitive state analysis.
 
     All parameters are derived from the calibrated baseline:
-    - window_size: sqrt(baseline sample count), minimum 8
-    - emit_interval: window_size // 2
-    - top_k: None (use all logits for full entropy)
+    - window_size: sqrt(baseline sample count)
+    - emit_interval: sqrt(window_size)
+    - variance: full-vocabulary logit variance (no top-k truncation)
     """
 
     def __init__(
@@ -243,16 +243,22 @@ class EntropyTracker:
         self._baseline = baseline
         self._source = source
 
-        # Derive window_size from baseline sample count
-        # sqrt(n) scaling, minimum 8 for statistical stability
-        baseline_n = baseline.sample_count if hasattr(baseline, "sample_count") else 64
-        self._window_size = max(8, int(math.sqrt(baseline_n)))
+        if not hasattr(baseline, "sample_count"):
+            raise ValueError("baseline.sample_count required for derived entropy windows")
+        baseline_n = int(baseline.sample_count)
+        if baseline_n <= 0:
+            raise ValueError("baseline.sample_count must be positive for derived windows")
+        self._window_size = int(math.sqrt(float(baseline_n)))
+        if self._window_size <= 0:
+            raise ValueError("derived window_size must be positive")
 
-        # Derive emit_interval from window_size (emit at half-window intervals)
-        self._emit_interval = max(1, self._window_size // 2)
+        # Derive emit_interval from window_size without arbitrary ratios
+        self._emit_interval = int(math.sqrt(float(self._window_size)))
+        if self._emit_interval <= 0:
+            raise ValueError("derived emit_interval must be positive")
 
-        # Use all logits for full entropy (no arbitrary top_k filtering)
-        self.calculator = LogitEntropyCalculator(top_k=None)
+        # Use full-vocabulary entropy/variance (no top-k truncation)
+        self.calculator = LogitEntropyCalculator()
 
         # Session state
         self._window: EntropyWindow | None = None

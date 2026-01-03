@@ -37,7 +37,6 @@ World Model Score: 0.40
 Key Metrics:
   Axis Orthogonality: 94.58%
   Gravity Correlation: 0.61
-  Inverse-Square Compliance: 0.52
 ```
 
 **What you just measured:**

@@ -50,21 +50,14 @@ class TestLogitEntropyCalculator:
     """Tests for LogitEntropyCalculator."""
 
     def test_initialization(self):
-        """Should initialize with explicit top_k."""
-        calc = LogitEntropyCalculator(top_k=10)
+        """Should initialize without configuration knobs."""
+        calc = LogitEntropyCalculator()
 
-        assert calc.top_k == 10
         assert calc.epsilon is None
-
-    def test_custom_top_k(self):
-        """Should accept custom top_k."""
-        calc = LogitEntropyCalculator(top_k=5)
-
-        assert calc.top_k == 5
 
     def test_compute_uniform_distribution(self):
         """Uniform logits should have high entropy."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
 
         vocab_size = 100
         logits = mx.zeros((vocab_size,))
@@ -77,7 +70,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_peaked_distribution(self):
         """Peaked logits should have low entropy."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
 
         vocab_size = 100
         logits = mx.zeros((vocab_size,))
@@ -89,7 +82,7 @@ class TestLogitEntropyCalculator:
 
     def test_flatten_to_vocab_1d(self):
         """1D input should pass through."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
         logits = mx.array([1.0, 2.0, 3.0])
 
         result = calc._flatten_to_vocab(logits)
@@ -98,7 +91,7 @@ class TestLogitEntropyCalculator:
 
     def test_flatten_to_vocab_2d(self):
         """2D input [batch, vocab] should extract batch 0."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
         logits = mx.zeros((2, 100))
 
         result = calc._flatten_to_vocab(logits)
@@ -107,7 +100,7 @@ class TestLogitEntropyCalculator:
 
     def test_flatten_to_vocab_3d(self):
         """3D input [batch, seq, vocab] should extract last token."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
         logits = mx.zeros((2, 5, 100))
 
         result = calc._flatten_to_vocab(logits)
@@ -116,7 +109,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_with_skip_variance(self):
         """Should return 0 variance when skipped."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
         logits = mx.zeros((100,))
 
         entropy, variance = calc.compute(logits, skip_variance=True)
@@ -126,7 +119,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_batch(self):
         """Should compute entropy for batch of logits."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
 
         batch = [
             mx.zeros((100,)),
@@ -140,7 +133,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_batch_empty(self):
         """Should handle empty batch."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
 
         results = calc.compute_batch([])
 
@@ -173,7 +166,7 @@ class TestEdgeCases:
 
     def test_compute_with_inf_logits_does_not_crash(self):
         """Compute should complete without raising on inf input."""
-        calc = LogitEntropyCalculator(top_k=10, backend=get_default_backend())
+        calc = LogitEntropyCalculator(backend=get_default_backend())
         logits = mx.array([float("inf"), 0.0, -1.0])
 
         calc.compute(logits)

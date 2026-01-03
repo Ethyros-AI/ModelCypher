@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from modelcypher.core.domain.entropy.hidden_state_extractor import (
-    ExtractorConfig,
     HiddenStateExtractor,
 )
 from modelcypher.ports.inference import HiddenStateEngine
@@ -533,10 +532,9 @@ class LocalInferenceEngine(HiddenStateEngine):
                 target_layers = set(range(len(layers)))
 
             extractor = HiddenStateExtractor(
-                ExtractorConfig(
-                    target_layers=target_layers,
-                    expected_hidden_dim=None,
-                )
+                total_layers=len(layers),
+                target_layers=target_layers,
+                expected_hidden_dim=None,
             )
             extractor.start_session()
 

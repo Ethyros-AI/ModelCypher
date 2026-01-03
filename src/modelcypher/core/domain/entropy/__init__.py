@@ -41,8 +41,8 @@ from .entropy_delta_sample import (
     EntropyDeltaSessionResult,
 )
 from .entropy_delta_tracker import (
+    EntropyDeltaCalibration,
     EntropyDeltaTracker,
-    EntropyDeltaTrackerConfig,
     PendingEntropyData,
 )
 from .entropy_pattern_detector import (
@@ -61,16 +61,12 @@ from .entropy_window import (
     EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version
 )
 from .entropy_window import (
-    EntropyWindowConfig,
-)
-from .entropy_window import (
     EntropyWindowStatus as EntropyWindowStatusV2,
 )
 from .geometric_alignment import *  # noqa: F401,F403
 from .hidden_state_extractor import (
     CapturedState,
     ExtractionSummary,
-    ExtractorConfig,
     HiddenStateExtractor,
 )
 from .layer_entropy_projector import (
@@ -96,10 +92,12 @@ from .model_state_classifier import (
     ModelStateSignals,
 )
 from .sep_probe import (
+    IncompatibleWeightsError,
+    LayerNotFoundError,
     LayerProbeWeights,
     PredictionResult,
     ProbeWeightsBundle,
     SEPProbe,
-    SEPProbeConfig,
     SEPProbeError,
+    WeightsNotLoadedError,
 )

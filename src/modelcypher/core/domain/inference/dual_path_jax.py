@@ -84,7 +84,6 @@ class DualPathGeneratorConfigurationJAX:
     top_k: int
     repetition_penalty: float
     stop_sequences: list[str]
-    entropy_top_k: int  # Top-K for entropy calculation
     seed: int
 
     # Anomaly detection thresholds - MUST be derived from baseline measurements
@@ -148,15 +147,12 @@ def compute_token_rank_metrics_jax(
 
 def compute_entropy_jax(
     logits: jnp.ndarray,
-    top_k: int = 100,
 ) -> tuple[float, float]:
     """
     Compute entropy and variance from logits.
 
     Args:
         logits: [vocab_size] logit array
-        top_k: Number of top tokens to consider
-
     Returns:
         Tuple of (entropy, variance)
     """
@@ -164,14 +160,8 @@ def compute_entropy_jax(
     if logits.ndim > 1:
         logits = logits.squeeze()
 
-    # Get top-K logits for stability
-    if top_k < logits.shape[0]:
-        top_logits = jax.lax.top_k(logits, top_k)[0]
-    else:
-        top_logits = logits
-
     # Softmax for probabilities
-    probs = jax.nn.softmax(top_logits)
+    probs = jax.nn.softmax(logits)
 
     eps = _division_epsilon_for_dtype(probs)
 
@@ -188,7 +178,6 @@ def compute_entropy_jax(
 def compute_kl_divergence_jax(
     logits_p: jnp.ndarray,
     logits_q: jnp.ndarray,
-    top_k: int = 100,
 ) -> float:
     """
     Compute KL divergence D_KL(P || Q) from logits.
@@ -196,8 +185,6 @@ def compute_kl_divergence_jax(
     Args:
         logits_p: Logits from distribution P
         logits_q: Logits from distribution Q
-        top_k: Number of top tokens to consider
-
     Returns:
         KL divergence value
     """
@@ -394,17 +381,11 @@ class DualPathGeneratorJAX:
             text = self.tokenizer.decode([token_id], skip_special_tokens=True)
 
             # Compute entropy metrics
-            base_entropy, base_variance = compute_entropy_jax(
-                logits_base[0], self.config.entropy_top_k
-            )
-            adapter_entropy, adapter_variance = compute_entropy_jax(
-                logits_adapter[0], self.config.entropy_top_k
-            )
+            base_entropy, base_variance = compute_entropy_jax(logits_base[0])
+            adapter_entropy, adapter_variance = compute_entropy_jax(logits_adapter[0])
 
             # Compute KL divergence
-            kl_div = compute_kl_divergence_jax(
-                logits_adapter[0], logits_base[0], self.config.entropy_top_k
-            )
+            kl_div = compute_kl_divergence_jax(logits_adapter[0], logits_base[0])
 
             # Compute base logit geometry.
             scores_base = logits_base[0]

@@ -54,16 +54,11 @@ from modelcypher.core.domain.entropy.entropy_delta_sample import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class EntropyDeltaTrackerConfig:
-    """Configuration for EntropyDeltaTracker.
+@dataclass(frozen=True)
+class EntropyDeltaCalibration:
+    """Calibration derived from baseline anomaly scores."""
 
-    Derive from baseline measurements via from_baseline_distribution().
-    """
-
-    top_k: int
     anomaly_threshold: float
-    compute_variance: bool
     source: str
 
     @classmethod
@@ -71,10 +66,8 @@ class EntropyDeltaTrackerConfig:
         cls,
         anomaly_score_samples: list[float],
         *,
-        top_k: int | None,
-        compute_variance: bool,
         source: str,
-    ) -> "EntropyDeltaTrackerConfig":
+    ) -> "EntropyDeltaCalibration":
         """Derive threshold from baseline anomaly score distribution.
 
         Args:
@@ -93,9 +86,7 @@ class EntropyDeltaTrackerConfig:
         threshold = float(find_magnitude_gap_threshold(sorted_samples, eps=eps))
 
         return cls(
-            top_k=top_k,
             anomaly_threshold=threshold,
-            compute_variance=compute_variance,
             source=source,
         )
 
@@ -161,8 +152,11 @@ class EntropyDeltaTracker:
     (base uncertain + adapter confident) signal potential security issues.
 
     Usage:
-        config = EntropyDeltaTrackerConfig.from_baseline_distribution(baseline_scores)
-        tracker = EntropyDeltaTracker(config)
+        calibration = EntropyDeltaCalibration.from_baseline_distribution(
+            baseline_scores,
+            source="entropy_delta_tracker",
+        )
+        tracker = EntropyDeltaTracker(calibration)
         tracker.start_session(correlation_id=generation_id)
 
         # In dual-path generation loop:
@@ -178,12 +172,12 @@ class EntropyDeltaTracker:
 
     def __init__(
         self,
-        config: EntropyDeltaTrackerConfig,
+        calibration: EntropyDeltaCalibration,
         backend: "Backend | None" = None,
     ) -> None:
-        self.config = config
+        self.calibration = calibration
         self._backend = backend or get_default_backend()
-        self.calculator = LogitEntropyCalculator(top_k=self.config.top_k, backend=self._backend)
+        self.calculator = LogitEntropyCalculator(backend=self._backend)
 
         # Session state
         self._session_active: bool = False
@@ -256,7 +250,7 @@ class EntropyDeltaTracker:
             adapter_top_token=adapter_top_token,
             latency_ms=latency_ms,
             correlation_id=self._correlation_id,
-            source=self.config.source,
+            source=self.calibration.source,
         )
 
         self._samples.append(sample)
@@ -298,7 +292,7 @@ class EntropyDeltaTracker:
             kl_divergence_adapter_to_base=data.kl_divergence_adapter_to_base,
             latency_ms=data.latency_ms,
             correlation_id=self._correlation_id,
-            source=self.config.source,
+            source=self.calibration.source,
         )
 
         self._samples.append(sample)
@@ -329,7 +323,7 @@ class EntropyDeltaTracker:
         # Compute statistics
         total_tokens = len(self._samples)
         anomaly_count = sum(
-            1 for s in self._samples if s.anomaly_score >= self.config.anomaly_threshold
+            1 for s in self._samples if s.anomaly_score >= self.calibration.anomaly_threshold
         )
         max_anomaly_score = max((s.anomaly_score for s in self._samples), default=0.0)
         avg_delta = sum(s.delta for s in self._samples) / total_tokens if total_tokens > 0 else 0.0
@@ -374,7 +368,7 @@ class EntropyDeltaTracker:
 
     async def _check_anomalies(self, sample: EntropyDeltaSample) -> None:
         """Check for anomalies and emit callbacks."""
-        is_anomaly = sample.anomaly_score >= self.config.anomaly_threshold
+        is_anomaly = sample.anomaly_score >= self.calibration.anomaly_threshold
 
         if is_anomaly:
             # Invoke callback

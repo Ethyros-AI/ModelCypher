@@ -52,7 +52,6 @@ class MLXInferenceAdapter(InferenceEnginePort):
 
         impl_config = ImplConfig(
             base_model_path=config.base_model_path,
-            delta_tracker_config=config.delta_tracker_config,
             adapter_path=config.adapter_path,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
@@ -79,7 +78,6 @@ class MLXInferenceAdapter(InferenceEnginePort):
 
         impl_config = ImplConfig(
             base_model_path=checkpoints[0],  # Dummy base? Or allow None?
-            delta_tracker_config=config.delta_tracker_config,
             adapter_path=None,
             max_tokens=config.max_tokens,
             temperature=config.temperature,

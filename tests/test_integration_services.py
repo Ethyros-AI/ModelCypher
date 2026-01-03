@@ -134,16 +134,11 @@ class TestEntropyIntegration:
 
     def test_entropy_window_import(self):
         """EntropyWindow can be imported and created."""
-        from modelcypher.core.domain.entropy.entropy_window import (
-            EntropyWindow,
-            EntropyWindowConfig,
-        )
+        from modelcypher.core.domain.entropy.entropy_window import EntropyWindow
 
-        config = EntropyWindowConfig(window_size=5)
-        window = EntropyWindow(config)
+        window = EntropyWindow(window_size=5)
 
         assert window is not None
-        assert window.config.window_size == 5
 
 
 class TestSafetyIntegration:

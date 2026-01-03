@@ -25,15 +25,18 @@ Extracts hidden states from transformer layers during inference for:
 - Refusal direction detection (layers 40-60%)
 - Persona vector analysis (layers 50-70%)
 
-Research Basis:
-- arXiv:2406.15927 - SEP layers 24-28 in 32-layer models
-- Arditi 2024 - Refusal direction in middle layers
-- Chen/Anthropic 2025 - Persona vectors in late-middle layers
+Layer ranges are research-based, not configurable:
+- arXiv:2406.15927 - SEP layers 75-87.5% in transformer models
+- Arditi 2024 - Refusal direction in middle layers (40-60%)
+- Chen/Anthropic 2025 - Persona vectors in late-middle layers (50-70%)
+
+All parameters are derived from model architecture.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -46,120 +49,61 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ExtractorConfig:
-    """Configuration for hidden state extraction."""
+# =============================================================================
+# Layer Range Derivation Functions (Research-based)
+# =============================================================================
 
-    target_layers: set[int]
-    keep_history: bool = False
-    max_history_tokens: int = 20
-    expected_hidden_dim: int | None = None
-    collect_for_neuron_analysis: bool = False
-    """When True, accumulates activations across captures for per-neuron analysis."""
 
-    @classmethod
-    def default(cls) -> "ExtractorConfig":
-        """Default: layers 24-28 for 32-layer models."""
-        return cls(target_layers={24, 25, 26, 27, 28})
+def _sep_probe_layers(total_layers: int) -> set[int]:
+    """SEP probe targeting: layers 75-87.5% (arXiv:2406.15927)."""
+    start = int(total_layers * 0.75)
+    end = int(total_layers * 0.875)
+    return set(range(start, end + 1))
 
-    @classmethod
-    def for_model_layers(
-        cls,
-        total_layers: int,
-        hidden_dim: int | None = None,
-    ) -> "ExtractorConfig":
-        """Create config based on model layer count (75-87.5% range)."""
-        start = int(total_layers * 0.75)
-        end = int(total_layers * 0.875)
-        return cls(
-            target_layers=set(range(start, end + 1)),
-            expected_hidden_dim=hidden_dim,
-        )
 
-    @classmethod
-    def for_sep_probe(cls, total_layers: int, hidden_dim: int | None = None) -> "ExtractorConfig":
-        """SEP probe targeting: layers 75-87.5% (most predictive)."""
-        return cls.for_model_layers(total_layers, hidden_dim)
+def _refusal_direction_layers(total_layers: int) -> set[int]:
+    """Refusal direction targeting: layers 40-60% (Arditi 2024)."""
+    start = int(total_layers * 0.40)
+    end = int(total_layers * 0.60)
+    return set(range(start, end + 1))
 
-    @classmethod
-    def for_refusal_direction(
-        cls, total_layers: int, hidden_dim: int | None = None
-    ) -> "ExtractorConfig":
-        """Refusal direction targeting: layers 40-60% (Arditi 2024)."""
-        start = int(total_layers * 0.40)
-        end = int(total_layers * 0.60)
-        return cls(
-            target_layers=set(range(start, end + 1)),
-            expected_hidden_dim=hidden_dim,
-        )
 
-    @classmethod
-    def for_persona_vectors(
-        cls, total_layers: int, hidden_dim: int | None = None
-    ) -> "ExtractorConfig":
-        """Persona vector targeting: layers 50-70%."""
-        start = int(total_layers * 0.50)
-        end = int(total_layers * 0.70)
-        return cls(
-            target_layers=set(range(start, end + 1)),
-            expected_hidden_dim=hidden_dim,
-        )
+def _persona_vector_layers(total_layers: int) -> set[int]:
+    """Persona vector targeting: layers 50-70%."""
+    start = int(total_layers * 0.50)
+    end = int(total_layers * 0.70)
+    return set(range(start, end + 1))
 
-    @classmethod
-    def for_circuit_breaker(
-        cls, total_layers: int, hidden_dim: int | None = None
-    ) -> "ExtractorConfig":
-        """Circuit breaker targeting: layers 40-75% (comprehensive)."""
-        start = int(total_layers * 0.40)
-        end = int(total_layers * 0.75)
-        return cls(
-            target_layers=set(range(start, end + 1)),
-            expected_hidden_dim=hidden_dim,
-        )
 
-    @classmethod
-    def for_full_research(
-        cls, total_layers: int, hidden_dim: int | None = None
-    ) -> "ExtractorConfig":
-        """Full research metrics: layers 40-87.5% with history."""
-        start = int(total_layers * 0.40)
-        end = int(total_layers * 0.875)
-        return cls(
-            target_layers=set(range(start, end + 1)),
-            keep_history=True,
-            max_history_tokens=50,
-            expected_hidden_dim=hidden_dim,
-        )
+def _circuit_breaker_layers(total_layers: int) -> set[int]:
+    """Circuit breaker targeting: layers 40-75% (comprehensive)."""
+    start = int(total_layers * 0.40)
+    end = int(total_layers * 0.75)
+    return set(range(start, end + 1))
 
-    @classmethod
-    def for_neuron_analysis(
-        cls, total_layers: int, hidden_dim: int | None = None
-    ) -> "ExtractorConfig":
-        """Configuration for per-neuron sparsity analysis (all layers)."""
-        return cls(
-            target_layers=set(range(total_layers)),
-            keep_history=False,
-            expected_hidden_dim=hidden_dim,
-            collect_for_neuron_analysis=True,
-        )
 
-    @classmethod
-    def for_neuron_analysis_range(
-        cls,
-        total_layers: int,
-        start_fraction: float = 0.0,
-        end_fraction: float = 1.0,
-        hidden_dim: int | None = None,
-    ) -> "ExtractorConfig":
-        """Configuration for per-neuron analysis on a layer range."""
-        start = int(total_layers * start_fraction)
-        end = int(total_layers * end_fraction)
-        return cls(
-            target_layers=set(range(start, end + 1)),
-            keep_history=False,
-            expected_hidden_dim=hidden_dim,
-            collect_for_neuron_analysis=True,
-        )
+def _full_research_layers(total_layers: int) -> set[int]:
+    """Full research metrics: layers 40-87.5%."""
+    start = int(total_layers * 0.40)
+    end = int(total_layers * 0.875)
+    return set(range(start, end + 1))
+
+
+def _neuron_analysis_layers(total_layers: int) -> set[int]:
+    """Neuron analysis targeting: layers 50-85% for sparsity analysis."""
+    start = int(total_layers * 0.50)
+    end = int(total_layers * 0.85)
+    return set(range(start, end + 1))
+
+
+def _neuron_analysis_range_layers(start_layer: int, end_layer: int) -> set[int]:
+    """Explicit layer range for neuron analysis."""
+    return set(range(start_layer, end_layer + 1))
+
+
+# =============================================================================
+# Data Classes
+# =============================================================================
 
 
 @dataclass
@@ -182,12 +126,22 @@ class ExtractionSummary:
     duration: float
 
 
+# =============================================================================
+# Hidden State Extractor
+# =============================================================================
+
+
 class HiddenStateExtractor:
     """
     Extracts hidden states from transformer layers during inference.
 
     Provides access to intermediate activations for SEP probe inference.
     Uses a callback-based approach since MLX doesn't have PyTorch-style hooks.
+
+    Layer targeting is derived from research findings:
+    - SEP probe: 75-87.5% layers (arXiv:2406.15927)
+    - Refusal direction: 40-60% layers (Arditi 2024)
+    - Persona vectors: 50-70% layers (Chen/Anthropic 2025)
 
     Usage:
         extractor = HiddenStateExtractor.for_sep_probe(32)
@@ -202,8 +156,26 @@ class HiddenStateExtractor:
         extractor.end_session()
     """
 
-    def __init__(self, config: ExtractorConfig | None = None) -> None:
-        self.config = config or ExtractorConfig.default()
+    def __init__(
+        self,
+        total_layers: int,
+        target_layers: set[int] | None = None,
+        expected_hidden_dim: int | None = None,
+    ) -> None:
+        """Create hidden state extractor.
+
+        Args:
+            total_layers: Number of transformer layers in the model.
+            target_layers: Specific layers to capture. If None, uses SEP probe layers.
+            expected_hidden_dim: Expected hidden dimension for validation.
+        """
+        self._total_layers = total_layers
+        self._target_layers = target_layers or _sep_probe_layers(total_layers)
+        self._expected_hidden_dim = expected_hidden_dim
+
+        # History depth derived from sqrt(total_layers) - reasonable memory bound
+        self._max_history_tokens = max(5, int(math.sqrt(total_layers)))
+        self._keep_history = False  # History disabled by default for memory
 
         # Session state
         self._current_states: "dict[int, Array]" = {}
@@ -213,25 +185,134 @@ class HiddenStateExtractor:
         self._capture_count: int = 0
         self._session_start: datetime | None = None
 
-        # Per-neuron analysis storage: layer -> list of activation vectors (one per prompt)
+        # Per-neuron analysis storage
         self._neuron_activations: dict[int, list[list[float]]] = {}
         self._prompt_count: int = 0
+        self._collect_for_neuron_analysis: bool = False
+
+    # =========================================================================
+    # Factory Methods (Research-based Layer Targeting)
+    # =========================================================================
 
     @classmethod
     def for_sep_probe(
         cls, total_layers: int, hidden_dim: int | None = None
     ) -> "HiddenStateExtractor":
-        """Create extractor configured for SEP probe."""
-        return cls(ExtractorConfig.for_sep_probe(total_layers, hidden_dim))
+        """Create extractor for SEP probe (layers 75-87.5%)."""
+        return cls(
+            total_layers=total_layers,
+            target_layers=_sep_probe_layers(total_layers),
+            expected_hidden_dim=hidden_dim,
+        )
 
     @classmethod
     def for_refusal_direction(
         cls, total_layers: int, hidden_dim: int | None = None
     ) -> "HiddenStateExtractor":
-        """Create extractor configured for refusal direction detection."""
-        return cls(ExtractorConfig.for_refusal_direction(total_layers, hidden_dim))
+        """Create extractor for refusal direction detection (layers 40-60%)."""
+        return cls(
+            total_layers=total_layers,
+            target_layers=_refusal_direction_layers(total_layers),
+            expected_hidden_dim=hidden_dim,
+        )
 
-    def start_session(self):
+    @classmethod
+    def for_persona_vectors(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "HiddenStateExtractor":
+        """Create extractor for persona vector analysis (layers 50-70%)."""
+        return cls(
+            total_layers=total_layers,
+            target_layers=_persona_vector_layers(total_layers),
+            expected_hidden_dim=hidden_dim,
+        )
+
+    @classmethod
+    def for_circuit_breaker(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "HiddenStateExtractor":
+        """Create extractor for circuit breaker analysis (layers 40-75%)."""
+        return cls(
+            total_layers=total_layers,
+            target_layers=_circuit_breaker_layers(total_layers),
+            expected_hidden_dim=hidden_dim,
+        )
+
+    @classmethod
+    def for_full_research(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "HiddenStateExtractor":
+        """Create extractor for full research metrics (layers 40-87.5%)."""
+        return cls(
+            total_layers=total_layers,
+            target_layers=_full_research_layers(total_layers),
+            expected_hidden_dim=hidden_dim,
+        )
+
+    @classmethod
+    def for_neuron_analysis(
+        cls, total_layers: int, hidden_dim: int | None = None
+    ) -> "HiddenStateExtractor":
+        """Create extractor for neuron sparsity analysis (layers 50-85%)."""
+        extractor = cls(
+            total_layers=total_layers,
+            target_layers=_neuron_analysis_layers(total_layers),
+            expected_hidden_dim=hidden_dim,
+        )
+        extractor._collect_for_neuron_analysis = True
+        return extractor
+
+    @classmethod
+    def for_neuron_analysis_range(
+        cls,
+        total_layers: int,
+        start_layer: int,
+        end_layer: int,
+        hidden_dim: int | None = None,
+    ) -> "HiddenStateExtractor":
+        """Create extractor for neuron analysis with explicit layer range."""
+        extractor = cls(
+            total_layers=total_layers,
+            target_layers=_neuron_analysis_range_layers(start_layer, end_layer),
+            expected_hidden_dim=hidden_dim,
+        )
+        extractor._collect_for_neuron_analysis = True
+        return extractor
+
+    # =========================================================================
+    # Properties
+    # =========================================================================
+
+    @property
+    def target_layers(self) -> set[int]:
+        """Target layers for extraction."""
+        return self._target_layers
+
+    @property
+    def is_active(self) -> bool:
+        """Whether extraction session is active."""
+        return self._is_active
+
+    @property
+    def captured_layers(self) -> set[int]:
+        """Layers captured in current token."""
+        return set(self._current_states.keys())
+
+    @property
+    def has_all_target_layers(self) -> bool:
+        """Whether all target layers have been captured."""
+        return self._target_layers.issubset(self.captured_layers)
+
+    @property
+    def state_count(self) -> int:
+        """Number of states captured for current token."""
+        return len(self._current_states)
+
+    # =========================================================================
+    # Session Management
+    # =========================================================================
+
+    def start_session(self) -> None:
         """Start a new extraction session."""
         self._is_active = True
         self._current_states.clear()
@@ -267,22 +348,22 @@ class HiddenStateExtractor:
         if not self._is_active:
             return
 
-        if layer not in self.config.target_layers:
+        if layer not in self._target_layers:
             return
 
         # Validate hidden dimension
-        if self.config.expected_hidden_dim is not None:
+        if self._expected_hidden_dim is not None:
             actual_dim = hidden_state.shape[-1]
-            if actual_dim != self.config.expected_hidden_dim:
+            if actual_dim != self._expected_hidden_dim:
                 logger.warning(
                     "Hidden dim mismatch: expected %s, got %s",
-                    self.config.expected_hidden_dim,
+                    self._expected_hidden_dim,
                     actual_dim,
                 )
 
         # Handle token transition
         if token_index != self._current_token_index:
-            if self.config.keep_history and self._current_states:
+            if self._keep_history and self._current_states:
                 historical = {
                     layer: CapturedState(
                         layer=layer, token_index=self._current_token_index, state=state
@@ -291,7 +372,7 @@ class HiddenStateExtractor:
                 }
                 self._state_history.append(historical)
 
-                if len(self._state_history) > self.config.max_history_tokens:
+                if len(self._state_history) > self._max_history_tokens:
                     self._state_history.pop(0)
 
             self._current_states.clear()
@@ -317,7 +398,7 @@ class HiddenStateExtractor:
 
     def states_for_token(self, token_index: int) -> "dict[int, Array] | None":
         """Get states for a specific token (if history enabled)."""
-        if not self.config.keep_history:
+        if not self._keep_history:
             return None
 
         if token_index == self._current_token_index:
@@ -331,29 +412,17 @@ class HiddenStateExtractor:
 
         return None
 
-    @property
-    def is_active(self) -> bool:
-        return self._is_active
+    def enable_history(self, enable: bool = True) -> None:
+        """Enable or disable token history."""
+        self._keep_history = enable
 
-    @property
-    def captured_layers(self) -> set[int]:
-        return set(self._current_states.keys())
-
-    @property
-    def has_all_target_layers(self) -> bool:
-        return self.config.target_layers.issubset(self.captured_layers)
-
-    @property
-    def state_count(self) -> int:
-        return len(self._current_states)
-
-    def clear_states(self):
+    def clear_states(self) -> None:
         """Clear captured states without ending session."""
         self._current_states.clear()
         self._state_history.clear()
         self._current_token_index = -1
 
-    def reset(self):
+    def reset(self) -> None:
         """Full reset including session state."""
         self.clear_states()
         self._is_active = False
@@ -364,22 +433,15 @@ class HiddenStateExtractor:
         """Debug information string."""
         return f"""HiddenStateExtractor Debug:
   Active: {self._is_active}
-  Target Layers: {sorted(self.config.target_layers)}
+  Target Layers: {sorted(self._target_layers)}
   Current Token: {self._current_token_index}
   Captured Layers: {sorted(self.captured_layers)}
   Total Captures: {self._capture_count}
-  History Tokens: {len(self._state_history) if self.config.keep_history else "N/A"}"""
+  History Tokens: {len(self._state_history) if self._keep_history else "N/A"}"""
 
     # =========================================================================
     # Per-Neuron Analysis Methods
     # =========================================================================
-
-    @classmethod
-    def for_neuron_analysis(
-        cls, total_layers: int, hidden_dim: int | None = None
-    ) -> "HiddenStateExtractor":
-        """Create extractor configured for per-neuron sparsity analysis."""
-        return cls(ExtractorConfig.for_neuron_analysis(total_layers, hidden_dim))
 
     def start_neuron_collection(self) -> None:
         """Start collecting activations for per-neuron analysis.
@@ -400,7 +462,7 @@ class HiddenStateExtractor:
         The last captured hidden states for each layer will be stored
         as that prompt's activation profile.
         """
-        if not self.config.collect_for_neuron_analysis:
+        if not self._collect_for_neuron_analysis:
             logger.warning(
                 "finalize_prompt_activations called but collect_for_neuron_analysis=False"
             )

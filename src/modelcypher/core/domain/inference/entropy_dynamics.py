@@ -265,10 +265,8 @@ class LogitEntropyCalculator:
 
     def __init__(
         self,
-        top_k: int = 10,
         backend: "Backend | None" = None,
     ) -> None:
-        self.top_k = top_k
         self._backend = backend or get_default_backend()
         self._epsilon = machine_epsilon(self._backend, self._backend.array([0.0]))
 
@@ -299,16 +297,9 @@ class LogitEntropyCalculator:
 
         # Variance
         variance_val = 0.0
-        if not skip_variance and self.top_k > 0:
-            vocab_size = flat_logits.shape[-1]
-            k = min(self.top_k, vocab_size)
-            # Use argsort to get top K indices (descending)
-            indices = b.argsort(-flat_logits, axis=-1)
-            top_k_indices = indices[:k]
-            top_k_logits = b.take(flat_logits, top_k_indices)
-
-            mean_val = b.mean(top_k_logits, axis=-1, keepdims=True)
-            squared_diff = (top_k_logits - mean_val) ** 2
+        if not skip_variance:
+            mean_val = b.mean(flat_logits, axis=-1, keepdims=True)
+            squared_diff = (flat_logits - mean_val) ** 2
             variance = b.mean(squared_diff, axis=-1)
             b.eval(entropy, variance)
             return (float(b.to_scalar(entropy)), float(b.to_scalar(variance)))
@@ -359,22 +350,17 @@ class LogitDivergenceCalculator:
 class EntropyDeltaTracker:
     """Tracks entropy differences between two model passes."""
 
-    @dataclass
-    class Configuration:
-        """Configuration for entropy delta tracking."""
-
-        top_k: int
-        compute_variance: bool
-        source: str
-
     def __init__(
         self,
-        configuration: "Configuration",
+        *,
+        source: str | None = None,
         backend: "Backend | None" = None,
+        router: Any | None = None,
     ) -> None:
-        self.config = configuration
+        self.source = source
         self._backend = backend or get_default_backend()
-        self.calculator = LogitEntropyCalculator(top_k=self.config.top_k, backend=self._backend)
+        self.calculator = LogitEntropyCalculator(backend=self._backend)
+        self._router = router
         self.samples: list[EntropyDeltaSample] = []
         self.session_active = False
         self.correlation_id: uuid.UUID | None = None
@@ -396,12 +382,8 @@ class EntropyDeltaTracker:
         start_time = time.perf_counter()
         b = self._backend
 
-        base_ent, base_var = self.calculator.compute(
-            base_logits, skip_variance=not self.config.compute_variance
-        )
-        adap_ent, adap_var = self.calculator.compute(
-            adapter_logits, skip_variance=not self.config.compute_variance
-        )
+        base_ent, base_var = self.calculator.compute(base_logits, skip_variance=False)
+        adap_ent, adap_var = self.calculator.compute(adapter_logits, skip_variance=False)
 
         # Top token extraction
         def get_top(logits: "Array") -> int:
@@ -428,7 +410,7 @@ class EntropyDeltaTracker:
             adapter_top_token=adap_top,
             latency_ms=latency_ms,
             correlation_id=self.correlation_id,
-            source=self.config.source,
+            source=self.source,
         )
 
         self.samples.append(sample)

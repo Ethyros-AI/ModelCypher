@@ -9,14 +9,14 @@
 
 Language models are trained on text, not visual input. Yet they can reason about spatial relationships ("the ball is under the table"). Do they encode a coherent 3D world model, or merely pattern-match on linguistic co-occurrences?
 
-## The Hypothesis: Latent Euclidean Structure
+## The Hypothesis: Latent Geodesic Structure
 
 **Blind Physicist Hypothesis**: Models trained on human text encode physical relationships (gravity, spatial structure) through **linguistic/relational** rather than **visual/perceptual** axes. The 3D world model exists but is distributed differently than human visual intuition would predict.
 
 We test for three properties:
-1. **Euclidean Consistency**: Do `up/down`, `left/right`, `near/far` form orthogonal axes?
-2. **Pythagorean Metric**: Does `dist(A,B)² + dist(B,C)² ≈ dist(A,C)²` for right triangles?
-3. **Gravity Gradient**: Does `heavy/light` correlate with `down/up`?
+1. **Axis Orthogonality**: Do `up/down`, `left/right`, `near/far` form orthogonal axes?
+2. **Gravity Gradient**: Does `heavy/light` correlate with `down/up`?
+3. **Volumetric Density**: Do distant anchors attenuate as expected?
 
 ## Methodology
 
@@ -33,23 +33,22 @@ We test for three properties:
 ### Probing Protocol
 
 1. Extract last-layer hidden states for each anchor prompt
-2. Compute pairwise cosine distances
-3. Analyze axis orthogonality via projection onto principal components
-4. Test Pythagorean property on spatial triplets
-5. Correlate mass anchors with vertical axis
+2. Analyze axis orthogonality from anchor-defined axes
+3. Correlate mass anchors with the inferred vertical axis
+4. Measure inverse-square compliance for depth attenuation
 
 ## Empirical Results (2025-12-23)
 
 ### Models Tested
 
-| Model | World Model Score | Axis Orthogonality | Pythagorean Error | Physics Detected |
-|-------|-------------------|-------------------|-------------------|------------------|
-| Qwen2.5-3B-bf16 | 0.4986 | 0.8844 | 0.7286 | No |
-| Llama-3.2-3B-4bit | 0.4909 | 0.8793 | 0.8248 | No |
-| Qwen2.5-Coder-3B-bf16 | 0.4860 | 0.8870 | 0.7631 | No |
-| Mistral-7B-4bit | 0.4774 | 0.8809 | 0.7936 | No |
-| Qwen2.5-0.5B-bf16 | 0.4602 | 0.8785 | 0.7889 | No |
-| Qwen2-0.5B-4bit | 0.4498 | 0.8703 | 0.7893 | No |
+| Model | World Model Score | Axis Orthogonality |
+|-------|-------------------|-------------------|
+| Qwen2.5-3B-bf16 | 0.4986 | 0.8844 |
+| Llama-3.2-3B-4bit | 0.4909 | 0.8793 |
+| Qwen2.5-Coder-3B-bf16 | 0.4860 | 0.8870 |
+| Mistral-7B-4bit | 0.4774 | 0.8809 |
+| Qwen2.5-0.5B-bf16 | 0.4602 | 0.8785 |
+| Qwen2-0.5B-4bit | 0.4498 | 0.8703 |
 
 **Mean World Model Score**: 0.48 (std: 0.019)
 
