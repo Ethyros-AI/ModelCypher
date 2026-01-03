@@ -78,6 +78,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -166,7 +167,9 @@ def per_layer_analysis(gradients: dict[str, "Array"]) -> PerLayerStats:
     for key, grad in gradients.items():
         grad_arr = backend.array(grad)
         backend.eval(grad_arr)
-        norm_arr = backend.norm(grad_arr)
+        # Reshape to 2D row vector for geodesic norm computation
+        flat_grad = backend.reshape(grad_arr, (1, -1))
+        norm_arr = geodesic_norms(flat_grad, backend)
         backend.eval(norm_arr)
         norm = float(backend.to_scalar(norm_arr))
         norms[key] = norm

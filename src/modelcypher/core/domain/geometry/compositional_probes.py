@@ -227,7 +227,13 @@ class CompositionalProbes:
         db = vb - mb
 
         num = bk.sum(da * db)
-        den = bk.sqrt(bk.sum(da**2) * bk.sum(db**2))
+        # Compute geodesic norms for correlation denominator
+        da_norm_arr = geodesic_norms(bk.reshape(da, (1, -1)), bk)
+        db_norm_arr = geodesic_norms(bk.reshape(db, (1, -1)), bk)
+        bk.eval(da_norm_arr, db_norm_arr)
+        da_norm = bk.to_scalar(da_norm_arr)
+        db_norm = bk.to_scalar(db_norm_arr)
+        den = bk.array([da_norm * db_norm])
         bk.eval(num, den)
 
         den_val = float(bk.to_scalar(den))

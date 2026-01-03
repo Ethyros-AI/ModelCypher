@@ -27,6 +27,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     log2_scalar,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_batch,
+    geodesic_norms,
+)
 from modelcypher.core.domain.geometry.types import (
     ConceptComparisonResult,
     DetectedConcept,
@@ -228,7 +232,14 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
             vecs = await self.embedder.embed(expressions)
             # vecs is [N, D]
             centroid = mx.mean(vecs, axis=0)  # [D]
-            centroid = centroid / mx.linalg.norm(centroid)
+            norm_arr = geodesic_norms(
+                get_default_backend().reshape(centroid, (1, -1)),
+                get_default_backend(),
+            )
+            get_default_backend().eval(norm_arr)
+            norm_val = float(get_default_backend().to_scalar(norm_arr))
+            if norm_val > 0.0:
+                centroid = centroid / norm_val
             prototypes.append(centroid)
 
         self._concept_embeddings = mx.stack(prototypes)  # [C, D]

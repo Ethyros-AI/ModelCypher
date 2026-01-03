@@ -48,6 +48,7 @@ from typing import Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -302,24 +303,35 @@ class LossLandscapeComputerCUDA:
         visualization.
         """
         if filter_norm:
-            # Filter-wise normalization
+            # Filter-wise normalization using geodesic norms
+            _b = get_default_backend()
             result = {}
             for k in direction:
                 d = direction[k]
                 p = params[k]
-                d_norm = float(torch.norm(d).item())
-                p_norm = float(torch.norm(p).item())
+                # Compute geodesic norm for each tensor
+                d_flat = _b.reshape(_b.array(d.flatten().cpu().numpy()), (1, -1))
+                p_flat = _b.reshape(_b.array(p.flatten().cpu().numpy()), (1, -1))
+                d_norm_arr = geodesic_norms(d_flat, _b)
+                p_norm_arr = geodesic_norms(p_flat, _b)
+                _b.eval(d_norm_arr, p_norm_arr)
+                d_norm = float(_b.to_scalar(d_norm_arr))
+                p_norm = float(_b.to_scalar(p_norm_arr))
                 if d_norm > _MACHINE_EPS:
                     result[k] = d * (p_norm / d_norm)
                 else:
                     result[k] = d.clone()
             return result
         else:
-            # Global normalization
+            # Global normalization using geodesic norms
+            _b = get_default_backend()
             total_norm_sq = 0.0
             for d in direction.values():
-                total_norm_sq += float(torch.sum(d**2).item())
-            _b = get_default_backend()
+                d_flat = _b.reshape(_b.array(d.flatten().cpu().numpy()), (1, -1))
+                d_norm_arr = geodesic_norms(d_flat, _b)
+                _b.eval(d_norm_arr)
+                d_norm = float(_b.to_scalar(d_norm_arr))
+                total_norm_sq += d_norm * d_norm
             total_norm = sqrt_scalar(total_norm_sq, _b)
 
             if total_norm > _MACHINE_EPS:

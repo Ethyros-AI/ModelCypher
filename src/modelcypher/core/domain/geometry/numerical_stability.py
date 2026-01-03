@@ -739,6 +739,22 @@ def power_iteration_eigh(
 
         prev_eigenvalues = eigenvalues
 
+    # Ritz refinement: project matrix onto subspace and diagonalize
+    # This corrects eigenvector rotation within the converged subspace
+    # H = V^T @ M @ V is the projected matrix (k x k)
+    H = b.matmul(b.transpose(V), b.matmul(matrix, V))
+    b.eval(H)
+
+    # Diagonalize H to get exact eigenvectors within the subspace
+    # H = Q @ D @ Q^T where D has eigenvalues on diagonal
+    ritz_eigenvalues, Q = b.eigh(H)
+    b.eval(ritz_eigenvalues, Q)
+
+    # Rotate V by Q to get true eigenvectors: V_final = V @ Q
+    V = b.matmul(V, Q)
+    eigenvalues = ritz_eigenvalues
+    b.eval(V, eigenvalues)
+
     # Sort by descending eigenvalue
     order = b.argsort(-eigenvalues)
     b.eval(order)

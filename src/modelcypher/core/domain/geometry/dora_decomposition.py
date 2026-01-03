@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_finite
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -127,16 +128,16 @@ class DoRADecomposition:
             return None
 
         b = self._backend
-        # Compute magnitudes (L2 norm)
-        base_flat = b.reshape(base_weight, (-1,))
-        current_flat = b.reshape(current_weight, (-1,))
+        # Compute magnitudes using geodesic norm (correct for high-dimensional manifolds)
+        base_flat = b.reshape(base_weight, (1, -1))
+        current_flat = b.reshape(current_weight, (1, -1))
 
-        base_sq = b.sqrt(b.sum(base_flat**2))
-        current_sq = b.sqrt(b.sum(current_flat**2))
-        b.eval(base_sq, current_sq)
+        base_norm_arr = geodesic_norms(base_flat, b)
+        current_norm_arr = geodesic_norms(current_flat, b)
+        b.eval(base_norm_arr, current_norm_arr)
 
-        base_mag = float(b.to_scalar(base_sq))
-        current_mag = float(b.to_scalar(current_sq))
+        base_mag = float(b.to_scalar(base_norm_arr))
+        current_mag = float(b.to_scalar(current_norm_arr))
 
         min_norm = division_epsilon(b, base_flat)
         if base_mag < min_norm:

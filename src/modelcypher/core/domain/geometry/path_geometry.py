@@ -24,12 +24,16 @@ from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    acos_scalar,
     division_epsilon,
     is_finite,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import BackendVectorMath, geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.vector_math import (
+    BackendVectorMath,
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -580,78 +584,8 @@ class PathGeometry:
         path: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> LocalGeometry:
-        projection_dim = PathGeometry._projection_dim(gate_embeddings)
-        if len(path.nodes) < 3:
-            return LocalGeometry(
-                curvatures=[],
-                mean_curvature=0.0,
-                max_curvature=0.0,
-                total_curvature=0.0,
-                torsions=[],
-                mean_torsion=0.0,
-            )
-
-        entropies = [node.entropy for node in path.nodes]
-        entropy_mean, entropy_scale = PathGeometry._entropy_normalization(entropies)
-        coords = []
-        for node in path.nodes:
-            emb = gate_embeddings.get(node.gate_id)
-            if emb:
-                proj = list(emb[: projection_dim - 1])
-                while len(proj) < projection_dim - 1:
-                    proj.append(0.0)
-                proj.append((node.entropy - entropy_mean) / entropy_scale)
-                coords.append(proj)
-            else:
-                proj = [0.0] * (projection_dim - 1)
-                proj.append((node.entropy - entropy_mean) / entropy_scale)
-                coords.append(proj)
-
         backend = get_default_backend()
-        tangents: list[list[float]] = []
-        for i in range(len(coords) - 1):
-            t = [0.0] * projection_dim
-            norm = 0.0
-            for d in range(projection_dim):
-                t[d] = coords[i + 1][d] - coords[i][d]
-                norm += t[d] * t[d]
-            norm = sqrt_scalar(norm, backend)
-            if norm > 0:
-                t = [val / norm for val in t]
-            tangents.append(t)
-
-        curvatures: list[float] = []
-        for i in range(len(tangents) - 1):
-            dot = sum(tangents[i][d] * tangents[i + 1][d] for d in range(projection_dim))
-            dot = max(-1.0, min(1.0, dot))
-            curvatures.append(acos_scalar(dot, backend))
-
-        mean_curv = sum(curvatures) / len(curvatures) if curvatures else 0.0
-        max_curv = max(curvatures) if curvatures else 0.0
-        total_curv = sum(curvatures)
-
-        torsions: list[float] = []
-        if len(tangents) >= 3:
-            for i in range(len(tangents) - 2):
-                t1 = tangents[i]
-                t2 = tangents[i + 1]
-                t3 = tangents[i + 2]
-                deviation = 0.0
-                for d in range(projection_dim):
-                    expected = (t1[d] + t3[d]) / 2.0
-                    deviation += (t2[d] - expected) ** 2
-                torsions.append(sqrt_scalar(deviation, backend))
-
-        mean_tors = sum(torsions) / len(torsions) if torsions else 0.0
-
-        return LocalGeometry(
-            curvatures=curvatures,
-            mean_curvature=mean_curv,
-            max_curvature=max_curv,
-            total_curvature=total_curv,
-            torsions=torsions,
-            mean_torsion=mean_tors,
-        )
+        return BackendPathGeometry(backend).compute_local_geometry(path, gate_embeddings)
 
     @staticmethod
     def comprehensive_compare(
@@ -935,24 +869,31 @@ class BackendPathGeometry:
                 coords_list.append(proj)
 
         coords = self.backend.array(coords_list)  # [n, d]
+        self.backend.eval(coords)
 
-        # Compute tangent vectors: diff and normalize using geodesic distance
-        tangent_diff = coords[1:] - coords[:-1]  # [n-1, d]
-        tangent_norms = geodesic_norms(tangent_diff, self.backend)  # [n-1]
-        tangent_norms = self.backend.reshape(tangent_norms, (-1, 1))  # [n-1, 1]
+        rg = RiemannianGeometry(self.backend)
+        geo_result = rg.geodesic_distances(coords, k_neighbors=None)
+        mean_result = rg.frechet_mean(coords, k_neighbors=geo_result.k_neighbors)
+        mean = mean_result.mean
+        self.backend.eval(mean)
 
-        # Avoid division by zero
+        # Map coordinates to tangent space at the Fréchet mean.
+        log_coords = rg.log_map(coords, mean, geo_result=geo_result)
+        self.backend.eval(log_coords)
+
+        # Compute tangent vectors in the shared tangent space.
+        tangent_diff = log_coords[1:] - log_coords[:-1]  # [n-1, d]
+        tangent_norms = geodesic_norms(tangent_diff, self.backend)
+        tangent_norms = self.backend.reshape(tangent_norms, (-1, 1))
         safe_norms = self.backend.maximum(tangent_norms, self._finfo.eps)
-        tangents = tangent_diff / safe_norms  # [n-1, d]
+        tangents = tangent_diff / safe_norms
         self.backend.eval(tangents)
 
-        # Curvatures: angle between consecutive tangents
-        # curvature[i] = arccos(tangents[i] · tangents[i+1])
-        n_tangents = len(coords_list) - 1
+        n_tangents = int(tangents.shape[0])
         if n_tangents > 1:
-            dot_arr = self.backend.sum(tangents[:-1] * tangents[1:], axis=1)
-            dot_clamped = self.backend.clip(dot_arr, -1.0, 1.0)
-            curvatures_arr = self.backend.arccos(dot_clamped)
+            cos_arr, _ = geodesic_pairwise_metrics(tangents[:-1], tangents[1:], self.backend)
+            cos_arr = self.backend.clip(cos_arr, -1.0, 1.0)
+            curvatures_arr = self.backend.arccos(cos_arr)
             mean_curv_arr = self.backend.mean(curvatures_arr)
             max_curv_arr = self.backend.max(curvatures_arr)
             total_curv_arr = self.backend.sum(curvatures_arr)
@@ -967,12 +908,11 @@ class BackendPathGeometry:
             max_curv = 0.0
             total_curv = 0.0
 
-        # Torsions: deviation from linear interpolation of tangents
+        # Torsions: deviation from linear interpolation of tangents in tangent space.
         if n_tangents >= 3:
             expected = (tangents[:-2] + tangents[2:]) / 2.0
             deviation = tangents[1:-1] - expected
-            dev_norm_sq = self.backend.sum(deviation * deviation, axis=1)
-            torsions_arr = self.backend.sqrt(dev_norm_sq)
+            torsions_arr = geodesic_norms(deviation, self.backend)
             mean_tors_arr = self.backend.mean(torsions_arr)
             self.backend.eval(torsions_arr, mean_tors_arr)
             torsions_list = [float(x) for x in self._to_list(torsions_arr)]

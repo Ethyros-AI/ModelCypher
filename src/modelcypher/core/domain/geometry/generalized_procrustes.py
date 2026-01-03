@@ -58,8 +58,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
     geodesic_svd,
+    machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 logger = logging.getLogger(__name__)
 
@@ -234,16 +236,8 @@ class GeneralizedProcrustes:
         means = self._backend.mean(X, axis=1, keepdims=True)
         X = X - means
 
-        # 2. No scaling - preserves magnitudes (allow_scaling = False always)
+        # 2. No scaling - preserves magnitudes (scaling distorts geometry)
         scales = self._backend.ones((model_count,))
-        if False:  # allow_scaling is always False
-            norms = self._backend.sqrt(self._backend.sum(X**2, axis=(1, 2)))
-            ones_arr = self._backend.ones((1,))
-            # Use precision-aware epsilon instead of hardcoded 1e-12
-            eps = division_epsilon(self._backend, norms)
-            scale_factors = self._backend.where(norms > eps, 1.0 / norms, ones_arr)
-            X = X * scale_factors[:, None, None]
-            scales = norms
 
         # Two-model alignment has a closed-form Procrustes solution.
         # Avoid iterative updates for M=2 to keep precision high and runtime low.
@@ -258,8 +252,9 @@ class GeneralizedProcrustes:
             # When X0 = X1, the optimal rotation is identity and error is exactly 0.
             # Skip SVD to avoid numerical errors in the null space.
             diff = X0 - X1
-            diff_norm_arr = b.sum(diff ** 2)
-            x_norm_arr = b.sum(X0 ** 2)
+            # Use geodesic norms for matrix distance (flatten to row vector)
+            diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
+            x_norm_arr = geodesic_norms(b.reshape(X0, (1, -1)), b)
             b.eval(diff_norm_arr, x_norm_arr)
             diff_norm = float(b.to_scalar(diff_norm_arr))
             x_norm = float(b.to_scalar(x_norm_arr))
@@ -304,9 +299,16 @@ class GeneralizedProcrustes:
             consensus = b.mean(aligned_X, axis=0)
 
             residuals = aligned_X - consensus
-            per_model_errors = b.sum(residuals**2, axis=(1, 2))
-            current_error_arr = b.sum(residuals**2)
-            total_var_arr = b.sum(aligned_X**2)
+            # Compute geodesic norms for each model's residuals
+            residuals_flat = b.reshape(residuals, (model_count, -1))  # [M, n*k]
+            per_model_norms = geodesic_norms(residuals_flat, b)  # [M]
+            per_model_errors = per_model_norms * per_model_norms  # squared geodesic norms
+            # Total error is sum of squared geodesic norms
+            current_error_arr = b.sum(per_model_errors)
+            # Total variance via geodesic norm
+            aligned_flat = b.reshape(aligned_X, (1, -1))
+            total_var_arr = geodesic_norms(aligned_flat, b)
+            total_var_arr = total_var_arr * total_var_arr  # squared
             b.eval(current_error_arr, total_var_arr, per_model_errors)
             current_error = float(b.to_scalar(current_error_arr))
             total_var = float(b.to_scalar(total_var_arr))
@@ -387,8 +389,13 @@ class GeneralizedProcrustes:
 
             # Error - normalize by total data energy for scale-invariant convergence
             diffs = aligned_X - new_consensus
-            current_error_arr = self._backend.sum(diffs**2)
-            total_energy_arr = self._backend.sum(aligned_X**2)
+            # Use geodesic norms for error computation
+            diffs_flat = self._backend.reshape(diffs, (1, -1))
+            diffs_norm = geodesic_norms(diffs_flat, self._backend)
+            current_error_arr = diffs_norm * diffs_norm  # squared geodesic norm
+            aligned_flat = self._backend.reshape(aligned_X, (1, -1))
+            aligned_norm = geodesic_norms(aligned_flat, self._backend)
+            total_energy_arr = aligned_norm * aligned_norm  # squared
             self._backend.eval(current_error_arr, total_energy_arr)
             current_error = float(self._backend.to_scalar(current_error_arr))
             total_energy = float(self._backend.to_scalar(total_energy_arr))
@@ -406,10 +413,15 @@ class GeneralizedProcrustes:
 
         # Final outputs
         residuals = aligned_X - consensus
-        per_model_errors = self._backend.sum(residuals**2, axis=(1, 2))
+        # Compute geodesic norms for each model's residuals
+        residuals_flat = self._backend.reshape(residuals, (model_count, -1))  # [M, n*k]
+        per_model_norms = geodesic_norms(residuals_flat, self._backend)  # [M]
+        per_model_errors = per_model_norms * per_model_norms  # squared geodesic norms
 
-        # Variance calc
-        total_var_arr = self._backend.sum(aligned_X**2)
+        # Variance calc using geodesic norm
+        aligned_flat = self._backend.reshape(aligned_X, (1, -1))
+        total_var_arr = geodesic_norms(aligned_flat, self._backend)
+        total_var_arr = total_var_arr * total_var_arr  # squared
         self._backend.eval(total_var_arr)
         total_var = float(self._backend.to_scalar(total_var_arr))
         residual_var = current_error

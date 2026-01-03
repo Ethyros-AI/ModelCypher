@@ -314,10 +314,22 @@ class JAXModelProbe(BaseModelProbe):
         a_f32 = self.jnp.asarray(tensor_a, dtype=self.jnp.float32)
         b_f32 = self.jnp.asarray(tensor_b, dtype=self.jnp.float32)
 
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+
+        backend = get_default_backend()
         diff = a_f32 - b_f32
-        norm_diff = float(self.jnp.linalg.norm(diff.flatten()))
-        norm_a = float(self.jnp.linalg.norm(a_f32.flatten()))
-        norm_b = float(self.jnp.linalg.norm(b_f32.flatten()))
+        diff_flat = diff.flatten()
+        a_flat = a_f32.flatten()
+        b_flat = b_f32.flatten()
+
+        norm_diff_arr = geodesic_norms(backend.reshape(diff_flat, (1, -1)), backend)
+        norm_a_arr = geodesic_norms(backend.reshape(a_flat, (1, -1)), backend)
+        norm_b_arr = geodesic_norms(backend.reshape(b_flat, (1, -1)), backend)
+        backend.eval(norm_diff_arr, norm_a_arr, norm_b_arr)
+        norm_diff = float(backend.to_scalar(norm_diff_arr))
+        norm_a = float(backend.to_scalar(norm_a_arr))
+        norm_b = float(backend.to_scalar(norm_b_arr))
 
         max_norm = max(norm_a, norm_b, _MACHINE_EPS)
         relative_drift = norm_diff / max_norm
