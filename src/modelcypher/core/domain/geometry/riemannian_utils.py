@@ -1592,8 +1592,11 @@ class RiemannianGeometry:
         backend.eval(max_sims)
 
         # The sparse direction is the candidate with minimum max-similarity
-        min_max_sim = float(backend.to_scalar(backend.min(max_sims)))
-        sparse_idx = int(backend.to_scalar(backend.argmin(max_sims)))
+        min_max_sim_arr = backend.min(max_sims)
+        sparse_idx_arr = backend.argmin(max_sims)
+        backend.eval(min_max_sim_arr, sparse_idx_arr)
+        min_max_sim = float(backend.to_scalar(min_max_sim_arr))
+        sparse_idx = int(backend.to_scalar(sparse_idx_arr))
 
         sparse_direction = candidates[sparse_idx]
 
@@ -1794,7 +1797,9 @@ class RiemannianGeometry:
             points, query, geo_result=geo_result
         )
         backend.eval(geo_from_query)
-        min_idx = int(backend.to_scalar(backend.argmin(geo_from_query)))
+        min_idx_arr = backend.argmin(geo_from_query)
+        backend.eval(min_idx_arr)
+        min_idx = int(backend.to_scalar(min_idx_arr))
         return min_idx
 
     def _frechet_mean_step(
@@ -1833,8 +1838,11 @@ class RiemannianGeometry:
         backend.eval(mu_isfinite, geo_isfinite)
 
         # Count non-finite using backend sum (1 - isfinite gives 0/1 mask)
-        mu_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(mu_isfinite, "float32"))))
-        geo_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(geo_isfinite, "float32"))))
+        mu_nonfinite_arr = backend.sum(1 - backend.astype(mu_isfinite, "float32"))
+        geo_nonfinite_arr = backend.sum(1 - backend.astype(geo_isfinite, "float32"))
+        backend.eval(mu_nonfinite_arr, geo_nonfinite_arr)
+        mu_nonfinite = int(backend.to_scalar(mu_nonfinite_arr))
+        geo_nonfinite = int(backend.to_scalar(geo_nonfinite_arr))
 
         if mu_nonfinite > 0:
             raise ValueError(
@@ -1875,8 +1883,11 @@ class RiemannianGeometry:
         scale_isnan = backend.isnan(scale)
         backend.eval(scale_isfinite, scale_isinf, scale_isnan)
 
-        inf_count = int(backend.to_scalar(backend.sum(backend.astype(scale_isinf, "float32"))))
-        nan_count = int(backend.to_scalar(backend.sum(backend.astype(scale_isnan, "float32"))))
+        inf_count_arr = backend.sum(backend.astype(scale_isinf, "float32"))
+        nan_count_arr = backend.sum(backend.astype(scale_isnan, "float32"))
+        backend.eval(inf_count_arr, nan_count_arr)
+        inf_count = int(backend.to_scalar(inf_count_arr))
+        nan_count = int(backend.to_scalar(nan_count_arr))
 
         if inf_count > 0 or nan_count > 0:
             raise ValueError(
@@ -1889,9 +1900,13 @@ class RiemannianGeometry:
         # Log curvature scale statistics for diagnostics (only when debugging)
         if logger.isEnabledFor(logging.DEBUG):
             n = int(scale.shape[0])
-            scale_min = float(backend.to_scalar(backend.min(scale)))
-            scale_max = float(backend.to_scalar(backend.max(scale)))
-            scale_mean = float(backend.to_scalar(backend.mean(scale)))
+            scale_min_arr = backend.min(scale)
+            scale_max_arr = backend.max(scale)
+            scale_mean_arr = backend.mean(scale)
+            backend.eval(scale_min_arr, scale_max_arr, scale_mean_arr)
+            scale_min = float(backend.to_scalar(scale_min_arr))
+            scale_max = float(backend.to_scalar(scale_max_arr))
+            scale_mean = float(backend.to_scalar(scale_mean_arr))
             logger.debug(
                 f"Curvature scaling in Fréchet mean: n={n}, "
                 f"scale range=[{scale_min:.3f}, {scale_max:.3f}], mean={scale_mean:.3f}"
@@ -1914,7 +1929,9 @@ class RiemannianGeometry:
         # IEEE 754: 0 * inf = nan, inf - inf = nan, so we must handle before scaling
         grad_isfinite = backend.isfinite(gradient)
         backend.eval(grad_isfinite)
-        has_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(grad_isfinite, "float32")))) > 0
+        grad_nonfinite_arr = backend.sum(1 - backend.astype(grad_isfinite, "float32"))
+        backend.eval(grad_nonfinite_arr)
+        has_nonfinite = int(backend.to_scalar(grad_nonfinite_arr)) > 0
 
         if has_nonfinite:
             # Gradient contains inf or nan - numerical overflow from extreme curvature
@@ -1960,7 +1977,9 @@ class RiemannianGeometry:
         backend.eval(new_mu)
         new_mu_isfinite = backend.isfinite(new_mu)
         backend.eval(new_mu_isfinite)
-        new_mu_nonfinite = int(backend.to_scalar(backend.sum(1 - backend.astype(new_mu_isfinite, "float32"))))
+        new_mu_nonfinite_arr = backend.sum(1 - backend.astype(new_mu_isfinite, "float32"))
+        backend.eval(new_mu_nonfinite_arr)
+        new_mu_nonfinite = int(backend.to_scalar(new_mu_nonfinite_arr))
 
         if new_mu_nonfinite > 0:
             # Update would produce NaN - skip this iteration

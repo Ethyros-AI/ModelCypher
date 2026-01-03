@@ -19,8 +19,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -37,6 +35,7 @@ from modelcypher.core.domain.geometry.curvature_profile import (
     LayerCurvature,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
+    is_finite,
     machine_epsilon,
 )
 
@@ -322,7 +321,7 @@ class TestComputeLayerGuidance:
         src = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=0.0)
         tgt = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=-0.1)
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
-        assert math.isfinite(guidance.curvature_correction)
+        assert is_finite(guidance.curvature_correction, get_default_backend())
 
     def test_alignment_weight_range(self):
         """Alignment weight should be in range [0, 1]."""
@@ -496,10 +495,12 @@ class TestCurvatureWeightedProcrustes:
         I = backend.eye(d)
         backend.eval(RTR, I)
 
-        diff = backend.to_numpy(RTR) - backend.to_numpy(I)
-        frobenius_norm = (diff ** 2).sum() ** 0.5
+        diff = RTR - I
+        fro_norm_arr = backend.sqrt(backend.sum(diff * diff))
+        backend.eval(fro_norm_arr)
+        frobenius_norm = float(backend.to_scalar(fro_norm_arr))
         eps = machine_epsilon(backend, R_low)
-        assert math.isfinite(frobenius_norm)
+        assert is_finite(frobenius_norm, backend)
         assert frobenius_norm >= -eps
 
     def test_high_curvature_correction_more_damping(self, backend):
@@ -525,12 +526,11 @@ class TestCurvatureWeightedProcrustes:
         backend.eval(I)
 
         # The matrix should have significant identity component
-        R_np = backend.to_numpy(R_high)
-        I_np = backend.to_numpy(I)
-
-        # Diagonal should be pushed toward 1
-        diag_mean = R_np.diagonal().mean()
-        assert math.isfinite(float(diag_mean))
+        diag = backend.diag(R_high)
+        diag_mean_arr = backend.mean(diag)
+        backend.eval(diag_mean_arr)
+        diag_mean = float(backend.to_scalar(diag_mean_arr))
+        assert is_finite(diag_mean, backend)
 
 
 # =============================================================================

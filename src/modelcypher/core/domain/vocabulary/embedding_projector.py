@@ -399,16 +399,18 @@ class EmbeddingProjector:
         backend.eval(source_proj, target_proj)
 
         n_components = int(min(source_proj.shape[1], target_proj.shape[1]))
-        correlations: list[float] = []
         eps = division_epsilon(backend, source_proj)
 
-        for idx in range(n_components):
-            s = source_proj[:, idx]
-            t = target_proj[:, idx]
-            s_norm = backend.norm(s)
-            t_norm = backend.norm(t)
-            denom = backend.clip(s_norm * t_norm, eps, None)
-            corr = backend.sum(s * t) / denom
-            backend.eval(corr)
-            correlations.append(float(backend.to_scalar(corr)))
-        return correlations
+        # Vectorized: compute all correlations at once
+        # Column-wise dot products
+        dot_products = backend.sum(source_proj[:, :n_components] * target_proj[:, :n_components], axis=0)
+        # Column norms
+        s_norms = backend.sqrt(backend.sum(source_proj[:, :n_components] ** 2, axis=0))
+        t_norms = backend.sqrt(backend.sum(target_proj[:, :n_components] ** 2, axis=0))
+        # Safe division
+        denom = backend.maximum(s_norms * t_norms, eps)
+        corr_arr = dot_products / denom
+        backend.eval(corr_arr)
+
+        # O(1) extraction via tolist() instead of O(n) to_scalar() loop
+        return [float(x) for x in backend.tolist(corr_arr)]

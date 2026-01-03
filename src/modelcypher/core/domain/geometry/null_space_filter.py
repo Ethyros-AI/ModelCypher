@@ -444,14 +444,15 @@ class NullSpaceFilter:
                     backend.eval(Vh)
 
                 n_dirs = min(10, int(Vh.shape[0]))
-                dir_pres = []
-                for i in range(n_dirs):
-                    vh_i = Vh[i]
-                    proj_vh = backend.matmul(projection.projection_matrix, vh_i)
-                    dot_product = backend.sum(vh_i * proj_vh)
-                    backend.eval(dot_product)
-                    dir_pres.append(1.0 - float(backend.to_scalar(dot_product)))
-                direction_preservation = backend.array(dir_pres)
+                # Vectorized: compute all direction preservations at once
+                Vh_subset = Vh[:n_dirs]  # (n_dirs, d)
+                # Project all directions: P @ Vh.T -> (d, n_dirs) -> transpose to (n_dirs, d)
+                proj_Vh = backend.transpose(backend.matmul(projection.projection_matrix, backend.transpose(Vh_subset)))
+                # Row-wise dot products: sum(Vh * proj_Vh, axis=1) -> (n_dirs,)
+                dot_products = backend.sum(Vh_subset * proj_Vh, axis=1)
+                backend.eval(dot_products)
+                # Preservation = 1 - dot_product
+                direction_preservation = 1.0 - dot_products
             except Exception:
                 direction_preservation = None
 

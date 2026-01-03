@@ -342,8 +342,12 @@ class ManifoldProfileService:
         result = rg.geodesic_distances(features, k_neighbors=k_neighbors)
 
         # Extract distances from query (row 0) to each candidate (rows 1..n)
+        # Use tolist() for O(1) extraction instead of O(n) scalar extractions
+        row0 = result.distances[0, :]
+        backend.eval(row0)
+        row0_list = backend.tolist(row0)
         distances = [
-            (points[i], float(backend.to_scalar(result.distances[0, i + 1])))
+            (points[i], float(row0_list[i + 1]))
             for i in range(len(points))
         ]
         filtered = [item for item in distances if item[1] <= threshold]

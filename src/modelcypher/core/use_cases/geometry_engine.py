@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,6 +24,7 @@ from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    is_finite,
     regularization_epsilon,
 )
 from modelcypher.ports.backend import Array, Backend
@@ -93,7 +93,7 @@ class GeometryEngine:
         step_l2_tensor = self.backend.sqrt(step_squared_sum) if has_step_delta else None
 
         weight_update_fro_tensor = None
-        if scale and math.isfinite(scale) and scale > 0:
+        if scale and is_finite(scale, self.backend) and scale > 0:
             weight_update_fro_tensor = self._weight_update_fro_norm(trainable_parameters, scale)
 
         eval_targets = [parameter_l2_tensor]
@@ -155,11 +155,11 @@ class GeometryEngine:
 
         rss_value = float(self._item(rss))
         denom_value = float(self._item(denom))
-        if not math.isfinite(rss_value) or not math.isfinite(denom_value) or denom_value <= 0:
+        if not is_finite(rss_value, self.backend) or not is_finite(denom_value, self.backend) or denom_value <= 0:
             raise ValueError("Non-finite Procrustes residuals")
 
         error = rss_value / denom_value
-        if not math.isfinite(error):
+        if not is_finite(error, self.backend):
             raise ValueError("Non-finite Procrustes relative error")
 
         return ProcrustesResult(omega=omega, error=error)
@@ -207,7 +207,7 @@ class GeometryEngine:
         self.backend.eval(rss, denom)
         rss_value = float(self._item(rss))
         denom_value = float(self._item(denom))
-        if not math.isfinite(rss_value) or not math.isfinite(denom_value) or denom_value <= 0:
+        if not is_finite(rss_value, self.backend) or not is_finite(denom_value, self.backend) or denom_value <= 0:
             raise ValueError("Non-finite soft Procrustes residuals")
         error = rss_value / denom_value
 

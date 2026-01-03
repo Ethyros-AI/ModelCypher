@@ -292,7 +292,11 @@ class MLXBackend(Backend):
         Raises:
             ValueError: If array has more than one element.
         """
-        return array.item()
+        if hasattr(array, "shape"):
+            self.safe.eval(array)
+        if hasattr(array, "item"):
+            return array.item()
+        return float(array)
 
     def tolist(self, array: Array) -> list | float | int:
         """Convert array to nested Python lists.

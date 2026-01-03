@@ -307,10 +307,9 @@ class IntrinsicDimension:
         valid_mask = r1_sq > eps
 
         # Count valid points
-        backend.eval(valid_mask)
-        valid_count = int(
-            backend.to_scalar(backend.sum(backend.astype(valid_mask, r1_sq.dtype)))
-        )
+        valid_count_arr = backend.sum(backend.astype(valid_mask, r1_sq.dtype))
+        backend.eval(valid_count_arr)
+        valid_count = int(backend.to_scalar(valid_count_arr))
 
         if valid_count == 0:
             return backend.array([])
@@ -578,6 +577,7 @@ class IntrinsicDimension:
         valid_mask = valid_id & (local_dims > 0)
         valid_mask_float = backend.astype(valid_mask, str(local_dims.dtype))
         valid_count = backend.sum(valid_mask_float)
+        backend.eval(valid_count)
         valid_count_scalar = backend.to_scalar(valid_count)
 
         if valid_count_scalar <= 0.0:
@@ -595,10 +595,13 @@ class IntrinsicDimension:
         zeros = backend.zeros_like(local_dims)
         local_dims_safe = backend.where(valid_mask, local_dims, zeros)
         mean_dim_arr = backend.sum(local_dims_safe) / valid_count
+        backend.eval(mean_dim_arr)
         mean_dim = backend.to_scalar(mean_dim_arr)
         diff = backend.where(valid_mask, local_dims_safe - mean_dim_arr, zeros)
         var_dim_arr = backend.sum(diff * diff) / valid_count
-        std_dim = backend.to_scalar(backend.sqrt(var_dim_arr))
+        std_dim_arr = backend.sqrt(var_dim_arr)
+        backend.eval(std_dim_arr)
+        std_dim = backend.to_scalar(std_dim_arr)
 
         # Modal dimension: bin dimensions and find most common
         # Use histogram with bins of width 0.5
@@ -606,6 +609,7 @@ class IntrinsicDimension:
         neg_inf = backend.array(float("-inf"), dtype=local_dims.dtype)
         min_dim_arr = backend.min(backend.where(valid_mask, local_dims, pos_inf))
         max_dim_arr = backend.max(backend.where(valid_mask, local_dims, neg_inf))
+        backend.eval(min_dim_arr, max_dim_arr)
         min_dim = backend.to_scalar(min_dim_arr)
         max_dim = backend.to_scalar(max_dim_arr)
 
@@ -639,14 +643,22 @@ class IntrinsicDimension:
             backend.eval(bin_counts_arr)
 
             # Find modal bin using backend argmax
-            max_bin = int(backend.to_scalar(backend.argmax(bin_counts_arr)))
+            max_bin_arr = backend.argmax(bin_counts_arr)
+            backend.eval(max_bin_arr)
+            max_bin = int(backend.to_scalar(max_bin_arr))
 
-            modal_dim = min_dim + (max_bin + 0.5) * backend.to_scalar(bin_width_arr)
+            backend.eval(bin_width_arr)
+            bin_width_val = float(backend.to_scalar(bin_width_arr))
+            modal_dim = min_dim + (max_bin + 0.5) * bin_width_val
         else:
             idx_range = backend.arange(0, n)
             idx_masked = backend.where(valid_mask, idx_range, backend.array(n, dtype="int32"))
-            first_idx = int(backend.to_scalar(backend.min(idx_masked)))
-            modal_dim = backend.to_scalar(local_dims[first_idx])
+            first_idx_arr = backend.min(idx_masked)
+            backend.eval(first_idx_arr)
+            first_idx = int(backend.to_scalar(first_idx_arr))
+            modal_dim_arr = local_dims[first_idx : first_idx + 1]
+            backend.eval(modal_dim_arr)
+            modal_dim = backend.to_scalar(modal_dim_arr)
 
         # Find deficient points (only if threshold provided)
         deficient: list[int] = []
@@ -654,9 +666,18 @@ class IntrinsicDimension:
             threshold = deficiency_threshold * modal_dim
             # Use backend operations to find deficient points
             deficient_mask = valid_id & (local_dims < backend.array(threshold))
-            backend.eval(deficient_mask)
-            mask_list = backend.tolist(deficient_mask)
-            deficient = [i for i, val in enumerate(mask_list) if val]
+            mask_int = backend.astype(deficient_mask, "int32")
+            count_arr = backend.sum(mask_int)
+            backend.eval(mask_int, count_arr)
+            count = int(backend.to_scalar(count_arr))
+            if count > 0:
+                kth = max(0, n - count)
+                partitioned = backend.argpartition(mask_int, kth)
+                selected = backend.take(
+                    partitioned, backend.arange(kth, n), axis=0
+                )
+                backend.eval(selected)
+                deficient = sorted(int(x) for x in backend.tolist(selected))
 
         return LocalDimensionMap(
             dimensions=local_dims,

@@ -25,10 +25,15 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import sys
 from pathlib import Path
 from typing import Any
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    exp_scalar,
+    sqrt_scalar,
+)
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -189,7 +194,8 @@ class JAXModelProbe(BaseModelProbe):
         if computed_drifts:
             mean_drift = sum(computed_drifts) / len(computed_drifts)
             variance = sum((d - mean_drift) ** 2 for d in computed_drifts) / len(computed_drifts)
-            std_drift = math.sqrt(variance)
+            _b = get_default_backend()
+            std_drift = sqrt_scalar(variance, _b)
             sorted_drifts = sorted(computed_drifts)
             drift_min = sorted_drifts[0]
             drift_max = sorted_drifts[-1]
@@ -304,8 +310,6 @@ class JAXModelProbe(BaseModelProbe):
 
     def _compute_layer_drift(self, tensor_a: Any, tensor_b: Any) -> float:
         """Compute normalized drift between two JAX arrays."""
-        import math
-
         # Convert to float32 for drift computation
         a_f32 = self.jnp.asarray(tensor_a, dtype=self.jnp.float32)
         b_f32 = self.jnp.asarray(tensor_b, dtype=self.jnp.float32)
@@ -318,5 +322,6 @@ class JAXModelProbe(BaseModelProbe):
         max_norm = max(norm_a, norm_b, _MACHINE_EPS)
         relative_drift = norm_diff / max_norm
 
-        normalized = 1.0 - math.exp(-relative_drift)
+        _b = get_default_backend()
+        normalized = 1.0 - exp_scalar(-relative_drift, _b)
         return float(min(1.0, max(0.0, normalized)))

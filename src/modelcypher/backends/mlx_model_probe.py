@@ -25,12 +25,17 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import sys
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    exp_scalar,
+    sqrt_scalar,
+)
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -171,7 +176,8 @@ class MLXModelProbe(BaseModelProbe):
         if computed_drifts:
             mean_drift = sum(computed_drifts) / len(computed_drifts)
             variance = sum((d - mean_drift) ** 2 for d in computed_drifts) / len(computed_drifts)
-            std_drift = math.sqrt(variance)
+            _b = get_default_backend()
+            std_drift = sqrt_scalar(variance, _b)
             sorted_drifts = sorted(computed_drifts)
             drift_min = sorted_drifts[0]
             drift_max = sorted_drifts[-1]
@@ -301,5 +307,6 @@ class MLXModelProbe(BaseModelProbe):
         relative_drift = norm_diff / max_norm
 
         # Normalize to [0, 1] using exponential decay
-        normalized = 1.0 - math.exp(-relative_drift)
+        _b = get_default_backend()
+        normalized = 1.0 - exp_scalar(-relative_drift, _b)
         return float(min(1.0, max(0.0, normalized)))

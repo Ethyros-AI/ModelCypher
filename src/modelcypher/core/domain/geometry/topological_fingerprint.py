@@ -256,9 +256,13 @@ class TopologicalFingerprint:
         - Exponential decay based on wasserstein/scale ratio
         - Harmonic penalty for Betti number differences
         """
-        bottleneck = TopologicalFingerprint._bottleneck_distance(
+        bottleneck_ab = TopologicalFingerprint._bottleneck_distance(
             fingerprint_a.diagram, fingerprint_b.diagram
         )
+        bottleneck_ba = TopologicalFingerprint._bottleneck_distance(
+            fingerprint_b.diagram, fingerprint_a.diagram
+        )
+        bottleneck = max(bottleneck_ab, bottleneck_ba)
         wasserstein = TopologicalFingerprint._wasserstein_distance(
             fingerprint_a.diagram, fingerprint_b.diagram
         )
@@ -851,7 +855,9 @@ class BackendTopologicalFingerprint:
         Returns:
             ComparisonResult with distance metrics and similarity score.
         """
-        bottleneck = self._bottleneck_distance(fingerprint_a.diagram, fingerprint_b.diagram)
+        bottleneck_ab = self._bottleneck_distance(fingerprint_a.diagram, fingerprint_b.diagram)
+        bottleneck_ba = self._bottleneck_distance(fingerprint_b.diagram, fingerprint_a.diagram)
+        bottleneck = max(bottleneck_ab, bottleneck_ba)
         wasserstein = self._wasserstein_distance(fingerprint_a.diagram, fingerprint_b.diagram)
 
         betti_diff = 0
@@ -875,8 +881,8 @@ class BackendTopologicalFingerprint:
         )
 
         score = (
-            exp_scalar(-bottleneck / scale, b)
-            * exp_scalar(-wasserstein / scale, b)
+            exp_scalar(-bottleneck / scale, backend)
+            * exp_scalar(-wasserstein / scale, backend)
             * (1.0 / (1 + betti_diff))
         )
 
@@ -930,15 +936,19 @@ class BackendTopologicalFingerprint:
         dist_arr = distances
         b.eval(dist_arr)
 
-        # Get upper triangular indices and values
-        # Build edges list with a single device→CPU transfer.
-        edges: list[tuple[int, int, float]] = []
-        dist_list = b.tolist(dist_arr)
-        for i in range(n):
-            row = dist_list[i]
-            for j in range(i + 1, n):
-                edges.append((i, j, float(row[j])))
-        edges.sort(key=lambda x: x[2])
+        # Flatten and sort edges on backend to avoid Python-side sorting.
+        flat_dist = b.reshape(dist_arr, (-1,))
+        index = b.arange(n)
+        row_idx = b.reshape(index, (n, 1))
+        col_idx = b.reshape(index, (1, n))
+        mask = col_idx > row_idx
+        flat_mask = b.reshape(mask, (-1,))
+        inf_val = float(b.finfo().max)
+        masked_dist = b.where(flat_mask, flat_dist, b.full(flat_dist.shape, inf_val))
+        sorted_idx = b.argsort(masked_dist)
+        b.eval(sorted_idx, masked_dist)
+        sorted_idx_list = b.tolist(sorted_idx)
+        masked_dist_list = b.tolist(masked_dist)
 
         # 0-dim persistence (connected components) - Union-Find is sequential
         parent = list(range(n))
@@ -976,9 +986,12 @@ class BackendTopologicalFingerprint:
 
         component_birth = [0.0] * n
 
-        for i, j, dist in edges:
-            if dist > max_filtration:
+        for flat_idx in sorted_idx_list:
+            dist = float(masked_dist_list[flat_idx])
+            if dist > max_filtration or dist >= inf_val * 0.9:
                 break
+            i = int(flat_idx) // n
+            j = int(flat_idx) % n
 
             dying = union(i, j, component_birth)
             if dying is not None:
@@ -1004,9 +1017,12 @@ class BackendTopologicalFingerprint:
             inf_vec = b.full((n,), inf_val)
             b.eval(index)
 
-            for i, j, dist in edges:
-                if dist > max_filtration:
+            for flat_idx in sorted_idx_list:
+                dist = float(masked_dist_list[flat_idx])
+                if dist > max_filtration or dist >= inf_val * 0.9:
                     break
+                i = int(flat_idx) // n
+                j = int(flat_idx) % n
 
                 px, py = find(i), find(j)
                 if px == py:

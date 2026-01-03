@@ -31,13 +31,19 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    is_finite,
+    log_scalar,
+    sqrt_scalar,
+)
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -300,7 +306,8 @@ class EntropyCalibrationService:
             if vocab_size is None:
                 raise ValueError("Unable to determine vocab_size for calibration")
 
-        max_entropy = math.log(vocab_size)
+        _b = get_default_backend()
+        max_entropy = log_scalar(float(vocab_size), _b)
 
         # Collect entropy values from all prompts
         all_entropy_values: list[float] = []
@@ -326,7 +333,7 @@ class EntropyCalibrationService:
             raise RuntimeError("No entropy values collected during calibration")
 
         # Filter out invalid values (NaN, inf)
-        valid_values = [v for v in all_entropy_values if math.isfinite(v)]
+        valid_values = [v for v in all_entropy_values if is_finite(v, _b)]
         invalid_count = len(all_entropy_values) - len(valid_values)
         if invalid_count > 0:
             logger.warning(
@@ -347,7 +354,7 @@ class EntropyCalibrationService:
 
         mean = sum(valid_values) / n
         variance = sum((v - mean) ** 2 for v in valid_values) / n
-        std_dev = math.sqrt(variance)
+        std_dev = sqrt_scalar(variance, _b)
 
         result = EntropyCalibrationResult(
             model_id=str(model_dir),

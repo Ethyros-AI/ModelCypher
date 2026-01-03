@@ -17,13 +17,22 @@
 
 from __future__ import annotations
 
-import math
-
 from modelcypher.core.domain.geometry.traversal_coherence import (
     Path,
     TraversalCoherence,
     standard_computational_paths,
 )
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    is_finite,
+    is_nan,
+    machine_epsilon,
+)
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def test_transition_inner_product_identity():
@@ -35,8 +44,8 @@ def test_transition_inner_product_identity():
     normalized = TraversalCoherence.normalized_transition_inner_product(
         gram, n=2, a=0, b=1, c=0, d=1
     )
-    assert math.isfinite(normalized)
-    assert abs(normalized - 1.0) < 1e-6
+    assert is_finite(normalized, get_default_backend())
+    assert abs(normalized - 1.0) <= _eps(normalized, 1.0)
 
 
 def test_compare_identical_transition_gram():
@@ -51,10 +60,16 @@ def test_compare_identical_transition_gram():
         0.3,
         1.0,
     ]
-    paths = [Path(anchor_ids=["A", "B", "C"])]
+    paths = [
+        Path(anchor_ids=["A", "B", "C"]),
+        Path(anchor_ids=["C", "A", "B"]),
+        Path(anchor_ids=["B", "C", "A"]),
+    ]
     result = TraversalCoherence.compare(paths, gram, gram, anchor_ids=["A", "B", "C"])
     assert result is not None
-    assert abs(result.transition_gram_correlation - 1.0) < 1e-6
+    assert abs(result.transition_gram_correlation - 1.0) <= _eps(
+        result.transition_gram_correlation, 1.0
+    )
 
 
 def test_path_transition_count():
@@ -73,7 +88,7 @@ def test_transition_inner_product_invalid_indices():
     """Invalid indices return NaN."""
     gram = [1.0, 0.0, 0.0, 1.0]
     value = TraversalCoherence.transition_inner_product(gram, n=2, a=-1, b=0, c=0, d=1)
-    assert math.isnan(value)
+    assert is_nan(value, get_default_backend())
 
 
 def test_transition_gram_empty_paths():

@@ -39,6 +39,8 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -61,9 +63,7 @@ def entropy_analyze(
     """
     context = _context(ctx)
     import json as json_lib
-    import math
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
     try:
@@ -92,10 +92,11 @@ def entropy_analyze(
     n = len(entropies)
 
     # Compute raw statistics from the data itself
+    _b = get_default_backend()
     entropy_mean = sum(entropies) / n
     variance_mean = sum(variances) / n
-    entropy_std = math.sqrt(sum((e - entropy_mean) ** 2 for e in entropies) / n) if n > 1 else 0.0
-    variance_std = math.sqrt(sum((v - variance_mean) ** 2 for v in variances) / n) if n > 1 else 0.0
+    entropy_std = sqrt_scalar(sum((e - entropy_mean) ** 2 for e in entropies) / n, _b) if n > 1 else 0.0
+    variance_std = sqrt_scalar(sum((v - variance_mean) ** 2 for v in variances) / n, _b) if n > 1 else 0.0
 
     # Trend via linear regression slope
     if n > 1:
@@ -157,7 +158,6 @@ def entropy_detect_distress(
     """
     context = _context(ctx)
     import json as json_lib
-    import math
 
     try:
         sample_list = json_lib.loads(samples)
@@ -184,10 +184,11 @@ def entropy_detect_distress(
     variances = [s[1] for s in parsed_samples]
 
     # Basic statistics
+    _b = get_default_backend()
     entropy_mean = sum(entropies) / n
     variance_mean = sum(variances) / n
-    entropy_std = math.sqrt(sum((e - entropy_mean) ** 2 for e in entropies) / n) if n > 1 else 0.0
-    variance_std = math.sqrt(sum((v - variance_mean) ** 2 for v in variances) / n) if n > 1 else 0.0
+    entropy_std = sqrt_scalar(sum((e - entropy_mean) ** 2 for e in entropies) / n, _b) if n > 1 else 0.0
+    variance_std = sqrt_scalar(sum((v - variance_mean) ** 2 for v in variances) / n, _b) if n > 1 else 0.0
 
     # Trend slope (linear regression on entropy)
     if n > 1:
@@ -211,7 +212,7 @@ def entropy_detect_distress(
     if n > 1:
         diffs = [entropies[i + 1] - entropies[i] for i in range(n - 1)]
         diff_mean = sum(diffs) / len(diffs)
-        volatility = math.sqrt(sum((d - diff_mean) ** 2 for d in diffs) / len(diffs))
+        volatility = sqrt_scalar(sum((d - diff_mean) ** 2 for d in diffs) / len(diffs), _b)
     else:
         volatility = 0.0
 
@@ -271,9 +272,7 @@ def entropy_verify_baseline(
     """
     context = _context(ctx)
     import json as json_lib
-    import math
 
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
     try:
@@ -299,12 +298,13 @@ def entropy_verify_baseline(
     n = len(parsed_deltas)
 
     # Compute observed statistics
+    _b = get_default_backend()
     observed_mean = sum(parsed_deltas) / n
-    observed_std = math.sqrt(sum((d - observed_mean) ** 2 for d in parsed_deltas) / n) if n > 1 else 0.0
+    observed_std = sqrt_scalar(sum((d - observed_mean) ** 2 for d in parsed_deltas) / n, _b) if n > 1 else 0.0
     observed_min = min(parsed_deltas)
     observed_max = max(parsed_deltas)
 
-    backend = get_default_backend()
+    backend = _b
     eps = division_epsilon(backend, backend.array([0.0]))
 
     mean_z_score = (observed_mean - declared_mean) / max(declared_std_dev, eps)
@@ -384,7 +384,6 @@ def entropy_window(
         mc entropy window '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]' --size 50
     """
     context = _context(ctx)
-    import math
 
     try:
         sample_list = json.loads(samples)
@@ -416,8 +415,9 @@ def entropy_window(
     window_n = len(window_data)
 
     # Window statistics
+    _b = get_default_backend()
     window_mean = sum(window_data) / window_n
-    window_std = math.sqrt(sum((e - window_mean) ** 2 for e in window_data) / window_n) if window_n > 1 else 0.0
+    window_std = sqrt_scalar(sum((e - window_mean) ** 2 for e in window_data) / window_n, _b) if window_n > 1 else 0.0
     window_min = min(window_data)
     window_max = max(window_data)
 
@@ -488,7 +488,6 @@ def entropy_conversation_track(
         mc entropy conversation-track --session ./session.json
     """
     context = _context(ctx)
-    import math
 
     session_path = Path(session)
     if not session_path.exists():
@@ -544,8 +543,9 @@ def entropy_conversation_track(
     n = len(deltas)
 
     # Basic statistics
+    _b = get_default_backend()
     delta_mean = sum(deltas) / n
-    delta_std = math.sqrt(sum((d - delta_mean) ** 2 for d in deltas) / n) if n > 1 else 0.0
+    delta_std = sqrt_scalar(sum((d - delta_mean) ** 2 for d in deltas) / n, _b) if n > 1 else 0.0
 
     # Cumulative drift (sum of deltas)
     cumulative_drift = sum(deltas)
@@ -564,7 +564,7 @@ def entropy_conversation_track(
     # Oscillation amplitude: std of turn_changes
     if turn_changes:
         tc_mean = sum(turn_changes) / len(turn_changes)
-        oscillation_amplitude = math.sqrt(sum((c - tc_mean) ** 2 for c in turn_changes) / len(turn_changes))
+        oscillation_amplitude = sqrt_scalar(sum((c - tc_mean) ** 2 for c in turn_changes) / len(turn_changes), _b)
     else:
         oscillation_amplitude = 0.0
 
@@ -625,7 +625,6 @@ def entropy_dual_path(
         mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]'
     """
     context = _context(ctx)
-    import math
 
     try:
         sample_list = json.loads(samples)
@@ -672,8 +671,9 @@ def entropy_dual_path(
     n = len(deltas)
 
     # Delta statistics
+    _b = get_default_backend()
     delta_mean = sum(deltas) / n
-    delta_std = math.sqrt(sum((d - delta_mean) ** 2 for d in deltas) / n) if n > 1 else 0.0
+    delta_std = sqrt_scalar(sum((d - delta_mean) ** 2 for d in deltas) / n, _b) if n > 1 else 0.0
 
     # Z-scores for each delta
     z_scores = [(d - delta_mean) / delta_std if delta_std > 0 else 0.0 for d in deltas]

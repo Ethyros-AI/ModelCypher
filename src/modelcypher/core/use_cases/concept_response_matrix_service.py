@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +43,8 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
+    sqrt_scalar,
+    ulp_scalar,
 )
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     Configuration as LayerMatcherConfiguration,
@@ -495,7 +496,8 @@ class ConceptResponseMatrixService:
             if percentile is not None:
                 return _percentile(values, percentile)
             sorted_vals = sorted(values)
-            return find_magnitude_gap_threshold(sorted_vals, eps=math.ulp(1.0))
+            _b = get_default_backend()
+            return find_magnitude_gap_threshold(sorted_vals, eps=ulp_scalar(1.0, _b))
 
         target_sparse_threshold = resolve_threshold(target_means, cfg.target_sparse_percentile)
         source_dense_threshold = resolve_threshold(source_means, cfg.source_dense_percentile)
@@ -684,7 +686,7 @@ def _mean_std(values: list[float]) -> tuple[float, float]:
         return 0.0, 0.0
     mean = sum(values) / float(len(values))
     variance = sum((value - mean) ** 2 for value in values) / float(len(values))
-    return float(mean), float(math.sqrt(max(0.0, variance)))
+    return float(mean), sqrt_scalar(max(0.0, variance), get_default_backend())
 
 
 def _validate_percentile(name: str, value: float) -> None:

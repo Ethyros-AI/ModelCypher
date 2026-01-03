@@ -25,12 +25,13 @@ Tests mathematical properties of persistent homology computation:
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     BackendTopologicalFingerprint,
     PersistenceDiagram,
@@ -90,10 +91,11 @@ class TestBettiNumbers:
         before the triangle fills in, there's a 1-cycle (β₁=1).
         """
         # Equilateral triangle
+        triangle_height = sqrt_scalar(3.0, get_default_backend()) / 2.0
         triangle = [
             [0.0, 0.0],
             [1.0, 0.0],
-            [0.5, math.sqrt(3) / 2],
+            [0.5, triangle_height],
         ]
         fingerprint = TopologicalFingerprint.compute(triangle, max_dimension=1)
         # Should have at least one component
@@ -335,7 +337,8 @@ class TestPairwiseDistances:
     def test_empty_returns_empty(self) -> None:
         """Empty input should return empty matrix."""
         distances = TopologicalFingerprint._compute_pairwise_distances([])
-        assert distances == []
+        backend = get_default_backend()
+        assert backend.shape(distances) == (0, 0)
 
 
 class TestPersistenceEntropy:

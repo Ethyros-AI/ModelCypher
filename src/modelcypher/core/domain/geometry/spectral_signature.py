@@ -169,7 +169,7 @@ class SpectralSignature:
 
         spectral_entropy = _spectral_entropy(backend, eigvals, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
-        neighbor_indices_list = [[int(x) for x in row] for row in backend.tolist(neighbor_indices)]
+        neighbor_indices_list = backend.tolist(neighbor_indices)
         component_count = _count_components_from_neighbors(neighbor_indices_list, n)
         connected = component_count == 1
 
@@ -321,9 +321,8 @@ def _count_components_from_neighbors(neighbors: list[list[int]], n: int) -> int:
     adjacency = [set() for _ in range(n)]
     for i in range(n):
         for j in neighbors[i]:
-            j_idx = int(j)
-            adjacency[i].add(j_idx)
-            adjacency[j_idx].add(i)
+            adjacency[i].add(j)
+            adjacency[j].add(i)
 
     visited = [False] * n
     components = 0

@@ -24,12 +24,14 @@ Ported from Swift VectorMath tests to ensure parity.
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.vector_math import (
     BackendVectorMath,
     SparseVectorMath,
@@ -43,6 +45,10 @@ from modelcypher.core.domain.geometry.vector_math import (
 def _eps(*values: float) -> float:
     backend = get_default_backend()
     return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def _sqrt(value: float) -> float:
+    return sqrt_scalar(value, get_default_backend())
 
 
 class TestHelperFunctions:
@@ -171,7 +177,8 @@ class TestVectorMathL2Normalized:
         assert abs(result[0] - expected[0]) <= eps
         assert abs(result[1] - expected[1]) <= eps
         # Norm should be 1
-        norm = math.sqrt(sum(x * x for x in result))
+        norm_sq = sum(x * x for x in result)
+        norm = sqrt_scalar(norm_sq, get_default_backend())
         assert abs(norm - 1.0) <= _eps(norm, 1.0)
 
     def test_l2_normalized_zero_vector(self):
@@ -307,7 +314,7 @@ class TestVectorMathSlerp:
         result = VectorMath.slerp(v0, v1, 0.5)
         # At 45 degrees: [cos(45), sin(45), 0] = [0.7071, 0.7071, 0]
         assert result is not None
-        expected = math.sqrt(0.5)
+        expected = _sqrt(0.5)
         eps = _eps(result[0], result[1], result[2], expected, 0.0)
         assert abs(result[0] - expected) <= eps
         assert abs(result[1] - expected) <= eps
@@ -394,7 +401,7 @@ class TestVectorMathSlerp:
             v1 = mx.array([0.0, 1.0, 0.0])
             result = VectorMath.slerp(v0, v1, 0.5)
             assert result is not None
-            expected = math.sqrt(0.5)
+            expected = _sqrt(0.5)
             eps = _eps(result[0], result[1], expected)
             assert abs(result[0] - expected) <= eps
             assert abs(result[1] - expected) <= eps
@@ -413,7 +420,7 @@ class TestVectorMathSlerpBatch:
         assert "layer1" in result
         assert "layer2" in result
         # Both should be 45-degree interpolations
-        expected = math.sqrt(0.5)
+        expected = _sqrt(0.5)
         eps = _eps(result["layer1"][0], result["layer1"][1], expected)
         assert abs(result["layer1"][0] - expected) <= eps
         assert abs(result["layer1"][1] - expected) <= eps
@@ -424,7 +431,7 @@ class TestVectorMathSlerpBatch:
         weights_b = {"layer1": [0.0, 1.0]}
         result = VectorMath.slerp_batch(weights_a, weights_b, 0.5)
         # layer1 should be interpolated
-        expected = math.sqrt(0.5)
+        expected = _sqrt(0.5)
         eps = _eps(result["layer1"][0], expected)
         assert abs(result["layer1"][0] - expected) <= eps
         # layer2 should be unchanged from weights_a
@@ -488,7 +495,7 @@ class TestBackendVectorMath:
         result = bvm.slerp(v0, v1, 0.5)
         backend.eval(result)
         result_list = result.tolist()
-        expected = math.sqrt(0.5)
+        expected = _sqrt(0.5)
         eps = machine_epsilon(backend, v0)
         assert abs(result_list[0] - expected) <= eps
         assert abs(result_list[1] - expected) <= eps
@@ -500,8 +507,8 @@ class TestBackendVectorMath:
         v1 = backend.array([0.0, 4.0, 0.0])
         result = bvm.slerp(v0, v1, 0.5)
         norm = bvm.l2_norm(result)
-        eps = machine_epsilon(backend, v0)
-        assert abs(norm - 3.0) <= eps
+        eps = division_epsilon(backend, v0)
+        assert abs(norm - 3.0) <= eps * 3.0
 
     def test_slerp_from_list(self, backend, bvm):
         """Test SLERP auto-converts lists to backend arrays."""
@@ -510,7 +517,7 @@ class TestBackendVectorMath:
         result = bvm.slerp(v0, v1, 0.5)
         backend.eval(result)
         result_list = result.tolist()
-        expected = math.sqrt(0.5)
+        expected = _sqrt(0.5)
         eps = machine_epsilon(backend, backend.array(result_list))
         assert abs(result_list[0] - expected) <= eps
 

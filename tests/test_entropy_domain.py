@@ -17,8 +17,6 @@
 
 """Entropy domain tests requiring MLX (Apple Silicon)."""
 
-import math
-
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -45,7 +43,10 @@ from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropySample,
 )
 from modelcypher.core.domain.entropy.metrics_ring_buffer import MetricsRingBuffer
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    log_scalar,
+)
 
 
 def _eps(*values: float) -> float:
@@ -87,7 +88,7 @@ def test_logit_entropy_calculator_uniform():
 
     entropy, variance = calculator.compute(logits)
 
-    expected_entropy = math.log(vocab_size)
+    expected_entropy = log_scalar(float(vocab_size), get_default_backend())
     assert abs(entropy - expected_entropy) <= _eps(entropy, expected_entropy)
     assert abs(variance - 0.0) <= _eps(variance, 0.0)
 
@@ -110,7 +111,7 @@ def test_logit_entropy_batch():
     results = calculator.compute_batch(logits_batch)
 
     assert len(results) == 2
-    expected_entropy = math.log(10)
+    expected_entropy = log_scalar(10.0, get_default_backend())
     assert abs(results[0][0] - expected_entropy) <= _eps(results[0][0], expected_entropy)
 
 
