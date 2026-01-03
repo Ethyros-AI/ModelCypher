@@ -1539,9 +1539,11 @@ def solve_via_gram_alignment(
     # S_s^{-1} for the k dimensions we're using (use actual_rank, not shared_rank)
     # Use machine epsilon as floor for numerical stability in inversion
     sv_floor = eps * float(b.to_scalar(b.max(S_s)))
-    S_s_inv = b.array([1.0 / S_s_np[i] if S_s_np[i] > sv_floor else 0.0
+    S_s_list = b.tolist(S_s)
+    S_t_list = b.tolist(S_t)
+    S_s_inv = b.array([1.0 / S_s_list[i] if S_s_list[i] > sv_floor else 0.0
                        for i in range(actual_rank)])
-    S_t_k = b.array([S_t_np[i] for i in range(actual_rank)])
+    S_t_k = b.array([S_t_list[i] for i in range(actual_rank)])
     b.eval(S_s_inv, S_t_k)
 
     V_s_k = b.transpose(Vt_s[:actual_rank, :])  # [d_s, k]

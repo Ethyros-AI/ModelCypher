@@ -27,10 +27,15 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.null_space_filter import (
     NullSpaceFilter,
     filter_merge_delta_to_null_space,
 )
+from modelcypher.core.support.array_utils import array_to_list
 # NOTE: NullSpaceFilterConfig was REMOVED. All parameters derived from spectral gap.
 
 
@@ -59,7 +64,10 @@ class TestNullSpaceProjection:
         eye_mat = backend.eye(10)
         backend.eval(projection.projection_matrix)
         backend.eval(eye_mat)
-        assert float(backend.to_numpy(backend.max(backend.abs(projection.projection_matrix - eye_mat)))) < 1e-6
+        diff = backend.max(backend.abs(projection.projection_matrix - eye_mat))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, projection.projection_matrix) * projection.projection_matrix.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
     def test_null_space_orthogonal_to_row_space(self):
         """Null space vectors should be orthogonal to all rows of A."""
@@ -94,7 +102,10 @@ class TestNullSpaceProjection:
         backend.eval(P_squared)
 
         # P^2 = P for projection matrices
-        assert float(backend.to_numpy(backend.max(backend.abs(P - P_squared)))) < 1e-6
+        diff = backend.max(backend.abs(P - P_squared))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, P) * P.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
     def test_projection_is_symmetric(self):
         """Projection matrix should be symmetric."""
@@ -110,7 +121,10 @@ class TestNullSpaceProjection:
         P_T = backend.transpose(P)
         backend.eval(P)
         backend.eval(P_T)
-        assert float(backend.to_numpy(backend.max(backend.abs(P - P_T)))) < 1e-6
+        diff = backend.max(backend.abs(P - P_T))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, P) * P.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
     def test_null_space_preserves_dimension_invariant(self):
         """null_dim + row_space_dim should equal total dimension."""
@@ -169,13 +183,13 @@ class TestNullSpaceFiltering:
             backend.eval(product)
 
             # Product should be near zero (in null space)
-            product_norm = float(backend.to_numpy(backend.norm(product)))
-            delta_norm = float(backend.to_numpy(backend.norm(delta_safe)))
+            product_norm = backend.to_scalar(backend.norm(product))
+            delta_norm = backend.to_scalar(backend.norm(delta_safe))
+            eps = division_epsilon(backend, delta_safe) * delta_safe.shape[0]
 
-            if delta_norm > 1e-8:
-                # Relative product should be small (numerical tolerance for projection)
+            if delta_norm > eps:
                 relative_product = product_norm / delta_norm
-                assert relative_product < 0.5, f"Null-space violation: A @ delta_safe = {relative_product:.4f}"
+                assert relative_product <= eps
 
     def test_preservation_fraction_bounded(self):
         """Preserved fraction should be in [0, 1]."""
@@ -192,7 +206,8 @@ class TestNullSpaceFiltering:
 
         assert 0.0 <= result.preserved_fraction <= 1.0
         assert 0.0 <= result.projection_loss <= 1.0
-        assert abs(result.preserved_fraction + result.projection_loss - 1.0) < 1e-6
+        eps = machine_epsilon(backend, backend.array(1.0))
+        assert abs(result.preserved_fraction + result.projection_loss - 1.0) <= eps
 
     def test_zero_delta_gives_zero_filtered(self):
         """Zero delta should give zero filtered delta."""
@@ -210,7 +225,10 @@ class TestNullSpaceFiltering:
         backend.eval(result.filtered_delta)
         zero_arr = backend.zeros_like(result.filtered_delta)
         backend.eval(zero_arr)
-        assert float(backend.to_numpy(backend.max(backend.abs(result.filtered_delta - zero_arr)))) < 1e-6
+        diff = backend.max(backend.abs(result.filtered_delta - zero_arr))
+        backend.eval(diff)
+        eps = machine_epsilon(backend, result.filtered_delta) * result.filtered_delta.shape[0]
+        assert backend.to_scalar(diff) <= eps
         assert result.original_norm == 0
         assert result.preserved_fraction == 1.0
 
@@ -234,15 +252,9 @@ class TestNullSpaceFiltering:
 
         result = null_filter.filter_delta(delta, A)
 
-        # With full rank activations, null space should be very small
-        # Preserved fraction should be low (most of delta projected out)
-        if result.filtering_applied:
-            # With 100 samples and 10 dimensions, null space should be tiny
-            # Allow some numerical tolerance but expect significant filtering
-            assert result.preserved_fraction < 0.6, (
-                f"Expected significant filtering with full-rank activations, "
-                f"but preserved_fraction={result.preserved_fraction:.3f}"
-            )
+        assert result.null_space_dim == 0
+        assert result.filtering_applied is False
+        assert result.preserved_fraction == 1.0
 
     def test_dimension_mismatch_raises_error(self):
         """Mismatched dimensions should raise NullSpaceFilterError.
@@ -323,7 +335,8 @@ class TestMergeIntegration:
         backend.eval(expected)
         diff = backend.max(backend.abs(merged - expected))
         backend.eval(diff)
-        assert float(backend.to_numpy(diff)) < 1e-6
+        eps = machine_epsilon(backend, merged) * merged.shape[0]
+        assert backend.to_scalar(diff) <= eps
 
 
 class TestModelProfile:
@@ -406,7 +419,8 @@ class TestPropertyBased:
         result = null_filter.filter_delta(delta, A)
 
         total = result.projection_loss + result.preserved_fraction
-        assert abs(total - 1.0) < 1e-6, f"Total was {total}"
+        eps = machine_epsilon(backend, backend.array(1.0))
+        assert abs(total - 1.0) <= eps, f"Total was {total}"
 
     @given(
         d=st.integers(min_value=5, max_value=30),
@@ -425,7 +439,8 @@ class TestPropertyBased:
 
         result = null_filter.filter_delta(delta, A)
 
-        assert result.filtered_norm <= result.original_norm + 1e-6
+        eps = machine_epsilon(backend, backend.array(1.0))
+        assert result.filtered_norm <= result.original_norm + eps
 
 
 class TestEdgeCases:
@@ -483,10 +498,9 @@ class TestEdgeCases:
         A = backend.random_normal((30, 20))
         delta = backend.random_normal((20,))
         # Set one element to NaN
-        A_np = backend.to_numpy(A)
-        import numpy as np
-        A_np[0, 0] = np.nan
-        A = backend.array(A_np)
+        A_list = array_to_list(backend, A)
+        A_list[0][0] = float("nan")
+        A = backend.array(A_list)
         backend.eval(A)
         backend.eval(delta)
 
@@ -503,10 +517,9 @@ class TestEdgeCases:
         A = backend.random_normal((30, 20))
         delta = backend.random_normal((20,))
         # Set one element to Inf
-        A_np = backend.to_numpy(A)
-        import numpy as np
-        A_np[0, 0] = np.inf
-        A = backend.array(A_np)
+        A_list = array_to_list(backend, A)
+        A_list[0][0] = float("inf")
+        A = backend.array(A_list)
         backend.eval(A)
         backend.eval(delta)
 

@@ -115,6 +115,7 @@ class UnifiedGeometricMerger:
         dry_run: bool = False,
         transplant_domains: list[str] | None = None,
         target_weights: dict[str, "Array"] | None = None,
+        use_cpu_weights: bool = False,
         config: "UnifiedMergeConfig | None" = None,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline."""
@@ -129,6 +130,7 @@ class UnifiedGeometricMerger:
             dry_run=dry_run,
             transplant_domains=transplant_domains,
             target_weights=target_weights,
+            use_cpu_weights=use_cpu_weights,
             config=config,
         )
 

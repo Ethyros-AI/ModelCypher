@@ -205,7 +205,7 @@ class NumpyBackend(Backend):
         return self.np.arctan(array)
 
     def lgamma(self, array: Array) -> Array:
-        vectorized = self.np.vectorize(math.lgamma)
+        vectorized = self.np.vectorize(math.lgamma, otypes=[float])
         return vectorized(array)
 
     def maximum(self, lhs: Array, rhs: Array) -> Array:
@@ -356,7 +356,10 @@ class NumpyBackend(Backend):
 
     # --- Type Conversion ---
     def astype(self, array: Array, dtype: Any) -> Array:
-        return self.np.asarray(array).astype(self._map_dtype(dtype))
+        mapped = self._map_dtype(dtype)
+        if mapped is None:
+            return self.np.asarray(array)
+        return self.np.asarray(array).astype(mapped)
 
     def to_numpy(self, array: Array) -> Any:
         return self.np.asarray(array)
@@ -601,4 +604,3 @@ class NumpyBackend(Backend):
         from safetensors.numpy import load_file
 
         return load_file(path)
-

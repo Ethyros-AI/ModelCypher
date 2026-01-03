@@ -71,6 +71,11 @@ def run(
         "--skip-pre-analysis",
         help="Skip pre-merge interference analysis",
     ),
+    low_memory: bool = typer.Option(
+        False,
+        "--low-memory",
+        help="Load weights on CPU (numpy) to reduce GPU memory usage",
+    ),
     output_file: str | None = typer.Option(
         None,
         "--output-file",
@@ -107,6 +112,7 @@ def run(
                 output_dir=output_dir,
                 transplant_domains=domain_list,
                 skip_pre_analysis=skip_pre_analysis,
+                use_cpu_weights=low_memory,
             )
 
         # Build output payload

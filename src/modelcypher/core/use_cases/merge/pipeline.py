@@ -33,6 +33,7 @@ from .helpers import (
     infer_hidden_dim,
     load_model_for_probing,
     load_tokenizer,
+    load_weights,
     load_weights_cpu,
     save_weights,
 )
@@ -62,6 +63,7 @@ def run_merge(
     dry_run: bool = False,
     transplant_domains: list[str] | None = None,
     target_weights: dict[str, "Array"] | None = None,
+    use_cpu_weights: bool = False,
     config: UnifiedMergeConfig | None = None,
 ) -> UnifiedMergeResult:
     """
@@ -91,8 +93,11 @@ def run_merge(
     if merge_config.transplant_domains:
         logger.info("Using null-space constrained transplant.")
 
-    # Load weights (CPU first to reduce GPU memory pressure during merge)
-    source_weights, _ = load_weights_cpu(model_loader, source_path)
+    # Load weights (backend arrays by default; CPU opt-out for low-memory mode)
+    if use_cpu_weights:
+        source_weights, _ = load_weights_cpu(model_loader, source_path)
+    else:
+        source_weights, _ = load_weights(model_loader, source_path)
 
     # Use pre-loaded target weights if provided (multi-donor optimization)
     if target_weights is not None:
@@ -100,7 +105,10 @@ def run_merge(
         loaded_target_weights = target_weights
         target_format = "safetensors"  # Assume safetensors for pre-loaded weights
     else:
-        loaded_target_weights, target_format = load_weights_cpu(model_loader, target_path)
+        if use_cpu_weights:
+            loaded_target_weights, target_format = load_weights_cpu(model_loader, target_path)
+        else:
+            loaded_target_weights, target_format = load_weights(model_loader, target_path)
 
     # Identify layers
     layer_indices = extract_layer_indices(loaded_target_weights)

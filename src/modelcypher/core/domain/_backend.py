@@ -136,10 +136,12 @@ def _detect_default_backend_type() -> BackendType:
     Priority:
         1. MC_BACKEND (or MODELCYPHER_BACKEND) environment variable
         2. MLX on macOS (Darwin)
-        3. JAX if available
+        3. CUDA if available
+        4. JAX if available
+        5. NumPy CPU fallback
 
-    Raises:
-        RuntimeError: If no GPU backend is available.
+    Note:
+        Falls back to the NumPy backend when no GPU backend is available.
     """
     # Check environment variable override
     env_backend = os.environ.get("MC_BACKEND", "").lower()

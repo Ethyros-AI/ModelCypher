@@ -127,6 +127,7 @@ class MergePipelineService:
         transplant_domains: list[str],
         *,
         skip_pre_analysis: bool = False,
+        use_cpu_weights: bool = False,
     ) -> PipelineResult:
         """Run the complete merge pipeline.
 
@@ -136,6 +137,7 @@ class MergePipelineService:
             output_dir: Output directory for merged model
             transplant_domains: Domains to transplant (e.g., ["mathematical", "logical"])
             skip_pre_analysis: Skip pre-merge interference analysis
+            use_cpu_weights: Load weights on CPU to reduce GPU memory usage
         Returns:
             PipelineResult with all stage results
         """
@@ -172,6 +174,7 @@ class MergePipelineService:
             target_path=target_path,
             output_dir=output_dir,
             transplant_domains=transplant_domains,
+            use_cpu_weights=use_cpu_weights,
         )
         merge_duration = time.time() - merge_start
         logger.info("Merge completed in %.2fs", merge_duration)
@@ -407,6 +410,7 @@ class MergePipelineService:
         target_path: str,
         output_dir: str,
         transplant_domains: list[str],
+        use_cpu_weights: bool,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
         from modelcypher.cli.composition import get_geometric_merger
@@ -417,6 +421,7 @@ class MergePipelineService:
             target_path=target_path,
             output_dir=output_dir,
             transplant_domains=transplant_domains,
+            use_cpu_weights=use_cpu_weights,
         )
 
     def _extract_post_merge_validation(

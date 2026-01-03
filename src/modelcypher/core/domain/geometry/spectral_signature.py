@@ -237,16 +237,17 @@ class SpectralSignature:
         backend.eval(neighbor_indices)
 
         adj = backend.full((n, n), inf_val)
-        for i in range(n):
-            adj = _set_matrix_element(backend, adj, i, i, 0.0)
+        diag_mask = backend.eye(n) > 0.0
+        adj = backend.where(diag_mask, backend.zeros_like(adj), adj)
 
         edge_eps = float(division_epsilon(backend, euclidean_dist))
+        neighbor_indices_list = backend.tolist(neighbor_indices)
         for i in range(n):
-            for j_idx in range(int(neighbor_indices.shape[1])):
-                j = int(backend.to_scalar(neighbor_indices[i, j_idx]))
-                edge_weight = max(float(backend.to_scalar(euclidean_dist[i, j])), edge_eps)
-                adj = _set_matrix_element(backend, adj, i, j, edge_weight)
-                adj = _set_matrix_element(backend, adj, j, i, edge_weight)
+            for j in neighbor_indices_list[i]:
+                j_idx = int(j)
+                edge_weight = max(float(backend.to_scalar(euclidean_dist[i, j_idx])), edge_eps)
+                adj = _set_matrix_element(backend, adj, i, j_idx, edge_weight)
+                adj = _set_matrix_element(backend, adj, j_idx, i, edge_weight)
 
         return adj, euclidean_dist, inf_val, k_neighbors, neighbor_indices
 
