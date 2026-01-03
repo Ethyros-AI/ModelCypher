@@ -109,9 +109,6 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
 
 def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     """Create test adapter files in safetensors format."""
-    from safetensors.numpy import save_file
-    import numpy as np
-
     backend = get_default_backend()
     # LoRA shapes: A is [in, rank], B is [rank, out]
     # delta = A @ B = [in, out]
@@ -129,9 +126,9 @@ def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     base_dir = tmp_path / "base_model"
     base_dir.mkdir()
     base_path = base_dir / "model.safetensors"
-    save_file(
-        {"layers.0.self_attn.q_proj.weight": np.asarray(backend.to_numpy(base_weight))},
+    backend.save_safetensors(
         str(base_path),
+        {"layers.0.self_attn.q_proj.weight": base_weight},
     )
 
     # Create adapter directory with safetensors
@@ -139,12 +136,12 @@ def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir()
     checkpoint_path = adapter_dir / "adapters.safetensors"
-    save_file(
-        {
-            "layers.0.self_attn.q_proj.lora_a": np.asarray(backend.to_numpy(lora_a)),
-            "layers.0.self_attn.q_proj.lora_b": np.asarray(backend.to_numpy(lora_b)),
-        },
+    backend.save_safetensors(
         str(checkpoint_path),
+        {
+            "layers.0.self_attn.q_proj.lora_a": lora_a,
+            "layers.0.self_attn.q_proj.lora_b": lora_b,
+        },
     )
 
     return adapter_dir, base_dir
@@ -459,15 +456,13 @@ def test_mc_thermo_analyze_schema(mcp_env: dict[str, str]):
 
 
 def test_mc_adapter_inspect_schema(mcp_env: dict[str, str], tmp_path: Path):
-    from safetensors.numpy import save_file
-
     backend = get_default_backend()
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir()
     ones_arr = backend.ones((2, 3), dtype="float32")
     backend.eval(ones_arr)
-    weights = {"layer.lora_A": backend.to_numpy(ones_arr)}
-    save_file(weights, adapter_dir / "adapter_model.safetensors")
+    weights = {"layer.lora_A": ones_arr}
+    backend.save_safetensors(str(adapter_dir / "adapter_model.safetensors"), weights)
     (adapter_dir / "adapter_config.json").write_text(
         '{"r": 4, "lora_alpha": 8.0, "target_modules": ["q_proj"]}', encoding="utf-8"
     )

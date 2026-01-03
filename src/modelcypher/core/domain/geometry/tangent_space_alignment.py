@@ -31,13 +31,15 @@ Key concepts:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
+    division_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -206,7 +208,7 @@ class TangentSpaceAlignment:
             for cos in principal_cosines:
                 clamped = max(0.0, min(1.0, cos))
                 cosines.append(clamped)
-                angles.append(math.acos(clamped))
+                angles.append(acos_scalar(clamped, self._backend))
 
             used_anchors += 1
 

@@ -295,6 +295,8 @@ class GeometryAdapterService:
         # Backend arrays have .dtype property directly
         weight_arr = b.array(weight)
         dtype_str = str(weight_arr.dtype)
+        if "." in dtype_str:
+            dtype_str = dtype_str.split(".")[-1]
         if dtype_str in ("float16", "float32", "float64", "bfloat16"):
             return weight_arr
 

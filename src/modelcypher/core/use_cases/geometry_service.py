@@ -206,45 +206,12 @@ class GeometryService:
         )
 
         config = report.config
-        thresholds = config.thresholds
         payload = {
             "suiteVersion": report.suite_version,
             "timestamp": GeometryService._iso_timestamp(report.timestamp),
             "passed": report.passed,
             "config": {
                 "includeFixtures": config.include_fixtures,
-                "thresholds": {
-                    "identityDistanceMax": thresholds.identity_distance_max,
-                    "permutationDistanceMax": thresholds.permutation_distance_max,
-                    "symmetryDeltaMax": thresholds.symmetry_delta_max,
-                    "couplingMassErrorMax": thresholds.coupling_mass_error_max,
-                    "traversalSelfCorrelationMin": thresholds.traversal_self_correlation_min,
-                    "traversalPerturbedCorrelationMax": thresholds.traversal_perturbed_correlation_max,
-                    "signatureSimilarityMin": thresholds.signature_similarity_min,
-                    "frechetDistanceMax": thresholds.frechet_distance_max,
-                    "dimensionConstraintCkaMin": thresholds.dimension_constraint_cka_min,
-                    "dimensionConstraintGeodesicMeanAbsDiffMax": (
-                        thresholds.dimension_constraint_geodesic_mean_abs_diff_max
-                    ),
-                    "dimensionConstraintGeodesicMaxAbsDiffMax": (
-                        thresholds.dimension_constraint_geodesic_max_abs_diff_max
-                    ),
-                    "dimensionConstraintSpectralEigenMeanAbsDiffMax": (
-                        thresholds.dimension_constraint_spectral_eigen_mean_abs_diff_max
-                    ),
-                    "dimensionConstraintSpectralEigenMaxAbsDiffMax": (
-                        thresholds.dimension_constraint_spectral_eigen_max_abs_diff_max
-                    ),
-                    "dimensionConstraintSpectralEntropyAbsDiffMax": (
-                        thresholds.dimension_constraint_spectral_entropy_abs_diff_max
-                    ),
-                    "dimensionConstraintHeatTraceMaxAbsDiffMax": (
-                        thresholds.dimension_constraint_heat_trace_max_abs_diff_max
-                    ),
-                    "dimensionConstraintTopologyAbsDiffMax": (
-                        thresholds.dimension_constraint_topology_abs_diff_max
-                    ),
-                },
                 "gromovWasserstein": {
                     "sinkhornEpsilon": _SINKHORN_EPSILON,
                     "sinkhornIterations": _SINKHORN_ITERATIONS,
