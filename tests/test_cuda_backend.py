@@ -25,14 +25,48 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import numpy as np
+import pytest
+
+from modelcypher.core.support.array_utils import array_to_list
+
+_BACKEND = None
+
+
+def _get_backend():
+    global _BACKEND
+    if _BACKEND is not None:
+        return _BACKEND
+    try:
+        from modelcypher.backends.mlx_backend import MLXBackend
+
+        _BACKEND = MLXBackend()
+    except Exception:
+        try:
+            from modelcypher.backends.jax_backend import JAXBackend
+
+            _BACKEND = JAXBackend()
+        except Exception:
+            pytest.skip(
+                "MLX or JAX backend required for CUDA backend tests.",
+                allow_module_level=True,
+            )
+    return _BACKEND
+
+
+def _is_inf(value: float) -> bool:
+    return value == float("inf") or value == float("-inf")
+
+
+def _is_finite(value: float) -> bool:
+    return value == value and not _is_inf(value)
 
 
 class MockTensor:
     """Mock tensor that simulates PyTorch tensor behavior."""
 
     def __init__(self, data, dtype=None, device=None):
-        self._data = np.array(data)
+        backend = _get_backend()
+        self._data = backend.array(data)
         self._dtype = dtype
         self._device = device
 
@@ -41,20 +75,24 @@ class MockTensor:
 
     @property
     def ndim(self) -> int:
-        return self._data.ndim
+        return len(_get_backend().shape(self._data))
 
     @property
     def shape(self):
-        return self._data.shape
+        return _get_backend().shape(self._data)
 
     def squeeze(self, dim=None):
-        return MockTensor(np.squeeze(self._data, axis=dim), self._dtype, self._device)
+        backend = _get_backend()
+        if dim is None:
+            return MockTensor(backend.squeeze(self._data), self._dtype, self._device)
+        return MockTensor(backend.squeeze(self._data, axis=dim), self._dtype, self._device)
 
     def unsqueeze(self, dim):
-        return MockTensor(np.expand_dims(self._data, axis=dim), self._dtype, self._device)
+        backend = _get_backend()
+        return MockTensor(backend.expand_dims(self._data, dim), self._dtype, self._device)
 
     def to_numpy(self):
-        return self._data.copy()
+        return array_to_list(_get_backend(), self._data)
 
     def detach(self):
         return self
@@ -63,11 +101,12 @@ class MockTensor:
         return self
 
     def numpy(self):
-        return self._data.copy()
+        return self.to_numpy()
 
 
 def create_mock_torch():
     """Create a mock torch module with required functions."""
+    backend = _get_backend()
     mock_torch = MagicMock()
 
     # Mock dtypes
@@ -78,52 +117,60 @@ def create_mock_torch():
 
     # Mock torch.triu - creates upper triangular matrix
     def mock_triu(tensor, diagonal=0):
-        data = tensor._data if isinstance(tensor, MockTensor) else np.array(tensor)
-        result = np.triu(data, k=diagonal)
+        data = tensor._data if isinstance(tensor, MockTensor) else backend.array(tensor)
+        rows, cols = backend.shape(data)
+        row_idx = backend.reshape(backend.arange(rows), (rows, 1))
+        col_idx = backend.reshape(backend.arange(cols), (1, cols))
+        row_grid = backend.broadcast_to(row_idx, (rows, cols))
+        col_grid = backend.broadcast_to(col_idx, (rows, cols))
+        mask = col_grid >= row_grid + diagonal
+        zeros = backend.zeros_like(data)
+        result = backend.where(mask, data, zeros)
         return MockTensor(result, tensor._dtype if isinstance(tensor, MockTensor) else None, "cuda")
 
     mock_torch.triu = mock_triu
 
     # Mock torch.full - creates tensor filled with value
     def mock_full(shape, fill_value, dtype=None, device=None):
-        data = np.full(shape, fill_value)
+        data = backend.full(shape, fill_value)
         return MockTensor(data, dtype, device)
 
     mock_torch.full = mock_full
 
     # Mock torch.softmax - applies softmax along axis
     def mock_softmax(tensor, dim=-1):
-        data = tensor._data if isinstance(tensor, MockTensor) else np.array(tensor)
-        # Numerically stable softmax
-        shifted = data - np.max(data, axis=dim, keepdims=True)
-        exp_data = np.exp(shifted)
-        probs = exp_data / np.sum(exp_data, axis=dim, keepdims=True)
+        data = tensor._data if isinstance(tensor, MockTensor) else backend.array(tensor)
+        shifted = data - backend.max(data, axis=dim, keepdims=True)
+        exp_data = backend.exp(shifted)
+        probs = exp_data / backend.sum(exp_data, axis=dim, keepdims=True)
         return MockTensor(probs, tensor._dtype if isinstance(tensor, MockTensor) else None, "cuda")
 
     mock_torch.softmax = mock_softmax
 
     # Mock torch.multinomial - samples from categorical distribution
     def mock_multinomial(probs_tensor, num_samples=1, replacement=True):
-        probs = (
-            probs_tensor._data if isinstance(probs_tensor, MockTensor) else np.array(probs_tensor)
+        probs = probs_tensor._data if isinstance(probs_tensor, MockTensor) else backend.array(
+            probs_tensor
         )
 
-        if probs.ndim == 1:
-            probs = probs.reshape(1, -1)
+        was_1d = len(backend.shape(probs)) == 1
+        if was_1d:
+            probs = backend.expand_dims(probs, 0)
 
-        batch_size = probs.shape[0]
-        num_categories = probs.shape[1]
+        probs = probs / backend.sum(probs, axis=1, keepdims=True)
+        cdf = backend.cumsum(probs, axis=1)
 
-        samples = []
-        for i in range(batch_size):
-            p = probs[i]
-            # Normalize to ensure valid probability distribution
-            p = p / p.sum()
-            sample = np.random.choice(num_categories, size=num_samples, replace=replacement, p=p)
-            samples.append(sample)
+        batch_size, num_categories = backend.shape(cdf)
+        samples = backend.random_uniform(shape=(batch_size, num_samples))
+        cdf_exp = backend.expand_dims(cdf, -1)
+        samples_exp = backend.expand_dims(samples, 1)
+        mask = cdf_exp >= samples_exp
+        indices = backend.argmax(mask * 1, axis=1)
 
-        result = np.array(samples)
-        return MockTensor(result, None, "cuda")
+        if was_1d:
+            indices = backend.squeeze(indices, axis=0)
+
+        return MockTensor(indices, None, "cuda")
 
     mock_torch.multinomial = mock_multinomial
 
@@ -177,7 +224,7 @@ class TestCUDABackendCreateCausalMask:
 
             # Check diagonal is 0
             for i in range(4):
-                assert data[i, i] == 0.0
+                assert data[i][i] == 0.0
 
     def test_causal_mask_lower_triangular_zero(self):
         """Lower triangular (below diagonal) should be 0 (attend to past)."""
@@ -195,7 +242,7 @@ class TestCUDABackendCreateCausalMask:
             # Check lower triangle is 0
             for i in range(4):
                 for j in range(i):
-                    assert data[i, j] == 0.0
+                    assert data[i][j] == 0.0
 
     def test_causal_mask_upper_triangular_neginf(self):
         """Upper triangular (above diagonal) should be -inf (block future)."""
@@ -213,7 +260,7 @@ class TestCUDABackendCreateCausalMask:
             # Check upper triangle is -inf
             for i in range(4):
                 for j in range(i + 1, 4):
-                    assert data[i, j] == float("-inf")
+                    assert data[i][j] == float("-inf")
 
     def test_causal_mask_seq_len_1(self):
         """Mask for seq_len=1 should be [[0.0]] (no masking needed)."""
@@ -228,8 +275,9 @@ class TestCUDABackendCreateCausalMask:
             mask = backend.create_causal_mask(1)
             data = mask.to_numpy()
 
-            assert data.shape == (1, 1)
-            assert data[0, 0] == 0.0
+            assert len(data) == 1
+            assert len(data[0]) == 1
+            assert data[0][0] == 0.0
 
     def test_causal_mask_large_sequence(self):
         """Test mask works for larger sequences."""
@@ -244,12 +292,13 @@ class TestCUDABackendCreateCausalMask:
             mask = backend.create_causal_mask(128)
             data = mask.to_numpy()
 
-            assert data.shape == (128, 128)
+            assert len(data) == 128
+            assert len(data[0]) == 128
             # Spot check
-            assert data[0, 0] == 0.0
-            assert data[0, 1] == float("-inf")
-            assert data[127, 0] == 0.0
-            assert data[127, 127] == 0.0
+            assert data[0][0] == 0.0
+            assert data[0][1] == float("-inf")
+            assert data[127][0] == 0.0
+            assert data[127][127] == 0.0
 
 
 class TestCUDABackendRandomCategorical:
@@ -272,7 +321,7 @@ class TestCUDABackendRandomCategorical:
 
             # Should return indices in valid range
             sample_data = samples.to_numpy()
-            assert sample_data.shape == (1,)
+            assert len(sample_data) == 1
             assert 0 <= sample_data[0] < 3
 
     def test_categorical_multiple_samples_1d(self):
@@ -290,7 +339,7 @@ class TestCUDABackendRandomCategorical:
             samples = backend.random_categorical(logits, num_samples=10)
 
             sample_data = samples.to_numpy()
-            assert sample_data.shape == (10,)
+            assert len(sample_data) == 10
             # All samples should be valid indices
             assert all(0 <= s < 3 for s in sample_data)
 
@@ -316,14 +365,15 @@ class TestCUDABackendRandomCategorical:
             samples = backend.random_categorical(logits, num_samples=5)
 
             sample_data = samples.to_numpy()
-            assert sample_data.shape == (3, 5)
+            assert len(sample_data) == 3
+            assert len(sample_data[0]) == 5
             # All samples should be valid indices
             assert all(0 <= s < 4 for row in sample_data for s in row)
 
     def test_categorical_deterministic_with_extreme_logits(self):
         """With extreme logits, sampling should strongly favor highest logit."""
         mock_torch = create_mock_torch()
-        np.random.seed(42)  # For reproducibility
+        _get_backend().random_seed(42)  # For reproducibility
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
 
@@ -343,7 +393,7 @@ class TestCUDABackendRandomCategorical:
     def test_categorical_respects_probability_distribution(self):
         """Samples should roughly follow the probability distribution."""
         mock_torch = create_mock_torch()
-        np.random.seed(42)  # For reproducibility
+        _get_backend().random_seed(42)  # For reproducibility
         with patch.dict("sys.modules", {"torch": mock_torch}):
             import importlib
 
@@ -358,7 +408,9 @@ class TestCUDABackendRandomCategorical:
             samples = backend.random_categorical(logits, num_samples=1000)
 
             sample_data = samples.to_numpy()
-            counts = np.bincount(sample_data, minlength=3)
+            counts = [0, 0, 0]
+            for value in sample_data:
+                counts[value] += 1
 
             # Category 2 should have most samples, category 0 least
             assert counts[2] > counts[1] > counts[0]
@@ -381,16 +433,14 @@ class TestCUDABackendIntegration:
             data = mask.to_numpy()
 
             # Expected structure for seq_len=4
-            expected = np.array(
-                [
-                    [0.0, -np.inf, -np.inf, -np.inf],
-                    [0.0, 0.0, -np.inf, -np.inf],
-                    [0.0, 0.0, 0.0, -np.inf],
-                    [0.0, 0.0, 0.0, 0.0],
-                ]
-            )
+            expected = [
+                [0.0, float("-inf"), float("-inf"), float("-inf")],
+                [0.0, 0.0, float("-inf"), float("-inf")],
+                [0.0, 0.0, 0.0, float("-inf")],
+                [0.0, 0.0, 0.0, 0.0],
+            ]
 
-            np.testing.assert_array_equal(data, expected)
+            assert data == expected
 
     def test_mask_can_be_used_for_attention(self):
         """Verify mask values work correctly with softmax attention pattern."""
@@ -406,18 +456,20 @@ class TestCUDABackendIntegration:
             mask_data = mask.to_numpy()
 
             # Simulate attention scores + mask
-            scores = np.ones((3, 3))
-            masked_scores = scores + mask_data
+            scores = [[1.0, 1.0, 1.0] for _ in range(3)]
+            masked_scores = [
+                [scores[i][j] + mask_data[i][j] for j in range(3)] for i in range(3)
+            ]
 
             # After masking, upper triangle should be -inf
-            assert np.isinf(masked_scores[0, 1])
-            assert np.isinf(masked_scores[0, 2])
-            assert np.isinf(masked_scores[1, 2])
+            assert _is_inf(masked_scores[0][1])
+            assert _is_inf(masked_scores[0][2])
+            assert _is_inf(masked_scores[1][2])
 
             # Lower triangle and diagonal should be finite
-            assert np.isfinite(masked_scores[0, 0])
-            assert np.isfinite(masked_scores[1, 0])
-            assert np.isfinite(masked_scores[1, 1])
-            assert np.isfinite(masked_scores[2, 0])
-            assert np.isfinite(masked_scores[2, 1])
-            assert np.isfinite(masked_scores[2, 2])
+            assert _is_finite(masked_scores[0][0])
+            assert _is_finite(masked_scores[1][0])
+            assert _is_finite(masked_scores[1][1])
+            assert _is_finite(masked_scores[2][0])
+            assert _is_finite(masked_scores[2][1])
+            assert _is_finite(masked_scores[2][2])

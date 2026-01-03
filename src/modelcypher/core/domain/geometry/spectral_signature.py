@@ -144,7 +144,7 @@ class SpectralSignature:
             kernel_bandwidth = bandwidth_floor
 
         weights_arr = backend.zeros((n, n), dtype="float32")
-        if edge_distances:
+        if edge_count > 0:
             sigma_sq = kernel_bandwidth * kernel_bandwidth * 2.0
             edge_mask = backend.where(
                 adjacency < inf_value * 0.9,

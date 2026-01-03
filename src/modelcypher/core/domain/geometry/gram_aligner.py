@@ -87,7 +87,6 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -96,6 +95,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     regularization_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -971,7 +971,7 @@ class GramAligner:
                 break
 
             # Learning rate decay: 1/(1 + sqrt(eps)*iteration) derived from precision
-            lr = 1.0 / (1.0 + math.sqrt(eps) * iteration)
+            lr = 1.0 / (1.0 + sqrt_scalar(eps, b) * iteration)
             F = F + lr * (grad / (grad_norm_val + div_eps))
             b.eval(F)
 
@@ -1014,7 +1014,7 @@ class GramAligner:
         hsic_xx = float(b.to_scalar(hsic_xx_arr)) / ((n - 1) ** 2)
         hsic_yy = float(b.to_scalar(hsic_yy_arr)) / ((n - 1) ** 2)
 
-        denominator = math.sqrt(hsic_xx * hsic_yy)
+        denominator = sqrt_scalar(hsic_xx * hsic_yy, b)
         # Use dtype-derived epsilon for denominator floor
         div_eps = division_epsilon(b, K_x_c)
         if denominator < div_eps:

@@ -49,13 +49,16 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
+    division_epsilon,
+    sqrt_scalar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +290,7 @@ class GeneralizedProcrustes:
             # Derive tolerance from machine epsilon if not specified
             if config.frechet_mean.tolerance is None:
                 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-                tol = math.sqrt(machine_epsilon(backend, sample_points))
+                tol = sqrt_scalar(machine_epsilon(backend, sample_points), backend)
             else:
                 tol = config.frechet_mean.tolerance
 
@@ -334,7 +337,7 @@ class GeneralizedProcrustes:
         if config.convergence_threshold is None:
             from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
             eps = machine_epsilon(self._backend, X)
-            convergence_threshold = math.sqrt(eps)  # sqrt(eps) for relative error
+            convergence_threshold = sqrt_scalar(eps, self._backend)  # sqrt(eps) for relative error
         else:
             convergence_threshold = config.convergence_threshold
 
@@ -770,7 +773,7 @@ class RotationContinuityAnalyzer:
                 # Clamp for numerical stability
                 cos_angle = (trace - 1) / 2
                 cos_angle = max(-1.0, min(1.0, cos_angle))
-                angular_deviation = math.acos(cos_angle)
+                angular_deviation = acos_scalar(cos_angle, backend)
 
                 # Frobenius norm of difference
                 diff = rotation - prev_rotation

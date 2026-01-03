@@ -15,9 +15,88 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Shared Subspace Projector - CCA/SVCCA alignment for cross-model representation matching.
+
+Discovers the shared geometric subspace between two models' representations,
+enabling dimension-agnostic alignment for model merging. When models encode
+the same knowledge in different coordinate systems, this module finds the
+common subspace where their representations align.
+
+Mathematical Foundation:
+========================
+
+Canonical Correlation Analysis (CCA) finds pairs of linear projections that
+maximize correlation between two sets of variables. Given centered activations
+X_s [n, d_s] and X_t [n, d_t]:
+
+    1. Covariance whitening: Transform each space to have identity covariance
+       C_ss^{-1/2} @ X_s and C_tt^{-1/2} @ X_t
+
+    2. Cross-covariance SVD: Decompose the whitened cross-covariance
+       SVD(C_ss^{-1/2} @ C_st @ C_tt^{-1/2}) = U @ S @ V^T
+
+    3. Canonical correlations: Singular values S are the canonical correlations
+       representing alignment strength in each shared dimension
+
+    4. Projection matrices: Final projections combine PCA reduction, whitening,
+       and SVD components to map both representations to the shared subspace
+
+SVCCA (Singular Vector CCA) adds a PCA preprocessing step to reduce each
+representation to its high-variance subspace before CCA. This improves
+numerical stability when d >> n and filters noise dimensions.
+
+Key Concepts:
+=============
+
+AlignmentMethod enum:
+    - CCA: Full SVCCA pipeline with covariance whitening
+    - shared_svd: Direct SVD on concatenated activations (faster, less precise)
+    - procrustes: Orthogonal Procrustes for same-dimension alignment
+
+PcaMode enum:
+    - auto: Choose based on n vs d (Gram-space when d > n)
+    - svd: Direct SVD on activations (stable for n >= d)
+    - gram: Eigendecomposition of Gram matrix (efficient for d >> n)
+
+Spectral gap detection:
+    When variance_threshold is None, component count is determined by finding
+    the largest relative drop in the sorted variance spectrum. This is
+    geometry-derived, not an arbitrary cutoff.
+
+Properties:
+===========
+
+- Dimension-agnostic: Works across ANY dimensions via Gram matrices
+- CKA = 1.0 for aligned layers: Perfect alignment is always achievable
+- No interpolation: Projects to shared subspace, doesn't blend representations
+- Numerically stable: Uses regularization derived from dtype, not heuristics
+
+Usage:
+    from modelcypher.core.domain.geometry.shared_subspace_projector import (
+        SharedSubspaceProjector, Config
+    )
+
+    result = SharedSubspaceProjector.discover(
+        source_crm, target_crm, layer=12
+    )
+    if result is not None:
+        # result.source_projection @ source_activations -> shared space
+        # result.target_projection @ target_activations -> shared space
+        print(f"Shared dimension: {result.shared_dimension}")
+        print(f"Top correlation: {result.alignment_strengths[0]:.4f}")
+
+References:
+    - Raghu, M., et al. (2017). "SVCCA: Singular Vector Canonical Correlation
+      Analysis for Deep Learning Dynamics and Interpretability."
+      arXiv:1706.05806. https://arxiv.org/abs/1706.05806
+    - Morcos, A., et al. (2018). "Insights on representational similarity in
+      neural networks with canonical correlation."
+      NeurIPS 2018. https://arxiv.org/abs/1806.05759
+"""
+
 from __future__ import annotations
 
-import math
 import sys
 from dataclasses import dataclass
 from enum import Enum
@@ -28,7 +107,10 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

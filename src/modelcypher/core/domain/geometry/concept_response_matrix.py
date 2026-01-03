@@ -15,6 +15,63 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Concept Response Matrix (CRM) for model fingerprinting and layer correspondence.
+
+A CRM captures how a model responds to a fixed set of anchor concepts across all
+layers, producing a unique geometric fingerprint. This fingerprint enables layer
+correspondence discovery between models of different architectures and sizes.
+
+Mathematical Foundation:
+    The CRM is a tensor M[anchor, layer, hidden_dim] where each entry records the
+    mean-pooled activation for a given anchor concept at a given layer.
+
+    For cross-model comparison, we compute Gram matrices K = M @ M^T per layer,
+    then measure CKA similarity between corresponding layers:
+
+        CKA(source_layer, target_layer) = HSIC(K_source, K_target) /
+                                          sqrt(HSIC(K_source, K_source) * HSIC(K_target, K_target))
+
+    Layer correspondence is discovered via greedy CKA matching: for each source
+    layer, find the unassigned target layer with maximum CKA.
+
+Key Concepts:
+    - Anchor concepts: Semantic primes and computational gates that probe specific
+      model capabilities. See semantic_primes.py for the anchor vocabulary.
+    - Layer correspondence: The mapping from source model layers to target model
+      layers that maximizes representational similarity.
+    - Transition alignment: Compares layer-to-layer deltas between models, measuring
+      whether models transform representations in similar ways.
+
+Invariant:
+    CKA = 1.0 for corresponding layers when alignment is correct.
+
+    If CKA < 1.0 between matched layers, this indicates an algorithm bug in the
+    alignment code, NOT model incompatibility. All LLMs trained on language encode
+    the same geometric structure - the invariant shape of knowledge.
+
+Usage:
+    crm_source = ConceptResponseMatrix(model_id="source", layer_count=32, ...)
+    crm_target = ConceptResponseMatrix(model_id="target", layer_count=24, ...)
+
+    # Record activations for each anchor
+    for anchor_id in anchor_ids:
+        crm_source.record_activations(anchor_id, layer_states)
+        crm_target.record_activations(anchor_id, layer_states)
+
+    # Discover layer correspondence
+    report = crm_source.compare(crm_target)
+    for match in report.layer_correspondence:
+        print(f"Layer {match.source_layer} -> {match.target_layer}: CKA={match.cka}")
+
+    # Transition alignment (compare how layers transform)
+    transition = crm_source.compute_transition_alignment(crm_target)
+
+See Also:
+    - cka.py: CKA implementation with HSIC estimators and feature-sampling correction
+    - semantic_primes.py: Anchor concept vocabulary (Wierzbicka's semantic primes)
+"""
+
 from __future__ import annotations
 
 import json

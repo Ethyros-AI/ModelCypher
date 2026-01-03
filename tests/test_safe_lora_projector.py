@@ -22,8 +22,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import numpy as np
-from safetensors.numpy import load_file, save_file
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.support.array_utils import array_to_list
 
 from modelcypher.core.domain.safety.safe_lora_projector import (
     SafeLoRAConfiguration,
@@ -173,23 +173,24 @@ class TestSafeLoRAProjector:
 
     def test_project_applied_happy_path(self, tmp_path: Path) -> None:
         """project() applies projection when cache and adapter exist."""
+        backend = get_default_backend()
         model_id = "test/model"
         sanitized = SafeLoRAProjector._sanitize(model_id)
         cache_dir = tmp_path / "safety" / "projections" / sanitized
         cache_dir.mkdir(parents=True)
         projection_file = cache_dir / "projection.safetensors"
 
-        projection = {"layers.0.proj": np.eye(2, dtype=np.float32)}
-        save_file(projection, projection_file)
+        projection = {"layers.0.proj": backend.eye(2)}
+        backend.save_safetensors(str(projection_file), projection)
 
         adapter_path = tmp_path / "adapter"
         adapter_path.mkdir()
         adapter_file = adapter_path / "adapter_model.safetensors"
         adapter_weights = {
-            "layers.0.lora_b.weight": np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
-            "layers.0.lora_a.weight": np.array([[5.0, 6.0]], dtype=np.float32),
+            "layers.0.lora_b.weight": backend.array([[1.0, 2.0], [3.0, 4.0]]),
+            "layers.0.lora_a.weight": backend.array([[5.0, 6.0]]),
         }
-        save_file(adapter_weights, adapter_file)
+        backend.save_safetensors(str(adapter_file), adapter_weights)
 
         projector = SafeLoRAProjector(resources_path=tmp_path)
         result = asyncio.run(projector.project(model_id, adapter_path))
@@ -197,11 +198,13 @@ class TestSafeLoRAProjector:
         assert result.status == SafeLoRAProjectionStatus.APPLIED
         assert result.was_applied is True
 
-        updated = load_file(str(adapter_file))
-        np.testing.assert_allclose(updated["layers.0.lora_b.weight"], np.zeros((2, 2)))
-        np.testing.assert_allclose(
-            updated["layers.0.lora_a.weight"], adapter_weights["layers.0.lora_a.weight"]
-        )
+        updated = backend.load_safetensors(str(adapter_file))
+        lora_b = array_to_list(backend, updated["layers.0.lora_b.weight"])
+        lora_a = array_to_list(backend, updated["layers.0.lora_a.weight"])
+        expected_b = array_to_list(backend, backend.zeros((2, 2)))
+        expected_a = array_to_list(backend, adapter_weights["layers.0.lora_a.weight"])
+        assert lora_b == expected_b
+        assert lora_a == expected_a
 
 
 class TestSafeLoRAConfiguration:

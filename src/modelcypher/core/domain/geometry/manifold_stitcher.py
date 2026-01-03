@@ -15,6 +15,80 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Cross-architecture model merging via manifold alignment.
+
+Models with different architectures encode knowledge on the same underlying
+geometric structure. This module aligns and stitches these representations
+by finding the correct transformation between coordinate systems.
+
+Mathematical Foundation:
+    Neural network activations define points on a Riemannian manifold. Alignment
+    requires computing distances and means on this curved space:
+
+    1. Geodesic Distance: Shortest path along the manifold surface, computed via
+       k-NN graph. Euclidean distance systematically errs:
+       - Positive curvature: Euclidean underestimates true distance
+       - Negative curvature: Euclidean overestimates true distance
+
+    2. Frechet Mean (Karcher Mean): Riemannian center of mass.
+       Minimizes sum of squared geodesic distances: mu = argmin_p sum(d^2(p, x_i))
+
+    3. Local Procrustes: SVD-based rotation that minimizes ||X @ R - Y||_F
+       subject to det(R) = +1 (proper rotation, not reflection).
+
+Algorithm:
+    1. Triangulated Probing: Collect activation fingerprints across multiple
+       semantic domains (semantic primes, sequence invariants, metaphor invariants).
+       Cross-domain agreement triangulates to robust alignment.
+
+    2. Continuous Fingerprinting: Preserve full activation vectors with magnitude,
+       entropy, and sparsity metadata. CKA measures structural similarity.
+
+    3. Riemannian K-Means: Cluster activations using geodesic distances and
+       Frechet centroids. Groups activation regions for local alignment.
+
+    4. Local Procrustes: Compute rotation matrices within each cluster using
+       SVD. The Schonemann (1966) sign correction ensures det(R) = +1.
+
+Key Principles:
+    - Curvature is inherent: Always use geodesic distance, not Euclidean.
+      The k-NN graph IS the discrete manifold representation.
+
+    - Proper rotations only: det(R) = +1. Reflections (det = -1) are corrected
+      by flipping the sign of the last column of U in the SVD.
+
+    - No interpolation: Model merging is geometric ADDITION via null-space
+      projection, not weighted averaging. See null_space_filter.py.
+
+Usage:
+    from modelcypher.core.domain.geometry.manifold_stitcher import ManifoldStitcher
+
+    # Compute CKA alignment between models at a specific layer
+    cka_matrix, source_ids, target_ids = ManifoldStitcher.compute_cka_matrix(
+        source_fingerprints, target_fingerprints, layer=12
+    )
+
+    # Cluster activations for local alignment
+    clusters = ManifoldStitcher.cluster_activations(
+        source_activations, target_activations, cluster_count=8
+    )
+
+    # Build triangulated probes for robust fingerprinting
+    probes = TriangulatedProbeBuilder.build_triangulated_probes()
+
+References:
+    - Schonemann (1966) "A Generalized Solution of the Orthogonal Procrustes Problem"
+    - Tenenbaum et al. (2000) "Isomap" - geodesic distance via graph
+    - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"
+
+See Also:
+    - riemannian_utils.py: Geodesic distance, Frechet mean, curvature estimation
+    - generalized_procrustes.py: Multi-shape alignment with proper rotations
+    - cka.py: Centered Kernel Alignment for representation similarity
+    - null_space_filter.py: Interference-free weight delta projection
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,7 +99,9 @@ from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol,
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    log_scalar,
     regularization_epsilon,
+    sqrt_scalar,
 )
 
 __all__ = [
@@ -95,7 +171,6 @@ output_layer_marker = -1
 
 
 import logging
-import math
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -196,7 +271,7 @@ class ContinuousFingerprint:
 
             log_probs = b.log(probs + eps)
             entropy = -float(b.to_scalar(b.sum(probs * log_probs)))
-            max_entropy = math.log(max(len(activations), 1))
+            max_entropy = log_scalar(float(max(len(activations), 1)), b)
             entropies[layer] = min(max(entropy / max_entropy, 0.0), 1.0) if max_entropy > 0 else 0.0
 
             abs_acts = b.abs(arr)
@@ -540,7 +615,7 @@ def _compute_std(values: list[float]) -> float:
         return 0.0
     mean = sum(values) / len(values)
     variance = sum((x - mean) ** 2 for x in values) / len(values)
-    return math.sqrt(variance)
+    return sqrt_scalar(variance, get_default_backend())
 
 
 def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
