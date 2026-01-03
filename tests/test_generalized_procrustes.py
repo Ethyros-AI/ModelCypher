@@ -31,7 +31,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -50,11 +49,14 @@ from modelcypher.core.domain.geometry.generalized_procrustes import (
     RotationContinuityAnalyzer,
     RotationContinuityResult,
 )
+from modelcypher.core.support.array_utils import array_to_list
 
 
 def _eps(backend, *values: float) -> float:
     return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
+
+PI = 3.141592653589793
 
 # =============================================================================
 # FrechetMeanConfig Tests
@@ -123,7 +125,11 @@ class TestConfig:
     def test_with_smoothness_threshold(self) -> None:
         """Config.with_smoothness_threshold() creates config with threshold."""
         ratios = [0.5, 0.55, 0.6, 0.65, 0.7]
-        threshold = sum(ratios) / len(ratios)
+        backend = get_default_backend()
+        ratio_array = backend.array(ratios)
+        mean = backend.mean(ratio_array)
+        backend.eval(mean)
+        threshold = float(backend.to_scalar(mean))
         config = Config.with_smoothness_threshold(threshold)
         assert config.per_layer_smoothness_threshold == threshold
         assert config.effective_smoothness_threshold == threshold
@@ -134,10 +140,17 @@ class TestConfig:
         ratios = [0.5, 0.55, 0.6, 0.65, 0.7]
         config = Config.from_smoothness_distribution(ratios)
         assert config.per_layer_smoothness_threshold is not None
-        mean = sum(ratios) / len(ratios)
-        variance = sum((r - mean) ** 2 for r in ratios) / len(ratios)
-        expected = max(0.0, mean - variance**0.5)
         backend = get_default_backend()
+        ratio_array = backend.array(ratios)
+        mean = backend.mean(ratio_array)
+        diff = ratio_array - mean
+        variance = backend.mean(diff * diff)
+        std = backend.sqrt(variance)
+        backend.eval(mean)
+        backend.eval(std)
+        mean_val = float(backend.to_scalar(mean))
+        std_val = float(backend.to_scalar(std))
+        expected = max(0.0, mean_val - std_val)
         eps = _eps(backend, config.effective_smoothness_threshold, expected)
         assert abs(config.effective_smoothness_threshold - expected) <= eps
 
@@ -152,7 +165,10 @@ class TestConfig:
         backend = get_default_backend()
         eps = machine_epsilon(backend, backend.array([1.0]))
         ratios = [0.4, 0.6]
-        threshold = sum(ratios) / len(ratios)
+        ratio_array = backend.array(ratios)
+        mean = backend.mean(ratio_array)
+        backend.eval(mean)
+        threshold = float(backend.to_scalar(mean))
         config = Config(
             max_iterations=50,
             convergence_threshold=eps,

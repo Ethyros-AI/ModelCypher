@@ -344,8 +344,8 @@ class SocialGeometryAnalyzer:
         mean_pos = sum(positions) / n
         mean_exp = sum(expected_levels) / n
         num = sum((positions[i] - mean_pos) * (expected_levels[i] - mean_exp) for i in range(n))
-        den_pos = math.sqrt(sum((positions[i] - mean_pos) ** 2 for i in range(n)))
-        den_exp = math.sqrt(sum((expected_levels[i] - mean_exp) ** 2 for i in range(n)))
+        den_pos = sqrt_scalar(sum((positions[i] - mean_pos) ** 2 for i in range(n)), backend)
+        den_exp = sqrt_scalar(sum((expected_levels[i] - mean_exp) ** 2 for i in range(n)), backend)
 
         eps = division_epsilon(backend, X_pca)
         if den_pos < eps or den_exp < eps:
@@ -353,7 +353,7 @@ class SocialGeometryAnalyzer:
         else:
             correlation = num / (den_pos * den_exp)
 
-        if math.isnan(correlation):
+        if is_nan(correlation, backend):
             correlation = 0.0
 
         # Compute power direction vector
