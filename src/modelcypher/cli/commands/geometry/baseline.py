@@ -60,7 +60,7 @@ def profile_extract(
     """
     context = _context(ctx)
 
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.infrastructure.model_loader_factory import get_model_loader
     from modelcypher.core.domain.geometry.model_profile import (
         ModelProfileExtractor,
         ProfileRepository,
@@ -69,7 +69,7 @@ def profile_extract(
     typer.echo(f"Extracting geometry profile from {model_path}...")
 
     try:
-        model_loader = MLXModelLoader()
+        model_loader = get_model_loader()
         extractor = ModelProfileExtractor(model_loader=model_loader)
         profile = extractor.extract_profile(
             model_path=model_path,
@@ -138,7 +138,7 @@ def profile_compare(
     """
     context = _context(ctx)
 
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.infrastructure.model_loader_factory import get_model_loader
     from modelcypher.core.domain.geometry.model_profile import ModelProfileExtractor
 
     typer.echo("Comparing model geometry...")
@@ -146,7 +146,7 @@ def profile_compare(
     typer.echo(f"  Model 2: {model2_path}")
 
     try:
-        model_loader = MLXModelLoader()
+        model_loader = get_model_loader()
         extractor = ModelProfileExtractor(model_loader=model_loader)
 
         typer.echo("Extracting profile from model 1...")

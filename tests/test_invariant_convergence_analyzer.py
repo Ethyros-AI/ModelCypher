@@ -284,21 +284,19 @@ class TestLegacyInterface:
         metric = ConvergenceMetric(
             sequence_family="fibonacci",
             step=100,
-            alignment_score=0.85,
+            cosine_similarity=0.85,
             variance=0.01,
-            is_converged=True,
         )
 
         assert metric.sequence_family == "fibonacci"
         assert metric.step == 100
-        assert metric.is_converged is True
 
     def test_convergence_report_fields(self):
         """ConvergenceReport should have expected fields."""
         report = ConvergenceReport(
             model_id="test-model",
             metrics=[],
-            overall_convergence=0.9,
+            overall_mean_cosine=0.9,
             stable_families=["fibonacci"],
         )
 

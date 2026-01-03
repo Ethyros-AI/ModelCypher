@@ -145,43 +145,35 @@ class TestResult:
         eps = _eps(b, result.normalized_distance, 1.0)
         assert abs(result.normalized_distance - 1.0) <= eps
 
-    def test_alignment_score_zero_distance(self, any_backend: "Backend") -> None:
-        """alignment_score should be 1 for distance=0."""
+    def test_aligned_zero_distance(self, any_backend: "Backend") -> None:
+        """aligned should be True for distance=0."""
         b = any_backend
         coupling = b.eye(2) / 2
         b.eval(coupling)
 
         result = Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
-        # exp(-0) = 1
-        eps = _eps(b, result.alignment_score, 1.0)
-        assert abs(result.alignment_score - 1.0) <= eps
+        assert result.aligned is True
 
-    def test_alignment_score_large_distance(self, any_backend: "Backend") -> None:
-        """alignment_score should approach 0 for large distance."""
+    def test_aligned_large_distance_false(self, any_backend: "Backend") -> None:
+        """aligned should be False for large distance."""
         b = any_backend
         coupling = b.eye(2) / 2
         b.eval(coupling)
 
         result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
-        neg_distance = b.array([-result.distance])
-        exp_val = b.exp(neg_distance)
-        b.eval(exp_val)
-        expected = float(b.to_scalar(exp_val))
-        eps = _eps(b, result.alignment_score, expected)
-        assert abs(result.alignment_score - expected) <= eps
+        assert result.aligned is False
 
-    def test_alignment_score_inf(self, any_backend: "Backend") -> None:
-        """alignment_score should be 0 for infinite distance."""
+    def test_aligned_inf_false(self, any_backend: "Backend") -> None:
+        """aligned should be False for infinite distance."""
         b = any_backend
         coupling = b.zeros((2, 2))
         b.eval(coupling)
 
         result = Result(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
 
-        eps = _eps(b, result.alignment_score, 0.0)
-        assert abs(result.alignment_score - 0.0) <= eps
+        assert result.aligned is False
 
     def test_frozen(self, any_backend: "Backend") -> None:
         """Result should be frozen (immutable)."""

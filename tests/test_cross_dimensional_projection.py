@@ -91,12 +91,12 @@ class TestProjectionResult:
         result = ProjectionResult(
             projected=projected,
             method_used=ProjectionMethod.GRAM_TRANSPORT,
-            metrics={"alignment_score": 0.95},
+            metrics={"column_distance": 0.95},
             aligned=True,
             row_coupling=None,
             col_coupling=None,
         )
-        assert result.metrics["alignment_score"] == 0.95
+        assert result.metrics["column_distance"] == 0.95
         assert result.method_used == ProjectionMethod.GRAM_TRANSPORT
         assert result.row_coupling is None
         assert result.col_coupling is None
@@ -109,7 +109,7 @@ class TestProjectionResult:
         result = ProjectionResult(
             projected=projected,
             method_used=ProjectionMethod.GRAM_TRANSPORT,
-            metrics={"alignment_score": 0.8},
+            metrics={"row_distance": 0.8},
             aligned=True,
             row_coupling=row_coupling,
             col_coupling=col_coupling,
@@ -123,7 +123,7 @@ class TestProjectionResult:
         result = ProjectionResult(
             projected=projected,
             method_used=ProjectionMethod.SVD_PROJECT,
-            metrics={"alignment_score": 0.9},
+            metrics={"variance_preservation_ratio": 0.9},
             aligned=True,
             row_coupling=None,
             col_coupling=None,

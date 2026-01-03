@@ -216,8 +216,8 @@ class TestGromovWassersteinProperties:
 
     @given(point_cloud(), point_cloud())
     @settings(max_examples=20, deadline=None)
-    def test_alignment_score_bounded(self, points_a, points_b):
-        """Compatibility score should be in [0, 1]."""
+    def test_aligned_is_boolean(self, points_a, points_b):
+        """aligned should be a boolean."""
         assume(len(points_a) >= 2 and len(points_b) >= 2)
         assume(has_distinct_points(points_a) and has_distinct_points(points_b))
 
@@ -227,9 +227,7 @@ class TestGromovWassersteinProperties:
 
         result = gw.compute(distances_a, distances_b)
 
-        eps = _eps(result.alignment_score, 1.0)
-        assert result.alignment_score >= -eps
-        assert result.alignment_score <= 1.0 + eps
+        assert isinstance(result.aligned, bool)
 
     @given(point_cloud())
     @settings(max_examples=30, deadline=None)

@@ -408,7 +408,7 @@ class TestMergeAnalyzer:
 
         # Overlapping concepts should produce meaningful scores
         assert result.overlap_score >= 0
-        assert result.alignment_score >= 0
+        assert result.subspace_alignment >= 0
 
     def test_identical_volumes_high_overlap(self, simple_gaussian_samples):
         """Identical volumes should have high overlap score."""
@@ -423,7 +423,8 @@ class TestMergeAnalyzer:
         tol = eps * max(1, vol.dimension)
         assert abs(result.overlap_score - 1.0) <= tol
         assert abs(result.distance_score) <= tol
-        assert abs(result.alignment_score - 1.0) <= tol
+        assert abs(result.subspace_alignment - 1.0) <= tol
+        assert result.aligned is True
 
 class TestGlobalMergeAnalysisReport:
     """Tests for global merge analysis."""
@@ -458,7 +459,7 @@ class TestGlobalMergeAnalysisReport:
 
         # Global metrics should be computed
         assert report.mean_overlap >= 0
-        assert report.mean_alignment >= 0
+        assert report.mean_subspace_alignment >= 0
 
     def test_pair_results_have_geometric_measurements(self):
         """Each pair should have geometric measurements."""
@@ -484,7 +485,7 @@ class TestGlobalMergeAnalysisReport:
         eps = machine_epsilon(backend, backend.array([0.0]))
         for pair, result in report.pair_results.items():
             assert -eps <= result.overlap_score <= 1 + eps
-            assert -eps <= result.alignment_score <= 1 + eps
+            assert -eps <= result.subspace_alignment <= 1 + eps
             assert result.curvature_divergence >= -eps
             assert result.distance_score >= -eps
 
@@ -627,7 +628,7 @@ class TestRiemannianDensityProperties:
         # All geometric measurements should be bounded (with small epsilon for floating point)
         eps = machine_epsilon(backend, backend.array([0.0]))
         assert -eps <= result.overlap_score <= 1 + eps
-        assert -eps <= result.alignment_score <= 1 + eps
+        assert -eps <= result.subspace_alignment <= 1 + eps
         assert result.curvature_divergence >= -eps
         assert result.distance_score >= -eps
 

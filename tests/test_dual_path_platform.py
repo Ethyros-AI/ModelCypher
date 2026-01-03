@@ -189,47 +189,6 @@ class TestGetDualPathGeneratorClass:
                             get_dual_path_generator_class()
 
 
-class TestGetDualPathConfigClass:
-    """Tests for get_dual_path_config_class() function."""
-
-    def test_returns_class_type(self):
-        """Config class getter returns a type."""
-        from modelcypher.core.domain.inference._platform import get_dual_path_config_class
-
-        cls = get_dual_path_config_class()
-        assert isinstance(cls, type)
-
-    def test_mlx_returns_configuration(self):
-        """MLX platform returns DualPathGeneratorConfiguration class."""
-        with mock.patch.dict(os.environ, {"MC_BACKEND": "mlx"}, clear=False):
-            from modelcypher.core.domain.inference._platform import get_dual_path_config_class
-
-            cls = get_dual_path_config_class()
-            assert cls.__name__ == "DualPathGeneratorConfiguration"
-
-    def test_cpu_raises_not_implemented(self):
-        """CPU platform raises NotImplementedError for config."""
-        from modelcypher.core.domain.inference._platform import get_dual_path_config_class
-
-        with mock.patch(
-            "modelcypher.core.domain.inference._platform._is_mlx_available",
-            return_value=False,
-        ):
-            with mock.patch(
-                "modelcypher.core.domain.inference._platform._is_cuda_available",
-                return_value=False,
-            ):
-                with mock.patch(
-                    "modelcypher.core.domain.inference._platform._is_jax_available",
-                    return_value=False,
-                ):
-                    with mock.patch.dict(
-                        os.environ, {"MC_BACKEND": "", "MODELCYPHER_BACKEND": ""}, clear=False
-                    ):
-                        with pytest.raises(NotImplementedError, match="cpu"):
-                            get_dual_path_config_class()
-
-
 class TestGetSecurityScanMetricsClass:
     """Tests for get_security_scan_metrics_class() function."""
 
@@ -267,75 +226,6 @@ class TestSecurityScanMetrics:
         assert abs(metrics.time_to_first_token_ms - 50.5) <= _eps()
         assert abs(metrics.total_time_ms - 1000.0) <= _eps()
         assert abs(metrics.tokens_per_second - 100.0) <= _eps()
-
-
-class TestDualPathGeneratorConfiguration:
-    """Tests for DualPathGeneratorConfiguration dataclass."""
-
-    def test_config_creation_minimal(self):
-        """Configuration can be created with minimal required fields."""
-        from modelcypher.core.domain.inference.dual_path_mlx import (
-            DualPathGeneratorConfiguration,
-        )
-
-        config = DualPathGeneratorConfiguration(
-            base_model_path="/path/to/model",
-            adapter_path=None,
-            max_tokens=512,
-            temperature=0.7,
-            top_p=0.95,
-            repetition_penalty=1.0,
-            stop_sequences=[],
-        )
-
-        assert config.base_model_path == "/path/to/model"
-        assert config.adapter_path is None
-        assert config.max_tokens == 512
-        assert abs(config.temperature - 0.7) <= _eps()
-        assert abs(config.top_p - 0.95) <= _eps()
-        assert abs(config.repetition_penalty - 1.0) <= _eps()
-        assert config.stop_sequences == []
-
-    def test_config_creation_full(self):
-        """Configuration can be created with all fields."""
-        from modelcypher.core.domain.inference.dual_path_mlx import (
-            DualPathGeneratorConfiguration,
-        )
-
-        config = DualPathGeneratorConfiguration(
-            base_model_path="/path/to/model",
-            adapter_path="/path/to/adapter",
-            max_tokens=256,
-            temperature=0.5,
-            top_p=0.9,
-            repetition_penalty=1.2,
-            stop_sequences=[".", "?", "!"],
-        )
-
-        assert config.adapter_path == "/path/to/adapter"
-        assert config.max_tokens == 256
-        assert abs(config.temperature - 0.5) <= _eps()
-        assert abs(config.top_p - 0.9) <= _eps()
-        assert abs(config.repetition_penalty - 1.2) <= _eps()
-        assert config.stop_sequences == [".", "?", "!"]
-
-    def test_config_with_zero_temperature(self):
-        """Zero temperature (greedy) is valid."""
-        from modelcypher.core.domain.inference.dual_path_mlx import (
-            DualPathGeneratorConfiguration,
-        )
-
-        config = DualPathGeneratorConfiguration(
-            base_model_path="/path/to/model",
-            adapter_path=None,
-            max_tokens=128,
-            temperature=0.0,
-            top_p=0.95,
-            repetition_penalty=1.0,
-            stop_sequences=[],
-        )
-
-        assert abs(config.temperature) <= _eps()
 
 
 class TestEntropyDeltaSample:

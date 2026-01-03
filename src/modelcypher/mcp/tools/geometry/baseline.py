@@ -87,15 +87,15 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Returns:
                 Extracted profile with curvature and dimension metrics
             """
-            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.geometry.model_profile import (
                 ModelProfileExtractor,
                 ProfileRepository,
             )
+            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
             model_path = require_existing_directory(modelPath)
 
-            model_loader = MLXModelLoader()
+            model_loader = get_model_loader()
             extractor = ModelProfileExtractor(model_loader=model_loader)
             profile = extractor.extract_profile(
                 model_path=model_path,
@@ -137,15 +137,15 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Returns:
                 Comparison results with divergence metrics
             """
-            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.geometry.model_profile import (
                 ModelProfileExtractor,
             )
+            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
             model1_path = require_existing_directory(model1Path)
             model2_path = require_existing_directory(model2Path)
 
-            model_loader = MLXModelLoader()
+            model_loader = get_model_loader()
             extractor = ModelProfileExtractor(model_loader=model_loader)
 
             profile1 = extractor.extract_profile(

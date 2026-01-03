@@ -59,13 +59,13 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             """
             from pathlib import Path
 
-            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
             )
+            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
             validator = EntropyMergeValidator()
-            model_loader = MLXModelLoader()
+            model_loader = get_model_loader()
 
             # Require real model path - no simulated data
             model_path = Path(model).expanduser()

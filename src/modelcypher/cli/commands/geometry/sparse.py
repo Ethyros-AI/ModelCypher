@@ -198,9 +198,9 @@ def geometry_sparse_neurons(
         extractor.enable_neuron_collection()
 
         # Collect activations via inference
-        from modelcypher.adapters.local_inference import LocalInferenceEngine
+        from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 
-        engine = LocalInferenceEngine()
+        engine = get_inference_engine()
         extractor.start_neuron_collection()
 
         for i, prompt in enumerate(prompts):

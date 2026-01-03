@@ -34,7 +34,7 @@ from pathlib import Path
 import typer
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.adapters.local_inference import LocalInferenceEngine
+from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.use_cases.geometry_service import GeometryService
@@ -71,7 +71,7 @@ def geometry_path_detect(
     service = GeometryService(embedder=embedder)
 
     if model:
-        engine = LocalInferenceEngine()
+        engine = get_inference_engine()
         result = engine.infer(model, text)
         text_to_analyze = result.get("response", "")
         model_id = Path(model).name if Path(model).exists() else model
@@ -144,7 +144,7 @@ def geometry_path_compare(
         model_id_a = "text-a"
         model_id_b = "text-b"
     elif model_a and model_b and prompt:
-        engine = LocalInferenceEngine()
+        engine = get_inference_engine()
         response_a = engine.infer(model_a, prompt)
         response_b = engine.infer(model_b, prompt)
         text_to_analyze_a = response_a.get("response", "")

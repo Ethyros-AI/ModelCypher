@@ -58,13 +58,13 @@ def entropy_profile(
     Example:
         mc geometry merge-entropy profile ./my-model
     """
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
     context = _context(ctx)
 
     try:
         validator = EntropyMergeValidator()
-        model_loader = MLXModelLoader()
+        model_loader = get_model_loader()
         profile = validator.create_profile(model, model_loader=model_loader)
 
         # Sort layers by entropy for reporting

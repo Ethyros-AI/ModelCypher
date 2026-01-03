@@ -322,7 +322,7 @@ class TestCrossDimensionalIntegration:
         )
 
         assert result.projected.shape == (m_t, d)
-        assert result.alignment_score >= 0
+        assert result.metrics["row_distance"] >= 0
 
 
 class TestMathematicalProperties:

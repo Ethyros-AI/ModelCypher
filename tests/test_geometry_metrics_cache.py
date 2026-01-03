@@ -43,15 +43,13 @@ class TestCachedGWResult:
         result = CachedGWResult(
             distance=0.5,
             normalized_distance=0.25,
-            alignment_score=0.8,
             converged=True,
             iterations=100,
             coupling_shape=(50, 60),
         )
-        eps = _eps(result.distance, result.normalized_distance, result.alignment_score)
+        eps = _eps(result.distance, result.normalized_distance)
         assert abs(result.distance - 0.5) <= eps
         assert abs(result.normalized_distance - 0.25) <= eps
-        assert abs(result.alignment_score - 0.8) <= eps
         assert result.converged is True
         assert result.iterations == 100
         assert result.coupling_shape == (50, 60)
@@ -60,7 +58,6 @@ class TestCachedGWResult:
         result = CachedGWResult(
             distance=0.5,
             normalized_distance=0.25,
-            alignment_score=0.8,
             converged=True,
             iterations=100,
             coupling_shape=(50, 60),
@@ -72,7 +69,6 @@ class TestCachedGWResult:
         result = CachedGWResult(
             distance=0.5,
             normalized_distance=0.25,
-            alignment_score=0.8,
             converged=True,
             iterations=100,
             coupling_shape=(50, 60),
@@ -240,7 +236,6 @@ class TestGeometryMetricsCacheGW:
         return CachedGWResult(
             distance=0.5,
             normalized_distance=0.25,
-            alignment_score=0.8,
             converged=True,
             iterations=50,
             coupling_shape=(3, 3),
@@ -427,7 +422,6 @@ class TestGeometryMetricsCacheSerialization:
         original = CachedGWResult(
             distance=0.5,
             normalized_distance=0.25,
-            alignment_score=0.8,
             converged=True,
             iterations=100,
             coupling_shape=(50, 60),

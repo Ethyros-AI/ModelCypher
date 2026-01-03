@@ -35,7 +35,7 @@ from pathlib import Path
 
 import typer
 
-from modelcypher.adapters.local_inference import LocalInferenceEngine
+from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
@@ -67,7 +67,7 @@ def geometry_crm_build(
         mc geometry crm build --model ./model --output-path ./crm.json
     """
     context = _context(ctx)
-    service = ConceptResponseMatrixService(engine=LocalInferenceEngine())
+    service = ConceptResponseMatrixService(engine=get_inference_engine())
 
     try:
         summary = service.build(

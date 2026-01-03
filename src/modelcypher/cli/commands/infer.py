@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import typer
 
-from modelcypher.adapters.local_inference import LocalInferenceEngine
+from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.utils.errors import ErrorDetail
@@ -45,7 +45,7 @@ def infer_run(
 ) -> None:
     """Execute inference with optional adapter and security scanning."""
     context = _context(ctx)
-    engine = LocalInferenceEngine()
+    engine = get_inference_engine()
 
     try:
         result = engine.run(
@@ -127,7 +127,7 @@ def infer_suite(
 ) -> None:
     """Execute batched inference over a suite of prompts."""
     context = _context(ctx)
-    engine = LocalInferenceEngine()
+    engine = get_inference_engine()
 
     try:
         result = engine.suite(

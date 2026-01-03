@@ -461,11 +461,11 @@ class TestComputeCurvatureAlignment:
 
         alignment = compute_curvature_alignment(profile, profile)
         eps = _eps()
-        assert abs(alignment.score - 1.0) <= eps
-        assert abs(alignment.sectional_alignment - 1.0) <= eps
-        assert abs(alignment.ollivier_ricci_alignment - 1.0) <= eps
+        assert abs(alignment.sectional_diff) <= eps
+        assert abs(alignment.ollivier_ricci_diff) <= eps
         assert abs(alignment.sectional_z_score) <= eps
         assert abs(alignment.ollivier_ricci_z_score) <= eps
+        assert alignment.aligned is True
 
     def test_different_profiles_no_baseline(self):
         """Different profiles produce lower alignment without baseline."""
@@ -492,10 +492,10 @@ class TestComputeCurvatureAlignment:
 
         alignment = compute_curvature_alignment(source, target)
         eps = _eps()
-        assert alignment.score > eps
-        assert alignment.score <= 1.0 + eps
         assert alignment.sectional_z_score > eps
+        assert alignment.ollivier_ricci_z_score > eps
         assert alignment.baseline_family == "none"
+        assert alignment.aligned is False
 
     def test_with_baseline(self):
         """Alignment uses baseline for z-score when provided."""
@@ -535,7 +535,7 @@ class TestComputeCurvatureAlignment:
         assert alignment.baseline_model_count == 3
         # With larger baseline std, z-scores should be smaller, alignment higher
         eps = _eps()
-        assert alignment.score + eps >= alignment_no_baseline.score
+        assert abs(alignment.sectional_z_score) <= abs(alignment_no_baseline.sectional_z_score) + eps
 
     def test_very_different_profiles(self):
         """Very different profiles have low alignment."""
@@ -573,11 +573,11 @@ class TestComputeCurvatureAlignment:
         )
         mild_alignment = compute_curvature_alignment(source, mild_target)
         eps = _eps()
-        assert alignment.score + eps <= mild_alignment.score
-        assert alignment.sectional_z_score >= mild_alignment.sectional_z_score + eps
+        assert alignment.sectional_diff >= mild_alignment.sectional_diff + eps
+        assert alignment.ollivier_ricci_diff >= mild_alignment.ollivier_ricci_diff + eps
 
-    def test_alignment_score_bounded(self):
-        """Alignment score is bounded to [0, 1]."""
+    def test_curvature_diffs_non_negative(self):
+        """Curvature diffs should be non-negative."""
         source = CurvatureProfile(
             model_path="/models/source",
             model_family="test",
@@ -599,9 +599,8 @@ class TestComputeCurvatureAlignment:
 
         alignment = compute_curvature_alignment(source, target)
         eps = _eps()
-        assert -eps <= alignment.score <= 1.0 + eps
-        assert -eps <= alignment.sectional_alignment <= 1.0 + eps
-        assert -eps <= alignment.ollivier_ricci_alignment <= 1.0 + eps
+        assert alignment.sectional_diff >= -eps
+        assert alignment.ollivier_ricci_diff >= -eps
 
 
 # =============================================================================
@@ -711,7 +710,7 @@ class TestEdgeCases:
         )
         # Should not raise, uses fallback epsilon
         alignment = compute_curvature_alignment(profile, profile)
-        assert abs(alignment.score - 1.0) <= _eps()
+        assert alignment.aligned
 
     def test_alignment_dataclass_is_frozen(self):
         """CurvatureAlignment is immutable."""
@@ -728,7 +727,7 @@ class TestEdgeCases:
             ),
         )
         with pytest.raises(AttributeError):
-            alignment.score = 0.5  # Should fail - frozen dataclass
+            alignment.aligned = False  # Should fail - frozen dataclass
 
     def test_json_serialization(self):
         """Profiles serialize to valid JSON."""

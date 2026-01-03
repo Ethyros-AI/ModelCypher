@@ -140,7 +140,7 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
     """
     import logging
 
-    from modelcypher.adapters.local_inference import LocalInferenceEngine
+    from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 
     logger = logging.getLogger(__name__)
     smoke_prompts = [
@@ -150,7 +150,7 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
     ]
 
     try:
-        engine = LocalInferenceEngine()
+        engine = get_inference_engine()
         # Run 3 prompts, check for coherent output
         results = []
         for prompt in smoke_prompts:
