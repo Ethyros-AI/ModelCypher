@@ -37,6 +37,7 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     Result,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
 from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
@@ -530,11 +531,11 @@ class TestLossAndGradient:
 
 
 class TestSinkhorn:
-    """Tests for Sinkhorn algorithm."""
+    """Tests for Sinkhorn algorithm using canonical SinkhornSolver from optimal_transport."""
 
     def test_solve_linear_ot_marginals(self, any_backend: "Backend") -> None:
         """Sinkhorn should produce valid marginals."""
-        gw = GromovWassersteinDistance(backend=any_backend)
+        solver = SinkhornSolver(backend=any_backend)
         b = any_backend
 
         n, m = 4, 5
@@ -546,7 +547,7 @@ class TestSinkhorn:
         epsilon = division_epsilon(b, cost)
         threshold = division_epsilon(b, cost)
         max_iterations = n * m
-        G = gw._solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
+        G = solver.solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
         b.eval(G)
 
         # Check row sums
@@ -569,7 +570,7 @@ class TestSinkhorn:
 
     def test_solve_linear_ot_empty(self, any_backend: "Backend") -> None:
         """Sinkhorn should handle empty inputs."""
-        gw = GromovWassersteinDistance(backend=any_backend)
+        solver = SinkhornSolver(backend=any_backend)
         b = any_backend
 
         cost = b.zeros((0, 0))
@@ -580,7 +581,7 @@ class TestSinkhorn:
         epsilon = division_epsilon(b, cost)
         threshold = division_epsilon(b, cost)
         max_iterations = 0
-        G = gw._solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
+        G = solver.solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
         b.eval(G)
 
         assert b.shape(G) == (0, 0)

@@ -17,6 +17,7 @@
 
 """Application use cases."""
 
+from .anchor_extractor import AnchorExtractor, AnchorExtractorError
 from .geometry_engine import (
     GeometryEngine,
     LoRAAdapterGeometryMetrics,
@@ -26,6 +27,9 @@ from .geometry_engine import (
 )
 
 __all__ = [
+    # Anchor extraction - semantic anchors from token embeddings
+    "AnchorExtractor",
+    "AnchorExtractorError",
     # Geometry engine - LoRA metrics, Procrustes, and optimal transport
     "GeometryEngine",
     "LoRAAdapterGeometryMetrics",

@@ -25,12 +25,6 @@ from typing import Any
 from tokenizers import Tokenizer
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
-from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames
-from modelcypher.core.domain.agents.semantic_prime_multilingual import (
-    SemanticPrimeMultilingualInventoryLoader,
-)
-from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
@@ -42,14 +36,6 @@ from modelcypher.core.use_cases.quantization_utils import (
 from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class AnchorExtractionConfig:
-    use_enriched_primes: bool = True
-    include_computational_gates: bool = True
-    max_polyglot_texts_per_language: int = 2
-    use_unified_atlas: bool = True  # Default: use all probes from UnifiedAtlasInventory
 
 
 class AnchorExtractorError(RuntimeError):
@@ -95,11 +81,24 @@ class AnchorExtractor:
         self,
         model_path: str,
         weights: dict[str, Any],
-        config: AnchorExtractionConfig | None = None,
         quantization: QuantizationConfig | None = None,
         backend: Backend | None = None,
     ) -> tuple[dict[str, Array], dict[str, float]]:
-        cfg = config or AnchorExtractionConfig()
+        """Extract semantic anchors from model token embeddings.
+
+        Uses the complete UnifiedAtlasInventory (~450 probes) to extract anchors.
+        Fréchet mean is used throughout - the correct geometric center on curved
+        manifolds.
+
+        Args:
+            model_path: Path to model directory (must contain tokenizer.json)
+            weights: Model weights dictionary
+            quantization: Optional quantization config for dequantization
+            backend: Backend for computation (uses default if None)
+
+        Returns:
+            Tuple of (anchors dict, confidence dict)
+        """
         b = backend or get_default_backend()
         tokenizer = self._load_tokenizer(model_path)
         embedding_key, embedding = self.token_embedding_matrix(weights, backend=b)
@@ -118,29 +117,10 @@ class AnchorExtractor:
             b.eval(embedding)
 
         vocab = int(embedding.shape[0])
-        anchors: dict[str, Array] = {}
         confidence: dict[str, float] = {}
 
-        if cfg.use_unified_atlas:
-            # Use all probes from the unified atlas (supersedes individual atlas calls)
-            anchors.update(
-                self._unified_atlas_anchors(tokenizer, embedding, vocab, confidence, b)
-            )
-        else:
-            # Legacy mode: use subset of atlas sources
-            if cfg.use_enriched_primes:
-                anchors.update(
-                    self._enriched_prime_anchors(tokenizer, embedding, vocab, confidence, cfg, b)
-                )
-            else:
-                anchors.update(
-                    self._basic_prime_anchors(tokenizer, embedding, vocab, confidence, b)
-                )
-
-            if cfg.include_computational_gates:
-                anchors.update(
-                    self._computational_gate_anchors(tokenizer, embedding, vocab, confidence, b)
-                )
+        # Always use complete unified atlas - the geometry determines anchor coverage
+        anchors = self._unified_atlas_anchors(tokenizer, embedding, vocab, confidence, b)
 
         if not anchors:
             raise AnchorExtractorError(
@@ -258,174 +238,6 @@ class AnchorExtractor:
         if not path.exists():
             raise AnchorExtractorError(f"Tokenizer not found at: {path}")
         return Tokenizer.from_file(str(path))
-
-    @staticmethod
-    def _confidence_for_token_count(count: int) -> float:
-        if count <= 0:
-            return 0.0
-        if count == 1:
-            return 1.0
-        if count == 2:
-            return 0.85
-        if count == 3:
-            return 0.70
-        return max(0.3, 1.0 - 0.15 * float(count))
-
-    def _enriched_prime_anchors(
-        self,
-        tokenizer: Tokenizer,
-        embedding: Array,
-        vocab: int,
-        confidence: dict[str, float],
-        cfg: AnchorExtractionConfig,
-        backend: Backend,
-    ) -> dict[str, Array]:
-        primes = SemanticPrimeFrames.enriched()
-        polyglot = SemanticPrimeMultilingualInventoryLoader.global_diverse()
-        polyglot_by_id: dict[str, list[str]] = {}
-        for prime in polyglot.primes:
-            texts: list[str] = []
-            for bucket in prime.languages:
-                texts.extend(bucket.texts[: cfg.max_polyglot_texts_per_language])
-            polyglot_by_id[prime.id] = texts
-
-        anchors: dict[str, Array] = {}
-        for prime in primes:
-            core_text = f" {prime.word}"
-            core_ids = tokenizer.encode(core_text, add_special_tokens=False).ids
-            core_valid = [token_id for token_id in core_ids if 0 <= token_id < vocab]
-            if len(core_valid) > 3:
-                logger.warning(
-                    "Skipping prime '%s' (core word fragmented into %s tokens)",
-                    prime.id,
-                    len(core_valid),
-                )
-                continue
-            if not core_valid:
-                continue
-
-            texts: list[str] = [core_text]
-            texts.extend([f" {text}" for text in prime.frames])
-            if prime.contrast:
-                texts.append(f" {prime.contrast}")
-            texts.extend([f" {text}" for text in prime.exemplars])
-            for text in polyglot_by_id.get(prime.id, []):
-                texts.append(f" {text}")
-
-            seen: set[str] = set()
-            unique = [text for text in texts if not (text in seen or seen.add(text))]
-
-            vectors: list[Array] = []
-            for text in unique:
-                ids = tokenizer.encode(text, add_special_tokens=False).ids
-                valid = [token_id for token_id in ids if 0 <= token_id < vocab]
-                if not valid:
-                    continue
-                # Use Fréchet mean for token embeddings (curvature is inherent)
-                token_vecs = [embedding[tid] for tid in valid]
-                vectors.append(self._frechet_mean_of_embeddings(token_vecs, backend=backend))
-
-            if not vectors:
-                continue
-
-            anchor_id = f"prime:{prime.id}"
-            # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
-            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors, backend=backend)
-            confidence[anchor_id] = self._confidence_for_token_count(len(core_valid))
-
-        return anchors
-
-    def _basic_prime_anchors(
-        self,
-        tokenizer: Tokenizer,
-        embedding: Array,
-        vocab: int,
-        confidence: dict[str, float],
-        backend: Backend,
-    ) -> dict[str, Array]:
-        primes = SemanticPrimeInventory.english2014()
-        anchors: dict[str, Array] = {}
-
-        for prime in primes:
-            text = f" {prime.canonical_english}"
-            ids = tokenizer.encode(text, add_special_tokens=False).ids
-            valid = [token_id for token_id in ids if 0 <= token_id < vocab]
-            if len(valid) > 3:
-                logger.warning(
-                    "Skipping prime '%s' (fragmented into %s tokens)",
-                    prime.id,
-                    len(valid),
-                )
-                continue
-            if not valid:
-                continue
-
-            anchor_id = f"prime:{prime.id}"
-            # Fréchet mean of token embeddings (curvature is inherent)
-            token_vecs = [embedding[tid] for tid in valid]
-            anchors[anchor_id] = self._frechet_mean_of_embeddings(
-                token_vecs, backend=backend
-            )
-            confidence[anchor_id] = self._confidence_for_token_count(len(valid))
-
-        return anchors
-
-    def _computational_gate_anchors(
-        self,
-        tokenizer: Tokenizer,
-        embedding: Array,
-        vocab: int,
-        confidence: dict[str, float],
-        backend: Backend,
-    ) -> dict[str, Array]:
-        gates = ComputationalGateInventory.probe_gates()
-        anchors: dict[str, Array] = {}
-
-        for gate in gates:
-            texts: list[str] = []
-            gate_name = gate.name.lower().replace("_", " ")
-            texts.append(f"{gate_name}: {gate.description}")
-            texts.append(gate_name)
-            examples = [example.strip() for example in gate.examples + gate.polyglot_examples]
-            examples = [example for example in examples if example]
-            if examples:
-                texts.extend(examples)
-
-            seen: set[str] = set()
-            unique = [text for text in texts if not (text in seen or seen.add(text))]
-
-            vectors: list[Array] = []
-            token_counts: list[int] = []
-            for text in unique:
-                ids = tokenizer.encode(text, add_special_tokens=False).ids
-                valid = [token_id for token_id in ids if 0 <= token_id < vocab]
-                if not valid:
-                    continue
-                # Fréchet mean for token embeddings (curvature is inherent)
-                token_vecs = [embedding[tid] for tid in valid]
-                vectors.append(self._frechet_mean_of_embeddings(token_vecs, backend=backend))
-                token_counts.append(len(valid))
-
-            if not vectors:
-                continue
-
-            anchor_id = f"gate:{gate.id}"
-            # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
-            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors, backend=backend)
-
-            avg_tokens = float(sum(token_counts)) / float(max(1, len(token_counts)))
-            if avg_tokens <= 5:
-                gate_confidence = 1.0
-            elif avg_tokens <= 15:
-                gate_confidence = 0.85
-            elif avg_tokens <= 30:
-                gate_confidence = 0.7
-            else:
-                gate_confidence = max(0.5, 1.0 - 0.02 * avg_tokens)
-
-            confidence[anchor_id] = gate_confidence
-
-        return anchors
 
     def _unified_atlas_anchors(
         self,

@@ -50,13 +50,12 @@ Research Connections:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     infinity_threshold,
     machine_epsilon,
 )
@@ -65,66 +64,45 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-@dataclass
-class GeodesicConfiguration:
-    """Configuration for geodesic distance estimation.
-
-    In high-dimensional spaces, curvature is inherent. Geodesic distance is
-    the correct metric. Geodesic distances are computed via k-NN graph
-    shortest paths (Isomap-style).
-
-    k_neighbors: When None, uses connectivity-based selection (Berry & Sauer 2016).
-                 This binary searches for the minimum k that makes the graph connected,
-                 which is a geometric property of the point cloud itself.
-    """
-
-    k_neighbors: int | None = None
-    distance_power: float = 2.0
-
-
-@dataclass
-class TwoNNConfiguration:
-    """Two-nearest-neighbors estimator configuration.
-
-    Attributes:
-        use_regression: Use regression variant (Facco et al.) vs MLE.
-        geodesic: Geodesic distance configuration. Always uses geodesic
-            distances since curvature is inherent in high-dimensional spaces.
-    """
-
-    use_regression: bool = True
-    geodesic: GeodesicConfiguration = field(default_factory=GeodesicConfiguration)
-
-
-@dataclass
-class BootstrapConfiguration:
-    """Bootstrap configuration for confidence intervals."""
-
-    resamples: int = 200
-    confidence_level: float = 0.95
-    seed: int = 42
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from the data:
+# - k_neighbors: Minimum k for connected graph (Berry & Sauer 2016)
+# - distance_power: Always 2.0 (squared geodesic is the correct metric)
+# - use_regression: Always True (Facco et al.'s variant is more robust)
+# - bootstrap resamples: Derived from sample size
+# - convergence: Derived from machine epsilon
+#
+# There is exactly ONE correct way to estimate intrinsic dimension.
+# =============================================================================
 
 
 @dataclass
 class ConfidenceInterval:
-    """Confidence interval for intrinsic dimension."""
+    """Confidence interval for intrinsic dimension.
 
-    level: float
+    Computed via bootstrap resampling with sample-size-derived parameters.
+    """
+
     lower: float
     upper: float
-    resamples: int
-    seed: int
+    resamples: int  # Derived from sample size
 
 
 @dataclass
 class TwoNNEstimate:
-    """Result of global intrinsic dimension estimation."""
+    """Result of global intrinsic dimension estimation.
+
+    Always uses:
+    - Geodesic distances (curvature-correct)
+    - Regression variant (Facco et al., more robust)
+    - Data-derived k for graph connectivity
+    """
 
     intrinsic_dimension: float
     sample_count: int
     usable_count: int
-    uses_regression: bool
-    uses_geodesic: bool = False
     ci: ConfidenceInterval | None = None
 
 
@@ -134,15 +112,17 @@ class LocalDimensionMap:
 
     Identifies local dimension variation across the manifold, including
     regions where dimension drops (collapsed zones) or spikes (transition zones).
+
+    Deficiency detection uses z-score from the dimension distribution -
+    no arbitrary threshold needed. Points > 2σ below modal are deficient.
     """
 
     dimensions: "Array"  # Per-point intrinsic dimension [n]
     modal_dimension: float  # Most common dimension (mode of distribution)
     mean_dimension: float  # Average dimension across points
     std_dimension: float  # Standard deviation of local dimensions
-    deficient_indices: list[int]  # Points where local ID < threshold * modal_dimension
-    deficiency_threshold: float  # Threshold used (e.g., 0.8)
-    k_neighbors: int  # k used for local estimation
+    deficient_indices: list[int]  # Points > 2σ below modal dimension
+    k_neighbors: int  # k derived from connectivity
 
 
 class IntrinsicDimension:
@@ -166,92 +146,79 @@ class IntrinsicDimension:
     @staticmethod
     def compute_two_nn(
         points: list[list[float]] | "Array",
-        configuration: "TwoNNConfiguration | None" = None,
         backend: "Backend | None" = None,
+        with_ci: bool = False,
     ) -> TwoNNEstimate:
-        """Static convenience method for computing intrinsic dimension.
+        """Compute intrinsic dimension via TwoNN (Facco et al., 2017).
+
+        All parameters are derived from the data:
+        - k_neighbors: Minimum k for connected graph (Berry & Sauer 2016)
+        - Uses geodesic distances (curvature-correct)
+        - Uses regression variant (more robust than MLE)
 
         Args:
             points: [N, D] array or list of points
-            configuration: Computation config (uses defaults if None)
             backend: Backend to use (uses default if None)
+            with_ci: Whether to compute bootstrap confidence interval
 
         Returns:
             TwoNNEstimate with intrinsic dimension and metadata
         """
         b = backend or get_default_backend()
-        config = configuration or TwoNNConfiguration()
 
         # Convert list to array if needed
         pts = b.array(points) if isinstance(points, list) else points
 
         computer = IntrinsicDimension(b)
-        return computer.compute(pts, config)
+        return computer.compute(pts, with_ci=with_ci)
 
     def compute(
         self,
         points: "Array",
-        configuration: TwoNNConfiguration = TwoNNConfiguration(),
-        bootstrap: BootstrapConfiguration | None = None,
+        with_ci: bool = False,
     ) -> TwoNNEstimate:
         """
         Compute intrinsic dimension using geodesic distances.
 
-        When k_neighbors is None in configuration, uses connectivity-based k
-        selection (Berry & Sauer 2016): binary search for the minimum k that
-        makes the k-NN graph connected. This is a geometric property of the
-        point cloud itself, not a heuristic.
+        All parameters are derived from the data - no configuration needed:
+        - k_neighbors: Connectivity-based selection (Berry & Sauer 2016) -
+          binary search for minimum k that makes the k-NN graph connected.
+          This is a geometric property of the point cloud itself.
+        - Always uses geodesic distances (curvature-correct)
+        - Always uses regression variant (Facco et al., more robust)
 
         Args:
             points: [N, D] array of points
-            configuration: Computation config
-            bootstrap: Optional bootstrap configuration for confidence intervals
+            with_ci: Whether to compute bootstrap confidence interval
 
-        Note:
-            Geodesic distances are computed via k-NN graph shortest paths.
-            This is the correct metric for curved manifolds.
+        Returns:
+            TwoNNEstimate with intrinsic dimension and metadata
         """
         N = points.shape[0]
         if N < 3:
             raise EstimatorError.insufficient_samples(N)
 
-        # k_neighbors is either specified, or None for connectivity-based selection
-        k_neighbors = configuration.geodesic.k_neighbors
-
-        # Compute with geodesic distances (k=None triggers connectivity-based selection)
-        dist_sq = self._geodesic_distance_matrix_squared(
-            points,
-            k_neighbors=k_neighbors,
-            distance_power=configuration.geodesic.distance_power,
-        )
+        # k_neighbors=None triggers connectivity-based selection (Berry & Sauer 2016)
+        # distance_power=2.0 is always correct (squared geodesic distances)
+        dist_sq = self._geodesic_distance_matrix_squared(points)
 
         mu = self._compute_two_nn_mu_from_distances(dist_sq)
 
-        dimension = self._compute_from_mu(mu, use_regression=configuration.use_regression)
+        # Always use regression variant (Facco et al.) - more robust than MLE
+        dimension = self._compute_from_mu(mu)
 
         ci = None
-        if bootstrap:
-            ci = self._bootstrap_two_nn(
-                mu,
-                use_regression=configuration.use_regression,
-                config=bootstrap,
-            )
+        if with_ci:
+            ci = self._bootstrap_two_nn(mu, N)
 
         return TwoNNEstimate(
             intrinsic_dimension=dimension,
             sample_count=N,
             usable_count=mu.shape[0],
-            uses_regression=configuration.use_regression,
-            uses_geodesic=True,
             ci=ci,
         )
 
-    def _geodesic_distance_matrix_squared(
-        self,
-        points: "Array",
-        k_neighbors: int | None,
-        distance_power: float = 2.0,
-    ) -> "Array":
+    def _geodesic_distance_matrix_squared(self, points: "Array") -> "Array":
         """Computes pairwise squared geodesic distances via k-NN graph.
 
         Uses the Isomap-style approach:
@@ -264,11 +231,9 @@ class IntrinsicDimension:
         - Positive curvature: Euclidean underestimates true distance
         - Negative curvature: Euclidean overestimates true distance
 
-        Args:
-            points: [N, D] array of points
-            k_neighbors: Number of neighbors for graph. When None, uses connectivity-based
-                         selection (Berry & Sauer 2016) - the geometric answer.
-            distance_power: Power for distance weighting (2.0 = squared distances)
+        k_neighbors is derived via connectivity-based selection (Berry & Sauer 2016):
+        binary search for minimum k that makes the graph connected. This is the
+        geometric answer - not a heuristic.
 
         Returns:
             [N, N] squared geodesic distance matrix
@@ -277,11 +242,11 @@ class IntrinsicDimension:
 
         riemannian = RiemannianGeometry(backend=self._backend)
 
-        # Get geodesic distances (k=None triggers connectivity-based selection)
-        result = riemannian.geodesic_distances(points, k_neighbors=k_neighbors)
+        # k_neighbors=None triggers connectivity-based selection (Berry & Sauer 2016)
+        result = riemannian.geodesic_distances(points, k_neighbors=None)
         geodesic_dist = result.distances
 
-        # Return squared distances
+        # Return squared distances (always the correct metric)
         return geodesic_dist * geodesic_dist
 
     def _compute_two_nn_mu_from_distances(self, dist_sq: "Array") -> "Array":
@@ -347,7 +312,11 @@ class IntrinsicDimension:
 
         return mu
 
-    def _compute_from_mu(self, mu: "Array", use_regression: bool) -> float:
+    def _compute_from_mu(self, mu: "Array") -> float:
+        """Compute intrinsic dimension from mu ratios using regression (Facco et al.).
+
+        Always uses the regression variant - more robust than MLE for real data.
+        """
         backend = self._backend
         N = mu.shape[0]
         if N < 3:
@@ -356,18 +325,7 @@ class IntrinsicDimension:
         # log(mu)
         log_mu = backend.log(mu)
 
-        if not use_regression:
-            # MLE form: d = 1 / mean(log(mu))
-            mean_log_mu_arr = backend.mean(log_mu)
-            backend.eval(mean_log_mu_arr)
-            mean_log_mu = float(backend.to_scalar(mean_log_mu_arr))
-            # Use machine epsilon for precision-aware threshold
-            eps = machine_epsilon(backend, log_mu)
-            if mean_log_mu < eps:
-                raise EstimatorError.regression_degenerate()
-            return 1.0 / mean_log_mu
-
-        # Regression variant (Facco et al.)
+        # Regression variant (Facco et al.) - always used, more robust than MLE
         sorted_log_mu = backend.sort(log_mu)
 
         # indices 1..N
@@ -399,26 +357,27 @@ class IntrinsicDimension:
         d = sum_xy_val / sum_xx_val
         return d
 
-    def _bootstrap_two_nn(
-        self,
-        mu: "Array",
-        use_regression: bool,
-        config: BootstrapConfiguration,
-    ) -> ConfidenceInterval | None:
-        """Compute bootstrap confidence interval for the ID estimate."""
+    def _bootstrap_two_nn(self, mu: "Array", sample_size: int) -> ConfidenceInterval | None:
+        """Compute bootstrap confidence interval for the ID estimate.
+
+        Resamples are derived from sample size:
+        - min(sample_size, 1000) ensures we don't over-sample small datasets
+        - For very small n, bootstrap may not be meaningful
+
+        Returns 95% CI (2.5th and 97.5th percentiles) - the standard choice.
+        No seed is used - bootstrap variance is part of the measurement.
+        """
         backend = self._backend
         n = mu.shape[0]
-        if n < 3:
+        if n < 10:  # Bootstrap needs reasonable sample size
             return None
 
-        resamples = config.resamples
-        if resamples <= 0:
-            return None
+        # Derive resamples from sample size - no magic numbers
+        # Rule: min(n, 1000) gives sufficient coverage without waste
+        resamples = min(sample_size, 1000)
 
-        alpha = (1.0 - config.confidence_level) / 2.0
-
-        # Use backend random with seed
-        backend.random_seed(config.seed)
+        # 95% CI is standard (2.5th and 97.5th percentiles)
+        alpha = 0.025
 
         dimensions: list[float] = []
         for _ in range(resamples):
@@ -427,12 +386,12 @@ class IntrinsicDimension:
             sample = backend.take(mu, indices)
 
             try:
-                d = self._compute_from_mu(sample, use_regression)
+                d = self._compute_from_mu(sample)
                 dimensions.append(d)
             except EstimatorError:
                 continue
 
-        if len(dimensions) < 10:  # Require a minimum number of successful computations
+        if len(dimensions) < 10:  # Require minimum successful computations
             return None
 
         dimensions.sort()
@@ -440,19 +399,12 @@ class IntrinsicDimension:
         upper_idx = int(len(dimensions) * (1.0 - alpha))
 
         return ConfidenceInterval(
-            level=config.confidence_level,
             lower=dimensions[lower_idx],
             upper=dimensions[upper_idx],
-            resamples=resamples,
-            seed=config.seed,
+            resamples=len(dimensions),
         )
 
-    def local_dimension_map(
-        self,
-        points: "Array",
-        k: int | None = None,
-        deficiency_threshold: float | None = None,
-    ) -> LocalDimensionMap:
+    def local_dimension_map(self, points: "Array") -> LocalDimensionMap:
         """
         Compute per-point intrinsic dimension estimates.
 
@@ -469,34 +421,27 @@ class IntrinsicDimension:
             2. Compute TwoNN-style mu = r2/r1 ratio locally
             3. Estimate local ID from the mu distribution
 
+        All parameters derived from data:
+        - k: Connectivity-based selection (Berry & Sauer 2016)
+        - Deficiency: Points > 2σ below modal dimension (statistical outliers)
+
         Note: This is more expensive than global ID (O(n^2) vs O(n)),
         but provides spatial resolution of dimension variation.
-
-        Args:
-            points: Point cloud [n, d]
-            k: Number of neighbors for local estimation. If None, uses
-                connectivity-based selection (minimum k for connected graph).
-            deficiency_threshold: Optional threshold for deficiency detection.
-                If provided, points with local ID < threshold * modal_dimension
-                are flagged. Common values: 0.5 (50% of modal), 0.8 (80% of modal).
-                If None, deficiency detection is skipped but dimensions are still computed.
 
         Returns:
             LocalDimensionMap with per-point dimensions and deficiency indices
         """
-        # deficiency_threshold is optional - if not provided, we skip deficiency detection
-        # but still compute per-point dimensions and statistics
         backend = self._backend
         points = backend.array(points)
         backend.eval(points)
 
         n = int(points.shape[0])
 
-        # Compute geodesic distances (k=None triggers connectivity-based selection)
+        # Compute geodesic distances - k derived from connectivity (Berry & Sauer 2016)
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
         rg = RiemannianGeometry(backend)
-        geo_result = rg.geodesic_distances(points, k_neighbors=k)
+        geo_result = rg.geodesic_distances(points, k_neighbors=None)
         geo_dist = geo_result.distances
         k_actual = geo_result.k_neighbors
         backend.eval(geo_dist)
@@ -592,7 +537,6 @@ class IntrinsicDimension:
                 mean_dimension=0.0,
                 std_dimension=0.0,
                 deficient_indices=[],
-                deficiency_threshold=deficiency_threshold,
                 k_neighbors=k_actual,
             )
 
@@ -665,11 +609,12 @@ class IntrinsicDimension:
             backend.eval(modal_dim_arr)
             modal_dim = backend.to_scalar(modal_dim_arr)
 
-        # Find deficient points (only if threshold provided)
+        # Find deficient points: > 2σ below modal dimension (statistical outliers)
+        # This is data-derived, not an arbitrary threshold
         deficient: list[int] = []
-        if deficiency_threshold is not None:
-            threshold = deficiency_threshold * modal_dim
-            # Use backend operations to find deficient points
+        if std_dim > 0:
+            # Deficient = local_dim < modal_dim - 2*std_dim
+            threshold = modal_dim - 2.0 * std_dim
             deficient_mask = valid_id & (local_dims < backend.array(threshold))
             mask_int = backend.astype(deficient_mask, "int32")
             count_arr = backend.sum(mask_int)
@@ -692,33 +637,25 @@ class IntrinsicDimension:
             mean_dimension=mean_dim,
             std_dimension=std_dim,
             deficient_indices=deficient,
-            deficiency_threshold=deficiency_threshold or 0.0,
             k_neighbors=k_actual,
         )
 
     @staticmethod
     def detect_dimension_deficiency(
         points: "Array",
-        threshold: float,
-        k: int | None = None,
         backend: "Backend | None" = None,
     ) -> list[int]:
         """
         Find points where local intrinsic dimension is deficient.
 
-        Convenience method that returns just the indices of points where
-        local ID < threshold * modal_dimension.
+        Convenience method that returns indices of statistical outliers:
+        points where local ID is > 2σ below the modal dimension.
 
         These points indicate "dimension-collapsed" regions where the
         manifold is locally lower-dimensional than expected.
 
         Args:
             points: Point cloud [n, d]
-            threshold: Deficiency threshold. This is a ratio (0.0-1.0) that
-                determines when local ID is considered deficient relative to
-                modal dimension. Must be explicitly provided.
-            k: Number of neighbors for local estimation. If None, uses
-                connectivity-based selection (minimum k for connected graph).
             backend: Backend to use
 
         Returns:
@@ -726,5 +663,5 @@ class IntrinsicDimension:
         """
         b = backend or get_default_backend()
         estimator = IntrinsicDimension(b)
-        result = estimator.local_dimension_map(points, k=k, deficiency_threshold=threshold)
+        result = estimator.local_dimension_map(points)
         return result.deficient_indices

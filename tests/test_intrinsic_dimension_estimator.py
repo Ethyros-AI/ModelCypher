@@ -21,11 +21,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    BootstrapConfiguration,
-    IntrinsicDimension,
-    TwoNNConfiguration,
-)
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
@@ -61,8 +57,7 @@ def test_two_nn_degenerate_neighbors() -> None:
 
 def test_two_nn_estimate_basic() -> None:
     points = [[float(i), 0.0] for i in range(6)]
-    config = TwoNNConfiguration(use_regression=False)
-    estimate = IntrinsicDimension.compute_two_nn(points, configuration=config)
+    estimate = IntrinsicDimension.compute_two_nn(points)
     assert estimate.sample_count == 6
     assert estimate.usable_count >= 3
     backend = get_default_backend()
@@ -73,10 +68,8 @@ def test_two_nn_estimate_basic() -> None:
 def test_two_nn_bootstrap_ci() -> None:
     backend = get_default_backend()
     points = backend.array([[float(i), 0.0] for i in range(6)])
-    config = TwoNNConfiguration(use_regression=False)
-    bootstrap = BootstrapConfiguration(resamples=50, confidence_level=0.9, seed=7)
     computer = IntrinsicDimension(backend)
-    estimate = computer.compute(points, configuration=config, bootstrap=bootstrap)
+    estimate = computer.compute(points, with_ci=True)
     assert estimate.ci is not None
     assert estimate.ci.lower <= estimate.ci.upper
 
