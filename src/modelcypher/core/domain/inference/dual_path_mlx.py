@@ -217,7 +217,7 @@ class DualPathGenerator:
 
         # Start tracking session
         correlation_id = uuid.uuid4()
-        await self.delta_tracker.start_session(correlation_id)
+        self.delta_tracker.start_session(correlation_id)
 
         # We need manual generation loop to intercept logits
         # MLX-LM `generate` is high level. We use `generate_step` or manual loop.
@@ -248,6 +248,7 @@ class DualPathGenerator:
             # Analyze
             # Compute Entropy/Divergence
             # (Synchronous in Python, unlike Swift actor)
+            analysis_start = time.perf_counter()
 
             # This logic mirrors `process` in Swift's DualPathLogitProcessor
 
@@ -261,10 +262,10 @@ class DualPathGenerator:
 
             # 3. Security Analysis
             # Compute base entropy/variance
-            base_ent = self.entropy_calc.compute(curr_logits_base)
+            base_entropy, base_variance = self.entropy_calc.compute(curr_logits_base)
 
             # Compute adapter entropy/variance
-            adap_ent = self.entropy_calc.compute(curr_logits_adapter)
+            adapter_entropy, adapter_variance = self.entropy_calc.compute(curr_logits_adapter)
 
             # Compute KL
             # Need LogitDivergenceCalculator (assuming it was ported as static or class)
@@ -275,6 +276,11 @@ class DualPathGenerator:
             # We call delta_tracker.record_step(...)
             # Note: Swift logic accumulates `PendingEntropyData` then sends to actor.
             # Python is simpler.
+            base_top_idx = b.argmax(curr_logits_base)
+            adapter_top_idx = b.argmax(curr_logits_adapter)
+            b.eval(base_top_idx, adapter_top_idx)
+            base_top_token = int(b.to_scalar(base_top_idx))
+            adapter_top_token = int(b.to_scalar(adapter_top_idx))
 
             # Compute base logits for rank geometry.
             scores_base = b.squeeze(curr_logits_base)
@@ -293,19 +299,22 @@ class DualPathGenerator:
 
             sample = EntropyDeltaSample(
                 token_index=token_count,
-                generated_token_id=token_id,
-                base_entropy=base_ent.entropy,
-                base_variance=base_ent.variance,
-                adapter_entropy=adap_ent.entropy,
-                adapter_variance=adap_ent.variance,
-                kl_divergence=kl,
+                generated_token=token_id,
+                base_entropy=base_entropy,
+                base_top_k_variance=base_variance,
+                base_top_token=base_top_token,
+                adapter_entropy=adapter_entropy,
+                adapter_top_k_variance=adapter_variance,
+                adapter_top_token=adapter_top_token,
+                latency_ms=(time.perf_counter() - analysis_start) * 1000,
+                kl_divergence_adapter_to_base=kl,
                 base_logit_margin=logit_margin,
                 base_token_logit=token_logit,
                 base_rank_fraction=rank_fraction,
                 base_frontier_hit=frontier_hit,
             )
 
-            await self.delta_tracker.record_step(sample)
+            self.delta_tracker.record_step(sample)
 
             # Yield token
             yield {"type": "token", "text": text}

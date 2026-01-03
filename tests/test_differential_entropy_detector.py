@@ -38,7 +38,11 @@ from modelcypher.core.domain.dynamics.differential_entropy_detector import (
     LinguisticModifier,
     VariantMeasurement,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+    machine_epsilon,
+)
 
 # =============================================================================
 # Configuration Tests
@@ -73,12 +77,9 @@ class TestCalibrationThresholds:
         """Test explicitly created thresholds."""
         cooling, _, baseline = _calibration_inputs()
         sorted_cooling = sorted(cooling)
-        # Median calculation
-        n = len(sorted_cooling)
-        if n % 2 == 0:
-            delta_h_threshold = (sorted_cooling[n // 2 - 1] + sorted_cooling[n // 2]) / 2
-        else:
-            delta_h_threshold = sorted_cooling[n // 2]
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        delta_h_threshold = float(find_magnitude_gap_threshold(sorted_cooling, eps=eps))
         minimum_baseline_entropy = min(baseline)
         thresholds = CalibrationThresholds(
             delta_h_threshold=delta_h_threshold,
@@ -96,13 +97,10 @@ class TestCalibrationThresholds:
             baseline_entropies=baseline_entropies,
         )
 
-        # Median calculation
         sorted_cooling = sorted(cooling_samples)
-        n = len(sorted_cooling)
-        if n % 2 == 0:
-            expected_threshold = (sorted_cooling[n // 2 - 1] + sorted_cooling[n // 2]) / 2
-        else:
-            expected_threshold = sorted_cooling[n // 2]
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        expected_threshold = float(find_magnitude_gap_threshold(sorted_cooling, eps=eps))
         expected_min_baseline = min(baseline_entropies)
         assert abs(thresholds.delta_h_threshold - expected_threshold) <= _eps()
         assert abs(thresholds.minimum_baseline_entropy - expected_min_baseline) <= _eps()

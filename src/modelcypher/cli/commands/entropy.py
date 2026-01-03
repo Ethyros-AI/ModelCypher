@@ -24,7 +24,7 @@ Commands:
     mc entropy analyze <samples>
     mc entropy detect-distress <samples>
     mc entropy verify-baseline --mean ... --std-dev ... --max ... --min ... --observed ...
-    mc entropy window <samples> --size <n>
+    mc entropy window <samples>
     mc entropy conversation-track --session <file>
     mc entropy dual-path <samples>
     mc entropy calibrate --model <path> --prompts <path> --max-tokens <n> --temperature <t>
@@ -367,7 +367,6 @@ def entropy_window(
     samples: str = typer.Argument(
         ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
-    size: int = typer.Option(50, "--size", help="Window size for sliding analysis"),
 ) -> None:
     """Analyze entropy using a sliding window.
 
@@ -381,7 +380,7 @@ def entropy_window(
     No thresholds - the window statistics ARE the signal.
 
     Examples:
-        mc entropy window '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]' --size 50
+        mc entropy window '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]'
     """
     context = _context(ctx)
 
@@ -410,8 +409,11 @@ def entropy_window(
     variances = [s[1] for s in parsed_samples]
     n = len(entropies)
 
+    import math
+
+    window_size = int(math.sqrt(n))
     # Use window or full data if smaller
-    window_data = entropies[-size:] if len(entropies) > size else entropies
+    window_data = entropies[-window_size:] if len(entropies) > window_size else entropies
     window_n = len(window_data)
 
     # Window statistics
@@ -430,7 +432,7 @@ def entropy_window(
     current_z = z_scores[-1] if z_scores else 0.0
 
     payload = {
-        "windowSize": size,
+        "windowSize": window_size,
         "actualWindowSize": window_n,
         "totalSamples": n,
         "currentEntropy": current_entropy,

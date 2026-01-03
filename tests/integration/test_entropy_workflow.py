@@ -50,7 +50,7 @@ class TestEntropyCalculationIntegration:
     def test_calculate_entropy_from_logits(self) -> None:
         """Entropy calculation should work on typical logit distributions."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
+        calculator = LogitEntropyCalculator(backend=backend)
 
         logits = backend.array([2.0, 1.5, 0.5, -0.5, -1.0])
         entropy, variance = calculator.compute(logits)
@@ -61,7 +61,7 @@ class TestEntropyCalculationIntegration:
     def test_entropy_tracks_uncertainty(self) -> None:
         """Higher uncertainty distributions should have higher entropy."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
+        calculator = LogitEntropyCalculator(backend=backend)
 
         low_uncertainty = backend.array([10.0, 0.0, 0.0, 0.0, 0.0])
         high_uncertainty = backend.array([1.0, 1.0, 1.0, 1.0, 1.0])
@@ -75,7 +75,7 @@ class TestEntropyCalculationIntegration:
     def test_entropy_always_non_negative(self, seed: int) -> None:
         """Entropy should always be non-negative."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
+        calculator = LogitEntropyCalculator(backend=backend)
 
         backend.random_seed(seed)
         logits = backend.random_normal((20,))

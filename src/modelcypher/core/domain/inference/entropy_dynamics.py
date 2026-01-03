@@ -416,6 +416,11 @@ class EntropyDeltaTracker:
         self.samples.append(sample)
         return sample
 
+    def record_step(self, sample: EntropyDeltaSample) -> EntropyDeltaSample:
+        """Record a precomputed entropy delta sample."""
+        self.samples.append(sample)
+        return sample
+
     def end_session(self) -> EntropyDeltaSessionResult:
         end_time = datetime.utcnow()
         self.session_active = False

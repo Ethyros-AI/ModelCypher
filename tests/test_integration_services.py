@@ -129,7 +129,7 @@ class TestEntropyIntegration:
             LogitEntropyCalculator,
         )
 
-        calculator = LogitEntropyCalculator(top_k=10)
+        calculator = LogitEntropyCalculator()
         assert calculator is not None
 
     def test_entropy_window_import(self):

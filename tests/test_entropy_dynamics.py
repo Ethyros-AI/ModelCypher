@@ -42,21 +42,12 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 
-def _test_tracker_config(vocab_size: int) -> EntropyDeltaTracker.Configuration:
-    """Create test config derived from the vocabulary size."""
-    return EntropyDeltaTracker.Configuration(
-        top_k=vocab_size,
-        compute_variance=True,
-        source="EntropyDeltaTracker",
-    )
-
-
 def test_logit_entropy_calculator():
     # High entropy: uniform distribution [10, 10, 10]
     # Softmax([10,10,10]) = [0.33, 0.33, 0.33]
     # Entropy = - sum(0.33 * log(0.33)) = ln(3)
     logits = mx.array([10.0, 10.0, 10.0])
-    calc = LogitEntropyCalculator(top_k=int(logits.shape[-1]))
+    calc = LogitEntropyCalculator()
     ent, var = calc.compute(logits)
 
     backend = get_default_backend()
@@ -95,7 +86,7 @@ def test_logit_divergence_calculator():
 
 def test_entropy_delta_tracker_anomaly():
     base_logits = mx.array([1.0, 1.0, 1.0])
-    tracker = EntropyDeltaTracker(_test_tracker_config(int(base_logits.shape[-1])))
+    tracker = EntropyDeltaTracker(source="EntropyDeltaTracker")
     tracker.start_session()
 
     # Base uncertain (high entropy), Adapter confident (low entropy) -> Anomaly

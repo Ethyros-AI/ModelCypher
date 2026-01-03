@@ -74,7 +74,7 @@ def test_logit_entropy_calculator_uniform():
     """Uniform distribution should have maximum entropy."""
     vocab_size = 32768
     logits = mx.zeros((vocab_size,))
-    calculator = LogitEntropyCalculator(top_k=None)
+    calculator = LogitEntropyCalculator()
 
     entropy, variance = calculator.compute(logits)
 
@@ -89,14 +89,14 @@ def test_logit_entropy_calculator_delta():
     logits = mx.array([-1e9] * vocab_size)
     logits[0] = 1e9
 
-    calculator = LogitEntropyCalculator(top_k=None)
+    calculator = LogitEntropyCalculator()
     entropy, _ = calculator.compute(logits)
 
     assert abs(entropy - 0.0) <= _eps(entropy, 0.0)
 
 
 def test_logit_entropy_batch():
-    calculator = LogitEntropyCalculator(top_k=None)
+    calculator = LogitEntropyCalculator()
     logits_batch = [mx.zeros((10,)), mx.ones((10,))]
     results = calculator.compute_batch(logits_batch)
 

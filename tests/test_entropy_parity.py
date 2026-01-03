@@ -109,19 +109,16 @@ class TestEntropyTracker:
 class TestHiddenStateExtractor:
     """Tests for HiddenStateExtractor."""
 
-    def test_layer_targeting_presets(self):
-        extractor = HiddenStateExtractor.for_sep_probe(32)
-        # 75-87.5% of 32 layers = layers 24-28
-        assert 24 in extractor.target_layers
-        assert 28 in extractor.target_layers
+    def test_requires_target_layers(self):
+        """Caller must specify target layers."""
+        import pytest
 
-        extractor = HiddenStateExtractor.for_refusal_direction(32)
-        # 40-60% of 32 layers = layers 12-19
-        assert 13 in extractor.target_layers
-        assert 19 in extractor.target_layers
+        with pytest.raises(ValueError):
+            HiddenStateExtractor(target_layers=set())
 
     def test_session_management(self):
-        extractor = HiddenStateExtractor.for_sep_probe(32)
+        # Caller provides layers from geometric analysis
+        extractor = HiddenStateExtractor(target_layers={24, 25, 26, 27, 28})
         assert not extractor.is_active
 
         extractor.start_session()
@@ -132,7 +129,7 @@ class TestHiddenStateExtractor:
         assert summary.total_captures == 0
 
     def test_state_capture(self):
-        extractor = HiddenStateExtractor(total_layers=32, target_layers={25, 26})
+        extractor = HiddenStateExtractor(target_layers={25, 26})
         extractor.start_session()
 
         hidden = mx.random.normal((1, 4096))
@@ -147,16 +144,13 @@ class TestHiddenStateExtractor:
 
 
 class TestSEPProbe:
-    """Tests for SEPProbe (no config)."""
+    """Tests for SEPProbe."""
 
     def test_initialization(self):
-        probe = SEPProbe(layer_count=32, hidden_dim=4096)
-        assert probe.layer_count == 32
+        probe = SEPProbe(hidden_dim=4096)
         assert probe.hidden_dim == 4096
+        assert not probe.is_ready  # No weights loaded yet
 
-    def test_target_layers(self):
-        probe = SEPProbe(layer_count=32, hidden_dim=4096)
-        # Target layers are 75-87.5% of layer count
-        targets = probe.target_layers
-        assert 24 in targets
-        assert 28 in targets
+    def test_available_layers_empty_before_load(self):
+        probe = SEPProbe(hidden_dim=4096)
+        assert probe.available_layers == set()

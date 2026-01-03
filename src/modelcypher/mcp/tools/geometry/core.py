@@ -530,14 +530,15 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             total_layers = len([l for l in model_info.layers if "layers." in l.name])
 
             # Create extractor for neuron analysis in specified layer range
+            # Caller specifies layer range - geometry determines which layers matter
             start_layer = int(total_layers * layer_start)
             end_layer = int(total_layers * layer_end)
-            extractor = HiddenStateExtractor.for_neuron_analysis_range(
-                total_layers,
-                start_layer=start_layer,
-                end_layer=end_layer,
-                hidden_dim=model_info.hidden_size,
+            target_layers = set(range(start_layer, end_layer + 1))
+            extractor = HiddenStateExtractor(
+                target_layers=target_layers,
+                expected_hidden_dim=model_info.hidden_size,
             )
+            extractor.enable_neuron_collection()
 
             # Collect activations via inference
             from modelcypher.adapters.local_inference import LocalInferenceEngine

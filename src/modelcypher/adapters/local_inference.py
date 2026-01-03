@@ -532,7 +532,6 @@ class LocalInferenceEngine(HiddenStateEngine):
                 target_layers = set(range(len(layers)))
 
             extractor = HiddenStateExtractor(
-                total_layers=len(layers),
                 target_layers=target_layers,
                 expected_hidden_dim=None,
             )

@@ -40,6 +40,8 @@ from typing import Awaitable, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
     machine_epsilon,
     sqrt_scalar,
 )
@@ -85,7 +87,7 @@ class CalibrationThresholds:
         """Derive thresholds from calibration data.
 
         All parameters are derived from the calibration samples:
-        - delta_h_threshold: median of cooling samples
+        - delta_h_threshold: largest magnitude gap in cooling samples
         - minimum_baseline_entropy: minimum of baseline samples
 
         Parameters
@@ -109,13 +111,11 @@ class CalibrationThresholds:
         if not baseline_entropies:
             raise ValueError("Baseline entropy samples required for calibration")
 
-        # Threshold is median of cooling samples - not an arbitrary percentile
+        # Threshold derived from the largest magnitude gap in cooling samples
         sorted_cooling = sorted(cooling_delta_h_samples)
-        n = len(sorted_cooling)
-        if n % 2 == 0:
-            delta_h_threshold = (sorted_cooling[n // 2 - 1] + sorted_cooling[n // 2]) / 2
-        else:
-            delta_h_threshold = sorted_cooling[n // 2]
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        delta_h_threshold = float(find_magnitude_gap_threshold(sorted_cooling, eps=eps))
 
         # Minimum baseline entropy from calibration data
         minimum_baseline = min(baseline_entropies)

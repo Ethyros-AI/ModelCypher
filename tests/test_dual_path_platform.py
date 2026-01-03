@@ -272,26 +272,14 @@ class TestSecurityScanMetrics:
 class TestDualPathGeneratorConfiguration:
     """Tests for DualPathGeneratorConfiguration dataclass."""
 
-    def _make_tracker_config(self):
-        """Create a valid tracker configuration for testing."""
-        from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaTracker
-
-        return EntropyDeltaTracker.Configuration(
-            top_k=10,
-            compute_variance=True,
-            source="test",
-        )
-
     def test_config_creation_minimal(self):
         """Configuration can be created with minimal required fields."""
         from modelcypher.core.domain.inference.dual_path_mlx import (
             DualPathGeneratorConfiguration,
         )
 
-        tracker_config = self._make_tracker_config()
         config = DualPathGeneratorConfiguration(
             base_model_path="/path/to/model",
-            delta_tracker_config=tracker_config,
             adapter_path=None,
             max_tokens=512,
             temperature=0.7,
@@ -314,10 +302,8 @@ class TestDualPathGeneratorConfiguration:
             DualPathGeneratorConfiguration,
         )
 
-        tracker_config = self._make_tracker_config()
         config = DualPathGeneratorConfiguration(
             base_model_path="/path/to/model",
-            delta_tracker_config=tracker_config,
             adapter_path="/path/to/adapter",
             max_tokens=256,
             temperature=0.5,
@@ -339,10 +325,8 @@ class TestDualPathGeneratorConfiguration:
             DualPathGeneratorConfiguration,
         )
 
-        tracker_config = self._make_tracker_config()
         config = DualPathGeneratorConfiguration(
             base_model_path="/path/to/model",
-            delta_tracker_config=tracker_config,
             adapter_path=None,
             max_tokens=128,
             temperature=0.0,
@@ -352,24 +336,6 @@ class TestDualPathGeneratorConfiguration:
         )
 
         assert abs(config.temperature) <= _eps()
-
-
-class TestEntropyDeltaTrackerConfiguration:
-    """Tests for EntropyDeltaTracker.Configuration."""
-
-    def test_configuration_creation(self):
-        """Configuration can be created with all required fields."""
-        from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaTracker
-
-        config = EntropyDeltaTracker.Configuration(
-            top_k=10,
-            compute_variance=True,
-            source="test",
-        )
-
-        assert config.top_k == 10
-        assert config.compute_variance is True
-        assert config.source == "test"
 
 
 class TestEntropyDeltaSample:
@@ -456,11 +422,11 @@ class TestLogitEntropyCalculator:
     """Tests for LogitEntropyCalculator."""
 
     def test_calculator_creation(self):
-        """LogitEntropyCalculator can be created with top_k."""
+        """LogitEntropyCalculator can be created without configuration knobs."""
         from modelcypher.core.domain.inference.entropy_dynamics import LogitEntropyCalculator
 
-        calc = LogitEntropyCalculator(top_k=100)
-        assert calc.top_k == 100
+        calc = LogitEntropyCalculator()
+        assert calc is not None
 
     def test_compute_returns_entropy_tuple(self):
         """Compute returns a tuple of (entropy, variance)."""
@@ -468,7 +434,7 @@ class TestLogitEntropyCalculator:
         from modelcypher.core.domain.inference.entropy_dynamics import LogitEntropyCalculator
 
         backend = get_default_backend()
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
 
         # Create sample logits
         backend.random_seed(42)
@@ -487,7 +453,7 @@ class TestLogitEntropyCalculator:
         from modelcypher.core.domain.inference.entropy_dynamics import LogitEntropyCalculator
 
         backend = get_default_backend()
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator()
 
         backend.random_seed(42)
         logits = backend.random_normal((100,))

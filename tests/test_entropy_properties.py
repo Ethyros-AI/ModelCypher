@@ -92,7 +92,7 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_entropy_is_non_negative(self, logits):
         """Entropy should always be non-negative."""
-        calc = LogitEntropyCalculator(top_k=None)
+        calc = LogitEntropyCalculator()
 
         entropy, _ = calc.compute(logits)
 
@@ -103,7 +103,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_uniform_distribution_maximum_entropy(self, logits):
         """Uniform distribution should have maximum entropy."""
-        calc = LogitEntropyCalculator(top_k=None)
+        calc = LogitEntropyCalculator()
 
         entropy, _ = calc.compute(logits)
 
@@ -119,7 +119,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_peaked_distribution_low_entropy(self, logits):
         """Highly peaked distribution should have low entropy."""
-        calc = LogitEntropyCalculator(top_k=None)
+        calc = LogitEntropyCalculator()
 
         entropy, _ = calc.compute(logits)
 
@@ -133,7 +133,7 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_variance_is_non_negative(self, logits):
         """Variance should always be non-negative."""
-        calc = LogitEntropyCalculator(top_k=None)
+        calc = LogitEntropyCalculator()
 
         _, variance = calc.compute(logits)
 
@@ -144,7 +144,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_length_matches(self, logits_a, logits_b):
         """Batch compute should return correct number of results."""
-        calc = LogitEntropyCalculator(top_k=None)
+        calc = LogitEntropyCalculator()
 
         batch = [logits_a, logits_b]
         results = calc.compute_batch(batch)
@@ -155,7 +155,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_empty_batch(self, batch):
         """Batch compute should handle any size batch."""
-        calc = LogitEntropyCalculator(top_k=None)
+        calc = LogitEntropyCalculator()
 
         results = calc.compute_batch(batch)
 
@@ -165,7 +165,7 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_skip_variance_returns_zero(self, logits):
         """When skipping variance, should return 0."""
-        calc = LogitEntropyCalculator(top_k=None)
+        calc = LogitEntropyCalculator()
 
         _, variance = calc.compute(logits, skip_variance=True)
 
