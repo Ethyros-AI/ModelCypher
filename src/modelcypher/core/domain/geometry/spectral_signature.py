@@ -33,7 +33,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     tiny_value,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import _set_matrix_element
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -234,20 +233,24 @@ class SpectralSignature:
         dist_no_self = backend.where(self_mask, inf_val, euclidean_dist)
         neighbor_order = backend.argsort(dist_no_self, axis=1)
         neighbor_indices = neighbor_order[:, :k_neighbors]
-        backend.eval(neighbor_indices)
+        backend.eval(neighbor_order, neighbor_indices)
 
         adj = backend.full((n, n), inf_val)
         diag_mask = backend.eye(n) > 0.0
         adj = backend.where(diag_mask, backend.zeros_like(adj), adj)
 
         edge_eps = float(division_epsilon(backend, euclidean_dist))
-        neighbor_indices_list = backend.tolist(neighbor_indices)
-        for i in range(n):
-            for j in neighbor_indices_list[i]:
-                j_idx = int(j)
-                edge_weight = max(float(backend.to_scalar(euclidean_dist[i, j_idx])), edge_eps)
-                adj = _set_matrix_element(backend, adj, i, j_idx, edge_weight)
-                adj = _set_matrix_element(backend, adj, j_idx, i, edge_weight)
+        edge_eps_arr = backend.full(euclidean_dist.shape, edge_eps)
+        weights = backend.maximum(euclidean_dist, edge_eps_arr)
+
+        # Vectorized k-NN mask: rank(i, j) < k_neighbors
+        rank = backend.argsort(neighbor_order, axis=1)
+        mask = rank < k_neighbors
+        mask = backend.where(diag_mask, backend.zeros_like(mask), mask)
+        mask_float = backend.astype(mask, "float32")
+        mask_sym = backend.maximum(mask_float, backend.transpose(mask_float))
+
+        adj = backend.where(mask_sym > 0.0, weights, adj)
 
         return adj, euclidean_dist, inf_val, k_neighbors, neighbor_indices
 

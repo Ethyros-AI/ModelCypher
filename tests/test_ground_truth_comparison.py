@@ -289,7 +289,7 @@ class TestIntrinsicDimensionGroundTruth:
         backend.eval(points)
 
         config = TwoNNConfiguration(
-            use_regression=True,
+            use_regression=False,
             geodesic=GeodesicConfiguration(k_neighbors=n_samples - 1),
         )
         estimate = IntrinsicDimension(backend).compute(
@@ -322,7 +322,7 @@ class TestIntrinsicDimensionGroundTruth:
         backend.eval(points)
 
         config = TwoNNConfiguration(
-            use_regression=True,
+            use_regression=False,
             geodesic=GeodesicConfiguration(k_neighbors=n_samples - 1),
         )
         estimate = IntrinsicDimension(backend).compute(

@@ -252,7 +252,10 @@ class DARESparsityAnalyzer:
             sample_indices = [int(i * total_count / 1000) for i in range(1000)]
             sorted_mags = b.sort(all_magnitudes)
             b.eval(sorted_mags)
-            samples = [float(b.to_scalar(sorted_mags[idx : idx + 1])) for idx in sample_indices]
+            sample_idx_arr = b.array(sample_indices)
+            sample_vals = b.take(sorted_mags, sample_idx_arr, axis=0)
+            b.eval(sample_vals)
+            samples = [float(x) for x in b.tolist(sample_vals)]
             gap_threshold = find_magnitude_gap_threshold(samples, eps=eps)
         else:
             def count_below(threshold: float) -> int:
