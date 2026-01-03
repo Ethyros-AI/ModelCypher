@@ -74,7 +74,7 @@ def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
             for text in probe.support_texts[:3]:  # Limit to 3 per probe
                 support_texts.append(text)
 
-            # Ensure at least 2 support texts for better centroid estimation
+            # Ensure at least 2 support texts for lower-variance centroid estimation
             if len(support_texts) < 2:
                 support_texts.append(f"The concept of {probe.name}")
 
@@ -284,7 +284,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         # Deduplicate
         detections.sort(key=lambda x: x.similarity, reverse=True)
         unique = []
-        # Simple interval overlap check or keep best per span?
+        # Simple interval overlap check or keep highest-similarity per span?
         # Swift kept highest confidence per "span-concept" key.
         # And sorted by position.
 

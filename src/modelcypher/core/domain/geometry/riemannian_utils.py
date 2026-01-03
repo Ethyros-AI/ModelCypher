@@ -1613,7 +1613,7 @@ class RiemannianGeometry:
         clamped_sim = max(-1.0, min(1.0, min_max_sim))
         max_gap_angle = acos_scalar(clamped_sim, backend)
 
-        # Coverage uniformity: ideal is uniform distribution on sphere
+        # Coverage uniformity: target is uniform distribution on sphere
         # Measure as 1 - (variance of similarities)
         # If all neighbors are in one direction, variance is high -> low uniformity
         sim_mean = backend.mean(max_sims)

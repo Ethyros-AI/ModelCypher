@@ -23,7 +23,6 @@ from .geometry_engine import (
     ProcrustesResult,
     SinkhornResult,
     SinkhornSolver,
-    SinkhornSolverConfig,
 )
 
 __all__ = [
@@ -33,5 +32,4 @@ __all__ = [
     "ProcrustesResult",
     "SinkhornResult",
     "SinkhornSolver",
-    "SinkhornSolverConfig",
 ]

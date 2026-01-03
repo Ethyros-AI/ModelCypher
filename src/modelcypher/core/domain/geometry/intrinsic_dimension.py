@@ -57,6 +57,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    infinity_threshold,
     machine_epsilon,
 )
 
@@ -301,10 +302,14 @@ class IntrinsicDimension:
         r1_sq = sorted_dist_sq[:, 1]
         r2_sq = sorted_dist_sq[:, 2]
 
-        # Filter degenerate points (r1 > 0 to avoid division by zero)
-        # Use machine epsilon for precision-aware threshold
+        # Filter degenerate points:
+        # 1. r1 > eps (avoid division by zero)
+        # 2. r2 < inf_threshold (filter disconnected nodes in geodesic graph)
         eps = machine_epsilon(backend, r1_sq)
-        valid_mask = r1_sq > eps
+        inf_thresh = infinity_threshold(backend, r2_sq)
+        r1_valid = r1_sq > eps
+        r2_finite = r2_sq < inf_thresh
+        valid_mask = r1_valid & r2_finite
 
         # Count valid points
         valid_count_arr = backend.sum(backend.astype(valid_mask, r1_sq.dtype))

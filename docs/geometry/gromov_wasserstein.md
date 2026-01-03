@@ -1,6 +1,6 @@
 # Gromov-Wasserstein Distance
 
-Gromov-Wasserstein (GW) distance measures structural similarity between metric spaces without requiring point-to-point correspondence. This makes it ideal for comparing representation manifolds across models with different architectures.
+Gromov-Wasserstein (GW) distance measures structural similarity between metric spaces without requiring point-to-point correspondence. This makes it well-suited for comparing representation manifolds across models with different architectures.
 
 ## Mathematical Foundation
 

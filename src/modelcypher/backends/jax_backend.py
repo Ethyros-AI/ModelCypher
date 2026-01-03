@@ -22,7 +22,7 @@ Provides hardware-invariant tensor operations using JAX, enabling:
 - GPU acceleration via CUDA/ROCm
 - Composable transformations (jit, vmap, grad) for geometry operations
 
-JAX is ideal for high-dimensional geometry work due to:
+JAX is well-suited for high-dimensional geometry work due to:
 - XLA compilation for efficient tensor operations
 - Automatic differentiation for Jacobian/Hessian computation
 - Functional purity enabling reproducible research

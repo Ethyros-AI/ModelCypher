@@ -319,7 +319,7 @@ class VectorMath:
             return result
 
         # Handle near-antipodal case (θ ≈ π) - SLERP is undefined
-        # Use linear interpolation as fallback (not ideal but defined)
+        # Use linear interpolation as fallback (defined but not geodesic)
         if theta > _PI - epsilon:
             result = [
                 (1.0 - t) * v0_list[i] + t * v1_list[i] for i in range(len_v0)

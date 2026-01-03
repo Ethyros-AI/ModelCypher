@@ -164,42 +164,35 @@ class GeometryEngine:
         target_anchors: Array,
         source_basis: Array,
         target_basis: Array,
-        config: "SoftProcrustesConfig | None" = None,
     ) -> tuple[Array, Array, float, SinkhornResult]:
+        """Compute soft Procrustes alignment using optimal transport.
+
+        Projects anchors into basis space, computes geodesic cost matrix,
+        solves optimal transport, and finds the orthogonal rotation.
+        All parameters are derived from the data - no configuration needed.
+
+        Args:
+            source_anchors: Source anchor points
+            target_anchors: Target anchor points
+            source_basis: Source projection basis
+            target_basis: Target projection basis
+
+        Returns:
+            Tuple of (rotation_matrix, transport_plan, alignment_error, sinkhorn_result)
+        """
         solver = SinkhornSolver(self.backend)
-        if config is None:
-            config = SoftProcrustesConfig()
 
         z_source = self.backend.matmul(source_anchors, source_basis)
         z_target = self.backend.matmul(target_anchors, target_basis)
         self.backend.eval(z_source, z_target)
 
-        # Get stability epsilon (will be derived from cost matrix if None)
-        stability_eps = config.stability_epsilon
-
-        cost_matrix = self._geodesic_cost_matrix(
-            z_source,
-            z_target,
-            k_neighbors=config.geodesic_k_neighbors,
-            square=config.geodesic_square,
-            normalize=config.geodesic_normalize,
-            stability_epsilon=stability_eps or division_epsilon(self.backend, z_source),
-        )
-
-        # Create SinkhornConfig from the relevant fields
-        sinkhorn_config = SinkhornConfig(
-            epsilon=config.epsilon,
-            max_iterations=config.max_iterations,
-            convergence_threshold=config.convergence_threshold,
-            use_log_domain=config.use_log_domain,
-            stability_epsilon=config.stability_epsilon,
-        )
-        sinkhorn_result = solver.solve(cost_matrix, config=sinkhorn_config)
+        cost_matrix = self._geodesic_cost_matrix(z_source, z_target)
+        sinkhorn_result = solver.solve(cost_matrix)
 
         transported_mass = self.backend.matmul(sinkhorn_result.plan, z_target)
         row_sums = self.backend.sum(sinkhorn_result.plan, axis=1, keepdims=True)
-        result_stability_eps = stability_eps or division_epsilon(self.backend, row_sums)
-        stabilized = self.backend.maximum(row_sums, self.backend.array(result_stability_eps))
+        stability_eps = division_epsilon(self.backend, row_sums)
+        stabilized = self.backend.maximum(row_sums, self.backend.array(stability_eps))
         transported_target = transported_mass / stabilized
         self.backend.eval(transported_target)
 
@@ -220,39 +213,43 @@ class GeometryEngine:
 
         return omega, sinkhorn_result.plan, error, sinkhorn_result
 
-    def _geodesic_cost_matrix(
-        self,
-        source: Array,
-        target: Array,
-        *,
-        k_neighbors: int | None,
-        square: bool,
-        normalize: bool,
-        stability_epsilon: float,
-    ) -> Array:
+    def _geodesic_cost_matrix(self, source: Array, target: Array) -> Array:
         """Compute geodesic cost matrix for Sinkhorn alignment.
 
         Geodesic distance is the correct metric on curved manifolds; Euclidean
         costs are invalid for high-dimensional geometry.
+
+        k-neighbors for the geodesic graph is derived from sqrt(n), which is
+        the standard rule-of-thumb for k-NN on manifolds.
         """
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
+        import math
 
         combined = self.backend.concatenate([source, target], axis=0)
         combined = self.backend.astype(combined, "float32")
+
+        # Derive k from data size: sqrt(n) is the standard rule for k-NN on manifolds
+        total_points = int(combined.shape[0])
+        k_neighbors = max(3, int(math.sqrt(total_points)))
+
         geo = geodesic_distance_matrix(combined, k_neighbors=k_neighbors, backend=self.backend)
         self.backend.eval(geo)
 
         n = int(source.shape[0])
         m = int(target.shape[0])
         cost = geo[:n, n : n + m]
-        if square:
-            cost = cost * cost
-        if normalize:
-            max_val = self.backend.max(cost)
-            denom = self.backend.maximum(max_val, self.backend.array(stability_epsilon))
-            cost = cost / denom
+
+        # Squared cost for Wasserstein-2
+        cost = cost * cost
+
+        # Normalize for numerical stability
+        max_val = self.backend.max(cost)
+        stability_eps = division_epsilon(self.backend, cost)
+        denom = self.backend.maximum(max_val, self.backend.array(stability_eps))
+        cost = cost / denom
+
         self.backend.eval(cost)
         return cost
 
@@ -324,267 +321,6 @@ class GeometryEngine:
     def _item(self, array: Any) -> Any:
         if array is None:
             return None
-        if hasattr(array, "item"):
-            return array.item()
-        arr = self.backend.array(array)
-        self.backend.eval(arr)
-        return self.backend.to_scalar(arr)
-
-
-@dataclass(frozen=True)
-class SinkhornSolverConfig:
-    """Configuration for Sinkhorn optimal transport solver.
-
-    Tolerance fields (epsilon, convergence_threshold, stability_epsilon)
-    default to None and are derived from array dtype at runtime:
-    - epsilon: regularization_epsilon (sqrt(machine_eps)) - entropy regularization
-    - convergence_threshold: regularization_epsilon - iteration convergence
-    - stability_epsilon: division_epsilon (1000 * machine_eps) - numerical safety
-    """
-
-    epsilon: float | None = None
-    max_iterations: int = 100
-    convergence_threshold: float | None = None
-    use_log_domain: bool = True
-    stability_epsilon: float | None = None
-    geodesic_k_neighbors: int | None = None
-    geodesic_square: bool = True
-    geodesic_normalize: bool = True
-
-
-class SinkhornSolver:
-    def __init__(self, backend: Backend) -> None:
-        self.backend = backend
-
-    def solve(
-        self,
-        cost_matrix: Array,
-        source_marginal: Array | None = None,
-        target_marginal: Array | None = None,
-        config: SinkhornSolverConfig = SinkhornSolverConfig(),
-    ) -> SinkhornResult:
-        # Convert inputs to backend arrays
-        cost_matrix = self.backend.array(cost_matrix)
-        if source_marginal is not None:
-            source_marginal = self.backend.array(source_marginal)
-        if target_marginal is not None:
-            target_marginal = self.backend.array(target_marginal)
-
-        # Derive tolerances from array dtype if not provided
-        resolved_epsilon = (
-            config.epsilon
-            if config.epsilon is not None
-            else regularization_epsilon(self.backend, cost_matrix)
-        )
-        resolved_convergence = (
-            config.convergence_threshold
-            if config.convergence_threshold is not None
-            else regularization_epsilon(self.backend, cost_matrix)
-        )
-        resolved_stability = (
-            config.stability_epsilon
-            if config.stability_epsilon is not None
-            else division_epsilon(self.backend, cost_matrix)
-        )
-
-        n = int(cost_matrix.shape[0])
-        m = int(cost_matrix.shape[1])
-        mu = (
-            source_marginal
-            if source_marginal is not None
-            else self.backend.ones((n,), dtype="float32") / float(n)
-        )
-        nu = (
-            target_marginal
-            if target_marginal is not None
-            else self.backend.ones((m,), dtype="float32") / float(m)
-        )
-        self.backend.eval(mu, nu)
-
-        if config.use_log_domain:
-            return self._solve_log_domain(
-                cost_matrix, mu, nu, resolved_epsilon, resolved_convergence,
-                resolved_stability, config.max_iterations
-            )
-        return self._solve_standard(
-            cost_matrix, mu, nu, resolved_epsilon, resolved_convergence,
-            resolved_stability, config.max_iterations
-        )
-
-    def _solve_standard(
-        self,
-        cost_matrix: Array,
-        mu: Array,
-        nu: Array,
-        epsilon: float,
-        convergence_threshold: float,
-        stability_epsilon: float,
-        max_iterations: int,
-    ) -> SinkhornResult:
-        n = int(cost_matrix.shape[0])
-        m = int(cost_matrix.shape[1])
-        K = self.backend.exp(-cost_matrix / epsilon)
-        self.backend.eval(K)
-
-        u = self.backend.ones((n,), dtype="float32")
-        v = self.backend.ones((m,), dtype="float32")
-        self.backend.eval(u, v)
-
-        converged = False
-        iterations = 0
-        marginal_error = float("inf")
-
-        for i in range(max_iterations):
-            iterations = i + 1
-            Kv = self.backend.matmul(K, v.reshape((m, 1))).reshape((n,))
-            u_new = mu / self.backend.maximum(Kv, self.backend.array(stability_epsilon))
-            KTu = self.backend.matmul(self.backend.transpose(K), u_new.reshape((n, 1))).reshape(
-                (m,)
-            )
-            v_new = nu / self.backend.maximum(KTu, self.backend.array(stability_epsilon))
-            Kv_new = self.backend.matmul(K, v_new.reshape((m, 1))).reshape((n,))
-            row_marginal = u_new * Kv_new
-            col_marginal = v_new * KTu
-            row_error = self.backend.max(self.backend.abs(row_marginal - mu))
-            col_error = self.backend.max(self.backend.abs(col_marginal - nu))
-            self.backend.eval(row_error, col_error)
-            marginal_error = max(float(self._item(row_error)), float(self._item(col_error)))
-            u = u_new
-            v = v_new
-            if marginal_error < convergence_threshold:
-                converged = True
-                break
-
-        plan = u.reshape((n, 1)) * K * v.reshape((1, m))
-        self.backend.eval(plan)
-        cost = self.backend.sum(cost_matrix * plan)
-        self.backend.eval(cost)
-        return SinkhornResult(
-            plan=plan,
-            converged=converged,
-            iterations=iterations,
-            marginal_error=marginal_error,
-            cost=float(self._item(cost)),
-        )
-
-    def _solve_log_domain(
-        self,
-        cost_matrix: Array,
-        mu: Array,
-        nu: Array,
-        epsilon: float,
-        convergence_threshold: float,
-        stability_epsilon: float,
-        max_iterations: int,
-    ) -> SinkhornResult:
-        n = int(cost_matrix.shape[0])
-        m = int(cost_matrix.shape[1])
-        log_mu = self.backend.log(
-            self.backend.maximum(mu, self.backend.array(stability_epsilon))
-        )
-        log_nu = self.backend.log(
-            self.backend.maximum(nu, self.backend.array(stability_epsilon))
-        )
-        logK = -cost_matrix / epsilon
-        self.backend.eval(log_mu, log_nu, logK)
-
-        f = self.backend.zeros((n,), dtype="float32")
-        g = self.backend.zeros((m,), dtype="float32")
-        self.backend.eval(f, g)
-
-        converged = False
-        iterations = 0
-        marginal_error = float("inf")
-
-        for i in range(max_iterations):
-            iterations = i + 1
-            logK_plus_g = logK + g.reshape((1, m))
-            f_new = log_mu - self._logsumexp(logK_plus_g, axis=1)
-            logKT_plus_f = self.backend.transpose(logK) + f_new.reshape((1, n))
-            col_log_sum = self._logsumexp(logKT_plus_f, axis=1)
-            g_new = log_nu - col_log_sum
-
-            f_diff = self.backend.max(self.backend.abs(f_new - f))
-            g_diff = self.backend.max(self.backend.abs(g_new - g))
-            self.backend.eval(f_diff, g_diff)
-            max_diff = max(float(self._item(f_diff)), float(self._item(g_diff)))
-
-            logK_plus_g_new = logK + g_new.reshape((1, m))
-            row_log_sum = self._logsumexp(logK_plus_g_new, axis=1)
-            row_sums = self.backend.exp(f_new + row_log_sum)
-            col_sums = self.backend.exp(g_new + col_log_sum)
-            row_error = self.backend.max(self.backend.abs(row_sums - mu))
-            col_error = self.backend.max(self.backend.abs(col_sums - nu))
-            self.backend.eval(row_error, col_error)
-            marginal_error = max(float(self._item(row_error)), float(self._item(col_error)))
-
-            f = f_new
-            g = g_new
-            if marginal_error < convergence_threshold or max_diff < convergence_threshold:
-                converged = True
-                break
-
-        logP = f.reshape((n, 1)) + logK + g.reshape((1, m))
-        plan = self.backend.exp(logP)
-        self.backend.eval(plan)
-
-        row_sums = self.backend.sum(plan, axis=1)
-        col_sums = self.backend.sum(plan, axis=0)
-        row_error = self.backend.max(self.backend.abs(row_sums - mu))
-        col_error = self.backend.max(self.backend.abs(col_sums - nu))
-        self.backend.eval(row_error, col_error)
-        marginal_error = max(float(self._item(row_error)), float(self._item(col_error)))
-
-        cost = self.backend.sum(cost_matrix * plan)
-        self.backend.eval(cost)
-
-        return SinkhornResult(
-            plan=plan,
-            converged=converged,
-            iterations=iterations,
-            marginal_error=marginal_error,
-            cost=float(self._item(cost)),
-        )
-
-    def squared_euclidean_cost(self, source: Array, target: Array, normalize: bool = True) -> Array:
-        s = source
-        t = target
-        if normalize:
-            div_eps = division_epsilon(self.backend, s)
-            s_norm = self.backend.sqrt(self.backend.sum(s * s, axis=1, keepdims=True) + div_eps)
-            t_norm = self.backend.sqrt(self.backend.sum(t * t, axis=1, keepdims=True) + div_eps)
-            s = s / s_norm
-            t = t / t_norm
-            self.backend.eval(s, t)
-        s_norm_sq = self.backend.sum(s * s, axis=1, keepdims=True)
-        t_norm_sq = self.backend.sum(t * t, axis=1, keepdims=True)
-        inner = self.backend.matmul(s, self.backend.transpose(t))
-        cost = s_norm_sq + self.backend.transpose(t_norm_sq) - 2 * inner
-        clamped = self.backend.maximum(cost, self.backend.array(0.0))
-        self.backend.eval(clamped)
-        return clamped
-
-    def cosine_cost(self, source: Array, target: Array) -> Array:
-        div_eps = division_epsilon(self.backend, source)
-        s_norm = self.backend.sqrt(self.backend.sum(source * source, axis=1, keepdims=True) + div_eps)
-        t_norm = self.backend.sqrt(self.backend.sum(target * target, axis=1, keepdims=True) + div_eps)
-        s = source / s_norm
-        t = target / t_norm
-        similarity = self.backend.matmul(s, self.backend.transpose(t))
-        cost = 1 - similarity
-        clamped = self.backend.minimum(
-            self.backend.maximum(cost, self.backend.array(0.0)), self.backend.array(2.0)
-        )
-        self.backend.eval(clamped)
-        return clamped
-
-    def _logsumexp(self, array: Array, axis: int) -> Array:
-        max_val = self.backend.max(array, axis=axis, keepdims=True)
-        shifted = array - max_val
-        sum_exp = self.backend.sum(self.backend.exp(shifted), axis=axis)
-        return self.backend.squeeze(max_val, axis=axis) + self.backend.log(sum_exp)
-
-    def _item(self, array: Any) -> Any:
         if hasattr(array, "item"):
             return array.item()
         arr = self.backend.array(array)

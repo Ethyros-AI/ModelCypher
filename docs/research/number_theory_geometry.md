@@ -9,7 +9,7 @@
 
 **If we find the invariant high-dimensional geometric structure of primes, we can use that to align any model.**
 
-Primes provide a "pure signal" - number-theoretic structure with no training noise, no language-specific bias, no cultural variation. Every language model that processes numbers must implicitly respect the structure of primes. This makes prime geometry an ideal **universal alignment anchor**:
+Primes provide a "pure signal" - number-theoretic structure with no training noise, no language-specific bias, no cultural variation. Every language model that processes numbers must implicitly respect the structure of primes. This makes prime geometry a candidate **universal alignment anchor**:
 
 1. **Training-invariant**: The structure of primes is fixed, unlike learned representations
 2. **Cross-architecture**: Any model processing numbers must encode prime structure

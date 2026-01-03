@@ -100,6 +100,7 @@ _SUBMODULES = {
     "moral_geometry",
     "neuron_sparsity_analyzer",
     "null_space_filter",
+    "optimal_transport",
     "path_geometry",
     "permutation_aligner",
     "persona_vector_monitor",

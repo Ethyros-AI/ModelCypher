@@ -173,7 +173,7 @@ class AnchorExtractor:
             "tok_embeddings.weight",
             "token_embedding.weight",
             "wte.weight",
-            "lm_head.weight",  # Fallback: contextual similarity, less ideal for anchors
+            "lm_head.weight",  # Fallback: contextual similarity, lower semantic anchor fidelity
         ]
         b = backend or get_default_backend()
 

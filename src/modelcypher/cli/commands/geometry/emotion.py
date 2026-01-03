@@ -308,7 +308,7 @@ def emotion_opposition(
                     "  If model A has joy > sadness, the merged model should maintain",
                     "  this relationship. Violations indicate potential semantic drift.",
                     "",
-                    "  Score: 1.0 = perfect preservation, 0.0 = opposition violated",
+                    "  Score: 1.0 = full preservation, 0.0 = opposition violated",
                 ]
             )
 
