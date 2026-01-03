@@ -8,7 +8,7 @@
 
 Neural network representations have **shape**—connected components, loops, voids. Persistent homology captures this shape across scales:
 1. **Topological fingerprinting**: Unique signature of representation structure
-2. **Merge alignment**: Models with similar topology align better for merging
+2. **Merge alignment**: Models with similar topology align with lower distortion for merging
 3. **Scale-invariant features**: Robust to magnitude differences
 
 **In ModelCypher**: Implemented in `topological_fingerprint.py` for representation topology analysis.

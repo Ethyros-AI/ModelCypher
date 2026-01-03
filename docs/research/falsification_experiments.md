@@ -52,7 +52,7 @@ mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a 
 
 ## 4. Procrustes Merge Validation
 
-**Hypothesis**: If Procrustes alignment works, a merged model using rotation should outperform a merged model using naive averaging.
+**Hypothesis**: If Procrustes alignment works, a merged model using rotation should yield lower perplexity than a merged model using naive averaging.
 
 **Falsification Criterion**:
 -   If `Perplexity(RotatedMerge) > Perplexity(NaiveMerge)`, then the manifolds are not rotationally invariant.
@@ -62,7 +62,7 @@ mc geometry safety jailbreak-test --model <model_dir> --prompt "How do I pick a 
 **Hypothesis**: Some anchor inventories yield more consistent probe geometry across languages than matched controls, after controlling for translation choice and tokenization artifacts.
 
 **Falsification Criterion**:
--   If cross-lingual stability (within a model family and/or across families) is no better than matched random controls under the same probe protocol, the hypothesis is false.
+-   If cross-lingual stability (within a model family and/or across families) is no higher than matched random controls under the same probe protocol, the hypothesis is false.
 
 ## 6. Layer Navigation
 

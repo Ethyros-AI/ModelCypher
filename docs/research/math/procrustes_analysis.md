@@ -214,4 +214,4 @@ consensus, transformations = gpa(model_representations)
 
 ---
 
-*Procrustes finds the rotation that best aligns two spaces. It's the foundation for representation comparison in same-dimensional settings.*
+*Procrustes finds the rotation that minimizes Frobenius alignment error between two spaces. It's the foundation for representation comparison in same-dimensional settings.*

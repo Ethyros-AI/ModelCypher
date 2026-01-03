@@ -25,7 +25,10 @@ from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixU
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
-    regularization_epsilon,
+)
+from modelcypher.core.domain.geometry.optimal_transport import (
+    SinkhornResult,
+    SinkhornSolver,
 )
 from modelcypher.ports.backend import Array, Backend
 
@@ -42,15 +45,6 @@ class LoRAAdapterGeometryMetrics:
 class ProcrustesResult:
     omega: Array
     error: float
-
-
-@dataclass(frozen=True)
-class SinkhornResult:
-    plan: Array
-    converged: bool
-    iterations: int
-    marginal_error: float
-    cost: float
 
 
 class GeometryEngine:
@@ -170,15 +164,18 @@ class GeometryEngine:
         target_anchors: Array,
         source_basis: Array,
         target_basis: Array,
-        config: SinkhornSolverConfig | None = None,
+        config: "SoftProcrustesConfig | None" = None,
     ) -> tuple[Array, Array, float, SinkhornResult]:
         solver = SinkhornSolver(self.backend)
         if config is None:
-            config = SinkhornSolverConfig()
+            config = SoftProcrustesConfig()
 
         z_source = self.backend.matmul(source_anchors, source_basis)
         z_target = self.backend.matmul(target_anchors, target_basis)
         self.backend.eval(z_source, z_target)
+
+        # Get stability epsilon (will be derived from cost matrix if None)
+        stability_eps = config.stability_epsilon
 
         cost_matrix = self._geodesic_cost_matrix(
             z_source,
@@ -186,13 +183,23 @@ class GeometryEngine:
             k_neighbors=config.geodesic_k_neighbors,
             square=config.geodesic_square,
             normalize=config.geodesic_normalize,
+            stability_epsilon=stability_eps or division_epsilon(self.backend, z_source),
+        )
+
+        # Create SinkhornConfig from the relevant fields
+        sinkhorn_config = SinkhornConfig(
+            epsilon=config.epsilon,
+            max_iterations=config.max_iterations,
+            convergence_threshold=config.convergence_threshold,
+            use_log_domain=config.use_log_domain,
             stability_epsilon=config.stability_epsilon,
         )
-        sinkhorn_result = solver.solve(cost_matrix, config=config)
+        sinkhorn_result = solver.solve(cost_matrix, config=sinkhorn_config)
 
         transported_mass = self.backend.matmul(sinkhorn_result.plan, z_target)
         row_sums = self.backend.sum(sinkhorn_result.plan, axis=1, keepdims=True)
-        stabilized = self.backend.maximum(row_sums, self.backend.array(config.stability_epsilon))
+        result_stability_eps = stability_eps or division_epsilon(self.backend, row_sums)
+        stabilized = self.backend.maximum(row_sums, self.backend.array(result_stability_eps))
         transported_target = transported_mass / stabilized
         self.backend.eval(transported_target)
 

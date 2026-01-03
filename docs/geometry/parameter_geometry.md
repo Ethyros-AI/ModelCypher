@@ -16,7 +16,7 @@ $$ W' = W + \frac{\alpha}{r} BA $$
 1.  **Rank ($r$) = Subspace Dimensionality**:
     -   $r$ defines the **degrees of freedom** of the update.
     -   Small $r$ (4-8): Constrains the model to move only along a few specific "semantic directions" (e.g., "become more polite"). This works like a **railgun**—hard to deviate from the target trajectory.
-    -   Large $r$ (64+): Allows complex, wiggly trajectories. Good for learning new facts, but prone to "forgetting" (moving off the manifold).
+    -   Large $r$ (64+): Allows complex, wiggly trajectories. Supports learning new facts, but increases "forgetting" risk (moving off the manifold).
 
 2.  **Alpha ($\alpha$) = Vector Magnitude (Loudness)**:
     -   $\alpha/r$ is a scalar multiplier.
@@ -33,7 +33,7 @@ Research (Aghajanyan et al., 2021) shows that the "Intrinsic Dimensionality" of 
 ModelCypher includes `GradientSmoothnessEstimator` (`src/modelcypher/core/domain/training/gradient_smoothness_estimator.py`) to measure the local geometry of the loss landscape during training.
 
 -   **High Variance (Rugged)**: The model is in a chaotic region. Updates are unstable.
--   **Low Variance (Smooth)**: The model is in a convex basin (or "wide valley"). Generalization is likely better here.
+-   **Low Variance (Smooth)**: The model is in a convex basin (or "wide valley"). Generalization is often higher in flatter basins.
 -   **Signal-to-Noise Ratio (SNR)**: Measures whether the gradient vector $g$ points in a consistent direction over time (High SNR) or flails randomly (Low SNR).
 
 $$ \text{SNR} = \frac{\| \mu_g \|^2}{\sigma_g^2} $$

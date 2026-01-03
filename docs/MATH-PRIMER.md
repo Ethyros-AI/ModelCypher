@@ -55,7 +55,7 @@ Two models can represent the “same concept” but with rotated/scaled coordina
 
 ### Procrustes alignment
 
-Procrustes finds the best rotation (and sometimes scaling) to align one set of vectors to another.
+Procrustes finds the least-squares rotation (and sometimes scaling) to align one set of vectors to another.
 
 How to explain to a human:
 “It’s like rotating one map so north lines up before comparing routes.”
@@ -124,4 +124,4 @@ How to explain to a human:
 - They do not certify safety.
 - They do not remove the need for policy review, red teaming, or human judgment.
 
-They are best used as: “something changed — here’s where, how, and how worried we should be.”
+Use them to report: “something changed — here’s where, how much, and the confidence of that change.”

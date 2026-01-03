@@ -69,15 +69,15 @@ $$TMS = 0.30 \times \text{orthogonality} + 0.40 \times \text{gradient} + 0.30 \t
 | **H2: Axis Independence** | ✅ SUPPORTED | Mean orthogonality = 91.9% > 80% |
 | **H3: Arrow of Time** | ❌ NOT SUPPORTED | No model shows monotonic direction gradient |
 | **H4: Duration Monotonicity** | ⚠️ PARTIALLY SUPPORTED | Only Mistral-7B shows monotonic duration |
-| **H5: Size Correlation** | ❌ NOT SUPPORTED | Smaller models perform better (inverse trend) |
+| **H5: Size Correlation** | ❌ NOT SUPPORTED | Smaller models show higher TMS (inverse trend) |
 
 ### Key Finding: Duration vs Direction
 
-The most notable pattern is that **duration** is more robustly encoded than **direction**:
+The most notable pattern is that **duration** shows higher monotonic ordering than **direction** in this sample:
 
 - Mistral-7B shows monotonic duration ordering: moment < hour < day < year < century
 - No model shows consistent Arrow of Time (past→future) gradient
-- This suggests models learn **duration extent** more reliably than **temporal direction**
+- This suggests models encode **duration extent** more consistently than **temporal direction** in this sample
 
 ## Comparison with Social Geometry
 
@@ -86,9 +86,9 @@ The most notable pattern is that **duration** is more robustly encoded than **di
 | Mean Score | **0.53** | 0.429 |
 | Axis Orthogonality | **94.8%** | 91.9% |
 | Monotonic Gradients | Power detected | Duration (1/6 models) |
-| Strongest Model | Qwen2.5-3B | Mistral-7B |
+| Highest-score Model | Qwen2.5-3B | Mistral-7B |
 
-**Social geometry shows stronger signal than temporal topology** - LLMs encode social relationships more robustly than temporal relationships. This is consistent with:
+**Social geometry shows a higher mean score than temporal topology** - LLMs encode social relationships more consistently than temporal relationships. This is consistent with:
 - Training data being predominantly present-tense dialogue
 - Social relationships being more explicitly marked in language (pronouns, titles, registers)
 - Temporal structure being more implicit and context-dependent
@@ -98,9 +98,9 @@ The most notable pattern is that **duration** is more robustly encoded than **di
 The **Latent Chronologist** hypothesis is **partially supported**:
 
 1. **Axis orthogonality is high** (91.9%) - Direction, Duration, and Causality are geometrically independent
-2. **Duration is robustly encoded** - Mistral-7B shows monotonic moment→century ordering (r = 1.0)
+2. **Duration shows monotonic ordering** - Mistral-7B shows monotonic moment→century ordering (r = 1.0)
 3. **Arrow of Time is NOT detected** - Models don't consistently encode past→future direction
-4. **Size correlation is inverse** - Smaller models actually show better temporal structure
+4. **Size correlation is inverse** - Smaller models show higher temporal structure scores
 
 The failure to detect Arrow of Time may indicate:
 - Training data is predominantly present-tense

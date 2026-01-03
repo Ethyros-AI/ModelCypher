@@ -17,7 +17,7 @@ Curved manifolds don't allow direct arithmetic. The tangent space provides:
 
 ## The Core Insight
 
-At each point $p$ on a manifold $M$, there's a **tangent space** $T_pM$—the best local linear approximation. We can:
+At each point $p$ on a manifold $M$, there's a **tangent space** $T_pM$—the first-order local linear approximation. We can:
 1. **Lift** from manifold to tangent space (logarithm map)
 2. **Compute** in the linear tangent space
 3. **Project** back to the manifold (exponential map)

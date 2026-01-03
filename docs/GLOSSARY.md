@@ -88,9 +88,9 @@ A measure of structural similarity between two metric spaces (manifolds) that do
 -   **Human explanation**: "The internal organization of these two models is similar, even though they don't share the same coordinate frame."
 
 ### Procrustes Alignment
-A method to optimally rotate/scale one set of points to match another.
+A method to rotate/scale one set of points to minimize alignment error.
 -   **Analogy**: Placing two photographs on top of each other and rotating/scaling one until the faces align as closely as possible.
--   **Human explanation**: "We're finding the best rotation to align these two models' representations so we can compare them fairly."
+-   **Human explanation**: "We're finding the rotation that minimizes alignment error so we can compare these representations in a shared frame."
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 3](../papers/paper-3-cross-architecture-transfer.md) (anchor-locked Procrustes for adapter transfer)
 -   **See also**: [docs/geometry/gromov_wasserstein.md](geometry/gromov_wasserstein.md)
 

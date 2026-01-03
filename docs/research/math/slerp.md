@@ -156,7 +156,7 @@ The weight space of neural networks has complex topology. SLERP's success sugges
 | `VectorMath.slerp_batch()` | 253 | Pure Python per-layer SLERP |
 | `BackendVectorMath.slerp()` | 572 | **GPU-accelerated SLERP** via Backend protocol |
 | `BackendVectorMath.slerp_batch()` | 657 | GPU-accelerated per-layer SLERP |
-| `get_vector_math()` | 723 | Factory function to get best implementation |
+| `get_vector_math()` | 723 | Factory function to get preferred implementation |
 
 **Usage**:
 ```python

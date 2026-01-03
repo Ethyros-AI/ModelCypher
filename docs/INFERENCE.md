@@ -142,7 +142,7 @@ class EntropyDeltaSample:
 
 ### Token Rank Metrics
 
-For better approval measurement than raw probability:
+For higher-resolution approval measurement than raw probability:
 
 ```python
 from modelcypher.core.domain.inference.dual_path_mlx import compute_token_rank_metrics

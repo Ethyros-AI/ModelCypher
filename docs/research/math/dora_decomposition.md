@@ -1,6 +1,6 @@
 # DoRA: Weight-Decomposed Low-Rank Adaptation
 
-> Separating magnitude and direction for better fine-tuning geometry.
+> Separating magnitude and direction to isolate fine-tuning geometry.
 
 ---
 
@@ -263,4 +263,4 @@ Layer-wise adaptive low-rank adaptation:
 
 ---
 
-*DoRA's insight—that magnitude and direction should be learned separately—reveals the geometric structure of fine-tuning and enables better model merging.*
+*DoRA's insight—that magnitude and direction should be learned separately—reveals the geometric structure of fine-tuning and enables lower-interference model merging.*

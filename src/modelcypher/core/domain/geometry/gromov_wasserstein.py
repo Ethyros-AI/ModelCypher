@@ -82,6 +82,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     tiny_value,
 )
+from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -130,6 +131,7 @@ class GromovWassersteinDistance:
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
+        self._sinkhorn_solver = SinkhornSolver(self._backend)
 
     def compute(
         self,
@@ -479,84 +481,6 @@ class GromovWassersteinDistance:
         epsilon = max(median_val * (eps ** 0.5), eps)
         return epsilon
 
-    def _solve_linear_ot(
-        self,
-        cost: "Array",
-        p: "Array",
-        q: "Array",
-        epsilon: float,
-        max_iterations: int,
-        threshold: float,
-    ) -> "Array":
-        """
-        Solve linear optimal transport problem using Sinkhorn.
-
-        Finds: argmin_G <cost, G> + ε H(G)
-        subject to: G @ 1 = p, Gᵀ @ 1 = q
-
-        This is the key step in Frank-Wolfe: we solve a LINEAR OT problem
-        (not the full non-convex GW) to get the descent direction.
-        """
-        backend = self._backend
-        n = cost.shape[0]
-        m = cost.shape[1]
-
-        if n == 0 or m == 0:
-            return backend.zeros((n, m))
-
-        # Stabilized Sinkhorn with log-domain computation
-        # K = exp(-cost / epsilon)
-
-        # Row-wise stabilization
-        cost_min = backend.min(cost, axis=1, keepdims=True)
-        cost_centered = cost - cost_min
-        # Use precision-aware epsilon for division
-        eps = division_epsilon(backend, cost)
-        log_K = -cost_centered / max(epsilon, eps)
-
-        # Clamp to avoid underflow
-        log_K = backend.maximum(log_K, backend.full(log_K.shape, -80.0))
-        K = backend.exp(log_K)
-        # Use dtype-specific tiny value as floor
-        floor = tiny_value(backend, K)
-        K = backend.maximum(K, backend.full(K.shape, floor))
-
-        # Initialize scaling vectors
-        u = backend.ones((n,))
-        v = backend.ones((m,))
-
-        for _ in range(max_iterations):
-            # Row scaling: u = p / (K @ v)
-            Kv = backend.matmul(K, v)
-            Kv = backend.maximum(Kv, backend.full(Kv.shape, floor))
-            u_new = p / Kv
-
-            # Column scaling: v = q / (Kᵀ @ u)
-            Ktu = backend.matmul(backend.transpose(K), u_new)
-            Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
-            v_new = q / Ktu
-
-            # Check convergence
-            if threshold > 0:
-                u_diff = backend.max(backend.abs(u_new - u))
-                v_diff = backend.max(backend.abs(v_new - v))
-                backend.eval(u_diff, v_diff)
-                if max(
-                    float(backend.to_scalar(u_diff)),
-                    float(backend.to_scalar(v_diff)),
-                ) < threshold:
-                    u = u_new
-                    v = v_new
-                    break
-
-            u = u_new
-            v = v_new
-
-        # Recover transport plan: G = diag(u) @ K @ diag(v)
-        G = K * backend.reshape(u, (n, 1)) * backend.reshape(v, (1, m))
-
-        return G
-
     def _compute_step_size(
         self,
         constC: "Array",
@@ -686,7 +610,7 @@ class GromovWassersteinDistance:
             # G = argmin_G <grad, G> subject to marginal constraints
             # Derive epsilon from gradient (cost matrix) scale
             sinkhorn_epsilon = self._derive_sinkhorn_epsilon(grad)
-            G = self._solve_linear_ot(
+            G = self._sinkhorn_solver.solve_linear_ot(
                 grad,
                 p,
                 q,

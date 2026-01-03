@@ -257,7 +257,7 @@ Projects intermediate hidden states to vocabulary space, revealing models iterat
 Improves logit lens with trained affine probes, showing prediction trajectories converge monotonically demonstrating "iterative inference." *Framework relevance*: Provides refined tools for tracking geometric navigation through computation, with iterative inference aligning with inference-as-navigation.
 
 **Zhang, F. & Nanda, N. (2024). Towards Best Practices of Activation Patching in Language Models. *ICLR 2024*. arXiv:2309.16042.**
-Systematically examines activation patching methodology, comparing metrics and corruption methods, establishing best practices for causal intervention studies. *Framework relevance*: Provides rigorous methodology for testing causal claims about geometric structures.
+Systematically examines activation patching methodology, comparing metrics and corruption methods, establishing reference practices for causal intervention studies. *Framework relevance*: Provides rigorous methodology for testing causal claims about geometric structures.
 
 ---
 

@@ -62,7 +62,7 @@ where $\rho_{tail}$ is typically power-law:
 $$\rho_{tail}(\lambda) \propto \lambda^{-\mu}$$
 
 The exponent $\mu$ correlates with:
-- Smaller $\mu$: More heavy-tailed → better generalization
+- Smaller $\mu$: More heavy-tailed → higher generalization in reported studies
 - Larger $\mu$: Lighter tail → possible overfitting
 
 ### Effective Rank

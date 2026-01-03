@@ -242,7 +242,7 @@ post‑merge geometry, not just pre‑merge alignment.
 The “overlay sparse regions to densify them” framing is the repo’s north star:
 
 1) **Dense region in the target**: the target already has a smooth, compressed representation for those
-   probes → merging there is likely redundant at best and destructive at worst.
+   probes → merging there is likely redundant and can be destructive.
 2) **Sparse region in the target**: the target has fewer constraints / fewer visited states → this is where
    “knowledge grafts” can fit.
 

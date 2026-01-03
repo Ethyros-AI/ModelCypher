@@ -39,7 +39,7 @@ The solution is given by SVD:
 $$ U, \Sigma, V^T = \text{SVD}(B^T A) $$
 $$ R^* = U V^T $$
 
-This yields an **orthogonal transform** (a best-fit rotation/reflection constraint) that aligns Model A’s activations to Model B’s activations under the probe corpus.
+This yields an **orthogonal transform** (a least-squares rotation/reflection constraint) that aligns Model A’s activations to Model B’s activations under the probe corpus.
 
 ### 3. Stitching Layer
 We insert a learnable (or computed) linear layer between the models.
