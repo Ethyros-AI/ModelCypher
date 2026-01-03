@@ -92,7 +92,12 @@ class ConceptResponseMatrix:
         backend = get_default_backend()
         for layer, state in layer_states.items():
             pooled = _mean_pool_state(state, backend)
-            activation = backend.to_numpy(pooled).reshape(-1).tolist()
+            pooled_flat = backend.reshape(pooled, (-1,))
+            backend.eval(pooled_flat)
+            activation = [
+                float(backend.to_scalar(pooled_flat[i]))
+                for i in range(int(pooled_flat.shape[0]))
+            ]
             if layer not in self.activations:
                 self.activations[layer] = {}
             self.activations[layer][anchor_id] = AnchorActivation(

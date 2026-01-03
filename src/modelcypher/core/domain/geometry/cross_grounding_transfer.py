@@ -204,12 +204,15 @@ class RelationalStressComputer:
         # Compute geodesic distances (curvature-aware)
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=None, backend=b)
         b.eval(geo_dist)
-        geo_dist_np = b.to_numpy(geo_dist)
 
         # Extract distances from concept (row 0) to each anchor
-        distances = {}
-        for i, name in enumerate(anchor_names):
-            distances[name] = float(geo_dist_np[0, i + 1])
+        row0 = b.take(geo_dist, b.array([0]), axis=0)
+        row0 = b.squeeze(row0, axis=0)
+        anchor_indices = b.arange(1, len(anchor_names) + 1)
+        anchor_dists = b.take(row0, anchor_indices, axis=0)
+        b.eval(anchor_dists)
+        dist_list = b.to_numpy(anchor_dists).tolist()
+        distances = {name: float(dist_list[i]) for i, name in enumerate(anchor_names)}
 
         # Normalize distances by the spread of anchor positions
         anchor_matrix = b.concatenate(anchor_list, axis=0)

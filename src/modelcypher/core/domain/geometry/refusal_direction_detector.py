@@ -235,7 +235,7 @@ class RefusalDirectionDetector:
         points = backend.array(valid_vectors)
         mean_arr = frechet_mean(points, backend=backend)
         backend.eval(mean_arr)
-        return backend.to_numpy(mean_arr).tolist()
+        return [float(backend.to_scalar(mean_arr[i])) for i in range(int(mean_arr.shape[0]))]
 
     @staticmethod
     def _estimate_explained_variance(

@@ -299,7 +299,7 @@ class ConceptDetector:
         )
         mean = frechet_mean(points, backend=self._backend)
         self._backend.eval(mean)
-        return [float(value) for value in self._backend.to_numpy(mean).tolist()]
+        return [float(self._backend.to_scalar(mean[i])) for i in range(int(mean.shape[0]))]
 
     def _compute_separation_floor(self) -> float:
         if len(self._probe_embeddings) < 2:

@@ -126,8 +126,6 @@ class SpectralSignature:
             points_arr, config.k_neighbors
         )
         backend.eval(adjacency, euclidean_dist, neighbor_indices)
-        neighbor_indices_np = backend.to_numpy(neighbor_indices)
-
         edge_mask = adjacency < inf_value * 0.9
         edge_count_total = int(
             backend.to_scalar(backend.sum(backend.astype(edge_mask, "int32")))
@@ -167,20 +165,24 @@ class SpectralSignature:
 
         eigvals, _ = backend.eigh(laplacian)
         backend.eval(eigvals)
-        eig_np = [float(v) for v in backend.to_numpy(eigvals).tolist()]
-        eig_np.sort()
+        eig_list = [float(backend.to_scalar(eigvals[i])) for i in range(int(eigvals.shape[0]))]
+        eig_list.sort()
 
-        spectral_entropy = _spectral_entropy(eig_np, regularization_epsilon(backend, eigvals))
-        algebraic_connectivity = eig_np[1] if len(eig_np) > 1 else 0.0
-        component_count = _count_components_from_neighbors(neighbor_indices_np, n)
+        spectral_entropy = _spectral_entropy(eig_list, regularization_epsilon(backend, eigvals))
+        algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
+        neighbor_indices_list = [
+            [int(backend.to_scalar(neighbor_indices[i, j])) for j in range(int(neighbor_indices.shape[1]))]
+            for i in range(int(neighbor_indices.shape[0]))
+        ]
+        component_count = _count_components_from_neighbors(neighbor_indices_list, n)
         connected = component_count == 1
 
-        eig_arr = backend.array(eig_np, dtype="float32")
+        eig_arr = backend.array(eig_list, dtype="float32")
         backend.eval(eig_arr)
         heat_trace = _heat_trace(backend, eig_arr, heat_times)
 
         return SpectralSignatureResult(
-            eigenvalues=eig_np,
+            eigenvalues=eig_list,
             heat_trace=heat_trace,
             heat_times=heat_times,
             spectral_entropy=spectral_entropy,
@@ -243,14 +245,12 @@ class SpectralSignature:
             adj = _set_matrix_element(backend, adj, i, i, 0.0)
 
         edge_eps = float(division_epsilon(backend, euclidean_dist))
-        neighbor_indices_np = backend.to_numpy(neighbor_indices)
         for i in range(n):
-            for j in neighbor_indices_np[i]:
-                edge_weight = max(
-                    float(backend.to_scalar(euclidean_dist[i, int(j)])), edge_eps
-                )
-                adj = _set_matrix_element(backend, adj, i, int(j), edge_weight)
-                adj = _set_matrix_element(backend, adj, int(j), i, edge_weight)
+            for j_idx in range(int(neighbor_indices.shape[1])):
+                j = int(backend.to_scalar(neighbor_indices[i, j_idx]))
+                edge_weight = max(float(backend.to_scalar(euclidean_dist[i, j])), edge_eps)
+                adj = _set_matrix_element(backend, adj, i, j, edge_weight)
+                adj = _set_matrix_element(backend, adj, j, i, edge_weight)
 
         return adj, euclidean_dist, inf_val, k_neighbors, neighbor_indices
 

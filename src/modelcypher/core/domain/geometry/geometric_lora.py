@@ -112,13 +112,11 @@ class LayerLoRAWeights:
 
     @property
     def in_features(self) -> int:
-        backend = get_default_backend()
-        return backend.to_numpy(self.A).shape[1]
+        return int(self.A.shape[1])
 
     @property
     def out_features(self) -> int:
-        backend = get_default_backend()
-        return backend.to_numpy(self.B).shape[0]
+        return int(self.B.shape[0])
 
     @property
     def delta_W(self) -> "object":
@@ -132,17 +130,23 @@ class LayerLoRAWeights:
     def effective_rank(self) -> float:
         """Compute effective rank using condition number threshold."""
         backend = get_default_backend()
-        sv_np = backend.to_numpy(self.singular_values)
-        if len(sv_np) == 0:
+        sv_count = int(self.singular_values.shape[0])
+        if sv_count == 0:
             return 0.0
         cond_thresh = condition_threshold(backend, self.singular_values)
-        threshold = sv_np[0] / cond_thresh
-        return float((sv_np > threshold).sum())
+        max_sv = float(backend.to_scalar(self.singular_values[0]))
+        threshold = max_sv / cond_thresh
+        mask = self.singular_values > threshold
+        rank = backend.sum(backend.astype(mask, "int32"))
+        backend.eval(rank)
+        return float(backend.to_scalar(rank))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         backend = get_default_backend()
-        sv_np = backend.to_numpy(self.singular_values)
+        sv_count = int(self.singular_values.shape[0])
+        top_n = min(5, sv_count)
+        top_svs = [float(backend.to_scalar(self.singular_values[i])) for i in range(top_n)]
         return {
             "layer": self.layer_idx,
             "projection": self.projection_name,
@@ -151,7 +155,7 @@ class LayerLoRAWeights:
             "outFeatures": self.out_features,
             "geometricLoss": self.geometric_loss,
             "effectiveRank": self.effective_rank,
-            "topSingularValues": sv_np[:5].tolist(),
+            "topSingularValues": top_svs,
         }
 
 
@@ -183,12 +187,9 @@ class GeometricLoRA:
     @property
     def num_parameters(self) -> int:
         """Total number of LoRA parameters."""
-        backend = get_default_backend()
         total = 0
         for w in self.weights:
-            A_np = backend.to_numpy(w.A)
-            B_np = backend.to_numpy(w.B)
-            total += A_np.size + B_np.size
+            total += int(w.A.size) + int(w.B.size)
         return total
 
     def get_weights_for_layer(self, layer_idx: int) -> list[LayerLoRAWeights]:
@@ -329,9 +330,11 @@ class GeometricLoRAGenerator:
         profile = transfer_point.source_profile
         for i, anchor_id in enumerate(profile.anchor_ids):
             if anchor_id in anchor_activations:
-                act = backend.to_numpy(anchor_activations[anchor_id])
+                act = backend.array(anchor_activations[anchor_id])
                 if len(act.shape) > 1:
-                    anchor_inputs.append(act.mean(axis=0))
+                    mean_act = backend.mean(act, axis=0)
+                    backend.eval(mean_act)
+                    anchor_inputs.append(mean_act)
                 else:
                     anchor_inputs.append(act)
                 weights_list.append(profile.weights[i])

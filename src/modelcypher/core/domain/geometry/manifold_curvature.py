@@ -292,26 +292,26 @@ class ManifoldCurvatureProfile:
         # Last row contains distances from query to all points
         geo_dist = geodesic_distance_matrix(pts_arr, k_neighbors=None, backend=backend)
         backend.eval(geo_dist)
-        geo_dist_np = backend.to_numpy(geo_dist)
 
         # Extract distances from query point (last row) to all measured points
-        distances = geo_dist_np[-1, :-1].tolist()  # Exclude self-distance
+        last_row_idx = backend.array([len(self.local_curvatures)])
+        row = backend.take(geo_dist, last_row_idx, axis=0)
+        row = backend.squeeze(row, axis=0)
+        row = backend.take(row, backend.arange(0, len(self.local_curvatures)), axis=0)
 
         # Sort by distance to find k nearest
-        indexed_distances = list(enumerate(distances))
-        indexed_distances.sort(key=lambda x: x[1])
-        nearest_indices = [idx for idx, _ in indexed_distances[:k]]
+        sorted_idx = backend.argsort(row)
+        nearest_indices_arr = sorted_idx[:k]
+        nearest_dists = backend.take(row, nearest_indices_arr, axis=0)
+        backend.eval(nearest_indices_arr, nearest_dists)
+        nearest_indices = [int(i) for i in backend.to_numpy(nearest_indices_arr).tolist()]
 
         # Weighted average by inverse geodesic distance
-        backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array(distances))
-        weights = []
-        for idx in nearest_indices:
-            d = distances[idx]
-            weights.append(1.0 / (d + eps))
-
-        total_weight = sum(weights)
-        weights = [w / total_weight for w in weights]
+        eps = division_epsilon(backend, nearest_dists)
+        weights_arr = 1.0 / (nearest_dists + eps)
+        weights_arr = weights_arr / backend.sum(weights_arr)
+        backend.eval(weights_arr)
+        weights = [float(w) for w in backend.to_numpy(weights_arr).tolist()]
 
         # Interpolate curvature values
         mean_sectional = sum(
@@ -412,9 +412,7 @@ class SectionalCurvatureEstimator:
             v = backend.random_normal((d,))
             backend.eval(u, v)
             # Gram-Schmidt
-            u_np = backend.to_numpy(u)
-            v_np = backend.to_numpy(v)
-            dot_uv = sum(float(ui) * float(vi) for ui, vi in zip(u_np.flatten(), v_np.flatten()))
+            dot_uv = float(backend.to_scalar(backend.sum(u * v)))
             v = v - dot_uv * u
             backend.eval(v)
             v_norm = backend.norm(v)
@@ -448,8 +446,7 @@ class SectionalCurvatureEstimator:
 
         if principal_curvs is not None:
             backend.eval(principal_curvs)
-            pc_np = backend.to_numpy(principal_curvs)
-            scalar_curv = float(sum(float(x) for x in pc_np.flatten()))
+            scalar_curv = float(backend.to_scalar(backend.sum(principal_curvs)))
         else:
             scalar_curv = float(sum(sectional_curvatures))
 
@@ -503,7 +500,6 @@ class SectionalCurvatureEstimator:
             pts_arr, k_neighbors=min(k_neighbors, n - 1), backend=backend
         )
         backend.eval(geo_dist)
-        geo_dist_np = backend.to_numpy(geo_dist)
 
         local_curvatures = []
 
@@ -511,19 +507,24 @@ class SectionalCurvatureEstimator:
             point = points[i]
 
             # Find k nearest neighbors using geodesic distances (excluding self)
-            distances = geo_dist_np[i].tolist()
-            # Sort by geodesic distance, exclude self (distance 0)
-            indexed_distances = list(enumerate(distances))
-            indexed_distances.sort(key=lambda x: x[1])
-            neighbor_indices = [idx for idx, _ in indexed_distances if idx != i][:k_neighbors]
+            row = backend.take(geo_dist, backend.array([i]), axis=0)
+            row = backend.squeeze(row, axis=0)
+            row_masked = backend.where(
+                backend.arange(0, n) == i,
+                backend.full((n,), float("inf")),
+                row,
+            )
+            sorted_idx = backend.argsort(row_masked)
+            neighbor_indices_arr = sorted_idx[:k_neighbors]
+            backend.eval(neighbor_indices_arr)
+            neighbor_count = int(neighbor_indices_arr.shape[0])
 
-            if len(neighbor_indices) < d:
+            if neighbor_count < d:
                 local_curvatures.append(self._flat_curvature(point))
                 continue
 
             # Gather neighbors
-            neighbor_list = [points[idx] for idx in neighbor_indices]
-            neighbors = backend.stack(neighbor_list, axis=0)
+            neighbors = backend.take(points, neighbor_indices_arr, axis=0)
 
             # Compute local curvature - no fallback to flat
             # If this fails, it's a bug we need to fix, not hide
@@ -1088,8 +1089,6 @@ class OllivierRicciCurvature:
         edge_curvatures: list[EdgeCurvature] = []
         processed_edges: set[tuple[int, int]] = set()
 
-        geo_np = backend.to_numpy(geo_result.distances)
-
         for source_idx in range(n):
             for target_idx in adjacency_list.get(source_idx, []):
                 # Track edges to avoid duplicates (for symmetrized curvature)
@@ -1102,7 +1101,7 @@ class OllivierRicciCurvature:
                     source_idx,
                     target_idx,
                     geo_result,
-                    geo_np,
+                    geo_result.distances,
                     adjacency_list,
                     max_degree,
                     n,
@@ -1151,21 +1150,27 @@ class OllivierRicciCurvature:
         Uses the k nearest neighbors for each point based on geodesic distances.
         """
         backend = self._backend
-        geo_np = backend.to_numpy(geo_result.distances)
-
         adjacency: dict[int, list[int]] = {}
 
         for i in range(n):
-            # Get distances from node i to all other nodes
-            distances = [(j, geo_np[i, j]) for j in range(n) if j != i]
-
-            # Filter out infinite distances (disconnected)
-            finite_distances = [(j, d) for j, d in distances if math.isfinite(d)]
-
-            # Sort by distance and take k nearest
-            finite_distances.sort(key=lambda x: x[1])
-            neighbors = [j for j, _ in finite_distances[:k]]
-
+            row = backend.take(geo_result.distances, backend.array([i]), axis=0)
+            row = backend.squeeze(row, axis=0)
+            row_masked = backend.where(
+                backend.arange(0, n) == i,
+                backend.full((n,), float("inf")),
+                row,
+            )
+            sorted_idx = backend.argsort(row_masked)
+            neighbors_arr = sorted_idx[:k]
+            neighbor_dists = backend.take(row_masked, neighbors_arr, axis=0)
+            backend.eval(neighbors_arr, neighbor_dists)
+            idx_list = backend.to_numpy(neighbors_arr).tolist()
+            dist_list = backend.to_numpy(neighbor_dists).tolist()
+            neighbors = [
+                int(idx)
+                for idx, dist in zip(idx_list, dist_list)
+                if math.isfinite(float(dist))
+            ]
             adjacency[i] = neighbors
 
         return adjacency
@@ -1175,7 +1180,7 @@ class OllivierRicciCurvature:
         source_idx: int,
         target_idx: int,
         geo_result: "Any",
-        geo_np: "Any",
+        geo_dist: "Any",
         adjacency_list: dict[int, list[int]],
         max_degree: int,
         n: int,
@@ -1187,7 +1192,7 @@ class OllivierRicciCurvature:
         backend = self._backend
 
         # Edge weight from geodesic distance matrix
-        edge_weight = float(geo_np[source_idx, target_idx])
+        edge_weight = float(backend.to_scalar(geo_dist[source_idx, target_idx]))
 
         # Skip infinite or zero edge weights
         eps = division_epsilon(backend, geo_result.distances)
@@ -1305,21 +1310,18 @@ class OllivierRicciCurvature:
         floor = tiny_value(backend, cost_matrix)
 
         # Ensure finite cost matrix for Sinkhorn stability.
-        cost_np = backend.to_numpy(cost_matrix)
-        finite_vals = [
-            float(value)
-            for row in cost_np
-            for value in row
-            if math.isfinite(float(value))
-        ]
-        finite_max = max(finite_vals) if finite_vals else 0.0
+        finite_mask = backend.isfinite(cost_matrix)
+        dtype = cost_matrix.dtype if hasattr(cost_matrix, "dtype") else None
+        neg_inf = -float(backend.finfo(dtype).max)
+        finite_vals = backend.where(
+            finite_mask, cost_matrix, backend.full(cost_matrix.shape, neg_inf)
+        )
+        finite_max_arr = backend.max(finite_vals)
+        backend.eval(finite_max_arr)
+        finite_max = float(backend.to_scalar(finite_max_arr))
         finite_max = max(finite_max, eps)
-        finite_mask = [
-            [math.isfinite(float(value)) for value in row] for row in cost_np
-        ]
-        mask_arr = backend.array(finite_mask)
         cost_matrix = backend.where(
-            mask_arr,
+            finite_mask,
             cost_matrix,
             backend.full(cost_matrix.shape, finite_max),
         )

@@ -218,7 +218,10 @@ class TransferPoint:
         backend = get_default_backend()
         return {
             "conceptId": self.concept_id,
-            "coordinates": backend.to_numpy(self.coordinates).tolist(),
+            "coordinates": [
+                float(backend.to_scalar(self.coordinates[i]))
+                for i in range(int(self.coordinates.shape[0]))
+            ],
             "stress": self.stress,
             "curvatureMismatch": self.curvature_mismatch,
             "stressFactor": self.confidence_components.stress_factor,
@@ -339,10 +342,10 @@ class CrossManifoldProjector:
 
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
         backend.eval(geo_dist)
-        geo_dist_np = backend.to_numpy(geo_dist)
-
-        # Extract distances from concept (row 0) to each anchor
-        distances = backend.array([float(geo_dist_np[0, i + 1]) for i in range(len(anchor_ids))])
+        row0 = backend.take(geo_dist, backend.array([0]), axis=0)
+        row0 = backend.squeeze(row0, axis=0)
+        anchor_indices = backend.arange(1, len(anchor_ids) + 1)
+        distances = backend.take(row0, anchor_indices, axis=0)
 
         # Weight by inverse distance (closer anchors more important)
         weights = 1.0 / (distances + self.config.distance_weight_decay)
@@ -457,10 +460,12 @@ class CrossManifoldProjector:
             # Compute geodesic distances
             geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
             backend.eval(geo_dist)
-            geo_dist_np = backend.to_numpy(geo_dist)
 
             # Extract distances from position (row 0) to each anchor
-            current_distances = backend.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
+            row0 = backend.take(geo_dist, backend.array([0]), axis=0)
+            row0 = backend.squeeze(row0, axis=0)
+            anchor_indices = backend.arange(1, n_anchors + 1)
+            current_distances = backend.take(row0, anchor_indices, axis=0)
 
             # Compute stress
             residuals = current_distances - source_distances
@@ -477,25 +482,16 @@ class CrossManifoldProjector:
                 break
 
             # Compute gradient in tangent space (local linear approximation)
-            gradient = backend.zeros((d,))
-            weights_np = backend.to_numpy(weights)
-            residuals_np = backend.to_numpy(residuals)
-            current_distances_np = backend.to_numpy(current_distances)
-            position_np = backend.to_numpy(position)
-            target_centroids_np = backend.to_numpy(target_centroids_arr)
-
-            grad_np = [0.0] * d
-            for i in range(n_anchors):
-                diff = position_np - target_centroids_np[i]
-                dist = current_distances_np[i]
-                if dist > eps:
-                    # Tangent-space gradient direction
-                    diff_norm = float(sum(x**2 for x in diff) ** 0.5)
-                    if diff_norm > eps:
-                        for j in range(d):
-                            grad_np[j] += 2 * weights_np[i] * residuals_np[i] * diff[j] / diff_norm
-
-            gradient = backend.array(grad_np)
+            diffs = position - target_centroids_arr
+            diff_norms = backend.sqrt(backend.sum(diffs * diffs, axis=1))
+            eps_vec = backend.full(diff_norms.shape, eps)
+            safe_norms = backend.maximum(diff_norms, eps_vec)
+            valid_mask = backend.astype(current_distances > eps, "float32") * backend.astype(
+                diff_norms > eps, "float32"
+            )
+            coeffs = (2.0 * weights * residuals) / safe_norms
+            coeffs = coeffs * valid_mask
+            gradient = backend.sum(diffs * backend.reshape(coeffs, (-1, 1)), axis=0)
 
             # Update position
             position = position - self.config.learning_rate * gradient
@@ -507,13 +503,19 @@ class CrossManifoldProjector:
         points_arr = backend.astype(all_points, "float32")
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
         backend.eval(geo_dist)
-        geo_dist_np = backend.to_numpy(geo_dist)
-        final_distances = backend.array([float(geo_dist_np[0, i + 1]) for i in range(n_anchors)])
+        row0 = backend.take(geo_dist, backend.array([0]), axis=0)
+        row0 = backend.squeeze(row0, axis=0)
+        anchor_indices = backend.arange(1, n_anchors + 1)
+        final_distances = backend.take(row0, anchor_indices, axis=0)
 
-        source_distances_np = backend.to_numpy(source_distances)
-        final_distances_np = backend.to_numpy(final_distances)
         anchor_stress = {
-            anchor_id: float((final_distances_np[i] - source_distances_np[i]) ** 2)
+            anchor_id: float(
+                (
+                    float(backend.to_scalar(final_distances[i]))
+                    - float(backend.to_scalar(source_distances[i]))
+                )
+                ** 2
+            )
             for i, anchor_id in enumerate(matching_anchor_ids)
         }
 

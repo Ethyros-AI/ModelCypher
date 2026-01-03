@@ -820,22 +820,15 @@ class ManifoldStitcher:
         # Get actual k from result (may differ if None was passed)
         geodesic_k_neighbors = geodesic_result.k_neighbors
         geodesic_dist_matrix = geodesic_result.distances
-        # Precompute numpy version for centroid representative updates
-        geo_np = b.to_numpy(geodesic_dist_matrix)
-
         def compute_distance_to_centroids(
             pts_arr: "Array", centroid_indices: list[int]
         ) -> "Array":
             """Compute geodesic distances from all points to selected centroids."""
             num_centroids = len(centroid_indices)
-            # Use precomputed geodesic distances
-            # Use .copy() to get writable arrays (JAX returns read-only)
-            dists = b.zeros((n, num_centroids))
-            dists_np = b.to_numpy(dists).copy()
-            geo_np = b.to_numpy(geodesic_dist_matrix)
-            for ci, idx in enumerate(centroid_indices):
-                dists_np[:, ci] = geo_np[:, idx]
-            return b.array(dists_np)
+            if num_centroids == 0:
+                return b.zeros((n, 0))
+            idx_arr = b.array(centroid_indices)
+            return b.take(geodesic_dist_matrix, idx_arr, axis=1)
 
         def compute_geodesic_distances_to_centroids(centroids_arr: "Array") -> "Array":
             """Compute geodesic distances from all points to centroids (geodesic-only)."""
@@ -882,8 +875,7 @@ class ManifoldStitcher:
         # Initialize centroids from selected points
         # Use array indexing instead of list (JAX doesn't allow list indexing)
         idx_arr = b.array(centroid_indices)
-        centroids_np = b.to_numpy(pts[idx_arr])
-        centroids = b.array(centroids_np)
+        centroids = b.take(pts, idx_arr, axis=0)
         assignments = b.zeros((n,), dtype="int32")
         # Track representative data point for each centroid (for geodesic proxy)
         centroid_reps = list(centroid_indices)
@@ -894,31 +886,30 @@ class ManifoldStitcher:
             new_assignments = b.argmin(dists, axis=1)
 
             # Check convergence
-            if (b.to_numpy(assignments) == b.to_numpy(new_assignments)).all():
+            same = b.sum(b.astype(assignments == new_assignments, "float32"))
+            b.eval(same)
+            if float(b.to_scalar(same)) == float(n):
                 break
             assignments = new_assignments
 
             # Update step: compute new centroids using Fréchet mean
-            assignments_np = b.to_numpy(assignments)
-            pts_np = b.to_numpy(pts)
-
+            assignments_np = b.to_numpy(assignments).tolist()
             new_centroids = []
             for c in range(k):
-                mask = assignments_np == c
-                if mask.sum() > 0:
-                    cluster_pts = b.array(pts_np[mask])
+                indices = [i for i, val in enumerate(assignments_np) if val == c]
+                if indices:
+                    idx_arr = b.array(indices)
+                    cluster_pts = b.take(pts, idx_arr, axis=0)
                     result = riemannian.frechet_mean(
                         cluster_pts,
                         max_iterations=20,
                         tolerance=regularization_epsilon(b, cluster_pts),
                     )
-                    new_centroids.append(b.to_numpy(result.mean))
+                    new_centroids.append(result.mean)
                 else:
                     # Empty cluster: keep old centroid
-                    new_centroids.append(centroids_np[c])
-            centroids_np = b.to_numpy(b.stack([b.array(c) for c in new_centroids]))
-
-            centroids = b.array(centroids_np)
+                    new_centroids.append(centroids[c])
+            centroids = b.stack(new_centroids, axis=0)
 
             # Update representatives: find nearest data point to each new centroid
             # Uses geodesic distance from current representative as primary signal
@@ -926,16 +917,9 @@ class ManifoldStitcher:
                 old_rep = centroid_reps[ci]
 
                 # Find nearest data point using pure geodesic distance from old representative
-                # Euclidean mixing is incorrect on curved manifolds
-                best_idx = old_rep
-                best_dist = float("inf")
-                for pi in range(n):
-                    # Pure geodesic distance to old representative (data point)
-                    geo_to_old_rep = geo_np[pi, old_rep]
-                    if geo_to_old_rep < best_dist:
-                        best_dist = geo_to_old_rep
-                        best_idx = pi
-
+                col = b.take(geodesic_dist_matrix, b.array([old_rep]), axis=1)
+                col = b.squeeze(col, axis=1)
+                best_idx = int(b.to_scalar(b.argmin(col)))
                 centroid_reps[ci] = best_idx
 
         return (b.to_numpy(assignments).tolist(), b.to_numpy(centroids).tolist())

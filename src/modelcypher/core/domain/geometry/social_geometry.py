@@ -164,22 +164,19 @@ class SocialGeometryAnalyzer:
         eigenvalues, eigenvectors = backend.eigh(cov)
         backend.eval(eigenvalues, eigenvectors)
 
-        # Sort descending
-        idx = backend.argsort(eigenvalues)
-        # Reverse the indices
-        idx_np = backend.to_numpy(idx)[::-1].tolist()
-        eigenvalues_sorted = backend.array([float(backend.to_numpy(eigenvalues)[i]) for i in idx_np])
-        eigenvectors_np = backend.to_numpy(eigenvectors)
-        backend.array([[eigenvectors_np[i, j] for j in idx_np] for i in range(eigenvectors_np.shape[0])])
+        # Sort descending by eigenvalue
+        idx = backend.argsort(-eigenvalues)
+        backend.eval(idx)
+        idx_top = idx[:n_components]
 
-        # Project data
-        eigenvectors_subset = backend.array([[eigenvectors_np[i, idx_np[j]] for j in range(n_components)] for i in range(eigenvectors_np.shape[0])])
+        # Project data onto top components
+        eigenvectors_subset = backend.take(eigenvectors, idx_top, axis=1)
         X_pca = backend.matmul(X_centered, eigenvectors_subset)
 
         # Variance explained
-        eigenvalues_np = backend.to_numpy(eigenvalues_sorted)
-        total_var = sum(eigenvalues_np)
-        variance_explained = backend.array([eigenvalues_np[i] / total_var for i in range(n_components)])
+        total_var = backend.sum(eigenvalues)
+        top_eigs = backend.take(eigenvalues, idx_top, axis=0)
+        variance_explained = top_eigs / total_var
 
         backend.eval(X_pca, variance_explained)
         return X_pca, variance_explained
@@ -254,9 +251,7 @@ class SocialGeometryAnalyzer:
 
             eps = division_epsilon(backend, X_pca)
 
-            # Get positions from X_pca using backend slicing
-            X_pca_np = backend.to_numpy(X_pca)
-            positions = [float(X_pca_np[i, 0]) for i in indices]
+            positions = [float(backend.to_scalar(X_pca[i, 0])) for i in indices]
             expected = list(range(len(indices)))
 
             # Spearman correlation (computed manually to avoid scipy)

@@ -264,7 +264,10 @@ class MoralGeometryAnalyzer:
             else:
                 variance_explained = backend.zeros_like(s_squared)
             backend.eval(variance_explained)
-            variance_list = backend.to_numpy(variance_explained).tolist()
+            variance_list = [
+                float(backend.to_scalar(variance_explained[i]))
+                for i in range(int(variance_explained.shape[0]))
+            ]
             pc_variance = variance_list[:5] + [0.0] * (5 - len(variance_list[:5]))
         except Exception:
             pc_variance = [0.0] * 5

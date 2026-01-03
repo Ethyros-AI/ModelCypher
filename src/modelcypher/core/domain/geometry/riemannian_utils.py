@@ -1475,7 +1475,24 @@ class RiemannianGeometry:
         n = int(points.shape[0])
         d = int(points.shape[1])
         point_idx = max(0, min(point_idx, n - 1))
-        k = max(1, min(k, n - 1))
+        # k can be 0 when n=1 (single point has no neighbors)
+        k = min(k, n - 1)
+
+        # Early exit for isolated point (no neighbors possible)
+        if k == 0:
+            sparse_dir = backend.zeros((d,))
+            if d > 0:
+                sparse_dir = _set_matrix_element(
+                    backend, backend.reshape(sparse_dir, (1, d)), 0, 0, 1.0
+                )
+                sparse_dir = backend.reshape(sparse_dir, (d,))
+            return DirectionalCoverage(
+                sparse_direction=sparse_dir,
+                max_gap_angle=math.pi,  # Full hemisphere is empty
+                coverage_uniformity=0.0,
+                neighbor_directions=backend.zeros((0, d)),
+                point_idx=point_idx,
+            )
 
         center = points[point_idx]
 
@@ -1709,23 +1726,35 @@ class RiemannianGeometry:
         backend.eval(euc_dist)
 
         # Deterministic neighbor selection with index tie-breaker
-        euc_list = backend.to_numpy(euc_dist).tolist()
-        sorted_pairs = sorted(enumerate(euc_list), key=lambda x: (x[1], x[0]))
+        sorted_indices = backend.argsort(euc_dist)
+        backend.eval(sorted_indices)
+        sorted_list = [int(backend.to_scalar(sorted_indices[i])) for i in range(n)]
 
         # Include all points tied at the k-th distance to ensure symmetric treatment
         # Without this, equidistant points would be arbitrarily excluded by index order
         def get_neighbors_with_ties(k: int) -> list[int]:
             """Get k nearest neighbors, including all ties at the k-th distance."""
             if k >= n:
-                return [idx for idx, _ in sorted_pairs]
-            threshold_dist = sorted_pairs[k - 1][1]  # Distance of k-th nearest
+                return sorted_list
+            threshold_idx = sorted_list[k - 1]
+            threshold_dist = float(backend.to_scalar(euc_dist[threshold_idx]))
             eps = division_epsilon(backend, euc_dist)
-            return [idx for idx, d in sorted_pairs if d <= threshold_dist + eps]
+            neighbors: list[int] = []
+            for idx in sorted_list:
+                dist_val = float(backend.to_scalar(euc_dist[idx]))
+                if dist_val <= threshold_dist + eps:
+                    neighbors.append(idx)
+                else:
+                    break
+            return neighbors
 
-        # Adaptive k: start with k_neighbors, increase until all points reachable
-        # This handles the case where the query's k nearest neighbors don't
-        # form a connected subgraph that reaches all points
-        current_k = k_neighbors
+        # For query attachment, always use all points to ensure direct paths exist.
+        # This is mathematically necessary because excluding any point forces a detour:
+        #   d(q, i) via j = d(q, j) + d(j, i) >= d(q, i)  (triangle inequality)
+        # Equality holds only when j is on the geodesic from q to i.
+        # In flat space, excluding the farthest point causes overestimation.
+        # Using all points ensures the minimum always includes the direct path.
+        current_k = n
         while current_k <= n:
             neighbors = get_neighbors_with_ties(current_k)
 
@@ -1789,14 +1818,7 @@ class RiemannianGeometry:
             points, query, geo_result=geo_result
         )
         backend.eval(geo_from_query)
-        geo_list = backend.to_numpy(geo_from_query).tolist()
-
-        min_val = geo_list[0]
-        min_idx = 0
-        for i, v in enumerate(geo_list[1:], 1):
-            if v < min_val:
-                min_val = v
-                min_idx = i
+        min_idx = int(backend.to_scalar(backend.argmin(geo_from_query)))
         return min_idx
 
     def _frechet_mean_step(

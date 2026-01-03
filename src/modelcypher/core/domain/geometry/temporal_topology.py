@@ -36,6 +36,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import (
@@ -44,6 +45,9 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concepts
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
 
 _AXIS_DIRECTION = "direction"
 _AXIS_DURATION = "duration"
@@ -192,23 +196,30 @@ class TemporalTopologyAnalyzer:
         try:
             _, s, vh = backend.svd(centered, full_matrices=False)
             backend.eval(s, vh)
-            s_np = backend.to_numpy(s)
-            variance_explained = (s_np**2) / (s_np**2).sum()
-            pc_variance = variance_explained[:5].tolist()
+            s_squared = s * s
+            total = backend.sum(s_squared)
+            backend.eval(total)
+            total_val = float(backend.to_scalar(total))
+            if total_val > division_epsilon(backend, s):
+                variance_explained = s_squared / total
+            else:
+                variance_explained = backend.zeros_like(s_squared)
+            backend.eval(variance_explained)
+            pc_variance = [
+                float(backend.to_scalar(variance_explained[i]))
+                for i in range(min(5, int(variance_explained.shape[0])))
+            ]
         except Exception:
             pc_variance = [0.0] * 5
 
-        # Convert to numpy for the rest of the analysis
-        matrix_norm_np = backend.to_numpy(matrix_norm)
-
         # Compute axis orthogonality
-        axis_ortho = self._compute_axis_orthogonality(matrix_norm_np, concepts)
+        axis_ortho = self._compute_axis_orthogonality(matrix_norm, concepts)
 
         # Compute gradient consistency
-        gradient = self._compute_gradient_consistency(matrix_norm_np, concepts)
+        gradient = self._compute_gradient_consistency(matrix_norm, concepts)
 
         # Detect Arrow of Time
-        arrow = self._detect_arrow_of_time(matrix_norm_np, concepts)
+        arrow = self._detect_arrow_of_time(matrix_norm, concepts)
 
         # Compute raw component scores
         ortho_score = axis_ortho.mean_orthogonality
@@ -240,13 +251,10 @@ class TemporalTopologyAnalyzer:
         )
 
     def _compute_axis_orthogonality(
-        self, matrix_np: "list[list[float]] | object", concepts: list[str]
+        self, matrix: "Array", concepts: list[str]
     ) -> AxisOrthogonality:
         """Compute orthogonality between temporal axes."""
         backend = get_default_backend()
-
-        # Convert to backend array
-        matrix = backend.array(matrix_np, dtype="float32")
         backend.eval(matrix)
 
         # Get centroids for each axis
@@ -326,15 +334,12 @@ class TemporalTopologyAnalyzer:
         )
 
     def _compute_gradient_consistency(
-        self, matrix_np: "list[list[float]] | object", concepts: list[str]
+        self, matrix: "Array", concepts: list[str]
     ) -> GradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
         from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = get_default_backend()
-
-        # Convert to backend array
-        matrix = backend.array(matrix_np, dtype="float32")
         backend.eval(matrix)
 
         def axis_correlation(axis: str) -> tuple[float, bool]:
@@ -380,14 +385,11 @@ class TemporalTopologyAnalyzer:
             causality_monotonic=caus_mono,
         )
 
-    def _detect_arrow_of_time(self, matrix_np: "list[list[float]] | object", concepts: list[str]) -> ArrowOfTime:
+    def _detect_arrow_of_time(self, matrix: "Array", concepts: list[str]) -> ArrowOfTime:
         """Detect if there's a consistent "Arrow of Time" direction."""
         from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = get_default_backend()
-
-        # Convert to backend array
-        matrix = backend.array(matrix_np, dtype="float32")
         backend.eval(matrix)
 
         # Separate past and future anchors

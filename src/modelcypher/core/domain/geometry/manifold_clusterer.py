@@ -304,10 +304,11 @@ class ManifoldClusterer:
         row = backend.take(geodesic_matrix, backend.array([point_index]), axis=0)
         row = backend.squeeze(row, axis=0)
         backend.eval(row)
-        distances = backend.squeeze(row, axis=0)
-        mask = distances <= epsilon
+        # row is already 1D after squeeze; use directly as distances
+        mask = row <= epsilon
         backend.eval(mask)
-        idx = backend.where(mask, backend.arange(0, int(distances.shape[0])), backend.full((int(distances.shape[0]),), -1))
+        n = int(row.shape[0])
+        idx = backend.where(mask, backend.arange(0, n), backend.full((n,), -1))
         backend.eval(idx)
         idx_np = backend.to_numpy(idx)
         return [int(i) for i in idx_np if int(i) >= 0]

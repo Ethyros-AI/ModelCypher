@@ -247,14 +247,15 @@ class TangentSpaceAlignment:
         distances = sq_norms + b.transpose(sq_norms) - 2 * dots
         b.eval(distances)
 
-        # Convert to Python for neighbor selection
-        dist_np = b.to_numpy(distances).tolist()
-
         neighbors: list[list[int]] = []
-        for i in range(n):
-            pairs = [(dist_np[i][j], j) for j in range(n) if j != i]
-            pairs.sort(key=lambda x: x[0])
-            neighbors.append([p[1] for p in pairs[:k]])
+        sorted_idx = b.argsort(distances, axis=1)
+        b.eval(sorted_idx)
+        for i in range(int(n)):
+            row = sorted_idx[i]
+            k_row = row[1 : k + 1]
+            neighbors.append(
+                [int(b.to_scalar(k_row[j])) for j in range(int(k_row.shape[0]))]
+            )
 
         return neighbors
 
@@ -294,9 +295,7 @@ class TangentSpaceAlignment:
             b.eval(u, s)
 
             # Filter by eigenvalue threshold (relative to max singular value)
-            s_np = b.to_numpy(s)
-            s_list = s_np.tolist()
-            s_max = max(s_list) if s_list else 0.0
+            s_max = float(b.to_scalar(b.max(s))) if int(s.shape[0]) > 0 else 0.0
 
             # Use relative threshold: eigenvalue must be > epsilon * max_eigenvalue
             # This handles varying scales in the data
@@ -304,7 +303,8 @@ class TangentSpaceAlignment:
                 return None
 
             relative_threshold = epsilon * s_max
-            valid_count = sum(1 for v in s_list[:rank] if v > relative_threshold)
+            mask = s[:rank] > relative_threshold
+            valid_count = int(b.to_scalar(b.sum(b.astype(mask, "int32"))))
 
             if valid_count == 0:
                 return None
@@ -345,8 +345,8 @@ class TangentSpaceAlignment:
             _, s, _ = b.svd(m)
             b.eval(s)
 
-            cosines = b.to_numpy(s).tolist()
-            return [max(0.0, min(1.0 + epsilon, c)) for c in cosines[:rank]]
+            cosines = [float(b.to_scalar(s[i])) for i in range(rank)]
+            return [max(0.0, min(1.0 + epsilon, c)) for c in cosines]
 
         except Exception:
             return []
