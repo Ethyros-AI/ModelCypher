@@ -20,6 +20,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from unittest.mock import MagicMock
+
 import pytest
 
 from modelcypher.core.use_cases.merge.service import (
@@ -28,6 +30,19 @@ from modelcypher.core.use_cases.merge.service import (
     PreMergeAnalysis,
     PipelineResult,
 )
+
+
+@pytest.fixture
+def merge_pipeline_service():
+    """Create MergePipelineService with mock dependencies."""
+    waypoint_service = MagicMock()
+    geometric_merger = MagicMock()
+    model_loader = MagicMock()
+    return MergePipelineService(
+        waypoint_service=waypoint_service,
+        geometric_merger=geometric_merger,
+        model_loader=model_loader,
+    )
 
 
 class TestPreMergeAnalysis:
@@ -225,15 +240,12 @@ class TestPipelineResult:
 class TestMergePipelineService:
     """Tests for MergePipelineService."""
 
-    def test_init_default(self):
-        """Test default initialization."""
-        service = MergePipelineService()
-        assert service is not None
+    def test_init_with_dependencies(self, merge_pipeline_service):
+        """Test initialization with injected dependencies."""
+        assert merge_pipeline_service is not None
 
-    def test_merge_result_to_dict(self):
+    def test_merge_result_to_dict(self, merge_pipeline_service):
         """Test converting merge result to dictionary."""
-        service = MergePipelineService()
-
         # Create a mock merge result
         class MockMergeResult:
             output_path = "/output"
@@ -245,7 +257,7 @@ class TestMergePipelineService:
             geometry_metrics = {"mean_preserved_fraction": 0.9}
             transplant_metrics = {"layers_transplanted": 24}
 
-        result = service._merge_result_to_dict(MockMergeResult())
+        result = merge_pipeline_service._merge_result_to_dict(MockMergeResult())
         assert result["output_path"] == "/output"
         assert result["layer_count"] == 24
         assert result["mean_preserved_fraction"] == 0.85
@@ -255,10 +267,8 @@ class TestMergePipelineService:
 class TestPipelineServiceInternals:
     """Tests for internal pipeline service methods."""
 
-    def test_merge_result_to_dict_with_geometry_metrics(self):
+    def test_merge_result_to_dict_with_geometry_metrics(self, merge_pipeline_service):
         """Test _merge_result_to_dict handles geometry_metrics correctly."""
-        service = MergePipelineService()
-
         class MockMergeResult:
             output_path = "/output"
             layer_count = 12
@@ -269,7 +279,7 @@ class TestPipelineServiceInternals:
             geometry_metrics = {"mean_cka_after": 0.98}
             transplant_metrics = {"layers_transplanted": 12}
 
-        result = service._merge_result_to_dict(MockMergeResult())
+        result = merge_pipeline_service._merge_result_to_dict(MockMergeResult())
         assert result["layer_count"] == 12
         assert result["mean_preserved_fraction"] == 0.92
         assert result["geometry_metrics"]["mean_cka_after"] == 0.98

@@ -67,7 +67,6 @@ class VocabularyStats:
 
 @dataclass(frozen=True)
 class VocabularyAlignment:
-    alignment_score: float
     vocab_overlap_ratio: float | None
     dimension_ratio: float
     requires_projection: bool
@@ -78,7 +77,6 @@ class VocabularyAlignment:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "alignment_score": self.alignment_score,
             "vocab_overlap_ratio": self.vocab_overlap_ratio,
             "dimension_ratio": self.dimension_ratio,
             "requires_projection": self.requires_projection,
@@ -175,18 +173,7 @@ class VocabularyAnalyzer:
             )
             requires_vocab_mapping = total_unique != shared_token_count
 
-        if overlap_ratio is not None:
-            alignment_score = overlap_ratio
-        else:
-            denom = max(source.hidden_dim, target.hidden_dim)
-            alignment_score = (
-                min(source.hidden_dim, target.hidden_dim) / float(denom)
-                if denom
-                else 0.0
-            )
-
         return VocabularyAlignment(
-            alignment_score=float(alignment_score),
             vocab_overlap_ratio=overlap_ratio,
             dimension_ratio=float(dimension_ratio),
             requires_projection=requires_projection,

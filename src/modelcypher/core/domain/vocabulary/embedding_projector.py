@@ -41,14 +41,12 @@ class ProjectionResult:
     projected_embeddings: "Array"
     projection_matrix: "Array | None"
     reconstruction_error: float
-    alignment_score: float
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         output_shape = list(self.projected_embeddings.shape)
         payload = {
             "reconstruction_error": self.reconstruction_error,
-            "alignment_score": self.alignment_score,
             "output_shape": output_shape,
             "has_projection_matrix": self.projection_matrix is not None,
         }
@@ -78,14 +76,14 @@ class EmbeddingProjector:
         quality = self.compute_alignment_quality(
             source, projected, target, shared_indices=shared_token_indices
         )
-        alignment_score = quality["mean_cosine_similarity"]
         reconstruction_error = quality["mse"]
+        meta = dict(meta)
+        meta.update(quality)
 
         return ProjectionResult(
             projected_embeddings=projected,
             projection_matrix=projection_matrix,
             reconstruction_error=reconstruction_error,
-            alignment_score=alignment_score,
             metadata=meta,
         )
 

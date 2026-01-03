@@ -16,7 +16,6 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 from modelcypher.core.use_cases.merge import pipeline
-from modelcypher.core.use_cases.merge.models import UnifiedMergeConfig
 
 
 def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:

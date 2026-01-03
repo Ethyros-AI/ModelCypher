@@ -162,15 +162,23 @@ class CrossVocabMerger:
             if alignment_map.source_vocab_size
             else 0.0
         )
+        projection_meta = result.projection_result.metadata
 
         return {
             "alignment_coverage": float(coverage),
             "alignment_confidence": float(confidence),
             "alignment_quality_distribution": alignment_map.quality_distribution(),
-            "projection_alignment_score": result.projection_result.alignment_score,
             "projection_reconstruction_error": result.projection_result.reconstruction_error,
-            "alignment_score": result.alignment.alignment_score,
+            "projection_mean_cosine_similarity": projection_meta.get(
+                "mean_cosine_similarity"
+            ),
+            "projection_norm_preservation_ratio": projection_meta.get(
+                "norm_preservation_ratio"
+            ),
             "vocab_overlap_ratio": result.alignment.vocab_overlap_ratio,
+            "dimension_ratio": result.alignment.dimension_ratio,
+            "requires_projection": result.alignment.requires_projection,
+            "requires_vocab_mapping": result.alignment.requires_vocab_mapping,
             "alignment_method": result.alignment_method.value,
         }
 

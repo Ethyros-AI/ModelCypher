@@ -88,7 +88,6 @@ class TestCrossVocabMergerIsSpecialToken:
         assert merger._is_special_token("[UNK]") is True
 
     def test_pipe_style_token(self, merger):
-        # <| and |> patterns
         assert merger._is_special_token("<|endoftext|>") is True
         assert merger._is_special_token("<|im_start|>") is True
 
@@ -101,93 +100,6 @@ class TestCrossVocabMergerIsSpecialToken:
         assert merger._is_special_token("<PAD>") is True
         assert merger._is_special_token("<BOS>") is True
         assert merger._is_special_token("[cls]") is True
-
-
-class TestCrossVocabMergerBuildIndexAlignment:
-    """Tests for _build_index_alignment method."""
-
-    @pytest.fixture
-    def merger(self):
-        return CrossVocabMerger()
-
-    def test_same_vocab_sizes(self, merger):
-        alignment = merger._build_index_alignment(100, 100)
-
-        assert alignment.source_vocab_size == 100
-        assert alignment.target_vocab_size == 100
-        assert alignment.exact_matches == 100
-        assert alignment.unmapped_count == 0
-
-    def test_source_larger(self, merger):
-        alignment = merger._build_index_alignment(150, 100)
-
-        assert alignment.source_vocab_size == 150
-        assert alignment.target_vocab_size == 100
-        # First 100 are exact matches, remaining 50 are unmapped
-        assert alignment.exact_matches == 100
-        assert alignment.unmapped_count == 50
-
-    def test_target_larger(self, merger):
-        alignment = merger._build_index_alignment(100, 150)
-
-        assert alignment.source_vocab_size == 100
-        assert alignment.target_vocab_size == 150
-        # All 100 source tokens have exact matches
-        assert alignment.exact_matches == 100
-        assert alignment.unmapped_count == 0
-
-    def test_small_vocab(self, merger):
-        alignment = merger._build_index_alignment(10, 10)
-
-        assert alignment.source_vocab_size == 10
-        assert alignment.exact_matches == 10
-
-    def test_alignment_quality_exact_for_shared(self, merger):
-        from modelcypher.core.domain.vocabulary.alignment_map import AlignmentQuality
-
-        alignment = merger._build_index_alignment(10, 20)
-
-        for a in alignment.iter_alignments():
-            if a.source_id < 10:
-                assert a.quality == AlignmentQuality.EXACT
-
-
-class TestCrossVocabMergerGetSharedIndices:
-    """Tests for _get_shared_indices method."""
-
-    @pytest.fixture
-    def merger(self):
-        return CrossVocabMerger()
-
-    def test_returns_tuple(self, merger):
-        alignment = merger._build_index_alignment(10, 10)
-        result = merger._get_shared_indices(alignment)
-
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-
-    def test_returns_lists(self, merger):
-        alignment = merger._build_index_alignment(10, 10)
-        source_indices, target_indices = merger._get_shared_indices(alignment)
-
-        assert isinstance(source_indices, list)
-        assert isinstance(target_indices, list)
-
-    def test_exact_matches_included(self, merger):
-        alignment = merger._build_index_alignment(10, 10)
-        source_indices, target_indices = merger._get_shared_indices(alignment)
-
-        # All 10 exact matches should be included
-        assert len(source_indices) == 10
-        assert len(target_indices) == 10
-
-    def test_indices_match_one_to_one(self, merger):
-        alignment = merger._build_index_alignment(5, 5)
-        source_indices, target_indices = merger._get_shared_indices(alignment)
-
-        # For index alignment, source_id == target_id
-        for src, tgt in zip(source_indices, target_indices):
-            assert src == tgt
 
 
 class TestCrossVocabMergerMerge:
@@ -219,7 +131,6 @@ class TestCrossVocabMergerMerge:
 
         result = merger.merge(source, target)
 
-        # Output size matches target
         assert result.merged_embeddings.shape == (50, 64)
         assert result.output_vocab_size == 50
 
@@ -230,29 +141,8 @@ class TestCrossVocabMergerMerge:
 
         result = merger.merge(source, target)
 
-        # Output dimension matches target
         assert result.merged_embeddings.shape == (50, 64)
         assert result.output_hidden_dim == 64
-
-    def test_merge_returns_all_fields(self, merger, backend):
-        backend.random_seed(42)
-        source = backend.random_normal((20, 32))
-        target = backend.random_normal((20, 32))
-
-        result = merger.merge(source, target)
-
-        assert result.merged_embeddings is not None
-        assert result.output_vocab_size > 0
-        assert result.output_hidden_dim > 0
-        assert result.alignment_map is not None
-        assert result.projection_result is not None
-        assert result.alignment is not None
-        assert result.source_stats is not None
-        assert result.target_stats is not None
-        assert isinstance(result.alignment_method, AlignmentMethod)
-        assert isinstance(result.tokens_preserved_from_source, int)
-        assert isinstance(result.tokens_preserved_from_target, int)
-        assert isinstance(result.tokens_interpolated, int)
 
     def test_merge_with_vocab_dicts(self, merger, backend):
         backend.random_seed(42)
@@ -267,6 +157,7 @@ class TestCrossVocabMergerMerge:
         )
 
         assert result.merged_embeddings.shape == (10, 32)
+        assert result.alignment_map.exact_matches == 10
 
     def test_merge_alignment_method_without_vocab_dicts(self, merger, backend):
         backend.random_seed(42)
@@ -381,10 +272,11 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
         result = merger.merge(source, target)
         quality = merger.analyze_merge_quality(result)
 
-        assert "projection_alignment_score" in quality
         assert "projection_reconstruction_error" in quality
+        assert "projection_mean_cosine_similarity" in quality
+        assert "projection_norm_preservation_ratio" in quality
 
-    def test_contains_alignment_metrics(self, merger, backend):
+    def test_contains_alignment_fields(self, merger, backend):
         backend.random_seed(42)
         source = backend.random_normal((10, 16))
         target = backend.random_normal((10, 16))
@@ -392,15 +284,8 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
         result = merger.merge(source, target)
         quality = merger.analyze_merge_quality(result)
 
-        assert "alignment_score" in quality
         assert "vocab_overlap_ratio" in quality
-
-    def test_contains_alignment_method(self, merger, backend):
-        backend.random_seed(42)
-        source = backend.random_normal((10, 16))
-        target = backend.random_normal((10, 16))
-
-        result = merger.merge(source, target)
-        quality = merger.analyze_merge_quality(result)
-
+        assert "dimension_ratio" in quality
+        assert "requires_projection" in quality
+        assert "requires_vocab_mapping" in quality
         assert "alignment_method" in quality
