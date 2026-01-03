@@ -17,15 +17,16 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
-from .vector_math import VectorMath
 
 
 @dataclass(frozen=True)
@@ -217,26 +218,43 @@ class PersonaVectorMonitor:
         """
         if not positive_activations or not negative_activations:
             return None
-        hidden_size = len(positive_activations[0]) if positive_activations else 0
-        if hidden_size <= 0:
+        backend = get_default_backend()
+        pos_arr = (
+            positive_activations
+            if hasattr(positive_activations, "shape")
+            else backend.array(positive_activations)
+        )
+        neg_arr = (
+            negative_activations
+            if hasattr(negative_activations, "shape")
+            else backend.array(negative_activations)
+        )
+        if len(backend.shape(pos_arr)) != 2 or len(backend.shape(neg_arr)) != 2:
+            return None
+        hidden_size = int(backend.shape(pos_arr)[1])
+        if hidden_size <= 0 or int(backend.shape(neg_arr)[1]) != hidden_size:
             return None
 
-        positive_mean = PersonaVectorMonitor._mean_vector(positive_activations)
-        negative_mean = PersonaVectorMonitor._mean_vector(negative_activations)
-        if len(positive_mean) != hidden_size or len(negative_mean) != hidden_size:
+        positive_mean = PersonaVectorMonitor._mean_vector(pos_arr)
+        negative_mean = PersonaVectorMonitor._mean_vector(neg_arr)
+        direction = positive_mean - negative_mean
+        norm_arr = backend.norm(direction)
+        backend.eval(norm_arr)
+        norm = float(backend.to_scalar(norm_arr))
+        eps = division_epsilon(backend, direction)
+        if norm <= eps:
             return None
-
-        direction = [positive_mean[i] - negative_mean[i] for i in range(hidden_size)]
-        norm = VectorMath.l2_norm(direction)
-        if norm is None or norm <= 0:
-            return None
-        strength = float(norm)
+        strength = norm
 
         # Always normalize - unit vectors on the manifold
-        final_direction = VectorMath.l2_normalized(direction)
+        final_direction = direction / norm
+        backend.eval(final_direction)
+        direction_list = backend.tolist(final_direction)
+        if not isinstance(direction_list, list):
+            direction_list = [float(direction_list)]
         correlation = PersonaVectorMonitor._compute_correlation(
-            positive_activations=positive_activations,
-            negative_activations=negative_activations,
+            positive_activations=pos_arr,
+            negative_activations=neg_arr,
             direction=final_direction,
         )
         # Only filter if threshold provided
@@ -247,7 +265,7 @@ class PersonaVectorMonitor:
         return PersonaVector(
             id=trait.id,
             name=trait.name,
-            direction=final_direction,
+            direction=direction_list,
             layer_index=layer_index,
             hidden_size=hidden_size,
             strength=strength,
@@ -262,18 +280,24 @@ class PersonaVectorMonitor:
         persona_vector: PersonaVector,
         baseline: PersonaBaseline | None,
     ) -> PersonaPosition | None:
-        if len(activation) != len(persona_vector.direction):
-            return None
-        projection = PersonaVectorMonitor._projection_value(
-            activation, persona_vector.direction
+        backend = get_default_backend()
+        activation_arr = activation if hasattr(activation, "shape") else backend.array(activation)
+        direction_arr = (
+            persona_vector.direction
+            if hasattr(persona_vector.direction, "shape")
+            else backend.array(persona_vector.direction)
         )
+        if backend.shape(activation_arr)[0] != backend.shape(direction_arr)[0]:
+            return None
+        projection = PersonaVectorMonitor._projection_value(activation_arr, direction_arr)
         if projection is None:
             return None
         projection_value = float(projection)
 
-        direction_norm = VectorMath.l2_norm(persona_vector.direction) or 1.0
-        # Use machine epsilon for division safety
-        normalized_position = projection_value / max(direction_norm, sys.float_info.epsilon)
+        direction_norm = PersonaVectorMonitor._l2_norm(direction_arr)
+        eps = division_epsilon(backend, direction_arr)
+        safe_norm = direction_norm if direction_norm > eps else eps
+        normalized_position = projection_value / safe_norm
         clamped = max(-1.0, min(1.0, normalized_position))
 
         delta = None
@@ -308,17 +332,23 @@ class PersonaVectorMonitor:
         step: int,
         drift_threshold: float | None = None,
     ) -> TrainingDriftMetrics:
-        total_drift = 0.0
+        deltas: list[float] = []
         drifting_traits: list[str] = []
         for position in positions:
             if position.delta_from_baseline is None:
                 continue
             abs_delta = abs(position.delta_from_baseline)
-            total_drift += abs_delta * abs_delta
+            deltas.append(abs_delta)
             # Only classify as drifting if threshold provided
             if drift_threshold is not None and abs_delta > drift_threshold:
                 drifting_traits.append(position.trait_id)
-        overall_magnitude = sqrt_scalar(total_drift, get_default_backend())
+        overall_magnitude = 0.0
+        if deltas:
+            backend = get_default_backend()
+            delta_arr = backend.array(deltas)
+            total_drift_arr = backend.sum(delta_arr * delta_arr)
+            backend.eval(total_drift_arr)
+            overall_magnitude = sqrt_scalar(float(backend.to_scalar(total_drift_arr)), backend)
         return TrainingDriftMetrics(
             step=step,
             positions=positions,
@@ -406,72 +436,84 @@ class PersonaVectorMonitor:
         return payload
 
     @staticmethod
-    def _mean_vector(vectors: list[list[float]]) -> list[float]:
+    def _mean_vector(vectors: list[list[float]] | object) -> object:
         """Compute Fréchet mean of embedding vectors on the representation manifold."""
-        if not vectors:
-            return []
-        dim = len(vectors[0])
-        # Filter to valid vectors of consistent dimension
-        valid_vectors = [v for v in vectors if len(v) == dim]
-        if not valid_vectors:
-            return []
-        # Use Fréchet mean (geodesic center of mass) instead of arithmetic mean
         backend = get_default_backend()
-        points = backend.array(valid_vectors)
+        points = vectors if hasattr(vectors, "shape") else backend.array(vectors)
+        if int(backend.shape(points)[0]) == 0:
+            return backend.zeros((0,))
         mean_arr = frechet_mean(points, backend=backend)
         backend.eval(mean_arr)
-        return backend.tolist(mean_arr)
+        return mean_arr
 
     @staticmethod
     def _compute_correlation(
-        positive_activations: list[list[float]],
-        negative_activations: list[list[float]],
-        direction: list[float],
+        positive_activations: object,
+        negative_activations: object,
+        direction: object,
     ) -> float:
-        positive_projections: list[float] = []
-        negative_projections: list[float] = []
-        for activation in positive_activations:
-            projection = PersonaVectorMonitor._projection_value(activation, direction)
-            if projection is not None:
-                positive_projections.append(float(projection))
-        for activation in negative_activations:
-            projection = PersonaVectorMonitor._projection_value(activation, direction)
-            if projection is not None:
-                negative_projections.append(float(projection))
-        if not positive_projections or not negative_projections:
+        backend = get_default_backend()
+        pos_arr = (
+            positive_activations
+            if hasattr(positive_activations, "shape")
+            else backend.array(positive_activations)
+        )
+        neg_arr = (
+            negative_activations
+            if hasattr(negative_activations, "shape")
+            else backend.array(negative_activations)
+        )
+        dir_arr = direction if hasattr(direction, "shape") else backend.array(direction)
+        if int(backend.shape(pos_arr)[0]) == 0 or int(backend.shape(neg_arr)[0]) == 0:
             return 0.0
 
-        pos_count = len(positive_projections)
-        neg_count = len(negative_projections)
-        total_count = pos_count + neg_count
-        pos_mean = sum(positive_projections) / float(pos_count)
-        neg_mean = sum(negative_projections) / float(neg_count)
+        direction_row = backend.reshape(dir_arr, (1, -1))
+        pos_proj = backend.sum(pos_arr * direction_row, axis=1)
+        neg_proj = backend.sum(neg_arr * direction_row, axis=1)
+        backend.eval(pos_proj, neg_proj)
 
-        all_projections = positive_projections + negative_projections
-        mean_all = sum(all_projections) / float(total_count)
-        variance = 0.0
-        for proj in all_projections:
-            diff = proj - mean_all
-            variance += diff * diff
-        backend = get_default_backend()
-        std_dev = sqrt_scalar(variance / float(total_count), backend)
+        pos_mean = backend.mean(pos_proj)
+        neg_mean = backend.mean(neg_proj)
+        all_proj = backend.concatenate([pos_proj, neg_proj], axis=0)
+        mean_all = backend.mean(all_proj)
+        backend.eval(pos_mean, neg_mean, mean_all)
+
+        diff = all_proj - mean_all
+        variance = backend.mean(diff * diff)
+        backend.eval(variance)
+        std_dev = sqrt_scalar(float(backend.to_scalar(variance)), backend)
         if std_dev <= 0:
             return 0.0
 
+        pos_count = int(backend.shape(pos_proj)[0])
+        neg_count = int(backend.shape(neg_proj)[0])
+        total_count = pos_count + neg_count
         p = float(pos_count) / float(total_count)
         q = float(neg_count) / float(total_count)
-        r = (pos_mean - neg_mean) / std_dev * sqrt_scalar(p * q, backend)
+        mean_delta_arr = pos_mean - neg_mean
+        backend.eval(mean_delta_arr)
+        mean_delta = float(backend.to_scalar(mean_delta_arr))
+        r = mean_delta / std_dev * sqrt_scalar(p * q, backend)
         return max(0.0, min(1.0, r))
 
     @staticmethod
-    def _projection_value(activation: list[float], direction: list[float]) -> float | None:
-        try:
-            cosine = VectorMath.cosine_similarity(activation, direction)
-        except ValueError:
+    def _projection_value(activation: object, direction: object) -> float | None:
+        backend = get_default_backend()
+        act_arr = activation if hasattr(activation, "shape") else backend.array(activation)
+        dir_arr = direction if hasattr(direction, "shape") else backend.array(direction)
+        if backend.shape(act_arr)[0] != backend.shape(dir_arr)[0]:
             return None
-        activation_norm = VectorMath.l2_norm(activation)
-        direction_norm = VectorMath.l2_norm(direction)
-        return activation_norm * direction_norm * cosine
+        dot = backend.dot(act_arr, dir_arr)
+        backend.eval(dot)
+        return float(backend.to_scalar(dot))
+
+    @staticmethod
+    def _l2_norm(values: object) -> float:
+        backend = get_default_backend()
+        arr = values if hasattr(values, "shape") else backend.array(values)
+        norm = backend.norm(arr)
+        backend.eval(norm)
+        return max(0.0, float(backend.to_scalar(norm)))
 
     @staticmethod
     def _compute_correlation_stats(correlations: list[float]) -> tuple[float, float]:
@@ -487,8 +529,13 @@ class PersonaVectorMonitor:
         """
         if not correlations:
             return (0.0, 0.0)
-        avg_correlation = sum(correlations) / float(len(correlations))
-        min_correlation = min(correlations)
+        backend = get_default_backend()
+        corr_arr = backend.array(correlations)
+        avg_arr = backend.mean(corr_arr)
+        min_arr = backend.min(corr_arr)
+        backend.eval(avg_arr, min_arr)
+        avg_correlation = float(backend.to_scalar(avg_arr))
+        min_correlation = float(backend.to_scalar(min_arr))
         return (avg_correlation, min_correlation)
 
 

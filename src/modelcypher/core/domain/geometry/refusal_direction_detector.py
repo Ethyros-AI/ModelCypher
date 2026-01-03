@@ -26,7 +26,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
-from .vector_math import BackendVectorMath
 
 if TYPE_CHECKING:
     pass
@@ -172,9 +171,9 @@ class RefusalDirectionDetector:
         b.eval(harmful_mean, harmless_mean)
 
         direction_arr = harmful_mean - harmless_mean
-        backend_math = BackendVectorMath(b)
-        b.eval(direction_arr)
-        norm = float(backend_math.l2_norm(direction_arr))
+        norm_arr = b.norm(direction_arr)
+        b.eval(direction_arr, norm_arr)
+        norm = float(b.to_scalar(norm_arr))
         eps = division_epsilon(b, direction_arr)
         if norm <= eps:
             return None

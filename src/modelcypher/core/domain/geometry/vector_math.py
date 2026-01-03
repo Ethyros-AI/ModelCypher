@@ -147,6 +147,54 @@ def _geodesic_cosine_from_origin(a: Any, b: Any, backend: "Backend") -> float:
     return max(-1.0, min(1.0, cos_val))
 
 
+def geodesic_cosine_batch(anchor: Any, vectors: Any, backend: "Backend") -> Any:
+    """Compute geodesic cosine similarities between anchor and each row in vectors."""
+    anchor_arr = anchor if hasattr(anchor, "shape") else backend.array(anchor)
+    vectors_arr = vectors if hasattr(vectors, "shape") else backend.array(vectors)
+
+    shape_anchor = backend.shape(anchor_arr)
+    shape_vectors = backend.shape(vectors_arr)
+    if len(shape_anchor) != 1:
+        anchor_arr = backend.reshape(anchor_arr, (-1,))
+        shape_anchor = backend.shape(anchor_arr)
+    if len(shape_vectors) != 2:
+        raise ValueError("geodesic_cosine_batch requires [n, d] vectors")
+    if shape_vectors[0] == 0:
+        return backend.array([])
+    if shape_anchor[0] != shape_vectors[1]:
+        raise ValueError("Anchor and vectors must share feature dimension")
+
+    zero = backend.zeros_like(anchor_arr)
+    points = backend.concatenate(
+        [
+            backend.reshape(zero, (1, -1)),
+            backend.reshape(anchor_arr, (1, -1)),
+            vectors_arr,
+        ],
+        axis=0,
+    )
+    rg = RiemannianGeometry(backend)
+    geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
+    distances = geo_result.distances
+    backend.eval(distances)
+
+    d0a = distances[0, 1]
+    d0v = distances[0, 2:]
+    dav = distances[1, 2:]
+
+    eps = division_epsilon(backend, distances)
+    d0a_val = float(backend.to_scalar(d0a))
+    if d0a_val <= eps:
+        return backend.zeros_like(d0v)
+
+    denom = 2.0 * d0a * d0v
+    safe_denom = backend.maximum(denom, backend.full(d0v.shape, eps))
+    cos_vals = (d0a * d0a + d0v * d0v - dav * dav) / safe_denom
+    cos_vals = backend.clip(cos_vals, -1.0, 1.0)
+    cos_vals = backend.where(d0v > eps, cos_vals, backend.zeros_like(cos_vals))
+    return cos_vals
+
+
 class VectorMath:
     """Vector math utilities for dense vectors."""
 

@@ -318,13 +318,25 @@ def primes_compare(
     prime_similarities = []
     if dim_a == dim_b:
         # Same dimensions - use direct cosine similarity
-        from modelcypher.core.domain.geometry.vector_math import VectorMath
+        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
         for prime in common_primes:
-            vec_a = acts_a[prime]
-            vec_b = acts_b[prime]
-            sim = VectorMath.cosine_similarity(vec_a, vec_b)
-            prime_similarities.append((prime, sim if sim is not None else 0.0))
+            vec_a = backend.array(acts_a[prime])
+            vec_b = backend.array(acts_b[prime])
+            norm_a = backend.norm(vec_a)
+            norm_b = backend.norm(vec_b)
+            backend.eval(norm_a, norm_b)
+            norm_a_val = float(backend.to_scalar(norm_a))
+            norm_b_val = float(backend.to_scalar(norm_b))
+            eps = division_epsilon(backend, vec_a)
+            if norm_a_val <= eps or norm_b_val <= eps:
+                sim = 0.0
+            else:
+                dot = backend.dot(vec_a, vec_b)
+                backend.eval(dot)
+                dot_val = float(backend.to_scalar(dot))
+                sim = dot_val / (norm_a_val * norm_b_val)
+            prime_similarities.append((prime, sim))
     else:
         # Different dimensions - use per-prime CKA via row correlation
         # Project to common space by computing normalized correlation

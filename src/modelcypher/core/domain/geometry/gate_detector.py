@@ -51,10 +51,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.text import truncate
 
@@ -83,8 +84,11 @@ class DetectionResult:
     def mean_similarity(self) -> float:
         if not self.detected_gates:
             return 0.0
-        total = sum(gate.similarity for gate in self.detected_gates)
-        return total / float(len(self.detected_gates))
+        backend = get_default_backend()
+        scores = backend.array([gate.similarity for gate in self.detected_gates])
+        mean_score = backend.mean(scores)
+        backend.eval(mean_score)
+        return float(backend.to_scalar(mean_score))
 
     @property
     def gate_sequence(self) -> list[str]:
@@ -116,8 +120,11 @@ class GateDetector:
         gate_inventory: Iterable[ComputationalGateProtocol] | None = None,
     ) -> None:
         self.embedder = embedder
+        self._backend = get_default_backend()
         self.gate_embeddings: dict[str, list[float]] = {}
         self.gate_metadata: dict[str, ComputationalGateProtocol] = {}
+        self._gate_ids: list[str] = []
+        self._gate_matrix = None
 
         if gate_inventory is None:
             gate_inventory = get_gate_inventory()
@@ -160,23 +167,21 @@ class GateDetector:
             embeddings = self.embedder.embed([window_text])
             if not embeddings:
                 continue
-            normalized_window = VectorMath.l2_normalized(
-                [float(value) for value in embeddings[0]]
-            )
-
-            best_gate_id = None
-            best_similarity = 0.0
-            for gate_id, gate_embedding in self.gate_embeddings.items():
-                try:
-                    similarity = VectorMath.cosine_similarity(normalized_window, gate_embedding)
-                except ValueError:
-                    similarity = 0.0
-                if similarity > best_similarity:
-                    best_similarity = similarity
-                    best_gate_id = gate_id
-
-            if best_gate_id is None:
+            if self._gate_matrix is None or not self._gate_ids:
                 continue
+            normalized_window = self._normalize_vector(embeddings[0])
+            sims = self._backend.matmul(
+                self._gate_matrix,
+                self._backend.reshape(normalized_window, (-1, 1)),
+            )
+            sims = self._backend.reshape(sims, (self._backend.shape(self._gate_matrix)[0],))
+            best_idx_arr = self._backend.argmax(sims)
+            self._backend.eval(best_idx_arr)
+            best_idx = int(self._backend.to_scalar(best_idx_arr))
+            best_sim_arr = self._backend.take(sims, self._backend.array([best_idx]))
+            self._backend.eval(best_sim_arr)
+            best_similarity = float(self._backend.to_scalar(best_sim_arr))
+            best_gate_id = self._gate_ids[best_idx]
 
             best_similarities.append(best_similarity)
             gate_meta = self.gate_metadata.get(best_gate_id)
@@ -189,7 +194,10 @@ class GateDetector:
                     window_start : min(window_end, len(entropy_trace))
                 ]
                 if window_entropy:
-                    local_entropy = sum(window_entropy) / float(len(window_entropy))
+                    entropy_arr = self._backend.array(window_entropy)
+                    mean_entropy = self._backend.mean(entropy_arr)
+                    self._backend.eval(mean_entropy)
+                    local_entropy = float(self._backend.to_scalar(mean_entropy))
 
             candidates.append(
                 (
@@ -251,6 +259,8 @@ class GateDetector:
         if self.gate_embeddings:
             return
 
+        vectors = []
+        ids: list[str] = []
         for gate in self.gate_metadata.values():
             texts = [f"{gate.name}: {gate.description}"]
             texts.extend(gate.examples)
@@ -263,13 +273,20 @@ class GateDetector:
             if not embeddings:
                 continue
 
-            sum_vector = [0.0] * len(embeddings[0])
-            for vector in embeddings:
-                for i in range(min(len(vector), len(sum_vector))):
-                    sum_vector[i] += float(vector[i])
+            embedding_arr = self._backend.array(embeddings)
+            centroid = self._backend.mean(embedding_arr, axis=0)
+            centroid = self._normalize_vector(centroid)
+            self._backend.eval(centroid)
+            centroid_list = self._backend.tolist(centroid)
+            if not isinstance(centroid_list, list):
+                centroid_list = [float(centroid_list)]
+            self.gate_embeddings[gate.id] = centroid_list
+            vectors.append(centroid)
+            ids.append(gate.id)
 
-            centroid = VectorMath.l2_normalized(sum_vector)
-            self.gate_embeddings[gate.id] = centroid
+        if vectors:
+            self._gate_matrix = self._backend.stack(vectors, axis=0)
+            self._gate_ids = ids
 
         logger.info("Loaded %s gate embeddings", len(self.gate_embeddings))
 
@@ -298,30 +315,35 @@ class GateDetector:
         if len(values) == 1:
             return values[0]
 
-        sorted_vals = sorted(values)
-        total = sum(sorted_vals)
-        total_count = len(sorted_vals)
+        backend = get_default_backend()
+        vals = backend.array(values)
+        sorted_vals = backend.sort(vals)
+        n = backend.shape(sorted_vals)[0]
+        if n < 2:
+            return float(backend.to_scalar(sorted_vals))
 
-        best_threshold = sorted_vals[0]
-        best_score = -1.0
-        sum_left = 0.0
+        idx = backend.arange(1, n)
+        cumsum = backend.cumsum(sorted_vals)
+        sum0 = backend.take(cumsum, idx - 1)
+        total = backend.sum(sorted_vals)
 
-        for idx, value in enumerate(sorted_vals[:-1]):
-            sum_left += value
-            count_left = idx + 1
-            count_right = total_count - count_left
-            if count_right == 0:
-                break
-            mean_left = sum_left / count_left
-            mean_right = (total - sum_left) / count_right
-            weight_left = count_left / total_count
-            weight_right = count_right / total_count
-            score = weight_left * weight_right * (mean_left - mean_right) ** 2
-            if score > best_score:
-                best_score = score
-                best_threshold = value
+        idx_float = backend.astype(idx, sorted_vals.dtype)
+        denom1 = float(n) - idx_float
+        mean0 = sum0 / idx_float
+        sum1 = total - sum0
+        mean1 = sum1 / denom1
 
-        return best_threshold
+        w0 = idx_float / float(n)
+        w1 = 1.0 - w0
+        variance = w0 * w1 * (mean0 - mean1) ** 2
+
+        best_idx_arr = backend.argmax(variance)
+        backend.eval(best_idx_arr)
+        best_idx = int(backend.to_scalar(best_idx_arr))
+        threshold_index = backend.take(idx, backend.array([best_idx]))
+        threshold_val = backend.take(sorted_vals, threshold_index)
+        backend.eval(threshold_val)
+        return float(backend.to_scalar(threshold_val))
 
     @staticmethod
     def _collapse_consecutive(gates: list[DetectedGate]) -> list[DetectedGate]:
@@ -334,3 +356,12 @@ class GateDetector:
             elif gate.similarity > collapsed[-1].similarity:
                 collapsed[-1] = gate
         return collapsed
+
+    def _normalize_vector(self, vector: Iterable[float] | object) -> object:
+        vec = vector if hasattr(vector, "shape") else self._backend.array(vector)
+        norm = self._backend.norm(vec)
+        eps = division_epsilon(self._backend, vec)
+        safe_norm = self._backend.where(
+            norm > eps, norm, self._backend.ones_like(norm)
+        )
+        return vec / safe_norm

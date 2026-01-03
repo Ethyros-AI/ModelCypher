@@ -41,11 +41,9 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    log_scalar,
-)
+from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 
 if TYPE_CHECKING:
     from modelcypher.ports.embedding import EmbeddingProvider
@@ -253,14 +251,8 @@ class BaseAtlas(ABC, Generic[C, S]):
             if not embeddings:
                 return None
 
-            text_vec = self._normalize_vector(embeddings[0])
-            sims = self._backend.matmul(
-                concept_embeddings,
-                self._backend.reshape(text_vec, (-1, 1)),
-            )
-            sims = self._backend.reshape(
-                sims, (self._backend.shape(concept_embeddings)[0],)
-            )
+            text_vec = self._ensure_array(embeddings[0])
+            sims = geodesic_cosine_batch(text_vec, concept_embeddings, self._backend)
             sims = self._backend.maximum(sims, self._backend.zeros_like(sims))
             self._backend.eval(sims)
             similarities = self._backend.tolist(sims)
@@ -294,32 +286,14 @@ class BaseAtlas(ABC, Generic[C, S]):
         if not embeddings:
             return self._backend.array([])
 
-        normalized = self._normalize_rows(embeddings)
-        self._cached_concept_embeddings = normalized
-        return normalized
+        concept_embeddings = self._backend.array(embeddings)
+        self._cached_concept_embeddings = concept_embeddings
+        return concept_embeddings
 
     def _ensure_array(self, value: Any) -> Any:
         if hasattr(value, "shape"):
             return value
         return self._backend.array(value)
-
-    def _normalize_rows(self, matrix: Any) -> Any:
-        matrix_arr = self._ensure_array(matrix)
-        norms = self._backend.norm(matrix_arr, axis=1, keepdims=True)
-        eps = division_epsilon(self._backend, matrix_arr)
-        safe_norms = self._backend.where(
-            norms > eps, norms, self._backend.ones_like(norms)
-        )
-        return matrix_arr / safe_norms
-
-    def _normalize_vector(self, vector: Any) -> Any:
-        vector_arr = self._ensure_array(vector)
-        norm = self._backend.norm(vector_arr)
-        eps = division_epsilon(self._backend, vector_arr)
-        safe_norm = self._backend.where(
-            norm > eps, norm, self._backend.ones_like(norm)
-        )
-        return vector_arr / safe_norm
 
     def clear_cache(self) -> None:
         """Clear cached concept embeddings.

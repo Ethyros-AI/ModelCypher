@@ -49,7 +49,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 AtlasProbe: TypeAlias = AtlasProbeProtocol
 SequenceInvariant: TypeAlias = SequenceInvariantProtocol
@@ -758,12 +759,14 @@ class InvariantLayerMapper:
         count = min(len(a), len(b), len(weights))
         if count == 0:
             return 0.0
-        weighted_a = [a[i] * weights[i] for i in range(count)]
-        weighted_b = [b[i] * weights[i] for i in range(count)]
-        try:
-            similarity = VectorMath.cosine_similarity(weighted_a, weighted_b)
-        except ValueError:
-            return 0.0
+        backend = get_default_backend()
+        idx = backend.arange(0, count)
+        arr_a = backend.take(backend.array(a), idx)
+        arr_b = backend.take(backend.array(b), idx)
+        w = backend.take(backend.array(weights), idx)
+        weighted_a = arr_a * w
+        weighted_b = arr_b * w
+        similarity = InvariantLayerMapper._cosine_similarity_backend(weighted_a, weighted_b)
         return max(0.0, min(1.0, similarity))
 
     @staticmethod
@@ -826,8 +829,31 @@ class InvariantLayerMapper:
         count = min(len(a), len(b))
         if count == 0:
             return 0.0
-        try:
-            similarity = VectorMath.cosine_similarity(a[:count], b[:count])
-        except ValueError:
-            return 0.0
+        backend = get_default_backend()
+        idx = backend.arange(0, count)
+        arr_a = backend.take(backend.array(a), idx)
+        arr_b = backend.take(backend.array(b), idx)
+        similarity = InvariantLayerMapper._cosine_similarity_backend(arr_a, arr_b)
         return max(0.0, min(1.0, similarity))
+
+    @staticmethod
+    def _cosine_similarity_backend(a: object, b: object) -> float:
+        backend = get_default_backend()
+        arr_a = a if hasattr(a, "shape") else backend.array(a)
+        arr_b = b if hasattr(b, "shape") else backend.array(b)
+        if backend.shape(arr_a)[0] == 0 or backend.shape(arr_b)[0] == 0:
+            return 0.0
+        if backend.shape(arr_a)[0] != backend.shape(arr_b)[0]:
+            raise ValueError("Cosine similarity requires matching dimensions")
+        norm_a = backend.norm(arr_a)
+        norm_b = backend.norm(arr_b)
+        backend.eval(norm_a, norm_b)
+        norm_a_val = float(backend.to_scalar(norm_a))
+        norm_b_val = float(backend.to_scalar(norm_b))
+        eps = division_epsilon(backend, arr_a)
+        if norm_a_val <= eps or norm_b_val <= eps:
+            return 0.0
+        dot = backend.dot(arr_a, arr_b)
+        backend.eval(dot)
+        dot_val = float(backend.to_scalar(dot))
+        return dot_val / (norm_a_val * norm_b_val)

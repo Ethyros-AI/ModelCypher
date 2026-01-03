@@ -69,6 +69,7 @@ _SUBMODULES = {
     "fingerprints",
     "gate_detector",
     "generalized_procrustes",
+    "geodesic_null_space",
     "geometric_lora",
     "geometry_fingerprint",
     "geometry_metrics_cache",

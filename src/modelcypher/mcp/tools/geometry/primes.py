@@ -178,7 +178,7 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
 
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
-            from modelcypher.core.domain.geometry.vector_math import VectorMath
+            from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
             backend = get_default_backend()
             path_a = require_existing_path(activationsA)
@@ -206,7 +206,21 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             # Find most similar and divergent
             sims = []
             for p in common:
-                sim = VectorMath.cosine_similarity(acts_a[p], acts_b[p])
+                vec_a = backend.array(acts_a[p])
+                vec_b = backend.array(acts_b[p])
+                norm_a = backend.norm(vec_a)
+                norm_b = backend.norm(vec_b)
+                backend.eval(norm_a, norm_b)
+                norm_a_val = float(backend.to_scalar(norm_a))
+                norm_b_val = float(backend.to_scalar(norm_b))
+                eps = division_epsilon(backend, vec_a)
+                if norm_a_val <= eps or norm_b_val <= eps:
+                    sim = 0.0
+                else:
+                    dot = backend.dot(vec_a, vec_b)
+                    backend.eval(dot)
+                    dot_val = float(backend.to_scalar(dot))
+                    sim = dot_val / (norm_a_val * norm_b_val)
                 sims.append((p, sim))
             sims.sort(key=lambda x: x[1], reverse=True)
 
