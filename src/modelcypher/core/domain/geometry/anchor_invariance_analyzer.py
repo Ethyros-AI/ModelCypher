@@ -41,7 +41,7 @@ from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
     MetaphorConvergenceAnalyzer,
 )
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_sparse
 
 
 class AnchorInvarianceError(Exception):
@@ -518,4 +518,5 @@ class AnchorInvarianceAnalyzer:
     @staticmethod
     def _cosine_sparse(a: dict[int, float], b: dict[int, float]) -> float | None:
         """Compute cosine similarity between two sparse vectors."""
-        return SparseVectorMath.cosine_similarity(a, b)
+        backend = get_default_backend()
+        return geodesic_cosine_sparse(a, b, backend)

@@ -197,7 +197,6 @@ class GramAligner:
         self,
         backend: "Backend | None" = None,
         max_iterations: int = 1000,
-        max_rounds: int = 1,
         tolerance: float | None = None,  # IGNORED - derived from dtype
         regularization: float | None = None,  # IGNORED - derived from dtype
     ) -> None:
@@ -208,11 +207,9 @@ class GramAligner:
         backend : Backend, optional
             Backend for tensor operations.
         max_iterations : int
-            Maximum iterations for optimization. We should converge
-            well before this - if we hit max, something is wrong.
-        max_rounds : int
-            Maximum search rounds to reach exact kernel alignment. Each round
-            increases the iteration budget and returns a diagnostic if still unlocked.
+            Initial iteration budget per search round. The aligner will
+            keep iterating (doubling budget each round) until CKA = 1.0.
+            There is no max_rounds - we iterate until perfect alignment.
         tolerance : float
             IGNORED. Convergence tolerance is derived from input dtype's machine
             epsilon. Kept for backward compatibility.
@@ -222,7 +219,6 @@ class GramAligner:
         """
         self._backend = backend or get_default_backend()
         self._max_iterations = max_iterations
-        self._max_rounds = max_rounds
         # IGNORED: these are kept for backward compatibility but all values
         # are derived from dtype in find_perfect_alignment
         self._tolerance = tolerance
@@ -674,14 +670,15 @@ class GramAligner:
         total_iterations = 0
         max_iterations = self._max_iterations
         final_cka = 0.0
-        rounds = max(1, self._max_rounds)
 
-        for round_idx in range(rounds):
+        # Iterate until perfect alignment - there is no max_rounds.
+        # CKA = 1.0 or we keep iterating. All models encode the same shape.
+        while final_cka < 1.0 - precision_threshold:
             feature_transform, iterations, final_cka = self._find_feature_transform(
                 source_centered,
                 target_centered,
                 K_t_c,
-                initial_transform=initial_transform,
+                initial_transform=feature_transform,  # Use previous best as starting point
                 max_iterations=max_iterations,
             )
             total_iterations += iterations
@@ -691,10 +688,9 @@ class GramAligner:
 
             max_iterations *= 2
             logger.info(
-                "GramAligner: Exact kernel alignment not reached (cka=%.8f, threshold=%.2e). "
+                "GramAligner: Iterating toward perfect alignment (cka=%.8f, target=1.0). "
                 "Expanding search to %d iterations.",
                 final_cka,
-                precision_threshold,
                 max_iterations,
             )
 

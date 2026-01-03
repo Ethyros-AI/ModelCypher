@@ -324,6 +324,28 @@ def geodesic_pairwise_metrics(a: Any, b: Any, backend: "Backend") -> tuple[Any, 
     return cos_vals, dab_diag
 
 
+def geodesic_cosine_sparse(
+    a: dict[int, float],
+    b: dict[int, float],
+    backend: "Backend",
+) -> float:
+    """Compute geodesic cosine similarity between sparse vectors.
+
+    Uses a dense union of keys on-device. Raises ValueError if vectors are empty.
+    """
+    if not a or not b:
+        raise ValueError("Cannot compute cosine similarity of empty sparse vectors")
+
+    keys = sorted(set(a.keys()) | set(b.keys()))
+    if not keys:
+        raise ValueError("Cannot compute cosine similarity of empty sparse vectors")
+
+    vec_a = backend.array([float(a.get(key, 0.0)) for key in keys], dtype="float32")
+    vec_b = backend.array([float(b.get(key, 0.0)) for key in keys], dtype="float32")
+    backend.eval(vec_a, vec_b)
+    return _geodesic_cosine_from_origin(vec_a, vec_b, backend)
+
+
 class VectorMath:
     """Vector math utilities for dense vectors."""
 

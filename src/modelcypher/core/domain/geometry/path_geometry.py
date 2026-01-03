@@ -29,10 +29,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain.geometry.vector_math import BackendVectorMath
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass(frozen=True)
@@ -162,11 +162,45 @@ class PathGeometry:
         return mean, std if std > eps else eps
 
     @staticmethod
+    def _prepare_embedding_cache(
+        gate_embeddings: dict[str, list[float]],
+    ) -> tuple["Backend", BackendVectorMath, dict[str, "Array"]]:
+        backend = get_default_backend()
+        cache: dict[str, "Array"] = {}
+        arrays = []
+        for gate_id, vec in gate_embeddings.items():
+            if not vec:
+                continue
+            arr = backend.array(vec, dtype="float32")
+            cache[gate_id] = arr
+            arrays.append(arr)
+        if arrays:
+            backend.eval(*arrays)
+        return backend, BackendVectorMath(backend), cache
+
+    @staticmethod
+    def _cached_cosine(
+        gate_a: str,
+        gate_b: str,
+        cache: dict[str, "Array"],
+        vmath: BackendVectorMath,
+    ) -> float | None:
+        vec_a = cache.get(gate_a)
+        vec_b = cache.get(gate_b)
+        if vec_a is None or vec_b is None:
+            return None
+        try:
+            return vmath.cosine_similarity(vec_a, vec_b)
+        except ValueError:
+            return None
+
+    @staticmethod
     def compare(
         path_a: PathSignature,
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> PathComparison:
+        _, vmath, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
         n = len(path_a.nodes)
         m = len(path_b.nodes)
 
@@ -189,10 +223,10 @@ class PathGeometry:
                 if node_a.gate_id == node_b.gate_id:
                     sub_cost = 0.0
                 else:
-                    vec_a = gate_embeddings.get(node_a.gate_id)
-                    vec_b = gate_embeddings.get(node_b.gate_id)
-                    if vec_a and vec_b:
-                        sim = VectorMath.cosine_similarity(vec_a, vec_b) or 0.0
+                    sim = PathGeometry._cached_cosine(
+                        node_a.gate_id, node_b.gate_id, embed_cache, vmath
+                    )
+                    if sim is not None:
                         sub_cost = 1.0 - sim
                     else:
                         sub_cost = 1.0
@@ -258,6 +292,7 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> FrechetResult:
+        _, vmath, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
         n = len(path_a.nodes)
         m = len(path_b.nodes)
         if n == 0 or m == 0:
@@ -270,14 +305,11 @@ class PathGeometry:
             node_b = path_b.nodes[j]
             if node_a.gate_id == node_b.gate_id:
                 return abs(node_a.entropy - node_b.entropy)
-            vec_a = gate_embeddings.get(node_a.gate_id)
-            vec_b = gate_embeddings.get(node_b.gate_id)
-            if vec_a and vec_b:
-                try:
-                    return 1.0 - VectorMath.cosine_similarity(vec_a, vec_b)
-                except ValueError:
-                    # Zero vector: undefined similarity, maximum distance
-                    return 1.0
+            sim = PathGeometry._cached_cosine(
+                node_a.gate_id, node_b.gate_id, embed_cache, vmath
+            )
+            if sim is not None:
+                return 1.0 - sim
             return 1.0
 
         dp[0][0] = dist(0, 0)
@@ -317,6 +349,7 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> DTWResult:
+        backend, vmath, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
         n = len(path_a.nodes)
         m = len(path_b.nodes)
         if n == 0 or m == 0:
@@ -336,10 +369,11 @@ class PathGeometry:
             if node_a.gate_id == node_b.gate_id:
                 d_val = 0.0
             else:
-                vec_a = gate_embeddings.get(node_a.gate_id)
-                vec_b = gate_embeddings.get(node_b.gate_id)
-                if vec_a and vec_b:
-                    d_val = 1.0 - (VectorMath.cosine_similarity(vec_a, vec_b) or 0.0)
+                sim = PathGeometry._cached_cosine(
+                    node_a.gate_id, node_b.gate_id, embed_cache, vmath
+                )
+                if sim is not None:
+                    d_val = 1.0 - sim
                 else:
                     d_val = 1.0
             entropy_diff = abs(node_a.entropy - node_b.entropy) / entropy_scale
@@ -359,7 +393,6 @@ class PathGeometry:
                 d_val = dist(i, j)
                 dp[i][j] = d_val + min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
 
-        backend = get_default_backend()
         final_cost = dp[n - 1][m - 1]
         if not is_finite(final_cost, backend):
             return DTWResult(

@@ -37,7 +37,8 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     ProbeSpace,
     output_layer_marker,
 )
-from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_sparse
 
 # =============================================================================
 # Helper: Dimension Alignment Builder (Simplified)
@@ -464,7 +465,8 @@ class MetaphorConvergenceAnalyzer:
     @staticmethod
     def _cosine_sparse(a: dict[int, float], b: dict[int, float]) -> float | None:
         """Compute cosine similarity between sparse vectors."""
-        return SparseVectorMath.cosine_similarity(a, b)
+        backend = get_default_backend()
+        return geodesic_cosine_sparse(a, b, backend)
 
     @staticmethod
     def _format_layer_label(

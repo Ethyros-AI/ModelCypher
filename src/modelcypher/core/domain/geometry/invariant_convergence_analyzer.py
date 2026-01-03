@@ -30,9 +30,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
 from .manifold_stitcher import ContinuousModelFingerprints
-from .vector_math import SparseVectorMath
+from .vector_math import geodesic_cosine_sparse
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger("modelcypher.geometry.invariant_convergence")
 
@@ -160,8 +165,9 @@ class InvariantConvergenceAnalyzer:
     - NORMALIZED: Normalized depth matching (cross-architecture)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, backend: "Backend | None" = None) -> None:
         """Initialize the analyzer (no thresholds; raw similarities only)."""
+        self._backend = backend or get_default_backend()
 
     def analyze(
         self,
@@ -473,7 +479,7 @@ class InvariantConvergenceAnalyzer:
 
     def _cosine_sparse(self, a: dict[int, float], b: dict[int, float]) -> float | None:
         """Compute cosine similarity between sparse vectors."""
-        return SparseVectorMath.cosine_similarity(a, b)
+        return geodesic_cosine_sparse(a, b, self._backend)
 
     def _format_layer_label(
         self,

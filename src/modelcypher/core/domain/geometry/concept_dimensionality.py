@@ -24,11 +24,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import is_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_spearman_correlation,
+    is_finite,
+)
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -375,6 +377,7 @@ class ConceptDimensionalityStudy:
     def summarize(
         reports: list[ConceptDimensionalityReport],
     ) -> ConceptDimensionalityStudyReport:
+        backend = get_default_backend()
         if not reports:
             return ConceptDimensionalityStudyReport(
                 layers=[],
@@ -446,13 +449,19 @@ class ConceptDimensionalityStudy:
                     continue
                 vals_a = [a.domain_mean_dimensions[name] for name in common]
                 vals_b = [b.domain_mean_dimensions[name] for name in common]
-                spearman = VectorMath.spearman_correlation(vals_a, vals_b)
+                spearman = compute_spearman_correlation(
+                    vals_a,
+                    vals_b,
+                    backend=backend,
+                    default=float("nan"),
+                )
+                spearman_value = spearman if is_finite(spearman, backend) else None
                 correlations.append(
                     DomainRankCorrelation(
                         layer_a=a.layer,
                         layer_b=b.layer,
                         domain_count=len(common),
-                        spearman=spearman,
+                        spearman=spearman_value,
                     )
                 )
 

@@ -27,7 +27,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_sparse
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.manifold_stitcher import (
@@ -109,8 +110,9 @@ def compute_cosine_similarity(
     """
     Compute cosine similarity between sparse activation vectors.
     """
+    backend = get_default_backend()
     try:
-        return SparseVectorMath.cosine_similarity(source_activations, target_activations)
+        return geodesic_cosine_sparse(source_activations, target_activations, backend)
     except ValueError:
         return 0.0
 

@@ -42,7 +42,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.cache import ComputationCache
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_nan
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_spearman_correlation,
+    division_epsilon,
+    is_nan,
+)
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
     MoralConceptProtocol,
@@ -386,8 +390,6 @@ class MoralGeometryAnalyzer:
         self, matrix: "Array", concepts: list[str]
     ) -> MoralGradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
-        from modelcypher.core.domain.geometry.vector_math import VectorMath
-
         backend = self._backend
         backend.eval(matrix)
 
@@ -415,7 +417,9 @@ class MoralGeometryAnalyzer:
             if len(levels) < 3:
                 return 0.0, False
 
-            corr = VectorMath.spearman_correlation(levels, projections)
+            corr = compute_spearman_correlation(
+                levels, projections, default=0.0, backend=backend
+            )
             if corr is None or is_nan(float(corr), self._backend):
                 corr = 0.0
 

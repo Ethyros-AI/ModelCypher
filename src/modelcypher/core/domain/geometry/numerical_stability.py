@@ -61,6 +61,7 @@ __all__ = [
     "find_magnitude_gap_threshold",
     # Statistical utilities
     "compute_pearson_correlation",
+    "compute_spearman_correlation",
     # Matrix decomposition
     "svd_via_eigh",
     "canonicalize_svd_signs",
@@ -517,6 +518,64 @@ def compute_pearson_correlation(
     backend.eval(num, denom)
     denom_val = float(backend.to_scalar(denom))
     if denom_val <= 0:
+        return error_value
+
+    return float(backend.to_scalar(num)) / denom_val
+
+
+def compute_spearman_correlation(
+    lhs: list[float],
+    rhs: list[float],
+    *,
+    default: float | None = None,
+    backend: "Backend | None" = None,
+) -> float:
+    """Compute Spearman rank correlation coefficient between two lists.
+
+    Ranks are derived via argsort on the backend for stable, on-device
+    computation. Ties follow backend sort order (no averaging).
+
+    Args:
+        lhs: First list of values.
+        rhs: Second list of values (must be same length as lhs).
+        default: Value to return on error (empty lists, mismatched lengths).
+                 If None, returns float("nan") on error.
+        backend: Backend for computation. If None, uses default backend.
+
+    Returns:
+        Spearman correlation coefficient in [-1, 1], or default/nan on error.
+    """
+    if backend is None:
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+
+    error_value = default if default is not None else float("nan")
+
+    if not lhs or len(lhs) != len(rhs) or len(lhs) < 2:
+        return error_value
+
+    lhs_arr = backend.array(lhs)
+    rhs_arr = backend.array(rhs)
+
+    lhs_rank = backend.argsort(backend.argsort(lhs_arr, axis=0), axis=0)
+    rhs_rank = backend.argsort(backend.argsort(rhs_arr, axis=0), axis=0)
+    lhs_rank = backend.astype(lhs_rank, backend.float32)
+    rhs_rank = backend.astype(rhs_rank, backend.float32)
+
+    mean_l = backend.mean(lhs_rank)
+    mean_r = backend.mean(rhs_rank)
+    diff_l = lhs_rank - mean_l
+    diff_r = rhs_rank - mean_r
+    num = backend.sum(diff_l * diff_r)
+    den_l = backend.sum(diff_l * diff_l)
+    den_r = backend.sum(diff_r * diff_r)
+    denom = backend.sqrt(den_l) * backend.sqrt(den_r)
+
+    backend.eval(num, denom)
+    denom_val = float(backend.to_scalar(denom))
+    eps = division_epsilon(backend, denom)
+    if denom_val <= eps:
         return error_value
 
     return float(backend.to_scalar(num)) / denom_val

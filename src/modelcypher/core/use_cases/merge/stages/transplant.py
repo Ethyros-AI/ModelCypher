@@ -35,12 +35,80 @@ from modelcypher.core.domain._backend import get_default_backend
 # NOTE: ProjectionMethod import removed - always use GRAM_TRANSPORT (the only correct method)
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
-    safe_pinv,
+    regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     partition_core_boundary,
 )
+
+
+def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
+    """Compute pseudo-inverse using geodesic-friendly Gram regularization.
+
+    For high-dimensional manifolds (8kD+), Euclidean SVD is inaccurate.
+    This uses regularized Gram matrix inversion which stays on GPU.
+
+    For CKA=1.0 transforms (which preserve Gram structure), F is nearly
+    orthogonal in representation space, so pinv(F) ≈ F.T with scaling.
+
+    Formula: pinv(F) = (F.T @ F + λI)^{-1} @ F.T
+    Computed via Neumann series to stay on GPU.
+    """
+    b = backend
+    F = b.astype(b.array(F), "float32")
+    b.eval(F)
+
+    src_dim = int(F.shape[0])
+    tgt_dim = int(F.shape[1])
+
+    # Gram matrix: G = F.T @ F [tgt_dim, tgt_dim]
+    G = b.matmul(b.transpose(F), F)
+    b.eval(G)
+
+    # Regularization from trace (data-derived, not arbitrary)
+    trace_G = b.trace(G)
+    b.eval(trace_G)
+    trace_val = float(b.to_scalar(trace_G))
+    reg = regularization_epsilon(b, F)
+    lambda_reg = max(reg, trace_val / tgt_dim * 0.01) if tgt_dim > 0 else reg
+
+    # Regularized Gram: G_reg = G + λI
+    G_reg = G + lambda_reg * b.eye(tgt_dim, dtype="float32")
+    b.eval(G_reg)
+
+    # Neumann series for (G_reg)^{-1}:
+    # (G_reg)^{-1} = (1/λ_eff) * Σ_{k=0}^{K} (I - G/λ_eff)^k
+    # where λ_eff = λ + trace(G)/d
+    lambda_eff = lambda_reg + trace_val / tgt_dim if tgt_dim > 0 else lambda_reg + reg
+
+    # First-order approximation (sufficient for well-conditioned CKA=1.0 transforms)
+    # (G_reg)^{-1} ≈ (1/λ_eff) * I - (1/λ_eff²) * (G - (trace/d)*I)
+    inv_lambda = 1.0 / lambda_eff
+    mean_diag = trace_val / tgt_dim if tgt_dim > 0 else 0.0
+
+    # G_centered = G - mean_diag * I
+    G_centered = G - mean_diag * b.eye(tgt_dim, dtype="float32")
+    b.eval(G_centered)
+
+    # G_reg_inv ≈ inv_lambda * I - inv_lambda² * G_centered
+    G_reg_inv = inv_lambda * b.eye(tgt_dim, dtype="float32") - (inv_lambda ** 2) * G_centered
+
+    # Refine with one Newton-Schulz iteration: X = X @ (2I - G @ X)
+    # This doubles the accuracy
+    GX = b.matmul(G_reg, G_reg_inv)
+    b.eval(GX)
+    two_I = 2.0 * b.eye(tgt_dim, dtype="float32")
+    G_reg_inv = b.matmul(G_reg_inv, two_I - GX)
+    b.eval(G_reg_inv)
+
+    # pinv(F) = G_reg_inv @ F.T  [tgt_dim, src_dim]
+    F_pinv = b.matmul(G_reg_inv, b.transpose(F))
+    b.eval(F_pinv)
+
+    return F_pinv
+
+
 from modelcypher.core.domain.merging.exceptions import (
     AlignmentFailureError,
     DimensionMismatchError,
@@ -405,7 +473,7 @@ def stage_transplant(
         # Compute stitch matrices for each layer
         for tgt_layer, F in transforms_to_eval:
             stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
-            F_pinv, _ = safe_pinv(b, F)
+            F_pinv = _geodesic_pinv(b, F)
             stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
             layer_hidden_stitches[tgt_layer] = (stitch_output, stitch_input)
 
@@ -502,7 +570,7 @@ def stage_transplant(
         # Compute stitch matrices for each layer
         for tgt_layer, F in attn_transforms_to_eval:
             stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
-            F_pinv, _ = safe_pinv(b, F)
+            F_pinv = _geodesic_pinv(b, F)
             stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
             layer_attention_stitches[tgt_layer] = (stitch_output, stitch_input)
 
@@ -579,7 +647,7 @@ def stage_transplant(
         # Compute stitch matrices for each layer
         for tgt_layer, F in kv_transforms_to_eval:
             stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
-            F_pinv, _ = safe_pinv(b, F)
+            F_pinv = _geodesic_pinv(b, F)
             stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
             layer_kv_stitches[tgt_layer] = (stitch_output, stitch_input)
 
@@ -779,13 +847,13 @@ def stage_transplant(
                     F = b.array(inter_result.feature_transform)
                     b.eval(F)
                     intermediate_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                    F_pinv, inter_pinv_diag = safe_pinv(b, F)
+                    F_pinv = _geodesic_pinv(b, F)
                     intermediate_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
                     b.eval(intermediate_stitch_output, intermediate_stitch_input)
                     logger.info(
-                        "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d) cond=%.2e",
+                        "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d)",
                         layer_idx, inter_result.achieved_cka,
-                        src_inter_dim, tgt_inter_dim, inter_pinv_diag.get("condition_number", 0)
+                        src_inter_dim, tgt_inter_dim,
                     )
                     metrics.setdefault("intermediate_gram_aligned", 0)
                     metrics["intermediate_gram_aligned"] += 1

@@ -43,7 +43,11 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concepts
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_nan
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_spearman_correlation,
+    division_epsilon,
+    is_nan,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -335,7 +339,6 @@ class TemporalTopologyAnalyzer:
         self, matrix: "Array", concepts: list[str]
     ) -> GradientConsistency:
         """Compute gradient consistency (Spearman correlation with expected ordering)."""
-        from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = get_default_backend()
         backend.eval(matrix)
@@ -364,7 +367,9 @@ class TemporalTopologyAnalyzer:
             if len(levels) < 3:
                 return 0.0, False
 
-            corr = VectorMath.spearman_correlation(levels, projections)
+            corr = compute_spearman_correlation(
+                levels, projections, default=0.0, backend=backend
+            )
             if corr is None or is_nan(float(corr), backend):
                 corr = 0.0
 
@@ -387,7 +392,6 @@ class TemporalTopologyAnalyzer:
 
     def _detect_arrow_of_time(self, matrix: "Array", concepts: list[str]) -> ArrowOfTime:
         """Detect if there's a consistent "Arrow of Time" direction."""
-        from modelcypher.core.domain.geometry.vector_math import VectorMath
 
         backend = get_default_backend()
         backend.eval(matrix)
@@ -428,7 +432,9 @@ class TemporalTopologyAnalyzer:
         levels = [a[1] for a in direction_anchors]
         projections = [a[2] for a in direction_anchors]
 
-        corr = VectorMath.spearman_correlation(levels, projections)
+        corr = compute_spearman_correlation(
+            levels, projections, default=0.0, backend=backend
+        )
         if corr is None or is_nan(float(corr), backend):
             corr = 0.0
 
