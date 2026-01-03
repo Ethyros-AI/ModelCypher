@@ -67,7 +67,9 @@ def select_anchor_indices_by_coverage(
     k_neighbors = min(10, n - 1)
     norms = backend.norm(points, axis=1)
     backend.eval(norms)
-    seed_idx = int(backend.to_scalar(backend.argmax(norms)))
+    seed_idx_arr = backend.argmax(norms)
+    backend.eval(seed_idx_arr)
+    seed_idx = int(backend.to_scalar(seed_idx_arr))
 
     rg = RiemannianGeometry(backend)
     fps_result = rg.farthest_point_sampling(

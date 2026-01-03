@@ -220,6 +220,7 @@ class MeasuredBasinTopology:
         p_attempted = attempted_count / total
         p_solved = solved_count / total
 
+        _b = get_default_backend()
         # Reference state: refusal (E=0)
         safe_min = _log_safe_min(_b)
         p_ref = max(p_refused, safe_min)
@@ -255,8 +256,7 @@ class MeasuredBasinTopology:
             # Approximate as (attempted + solved) / total
             escape_rate = (p_attempted + p_solved)
 
-        escape_rate = max(escape_rate, _log_safe_min(_b))  # Log safety
-        _b = get_default_backend()
+        escape_rate = max(escape_rate, safe_min)  # Log safety
         barrier_height = -temperature * log_scalar(escape_rate, _b)
         ridge_energy = caution.value + barrier_height
 

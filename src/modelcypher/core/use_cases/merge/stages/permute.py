@@ -191,8 +191,11 @@ def stage_permute(
         b.eval(eigvals, eigvecs)
 
         # Use backend operations to find min/max eigenvalues (avoid CPU conversion)
-        max_eig = float(b.to_scalar(b.max(eigvals)))
-        min_eig = float(b.to_scalar(b.min(eigvals)))
+        max_eig_arr = b.max(eigvals)
+        min_eig_arr = b.min(eigvals)
+        b.eval(max_eig_arr, min_eig_arr)
+        max_eig = float(b.to_scalar(max_eig_arr))
+        min_eig = float(b.to_scalar(min_eig_arr))
         threshold = max_eig * precision_tol
         if min_eig <= threshold:
             raise RuntimeError(

@@ -19,8 +19,6 @@
 
 from __future__ import annotations
 
-import sys
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -146,7 +144,8 @@ class TestMeasuredEnergy:
         )
 
         # Should not raise, energy should be very high (low probability)
-        expected = -log_scalar(sys.float_info.min / 0.5, get_default_backend())
+        b = get_default_backend()
+        expected = -log_scalar(b.finfo().tiny / 0.5, b)
         eps = _eps(energy.value, expected)
         assert abs(energy.value - expected) <= eps
 

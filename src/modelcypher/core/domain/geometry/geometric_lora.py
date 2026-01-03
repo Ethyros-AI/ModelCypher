@@ -134,7 +134,10 @@ class LayerLoRAWeights:
         if sv_count == 0:
             return 0.0
         cond_thresh = condition_threshold(backend, self.singular_values)
-        max_sv = float(backend.to_scalar(self.singular_values[0]))
+        max_sv_arr = backend.take(self.singular_values, backend.array([0]), axis=0)
+        max_sv_arr = backend.squeeze(max_sv_arr)
+        backend.eval(max_sv_arr)
+        max_sv = float(backend.to_scalar(max_sv_arr))
         threshold = max_sv / cond_thresh
         mask = self.singular_values > threshold
         rank = backend.sum(backend.astype(mask, "int32"))

@@ -176,7 +176,13 @@ def compute_transplant_delta(
     # Compute spectral norm (largest singular value)
     _, S, _ = svd_via_eigh(b, delta_filtered, full_matrices=False)
     b.eval(S)
-    spectral_norm = float(b.to_scalar(S[0])) if int(S.shape[0]) > 0 else 0.0
+    if int(S.shape[0]) > 0:
+        max_sv_arr = b.take(S, b.array([0]), axis=0)
+        max_sv_arr = b.squeeze(max_sv_arr)
+        b.eval(max_sv_arr)
+        spectral_norm = float(b.to_scalar(max_sv_arr))
+    else:
+        spectral_norm = 0.0
 
     # Scale by scalar if needed (preserves null-space exactly)
     max_norm = 1.0

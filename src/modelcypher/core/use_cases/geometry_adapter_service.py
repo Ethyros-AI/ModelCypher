@@ -105,8 +105,10 @@ class GeometryAdapterService:
         scale = 1.0
         if "lora_scale" in checkpoint:
             scale_arr = b.reshape(b.array(checkpoint["lora_scale"]), (-1,))
-            b.eval(scale_arr)
-            scale = float(b.to_scalar(scale_arr[0]))
+            first = b.take(scale_arr, b.array([0]), axis=0)
+            first = b.squeeze(first)
+            b.eval(first)
+            scale = float(b.to_scalar(first))
 
         lora_deltas = self._lora_deltas_gpu(checkpoint, scale)
         if not lora_deltas:
@@ -197,8 +199,10 @@ class GeometryAdapterService:
         scale = 1.0
         if "lora_scale" in checkpoint:
             scale_arr = b.reshape(b.array(checkpoint["lora_scale"]), (-1,))
-            b.eval(scale_arr)
-            scale = float(b.to_scalar(scale_arr[0]))
+            first = b.take(scale_arr, b.array([0]), axis=0)
+            first = b.squeeze(first)
+            b.eval(first)
+            scale = float(b.to_scalar(first))
 
         deltas = self._lora_deltas_gpu(checkpoint, scale)
         if deltas:
@@ -484,8 +488,10 @@ class GeometryAdapterService:
         if "lora_scale" in weights:
             scale_arr = b.array(weights["lora_scale"])
             scale_arr = b.reshape(scale_arr, (-1,))
-            b.eval(scale_arr)
-            scale = float(b.to_scalar(scale_arr[0]))
+            first = b.take(scale_arr, b.array([0]), axis=0)
+            first = b.squeeze(first)
+            b.eval(first)
+            scale = float(b.to_scalar(first))
 
         return AdapterWeights(weights=weights, scale=scale)
 

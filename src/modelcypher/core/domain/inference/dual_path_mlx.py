@@ -88,7 +88,9 @@ def compute_token_rank_metrics(
     token_score = scores[token_id]
 
     # Rank = count of tokens with strictly higher score.
-    token_rank = int(b.to_scalar(b.sum(b.astype(scores > token_score, "float32"))))
+    rank_arr = b.sum(b.astype(scores > token_score, "float32"))
+    b.eval(rank_arr)
+    token_rank = int(b.to_scalar(rank_arr))
 
     # Rank fraction: 1 = top token, 0 = bottom token.
     if vocab_size > 1:
@@ -101,11 +103,15 @@ def compute_token_rank_metrics(
         sorted_scores = -b.sort(-scores)
         gaps = sorted_scores[:-1] - sorted_scores[1:]
         eps = division_epsilon(b, scores)
-        max_gap = float(b.to_scalar(b.max(gaps)))
+        max_gap_arr = b.max(gaps)
+        b.eval(max_gap_arr)
+        max_gap = float(b.to_scalar(max_gap_arr))
         if max_gap <= eps:
             frontier_size = vocab_size
         else:
-            frontier_index = int(b.to_scalar(b.argmax(gaps)))
+            frontier_index_arr = b.argmax(gaps)
+            b.eval(frontier_index_arr)
+            frontier_index = int(b.to_scalar(frontier_index_arr))
             frontier_size = frontier_index + 1
     else:
         frontier_size = 1
@@ -271,8 +277,12 @@ class DualPathGenerator:
 
             # Compute base logits for rank geometry.
             scores_base = b.squeeze(curr_logits_base)
-            token_logit = float(b.to_scalar(scores_base[token_id]))
-            max_logit = float(b.to_scalar(b.max(scores_base)))
+            token_logit_arr = b.take(scores_base, b.array([token_id]), axis=0)
+            token_logit_arr = b.squeeze(token_logit_arr)
+            max_logit_arr = b.max(scores_base)
+            b.eval(token_logit_arr, max_logit_arr)
+            token_logit = float(b.to_scalar(token_logit_arr))
+            max_logit = float(b.to_scalar(max_logit_arr))
             logit_margin = max(0.0, max_logit - token_logit)
 
             # Compute rank geometry for the generated token.

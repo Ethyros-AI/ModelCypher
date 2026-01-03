@@ -313,9 +313,13 @@ class GromovWassersteinDistance:
         losses = (losses_forward + losses_backward) / (2.0 * n * n)
 
         # Force evaluation and find minimum
-        backend.eval(losses)
-        best_idx = int(backend.to_scalar(backend.argmin(losses)))
-        best_loss = float(backend.to_scalar(losses[best_idx]))
+        best_idx_arr = backend.argmin(losses)
+        backend.eval(best_idx_arr)
+        best_idx = int(backend.to_scalar(best_idx_arr))
+        best_loss_arr = backend.take(losses, backend.array([best_idx]), axis=0)
+        best_loss_arr = backend.squeeze(best_loss_arr)
+        backend.eval(best_loss_arr)
+        best_loss = float(backend.to_scalar(best_loss_arr))
         best_perm = perms[best_idx]
 
         # Build coupling matrix from best permutation

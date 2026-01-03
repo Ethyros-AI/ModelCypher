@@ -187,15 +187,27 @@ def compute_spectral_metrics(
     # Extract values
     source_len = int(source_s.shape[0])
     target_len = int(target_s.shape[0])
-    source_spectral = (
-        b.to_scalar(source_s[0]) if source_len > 0 else eps
-    )
-    target_spectral = (
-        b.to_scalar(target_s[0]) if target_len > 0 else eps
-    )
-    target_min_s = (
-        b.to_scalar(target_s[target_len - 1]) if target_len > 0 else eps
-    )
+    if source_len > 0:
+        source_s0 = b.take(source_s, b.array([0]), axis=0)
+        source_s0 = b.squeeze(source_s0)
+        b.eval(source_s0)
+        source_spectral = float(b.to_scalar(source_s0))
+    else:
+        source_spectral = eps
+
+    if target_len > 0:
+        target_s0 = b.take(target_s, b.array([0]), axis=0)
+        target_s0 = b.squeeze(target_s0)
+        b.eval(target_s0)
+        target_spectral = float(b.to_scalar(target_s0))
+
+        target_last = b.take(target_s, b.array([target_len - 1]), axis=0)
+        target_last = b.squeeze(target_last)
+        b.eval(target_last)
+        target_min_s = float(b.to_scalar(target_last))
+    else:
+        target_spectral = eps
+        target_min_s = eps
 
     # Delta Frobenius norm
     delta_arr = b.norm(source_arr - target_arr)

@@ -883,7 +883,9 @@ def _extract_top_k_dims(
         k = max(1, int(ceil_scalar(log2_dim, b)))
 
     # Derive threshold from dtype precision scaled by max magnitude (use backend ops)
-    max_magnitude = float(b.to_scalar(b.max(abs_vals)))
+    max_magnitude_arr = b.max(abs_vals)
+    b.eval(max_magnitude_arr)
+    max_magnitude = float(b.to_scalar(max_magnitude_arr))
     if threshold is None:
         eps = machine_epsilon(b, activation_vector)
         # Threshold at sqrt(eps) * max - standard numerical tolerance

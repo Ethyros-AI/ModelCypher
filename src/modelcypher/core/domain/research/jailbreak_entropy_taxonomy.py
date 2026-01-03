@@ -652,7 +652,12 @@ class JailbreakEntropyTaxonomy:
         points = backend.array([a, b])
         geo_dist = geodesic_distance_matrix(points, k_neighbors=1, backend=backend)
         backend.eval(geo_dist)
-        return float(backend.to_scalar(geo_dist[0, 1]))
+        row = backend.take(geo_dist, backend.array([0]), axis=0)
+        row = backend.squeeze(row, axis=0)
+        cell = backend.take(row, backend.array([1]), axis=0)
+        cell = backend.squeeze(cell)
+        backend.eval(cell)
+        return float(backend.to_scalar(cell))
 
     # Backward compatibility alias
     _euclidean_distance = _geodesic_distance

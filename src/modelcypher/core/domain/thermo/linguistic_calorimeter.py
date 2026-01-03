@@ -292,20 +292,34 @@ class LinguisticCalorimeter:
             entropy_trajectory.append(entropy)
             variance_trajectory.append(variance)
 
+            # Pull the last position logits via backend indexing.
+            seq_len = int(logits.shape[1])
+            row = b.take(logits, b.array([0]), axis=0)
+            row = b.squeeze(row, axis=0)
+            last_logits = b.take(row, b.array([seq_len - 1]), axis=0)
+            last_logits = b.squeeze(last_logits, axis=0)
+            b.eval(last_logits)
+
             # Sample next token
             if temperature <= 0:
                 # Greedy
-                next_token = int(b.to_scalar(b.argmax(logits[0, -1, :], axis=-1)))
+                next_token_arr = b.argmax(last_logits, axis=-1)
+                b.eval(next_token_arr)
+                next_token = int(b.to_scalar(next_token_arr))
             else:
                 # Temperature sampling
-                scaled_logits = logits[0, -1, :] / temperature
+                scaled_logits = last_logits / temperature
                 probs = b.softmax(scaled_logits, axis=-1)
                 b.eval(probs)
                 # Use random_categorical if available, else argmax
                 if hasattr(b, "random_categorical"):
-                    next_token = int(b.to_scalar(b.random_categorical(b.log(probs))))
+                    next_token_arr = b.random_categorical(b.log(probs))
+                    b.eval(next_token_arr)
+                    next_token = int(b.to_scalar(next_token_arr))
                 else:
-                    next_token = int(b.to_scalar(b.argmax(probs, axis=-1)))
+                    next_token_arr = b.argmax(probs, axis=-1)
+                    b.eval(next_token_arr)
+                    next_token = int(b.to_scalar(next_token_arr))
 
             generated_tokens.append(next_token)
             current_tokens.append(next_token)

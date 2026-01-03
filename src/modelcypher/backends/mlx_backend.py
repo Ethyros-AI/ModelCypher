@@ -247,23 +247,16 @@ class MLXBackend(Backend):
         return mask
 
     def to_numpy(self, array: Array) -> Any:
-        """Convert to a host array - requires eval first."""
+        """Convert to a host list - requires eval first.
+
+        Note: Returns a Python list, not a numpy array. Use backend operations
+        for array math. This method exists for serialization/interop only.
+        """
         self.safe.eval(array)
-        # Handle bfloat16 which host array protocols may not support
+        # Handle bfloat16 which some protocols may not support
         if array.dtype == self.mx.bfloat16:
             array = array.astype(self.mx.float32)
             self.safe.eval(array)
-        if hasattr(array, "to_numpy"):
-            try:
-                return array.to_numpy()
-            except Exception:
-                pass  # Fall through to fallback
-        if hasattr(array, "__array__"):
-            try:
-                return array.__array__()
-            except Exception:
-                pass  # Fall through to fallback
-        # Fallback: return a host list without numpy dependency.
         return array.tolist()
 
     def to_scalar(self, array: Array) -> float | int:

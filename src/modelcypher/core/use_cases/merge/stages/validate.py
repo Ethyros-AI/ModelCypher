@@ -498,7 +498,9 @@ def _compute_layer_condition_number(
                 continue
             threshold = sv_eps * s_max
             mask = s > threshold
-            count = int(b.to_scalar(b.sum(b.astype(mask, "int32"))))
+            count_arr = b.sum(b.astype(mask, "int32"))
+            b.eval(count_arr)
+            count = int(b.to_scalar(count_arr))
             if count > 1:
                 pos_inf = b.full(s.shape, float("inf"))
                 min_nonzero_arr = b.min(b.where(mask, s, pos_inf))
@@ -554,7 +556,9 @@ def _estimate_layer_intrinsic_dim(
             b.eval(s_max_arr)
             s_max = float(b.to_scalar(s_max_arr))
             threshold = s_max * (sv_eps ** 0.5)
-            intrinsic = int(b.to_scalar(b.sum(b.astype(s > threshold, "int32"))))
+            intrinsic_arr = b.sum(b.astype(s > threshold, "int32"))
+            b.eval(intrinsic_arr)
+            intrinsic = int(b.to_scalar(intrinsic_arr))
             intrinsic_dims.append(intrinsic)
         except Exception:
             pass

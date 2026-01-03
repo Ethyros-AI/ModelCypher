@@ -261,7 +261,12 @@ class BirkhoffProjector:
         _, S, _ = svd_via_eigh(backend, matrix, full_matrices=False)
         backend.eval(S)
         count = int(S.shape[0])
-        return float(backend.to_scalar(S[0])) if count > 0 else 0.0
+        if count > 0:
+            max_sv_arr = backend.take(S, backend.array([0]), axis=0)
+            max_sv_arr = backend.squeeze(max_sv_arr)
+            backend.eval(max_sv_arr)
+            return float(backend.to_scalar(max_sv_arr))
+        return 0.0
 
     def bound_spectral_norm(
         self,

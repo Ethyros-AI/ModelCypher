@@ -29,7 +29,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 import pytest
@@ -39,6 +38,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     compute_shared_relational_rank,
     condition_threshold,
     division_epsilon,
+    is_finite,
+    is_inf,
+    is_nan,
+    log_scalar,
     machine_epsilon,
     regularization_epsilon,
     safe_log_epsilon,
@@ -46,6 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     solve_via_cca_procrustes,
     solve_via_gram_alignment,
     solve_via_truncated_svd,
+    sqrt_scalar,
     svd_rank_threshold,
     svd_via_eigh,
     tiny_value,
@@ -120,7 +124,7 @@ class TestDivisionEpsilon:
         arr = b.zeros((2, 2))
         div_eps = division_epsilon(b, arr)
         mach_eps = machine_epsilon(b, arr)
-        expected = math.sqrt(mach_eps)
+        expected = sqrt_scalar(mach_eps, b)
         eps = _eps(b, div_eps, expected)
         assert abs(div_eps - expected) <= eps
 
@@ -247,8 +251,8 @@ class TestSafeLogEpsilon:
         arr = b.zeros((2, 2))
         log_eps = safe_log_epsilon(b, arr)
         # log(epsilon) should be finite
-        log_val = math.log(log_eps)
-        assert math.isfinite(log_val)
+        log_val = log_scalar(log_eps, b)
+        assert is_finite(log_val, b)
 
 
 # =============================================================================
@@ -274,10 +278,12 @@ class TestSvdViaEigh:
         reconstructed = b.matmul(U, b.matmul(S_diag, Vt))
         b.eval(reconstructed)
 
-        # Should match original
-        diff = b.to_numpy(reconstructed) - b.to_numpy(A)
-        diff_val = abs(diff).max()
-        eps = _eps(b, float(diff_val))
+        # Should match original - use backend operations
+        diff = reconstructed - A
+        diff_val_arr = b.max(b.abs(diff))
+        b.eval(diff_val_arr)
+        diff_val = float(b.to_scalar(diff_val_arr))
+        eps = _eps(b, diff_val)
         assert diff_val <= eps
 
     def test_svd_u_orthonormality(self, any_backend: "Backend") -> None:
@@ -295,9 +301,11 @@ class TestSvdViaEigh:
         b.eval(UtU)
         identity = b.eye(int(b.shape(U)[1]))
 
-        diff = b.to_numpy(UtU) - b.to_numpy(identity)
-        diff_val = abs(diff).max()
-        eps = _eps(b, float(diff_val))
+        diff = UtU - identity
+        diff_val_arr = b.max(b.abs(diff))
+        b.eval(diff_val_arr)
+        diff_val = float(b.to_scalar(diff_val_arr))
+        eps = _eps(b, diff_val)
         assert diff_val <= eps
 
     def test_svd_vt_orthonormality(self, any_backend: "Backend") -> None:
@@ -315,9 +323,11 @@ class TestSvdViaEigh:
         b.eval(VtVt_T)
         identity = b.eye(int(b.shape(Vt)[0]))
 
-        diff = b.to_numpy(VtVt_T) - b.to_numpy(identity)
-        diff_val = abs(diff).max()
-        eps = _eps(b, float(diff_val))
+        diff = VtVt_T - identity
+        diff_val_arr = b.max(b.abs(diff))
+        b.eval(diff_val_arr)
+        diff_val = float(b.to_scalar(diff_val_arr))
+        eps = _eps(b, diff_val)
         assert diff_val <= eps
 
     def test_svd_singular_values_nonnegative(self, any_backend: "Backend") -> None:
@@ -331,7 +341,8 @@ class TestSvdViaEigh:
         b.eval(S)
 
         S_np = b.to_numpy(S)
-        eps = _eps(b, float(min(S_np, default=0.0)))
+        min_sv = float(min(S_np, default=0.0))
+        eps = _eps(b, min_sv)
         assert all(s >= -eps for s in S_np)
 
     def test_svd_singular_values_descending(self, any_backend: "Backend") -> None:
@@ -386,7 +397,8 @@ class TestSvdViaEigh:
         S_np = [float(v) for v in b.to_numpy(S)]
         # Should have 2 significant singular values, rest near zero
         # Count values above threshold
-        thresh = svd_rank_threshold(b, b.array(S_np), max_dim=len(S_np))
+        max_sv = max(S_np, default=0.0)
+        thresh = division_epsilon(b, b.array([max_sv])) * max_sv
         significant = sum(1 for s in S_np if s > thresh)
         assert significant <= 2
 
@@ -1107,20 +1119,20 @@ class TestNumericalPrecision:
         # Create ill-conditioned matrix
         A = b.random_normal((20, 10))
         # Scale columns to create poor conditioning
-        # Use .copy() to get a writable array (JAX returns read-only)
-        A_np = b.to_numpy(A).copy()
-        for i in range(10):
-            A_np[:, i] *= 10 ** (-i)
-        A = b.array(A_np)
-        b.eval(A)
+        scales = b.array([10.0 ** (-i) for i in range(10)])
+        scales = b.reshape(scales, (1, -1))
+        A = A * scales
+        b.eval(A, scales)
 
         # Should not raise or produce NaN
         U, S, Vt = svd_via_eigh(b, A)
         b.eval(U, S, Vt)
 
-        # Check no NaN
-        assert not any(math.isnan(float(v)) for v in b.to_numpy(S))
-        assert not any(math.isnan(float(v)) for v in b.to_numpy(U).flatten())
+        nan_s = b.sum(b.astype(b.isnan(S), "int32"))
+        nan_u = b.sum(b.astype(b.isnan(U), "int32"))
+        b.eval(nan_s, nan_u)
+        assert int(b.to_scalar(nan_s)) == 0
+        assert int(b.to_scalar(nan_u)) == 0
 
     def test_epsilon_functions_consistency(self, any_backend: "Backend") -> None:
         """Epsilon functions should have consistent relationships."""
@@ -1223,15 +1235,17 @@ class TestNumericalStabilityHypothesis:
         U, S, Vt = svd_via_eigh(b, A)
         b.eval(U, S, Vt)
 
-        # Check no NaN/Inf in singular values
-        S_np = b.to_numpy(S)
-        assert not any(math.isnan(float(v)) for v in S_np), "S contains NaN"
-        assert not any(math.isinf(float(v)) for v in S_np), "S contains Inf"
+        nan_s = b.sum(b.astype(b.isnan(S), "int32"))
+        inf_s = b.sum(b.astype(b.isinf(S), "int32"))
+        b.eval(nan_s, inf_s)
+        assert int(b.to_scalar(nan_s)) == 0, "S contains NaN"
+        assert int(b.to_scalar(inf_s)) == 0, "S contains Inf"
 
         # Check no NaN/Inf in U (if non-empty)
         if b.shape(U)[0] > 0 and b.shape(U)[1] > 0:
-            U_np = b.to_numpy(U).flatten()
-            assert not any(math.isnan(float(v)) for v in U_np), "U contains NaN"
+            nan_u = b.sum(b.astype(b.isnan(U), "int32"))
+            b.eval(nan_u)
+            assert int(b.to_scalar(nan_u)) == 0, "U contains NaN"
 
     @given(
         rows=st.integers(min_value=5, max_value=20),
@@ -1389,9 +1403,11 @@ class TestSolverStabilityHypothesis:
 
         # Should produce a valid solution (not None, no NaN)
         if F is not None:
-            F_np = b.to_numpy(F).flatten()
-            nan_count = sum(1 for v in F_np if math.isnan(float(v)))
-            assert nan_count == 0, f"F contains {nan_count} NaN values at scale {scale}"
+            nan_count = b.sum(b.astype(b.isnan(F), "int32"))
+            b.eval(nan_count)
+            assert int(b.to_scalar(nan_count)) == 0, (
+                f"F contains NaN values at scale {scale}"
+            )
 
 
 class TestEdgeCaseEpsilons:
@@ -1407,7 +1423,7 @@ class TestEdgeCaseEpsilons:
         # Epsilon functions should still work
         eps = machine_epsilon(b, small)
         assert eps > 0
-        assert not math.isnan(eps)
+        assert not is_nan(eps, b)
 
     def test_very_large_array_values(self, any_backend: "Backend") -> None:
         """Arrays with very large values should not cause overflow issues."""
@@ -1419,7 +1435,7 @@ class TestEdgeCaseEpsilons:
         # Epsilon functions should still work
         eps = machine_epsilon(b, large)
         assert eps > 0
-        assert not math.isnan(eps)
+        assert not is_nan(eps, b)
 
     def test_mixed_scale_array(self, any_backend: "Backend") -> None:
         """Arrays with mixed scales should be handled properly."""
@@ -1427,22 +1443,22 @@ class TestEdgeCaseEpsilons:
         b.random_seed(42)
 
         # Create matrix with mixed scales
-        # Use .copy() because JAX arrays are read-only when converted to numpy
-        source_np = b.to_numpy(b.random_normal((20, 10))).copy()
-        # Scale columns by different orders of magnitude
-        for i in range(10):
-            source_np[:, i] *= 10.0 ** (i - 5)  # Scales from 1e-5 to 1e4
-        source = b.array(source_np)
+        source = b.random_normal((20, 10))
+        scales = b.array([10.0 ** (i - 5) for i in range(10)])
+        scales = b.reshape(scales, (1, -1))
+        source = source * scales
         target = b.random_normal((20, 5))
-        b.eval(source, target)
+        b.eval(source, target, scales)
 
         # SVD via eigh should handle this
         U, S, Vt = svd_via_eigh(b, source)
         b.eval(U, S, Vt)
 
-        S_np = b.to_numpy(S)
-        assert not any(math.isnan(float(v)) for v in S_np), "SVD produced NaN"
-        assert not any(math.isinf(float(v)) for v in S_np), "SVD produced Inf"
+        nan_s = b.sum(b.astype(b.isnan(S), "int32"))
+        inf_s = b.sum(b.astype(b.isinf(S), "int32"))
+        b.eval(nan_s, inf_s)
+        assert int(b.to_scalar(nan_s)) == 0, "SVD produced NaN"
+        assert int(b.to_scalar(inf_s)) == 0, "SVD produced Inf"
 
     def test_near_singular_matrix(self, any_backend: "Backend") -> None:
         """Near-singular matrices should be handled gracefully."""
