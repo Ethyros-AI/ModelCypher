@@ -310,14 +310,15 @@ mc profile import /Volumes/CodeCypher/experiments/SmolLM.json \
 mc profile import /Volumes/CodeCypher/experiments/Qwen2.json \
     --type curvature -o qwen2.json
 
-# 2. Compare for alignment story
+# 2. Compare for geometric diffs
 mc profile compare smolm.json qwen2.json --save comparison.json
 
 # 3. Check the results
 mc --output json profile compare smolm.json qwen2.json | jq '{
-  alignment: .overall_alignment,
-  strategy: .recommended_strategy,
-  effort: .mean_alignment_effort
+  aligned: .aligned,
+  mean_sectional_diff: .mean_sectional_curvature_diff,
+  mean_ricci_diff: .mean_ollivier_ricci_diff,
+  mean_dim_diff: .mean_intrinsic_dimension_diff
 }'
 ```
 
