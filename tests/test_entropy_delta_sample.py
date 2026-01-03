@@ -132,14 +132,17 @@ def test_baseline_distribution_z_score() -> None:
     """Test z-score computation from baseline."""
     baseline = BaselineDistribution(mean=0.5, std=0.1)
 
+    # z_score computes (value - mean) / std, a 2-operation chain.
+    # Error accumulates: use 2*eps for the two-operation error bound.
+
     # At mean: z=0 (use input scale since output is 0)
-    assert abs(baseline.z_score(0.5)) <= _eps(0.5)
+    assert abs(baseline.z_score(0.5)) <= _ops_eps(2, 0.5)
 
     # 1 std above: z=1 (use eps relative to expected output)
-    assert abs(baseline.z_score(0.6) - 1.0) <= _eps(1.0)
+    assert abs(baseline.z_score(0.6) - 1.0) <= _ops_eps(2, 1.0)
 
     # 3 std above: z=3 (use eps relative to expected output)
-    assert abs(baseline.z_score(0.8) - 3.0) <= _eps(3.0)
+    assert abs(baseline.z_score(0.8) - 3.0) <= _ops_eps(2, 3.0)
 
 
 def test_baseline_distribution_from_samples() -> None:

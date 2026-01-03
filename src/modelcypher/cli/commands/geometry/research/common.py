@@ -132,20 +132,20 @@ def cleanup_memory() -> None:
     Without cleanup, memory accumulates and can crash the system.
     """
     import gc
+    import time
+
+    from modelcypher.core.domain._backend import get_default_backend
 
     # Force Python garbage collection
     gc.collect()
     gc.collect()  # Second pass catches circular refs
 
-    # Clear MLX cache if available
+    # Clear backend cache if available
     try:
-        import mlx.core as mx
-
-        mx.clear_cache()
-    except (ImportError, AttributeError):
+        backend = get_default_backend()
+        backend.clear_cache()
+    except Exception:
         pass
 
     # Brief pause to let system reclaim memory
-    import time
-
     time.sleep(1)

@@ -138,13 +138,14 @@ def _cleanup_memory() -> None:
     import gc
     import time
 
+    from modelcypher.core.domain._backend import get_default_backend
+
     gc.collect()
     gc.collect()
     try:
-        import mlx.core as mx
-
-        mx.clear_cache()
-    except (ImportError, AttributeError):
+        backend = get_default_backend()
+        backend.clear_cache()
+    except Exception:
         pass
     time.sleep(1)
 

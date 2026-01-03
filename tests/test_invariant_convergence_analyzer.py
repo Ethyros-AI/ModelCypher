@@ -24,6 +24,8 @@ Tests the full implementation with FamilyResult, AlignMode, and CSV export.
 from dataclasses import dataclass
 from typing import Dict, List
 
+import pytest
+
 from modelcypher.core.domain.geometry.invariant_convergence_analyzer import (
     AlignmentPair,
     AlignMode,
@@ -121,19 +123,15 @@ class TestFamilyResult:
 class TestInvariantConvergenceAnalyzer:
     """Tests for the main analyzer class."""
 
-    def test_default_thresholds(self):
-        """Should have empty thresholds by default (no vibes)."""
+    def test_no_thresholds_attribute(self):
+        """Analyzer exposes raw measurements only (no thresholds)."""
         analyzer = InvariantConvergenceAnalyzer()
+        assert not hasattr(analyzer, "thresholds")
 
-        # No hardcoded thresholds - caller provides or raw measurements returned
-        assert analyzer.thresholds == {}
-
-    def test_custom_thresholds(self):
-        """Should accept custom thresholds."""
-        custom = {"custom_family": 0.9}
-        analyzer = InvariantConvergenceAnalyzer(thresholds=custom)
-
-        assert analyzer.thresholds == custom
+    def test_thresholds_not_supported(self):
+        """Threshold inputs are rejected to avoid subjective gating."""
+        with pytest.raises(TypeError):
+            InvariantConvergenceAnalyzer(thresholds={"custom_family": 0.9})
 
     def test_scaled_index_middle(self):
         """Scaled index should interpolate correctly."""

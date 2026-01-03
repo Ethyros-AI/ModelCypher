@@ -360,13 +360,11 @@ def test_cache(
         if model_dir.exists():
             # Try to load real weights
             try:
-                import mlx.core as mx
-
                 safetensor_files = list(model_dir.glob("*.safetensors"))
                 if safetensor_files:
                     all_weights = {}
                     for sf_path in safetensor_files:
-                        file_weights = mx.load(str(sf_path))
+                        file_weights = backend.load_safetensors(str(sf_path))
                         all_weights.update(file_weights)
 
                     # Extract attention weight layers
@@ -379,7 +377,7 @@ def test_cache(
                     # Use same weights for target (testing cache behavior)
                     target_weights = source_weights.copy()
                     use_real_weights = len(source_weights) > 0
-            except ImportError:
+            except Exception:
                 pass
 
     # Fallback to synthetic data

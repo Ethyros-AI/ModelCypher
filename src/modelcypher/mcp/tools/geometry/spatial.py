@@ -215,8 +215,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             """
             import json
 
-            import mlx.core as mx
-
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
@@ -231,7 +229,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             target_layer = len(model.model.layers) - 1
             for anchor in SpatialConceptInventory.all_concepts():
                 tokens = tokenizer.encode(anchor.prompt)
-                input_ids = mx.array([tokens])
+                input_ids = backend.array([tokens])
 
                 try:
                     hidden = model.model.embed_tokens(input_ids)
@@ -240,8 +238,8 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                         if i == target_layer:
                             break
 
-                    activation = mx.mean(hidden[0], axis=0)
-                    mx.eval(activation)
+                    activation = backend.mean(hidden[0], axis=0)
+                    backend.eval(activation)
                     anchor_activations[anchor.id] = activation
                 except Exception:
                     pass  # Skip anchors that fail

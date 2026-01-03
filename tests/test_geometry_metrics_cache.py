@@ -504,7 +504,7 @@ class TestGeometryMetricsCacheClearAll:
 
         cache.set_gw_result(
             points, points, epsilon=0.01, max_iterations=100,
-            result=CachedGWResult(0.1, 0.05, 0.9, True, 10, (2, 2))
+            result=CachedGWResult(0.1, 0.05, True, 10, (2, 2))
         )
         cache.set_id_result(
             points, use_regression=True, bootstrap_samples=50,
