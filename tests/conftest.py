@@ -151,6 +151,18 @@ def _register_atlas_defaults():
     register_default_atlas_inventories()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _initialize_default_backend():
+    """Initialize the default backend for tests.
+
+    This must happen before any domain code runs. Uses platform detection
+    to select the appropriate backend (MLX on macOS, CUDA/JAX elsewhere).
+    """
+    from modelcypher.backends import initialize_default_backend
+
+    initialize_default_backend()
+
+
 @pytest.fixture(autouse=True)
 def _clear_cli_composition_cache():
     """Clear CLI composition cache before each test.

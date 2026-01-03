@@ -110,6 +110,10 @@ def build_server(profile: str | None = None) -> FastMCP:
 
 
 def main() -> None:
+    # Initialize the default backend (required before any domain code runs)
+    from modelcypher.backends import initialize_default_backend
+
+    initialize_default_backend()
     build_server().run()
 
 

@@ -250,6 +250,11 @@ def main(
     effective_log_level = "error" if very_quiet else log_level
     configure_logging(effective_log_level, quiet=quiet_mode)
 
+    # Initialize the default backend (required before any domain code runs)
+    from modelcypher.backends import initialize_default_backend
+
+    initialize_default_backend()
+
     ctx.obj = CLIContext(
         ai_mode=ai_mode,
         output_format=output_format,

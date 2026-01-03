@@ -107,13 +107,12 @@ def compare_profiles_cmd(
         None, "--baseline", "-b", help="Path to family baseline for z-score computation"
     ),
 ) -> None:
-    """Compare two model profiles and show alignment summary.
+    """Compare two model profiles and show geometric summary.
 
     The comparison shows:
-    - Structural alignment (architecture, dimensions)
-    - Geometric alignment (curvature, topology)
+    - Structural ratios (architecture, dimensions)
+    - Geometric diffs (curvature, topology)
     - Layer correspondence and critical layers
-    - Alignment inputs for downstream planning
     - Baseline-relative z-scores (when --baseline provided)
 
     Examples:

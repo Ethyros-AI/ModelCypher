@@ -360,11 +360,10 @@ class TestMetricsRingBuffer:
         for i in range(5):
             buffer.append_values(timestamp=float(i), entropy=float(i))
 
-        # Average of 0, 1, 2, 3, 4 = 2.0
-        assert buffer.average_entropy(window_size=5) == 2.0
-
-        # Average of last 3: 2, 3, 4 = 3.0
-        assert buffer.average_entropy(window_size=3) == 3.0
+        # Window size is derived from sqrt(len(points)).
+        # With 5 points, sqrt(5) ≈ 2.2 → window_size = 2.
+        # Average of last 2: 3, 4 = 3.5
+        assert buffer.average_entropy() == 3.5
 
     def test_average_loss(self) -> None:
         """Test loss moving average."""
@@ -373,8 +372,11 @@ class TestMetricsRingBuffer:
         for i in range(5):
             buffer.append_values(timestamp=float(i), loss=float(i) * 0.1)
 
-        # Average of 0.0, 0.1, 0.2, 0.3, 0.4 = 0.2
-        assert abs(buffer.average_loss(window_size=5) - 0.2) < 0.001
+        # Window size is derived from sqrt(len(points)).
+        # With 5 points, sqrt(5) ≈ 2.2 → window_size = 2.
+        # Loss values: 0.0, 0.1, 0.2, 0.3, 0.4
+        # Average of last 2: 0.3, 0.4 = 0.35
+        assert abs(buffer.average_loss() - 0.35) < 0.001
 
     def test_current_entropy(self) -> None:
         """Test current entropy property."""

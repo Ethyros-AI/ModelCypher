@@ -15,15 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Profile comparison for alignment analysis.
+"""Profile comparison for geometric diagnostics.
 
-Two profiles together tell the alignment story:
-- What transformations are needed to merge?
-- How aligned is the geometry?
-- What capabilities might be at risk?
+Two profiles together describe the geometric relationship:
+- Structural ratios (hidden size, layer count)
+- Curvature and dimensionality diffs
+- Topology and semantic measurements
 
-This module computes the comparison without making judgment calls.
-The geometry speaks for itself.
+This module emits raw measurements without judgment calls.
 """
 
 from __future__ import annotations
@@ -35,8 +34,6 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    exp_scalar,
-    log_scalar,
     machine_epsilon,
     sqrt_scalar,
 )
@@ -74,7 +71,6 @@ class LayerComparison:
     betti_1_diff: int | None = None
 
     # Alignment metrics
-    alignment_effort: float = 0.0  # 0-1, how much transformation needed
     curvature_sign_match: bool = True
 
     def to_dict(self) -> dict[str, Any]:
@@ -88,7 +84,6 @@ class LayerComparison:
             "shannon_entropy_diff": self.shannon_entropy_diff,
             "betti_0_diff": self.betti_0_diff,
             "betti_1_diff": self.betti_1_diff,
-            "alignment_effort": self.alignment_effort,
             "curvature_sign_match": self.curvature_sign_match,
         }
 
@@ -104,18 +99,16 @@ class LayerComparison:
             shannon_entropy_diff=d.get("shannon_entropy_diff"),
             betti_0_diff=d.get("betti_0_diff"),
             betti_1_diff=d.get("betti_1_diff"),
-            alignment_effort=d.get("alignment_effort", 0.0),
             curvature_sign_match=d.get("curvature_sign_match", True),
         )
 
 
 @dataclass
 class ProfileComparison:
-    """What the geometry says about aligning two models.
+    """What the geometry says about two models.
 
-    This is the "alignment story" - computed metrics about how two models
-    relate to each other geometrically. No interpretation strings,
-    just raw measurements.
+    Computed metrics about how two models relate geometrically.
+    No interpretation strings, just raw measurements.
     """
 
     source_path: str
@@ -128,32 +121,23 @@ class ProfileComparison:
     vocab_overlap: float = 0.0  # Shared vocabulary percentage (if computed)
 
     # === GEOMETRIC METRICS ===
-    # Curvature alignment (0-1 scale derived from z-score differences)
-    curvature_alignment: float = 0.0
-
-    # Ollivier-Ricci alignment
-    ricci_alignment: float = 0.0
-
-    # Intrinsic dimension alignment
-    dimension_alignment: float = 0.0
-
-    # Overall geometric alignment (weighted combination)
-    overall_alignment: float = 0.0
+    mean_sectional_curvature_diff: float = 0.0
+    mean_ollivier_ricci_diff: float = 0.0
+    mean_intrinsic_dimension_diff: float = 0.0
 
     # === TOPOLOGY METRICS ===
-    topology_similarity: float | None = None  # If topology summaries available
+    topology_betti_diff: int | None = None
+    topology_persistence_diff: float | None = None
 
     # === SEMANTIC METRICS ===
-    semantic_alignment: float | None = None  # Cosine similarity of semantic signatures
+    semantic_cosine_similarity: float | None = None  # Cosine similarity of semantic signatures
 
     # === LAYER CORRESPONDENCE ===
     layer_mapping: dict[int, int] = field(default_factory=dict)  # source -> target
     layer_comparisons: list[LayerComparison] = field(default_factory=list)
 
-    # === ALIGNMENT SUMMARY ===
-    total_alignment_effort: float = 0.0
-    mean_alignment_effort: float = 0.0
-    max_alignment_effort: float = 0.0
+    # === ALIGNMENT FLAG ===
+    aligned: bool = False
 
     # === BASELINE-RELATIVE Z-SCORES ===
     # These are only populated when a FamilyBaseline is provided
@@ -173,21 +157,19 @@ class ProfileComparison:
             "layer_count_ratio": self.layer_count_ratio,
             "vocab_overlap": self.vocab_overlap,
             # Geometric
-            "curvature_alignment": self.curvature_alignment,
-            "ricci_alignment": self.ricci_alignment,
-            "dimension_alignment": self.dimension_alignment,
-            "overall_alignment": self.overall_alignment,
+            "mean_sectional_curvature_diff": self.mean_sectional_curvature_diff,
+            "mean_ollivier_ricci_diff": self.mean_ollivier_ricci_diff,
+            "mean_intrinsic_dimension_diff": self.mean_intrinsic_dimension_diff,
             # Topology
-            "topology_similarity": self.topology_similarity,
+            "topology_betti_diff": self.topology_betti_diff,
+            "topology_persistence_diff": self.topology_persistence_diff,
             # Semantic
-            "semantic_alignment": self.semantic_alignment,
+            "semantic_cosine_similarity": self.semantic_cosine_similarity,
             # Layer correspondence
             "layer_mapping": self.layer_mapping,
             "layer_comparisons": [lc.to_dict() for lc in self.layer_comparisons],
             # Alignment
-            "total_alignment_effort": self.total_alignment_effort,
-            "mean_alignment_effort": self.mean_alignment_effort,
-            "max_alignment_effort": self.max_alignment_effort,
+            "aligned": self.aligned,
             # Baseline-relative z-scores
             "sectional_z_score": self.sectional_z_score,
             "ricci_z_score": self.ricci_z_score,
@@ -205,20 +187,18 @@ class ProfileComparison:
             hidden_dim_ratio=d.get("hidden_dim_ratio", 1.0),
             layer_count_ratio=d.get("layer_count_ratio", 1.0),
             vocab_overlap=d.get("vocab_overlap", 0.0),
-            curvature_alignment=d.get("curvature_alignment", 0.0),
-            ricci_alignment=d.get("ricci_alignment", 0.0),
-            dimension_alignment=d.get("dimension_alignment", 0.0),
-            overall_alignment=d.get("overall_alignment", 0.0),
-            topology_similarity=d.get("topology_similarity"),
-            semantic_alignment=d.get("semantic_alignment"),
+            mean_sectional_curvature_diff=d.get("mean_sectional_curvature_diff", 0.0),
+            mean_ollivier_ricci_diff=d.get("mean_ollivier_ricci_diff", 0.0),
+            mean_intrinsic_dimension_diff=d.get("mean_intrinsic_dimension_diff", 0.0),
+            topology_betti_diff=d.get("topology_betti_diff"),
+            topology_persistence_diff=d.get("topology_persistence_diff"),
+            semantic_cosine_similarity=d.get("semantic_cosine_similarity"),
             layer_mapping=d.get("layer_mapping", {}),
             layer_comparisons=[
                 LayerComparison.from_dict(lc)
                 for lc in d.get("layer_comparisons", [])
             ],
-            total_alignment_effort=d.get("total_alignment_effort", 0.0),
-            mean_alignment_effort=d.get("mean_alignment_effort", 0.0),
-            max_alignment_effort=d.get("max_alignment_effort", 0.0),
+            aligned=d.get("aligned", False),
             sectional_z_score=d.get("sectional_z_score"),
             ricci_z_score=d.get("ricci_z_score"),
             dimension_z_score=d.get("dimension_z_score"),
@@ -232,9 +212,9 @@ def compare_profiles(
     target: ModelProfile,
     baseline: "FamilyBaseline | None" = None,
 ) -> ProfileComparison:
-    """Compare two ModelProfiles and produce alignment analysis.
+    """Compare two ModelProfiles and produce geometric diagnostics.
 
-    This function computes geometric alignment metrics between two models
+    This function computes geometric measurements between two models
     without making value judgments. The geometry speaks for itself.
 
     Args:
@@ -286,38 +266,24 @@ def compare_profiles(
             comparison = _compare_layers(src_lp, tgt_lp)
             layer_comparisons.append(comparison)
 
-    # === GEOMETRIC ALIGNMENT ===
-    # Compute alignment scores from layer comparisons
+    # === GEOMETRIC METRICS ===
+    # Compute mean absolute diffs from layer comparisons
     sectional_diffs = [
         abs(lc.sectional_curvature_diff) for lc in layer_comparisons
     ]
     ricci_diffs = [abs(lc.ollivier_ricci_diff) for lc in layer_comparisons]
     dim_diffs = [abs(lc.intrinsic_dimension_diff) for lc in layer_comparisons]
 
-    # Convert differences to alignment (0-1 scale)
-    # Use exponential decay: exp(-diff/scale) where scale is derived from data
-    # Scale = median of differences (so "typical" difference gives ~0.5 alignment)
+    mean_sectional_diff = sum(sectional_diffs) / len(sectional_diffs) if sectional_diffs else 0.0
+    mean_ricci_diff = sum(ricci_diffs) / len(ricci_diffs) if ricci_diffs else 0.0
+    mean_dim_diff = sum(dim_diffs) / len(dim_diffs) if dim_diffs else 0.0
+
     backend = get_default_backend()
     eps = float(machine_epsilon(backend, backend.array([1.0])))
 
-    def _data_scale(diffs: list[float]) -> float:
-        """Derive scale from median of differences."""
-        if not diffs:
-            return 1.0
-        sorted_d = sorted(diffs)
-        mid = len(sorted_d) // 2
-        median = sorted_d[mid] if len(sorted_d) % 2 else (sorted_d[mid - 1] + sorted_d[mid]) / 2.0
-        return max(median, eps)  # Ensure non-zero scale
-
-    curvature_alignment = _mean_alignment(sectional_diffs, scale=_data_scale(sectional_diffs))
-    ricci_alignment = _mean_alignment(ricci_diffs, scale=_data_scale(ricci_diffs))
-    dimension_alignment = _mean_alignment(dim_diffs, scale=_data_scale(dim_diffs))
-
-    # Equal weights - let individual alignments speak for themselves
-    overall_alignment = (ricci_alignment + curvature_alignment + dimension_alignment) / 3.0
-
     # === TOPOLOGY COMPARISON ===
-    topology_similarity = None
+    topology_betti_diff = None
+    topology_persistence_diff = None
     if source.topology_summary and target.topology_summary:
         # Compare Betti numbers and persistence
         src_topo = source.topology_summary
@@ -328,16 +294,11 @@ def compare_profiles(
             + abs(src_topo.cycle_count - tgt_topo.cycle_count)
         )
         persist_diff = abs(src_topo.max_persistence - tgt_topo.max_persistence)
-        scale_eps = division_epsilon(
-            backend,
-            backend.array([src_topo.max_persistence, tgt_topo.max_persistence]),
-        )
-        scale = max(src_topo.max_persistence, tgt_topo.max_persistence, scale_eps)
-
-        topology_similarity = exp_scalar(-betti_diff, backend) * exp_scalar(-persist_diff / scale, backend)
+        topology_betti_diff = int(betti_diff)
+        topology_persistence_diff = persist_diff
 
     # === SEMANTIC COMPARISON ===
-    semantic_alignment = None
+    semantic_cosine_similarity = None
     if source.semantic_signature and target.semantic_signature:
         src_vec = source.semantic_signature.vector
         tgt_vec = target.semantic_signature.vector
@@ -347,13 +308,20 @@ def compare_profiles(
             norm_src = sqrt_scalar(sum(a * a for a in src_vec), backend)
             norm_tgt = sqrt_scalar(sum(b * b for b in tgt_vec), backend)
             if norm_src > 0 and norm_tgt > 0:
-                semantic_alignment = dot / (norm_src * norm_tgt)
+                semantic_cosine_similarity = dot / (norm_src * norm_tgt)
 
-    # === ALIGNMENT EFFORT ===
-    efforts = [lc.alignment_effort for lc in layer_comparisons]
-    total_effort = sum(efforts)
-    mean_effort = total_effort / len(efforts) if efforts else 0.0
-    max_effort = max(efforts) if efforts else 0.0
+    # === ALIGNMENT FLAG ===
+    aligned = False
+    if layer_comparisons:
+        aligned = all(abs(lc.sectional_curvature_diff) <= eps for lc in layer_comparisons)
+        aligned = aligned and all(abs(lc.ollivier_ricci_diff) <= eps for lc in layer_comparisons)
+        aligned = aligned and all(abs(lc.intrinsic_dimension_diff) <= eps for lc in layer_comparisons)
+        if topology_betti_diff is not None:
+            aligned = aligned and topology_betti_diff == 0
+        if topology_persistence_diff is not None:
+            aligned = aligned and topology_persistence_diff <= eps
+        if semantic_cosine_similarity is not None:
+            aligned = aligned and abs(semantic_cosine_similarity - 1.0) <= eps
 
     # === BASELINE-RELATIVE Z-SCORES ===
     sectional_z_score = None
@@ -429,17 +397,15 @@ def compare_profiles(
         architecture_match=architecture_match,
         hidden_dim_ratio=hidden_dim_ratio,
         layer_count_ratio=layer_count_ratio,
-        curvature_alignment=curvature_alignment,
-        ricci_alignment=ricci_alignment,
-        dimension_alignment=dimension_alignment,
-        overall_alignment=overall_alignment,
-        topology_similarity=topology_similarity,
-        semantic_alignment=semantic_alignment,
+        mean_sectional_curvature_diff=mean_sectional_diff,
+        mean_ollivier_ricci_diff=mean_ricci_diff,
+        mean_intrinsic_dimension_diff=mean_dim_diff,
+        topology_betti_diff=topology_betti_diff,
+        topology_persistence_diff=topology_persistence_diff,
+        semantic_cosine_similarity=semantic_cosine_similarity,
         layer_mapping=layer_mapping,
         layer_comparisons=layer_comparisons,
-        total_alignment_effort=total_effort,
-        mean_alignment_effort=mean_effort,
-        max_alignment_effort=max_effort,
+        aligned=aligned,
         sectional_z_score=sectional_z_score,
         ricci_z_score=ricci_z_score,
         dimension_z_score=dimension_z_score,
@@ -480,15 +446,6 @@ def _compare_layers(source: LayerProfile, target: LayerProfile) -> LayerComparis
         or target.dominant_curvature_sign == "unknown"
     )
 
-    # Alignment effort (0-1)
-    # Higher effort = more transformation needed
-    _b = get_default_backend()
-    dim_effort = min(1.0, abs(log_scalar(dim_ratio, _b)) / log_scalar(2, _b))  # Double/half = 1.0
-    curv_effort = min(1.0, abs(ricci_diff))
-
-    # Equal weights - let individual efforts speak for themselves
-    alignment_effort = (dim_effort + curv_effort) / 2.0
-
     return LayerComparison(
         source_layer_idx=source.layer_idx,
         target_layer_idx=target.layer_idx,
@@ -499,20 +456,8 @@ def _compare_layers(source: LayerProfile, target: LayerProfile) -> LayerComparis
         shannon_entropy_diff=entropy_diff,
         betti_0_diff=betti_0_diff,
         betti_1_diff=betti_1_diff,
-        alignment_effort=alignment_effort,
         curvature_sign_match=sign_match,
     )
-
-
-def _mean_alignment(diffs: list[float], scale: float = 1.0) -> float:
-    """Convert differences to alignment score using exponential decay."""
-    if not diffs:
-        return 1.0
-
-    # Exponential decay: exp(-diff/scale)
-    _b = get_default_backend()
-    compatibilities = [exp_scalar(-d / scale, _b) for d in diffs]
-    return sum(compatibilities) / len(compatibilities)
 
 
 __all__ = [

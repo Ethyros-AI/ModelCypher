@@ -57,7 +57,6 @@ class TestLayerComparison:
         assert lc.source_layer_idx == 0
         assert lc.target_layer_idx == 0
         assert lc.sectional_curvature_diff == 0.0
-        assert lc.alignment_effort == 0.0
         assert lc.curvature_sign_match
 
     def test_create_full(self) -> None:
@@ -72,7 +71,6 @@ class TestLayerComparison:
             shannon_entropy_diff=0.5,
             betti_0_diff=0,
             betti_1_diff=1,
-            alignment_effort=0.6,
             curvature_sign_match=False,
         )
         assert lc.source_layer_idx == 5
@@ -89,7 +87,6 @@ class TestLayerComparison:
             ollivier_ricci_diff=-0.05,
             intrinsic_dimension_diff=5.0,
             dimension_ratio=1.1,
-            alignment_effort=0.4,
         )
         d = original.to_dict()
         restored = LayerComparison.from_dict(d)
@@ -97,7 +94,6 @@ class TestLayerComparison:
         assert restored.source_layer_idx == original.source_layer_idx
         assert restored.target_layer_idx == original.target_layer_idx
         assert restored.sectional_curvature_diff == original.sectional_curvature_diff
-        assert restored.alignment_effort == original.alignment_effort
 
 
 class TestProfileComparison:
@@ -112,7 +108,8 @@ class TestProfileComparison:
         assert pc.source_path == "/path/to/source"
         assert pc.target_path == "/path/to/target"
         assert pc.architecture_match is False
-        assert pc.overall_alignment == 0.0
+        assert pc.mean_sectional_curvature_diff == 0.0
+        assert pc.aligned is False
 
     def test_create_full(self) -> None:
         """Should create ProfileComparison with all fields."""
@@ -122,23 +119,21 @@ class TestProfileComparison:
             architecture_match=True,
             hidden_dim_ratio=1.0,
             layer_count_ratio=1.0,
-            curvature_alignment=0.85,
-            ricci_alignment=0.90,
-            dimension_alignment=0.80,
-            overall_alignment=0.87,
-            topology_similarity=0.92,
-            semantic_alignment=0.88,
+            mean_sectional_curvature_diff=0.01,
+            mean_ollivier_ricci_diff=0.02,
+            mean_intrinsic_dimension_diff=0.03,
+            topology_betti_diff=1,
+            topology_persistence_diff=0.1,
+            semantic_cosine_similarity=0.88,
             layer_mapping={0: 0, 1: 1, 2: 2},
             layer_comparisons=[
-                LayerComparison(0, 0, alignment_effort=0.2),
-                LayerComparison(1, 1, alignment_effort=0.3),
+                LayerComparison(0, 0),
+                LayerComparison(1, 1),
             ],
-            total_alignment_effort=0.5,
-            mean_alignment_effort=0.25,
-            max_alignment_effort=0.3,
+            aligned=False,
         )
         assert pc.architecture_match
-        assert pc.overall_alignment == 0.87
+        assert pc.mean_sectional_curvature_diff == 0.01
         assert len(pc.layer_comparisons) == 2
 
     def test_to_dict_and_from_dict(self) -> None:
@@ -147,10 +142,10 @@ class TestProfileComparison:
             source_path="/path/to/source",
             target_path="/path/to/target",
             architecture_match=True,
-            curvature_alignment=0.85,
+            mean_sectional_curvature_diff=0.01,
             layer_mapping={0: 0, 1: 1},
             layer_comparisons=[
-                LayerComparison(0, 0, alignment_effort=0.2),
+                LayerComparison(0, 0),
             ],
         )
         d = original.to_dict()
@@ -158,7 +153,7 @@ class TestProfileComparison:
 
         assert restored.source_path == original.source_path
         assert restored.architecture_match == original.architecture_match
-        assert restored.curvature_alignment == original.curvature_alignment
+        assert restored.mean_sectional_curvature_diff == original.mean_sectional_curvature_diff
         assert len(restored.layer_comparisons) == 1
 
 
@@ -191,10 +186,11 @@ class TestCompareProfiles:
         assert comparison.architecture_match
         assert comparison.hidden_dim_ratio == 1.0
         assert comparison.layer_count_ratio == 1.0
-        # Identical profiles should have high alignment
-        assert abs(comparison.curvature_alignment - 1.0) <= eps
-        assert abs(comparison.overall_alignment - 1.0) <= eps
-        assert abs(comparison.mean_alignment_effort) <= eps
+        # Identical profiles should have near-zero diffs
+        assert abs(comparison.mean_sectional_curvature_diff) <= eps
+        assert abs(comparison.mean_ollivier_ricci_diff) <= eps
+        assert abs(comparison.mean_intrinsic_dimension_diff) <= eps
+        assert comparison.aligned is True
 
     def test_compare_same_architecture_different_curvature(self) -> None:
         """Same architecture with different curvature should still be compatible."""
@@ -239,8 +235,9 @@ class TestCompareProfiles:
 
         assert comparison.architecture_match
         assert comparison.hidden_dim_ratio == 1.0
-        assert comparison.overall_alignment < identical.overall_alignment
-        assert comparison.mean_alignment_effort > identical.mean_alignment_effort
+        assert comparison.mean_sectional_curvature_diff >= identical.mean_sectional_curvature_diff
+        assert comparison.mean_ollivier_ricci_diff >= identical.mean_ollivier_ricci_diff
+        assert comparison.aligned is False
 
     def test_compare_different_architectures(self) -> None:
         """Different architectures should be flagged."""

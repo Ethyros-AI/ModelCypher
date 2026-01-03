@@ -27,6 +27,13 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    """Get machine epsilon for comparison tolerance."""
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # Test that all key geometry modules can be imported and work together
@@ -49,7 +56,10 @@ class TestGeometryIntegration:
         sim_v1_v2 = VectorMath.cosine_similarity(v1, v2)
         sim_v1_v3 = VectorMath.cosine_similarity(v1, v3_norm)
 
-        assert sim_v1_v2 == pytest.approx(0.0)
+        # Orthogonal vectors have cosine similarity 0.0, but floating-point
+        # error from the multi-operation chain (dot, norms, division) causes
+        # small deviations. Use machine epsilon as tolerance.
+        assert abs(sim_v1_v2) <= _eps(1.0)
         backend = get_default_backend()
         denom = backend.to_scalar(backend.sqrt(backend.array(2.0)))
         assert sim_v1_v3 == pytest.approx(1.0 / denom)
@@ -197,12 +207,11 @@ class TestAgentsIntegration:
     def test_semantic_prime_atlas_import(self):
         """SemanticPrimeAtlas can be imported."""
         from modelcypher.core.domain.agents.semantic_prime_atlas import (
-            AtlasConfiguration,
             SemanticPrimeAtlas,
         )
 
-        config = AtlasConfiguration()
-        atlas = SemanticPrimeAtlas(configuration=config)
+        # Configuration class was removed; atlas uses direct parameters
+        atlas = SemanticPrimeAtlas()
 
         # Get inventory
         primes = atlas.inventory

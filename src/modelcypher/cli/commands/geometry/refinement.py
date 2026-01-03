@@ -71,9 +71,7 @@ def geometry_refinement_analyze(
     context = _context(ctx)
 
     try:
-        import mlx.core as mx
-        from mlx_lm import load as mlx_load
-
+        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.concept_response_matrix import (
             ConceptResponseMatrix,
         )
@@ -83,13 +81,14 @@ def geometry_refinement_analyze(
         from modelcypher.core.domain.geometry.dora_decomposition import (
             DoRADecomposition,
         )
+        from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
-        # Load models
-        _, base_weights = mlx_load(base_model, lazy=True)
-        _, adapted_weights = mlx_load(adapted_model, lazy=True)
+        # Load models using platform-agnostic loader
+        model_loader = get_model_loader()
+        backend = get_default_backend()
 
-        base_weights = dict(base_weights)
-        adapted_weights = dict(adapted_weights)
+        base_weights = model_loader.load_weights(base_model)
+        adapted_weights = model_loader.load_weights(adapted_model)
 
         # Compute delta weights for DARE
         delta_weights = {}
@@ -101,8 +100,8 @@ def geometry_refinement_analyze(
             if base.shape != adapted.shape:
                 continue
             delta = adapted - base
-            mx.eval(delta)
-            delta_weights[name] = delta.flatten().tolist()
+            backend.eval(delta)
+            delta_weights[name] = backend.reshape(delta, (-1,)).tolist()
 
         sparsity_analysis = DARESparsityAnalyzer.analyze(delta_weights)
 

@@ -100,11 +100,14 @@ class PortRegistry:
             LocalManifoldProfileStore,
         )
         from modelcypher.adapters.local_training import LocalTrainingEngine
-        from modelcypher.backends import default_backend
+        from modelcypher.backends import default_backend, initialize_default_backend
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
         from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
         from modelcypher.infrastructure.model_loader_factory import get_model_loader
+
+        # Initialize the global backend for domain code that calls get_default_backend()
+        initialize_default_backend()
 
         register_default_atlas_inventories()
 
