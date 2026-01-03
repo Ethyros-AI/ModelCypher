@@ -931,11 +931,13 @@ class BackendTopologicalFingerprint:
         b.eval(dist_arr)
 
         # Get upper triangular indices and values
-        # Build edges list more efficiently
+        # Build edges list with a single device→CPU transfer.
         edges: list[tuple[int, int, float]] = []
+        dist_list = b.tolist(dist_arr)
         for i in range(n):
+            row = dist_list[i]
             for j in range(i + 1, n):
-                edges.append((i, j, float(b.to_scalar(dist_arr[i, j]))))
+                edges.append((i, j, float(row[j])))
         edges.sort(key=lambda x: x[2])
 
         # 0-dim persistence (connected components) - Union-Find is sequential
@@ -995,6 +997,8 @@ class BackendTopologicalFingerprint:
             rank = [0] * n
 
             possible_cycles: list[PersistencePoint] = []
+            index = b.arange(n)
+            b.eval(index)
 
             for i, j, dist in edges:
                 if dist > max_filtration:
@@ -1010,8 +1014,8 @@ class BackendTopologicalFingerprint:
                     # Mask self-edges to inf
                     inf_val = float(b.finfo().max)
                     mask = b.ones((n,))
-                    mask = b.where(b.arange(n) == i, b.full(mask.shape, 0.0), mask)
-                    mask = b.where(b.arange(n) == j, b.full(mask.shape, 0.0), mask)
+                    mask = b.where(index == i, b.full(mask.shape, 0.0), mask)
+                    mask = b.where(index == j, b.full(mask.shape, 0.0), mask)
                     masked_fills = b.where(mask > 0, triangle_fills, b.full(triangle_fills.shape, inf_val))
                     min_fill = float(b.to_scalar(b.min(masked_fills)))
                     if min_fill < max_filtration and min_fill > dist:
@@ -1070,9 +1074,11 @@ class BackendTopologicalFingerprint:
 
             # Build full cost matrix
             cost = [[float("inf")] * n for _ in range(n)]
+            match_costs_list = b.tolist(match_costs)
             for i in range(n_a):
+                row_costs = match_costs_list[i]
                 for j in range(n_b):
-                    cost[i][j] = float(b.to_scalar(match_costs[i, j]))
+                    cost[i][j] = float(row_costs[j])
                 diag_cost_a = (pa[i].death - pa[i].birth) / 2.0
                 cost[i][n_b + i] = diag_cost_a
 
@@ -1137,9 +1143,11 @@ class BackendTopologicalFingerprint:
 
             # Build full cost matrix
             cost = [[float("inf")] * n for _ in range(n)]
+            match_costs_list = b.tolist(match_costs)
             for i in range(n_a):
+                row_costs = match_costs_list[i]
                 for j in range(n_b):
-                    cost[i][j] = float(b.to_scalar(match_costs[i, j]))
+                    cost[i][j] = float(row_costs[j])
                 diag_cost_a = pa[i].death - pa[i].birth
                 cost[i][n_b + i] = diag_cost_a
 

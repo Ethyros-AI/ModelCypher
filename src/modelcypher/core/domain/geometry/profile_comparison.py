@@ -29,12 +29,16 @@ The geometry speaks for itself.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    exp_scalar,
+    log_scalar,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.model_profile import (
     LayerProfile,
     ModelProfile,
@@ -317,7 +321,7 @@ def compare_profiles(
         )
         scale = max(src_topo.max_persistence, tgt_topo.max_persistence, scale_eps)
 
-        topology_similarity = math.exp(-betti_diff) * math.exp(-persist_diff / scale)
+        topology_similarity = exp_scalar(-betti_diff, backend) * exp_scalar(-persist_diff / scale, backend)
 
     # === SEMANTIC COMPARISON ===
     semantic_alignment = None
@@ -327,8 +331,8 @@ def compare_profiles(
         if src_vec and tgt_vec and len(src_vec) == len(tgt_vec):
             # Cosine similarity
             dot = sum(a * b for a, b in zip(src_vec, tgt_vec))
-            norm_src = math.sqrt(sum(a * a for a in src_vec))
-            norm_tgt = math.sqrt(sum(b * b for b in tgt_vec))
+            norm_src = sqrt_scalar(sum(a * a for a in src_vec), backend)
+            norm_tgt = sqrt_scalar(sum(b * b for b in tgt_vec), backend)
             if norm_src > 0 and norm_tgt > 0:
                 semantic_alignment = dot / (norm_src * norm_tgt)
 
@@ -465,7 +469,8 @@ def _compare_layers(source: LayerProfile, target: LayerProfile) -> LayerComparis
 
     # Alignment effort (0-1)
     # Higher effort = more transformation needed
-    dim_effort = min(1.0, abs(math.log(dim_ratio)) / math.log(2))  # Double/half = 1.0
+    _b = get_default_backend()
+    dim_effort = min(1.0, abs(log_scalar(dim_ratio, _b)) / log_scalar(2, _b))  # Double/half = 1.0
     curv_effort = min(1.0, abs(ricci_diff))
 
     # Weight: dimension matters more for projection, curvature for rotation
@@ -492,7 +497,8 @@ def _mean_alignment(diffs: list[float], scale: float = 1.0) -> float:
         return 1.0
 
     # Exponential decay: exp(-diff/scale)
-    compatibilities = [math.exp(-d / scale) for d in diffs]
+    _b = get_default_backend()
+    compatibilities = [exp_scalar(-d / scale, _b) for d in diffs]
     return sum(compatibilities) / len(compatibilities)
 
 

@@ -17,12 +17,16 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Iterable
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_pearson_correlation,
+    exp_scalar,
+    is_finite,
+    log_scalar,
+    sqrt_scalar,
 )
 
 
@@ -68,8 +72,9 @@ class TransferFidelityPrediction:
                 vec_a.append(float(gram_a[i * n + j]))
                 vec_b.append(float(gram_b[i * n + j]))
 
+        _b = get_default_backend()
         correlation = compute_pearson_correlation(vec_a, vec_b)
-        if not math.isfinite(correlation):
+        if not is_finite(correlation, _b):
             return None
 
         fisher_z = _fisher_z_transform(correlation)
@@ -84,7 +89,7 @@ class TransferFidelityPrediction:
                 correlation_ci95=(float("nan"), float("nan")),
             )
 
-        fisher_z_se = 1.0 / math.sqrt(sample_size - 3)
+        fisher_z_se = 1.0 / sqrt_scalar(sample_size - 3, _b)
         z_lower = fisher_z - 1.96 * fisher_z_se
         z_upper = fisher_z + 1.96 * fisher_z_se
         r_lower = _inverse_fisher_z(z_lower)
@@ -132,9 +137,11 @@ class TransferFidelityPrediction:
 
 def _fisher_z_transform(value: float) -> float:
     r_clamped = max(-0.9999, min(0.9999, value))
-    return 0.5 * math.log((1.0 + r_clamped) / (1.0 - r_clamped))
+    _b = get_default_backend()
+    return 0.5 * log_scalar((1.0 + r_clamped) / (1.0 - r_clamped), _b)
 
 
 def _inverse_fisher_z(value: float) -> float:
-    e2z = math.exp(2.0 * value)
+    _b = get_default_backend()
+    e2z = exp_scalar(2.0 * value, _b)
     return (e2z - 1.0) / (e2z + 1.0)

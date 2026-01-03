@@ -40,7 +40,11 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_social_concepts
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    is_nan,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -234,8 +238,6 @@ class SocialGeometryAnalyzer:
         X_pca: "Array",
     ) -> GradientConsistency:
         """Check if axes form monotonic gradients."""
-        import math
-
         backend = self.backend
 
         # Define expected orderings
@@ -276,8 +278,8 @@ class SocialGeometryAnalyzer:
             mean_exp = sum(exp_ranks) / n
 
             num = sum((pos_ranks[i] - mean_pos) * (exp_ranks[i] - mean_exp) for i in range(n))
-            den_pos = math.sqrt(sum((pos_ranks[i] - mean_pos) ** 2 for i in range(n)))
-            den_exp = math.sqrt(sum((exp_ranks[i] - mean_exp) ** 2 for i in range(n)))
+            den_pos = sqrt_scalar(sum((pos_ranks[i] - mean_pos) ** 2 for i in range(n)), backend)
+            den_exp = sqrt_scalar(sum((exp_ranks[i] - mean_exp) ** 2 for i in range(n)), backend)
 
             if den_pos < eps or den_exp < eps:
                 corr = 0.0
@@ -288,7 +290,7 @@ class SocialGeometryAnalyzer:
             diffs = [positions[i + 1] - positions[i] for i in range(len(positions) - 1)]
             monotonic = all(d > 0 for d in diffs) or all(d < 0 for d in diffs)
 
-            return monotonic, abs(corr) if not math.isnan(corr) else 0.0
+            return monotonic, abs(corr) if not is_nan(corr, backend) else 0.0
 
         power_mono, power_corr = check_monotonicity(power_order)
         kinship_mono, kinship_corr = check_monotonicity(kinship_order)
@@ -310,8 +312,6 @@ class SocialGeometryAnalyzer:
         X_pca: "Array",
     ) -> PowerGradientResult:
         """Analyze the power hierarchy axis specifically."""
-        import math
-
         backend = self.backend
 
         # Get power anchors

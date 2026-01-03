@@ -1213,11 +1213,19 @@ class RiemannianGeometry:
         current = start_idx
         # Use precision-aware tolerance for floating point comparison
         tolerance = regularization_epsilon(backend, geo_dist) * total_dist
+        col_end = backend.take(geo_dist, backend.array([end_idx]), axis=1)
+        col_end = backend.squeeze(col_end, axis=1)
+        backend.eval(col_end)
+        col_end_list = backend.tolist(col_end)
 
         while current != end_idx:
             # Find next point: must satisfy triangle equality
             # d(current, next) + d(next, end) ≈ d(current, end)
-            dist_to_end = float(backend.to_scalar(geo_dist[current, end_idx]))
+            row = backend.take(geo_dist, backend.array([current]), axis=0)
+            row = backend.squeeze(row, axis=0)
+            backend.eval(row)
+            row_list = backend.tolist(row)
+            dist_to_end = float(row_list[end_idx])
 
             best_next = end_idx
             best_dist = dist_to_end
@@ -1226,8 +1234,8 @@ class RiemannianGeometry:
                 if candidate == current or candidate in path:
                     continue
 
-                d_to_candidate = float(backend.to_scalar(geo_dist[current, candidate]))
-                d_candidate_to_end = float(backend.to_scalar(geo_dist[candidate, end_idx]))
+                d_to_candidate = float(row_list[candidate])
+                d_candidate_to_end = float(col_end_list[candidate])
 
                 if is_inf(d_to_candidate, backend) or is_inf(d_candidate_to_end, backend):
                     continue
@@ -1273,16 +1281,17 @@ class RiemannianGeometry:
         if len(path_indices) <= 1:
             return [0.0]
 
+        path_idx_arr = backend.array(path_indices)
+        path_points = backend.take(points, path_idx_arr, axis=0)
+        diffs = path_points[1:] - path_points[:-1]
+        segment_lengths = backend.sqrt(backend.sum(diffs * diffs, axis=1))
+        backend.eval(segment_lengths)
+        segment_list = backend.tolist(segment_lengths)
+
         arc_lengths = [0.0]
         cumulative = 0.0
-
-        for i in range(len(path_indices) - 1):
-            p1 = points[path_indices[i]]
-            p2 = points[path_indices[i + 1]]
-            diff = p2 - p1
-            dist = backend.sqrt(backend.sum(diff * diff))
-            backend.eval(dist)
-            cumulative += float(backend.to_scalar(dist))
+        for seg in segment_list:
+            cumulative += float(seg)
             arc_lengths.append(cumulative)
 
         return arc_lengths
@@ -1726,6 +1735,7 @@ class RiemannianGeometry:
         sorted_indices = backend.argsort(euc_dist)
         backend.eval(sorted_indices)
         sorted_list = [int(x) for x in backend.tolist(sorted_indices)]
+        euc_list = backend.tolist(euc_dist)
 
         # Include all points tied at the k-th distance to ensure symmetric treatment
         # Without this, equidistant points would be arbitrarily excluded by index order
@@ -1734,11 +1744,11 @@ class RiemannianGeometry:
             if k >= n:
                 return sorted_list
             threshold_idx = sorted_list[k - 1]
-            threshold_dist = float(backend.to_scalar(euc_dist[threshold_idx]))
+            threshold_dist = float(euc_list[threshold_idx])
             eps = division_epsilon(backend, euc_dist)
             neighbors: list[int] = []
             for idx in sorted_list:
-                dist_val = float(backend.to_scalar(euc_dist[idx]))
+                dist_val = float(euc_list[idx])
                 if dist_val <= threshold_dist + eps:
                     neighbors.append(idx)
                 else:
