@@ -611,7 +611,7 @@ class RotationContinuityResult:
 
     - **smoothness_ratio < 0.7**: Per-layer rotations are significantly better
       → The models organize information differently at different depths
-      → Need layer-specific alignment for good merging
+      → Need layer-specific alignment for low-error merging
 
     - **smoothness_ratio ≥ 0.7**: Global rotation is sufficient
       → The models have similar "information flow" structure

@@ -31,7 +31,7 @@ CKA = 1.0 means these relationships are IDENTICAL between two representations.
 **CKA = 1.0 is ALWAYS achievable. Always.**
 
 This is a geometric guarantee, not a hope. High-dimensional manifolds
-ALWAYS have a way to fit together perfectly. The relational structure
+ALWAYS have a way to fit together exactly. The relational structure
 is preserved - we just need to find the coordinate transformation that
 reveals this alignment.
 
@@ -66,10 +66,10 @@ Users do NOT configure thresholds - the geometry speaks for itself.
 
 - Convergence tolerance: sqrt(machine_epsilon) - dtype-derived
 - Regularization: sqrt(machine_epsilon) - dtype-derived
-- "Perfect" alignment: 1.0 - sqrt(machine_epsilon) - dtype-derived
+- "Exact" alignment: 1.0 - sqrt(machine_epsilon) - dtype-derived
 
 This follows the principle: geometry either works or it doesn't.
-There are no "good enough" alignments - only exact alignment within
+There are no tolerance-based alignments - only exact alignment within
 the precision limits of the hardware.
 
 References:
@@ -114,13 +114,13 @@ __all__ = [
 
 @dataclass(frozen=True)
 class AlignmentResult:
-    """Result of finding perfect CKA alignment.
+    """Result of finding exact CKA alignment.
 
     The transformation that achieves CKA = 1.0, plus diagnostics about
     how we got there.
 
     All thresholds are derived from dtype, not hardcoded. The precision_threshold
-    field stores the dtype-derived tolerance used to determine "perfect" alignment
+    field stores the dtype-derived tolerance used to determine "exact" alignment
     and "converged" status.
     """
 
@@ -244,7 +244,7 @@ class GramAligner:
         """Solve for F such that Gram(source @ F) = Gram(target).
 
         Tries all methods and selects the one with lowest error.
-        No "good enough" thresholds - always returns the best solution.
+        No tolerance-based thresholds - always returns the best solution.
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
@@ -360,7 +360,7 @@ class GramAligner:
         """Solve for F such that Gram(source @ F) = Gram(target) on uncentered data.
 
         Tries all methods and selects the one with lowest error.
-        No "good enough" thresholds - always returns the best solution.
+        No tolerance-based thresholds - always returns the best solution.
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
@@ -449,7 +449,7 @@ class GramAligner:
     ) -> AlignmentResult:
         """Find the transformation that achieves CKA = 1.0.
 
-        This method WILL find the perfect alignment. If it can't,
+        This method WILL find the exact alignment. If it can't,
         that indicates a bug in the implementation, not a property
         of the inputs.
 
@@ -1095,7 +1095,7 @@ def find_alignment(
 ) -> AlignmentResult:
     """Find the transformation that achieves CKA = 1.0.
 
-    This is the main entry point. It WILL find the perfect alignment.
+    This is the main entry point. It WILL find the exact alignment.
 
     Parameters
     ----------

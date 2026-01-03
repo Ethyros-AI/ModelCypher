@@ -79,7 +79,7 @@ A specialized, lightweight adapter (LoRA) trained to enforce specific geometric 
 
 ### Bhattacharyya Coefficient
 A measure of overlap between two probability distributions.
--   **Analogy**: Imagine two bells (Gaussians) placed on a number line. The Bhattacharyya Coefficient measures how much they overlap. 1.0 = perfect overlap (same bell), 0.0 = no overlap (completely separate).
+-   **Analogy**: Imagine two bells (Gaussians) placed on a number line. The Bhattacharyya Coefficient measures how much they overlap. 1.0 = exact overlap (same bell), 0.0 = no overlap (completely separate).
 -   **Human explanation**: "These two models see this concept in almost the same way (high overlap)" or "These models have very different representations (low overlap)."
 
 ### Gromov-Wasserstein Distance
@@ -101,7 +101,7 @@ A mathematical framework for finding the cheapest way to transform one distribut
 
 ### Shannon Entropy
 A measure of uncertainty or information content in a probability distribution.
--   **Analogy**: A fair coin has high entropy (maximum uncertainty). A rigged coin with 99% heads has low entropy (very predictable).
+-   **Analogy**: An unbiased coin has high entropy (maximum uncertainty). A rigged coin with 99% heads has low entropy (very predictable).
 -   **Human explanation**: "The model is very uncertain about what to say next" (high entropy) or "The model is confident about the next word" (low entropy).
 -   **Used in**: [Paper 2](../papers/paper-2-entropy-safety-signal.md) (ΔH safety signal, entropy reduction from modifiers)
 -   **CLI**: `mc entropy measure`
@@ -137,7 +137,7 @@ A relational coordinate in a Target Model synthesized from a Source Model's rela
 
 ### Relational Stress
 The error metric for Manifold Transfer. It measures how much the relative distances between anchors drifted during projection.
--   **Analogy**: Stretching a rubber map over a globe. "Stress" is where the rubber starts to tear because the shapes don't fit perfectly.
+-   **Analogy**: Stretching a rubber map over a globe. "Stress" is where the rubber starts to tear because the shapes don't fit exactly.
 -   **Human explanation**: "The transfer failed because the Target Model's cognitive terrain is too different from the Source's."
 
 ### Concept Volume (Influence)
@@ -207,7 +207,7 @@ The geometric structure in representation space encoding social relationships.
 ### Power Axis
 A geometric dimension encoding status hierarchy from low to high.
 -   **Anchors**: slave → servant → citizen → noble → emperor
--   **Monotonic Gradient**: Some models (e.g., Qwen2.5-3B) show perfect monotonic ordering (r = 1.0) along this axis.
+-   **Monotonic Gradient**: Some models (e.g., Qwen2.5-3B) show exact monotonic ordering (r = 1.0) along this axis.
 -   **Human explanation**: "The model learned that 'slave' is below 'servant' is below 'citizen' without explicit labels."
 
 ### Kinship Axis

@@ -98,9 +98,10 @@ class Configuration:
 
     @staticmethod
     def target_layers_for_model_depth(total_layers: int) -> set[int]:
-        start = int(float(total_layers) * 0.5)
-        end = int(float(total_layers) * 0.7)
-        return set(range(start, end + 1))
+        # Return all layers - caller should filter based on analysis
+        # (e.g., layer activation variance, information content)
+        # rather than arbitrary percentage ranges.
+        return set(range(total_layers))
 
 
 @dataclass(frozen=True)

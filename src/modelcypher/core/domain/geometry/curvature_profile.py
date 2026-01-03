@@ -294,7 +294,7 @@ class CurvatureAlignment:
     """Curvature alignment score between two models.
 
     Uses z-scores relative to family baseline, NOT absolute thresholds.
-    Score of 1.0 = perfect match, 0.0 = 3σ or more divergence.
+    Score of 1.0 = exact match, 0.0 = 3σ or more divergence.
     """
 
     # Overall alignment (0.0 - 1.0)

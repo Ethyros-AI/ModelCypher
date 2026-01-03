@@ -113,7 +113,7 @@ class GroundingRotation:
     """
 
     angle_degrees: float  # Estimated rotation angle
-    alignment_score: float  # 1.0 = perfectly aligned, 0.0 = orthogonal
+    alignment_score: float  # 1.0 = exactly aligned, 0.0 = orthogonal
     axis_correspondence: dict[str, str]  # source_axis -> target_axis mapping
     confidence: float  # How confident we are in the rotation estimate
 

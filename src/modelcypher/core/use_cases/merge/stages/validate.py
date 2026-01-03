@@ -192,7 +192,7 @@ def stage_validate(
         interference_samples.append(interference)
         # Normalize condition number to instability score using dtype-derived bounds.
         # Instability maps log(κ) to [0, 1] where:
-        #   κ = 1 → instability = 0 (perfectly conditioned)
+        #   κ = 1 → instability = 0 (well-conditioned)
         #   κ = 1/sqrt(eps) → instability = 1 (numerical breakdown threshold)
         # Use float32 machine epsilon since we convert to float32 for computation
         # Get machine epsilon for float32 (arrays are astype'd to float32)
@@ -582,7 +582,7 @@ def _check_refusal_preservation(
     Check if refusal behavior is preserved from target model.
 
     Returns:
-        Score in [0, 1] where 1.0 = perfect preservation
+        Score in [0, 1] where 1.0 = full preservation
     """
     b = backend
     from modelcypher.core.domain.geometry.refusal_direction_detector import (

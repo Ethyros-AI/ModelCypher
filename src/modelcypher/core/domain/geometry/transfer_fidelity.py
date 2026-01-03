@@ -26,6 +26,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     is_finite,
     log_scalar,
+    machine_epsilon,
     sqrt_scalar,
 )
 
@@ -140,8 +141,11 @@ class TransferFidelityPrediction:
 
 
 def _fisher_z_transform(value: float) -> float:
-    r_clamped = max(-0.9999, min(0.9999, value))
     _b = get_default_backend()
+    # Clamp to avoid log(0) at r=±1 - use dtype-derived bound
+    eps = float(machine_epsilon(_b, _b.array([1.0])))
+    bound = 1.0 - eps
+    r_clamped = max(-bound, min(bound, value))
     return 0.5 * log_scalar((1.0 + r_clamped) / (1.0 - r_clamped), _b)
 
 

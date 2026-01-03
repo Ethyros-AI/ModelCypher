@@ -1371,14 +1371,10 @@ class Spatial3DAnalyzer:
         else:
             occlusion_score = 0.0
 
-        # Composite world model score
+        # Equal weights - let individual scores speak for themselves
         world_model_score = (
-            0.25 * euclidean_score
-            + 0.20 * gravity_score
-            + 0.20 * density_score
-            + 0.20 * stereo_score
-            + 0.15 * occlusion_score
-        )
+            euclidean_score + gravity_score + density_score + stereo_score + occlusion_score
+        ) / 5.0
 
         # Physics detected if gravity axis exists and any measurable density-mass correlation
         physics_detected = gravity.gravity_axis_detected and density.density_mass_correlation > 0

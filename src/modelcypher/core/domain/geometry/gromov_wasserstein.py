@@ -118,6 +118,8 @@ _MIN_OUTER_ITERATIONS = 5
 # Sinkhorn iterations - small epsilon approximates exact EMD
 _SINKHORN_ITERATIONS = 50
 # Sinkhorn epsilon is now derived from cost matrix scale (see _derive_sinkhorn_epsilon)
+# This nominal value is retained for cache key compatibility only
+_SINKHORN_EPSILON = "data_derived"  # Not used in computation; epsilon is computed per-call
 # Random restarts to escape local minima (GW is non-convex)
 _NUM_RESTARTS = 10
 _RANDOM_SEED = 42
@@ -472,7 +474,7 @@ class GromovWassersteinDistance:
         median_val = float(backend.to_scalar(median_arr))
 
         # Epsilon = median * sqrt(machine_eps)
-        # This scales with cost and provides good numerical behavior
+        # This scales with cost and provides stable numerical behavior
         eps = float(machine_epsilon(backend, cost))
         epsilon = max(median_val * (eps ** 0.5), eps)
         return epsilon

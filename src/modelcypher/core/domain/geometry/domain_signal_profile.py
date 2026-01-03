@@ -48,7 +48,7 @@ class LayerSignal:
     # Number of gradient samples used for this layer
     gradient_sample_count: int | None = None
 
-    # Domain geometry coherence scores (0 = no coherence, 1 = perfect coherence)
+    # Domain geometry coherence scores (0 = no coherence, 1 = full coherence)
     # Added for domain-aware merge waypoints
     spatial_coherence: float | None = None
     social_coherence: float | None = None
@@ -173,4 +173,3 @@ class DomainSignalProfile:
             else datetime.utcnow(),
             notes=data.get("notes"),
         )
-

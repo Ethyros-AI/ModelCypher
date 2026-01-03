@@ -457,7 +457,7 @@ def _probe_precise(
                 cka_matrix
             )
 
-            # For each matched layer pair, use GramAligner to find PERFECT alignment
+            # For each matched layer pair, use GramAligner to find exact alignment
             # GramAligner.achieved_cka should be 1.0 (or very close)
             for src_idx, tgt_idx in dp_path:
                 src_layer = source_layers[src_idx]
@@ -498,7 +498,7 @@ def _probe_precise(
 
                     if not alignment_result.is_perfect:
                         logger.warning(
-                            "PROBE: Layer %d -> %d hidden alignment not perfect "
+                            "PROBE: Layer %d -> %d hidden alignment not exact "
                             "(achieved_cka=%.4f, threshold=%.2e). "
                             "This indicates an alignment algorithm bug.",
                             src_layer,
@@ -533,7 +533,7 @@ def _probe_precise(
 
                             if not attn_result.is_perfect:
                                 logger.warning(
-                                    "PROBE: Layer %d -> %d attention Q alignment not perfect "
+                                    "PROBE: Layer %d -> %d attention Q alignment not exact "
                                     "(achieved_cka=%.4f).",
                                     src_layer,
                                     tgt_layer,
@@ -665,7 +665,7 @@ def _probe_precise(
 
                             if not kv_result.is_perfect:
                                 logger.warning(
-                                    "PROBE: Layer %d -> %d attention KV alignment not perfect "
+                                    "PROBE: Layer %d -> %d attention KV alignment not exact "
                                     "(achieved_cka=%.4f after Procrustes).",
                                     src_layer,
                                     tgt_layer,
@@ -744,9 +744,9 @@ def _probe_precise(
     # layers_with_data: layers that have activations in both models (for reporting)
     layers_with_data = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
     # For cross-architecture, DP alignment only matches a subset of layers.
-    # missing_cka_layers is for reporting - it doesn't block perfect_alignment
+    # missing_cka_layers is for reporting - it doesn't block exact alignment
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
-    # Perfect alignment: all ALIGNED layers (in layer_cka_scores) have CKA >= 1.0 - threshold
+    # Exact alignment: all ALIGNED layers (in layer_cka_scores) have CKA >= 1.0 - threshold
     # The threshold is sqrt(machine_epsilon) ≈ 1e-4 for float32
     precision_threshold = sqrt_scalar(machine_epsilon(b, b.array([1.0])), b)
     perfect_alignment = bool(layer_cka_scores) and min_cka >= 1.0 - precision_threshold

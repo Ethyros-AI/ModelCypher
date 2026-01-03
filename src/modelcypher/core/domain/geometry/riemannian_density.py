@@ -897,7 +897,7 @@ class RiemannianDensityEstimator:
         - Runs entirely on GPU
         - Captures invariant representational geometry
 
-        CKA = 1.0 means identical representational geometry (perfect alignment)
+        CKA = 1.0 means identical representational geometry (exact alignment)
         CKA = 0.0 means orthogonal representations (no overlap)
 
         Args:
@@ -1274,7 +1274,7 @@ class RiemannianDensityEstimator:
 
         For same-dimension: Uses principal angles between covariance eigenspaces.
         For cross-dimension: Uses CKA on Gram matrices (dimension-agnostic).
-        Returns value in [0, 1] where 1 = perfectly aligned.
+        Returns value in [0, 1] where 1 = exactly aligned.
         """
         backend = get_default_backend()
 

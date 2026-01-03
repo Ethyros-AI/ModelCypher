@@ -331,7 +331,7 @@ class DirectionalCoverage:
 
     sparse_direction: "Array"  # Unit vector in most sparse direction [d]
     max_gap_angle: float  # Largest angular gap (radians)
-    coverage_uniformity: float  # 0 = highly non-uniform, 1 = perfectly uniform
+    coverage_uniformity: float  # 0 = highly non-uniform, 1 = fully uniform
     neighbor_directions: "Array"  # Normalized tangent directions to neighbors [k, d]
     point_idx: int  # Index of the analyzed point
 
@@ -1647,7 +1647,7 @@ class RiemannianGeometry:
         For the discrete manifold, we use a first-order approximation:
             x_new = x + step_size * sparse_direction
 
-        This is exact for flat manifolds and a good approximation for
+        This is exact for flat manifolds and a first-order approximation for
         small step sizes on curved manifolds.
 
         Args:

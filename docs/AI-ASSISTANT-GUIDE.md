@@ -189,7 +189,7 @@ When reporting 3D world model scores, report the measurement and baseline contex
 
 ### The "Blind Physicist" Analogy
 If a model has a low visual grounding score, explain it like this:
-> "Imagine a brilliant physicist who was born blind. They understand gravity ($F=ma$), spatial relationships, and the laws of physics perfectly through equations and tactile experience, but they don't 'see' the world on a visual 3D grid. A model with alternative grounding is similar: the physics is there, but it's encoded along linguistic or non-visual axes."
+> "Imagine a brilliant physicist who was born blind. They understand gravity ($F=ma$), spatial relationships, and the laws of physics exactly through equations and tactile experience, but they don't 'see' the world on a visual 3D grid. A model with alternative grounding is similar: the physics is there, but it's encoded along linguistic or non-visual axes."
 
 ### Reporting Grounding Measurements
 

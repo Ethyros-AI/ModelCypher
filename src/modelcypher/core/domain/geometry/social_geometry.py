@@ -60,7 +60,7 @@ _AXIS_FORMALITY = "formality"
 class AxisOrthogonality:
     """Measures how independent the social axes are."""
 
-    power_kinship: float  # 1.0 = perfectly orthogonal
+    power_kinship: float  # 1.0 = exactly orthogonal
     power_formality: float
     kinship_formality: float
     mean_orthogonality: float

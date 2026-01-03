@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class Configuration:
     validation_prompts: int = 10
     max_tokens_per_prompt: int = 100
-    perturbation_magnitude: float = 0.01
+    perturbation_magnitude: float | None = None  # Must be derived from weight scale
 
 
 @dataclass(frozen=True)
@@ -134,6 +134,11 @@ class SparseRegionValidator:
                 )
             )
 
+        if self.config.perturbation_magnitude is None:
+            raise ValueError(
+                "perturbation_magnitude must be set. Derive from weight scale "
+                "(e.g., std(weights) * sqrt(machine_epsilon))."
+            )
         apply_perturbation(layers_to_perturb, self.config.perturbation_magnitude)
 
         if progress:
@@ -171,7 +176,9 @@ class SparseRegionValidator:
         post_perturbation: BaselineMetrics,
         perturbed_layers: list[int],
     ) -> ValidationResult:
-        if baseline.mean_entropy > 0.001:
+        backend = get_default_backend()
+        eps = float(division_epsilon(backend, backend.array([baseline.mean_entropy])))
+        if baseline.mean_entropy > eps:
             entropy_delta = (
                 abs(post_perturbation.mean_entropy - baseline.mean_entropy) / baseline.mean_entropy
             )

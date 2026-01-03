@@ -69,7 +69,7 @@ class AlignmentFailureError(MergeValidationError):
     structure (angles, distances, topology). If CKA < 1.0, it means our algorithm
     has a bug, not that the models are "incompatible."
 
-    Fix the algorithm. The perfect alignment EXISTS - we just failed to find it.
+    Fix the algorithm. The exact alignment EXISTS - we just failed to find it.
 
     Context typically includes:
     - achieved_cka: The CKA value that was achieved

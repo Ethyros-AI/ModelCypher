@@ -298,12 +298,8 @@ class MoralGeometryAnalyzer:
         cluster_score = min(1.0, clustering.separation_ratio)
         opposition_score = opposition.mean_opposition
 
-        mms = (
-            0.25 * ortho_score
-            + 0.30 * gradient_score
-            + 0.25 * cluster_score
-            + 0.20 * opposition_score
-        )
+        # Equal weights - let individual scores speak for themselves
+        mms = (ortho_score + gradient_score + cluster_score + opposition_score) / 4.0
 
         return MoralGeometryReport(
             model_path=model_path,

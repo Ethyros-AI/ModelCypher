@@ -1664,7 +1664,7 @@ def solve_via_cca_procrustes(
     source: Array,
     target: Array,
 ) -> tuple[Array | None, dict]:
-    """Solve source @ F = target via SVCCA + Procrustes for perfect alignment.
+    """Solve source @ F = target via SVCCA + Procrustes for exact alignment.
 
     NOTE: This approach has issues - it projects through a low-dimensional
     bottleneck which can destroy CKA. Prefer solve_via_gram_alignment() which

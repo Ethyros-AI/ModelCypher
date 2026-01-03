@@ -1016,8 +1016,8 @@ def compute_curvature_divergence(
         )
         sign_diff += diff
 
-    # Normalize
-    divergence = mean_diff + 0.5 * var_diff + 0.25 * sign_diff
+    # Equal weights for divergence components
+    divergence = (mean_diff + var_diff + sign_diff) / 3.0
 
     return divergence
 

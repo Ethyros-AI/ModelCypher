@@ -36,7 +36,7 @@ Scientific basis:
 - Social deixis in language (formal/informal registers)
 
 Empirical validation (2025-12-23) shows Mean SMS: 0.53 (effect size d=2.39),
-axis orthogonality: 94.8%, and perfect reproducibility (CV=0.00%).
+axis orthogonality: 94.8%, and deterministic reproducibility (CV=0.00%).
 """
 
 from __future__ import annotations

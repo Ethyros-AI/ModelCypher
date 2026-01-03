@@ -532,7 +532,7 @@ class DimensionCascade:
         and embedded Euclidean distances. Lower is better.
 
         Returns:
-            Distortion in [0, 1] where 0 = perfect preservation
+            Distortion in [0, 1] where 0 = exact preservation
         """
         b = self.backend
         n = original.shape[0]
@@ -577,7 +577,7 @@ class DimensionCascade:
             corr_val = float(b.to_scalar(correlation))
 
             # Distortion = 1 - |correlation|
-            # Perfect embedding has correlation ±1, distortion 0
+            # Exact embedding has correlation ±1, distortion 0
             distortion = 1.0 - abs(corr_val)
 
             logger.debug(

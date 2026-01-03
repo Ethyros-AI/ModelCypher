@@ -103,7 +103,7 @@ class LayerMergeValidation:
     entropy_ratio: float
     """Delta normalized by expected entropy. The stability signal."""
     knowledge_retention_score: float
-    """1.0 = perfect retention, 0.0 = total loss."""
+    """1.0 = full retention, 0.0 = total loss."""
 
     @classmethod
     def compute(

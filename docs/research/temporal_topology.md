@@ -98,7 +98,7 @@ The most notable pattern is that **duration** is more robustly encoded than **di
 The **Latent Chronologist** hypothesis is **partially supported**:
 
 1. **Axis orthogonality is high** (91.9%) - Direction, Duration, and Causality are geometrically independent
-2. **Duration is robustly encoded** - Mistral-7B shows perfect moment→century ordering
+2. **Duration is robustly encoded** - Mistral-7B shows monotonic moment→century ordering (r = 1.0)
 3. **Arrow of Time is NOT detected** - Models don't consistently encode past→future direction
 4. **Size correlation is inverse** - Smaller models actually show better temporal structure
 
