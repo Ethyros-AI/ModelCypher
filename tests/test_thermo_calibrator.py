@@ -28,47 +28,10 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
 )
 from modelcypher.core.domain.thermo.thermo_calibrator import (
-    CalibrationConfig,
     CalibrationProgress,
     ThermoCalibrator,
     get_default_calibration_probes,
 )
-
-
-class TestCalibrationConfig:
-    """Tests for CalibrationConfig dataclass."""
-
-    def test_defaults(self):
-        config = CalibrationConfig()
-        assert config.temperature == 1.0
-        assert config.max_tokens == 64
-        assert config.baseline_samples == 50
-        assert config.modifier_samples == 20
-        assert config.refused_percentile == 95.0
-        assert config.hedged_percentile == 75.0
-        assert config.attempted_percentile == 50.0
-
-    def test_custom_temperature(self):
-        config = CalibrationConfig(temperature=0.7)
-        assert config.temperature == 0.7
-
-    def test_custom_max_tokens(self):
-        config = CalibrationConfig(max_tokens=128)
-        assert config.max_tokens == 128
-
-    def test_custom_baseline_samples(self):
-        config = CalibrationConfig(baseline_samples=100)
-        assert config.baseline_samples == 100
-
-    def test_custom_percentiles(self):
-        config = CalibrationConfig(
-            refused_percentile=90.0,
-            hedged_percentile=70.0,
-            attempted_percentile=40.0,
-        )
-        assert config.refused_percentile == 90.0
-        assert config.hedged_percentile == 70.0
-        assert config.attempted_percentile == 40.0
 
 
 class TestCalibrationProgress:
@@ -128,13 +91,6 @@ class TestThermoCalibrator:
         adapter_path.mkdir()
         calibrator = ThermoCalibrator(model_path, adapter_path)
         assert calibrator.adapter_path == adapter_path
-
-    def test_init_with_config(self, tmp_path):
-        model_path = tmp_path / "model"
-        model_path.mkdir()
-        config = CalibrationConfig(temperature=0.5)
-        calibrator = ThermoCalibrator(model_path, config=config)
-        assert calibrator.config.temperature == 0.5
 
     def test_model_id_from_path(self, tmp_path):
         model_path = tmp_path / "my-cool-model"
@@ -219,31 +175,3 @@ class TestGetDefaultCalibrationProbes:
         probes = get_default_calibration_probes()
         # Should have a reasonable number of probes
         assert 20 <= len(probes) <= 100
-
-
-class TestCalibrationConfigValidation:
-    """Tests for CalibrationConfig validation."""
-
-    def test_percentiles_within_bounds(self):
-        config = CalibrationConfig()
-        assert 0 <= config.refused_percentile <= 100
-        assert 0 <= config.hedged_percentile <= 100
-        assert 0 <= config.attempted_percentile <= 100
-
-    def test_percentiles_ordered(self):
-        config = CalibrationConfig()
-        # refused > hedged > attempted
-        assert config.refused_percentile >= config.hedged_percentile
-        assert config.hedged_percentile >= config.attempted_percentile
-
-    def test_temperature_positive(self):
-        config = CalibrationConfig()
-        assert config.temperature > 0
-
-    def test_max_tokens_positive(self):
-        config = CalibrationConfig()
-        assert config.max_tokens > 0
-
-    def test_baseline_samples_positive(self):
-        config = CalibrationConfig()
-        assert config.baseline_samples > 0

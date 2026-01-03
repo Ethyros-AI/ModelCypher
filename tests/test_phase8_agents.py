@@ -27,14 +27,12 @@ from typing import List
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateAtlas,
     ComputationalGateInventory,
-    GateAtlasConfiguration,
 )
 from modelcypher.core.domain.agents.semantic_prime_atlas import (
     SemanticPrimeAtlas,
     SemanticPrimeInventory,
 )
 from modelcypher.core.domain.agents.task_diversion_detector import (
-    DiversionDetectorConfiguration,
     TaskDiversionAssessment,
     TaskDiversionDetector,
     TaskDiversionMethod,
@@ -121,13 +119,13 @@ class TestPhase8Agents(unittest.TestCase):
         self.assertIn(summary.top_primes[0].prime_id, valid_prime_ids)
 
     def test_computational_gate_atlas_signature(self):
-        config = GateAtlasConfiguration(use_probe_subset=True)
-        atlas = ComputationalGateAtlas(embedder=self.mock_embedder, configuration=config)
+        # All gates included - geometry determines significance
+        atlas = ComputationalGateAtlas(embedder=self.mock_embedder)
 
         sig = asyncio.run(atlas.signature("def my_func(): return 1"))
 
         self.assertIsNotNone(sig)
-        self.assertEqual(len(sig.gate_ids), len(ComputationalGateInventory.probe_gates()))
+        self.assertEqual(len(sig.gate_ids), len(ComputationalGateInventory.all_gates()))
 
     def test_computational_gate_prompt_generation(self):
         prompts = ComputationalGateAtlas.generate_probe_prompts(
@@ -164,10 +162,8 @@ class TestPhase8Agents(unittest.TestCase):
             async def embed(self, texts):
                 return []
 
-        detector = TaskDiversionDetector(
-            embedder=BrokenEmbedder(),
-            configuration=DiversionDetectorConfiguration(enable_lexical_fallback=True),
-        )
+        # Lexical fallback is automatic when embeddings fail
+        detector = TaskDiversionDetector(embedder=BrokenEmbedder())
 
         # Similar (lexically overlapping)
         # Stop words: "this", "is" might be stripped.

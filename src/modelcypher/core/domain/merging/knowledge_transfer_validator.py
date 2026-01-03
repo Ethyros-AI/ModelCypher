@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Enums and Configuration
+# Enums
 # =============================================================================
 
 
@@ -54,25 +54,6 @@ class KnowledgeDomain(str, Enum):
 
 
 # ValidationStatus enum removed - expose raw retention metrics only.
-
-
-@dataclass
-class KnowledgeValidationConfig:
-    """Configuration for knowledge validation.
-
-    Attributes
-    ----------
-    domains : list of KnowledgeDomain
-        Which domains to test.
-    min_probes_per_domain : int
-        Minimum number of probes per domain.
-    use_variations : bool
-        Whether to test paraphrased variations of prompts.
-    """
-
-    domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
-    min_probes_per_domain: int = 5
-    use_variations: bool = True
 
 
 # =============================================================================
@@ -537,8 +518,6 @@ class KnowledgeTransferReport:
         Results broken down by domain.
     probe_results : list of ProbeResult
         Individual probe results.
-    config : KnowledgeValidationConfig or None
-        Configuration used for validation.
     compositional_consistency : float
         Consistency of semantic compositions.
     crm_correlation : float
@@ -547,7 +526,6 @@ class KnowledgeTransferReport:
 
     per_domain: dict[KnowledgeDomain, KnowledgeRetentionResult]
     probe_results: list[ProbeResult] = field(default_factory=list)
-    config: KnowledgeValidationConfig | None = None
 
     @property
     def overall_retention(self) -> float:
@@ -610,7 +588,6 @@ class KnowledgeTransferReport:
 def run_knowledge_probes(
     generate_fn: Callable[[str], str],
     probes: list[KnowledgeProbe],
-    config: KnowledgeValidationConfig | None = None,
 ) -> list[ProbeResult]:
     """Run knowledge probes against a model.
 
@@ -620,15 +597,12 @@ def run_knowledge_probes(
         Function that takes a prompt and returns model response.
     probes : list of KnowledgeProbe
         List of probes to run.
-    config : KnowledgeValidationConfig, optional
-        Validation configuration (defaults to standard settings).
 
     Returns
     -------
     list of ProbeResult
         List of ProbeResult for each probe.
     """
-    cfg = config or KnowledgeValidationConfig()
     results = []
 
     for probe in probes:
@@ -636,9 +610,9 @@ def run_knowledge_probes(
         response = generate_fn(probe.prompt)
         passed = probe.matches(response)
 
-        # Run variations if configured
+        # Run variations for the full probe set
         variation_results = {}
-        if cfg.use_variations and probe.variations:
+        if probe.variations:
             for variation in probe.variations:
                 var_response = generate_fn(variation)
                 variation_results[variation] = probe.matches(var_response)
@@ -715,7 +689,6 @@ def compute_retention_by_domain(
 def validate_knowledge_transfer(
     source_generate_fn: Callable[[str], str],
     merged_generate_fn: Callable[[str], str],
-    config: KnowledgeValidationConfig | None = None,
     corpus: KnowledgeProbeCorpus | None = None,
 ) -> KnowledgeTransferReport:
     """Run full knowledge transfer validation.
@@ -726,8 +699,6 @@ def validate_knowledge_transfer(
         Generation function for source model.
     merged_generate_fn : callable
         Generation function for merged model.
-    config : KnowledgeValidationConfig, optional
-        Validation configuration (defaults to standard settings if not provided).
     corpus : KnowledgeProbeCorpus, optional
         Probe corpus (uses default if not provided).
 
@@ -736,22 +707,18 @@ def validate_knowledge_transfer(
     KnowledgeTransferReport
         Comprehensive knowledge transfer report.
     """
-    cfg = config or KnowledgeValidationConfig()
     probe_corpus = corpus or KnowledgeProbeCorpus()
 
-    # Get probes for configured domains
-    probes = []
-    for domain in cfg.domains:
-        domain_probes = probe_corpus.get_probes(domain)
-        probes.extend(domain_probes[: cfg.min_probes_per_domain])
+    # Use the full probe corpus to avoid arbitrary truncation
+    probes = probe_corpus.get_probes()
 
-    logger.info(f"Running {len(probes)} knowledge probes across {len(cfg.domains)} domains")
+    logger.info(f"Running {len(probes)} knowledge probes across all domains")
 
     # Run probes on source model
-    source_results = run_knowledge_probes(source_generate_fn, probes, cfg)
+    source_results = run_knowledge_probes(source_generate_fn, probes)
 
     # Run probes on merged model
-    merged_results = run_knowledge_probes(merged_generate_fn, probes, cfg)
+    merged_results = run_knowledge_probes(merged_generate_fn, probes)
 
     # Compute retention
     per_domain = compute_retention_by_domain(source_results, merged_results)
@@ -759,7 +726,6 @@ def validate_knowledge_transfer(
     return KnowledgeTransferReport(
         per_domain=per_domain,
         probe_results=merged_results,
-        config=cfg,
         compositional_consistency=0.0,  # To be filled by service
         crm_correlation=0.0,  # To be filled by service
     )

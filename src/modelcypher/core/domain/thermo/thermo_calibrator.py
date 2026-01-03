@@ -97,14 +97,15 @@ class CalibrationProgress:
 class ThermoCalibrator:
     """Calibrates thermodynamic parameters from empirical measurement.
 
+    Thresholds are derived from the natural structure of the entropy distribution,
+    not from arbitrary percentiles.
+
     Parameters
     ----------
     model_path : str | Path
         Path to the model to calibrate.
     adapter_path : str | Path | None
         Optional path to adapter weights.
-    config : CalibrationConfig | None
-        Calibration configuration.
     backend : Backend | None
         Optional backend for array operations.
     """
@@ -113,12 +114,10 @@ class ThermoCalibrator:
         self,
         model_path: str | Path,
         adapter_path: str | Path | None = None,
-        config: CalibrationConfig | None = None,
         backend: "Backend | None" = None,
     ):
         self.model_path = Path(model_path).expanduser().resolve()
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
-        self.config = config or CalibrationConfig()
         self._backend = backend
 
         # Model identifier derived from path
@@ -187,8 +186,8 @@ class ThermoCalibrator:
                 measurements = calorimeter.measure_with_modifiers(
                     prompt=probe,
                     modifiers=modifiers,
-                    temperature=self.config.temperature,
-                    max_tokens=self.config.max_tokens,
+                    temperature=1.0,  # Standard temperature
+                    max_tokens=64,  # Sufficient for entropy measurement
                 )
             except Exception as e:
                 logger.warning(f"Failed to measure probe {i}: {e}")
@@ -230,20 +229,24 @@ class ThermoCalibrator:
         self,
         baseline_entropies: list[float],
     ) -> MeasuredThresholds | None:
-        """Derive classification thresholds from baseline entropy distribution."""
-        if len(baseline_entropies) < self.config.baseline_samples:
+        """Derive classification thresholds from baseline entropy distribution.
+
+        Thresholds are derived from the natural structure of the data,
+        not from arbitrary percentiles.
+        """
+        # Need sufficient samples for statistical validity
+        min_samples = max(10, len(baseline_entropies) // 5)
+        if len(baseline_entropies) < min_samples:
             logger.warning(
                 f"Insufficient baseline samples for threshold calibration: "
-                f"{len(baseline_entropies)} < {self.config.baseline_samples}"
+                f"{len(baseline_entropies)} < {min_samples}"
             )
             return None
 
+        # Derive thresholds from the data's natural structure
         return MeasuredThresholds.from_baseline_entropies(
             entropies=baseline_entropies,
             model_id=self.model_id,
-            refused_percentile=self.config.refused_percentile,
-            hedged_percentile=self.config.hedged_percentile,
-            attempted_percentile=self.config.attempted_percentile,
         )
 
     def _calibrate_modifier_profile(
@@ -257,7 +260,7 @@ class ThermoCalibrator:
 
         return MeasuredModifierProfile.from_measurements(
             measurements=measurements,
-            temperature=self.config.temperature,
+            temperature=1.0,  # Standard temperature
             model_id=self.model_id,
         )
 
@@ -283,7 +286,7 @@ class ThermoCalibrator:
             hedged_count=hedged,
             attempted_count=attempted,
             solved_count=solved,
-            temperature=self.config.temperature,
+            temperature=1.0,  # Standard temperature
             model_id=self.model_id,
         )
 

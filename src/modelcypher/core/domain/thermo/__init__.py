@@ -73,14 +73,12 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
     TemperatureSweepResult,
 )
 from modelcypher.core.domain.thermo.ridge_cross_detector import (
-    RidgeCrossConfiguration,
     RidgeCrossDetector,
     RidgeCrossEvent,
     RidgeCrossRateStats,
     TransitionAnalysis,
 )
 from modelcypher.core.domain.thermo.thermo_calibrator import (
-    CalibrationConfig,
     CalibrationProgress,
     ThermoCalibrator,
     get_default_calibration_probes,
@@ -98,7 +96,6 @@ __all__ = [
     "MultilingualPerturbedPrompt",
     "PerturbedPrompt",
     "PromptLanguage",
-    "RidgeCrossConfiguration",
     "RidgeCrossDetector",
     "RidgeCrossEvent",
     "RidgeCrossRateStats",
@@ -138,7 +135,6 @@ __all__ = [
     "ThermoCalibration",
     "UncalibratedError",
     # ThermoCalibrator
-    "CalibrationConfig",
     "CalibrationProgress",
     "ThermoCalibrator",
     "get_default_calibration_probes",

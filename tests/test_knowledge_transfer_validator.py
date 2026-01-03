@@ -29,7 +29,6 @@ from modelcypher.core.domain.merging.knowledge_transfer_validator import (
     KnowledgeProbeCorpus,
     KnowledgeRetentionResult,
     KnowledgeTransferReport,
-    KnowledgeValidationConfig,
     ProbeResult,
     compute_retention_by_domain,
     run_knowledge_probes,

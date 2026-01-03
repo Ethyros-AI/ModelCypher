@@ -36,7 +36,6 @@ from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateCategory,
     ComputationalGateInventory,
     ComputationalGateSignature,
-    GateAtlasConfiguration,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.vector_math import VectorMath

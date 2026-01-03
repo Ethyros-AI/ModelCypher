@@ -31,7 +31,6 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     ThermoMeasurement,
 )
 from modelcypher.core.domain.thermo.ridge_cross_detector import (
-    RidgeCrossConfiguration,
     RidgeCrossDetector,
     RidgeCrossEvent,
     RidgeCrossRateStats,
@@ -66,42 +65,6 @@ def make_measurement(
         behavioral_outcome=behavioral_outcome,
         delta_h=delta_h,
     )
-
-
-class TestRidgeCrossConfiguration:
-    """Tests for RidgeCrossConfiguration dataclass."""
-
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = RidgeCrossConfiguration()
-        assert config.minimum_delta_h == 0.1
-        assert config.require_outcome_change is True
-        assert config.minimum_confidence == 0.6
-
-    def test_default_factory(self):
-        """Test default() factory method."""
-        config = RidgeCrossConfiguration.default()
-        assert config.minimum_delta_h == 0.1
-
-    def test_strict_factory(self):
-        """Test strict() factory method."""
-        config = RidgeCrossConfiguration.strict()
-        assert config.minimum_delta_h == 0.2
-        assert config.minimum_confidence == 0.7
-        assert config.require_outcome_change is True
-
-    def test_lenient_factory(self):
-        """Test lenient() factory method."""
-        config = RidgeCrossConfiguration.lenient()
-        assert config.minimum_delta_h == 0.05
-        assert config.minimum_confidence == 0.5
-        assert config.require_outcome_change is False
-
-    def test_frozen(self):
-        """Test configuration is frozen."""
-        config = RidgeCrossConfiguration()
-        with pytest.raises(AttributeError):
-            config.minimum_delta_h = 0.5
 
 
 class TestRidgeCrossEvent:
@@ -219,21 +182,6 @@ class TestRidgeCrossRateStats:
         assert "n=100" in display
 
 
-class TestRidgeCrossDetectorInit:
-    """Tests for RidgeCrossDetector initialization."""
-
-    def test_default_configuration(self):
-        """Test default configuration is used."""
-        detector = RidgeCrossDetector()
-        assert detector.configuration.minimum_delta_h == 0.1
-
-    def test_custom_configuration(self):
-        """Test custom configuration is used."""
-        config = RidgeCrossConfiguration.strict()
-        detector = RidgeCrossDetector(configuration=config)
-        assert detector.configuration.minimum_delta_h == 0.2
-
-
 class TestRidgeCrossDetectorDetectCrossings:
     """Tests for RidgeCrossDetector.detect_crossings method."""
 
@@ -320,29 +268,6 @@ class TestRidgeCrossDetectorDetectCrossings:
 
         assert len(events) == 1
         assert events[0].delta_h == -0.5
-
-    def test_lenient_config_no_outcome_change_required(self):
-        """Test lenient config doesn't require outcome change."""
-        config = RidgeCrossConfiguration.lenient()
-        detector = RidgeCrossDetector(configuration=config)
-
-        baseline = make_measurement(
-            modifier=LinguisticModifier.BASELINE,
-            mean_entropy=2.5,
-            behavioral_outcome=BehavioralOutcome.HEDGED,
-        )
-        variants = [
-            make_measurement(
-                modifier=LinguisticModifier.DIRECT,
-                mean_entropy=2.3,  # 0.2 delta (above lenient threshold of 0.05)
-                behavioral_outcome=BehavioralOutcome.HEDGED,  # Same outcome
-            )
-        ]
-
-        events = detector.detect_crossings(baseline, variants)
-
-        assert len(events) == 1  # Should detect even without outcome change
-
 
 class TestRidgeCrossDetectorRidgeCrossRate:
     """Tests for RidgeCrossDetector.ridge_cross_rate method."""

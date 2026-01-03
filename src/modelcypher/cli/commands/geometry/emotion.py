@@ -34,7 +34,6 @@ from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
     OPPOSITION_PAIRS,
-    EmotionAtlasConfiguration,
     EmotionCategory,
     EmotionConceptAtlas,
     EmotionConceptInventory,
@@ -166,17 +165,8 @@ def emotion_analyze(
     context = _context(ctx)
 
     try:
-        include_mild = True
-        include_intense = True
-        top_k = len(EmotionConceptInventory.all_emotions()) + len(
-            EmotionConceptInventory.primary_dyads()
-        )
-        config = EmotionAtlasConfiguration(
-            include_mild=include_mild,
-            include_intense=include_intense,
-            top_k=top_k,
-        )
-        atlas = EmotionConceptAtlas(configuration=config)
+        # All emotions included - geometry determines significance
+        atlas = EmotionConceptAtlas()
 
         # Without embedder, we can only provide static info
         payload = {
@@ -184,11 +174,6 @@ def emotion_analyze(
             "textLength": len(text),
             "inventorySize": len(atlas.inventory),
             "dyadCount": len(atlas.dyads),
-            "configuration": {
-                "includeMild": include_mild,
-                "includeIntense": include_intense,
-                "topK": top_k,
-            },
             "note": "Embedding-based analysis requires an embedding provider. "
             "Use MCP server or programmatic API for full analysis.",
             "availableCategories": [c.value for c in EmotionCategory],

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
     OPPOSITION_PAIRS,
-    EmotionAtlasConfiguration,
     EmotionCategory,
     EmotionConceptAtlas,
     EmotionConceptInventory,

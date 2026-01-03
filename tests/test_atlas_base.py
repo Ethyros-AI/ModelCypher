@@ -251,7 +251,7 @@ class TestBaseAtlas:
     @pytest.mark.asyncio
     async def test_signature_text_trimmed(self):
         """Test that text is trimmed before embedding."""
-        config = BaseAtlasConfiguration()
+
         class RecordingEmbedder:
             def __init__(self):
                 self.texts: list[str] = []
@@ -261,7 +261,7 @@ class TestBaseAtlas:
                 return [[0.5, 0.5, 0.5, 0.5] for _ in texts]
 
         embedder = RecordingEmbedder()
-        atlas = MockAtlas(embedder=embedder, configuration=config)
+        atlas = MockAtlas(embedder=embedder)
         text = "  This is a very long text that should be preserved.  "
 
         await atlas.signature(text)
