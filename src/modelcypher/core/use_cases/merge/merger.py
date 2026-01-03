@@ -96,7 +96,7 @@ class UnifiedGeometricMerger:
 
         Args:
             model_loader: Model loader port for loading weights (REQUIRED).
-            config: Merge configuration (optional, defaults to default config).
+            config: Internal merge configuration; default used when omitted.
             backend: Compute backend for tensor operations (defaults to MLXBackend).
                      All geometric operations run on GPU when using MLXBackend.
         """
@@ -113,12 +113,10 @@ class UnifiedGeometricMerger:
         output_dir: str | None = None,
         output_path: str | None = None,
         dry_run: bool = False,
-        transplant_domains: list[str] | None = None,
         target_weights: dict[str, "Array"] | None = None,
-        use_cpu_weights: bool = False,
         config: "UnifiedMergeConfig | None" = None,
     ) -> UnifiedMergeResult:
-        """Execute the unified geometric merge pipeline."""
+        """Execute the unified geometric merge pipeline (geometry-only, no domain overrides)."""
         return run_merge(
             model_loader=self._model_loader,
             backend=self._backend,
@@ -128,9 +126,7 @@ class UnifiedGeometricMerger:
             output_dir=output_dir,
             output_path=output_path,
             dry_run=dry_run,
-            transplant_domains=transplant_domains,
             target_weights=target_weights,
-            use_cpu_weights=use_cpu_weights,
             config=config,
         )
 

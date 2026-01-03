@@ -48,42 +48,12 @@ if TYPE_CHECKING:
 SUITE_VERSION = "1.0"
 
 
-@dataclass(frozen=True)
-class Config:
-    """Configuration for geometry validation suite.
-
-    GW solver parameters are derived from dtype - no configuration needed.
-    """
-
-    include_fixtures: bool
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        include_fixtures: bool = False,
-    ) -> "Config":
-        """Create configuration with explicit parameters.
-
-        Args:
-            include_fixtures: Whether to include test fixtures in report.
-
-        Returns:
-            Configuration with specified parameters.
-        """
-        return cls(
-            include_fixtures=include_fixtures,
-        )
-
-    @classmethod
-    def standard(cls) -> "Config":
-        """Return standard suite configuration."""
-        return cls.with_parameters()
-
-    @classmethod
-    def default(cls) -> "Config":
-        """Alias for standard suite configuration."""
-        return cls.standard()
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All algorithm parameters are derived from data (machine epsilon, dtype).
+# There is exactly ONE correct way to validate geometry.
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -216,14 +186,12 @@ class Report:
     suite_version: str
     timestamp: datetime
     passed: bool
-    config: Config
     gromov_wasserstein: GromovWassersteinValidation
     traversal_coherence: TraversalCoherenceValidation
     path_signature: PathSignatureValidation
     spectral_signature: SpectralSignatureValidation
     spectral_signature_connected: SpectralSignatureValidation
     dimension_constraint: DimensionConstraintValidation
-    fixtures: Fixtures | None
 
 
 class GeometryValidationSuite:
@@ -237,13 +205,11 @@ class GeometryValidationSuite:
         """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
         return self._backend.tolist(array)
 
-    def run(self, config: Config | None = None) -> Report:
+    def run(self) -> Report:
         """Run the full geometry validation suite.
 
-        Args:
-            config: Suite configuration (use with_parameters() to create).
+        All algorithm parameters are derived from data (machine epsilon, dtype).
         """
-        resolved = config or Config.default()
         fixtures = self._build_fixtures()
         gw_validation = self._validate_gromov_wasserstein(
             fixture=fixtures.gromov_wasserstein,
@@ -277,14 +243,12 @@ class GeometryValidationSuite:
             suite_version=SUITE_VERSION,
             timestamp=datetime.utcnow(),
             passed=passed,
-            config=resolved,
             gromov_wasserstein=gw_validation,
             traversal_coherence=traversal_validation,
             path_signature=path_validation,
             spectral_signature=spectral_validation,
             spectral_signature_connected=spectral_connected_validation,
             dimension_constraint=dimension_constraint_validation,
-            fixtures=fixtures if resolved.include_fixtures else None,
         )
 
     def _build_fixtures(self) -> Fixtures:

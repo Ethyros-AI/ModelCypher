@@ -85,6 +85,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     pi_value,
     regularization_epsilon,
+    sqrt_scalar,
     tiny_value,
 )
 
@@ -922,12 +923,10 @@ class RiemannianGeometry:
         k_neighbors: int | None = None,
     ) -> CurvatureEstimate:
         """
-        Estimate local sectional curvature at a point using geodesic defect.
+        Estimate local sectional curvature at a point.
 
-        The geodesic defect compares the ratio of geodesic to Euclidean distances:
-        - If geodesic > Euclidean: positive curvature (sphere-like)
-        - If geodesic < Euclidean: negative curvature (saddle-like)
-        - If geodesic ≈ Euclidean: flat (Euclidean-like)
+        Uses geodesic defect (geodesic vs Euclidean chord) for 2D/3D probes.
+        For 4D+, falls back to geodesic-only curvature estimation.
 
         This uses the formula from differential geometry relating the geodesic
         excess to sectional curvature via the Jacobi equation.
@@ -945,6 +944,7 @@ class RiemannianGeometry:
         backend.eval(points)
 
         n = int(points.shape[0])
+        d = int(points.shape[1]) if len(points.shape) > 1 else 1
 
         if n < 3:
             return CurvatureEstimate(
@@ -958,22 +958,44 @@ class RiemannianGeometry:
         geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
         # Use the actual k from the result (may differ from input if None was passed)
         k_neighbors = geo_result.k_neighbors
-        euclidean_dist = self._euclidean_distance_matrix(points)
 
-        # Compute precision-aware epsilon before numpy conversion
-        eps = division_epsilon(backend, euclidean_dist)
-
-        # Look at the k nearest neighbors of the center point
+        # Look at the k nearest neighbors of the center point (geodesic order)
         center_geo = geo_result.distances[center_idx]
-        center_euc = euclidean_dist[center_idx]
-
-        sorted_idx = backend.argsort(center_euc)
+        sorted_idx = backend.argsort(center_geo)
         neighbors = sorted_idx[1 : k_neighbors + 1]
         backend.eval(neighbors)
 
+        if d > 3:
+            from modelcypher.core.domain.geometry.manifold_curvature import (
+                SectionalCurvatureEstimator,
+            )
+
+            center = points[center_idx]
+            neighbor_pts = backend.take(points, neighbors, axis=0)
+            backend.eval(center, neighbor_pts)
+            estimator = SectionalCurvatureEstimator()
+            local = estimator.estimate_local_curvature(center, neighbor_pts)
+            std_val = sqrt_scalar(local.variance_sectional, backend)
+            confidence = 1.0 / (1.0 + std_val) if std_val > 0 else 1.0
+            return CurvatureEstimate(
+                sectional_curvature=local.mean_sectional,
+                is_positive=local.mean_sectional > 0,
+                is_negative=local.mean_sectional < 0,
+                confidence=confidence,
+            )
+
+        # 2D/3D: compute geodesic defect against Euclidean chord distances.
+        center = points[center_idx]
+        neighbor_pts = backend.take(points, neighbors, axis=0)
+        diffs = neighbor_pts - center
+        center_euc_k = backend.sqrt(backend.sum(diffs * diffs, axis=1))
+        backend.eval(center_euc_k)
+
+        # Compute precision-aware epsilon before numpy conversion
+        eps = division_epsilon(backend, center_euc_k)
+
         center_geo_k = backend.take(center_geo, neighbors)
-        center_euc_k = backend.take(center_euc, neighbors)
-        backend.eval(center_geo_k, center_euc_k)
+        backend.eval(center_geo_k)
 
         # Compute geodesic defect: (geodesic - euclidean) / euclidean
         valid_mask = center_euc_k > eps

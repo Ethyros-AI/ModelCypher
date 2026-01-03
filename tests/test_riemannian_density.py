@@ -154,7 +154,7 @@ class TestSectionalCurvatureEstimator:
         backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        profile = estimator.estimate_manifold_profile(simple_gaussian_samples, k_neighbors=10)
+        profile = estimator.estimate_manifold_profile(simple_gaussian_samples)
 
         assert len(profile.local_curvatures) == len(simple_gaussian_samples)
         sign_values = list(profile.sign_distribution.values())
@@ -167,7 +167,7 @@ class TestSectionalCurvatureEstimator:
     def test_curvature_divergence_same_profile(self, simple_gaussian_samples):
         """Same profile should have zero divergence."""
         estimator = SectionalCurvatureEstimator()
-        profile = estimator.estimate_manifold_profile(simple_gaussian_samples[:50], k_neighbors=10)
+        profile = estimator.estimate_manifold_profile(simple_gaussian_samples[:50])
 
         divergence = compute_curvature_divergence(profile, profile)
         assert divergence == 0.0

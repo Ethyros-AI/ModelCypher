@@ -40,8 +40,7 @@ class UnifiedMergeConfig:
     (AlphaEdit, ICLR 2025 Outstanding Paper).
     """
 
-    # Transplant settings - REQUIRED for effective knowledge transfer
-    # Core domains define what concepts to transplant (e.g., "mathematical")
+    # Transplant domains are not user-configurable; geometry selects probes.
     transplant_domains: tuple[str, ...] = ()
     # NOTE: Alpha was REMOVED. The null-space projection determines preserved_fraction
     # geometrically. Sequential single-domain transplants reduce cross-domain interference.

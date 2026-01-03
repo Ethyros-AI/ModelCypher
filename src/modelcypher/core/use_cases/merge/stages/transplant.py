@@ -256,7 +256,7 @@ def stage_transplant(
     if not target_activations:
         error_msg = (
             "Transplant requires real activations collected from probe runs. "
-            "Use `mc merge pipeline` (probe stage) to collect activations before merging."
+            "Use `mc merge` to collect activations before merging."
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)

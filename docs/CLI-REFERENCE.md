@@ -22,14 +22,13 @@ All commands support these options:
 The primary operation. Takes knowledge from source and adds it to target via null-space projection.
 
 ```bash
-mc merge -s SOURCE -t TARGET -o OUTPUT -d DOMAINS
+mc merge -s SOURCE -t TARGET -o OUTPUT
 
 # Full example
 mc merge \
   --source /path/to/qwen \
   --target /path/to/smol \
-  --output-dir /path/to/merged \
-  --transplant-domains mathematical,logical,spatial
+  --output-dir /path/to/merged
 ```
 
 **Options:**
@@ -38,8 +37,6 @@ mc merge \
 | `-s, --source` | path | Path to source model (knowledge donor) |
 | `-t, --target` | path | Path to target model (receives knowledge) |
 | `-o, --output-dir` | path | Output directory for merged model |
-| `-d, --transplant-domains` | string | Comma-separated domains: mathematical, logical, spatial, temporal, social, computational |
-| `--skip-pre-analysis` | flag | Skip interference analysis |
 | `-f, --output-file` | path | Save full result to JSON file |
 
 ---

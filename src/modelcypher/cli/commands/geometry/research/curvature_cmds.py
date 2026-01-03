@@ -44,9 +44,6 @@ def register(app: typer.Typer) -> None:
         output_path: str | None = typer.Option(
             None, "--save", "-s", help="Save profile to JSON file"
         ),
-        k_neighbors: int = typer.Option(
-            10, "--k-neighbors", help="k for k-NN graph construction"
-        ),
         layers: str | None = typer.Option(
             None, "--layers", help="Specific layers to analyze (e.g., '0,5,10,15')"
         ),
@@ -58,8 +55,7 @@ def register(app: typer.Typer) -> None:
         - Ollivier-Ricci curvature (via optimal transport on k-NN graph)
         - Intrinsic dimension (via Two-NN estimator)
 
-        These measurements capture the SHAPE of the representation space,
-        complementing knowledge density profiles that capture semantic CONTENT.
+        All parameters are derived from data - no configuration needed.
 
         Use --output to save profile for family baseline aggregation.
         """
@@ -77,7 +73,6 @@ def register(app: typer.Typer) -> None:
             IntrinsicDimension,
         )
         from modelcypher.core.domain.geometry.manifold_curvature import (
-            OllivierRicciConfig,
             OllivierRicciCurvature,
             SectionalCurvatureEstimator,
         )
@@ -103,12 +98,9 @@ def register(app: typer.Typer) -> None:
 
         logger.info(f"Computing curvature for {len(layer_indices)} layers with {len(probe_texts)} probes")
 
-        # Initialize estimators
-        # SectionalCurvatureEstimator derives all parameters from data
+        # Initialize estimators (all parameters derived from data)
         sectional_estimator = SectionalCurvatureEstimator()
-        # OllivierRicciConfig: k_neighbors=None means derive from intrinsic dimension
-        orc_config = OllivierRicciConfig(k_neighbors=k_neighbors, adaptive_alpha=True)
-        orc_estimator = OllivierRicciCurvature(config=orc_config, backend=backend)
+        orc_estimator = OllivierRicciCurvature(backend=backend)
 
         layer_curvatures: list[LayerCurvature] = []
 
@@ -129,11 +121,9 @@ def register(app: typer.Typer) -> None:
                 stacked = backend.stack(activations, axis=0)
                 backend.eval(stacked)
 
-                # Compute sectional curvature
+                # Compute sectional curvature (k derived from data)
                 try:
-                    profile = sectional_estimator.estimate_manifold_profile(
-                        stacked, k_neighbors=k_neighbors
-                    )
+                    profile = sectional_estimator.estimate_manifold_profile(stacked)
                     sectional_mean = profile.global_mean
                     sectional_std = profile.global_variance ** 0.5
                     sectional_min = min(lc.min_sectional for lc in profile.local_curvatures)
@@ -144,9 +134,9 @@ def register(app: typer.Typer) -> None:
                     sectional_mean = sectional_std = sectional_min = sectional_max = 0.0
                     dominant_sign = "unknown"
 
-                # Compute Ollivier-Ricci curvature
+                # Compute Ollivier-Ricci curvature (k derived from data)
                 try:
-                    orc_result = orc_estimator.compute(stacked, k_neighbors=k_neighbors)
+                    orc_result = orc_estimator.compute(stacked)
                     ricci_mean = orc_result.mean_edge_curvature
                     ricci_std = orc_result.std_edge_curvature
                 except Exception as e:
@@ -210,7 +200,6 @@ def register(app: typer.Typer) -> None:
             global_intrinsic_dimension_mean=global_dim_mean,
             extraction_date=datetime.now().isoformat(),
             extraction_config={
-                "k_neighbors": k_neighbors,
                 "num_probes": len(probe_texts),
                 "layers": layer_indices,
             },

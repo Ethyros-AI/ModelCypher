@@ -79,14 +79,14 @@ class HelpService:
                 "and track progress via `mc train status`."
             )
         elif "merge" in question_lower:
-            related_commands = ["mc merge pipeline", "mc merge validate", "mc merge diagnose"]
+            related_commands = ["mc merge", "mc merge validate", "mc merge diagnose"]
             examples = [
-                "mc merge pipeline --source ./model-a --target ./model-b --output-dir ./merged --transplant-domains math",
+                "mc merge --source ./model-a --target ./model-b --output-dir ./merged",
                 "mc merge validate --merged ./merged",
             ]
             answer = (
                 "Merge workflows use geometry-first validation. "
-                "Run `mc merge pipeline` to combine models, then `mc merge validate` or "
+                "Run `mc merge` to combine models, then `mc merge validate` or "
                 "`mc merge diagnose` to inspect alignment."
             )
         elif "model" in question_lower:

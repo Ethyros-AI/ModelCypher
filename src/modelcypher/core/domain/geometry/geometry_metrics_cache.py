@@ -450,7 +450,7 @@ class GeometryMetricsCache:
         k_neighbors: int | None,
         kernel_bandwidth: float | None,
         normalized_laplacian: bool,
-        heat_times: tuple[float, ...],
+        heat_times: tuple[float, ...] | None,
     ) -> str:
         """Create cache key for spectral signature computation."""
         return content_hash(
@@ -459,7 +459,7 @@ class GeometryMetricsCache:
                 "k_neighbors": k_neighbors,
                 "kernel_bandwidth": kernel_bandwidth,
                 "normalized_laplacian": normalized_laplacian,
-                "heat_times": list(heat_times),
+                "heat_times": list(heat_times) if heat_times is not None else [],
             }
         )
 

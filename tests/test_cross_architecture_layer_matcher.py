@@ -22,15 +22,8 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     ConceptResponseMatrix,
 )
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
-    AnchorCategoryWeights,
-    Configuration,
     CrossArchitectureLayerMatcher,
 )
-
-
-def _test_config() -> Configuration:
-    """Create test Configuration."""
-    return Configuration(anchor_category_weights=AnchorCategoryWeights.uniform())
 
 
 def _build_crm(model_id: str) -> ConceptResponseMatrix:
@@ -56,7 +49,7 @@ def _build_crm(model_id: str) -> ConceptResponseMatrix:
 def test_layer_matcher_basic_alignment() -> None:
     source = _build_crm("source")
     target = _build_crm("target")
-    result = CrossArchitectureLayerMatcher.find_correspondence(source, target, _test_config())
+    result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
     assert len(result.mappings) == 2
     assert result.mappings[0].source_layer == 0
     assert result.mappings[0].target_layer == 0
@@ -70,7 +63,7 @@ def test_layer_matcher_with_jaccard() -> None:
     target = _build_crm("target")
     jaccard = [[1.0, 0.0], [0.0, 1.0]]
     result = CrossArchitectureLayerMatcher.find_correspondence(
-        source, target, _test_config(), jaccard_matrix=jaccard
+        source, target, jaccard_matrix=jaccard
     )
     assert result.visualization_data.combined_matrix is not None
 
@@ -106,7 +99,7 @@ class TestCrossArchitectureEdgeCases:
         source = _build_crm_with_dims("source-768", hidden_dim=768, layer_count=2)
         target = _build_crm_with_dims("target-1024", hidden_dim=1024, layer_count=2)
 
-        result = CrossArchitectureLayerMatcher.find_correspondence(source, target, _test_config())
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
         # Should produce mappings despite dimension mismatch
         assert len(result.mappings) == 2
@@ -117,7 +110,7 @@ class TestCrossArchitectureEdgeCases:
         source = _build_crm_with_dims("source-shallow", hidden_dim=2, layer_count=2)
         target = _build_crm_with_dims("target-deep", hidden_dim=2, layer_count=4)
 
-        result = CrossArchitectureLayerMatcher.find_correspondence(source, target, _test_config())
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
         # Should map source layers to some target layers
         assert len(result.mappings) == 2  # Source has 2 layers
@@ -142,7 +135,7 @@ class TestCrossArchitectureEdgeCases:
         target = _build_crm("target")
 
         # Should handle gracefully, may produce empty or low-quality result
-        result = CrossArchitectureLayerMatcher.find_correspondence(empty_crm, target, _test_config())
+        result = CrossArchitectureLayerMatcher.find_correspondence(empty_crm, target)
 
         # Result should exist, quality may be 0
         assert result is not None
@@ -152,7 +145,7 @@ class TestCrossArchitectureEdgeCases:
         source = _build_crm_with_dims("source-1", hidden_dim=2, layer_count=1)
         target = _build_crm_with_dims("target-1", hidden_dim=2, layer_count=1)
 
-        result = CrossArchitectureLayerMatcher.find_correspondence(source, target, _test_config())
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
         assert len(result.mappings) == 1
         assert result.mappings[0].source_layer == 0
@@ -163,7 +156,7 @@ class TestCrossArchitectureEdgeCases:
         source = _build_crm_with_dims("source-32", hidden_dim=4, layer_count=32)
         target = _build_crm_with_dims("target-32", hidden_dim=4, layer_count=32)
 
-        result = CrossArchitectureLayerMatcher.find_correspondence(source, target, _test_config())
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
         assert len(result.mappings) == 32
         assert result.alignment_quality >= 0.0
@@ -175,7 +168,7 @@ class TestCrossArchitectureEdgeCases:
         # Large model with many layers and high dimension
         large = _build_crm_with_dims("large", hidden_dim=4096, layer_count=32)
 
-        result = CrossArchitectureLayerMatcher.find_correspondence(small, large, _test_config())
+        result = CrossArchitectureLayerMatcher.find_correspondence(small, large)
 
         # Should still produce some mappings
         assert len(result.mappings) == 4  # Limited by smaller model
@@ -191,7 +184,7 @@ class TestCrossArchitectureEdgeCases:
         # Should either handle gracefully or use default behavior
         try:
             result = CrossArchitectureLayerMatcher.find_correspondence(
-                source, target, _test_config(), jaccard_matrix=wrong_jaccard
+                source, target, jaccard_matrix=wrong_jaccard
             )
             # If it doesn't raise, result should still be valid
             assert result is not None
@@ -219,7 +212,7 @@ class TestCrossArchitectureEdgeCases:
 
         target = _build_crm("target")
 
-        result = CrossArchitectureLayerMatcher.find_correspondence(source, target, _test_config())
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
 
         # Should not crash on zero activations
         assert result is not None

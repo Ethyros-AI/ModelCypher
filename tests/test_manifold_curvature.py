@@ -38,7 +38,6 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     LocalCurvature,
     ManifoldCurvatureProfile,
     NodeRicciCurvature,
-    OllivierRicciConfig,
     OllivierRicciCurvature,
     OllivierRicciResult,
     SectionalCurvatureEstimator,
@@ -109,16 +108,12 @@ def _is_finite(value: float) -> bool:
     return value == value and value not in (float("inf"), float("-inf"))
 
 
-def _fast_ollivier_estimator(
-    config: OllivierRicciConfig | None = None,
-) -> OllivierRicciCurvature:
+def _fast_ollivier_estimator() -> OllivierRicciCurvature:
     """Create Ollivier-Ricci estimator.
 
-    Now uses convergence-based termination - no iteration count needed.
+    All parameters are derived from data - no config needed.
     """
-    return OllivierRicciCurvature(
-        config=config if config is not None else OllivierRicciConfig()
-    )
+    return OllivierRicciCurvature()
 
 
 # =============================================================================
@@ -421,7 +416,7 @@ class TestManifoldCurvatureProfile:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
 
-        profile = estimator.estimate_manifold_profile(samples, k_neighbors=2)
+        profile = estimator.estimate_manifold_profile(samples)
 
         total = sum(profile.sign_distribution.values())
         backend = get_default_backend()
@@ -438,7 +433,7 @@ class TestManifoldCurvatureProfile:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
 
-        profile = estimator.estimate_manifold_profile(samples, k_neighbors=2)
+        profile = estimator.estimate_manifold_profile(samples)
 
         assert len(profile.local_curvatures) == samples.shape[0]
 
@@ -452,7 +447,7 @@ class TestManifoldCurvatureProfile:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
 
-        profile = estimator.estimate_manifold_profile(samples, k_neighbors=2)
+        profile = estimator.estimate_manifold_profile(samples)
 
         assert profile.dominant_sign in CurvatureSign
 
@@ -466,7 +461,7 @@ class TestManifoldCurvatureProfile:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
 
-        profile = estimator.estimate_manifold_profile(samples, k_neighbors=2)
+        profile = estimator.estimate_manifold_profile(samples)
         backend = get_default_backend()
         high_curv = profile.get_high_curvature_regions(threshold=_eps(backend))
 
@@ -487,7 +482,7 @@ class TestCurvatureAtPoint:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
 
-        profile = estimator.estimate_manifold_profile(samples, k_neighbors=2)
+        profile = estimator.estimate_manifold_profile(samples)
 
         # Query at first point
         result = profile.curvature_at_point(samples[0], k=1)
@@ -508,7 +503,7 @@ class TestCurvatureAtPoint:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
 
-        profile = estimator.estimate_manifold_profile(samples, k_neighbors=2)
+        profile = estimator.estimate_manifold_profile(samples)
 
         # Query at arbitrary point
         backend = get_default_backend()
@@ -538,7 +533,7 @@ class TestCurvatureDivergence:
         estimator = SectionalCurvatureEstimator()
         samples = make_gaussian_samples(n=12, d=4)
 
-        profile = estimator.estimate_manifold_profile(samples, k_neighbors=2)
+        profile = estimator.estimate_manifold_profile(samples)
 
         divergence = compute_curvature_divergence(profile, profile)
 
@@ -558,8 +553,8 @@ class TestCurvatureDivergence:
         samples_a = make_gaussian_samples(n=12, d=4, seed=42)
         samples_b = make_gaussian_samples(n=12, d=4, seed=123)
 
-        profile_a = estimator.estimate_manifold_profile(samples_a, k_neighbors=2)
-        profile_b = estimator.estimate_manifold_profile(samples_b, k_neighbors=2)
+        profile_a = estimator.estimate_manifold_profile(samples_a)
+        profile_b = estimator.estimate_manifold_profile(samples_b)
 
         divergence = compute_curvature_divergence(profile_a, profile_b)
 
@@ -579,8 +574,8 @@ class TestCurvatureDivergence:
         samples_a = make_gaussian_samples(n=12, d=4, seed=42)
         samples_b = make_gaussian_samples(n=12, d=4, seed=123)
 
-        profile_a = estimator.estimate_manifold_profile(samples_a, k_neighbors=2)
-        profile_b = estimator.estimate_manifold_profile(samples_b, k_neighbors=2)
+        profile_a = estimator.estimate_manifold_profile(samples_a)
+        profile_b = estimator.estimate_manifold_profile(samples_b)
 
         div_ab = compute_curvature_divergence(profile_a, profile_b)
         div_ba = compute_curvature_divergence(profile_b, profile_a)
@@ -789,16 +784,6 @@ class TestEdgeCases:
 # =============================================================================
 
 
-class TestOllivierRicciConfig:
-    """Tests for OllivierRicciConfig dataclass."""
-
-    def test_config_is_frozen(self) -> None:
-        """Config should be immutable."""
-        config = OllivierRicciConfig()
-        with pytest.raises(Exception):  # FrozenInstanceError
-            config.base_alpha = 0.9  # type: ignore
-
-
 class TestOllivierRicciCurvature:
     """Tests for OllivierRicciCurvature class."""
 
@@ -812,14 +797,14 @@ class TestOllivierRicciCurvature:
         n_points = int(points.shape[0])
 
         estimator = _fast_ollivier_estimator()
-        k_neighbors = 2
-        result = estimator.compute(points, k_neighbors=k_neighbors)
+        result = estimator.compute(points)
 
         assert isinstance(result, OllivierRicciResult)
         assert len(result.edge_curvatures) > 0
         assert len(result.node_curvatures) == n_points
         assert result.n_points == n_points
-        assert result.k_neighbors == k_neighbors
+        # k_neighbors is derived from intrinsic dimension, just check it's positive
+        assert result.k_neighbors >= 1
 
     def test_curvature_bounds(self) -> None:
         """Edge curvature should be bounded by 1.0."""
@@ -829,8 +814,7 @@ class TestOllivierRicciCurvature:
         points = backend.random_normal((16, 4))
 
         estimator = _fast_ollivier_estimator()
-        k_neighbors = 2
-        result = estimator.compute(points, k_neighbors=k_neighbors)
+        result = estimator.compute(points)
         eps = _eps(backend)
 
         for edge in result.edge_curvatures:
@@ -847,7 +831,7 @@ class TestOllivierRicciCurvature:
         points = backend.random_normal((16, 4))
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=2)
+        result = estimator.compute(points)
         eps = _eps(backend)
 
         for node in result.node_curvatures:
@@ -858,15 +842,15 @@ class TestOllivierRicciCurvature:
             assert node.num_edges >= 1
 
     def test_symmetrized_graph(self) -> None:
-        """Symmetrize option should create undirected edges."""
+        """Graph should have symmetric edges (derived from k-NN)."""
         backend = get_default_backend()
         backend.random_seed(222)
 
         points = backend.random_normal((16, 4))
 
-        config = OllivierRicciConfig(symmetrize=True)
-        estimator = OllivierRicciCurvature(config=config)
-        result = estimator.compute(points, k_neighbors=2)
+        # Symmetry is now automatic in the implementation
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points)
 
         # Check that edges appear in both directions (symmetrized)
         edge_set = {(e.source_idx, e.target_idx) for e in result.edge_curvatures}
@@ -888,8 +872,8 @@ class TestOllivierRicciCurvature:
         points2 = backend.random_normal((16, 4))
 
         estimator = _fast_ollivier_estimator()
-        result1 = estimator.compute(points1, k_neighbors=2)
-        result2 = estimator.compute(points2, k_neighbors=2)
+        result1 = estimator.compute(points1)
+        result2 = estimator.compute(points2)
         eps = _eps(backend)
 
         assert abs(result1.mean_edge_curvature - result2.mean_edge_curvature) <= eps
@@ -904,7 +888,7 @@ class TestOllivierRicciCurvature:
         points = backend.random_normal((14, 4))
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=2)
+        result = estimator.compute(points)
         eps = _eps(backend)
 
         for edge in result.edge_curvatures:
@@ -918,7 +902,7 @@ class TestOllivierRicciCurvature:
         points = backend.random_normal((14, 4))
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=2)
+        result = estimator.compute(points)
 
         assert result is not None
         assert len(result.edge_curvatures) > 0
@@ -932,8 +916,8 @@ class TestOllivierRicciCurvature:
         points = backend.random_normal((n_points, 4))
 
         estimator = _fast_ollivier_estimator()
-        # k close to n-1
-        result = estimator.compute(points, k_neighbors=min(8, n_points - 1))
+        # k is derived from data, should still work
+        result = estimator.compute(points)
 
         assert result is not None
         assert len(result.node_curvatures) == n_points
@@ -946,7 +930,7 @@ class TestOllivierRicciCurvature:
         points = backend.random_normal((16, 4))
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=2)
+        result = estimator.compute(points)
 
         # Standard deviation should be non-negative
         eps = _eps(backend)
@@ -955,29 +939,6 @@ class TestOllivierRicciCurvature:
         # Mean should be finite
         assert _is_finite(result.mean_edge_curvature)
         assert _is_finite(result.mean_node_curvature)
-
-    def test_config_in_result(self) -> None:
-        """Result should contain the config used."""
-        backend = get_default_backend()
-        backend.random_seed(888)
-
-        points = backend.random_normal((14, 4))
-        n_points = int(points.shape[0])
-
-        base_alpha = 1.0 - _eps(backend)
-        config_k_neighbors = min(3, n_points - 1)
-        k_neighbors = min(2, n_points - 1)
-        config = OllivierRicciConfig(
-            base_alpha=base_alpha,
-            k_neighbors=config_k_neighbors,
-        )
-        estimator = OllivierRicciCurvature(config=config)
-        result = estimator.compute(points, k_neighbors=k_neighbors)
-
-        assert result.config.base_alpha == base_alpha
-        # k_neighbors in result should be from compute() call, not config
-        assert result.k_neighbors == k_neighbors
-
 
 class TestOllivierRicciEdgeCases:
     """Edge case tests for Ollivier-Ricci curvature."""
@@ -991,7 +952,7 @@ class TestOllivierRicciEdgeCases:
         points = backend.random_normal((6, 3))
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=3)
+        result = estimator.compute(points)
 
         assert result is not None
         assert result.n_points == 6
@@ -1005,7 +966,7 @@ class TestOllivierRicciEdgeCases:
         points = backend.random_normal((12, 16))
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=2)
+        result = estimator.compute(points)
 
         assert result is not None
         assert _is_finite(result.mean_edge_curvature)
@@ -1024,7 +985,7 @@ class TestOllivierRicciEdgeCases:
         points = base_expanded + noise
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=2)
+        result = estimator.compute(points)
 
         # Should complete without error
         assert result is not None
@@ -1042,7 +1003,7 @@ class TestOllivierRicciEdgeCases:
         points = backend.concatenate([cluster1, cluster2], axis=0)
 
         estimator = _fast_ollivier_estimator()
-        result = estimator.compute(points, k_neighbors=2)
+        result = estimator.compute(points)
 
         # Clustered data may show different curvature patterns
         assert result is not None
@@ -1059,16 +1020,18 @@ class TestLazyMeasureProperties:
 
         points = backend.random_normal((10, 4))
         n_points = int(points.shape[0])
-        k_neighbors = 2
 
         estimator = _fast_ollivier_estimator()
 
-        # We need to access internal methods to test measure construction
-        # First compute to build adjacency
+        # First run compute to set up derived parameters (_derived_base_alpha, etc.)
+        result = estimator.compute(points)
+        k_neighbors = result.k_neighbors
+
+        # Now we can access internal methods
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
         rg = RiemannianGeometry(backend)
-        geo_result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
+        geo_result = rg.geodesic_distances(points)
 
         adjacency_list = estimator._build_adjacency_list(geo_result, k_neighbors, n_points)
         max_degree = max(len(neighbors) for neighbors in adjacency_list.values())
@@ -1077,81 +1040,8 @@ class TestLazyMeasureProperties:
         node_idx = 0
         measure = estimator._build_lazy_measure(node_idx, adjacency_list, max_degree, n_points)
 
-        # Convert to numpy for sum
+        # Measure should sum to 1.0 (probability distribution)
         measure_sum = float(backend.sum(measure))
         eps = _eps(backend)
         assert abs(measure_sum - 1.0) <= eps
 
-    def test_measure_alpha_zero_is_delta(self) -> None:
-        """When alpha=0, measure should be delta at node."""
-        backend = get_default_backend()
-        backend.random_seed(1002)
-
-        points = backend.random_normal((10, 4))
-        n_points = int(points.shape[0])
-        k_neighbors = 2
-
-        config = OllivierRicciConfig(
-            base_alpha=0.0,
-            adaptive_alpha=False,
-        )
-        estimator = OllivierRicciCurvature(config=config)
-
-        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-
-        rg = RiemannianGeometry(backend)
-        geo_result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
-
-        adjacency_list = estimator._build_adjacency_list(geo_result, k_neighbors, n_points)
-        max_degree = max(len(neighbors) for neighbors in adjacency_list.values())
-
-        node_idx = 5
-        measure = estimator._build_lazy_measure(node_idx, adjacency_list, max_degree, n_points)
-
-        # With alpha=0, all mass should be on node_idx
-        measure_list = array_to_list(backend, measure)
-        eps = _eps(backend)
-        assert abs(measure_list[node_idx] - 1.0) <= eps
-        # All other entries should be 0
-        for i in range(n_points):
-            if i != node_idx:
-                assert abs(measure_list[i]) <= eps
-
-    def test_measure_alpha_one_is_uniform_on_neighbors(self) -> None:
-        """When alpha=1, measure should be uniform on neighbors."""
-        backend = get_default_backend()
-        backend.random_seed(1003)
-
-        points = backend.random_normal((10, 4))
-        n_points = int(points.shape[0])
-        k_neighbors = 2
-
-        config = OllivierRicciConfig(
-            base_alpha=1.0,
-            adaptive_alpha=False,
-        )
-        estimator = OllivierRicciCurvature(config=config)
-
-        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-
-        rg = RiemannianGeometry(backend)
-        geo_result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
-
-        adjacency_list = estimator._build_adjacency_list(geo_result, k_neighbors, n_points)
-        max_degree = max(len(neighbors) for neighbors in adjacency_list.values())
-
-        node_idx = 6
-        measure = estimator._build_lazy_measure(node_idx, adjacency_list, max_degree, n_points)
-
-        measure_list = array_to_list(backend, measure)
-        neighbors = adjacency_list[node_idx]
-        n_neighbors = len(neighbors)
-        eps = _eps(backend)
-
-        # With alpha=1, no mass on self
-        assert abs(measure_list[node_idx]) <= eps
-
-        # Uniform mass on neighbors
-        expected_mass = 1.0 / n_neighbors
-        for neighbor_idx in neighbors:
-            assert abs(measure_list[neighbor_idx] - expected_mass) <= eps

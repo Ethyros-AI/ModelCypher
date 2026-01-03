@@ -119,11 +119,12 @@ class AnchorCategoryWeights:
         return {k: v / total for k, v in weights.items()}
 
 
-@dataclass(frozen=True)
-class Configuration:
-    """Configuration for cross-architecture layer matching."""
-
-    anchor_category_weights: AnchorCategoryWeights | None = None
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All matching uses uniform anchor weights - all concept types contribute equally.
+# There is exactly ONE correct way to match layers across architectures.
+# =============================================================================
 
 
 # ConfidenceLevel enum removed - use raw CKA values directly.
@@ -206,7 +207,6 @@ class CrossArchitectureLayerMatcher:
     def find_correspondence(
         source_crm: ConceptResponseMatrix,
         target_crm: ConceptResponseMatrix,
-        configuration: Configuration,
         jaccard_matrix: list[list[float]] | None = None,
     ) -> Result:
         """Find layer correspondence between two concept response matrices.
@@ -214,20 +214,23 @@ class CrossArchitectureLayerMatcher:
         Uses dynamic programming to find optimal monotonic alignment between layers,
         respecting the sequential nature of neural network processing.
 
+        All anchor categories contribute equally (uniform weights). There is exactly
+        ONE correct way to match layers across architectures.
+
         Args:
             source_crm: Concept response matrix from source model.
             target_crm: Concept response matrix from target model.
-        configuration: Matching configuration.
             jaccard_matrix: Optional Jaccard similarity matrix (diagnostics only).
 
         Returns:
             Complete matching result with validation metrics.
         """
-        config = configuration
+        # Always use uniform anchor weights - all concept types contribute equally
+        anchor_weights = AnchorCategoryWeights.uniform()
 
-        # Step 1: Compute CKA matrix (optionally weighted by anchor category)
+        # Step 1: Compute CKA matrix (weighted by anchor category)
         weighted_cka = CrossArchitectureLayerMatcher._compute_weighted_cka_matrix(
-            source_crm, target_crm, config.anchor_category_weights
+            source_crm, target_crm, anchor_weights
         )
         cka_matrix = weighted_cka if weighted_cka else source_crm.compute_cka_matrix(target_crm)
 

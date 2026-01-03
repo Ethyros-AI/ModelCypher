@@ -74,7 +74,7 @@ A toolkit for measuring the geometric structure of LLM representations.
 mc geometry interference predict ./model-A ./model-B
 
 # Merge with geometric alignment
-mc merge pipeline --source ./model-A --target ./model-B --output-dir ./merged --transplant-domains mathematical
+mc merge --source ./model-A --target ./model-B --output-dir ./merged
 ```
 
 → [CLI Reference](CLI-REFERENCE.md) · [Why Geometry Matters](WHY-GEOMETRY-MATTERS.md) · [Verification](VERIFICATION.md)

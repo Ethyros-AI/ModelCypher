@@ -134,11 +134,10 @@ See [papers/](../papers/) for the full research foundation.
 mc geometry validate
 
 # Run merge comparison
-mc merge pipeline \
+mc merge \
     --source ./model-A \
     --target ./model-B \
-    --output-dir ./merged-geometric \
-    --transplant-domains mathematical
+    --output-dir ./merged-geometric
 
 # For a naive baseline, run your preferred linear merge tool and save to ./merged-naive.
 

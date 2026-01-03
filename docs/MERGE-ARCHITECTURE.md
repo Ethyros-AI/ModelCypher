@@ -4,7 +4,7 @@ This document describes the consolidated merge subsystem and how the pipeline is
 
 ## Entry Points
 
-- CLI: `mc merge pipeline` -> `MergePipelineService` (`src/modelcypher/core/use_cases/merge/service.py`)
+- CLI: `mc merge` -> `MergePipelineService` (`src/modelcypher/core/use_cases/merge/service.py`)
 - API: `UnifiedGeometricMerger.merge()` -> `run_merge()` (`src/modelcypher/core/use_cases/merge/merger.py`)
 - Full geometry analysis: `run_full_geometry_merge()` -> `GeometricMergeOrchestrator` (`src/modelcypher/core/use_cases/merge/orchestrator.py`)
 

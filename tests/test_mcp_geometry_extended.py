@@ -232,11 +232,7 @@ class TestIntrinsicDimensionTool:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_geometry_intrinsic_dimension",
-                    arguments={
-                        "points": points,
-                        "useRegression": True,
-                        "bootstrapSamples": 100,
-                    },
+                    arguments={"points": points},
                 )
             )
 
@@ -281,7 +277,7 @@ class TestIntrinsicDimensionTool:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_geometry_intrinsic_dimension",
-                    arguments={"points": points, "useRegression": True},
+                    arguments={"points": points},
                 )
             )
 
@@ -486,10 +482,7 @@ class TestManifoldDimensionTool:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_geometry_manifold_dimension",
-                    arguments={
-                        "points": points,
-                        "useRegression": True,
-                    },
+                    arguments={"points": points},
                 )
             )
 
@@ -832,13 +825,13 @@ class TestGeometryToolInvariants:
             result_id = await _await_with_timeout(
                 session.call_tool(
                     "mc_geometry_intrinsic_dimension",
-                    arguments={"points": points, "useRegression": True},
+                    arguments={"points": points},
                 )
             )
             result_md = await _await_with_timeout(
                 session.call_tool(
                     "mc_geometry_manifold_dimension",
-                    arguments={"points": points, "useRegression": True},
+                    arguments={"points": points},
                 )
             )
             return result_id, result_md

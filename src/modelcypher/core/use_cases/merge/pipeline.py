@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,7 +33,6 @@ from .helpers import (
     load_model_for_probing,
     load_tokenizer,
     load_weights,
-    load_weights_cpu,
     save_weights,
 )
 from .models import UnifiedMergeConfig, UnifiedMergeResult
@@ -61,9 +59,7 @@ def run_merge(
     output_dir: str | None = None,
     output_path: str | None = None,
     dry_run: bool = False,
-    transplant_domains: list[str] | None = None,
     target_weights: dict[str, "Array"] | None = None,
-    use_cpu_weights: bool = False,
     config: UnifiedMergeConfig | None = None,
 ) -> UnifiedMergeResult:
     """
@@ -84,20 +80,11 @@ def run_merge(
 
     # Resolve output path (prefer output_path over output_dir)
     effective_output = output_path or output_dir
-    if transplant_domains is not None:
-        merge_config = replace(
-            merge_config,
-            transplant_domains=tuple(transplant_domains or merge_config.transplant_domains),
-        )
 
-    if merge_config.transplant_domains:
-        logger.info("Using null-space constrained transplant.")
+    logger.info("Using null-space constrained transplant.")
 
-    # Load weights (backend arrays by default; CPU opt-out for low-memory mode)
-    if use_cpu_weights:
-        source_weights, _ = load_weights_cpu(model_loader, source_path)
-    else:
-        source_weights, _ = load_weights(model_loader, source_path)
+    # Load weights (backend arrays)
+    source_weights, _ = load_weights(model_loader, source_path)
 
     # Use pre-loaded target weights if provided (multi-donor optimization)
     if target_weights is not None:
@@ -105,10 +92,7 @@ def run_merge(
         loaded_target_weights = target_weights
         target_format = "safetensors"  # Assume safetensors for pre-loaded weights
     else:
-        if use_cpu_weights:
-            loaded_target_weights, target_format = load_weights_cpu(model_loader, target_path)
-        else:
-            loaded_target_weights, target_format = load_weights(model_loader, target_path)
+        loaded_target_weights, target_format = load_weights(model_loader, target_path)
 
     # Identify layers
     layer_indices = extract_layer_indices(loaded_target_weights)
@@ -285,21 +269,14 @@ def run_merge(
     # ROTATE/PROPAGATE was removed - no boundary preservation guarantee.
     # Only null-space constrained transplant preserves boundary relationships.
     #
-    # DENSITY-ONLY MODE: When transplant_domains is empty, ALL probes are
-    # candidates and graft_mask decides what to transplant based on density.
-    # Default mode - geometry decides, not domain names.
-    if merge_config.transplant_domains:
-        logger.info(
-            "TRANSPLANT: Domain-based mode - restricting to domains: %s",
-            list(merge_config.transplant_domains),
-        )
-    else:
-        logger.info("TRANSPLANT: Density-only mode - geometry decides what to transplant")
+    # Geometry-only mode: ALL probes are candidates and graft_mask decides
+    # what to transplant based on density.
+    logger.info("TRANSPLANT: Geometry-only mode - density decides grafts")
 
     if not target_activations:
         raise RuntimeError(
             "Transplant requires probe activations. "
-            "Use `mc merge pipeline` (probe stage) to collect activations before merging."
+            "Use `mc merge` to collect activations before merging."
         )
 
     # =================================================================
@@ -352,7 +329,7 @@ def run_merge(
         target_attention_activations=target_attention_activations,
         source_kv_activations=source_kv_activations,
         target_kv_activations=target_kv_activations,
-        transplant_domains=tuple(merge_config.transplant_domains),
+        transplant_domains=(),
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
         graft_mask=graft_mask,

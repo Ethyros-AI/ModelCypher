@@ -466,7 +466,6 @@ class SectionalCurvatureEstimator:
     def estimate_manifold_profile(
         self,
         points: "Array",
-        k_neighbors: int = 20,
         metric_fn: Callable[["Array"], "Array"] | None = None,
     ) -> ManifoldCurvatureProfile:
         """Estimate curvature profile across all points.
@@ -475,15 +474,20 @@ class SectionalCurvatureEstimator:
         because Euclidean k-NN in curved spaces will systematically
         misidentify neighbors, leading to incorrect curvature estimates.
 
+        k_neighbors is derived from data via Berry & Sauer (2016):
+        minimum k for graph connectivity, plus log(n) for local structure.
+
         Args:
             points: Points on the manifold (n x d array)
-            k_neighbors: Number of neighbors for local estimation
             metric_fn: Optional metric tensor function
 
         Returns:
             ManifoldCurvatureProfile with global statistics
         """
+        import math
+
         from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
             geodesic_distance_matrix,
         )
 
@@ -493,6 +497,15 @@ class SectionalCurvatureEstimator:
         backend.eval(points)
         n = int(points.shape[0])
         d = int(points.shape[1])
+
+        # Derive k_neighbors from data:
+        # 1. Minimum k for connectivity (Berry & Sauer 2016)
+        # 2. At least ceil(log(n)) for local structure
+        riemannian = RiemannianGeometry(backend=backend)
+        result = riemannian.geodesic_distances(points, k_neighbors=None)
+        k_connectivity = result.k_neighbors
+        k_local = max(2, int(math.ceil(math.log(max(n, 2)))))
+        k_neighbors = max(k_connectivity, k_local, d + 1)  # Also need d+1 for curvature
 
         # Compute full geodesic distance matrix once
         pts_arr = backend.astype(points, "float32")
@@ -1040,25 +1053,27 @@ class OllivierRicciCurvature:
 
     def __init__(
         self,
-        config: OllivierRicciConfig | None = None,
         backend: "Backend | None" = None,
     ) -> None:
-        self.config = config or OllivierRicciConfig()
+        """Initialize Ollivier-Ricci curvature. All parameters derived from data."""
         self._backend = backend or get_default_backend()
 
     def compute(
         self,
         points: "Array",
-        k_neighbors: int | None = None,
     ) -> OllivierRicciResult:
         """Compute Ollivier-Ricci curvature for all edges in the k-NN graph.
 
+        All parameters are derived from data:
+        - k_neighbors: from connectivity (Berry & Sauer 2016)
+        - alpha: from graph density
+        - adaptive_strength: from degree variance
+
         Args:
             points: Point cloud [n, d] on the manifold
-            k_neighbors: Override config k_neighbors if provided
 
         Returns:
-            OllivierRicciResult with edge/node curvatures and health classification
+            OllivierRicciResult with edge/node curvatures
         """
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
@@ -1076,13 +1091,12 @@ class OllivierRicciCurvature:
                 mean_edge_curvature=0.0,
                 std_edge_curvature=0.0,
                 mean_node_curvature=0.0,
-                config=self.config,
                 k_neighbors=1,
                 n_points=n,
             )
 
-        # Use specified k, or None for connectivity-based selection
-        k = k_neighbors or self.config.k_neighbors
+        # k is derived from connectivity (Berry & Sauer 2016)
+        k = None  # Triggers automatic selection
 
         # 1. Compute geodesic distances (k=None triggers connectivity-based selection)
         rg = RiemannianGeometry(backend)
@@ -1097,26 +1111,20 @@ class OllivierRicciCurvature:
         # Compute max degree for adaptive alpha
         max_degree = max(len(neighbors) for neighbors in adjacency_list.values()) if adjacency_list else 1
 
-        # Derive base_alpha and adaptive_strength if not provided
+        # Derive base_alpha and adaptive_strength from data (no configuration)
         degrees = [len(neighbors) for neighbors in adjacency_list.values()] if adjacency_list else [1]
         avg_degree = sum(degrees) / len(degrees) if degrees else 1.0
 
-        if self.config.base_alpha is not None:
-            base_alpha = self.config.base_alpha
-        else:
-            # Derive from average degree: denser graphs need more self-weight
-            base_alpha = 1.0 / (1.0 + avg_degree)
+        # Derive from average degree: denser graphs need more self-weight
+        base_alpha = 1.0 / (1.0 + avg_degree)
 
-        if self.config.adaptive_strength is not None:
-            adaptive_strength = self.config.adaptive_strength
+        # Derive from coefficient of variation of degrees
+        if len(degrees) > 1 and avg_degree > 0:
+            deg_var = sum((d - avg_degree) ** 2 for d in degrees) / len(degrees)
+            deg_std = deg_var ** 0.5
+            adaptive_strength = min(1.0, deg_std / avg_degree)  # CV, clamped
         else:
-            # Derive from coefficient of variation of degrees
-            if len(degrees) > 1 and avg_degree > 0:
-                deg_var = sum((d - avg_degree) ** 2 for d in degrees) / len(degrees)
-                deg_std = deg_var ** 0.5
-                adaptive_strength = min(1.0, deg_std / avg_degree)  # CV, clamped
-            else:
-                adaptive_strength = 0.0  # No variation
+            adaptive_strength = 0.0  # No variation
 
         # Store derived values for use in lazy measure computation
         self._derived_base_alpha = base_alpha
@@ -1128,9 +1136,9 @@ class OllivierRicciCurvature:
 
         for source_idx in range(n):
             for target_idx in adjacency_list.get(source_idx, []):
-                # Track edges to avoid duplicates (for symmetrized curvature)
+                # Track edges to avoid duplicates (always symmetrize - geometrically correct)
                 edge_key = (min(source_idx, target_idx), max(source_idx, target_idx))
-                if edge_key in processed_edges and self.config.symmetrize:
+                if edge_key in processed_edges:
                     continue
                 processed_edges.add(edge_key)
 
@@ -1171,7 +1179,6 @@ class OllivierRicciCurvature:
             mean_edge_curvature=mean_edge,
             std_edge_curvature=std_edge,
             mean_node_curvature=mean_node,
-            config=self.config,
             k_neighbors=k,
             n_points=n,
         )
@@ -1291,22 +1298,12 @@ class OllivierRicciCurvature:
         neighbors = adjacency_list.get(node_idx, [])
         degree = len(neighbors)
 
-        # Compute adaptive alpha using derived values
-        if hasattr(self, '_derived_base_alpha'):
-            base_alpha = self._derived_base_alpha
-        elif self.config.base_alpha is not None:
-            base_alpha = self.config.base_alpha
-        else:
-            base_alpha = 0.5  # Fallback
+        # Use derived values (always computed in compute())
+        base_alpha = self._derived_base_alpha
+        adaptive_strength = self._derived_adaptive_strength
 
-        if hasattr(self, '_derived_adaptive_strength'):
-            adaptive_strength = self._derived_adaptive_strength
-        elif self.config.adaptive_strength is not None:
-            adaptive_strength = self.config.adaptive_strength
-        else:
-            adaptive_strength = 0.0  # Fallback
-
-        if self.config.adaptive_alpha and max_degree > 0:
+        # Always use adaptive alpha (geometrically correct)
+        if max_degree > 0:
             alpha = base_alpha * (1.0 - (degree / max_degree) * adaptive_strength)
         else:
             alpha = base_alpha
@@ -1352,8 +1349,9 @@ class OllivierRicciCurvature:
         backend = self._backend
         n = int(mu.shape[0])
 
-        epsilon = self.config.sinkhorn_epsilon
-        threshold = self.config.sinkhorn_threshold
+        # Derive epsilon and threshold from data (not configuration)
+        epsilon = None  # Will be derived from cost matrix scale
+        threshold = None  # Will be derived from machine epsilon
 
         # Derive max iterations from problem size as a safety bound
         # Sinkhorn converges in O(n * log(n) / epsilon) for well-conditioned problems

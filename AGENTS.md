@@ -34,7 +34,7 @@ poetry run modelcypher-mcp        # MCP server
 There is exactly ONE command to merge models:
 
 ```bash
-mc merge -s SOURCE -t TARGET -o OUTPUT -d DOMAINS
+mc merge -s SOURCE -t TARGET -o OUTPUT
 ```
 
 **Full example:**
@@ -42,13 +42,10 @@ mc merge -s SOURCE -t TARGET -o OUTPUT -d DOMAINS
 mc merge \
   --source /path/to/qwen \
   --target /path/to/smol \
-  --output-dir /path/to/merged \
-  --transplant-domains mathematical,logical,spatial
+  --output-dir /path/to/merged
 ```
 
 **What it does:** Takes knowledge from SOURCE and adds it to TARGET via null-space projection. TARGET's capabilities are preserved; SOURCE's knowledge is added. Result is denser than either input.
-
-**Available domains:** `mathematical`, `logical`, `spatial`, `temporal`, `social`, `computational`
 
 ### Other Common Commands
 

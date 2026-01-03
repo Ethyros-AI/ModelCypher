@@ -17,7 +17,7 @@ Requires Python 3.11+. Primary backend is MLX (macOS/Apple Silicon). JAX backend
 mc model probe /path/to/model
 
 # Merge two models with geometric alignment
-mc merge pipeline --source /path/to/source --target /path/to/target --output /path/to/output
+mc merge --source /path/to/source --target /path/to/target --output-dir /path/to/output
 
 # Analyze spatial geometry encoding
 mc geometry spatial probe-model /path/to/model

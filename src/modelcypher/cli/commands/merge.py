@@ -25,11 +25,7 @@ There is exactly ONE correct way to merge high-dimensional Legos:
 2. Project source knowledge into target's null space
 3. Add (not blend) the projected knowledge
 
-By default, uses density-only mode: geometry decides what to transplant based on
-where source is denser than target. Optionally specify --transplant-domains to
-restrict to specific domains.
-
-This command runs the complete pipeline automatically.
+This command runs the complete pipeline automatically; geometry decides grafts and alignment.
 """
 
 from __future__ import annotations
@@ -60,22 +56,6 @@ def run(
     source: str = typer.Option(..., "--source", "-s", help="Path to source model (knowledge donor)"),
     target: str = typer.Option(..., "--target", "-t", help="Path to target model (receives knowledge)"),
     output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
-    transplant_domains: str = typer.Option(
-        "",
-        "--transplant-domains",
-        "-d",
-        help="Comma-separated domains to transplant. Empty = density-only mode (default)",
-    ),
-    skip_pre_analysis: bool = typer.Option(
-        False,
-        "--skip-pre-analysis",
-        help="Skip pre-merge interference analysis",
-    ),
-    low_memory: bool = typer.Option(
-        False,
-        "--low-memory",
-        help="Load weights on CPU (numpy) to reduce GPU memory usage",
-    ),
     output_file: str | None = typer.Option(
         None,
         "--output-file",
@@ -89,18 +69,11 @@ def run(
     TARGET's existing capabilities. The result is a denser model.
 
     Examples:
-        # Density-only mode (default) - geometry decides what to transplant
         mc merge -s ./qwen -t ./smol -o ./merged
-
-        # Domain-based mode - transplant specific domains only
-        mc merge -s ./qwen -t ./smol -o ./merged -d mathematical,logical
     """
     from modelcypher.core.use_cases.merge import MergePipelineService
 
     context = _context(ctx)
-
-    # Parse domains (empty = density-only mode)
-    domain_list = [d.strip() for d in transplant_domains.split(",") if d.strip()]
 
     service = MergePipelineService()
 
@@ -110,9 +83,6 @@ def run(
                 source_path=source,
                 target_path=target,
                 output_dir=output_dir,
-                transplant_domains=domain_list,
-                skip_pre_analysis=skip_pre_analysis,
-                use_cpu_weights=low_memory,
             )
 
         # Build output payload
