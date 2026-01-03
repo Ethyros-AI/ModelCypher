@@ -447,7 +447,8 @@ class TestTransplantEndToEnd:
         _, singular_vals, _ = backend.svd(activations_boundary)
         backend.eval(singular_vals)
         rank_eps = machine_epsilon(backend, singular_vals)
-        rank = int((backend.tolist(singular_vals) > rank_eps).sum())
+        sv_list = backend.tolist(singular_vals)
+        rank = sum(1 for sv in sv_list if sv > rank_eps)
         expected_null_dim = in_dim - rank
         assert result.null_dim == expected_null_dim
         # Spectral norm bounding enforces compositional stability
@@ -485,6 +486,7 @@ class TestTransplantEndToEnd:
         _, singular_vals, _ = backend.svd(activations_boundary)
         backend.eval(singular_vals)
         rank_eps = machine_epsilon(backend, singular_vals)
-        rank = int((backend.tolist(singular_vals) > rank_eps).sum())
+        sv_list = backend.tolist(singular_vals)
+        rank = sum(1 for sv in sv_list if sv > rank_eps)
         expected_null_dim = in_dim - rank
         assert result.null_dim == expected_null_dim

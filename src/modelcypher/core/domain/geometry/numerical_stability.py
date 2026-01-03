@@ -1851,8 +1851,10 @@ def solve_via_cca_procrustes(
     b.eval(U, S, Vt)
 
     # Canonical correlations (SHOULD be in [0, 1] now!)
+    S_clamped = b.clip(S, 0.0, 1.0)
+    b.eval(S_clamped)
     # Use native tolist() for O(1) extraction
-    correlations = [max(0.0, min(1.0, float(x))) for x in b.tolist(S)]
+    correlations = [float(x) for x in b.tolist(S_clamped)]
 
     if not correlations:
         return None, diagnostics

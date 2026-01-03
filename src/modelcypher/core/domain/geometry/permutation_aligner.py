@@ -271,7 +271,9 @@ class PermutationAligner:
         sign_matrix = b.astype(b.diag(b.array(signs_target)), "float32")
         b.eval(permutation, sign_matrix)
 
-        mean_quality = sum(confidences_target) / max(N, 1)
+        mean_quality_arr = b.mean(sim_abs)
+        b.eval(mean_quality_arr)
+        mean_quality = float(b.to_scalar(mean_quality_arr))
 
         logger.info(f"Aligned {N} neurons: quality={mean_quality:.3f}, signFlips={sign_flip_count}")
 
@@ -449,7 +451,9 @@ class PermutationAligner:
                 signs_target[tgt] = signs[src]
                 confidences_target[tgt] = match_confidences[src]
 
-        avg_quality = sum(confidences_target) / max(1, N)
+        avg_quality_arr = b.mean(sim_abs)
+        b.eval(avg_quality_arr)
+        avg_quality = float(b.to_scalar(avg_quality_arr))
 
         if N > _SPARSE_THRESHOLD_N:
             return AlignmentResult(

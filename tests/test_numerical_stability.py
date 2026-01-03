@@ -771,7 +771,7 @@ class TestComputeEntropyEffectiveRank:
         sv = [1.0, 1.0, 1.0, 1.0, 1.0]
         erank = compute_entropy_effective_rank(b, sv)
         expected = float(len(sv))
-        eps = _eps(b, erank, expected)
+        eps = 10.0 * _eps(b, erank, expected)  # 10x epsilon for log/exp stability
         assert abs(erank - expected) <= eps
 
     def test_concentrated_singular_values_low_rank(

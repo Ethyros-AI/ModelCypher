@@ -677,7 +677,9 @@ class IntrinsicDimension:
                     partitioned, backend.arange(kth, n), axis=0
                 )
                 backend.eval(selected)
-                deficient = sorted(int(x) for x in backend.tolist(selected))
+                sorted_selected = backend.sort(selected)
+                backend.eval(sorted_selected)
+                deficient = [int(x) for x in backend.tolist(sorted_selected)]
 
         return LocalDimensionMap(
             dimensions=local_dims,
