@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 17
-- Issues found: 7
-- Issues fixed: 7
+- Audited: 18
+- Issues found: 8
+- Issues fixed: 8
 
 ## Audit Log
 
@@ -237,3 +237,16 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Referenced non-existent `mc geometry manifold analyze`
   - Fix: Updated to `mc geometry research curvature-profile`
+
+- `docs/GEOMETRY-GUIDE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (aligned CLI field names and examples)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: CLI field lists/examples referenced non-existent fields
+  - Fix: Updated fields/examples to match CLI output

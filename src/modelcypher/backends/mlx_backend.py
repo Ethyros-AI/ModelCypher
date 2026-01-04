@@ -595,7 +595,24 @@ class MLXBackend(Backend):
         MLX doesn't have linalg.det, so we compute it as:
         det(A) = det(U) * sign(permutation)
         where PA = LU and det(L) = 1 (unit diagonal).
+
+        Supports batched matrices: if array is 3D [batch, n, n],
+        returns 1D array of determinants [batch].
         """
+        # Handle batched matrices (3D array)
+        if len(array.shape) == 3:
+            batch_size = int(array.shape[0])
+            dets = []
+            for i in range(batch_size):
+                dets.append(self._det_single(array[i]))
+            result = self.mx.stack(dets)
+            self.safe.eval(result)
+            return result
+
+        return self._det_single(array)
+
+    def _det_single(self, array: Array) -> Array:
+        """Compute determinant of a single 2D matrix."""
         try:
             p, L, U = self.mx.linalg.lu(array)
         except Exception as exc:

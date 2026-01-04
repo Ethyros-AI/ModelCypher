@@ -25,10 +25,12 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     power_iteration_eigh,
 )
+from modelcypher.core.domain.geometry.exceptions import ProjectionError
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.ports.backend import Backend
 
 # Data Structures mimicking Swift ManifoldStitcher.ModelFingerprints
+# NOTE: These duplicate definitions in types.py - consolidation needed.
 
 
 @dataclass(frozen=True)
@@ -41,14 +43,14 @@ class ActivatedDimension:
 class Fingerprint:
     prime_id: str
     prime_text: str
-    # layer_index -> list of ActivatedDimension
-    activated_dimensions: dict[int, list[ActivatedDimension]]
+    # layer_index -> tuple of ActivatedDimension
+    activated_dimensions: dict[int, tuple[ActivatedDimension, ...]]
 
 
 @dataclass(frozen=True)
 class ModelFingerprints:
     model_id: str
-    fingerprints: list[Fingerprint]
+    fingerprints: tuple[Fingerprint, ...]
 
 
 # Projection Logic
@@ -58,9 +60,6 @@ class ProjectionMethod(Enum):
     PCA = "pca"
     TSNE = "tsne"
     UMAP = "umap"
-
-
-from modelcypher.core.domain.geometry.exceptions import ProjectionError
 
 
 @dataclass

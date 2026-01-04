@@ -162,64 +162,6 @@ class IntrinsicDimensionResult:
     details: dict[str, Any]
 
 
-# --- Fingerprints Types ---
-
-
-@dataclass(frozen=True)
-class ActivatedDimension:
-    index: int
-    activation: float
-
-
-@dataclass(frozen=True)
-class Fingerprint:
-    prime_id: str
-    prime_text: str
-    activated_dimensions: dict[int, tuple[ActivatedDimension, ...]]
-
-
-@dataclass(frozen=True)
-class ModelFingerprints:
-    model_id: str
-    fingerprints: tuple[Fingerprint, ...]
-
-
-class ProjectionMethod(Enum):
-    PCA = "pca"
-    TSNE = "tsne"
-    UMAP = "umap"
-
-
-@dataclass
-class ProjectionFeature:
-    layer: int
-    dimension: int
-    frequency: int
-
-    @property
-    def key(self) -> str:
-        return f"{self.layer}:{self.dimension}"
-
-
-@dataclass
-class ProjectionPoint:
-    id: str
-    prime_id: str
-    prime_text: str
-    x: float
-    y: float
-
-
-@dataclass
-class ProjectionResult:
-    model_id: str
-    method: ProjectionMethod
-    max_features: int
-    included_layers: list[list[int]] | None
-    features: list[ProjectionFeature]
-    points: list[ProjectionPoint]
-
-
 # --- Compositional Probes Types ---
 
 

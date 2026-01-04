@@ -242,6 +242,94 @@ class ConceptResponseMatrix:
         if not common:
             return cka_matrix
         sorted_anchors = sorted(common)
+
+        def _stack_layer_activations(
+            crm: "ConceptResponseMatrix",
+        ) -> "Array | None":
+            layers: list[list[list[float]]] = []
+            for layer in range(crm.layer_count):
+                layer_acts = crm.activations.get(layer)
+                if layer_acts is None:
+                    return None
+                row: list[list[float]] = []
+                for anchor_id in sorted_anchors:
+                    activation = layer_acts.get(anchor_id)
+                    if activation is None:
+                        return None
+                    row.append(activation.activation)
+                layers.append(row)
+            return backend.array(layers)
+
+        source_stack = _stack_layer_activations(self)
+        target_stack = _stack_layer_activations(other)
+        if source_stack is not None and target_stack is not None:
+            backend.eval(source_stack, target_stack)
+
+            source_centered = source_stack - backend.mean(source_stack, axis=1, keepdims=True)
+            target_centered = target_stack - backend.mean(target_stack, axis=1, keepdims=True)
+            source_grams_arr = backend.matmul(
+                source_centered, backend.transpose(source_centered, axes=(0, 2, 1))
+            )
+            target_grams_arr = backend.matmul(
+                target_centered, backend.transpose(target_centered, axes=(0, 2, 1))
+            )
+            source_frob_arr = backend.sum(source_grams_arr * source_grams_arr, axis=(1, 2))
+            target_frob_arr = backend.sum(target_grams_arr * target_grams_arr, axis=(1, 2))
+            backend.eval(source_grams_arr, target_grams_arr, source_frob_arr, target_frob_arr)
+
+            source_layers = int(source_grams_arr.shape[0])
+            target_layers = int(target_grams_arr.shape[0])
+            anchor_count = int(source_grams_arr.shape[1])
+            source_exp = backend.reshape(
+                source_grams_arr, (source_layers, 1, anchor_count, anchor_count)
+            )
+            target_exp = backend.reshape(
+                target_grams_arr, (1, target_layers, anchor_count, anchor_count)
+            )
+            hsic_xy = backend.sum(source_exp * target_exp, axis=(2, 3))
+
+            eps = division_epsilon(backend, source_grams_arr)
+            source_valid = source_frob_arr > eps
+            target_valid = target_frob_arr > eps
+            denom = backend.sqrt(
+                backend.reshape(source_frob_arr, (-1, 1))
+                * backend.reshape(target_frob_arr, (1, -1))
+            )
+            valid = backend.reshape(source_valid, (-1, 1)) & backend.reshape(
+                target_valid, (1, -1)
+            )
+            safe_denom = backend.where(valid, denom, backend.ones_like(denom))
+            cka = backend.where(valid, hsic_xy / safe_denom, backend.zeros_like(denom))
+            cka = backend.clip(cka, 0.0, 1.0)
+            cka = backend.where(cka >= 1.0 - eps, backend.ones_like(cka), cka)
+
+            if feature_bias_correction:
+                source_corr: list[float] = []
+                target_corr: list[float] = []
+                source_dim = int(source_stack.shape[2]) if len(source_stack.shape) > 2 else 1
+                target_dim = int(target_stack.shape[2]) if len(target_stack.shape) > 2 else 1
+                for layer in range(self.layer_count):
+                    correction, _ = _feature_sampling_correction(
+                        source_grams_arr[layer], source_dim, backend
+                    )
+                    source_corr.append(correction)
+                for layer in range(other.layer_count):
+                    correction, _ = _feature_sampling_correction(
+                        target_grams_arr[layer], target_dim, backend
+                    )
+                    target_corr.append(correction)
+                source_corr_arr = backend.array(source_corr)
+                target_corr_arr = backend.array(target_corr)
+                correction = backend.reshape(source_corr_arr, (-1, 1)) * backend.reshape(
+                    target_corr_arr, (1, -1)
+                )
+                corr_mask = (correction > 0) & backend.isfinite(correction)
+                cka = backend.where(corr_mask, cka * correction, cka)
+                cka = backend.clip(cka, 0.0, 1.0)
+                cka = backend.where(cka >= 1.0 - eps, backend.ones_like(cka), cka)
+
+            backend.eval(cka)
+            return backend.tolist(cka)
         source_grams: dict[int, tuple["Array", float, float]] = {}
         target_grams: dict[int, tuple["Array", float, float]] = {}
 

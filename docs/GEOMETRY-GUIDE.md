@@ -101,11 +101,11 @@ Key fields:
 - `gradientSNR`: Signal-to-noise ratio in gradients.
 - `circuitBreakerSeverity`: Composite signal from entropy/refusal/persona/oscillation measurements.
 - `activeLayers`: Layers with notable gradient activity (when available).
-- `baseline`: Reference distribution statistics when available.
+- `perLayerGradientNorms`: Per-layer gradient norms (when `--format full`).
 
 How to report:
-- "Flatness score is 0.78 (baseline mean: 0.72, z-score: +0.8)."
-- "Circuit breaker severity is 0.82, above the configured threshold of 0.75."
+- "Flatness score is 0.78. Gradient SNR is 12.4."
+- "Circuit breaker severity is 0.82. Active layers: layer.4, layer.5."
 
 ### mc geometry training history
 
@@ -129,11 +129,10 @@ How to report:
 
 Key fields:
 - `severity`: 0 to 1 aggregate safety score.
-- `tripped`: true when severity exceeds configured threshold.
-- `signals`: Individual signal contributions to the severity score.
+- `dominantSource`: The strongest contributing signal (when available).
 
 How to report:
-- "Circuit breaker severity is 0.82 (threshold: 0.75). Primary contributor: persona drift at 0.45."
+- "Circuit breaker severity is 0.82. Dominant source: persona drift."
 
 ### mc geometry safety persona
 
@@ -141,17 +140,16 @@ Key fields:
 - `overallDriftMagnitude`: 0 to 1 measure of alignment drift.
 - `driftingTraits`: Which persona traits are moving most.
 - `refusalDistance`: Distance to the refusal direction.
-- `baseline`: Reference drift statistics for this model family.
+- `isApproachingRefusal`: Whether the refusal distance is decreasing over time.
 
 How to report:
-- "Persona drift magnitude is 0.32 (baseline mean: 0.15, z-score: +2.3). Highest drift in: helpfulness, directness."
+- "Persona drift magnitude is 0.32. Highest drift in: helpfulness, directness."
 
 ### mc geometry adapter sparsity (DARE)
 
 Key fields:
 - `effectiveSparsity`: Fraction of adapter deltas that are small enough to drop.
-- `perLayerSparsity`: Per-layer sparsity and importance metrics.
-- `layerRanking`: Layers sorted by importance.
+- `checkpointPath`, `baseModelPath`: Paths for the analyzed adapter and base model.
 
 How to report:
 - "Effective sparsity is 91%. Delta magnitude distribution is heavily left-skewed."
@@ -161,7 +159,7 @@ How to report:
 Key fields:
 - `magnitudeChangeRatio`: Average scale change in weights (0.1 means about 10% change).
 - `directionalDrift`: Average angular change (0 means no rotation).
-- `perLayerDecomposition`: Per-layer magnitude and direction metrics.
+- `magnitudeToDirectionRatio`: Ratio of magnitude vs direction contribution.
 
 How to report:
 - "Magnitude change ratio is 0.18, directional drift is 0.04. Adapter primarily modifies scale."
@@ -169,19 +167,19 @@ How to report:
 ### mc geometry path detect
 
 Key fields:
-- `detectedGates`: Sequence of computational gates detected in the response.
-- `meanConfidence`: Confidence in the gate sequence.
-- `gateDistribution`: Frequency of each gate type.
+- `detectedGates`: Detected gate entries with `gateName`, `similarity`, and `triggerText`.
+- `meanSimilarity`: Mean similarity across detected gates.
+- `modelID`, `promptID`: Identifiers for the analyzed response.
 
 How to report:
-- "Detected gate sequence: [retrieval, composition, validation]. Mean confidence: 0.87."
+- "Detected gate sequence: [retrieval, composition, validation]. Mean similarity: 0.87."
 
 ### mc geometry path compare
 
 Key fields:
 - `normalizedDistance` (0 to 1): Lower means more similar gate trajectories.
 - `alignmentCount`: Number of aligned gate steps.
-- `divergencePoints`: Where the two paths differ most.
+- `rawDistance`: Unnormalized edit distance between paths.
 
 How to report:
 - "Normalized distance is 0.23. Paths aligned on 8 of 12 steps."
@@ -191,7 +189,7 @@ How to report:
 Key fields:
 - `passed`: True means the geometry invariants are behaving as expected.
 - `gromovWasserstein`, `traversalCoherence`, `pathSignature`: Individual test results.
-- `failureDetails`: Which tests failed and by how much.
+- `spectralSignature`, `spectralSignatureConnected`: Graph connectivity diagnostics.
 
 How to report:
 - "Geometry validation passed. GW distance: 0.12, traversal coherence: 0.94."
@@ -208,33 +206,26 @@ How to report:
   "flatnessScore": 0.78,
   "gradientSNR": 12.4,
   "circuitBreakerSeverity": 0.22,
-  "circuitBreakerTripped": false,
   "activeLayers": ["layer.4", "layer.5"],
-  "baseline": {"flatnessMean": 0.72, "flatnessStd": 0.08}
+  "perLayerGradientNorms": null
 }
 ```
 
 **Human summary:**
-Flatness score is 0.78 (z-score: +0.75 vs baseline). Gradient SNR is 12.4. Circuit breaker severity is 0.22, well below threshold.
+Flatness score is 0.78. Gradient SNR is 12.4. Circuit breaker severity is 0.22.
 
 ### Example: mc geometry safety circuit-breaker
 
 **JSON output:**
 ```json
 {
-  "tripped": true,
   "severity": 0.82,
-  "threshold": 0.75,
-  "signals": {
-    "personaDrift": 0.45,
-    "entropySpike": 0.28,
-    "refusalProximity": 0.09
-  }
+  "dominantSource": "persona_drift"
 }
 ```
 
 **Human summary:**
-Circuit breaker severity is 0.82 (threshold: 0.75). Primary signal: persona drift at 0.45.
+Circuit breaker severity is 0.82. Dominant source: persona drift.
 
 ### Example: mc geometry adapter sparsity (DARE)
 
@@ -243,16 +234,12 @@ Circuit breaker severity is 0.82 (threshold: 0.75). Primary signal: persona drif
 {
   "checkpointPath": "./adapters/adapter.npz",
   "baseModelPath": "./models/base",
-  "effectiveSparsity": 0.91,
-  "perLayerSparsity": [
-    { "layerName": "layer1", "sparsity": 0.92, "importance": 0.08 }
-  ],
-  "layerRanking": ["layer1"]
+  "effectiveSparsity": 0.91
 }
 ```
 
 **Human summary:**
-Effective sparsity is 91%. Layer1 sparsity 0.92 (importance 0.08).
+Effective sparsity is 91%.
 
 ### Example: mc geometry adapter decomposition (DoRA)
 
@@ -263,21 +250,12 @@ Effective sparsity is 91%. Layer1 sparsity 0.92 (importance 0.08).
   "baseModelPath": "./models/base",
   "magnitudeChangeRatio": 0.18,
   "directionalDrift": 0.04,
-  "magnitudeToDirectionRatio": 1.2,
-  "perLayerDecomposition": [
-    {
-      "layerName": "layer1",
-      "magnitudeChange": 0.15,
-      "directionalDrift": 0.03,
-      "magnitudeRatio": 1.1,
-      "directionCosine": 0.92
-    }
-  ]
+  "magnitudeToDirectionRatio": 1.2
 }
 ```
 
 **Human summary:**
-Magnitude change ratio is 0.18, directional drift is 0.04. Layer1 magnitude change is 0.15 with direction cosine 0.92.
+Magnitude change ratio is 0.18, directional drift is 0.04.
 
 ## Glossary (short)
 
