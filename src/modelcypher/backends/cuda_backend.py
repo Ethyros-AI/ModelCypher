@@ -329,6 +329,9 @@ class CUDABackend(Backend):
     def log2(self, array: Array) -> Array:
         return self.torch.log2(array)
 
+    def mod(self, lhs: Array, rhs: Array | float | int) -> Array:
+        return self.torch.remainder(lhs, rhs)
+
     def sin(self, array: Array) -> Array:
         return self.torch.sin(array)
 

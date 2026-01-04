@@ -730,6 +730,157 @@ class InvariantLayerMapper:
         )
 
     @staticmethod
+    def _build_similarity_matrix_batched(
+        source_layers: list[int],
+        target_layers: list[int],
+        source_profile: _ProfileData,
+        target_profile: _ProfileData,
+        weights: list[float] | None,
+        source_triangulation: dict[int, TriangulatedScore] | None,
+        target_triangulation: dict[int, TriangulatedScore] | None,
+    ) -> list[list[float]] | None:
+        source_count = len(source_layers)
+        target_count = len(target_layers)
+        if source_count == 0 or target_count == 0:
+            return []
+
+        dim: int | None = len(weights) if weights is not None else None
+        if dim is None:
+            for layer in source_layers:
+                vec = source_profile.vectors.get(layer)
+                if vec:
+                    dim = len(vec)
+                    break
+        if dim is None:
+            for layer in target_layers:
+                vec = target_profile.vectors.get(layer)
+                if vec:
+                    dim = len(vec)
+                    break
+        if dim is None or dim == 0:
+            return [[0.0] * target_count for _ in range(source_count)]
+        if weights is not None and len(weights) != dim:
+            return None
+
+        source_vectors: list[list[float]] = []
+        for layer in source_layers:
+            vec = source_profile.vectors.get(layer, [])
+            if not vec:
+                source_vectors.append([0.0] * dim)
+                continue
+            if len(vec) != dim:
+                return None
+            source_vectors.append(vec)
+
+        target_vectors: list[list[float]] = []
+        for layer in target_layers:
+            vec = target_profile.vectors.get(layer, [])
+            if not vec:
+                target_vectors.append([0.0] * dim)
+                continue
+            if len(vec) != dim:
+                return None
+            target_vectors.append(vec)
+
+        b = get_default_backend()
+        source_arr = b.array(source_vectors)
+        target_arr = b.array(target_vectors)
+
+        if weights is not None:
+            weights_arr = b.array(weights)
+            weights_row = b.reshape(weights_arr, (1, -1))
+            source_arr = source_arr * weights_row
+            target_arr = target_arr * weights_row
+
+        sim_matrix = geodesic_cosine_between_sets(source_arr, target_arr, b)
+
+        source_conf = [
+            max(0.0, source_profile.confidence_by_layer.get(layer, 0.0))
+            for layer in source_layers
+        ]
+        target_conf = [
+            max(0.0, target_profile.confidence_by_layer.get(layer, 0.0))
+            for layer in target_layers
+        ]
+        source_conf_arr = b.array(source_conf)
+        target_conf_arr = b.array(target_conf)
+        conf_outer = b.reshape(source_conf_arr, (-1, 1)) * b.reshape(target_conf_arr, (1, -1))
+        conf_weight = b.sqrt(conf_outer)
+        sim_matrix = sim_matrix * conf_weight
+
+        if source_triangulation and target_triangulation:
+            source_tri = []
+            for layer in source_layers:
+                source_ts = source_triangulation.get(layer)
+                source_tri.append(source_ts.cross_domain_multiplier if source_ts else 1.0)
+            target_tri = []
+            for layer in target_layers:
+                target_ts = target_triangulation.get(layer)
+                target_tri.append(target_ts.cross_domain_multiplier if target_ts else 1.0)
+
+            source_tri_arr = b.array(source_tri)
+            target_tri_arr = b.array(target_tri)
+            tri_outer = b.reshape(source_tri_arr, (-1, 1)) * b.reshape(target_tri_arr, (1, -1))
+            tri_weight = b.sqrt(b.sqrt(tri_outer))
+            sim_matrix = sim_matrix * tri_weight
+
+        sim_matrix = b.clip(sim_matrix, 0.0, 1.0)
+        b.eval(sim_matrix)
+        return b.tolist(sim_matrix)
+
+    @staticmethod
+    def _build_similarity_matrix_loop(
+        source_layers: list[int],
+        target_layers: list[int],
+        source_profile: _ProfileData,
+        target_profile: _ProfileData,
+        weights: list[float] | None,
+        source_triangulation: dict[int, TriangulatedScore] | None,
+        target_triangulation: dict[int, TriangulatedScore] | None,
+    ) -> list[list[float]]:
+        source_count = len(source_layers)
+        target_count = len(target_layers)
+        matrix = [[0.0] * target_count for _ in range(source_count)]
+
+        for i, source_layer in enumerate(source_layers):
+            source_vector = source_profile.vectors.get(source_layer, [])
+            source_confidence = source_profile.confidence_by_layer.get(source_layer, 0.0)
+
+            for j, target_layer in enumerate(target_layers):
+                target_vector = target_profile.vectors.get(target_layer, [])
+                target_confidence = target_profile.confidence_by_layer.get(target_layer, 0.0)
+
+                if weights:
+                    similarity = InvariantLayerMapper._weighted_cosine_similarity(
+                        source_vector, target_vector, weights
+                    )
+                else:
+                    similarity = InvariantLayerMapper._cosine_similarity(
+                        source_vector, target_vector
+                    )
+
+                _b = get_default_backend()
+                confidence_weight = sqrt_scalar(
+                    max(0, source_confidence) * max(0, target_confidence), _b
+                )
+                similarity *= confidence_weight
+
+                if source_triangulation and target_triangulation:
+                    source_ts = source_triangulation.get(source_layer)
+                    target_ts = target_triangulation.get(target_layer)
+                    if source_ts and target_ts:
+                        tri_boost = sqrt_scalar(
+                            source_ts.cross_domain_multiplier
+                            * target_ts.cross_domain_multiplier,
+                            _b,
+                        )
+                        similarity *= sqrt_scalar(tri_boost, _b)
+
+                matrix[i][j] = max(0.0, min(1.0, similarity))
+
+        return matrix
+
+    @staticmethod
     def _weighted_cosine_similarity(a: list[float], b: list[float], weights: list[float]) -> float:
         """Compute weighted cosine similarity between two vectors."""
         count = min(len(a), len(b), len(weights))

@@ -246,6 +246,9 @@ class NumpyBackend(Backend):
     def log2(self, array: Array) -> Array:
         return self.np.log2(array)
 
+    def mod(self, lhs: Array, rhs: Array | float | int) -> Array:
+        return self.np.mod(lhs, rhs)
+
     # --- Linear Algebra ---
     def matmul(self, lhs: Array, rhs: Array) -> Array:
         return self.np.matmul(lhs, rhs)
