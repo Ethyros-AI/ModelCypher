@@ -273,17 +273,17 @@ class ConceptVolume:
         backend.eval(geo_dist)
         geo_dist_float = float(backend.to_scalar(geo_dist))
 
-        # Euclidean distance
-        euc_dist_sq = backend.sum(diff * diff)
-        euc_dist_arr = backend.sqrt(euc_dist_sq)
-        backend.eval(euc_dist_arr)
-        euc_dist = float(backend.to_scalar(euc_dist_arr))
+        # Tangent norm via geodesic distance from origin
+        diff_vec = backend.reshape(diff, (1, -1))
+        diff_norm_arr = geodesic_norms(diff_vec, backend)
+        backend.eval(diff_norm_arr)
+        diff_norm = float(backend.to_scalar(diff_norm_arr[0]))
 
         # Scale factor: geodesic / euclidean
         # Use machine_epsilon for near-zero check
-        if euc_dist < machine_epsilon(backend, diff):
+        if diff_norm < machine_epsilon(backend, diff):
             return diff  # Point is at centroid
-        scale = geo_dist_float / euc_dist
+        scale = geo_dist_float / diff_norm
 
         return diff * scale
 
@@ -470,16 +470,16 @@ class ConceptVolume:
 
             # Euclidean distance
             diff_i = diff[i]
-            euc_dist_sq = backend.sum(diff_i * diff_i)
-            euc_dist_arr = backend.sqrt(euc_dist_sq)
-            backend.eval(euc_dist_arr)
-            euc_dist = float(backend.to_scalar(euc_dist_arr))
+            diff_vec = backend.reshape(diff_i, (1, -1))
+            diff_norm_arr = geodesic_norms(diff_vec, backend)
+            backend.eval(diff_norm_arr)
+            diff_norm = float(backend.to_scalar(diff_norm_arr[0]))
 
             # Scale factor (use machine_epsilon for near-zero check)
-            if euc_dist < machine_epsilon(backend, diff_i):
+            if diff_norm < machine_epsilon(backend, diff_i):
                 scales.append(1.0)
             else:
-                scales.append(geo_dist_float / euc_dist)
+                scales.append(geo_dist_float / diff_norm)
 
         # Apply scales to differences
         scales_arr = backend.array(scales)

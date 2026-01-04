@@ -251,6 +251,16 @@ class SystemService:
 
     @staticmethod
     def _jax_available() -> bool:
+        import os
+        import sys
+
+        env_backend = os.environ.get("MC_BACKEND", "").lower()
+        if not env_backend:
+            env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
+
+        if sys.platform == "darwin" and env_backend != "jax":
+            return False
+
         try:
             import jax
 

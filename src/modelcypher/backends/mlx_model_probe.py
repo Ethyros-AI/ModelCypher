@@ -29,9 +29,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import mlx.core as mx
-
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
 from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     sqrt_scalar,
@@ -63,6 +62,19 @@ class MLXModelProbe(BaseModelProbe):
     - Works with sharded safetensors files
     - Provides lazy loading for memory efficiency
     """
+
+    def __init__(self) -> None:
+        self._mx = None
+
+    def _ensure_mlx(self) -> None:
+        if self._mx is not None:
+            return
+        if not probe_mlx_available(explicit=True):
+            detail = get_mlx_probe_error() or "MLX probe failed"
+            raise RuntimeError(f"MLX backend unavailable: {detail}")
+        import mlx.core as mx
+
+        self._mx = mx
 
     def probe(self, model_path: str) -> ModelProbeResult:
         """Probe model for architecture details using MLX."""
@@ -234,6 +246,8 @@ class MLXModelProbe(BaseModelProbe):
 
     def _analyze_weights(self, model_path: Path) -> tuple[list[LayerInfo], int]:
         """Analyze weight files to extract layer information using MLX."""
+        self._ensure_mlx()
+        mx = self._mx
         layers: list[LayerInfo] = []
         total_params = 0
 
@@ -268,6 +282,8 @@ class MLXModelProbe(BaseModelProbe):
 
     def _load_weight_tensors(self, model_path: Path) -> dict[str, Any]:
         """Load weight tensors using MLX (supports bfloat16)."""
+        self._ensure_mlx()
+        mx = self._mx
         tensors: dict[str, Any] = {}
 
         safetensor_files = list(model_path.glob("*.safetensors"))
@@ -291,6 +307,8 @@ class MLXModelProbe(BaseModelProbe):
         Returns a value in [0.0, 1.0] where 0 means identical and 1 means maximally different.
         """
         # Convert to float32 for drift computation (handles bfloat16, quantized, etc.)
+        self._ensure_mlx()
+        mx = self._mx
         a_f32 = tensor_a.astype(mx.float32)
         b_f32 = tensor_b.astype(mx.float32)
 

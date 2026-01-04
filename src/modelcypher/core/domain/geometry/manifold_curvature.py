@@ -61,7 +61,11 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     tiny_value,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -412,9 +416,13 @@ class SectionalCurvatureEstimator:
             v = backend.random_normal((d,))
             backend.eval(u, v)
             # Gram-Schmidt
-            dot_uv_arr = backend.sum(u * v)
-            backend.eval(dot_uv_arr)
-            dot_uv = float(backend.to_scalar(dot_uv_arr))
+            u_mat = backend.reshape(u, (1, -1))
+            v_mat = backend.reshape(v, (1, -1))
+            v_norm_arr = geodesic_norms(v_mat, backend)
+            cos_arr, _ = geodesic_pairwise_metrics(u_mat, v_mat, backend)
+            backend.eval(v_norm_arr, cos_arr)
+            v_norm_val = float(backend.to_scalar(v_norm_arr[0]))
+            dot_uv = float(backend.to_scalar(cos_arr[0])) * v_norm_val
             v = v - dot_uv * u
             backend.eval(v)
             v_norm = geodesic_norms(backend.reshape(v, (1, -1)), backend)
@@ -646,17 +654,10 @@ class SectionalCurvatureEstimator:
         else:
             subset = neighbors
 
-        # Compute pairwise distances for scale estimation
-        # INTENTIONAL EUCLIDEAN: Bootstrap step for estimating characteristic scale.
-        # We need pairwise distances to determine the k-NN radius, but we can't
-        # compute geodesic distances without first having a k-NN graph. This is
-        # the unavoidable bootstrap: Euclidean for initial edge weights.
+        # Compute pairwise geodesic distances for scale estimation
         m = int(subset.shape[0])
-        norms = backend.sum(subset * subset, axis=1, keepdims=True)
-        dots = backend.matmul(subset, backend.transpose(subset))
-        dist_sq = norms + backend.transpose(norms) - 2.0 * dots
-        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-        dists = backend.sqrt(dist_sq)
+        dists = geodesic_distance_matrix(subset, k_neighbors=None, backend=backend)
+        backend.eval(dists)
 
         # Extract upper triangle (excluding diagonal) for median using backend ops
         idx = backend.arange(m)

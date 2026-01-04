@@ -108,7 +108,12 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     power_iteration_eigh,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_between_sets,
+    geodesic_cosine_matrix,
+    geodesic_norms,
+    VectorMath,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -787,17 +792,31 @@ class SharedSubspaceProjector:
 
     @staticmethod
     def _compute_covariance(x: list[list[float]], y: list[list[float]], n: int) -> list[float]:
+        if n <= 0:
+            return []
         d_x = len(x[0])
         d_y = len(y[0])
-        cov = [0.0 for _ in range(d_x * d_y)]
-        for sample in range(n):
-            for i in range(d_x):
-                for j in range(d_y):
-                    cov[i * d_y + j] += x[sample][i] * y[sample][j]
-        scale = 1.0 / float(n)
-        for idx in range(d_x * d_y):
-            cov[idx] *= scale
-        return cov
+        b = get_default_backend()
+        x_arr = b.array(x)
+        y_arr = b.array(y)
+        b.eval(x_arr, y_arr)
+
+        x_feat = b.transpose(x_arr)  # [d_x, n]
+        y_feat = b.transpose(y_arr)  # [d_y, n]
+
+        cos_arr = geodesic_cosine_between_sets(x_feat, y_feat, b)
+        x_norms = geodesic_norms(x_feat, b)
+        y_norms = geodesic_norms(y_feat, b)
+        b.eval(cos_arr, x_norms, y_norms)
+
+        x_norm_col = b.reshape(x_norms, (-1, 1))
+        y_norm_row = b.reshape(y_norms, (1, -1))
+        cov_arr = cos_arr * x_norm_col * y_norm_row
+        cov_arr = cov_arr * (1.0 / float(n))
+        b.eval(cov_arr)
+
+        flat = b.reshape(cov_arr, (-1,))
+        return [float(v) for v in b.tolist(flat)]
 
     @staticmethod
     def _compute_covariance_flat(
@@ -807,27 +826,47 @@ class SharedSubspaceProjector:
         d_x: int,
         d_y: int,
     ) -> list[float]:
-        cov = [0.0 for _ in range(d_x * d_y)]
-        for sample in range(n):
-            for i in range(d_x):
-                for j in range(d_y):
-                    cov[i * d_y + j] += x[sample * d_x + i] * y[sample * d_y + j]
-        scale = 1.0 / float(n)
-        for idx in range(d_x * d_y):
-            cov[idx] *= scale
-        return cov
+        if n <= 0:
+            return []
+        b = get_default_backend()
+        x_arr = b.reshape(b.array(x), (n, d_x))
+        y_arr = b.reshape(b.array(y), (n, d_y))
+        b.eval(x_arr, y_arr)
+
+        x_feat = b.transpose(x_arr)
+        y_feat = b.transpose(y_arr)
+
+        cos_arr = geodesic_cosine_between_sets(x_feat, y_feat, b)
+        x_norms = geodesic_norms(x_feat, b)
+        y_norms = geodesic_norms(y_feat, b)
+        b.eval(cos_arr, x_norms, y_norms)
+
+        x_norm_col = b.reshape(x_norms, (-1, 1))
+        y_norm_row = b.reshape(y_norms, (1, -1))
+        cov_arr = cos_arr * x_norm_col * y_norm_row
+        cov_arr = cov_arr * (1.0 / float(n))
+        b.eval(cov_arr)
+
+        flat = b.reshape(cov_arr, (-1,))
+        return [float(v) for v in b.tolist(flat)]
 
     @staticmethod
     def _compute_gram_matrix(x: list[list[float]], n: int, d: int) -> list[float]:
-        gram = [0.0 for _ in range(n * n)]
-        for i in range(n):
-            for j in range(i, n):
-                dot = 0.0
-                for k in range(d):
-                    dot += x[i][k] * x[j][k]
-                gram[i * n + j] = dot
-                gram[j * n + i] = dot
-        return gram
+        if n <= 0 or d <= 0:
+            return []
+        b = get_default_backend()
+        x_arr = b.array(x)
+        cos_arr = geodesic_cosine_matrix(x_arr, b)
+        norms = geodesic_norms(x_arr, b)
+        b.eval(cos_arr, norms)
+
+        norm_col = b.reshape(norms, (-1, 1))
+        norm_row = b.reshape(norms, (1, -1))
+        gram_arr = cos_arr * norm_col * norm_row
+        b.eval(gram_arr)
+
+        flat = b.reshape(gram_arr, (-1,))
+        return [float(v) for v in b.tolist(flat)]
 
     @staticmethod
     def _compute_whitening_transform(
@@ -869,25 +908,21 @@ class SharedSubspaceProjector:
                     new_vecs[i * k + j] = total
 
             for j in range(k):
-                norm = 0.0
-                for i in range(dim):
-                    norm += new_vecs[i * k + j] * new_vecs[i * k + j]
-                # Use float_info.min as floor for sqrt to avoid zero division
-                norm = sqrt_scalar(max(norm, sys.float_info.min), get_default_backend())
+                vec = [new_vecs[i * k + j] for i in range(dim)]
+                # Use geodesic norm for normalization
+                norm = max(VectorMath.l2_norm(vec), sys.float_info.min)
                 for i in range(dim):
                     eigenvectors[i * k + j] = new_vecs[i * k + j] / norm
 
             for j in range(1, k):
                 for prev in range(j):
-                    dot = 0.0
-                    for i in range(dim):
-                        dot += eigenvectors[i * k + j] * eigenvectors[i * k + prev]
+                    vec_j = [eigenvectors[i * k + j] for i in range(dim)]
+                    vec_prev = [eigenvectors[i * k + prev] for i in range(dim)]
+                    dot = VectorMath.dot(vec_j, vec_prev)
                     for i in range(dim):
                         eigenvectors[i * k + j] -= dot * eigenvectors[i * k + prev]
-                norm = 0.0
-                for i in range(dim):
-                    norm += eigenvectors[i * k + j] * eigenvectors[i * k + j]
-                norm = sqrt_scalar(max(norm, sys.float_info.min), get_default_backend())
+                vec_j = [eigenvectors[i * k + j] for i in range(dim)]
+                norm = max(VectorMath.l2_norm(vec_j), sys.float_info.min)
                 for i in range(dim):
                     eigenvectors[i * k + j] /= norm
 

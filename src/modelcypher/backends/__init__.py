@@ -64,6 +64,15 @@ def detect_default_backend_type() -> BackendType:
         return env_backend  # type: ignore[return-value]
 
     # Auto-detect best available backend
+    if sys.platform == "darwin":
+        if probe_mlx_available():
+            return "mlx"
+        detail = get_mlx_probe_error()
+        message = "MLX backend unavailable on macOS."
+        if detail:
+            message = f"{message} {detail}."
+        raise RuntimeError(message)
+
     if probe_mlx_available():
         return "mlx"
 
