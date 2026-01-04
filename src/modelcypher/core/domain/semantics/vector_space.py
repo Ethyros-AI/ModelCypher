@@ -70,14 +70,14 @@ class ConceptVectorSpace:
         k = min(k, int(scores.shape[0]))
         if k <= 0:
             return []
-        # argsort is ascending
-        indices = self._backend.argsort(scores)
-        # Take last k elements (highest scores) and reverse them
-        top_k_indices = indices[-k:]
-        reverse_idx = self._backend.arange(k - 1, -1, -1)
-        top_k_indices = self._backend.take(top_k_indices, reverse_idx, axis=0)
-
+        neg_scores = -scores
+        kth = max(0, k - 1)
+        partitioned = self._backend.argpartition(neg_scores, kth)
+        top_k_indices = self._backend.take(partitioned, self._backend.arange(k), axis=0)
         top_scores = self._backend.take(scores, top_k_indices)
+        order = self._backend.argsort(-top_scores)
+        top_k_indices = self._backend.take(top_k_indices, order, axis=0)
+        top_scores = self._backend.take(top_scores, order, axis=0)
         self._backend.eval(top_scores, top_k_indices)
 
         # Use native tolist() for O(1) extraction

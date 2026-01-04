@@ -119,17 +119,25 @@ class BaseAtlasSignature(LabeledSignatureMixin):
             return []
         backend = get_default_backend()
         values_arr = backend.array(self.values)
-        indices = backend.argsort(values_arr)
-        n = backend.shape(indices)[0]
-        start = 0
-        if k is not None and k < n:
-            start = n - k
-        select = backend.take(indices, backend.arange(start, n))
-        rev = backend.take(
-            select, backend.arange(backend.shape(select)[0] - 1, -1, -1)
-        )
-        backend.eval(rev)
-        order = backend.tolist(rev)
+        n = int(backend.shape(values_arr)[0])
+        if k is None or k >= n:
+            indices = backend.argsort(values_arr)
+            select = backend.take(indices, backend.arange(0, n))
+            rev = backend.take(
+                select, backend.arange(backend.shape(select)[0] - 1, -1, -1)
+            )
+            backend.eval(rev)
+            order = backend.tolist(rev)
+        else:
+            neg_vals = -values_arr
+            kth = max(0, k - 1)
+            part = backend.argpartition(neg_vals, kth)
+            select = backend.take(part, backend.arange(k))
+            vals = backend.take(values_arr, select)
+            order_idx = backend.argsort(-vals)
+            select = backend.take(select, order_idx)
+            backend.eval(select)
+            order = backend.tolist(select)
         if not isinstance(order, list):
             order = [int(order)]
         return [(self.concept_ids[i], self.values[i]) for i in order]

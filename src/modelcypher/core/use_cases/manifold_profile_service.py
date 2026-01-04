@@ -366,19 +366,15 @@ class ManifoldProfileService:
         if count == 0:
             return []
 
-        sorted_idx = backend.argsort(row0)
-        sorted_vals = backend.take(row0, sorted_idx, axis=0)
-        backend.eval(sorted_idx, sorted_vals)
-
         # Derive threshold from data: 25th percentile of distance distribution
         percentile_idx = max(0, int(count * 0.25) - 1)
-        threshold_arr = backend.take(
-            sorted_vals, backend.array([percentile_idx]), axis=0
-        )
+        part = backend.argpartition(row0, percentile_idx)
+        thresh_idx = backend.take(part, backend.array([percentile_idx]), axis=0)
+        threshold_arr = backend.take(row0, thresh_idx, axis=0)
         backend.eval(threshold_arr)
 
-        # Select candidates within threshold, then take closest max_results
-        within = sorted_vals <= threshold_arr
+        # Count candidates within threshold
+        within = row0 <= threshold_arr
         within_count_arr = backend.sum(backend.astype(within, "int32"))
         backend.eval(within_count_arr)
         within_count = int(backend.to_scalar(within_count_arr))
@@ -386,8 +382,13 @@ class ManifoldProfileService:
             return []
         take_count = min(within_count, max_results)
 
-        prefix_idx = backend.arange(take_count)
-        selected_idx = backend.take(sorted_idx, prefix_idx, axis=0)
+        # Take closest results via partial sort
+        kth = max(0, take_count - 1)
+        part_top = backend.argpartition(row0, kth)
+        selected_idx = backend.take(part_top, backend.arange(take_count), axis=0)
+        selected_vals = backend.take(row0, selected_idx, axis=0)
+        order = backend.argsort(selected_vals)
+        selected_idx = backend.take(selected_idx, order, axis=0)
         backend.eval(selected_idx)
         selected_list = backend.tolist(selected_idx)
         return [points[int(i)] for i in selected_list]

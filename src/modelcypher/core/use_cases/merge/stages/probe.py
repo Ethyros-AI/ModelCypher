@@ -939,10 +939,12 @@ def _extract_top_k_dims(
         # Threshold at sqrt(eps) * max - standard numerical tolerance
         threshold = sqrt_scalar(eps, b) * max_magnitude
 
-    # Negate for descending argsort
+    # Negate for descending selection
     neg_abs = -abs_vals
     b.eval(neg_abs)
-    top_indices_arr = b.argsort(neg_abs)[:k]
+    kth = max(0, k - 1)
+    partitioned = b.argpartition(neg_abs, kth)
+    top_indices_arr = b.take(partitioned, b.arange(k), axis=0)
     b.eval(top_indices_arr)
 
     # Convert to Python using native tolist - no NumPy

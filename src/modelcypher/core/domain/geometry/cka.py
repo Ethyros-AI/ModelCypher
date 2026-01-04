@@ -560,11 +560,12 @@ def compute_cka(
 
     kernel_type = "linear" if use_linear_kernel else "rbf"
 
+    gram_key_x = _get_cache().make_gram_key(activations_x, backend, kernel_type)
+    gram_key_y = _get_cache().make_gram_key(activations_y, backend, kernel_type)
+    same_grams = gram_key_x == gram_key_y
+
     if use_linear_kernel:
         # Use cached Gram matrices for linear kernel
-        gram_key_x = _get_cache().make_gram_key(activations_x, backend, kernel_type)
-        gram_key_y = _get_cache().make_gram_key(activations_y, backend, kernel_type)
-
         gram_x = _get_cache().get_gram(gram_key_x)
         if gram_x is None:
             start = time.perf_counter()
@@ -573,21 +574,20 @@ def compute_cka(
             elapsed_ms = (time.perf_counter() - start) * 1000
             _get_cache().set_gram(gram_key_x, gram_x, elapsed_ms)
 
-        gram_y = _get_cache().get_gram(gram_key_y)
-        if gram_y is None:
-            start = time.perf_counter()
-            gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
-            backend.eval(gram_y)
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            _get_cache().set_gram(gram_key_y, gram_y, elapsed_ms)
+        if same_grams:
+            gram_y = gram_x
+        else:
+            gram_y = _get_cache().get_gram(gram_key_y)
+            if gram_y is None:
+                start = time.perf_counter()
+                gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
+                backend.eval(gram_y)
+                elapsed_ms = (time.perf_counter() - start) * 1000
+                _get_cache().set_gram(gram_key_y, gram_y, elapsed_ms)
     else:
         # RBF kernel - compute directly (less frequently reused)
-        gram_key_x = _get_cache().make_gram_key(activations_x, backend, kernel_type)
-        gram_key_y = _get_cache().make_gram_key(activations_y, backend, kernel_type)
         gram_x = _rbf_gram_matrix(activations_x, backend)
-        gram_y = _rbf_gram_matrix(activations_y, backend)
-
-    same_grams = gram_key_x == gram_key_y
+        gram_y = gram_x if same_grams else _rbf_gram_matrix(activations_y, backend)
 
     # Center Gram matrices (with caching) - needed for biased estimator
     centered_x = _center_gram_matrix(gram_x, backend, gram_key_x)

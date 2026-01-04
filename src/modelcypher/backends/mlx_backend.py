@@ -706,6 +706,9 @@ class MLXBackend(Backend):
         if axis < 0:
             axis = ndim + axis
 
+        # Ensure indices are int32
+        indices_int = indices.astype(self.mx.int32)
+
         # For 2D arrays along axis=1 (the common case), use efficient gather
         if ndim == 2 and axis == 1:
             n_rows = int(array.shape[0])
@@ -714,20 +717,16 @@ class MLXBackend(Backend):
 
             # Compute linear indices: row * n_cols + col_index
             row_offsets = self.mx.reshape(self.mx.arange(n_rows), (-1, 1)) * n_cols
-            linear_indices = row_offsets + self.mx.astype(indices, self.mx.int32)
+            linear_indices = row_offsets + indices_int
             flat_array = self.mx.reshape(array, (-1,))
             flat_indices = self.mx.reshape(linear_indices, (-1,))
             gathered = self.mx.take(flat_array, flat_indices)
             return self.mx.reshape(gathered, (n_rows, n_gather))
 
-        # General case: use vmap for arbitrary axis
-        # This is slower but handles all dimensions
-        def gather_along_axis(arr_slice: Array, idx_slice: Array) -> Array:
-            return self.mx.take(arr_slice, idx_slice)
-
-        # Move gather axis to front, apply vmap, move back
+        # General case: loop over the gather dimension
+        # Move gather axis to front for easier iteration
         array_t = self.mx.moveaxis(array, axis, 0)
-        indices_t = self.mx.moveaxis(indices, axis, 0)
+        indices_t = self.mx.moveaxis(indices_int, axis, 0)
 
         # Stack results along axis 0
         results = []

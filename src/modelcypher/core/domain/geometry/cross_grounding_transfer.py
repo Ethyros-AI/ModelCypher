@@ -208,10 +208,6 @@ class RelationalStressComputer:
         Returns:
             Coordinate-invariant RelationalStressProfile
         """
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
-
         b = self._backend
 
         # Build combined matrix: [concept, anchor_0, anchor_1, ...]
@@ -321,13 +317,6 @@ class RelationalStressComputer:
         points_arr = b.astype(all_points, "float32")
         b.eval(points_arr)
 
-        # Compute geodesic distances
-        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=None, backend=b)
-        b.eval(geo_dist)
-
-        # Extract distances from point (row 0) to neighbors
-        row0 = b.take(geo_dist, b.array([0]), axis=0)
-        row0 = b.squeeze(row0, axis=0)
         # Build local covariance from neighbor directions
         directions = []
         eps = division_epsilon(b, point)

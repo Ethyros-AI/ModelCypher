@@ -32,8 +32,8 @@ Mathematical Foundation:
         CKA(source_layer, target_layer) = HSIC(K_source, K_target) /
                                           sqrt(HSIC(K_source, K_source) * HSIC(K_target, K_target))
 
-    Layer correspondence is discovered via greedy CKA matching: for each source
-    layer, find the unassigned target layer with maximum CKA.
+    Layer correspondence is discovered via optimal CKA assignment (Hungarian):
+    global one-to-one matching that maximizes total CKA.
 
 Key Concepts:
     - Anchor concepts: Semantic primes and computational gates that probe specific
@@ -363,28 +363,43 @@ class ConceptResponseMatrix:
         common = set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
         cka_matrix = self.compute_cka_matrix(other)
 
-        matches: list[ComparisonReport.LayerMatch] = []
-        used_targets: set[int] = set()
+        from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
 
-        for source_layer in range(self.layer_count):
-            best_target = -1
-            best_cka = -1.0
-            for target_layer in range(other.layer_count):
-                if target_layer in used_targets:
-                    continue
-                cka = cka_matrix[source_layer][target_layer]
-                if cka > best_cka:
-                    best_cka = cka
-                    best_target = target_layer
-            if best_target >= 0:
-                used_targets.add(best_target)
-                matches.append(
-                    ComparisonReport.LayerMatch(
-                        source_layer=source_layer,
-                        target_layer=best_target,
-                        cka=float(best_cka),
-                    )
+        matches: list[ComparisonReport.LayerMatch] = []
+        source_count = self.layer_count
+        target_count = other.layer_count
+        backend = get_default_backend()
+
+        cka_arr = backend.array(cka_matrix)
+        cost_arr = 1.0 - cka_arr
+        pad_cost = 1.0 + float(division_epsilon(backend, cka_arr))
+
+        if source_count < target_count:
+            pad_rows = backend.full((target_count - source_count, target_count), pad_cost)
+            cost_arr = backend.concatenate([cost_arr, pad_rows], axis=0)
+        if target_count < source_count:
+            pad_cols = backend.full((cost_arr.shape[0], source_count - target_count), pad_cost)
+            cost_arr = backend.concatenate([cost_arr, pad_cols], axis=1)
+
+        try:
+            assignment_arr = PermutationAligner._hungarian_backend(cost_arr, backend)
+            assignment = [int(x) for x in backend.tolist(assignment_arr)]
+        except Exception:
+            cost_list = backend.tolist(cost_arr)
+            assignment = PermutationAligner._hungarian_algorithm(cost_list)
+
+        for source_layer in range(source_count):
+            target_layer = assignment[source_layer]
+            if target_layer >= target_count:
+                continue
+            cka = cka_matrix[source_layer][target_layer]
+            matches.append(
+                ComparisonReport.LayerMatch(
+                    source_layer=source_layer,
+                    target_layer=target_layer,
+                    cka=float(cka),
                 )
+            )
 
         mean_cka = (
             sum(match.cka for match in matches) / float(len(matches)) if matches else 0.0

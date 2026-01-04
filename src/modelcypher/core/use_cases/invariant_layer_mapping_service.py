@@ -373,10 +373,15 @@ class InvariantLayerMappingService:
                     if top_k > dim:
                         top_k = dim
 
-                    # Get top-k indices (sort descending by taking negative)
+                    # Get top-k indices without full sort
                     neg_abs = -abs_vals
-                    top_idx = backend.argsort(neg_abs)[:top_k]
+                    kth = max(0, top_k - 1)
+                    partitioned = backend.argpartition(neg_abs, kth)
+                    top_idx = backend.take(partitioned, backend.arange(top_k), axis=0)
                     top_vals = backend.take(abs_vals, top_idx, axis=0)
+                    order = backend.argsort(-top_vals)
+                    top_idx = backend.take(top_idx, order, axis=0)
+                    top_vals = backend.take(top_vals, order, axis=0)
                     backend.eval(top_idx, top_vals)
 
                     top_idx_list = [int(x) for x in backend.tolist(top_idx)]

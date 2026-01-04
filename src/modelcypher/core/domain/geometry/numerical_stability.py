@@ -709,14 +709,14 @@ def power_iteration_eigh(
 
     Args:
         backend: Compute backend.
-        matrix: Symmetric matrix [n, n].
+        matrix: Symmetric matrix [n, n] or batched [..., n, n].
         k: Number of top eigenvectors to return. The FULL decomposition
            is always computed; only the return value is truncated.
 
     Returns:
         (eigenvalues, eigenvectors) where:
-        - eigenvalues: [k] in descending order
-        - eigenvectors: [n, k] orthonormal columns
+        - eigenvalues: [..., k] in descending order
+        - eigenvectors: [..., n, k] orthonormal columns
     """
     b = backend
     matrix = b.astype(b.array(matrix), "float32")
@@ -724,9 +724,13 @@ def power_iteration_eigh(
 
     shape = matrix.shape
     n = int(shape[-1])
+    batch_shape = shape[:-2]
     k = min(k, n)
     if k == 0:
-        return b.zeros((0,), dtype="float32"), b.zeros((n, 0), dtype="float32")
+        return (
+            b.zeros(batch_shape + (0,), dtype="float32"),
+            b.zeros(batch_shape + (n, 0), dtype="float32"),
+        )
 
     # EXACT eigendecomposition - no approximation
     eigenvalues_full, eigenvectors_full = b.eigh(matrix)
