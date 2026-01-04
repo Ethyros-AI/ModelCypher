@@ -1,202 +1,40 @@
 # Task Singular Vectors (TSV)
 
-> CVPR 2025: Separating skills from structure via SVD decomposition.
+> Low-rank task vector decomposition (research reference).
 
 ---
 
-## Why This Matters for Model Merging
+## Status in ModelCypher
 
-When merging fine-tuned models, **task interference** is a major problem: capabilities from different tasks conflict in the merged model. Task Singular Vectors provide a principled way to:
-1. **Compress** task vectors to 10% size while retaining 99% accuracy
-2. **Measure** interference between tasks via singular vector alignment
-3. **Reduce** interference through decorrelation
-
-**In ModelCypher**: Implemented in `task_singular_vectors.py` for low-rank task representation and interference-aware merging.
+TSV is **not implemented** in ModelCypher. There is no
+`task_singular_vectors.py` module in the codebase at this time. This document
+is retained as a research note and should not be treated as an available
+feature.
 
 ---
 
-## The Core Insight
+## Core Idea (External Literature)
 
-Fine-tuned model weights can be decomposed as:
-
-$$W_{fine} = W_{base} + \Delta W$$
-
-where $\Delta W$ is the "task vector". The key discovery:
-
-> **Task vectors are inherently low-rank.** Only a small portion of singular vectors capture task-specific function.
+Given a task delta matrix $\Delta W$ from fine-tuning, TSV proposes decomposing
+it via SVD and keeping only the dominant singular directions. The intuition is
+that task deltas are low-rank and can be compressed while preserving behavior.
 
 ---
 
-## Formal Definition
+## If TSV Is Added Later
 
-### Task Matrix Decomposition
+Any TSV implementation in ModelCypher should follow existing principles:
 
-For a layer $l$, let $\Delta W^{(l)} \in \mathbb{R}^{m \times n}$ be the task matrix. SVD gives:
-
-$$\Delta W^{(l)} = U \Sigma V^T = \sum_{i=1}^{r} \sigma_i u_i v_i^T$$
-
-where:
-- $U = [u_1, \ldots, u_r]$: left singular vectors
-- $\Sigma = \text{diag}(\sigma_1, \ldots, \sigma_r)$: singular values
-- $V = [v_1, \ldots, v_r]$: right singular vectors (Task Singular Vectors)
-- $r = \min(m, n)$: rank
-
-### The Task Singular Vectors
-
-The **right singular vectors** $v_i$ span the input space directions that the task modifies. These are the Task Singular Vectors (TSV).
+1. **Backend-only math**: Use `geodesic_svd` and backend ops (no NumPy).
+2. **Data-derived rank**: Choose rank from singular value gaps or
+   condition thresholds, not fixed heuristics.
+3. **No blending**: TSV should not replace null-space addition in merging.
+4. **Raw metrics**: Report measurements only, no qualitative labels.
 
 ---
 
-## TSV-Compress: 10× Compression
+## Related Modules
 
-### Algorithm
-
-Given task matrix $\Delta W$ and compression ratio $k$:
-
-```
-1. Compute SVD: ΔW = UΣV^T
-2. Keep top-k singular values: Σ_k = diag(σ₁, ..., σ_k)
-3. Reconstruct: ΔW_compressed = U_k Σ_k V_k^T
-```
-
-### The Low-Rank Property
-
-Gargiulo et al. (2025) show empirically that:
-- **90% of singular values can be discarded** with <1% accuracy loss
-- Task matrices have effective rank much smaller than full rank
-- This holds across vision and language models
-
----
-
-## TSV-Merge: Interference Reduction
-
-### Measuring Interference
-
-For two task matrices $\Delta W_A$ and $\Delta W_B$ with TSVs $V_A$ and $V_B$:
-
-**Task Interference** = $\|V_A^T V_B\|_F$
-
-High interference means tasks modify the same input directions.
-
-### ZCA Whitening for Decorrelation
-
-The TSV-Merge algorithm applies ZCA whitening to decorrelate:
-
-```
-1. Concatenate TSVs: V = [V_A, V_B]
-2. Compute covariance: C = V^T V
-3. Whitening transform: W_zca = C^(-1/2)
-4. Apply to task matrices before merging
-```
-
-### The Full Algorithm
-
-```
-Input: Task matrices {ΔW₁, ..., ΔW_T}, compression ratio k
-Output: Merged task matrix ΔW_merged
-
-For each layer l:
-  1. SVD each task: ΔW_i = U_i Σ_i V_i^T
-  2. Compress to rank k
-  3. Concatenate TSVs: V = [V₁, ..., V_T]
-  4. ZCA whiten: V' = V · C^(-1/2)
-  5. Reconstruct: ΔW'_i = U_i Σ_i (V'_i)^T
-  6. Average: ΔW_merged = (1/T) Σᵢ ΔW'_i
-
-Return W_merged = W_base + ΔW_merged
-```
-
----
-
-## Theoretical Foundation
-
-### Why Low-Rank?
-
-The low-rank property connects to:
-1. **LoRA's success**: Low-rank adaptation works precisely because task matrices are low-rank
-2. **Intrinsic dimensionality**: Tasks live in low-dimensional subspaces
-3. **Information geometry**: Task-specific changes concentrate in few directions
-
-### Relationship to LoRA
-
-LoRA explicitly parameterizes $\Delta W = BA$ with $B \in \mathbb{R}^{m \times r}$, $A \in \mathbb{R}^{r \times n}$.
-
-TSV shows this is **not just a convenient parameterization** but reflects the true structure of fine-tuning.
-
----
-
-## Code Implementation
-
-**Primary Location**: [`src/modelcypher/core/domain/geometry/task_singular_vectors.py`](../../../../src/modelcypher/core/domain/geometry/task_singular_vectors.py)
-
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `TaskVectorDecomposition` | 64 | Result with U, S, Vt, variance captured, effective rank |
-| `SVDBlendConfig` | 103 | Configuration with numerical stability params |
-| `_find_spectral_gap()` | 142 | Find natural rank cutoff from spectral gap |
-
-**Design decisions**:
-1. **Per-layer analysis**: TSV computed separately per layer
-2. **Adaptive rank**: Rank chosen to capture specified variance (default 99%)
-3. **Backend-agnostic**: Works with MLX, JAX, or any backend
-
----
-
-## Experimental Results (CVPR 2025)
-
-From Gargiulo et al. (2025):
-
-| Method | Accuracy (8 tasks) | Compression |
-|--------|-------------------|-------------|
-| Task Arithmetic | 67.8% | 1× |
-| TIES-Merging | 72.1% | 1× |
-| TSV-Compress | 67.2% | **10×** |
-| TSV-Merge | **75.4%** | 10× |
-
-Key findings:
-- 10× compression with <1% accuracy loss
-- TSV-Merge outperforms all baselines despite compression
-- Interference reduction is key to performance
-
----
-
-## Citations
-
-### Primary Reference
-
-1. **Gargiulo, A.A., Crisostomi, D., Bucarelli, M.S., Scardapane, S., Silvestri, F., & Rodolà, E.** (2025). "Task Singular Vectors: Reducing Task Interference in Model Merging." *CVPR 2025*. [arXiv:2412.00081](https://arxiv.org/abs/2412.00081) · [CVPR Paper](https://openaccess.thecvf.com/content/CVPR2025/papers/Gargiulo_Task_Singular_Vectors_Reducing_Task_Interference_in_Model_Merging_CVPR_2025_paper.pdf)
-   - *The foundational TSV paper*
-
-### Related Model Merging
-
-2. **[Ilharco et al. (2023)](../../references/arxiv/Ilharco_2023_Task_Arithmetic.pdf)**. "Editing Models with Task Arithmetic." *ICLR 2023*. [arXiv:2212.04089](https://arxiv.org/abs/2212.04089)
-   - *Task vectors concept*
-
-3. **[Yadav et al. (2023)](../../references/arxiv/Yadav_2023_TIES_Merging.pdf)**. "TIES-Merging: Resolving Interference When Merging Models." *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708)
-   - *Ties-based merging baseline*
-
-4. **Yu, L., et al.** (2024). "DARE: Drop and Rescale for Model Merging." *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099)
-   - *Sparsification-based merging*
-
-### SVD-Based Methods
-
-5. **Lialin, V., et al.** (2025). "STAR: Spectral Truncation and Rescale for Model Merging." *NAACL 2025*. [ACL Anthology](https://aclanthology.org/)
-   - *Adaptive rank truncation*
-
-6. **Panariello, A., et al.** (2025). "Accurate and Efficient Low-Rank Model Merging in Core Space." [arXiv](https://arxiv.org/search/?query=low-rank+model+merging+core+space&searchtype=all)
-   - *Low-rank merging in aligned space*
-
-7. **Kim, J., et al.** (2025). "KnOTS: Model merging with SVD to tie the Knots." *ICLR 2025*. [arXiv:2410.19735](https://arxiv.org/abs/2410.19735)
-   - *SVD for LoRA alignment*
-
----
-
-## Related Concepts
-
-- [fisher_information.md](fisher_information.md) - Importance weighting (complementary to TSV)
-- [procrustes_analysis.md](procrustes_analysis.md) - Alignment before decomposition
-- [intrinsic_dimension.md](intrinsic_dimension.md) - Why low-rank works
-
----
-
-*Task Singular Vectors reveal that fine-tuning is fundamentally low-rank. This insight enables both compression and interference reduction.*
+- [`src/modelcypher/core/domain/geometry/geometric_lora.py`](../../../../src/modelcypher/core/domain/geometry/geometric_lora.py) - SVD-based low-rank factors
+- [`src/modelcypher/core/domain/geometry/safety_polytope.py`](../../../../src/modelcypher/core/domain/geometry/safety_polytope.py) - TSV_PRUNE diagnostic label
+- [spectral_analysis.md](spectral_analysis.md) - Spectral ratios and conditioning

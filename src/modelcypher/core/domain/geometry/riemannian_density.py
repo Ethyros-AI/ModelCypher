@@ -557,9 +557,39 @@ class ConceptVolume:
         cross = backend.matmul(points_arr, raw_t)
         dist_sq = pts_sq + backend.transpose(acts_sq) - 2.0 * cross
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-        chord_dist = backend.sqrt(dist_sq)
-        total_dists = chord_dist + backend.reshape(geo_from_centroid, (1, -1))
-        geo_dist = backend.min(total_dists, axis=1)
+
+        n_acts = int(self.raw_activations.shape[0])
+        k_neighbors = (
+            int(self._geodesic_context.k_neighbors)
+            if self._geodesic_context is not None
+            else n_acts
+        )
+        k_neighbors = max(1, min(k_neighbors, n_acts))
+
+        if k_neighbors >= n_acts:
+            chord_dist = backend.sqrt(dist_sq)
+            total_dists = chord_dist + backend.reshape(geo_from_centroid, (1, -1))
+            geo_dist = backend.min(total_dists, axis=1)
+        else:
+            tie_eps = machine_epsilon(backend, dist_sq)
+            col_indices = backend.arange(n_acts)
+            col_row = backend.reshape(col_indices, (1, n_acts))
+            dist_for_sort = dist_sq + backend.astype(col_row, dist_sq.dtype) * tie_eps
+            kth = max(0, min(k_neighbors - 1, n_acts - 1))
+            partitioned = backend.argpartition(dist_for_sort, kth, axis=1)
+            neighbor_idx = partitioned[:, :k_neighbors]
+
+            neighbor_dist_sq = backend.take_along_axis(dist_sq, neighbor_idx, axis=1)
+            neighbor_dist_sq = backend.maximum(
+                neighbor_dist_sq, backend.zeros_like(neighbor_dist_sq)
+            )
+            neighbor_dists = backend.sqrt(neighbor_dist_sq)
+
+            geo_row = backend.reshape(geo_from_centroid, (1, n_acts))
+            geo_row = backend.broadcast_to(geo_row, dist_sq.shape)
+            neighbor_geo = backend.take_along_axis(geo_row, neighbor_idx, axis=1)
+            total_dists = neighbor_dists + neighbor_geo
+            geo_dist = backend.min(total_dists, axis=1)
 
         # Chord length from centroid to each point (geodesic equals chord for 2 points).
         diff_sq = backend.sum(diff * diff, axis=1)

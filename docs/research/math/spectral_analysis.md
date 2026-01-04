@@ -1,202 +1,66 @@
-# Spectral Analysis of Neural Network Weights
+# Spectral Analysis of Weight Matrices
 
-> Eigenvalue distributions reveal model structure and training dynamics.
+> Raw spectral measurements for source/target weight pairs.
 
 ---
 
 ## Why This Matters for Model Merging
 
-The eigenvalue spectrum of weight matrices encodes:
-1. **Effective rank**: How many dimensions are actually used
-2. **Training stage**: Spectra evolve characteristically during training
-3. **Merge alignment**: Similar spectra suggest aligned representations
+Spectral measurements quantify scale and conditioning without introducing
+heuristics. ModelCypher uses them to describe how far source and target
+weights are apart before null-space addition.
 
-**In ModelCypher**: Implemented in `spectral_analysis.py` for weight matrix analysis.
-
----
-
-## The Core Insight
-
-Random matrices have well-characterized spectra (Marchenko-Pastur law). Training **systematically departs** from this:
-- Develops "bulk + tail" structure
-- Tail eigenvalues correlate with learned features
-- Spectral properties predict generalization
+**In ModelCypher**: Implemented in `spectral_analysis.py` and returns raw
+metrics only.
 
 ---
 
-## Random Matrix Theory Background
+## Metrics Computed
 
-### Marchenko-Pastur Law
+For source matrix $W_s$ and target matrix $W_t$:
 
-For a random matrix $X \in \mathbb{R}^{n \times p}$ with i.i.d. entries, the eigenvalue distribution of $\frac{1}{n}X^TX$ converges to:
+- **Spectral ratio**: $\sigma_{max}(W_s) / \sigma_{max}(W_t)$
+- **Spectral ratio symmetry**: $\min(r, 1/r)$ where $r$ is the spectral ratio
+- **Condition number**: $\sigma_{max}(W_t) / \sigma_{min}(W_t)$ (capped by dtype threshold)
+- **Source/target spectral norms**: $\sigma_{max}$ per matrix
+- **Delta Frobenius**: $\|W_s - W_t\|_F$ using geodesic norms
 
-$$\rho_{MP}(\lambda) = \frac{\sqrt{(\lambda_+ - \lambda)(\lambda - \lambda_-)}}{2\pi \gamma \lambda}$$
-
-for $\lambda \in [\lambda_-, \lambda_+]$, where:
-- $\gamma = p/n$ (aspect ratio)
-- $\lambda_\pm = (1 \pm \sqrt{\gamma})^2$
-
-### At Initialization
-
-Neural network weights at initialization follow MP closely:
-- Bulk of eigenvalues within MP bounds
-- Edge statistics follow Tracy-Widom distribution
-
-### After Training
-
-Training induces characteristic deviations:
-- **Bulk**: Still approximately MP
-- **Tail**: Heavy-tailed distribution of outlier eigenvalues
-- Tail eigenvalues encode task-relevant information
+For 1D vectors (biases, layer norms), ModelCypher uses geodesic norms and sets
+condition number to 1.0.
 
 ---
 
-## Spectral Signatures of Training
-
-### Bulk + Tail Structure (Martin & Mahoney, 2021)
-
-$$\rho(\lambda) = (1-\alpha) \rho_{MP}(\lambda) + \alpha \rho_{tail}(\lambda)$$
-
-where $\rho_{tail}$ is typically power-law:
-
-$$\rho_{tail}(\lambda) \propto \lambda^{-\mu}$$
-
-The exponent $\mu$ correlates with:
-- Smaller $\mu$: More heavy-tailed → higher generalization in reported studies
-- Larger $\mu$: Lighter tail → possible overfitting
-
-### Effective Rank
-
-The **effective rank** (Roy & Vetterli, 2007):
-
-$$\text{erank}(W) = \exp\left(-\sum_i \tilde{\sigma}_i \log \tilde{\sigma}_i\right)$$
-
-where $\tilde{\sigma}_i = \sigma_i / \sum_j \sigma_j$ are normalized singular values.
-
----
-
-## Spectral Analysis Algorithm
+## Algorithm (ModelCypher)
 
 ```python
-def spectral_analysis(W: Array) -> SpectralSignature:
-    """
-    Analyze eigenvalue distribution of weight matrix.
+def compute_spectral_metrics(source, target):
+    eps = division_epsilon(target)
+    max_cond = condition_threshold(target)
 
-    Args:
-        W: Weight matrix [d_out, d_in]
+    if source.ndim == 1:
+        source_norm = geodesic_norm(source)
+        target_norm = geodesic_norm(target)
+        delta_norm = geodesic_norm(source - target)
+        ratio = source_norm / max(target_norm, eps)
+        symmetry = min(ratio, 1 / max(ratio, eps))
+        return metrics(condition_number=1.0, ...)
 
-    Returns:
-        SpectralSignature with eigenvalues, effective rank,
-        bulk/tail decomposition, and power-law exponent
-    """
-    # Singular value decomposition
-    U, S, Vh = svd(W)
+    source_f32 = astype(source, "float32")
+    target_f32 = astype(target, "float32")
+    _, s_source, _ = geodesic_svd(source_f32)
+    _, s_target, _ = geodesic_svd(target_f32)
 
-    # Eigenvalues of W^T W
-    eigenvalues = S ** 2
+    sigma_max_s = s_source[0]
+    sigma_max_t = s_target[0]
+    sigma_min_t = s_target[-1]
+    condition = min(sigma_max_t / max(sigma_min_t, eps), max_cond)
 
-    # Effective rank
-    S_norm = S / sum(S)
-    effective_rank = exp(-sum(S_norm * log(S_norm + eps)))
+    ratio = sigma_max_s / max(sigma_max_t, eps)
+    symmetry = min(ratio, 1 / ratio) if ratio > 0 else 0.0
 
-    # Fit bulk + tail model
-    bulk_edge = estimate_mp_edge(W.shape)
-    tail_eigenvalues = eigenvalues[eigenvalues > bulk_edge]
-    bulk_eigenvalues = eigenvalues[eigenvalues <= bulk_edge]
-
-    # Power-law exponent for tail
-    alpha = fit_power_law(tail_eigenvalues)
-
-    return SpectralSignature(
-        eigenvalues=eigenvalues,
-        effective_rank=effective_rank,
-        bulk_edge=bulk_edge,
-        tail_fraction=len(tail_eigenvalues) / len(eigenvalues),
-        power_law_exponent=alpha,
-    )
+    delta = geodesic_norm(source - target)
+    return metrics(...)
 ```
-
----
-
-## WeightWatcher Methodology
-
-Martin & Mahoney's **WeightWatcher** analyzes pre-trained models:
-
-### Key Metrics
-
-1. **Alpha ($\alpha$)**: Power-law exponent of eigenvalue tail
-   - $\alpha < 2$: Heavy-tailed
-   - $\alpha > 4$: Thin-tailed
-
-2. **Lambda ($\lambda$)**: Spectral norm / maximum eigenvalue
-
-3. **Log Spectral Norm**: $\log(\lambda_{max})$
-
-### Quality Prediction
-
-Without any training data:
-$$\text{Test Accuracy} \approx f(\bar{\alpha}, \bar{\lambda})$$
-
-where $\bar{\alpha}$ is the average power-law exponent across layers.
-
----
-
-## Implications for Model Merging
-
-### Spectral Compatibility
-
-Models with similar spectral signatures:
-- Have similar effective dimensionality
-- Use weight space similarly
-- Merge with less interference
-
-### Spectral-Aware Merging
-
-```python
-def spectral_aware_merge(models: list, weights: list = None):
-    """
-    Merge models with spectral analysis guidance.
-    """
-    for layer_name in layer_names:
-        # Analyze each model's spectrum
-        spectra = [spectral_analysis(m[layer_name]) for m in models]
-
-        # Check alignment
-        rank_variance = var([s.effective_rank for s in spectra])
-        if rank_variance > threshold:
-            # Use projection to shared subspace
-            merged = project_to_shared_subspace(...)
-        else:
-            # Standard merge is safe
-            merged = weighted_average(...)
-```
-
-### Truncation Strategies (STAR, 2025)
-
-**STAR: Spectral Truncation and Rescale**:
-1. Compute SVD of task vectors
-2. Truncate to top-$k$ singular values
-3. Rescale remaining components
-4. Merge in reduced space
-
----
-
-## Layer-wise Spectral Patterns
-
-### Empirical Observations
-
-| Layer Position | Typical $\alpha$ | Effective Rank | Interpretation |
-|---------------|-----------------|----------------|----------------|
-| Early | 2.5-3.5 | Higher | Feature extraction |
-| Middle | 2.0-3.0 | Variable | Representation learning |
-| Late | 1.5-2.5 | Lower | Task-specific |
-
-### Training Dynamics
-
-Spectra evolve during training:
-1. **Early**: Near MP (random initialization)
-2. **Middle**: Tail develops, bulk shrinks
-3. **Late**: Stable bulk + heavy tail
 
 ---
 
@@ -204,60 +68,18 @@ Spectra evolve during training:
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/spectral_analysis.py`](../../../../src/modelcypher/core/domain/geometry/spectral_analysis.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `SpectralMetrics` | 62 | Core metrics dataclass (eigenvalues, effective rank, etc.) |
-| `compute_spectral_metrics()` | 103 | Compute spectral metrics (all params derived from data) |
-| `spectral_summary()` | 240 | Aggregate statistics across layers |
+**Key entry points**:
+- `compute_spectral_metrics()` - per-weight spectral metrics
+- `spectral_summary()` - aggregate statistics across weights
 
----
-
-## Citations
-
-### Random Matrix Theory Foundations
-
-1. **Marčenko, V.A., & Pastur, L.A.** (1967). "Distribution of eigenvalues for some sets of random matrices." *Mathematics of the USSR-Sbornik*, 1(4), 457-483. [DOI:10.1070/SM1967v001n04ABEH001994](https://doi.org/10.1070/SM1967v001n04ABEH001994)
-   - *Marchenko-Pastur law*
-
-2. **Tracy, C.A., & Widom, H.** (1996). "On orthogonal and symplectic matrix ensembles." *Communications in Mathematical Physics*, 177(3), 727-754. [DOI:10.1007/BF02099545](https://doi.org/10.1007/BF02099545)
-   - *Edge statistics*
-
-3. **Wigner, E.P.** (1955). "Characteristic vectors of bordered matrices with infinite dimensions." *Annals of Mathematics*, 62, 548-564. [DOI:10.2307/1970079](https://doi.org/10.2307/1970079)
-   - *Semicircle law*
-
-### Neural Network Applications
-
-4. **Martin, C.H., & Mahoney, M.W.** (2021). "Implicit Self-Regularization in Deep Neural Networks: Evidence from Random Matrix Theory and Implications for Learning." *JMLR*, 22(165), 1-73. [JMLR](https://jmlr.org/papers/v22/20-410.html) · [arXiv:1810.01075](https://arxiv.org/abs/1810.01075)
-   - *WeightWatcher methodology*
-
-5. **Saxe, A.M., McClelland, J.L., & Ganguli, S.** (2014). "Exact solutions to the nonlinear dynamics of learning in deep linear neural networks." *ICLR 2014*. [arXiv:1312.6120](https://arxiv.org/abs/1312.6120)
-   - *Spectral dynamics during training*
-
-6. **Papyan, V.** (2020). "Traces of Class/Cross-Class Structure Pervade Deep Learning Spectra." *JMLR*, 21(252), 1-64. [JMLR](https://jmlr.org/papers/v21/20-933.html)
-   - *Class structure in spectra*
-
-### 2024-2025 Advances
-
-7. **Lialin, V., et al.** (2025). "STAR: Spectral Truncation and Rescale for Model Merging." *NAACL 2025*. [ACL Anthology](https://aclanthology.org/events/naacl-2025/)
-   - *Spectral methods for merging*
-
-8. **From SGD to Spectra** (2025). "A Theory of Neural Network Weight Dynamics." [arXiv:2507.12709](https://arxiv.org/abs/2507.12709)
-   - *Spectral SDE framework*
-
-9. **Mahoney, M.W.** (2025). "Random Matrix Theory and Modern Machine Learning." *UC Berkeley Lecture Notes*. [Berkeley](https://www.stat.berkeley.edu/~mmahoney/)
-   - *Recent comprehensive treatment*
-
-10. **Nature Communications** (2025). "SPectral ARchiteCture Search for neural network models." [DOI:10.1038/s44387-025-00039-1](https://doi.org/10.1038/s44387-025-00039-1)
-    - *Spectral methods for architecture search*
+**Design decisions**:
+1. **Data-derived thresholds**: Uses `division_epsilon` and `condition_threshold`.
+2. **Backend-only math**: Geodesic SVD and norms, no NumPy.
+3. **Raw measurements only**: No thresholds or qualitative labels.
 
 ---
 
 ## Related Concepts
 
-- [task_singular_vectors.md](task_singular_vectors.md) - SVD for task-specific components
 - [intrinsic_dimension.md](intrinsic_dimension.md) - Related to effective rank
 - [fisher_information.md](fisher_information.md) - Fisher eigenspectrum
-
----
-
-*The eigenvalue spectrum of weight matrices reveals the learned structure: random at initialization, structured after training, with heavy tails encoding task-relevant features.*

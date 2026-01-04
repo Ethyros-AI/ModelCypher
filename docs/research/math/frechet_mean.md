@@ -8,7 +8,7 @@
 
 When averaging embeddings or representations from neural networks, the arithmetic mean is **geometrically incorrect** on curved manifolds. The Fréchet mean minimizes the sum of squared geodesic distances, giving the true center of mass on the manifold.
 
-**In ModelCypher**: Used in `riemannian_utils.py` for curvature-aware averaging of embeddings, activation patterns, and layer-wise representations during merge operations.
+**In ModelCypher**: Used throughout geometry (e.g., density estimation, anchor extraction, generalized Procrustes) via `RiemannianGeometry.frechet_mean()`.
 
 ---
 
@@ -44,7 +44,7 @@ We implement the gradient descent algorithm on the manifold:
 Input: Points {x_1, ..., x_n}, weights {w_1, ..., w_n}, tolerance ε
 Output: Fréchet mean μ
 
-1. Initialize μ ← weighted Euclidean mean (reasonable starting point)
+1. Initialize μ ← geodesic medoid (distance-minimizing point)
 2. Compute geodesic distances from all points to μ
 3. Repeat until convergence:
    a. Compute weighted gradient: g = Σᵢ wᵢ · log_μ(xᵢ)
@@ -86,18 +86,21 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/riemannian_utils.py`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `FrechetMeanResult` | 121 | Result dataclass with mean, iterations, convergence |
-| `RiemannianGeometry.frechet_mean()` | 164 | Instance method for Fréchet mean computation |
-| `frechet_mean()` | 1146 | Standalone function wrapping the class method |
+**Key entry points**:
+- `FrechetMeanResult`
+- `RiemannianGeometry.frechet_mean()`
+- `frechet_mean()` (convenience wrapper)
 
-**Also used in**: [`generalized_procrustes.py:32`](../../../../src/modelcypher/core/domain/geometry/generalized_procrustes.py) - `FrechetMeanConfig` for GPA consensus
+**Also used in**:
+- `src/modelcypher/core/domain/geometry/riemannian_density.py`
+- `src/modelcypher/core/domain/geometry/generalized_procrustes.py`
+- `src/modelcypher/core/use_cases/anchor_extractor.py`
 
 **Key design decisions**:
-1. **No metric substitution** - If geodesic computation fails, we raise an error
-2. **No scale clamping** - Extreme curvature is reported, not hidden
-3. **Weighted support** - Handles importance-weighted averaging
+1. **Geodesic medoid init** - distance-minimizing start point
+2. **Adaptive k-NN** - retries with larger k for connectivity
+3. **Caching** - geodesic distances and Fréchet means are cached per session
+4. **Weighted support** - handles importance-weighted averaging
 
 ---
 

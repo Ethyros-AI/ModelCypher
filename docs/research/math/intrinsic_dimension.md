@@ -6,12 +6,12 @@
 
 ## Why This Matters for Model Merging
 
-Neural networks operate in high-dimensional spaces (4096 dimensions for LLMs), but representations often lie on low-dimensional manifolds. Understanding intrinsic dimension helps us:
-1. **Choose compression rank**: TSV and LoRA rank selection
-2. **Detect overfitting**: High ID may indicate memorization
-3. **Assess merge alignment**: Similar ID suggests similar geometry
+Neural networks operate in high-dimensional spaces, but representations often lie on low-dimensional manifolds. Understanding intrinsic dimension helps us:
+1. **Inform compression choices**: TSV and LoRA rank selection
+2. **Detect overfitting signals**: High ID may indicate memorization
+3. **Compare manifold complexity**: Similar ID suggests similar geometry
 
-**In ModelCypher**: Used in `intrinsic_dimension.py` for manifold complexity analysis and merge quality prediction.
+**In ModelCypher**: Used in `intrinsic_dimension.py` for manifold complexity analysis and geometry metrics reporting.
 
 ---
 
@@ -31,6 +31,9 @@ Formally, if $X$ lies on a $d$-dimensional manifold $\mathcal{M} \subset \mathbb
 ---
 
 ## Estimation Methods
+
+ModelCypher implements the **TwoNN regression estimator** with geodesic distances.
+MLE formulas are included for background context only.
 
 ### 1. Maximum Likelihood Estimator (MLE)
 
@@ -85,6 +88,9 @@ $$\hat{d}_{geo}(x_i) = \left( \frac{1}{k-1} \sum_{j=1}^{k-1} \log \frac{d_{geo}(
 
 where $d_{geo}$ is the shortest path distance on the k-NN graph.
 
+ModelCypher derives $k$ from data: $k = \\max(k_{connectivity}, \\lceil \\log n \\rceil)$
+to ensure both connectivity and local neighborhood structure.
+
 ---
 
 ## Key Theorems
@@ -130,20 +136,20 @@ Output Layer:  ID ≈ number of classes
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/intrinsic_dimension.py`](../../../../src/modelcypher/core/domain/geometry/intrinsic_dimension.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `IntrinsicDimension` | 89 | Main class with MLE and TwoNN estimators |
+**Key entry points**:
+- `IntrinsicDimension`
+- `TwoNNEstimate`
+- `LocalDimensionMap`
 
-**Also in**:
-- [`types.py:229`](../../../../src/modelcypher/core/domain/geometry/types.py) - `IntrinsicDimensionResult` dataclass
-- [`geometry_metrics_service.py:66`](../../../../src/modelcypher/core/use_cases/geometry_metrics_service.py) - Service-level result
-- [`geometry_metrics_service.py:195`](../../../../src/modelcypher/core/use_cases/geometry_metrics_service.py) - `estimate_intrinsic_dimension()` method
-- [`async_geometry.py:106`](../../../../src/modelcypher/ports/async_geometry.py) - Async port definition
+**Also used in**:
+- `src/modelcypher/core/use_cases/geometry_metrics_service.py`
+- `src/modelcypher/ports/async_geometry.py`
 
 **Design decisions**:
-1. **Geodesic by default**: Uses k-NN graph distances
-2. **Robust averaging**: Averages over multiple k values
-3. **Local ID support**: Can compute per-point ID for heterogeneous manifolds
+1. **TwoNN regression**: Single estimator (no MLE path)
+2. **Geodesic distances**: k-NN graph with data-derived k
+3. **Bootstrap CI**: Optional confidence intervals
+4. **Local ID support**: Per-point dimension map
 
 ---
 

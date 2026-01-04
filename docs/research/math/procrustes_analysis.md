@@ -8,7 +8,7 @@
 
 Before comparing or merging representations from different models, we need to align them. Procrustes analysis finds the optimal orthogonal transformation (rotation/reflection) that minimizes the difference between two sets of representations.
 
-**In ModelCypher**: Used in `generalized_procrustes.py` for multi-model alignment and `procrustes_alignment.py` for pairwise alignment.
+**In ModelCypher**: `generalized_procrustes.py` handles multi-model alignment. Pairwise alignment uses `backend_matrix_utils.py` (core rotation) and `geometry_engine.py` (use-case wrapper). Cross-dimensional cases go through `_project_procrustes` in `cross_dimensional_projection.py`, and vocabulary alignment uses `embedding_projector.py`.
 
 ---
 
@@ -50,19 +50,21 @@ Align $M$ matrices $\{X_1, \ldots, X_M\}$ to a common consensus:
 
 $$\min_{\Omega_1, \ldots, \Omega_M, \bar{X}} \sum_{i=1}^{M} \|X_i \Omega_i - \bar{X}\|_F^2$$
 
-### Algorithm
+### Algorithm (ModelCypher)
 
 ```
-1. Initialize consensus X̄ = X₁ (or average)
+1. Initialize consensus X̄ = X₁
 2. Repeat until convergence:
-   a. For each i: compute Ωᵢ by solving Procrustes(Xᵢ, X̄)
-   b. Update consensus: X̄ = (1/M) Σᵢ Xᵢ Ωᵢ
+   a. For each i: compute Ωᵢ by solving Procrustes(Xᵢ, X̄) with det(Ωᵢ)=1
+   b. Update consensus:
+      - M > 2: Fréchet mean of {Xᵢ Ωᵢ}
+      - M ≤ 2: arithmetic mean (k-NN graph degenerates)
 3. Return {Ωᵢ} and X̄
 ```
 
-### Fréchet Mean Extension
+### Consensus on Curved Manifolds
 
-For curved manifolds, replace arithmetic mean with Fréchet mean:
+ModelCypher uses the Fréchet mean whenever $M > 2$:
 
 $$\bar{X} = \text{FrechetMean}(X_1 \Omega_1, \ldots, X_M \Omega_M)$$
 
@@ -86,25 +88,20 @@ $$\bar{X} = \text{FrechetMean}(X_1 \Omega_1, \ldots, X_M \Omega_M)$$
 
 ---
 
-## Partial Procrustes
+## Cross-Dimensional Procrustes (ModelCypher)
 
-### Problem
+When dimensions differ, ModelCypher uses `_project_procrustes` with geodesic SVD
+and zero-padding to preserve geometry:
 
-When matrices have different sizes, use partial alignment.
+- **Rows match, columns differ**:
+  - If $d_s > d_t$: project via geodesic SVD to the top-$k$ subspace, align to target,
+    and pad with zeros if rank < $d_t$.
+  - If $d_s < d_t$: align shared dimensions and zero-pad expansion.
+- **Columns match, rows differ**: transpose, apply the same logic, transpose back.
+- **Both rows and columns differ**: fall back to Gram-transport projection.
 
-**Same features, different samples**: No alignment needed (Gram matrices handle this)
-
-**Same samples, different features**: Truncate or pad, then align.
-
-### Solution for Different Feature Dimensions
-
-```python
-# Align to smaller dimension
-d_min = min(d1, d2)
-X_trunc = X[:, :d_min]
-Y_trunc = Y[:, :d_min]
-Omega = procrustes(X_trunc, Y_trunc)
-```
+Reflections are corrected so $\det(\Omega)=1$, and zero padding is used to avoid
+introducing spurious correlations.
 
 ---
 
@@ -124,39 +121,41 @@ for centered matrices with specific normalization.
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/generalized_procrustes.py`](../../../../src/modelcypher/core/domain/geometry/generalized_procrustes.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `GeneralizedProcrustes` | 105 | Main GPA class with `align()` method |
-
-**Procrustes functions in other modules**:
-- [`backend_matrix_utils.py:241`](../../../../src/modelcypher/core/domain/geometry/backend_matrix_utils.py) - `procrustes_rotation()` via SVD
-- [`backend_matrix_utils.py:320`](../../../../src/modelcypher/core/domain/geometry/backend_matrix_utils.py) - `procrustes_align()` full alignment
-- [`geometry_engine.py:117`](../../../../src/modelcypher/core/use_cases/geometry_engine.py) - `orthogonal_procrustes()` port
-- [`cross_dimensional_projection.py:310`](../../../../src/modelcypher/core/domain/geometry/cross_dimensional_projection.py) - projection with Procrustes
-- [`embedding_projector.py:240`](../../../../src/modelcypher/core/domain/vocabulary/embedding_projector.py) - vocabulary alignment
+**Key entry points**:
+- `GeneralizedProcrustes.align()` - multi-model alignment with Fréchet consensus
+- `BackendMatrixUtils.procrustes_rotation()` / `procrustes_align()` - pairwise alignment
+- `GeometryEngine.orthogonal_procrustes()` - use-case wrapper
+- `cross_dimensional_projection._project_procrustes()` - one-dimension mismatch
+- `EmbeddingProjector.project()` - vocabulary alignment
 
 **Design decisions**:
-1. **Fréchet mean option**: Curvature-aware consensus computation
-2. **Dimension handling**: Auto-truncates to shared dimension
-3. **Convergence tracking**: Reports alignment error and iterations
+1. **Fréchet mean**: Used for $M > 2$; arithmetic mean only when $M \le 2$.
+2. **Shape requirements**: GPA requires matching shapes; cross-dimensional projection handles mismatches.
+3. **Reflections and scaling**: Disabled; rotations are enforced with $\det(\Omega)=1$.
+4. **Convergence**: Threshold from machine epsilon; max iterations from model count.
 
 ---
 
 ## Applications in Model Merging
 
-### 1. Layer Alignment
+### 1. Layer Alignment (Null-Space Addition)
 
-Before merging, align layer representations:
+Before merging, align representations and add only the null-space component:
 ```python
-aligned_layers = procrustes_align(source_layers, target_layers)
-merged = 0.5 * aligned_layers + 0.5 * target_layers
+utils = BackendMatrixUtils(backend)
+omega = utils.procrustes_rotation(source_layers, target_layers).rotation
+aligned_source = backend.matmul(source_layers, omega)
+delta = aligned_source - target_layers
+filter = GeodesicNullSpaceFilter(backend)
+projected = filter.filter_delta(delta, target_activations).filtered_delta
+merged = target_layers + projected
 ```
 
 ### 2. Cross-Model Comparison
 
 Compare representations after alignment:
 ```python
-aligned_source = source @ omega
+aligned_source = backend.matmul(source, omega)
 similarity = cka(aligned_source, target)
 ```
 
@@ -164,7 +163,9 @@ similarity = cka(aligned_source, target)
 
 Find shared representation space:
 ```python
-consensus, transformations = gpa(model_representations)
+result = GeneralizedProcrustes().align(model_representations)
+consensus = result.consensus
+transformations = result.rotations
 ```
 
 ---

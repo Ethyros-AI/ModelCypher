@@ -1,17 +1,17 @@
 # Spherical Linear Interpolation (SLERP)
 
-> Geodesic interpolation on the hypersphere for model merging.
+> Geodesic interpolation on the hypersphere for diagnostics and visualization.
 
 ---
 
-## Why This Matters for Model Merging
+## Why This Exists in ModelCypher
 
-Linear interpolation between neural network weights cuts through the interior of the weight space, often crossing high-loss regions. **SLERP follows the geodesic on the hypersphere**, providing smoother transitions that:
-1. **Preserve magnitude** while interpolating direction
-2. **Avoid loss barriers** that linear interpolation encounters
-3. **Respect the spherical geometry** of normalized weight spaces
+SLERP provides spherical geodesic interpolation for diagnostics, visualization,
+and representation analysis. It is **not** used for model merging because
+interpolation discards information; ModelCypher merges with null-space addition.
 
-**In ModelCypher**: Implemented in `vector_math.py` for weight interpolation during model merging.
+**In ModelCypher**: Implemented in `vector_math.py` with explicit warnings against
+using SLERP for merges.
 
 ---
 
@@ -45,16 +45,15 @@ where $\theta = \arccos(v_0 \cdot v_1)$ is the angle between the vectors.
 When $\theta \approx 0$ (vectors nearly parallel):
 $$\text{SLERP}(v_0, v_1, t) \approx (1-t) v_0 + t v_1$$
 
-When $\theta \approx \pi$ (vectors nearly opposite):
-- SLERP is undefined (infinite great circles connect antipodal points)
-- Practical solution: perturb slightly or use fallback
+When $\theta \approx \pi$ (vectors nearly opposite), ModelCypher falls back to
+linear interpolation to avoid instability.
 
 ---
 
 ## Algorithm for Neural Network Weights
 
 ```python
-def slerp(v0, v1, t, epsilon=1e-6):
+def slerp(v0, v1, t, epsilon=None, interpolate_magnitude=True):
     """
     Spherical linear interpolation between weight vectors.
 
@@ -62,21 +61,24 @@ def slerp(v0, v1, t, epsilon=1e-6):
         v0: First weight vector (will be normalized)
         v1: Second weight vector (will be normalized)
         t: Interpolation factor in [0, 1]
-        epsilon: Threshold for near-parallel detection
+        epsilon: Threshold for near-parallel/antipodal detection
 
     Returns:
         Interpolated vector on the great circle arc
     """
-    # Normalize inputs
-    v0_norm = v0 / norm(v0)
-    v1_norm = v1 / norm(v1)
+    if epsilon is None:
+        epsilon = dtype_epsilon(v0)
+
+    # Normalize inputs (geodesic norms on backend)
+    v0_norm = v0 / geodesic_norm(v0)
+    v1_norm = v1 / geodesic_norm(v1)
 
     # Compute angle
     dot = clip(dot_product(v0_norm, v1_norm), -1, 1)
     theta = arccos(dot)
 
-    # Handle near-parallel case
-    if theta < epsilon:
+    # Handle near-parallel or near-antipodal case
+    if theta < epsilon or theta > (pi - epsilon):
         return (1 - t) * v0 + t * v1
 
     # SLERP formula
@@ -88,39 +90,21 @@ def slerp(v0, v1, t, epsilon=1e-6):
     result = s0 * v0_norm + s1 * v1_norm
 
     # Optionally rescale to interpolated magnitude
-    mag = (1 - t) * norm(v0) + t * norm(v1)
-    return result * mag
+    if interpolate_magnitude:
+        mag = (1 - t) * geodesic_norm(v0) + t * geodesic_norm(v1)
+        return result * mag
+    return result
 ```
 
 ---
 
-## SLERP vs Linear Interpolation for LLMs
+## When to Use SLERP (ModelCypher)
 
-### Empirical Evidence (2024-2025)
+- Visualizing smooth transitions between representations
+- Interpolating embeddings for diagnostic sweeps
+- Animation or inspection of latent trajectories
 
-Recent benchmarks show SLERP advantages:
-
-| Method | MMLU Accuracy | Perplexity | Loss Barrier |
-|--------|--------------|------------|--------------|
-| **SLERP** | 82.1% | Lower | Minimal |
-| Linear Avg | 71.4% | Higher | Significant |
-| TIES-Merge | 79.6% | Medium | Low |
-
-From Kao et al. (2023) and medical domain experiments (2025):
-- SLERP outperforms linear interpolation in domain-specific merging
-- Particularly effective when merging models with different specializations
-
-### When SLERP Excels
-
-1. **Merging fine-tuned variants** of the same base model
-2. **Attention weight interpolation** (normalized query/key/value)
-3. **Combining specialized capabilities** (e.g., coding + multilingual)
-
-### When Linear May Suffice
-
-1. Very similar models (small angle θ)
-2. Unnormalized weights with significant magnitude differences
-3. When combined with other techniques (TIES, DARE)
+For merges, use null-space addition instead of interpolation.
 
 ---
 
@@ -137,12 +121,10 @@ Originally developed for 3D rotation interpolation:
 - SLERP on quaternions gives uniform angular velocity rotation
 - This same principle applies to normalized weight vectors
 
-### Loss Landscape Intuition
+### Notes on Scope
 
-The weight space of neural networks has complex topology. SLERP's success suggests:
-- Loss landscapes have spherical structure in important directions
-- Linear paths cut through high-loss "interior" regions
-- Geodesic paths stay in low-loss "surface" regions
+SLERP is a spherical geodesic; it does not imply that the full weight space is
+globally spherical. Use it for local, diagnostic interpolation only.
 
 ---
 
@@ -150,13 +132,10 @@ The weight space of neural networks has complex topology. SLERP's success sugges
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/vector_math.py`](../../../../src/modelcypher/core/domain/geometry/vector_math.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `VectorMath.slerp()` | 163 | Pure Python SLERP (fallback) |
-| `VectorMath.slerp_batch()` | 253 | Pure Python per-layer SLERP |
-| `BackendVectorMath.slerp()` | 572 | **GPU-accelerated SLERP** via Backend protocol |
-| `BackendVectorMath.slerp_batch()` | 657 | GPU-accelerated per-layer SLERP |
-| `get_vector_math()` | 723 | Factory function to get preferred implementation |
+**Key entry points**:
+- `VectorMath.slerp()` / `slerp_batch()` - CPU fallback
+- `BackendVectorMath.slerp()` / `slerp_batch()` / `slerp_matrix()` - GPU path
+- `get_vector_math()` - factory for backend-aware math
 
 **Usage**:
 ```python
@@ -169,11 +148,11 @@ result = vm.slerp(v0, v1, 0.5)
 ```
 
 **Design decisions**:
-1. **Dual implementation**: Pure Python fallback + GPU-accelerated Backend version
-2. **Per-layer SLERP**: `slerp_batch()` applies independently to each layer
-3. **Magnitude handling**: `interpolate_magnitude` parameter (default True)
-4. **Numerical stability**: Uses Backend's `finfo()` for machine-epsilon thresholds
-5. **Edge case handling**: Falls back to linear interpolation for near-parallel (θ≈0) or near-antipodal (θ≈π) vectors
+1. **Explicit warning**: SLERP is for diagnostics/visualization, not merging.
+2. **Geodesic norms**: Uses backend geodesic norms and cosine similarity.
+3. **Numerical stability**: Epsilon derives from backend dtype via `division_epsilon`.
+4. **Edge cases**: Linear fallback for near-parallel (θ≈0) or near-antipodal (θ≈π).
+5. **Magnitude handling**: Optional `interpolate_magnitude` for rescaled outputs.
 
 ---
 
@@ -186,7 +165,7 @@ result = vm.slerp(v0, v1, 0.5)
 | TIES | Task vector | Trims/elects | Yes |
 | DARE | Sparse linear | Yes | No |
 
-SLERP can be combined with TIES or DARE as a final merge step.
+Do not use SLERP as a merge step; use null-space addition for knowledge merging.
 
 ---
 
@@ -229,4 +208,4 @@ SLERP can be combined with TIES or DARE as a final merge step.
 
 ---
 
-*SLERP respects the spherical geometry of normalized weight spaces, providing smoother model merging than linear interpolation.*
+*SLERP respects the spherical geometry of normalized weight spaces, providing smooth interpolation for diagnostics and visualization.*

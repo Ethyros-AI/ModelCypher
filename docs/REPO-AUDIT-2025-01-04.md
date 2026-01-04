@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 110
-- Issues found: 44
-- Issues fixed: 44
+- Audited: 127
+- Issues found: 61
+- Issues fixed: 61
 
 ## Audit Log
 
@@ -1390,3 +1390,224 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Implied Fisher diagnostics exist and mischaracterized DARE in comparison table
   - Fix: Clarified non-implementation and updated method comparison
+
+- `docs/research/math/frechet_mean.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (Fréchet mean algorithm)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Incorrect initialization step, stale line refs, and outdated usage notes
+  - Fix: Aligned algorithm and implementation references with current RiemannianGeometry behavior
+
+- `docs/research/math/geodesic_distance.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (geodesic distance behavior)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated k-selection guidance, line references, and disconnection handling
+  - Fix: Matched adaptive k-min connectivity behavior and updated implementation notes
+
+- `docs/research/math/gromov_wasserstein.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (GW implementation)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described entropic GW/FGW and stale implementation notes
+  - Fix: Rewrote to match Frank-Wolfe + Sinkhorn implementation and projection usage
+
+- `docs/research/math/hsic.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (HSIC/CKA linkage)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Stale line references and imprecise normalization note
+  - Fix: Removed line numbers and clarified normalized range
+
+- `docs/research/math/intrinsic_dimension.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (TwoNN-only implementation)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described MLE path and stale references not implemented
+  - Fix: Clarified TwoNN-only estimator and updated implementation notes
+
+- `docs/research/math/manifold_curvature.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (curvature implementation)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-existent config/Forman methods and speculative merge guidance
+  - Fix: Rewrote to match sectional + Ollivier-Ricci implementation and usage
+
+- `docs/research/math/permutation_alignment.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (permutation alignment scope)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Included non-implemented REPAIR/averaging pipelines and stale API references
+  - Fix: Rewrote to match ModelCypher's anchor-guided MLP alignment
+
+- `docs/research/math/persistent_homology.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (topological fingerprint implementation)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-implemented TDA methods and outputs
+  - Fix: Rewrote to match H0/H1 Vietoris-Rips implementation
+
+- `docs/research/math/prime_spectral_geometry.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (spectral analysis details)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Included KS threshold, backend eig call, and stale line references/runtime claim
+  - Fix: Removed thresholds, switched to `power_iteration_eigh`, updated stability notes, and replaced line table with entry points
+
+- `docs/research/math/procrustes_analysis.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (Procrustes usage and merge-safe examples)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referred to missing file, stale line refs, and blending example
+  - Fix: Updated entry points, clarified cross-dimensional behavior, and replaced blending with null-space addition
+
+- `docs/research/math/relative_representations.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (anchor pipeline + API accuracy)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Claimed RBF/normalization options, stale line refs, and broken related link
+  - Fix: Matched geodesic cosine-only implementation, updated entry points, and corrected anchor reference
+
+- `docs/research/math/slerp.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (SLERP scope + warnings)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Presented SLERP as a merge method and included unverified claims
+  - Fix: Reframed as diagnostic interpolation, aligned with backend implementation, and removed merge guidance
+
+- `docs/research/math/spectral_analysis.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (matched actual spectral metrics)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described MP/WeightWatcher analysis not implemented
+  - Fix: Rewrote to reflect raw spectral ratios, condition numbers, and summaries
+
+- `docs/research/math/tangent_space.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (tangent alignment implementation)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Focused on exp/log maps and merges not present in code
+  - Fix: Rewrote to match tangent basis + principal angle metrics
+
+- `docs/research/math/task_singular_vectors.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (status correction)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-existent implementation and merge guidance
+  - Fix: Marked as not implemented and aligned guidance with repo principles
+
+- `docs/research/math/ties_merge.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (status correction)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described TIES as a merge method despite no implementation
+  - Fix: Marked as external reference and aligned with null-space merge policy
+
+- `docs/research/merge_algorithm_synthesis.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (implementation status)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Claimed missing modules and outdated merge status
+  - Fix: Rewrote with implementation map and aligned to current code

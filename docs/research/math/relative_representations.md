@@ -11,7 +11,7 @@ Neural networks trained with different seeds, architectures, or data produce **i
 2. Enabling **zero-shot stitching** between models
 3. Being **invariant to isometries** (rotations, reflections)
 
-**In ModelCypher**: Implemented in `relative_representation.py` for cross-architecture model comparison and transfer.
+**In ModelCypher**: `relative_representation.py` computes anchor embeddings from atlas probes, builds geodesic-cosine relative representations, aligns them with Procrustes, and transfers back to target space via cached pseudo-inverse of anchor similarities.
 
 ---
 
@@ -36,19 +36,17 @@ Given:
 - Anchor set $A = \{a_1, \ldots, a_k\} \subset \mathcal{Z}$
 - Similarity function $s: \mathcal{Z} \times \mathcal{Z} \to \mathbb{R}$
 
-The **relative representation** of $z \in \mathcal{Z}$ is:
+The **relative representation** used in ModelCypher is:
 
-$$\phi_A(z) = \left( \frac{s(z, a_1)}{\|s(z, A)\|}, \ldots, \frac{s(z, a_k)}{\|s(z, A)\|} \right)$$
+$$\phi_A(z) = \left( s(z, a_1), \ldots, s(z, a_k) \right)$$
 
-where $\|s(z, A)\| = \sqrt{\sum_i s(z, a_i)^2}$ normalizes the representation.
+Normalized variants appear in the literature, but ModelCypher uses the raw
+similarity vector and handles scale during alignment.
 
-### Similarity Functions
+### Similarity Function (ModelCypher)
 
-**Cosine similarity** (most common):
+**Geodesic cosine similarity**:
 $$s_{cos}(x, y) = \frac{x \cdot y}{\|x\| \|y\|}$$
-
-**RBF kernel**:
-$$s_{rbf}(x, y) = \exp\left(-\frac{\|x - y\|^2}{2\sigma^2}\right)$$
 
 ---
 
@@ -94,7 +92,9 @@ Can we compose $D_2 \circ E_1$ without retraining?
 2. For input x:
    a. Encode: z = E₁(x)
    b. Compute relative repr: r = φ_A(z)
-   c. Decode: y = D₂(r)
+   c. (Optional) Align anchor space with paired samples
+   d. Project back to target space with a pseudo-inverse of anchor similarities
+   e. Decode: y = D₂(projected)
 ```
 
 **Key insight**: If both models learned similar relative structure (which they do for semantically similar tasks), stitching works.
@@ -115,6 +115,10 @@ Can we compose $D_2 \circ E_1$ without retraining?
 2. **Random sampling**: Works surprisingly well
 3. **Bootstrapping**: Learn anchors from unlabeled data (Cannistraci et al., 2023)
 
+**ModelCypher default**: Anchors come from the atlas probe registry via
+`compute_anchor_embeddings()`, which averages token embeddings for each probe's
+support texts. Custom probe sets can be injected when needed.
+
 ---
 
 ## Connecting to ModelCypher's Thesis
@@ -131,16 +135,18 @@ Relative representations align with our geometric framework:
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/relative_representation.py`](../../../../src/modelcypher/core/domain/geometry/relative_representation.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `RelativeRepresentation` | 54 | Class encapsulating relative representation computation |
-| `compute_relative_representation()` | 134 | Standalone function for computing relative representations |
-| `align_relative_representations()` | 170 | Align representations across models |
+**Key entry points**:
+- `compute_anchor_embeddings()` - build anchor embeddings from atlas probes
+- `compute_relative_representation()` - cosine similarities to anchors
+- `align_relative_representations()` - Procrustes in anchor space
+- `transfer_via_relative_space()` - pseudo-inverse projection to target space
+- `cross_dimension_transfer()` - full transfer pipeline
 
 **Design decisions**:
-1. **Multiple similarity functions**: Cosine (default) and RBF
-2. **Normalization option**: For downstream alignment
-3. **Geodesic-aware**: Can use geodesic distances for anchor similarities
+1. **Geodesic cosine only**: No RBF path in core implementation.
+2. **No per-sample normalization**: Raw similarity vectors are aligned downstream.
+3. **Caching**: Gram and SVD results are cached for repeated projections.
+4. **Proper rotations**: Alignment enforces $\det(R)=1$ and reports normalized geodesic error.
 
 ---
 
@@ -150,33 +156,33 @@ Relative representations align with our geometric framework:
 
 Compare CNN and Transformer representations:
 ```python
-anchors = get_shared_anchors()
-rel_cnn = relative_repr(cnn_features, anchors)
-rel_transformer = relative_repr(transformer_features, anchors)
-similarity = cosine_sim(rel_cnn, rel_transformer)
+anchors, _ = compute_anchor_embeddings(embedding_matrix, tokenizer)
+rel_cnn = compute_relative_representation(cnn_features, anchors)
+rel_transformer = compute_relative_representation(transformer_features, anchors)
+R, error = align_relative_representations(rel_cnn, rel_transformer)
 ```
 
 ### 2. Model Stitching
 
 Compose components from different training runs:
 ```python
-encoder = load_encoder(run_1)
-decoder = load_decoder(run_2)
-anchors = load_shared_anchors()
-
-def stitched_model(x):
-    z = encoder(x)
-    r = relative_repr(z, anchors)
-    return decoder(r)
+source_anchors, _ = compute_anchor_embeddings(source_embedding, source_tokenizer)
+target_anchors, _ = compute_anchor_embeddings(target_embedding, target_tokenizer)
+transferred = transfer_via_relative_space(source_hidden, source_anchors, target_anchors)
 ```
 
 ### 3. Cross-Lingual Transfer
 
 Transfer between languages via semantic anchors:
 ```python
-en_anchors = get_english_prototypes()
-de_anchors = get_german_prototypes()
-aligned = relative_repr(en_embeddings, en_anchors)
+result = cross_dimension_transfer(
+    source_hidden,
+    source_embedding,
+    target_embedding,
+    source_tokenizer,
+    target_tokenizer,
+)
+aligned = result.relative_representation
 ```
 
 ---
@@ -221,7 +227,7 @@ aligned = relative_repr(en_embeddings, en_anchors)
 
 - [centered_kernel_alignment.md](centered_kernel_alignment.md) - CKA relates to relative repr via Gram matrices
 - [procrustes_analysis.md](procrustes_analysis.md) - Alternative alignment approach
-- [anchor_invariance_analyzer.py](../anchor_invariance.md) - Finding stable anchors
+- [`src/modelcypher/core/domain/geometry/anchor_invariance_analyzer.py`](../../../../src/modelcypher/core/domain/geometry/anchor_invariance_analyzer.py) - Finding stable anchors
 
 ---
 

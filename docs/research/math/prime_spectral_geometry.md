@@ -158,8 +158,7 @@ Measures the "work" to transform one distribution into another.
 ### Kolmogorov-Smirnov Statistic
 
 $$D = \sup_x |F_1(x) - F_2(x)|$$
-
-Maximum pointwise difference between CDFs. KS > 0.1 suggests meaningfully different distributions.
+Maximum pointwise difference between CDFs.
 
 ### Permutation Test
 
@@ -205,17 +204,19 @@ All computations use the `Backend` protocol for GPU acceleration:
 ```python
 # CORRECT - Backend protocol
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import power_iteration_eigh
 backend = get_default_backend()
 
 gram = backend.matmul(X, backend.transpose(X))
-eigenvalues, _ = backend.eigh(gram)
+n = int(gram.shape[0])
+eigenvalues, _ = power_iteration_eigh(backend, gram, k=n)
 ```
 
 ### Numerical Stability
 
-1. **Eigenvalue filtering**: Ignore eigenvalues < 1e-10 for ratio computations
-2. **Log safety**: Use `log(x + eps)` for entropy
-3. **Gram normalization**: Multiply by 1.0 to ensure float dtype
+1. **Eigenvalue filtering**: Thresholds derived from machine epsilon
+2. **Log safety**: Use dtype-derived epsilon for entropy computations
+3. **Precision**: Eigenvalues computed via `power_iteration_eigh` on the backend
 
 ### Complexity
 
@@ -226,7 +227,7 @@ eigenvalues, _ = backend.eigh(gram)
 | Eigendecomposition | O(n³) |
 | Full analysis | O(n³) bottleneck |
 
-For n = 10,000 primes with d = 20: < 1 minute on GPU.
+Runtime is dominated by eigendecomposition ($O(n^3)$) and is data-dependent.
 
 ---
 
@@ -234,16 +235,12 @@ For n = 10,000 primes with d = 20: < 1 minute on GPU.
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/prime_geometry.py`](../../../../src/modelcypher/core/domain/geometry/prime_geometry.py)
 
-| Function | Line | Description |
-|----------|------|-------------|
-| `generate_primes()` | 260 | Sieve of Eratosthenes |
-| `time_delay_embedding()` | 313 | Takens embedding |
-| `compute_gram_matrix()` | 506 | Gram matrix K = XX^T |
-| `analyze_eigenvalues()` | 526 | Spectral metrics |
-| `compare_distributions()` | 598 | KS, Wasserstein comparison |
-| `run_hypothesis_test()` | 1196 | Statistical testing |
-| `run_comprehensive_analysis()` | 1263 | Full experiment |
-| `run_scale_sweep()` | 1398 | Multi-scale analysis |
+**Key entry points**:
+- `generate_primes()` / `generate_prime_gaps()`
+- `time_delay_embedding()` (plus residue/digit/position embeddings)
+- `compute_gram_matrix()` / `analyze_eigenvalues()`
+- `compare_distributions()` / `run_hypothesis_test()`
+- `run_comprehensive_analysis()` / `run_scale_sweep()`
 
 ---
 

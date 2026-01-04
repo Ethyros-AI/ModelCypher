@@ -1,197 +1,69 @@
-# Tangent Space and Riemannian Operations
+# Tangent Space Alignment
 
-> Local linearization for computation on curved manifolds.
+> Local tangent-space agreement for geometric comparison.
 
 ---
 
 ## Why This Matters for Model Merging
 
-Curved manifolds don't allow direct arithmetic. The tangent space provides:
-1. **Local Euclidean approximation**: Do linear operations in tangent space
-2. **Geodesic computation**: Exponential map traces geodesics
-3. **Transport between points**: Move vectors along the manifold
+Global rotations can hide local mismatches. Tangent space alignment measures
+local geometric agreement around shared anchors, providing a scale-free signal
+before null-space addition.
 
-**In ModelCypher**: Implemented in `tangent_space_alignment.py` and `riemannian_utils.py`.
-
----
-
-## The Core Insight
-
-At each point $p$ on a manifold $M$, there's a **tangent space** $T_pM$—the first-order local linear approximation. We can:
-1. **Lift** from manifold to tangent space (logarithm map)
-2. **Compute** in the linear tangent space
-3. **Project** back to the manifold (exponential map)
+**In ModelCypher**: Implemented in `tangent_space_alignment.py` and driven by
+geodesic neighbor graphs.
 
 ---
 
-## Formal Definitions
+## What ModelCypher Computes
 
-### Tangent Space
+For each anchor point shared between source and target representations:
 
-The **tangent space** $T_pM$ at point $p \in M$ is the vector space of all tangent vectors to curves through $p$.
+1. **Neighbors**: Build a k-NN graph using geodesic distances.
+   - `k = sqrt(n_anchors)` clamped to `[2, n_anchors - 1]`.
+2. **Tangent basis**: Compute local covariance from neighbor deltas and extract
+   the top eigenvectors (tangent directions).
+3. **Principal angles**: Compute principal cosines from `B_s^T B_t` and convert
+   to angles.
+4. **Aggregate** across anchors into per-layer metrics.
 
-**Intuition**: For a 2D surface in 3D, the tangent space at $p$ is the tangent plane.
-
-### Exponential Map
-
-The **exponential map** $\text{Exp}_p: T_pM \to M$ maps a tangent vector to the manifold:
-
-$$\text{Exp}_p(v) = \gamma(1)$$
-
-where $\gamma$ is the geodesic starting at $p$ with initial velocity $v$.
-
-**Properties**:
-- $\text{Exp}_p(0) = p$
-- $\text{Exp}_p(tv) = \gamma(t)$ for the geodesic
-
-### Logarithm Map
-
-The **logarithm map** $\text{Log}_p: M \to T_pM$ is the inverse of $\text{Exp}_p$:
-
-$$\text{Log}_p(q) = v \text{ such that } \text{Exp}_p(v) = q$$
-
-**Properties**:
-- $\text{Log}_p(p) = 0$
-- $\|\text{Log}_p(q)\| = d(p, q)$ (geodesic distance)
-
-### Parallel Transport
-
-**Parallel transport** $\Gamma_{p \to q}: T_pM \to T_qM$ moves vectors along geodesics while preserving:
-- Length: $\|v\| = \|\Gamma_{p \to q}(v)\|$
-- Angle: Inner products preserved
+Per-layer outputs include:
+- Mean/min/max cosine of principal angles
+- Mean/median angle (radians)
+- Coverage (anchors with valid bases / total)
+- Neighbor count and tangent rank
 
 ---
 
-## Riemannian Operations in Practice
-
-### Fréchet Mean via Tangent Space
+## Algorithm (ModelCypher)
 
 ```python
-def frechet_mean_tangent(points: list[Array], base: Array, n_iter: int = 10):
-    """
-    Compute Fréchet mean using tangent space iterations.
+def compute_layer_metrics(source_points, target_points):
+    n = min(len(source_points), len(target_points))
+    neighbor_count = clamp(sqrt(n), 2, n - 1)
+    tangent_rank = clamp(neighbor_count // 2, 1, neighbor_count)
+    eps = division_epsilon(source_points)
 
-    1. Lift all points to tangent space at current estimate
-    2. Compute Euclidean mean in tangent space
-    3. Project back to manifold
-    4. Repeat until convergence
-    """
-    mean = base
+    source_neighbors = knn_geodesic(source_points, neighbor_count)
+    target_neighbors = knn_geodesic(target_points, neighbor_count)
 
-    for _ in range(n_iter):
-        # Lift to tangent space
-        tangent_vectors = [log_map(mean, p) for p in points]
+    cosines = []
+    angles = []
+    for i in range(n):
+        basis_s = tangent_basis(source_points, source_neighbors[i], tangent_rank, eps)
+        basis_t = tangent_basis(target_points, target_neighbors[i], tangent_rank, eps)
+        if basis_s is None or basis_t is None:
+            continue
+        principal = principal_cosines(basis_s, basis_t, eps)
+        cosines.extend(principal)
+        angles.extend(arccos(clamp_01(c)) for c in principal)
 
-        # Euclidean mean in tangent space
-        tangent_mean = sum(tangent_vectors) / len(tangent_vectors)
-
-        # Project back
-        mean = exp_map(mean, tangent_mean)
-
-    return mean
+    return metrics(...)
 ```
 
-### Geodesic Interpolation
-
-```python
-def geodesic_interpolation(p: Array, q: Array, t: float):
-    """
-    Interpolate along geodesic from p to q.
-
-    Equivalent to SLERP for spherical manifolds.
-    """
-    # Direction in tangent space
-    v = log_map(p, q)
-
-    # Walk fraction t along geodesic
-    return exp_map(p, t * v)
-```
-
----
-
-## Specific Manifolds
-
-### Sphere $S^{n-1}$
-
-For unit vectors on the sphere:
-
-**Exponential map**:
-$$\text{Exp}_p(v) = \cos(\|v\|) p + \sin(\|v\|) \frac{v}{\|v\|}$$
-
-**Logarithm map**:
-$$\text{Log}_p(q) = \frac{\theta}{\sin\theta}(q - \cos\theta \cdot p)$$
-
-where $\theta = \arccos(p \cdot q)$.
-
-### Symmetric Positive Definite (SPD) Matrices
-
-For the SPD manifold (covariance matrices):
-
-**Exponential map** (Affine-Invariant metric):
-$$\text{Exp}_P(V) = P^{1/2} \exp(P^{-1/2} V P^{-1/2}) P^{1/2}$$
-
-**Logarithm map**:
-$$\text{Log}_P(Q) = P^{1/2} \log(P^{-1/2} Q P^{-1/2}) P^{1/2}$$
-
-### Grassmann Manifold
-
-For subspaces (relevant for neural network layers):
-
-The Grassmannian $\text{Gr}(k, n)$ is the space of $k$-dimensional subspaces of $\mathbb{R}^n$.
-
----
-
-## Applications in Neural Networks
-
-### Representation Geometry
-
-Neural representations lie on manifolds, not in flat Euclidean space:
-- Normalize layers → spherical manifold
-- Covariance structures → SPD manifold
-- Subspace representations → Grassmannian
-
-### Tangent Classifier (2024-2025)
-
-Recent work on **tangent classifiers** (Chen et al., 2024):
-- Map features to tangent space via logarithm
-- Apply Euclidean classifier in tangent space
-- Respects underlying geometry
-
-### Wrapped Gaussian Processes (2025)
-
-For data on Riemannian manifolds:
-- Define GP in tangent space
-- "Wrap" onto manifold via exponential map
-- Enables Bayesian inference on curved spaces
-
----
-
-## For Model Merging
-
-### Tangent Space Averaging
-
-Instead of Euclidean averaging:
-
-```python
-def tangent_space_merge(weights: list[Array], base: Array):
-    """
-    Merge weights via tangent space averaging.
-
-    More appropriate than Euclidean when weights lie on manifold.
-    """
-    # Lift to tangent space at base
-    tangent_vectors = [log_map(base, w) for w in weights]
-
-    # Average in tangent space
-    mean_tangent = sum(tangent_vectors) / len(tangent_vectors)
-
-    # Project back
-    return exp_map(base, mean_tangent)
-```
-
-### Connection to SLERP
-
-For spherical manifolds, geodesic interpolation via exp/log maps is equivalent to SLERP. The tangent space framework generalizes this to arbitrary manifolds.
+Notes:
+- Batch mode uses `eigh` on covariance for speed; fallback uses `geodesic_svd`.
+- All parameters are derived from data (no configuration classes).
 
 ---
 
@@ -199,63 +71,20 @@ For spherical manifolds, geodesic interpolation via exp/log maps is equivalent t
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/tangent_space_alignment.py`](../../../../src/modelcypher/core/domain/geometry/tangent_space_alignment.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `TangentSpaceAlignment` | 124 | Main class with exp/log maps and parallel transport |
+**Key entry points**:
+- `TangentSpaceAlignment.compute_layer_metrics()` - per-layer tangent metrics
+- `compute_alignment_for_layers()` - batch report across layer mappings
 
-**Also in**:
-- [`riemannian_utils.py`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py) - Fréchet mean uses tangent space iterations internally
-
----
-
-## Citations
-
-### Foundational
-
-1. **Lee, J.M.** (2018). *Introduction to Riemannian Manifolds*. 2nd ed. Springer. [DOI:10.1007/978-3-319-91755-9](https://doi.org/10.1007/978-3-319-91755-9)
-   - *Standard graduate reference*
-
-2. **do Carmo, M.P.** (1992). *Riemannian Geometry*. Birkhäuser. [DOI:10.1007/978-1-4757-2201-7](https://doi.org/10.1007/978-1-4757-2201-7)
-   - *Classic treatment*
-
-### Computational
-
-3. **Absil, P.-A., Mahony, R., & Sepulchre, R.** (2008). *Optimization Algorithms on Matrix Manifolds*. Princeton University Press. [DOI:10.1515/9781400830244](https://doi.org/10.1515/9781400830244) · [PDF](https://press.princeton.edu/absil)
-   - *Algorithms for Riemannian optimization*
-
-4. **Pennec, X., Fillard, P., & Ayache, N.** (2006). "A Riemannian Framework for Tensor Computing." *IJCV*, 66(1), 41-66. [DOI:10.1007/s11263-005-3222-z](https://doi.org/10.1007/s11263-005-3222-z)
-   - *SPD manifold operations*
-
-### Neural Network Applications
-
-5. **Bronstein, M.M., et al.** (2021). "Geometric Deep Learning: Grids, Groups, Graphs, Geodesics, and Gauges." [arXiv:2104.13478](https://arxiv.org/abs/2104.13478)
-   - *Comprehensive geometric DL survey*
-
-6. **Nickel, M., & Kiela, D.** (2018). "Learning Continuous Hierarchies in the Lorentz Model of Hyperbolic Geometry." *ICML 2018*. [arXiv:1806.03417](https://arxiv.org/abs/1806.03417)
-   - *Hyperbolic manifold learning*
-
-### 2024-2025 Advances
-
-7. **Chen, X., et al.** (2024). "Matrix Functions and Tangent Classifiers." [arXiv:2407.10484](https://arxiv.org/abs/2407.10484)
-   - *Tangent classifiers for SPD data*
-
-8. **Rozo, L., et al.** (2025). "Riemann²: Learning Riemannian Submanifolds from Riemannian Data." [arXiv:2503.05540](https://arxiv.org/abs/2503.05540)
-   - *Wrapped GP models*
-
-9. **ICLR 2025**: "Riemannian Transformation Layers for Generative Models." [OpenReview](https://openreview.net/forum?id=iclr2025)
-   - *Exp/log maps for generative modeling*
-
-10. **arXiv 2501.12678** (2025). "Manifold learning and optimization using tangent space proxies." [arXiv:2501.12678](https://arxiv.org/abs/2501.12678)
-    - *Modern tangent space optimization*
+**Design decisions**:
+1. **Geodesic neighbors**: k-NN graph built from geodesic distances.
+2. **Data-derived parameters**: neighbor count, rank, and epsilon all derived.
+3. **Raw metrics only**: No thresholds or qualitative labels.
+4. **Coverage tracking**: Reports anchor coverage to detect sparse validity.
 
 ---
 
 ## Related Concepts
 
-- [frechet_mean.md](frechet_mean.md) - Computed via tangent space iterations
-- [geodesic_distance.md](geodesic_distance.md) - Computed from log map norms
-- [slerp.md](slerp.md) - Geodesic interpolation on spheres
-
----
-
-*The tangent space is the bridge between curved manifolds and linear algebra—enabling Riemannian computation via local Euclidean approximations.*
+- [geodesic_distance.md](geodesic_distance.md) - k-NN geodesic graph distances
+- [frechet_mean.md](frechet_mean.md) - Geodesic averaging (separate module)
+- [procrustes_analysis.md](procrustes_analysis.md) - Global alignment baseline

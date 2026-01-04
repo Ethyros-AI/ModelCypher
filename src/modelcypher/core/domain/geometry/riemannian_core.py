@@ -335,10 +335,24 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             weights_row = backend.reshape(weights_arr, (1, n))
             weighted = geo_dist * weights_row
             sum_per_point = backend.sum(weighted, axis=1)
-            medoid_idx_arr = backend.argmin(sum_per_point)
-            backend.eval(sum_per_point, medoid_idx_arr)
-            medoid_idx = int(backend.to_scalar(medoid_idx_arr))
-            mu = points[medoid_idx]
+
+            # If multiple medoids tie, initialize at their mean to preserve symmetry.
+            min_sum_arr = backend.min(sum_per_point)
+            scale = backend.maximum(backend.abs(min_sum_arr), backend.array(1.0))
+            tie_eps = machine_epsilon(backend, sum_per_point) * scale
+            tie_mask = sum_per_point <= (min_sum_arr + tie_eps)
+            tie_weights = backend.astype(tie_mask, points.dtype)
+            tie_count_arr = backend.sum(tie_weights)
+            backend.eval(sum_per_point, min_sum_arr, tie_count_arr)
+            tie_count = float(backend.to_scalar(tie_count_arr))
+            if tie_count > 1.0:
+                weights_col = backend.reshape(tie_weights, (n, 1))
+                mu = backend.sum(points * weights_col, axis=0) / tie_count_arr
+            else:
+                medoid_idx_arr = backend.argmin(sum_per_point)
+                backend.eval(medoid_idx_arr)
+                medoid_idx = int(backend.to_scalar(medoid_idx_arr))
+                mu = points[medoid_idx]
 
             # Gradient descent for Fréchet mean
             converged = False
@@ -363,12 +377,11 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                     # On the discrete manifold, log maps are defined by geodesic scaling.
                     new_mu = self._frechet_mean_step(points, mu, geo_from_mu, weights_arr)
 
-                    # Convergence in geodesic distance by attaching new_mu to the graph.
-                    diffs = points - backend.reshape(new_mu, (1, -1))
-                    chord_dist = backend.sqrt(backend.sum(diffs * diffs, axis=1))
-                    geo_step = backend.min(geo_from_mu + chord_dist)
-                    backend.eval(geo_step)
-                    step_val = float(backend.to_scalar(geo_step))
+                    # Convergence in tangent space: step size of the update.
+                    step_vec = new_mu - mu
+                    step_norm_arr = backend.sqrt(backend.sum(step_vec * step_vec))
+                    backend.eval(step_norm_arr)
+                    step_val = float(backend.to_scalar(step_norm_arr))
 
                     if step_val < tol:
                         converged = True
@@ -676,7 +689,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         base = max(max_dist, eps)
         inf_val = min(base / eps, backend.finfo(chord_dist.dtype).max)
         eye = backend.eye(n)
-        dist_for_sort = chord_dist + eye * inf_val
+        dist_no_self = chord_dist + eye * inf_val
+        dist_for_sort = dist_no_self
 
         # Deterministic tie-breaker by column index at machine-epsilon scale.
         tie_eps = machine_epsilon(backend, chord_dist)
@@ -687,6 +701,20 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         kth = max(0, min(k_neighbors - 1, n - 1))
         partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
+
+        # Include all ties at the k-th distance to preserve symmetry.
+        kth_idx = partitioned_idx[:, kth : kth + 1]
+        kth_vals = backend.take_along_axis(dist_no_self, kth_idx, axis=1)
+        tie_mask = dist_no_self <= (kth_vals + tie_eps)
+        tie_count = backend.sum(backend.astype(tie_mask, "int32"), axis=1)
+        max_ties_arr = backend.max(tie_count)
+        backend.eval(max_ties_arr)
+        max_ties = int(backend.to_scalar(max_ties_arr))
+        if max_ties > k_neighbors:
+            k_neighbors = max(1, min(max_ties, n - 1))
+            kth = max(0, min(k_neighbors - 1, n - 1))
+            partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
+
         knn_idx = partitioned_idx[:, :k_neighbors]
         backend.eval(knn_idx)
         return knn_idx, inf_val
@@ -835,18 +863,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         eye = backend.eye(n)
 
         if knn_idx is None:
-            dist_for_sort = chord_dist + eye * inf_val
-
-            # Deterministic tie-breaker by column index at machine-epsilon scale.
-            tie_eps = machine_epsilon(backend, chord_dist)
-            col_indices = backend.arange(n)
-            col_indices_row = backend.reshape(col_indices, (1, n))
-            tie_breaker = backend.astype(col_indices_row, chord_dist.dtype) * tie_eps
-            dist_for_sort = dist_for_sort + tie_breaker
-
-            kth = max(0, min(k_neighbors - 1, n - 1))
-            partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
-            knn_idx = partitioned_idx[:, :k_neighbors]
+            knn_idx, _ = self._knn_indices_from_chord(chord_dist, k_neighbors)
+        k_neighbors = int(knn_idx.shape[1])
 
         adj = backend.full((n, n), inf_val)
         adj = adj * (1.0 - eye)
@@ -1225,15 +1243,48 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             k_neighbors = geo_result.k_neighbors
         k_neighbors = max(1, min(int(k_neighbors), n))
 
-        # Chord distances from query to all points
+        # Chord distances from query to all points (squared for stable top-k)
         diff = points - backend.reshape(query, (1, -1))
-        chord_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
-        backend.eval(chord_dist)
+        dist_sq = backend.sum(diff * diff, axis=1)
+        backend.eval(dist_sq)
 
-        # For query attachment, always use all points to ensure direct paths exist.
-        weights_col = backend.reshape(chord_dist, (n, 1))
-        candidates = geo_result.distances + weights_col
-        geo_from_query = backend.min(candidates, axis=0)
+        # Attach query to its k nearest neighbors in the manifold graph.
+        # This preserves the discrete geodesic structure and avoids O(n^2).
+        if k_neighbors >= n:
+            chord_dist = backend.sqrt(backend.maximum(dist_sq, backend.zeros_like(dist_sq)))
+            backend.eval(chord_dist)
+            weights_col = backend.reshape(chord_dist, (n, 1))
+            candidates = geo_result.distances + weights_col
+            geo_from_query = backend.min(candidates, axis=0)
+        else:
+            tie_eps = machine_epsilon(backend, dist_sq)
+            col_indices = backend.arange(n)
+            dist_for_sort = dist_sq + backend.astype(col_indices, dist_sq.dtype) * tie_eps
+            kth = max(0, min(k_neighbors - 1, n - 1))
+            partitioned_idx = backend.argpartition(dist_for_sort, kth)
+            neighbor_idx = partitioned_idx[:k_neighbors]
+
+            # Include all ties at the k-th distance to preserve symmetry.
+            kth_idx = partitioned_idx[kth]
+            kth_dist_sq = backend.take(dist_sq, kth_idx, axis=0)
+            tie_mask = dist_sq <= (kth_dist_sq + tie_eps)
+            tie_count_arr = backend.sum(backend.astype(tie_mask, "int32"))
+            backend.eval(tie_count_arr)
+            tie_count = int(backend.to_scalar(tie_count_arr))
+            if tie_count > k_neighbors:
+                k_neighbors = tie_count
+                kth = max(0, min(k_neighbors - 1, n - 1))
+                partitioned_idx = backend.argpartition(dist_for_sort, kth)
+                neighbor_idx = partitioned_idx[:k_neighbors]
+
+            neighbor_dist_sq = backend.take(dist_sq, neighbor_idx, axis=0)
+            neighbor_dist_sq = backend.maximum(neighbor_dist_sq, backend.zeros_like(neighbor_dist_sq))
+            neighbor_dists = backend.sqrt(neighbor_dist_sq)
+
+            neighbor_geo = backend.take(geo_result.distances, neighbor_idx, axis=0)
+            weights_col = backend.reshape(neighbor_dists, (k_neighbors, 1))
+            candidates = neighbor_geo + weights_col
+            geo_from_query = backend.min(candidates, axis=0)
 
         # Check if all points are reachable (no inf or nan values)
         backend.eval(geo_from_query)

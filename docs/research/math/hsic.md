@@ -79,7 +79,7 @@ $$\text{CKA}(X, Y) = \frac{\text{HSIC}(X, Y)}{\sqrt{\text{HSIC}(X, X) \cdot \tex
 ### Interpretation
 
 - HSIC: Unnormalized dependence measure
-- CKA: Normalized to [0, 1] (or [-1, 1] for some kernels)
+- CKA: Normalized to [0, 1] for positive semi-definite kernels
 
 ### Linear Kernel Special Case
 
@@ -217,13 +217,12 @@ HSIC is implemented as part of the CKA module (CKA = normalized HSIC).
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../../src/modelcypher/core/domain/geometry/cka.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `CKAResult` | 68 | Result dataclass (includes HSIC internally) |
-| `compute_cka()` | 270 | CKA via normalized HSIC |
-| `compute_cka_from_grams()` | 548 | Direct Gram matrix version |
+**Key entry points**:
+- `CKAResult` (stores HSIC values)
+- `compute_cka()` (normalized HSIC)
+- `compute_cka_from_grams()` (Gram-matrix entry)
 
-The HSIC computation is embedded within the CKA functions (centering, trace product, normalization).
+HSIC is computed internally via the biased/unbiased estimators; there is no standalone HSIC module.
 
 ---
 

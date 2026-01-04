@@ -81,12 +81,8 @@ For $\theta = \pi/2$: Euclidean underestimates by 11%.
 
 ### Neural Network Manifolds
 
-Empirical observations:
-- Early layers: Often positive curvature
-- Middle layers: Mixed curvature
-- Late layers: Complex curvature patterns
-
-Euclidean distance can be systematically wrong by 10-50% in curved regions.
+Curvature varies by layer and model; geodesic distance avoids systematic bias
+from chord-length approximations in curved regions.
 
 ---
 
@@ -105,26 +101,21 @@ $$\delta(x, y) = \frac{d_{geo}(x, y)}{d_{euc}(x, y)} - 1$$
 ## Algorithm: Geodesic Distance Matrix
 
 ```python
-def geodesic_distances(points, k_neighbors):
+def geodesic_distances(points, k_neighbors=None):
     """
     Compute all-pairs geodesic distances via k-NN graph.
 
-    1. Compute Euclidean distance matrix
-    2. Build k-NN graph (keep k nearest neighbors per point)
-    3. Symmetrize: edge exists if either direction qualifies
-    4. Run Floyd-Warshall or Dijkstra for shortest paths
-    5. Handle disconnected components (distance = inf)
+    1. Compute chord (Euclidean) distance matrix
+    2. If k_neighbors is None, find the minimum k that connects the graph
+    3. Build symmetric k-NN adjacency with inf sentinel for non-edges
+    4. Run shortest paths (Floyd-Warshall or sparse Dijkstra)
+    5. Return distances and connectivity flag (inf for disconnected pairs)
     """
-    # Euclidean distances
-    euc_dist = pairwise_euclidean(points)
-
-    # k-NN graph adjacency
-    adj = build_knn_graph(euc_dist, k_neighbors)
-
-    # Shortest paths
-    geo_dist = floyd_warshall(adj)
-
-    return geo_dist
+    chord = pairwise_euclidean(points)
+    k = k_neighbors or minimum_connected_k(chord)
+    adj = build_knn_adjacency(chord, k)
+    geo = all_pairs_shortest_paths(adj)
+    return geo
 ```
 
 ---
@@ -133,17 +124,11 @@ def geodesic_distances(points, k_neighbors):
 
 If the k-NN graph is disconnected:
 - Some pairs have infinite geodesic distance
-- This indicates the manifold has multiple components
+- `GeodesicDistanceResult.connected` is False
 
-**ModelCypher approach**: Raise explicit error rather than fall back to Euclidean.
-
-```python
-if np.any(np.isinf(geo_dist)):
-    raise ValueError(
-        "k-NN graph is disconnected. Increase k_neighbors or "
-        "check for outliers in the data."
-    )
-```
+**ModelCypher approach**: Attempt to find the minimum k that yields connectivity.
+If the graph remains disconnected, downstream callers (e.g., Fréchet mean) retry
+with larger k or raise when geodesic distances are required.
 
 ---
 
@@ -151,18 +136,19 @@ if np.any(np.isinf(geo_dist)):
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/riemannian_utils.py`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `GeodesicDistanceResult` | 131 | Result dataclass with distances, graph, defect |
-| `RiemannianGeometry.geodesic_distances()` | 293 | Instance method for k-NN graph geodesics |
-| `geodesic_distance_matrix()` | 1172 | Standalone function for pairwise distances |
+**Key entry points**:
+- `GeodesicDistanceResult`
+- `RiemannianGeometry.geodesic_distances()`
+- `geodesic_distance_matrix()` (convenience wrapper)
 
-**Also in**: [`riemannian_density.py:261`](../../../../src/modelcypher/core/domain/geometry/riemannian_density.py) - point-to-point geodesic distance
+**Also used in**:
+- `src/modelcypher/core/domain/geometry/riemannian_density.py`
+- `src/modelcypher/core/domain/geometry/riemannian_core.py`
 
 **Design decisions**:
-1. **No metric substitution**: Disconnection returns infinity or raises an error
-2. **Adaptive k**: Default based on sample size
-3. **Symmetric graph**: Edge exists if either direction qualifies
+1. **Adaptive k**: Minimum k for connectivity when not specified
+2. **Symmetric graph**: Edge exists if either direction qualifies
+3. **Shortest paths**: Floyd-Warshall or sparse Dijkstra depending on density
 4. **Backend-agnostic**: Works with any Backend implementation
 
 ---
@@ -190,14 +176,9 @@ if np.any(np.isinf(geo_dist)):
 - Geodesic → Euclidean
 - Loses curvature information
 
-### Rule of Thumb
-
-$$k \approx 2d + 1$$
-
-where $d$ is the intrinsic dimension. For neural networks:
-- $k = 10$ is a reasonable default
-- Increase if disconnection occurs
-- Decrease if geodesic ≈ Euclidean everywhere
+When `k_neighbors` is omitted, ModelCypher finds the **minimum** k that
+connects the graph. You can override by passing `k_neighbors` directly
+if you want a fixed neighborhood size.
 
 ---
 
