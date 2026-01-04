@@ -2,7 +2,7 @@
 
 Complete reference for ModelCypher MCP tools. These tools enable AI assistants to work with LLM geometric analysis, training, and model operations.
 
-**Total Tools:** 119
+**Tool Count:** Varies by `MC_MCP_TOOL_SET`; verify against the running server's registry.
 
 ---
 

@@ -306,9 +306,14 @@ def compare_profiles(
         if src_vec and tgt_vec and len(src_vec) == len(tgt_vec):
             src_arr = backend.reshape(backend.array(src_vec), (1, -1))
             tgt_arr = backend.reshape(backend.array(tgt_vec), (1, -1))
-            cos_arr, _ = geodesic_pairwise_metrics(src_arr, tgt_arr, backend)
-            backend.eval(cos_arr)
-            semantic_cosine_similarity = float(backend.to_scalar(cos_arr))
+            # Check for zero-norm vectors (cosine similarity undefined)
+            src_norm = backend.norm(src_arr)
+            tgt_norm = backend.norm(tgt_arr)
+            backend.eval(src_norm, tgt_norm)
+            if float(backend.to_scalar(src_norm)) > eps and float(backend.to_scalar(tgt_norm)) > eps:
+                cos_arr, _ = geodesic_pairwise_metrics(src_arr, tgt_arr, backend)
+                backend.eval(cos_arr)
+                semantic_cosine_similarity = float(backend.to_scalar(cos_arr))
 
     # === ALIGNMENT FLAG ===
     aligned = False

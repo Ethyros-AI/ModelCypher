@@ -89,7 +89,7 @@ def test_manifold_clusterer_simple():
 
     # Expect 2 regions
     assert len(result.regions) == 2
-    assert result.noise_points == []
+    assert result.noise_points == ()
 
     # Check region centroids
     centroids = sorted([r.centroid.mean_entropy for r in result.regions])

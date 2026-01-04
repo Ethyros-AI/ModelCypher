@@ -88,6 +88,8 @@ from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
+_PERM_CACHE: dict[tuple[int, int], tuple[list[tuple[int, ...]], "Array", "Array"]] = {}
+
 
 @dataclass(frozen=True)
 class Result:
@@ -224,7 +226,13 @@ class GromovWassersteinDistance:
             total_iterations += result.iterations
 
             if best_result is None or result.distance < best_result.distance:
+                prev_best = best_result.distance if best_result is not None else None
                 best_result = result
+                if prev_best is not None:
+                    improvement = prev_best - result.distance
+                    eps = float(machine_epsilon(backend, C1))
+                    if improvement <= eps * max(prev_best, 1.0):
+                        break
 
             # Early termination if we found near-zero distance
             # Use dtype-derived epsilon for precision-aware comparison
@@ -283,18 +291,26 @@ class GromovWassersteinDistance:
         """
         import itertools
 
-        # Generate all permutations (n! permutations, tractable for n≤8)
-        perms = list(itertools.permutations(range(n)))
+        cache_key = (id(backend), n)
+        cached = _PERM_CACHE.get(cache_key)
+        if cached is None:
+            # Generate all permutations (n! permutations, tractable for n≤8)
+            perms = list(itertools.permutations(range(n)))
 
-        # Build all permutation matrices on GPU [n_perms, n, n]
-        # P[idx, i, perm[i]] = 1.0
-        P_data = []
-        for perm in perms:
-            P_row = [[0.0] * n for _ in range(n)]
-            for i, j in enumerate(perm):
-                P_row[i][j] = 1.0
-            P_data.append(P_row)
-        P_all = backend.array(P_data)  # [n_perms, n, n]
+            # Build all permutation matrices on GPU [n_perms, n, n]
+            # P[idx, i, perm[i]] = 1.0
+            P_data = []
+            for perm in perms:
+                P_row = [[0.0] * n for _ in range(n)]
+                for i, j in enumerate(perm):
+                    P_row[i][j] = 1.0
+                P_data.append(P_row)
+            P_all = backend.array(P_data)  # [n_perms, n, n]
+            P_T = backend.transpose(P_all, axes=(0, 2, 1))  # [n_perms, n, n]
+            backend.eval(P_all, P_T)
+            _PERM_CACHE[cache_key] = (perms, P_all, P_T)
+        else:
+            perms, P_all, P_T = cached
 
         # Compute C2_permuted[idx] = P[idx] @ C2 @ P[idx].T for all perms
         # Step 1: P @ C2 → [n_perms, n, n]
@@ -306,7 +322,6 @@ class GromovWassersteinDistance:
 
         # Step 2: (P @ C2) @ P.T → [n_perms, n, n]
         # P.T is transpose of each P, which is [n_perms, n, n] with last two dims swapped
-        P_T = backend.transpose(P_all, axes=(0, 2, 1))  # [n_perms, n, n]
         C2_permuted = backend.matmul(PC2, P_T)  # [n_perms, n, n]
 
         # Compute Frobenius norm squared: ||C1 - C2_permuted||^2_F for each perm
@@ -597,7 +612,7 @@ class GromovWassersteinDistance:
         dtype_eps = float(machine_epsilon(backend, T0))
         conv_threshold = dtype_eps**0.5
         rel_threshold = dtype_eps**0.5
-        sink_threshold = dtype_eps
+        sink_threshold = dtype_eps**0.5
 
         T = T0
         prev_loss = float("inf")

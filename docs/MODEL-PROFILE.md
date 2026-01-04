@@ -28,7 +28,7 @@ The profile is organized into sections that can be computed independently:
 | `topology` | Persistent homology, Betti numbers | Expensive |
 | `semantic` | Semantic prime signatures | Requires inference |
 | `density` | Knowledge density, concept regions | Expensive |
-| `entropy` | Shannon/Renyi entropy per layer | Medium |
+| `entropy` | Per-layer Shannon/Renyi entropy (LayerProfile fields) | Medium |
 
 ## Schema Overview
 
@@ -57,16 +57,23 @@ class ModelProfile:
     global_sectional_std: float
     global_ollivier_ricci_mean: float
     global_ollivier_ricci_std: float
+    global_intrinsic_dimension_mean: float
 
     # Optional summaries
     topology_summary: TopologySummary | None
     semantic_signature: SemanticSignature | None
     density_summary: DensitySummary | None
 
+    # Domain-specific metrics (optional)
+    domain_metrics: dict[str, dict[str, float]]
+
     # Metadata
     profile_version: str       # Schema version
     computed_sections: list[str]
     computed_at: str           # ISO timestamp
+    probe_corpus_hash: str
+    backend_used: str
+    extraction_config: dict[str, Any]
 ```
 
 ### LayerProfile
@@ -88,13 +95,18 @@ class LayerProfile:
 
     # Intrinsic dimension
     intrinsic_dimension: float
+    intrinsic_dimension_uncertainty: float
     intrinsic_dimension_method: str
 
     # Optional
     shannon_entropy: float | None
+    renyi_entropy_alpha2: float | None
     betti_0: int | None
     betti_1: int | None
     max_persistence: float | None
+    gradient_norm: float | None
+    condition_number: float | None
+    manifold_regions: list[ManifoldRegion]
 ```
 
 ### ProfileComparison
@@ -175,8 +187,8 @@ standard deviations the differences are from typical within-family variation:
 - `dimension_z_score`: How unusual the intrinsic dimension difference is
 - `sectional_z_score`: How unusual the sectional curvature difference is
 
-A z-score < 1.0 means the difference is within typical family variation.
-A z-score > 2.0 suggests the difference is statistically significant.
+Z-scores are raw measurements relative to the provided baseline; interpret them
+in the context of your own family distributions.
 
 ### Import from existing formats
 
@@ -185,8 +197,10 @@ A z-score > 2.0 suggests the difference is statistically significant.
 mc profile import curvature.json --type curvature -o unified.json
 
 # Import and merge into existing profile
-mc profile import density.json --type density --base unified.json -o updated.json
+mc profile import curvature.json --type curvature --base unified.json -o updated.json
 ```
+
+Currently supported types: `curvature`.
 
 ### Merge partial profiles
 
@@ -195,19 +209,25 @@ mc profile import density.json --type density --base unified.json -o updated.jso
 mc profile merge geometry.json topology.json semantic.json -o complete.json
 ```
 
-## Alignment Scores
+### Generate a profile
 
-Alignment scores are in [0, 1] and computed via exponential decay of differences.
-They are comparative metrics, not pass/fail thresholds. If you need thresholds,
-derive them from baseline distributions for the model family.
+```bash
+# Identity-only profile (fast, no model loading)
+mc profile generate /path/to/model -o profile.json --identity-only
+```
 
-The `recommended_strategy` field records which alignment heuristic was selected:
+### Update an existing profile
 
-| Strategy | Heuristic trigger |
-|----------|-------------------|
-| `procrustes` | Similar dimensions, curvature signs match |
-| `projection_first` | Dimension ratios > 1.5x difference |
-| `curvature_flow` | Curvature sign mismatches or high effort |
+```bash
+# Add identity data from a model directory
+mc profile update profile.json --model /path/to/model -o updated.json
+```
+
+## Alignment Flags
+
+`ProfileComparison.aligned` is a raw boolean flag indicating whether the
+comparison met the internal alignment checks. Use baseline-relative z-scores
+for context instead of hard thresholds.
 
 ## Family Baselines
 

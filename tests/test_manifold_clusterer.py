@@ -81,8 +81,8 @@ class TestClusterEmptyInput:
         result = clusterer.cluster([])
 
         assert isinstance(result, ClusteringResult)
-        assert result.regions == []
-        assert result.noise_points == []
+        assert result.regions == ()
+        assert result.noise_points == ()
         assert result.new_clusters_formed == 0
         assert result.clusters_merged == 0
         assert result.points_assigned_to_existing == 0
@@ -161,17 +161,17 @@ class TestClusteringResultStructure:
         assert hasattr(result, "clusters_merged")
         assert hasattr(result, "points_assigned_to_existing")
 
-    def test_regions_is_list(self):
-        """Regions should be a list."""
+    def test_regions_is_tuple(self):
+        """Regions should be a tuple (frozen dataclass)."""
         clusterer = ManifoldClusterer()
         result = clusterer.cluster([])
-        assert isinstance(result.regions, list)
+        assert isinstance(result.regions, tuple)
 
-    def test_noise_points_is_list(self):
-        """Noise points should be a list."""
+    def test_noise_points_is_tuple(self):
+        """Noise points should be a tuple (frozen dataclass)."""
         clusterer = ManifoldClusterer()
         result = clusterer.cluster([])
-        assert isinstance(result.noise_points, list)
+        assert isinstance(result.noise_points, tuple)
 
 
 class TestIncrementalClustering:

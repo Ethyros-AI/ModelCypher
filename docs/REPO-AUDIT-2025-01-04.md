@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 21
-- Issues found: 11
-- Issues fixed: 11
+- Audited: 27
+- Issues found: 17
+- Issues fixed: 17
 
 ## Audit Log
 
@@ -289,3 +289,81 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Outdated API references and incorrect CLI commands
   - Fix: Updated to match current inference and adapter pool APIs
+
+- `docs/INTEGRATION_ARCHITECTURE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (marked historical)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated integration status narrative
+  - Fix: Added superseded note at top
+
+- `docs/MATH-PRIMER.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (fixed citation path)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Citation file path was incorrect
+  - Fix: Linked to `research/KnowledgeasHighDimensionalGeometryInLLMs.md`
+
+- `docs/MCP-TOOLS-CATALOG.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (removed fixed tool count)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Hard-coded tool count likely stale
+  - Fix: Replaced with note about runtime tool set
+
+- `docs/MCP.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (scope and tool list)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Claimed MCP exposes geometry-only tools
+  - Fix: Updated scope and referenced tool catalog
+
+- `docs/MERGE-ARCHITECTURE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (merge stages and layout)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated stage list and file layout
+  - Fix: Aligned with current merge pipeline and files
+
+- `docs/MODEL-PROFILE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (schema fields and CLI coverage)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Schema and CLI sections out of date
+  - Fix: Aligned fields and commands with current implementation

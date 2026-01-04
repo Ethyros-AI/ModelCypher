@@ -4,7 +4,7 @@ ModelCypher uses “high-dimensional geometry” to turn training artifacts (wei
 
 This is not a full math textbook. It’s a translation layer: the smallest set of ideas you need to explain what the tools measure and why it’s useful.
 
-If you want the academic citations behind the “knowledge as geometry” framing, see `KnowledgeasHighDimensionalGeometryInLLMs.md`.
+If you want the academic citations behind the “knowledge as geometry” framing, see `research/KnowledgeasHighDimensionalGeometryInLLMs.md`.
 
 ## The core idea: everything is a vector
 

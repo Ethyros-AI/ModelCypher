@@ -1,5 +1,7 @@
 # ModelCypher Integration Architecture
 
+> Status: Historical gap analysis. Several items are now integrated; see current code and `docs/REPO-AUDIT-2025-01-04.md`.
+
 ## The Problem
 
 ModelCypher has a comprehensive multi-domain atlas system in `UnifiedAtlasInventory`, but most merge and geometry modules **ignore it entirely** and reinvent their own anchor systems.

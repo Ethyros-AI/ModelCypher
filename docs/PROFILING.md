@@ -13,7 +13,7 @@ Use the shell's `time` command for simple timing:
 time mc geometry crm build --model ./model --output-path ./crm.json
 
 # Time with verbose output
-MC_LOG_LEVEL=debug mc geometry validate ./model
+mc --log-level debug geometry validate
 ```
 
 ### Memory Monitoring
@@ -21,8 +21,11 @@ MC_LOG_LEVEL=debug mc geometry validate ./model
 Monitor memory during operations:
 
 ```bash
-# Watch system status
-mc system status --watch
+# Watch system status (if `watch` is available)
+watch -n 2 mc system status
+
+# Portable loop
+while true; do mc system status; sleep 2; done
 
 # MLX-specific memory info
 python -c "import mlx.core as mx; print(mx.metal.get_active_memory() / 1e9, 'GB')"

@@ -6,26 +6,24 @@ This document describes the consolidated merge subsystem and how the pipeline is
 
 - CLI: `mc merge` -> `MergePipelineService` (`src/modelcypher/core/use_cases/merge/service.py`)
 - API: `UnifiedGeometricMerger.merge()` -> `run_merge()` (`src/modelcypher/core/use_cases/merge/merger.py`)
-- Full geometry analysis: `run_full_geometry_merge()` -> `GeometricMergeOrchestrator` (`src/modelcypher/core/use_cases/merge/orchestrator.py`)
+- Full pipeline (pre-merge + merge + post-merge): `MergePipelineService.run()` (`src/modelcypher/core/use_cases/merge/service.py`)
 
 ## Pipeline Stages
 
 Pipeline order (null-space transplant path):
 
-1. Vocabulary alignment: `src/modelcypher/core/use_cases/merge/stages/vocabulary.py`
-2. Probe (CKA + activations): `src/modelcypher/core/use_cases/merge/stages/probe.py`
-3. Density (graft mask): `src/modelcypher/core/use_cases/merge/stages/density.py`
-4. Permute (Git Re-Basin): `src/modelcypher/core/use_cases/merge/stages/permute.py`
-5. Transplant (null-space constrained): `src/modelcypher/core/use_cases/merge/stages/transplant.py`
-6. Validate: `src/modelcypher/core/use_cases/merge/stages/validate.py`
+1. Probe (CKA + activations): `src/modelcypher/core/use_cases/merge/stages/probe.py`
+2. Density (graft mask): `src/modelcypher/core/use_cases/merge/stages/density.py`
+3. Permute (Git Re-Basin): `src/modelcypher/core/use_cases/merge/stages/permute.py`
+4. Transplant (null-space constrained): `src/modelcypher/core/use_cases/merge/stages/transplant.py`
 
-Full-geometry analysis delegates to the orchestrator for layer-by-layer analysis
-and then executes null-space transplant (no blending).
+Pre-merge analysis and post-merge validation are orchestrated in
+`MergePipelineService` (not part of `run_merge()`).
 
 ## Data Models and Metrics
 
 - Merge config/results: `src/modelcypher/core/use_cases/merge/models.py`
-- Confidence metrics: `src/modelcypher/core/use_cases/merge/confidence.py`
+- Geometric metrics: `src/modelcypher/core/use_cases/merge/metrics.py`
 - Validation service: `src/modelcypher/core/use_cases/merge/validation.py`
 
 ## Directory Layout
@@ -36,17 +34,17 @@ src/modelcypher/core/use_cases/merge/
 ├── merger.py              # UnifiedGeometricMerger + run_merge entry
 ├── pipeline.py            # run_merge implementation
 ├── service.py             # MergePipelineService (CLI orchestration)
-├── orchestrator.py        # GeometricMergeOrchestrator (analysis)
 ├── models.py              # UnifiedMergeConfig, UnifiedMergeResult, geometry models
-├── confidence.py          # geometric_confidence helpers
+├── metrics.py             # geometric metric aggregation
 ├── validation.py          # MergeValidationService
+├── helpers.py             # loading/utilities
+├── infrastructure.py      # adapter wiring helpers
 ├── stages/
-│   ├── vocabulary.py
 │   ├── probe.py
 │   ├── density.py
 │   ├── permute.py
 │   ├── transplant.py
 │   ├── validate.py
-│   └── vocab/              # vocabulary alignment submodules
-└── analysis/               # orchestrator sub-stages
+│   ├── manifest.py
+│   └── __init__.py
 ```

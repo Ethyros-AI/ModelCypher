@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -36,9 +35,6 @@ from modelcypher.core.domain.geometry.manifold_profile import (
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 
@@ -54,8 +50,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ClusteringResult:
-    regions: list[ManifoldRegion]
-    noise_points: list[ManifoldPoint]
+    regions: tuple[ManifoldRegion, ...]
+    noise_points: tuple[ManifoldPoint, ...]
     new_clusters_formed: int
     clusters_merged: int
     points_assigned_to_existing: int
@@ -68,8 +64,8 @@ class ManifoldClusterer:
     def cluster(self, points: list[ManifoldPoint]) -> ClusteringResult:
         if not points:
             return ClusteringResult(
-                regions=[],
-                noise_points=[],
+                regions=(),
+                noise_points=(),
                 new_clusters_formed=0,
                 clusters_merged=0,
                 points_assigned_to_existing=0,
@@ -125,8 +121,8 @@ class ManifoldClusterer:
         logger.info("Full clustering: %s regions, %s noise points", len(regions), len(noise_points))
 
         return ClusteringResult(
-            regions=regions,
-            noise_points=noise_points,
+            regions=tuple(regions),
+            noise_points=tuple(noise_points),
             new_clusters_formed=len(regions),
             clusters_merged=0,
             points_assigned_to_existing=0,
@@ -140,8 +136,8 @@ class ManifoldClusterer:
     ) -> ClusteringResult:
         if not new_points:
             return ClusteringResult(
-                regions=existing_regions,
-                noise_points=existing_noise,
+                regions=tuple(existing_regions),
+                noise_points=tuple(existing_noise),
                 new_clusters_formed=0,
                 clusters_merged=0,
                 points_assigned_to_existing=0,
@@ -210,8 +206,8 @@ class ManifoldClusterer:
         )
 
         return ClusteringResult(
-            regions=final_regions,
-            noise_points=noise_points,
+            regions=tuple(final_regions),
+            noise_points=tuple(noise_points),
             new_clusters_formed=new_clusters_formed,
             clusters_merged=merge_count,
             points_assigned_to_existing=assigned_to_existing,

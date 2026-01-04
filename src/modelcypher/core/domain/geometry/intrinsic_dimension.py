@@ -59,6 +59,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     safe_log_epsilon,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -247,8 +248,6 @@ class IntrinsicDimension:
             [N, N] squared geodesic distance matrix
         """
         import math
-
-        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
         riemannian = RiemannianGeometry(backend=self._backend)
         n = int(points.shape[0])
@@ -510,8 +509,6 @@ class IntrinsicDimension:
         n = int(points.shape[0])
 
         # Compute geodesic distances - k derived from connectivity (Berry & Sauer 2016)
-        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-
         rg = RiemannianGeometry(backend)
         geo_result = rg.geodesic_distances(points, k_neighbors=None)
         geo_dist = geo_result.distances

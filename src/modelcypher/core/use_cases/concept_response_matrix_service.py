@@ -126,6 +126,8 @@ class KnowledgeDeltaMaskSummary:
 class ConceptResponseMatrixService:
     def __init__(self, engine: HiddenStateEngine | None = None) -> None:
         self.engine = engine
+        self._anchor_prompt_cache: list[tuple[str, list[str]]] | None = None
+        self._prompt_state_cache: dict[tuple[str, str | None, str], dict[int, list[float]]] = {}
 
     def build(
         self,
@@ -171,11 +173,15 @@ class ConceptResponseMatrixService:
             layer_sums: dict[int, object] = {}
             layer_counts: dict[int, int] = {}
             for prompt in prompts:
-                states = self.engine.capture_hidden_states(
-                    model=str(resolved_model),
-                    prompt=prompt,
-                    adapter=adapter,
-                )
+                cache_key = (str(resolved_model), adapter, prompt)
+                states = self._prompt_state_cache.get(cache_key)
+                if states is None:
+                    states = self.engine.capture_hidden_states(
+                        model=str(resolved_model),
+                        prompt=prompt,
+                        adapter=adapter,
+                    )
+                    self._prompt_state_cache[cache_key] = states
                 for layer, vector in states.items():
                     arr = backend.array(vector, dtype="float32")
                     arr = backend.reshape(arr, (-1,))
@@ -521,11 +527,14 @@ class ConceptResponseMatrixService:
         return int(layer_count), int(hidden_dim)
 
     def _build_anchor_prompts(self) -> list[tuple[str, list[str]]]:
+        if self._anchor_prompt_cache is not None:
+            return self._anchor_prompt_cache
         entries: list[tuple[str, list[str]]] = []
         entries.extend(self._prime_prompts())
         entries.extend(self._gate_prompts())
         entries.extend(self._sequence_invariant_prompts())
         entries.extend(self._emotion_prompts())
+        self._anchor_prompt_cache = entries
         return entries
 
     def _prime_prompts(self) -> list[tuple[str, list[str]]]:

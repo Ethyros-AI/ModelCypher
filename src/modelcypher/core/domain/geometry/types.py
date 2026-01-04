@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import time
-import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Generic, TypeVar
@@ -95,71 +94,14 @@ class ConceptComparisonResult:
         return len(self.aligned_concepts) / float(total)
 
 
-# --- Refusal / Safety Types ---
-
-
-@dataclass(frozen=True)
-class ContrastivePair:
-    harmful: str
-    harmless: str
-
-
-@dataclass(frozen=True)
-class RefusalDirection:
-    direction: Any  # Vector
-    layer_index: int
-    hidden_size: int
-    strength: float
-    explained_variance: float
-    model_id: str
-    computed_at: float = field(default_factory=time.time)
-
-
-@dataclass(frozen=True)
-class RefusalDistanceMetrics:
-    """Distance metrics relative to refusal direction."""
-
-    distance_to_refusal: float
-    projection_magnitude: float
-    is_approaching: bool
-    layer_index: int
-    token_index: int
-
-
 # --- Manifold Clusterer Types ---
-
-
-@dataclass
-class ManifoldPoint:
-    id: uuid.UUID
-    embedding: Any  # Vector (list[float] or Array)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ManifoldRegion:
-    id: int
-    centroid: Any
-    points: list[ManifoldPoint]
-    density: float
-    volume: float
-
-
-@dataclass
-class ClusteringResult:
-    regions: list[ManifoldRegion]
-    noise_points: list[ManifoldPoint]
-    metrics: dict[str, float]
+# Note: ManifoldPoint, ManifoldRegion defined in manifold_profile.py
+# Note: ClusteringResult defined in manifold_clusterer.py
 
 
 # --- Intrinsic Dimension Types ---
-
-
-@dataclass
-class IntrinsicDimensionResult:
-    estimated_dimension: float
-    method: str
-    details: dict[str, Any]
+# Note: TwoNNEstimate and LocalDimensionMap defined in intrinsic_dimension.py
+# Note: IntrinsicDimensionResult for services in geometry_metrics_service.py
 
 
 # --- Compositional Probes Types ---
