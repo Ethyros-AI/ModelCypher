@@ -724,7 +724,17 @@ def stage_transplant(
         # Get intermediate activations for this layer (MLP internal states)
         # CRITICAL: For cross-architecture merge, source layer index may differ from target.
         # Use layer_mapping to translate target layer_idx → source layer index.
-        source_layer_idx = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
+        # For unmapped layers, use proportional mapping based on layer counts.
+        if layer_mapping and layer_idx in layer_mapping:
+            source_layer_idx = layer_mapping[layer_idx]
+        elif layer_mapping and source_intermediate_activations:
+            # Proportional fallback: target_i * (source_layers / target_layers)
+            n_source = max(source_intermediate_activations.keys()) + 1 if source_intermediate_activations else layer_idx + 1
+            n_target = len(layer_indices)
+            source_layer_idx = int(round(layer_idx * n_source / n_target))
+            source_layer_idx = min(source_layer_idx, n_source - 1)  # Clamp to valid range
+        else:
+            source_layer_idx = layer_idx
         src_inter_list = (
             source_intermediate_activations.get(source_layer_idx)
             if source_intermediate_activations else None
