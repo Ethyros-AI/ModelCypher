@@ -61,7 +61,6 @@ class HfHubAdapter(HubAdapterPort):
             repo_id=repo_id,
             revision=revision,
             local_dir=local_path,
-            local_dir_use_symlinks=False,
         )
         return str(Path(path))
 
