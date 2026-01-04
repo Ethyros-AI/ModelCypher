@@ -255,64 +255,42 @@ class GeodesicNullSpaceFilter:
         # The tangent vectors span the "occupied" directions on the manifold.
         # We project delta onto the orthogonal complement (geodesic null space).
         #
-        # Projection onto column space of T: P_T = T @ (T.T @ T)^{-1} @ T.T
+        # Projection onto column space of T: P_T = T @ pinv(T)
         # Projection onto orthogonal complement: P_null = I - P_T
         #
-        # Instead of computing (T.T @ T)^{-1} which needs pinv (CPU),
-        # we use the Gram matrix approximation with regularization.
+        # Uses native b.pinv() for EXACT pseudo-inverse computation on GPU.
 
-        # Gram matrix: G = T.T @ T (GPU: matmul)
+        # EXACT null space projection using native pinv (GPU)
+        # P_T = T @ pinv(T)  (projection onto column space of T)
+        # P_null = I - P_T   (projection onto null space)
+        # delta_safe = P_null @ delta = delta - T @ pinv(T) @ delta
+        #
+        # CKA=1.0 requires exact projection. No regularization or approximation.
         T = tangent_vectors  # [n_samples, d]
-        G = backend.matmul(backend.transpose(T), T)  # [d, d]
-        backend.eval(G)
+        reg = regularization_epsilon(backend, T)
 
-        # Regularized inverse via Neumann series (GPU-only)
-        # (G + λI)^{-1} ≈ (1/λ) * Σ_{k=0}^{K} (-G/λ)^k  for λ >> ||G||
-        #
-        # For better conditioning, we use:
-        # (G + λI)^{-1} ≈ (1/(λ + trace(G)/d)) * I - (G - (trace(G)/d)*I) / (λ + trace(G)/d)^2
-        #
-        # This is a first-order approximation that works well when G is low-rank.
+        # Use native pinv for exact pseudo-inverse
+        T_pinv = backend.pinv(T)  # [d, n_samples]
+        backend.eval(T_pinv)
 
-        trace_G = backend.trace(G)
-        backend.eval(trace_G)
-        trace_G_val = float(backend.to_scalar(trace_G))
+        # Project delta onto tangent space: T @ pinv(T) @ delta
+        delta_col = backend.reshape(delta_flat, (d, 1))
+        T_pinv_delta = backend.matmul(T_pinv, delta_col)  # [n_samples, 1]
+        backend.eval(T_pinv_delta)
+        delta_tangent = backend.matmul(T, T_pinv_delta)  # [d, 1]
+        delta_tangent = backend.reshape(delta_tangent, (d,))
+        backend.eval(delta_tangent)
 
-        # Regularization from dtype
-        reg = regularization_epsilon(backend, G)
+        # Geodesic null space component: delta - projection onto tangent space
+        delta_safe = delta_flat - delta_tangent
+        backend.eval(delta_safe)
 
-        # Effective regularization: scale with data
-        lambda_reg = max(reg, trace_G_val / d * 0.1) if d > 0 else reg
-
-        # Simple regularized projection: P_T ≈ T @ T.T / (||T||_F^2 + λ)
-        # This is equivalent to the first term of the Neumann series
-        T_norm_sq = trace_G_val + lambda_reg * d
-
-        if T_norm_sq > reg:
-            # Project delta onto tangent space: component along T
-            # delta_T = T.T @ ((T @ T.T + λI)^{-1} @ T) @ delta
-            #         ≈ T.T @ T @ delta / ||T||_F^2
-
-            # Compute T @ delta (how much delta aligns with each tangent vector)
-            T_delta = backend.matmul(T, backend.reshape(delta_flat, (d, 1)))  # [n, 1]
-            backend.eval(T_delta)
-
-            # Project back: T.T @ (T @ delta) / ||T||_F^2
-            delta_tangent = backend.matmul(backend.transpose(T), T_delta) / T_norm_sq  # [d, 1]
-            delta_tangent = backend.reshape(delta_tangent, (d,))
-            backend.eval(delta_tangent)
-
-            # Geodesic null space component: delta - projection onto tangent space
-            delta_safe = delta_flat - delta_tangent
-            backend.eval(delta_safe)
-
-            filtering_applied = True
-            orthogonal_dim = max(0, d - n_samples)  # Approximate null space dimension
-        else:
-            # Tangent space is essentially zero - no filtering needed
-            delta_safe = delta_flat
-            filtering_applied = False
-            orthogonal_dim = d
+        # Check if any filtering was actually applied
+        tangent_norm_arr = backend.sqrt(backend.sum(delta_tangent * delta_tangent))
+        backend.eval(tangent_norm_arr)
+        tangent_norm = float(backend.to_scalar(tangent_norm_arr))
+        filtering_applied = tangent_norm > reg
+        orthogonal_dim = max(0, d - n_samples)  # Null space dimension
 
         # Compute metrics
         original_norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)

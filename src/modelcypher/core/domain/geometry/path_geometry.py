@@ -30,6 +30,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.vector_math import (
     BackendVectorMath,
+    geodesic_cosine_between_sets,
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
@@ -198,14 +199,100 @@ class PathGeometry:
             return None
 
     @staticmethod
+    def _prepare_gate_similarity(
+        path_a: PathSignature,
+        path_b: PathSignature,
+        embed_cache: dict[str, "Array"],
+        backend: "Backend",
+    ) -> tuple[list[str], list[str], list[int], list[int], list[list[float]]]:
+        gate_ids_a = [node.gate_id for node in path_a.nodes]
+        gate_ids_b = [node.gate_id for node in path_b.nodes]
+
+        unique_map_a: dict[str, int] = {}
+        unique_map_b: dict[str, int] = {}
+        unique_a: list[str] = []
+        unique_b: list[str] = []
+        node_map_a: list[int] = []
+        node_map_b: list[int] = []
+
+        for gate_id in gate_ids_a:
+            idx = unique_map_a.get(gate_id)
+            if idx is None:
+                idx = len(unique_a)
+                unique_map_a[gate_id] = idx
+                unique_a.append(gate_id)
+            node_map_a.append(idx)
+
+        for gate_id in gate_ids_b:
+            idx = unique_map_b.get(gate_id)
+            if idx is None:
+                idx = len(unique_b)
+                unique_map_b[gate_id] = idx
+                unique_b.append(gate_id)
+            node_map_b.append(idx)
+
+        sim_matrix = [[0.0] * len(unique_b) for _ in range(len(unique_a))]
+        if not embed_cache or not unique_a or not unique_b:
+            return gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix
+
+        groups: dict[int, dict[str, list]] = {}
+        for idx, gate_id in enumerate(unique_a):
+            vec = embed_cache.get(gate_id)
+            if vec is None:
+                continue
+            shape = backend.shape(vec)
+            if len(shape) != 1:
+                continue
+            dim = int(shape[0])
+            group = groups.setdefault(
+                dim, {"a_idx": [], "a_vecs": [], "b_idx": [], "b_vecs": []}
+            )
+            group["a_idx"].append(idx)
+            group["a_vecs"].append(vec)
+
+        for idx, gate_id in enumerate(unique_b):
+            vec = embed_cache.get(gate_id)
+            if vec is None:
+                continue
+            shape = backend.shape(vec)
+            if len(shape) != 1:
+                continue
+            dim = int(shape[0])
+            group = groups.setdefault(
+                dim, {"a_idx": [], "a_vecs": [], "b_idx": [], "b_vecs": []}
+            )
+            group["b_idx"].append(idx)
+            group["b_vecs"].append(vec)
+
+        for group in groups.values():
+            if not group["a_idx"] or not group["b_idx"]:
+                continue
+            a_mat = backend.stack(group["a_vecs"], axis=0)
+            b_mat = backend.stack(group["b_vecs"], axis=0)
+            cos = geodesic_cosine_between_sets(a_mat, b_mat, backend)
+            backend.eval(cos)
+            cos_list = backend.tolist(cos)
+            for row_idx, row_vals in enumerate(cos_list):
+                a_idx = group["a_idx"][row_idx]
+                sim_row = sim_matrix[a_idx]
+                for col_idx, val in enumerate(row_vals):
+                    b_idx = group["b_idx"][col_idx]
+                    sim_row[b_idx] = float(val)
+
+        return gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix
+
+    @staticmethod
     def compare(
         path_a: PathSignature,
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> PathComparison:
-        _, vmath, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
-        n = len(path_a.nodes)
-        m = len(path_b.nodes)
+        backend, _, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
+        gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix = (
+            PathGeometry._prepare_gate_similarity(path_a, path_b, embed_cache, backend)
+        )
+        n = len(gate_ids_a)
+        m = len(gate_ids_b)
 
         dp = [[0.0] * (m + 1) for _ in range(n + 1)]
         ops = [[AlignmentOp.match] * (m + 1) for _ in range(n + 1)]
@@ -220,19 +307,13 @@ class PathGeometry:
 
         for i in range(1, n + 1):
             for j in range(1, m + 1):
-                node_a = path_a.nodes[i - 1]
-                node_b = path_b.nodes[j - 1]
-
-                if node_a.gate_id == node_b.gate_id:
+                gate_a = gate_ids_a[i - 1]
+                gate_b = gate_ids_b[j - 1]
+                if gate_a == gate_b:
                     sub_cost = 0.0
                 else:
-                    sim = PathGeometry._cached_cosine(
-                        node_a.gate_id, node_b.gate_id, embed_cache, vmath
-                    )
-                    if sim is not None:
-                        sub_cost = 1.0 - sim
-                    else:
-                        sub_cost = 1.0
+                    sim = sim_matrix[node_map_a[i - 1]][node_map_b[j - 1]]
+                    sub_cost = 1.0 - sim
 
                 cost_match = dp[i - 1][j - 1] + sub_cost
                 cost_del = dp[i - 1][j] + 1.0
@@ -242,7 +323,7 @@ class PathGeometry:
                     dp[i][j] = cost_match
                     ops[i][j] = (
                         AlignmentOp.match
-                        if node_a.gate_id == node_b.gate_id
+                        if gate_a == gate_b
                         else AlignmentOp.substitute
                     )
                 elif cost_del <= cost_ins:
@@ -295,25 +376,24 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> FrechetResult:
-        _, vmath, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
-        n = len(path_a.nodes)
-        m = len(path_b.nodes)
+        backend, _, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
+        gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix = (
+            PathGeometry._prepare_gate_similarity(path_a, path_b, embed_cache, backend)
+        )
+        n = len(gate_ids_a)
+        m = len(gate_ids_b)
         if n == 0 or m == 0:
             return FrechetResult(distance=float("inf"), optimal_coupling=[])
 
         dp = [[float("inf")] * m for _ in range(n)]
+        entropies_a = [node.entropy for node in path_a.nodes]
+        entropies_b = [node.entropy for node in path_b.nodes]
 
         def dist(i: int, j: int) -> float:
-            node_a = path_a.nodes[i]
-            node_b = path_b.nodes[j]
-            if node_a.gate_id == node_b.gate_id:
-                return abs(node_a.entropy - node_b.entropy)
-            sim = PathGeometry._cached_cosine(
-                node_a.gate_id, node_b.gate_id, embed_cache, vmath
-            )
-            if sim is not None:
-                return 1.0 - sim
-            return 1.0
+            if gate_ids_a[i] == gate_ids_b[j]:
+                return abs(entropies_a[i] - entropies_b[j])
+            sim = sim_matrix[node_map_a[i]][node_map_b[j]]
+            return 1.0 - sim
 
         dp[0][0] = dist(0, 0)
         for j in range(1, m):
@@ -352,9 +432,12 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> DTWResult:
-        backend, vmath, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
-        n = len(path_a.nodes)
-        m = len(path_b.nodes)
+        backend, _, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
+        gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix = (
+            PathGeometry._prepare_gate_similarity(path_a, path_b, embed_cache, backend)
+        )
+        n = len(gate_ids_a)
+        m = len(gate_ids_b)
         if n == 0 or m == 0:
             return DTWResult(
                 total_cost=float("inf"),
@@ -363,23 +446,18 @@ class PathGeometry:
                 compression_ratio=0.0,
             )
 
-        entropy_values = [node.entropy for node in path_a.nodes + path_b.nodes]
+        entropies_a = [node.entropy for node in path_a.nodes]
+        entropies_b = [node.entropy for node in path_b.nodes]
+        entropy_values = entropies_a + entropies_b
         _, entropy_scale = PathGeometry._entropy_normalization(entropy_values)
 
         def dist(i: int, j: int) -> float:
-            node_a = path_a.nodes[i]
-            node_b = path_b.nodes[j]
-            if node_a.gate_id == node_b.gate_id:
+            if gate_ids_a[i] == gate_ids_b[j]:
                 d_val = 0.0
             else:
-                sim = PathGeometry._cached_cosine(
-                    node_a.gate_id, node_b.gate_id, embed_cache, vmath
-                )
-                if sim is not None:
-                    d_val = 1.0 - sim
-                else:
-                    d_val = 1.0
-            entropy_diff = abs(node_a.entropy - node_b.entropy) / entropy_scale
+                sim = sim_matrix[node_map_a[i]][node_map_b[j]]
+                d_val = 1.0 - sim
+            entropy_diff = abs(entropies_a[i] - entropies_b[j]) / entropy_scale
             return d_val + entropy_diff
 
         dp = [[float("inf")] * m for _ in range(n)]

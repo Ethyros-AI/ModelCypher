@@ -646,13 +646,8 @@ class SectionalCurvatureEstimator:
             return division_epsilon(backend, neighbors)
 
         # Compute characteristic scale as median neighbor distance
-        # Subsample for efficiency if many points
-        if n > 50:
-            indices = list(range(0, n, n // 50))
-            subset_list = [neighbors[i] for i in indices]
-            subset = backend.stack(subset_list, axis=0)
-        else:
-            subset = neighbors
+        # Use ALL points - no subsampling. CKA=1.0 requires exact computation.
+        subset = neighbors
 
         # Compute pairwise geodesic distances for scale estimation
         m = int(subset.shape[0])
@@ -1446,6 +1441,7 @@ class OllivierRicciCurvature:
         mu: "Array",
         nu: "Array",
         cost_matrix: "Array",
+        kernel: tuple["Array", "Array", "Array", float, float] | None = None,
     ) -> float:
         """Compute Wasserstein-1 distance using Sinkhorn algorithm.
 
@@ -1457,66 +1453,24 @@ class OllivierRicciCurvature:
 
         This follows the same pattern as gromov_wasserstein.py:_solve_linear_ot()
         """
-        from modelcypher.core.domain.geometry.numerical_stability import tiny_value
-
         backend = self._backend
         n = int(mu.shape[0])
-
-        # Derive epsilon and threshold from data (not configuration)
-        epsilon = None  # Will be derived from cost matrix scale
-        threshold = None  # Will be derived from machine epsilon
 
         # Derive max iterations from problem size as a safety bound
         # Sinkhorn converges in O(n * log(n) / epsilon) for well-conditioned problems
         # Use n * 10 as a generous safety limit - if not converged by then, something is wrong
-        import math
         max_iter = max(100, n * 10)  # Safety limit derived from problem size
 
-        # Get precision-aware values
-        eps = division_epsilon(backend, cost_matrix)
-        floor = tiny_value(backend, cost_matrix)
-
-        # Ensure finite cost matrix for Sinkhorn stability.
-        finite_mask = backend.isfinite(cost_matrix)
-        dtype = cost_matrix.dtype if hasattr(cost_matrix, "dtype") else None
-        neg_inf = -float(backend.finfo(dtype).max)
-        finite_vals = backend.where(
-            finite_mask, cost_matrix, backend.full(cost_matrix.shape, neg_inf)
-        )
-        finite_max_arr = backend.max(finite_vals)
-        backend.eval(finite_max_arr)
-        finite_max = float(backend.to_scalar(finite_max_arr))
-        finite_max = max(finite_max, eps)
-        cost_matrix = backend.where(
-            finite_mask,
-            cost_matrix,
-            backend.full(cost_matrix.shape, finite_max),
-        )
-
-        if epsilon is None:
-            cost_max_arr = backend.max(cost_matrix)
-            backend.eval(cost_max_arr)
-            cost_max = float(backend.to_scalar(cost_max_arr))
-            epsilon = cost_max * eps if cost_max > 0 else eps
-
-        if threshold is None:
-            threshold = eps
-
-        # Stabilized Sinkhorn: K = exp(-cost / epsilon)
-        cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
-        cost_centered = cost_matrix - cost_min
-        log_K = -cost_centered / max(epsilon, eps)
-
-        # Clamp to avoid underflow
-        min_log = log_scalar(floor, backend)
-        log_K = backend.maximum(log_K, backend.full(log_K.shape, min_log))
-        K = backend.exp(log_K)
-        K = backend.maximum(K, backend.full(K.shape, floor))
+        if kernel is None:
+            cost_matrix, K, K_T, floor, threshold = self._prepare_sinkhorn_kernel(
+                cost_matrix
+            )
+        else:
+            cost_matrix, K, K_T, floor, threshold = kernel
 
         # Sinkhorn iterations
         u = backend.ones((n,))
         v = backend.ones((n,))
-        K_T = backend.transpose(K)
 
         for _ in range(max_iter):
             Kv = backend.matmul(K, v)
@@ -1554,6 +1508,7 @@ class OllivierRicciCurvature:
         mu_batch: "Array",
         nu_batch: "Array",
         cost_matrix: "Array",
+        kernel: tuple["Array", "Array", "Array", float, float] | None = None,
     ) -> "Array":
         """Compute Wasserstein-1 distances for a batch of marginals."""
         backend = self._backend
@@ -1566,44 +1521,17 @@ class OllivierRicciCurvature:
         if batch == 0 or n == 0:
             return backend.zeros((batch,))
 
-        eps = division_epsilon(backend, cost_matrix)
-        floor = tiny_value(backend, cost_matrix)
+        if kernel is None:
+            cost_matrix, K, K_T, floor, threshold = self._prepare_sinkhorn_kernel(
+                cost_matrix
+            )
+        else:
+            cost_matrix, K, K_T, floor, threshold = kernel
 
-        finite_mask = backend.isfinite(cost_matrix)
-        dtype = cost_matrix.dtype if hasattr(cost_matrix, "dtype") else None
-        neg_inf = -float(backend.finfo(dtype).max)
-        finite_vals = backend.where(
-            finite_mask, cost_matrix, backend.full(cost_matrix.shape, neg_inf)
-        )
-        finite_max_arr = backend.max(finite_vals)
-        backend.eval(finite_max_arr)
-        finite_max = float(backend.to_scalar(finite_max_arr))
-        finite_max = max(finite_max, eps)
-        cost_matrix = backend.where(
-            finite_mask,
-            cost_matrix,
-            backend.full(cost_matrix.shape, finite_max),
-        )
-
-        cost_max_arr = backend.max(cost_matrix)
-        backend.eval(cost_max_arr)
-        cost_max = float(backend.to_scalar(cost_max_arr))
-        epsilon = cost_max * eps if cost_max > 0 else eps
-        threshold = eps
         max_iter = max(100, n * 10)
-
-        cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
-        cost_centered = cost_matrix - cost_min
-        log_K = -cost_centered / max(epsilon, eps)
-
-        min_log = log_scalar(floor, backend)
-        log_K = backend.maximum(log_K, backend.full(log_K.shape, min_log))
-        K = backend.exp(log_K)
-        K = backend.maximum(K, backend.full(K.shape, floor))
 
         u = backend.ones((batch, n))
         v = backend.ones((batch, n))
-        K_T = backend.transpose(K)
 
         for _ in range(max_iter):
             Kv = backend.matmul(K, backend.reshape(v, (batch, n, 1)))

@@ -402,12 +402,15 @@ class TopologicalFingerprint:
         flat_dist = b.reshape(dist_arr, (-1,))
         flat_idx = row_idx * n + col_idx
         edge_dist = b.take(flat_dist, flat_idx, axis=0)
-        b.eval(row_idx, col_idx, edge_dist)
-        row_list = b.tolist(row_idx)
-        col_list = b.tolist(col_idx)
-        dist_list = b.tolist(edge_dist)
+        sorted_idx = b.argsort(edge_dist)
+        sorted_row = b.take(row_idx, sorted_idx, axis=0)
+        sorted_col = b.take(col_idx, sorted_idx, axis=0)
+        sorted_dist = b.take(edge_dist, sorted_idx, axis=0)
+        b.eval(sorted_row, sorted_col, sorted_dist)
+        row_list = b.tolist(sorted_row)
+        col_list = b.tolist(sorted_col)
+        dist_list = b.tolist(sorted_dist)
         edges = list(zip(row_list, col_list, dist_list))
-        edges.sort(key=lambda x: x[2])
 
         # Process edges
         for i, j, dist in edges:
@@ -447,6 +450,10 @@ class TopologicalFingerprint:
             rank = [0] * n
 
             possible_cycles = []
+            index = b.arange(n)
+            base_mask = b.ones((n,))
+            zero_vec = b.full((n,), 0.0)
+            inf_vec = b.full((n,), float("inf"))
 
             for i, j, dist in edges:
                 if dist > max_filtration:
@@ -455,27 +462,20 @@ class TopologicalFingerprint:
                 px, py = find(i), find(j)
                 if px == py:
                     # Cycle candidates
-                    death_time = max_filtration
-                    # Check for "filling triangles" (common neighbor k)
-                    # Death is min(max(dist(i,k), dist(j,k))) over all k
-                    # Actually death is when the cycle is "filled".
-                    # A cycle formed by (i,j) with existing path is filled when a triangle (i,j,k) appears
-                    # such that (i,k) and (j,k) exist.
-                    # This approximation finds the "tightest" triangle filling this edge.
-
-                    found_filling = False
-                    for k in range(n):
-                        if k == i or k == j:
-                            continue
-                        dik = distances[i][k]
-                        djk = distances[j][k]
-                        triangle_fill = max(dist, max(dik, djk))
-                        if triangle_fill < death_time:
-                            death_time = triangle_fill
-                            found_filling = True
-
-                    if found_filling and death_time > dist:
-                        possible_cycles.append(PersistencePoint(dist, death_time, 1))
+                    # Vectorized triangle fill detection on backend.
+                    row_i = dist_arr[i, :]
+                    row_j = dist_arr[j, :]
+                    triangle_fills = b.maximum(
+                        b.maximum(row_i, row_j), b.full((n,), dist)
+                    )
+                    mask = b.where(index == i, zero_vec, base_mask)
+                    mask = b.where(index == j, zero_vec, mask)
+                    masked_fills = b.where(mask > 0, triangle_fills, inf_vec)
+                    min_fill_arr = b.min(masked_fills)
+                    b.eval(min_fill_arr)
+                    min_fill = float(b.to_scalar(min_fill_arr))
+                    if min_fill < max_filtration and min_fill > dist:
+                        possible_cycles.append(PersistencePoint(dist, min_fill, 1))
                 else:
                     union(i, j, component_birth)
 

@@ -725,17 +725,19 @@ def geodesic_svd(
     array: Array,
     k: int | None = None,
 ) -> tuple[Array, Array, Array]:
-    """Compute SVD using backend linalg with a power-iteration fallback.
+    """Compute EXACT SVD using native backend operation.
 
-    Uses backend.svd when a full decomposition is requested and available.
-    Falls back to power iteration for top-k requests or when backend.svd
-    fails. This keeps operations on-device while preserving numerical
-    stability for geodesic alignment.
+    Uses native b.svd() which computes exact singular value decomposition.
+    No approximation - correctness over efficiency.
+
+    CKA=1.0 requires exact SVD. Any approximation introduces error
+    that prevents perfect kernel alignment.
 
     Args:
         backend: Compute backend.
         array: Matrix [m, n] to decompose.
-        k: Number of singular values to compute. If None, uses min(m, n).
+        k: Number of singular values to return. The FULL decomposition
+           is always computed; only the return value is truncated.
 
     Returns:
         (U, S, Vt) where:
@@ -750,7 +752,6 @@ def geodesic_svd(
     m = int(A.shape[0])
     n = int(A.shape[1])
     max_rank = min(m, n)
-    reg = regularization_epsilon(b, A)
 
     if m == 0 or n == 0:
         U = b.zeros((m, 0), dtype="float32")
@@ -758,54 +759,22 @@ def geodesic_svd(
         Vt = b.zeros((0, n), dtype="float32")
         return U, S, Vt
 
-    if k is None or k >= max_rank:
-        try:
-            U, S, Vt = b.svd(A, compute_uv=True)
-            b.eval(U, S, Vt)
-            return U, S, Vt
-        except Exception:
-            pass
+    # EXACT SVD - no approximation
+    U_full, S_full, Vt_full = b.svd(A, compute_uv=True)
+    b.eval(U_full, S_full, Vt_full)
 
-    k = min(k or max_rank, m, n)
+    # Truncate to top-k if requested (but decomposition was exact)
+    k = min(k or max_rank, max_rank)
     if k == 0:
         U = b.zeros((m, 0), dtype="float32")
         S = b.zeros((0,), dtype="float32")
         Vt = b.zeros((0, n), dtype="float32")
         return U, S, Vt
 
-    # Form A.T @ A (Gram matrix of columns)
-    AtA = b.matmul(b.transpose(A), A)
-    b.eval(AtA)
-
-    # Get top-k eigenvectors of A.T @ A via power iteration (iterates until convergence)
-    eigenvalues, V = power_iteration_eigh(b, AtA, k=k)
-    b.eval(eigenvalues, V)
-
-    # Singular values are sqrt of eigenvalues
-    S = b.sqrt(b.maximum(eigenvalues, b.zeros_like(eigenvalues)))
-    b.eval(S)
-
-    # Compute U = A @ V @ diag(1/S)
-    AV = b.matmul(A, V)
-    b.eval(AV)
-
-    # Vectorized column normalization: U = AV / S (zero where S < reg)
-    reg_arr = b.zeros((k,), dtype="float32") + reg
-    S_safe = b.maximum(S, reg_arr)  # Avoid division by zero
-    b.eval(S_safe)
-
-    # Broadcasting: U[i,j] = AV[i,j] / S_safe[j]
-    inv_S = 1.0 / S_safe
-    U = AV * b.reshape(inv_S, (1, k))
-    b.eval(U)
-
-    # Zero out columns where singular value was below threshold
-    valid_mask = S > reg_arr  # Shape: (k,)
-    valid_broadcast = b.reshape(b.astype(valid_mask, "float32"), (1, k))
-    U = U * valid_broadcast
-    b.eval(U)
-    Vt = b.transpose(V)
-    b.eval(U, Vt)
+    U = U_full[:, :k]
+    S = S_full[:k]
+    Vt = Vt_full[:k, :]
+    b.eval(U, S, Vt)
 
     return U, S, Vt
 
