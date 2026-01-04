@@ -225,21 +225,21 @@ class PermutationAligner:
         flat_sim = b.reshape(similarity, (-1,))
         sim_selected = b.take(flat_sim, flat_idx, axis=0)
         sim_abs = b.abs(sim_selected)
-        b.eval(sim_selected, sim_abs)
-        sim_selected_list = b.tolist(sim_selected)
+        neg_mask = sim_selected < 0
+        signs_arr = b.where(
+            neg_mask,
+            b.full(sim_selected.shape, -1.0),
+            b.full(sim_selected.shape, 1.0),
+        )
+        sign_flip_count_arr = b.sum(b.astype(neg_mask, "float32"))
+        b.eval(sim_selected, sim_abs, signs_arr, sign_flip_count_arr)
         sim_abs_list = b.tolist(sim_abs)
+        signs_list = b.tolist(signs_arr)
+        sign_flip_count = int(b.to_scalar(sign_flip_count_arr))
 
         # Compute signs and confidences from the optimal assignment
-        signs = [1.0] * N
-        match_confidences = [0.0] * N
-        sign_flip_count = 0
-
-        for src_idx in range(N):
-            sim = float(sim_selected_list[src_idx])
-            match_confidences[src_idx] = float(sim_abs_list[src_idx])
-            if sim < 0:
-                signs[src_idx] = -1.0
-                sign_flip_count += 1
+        match_confidences = [float(v) for v in sim_abs_list]
+        signs = [float(v) for v in signs_list]
 
         # Build target-ordered sign/confidence arrays
         signs_target = [1.0] * N

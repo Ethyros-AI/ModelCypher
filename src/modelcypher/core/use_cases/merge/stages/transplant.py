@@ -260,31 +260,34 @@ def _set_submatrix(
     Since MLX doesn't support in-place slice assignment, we construct the
     result using concatenation or element-wise operations.
     """
-    # For simplicity, use a full reconstruction approach
-    # This creates a new array with source embedded at the given offset
     src_rows, src_cols = int(source.shape[0]), int(source.shape[1])
     tgt_rows, tgt_cols = int(target.shape[0]), int(target.shape[1])
 
-    # Build row by row using where masks
-    result_rows = []
-    for i in range(tgt_rows):
-        if row_offset <= i < row_offset + src_rows:
-            src_row_idx = i - row_offset
-            # This row has some source data
-            row_data = []
-            for j in range(tgt_cols):
-                if col_offset <= j < col_offset + src_cols:
-                    # Use source value
-                    row_data.append(source[src_row_idx, j - col_offset])
-                else:
-                    # Use target value
-                    row_data.append(target[i, j])
-            result_rows.append(backend.stack(row_data))
-        else:
-            # Entire row from target
-            result_rows.append(target[i, :])
+    if src_rows == 0 or src_cols == 0:
+        return target
 
-    result = backend.stack(result_rows)
+    row_end = row_offset + src_rows
+    col_end = col_offset + src_cols
+
+    # Build middle block with column concatenation
+    mid_parts = []
+    if col_offset > 0:
+        mid_parts.append(target[row_offset:row_end, :col_offset])
+    mid_parts.append(source)
+    if col_end < tgt_cols:
+        mid_parts.append(target[row_offset:row_end, col_end:])
+
+    mid = mid_parts[0] if len(mid_parts) == 1 else backend.concatenate(mid_parts, axis=1)
+
+    # Stitch rows via concatenation
+    row_parts = []
+    if row_offset > 0:
+        row_parts.append(target[:row_offset, :])
+    row_parts.append(mid)
+    if row_end < tgt_rows:
+        row_parts.append(target[row_end:, :])
+
+    result = row_parts[0] if len(row_parts) == 1 else backend.concatenate(row_parts, axis=0)
     backend.eval(result)
     return result
 

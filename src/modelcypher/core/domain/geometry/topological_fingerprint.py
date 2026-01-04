@@ -887,8 +887,8 @@ class BackendTopologicalFingerprint:
     ) -> PersistenceDiagram:
         """Compute persistent homology via Vietoris-Rips filtration.
 
-        Uses Backend for vectorized edge extraction, but Union-Find
-        remains sequential as it's inherently order-dependent.
+        Uses Backend for vectorized edge extraction and GPU-native
+        spanning-forest construction (no host-side Union-Find).
         """
         b = self.backend
         n = int(distances.shape[0])
@@ -922,112 +922,132 @@ class BackendTopologicalFingerprint:
         b.eval(edge_count_arr)
         edge_count = int(b.to_scalar(edge_count_arr))
 
-        if edge_count > 0:
-            prefix_idx = b.arange(edge_count)
-            edge_indices = b.take(sorted_idx, prefix_idx, axis=0)
-            edge_dists = b.take(sorted_dist, prefix_idx, axis=0)
-            b.eval(edge_indices, edge_dists)
-            sorted_idx_list = b.tolist(edge_indices)
-            masked_dist_list = b.tolist(edge_dists)
-        else:
-            sorted_idx_list = []
-            masked_dist_list = []
+        mst_edges: set[int] = set()
+        component_roots: list[int] = []
 
-        # 0-dim persistence (connected components) - Union-Find is sequential
-        parent = list(range(n))
-        rank = [0] * n
+        # Build thresholded distance matrix for spanning forest
+        thresh_mask = (dist_arr <= max_filtration) * (dist_arr < inf_thresh)
+        dist_thresh = b.where(thresh_mask, dist_arr, b.full(dist_arr.shape, inf_val))
+        eye = b.eye(n)
+        dist_thresh = dist_thresh + eye * inf_val
+        b.eval(dist_thresh)
 
-        def find(x: int) -> int:
-            if parent[x] != x:
-                parent[x] = find(parent[x])
-            return parent[x]
+        index = b.arange(n, dtype="int32")
+        ones_int = b.ones((n,), dtype="int32")
+        inf_vec = b.full((n,), float("inf"))
 
-        def union(x: int, y: int, component_birth: list[float]) -> int | None:
-            px, py = find(x), find(y)
-            if px == py:
-                return None
+        selected = b.zeros((n,), dtype="int32")
+        min_dist = inf_vec
+        min_parent = b.full((n,), -1, dtype="int32")
 
-            birth_x = component_birth[px]
-            birth_y = component_birth[py]
-
-            survivor, dying = (px, py)
-            if birth_x < birth_y:
-                survivor, dying = px, py
-            elif birth_y < birth_x:
-                survivor, dying = py, px
-            else:
-                if rank[px] < rank[py]:
-                    survivor, dying = py, px
-                elif rank[px] > rank[py]:
-                    survivor, dying = px, py
-                else:
-                    survivor, dying = px, py
-                    rank[px] += 1
-
-            parent[dying] = survivor
-            return dying
-
-        component_birth = [0.0] * n
-
-        for flat_idx, dist_val in zip(sorted_idx_list, masked_dist_list):
-            dist = float(dist_val)
-            if dist > max_filtration or dist >= inf_thresh:
+        while True:
+            unselected_mask = selected == 0
+            unselected_count = b.sum(b.astype(unselected_mask, "int32"))
+            b.eval(unselected_count)
+            if int(b.to_scalar(unselected_count)) == 0:
                 break
-            flat_idx_int = int(flat_idx)
-            i = flat_idx_int // n
-            j = flat_idx_int % n
 
-            dying = union(i, j, component_birth)
-            if dying is not None:
-                birth = component_birth[dying]
-                death = dist
-                if death > birth:
-                    persistence_points.append(PersistencePoint(birth, death, 0))
+            idx_candidates = b.where(
+                unselected_mask, index, b.full(index.shape, n, dtype="int32")
+            )
+            root_idx_arr = b.argmin(idx_candidates)
+            b.eval(root_idx_arr)
+            root_idx = int(b.to_scalar(root_idx_arr))
+            component_roots.append(root_idx)
 
-        for i in range(n):
-            if find(i) == i:
-                persistence_points.append(PersistencePoint(0.0, max_filtration, 0))
+            selected = b.where(index == root_idx, ones_int, selected)
+
+            root_row = b.take(dist_thresh, b.array([root_idx], dtype="int32"), axis=0)
+            root_row = b.reshape(root_row, (n,))
+            unselected_mask = selected == 0
+            min_dist = b.where(unselected_mask, root_row, inf_vec)
+            min_parent = b.where(
+                unselected_mask,
+                b.full(min_parent.shape, root_idx, dtype="int32"),
+                min_parent,
+            )
+
+            while True:
+                masked = b.where(selected == 0, min_dist, inf_vec)
+                min_val_arr = b.min(masked)
+                b.eval(min_val_arr)
+                min_val = float(b.to_scalar(min_val_arr))
+                if not is_finite(min_val, b) or min_val > max_filtration:
+                    break
+
+                idx_arr = b.argmin(masked)
+                b.eval(idx_arr)
+                idx = int(b.to_scalar(idx_arr))
+                parent_arr = b.take(min_parent, b.array([idx], dtype="int32"), axis=0)
+                b.eval(parent_arr)
+                parent_idx = int(b.to_scalar(parent_arr))
+                if parent_idx < 0:
+                    break
+
+                persistence_points.append(PersistencePoint(0.0, min_val, 0))
+                edge_id = (
+                    idx * n + parent_idx if idx < parent_idx else parent_idx * n + idx
+                )
+                mst_edges.add(edge_id)
+
+                selected = b.where(index == idx, ones_int, selected)
+
+                row = b.take(dist_thresh, b.array([idx], dtype="int32"), axis=0)
+                row = b.reshape(row, (n,))
+                better = b.astype(row < min_dist, "int32") * b.astype(
+                    selected == 0, "int32"
+                )
+                min_dist = b.where(better > 0, row, min_dist)
+                min_parent = b.where(
+                    better > 0,
+                    b.full(min_parent.shape, idx, dtype="int32"),
+                    min_parent,
+                )
+
+        for _ in component_roots:
+            persistence_points.append(PersistencePoint(0.0, max_filtration, 0))
 
         # 1-dim persistence (cycles) with Backend-accelerated triangle detection
-        if n >= 3:
-            parent = list(range(n))
-            rank = [0] * n
-
+        if n >= 3 and edge_count > 0:
             possible_cycles: list[PersistencePoint] = []
-            index = b.arange(n)
             base_mask = b.ones((n,))
             zero_vec = b.full((n,), 0.0)
             inf_vec = b.full((n,), inf_val)
-            b.eval(index)
 
-            for flat_idx, dist_val in zip(sorted_idx_list, masked_dist_list):
-                dist = float(dist_val)
-                if dist > max_filtration or dist >= inf_thresh:
+            for edge_idx in range(edge_count):
+                idx_arr = b.take(sorted_idx, b.array([edge_idx], dtype="int32"), axis=0)
+                dist_arr_edge = b.take(sorted_dist, b.array([edge_idx], dtype="int32"), axis=0)
+                b.eval(idx_arr, dist_arr_edge)
+
+                flat_idx_int = int(b.to_scalar(idx_arr))
+                if flat_idx_int in mst_edges:
+                    continue
+                dist_val = float(b.to_scalar(dist_arr_edge))
+                if dist_val > max_filtration:
                     break
-                flat_idx_int = int(flat_idx)
+
                 i = flat_idx_int // n
                 j = flat_idx_int % n
 
-                px, py = find(i), find(j)
-                if px == py:
-                    # Vectorized triangle fill detection using Backend
-                    # For each k, compute max(dist, d[i,k], d[j,k])
-                    row_i = dist_arr[i, :]
-                    row_j = dist_arr[j, :]
-                    triangle_fills = b.maximum(b.maximum(row_i, row_j), b.full((n,), dist))
-                    # Mask self-edges to inf
-                    mask = b.where(index == i, zero_vec, base_mask)
-                    mask = b.where(index == j, zero_vec, mask)
-                    masked_fills = b.where(mask > 0, triangle_fills, inf_vec)
-                    min_fill_arr = b.min(masked_fills)
-                    b.eval(min_fill_arr)
-                    min_fill = float(b.to_scalar(min_fill_arr))
-                    if min_fill < max_filtration and min_fill > dist:
-                        possible_cycles.append(PersistencePoint(dist, min_fill, 1))
-                else:
-                    union(i, j, component_birth)
+                # Vectorized triangle fill detection using Backend
+                row_i = dist_arr[i, :]
+                row_j = dist_arr[j, :]
+                triangle_fills = b.maximum(
+                    b.maximum(row_i, row_j), b.full((n,), dist_val)
+                )
+                # Mask self-edges to inf
+                mask = b.where(index == i, zero_vec, base_mask)
+                mask = b.where(index == j, zero_vec, mask)
+                masked_fills = b.where(mask > 0, triangle_fills, inf_vec)
+                min_fill_arr = b.min(masked_fills)
+                b.eval(min_fill_arr)
+                min_fill = float(b.to_scalar(min_fill_arr))
+                if min_fill < max_filtration and min_fill > dist_val:
+                    possible_cycles.append(PersistencePoint(dist_val, min_fill, 1))
+                    if len(possible_cycles) >= 20:
+                        break
 
-            persistence_points.extend(possible_cycles[:20])
+            persistence_points.extend(possible_cycles)
 
         return PersistenceDiagram(persistence_points)
 
