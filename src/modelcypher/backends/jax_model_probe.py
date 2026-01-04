@@ -223,7 +223,8 @@ class JAXModelProbe(BaseModelProbe):
                     )
                 )
                 continue
-            if std_drift is None or std_drift == 0.0:
+            # Use epsilon tolerance instead of exact zero check
+            if std_drift is None or std_drift <= _MACHINE_EPS:
                 z_score = 0.0
             else:
                 z_score = (drift - mean_drift) / std_drift

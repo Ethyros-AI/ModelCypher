@@ -325,7 +325,8 @@ class PhaseTransitionTheory:
         max_scaled = max(scaled)
         exp_scaled = [exp_scalar(s - max_scaled, backend) for s in scaled]  # Numerical stability
         partition = sum(exp_scaled)
-        probs = [e / partition for e in exp_scaled]
+        safe_partition = max(partition, ulp_scalar(partition, backend))
+        probs = [e / safe_partition for e in exp_scaled]
 
         # E[z] = Σ p_i z_i
         mean_z = sum(p * z for p, z in zip(probs, logits))
@@ -415,7 +416,8 @@ class PhaseTransitionTheory:
         max_scaled = max(scaled)
         exp_scaled = [exp_scalar(s - max_scaled, backend) for s in scaled]
         partition = sum(exp_scaled)
-        probs = [e / partition for e in exp_scaled]
+        safe_partition = max(partition, ulp_scalar(partition, backend))
+        probs = [e / safe_partition for e in exp_scaled]
 
         # Count tokens with p > threshold
         prob_threshold = threshold if threshold is not None else ulp_scalar(1.0, backend)
@@ -449,7 +451,8 @@ class PhaseTransitionTheory:
         max_scaled = max(scaled)
         exp_scaled = [exp_scalar(s - max_scaled, backend) for s in scaled]
         partition = sum(exp_scaled)
-        probs = [e / partition for e in exp_scaled]
+        safe_partition = max(partition, ulp_scalar(partition, backend))
+        probs = [e / safe_partition for e in exp_scaled]
 
         # H = -Σ p log p (with numerical stability)
         log_eps = ulp_scalar(0.0, backend)

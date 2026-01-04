@@ -28,6 +28,7 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.hungarian import hungarian_assignment_list
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
@@ -275,7 +276,7 @@ class TestHungarianAlgorithm:
             [1.0, 2.0],
             [3.0, 0.5],
         ]
-        matching = TopologicalFingerprint._hungarian_algorithm(cost)
+        matching = hungarian_assignment_list(cost)
 
         # Optimal: row 0 -> col 0 (cost 1), row 1 -> col 1 (cost 0.5)
         assert matching[0] == 0
@@ -283,7 +284,7 @@ class TestHungarianAlgorithm:
 
     def test_empty_matrix(self) -> None:
         """Should handle empty matrix."""
-        matching = TopologicalFingerprint._hungarian_algorithm([])
+        matching = hungarian_assignment_list([])
         assert matching == []
 
     def test_three_by_three(self) -> None:
@@ -293,7 +294,7 @@ class TestHungarianAlgorithm:
             [2.0, 1.0, 3.0],
             [3.0, 3.0, 1.0],
         ]
-        matching = TopologicalFingerprint._hungarian_algorithm(cost)
+        matching = hungarian_assignment_list(cost)
 
         # Optimal: diagonal (total cost 3)
         assert matching[0] == 0

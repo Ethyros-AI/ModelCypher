@@ -363,7 +363,7 @@ class ConceptResponseMatrix:
         common = set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
         cka_matrix = self.compute_cka_matrix(other)
 
-        from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
+        from modelcypher.core.domain.geometry.hungarian import hungarian_assignment
 
         matches: list[ComparisonReport.LayerMatch] = []
         source_count = self.layer_count
@@ -381,12 +381,8 @@ class ConceptResponseMatrix:
             pad_cols = backend.full((cost_arr.shape[0], source_count - target_count), pad_cost)
             cost_arr = backend.concatenate([cost_arr, pad_cols], axis=1)
 
-        try:
-            assignment_arr = PermutationAligner._hungarian_backend(cost_arr, backend)
-            assignment = [int(x) for x in backend.tolist(assignment_arr)]
-        except Exception:
-            cost_list = backend.tolist(cost_arr)
-            assignment = PermutationAligner._hungarian_algorithm(cost_list)
+        assignment_arr = hungarian_assignment(cost_arr, backend)
+        assignment = [int(x) for x in backend.tolist(assignment_arr)]
 
         for source_layer in range(source_count):
             target_layer = assignment[source_layer]

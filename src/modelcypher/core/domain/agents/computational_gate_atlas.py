@@ -935,7 +935,9 @@ class ComputationalGateAtlas:
                     density = volume.density_at(text_vec)
                     # Normalize by density at centroid
                     max_density = volume.density_at(volume.centroid)
-                    if max_density > 0:
+                    # Use epsilon guard for robustness with very small densities
+                    eps = division_epsilon(backend, backend.array([max_density]))
+                    if max_density > eps:
                         similarity = density / max_density
                     else:
                         similarity = 0.0

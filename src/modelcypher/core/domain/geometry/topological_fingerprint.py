@@ -68,6 +68,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.hungarian import (
+    hungarian_assignment,
+    hungarian_assignment_list,
+)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
@@ -548,7 +552,7 @@ class TopologicalFingerprint:
                     cost[row][j] = 0.0
 
             # Use Hungarian algorithm for optimal matching
-            matching = TopologicalFingerprint._hungarian_algorithm(cost)
+            matching = hungarian_assignment_list(cost)
 
             # Bottleneck = max cost in matching (excluding dummy-dummy pairs)
             for i, j in enumerate(matching):
@@ -631,7 +635,7 @@ class TopologicalFingerprint:
                     cost[row][j] = 0.0
 
             # Use Hungarian algorithm to find optimal matching
-            matching = TopologicalFingerprint._hungarian_algorithm(cost)
+            matching = hungarian_assignment_list(cost)
 
             # Sum up the costs from the matching
             for i, j in enumerate(matching):
@@ -641,77 +645,6 @@ class TopologicalFingerprint:
                         count += 1
 
         return total_dist / count if count > 0 else 0.0
-
-    @staticmethod
-    def _hungarian_algorithm(cost_matrix: list[list[float]]) -> list[int]:
-        """
-        Hungarian algorithm for minimum cost bipartite matching.
-
-        Returns a list where result[i] = j means row i is matched to column j.
-        This implementation handles square matrices.
-        """
-        n = len(cost_matrix)
-        if n == 0:
-            return []
-
-        # Initialize labels
-        u = [0.0] * (n + 1)
-        v = [0.0] * (n + 1)
-        p = [0] * (n + 1)  # p[j] = row matched to column j
-        way = [0] * (n + 1)
-
-        INF = float("inf")
-
-        for i in range(1, n + 1):
-            p[0] = i
-            j0 = 0
-            minv = [INF] * (n + 1)
-            used = [False] * (n + 1)
-
-            while p[j0] != 0:
-                used[j0] = True
-                i0 = p[j0]
-                delta = INF
-                j1 = 0
-
-                for j in range(1, n + 1):
-                    if not used[j]:
-                        # Get cost, handling infinity
-                        c = cost_matrix[i0 - 1][j - 1] if i0 <= n and j <= n else INF
-                        cur = c - u[i0] - v[j]
-                        if cur < minv[j]:
-                            minv[j] = cur
-                            way[j] = j0
-                        if minv[j] < delta:
-                            delta = minv[j]
-                            j1 = j
-
-                # Prevent infinite loop on impossible matching
-                if delta == INF:
-                    break
-
-                for j in range(n + 1):
-                    if used[j]:
-                        u[p[j]] += delta
-                        v[j] -= delta
-                    else:
-                        minv[j] -= delta
-
-                j0 = j1
-
-            # Reconstruct path
-            while j0 != 0:
-                j1 = way[j0]
-                p[j0] = p[j1]
-                j0 = j1
-
-        # Build result: result[i] = column matched to row i
-        result = [0] * n
-        for j in range(1, n + 1):
-            if p[j] != 0 and p[j] <= n:
-                result[p[j] - 1] = j - 1
-
-        return result
 
     @staticmethod
     def _compute_entropy(values: list[float]) -> float:
@@ -1078,111 +1011,6 @@ class BackendTopologicalFingerprint:
 
         return PersistenceDiagram(persistence_points)
 
-    @staticmethod
-    def _hungarian_backend(cost_matrix: "Array", backend: "Backend") -> "Array":
-        """Hungarian algorithm using Backend ops for cost updates."""
-        b = backend
-        cost = b.array(cost_matrix, dtype="float32")
-        b.eval(cost)
-
-        n = int(cost.shape[0])
-        if n == 0:
-            return b.zeros((0,), dtype="int32")
-
-        size = n + 1
-        u = b.zeros((size,), dtype="float32")
-        v = b.zeros((size,), dtype="float32")
-        p = b.zeros((size,), dtype="int32")
-        way = b.zeros((n,), dtype="int32")
-
-        col_idx = b.arange(1, n + 1, dtype="int32")
-        row_idx = b.arange(size, dtype="int32")
-        row_idx_matrix = b.reshape(row_idx, (1, size))
-
-        inf_vec = b.full((n,), float("inf"), dtype="float32")
-        zeros = b.zeros((n,), dtype="float32")
-        ones = b.ones((n,), dtype="float32")
-
-        for i in range(1, n + 1):
-            p = b.where(row_idx == 0, b.full(p.shape, i, dtype="int32"), p)
-            j0 = 0
-            minv = inf_vec
-            used = zeros
-            way = b.zeros((n,), dtype="int32")
-
-            while True:
-                if j0 > 0:
-                    used = b.where(col_idx == j0, ones, used)
-
-                p_j0 = b.take(p, b.array([j0], dtype="int32"), axis=0)
-                b.eval(p_j0)
-                i0 = int(b.to_scalar(p_j0))
-                if i0 == 0:
-                    break
-
-                row = b.take(cost, b.array([i0 - 1], dtype="int32"), axis=0)
-                row = b.reshape(row, (n,))
-                u_i0 = b.take(u, b.array([i0], dtype="int32"), axis=0)
-                v_cols = b.take(v, col_idx, axis=0)
-                cur = row - u_i0 - v_cols
-
-                unused_mask = used == 0
-                update = unused_mask * (cur < minv)
-                minv = b.where(update, cur, minv)
-                way = b.where(update, b.full(way.shape, j0, dtype="int32"), way)
-
-                masked_minv = b.where(unused_mask, minv, inf_vec)
-                delta = b.min(masked_minv)
-                b.eval(delta)
-                delta_val = float(b.to_scalar(delta))
-                if not is_finite(delta_val, b):
-                    break
-
-                j1_idx = b.argmin(masked_minv)
-                b.eval(j1_idx)
-                j1 = int(b.to_scalar(j1_idx)) + 1
-
-                p_cols = b.take(p, col_idx, axis=0)
-                p_cols_row = b.reshape(p_cols, (n, 1))
-                used_col = b.reshape(used, (n, 1))
-                row_match = b.astype(p_cols_row == row_idx_matrix, "float32")
-                counts = b.sum(row_match * used_col, axis=0)
-
-                p0 = b.take(p, b.array([0], dtype="int32"), axis=0)
-                p0_mask = row_idx == p0
-                p0_one = b.astype(p0_mask, "float32")
-                u = u + (counts + p0_one) * delta
-
-                v0 = b.take(v, b.array([0], dtype="int32"), axis=0)
-                v0 = v0 - delta
-                v_cols = v_cols - used * delta
-                v = b.concatenate([v0, v_cols], axis=0)
-
-                minv = b.where(unused_mask, minv - delta, minv)
-                j0 = j1
-
-            while True:
-                if j0 == 0:
-                    break
-                way_j0 = b.take(way, b.array([j0 - 1], dtype="int32"), axis=0)
-                b.eval(way_j0)
-                j1 = int(b.to_scalar(way_j0))
-                p_j1 = b.take(p, b.array([j1], dtype="int32"), axis=0)
-                b.eval(p_j1)
-                p_val = int(b.to_scalar(p_j1))
-                p = b.where(row_idx == j0, b.full(p.shape, p_val, dtype="int32"), p)
-                j0 = j1
-
-        cols = b.take(p, col_idx, axis=0)
-        rows = cols - 1
-        row_idx_small = b.arange(n, dtype="int32")
-        rows_matrix = b.reshape(rows, (n, 1))
-        row_idx_matrix = b.reshape(row_idx_small, (1, n))
-        one_hot = b.astype(rows_matrix == row_idx_matrix, "float32")
-        col_vals = b.reshape(col_idx - 1, (n, 1))
-        result = b.sum(one_hot * col_vals, axis=0)
-        return b.astype(result, "int32")
-
     def _bottleneck_distance(
         self, diag_a: PersistenceDiagram, diag_b: PersistenceDiagram
     ) -> float:
@@ -1247,7 +1075,7 @@ class BackendTopologicalFingerprint:
             bottom_block = b.concatenate([diag_block_b, b.zeros((n_b, n_a))], axis=1)
             cost_matrix_arr = b.concatenate([top_block, bottom_block], axis=0)
             b.eval(cost_matrix_arr)
-            matching = self._hungarian_backend(cost_matrix_arr, b)
+            matching = hungarian_assignment(cost_matrix_arr, b)
             row_idx = b.arange(n, dtype="int32")
             flat = b.reshape(cost_matrix_arr, (-1,))
             flat_idx = b.astype(row_idx * n + matching, "int32")
@@ -1329,7 +1157,7 @@ class BackendTopologicalFingerprint:
             bottom_block = b.concatenate([diag_block_b, b.zeros((n_b, n_a))], axis=1)
             cost_matrix_arr = b.concatenate([top_block, bottom_block], axis=0)
             b.eval(cost_matrix_arr)
-            matching = self._hungarian_backend(cost_matrix_arr, b)
+            matching = hungarian_assignment(cost_matrix_arr, b)
             row_idx = b.arange(n, dtype="int32")
             flat = b.reshape(cost_matrix_arr, (-1,))
             flat_idx = b.astype(row_idx * n + matching, "int32")

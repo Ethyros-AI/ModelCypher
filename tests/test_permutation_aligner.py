@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain.geometry.hungarian import hungarian_assignment_list
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
@@ -107,7 +108,7 @@ class TestHungarianAlgorithm:
             [1.0, 0.0, 1.0],
             [1.0, 1.0, 0.0],
         ]
-        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+        assignment = hungarian_assignment_list(cost_matrix)
         assert assignment == [0, 1, 2]
 
     def test_hungarian_reverse_assignment(self) -> None:
@@ -118,18 +119,18 @@ class TestHungarianAlgorithm:
             [1.0, 0.0, 1.0],
             [0.0, 1.0, 1.0],
         ]
-        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+        assignment = hungarian_assignment_list(cost_matrix)
         assert assignment == [2, 1, 0]
 
     def test_hungarian_empty_matrix(self) -> None:
         """Empty cost matrix should return empty assignment."""
-        assignment = PermutationAligner._hungarian_algorithm([])
+        assignment = hungarian_assignment_list([])
         assert assignment == []
 
     def test_hungarian_single_element(self) -> None:
         """Single element matrix should return [0]."""
         cost_matrix = [[5.0]]
-        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+        assignment = hungarian_assignment_list(cost_matrix)
         assert assignment == [0]
 
     def test_hungarian_optimal_assignment(self) -> None:
@@ -140,7 +141,7 @@ class TestHungarianAlgorithm:
             [3.0, 15.0, 2.0],
             [8.0, 9.0, 7.0],
         ]
-        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+        assignment = hungarian_assignment_list(cost_matrix)
         # Optimal: 0→1 (5) + 1→2 (2) + 2→0 (8) = 15
         # or: 0→0 (10) + 1→2 (2) + 2→1 (9) = 21
         # or: 0→2 (13) + 1→0 (3) + 2→1 (9) = 25
@@ -163,7 +164,7 @@ class TestHungarianAlgorithm:
             [2.0, 1.0, 4.0, 3.0],
             [3.0, 4.0, 1.0, 2.0],
         ]
-        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+        assignment = hungarian_assignment_list(cost_matrix)
         # Check it's a valid permutation
         assert sorted(assignment) == [0, 1, 2, 3]
 
