@@ -18,8 +18,9 @@
 from dataclasses import dataclass
 from enum import Enum
 
-import mlx.core as mx
 import psutil
+
+from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
 
 
 class MemoryPressure(str, Enum):
@@ -50,12 +51,23 @@ class MLXMemoryService:
             cls._instance = super(MLXMemoryService, cls).__new__(cls)
         return cls._instance
 
+    @staticmethod
+    def _ensure_mlx():
+        if not probe_mlx_available(explicit=True):
+            detail = get_mlx_probe_error() or "Unknown MLX initialization error"
+            raise RuntimeError(f"MLX runtime unavailable: {detail}")
+
+        import mlx.core as mx
+
+        return mx
+
     def get_memory_stats(self) -> MemoryStats:
         vm = psutil.virtual_memory()
         total_gb = vm.total / (1024**3)
         available_gb = vm.available / (1024**3)
         used_gb = vm.used / (1024**3)
 
+        mx = self._ensure_mlx()
         mlx_peak = mx.metal.get_peak_memory() / (1024**3)
         mlx_active = mx.metal.get_active_memory() / (1024**3)
 
@@ -77,4 +89,5 @@ class MLXMemoryService:
 
     def clear_cache(self):
         """Force MLX cache cleanup."""
+        mx = self._ensure_mlx()
         mx.metal.clear_cache()

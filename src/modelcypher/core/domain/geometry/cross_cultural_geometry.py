@@ -47,7 +47,7 @@ class ComparisonResult:
     roughness_reduction : float
         Reduction in roughness from merging.
     row_correlations : list[float]
-        Per-prime Pearson correlations between Gram rows.
+        Per-prime geodesic cosine correlations between Gram rows.
     row_sharpness_a : list[float]
         Per-prime sharpness (row variance) for model A.
     row_sharpness_b : list[float]
@@ -81,7 +81,7 @@ class AlignmentAnalysis:
     cka : float
         CKA score [0, 1].
     raw_pearson : float
-        Pearson correlation of off-diagonal Gram elements.
+        Geodesic cosine correlation of off-diagonal Gram elements.
     alignment_gap : float
         Difference cka - raw_pearson. Large gap indicates centering matters.
     """
@@ -191,7 +191,7 @@ class CrossCulturalGeometry:
         cka = CrossCulturalGeometry.compute_cka(gram_a, gram_b, n)
 
         if raw_pearson is None:
-            # Vectorized Pearson correlation on off-diagonal elements
+            # Vectorized geodesic correlation on off-diagonal elements
             backend = get_default_backend()
             gram_a_arr = backend.reshape(backend.array(gram_a), (n, n))
             gram_b_arr = backend.reshape(backend.array(gram_b), (n, n))
@@ -207,7 +207,7 @@ class CrossCulturalGeometry:
             mean_a = sum_a_val / off_diag_count
             mean_b = sum_b_val / off_diag_count
 
-            # Compute Pearson correlation: cov(a,b) / (std(a) * std(b))
+            # Compute geodesic cosine of centered off-diagonal elements
             centered_a = (gram_a_arr - mean_a) * mask
             centered_b = (gram_b_arr - mean_b) * mask
             centered_a_flat = backend.reshape(centered_a, (1, -1))
@@ -261,7 +261,7 @@ class CrossCulturalGeometry:
     def _compute_row_correlations(gram_a: list[float], gram_b: list[float], n: int) -> list[float]:
         if n <= 1:
             return []
-        # Vectorized per-row Pearson correlation of off-diagonal elements
+        # Vectorized per-row geodesic correlation of off-diagonal elements
         backend = get_default_backend()
         arr_a = backend.reshape(backend.array(gram_a), (n, n))
         arr_b = backend.reshape(backend.array(gram_b), (n, n))
@@ -278,26 +278,9 @@ class CrossCulturalGeometry:
         # Per-row centered values (broadcast row means)
         centered_a = (arr_a - backend.reshape(mean_a, (n, 1))) * mask
         centered_b = (arr_b - backend.reshape(mean_b, (n, 1))) * mask
-
-        # Per-row covariance and variances
-        cov_sums = backend.sum(centered_a * centered_b, axis=1)
-        var_a_sums = backend.sum(centered_a * centered_a, axis=1)
-        var_b_sums = backend.sum(centered_b * centered_b, axis=1)
-        backend.eval(cov_sums, var_a_sums, var_b_sums)
-
-        cov = cov_sums / off_diag_count
-        var_a = var_a_sums / off_diag_count
-        var_b = var_b_sums / off_diag_count
-        std_product = backend.sqrt(var_a * var_b)
-
-        eps = division_epsilon(backend, arr_a)
-        eps_arr = backend.full(std_product.shape, eps)
-        denom = backend.maximum(std_product, eps_arr)
-        corr = cov / denom
-        corr = backend.where(std_product > eps_arr, corr, backend.zeros_like(corr))
-        backend.eval(corr)
-
-        return [float(x) for x in backend.tolist(corr)]
+        cos_arr, _ = geodesic_pairwise_metrics(centered_a, centered_b, backend)
+        backend.eval(cos_arr)
+        return [float(x) for x in backend.tolist(cos_arr)]
 
     @staticmethod
     def _average_grams(gram_a: list[float], gram_b: list[float]) -> list[float]:

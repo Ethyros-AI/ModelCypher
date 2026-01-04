@@ -43,7 +43,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -376,7 +379,7 @@ class ManifoldFidelitySweep:
         return overlap_sum / n
 
     def _compute_distance_correlation(self, x: "Array", y: "Array") -> float:
-        """Pearson correlation of pairwise geodesic distances.
+        """Geodesic correlation of pairwise geodesic distances.
 
         Geodesic distances account for manifold curvature. Comparing Euclidean
         distances would give incorrect correlation in curved spaces.
@@ -398,7 +401,7 @@ class ManifoldFidelitySweep:
         dy_mat = dy_result.distances
         b.eval(dx_mat, dy_mat)
 
-        # Extract upper triangular pairwise distances
+        # Extract off-diagonal pairwise distances
         off_diag = b.ones((n, n)) - b.eye(n)
         dx_vals = dx_mat * off_diag
         dy_vals = dy_mat * off_diag
@@ -406,17 +409,16 @@ class ManifoldFidelitySweep:
 
         mean_x = b.sum(dx_vals) / float(count)
         mean_y = b.sum(dy_vals) / float(count)
-        cov = b.sum((dx_vals - mean_x) * (dy_vals - mean_y))
-        var_x = b.sum((dx_vals - mean_x) ** 2)
-        var_y = b.sum((dy_vals - mean_y) ** 2)
-        b.eval(cov, var_x, var_y)
+        centered_x = (dx_vals - mean_x) * off_diag
+        centered_y = (dy_vals - mean_y) * off_diag
 
-        var_x_val = float(b.to_scalar(var_x))
-        var_y_val = float(b.to_scalar(var_y))
-        cov_val = float(b.to_scalar(cov))
-        denom = sqrt_scalar(var_x_val * var_y_val, b)
-        eps = division_epsilon(b, b.array([denom]))
-        return cov_val / denom if denom > eps else 0.0
+        centered_x_flat = b.reshape(centered_x, (1, -1))
+        centered_y_flat = b.reshape(centered_y, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(centered_x_flat, centered_y_flat, b)
+        b.eval(cos_arr)
+        if cos_arr.size == 0:
+            return 0.0
+        return float(b.to_scalar(cos_arr[0]))
 
     def _compute_plateau(self, metrics: list[RankMetrics]) -> PlateauSummary:
         """Find plateau ranks where metrics stop improving.

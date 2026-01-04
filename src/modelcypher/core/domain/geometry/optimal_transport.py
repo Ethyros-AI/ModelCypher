@@ -50,7 +50,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     tiny_value,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_between_sets,
+    geodesic_norms,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -475,15 +478,9 @@ class SinkhornSolver:
             Cost matrix [n, m] where cost = 1 - cosine_similarity
         """
         backend = self._backend
-        div_eps = division_epsilon(backend, source)
-        s_norms = geodesic_norms(source, backend)
-        t_norms = geodesic_norms(target, backend)
-        backend.eval(s_norms, t_norms)
-        s_norm = backend.reshape(s_norms, (-1, 1)) + div_eps
-        t_norm = backend.reshape(t_norms, (-1, 1)) + div_eps
-        s = source / s_norm
-        t = target / t_norm
-        similarity = backend.matmul(s, backend.transpose(t))
+        s = backend.array(source)
+        t = backend.array(target)
+        similarity = geodesic_cosine_between_sets(s, t, backend)
         cost = 1 - similarity
         clamped = backend.minimum(
             backend.maximum(cost, backend.array(0.0)), backend.array(2.0)

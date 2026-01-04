@@ -22,13 +22,13 @@ from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    compute_pearson_correlation,
     exp_scalar,
     is_finite,
     log_scalar,
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class Prediction:
     Attributes
     ----------
     expected_fidelity : float
-        Pearson correlation between Gram matrices.
+        Geodesic correlation between Gram matrices.
     confidence : float
         Statistical confidence (1 - CI width).
     sample_size : int
@@ -79,7 +79,17 @@ class TransferFidelityPrediction:
             return None
 
         _b = get_default_backend()
-        correlation = compute_pearson_correlation(vec_a, vec_b)
+        vec_a_arr = _b.array(vec_a)
+        vec_b_arr = _b.array(vec_b)
+        mean_a = _b.mean(vec_a_arr)
+        mean_b = _b.mean(vec_b_arr)
+        centered_a = vec_a_arr - mean_a
+        centered_b = vec_b_arr - mean_b
+        centered_a_mat = _b.reshape(centered_a, (1, -1))
+        centered_b_mat = _b.reshape(centered_b, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(centered_a_mat, centered_b_mat, _b)
+        _b.eval(cos_arr)
+        correlation = float(_b.to_scalar(cos_arr[0])) if cos_arr.size else 0.0
         if not is_finite(correlation, _b):
             return None
 

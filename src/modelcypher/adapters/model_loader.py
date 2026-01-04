@@ -23,10 +23,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend, get_mlx_probe_error, probe_mlx_available
-from modelcypher.core.domain.training.lora_mlx import (
-    LoRASettings,
-    apply_lora_to_model,
-)
+if TYPE_CHECKING:
+    from modelcypher.core.domain.training.lora_mlx import LoRASettings
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +42,7 @@ def _ensure_mlx() -> tuple[Any, Any]:
 
 def load_model_for_training(
     model_path: str,
-    lora_settings: LoRASettings | None = None,
+    lora_settings: "LoRASettings | None" = None,
 ) -> tuple["nn.Module", Any]:
     """Load model and tokenizer for training.
 
@@ -101,6 +99,8 @@ def load_model_for_training(
                     "Consider using text-only model for LoRA training."
                 )
                 # For now, we freeze and apply LoRA to language backbone only
+                from modelcypher.core.domain.training.lora_mlx import apply_lora_to_model
+
                 model.freeze()
                 model = apply_lora_to_model(model, lora_settings)
 
@@ -133,6 +133,8 @@ def load_model_for_training(
         model.freeze()
 
         logger.info("Injecting LoRA adapters (rank=%d)", lora_settings.rank)
+        from modelcypher.core.domain.training.lora_mlx import apply_lora_to_model
+
         model = apply_lora_to_model(model, lora_settings)
 
         # Count parameters for logging

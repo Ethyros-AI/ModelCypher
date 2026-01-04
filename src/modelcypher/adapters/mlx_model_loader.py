@@ -85,6 +85,14 @@ class MLXModelLoader(ModelLoaderPort):
             Dictionary mapping weight names to mx.array (runs on GPU)
         """
         from pathlib import Path
+        from modelcypher.core.domain._backend import (
+            get_mlx_probe_error,
+            probe_mlx_available,
+        )
+
+        if not probe_mlx_available(explicit=True):
+            detail = get_mlx_probe_error() or "Unknown MLX initialization error"
+            raise RuntimeError(f"MLX runtime unavailable: {detail}")
 
         import mlx.core as mx
 
