@@ -1056,13 +1056,13 @@ class RiemannianDensityEstimator:
         k_neighbors = min(max(3, n // 3), n)
         geo_result = rg.geodesic_distances(points_arr, k_neighbors=k_neighbors)
         centroid_to_points = geo_result.distances[0, 1:]
-        sorted_dists = backend.sort(centroid_to_points)
-        backend.eval(sorted_dists)
-        count = int(sorted_dists.shape[0])
+        count = int(centroid_to_points.shape[0])
         if count == 0:
             return 0.0
         idx = min(int(count * 0.95), count - 1)
-        elem = sorted_dists[idx]
+        partitioned = backend.argpartition(centroid_to_points, idx)
+        elem_idx = backend.take(partitioned, backend.array([idx]), axis=0)
+        elem = backend.take(centroid_to_points, elem_idx, axis=0)
         backend.eval(elem)
         return float(backend.to_scalar(elem))
 
@@ -1082,7 +1082,7 @@ class RiemannianDensityEstimator:
         cov_avg = (volume_a.covariance + volume_b.covariance) / 2
 
         try:
-            cov_avg_inv = backend.inv(cov_avg)
+            cov_avg_inv, _ = safe_inverse(backend, cov_avg, regularize=True)
             backend.eval(cov_avg_inv)
 
             # term1 = 0.125 * diff @ cov_avg_inv @ diff
@@ -1099,7 +1099,10 @@ class RiemannianDensityEstimator:
             backend.eval(min_eig)
             if float(backend.to_scalar(min_eig)) <= 0.0:
                 return 0.0
-            logdet_arr = backend.sum(backend.log(eigenvalues))
+            # Clamp eigenvalues to tiny_value before log for numerical stability
+            tiny = tiny_value(backend, eigenvalues)
+            clamped_eigenvalues = backend.maximum(eigenvalues, backend.full(eigenvalues.shape, tiny))
+            logdet_arr = backend.sum(backend.log(clamped_eigenvalues))
             backend.eval(logdet_arr)
             logdet_avg = float(backend.to_scalar(logdet_arr))
 

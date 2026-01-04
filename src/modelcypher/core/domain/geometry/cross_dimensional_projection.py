@@ -565,9 +565,14 @@ def _project_svd(
             # This preserves the most important components
             row_norms = geodesic_norms(source_k, b)
             b.eval(row_norms)
-            # Sort by negative norms (descending order) and keep top m_t
+            # Select top rows by magnitude without full sort
             neg_norms = -row_norms
-            indices = b.argsort(neg_norms)[:m_t]
+            kth = max(0, min(m_t - 1, int(row_norms.shape[0]) - 1))
+            partitioned = b.argpartition(neg_norms, kth)
+            indices = b.take(partitioned, b.arange(m_t), axis=0)
+            selected_neg = b.take(neg_norms, indices, axis=0)
+            order = b.argsort(selected_neg)
+            indices = b.take(indices, order, axis=0)
             b.eval(indices)
             source_k = b.take(source_k, indices, axis=0)
             b.eval(source_k)

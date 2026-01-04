@@ -260,15 +260,19 @@ class ManifoldClusterer:
         masked = geodesic_matrix + inf_mask
         nearest = backend.min(masked, axis=1)
         backend.eval(nearest)
-        sorted_nearest = backend.sort(nearest, axis=0)
-        backend.eval(sorted_nearest)
         mid = n // 2
         if n % 2 == 1:
-            median = backend.take(sorted_nearest, backend.array([mid]), axis=0)
+            partitioned = backend.argpartition(nearest, mid)
+            median_idx = backend.take(partitioned, backend.array([mid]), axis=0)
+            median = backend.take(nearest, median_idx, axis=0)
             backend.eval(median)
             return float(backend.to_scalar(backend.squeeze(median)))
-        lower = backend.take(sorted_nearest, backend.array([mid - 1]), axis=0)
-        upper = backend.take(sorted_nearest, backend.array([mid]), axis=0)
+        lower_part = backend.argpartition(nearest, mid - 1)
+        upper_part = backend.argpartition(nearest, mid)
+        lower_idx = backend.take(lower_part, backend.array([mid - 1]), axis=0)
+        upper_idx = backend.take(upper_part, backend.array([mid]), axis=0)
+        lower = backend.take(nearest, lower_idx, axis=0)
+        upper = backend.take(nearest, upper_idx, axis=0)
         backend.eval(lower, upper)
         median = (backend.squeeze(lower) + backend.squeeze(upper)) / 2.0
         backend.eval(median)
@@ -307,17 +311,18 @@ class ManifoldClusterer:
         row = backend.take(geodesic_matrix, backend.array([point_index]), axis=0)
         row = backend.squeeze(row, axis=0)
         backend.eval(row)
-        # row is already 1D after squeeze; use backend sorting to select neighbors.
-        sorted_idx = backend.argsort(row)
-        sorted_dist = backend.take(row, sorted_idx, axis=0)
-        mask = sorted_dist <= epsilon
-        count_arr = backend.sum(backend.astype(mask, "int32"))
-        backend.eval(sorted_idx, sorted_dist, count_arr)
+        mask = row <= epsilon
+        mask_int = backend.astype(mask, "int32")
+        count_arr = backend.sum(mask_int)
+        backend.eval(mask_int, count_arr)
         count = int(backend.to_scalar(count_arr))
         if count <= 0:
             return []
-        prefix_idx = backend.arange(count)
-        neighbor_idx = backend.take(sorted_idx, prefix_idx, axis=0)
+        kth = max(0, int(row.shape[0]) - count)
+        partitioned = backend.argpartition(mask_int, kth)
+        neighbor_idx = backend.take(
+            partitioned, backend.arange(kth, int(row.shape[0])), axis=0
+        )
         backend.eval(neighbor_idx)
         neighbors = backend.tolist(neighbor_idx)
         return [int(x) for x in neighbors]

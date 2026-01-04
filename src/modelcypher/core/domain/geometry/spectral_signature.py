@@ -231,12 +231,12 @@ class SpectralSignature:
         inf_val = geo_result.inf_value
         k_neighbors = geo_result.k_neighbors
 
-        # Use geodesic distances for neighbor ordering.
+        # Use geodesic distances for neighbor selection.
         self_mask = backend.eye(n) > 0.0
         dist_no_self = backend.where(self_mask, inf_val, geodesic_dist)
-        neighbor_order = backend.argsort(dist_no_self, axis=1)
-        neighbor_indices = neighbor_order[:, :k_neighbors]
-        backend.eval(neighbor_order, neighbor_indices)
+        kth = max(0, min(k_neighbors - 1, n - 1))
+        neighbor_indices = backend.argpartition(dist_no_self, kth, axis=1)[:, :k_neighbors]
+        backend.eval(neighbor_indices)
 
         adj = backend.full((n, n), inf_val)
         adj = backend.where(self_mask, backend.zeros_like(adj), adj)
@@ -245,14 +245,13 @@ class SpectralSignature:
         edge_eps_arr = backend.full(geodesic_dist.shape, edge_eps)
         weights = backend.maximum(geodesic_dist, edge_eps_arr)
 
-        # Vectorized k-NN mask: rank(i, j) < k_neighbors
-        rank = backend.argsort(neighbor_order, axis=1)
-        mask = rank < k_neighbors
-        mask = backend.where(self_mask, backend.zeros_like(mask), mask)
-        mask_float = backend.astype(mask, "float32")
-        mask_sym = backend.maximum(mask_float, backend.transpose(mask_float))
-
-        adj = backend.where(mask_sym > 0.0, weights, adj)
+        col_indices = backend.arange(n)
+        col_indices_row = backend.reshape(col_indices, (1, n))
+        for neighbor_rank in range(k_neighbors):
+            neighbor_cols = neighbor_indices[:, neighbor_rank]
+            mask = backend.reshape(neighbor_cols, (n, 1)) == col_indices_row
+            adj = backend.where(mask, weights, adj)
+        adj = backend.minimum(adj, backend.transpose(adj))
 
         return adj, geodesic_dist, inf_val, k_neighbors, neighbor_indices
 
@@ -312,7 +311,11 @@ def _spectral_entropy(backend: "Backend", eigenvalues: "Array", eps: float) -> f
     if total_val <= eps:
         return 0.0
     probs = eigenvalues / total
-    log_probs = backend.where(probs > eps, backend.log(probs), backend.zeros_like(probs))
+    # Use safe_log_epsilon for log clamping (smaller than division epsilon)
+    log_eps = safe_log_epsilon(backend, probs)
+    log_probs = backend.where(
+        probs > log_eps, backend.log(probs), backend.zeros_like(probs)
+    )
     entropy_arr = -backend.sum(probs * log_probs)
     backend.eval(entropy_arr)
     return float(backend.to_scalar(entropy_arr))

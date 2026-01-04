@@ -288,6 +288,16 @@ class GramAligner:
             procrustes_err,
         )
 
+        # LAZY EVALUATION: Short-circuit if Procrustes achieves near-perfect alignment
+        # If relative error is below sqrt(machine_epsilon), skip expensive alternatives
+        precision_threshold = regularization_epsilon(b, source_centered)
+        if procrustes_err < precision_threshold:
+            self._logger.debug(
+                "Procrustes short-circuit: error %.2e < threshold %.2e",
+                procrustes_err, precision_threshold,
+            )
+            return F_gram
+
         # Method 2: Native eigendecomposition for Gram inverse (EXACT, no approximation)
         gram = b.matmul(source_centered, b.transpose(source_centered))
         gram_f32 = b.astype(gram, "float32")
@@ -324,6 +334,14 @@ class GramAligner:
         residual_val = float(b.to_scalar(residual_eig_arr))
         rel_residual = residual_val / (target_norm_val + reg_threshold)
         candidates.append((rel_residual, F_eig, "native_eigh"))
+
+        # LAZY EVALUATION: Short-circuit if eigendecomposition achieves near-perfect alignment
+        if rel_residual < precision_threshold:
+            self._logger.debug(
+                "Eigendecomposition short-circuit: error %.2e < threshold %.2e",
+                rel_residual, precision_threshold,
+            )
+            return F_eig
 
         # Method 3: Native pseudo-inverse (EXACT Moore-Penrose, no regularization)
         source_pinv = b.pinv(source_centered)
@@ -520,8 +538,7 @@ class GramAligner:
                 b.eval(identity)
                 source_centered = self._center(source_activations)
                 K_s = b.matmul(source_centered, b.transpose(source_centered))
-                H = self._centering_matrix(n_samples)
-                K_s_c = b.matmul(b.matmul(H, K_s), H)
+                K_s_c = self._center_gram_efficient(K_s)
                 sample_transform = self._compute_sample_transform(K_s_c, K_s_c)
                 b.eval(sample_transform)
                 return AlignmentResult(
@@ -554,9 +571,8 @@ class GramAligner:
                     target_centered = self._center(target_activations)
                     K_s = b.matmul(source_centered, b.transpose(source_centered))
                     K_t = b.matmul(target_centered, b.transpose(target_centered))
-                    H = self._centering_matrix(n_samples)
-                    K_s_c = b.matmul(b.matmul(H, K_s), H)
-                    K_t_c = b.matmul(b.matmul(H, K_t), H)
+                    K_s_c = self._center_gram_efficient(K_s)
+                    K_t_c = self._center_gram_efficient(K_t)
                     sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
                     b.eval(sample_transform)
                     return AlignmentResult(
@@ -591,8 +607,7 @@ class GramAligner:
                 cross = b.matmul(b.transpose(source_centered), target_centered)
                 U, _, Vt = geodesic_svd(b, cross)
                 rotation = b.matmul(U, Vt)
-                H = self._centering_matrix(n_samples)
-                K_s_c = b.matmul(b.matmul(H, K_s), H)
+                K_s_c = self._center_gram_efficient(K_s)
                 sample_transform = self._compute_sample_transform(K_s_c, K_s_c)
                 return AlignmentResult(
                     feature_transform=self._array_to_2d_list(rotation),
@@ -615,11 +630,10 @@ class GramAligner:
             aligned_uncentered = b.matmul(source_activations, uncentered_transform)
             K_s = b.matmul(source_activations, b.transpose(source_activations))
             K_t = b.matmul(target_activations, b.transpose(target_activations))
-            H = self._centering_matrix(n_samples)
-            K_s_c = b.matmul(b.matmul(H, K_s), H)
-            K_t_c = b.matmul(b.matmul(H, K_t), H)
+            K_s_c = self._center_gram_efficient(K_s)
+            K_t_c = self._center_gram_efficient(K_t)
             K_a = b.matmul(aligned_uncentered, b.transpose(aligned_uncentered))
-            K_a_c = b.matmul(b.matmul(H, K_a), H)
+            K_a_c = self._center_gram_efficient(K_a)
             b.eval(K_s_c, K_t_c, K_a_c)
 
             cka_uncentered = self._compute_cka_from_centered_grams(K_a_c, K_t_c)
@@ -648,11 +662,9 @@ class GramAligner:
         K_t = b.matmul(target_centered, b.transpose(target_centered))
         b.eval(K_s, K_t)
 
-        # Center the Gram matrices (for CKA)
-        H = self._centering_matrix(n_samples)
-        K_s_c = b.matmul(b.matmul(H, K_s), H)
-        K_t_c = b.matmul(b.matmul(H, K_t), H)
-        b.eval(K_s_c, K_t_c)
+        # Center the Gram matrices (for CKA) - O(n²) instead of O(n³)
+        K_s_c = self._center_gram_efficient(K_s)
+        K_t_c = self._center_gram_efficient(K_t)
 
         # Step 1: Compute the exact sample-space transformation
         # T = K_t^{1/2} @ K_s^{-1/2}
@@ -707,8 +719,7 @@ class GramAligner:
         # Compute alignment error
         source_transformed = b.matmul(source_centered, feature_transform)
         K_s_transformed = b.matmul(source_transformed, b.transpose(source_transformed))
-        K_s_t_c = b.matmul(b.matmul(H, K_s_transformed), H)
-        b.eval(K_s_t_c)
+        K_s_t_c = self._center_gram_efficient(K_s_transformed)
 
         # Error is geodesic norm of difference (normalized)
         diff = K_s_t_c - K_t_c
@@ -754,6 +765,40 @@ class GramAligner:
         b.eval(H)
         self._centering_cache[n] = H
         return H
+
+    def _center_gram_efficient(self, K: "Array") -> "Array":
+        """Center Gram matrix in O(n²) instead of O(n³).
+
+        Mathematically equivalent to H @ K @ H where H = I - (1/n) * 1 @ 1^T,
+        but computed directly without matrix multiplication:
+
+            K_c = K - row_mean - col_mean + total_mean
+
+        This replaces two n×n matrix multiplications with four O(n²) operations:
+        - mean(K, axis=1): O(n²)
+        - mean(K, axis=0): O(n²)
+        - mean(K): O(n²)
+        - broadcast and subtract: O(n²)
+
+        Total: O(n²) vs O(n³) for H @ K @ H
+
+        Parameters
+        ----------
+        K : Array
+            Gram matrix [n, n] to center.
+
+        Returns
+        -------
+        Array
+            Centered Gram matrix K_c such that K_c = H @ K @ H.
+        """
+        b = self._backend
+        row_mean = b.mean(K, axis=1, keepdims=True)  # [n, 1]
+        col_mean = b.mean(K, axis=0, keepdims=True)  # [1, n]
+        total_mean = b.mean(K)                        # scalar
+        K_c = K - row_mean - col_mean + total_mean
+        b.eval(K_c)
+        return K_c
 
     def _compute_sample_transform(
         self, K_s_c: "Array", K_t_c: "Array"
@@ -845,9 +890,6 @@ class GramAligner:
         # Uses sqrt(machine_epsilon) as the convergence criterion
         precision_threshold = regularization_epsilon(b, source_centered)
 
-        # Use centering matrix for CKA computation
-        H = self._centering_matrix(n_samples)
-
         # CLOSED-FORM SOLUTION: F = A_s^T (A_s A_s^T)^-1 @ A_t
         # This GUARANTEES CKA = 1.0 when A_s has full row rank (n <= d_s)
         if initial_transform is not None:
@@ -865,8 +907,7 @@ class GramAligner:
             # Verify CKA = 1.0
             source_transformed = b.matmul(source_centered, F)
             K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-            K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
-            b.eval(K_s_t_c)
+            K_s_t_c = self._center_gram_efficient(K_s_t)
             cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
 
             if cka >= 1.0 - precision_threshold:
@@ -890,9 +931,7 @@ class GramAligner:
 
         # Compute sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
         K_s = b.matmul(source_centered, b.transpose(source_centered))
-        b.matmul(target_centered, b.transpose(target_centered))
-        K_s_c_local = b.matmul(b.matmul(H, K_s), H)
-        b.eval(K_s_c_local)
+        K_s_c_local = self._center_gram_efficient(K_s)
 
         # Native eigendecomposition for matrix square roots - ALL eigenvalues, no approximation
         K_s_f32 = b.astype(K_s_c_local, "float32")
@@ -942,8 +981,7 @@ class GramAligner:
             # Verify CKA
             source_aligned = b.matmul(source_centered, F_sample)
             K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
-            K_aligned_c = b.matmul(b.matmul(H, K_aligned), H)
-            b.eval(K_aligned_c)
+            K_aligned_c = self._center_gram_efficient(K_aligned)
             cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
 
             if cka >= 1.0 - precision_threshold:
@@ -962,11 +1000,21 @@ class GramAligner:
         eps = machine_epsilon(b, source_centered)
         div_eps = division_epsilon(b, source_centered)
 
+        # Cache fixed values before loop to avoid recomputation
+        source_centered_T = b.transpose(source_centered)
+        b.eval(source_centered_T)
+
+        # Conservative plateau detection: stop if CKA improvement < 1e-10 for 200 consecutive iters
+        # This avoids wasted iterations near convergence while preserving CKA=1.0 requirement
+        PLATEAU_THRESHOLD = 1e-10
+        PLATEAU_PATIENCE = 200
+        prev_cka = 0.0
+        plateau_count = 0
+
         for iteration in range(max_iters):
             source_transformed = b.matmul(source_centered, F)
             K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-            K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
-            b.eval(K_s_t_c)
+            K_s_t_c = self._center_gram_efficient(K_s_t)
 
             cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
 
@@ -981,9 +1029,24 @@ class GramAligner:
                 )
                 return F, iteration + 1, cka
 
+            # Plateau detection: track improvement rate
+            improvement = cka - prev_cka
+            if iteration > 10 and improvement < PLATEAU_THRESHOLD:
+                plateau_count += 1
+                if plateau_count >= PLATEAU_PATIENCE:
+                    logger.info(
+                        "GramAligner: Plateau detected at CKA=%.10f after %d iterations "
+                        "(improvement < %.0e for %d consecutive iterations)",
+                        cka, iteration + 1, PLATEAU_THRESHOLD, PLATEAU_PATIENCE
+                    )
+                    break
+            else:
+                plateau_count = 0
+            prev_cka = cka
+
             # Gradient step with adaptive learning rate
             diff = K_t_c - K_s_t_c
-            grad = b.matmul(b.transpose(source_centered), b.matmul(diff, source_transformed))
+            grad = b.matmul(source_centered_T, b.matmul(diff, source_transformed))
             b.eval(grad)
 
             grad_flat = b.reshape(grad, (1, -1))
@@ -1001,8 +1064,7 @@ class GramAligner:
         # Return lowest-error result
         source_transformed = b.matmul(source_centered, best_F)
         K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-        K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
-        b.eval(K_s_t_c)
+        K_s_t_c = self._center_gram_efficient(K_s_t)
         final_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
         return best_F, max_iters, final_cka
 

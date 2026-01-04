@@ -335,16 +335,26 @@ class SparseRegionProber:
                 layer_values.setdefault(layer, []).append(float(value))
 
         stats: list[LayerActivationStats] = []
+        backend = get_default_backend()
         for layer, values in layer_values.items():
             if not values:
                 continue
-            mean = sum(values) / float(len(values))
-            max_val = max(values)
-            variance = (
-                sum((value - mean) ** 2 for value in values) / float(max(1, len(values) - 1))
-                if len(values) > 1
-                else 0.0
-            )
+            # Use backend for mean, max, and variance computation
+            arr = backend.array(values)
+            mean_arr = backend.mean(arr)
+            max_arr = backend.max(arr)
+            backend.eval(mean_arr, max_arr)
+            mean = float(backend.to_scalar(mean_arr))
+            max_val = float(backend.to_scalar(max_arr))
+
+            # Variance using backend ops
+            if len(values) > 1:
+                diff = arr - mean
+                sum_sq = backend.sum(diff * diff)
+                backend.eval(sum_sq)
+                variance = float(backend.to_scalar(sum_sq)) / float(len(values) - 1)
+            else:
+                variance = 0.0
             stats.append(
                 LayerActivationStats(
                     layer_index=layer,

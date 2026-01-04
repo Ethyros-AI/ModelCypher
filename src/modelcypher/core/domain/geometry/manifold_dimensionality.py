@@ -32,6 +32,16 @@ if TYPE_CHECKING:
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.support import statistics
 
+# Module-level cache for default feature names to avoid repeated string creation
+_DEFAULT_FEATURE_NAMES: dict[int, list[str]] = {}
+
+
+def _get_default_feature_names(d: int) -> list[str]:
+    """Get or create default feature names for dimension d (cached)."""
+    if d not in _DEFAULT_FEATURE_NAMES:
+        _DEFAULT_FEATURE_NAMES[d] = [f"feature_{i}" for i in range(d)]
+    return _DEFAULT_FEATURE_NAMES[d]
+
 
 @dataclass(frozen=True)
 class EntropyTraceFeatures:
@@ -116,7 +126,7 @@ class ManifoldDimensionality:
         d = len(points[0])
         if d <= 0 or any(len(row) != d for row in points):
             return []
-        names = feature_names if len(feature_names) == d else [f"feature_{i}" for i in range(d)]
+        names = feature_names if len(feature_names) == d else _get_default_feature_names(d)
 
         stats: list[FeatureStat] = []
         _b = get_default_backend()
@@ -260,7 +270,7 @@ class BackendManifoldDimensionality:
         if d <= 0 or any(len(row) != d for row in points):
             return []
 
-        names = feature_names if len(feature_names) == d else [f"feature_{i}" for i in range(d)]
+        names = feature_names if len(feature_names) == d else _get_default_feature_names(d)
 
         # Convert to backend array [n, d]
         # Filter out non-finite values per column

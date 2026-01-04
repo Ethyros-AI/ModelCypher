@@ -256,13 +256,13 @@ class DensityEstimator:
         dist = dist_full[:grid_count, grid_count:]
         b.eval(dist)
 
-        # Find k-th nearest neighbor distance for each grid point
-        sorted_dists = b.sort(dist, axis=1)
-        b.eval(sorted_dists)
-
         # Derive k from Berry & Sauer 2016: k >= ceil(log(n))
         k = max(1, min(n_points - 1, int(math.ceil(math.log(n_points)))))
-        kth_dist = sorted_dists[:, k]
+        kth = max(0, min(k, n_points - 1))
+        partitioned = b.argpartition(dist, kth, axis=1)
+        kth_idx = partitioned[:, kth : kth + 1]
+        kth_dist = b.take_along_axis(dist, kth_idx, axis=1)
+        kth_dist = b.squeeze(kth_dist, axis=1)
         b.eval(kth_dist)
 
         # Density = k / r^3

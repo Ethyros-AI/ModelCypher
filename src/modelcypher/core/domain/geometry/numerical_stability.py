@@ -90,11 +90,14 @@ def _geodesic_norm_scalar(array: "Array", backend: "Backend") -> float:
 
 
 def sqrt_scalar(value: float, backend: "Backend") -> float:
-    """Compute sqrt of scalar using backend.
+    """Compute sqrt of scalar using backend with non-negativity guard.
 
-    Use instead of math.sqrt(value).
+    Use instead of math.sqrt(value). Guards against numerical noise
+    that might produce slightly negative values (returns 0.0 for v < 0).
     """
-    arr = backend.array([value])
+    # Guard against negative values from numerical noise
+    safe_value = max(0.0, value)
+    arr = backend.array([safe_value])
     result = backend.sqrt(arr)
     backend.eval(result)
     return float(backend.to_scalar(result))

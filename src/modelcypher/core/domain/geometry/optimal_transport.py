@@ -169,13 +169,18 @@ class SinkhornSolver:
         if n == 0:
             return float(division_epsilon(backend, cost))
 
-        sorted_vals = backend.sort(flat)
         mid = n // 2
         if n % 2 == 1:
-            median_arr = backend.take(sorted_vals, backend.array([mid]), axis=0)
+            partitioned = backend.argpartition(flat, mid)
+            median_idx = backend.take(partitioned, backend.array([mid]), axis=0)
+            median_arr = backend.take(flat, median_idx, axis=0)
         else:
-            low = backend.take(sorted_vals, backend.array([mid - 1]), axis=0)
-            high = backend.take(sorted_vals, backend.array([mid]), axis=0)
+            low_part = backend.argpartition(flat, mid - 1)
+            high_part = backend.argpartition(flat, mid)
+            low_idx = backend.take(low_part, backend.array([mid - 1]), axis=0)
+            high_idx = backend.take(high_part, backend.array([mid]), axis=0)
+            low = backend.take(flat, low_idx, axis=0)
+            high = backend.take(flat, high_idx, axis=0)
             median_arr = (low + high) * 0.5
         median_arr = backend.squeeze(median_arr)
         backend.eval(median_arr)

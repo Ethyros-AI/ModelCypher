@@ -232,8 +232,19 @@ class RelationalStressComputer:
         anchor_indices = b.arange(1, len(anchor_names) + 1)
         anchor_dists = b.take(row0, anchor_indices, axis=0)
         b.eval(anchor_dists)
-        sorted_idx = b.argsort(anchor_dists)
-        sorted_dists = b.take(anchor_dists, sorted_idx, axis=0)
+        total_anchors = len(anchor_names)
+        effective_k = total_anchors if k_nearest is None else min(k_nearest, total_anchors)
+        if effective_k >= total_anchors:
+            sorted_idx = b.argsort(anchor_dists)
+            sorted_dists = b.take(anchor_dists, sorted_idx, axis=0)
+        else:
+            kth = max(0, effective_k - 1)
+            partitioned = b.argpartition(anchor_dists, kth)
+            sorted_idx = partitioned[:effective_k]
+            sorted_dists = b.take(anchor_dists, sorted_idx, axis=0)
+            order = b.argsort(sorted_dists)
+            sorted_idx = b.take(sorted_idx, order, axis=0)
+            sorted_dists = b.take(sorted_dists, order, axis=0)
         b.eval(sorted_idx, sorted_dists)
         sorted_idx_list = [int(x) for x in b.tolist(sorted_idx)]
         # Use tolist() for O(1) extraction instead of O(n) scalar extractions
@@ -254,14 +265,11 @@ class RelationalStressComputer:
             normalized = distances.copy()
 
         # Find k nearest anchors using backend sort order
-        total_anchors = len(anchor_names)
-        effective_k = total_anchors if k_nearest is None else min(k_nearest, total_anchors)
         nearest = tuple(anchor_names[i] for i in sorted_idx_list[:effective_k])
 
         # Compute local density (inverse of mean distance to k nearest)
         if effective_k > 0:
-            prefix_idx = b.arange(effective_k)
-            k_vals = b.take(sorted_dists, prefix_idx, axis=0)
+            k_vals = b.reshape(sorted_dists, (-1,))
             k_mean = b.mean(k_vals)
             b.eval(k_mean)
             eps = division_epsilon(b, anchor_dists)
@@ -320,19 +328,11 @@ class RelationalStressComputer:
         # Extract distances from point (row 0) to neighbors
         row0 = b.take(geo_dist, b.array([0]), axis=0)
         row0 = b.squeeze(row0, axis=0)
-        neighbor_indices = b.arange(1, len(neighbor_names) + 1)
-        neighbor_dists = b.take(row0, neighbor_indices, axis=0)
-        b.eval(neighbor_dists)
-        sorted_idx = b.argsort(neighbor_dists)
-        b.eval(sorted_idx)
-        sorted_idx_list = [int(x) for x in b.tolist(sorted_idx)]
-        k = len(sorted_idx_list)
-
         # Build local covariance from neighbor directions
         directions = []
         eps = division_epsilon(b, point)
-        for idx in sorted_idx_list:
-            direction = neighbors[neighbor_names[idx]] - point
+        for name in neighbor_names:
+            direction = neighbors[name] - point
             norm_arr = geodesic_norms(b.reshape(direction, (1, -1)), b)
             b.eval(norm_arr)
             norm = float(b.to_scalar(norm_arr[0]))

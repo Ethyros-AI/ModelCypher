@@ -198,7 +198,7 @@ def _rbf_gram_matrix(
     if sigma is None:
         # Median bandwidth: sigma = median of non-zero distances
         flat_dist = backend.reshape(distances, (-1,))
-        sorted_dist = backend.sort(flat_dist)
+        partitioned = backend.argpartition(flat_dist, median_idx)
         # Skip near-zeros (diagonal elements and exact duplicates)
         div_eps = division_epsilon(backend, distances)
         zero_mask = flat_dist <= div_eps
@@ -208,7 +208,8 @@ def _rbf_gram_matrix(
         total = n * n
         non_zero_count = max(total - zero_count, 1)
         median_idx = min(zero_count + (non_zero_count // 2), total - 1)
-        median_elem = backend.take(sorted_dist, backend.array([median_idx]), axis=0)
+        median_idx_arr = backend.take(partitioned, backend.array([median_idx]), axis=0)
+        median_elem = backend.take(flat_dist, median_idx_arr, axis=0)
         median_elem = backend.squeeze(median_elem)
         backend.eval(median_elem)
         median_dist = float(backend.to_scalar(median_elem))

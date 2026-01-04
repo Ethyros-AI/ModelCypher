@@ -1090,8 +1090,15 @@ class RiemannianGeometry:
 
         # Look at the k nearest neighbors of the center point (geodesic order)
         center_geo = geo_result.distances[center_idx]
-        sorted_idx = backend.argsort(center_geo)
-        neighbors = sorted_idx[1 : k_neighbors + 1]
+        inf_val = geo_result.inf_value
+        center_geo = backend.where(
+            backend.arange(0, n) == center_idx,
+            backend.full((n,), inf_val),
+            center_geo,
+        )
+        kth = max(0, min(k_neighbors - 1, n - 1))
+        partitioned = backend.argpartition(center_geo, kth)
+        neighbors = partitioned[:k_neighbors]
         backend.eval(neighbors)
 
         if d > 3:

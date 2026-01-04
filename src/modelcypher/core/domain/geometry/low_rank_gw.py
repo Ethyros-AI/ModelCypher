@@ -234,14 +234,19 @@ class LowRankGromovWasserstein:
         # Use median of cost matrix scale * sqrt(machine_epsilon)
         # This balances regularization strength with numerical precision
         flat_c1 = b.reshape(C1, (-1,))
-        sorted_c1 = b.sort(flat_c1)
         n_flat = int(flat_c1.shape[0])
         mid = n_flat // 2
         if n_flat % 2 == 1:
-            median_c1 = b.take(sorted_c1, b.array([mid]), axis=0)
+            partitioned = b.argpartition(flat_c1, mid)
+            median_idx = b.take(partitioned, b.array([mid]), axis=0)
+            median_c1 = b.take(flat_c1, median_idx, axis=0)
         else:
-            low = b.take(sorted_c1, b.array([mid - 1]), axis=0)
-            high = b.take(sorted_c1, b.array([mid]), axis=0)
+            low_part = b.argpartition(flat_c1, mid - 1)
+            high_part = b.argpartition(flat_c1, mid)
+            low_idx = b.take(low_part, b.array([mid - 1]), axis=0)
+            high_idx = b.take(high_part, b.array([mid]), axis=0)
+            low = b.take(flat_c1, low_idx, axis=0)
+            high = b.take(flat_c1, high_idx, axis=0)
             median_c1 = (low + high) * 0.5
         median_c1 = b.squeeze(median_c1)
         b.eval(median_c1)

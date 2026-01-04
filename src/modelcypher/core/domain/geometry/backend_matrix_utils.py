@@ -106,9 +106,8 @@ class BackendMatrixUtils:
             sq_dists = self.pairwise_squared_distances(X)
 
             # Compute median of non-zero distances for bandwidth
-            # Flatten, sort, find median
+            # Flatten, select median without full sort
             flat = self.backend.reshape(sq_dists, (-1,))
-            sorted_dists = self.backend.sort(flat)
 
             # Find median of positive values (exclude near-zeros by dtype epsilon)
             n = int(flat.shape[0]) if hasattr(flat, "shape") else len(flat)
@@ -119,9 +118,11 @@ class BackendMatrixUtils:
             zero_count = int(self.backend.to_scalar(zero_count_arr))
             non_zero_count = max(n - zero_count, 1)
             median_idx = min(zero_count + (non_zero_count // 2), n - 1)
-            median_val = self.backend.take(
-                sorted_dists, self.backend.array([median_idx]), axis=0
+            partitioned = self.backend.argpartition(flat, median_idx)
+            median_idx_arr = self.backend.take(
+                partitioned, self.backend.array([median_idx]), axis=0
             )
+            median_val = self.backend.take(flat, median_idx_arr, axis=0)
             median_val = self.backend.squeeze(median_val)
             self.backend.eval(median_val)
             median_dist = float(self.backend.to_scalar(median_val))

@@ -362,8 +362,9 @@ class ManifoldFidelitySweep:
         eye = b.eye(n)
         dx_masked = b.where(eye > 0, b.full(dx.shape, inf), dx)
         dy_masked = b.where(eye > 0, b.full(dy.shape, inf), dy)
-        x_neighbors = b.argsort(dx_masked, axis=1)[:, :k]
-        y_neighbors = b.argsort(dy_masked, axis=1)[:, :k]
+        kth = max(0, min(k - 1, n - 1))
+        x_neighbors = b.argpartition(dx_masked, kth, axis=1)[:, :k]
+        y_neighbors = b.argpartition(dy_masked, kth, axis=1)[:, :k]
         b.eval(x_neighbors, y_neighbors)
 
         # Overlap per row via broadcast compare

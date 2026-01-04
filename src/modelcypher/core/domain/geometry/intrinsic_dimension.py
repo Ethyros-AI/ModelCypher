@@ -286,12 +286,23 @@ class IntrinsicDimension:
         """
         backend = self._backend
 
-        # Find nearest neighbors (excluding self at index 0 in sorted order)
-        sorted_dist_sq = backend.sort(dist_sq, axis=1)
-
-        # index 0 is self (dist 0), index 1 is NN1, index 2 is NN2
-        r1_sq = sorted_dist_sq[:, 1]
-        r2_sq = sorted_dist_sq[:, 2]
+        # Find nearest neighbors without full sort (exclude self)
+        n = dist_sq.shape[0]
+        if n < 3:
+            sorted_dist_sq = backend.sort(dist_sq, axis=1)
+            r1_sq = sorted_dist_sq[:, 1]
+            r2_sq = sorted_dist_sq[:, 2]
+        else:
+            dtype = dist_sq.dtype if hasattr(dist_sq, "dtype") else None
+            inf_val = float(backend.finfo(dtype).max)
+            dist_no_self = backend.where(
+                backend.eye(n) > 0, backend.full((n, n), inf_val), dist_sq
+            )
+            partitioned = backend.argpartition(dist_no_self, 1, axis=1)
+            nearest_idx = partitioned[:, :2]
+            nearest_vals = backend.take_along_axis(dist_sq, nearest_idx, axis=1)
+            r1_sq = backend.min(nearest_vals, axis=1)
+            r2_sq = backend.max(nearest_vals, axis=1)
 
         # Filter degenerate points:
         # 1. r1 > eps (avoid division by zero)
@@ -306,16 +317,25 @@ class IntrinsicDimension:
 
         # Data-derived infinity threshold:
         # Use median of r2 as baseline - infinite values are >> typical distances
-        # Compute median via sort (backend doesn't have median function)
-        sorted_r2 = backend.sort(r2_sq)
-        backend.eval(sorted_r2)
+        # Compute median via argpartition (avoid full sort)
         n = r2_sq.shape[0]
         mid = n // 2
         if n % 2 == 0:
-            median_val = (float(backend.to_scalar(sorted_r2[mid - 1])) +
-                         float(backend.to_scalar(sorted_r2[mid]))) / 2.0
+            low_part = backend.argpartition(r2_sq, mid - 1)
+            high_part = backend.argpartition(r2_sq, mid)
+            low_idx = backend.take(low_part, backend.array([mid - 1]), axis=0)
+            high_idx = backend.take(high_part, backend.array([mid]), axis=0)
+            low = backend.take(r2_sq, low_idx, axis=0)
+            high = backend.take(r2_sq, high_idx, axis=0)
+            backend.eval(low, high)
+            median_val = (float(backend.to_scalar(low)) +
+                         float(backend.to_scalar(high))) / 2.0
         else:
-            median_val = float(backend.to_scalar(sorted_r2[mid]))
+            part = backend.argpartition(r2_sq, mid)
+            mid_idx = backend.take(part, backend.array([mid]), axis=0)
+            mid_val = backend.take(r2_sq, mid_idx, axis=0)
+            backend.eval(mid_val)
+            median_val = float(backend.to_scalar(mid_val))
 
         # Infinity threshold: anything > 1e6 * median is disconnected
         # This factor is derived from geometry: in connected graphs, max distance
@@ -344,18 +364,16 @@ class IntrinsicDimension:
         # mu = r2 / r1 for valid points
         mu_all = r2 / r1
 
-        # Extract only valid values using argsort
-        # Sort by validity (invalid first = 0, valid second = 1), then take last N indices
+        # Extract only valid values using argpartition
+        # Partition by validity (invalid first = 0, valid second = 1), then take tail indices
         n = dist_sq.shape[0]
         if valid_count == n:
             mu = mu_all
         else:
-            # Use argsort to get indices sorted by validity
             valid_float = backend.astype(valid_mask, r1_sq.dtype)
-            sorted_indices = backend.argsort(valid_float)
-            # Valid entries are at the end (they have higher values = 1.0)
-            valid_indices = sorted_indices[n - valid_count:]
-            # Extract actual mu values at those indices
+            kth = max(0, n - valid_count)
+            partitioned = backend.argpartition(valid_float, kth)
+            valid_indices = partitioned[kth:]
             mu = backend.take(mu_all, valid_indices)
 
         return mu
@@ -370,8 +388,10 @@ class IntrinsicDimension:
         if N < 3:
             raise EstimatorError("two_nn", f"Insufficient non-degenerate samples: {N} < 3", N)
 
-        # log(mu)
-        log_mu = backend.log(mu)
+        # log(mu) - clamp to avoid log(0) for degenerate neighbor ratios
+        log_eps = safe_log_epsilon(backend, mu)
+        mu_clamped = backend.maximum(mu, backend.full(mu.shape, log_eps))
+        log_mu = backend.log(mu_clamped)
 
         # Regression variant (Facco et al.) - always used, more robust than MLE
         sorted_log_mu = backend.sort(log_mu)
@@ -501,14 +521,17 @@ class IntrinsicDimension:
         # Get machine epsilon from the array's dtype - the geometry's precision limit
         eps = machine_epsilon(backend, geo_dist)
 
-        # Sort distances per row to get k-nearest neighbors
-        # Shape: [n, n] -> [n, n] sorted per row
-        sorted_dists = backend.sort(geo_dist, axis=1)
-        backend.eval(sorted_dists)
-
-        # Skip self (column 0, distance 0), take k_local neighbors
-        # k_dists[:, 0] is distance to self (0), k_dists[:, 1:k_local+1] are k nearest
-        k_dists = sorted_dists[:, 1 : k_local + 1]  # [n, k_local]
+        # Select k-nearest neighbors without full sort, then sort only the k block.
+        inf_val = backend.finfo(geo_dist.dtype).max
+        dist_no_self = backend.where(
+            backend.eye(n) > 0, backend.full((n, n), inf_val), geo_dist
+        )
+        kth = max(0, min(k_local - 1, n - 1))
+        partitioned = backend.argpartition(dist_no_self, kth, axis=1)
+        neighbor_idx = partitioned[:, :k_local]
+        k_dists = backend.take_along_axis(geo_dist, neighbor_idx, axis=1)
+        k_dists = backend.sort(k_dists, axis=1)
+        backend.eval(k_dists)
 
         # Detect infinite distances (disconnected points in geodesic graph)
         # Use dtype max as the numerical "infinite" sentinel.

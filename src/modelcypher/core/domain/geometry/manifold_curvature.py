@@ -970,14 +970,8 @@ class SectionalCurvatureEstimator:
             hessian = backend.array(hessian_list)
 
             # Shape operator = g^{-1} @ H
-            # Regularize metric for stable inversion - no fallback
-            reg = regularization_epsilon(backend, metric)
-            max_abs_arr = backend.max(backend.abs(metric))
-            backend.eval(max_abs_arr)
-            max_abs = float(backend.to_scalar(max_abs_arr))
-            reg_scale = reg * max_abs if max_abs > 0 else reg
-            metric_reg = metric + reg_scale * backend.eye(d)
-            metric_inv = backend.inv(metric_reg)
+            # Use safe_inverse for condition-checked inversion with auto-regularization
+            metric_inv, _ = safe_inverse(backend, metric, regularize=True)
             shape_op = backend.matmul(metric_inv, hessian)
 
             # Principal curvatures are eigenvalues (geodesic - GPU-only)
