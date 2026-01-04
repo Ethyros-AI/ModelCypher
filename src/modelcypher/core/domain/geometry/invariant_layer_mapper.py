@@ -909,30 +909,45 @@ class InvariantLayerMapper:
         if source_count == 0 or target_count == 0:
             return []
 
-        dp = [[float("-inf")] * target_count for _ in range(source_count)]
-        parent: list[list[tuple[int, int] | None]] = [
-            [None] * target_count for _ in range(source_count)
-        ]
+        backend = get_default_backend()
+        sim = backend.array(similarity_matrix, dtype="float32")
+        backend.eval(sim)
 
-        for j in range(target_count):
-            dp[0][j] = float(similarity_matrix[0][j])
+        neg_inf = -float(backend.finfo().max)
+        index = backend.arange(target_count, dtype="int32")
+        row_idx = backend.reshape(index, (target_count, 1))
+        col_idx = backend.reshape(index, (1, target_count))
+        prefix_mask = col_idx <= row_idx
+        neg_inf_mat = backend.full((target_count, target_count), neg_inf)
+
+        first_row = backend.take(sim, backend.array([0], dtype="int32"), axis=0)
+        first_row = backend.reshape(first_row, (target_count,))
+        dp_rows = [first_row]
+        parent: list[list[int]] = [[-1 for _ in range(target_count)]]
 
         for i in range(1, source_count):
-            best_prev_score = float("-inf")
-            best_prev_j = 0
-            for j in range(target_count):
-                if dp[i - 1][j] > best_prev_score:
-                    best_prev_score = dp[i - 1][j]
-                    best_prev_j = j
-                dp[i][j] = float(similarity_matrix[i][j]) + best_prev_score
-                parent[i][j] = (i - 1, best_prev_j)
+            row = backend.take(sim, backend.array([i], dtype="int32"), axis=0)
+            row = backend.reshape(row, (target_count,))
+            dp_prev = dp_rows[-1]
+            dp_prev_row = backend.broadcast_to(
+                backend.reshape(dp_prev, (1, target_count)),
+                (target_count, target_count),
+            )
+            masked_prev = backend.where(prefix_mask, dp_prev_row, neg_inf_mat)
+            prefix_max = backend.max(masked_prev, axis=1)
+            prefix_arg = backend.argmax(masked_prev, axis=1)
+            dp_row = row + prefix_max
+            backend.eval(prefix_arg, dp_row)
+            dp_rows.append(dp_row)
+            parent.append([int(x) for x in backend.tolist(prefix_arg)])
 
-        best_j = max(range(target_count), key=lambda j: dp[source_count - 1][j])
+        best_j_arr = backend.argmax(dp_rows[-1])
+        backend.eval(best_j_arr)
+        best_j = int(backend.to_scalar(best_j_arr))
 
         mappings: list[LayerMapping] = []
-        current: tuple[int, int] | None = (source_count - 1, best_j)
-        while current is not None:
-            i, j = current
+        j = best_j
+        for i in range(source_count - 1, -1, -1):
             source_layer = source_samples[i]
             target_layer = target_samples[j]
             similarity = similarity_matrix[i][j]
@@ -943,7 +958,9 @@ class InvariantLayerMapper:
                     similarity=similarity,
                 )
             )
-            current = parent[i][j]
+            if i == 0:
+                break
+            j = parent[i][j]
 
         mappings.reverse()
         return mappings
