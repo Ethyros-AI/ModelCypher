@@ -417,7 +417,7 @@ class CrossArchitectureLayerMatcher:
         centered_y_mat = backend.reshape(centered_y, (1, -1))
         cos_arr, _ = geodesic_pairwise_metrics(centered_x_mat, centered_y_mat, backend)
         backend.eval(cos_arr)
-        if cos_arr.size == 0:
+        if int(cos_arr.shape[0]) == 0:
             return 0.0
         corr = float(backend.to_scalar(cos_arr[0]))
         return 0.0 if is_nan(corr, backend) else corr

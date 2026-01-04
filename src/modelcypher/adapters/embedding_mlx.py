@@ -100,5 +100,9 @@ class MLXEmbeddingProvider(EmbeddingProvider):
             return self._mx.mean(hidden, axis=1)
         mask = attention_mask.astype(self._mx.float32)
         masked = hidden * mask[:, :, None]
-        denom = self._mx.sum(mask, axis=1, keepdims=True) + 1e-8
+        # Use 1e-6 for mixed precision safety (1e-8 too small for float16)
+        denom = self._mx.maximum(
+            self._mx.sum(mask, axis=1, keepdims=True),
+            self._mx.array(1e-6),
+        )
         return self._mx.sum(masked, axis=1) / denom
