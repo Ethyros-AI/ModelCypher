@@ -735,6 +735,17 @@ def stage_transplant(
             source_layer_idx = min(source_layer_idx, n_source - 1)  # Clamp to valid range
         else:
             source_layer_idx = layer_idx
+        
+        # DEBUG: Log which source layer is being used for this target layer
+        if layer_num < 5 or layer_idx >= 15:  # Log first 5 and layers 15+
+            available_keys = sorted(source_intermediate_activations.keys()) if source_intermediate_activations else []
+            has_source = source_layer_idx in available_keys if source_intermediate_activations else False
+            logger.info(
+                "Layer %d: Intermediate alignment using source layer %d (mapped=%s, has_data=%s, available_keys_sample=%s)",
+                layer_idx, source_layer_idx, layer_idx in layer_mapping if layer_mapping else "N/A",
+                has_source, str(available_keys[:5]) if available_keys else "[]"
+            )
+        
         src_inter_list = (
             source_intermediate_activations.get(source_layer_idx)
             if source_intermediate_activations else None
