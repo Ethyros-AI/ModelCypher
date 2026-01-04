@@ -154,11 +154,20 @@ class GeometricFingerprint:
         eigenvalues = GeometricFingerprint.symmetric_eigenvalues(gram, n)
         if eigenvalues is None or not eigenvalues:
             return float(n)
-        clamped = [max(0.0, val) for val in eigenvalues]
-        sum_vals = sum(clamped)
-        sum_sq = sum(val * val for val in clamped)
+
         backend = get_default_backend()
-        eig_eps = regularization_epsilon(backend, backend.array(clamped))
+        eig_arr = backend.array(eigenvalues)
+        zeros = backend.zeros_like(eig_arr)
+        clamped = backend.maximum(eig_arr, zeros)
+
+        sum_vals_arr = backend.sum(clamped)
+        sum_sq_arr = backend.sum(clamped * clamped)
+        backend.eval(sum_vals_arr, sum_sq_arr)
+
+        sum_vals = float(backend.to_scalar(sum_vals_arr))
+        sum_sq = float(backend.to_scalar(sum_sq_arr))
+
+        eig_eps = regularization_epsilon(backend, clamped)
         if sum_sq <= eig_eps:
             return float(n)
         return float((sum_vals * sum_vals) / sum_sq)
@@ -212,5 +221,11 @@ def _mean_abs_diff(lhs: Iterable[float], rhs: Iterable[float]) -> float:
     count = min(len(left), len(right))
     if count == 0:
         return 0.0
-    total = sum(abs(left[i] - right[i]) for i in range(count))
-    return total / count
+
+    backend = get_default_backend()
+    left_arr = backend.array(left[:count])
+    right_arr = backend.array(right[:count])
+    diff = backend.abs(left_arr - right_arr)
+    mean_arr = backend.mean(diff)
+    backend.eval(mean_arr)
+    return float(backend.to_scalar(mean_arr))

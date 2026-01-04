@@ -569,11 +569,16 @@ class GeometryValidationSuite:
 
         heat_arr = backend.array(signature.heat_trace or [0.0], dtype="float32")
         heat_eps = regularization_epsilon(backend, heat_arr)
-        heat_monotone = True
-        for i in range(len(signature.heat_trace) - 1):
-            if signature.heat_trace[i] + heat_eps < signature.heat_trace[i + 1]:
-                heat_monotone = False
-                break
+
+        # Vectorized monotonicity check: heat[i] + eps >= heat[i+1] for all i
+        if len(signature.heat_trace) > 1:
+            heat_diff = heat_arr[:-1] - heat_arr[1:]  # heat[i] - heat[i+1]
+            # If any diff < -eps, it's not monotone
+            violations = backend.sum(heat_diff < -heat_eps)
+            backend.eval(violations)
+            heat_monotone = int(backend.to_scalar(violations)) == 0
+        else:
+            heat_monotone = True
 
         component_ok = signature.component_count == fixture.expected_component_count
         connected_ok = signature.connected == fixture.expected_connected

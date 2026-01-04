@@ -135,7 +135,6 @@ def run_merge(
     )
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
-    probe_result.get("dimension_correlations", {})
     intersection_map_obj = probe_result.get("intersection_map")
     probe_failed = bool(probe_metrics.get("probe_failed"))
     perfect_alignment = bool(probe_metrics.get("perfect_alignment"))
@@ -413,7 +412,7 @@ def run_merge(
             from modelcypher.core.use_cases.merge.stages.probe import collect_activations
 
             # Load merged model (350M is fast)
-            merged_model, _ = load_model_for_probing(final_output_path, model_loader)
+            merged_model = load_model_for_probing(final_output_path)
 
             # Run subset of probes through merged model
             probe_ids = probe_result.get("probe_ids", [])[:50]  # Sample 50 probes
@@ -424,7 +423,7 @@ def run_merge(
                 # Collect activations from merged model
                 merged_activations = collect_activations(
                     model=merged_model,
-                    tokenizer=tokenizer,
+                    tokenizer=target_tokenizer,
                     texts=probe_texts,
                     layers=sample_layers,
                     backend=backend,

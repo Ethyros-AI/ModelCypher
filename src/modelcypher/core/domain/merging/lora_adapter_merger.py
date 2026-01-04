@@ -136,6 +136,36 @@ class LoRAAdapterMerger:
         weights: dict[str, "Array"] = {}
         module_keys: list[str] = []
 
+        # Actually load the weights from the file
+        if weights_path.suffix == ".safetensors":
+            try:
+                import safetensors.numpy
+                raw_weights = safetensors.numpy.load_file(str(weights_path))
+                for key, value in raw_weights.items():
+                    weights[key] = backend.array(value)
+                    module_keys.append(key)
+            except ImportError:
+                raise MergeError(
+                    "safetensors package required for .safetensors files. "
+                    "Install with: pip install safetensors"
+                )
+        elif weights_path.suffix in (".bin", ".pt"):
+            try:
+                import torch
+                raw_weights = torch.load(str(weights_path), map_location="cpu", weights_only=True)
+                for key, value in raw_weights.items():
+                    # Convert torch tensor to backend array via numpy
+                    weights[key] = backend.array(value.numpy())
+                    module_keys.append(key)
+            except ImportError:
+                raise MergeError(
+                    "torch package required for .bin/.pt files. "
+                    "Install with: pip install torch"
+                )
+
+        if not weights:
+            raise MergeError(f"No weights loaded from {weights_path}")
+
         base_model_id = str(config.get("base_model_name_or_path", ""))
         rank = int(config.get("r", 0))
         scale = float(config.get("lora_alpha", 1.0))
