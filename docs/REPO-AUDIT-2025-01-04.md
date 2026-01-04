@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 143
-- Issues found: 71
-- Issues fixed: 71
+- Audited: 150
+- Issues found: 77
+- Issues fixed: 77
 
 ## Audit Log
 
@@ -1247,6 +1247,96 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Outdated ThermoService API usage and interpretation output
   - Fix: Updated to ThermoService.measure/detect with raw metrics only
+
+- `examples/05_model_merge.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (pipeline alignment)
+  - Hexagonal structure: OK (use cases only)
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated merge API/config usage and invalid output fields
+  - Fix: Switched to MergePipelineService outputs and current pipeline metrics
+
+- `examples/README.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (example usage alignment)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Example descriptions and commands mismatched current scripts
+  - Fix: Updated usage and descriptions for examples 01/02/04/05
+
+- `package-lock.json` (metadata)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `papers/NEGATIVE-RESULTS.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (historical scope and wording)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified claims, heuristics, and missing data pointers
+  - Fix: Marked as historical snapshot, removed heuristics, clarified data handling
+
+- `papers/README.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (status and claims)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified status labels and numeric claims
+  - Fix: Marked claims as historical, removed numeric assertions, clarified pending work
+
+- `papers/RELEASE_NOTES.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (draft scope)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified claims, invalid links, and status assertions
+  - Fix: Reframed as draft notes, removed numeric claims, corrected links
+
+- `papers/SUMMARIES.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (raw metrics framing)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Numeric claims, thresholds, and validation assertions
+  - Fix: Reframed as draft summaries with raw-metric commands only
 
 - `docs/research/cross-architecture-transplant-2025-12-28.md` (doc)
   - Duplicate code/math: N/A

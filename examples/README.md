@@ -23,20 +23,23 @@ python examples/01_basic_geometry_probe.py /path/to/model
 - Loads model weights
 - Analyzes layer structure
 - Reports parameter counts and hidden dimensions
-- Computes geometric metrics (intrinsic dimension, effective rank)
+- Reports attention head count and quantization (when available)
 
 ### 02. Safety Audit
 
-Run safety probes against an adapter to detect potential risks.
+Run safety probes and entropy diagnostics against adapter metadata and baselines.
 
 ```bash
-python examples/02_safety_audit.py /path/to/adapter.safetensors
+python examples/02_safety_audit.py --name "adapter-name"
+python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/baseline.json \
+  --observed "[0.1, 0.12, 0.09]" --samples /path/to/samples.json
 ```
 
 **What it does:**
-- Static analysis for threat indicators
-- Entropy baseline verification
-- Pattern analysis for distress signals
+- Static metadata scan (red team)
+- Behavioral probe summary (raw findings only)
+- Entropy baseline verification (raw comparison metrics)
+- Entropy pattern analysis (trend, volatility, anomalies)
 
 ### 03. Adapter Inspection
 
@@ -59,22 +62,22 @@ python examples/04_entropy_analysis.py /path/to/model --prompt "Your prompt here
 ```
 
 **What it does:**
-- Measures entropy, temperature, and free energy
-- Detects phase transitions (ridges)
-- Provides interpretable results
+- Measures entropy across linguistic modifiers
+- Reports raw statistics (mean/std/min/max)
+- Computes baseline vs intensity delta_h
 
 ### 05. Model Merge
 
 Merge two models using geometric alignment.
 
 ```bash
-python examples/05_model_merge.py base_model model_a model_b -o merged_output
+python examples/05_model_merge.py source_model target_model -o merged_output
 ```
 
 **What it does:**
-- Aligns model representations using Procrustes analysis
-- Applies spectral regularization
-- Produces a merged model preserving capabilities from both sources
+- Runs pre-merge analysis, merge, and post-merge metrics
+- Uses null-space transplant (no blending)
+- Outputs raw geometry measurements
 
 ## Getting Models
 

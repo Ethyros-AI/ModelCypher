@@ -555,6 +555,11 @@ class GramAligner:
         K_aligned_c = _center_gram_matrix(K_aligned, b)
         cka = compute_cka_from_centered_grams(K_aligned_c, K_t_c, b)
 
+        # Cache the result for reuse
+        if use_cache and cache_key is not None:
+            compute_time_ms = (time.perf_counter() - start_time) * 1000
+            _cache.set_stitch(cache_key, (F, cka), compute_time_ms)
+
         return F, 1, cka
 
     def _diagnose_alignment(

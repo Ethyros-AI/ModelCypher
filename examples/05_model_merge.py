@@ -24,7 +24,7 @@ This example demonstrates how to merge two models using geometric alignment.
 The merge uses Gram alignment and null-space constrained transplant to preserve
 target boundaries while grafting dense source regions.
 
-Pipeline: VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
+Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
 
 Usage:
     python examples/05_model_merge.py source_model target_model -o merged_output
@@ -37,11 +37,10 @@ Requirements:
 import argparse
 from pathlib import Path
 
-from modelcypher.cli.composition import get_geometric_merger
-from modelcypher.core.use_cases.merge import UnifiedMergeConfig
+from modelcypher.cli.composition import get_merge_pipeline_service
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="Merge models using geometric alignment"
     )
@@ -57,17 +56,6 @@ def main():
         "-o", "--output",
         required=True,
         help="Output directory for merged model",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Analyze without saving (shows what would happen)",
-    )
-    parser.add_argument(
-        "--probe-mode",
-        choices=["precise", "fast"],
-        default="precise",
-        help="Probe mode: precise (CKA on activations) or fast (weight-level). Default: precise",
     )
     args = parser.parse_args()
 
@@ -88,53 +76,61 @@ def main():
     print(f"Source model: {source_path}")
     print(f"Target model: {target_path}")
     print(f"Output: {args.output}")
-    print(f"Probe mode: {args.probe_mode}")
-    print(f"Dry run: {args.dry_run}")
     print()
-    print("Pipeline: VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE")
+    print("Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT")
     print()
 
-    # Initialize merger with dependency injection
-    merger = get_geometric_merger()
+    service = get_merge_pipeline_service()
 
-    # Configure merge (optional - defaults are sensible)
-    merger.config = UnifiedMergeConfig(
-        probe_mode=args.probe_mode,
-    )
-
-    print("Running geometric merge...")
-    print("  Using Gram alignment and null-space transplant.")
+    print("Running geometric merge pipeline...")
+    print("  Using exact CKA alignment and null-space transplant.")
     print()
 
-    result = merger.merge(
-        source_path=str(source_path),
-        target_path=str(target_path),
-        output_dir=args.output if not args.dry_run else None,
-        dry_run=args.dry_run,
-    )
+    try:
+        result = service.run(
+            source_path=str(source_path),
+            target_path=str(target_path),
+            output_dir=args.output,
+        )
+    except RuntimeError as exc:
+        print(f"Merge failed: {exc}")
+        return 1
 
     print("\nMerge complete!")
     print("-" * 40)
-    print(f"Layers merged: {result.layer_count}")
-    print(f"Weights merged: {result.weight_count}")
-    print(f"Mean confidence: {result.mean_confidence:.4f}")
-    print(f"Mean Procrustes error: {result.mean_procrustes_error:.6f}")
+    print(f"Pipeline ID: {result.pipeline_id}")
+    print(f"Output directory: {result.output_dir}")
 
-    if result.vocab_aligned:
-        print(f"Vocabulary aligned: Yes")
-    if result.validation_metrics:
-        preserved = result.geometry_metrics.get("mean_preserved_fraction", 0.0)
-        print(f"Mean preserved fraction: {preserved:.4f}")
-        print(f"Refusal preserved: {result.refusal_preserved}")
+    pre = result.pre_merge
+    print("\nPre-merge metrics:")
+    print(f"  Mean overlap: {pre.mean_overlap:.6f}")
+    print(f"  Mean subspace alignment: {pre.mean_subspace_alignment:.6f}")
+    print(f"  Mean curvature divergence: {pre.mean_curvature_divergence:.6f}")
+    print(f"  Mean distance: {pre.mean_distance:.6f}")
+    print(f"  Aligned pairs: {pre.aligned_pairs}")
 
-    if result.output_path:
-        print(f"\nOutput path: {result.output_path}")
-        print("\nNext steps:")
-        print(f"  1. Test the merged model: mc model probe {result.output_path}")
-        print(f"  2. Run inference: mc infer run {result.output_path} --prompt 'Hello'")
-    elif args.dry_run:
-        print("\n[Dry run - no output saved]")
+    merge_result = result.merge_result
+    print("\nMerge results:")
+    print(f"  Layers merged: {merge_result.get('layer_count', 0)}")
+    print(f"  Weights merged: {merge_result.get('weight_count', 0)}")
+    print(f"  Mean preserved fraction: {merge_result.get('mean_preserved_fraction', 0.0):.6f}")
+    print(f"  Mean Procrustes error: {merge_result.get('mean_procrustes_error', 0.0):.6f}")
+
+    post = result.post_merge
+    print("\nPost-merge metrics:")
+    print(f"  Layers transplanted: {post.layers_transplanted}")
+    print(f"  Weights transplanted: {post.weights_transplanted}")
+    print(f"  Mean preserved fraction: {post.mean_preserved_fraction:.6f}")
+    print(f"  Mean CKA after: {post.mean_cka_after:.6f}")
+
+    output_path = merge_result.get("output_path") or result.output_dir
+    print(f"\nOutput path: {output_path}")
+    print("\nNext steps:")
+    print(f"  1. Test the merged model: mc model probe {output_path}")
+    print(f"  2. Run inference: mc infer run {output_path} --prompt 'Hello'")
+
+    return 0
 
 
 if __name__ == "__main__":
-    exit(main() or 0)
+    raise SystemExit(main())

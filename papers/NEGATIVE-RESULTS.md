@@ -2,6 +2,8 @@
 
 **Document Purpose**: This file records experimental results that did not support initial hypotheses, following best practices for scientific transparency and reproducibility.
 
+**Status**: Historical snapshot from 2025-12-25. Results have not been reproduced against current code paths. Treat numbers as provisional and rerun with recorded datasets and prompts before relying on them.
+
 ---
 
 ## 1. Semantic Primes Are Not More Special Than Random Words
@@ -25,22 +27,18 @@
 | Effect size (Cohen's d) | -6.76 | - |
 | p-value | 1.0 | - |
 
-**Interpretation**:
-Semantic primes showed **lower** cross-model CKA than random words, not higher. The difference is statistically significant in the **wrong direction**.
+**Observations**:
+- In this run, semantic primes produced lower cross-model CKA than the random baseline.
+- Both sets produced high CKA for this model pair.
 
-**What This Means**:
-1. ✅ **Supported**: Models share invariant structure (both primes and random words show CKA > 0.9)
-2. ❌ **Not Supported**: Semantic primes are geometrically "special" compared to other words
-3. ❌ **Not Supported**: The 52% improvement over controls claimed in Paper 1
-
-**Possible Explanations**:
+**Possible Explanations / Follow-ups**:
 1. The original claim may have used a different CKA normalization or centering scheme
 2. Different model pairs may show different patterns
 3. The semantic "primeness" may manifest in dimensions CKA doesn't capture
 4. Random words may share more surface-level features (morphology, frequency) that boost CKA
 
-**Revised Hypothesis**:
-> Cross-model CKA is uniformly high (>0.9) for most word sets, reflecting shared training dynamics and tokenization strategies rather than semantic structure specifically.
+**Working Hypothesis (to test)**:
+> Cross-model CKA is uniformly high for most word sets, reflecting shared training dynamics and tokenization strategies rather than semantic structure specifically.
 
 ---
 
@@ -49,9 +47,9 @@ Semantic primes showed **lower** cross-model CKA than random words, not higher. 
 **Experiment Date**: 2025-12-25
 **Hardware**: Apple M4 Max, 128GB unified memory
 
-### Key Finding: If You Can Run Inference, You Can Merge
+### Observation: Memory Use From a Single-Machine Run
 
-Unlike training (which requires ~3x model size in RAM for gradients), geometric analysis and merging are computationally lightweight. The operations are simple matrix manipulations on embeddings.
+Unlike training (which requires gradient memory), geometric analysis and merging are inference-weight operations. This section records one machine's observed memory usage; it is not a general limit.
 
 ### Memory Test Results
 
@@ -63,20 +61,17 @@ Unlike training (which requires ~3x model size in RAM for gradients), geometric 
 | **Qwen3-80B + Qwen3-8B** | **47 GB** | **47,161 MB** | **36.0%** |
 | **Qwen3-80B + Qwen2.5-3B-bf16** | **48 GB** | **48,653 MB** | **37.1%** |
 
-### Implications
+### Notes
 
-1. **No "training overhead"** - Geometric operations use only the model weight memory
-2. **80B models are practical** - An 80B 4-bit model uses only ~43GB, leaving 85GB for other operations
-3. **Two 80B models could theoretically be loaded simultaneously** - 82GB headroom after 80B+3B
-4. **Rule of thumb**: If you can load both models for inference, you can analyze and merge them
+1. These measurements reflect the model weight footprint only (no training gradients).
+2. These measurements are hardware- and configuration-specific; rerun on your system.
 
-### Verified Limit on 128GB M4 Max
+### Observed Limit on 128GB M4 Max
 
-- **Confirmed working**: 80B + 8B models (47GB combined, 36% RAM)
+- **Observed working**: 80B + 8B models (47GB combined, 36% RAM)
 - **Headroom remaining**: 82GB after largest test
-- **Theoretical maximum**: ~110GB of combined model weights (accounting for system overhead)
 
-### Performance Timings
+### Performance Timings (Single-Run Snapshot)
 
 | Operation | Model Pair | Time |
 |-----------|-----------|------|
@@ -101,4 +96,4 @@ rather than semantic structure specifically (see NEGATIVE-RESULTS.md).
 
 ## Experimental Data
 
-Full data files are available in the `experiments/` directory after running validation commands.
+Raw data files are not stored in this repo. If you rerun these experiments, capture inputs and outputs under a local `experiments/` directory and note the paths here.

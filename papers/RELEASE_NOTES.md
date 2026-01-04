@@ -2,54 +2,44 @@
 
 ## The Geometric Knowledge Thesis
 
-This release presents empirical evidence that knowledge in large language models has measurable geometric structure that is preserved across architectures.
+This release collects draft manuscripts and protocols. Empirical validation is pending and must be reproduced with current code and data.
 
 ---
 
 ## Papers
 
-### Tier 1: Validated Results
+### Draft Manuscripts (Validation Pending)
 
-| Paper | Title | Key Finding |
-|-------|-------|-------------|
-| **Paper 5** | [The Semantic Highway](papers/paper-5-semantic-highway.md) | Intrinsic dimension cliff in layers 0-4 across Qwen, Llama, Mistral |
-| **Paper 1** | [Invariant Semantic Structure](papers/paper-1-invariant-semantic-structure.md) | CKA > 0.9 cross-family for BOTH primes AND random words |
+| Paper | Title | Scope |
+|-------|-------|-------|
+| **Paper 5** | [The Semantic Highway](paper-5-semantic-highway.md) | Early-layer ID cliff exploration |
+| **Paper 1** | [Invariant Semantic Structure](paper-1-invariant-semantic-structure.md) | Cross-model CKA comparisons |
 
-### Tier 2: Framework & Systems
+### Framework & Systems
 
-| Paper | Title | Key Finding |
-|-------|-------|-------------|
-| **Paper 0** | [The Shape of Knowledge](papers/paper-0-the-shape-of-knowledge.md) | Theoretical framework for geometric knowledge thesis |
-| **Paper 4** | [ModelCypher Toolkit](papers/paper-4-modelcypher-toolkit.md) | 274 modules, 3060 tests, 46 papers implemented |
+| Paper | Title | Scope |
+|-------|-------|-------|
+| **Paper 0** | [The Shape of Knowledge](paper-0-the-shape-of-knowledge.md) | Theoretical framework |
+| **Paper 4** | [ModelCypher Toolkit](paper-4-modelcypher-toolkit.md) | Toolkit overview |
 
-### Tier 3: Methodology (Preliminary)
+### Methodology (Draft)
 
-| Paper | Title | Status |
-|-------|-------|--------|
-| **Paper 2** | [Entropy Safety Signal](papers/paper-2-entropy-safety-signal.md) | Protocol defined, preliminary AUROC ~0.85 |
-| **Paper 3** | [Cross-Architecture Transfer](papers/paper-3-cross-architecture-transfer.md) | Protocol defined, preliminary 65-78% retention |
-
----
-
-## Key Scientific Finding
-
-**Semantic primes are NOT geometrically special.**
-
-Original hypothesis: NSM semantic primes would show higher cross-model CKA than random words.
-
-Actual result:
-- Semantic primes: CKA = 0.92
-- Random words: CKA = 0.94
-
-This FALSIFIES the original hypothesis but reveals a STRONGER result: **universal representation invariance** applies to ALL concepts, not just theoretically-motivated ones.
-
-See [NEGATIVE-RESULTS.md](papers/NEGATIVE-RESULTS.md) for full analysis.
+| Paper | Title | Scope |
+|-------|-------|-------|
+| **Paper 2** | [Entropy Safety Signal](paper-2-entropy-safety-signal.md) | Protocol definition |
+| **Paper 3** | [Cross-Architecture Transfer](paper-3-cross-architecture-transfer.md) | Protocol definition |
 
 ---
 
-## Reproducibility
+## Historical Note
 
-All results can be reproduced using ModelCypher CLI:
+A prior run suggested semantic primes are not geometrically special compared to random words. Reproduction is pending. See [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md) for details.
+
+---
+
+## Reproducibility (Raw Metrics)
+
+Use the ModelCypher CLI to reproduce raw measurements:
 
 ```bash
 # Install
