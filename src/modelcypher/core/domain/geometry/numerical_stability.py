@@ -485,10 +485,10 @@ def compute_pearson_correlation(
     default: float | None = None,
     backend: "Backend | None" = None,
 ) -> float:
-    """Compute Pearson correlation coefficient between two lists.
+    """Compute geodesic correlation coefficient between two lists.
 
-    This is the canonical implementation for computing Pearson's r
-    across geometry modules.
+    This is the canonical implementation for computing geodesic
+    correlation across geometry modules.
 
     Args:
         lhs: First list of values.
@@ -498,7 +498,7 @@ def compute_pearson_correlation(
         backend: Backend for computation. If None, uses default backend.
 
     Returns:
-        Pearson correlation coefficient in [-1, 1], or default/nan on error.
+        Geodesic correlation coefficient in [-1, 1], or default/nan on error.
     """
     if backend is None:
         from modelcypher.core.domain._backend import get_default_backend
@@ -516,17 +516,25 @@ def compute_pearson_correlation(
     mean_r = backend.mean(rhs_arr)
     diff_l = lhs_arr - mean_l
     diff_r = rhs_arr - mean_r
-    num = backend.sum(diff_l * diff_r)
-    den_l = backend.sum(diff_l * diff_l)
-    den_r = backend.sum(diff_r * diff_r)
-    denom = backend.sqrt(den_l) * backend.sqrt(den_r)
+    backend.eval(diff_l, diff_r)
 
-    backend.eval(num, denom)
-    denom_val = float(backend.to_scalar(denom))
-    if denom_val <= 0:
+    eps = division_epsilon(backend, lhs_arr)
+    if _geodesic_norm_scalar(diff_l, backend) <= eps:
+        return error_value
+    if _geodesic_norm_scalar(diff_r, backend) <= eps:
         return error_value
 
-    return float(backend.to_scalar(num)) / denom_val
+    from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
+
+    diff_l_mat = backend.reshape(diff_l, (1, -1))
+    diff_r_mat = backend.reshape(diff_r, (1, -1))
+    cos_arr, _ = geodesic_pairwise_metrics(diff_l_mat, diff_r_mat, backend)
+    backend.eval(cos_arr)
+    if cos_arr.size == 0:
+        return error_value
+
+    corr = float(backend.to_scalar(cos_arr[0]))
+    return corr if is_finite(corr, backend) else error_value
 
 
 def compute_spearman_correlation(
@@ -549,7 +557,7 @@ def compute_spearman_correlation(
         backend: Backend for computation. If None, uses default backend.
 
     Returns:
-        Spearman correlation coefficient in [-1, 1], or default/nan on error.
+        Geodesic correlation coefficient in [-1, 1], or default/nan on error.
     """
     if backend is None:
         from modelcypher.core.domain._backend import get_default_backend
@@ -573,18 +581,25 @@ def compute_spearman_correlation(
     mean_r = backend.mean(rhs_rank)
     diff_l = lhs_rank - mean_l
     diff_r = rhs_rank - mean_r
-    num = backend.sum(diff_l * diff_r)
-    den_l = backend.sum(diff_l * diff_l)
-    den_r = backend.sum(diff_r * diff_r)
-    denom = backend.sqrt(den_l) * backend.sqrt(den_r)
+    backend.eval(diff_l, diff_r)
 
-    backend.eval(num, denom)
-    denom_val = float(backend.to_scalar(denom))
-    eps = division_epsilon(backend, denom)
-    if denom_val <= eps:
+    eps = division_epsilon(backend, lhs_rank)
+    if _geodesic_norm_scalar(diff_l, backend) <= eps:
+        return error_value
+    if _geodesic_norm_scalar(diff_r, backend) <= eps:
         return error_value
 
-    return float(backend.to_scalar(num)) / denom_val
+    from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
+
+    diff_l_mat = backend.reshape(diff_l, (1, -1))
+    diff_r_mat = backend.reshape(diff_r, (1, -1))
+    cos_arr, _ = geodesic_pairwise_metrics(diff_l_mat, diff_r_mat, backend)
+    backend.eval(cos_arr)
+    if cos_arr.size == 0:
+        return error_value
+
+    corr = float(backend.to_scalar(cos_arr[0]))
+    return corr if is_finite(corr, backend) else error_value
 
 
 # =============================================================================

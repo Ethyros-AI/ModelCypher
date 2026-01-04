@@ -896,8 +896,8 @@ class ManifoldStitcher:
                 return b.zeros((n, 0))
             # Attach centroids to the manifold graph with Euclidean edge weights.
             cent_sq = b.sum(centroids_arr * centroids_arr, axis=1, keepdims=True)
-            pts_sq = b.sum(pts_arr * pts_arr, axis=1, keepdims=True)
-            cross = b.matmul(centroids_arr, b.transpose(pts_arr))
+            pts_sq = b.sum(pts * pts, axis=1, keepdims=True)
+            cross = b.matmul(centroids_arr, b.transpose(pts))
             dist_sq = cent_sq + b.transpose(pts_sq) - 2.0 * cross
             dist_sq = b.maximum(dist_sq, b.zeros_like(dist_sq))
             euc_dist = b.sqrt(dist_sq)

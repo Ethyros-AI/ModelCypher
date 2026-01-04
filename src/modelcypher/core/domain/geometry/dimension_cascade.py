@@ -54,7 +54,10 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     geodesic_distance_matrix,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -616,24 +619,16 @@ class DimensionCascade:
             embed_flat = b.reshape(embed_dist, (-1,))
             b.eval(geo_flat, embed_flat)
 
-            # Pearson correlation
+            # Geodesic correlation of centered distance vectors
             geo_mean = b.mean(geo_flat)
             embed_mean = b.mean(embed_flat)
             geo_centered = geo_flat - geo_mean
             embed_centered = embed_flat - embed_mean
-            b.eval(geo_centered, embed_centered)
-
-            numerator = b.sum(geo_centered * embed_centered)
-            # Use geodesic norms for standard deviation computation
-            geo_std = geodesic_norms(b.reshape(geo_centered, (1, -1)), b)
-            embed_std = geodesic_norms(b.reshape(embed_centered, (1, -1)), b)
-            b.eval(numerator, geo_std, embed_std)
-
-            eps = division_epsilon(b, geo_flat)
-            correlation = numerator / (geo_std * embed_std + eps)
-            b.eval(correlation)
-
-            corr_val = float(b.to_scalar(correlation))
+            geo_centered_mat = b.reshape(geo_centered, (1, -1))
+            embed_centered_mat = b.reshape(embed_centered, (1, -1))
+            cos_arr, _ = geodesic_pairwise_metrics(geo_centered_mat, embed_centered_mat, b)
+            b.eval(cos_arr)
+            corr_val = float(b.to_scalar(cos_arr[0])) if cos_arr.size else 0.0
 
             # Distortion = 1 - |correlation|
             # Exact embedding has correlation ±1, distortion 0

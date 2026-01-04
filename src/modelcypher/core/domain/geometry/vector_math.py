@@ -41,6 +41,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
+    is_nan,
     sin_scalar,
     sqrt_scalar,
 )
@@ -690,7 +691,7 @@ class VectorMath:
 
     @staticmethod
     def spearman_correlation(a: ArrayLike, b: ArrayLike) -> float:
-        """Compute Spearman rank correlation (Pearson on ranks).
+        """Compute Spearman rank correlation using geodesic correlation on ranks.
 
         Raises:
             ValueError: If vectors have different lengths, fewer than 2 elements,
@@ -712,23 +713,27 @@ class VectorMath:
         rank_a = VectorMath._rankdata([float(v) for v in a_list])
         rank_b = VectorMath._rankdata([float(v) for v in b_list])
 
-        mean_a = sum(rank_a) / len_a
-        mean_b = sum(rank_b) / len_b
-
-        num = 0.0
-        den_a = 0.0
-        den_b = 0.0
-        for i in range(len_a):
-            da = rank_a[i] - mean_a
-            db = rank_b[i] - mean_b
-            num += da * db
-            den_a += da * da
-            den_b += db * db
-
-        if den_a <= 0.0 or den_b <= 0.0:
-            raise ValueError("Spearman correlation undefined for constant vectors (zero variance)")
         _b = get_default_backend()
-        return num / sqrt_scalar(den_a * den_b, _b)
+        rank_a_arr = _b.array(rank_a)
+        rank_b_arr = _b.array(rank_b)
+        mean_a = _b.mean(rank_a_arr)
+        mean_b = _b.mean(rank_b_arr)
+        centered_a = rank_a_arr - mean_a
+        centered_b = rank_b_arr - mean_b
+        centered_a_mat = _b.reshape(centered_a, (1, -1))
+        centered_b_mat = _b.reshape(centered_b, (1, -1))
+        norm_a = geodesic_norms(centered_a_mat, _b)
+        norm_b = geodesic_norms(centered_b_mat, _b)
+        _b.eval(norm_a, norm_b)
+        eps = division_epsilon(_b, rank_a_arr)
+        if float(_b.to_scalar(norm_a[0])) <= eps or float(_b.to_scalar(norm_b[0])) <= eps:
+            raise ValueError("Spearman correlation undefined for constant vectors (zero variance)")
+        cos_arr, _ = geodesic_pairwise_metrics(centered_a_mat, centered_b_mat, _b)
+        _b.eval(cos_arr)
+        corr = float(_b.to_scalar(cos_arr[0])) if cos_arr.size else 0.0
+        if is_nan(corr, _b):
+            raise ValueError("Spearman correlation undefined for non-finite values")
+        return corr
 
 
 # Sparse vector operations (for dict-based vectors)

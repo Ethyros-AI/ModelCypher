@@ -48,6 +48,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -131,10 +135,7 @@ def _backend_nan_to_num(
 
 
 def _backend_corrcoef(backend: "Backend", x: "Array", y: "Array") -> float:
-    """Compute Pearson correlation coefficient using backend ops.
-
-    r = Σ((x - μ_x)(y - μ_y)) / (n * σ_x * σ_y)
-    """
+    """Compute geodesic correlation coefficient using backend ops."""
     b = backend
 
     # Ensure 1D
@@ -154,62 +155,48 @@ def _backend_corrcoef(backend: "Backend", x: "Array", y: "Array") -> float:
     x_centered = x_flat - mean_x
     y_centered = y_flat - mean_y
 
-    # Standard deviations
-    std_x = b.sqrt(b.mean(x_centered * x_centered))
-    std_y = b.sqrt(b.mean(y_centered * y_centered))
-    b.eval(std_x, std_y)
-
-    std_x_val = float(b.to_scalar(std_x))
-    std_y_val = float(b.to_scalar(std_y))
-
     eps = division_epsilon(b, x_flat)
-    if std_x_val < eps or std_y_val < eps:
+    x_centered_mat = b.reshape(x_centered, (1, -1))
+    y_centered_mat = b.reshape(y_centered, (1, -1))
+    x_norm = geodesic_norms(x_centered_mat, b)
+    y_norm = geodesic_norms(y_centered_mat, b)
+    cos_arr, _ = geodesic_pairwise_metrics(x_centered_mat, y_centered_mat, b)
+    b.eval(x_norm, y_norm, cos_arr)
+
+    if float(b.to_scalar(x_norm[0])) < eps or float(b.to_scalar(y_norm[0])) < eps:
         return 0.0
-
-    # Covariance
-    cov = b.mean(x_centered * y_centered)
-    b.eval(cov)
-
-    # Correlation
-    corr = cov / (std_x * std_y)
-    b.eval(corr)
-
-    result = float(b.to_scalar(corr))
-
-    # Handle NaN result
-    if result != result:  # NaN check
+    if cos_arr.size == 0:
         return 0.0
-
-    return result
+    result = float(b.to_scalar(cos_arr[0]))
+    return 0.0 if result != result else result
 
 
 def _backend_vector_norm(backend: "Backend", v: "Array") -> float:
-    """Compute L2 norm of vector using backend ops.
-
-    INTENTIONAL EUCLIDEAN: This operates on 3D spatial vectors representing
-    human-perceptual axes. Physical 3D space IS Euclidean by definition.
-    """
+    """Compute geodesic norm of vector using backend ops."""
     b = backend
     v_flat = b.reshape(v, (-1,))
-    norm_sq = b.sum(v_flat * v_flat)
-    norm = b.sqrt(norm_sq)
-    b.eval(norm)
-    return float(b.to_scalar(norm))
+    v_mat = b.reshape(v_flat, (1, -1))
+    norm_arr = geodesic_norms(v_mat, b)
+    b.eval(norm_arr)
+    return float(b.to_scalar(norm_arr[0]))
 
 
 def _backend_vector_dot(backend: "Backend", v1: "Array", v2: "Array") -> float:
-    """Compute dot product of vectors using backend ops.
-
-    INTENTIONAL EUCLIDEAN: This operates on 3D spatial vectors representing
-    human-perceptual axes (X=lateral, Y=vertical, Z=depth). Physical 3D space
-    IS Euclidean by definition - the curse of dimensionality doesn't apply.
-    """
+    """Compute geodesic dot product of vectors using backend ops."""
     b = backend
     v1_flat = b.reshape(v1, (-1,))
     v2_flat = b.reshape(v2, (-1,))
-    dot = b.sum(v1_flat * v2_flat)
-    b.eval(dot)
-    return float(b.to_scalar(dot))
+    v1_mat = b.reshape(v1_flat, (1, -1))
+    v2_mat = b.reshape(v2_flat, (1, -1))
+    cos_arr, _ = geodesic_pairwise_metrics(v1_mat, v2_mat, b)
+    v1_norm = geodesic_norms(v1_mat, b)
+    v2_norm = geodesic_norms(v2_mat, b)
+    b.eval(cos_arr, v1_norm, v2_norm)
+    if cos_arr.size == 0:
+        return 0.0
+    return float(b.to_scalar(cos_arr[0])) * float(b.to_scalar(v1_norm[0])) * float(
+        b.to_scalar(v2_norm[0])
+    )
 
 
 def _backend_var(backend: "Backend", arr: "Array") -> float:
