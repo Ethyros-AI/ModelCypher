@@ -666,6 +666,7 @@ def power_iteration_eigh(
     backend: Backend,
     matrix: Array,
     k: int = 10,
+    use_ritz: bool = True,
 ) -> tuple[Array, Array]:
     """Compute top-k eigenvalues/eigenvectors via power iteration (GPU-only).
 
@@ -754,21 +755,21 @@ def power_iteration_eigh(
 
         prev_eigenvalues = eigenvalues
 
-    # Ritz refinement: project matrix onto subspace and diagonalize
-    # This corrects eigenvector rotation within the converged subspace
-    # H = V^T @ M @ V is the projected matrix (k x k)
-    H = b.matmul(b.transpose(V), b.matmul(matrix, V))
-    b.eval(H)
+    if use_ritz and k > 1:
+        # Ritz refinement: project matrix onto subspace and diagonalize
+        # This corrects eigenvector rotation within the converged subspace
+        # H = V^T @ M @ V is the projected matrix (k x k)
+        H = b.matmul(b.transpose(V), b.matmul(matrix, V))
+        b.eval(H)
 
-    # Diagonalize H to get exact eigenvectors within the subspace
-    # H = Q @ D @ Q^T where D has eigenvalues on diagonal
-    ritz_eigenvalues, Q = b.eigh(H)
-    b.eval(ritz_eigenvalues, Q)
+        # Diagonalize H via power iteration to stay on backend
+        ritz_eigenvalues, Q = power_iteration_eigh(b, H, k=k, use_ritz=False)
+        b.eval(ritz_eigenvalues, Q)
 
-    # Rotate V by Q to get true eigenvectors: V_final = V @ Q
-    V = b.matmul(V, Q)
-    eigenvalues = ritz_eigenvalues
-    b.eval(V, eigenvalues)
+        # Rotate V by Q to get true eigenvectors: V_final = V @ Q
+        V = b.matmul(V, Q)
+        eigenvalues = ritz_eigenvalues
+        b.eval(V, eigenvalues)
 
     # Sort by descending eigenvalue
     order = b.argsort(-eigenvalues)
