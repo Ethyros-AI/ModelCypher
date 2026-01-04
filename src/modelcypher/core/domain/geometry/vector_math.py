@@ -417,7 +417,7 @@ class VectorMath:
             a: Vector (list or MLX array)
 
         Returns:
-            L2 norm (0.0 for zero vector).
+            Geodesic norm (0.0 for zero vector).
 
         Raises:
             ValueError: If vector is empty.
@@ -433,7 +433,7 @@ class VectorMath:
 
     @staticmethod
     def l2_normalized(a: ArrayLike) -> list[float]:
-        """Return L2-normalized vector.
+        """Return geodesic-normalized vector.
 
         Args:
             a: Vector (list or MLX array)
@@ -756,7 +756,7 @@ class SparseVectorMath:
             vector: Dict mapping keys to float values.
 
         Returns:
-            L2 norm (0.0 for zero vector).
+            Geodesic norm (0.0 for zero vector).
 
         Raises:
             ValueError: If vector is empty (no keys).
@@ -851,7 +851,7 @@ class BackendVectorMath:
             a: Vector (Backend array or convertible)
 
         Returns:
-            L2 norm as Python float (0.0 for zero vector).
+            Geodesic norm as Python float (0.0 for zero vector).
 
         Raises:
             ValueError: If array is invalid or empty.
@@ -870,7 +870,7 @@ class BackendVectorMath:
         return max(0.0, float(norm))
 
     def l2_normalized(self, a: Any) -> Any:
-        """Return L2-normalized vector using backend operations.
+        """Return geodesic-normalized vector using backend operations.
 
         Args:
             a: Vector (Backend array or convertible)

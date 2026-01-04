@@ -87,6 +87,12 @@ def thermo_path(
 ) -> None:
     """Path integration analysis between checkpoints."""
     context = _context(ctx)
+
+    # Validate checkpoint paths early for clear error messages
+    from modelcypher.cli.validation import validate_file_exists
+    for checkpoint in checkpoints:
+        validate_file_exists(checkpoint, description="Checkpoint", context=context)
+
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     service = ThermoService()
@@ -123,6 +129,10 @@ def thermo_path_integration(
     The similarity scores ARE the signal - no threshold filtering.
     """
     context = _context(ctx)
+
+    # Validate model path early for clear error messages
+    validate_model_path(model, context=context)
+
     from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
@@ -281,6 +291,10 @@ def thermo_detect(
 ) -> None:
     """Measure prompt entropy differential."""
     context = _context(ctx)
+
+    # Validate model path early for clear error messages
+    validate_model_path(model, context=context)
+
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     service = ThermoService()
@@ -320,6 +334,12 @@ def thermo_detect_batch(
 ) -> None:
     """Batch measure entropy differentials across multiple prompts."""
     context = _context(ctx)
+
+    # Validate inputs early for clear error messages
+    from modelcypher.cli.validation import validate_file_exists
+    validate_file_exists(prompts_file, description="Prompts file", context=context)
+    validate_model_path(model, context=context)
+
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     service = ThermoService()
@@ -384,6 +404,12 @@ def thermo_ridge_detect(
     import json
 
     context = _context(ctx)
+
+    # Validate file paths early for clear error messages
+    from modelcypher.cli.validation import validate_file_exists
+    validate_file_exists(baseline_file, description="Baseline file", context=context)
+    validate_file_exists(variants_file, description="Variants file", context=context)
+
     from modelcypher.core.domain.thermo.linguistic_thermodynamics import ThermoMeasurement
     from modelcypher.core.domain.thermo.ridge_cross_detector import RidgeCrossDetector
 
@@ -625,6 +651,13 @@ def thermo_benchmark(
     from pathlib import Path
 
     context = _context(ctx)
+
+    # Validate inputs early for clear error messages
+    from modelcypher.cli.validation import validate_file_exists
+    validate_file_exists(prompts_file, description="Prompts file", context=context)
+    if model is not None:
+        validate_model_path(model, context=context)
+
     from modelcypher.core.domain.thermo.benchmark_runner import ThermoBenchmarkRunner
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 
@@ -750,6 +783,11 @@ def thermo_parity(
     from pathlib import Path
 
     context = _context(ctx)
+
+    # Validate model path early for clear error messages
+    if model is not None:
+        validate_model_path(model, context=context)
+
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
     from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
         LinguisticModifier,

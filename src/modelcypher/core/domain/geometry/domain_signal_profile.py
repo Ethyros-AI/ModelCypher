@@ -42,7 +42,7 @@ class LayerSignal:
     # Gradient signal-to-noise ratio (higher = smoother)
     gradient_snr: float | None = None
 
-    # Mean gradient L2 norm across prompts
+    # Mean gradient geodesic norm across prompts
     mean_gradient_norm: float | None = None
 
     # Number of gradient samples used for this layer

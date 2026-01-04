@@ -18,7 +18,7 @@
 """Base class for vector signature types.
 
 This module provides a mixin class for signature vectors that need
-L2 normalization and cosine similarity operations. All signature
+geodesic normalization and cosine similarity operations. All signature
 classes in the agents domain should inherit from this mixin.
 
 Signature classes include:
@@ -46,7 +46,7 @@ T = TypeVar("T", bound="SignatureMixin")
 
 
 class SignatureMixin:
-    """Mixin class providing L2 normalization and cosine similarity for signatures.
+    """Mixin class providing geodesic normalization and cosine similarity for signatures.
 
     Classes using this mixin must have a `values: list[float]` attribute.
 
@@ -68,7 +68,7 @@ class SignatureMixin:
     values: list[float]  # Required attribute
 
     def l2_norm(self) -> float | None:
-        """Compute geodesic L2 norm of this signature's values."""
+        """Compute geodesic norm of this signature's values."""
         if not self.values:
             raise ValueError("Cannot compute L2 norm of empty vector")
         backend = get_default_backend()
@@ -77,7 +77,7 @@ class SignatureMixin:
         return max(0.0, float(norm))
 
     def l2_normalized(self: T) -> T:
-        """Return a copy of this signature with L2-normalized values.
+        """Return a copy of this signature with geodesic-normalized values.
 
         Returns:
             New signature instance with normalized values.

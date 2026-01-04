@@ -104,10 +104,10 @@ class GeodesicNullSpaceResult:
     # Fraction of delta preserved (safe component)
     preserved_fraction: float
 
-    # L2 norm of original delta
+    # Geodesic norm of original delta
     original_norm: float
 
-    # L2 norm of filtered delta
+    # Geodesic norm of filtered delta
     filtered_norm: float
 
     # Whether filtering was applied

@@ -312,6 +312,10 @@ def entropy_verify_baseline(
     context = _context(ctx)
     import json as json_lib
 
+    # Validate baseline file path early for clear error messages
+    from modelcypher.cli.validation import validate_file_exists
+    validate_file_exists(baseline, description="Baseline file", context=context)
+
     from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 
     try:
@@ -832,6 +836,11 @@ def entropy_calibrate(
         mc entropy calibrate --model /path/to/model --prompts ./prompts.json --output-file ./calibration.json
     """
     context = _context(ctx)
+
+    # Validate inputs early for clear error messages
+    from modelcypher.cli.validation import validate_file_exists, validate_model_path
+    validate_model_path(model, context=context)
+    validate_file_exists(prompts, description="Prompts file", context=context)
 
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,

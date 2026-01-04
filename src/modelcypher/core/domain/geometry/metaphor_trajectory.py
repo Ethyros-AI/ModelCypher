@@ -65,8 +65,8 @@ class MetaphorTrajectoryPoint:
         layer_index: Index of the transformer layer (0-based).
         cka_source_target: CKA between source and target activations at this layer.
         cosine_similarity: Cosine similarity between source/target centroids.
-        source_centroid_norm: L2 norm of the source domain centroid.
-        target_centroid_norm: L2 norm of the target domain centroid.
+        source_centroid_norm: Geodesic norm of the source domain centroid.
+        target_centroid_norm: Geodesic norm of the target domain centroid.
     """
 
     layer_index: int

@@ -73,65 +73,12 @@ class Projection:
 
 class ModelFingerprintsProjection:
     @staticmethod
-    def _project_euclidean_mds(
-        points: "Array",
-        backend: "Backend",
-        target_dim: int,
-    ) -> "Array":
-        """Simple Euclidean MDS fallback for small/degenerate datasets.
-
-        For n points, MDS can only produce n-1 meaningful dimensions.
-        This handles the degenerate case gracefully by padding with zeros.
-        """
-        n = int(points.shape[0])
-
-        # Center the points
-        mean = backend.mean(points, axis=0, keepdims=True)
-        centered = points - mean
-        backend.eval(centered)
-
-        # Compute Gram matrix (inner products)
-        gram = backend.matmul(centered, backend.transpose(centered))
-        backend.eval(gram)
-
-        # Eigendecomposition - we can only get min(n, d) meaningful dimensions
-        k = min(target_dim, n)
-        eigenvalues, eigenvectors = power_iteration_eigh(backend, gram, k=k)
-        backend.eval(eigenvalues, eigenvectors)
-
-        eps = division_epsilon(backend, gram)
-        eps_arr = backend.zeros_like(eigenvalues) + eps
-        eigenvalues = backend.maximum(eigenvalues, eps_arr)
-        backend.eval(eigenvalues)
-
-        # Project: U * sqrt(S)
-        sqrt_eig = backend.sqrt(eigenvalues)
-        backend.eval(sqrt_eig)
-        projected = eigenvectors * sqrt_eig[None, :]
-        backend.eval(projected)
-
-        # If we got fewer dimensions than target, pad with zeros
-        if k < target_dim:
-            padding = backend.zeros((n, target_dim - k))
-            projected = backend.concatenate([projected, padding], axis=1)
-            backend.eval(projected)
-
-        return projected
-
-    @staticmethod
     def _project_geodesic_mds(
         points: "Array",
         backend: "Backend",
         target_dim: int,
     ) -> "Array":
         n = int(points.shape[0])
-
-        # For very small datasets, geodesic distances don't add value
-        # and can produce degenerate results. Fall back to Euclidean MDS.
-        if n <= 3:
-            return ModelFingerprintsProjection._project_euclidean_mds(
-                points, backend, target_dim
-            )
 
         rg = RiemannianGeometry(backend)
         geo_result = rg.geodesic_distances(points, k_neighbors=None)
@@ -179,9 +126,9 @@ class ModelFingerprintsProjection:
         backend.eval(n_positive_arr)
         n_positive = int(backend.to_scalar(n_positive_arr))
         if n_positive < target_dim:
-            # Fall back to Euclidean MDS for non-metric distance matrices
-            return ModelFingerprintsProjection._project_euclidean_mds(
-                points, backend, target_dim
+            raise ProjectionError(
+                f"Only {n_positive} positive eigenvalues, need {target_dim}. "
+                "Distance matrix is non-metric."
             )
 
         U_k = eigenvectors[:, :target_dim]

@@ -139,6 +139,12 @@ def infer_suite(
 ) -> None:
     """Execute batched inference over a suite of prompts."""
     context = _context(ctx)
+
+    # Validate inputs early for clear error messages
+    validate_model_path(model, context=context)
+    from modelcypher.cli.validation import validate_file_exists
+    validate_file_exists(suite_file, description="Suite file", context=context)
+
     engine = get_inference_engine()
 
     try:

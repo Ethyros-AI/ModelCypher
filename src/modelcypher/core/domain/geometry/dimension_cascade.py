@@ -232,7 +232,7 @@ class DimensionCascade:
 
             # Use Isomap for GEODESIC-preserving projection
             # Isomap preserves manifold structure via geodesic distances
-            # PCA only preserves Euclidean variance - WRONG for curved manifolds
+            # PCA only preserves linear variance - WRONG for curved manifolds
             projected, coupling_matrix = self._project_via_isomap(current, target_dim)
             logger.debug(
                 "Stored Isomap coupling: [%d, %d]",
@@ -246,7 +246,7 @@ class DimensionCascade:
 
             # Measure geodesic distortion: how well does embedding preserve distances?
             # We compute correlation between original geodesic distances and
-            # embedded distances (Euclidean for 2D/3D, geodesic otherwise)
+            # embedded distances (geodesic on the embedded manifold)
             geodesic_distortion[target_dim] = self._measure_geodesic_distortion(
                 current, projected
             )
@@ -321,7 +321,7 @@ class DimensionCascade:
         4. Derive linear coupling via least squares for streaming
 
         The 3D positions reflect the ACTUAL manifold geometry, not
-        Euclidean variance like PCA.
+        Linear variance like PCA.
 
         Args:
             points: Source points [n_points, source_dim]
@@ -545,7 +545,7 @@ class DimensionCascade:
         Measure how well embedding preserves geodesic distances.
 
         Computes 1 - correlation between original geodesic distances
-        and embedded distances (Euclidean for 2D/3D, geodesic otherwise).
+        and embedded distances (geodesic on the embedded manifold).
 
         Returns:
             Distortion in [0, 1] where 0 = exact preservation

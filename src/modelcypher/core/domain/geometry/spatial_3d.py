@@ -780,7 +780,7 @@ class VolumetricDensityProber:
                 inverse_square_compliance=0.0,
             )
 
-        # Compute "density" as activation concentration (L2 norm / variance)
+        # Compute "density" as activation concentration (geodesic norm / variance)
         densities = {}
         for anchor in available:
             raw_act = anchor_activations[anchor.name]
