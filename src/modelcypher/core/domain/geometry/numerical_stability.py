@@ -722,7 +722,8 @@ def power_iteration_eigh(
     matrix = b.astype(b.array(matrix), "float32")
     b.eval(matrix)
 
-    n = int(matrix.shape[0])
+    shape = matrix.shape
+    n = int(shape[-1])
     k = min(k, n)
     if k == 0:
         return b.zeros((0,), dtype="float32"), b.zeros((n, 0), dtype="float32")
@@ -731,16 +732,16 @@ def power_iteration_eigh(
     eigenvalues_full, eigenvectors_full = b.eigh(matrix)
     b.eval(eigenvalues_full, eigenvectors_full)
 
-    # Sort by descending eigenvalue
-    order = b.argsort(-eigenvalues_full)
-    b.eval(order)
-    eigenvalues_sorted = b.take(eigenvalues_full, order, axis=0)
-    eigenvectors_sorted = b.take(eigenvectors_full, order, axis=1)
-    b.eval(eigenvalues_sorted, eigenvectors_sorted)
+    # Sort by descending eigenvalue along the last axis
+    order = b.argsort(-eigenvalues_full, axis=-1)
+    eigenvalues_sorted = b.take_along_axis(eigenvalues_full, order, axis=-1)
+    order_exp = b.expand_dims(order, axis=-2)
+    eigenvectors_sorted = b.take_along_axis(eigenvectors_full, order_exp, axis=-1)
+    b.eval(order, eigenvalues_sorted, eigenvectors_sorted)
 
     # Return top-k (but decomposition was exact)
-    eigenvalues = eigenvalues_sorted[:k]
-    eigenvectors = eigenvectors_sorted[:, :k]
+    eigenvalues = eigenvalues_sorted[..., :k]
+    eigenvectors = eigenvectors_sorted[..., :k]
     b.eval(eigenvalues, eigenvectors)
 
     return eigenvalues, eigenvectors
@@ -761,28 +762,32 @@ def geodesic_svd(
 
     Args:
         backend: Compute backend.
-        array: Matrix [m, n] to decompose.
-        k: Number of singular values to return. The FULL decomposition
-           is always computed; only the return value is truncated.
+        array: Matrix [m, n] or batched matrix [..., m, n] to decompose.
+        k: Number of singular values to return (per matrix). The FULL
+           decomposition is always computed; only the return value is truncated.
 
     Returns:
         (U, S, Vt) where:
-        - U: [m, k] left singular vectors
-        - S: [k] singular values in descending order
-        - Vt: [k, n] right singular vectors (transposed)
+        - U: [..., m, k] left singular vectors
+        - S: [..., k] singular values in descending order
+        - Vt: [..., k, n] right singular vectors (transposed)
     """
     b = backend
     A = b.astype(b.array(array), "float32")
     b.eval(A)
 
-    m = int(A.shape[0])
-    n = int(A.shape[1])
+    shape = A.shape
+    if len(shape) < 2:
+        raise ValueError("geodesic_svd requires at least 2D input")
+    m = int(shape[-2])
+    n = int(shape[-1])
+    batch_shape = shape[:-2]
     max_rank = min(m, n)
 
     if m == 0 or n == 0:
-        U = b.zeros((m, 0), dtype="float32")
-        S = b.zeros((0,), dtype="float32")
-        Vt = b.zeros((0, n), dtype="float32")
+        U = b.zeros(batch_shape + (m, 0), dtype="float32")
+        S = b.zeros(batch_shape + (0,), dtype="float32")
+        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
         return U, S, Vt
 
     # EXACT SVD - no approximation
@@ -797,9 +802,9 @@ def geodesic_svd(
         Vt = b.zeros((0, n), dtype="float32")
         return U, S, Vt
 
-    U = U_full[:, :k]
-    S = S_full[:k]
-    Vt = Vt_full[:k, :]
+    U = U_full[..., :k]
+    S = S_full[..., :k]
+    Vt = Vt_full[..., :k, :]
     b.eval(U, S, Vt)
 
     return U, S, Vt

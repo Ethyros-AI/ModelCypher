@@ -392,6 +392,21 @@ class Backend(Protocol):
 
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array: ...
+    def take_along_axis(self, array: Array, indices: Array, axis: int) -> Array:
+        """Take values from array along axis using indices array.
+
+        Similar to numpy.take_along_axis. For each position in indices,
+        gathers the value from array at that index along the specified axis.
+
+        Args:
+            array: Source array to gather from.
+            indices: Index array (must broadcast with array except along axis).
+            axis: Axis along which to gather.
+
+        Returns:
+            Array with same shape as indices, containing gathered values.
+        """
+        ...
 
     # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array: ...

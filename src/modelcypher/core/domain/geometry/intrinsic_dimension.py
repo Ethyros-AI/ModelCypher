@@ -298,8 +298,12 @@ class IntrinsicDimension:
             dist_no_self = backend.where(
                 backend.eye(n) > 0, backend.full((n, n), inf_val), dist_sq
             )
+            # Get two nearest neighbors per point (excluding self)
+            # argpartition puts k smallest at front, but not sorted among themselves
             partitioned = backend.argpartition(dist_no_self, 1, axis=1)
             nearest_idx = partitioned[:, :2]
+
+            # Gather distances for the two nearest neighbors
             nearest_vals = backend.take_along_axis(dist_sq, nearest_idx, axis=1)
             r1_sq = backend.min(nearest_vals, axis=1)
             r2_sq = backend.max(nearest_vals, axis=1)

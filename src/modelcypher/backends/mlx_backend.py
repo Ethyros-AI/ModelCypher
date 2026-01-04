@@ -695,6 +695,49 @@ class MLXBackend(Backend):
             return self.mx.take(array, indices, axis=axis)
         return self.mx.take(array, indices)
 
+    def take_along_axis(self, array: Array, indices: Array, axis: int) -> Array:
+        """Take values from array along axis using indices array.
+
+        MLX doesn't have native take_along_axis, so we implement it via
+        flattening and linear index computation for the gather axis.
+        """
+        # Handle negative axis
+        ndim = len(array.shape)
+        if axis < 0:
+            axis = ndim + axis
+
+        # For 2D arrays along axis=1 (the common case), use efficient gather
+        if ndim == 2 and axis == 1:
+            n_rows = int(array.shape[0])
+            n_cols = int(array.shape[1])
+            n_gather = int(indices.shape[1])
+
+            # Compute linear indices: row * n_cols + col_index
+            row_offsets = self.mx.reshape(self.mx.arange(n_rows), (-1, 1)) * n_cols
+            linear_indices = row_offsets + self.mx.astype(indices, self.mx.int32)
+            flat_array = self.mx.reshape(array, (-1,))
+            flat_indices = self.mx.reshape(linear_indices, (-1,))
+            gathered = self.mx.take(flat_array, flat_indices)
+            return self.mx.reshape(gathered, (n_rows, n_gather))
+
+        # General case: use vmap for arbitrary axis
+        # This is slower but handles all dimensions
+        def gather_along_axis(arr_slice: Array, idx_slice: Array) -> Array:
+            return self.mx.take(arr_slice, idx_slice)
+
+        # Move gather axis to front, apply vmap, move back
+        array_t = self.mx.moveaxis(array, axis, 0)
+        indices_t = self.mx.moveaxis(indices, axis, 0)
+
+        # Stack results along axis 0
+        results = []
+        for i in range(int(indices_t.shape[0])):
+            gathered = self.mx.take(array_t, indices_t[i], axis=0)
+            results.append(gathered)
+
+        result = self.mx.stack(results, axis=0)
+        return self.mx.moveaxis(result, 0, axis)
+
     # --- Sorting (lazy - no eval) ---
     def sort(self, array: Array, axis: int = -1) -> Array:
         return self.mx.sort(array, axis=axis)

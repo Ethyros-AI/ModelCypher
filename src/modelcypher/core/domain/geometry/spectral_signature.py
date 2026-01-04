@@ -261,15 +261,19 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
     count = int(flat.shape[0])
     if count == 0:
         return 0.0
-    sorted_vals = backend.sort(flat)
-    backend.eval(sorted_vals)
     mid = count // 2
     if count % 2 == 1:
-        mid_val = backend.take(sorted_vals, backend.array([mid]), axis=0)
+        part = backend.argpartition(flat, mid)
+        mid_idx = backend.take(part, backend.array([mid]), axis=0)
+        mid_val = backend.take(flat, mid_idx, axis=0)
         backend.eval(mid_val)
         return float(backend.to_scalar(mid_val))
-    low_val = backend.take(sorted_vals, backend.array([mid - 1]), axis=0)
-    high_val = backend.take(sorted_vals, backend.array([mid]), axis=0)
+    low_part = backend.argpartition(flat, mid - 1)
+    high_part = backend.argpartition(flat, mid)
+    low_idx = backend.take(low_part, backend.array([mid - 1]), axis=0)
+    high_idx = backend.take(high_part, backend.array([mid]), axis=0)
+    low_val = backend.take(flat, low_idx, axis=0)
+    high_val = backend.take(flat, high_idx, axis=0)
     low_val = backend.squeeze(low_val)
     high_val = backend.squeeze(high_val)
     backend.eval(low_val, high_val)
