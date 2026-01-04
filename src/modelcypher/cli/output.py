@@ -51,7 +51,10 @@ def write_output(
     sys.stdout.write("\n")
 
 
-def write_error(error: dict) -> None:
+def write_error(
+    error: Any,
+    output_format: str = "json",
+    pretty: bool = False,
+) -> None:
     payload = {"error": error}
-    sys.stdout.write(dump_json(payload, pretty=False))
-    sys.stdout.write("\n")
+    write_output(payload, output_format=output_format, pretty=pretty)

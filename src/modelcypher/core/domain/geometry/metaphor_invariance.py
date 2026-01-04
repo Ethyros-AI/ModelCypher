@@ -307,7 +307,8 @@ class MetaphorInvarianceAnalyzer:
                             per_family_ckas[family] = []
                         per_family_ckas[family].append(result.trajectory_cka)
 
-        # Compute aggregate statistics
+        # Compute aggregate statistics.
+        # Note: Std dev of scalar CKA values is 1D statistics (intentional Euclidean).
         if results:
             all_ckas = [r.trajectory_cka for r in results]
             mean_cka = sum(all_ckas) / len(all_ckas)

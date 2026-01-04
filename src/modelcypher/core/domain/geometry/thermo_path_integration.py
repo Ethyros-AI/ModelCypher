@@ -198,6 +198,12 @@ class ThermoPathIntegration:
 
     @staticmethod
     def _compute_pearson_correlation(x: list[float], y: list[float]) -> float | None:
+        """Compute Pearson correlation between two 1D scalar sequences.
+
+        INTENTIONAL EUCLIDEAN: This is the standard correlation formula using
+        Euclidean norms. Correlation is a statistical measure on 1D sequences,
+        not a geometric distance on a high-dimensional manifold.
+        """
         if len(x) != len(y) or len(x) <= 2:
             return None
         n = float(len(x))

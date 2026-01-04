@@ -34,14 +34,19 @@ from pathlib import Path
 
 import typer
 
+from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 
 app = typer.Typer(no_args_is_help=True)
 
+def _context(ctx: typer.Context) -> CLIContext:
+    return ctx.obj
+
 
 @app.command("gromov-wasserstein")
 def geometry_metrics_gromov_wasserstein(
+    ctx: typer.Context,
     source_file: str = typer.Argument(
         ..., help="Path to source point cloud (JSON array of arrays)"
     ),
@@ -59,13 +64,15 @@ def geometry_metrics_gromov_wasserstein(
         target_points=target_points,
     )
 
+    context = _context(ctx)
     payload = service.gromov_wasserstein_payload(result)
     payload["_schema"] = "mc.geometry.gromov_wasserstein.v1"
-    write_output(payload)
+    write_output(payload, context.output_format, context.pretty)
 
 
 @app.command("intrinsic-dimension")
 def geometry_metrics_intrinsic_dimension(
+    ctx: typer.Context,
     points_file: str = typer.Argument(
         ..., help="Path to point cloud (JSON array of arrays or activations dict)"
     ),
@@ -80,13 +87,15 @@ def geometry_metrics_intrinsic_dimension(
     service = GeometryMetricsService()
     result = service.estimate_intrinsic_dimension(points=points)
 
+    context = _context(ctx)
     payload = service.intrinsic_dimension_payload(result)
     payload["_schema"] = "mc.geometry.intrinsic_dimension.v1"
-    write_output(payload)
+    write_output(payload, context.output_format, context.pretty)
 
 
 @app.command("topological-fingerprint")
 def geometry_metrics_topological_fingerprint(
+    ctx: typer.Context,
     points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
 ) -> None:
     """Compute topological fingerprint using persistent homology."""
@@ -95,13 +104,15 @@ def geometry_metrics_topological_fingerprint(
     service = GeometryMetricsService()
     result = service.compute_topological_fingerprint(points=points)
 
+    context = _context(ctx)
     payload = service.topological_fingerprint_payload(result)
     payload["_schema"] = "mc.geometry.topological_fingerprint.v1"
-    write_output(payload)
+    write_output(payload, context.output_format, context.pretty)
 
 
 @app.command("spectral-signature")
 def geometry_metrics_spectral_signature(
+    ctx: typer.Context,
     points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
 ) -> None:
     """Compute spectral signature of a point cloud."""
@@ -110,6 +121,7 @@ def geometry_metrics_spectral_signature(
     service = GeometryMetricsService()
     result = service.compute_spectral_signature(points=points)
 
+    context = _context(ctx)
     payload = service.spectral_signature_payload(result)
     payload["_schema"] = "mc.geometry.spectral_signature.v1"
-    write_output(payload)
+    write_output(payload, context.output_format, context.pretty)

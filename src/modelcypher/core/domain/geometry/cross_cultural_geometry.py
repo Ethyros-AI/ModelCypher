@@ -223,6 +223,8 @@ class CrossCulturalGeometry:
             var_b = var_b_val / off_diag_count
 
             eps = division_epsilon(backend, gram_a_arr)
+            # INTENTIONAL EUCLIDEAN: Standard Pearson correlation formula.
+            # Std dev is defined by Euclidean norm of centered values.
             std_product = (var_a ** 0.5) * (var_b ** 0.5)
             pearson = cov / max(std_product, eps) if std_product > eps else 0.0
         else:

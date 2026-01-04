@@ -331,12 +331,26 @@ def diagnose_probe_conflict(
     def find_secondary_peak(activations: dict[int, list[float]], primary: int) -> tuple[int, float]:
         secondary_layer = -1
         secondary_strength = 0.0
-        primary_strength = sum(a * a for a in activations.get(primary, [])) ** 0.5
+        # Use geodesic norms for high-dimensional activation vectors
+        primary_acts = activations.get(primary, [])
+        if primary_acts:
+            p_arr = backend.reshape(backend.array(primary_acts), (1, -1))
+            p_norm = geodesic_norms(p_arr, backend)
+            backend.eval(p_norm)
+            primary_strength = float(backend.to_scalar(p_norm[0]))
+        else:
+            primary_strength = 0.0
 
         for layer, acts in activations.items():
             if layer == primary:
                 continue
-            strength = sum(a * a for a in acts) ** 0.5
+            if not acts:
+                continue
+            # Use geodesic norms for high-dimensional activation vectors
+            act_arr = backend.reshape(backend.array(acts), (1, -1))
+            norm_arr = geodesic_norms(act_arr, backend)
+            backend.eval(norm_arr)
+            strength = float(backend.to_scalar(norm_arr[0]))
             # Track the second-highest activation layer
             if strength > secondary_strength:
                 secondary_strength = strength

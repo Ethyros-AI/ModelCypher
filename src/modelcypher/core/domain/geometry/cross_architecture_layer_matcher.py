@@ -381,6 +381,10 @@ class CrossArchitectureLayerMatcher:
         mean_x = sum(rank_x) / float(n)
         mean_y = sum(rank_y) / float(n)
 
+        # INTENTIONAL EUCLIDEAN: This is Spearman rank correlation, a statistical
+        # measure defined by the Pearson formula on ranks. The denominator uses
+        # Euclidean norms because this is the standard correlation formula,
+        # not a geometric distance on a high-dimensional manifold.
         sum_xy = 0.0
         sum_x2 = 0.0
         sum_y2 = 0.0

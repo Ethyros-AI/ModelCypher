@@ -377,10 +377,14 @@ class GeometricLoRAGenerator:
         output_delta = target_arr - current_output
         backend.eval(current_output, output_delta)
 
-        # Compute full-rank delta: ΔW = output_delta ⊗ input / ||input||²
-        input_norm_sq = backend.sum(representative_input * representative_input)
+        # Compute full-rank delta: ΔW = output_delta ⊗ input / ||input||² (geodesic)
+        input_norm_arr = geodesic_norms(
+            backend.reshape(representative_input, (1, -1)),
+            backend,
+        )
+        input_norm_sq = input_norm_arr * input_norm_arr
         backend.eval(input_norm_sq)
-        input_norm_sq_val = float(backend.to_scalar(input_norm_sq))
+        input_norm_sq_val = float(backend.to_scalar(input_norm_sq[0]))
         # Use dtype-derived threshold for near-zero detection
         near_zero_thresh = float(tiny_value(backend, representative_input))
         if input_norm_sq_val < near_zero_thresh:
