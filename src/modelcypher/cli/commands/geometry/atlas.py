@@ -19,7 +19,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import time
+from typing import Callable
 
 import typer
 
@@ -105,6 +108,241 @@ class BackboneActivationProvider:
         return [array_to_list(self._backend, vec) for vec in activations]
 
 
+def _apply_layer(layer, hidden, mask):
+    try:
+        return layer(hidden, mask=mask)
+    except TypeError:
+        try:
+            return layer(hidden, mask)
+        except TypeError:
+            return layer(hidden)
+
+
+def _normalize_probe_text(text: str | None) -> str | None:
+    if not text:
+        return None
+    cleaned = text.strip()
+    if len(cleaned) < 2:
+        return None
+    return cleaned
+
+
+class AtlasProgress:
+    def __init__(self, logger: logging.Logger, min_interval_s: float = 1.0) -> None:
+        self._logger = logger
+        self._min_interval_s = min_interval_s
+        self._start = time.monotonic()
+        self._last_emit = 0.0
+
+    def emit(
+        self,
+        phase: str,
+        processed: int,
+        total: int,
+        extra: dict | None = None,
+    ) -> None:
+        now = time.monotonic()
+        if processed < total and now - self._last_emit < self._min_interval_s:
+            return
+
+        elapsed = now - self._start
+        rate = processed / elapsed if elapsed > 0 else None
+        eta = ((total - processed) / rate) if rate and total >= processed else None
+        payload = {
+            "phase": phase,
+            "processed": processed,
+            "total": total,
+            "elapsedS": round(elapsed, 2),
+            "rate": round(rate, 2) if rate is not None else None,
+            "etaS": round(eta, 2) if eta is not None else None,
+        }
+        if extra:
+            payload.update(extra)
+        self._logger.info("ATLAS_PROGRESS %s", json.dumps(payload, sort_keys=True))
+        self._last_emit = now
+
+    def callback(self, phase: str, total: int, extra: dict | None = None) -> Callable:
+        def _cb(
+            processed: int,
+            total_override: int | None = None,
+            analyzed: int | None = None,
+            skipped: int | None = None,
+        ) -> None:
+            payload = dict(extra or {})
+            if analyzed is not None:
+                payload["analyzed"] = analyzed
+            if skipped is not None:
+                payload["skipped"] = skipped
+            self.emit(phase, processed, total_override or total, payload)
+
+        return _cb
+
+
+class AtlasActivationCache:
+    def __init__(
+        self,
+        tokenizer,
+        embed_tokens,
+        layers,
+        norm,
+        backend,
+        pooling: str = "frechet",
+        batch_size: int = 8,
+        frechet_k_neighbors: int | None = None,
+        frechet_max_k_neighbors: int | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._embed_tokens = embed_tokens
+        self._layers = layers
+        self._norm = norm
+        self._backend = backend
+        self._pooling = pooling
+        self._batch_size = max(1, batch_size)
+        self._frechet_k_neighbors = frechet_k_neighbors
+        self._frechet_max_k_neighbors = frechet_max_k_neighbors
+        self._progress_callback = progress_callback
+        self._cache: dict[int, dict[str, list[float]]] = {}
+        self._token_cache: dict[str, list[int]] = {}
+
+    def get_activations(self, texts: list[str], layer: int) -> list[list[float]]:
+        normalized = [_normalize_probe_text(text) for text in texts]
+        missing = [
+            text
+            for text in normalized
+            if text is not None and text not in self._cache.get(layer, {})
+        ]
+        if missing:
+            self.preload_layers(missing, [layer])
+
+        activations = []
+        layer_cache = self._cache.get(layer, {})
+        for text in normalized:
+            if text is None:
+                continue
+            vec = layer_cache.get(text)
+            if vec is not None:
+                activations.append(vec)
+        return activations
+
+    def clear_layers(self, layers: list[int]) -> None:
+        for layer in layers:
+            self._cache.pop(layer, None)
+
+    def preload_layers(
+        self,
+        texts: list[str],
+        layers: list[int],
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> None:
+        if not layers:
+            return
+
+        normalized = []
+        seen: set[str] = set()
+        for text in texts:
+            clean = _normalize_probe_text(text)
+            if clean is None or clean in seen:
+                continue
+            seen.add(clean)
+            normalized.append(clean)
+
+        missing = [
+            text
+            for text in normalized
+            if any(text not in self._cache.get(layer, {}) for layer in layers)
+        ]
+        if not missing:
+            return
+
+        callback = progress_callback or self._progress_callback
+        total = len(missing)
+        processed = 0
+        for batch_start in range(0, total, self._batch_size):
+            batch_texts = missing[batch_start: batch_start + self._batch_size]
+            pooled_by_layer = self._collect_layer_pools(batch_texts, layers)
+            for layer, pooled in pooled_by_layer.items():
+                layer_cache = self._cache.setdefault(layer, {})
+                for text, vec in zip(batch_texts, pooled):
+                    if vec is None:
+                        continue
+                    layer_cache[text] = array_to_list(self._backend, vec)
+
+            processed += len(batch_texts)
+            if callback:
+                callback(processed, total)
+
+    def _tokenize(self, text: str) -> list[int]:
+        cached = self._token_cache.get(text)
+        if cached is not None:
+            return cached
+        tokens = self._tokenizer.encode(text)
+        if isinstance(tokens, list):
+            token_ids = tokens
+        elif hasattr(tokens, "ids"):
+            token_ids = list(tokens.ids)
+        else:
+            token_ids = list(tokens)
+        self._token_cache[text] = token_ids
+        return token_ids
+
+    def _pool_hidden(self, hidden, lengths: list[int]) -> list:
+        pooled = []
+        pending = []
+        for i, seq_len in enumerate(lengths):
+            if seq_len <= 0:
+                pooled.append(None)
+                continue
+            slice_arr = hidden[i, :seq_len, :]
+            if self._pooling == "mean":
+                vec = self._backend.mean(slice_arr, axis=0)
+            else:
+                vec = frechet_mean(
+                    slice_arr,
+                    backend=self._backend,
+                    k_neighbors=self._frechet_k_neighbors,
+                    max_k_neighbors=self._frechet_max_k_neighbors,
+                )
+            self._backend.async_eval(vec)
+            pending.append(vec)
+            pooled.append(vec)
+        if pending:
+            self._backend.eval(*pending)
+        return pooled
+
+    def _collect_layer_pools(self, texts: list[str], layers: list[int]) -> dict[int, list]:
+        if not texts:
+            return {layer: [] for layer in layers}
+        target_layers = sorted(set(layers))
+        max_target = max(target_layers)
+        target_set = set(target_layers)
+
+        token_ids = [self._tokenize(text) for text in texts]
+        lengths = [len(ids) for ids in token_ids]
+        max_len = max(lengths)
+        if max_len <= 0:
+            return {layer: [None for _ in texts] for layer in target_layers}
+
+        pad_id = getattr(self._tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in token_ids]
+        input_ids = self._backend.array(padded)
+
+        hidden = self._embed_tokens(input_ids)
+        mask = self._backend.create_causal_mask(max_len, hidden.dtype)
+
+        results: dict[int, list] = {layer: [] for layer in target_layers}
+        for layer_idx, layer in enumerate(self._layers):
+            hidden = _apply_layer(layer, hidden, mask)
+            if layer_idx == len(self._layers) - 1 and self._norm is not None:
+                hidden = self._norm(hidden)
+            if layer_idx in target_set:
+                results[layer_idx] = self._pool_hidden(hidden, lengths)
+            if layer_idx >= max_target:
+                break
+
+        return results
+
+
 def _report_payload(report: ConceptDimensionalityReport) -> dict:
     return {
         "layer": report.layer,
@@ -156,10 +394,23 @@ def _report_payload(report: ConceptDimensionalityReport) -> dict:
     }
 
 
+def _collect_probe_texts(probes) -> list[str]:
+    texts: list[str] = []
+    for probe in probes:
+        texts.extend(ConceptDimensionalityAnalyzer._build_support_texts(probe))
+    return texts
+
+
 @app.command("dimensionality")
 def atlas_dimensionality(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
+    batch_size: int = typer.Option(
+        8, "--batch-size", help="Batch size for probe activation collection"
+    ),
+    pooling: str = typer.Option(
+        "frechet", "--pooling", help="Token pooling: frechet or mean"
+    ),
 ) -> None:
     """Measure intrinsic dimension for UnifiedAtlas probes at a model layer."""
     context = _context(ctx)
@@ -179,24 +430,55 @@ def atlas_dimensionality(
     target_layer = num_layers - 1
 
     probes = UnifiedAtlasInventory.all_probes()
+    probe_texts = _collect_probe_texts(probes)
     calibration_weights = {}
 
     backend = get_default_backend()
-    provider = BackboneActivationProvider(
+    pool_mode = pooling.strip().lower()
+    if pool_mode not in {"frechet", "mean"}:
+        raise typer.BadParameter("Pooling must be 'frechet' or 'mean'.")
+    if batch_size < 1:
+        raise typer.BadParameter("Batch size must be >= 1.")
+
+    progress = AtlasProgress(logger)
+    unique_texts = {
+        text for text in (_normalize_probe_text(t) for t in probe_texts) if text is not None
+    }
+    logger.info(
+        "ATLAS: %d probes, %d texts (%d unique)",
+        len(probes),
+        len(probe_texts),
+        len(unique_texts),
+    )
+
+    provider = AtlasActivationCache(
         tokenizer,
         embed_tokens,
         layers,
         norm,
         backend,
+        pooling=pool_mode,
+        batch_size=batch_size,
         frechet_k_neighbors=None,
         frechet_max_k_neighbors=None,
+        progress_callback=progress.callback(
+            "activations",
+            total=len(unique_texts),
+            extra={"layers": 1, "batchSize": batch_size},
+        ),
     )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
+    provider.preload_layers(probe_texts, [target_layer])
     report = analyzer.analyze(
         probes=probes,
         activation_provider=provider,
         layer=target_layer,
         calibration_weights=calibration_weights,
+        progress_callback=progress.callback(
+            "probes",
+            total=len(probes),
+            extra={"layer": target_layer},
+        ),
     )
 
     payload = {
@@ -254,6 +536,17 @@ def atlas_dimensionality_study(
         "--include-results/--summary-only",
         help="Include per-probe results for each layer",
     ),
+    batch_size: int = typer.Option(
+        8, "--batch-size", help="Batch size for probe activation collection"
+    ),
+    pooling: str = typer.Option(
+        "frechet", "--pooling", help="Token pooling: frechet or mean"
+    ),
+    layer_chunk_size: int = typer.Option(
+        4,
+        "--layer-chunk-size",
+        help="Layers per activation pass (higher = faster, more memory)",
+    ),
 ) -> None:
     """Run atlas dimensionality across all layers and summarize structure."""
     context = _context(ctx)
@@ -273,29 +566,92 @@ def atlas_dimensionality_study(
     resolved_layers = list(range(num_layers))
 
     probes = UnifiedAtlasInventory.all_probes()
+    probe_texts = _collect_probe_texts(probes)
     calibration_weights = {}
 
     backend = get_default_backend()
-    provider = BackboneActivationProvider(
+    pool_mode = pooling.strip().lower()
+    if pool_mode not in {"frechet", "mean"}:
+        raise typer.BadParameter("Pooling must be 'frechet' or 'mean'.")
+    if batch_size < 1:
+        raise typer.BadParameter("Batch size must be >= 1.")
+
+    chunk_size = layer_chunk_size
+    if chunk_size <= 0:
+        chunk_size = len(resolved_layers)
+    chunk_size = min(chunk_size, len(resolved_layers))
+
+    progress = AtlasProgress(logger)
+    unique_texts = {
+        text for text in (_normalize_probe_text(t) for t in probe_texts) if text is not None
+    }
+    logger.info(
+        "ATLAS: %d probes, %d texts (%d unique), %d layers, chunk=%d",
+        len(probes),
+        len(probe_texts),
+        len(unique_texts),
+        len(resolved_layers),
+        chunk_size,
+    )
+
+    provider = AtlasActivationCache(
         tokenizer,
         embed_tokens,
         layers_module,
         norm,
         backend,
+        pooling=pool_mode,
+        batch_size=batch_size,
         frechet_k_neighbors=None,
         frechet_max_k_neighbors=None,
+        progress_callback=progress.callback(
+            "activations",
+            total=len(unique_texts),
+            extra={"layers": chunk_size, "batchSize": batch_size},
+        ),
     )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
 
     reports: list[ConceptDimensionalityReport] = []
-    for layer_idx in resolved_layers:
-        report = analyzer.analyze(
-            probes=probes,
-            activation_provider=provider,
-            layer=layer_idx,
-            calibration_weights=calibration_weights,
+    chunks = [
+        resolved_layers[i : i + chunk_size]
+        for i in range(0, len(resolved_layers), chunk_size)
+    ]
+    for chunk_idx, chunk in enumerate(chunks, start=1):
+        logger.info(
+            "ATLAS: Preloading chunk %d/%d (layers %s)",
+            chunk_idx,
+            len(chunks),
+            ", ".join(str(layer) for layer in chunk),
         )
-        reports.append(report)
+        provider.preload_layers(
+            probe_texts,
+            chunk,
+            progress_callback=progress.callback(
+                "activations",
+                total=len(unique_texts),
+                extra={"layers": len(chunk), "batchSize": batch_size},
+            ),
+        )
+        for layer_idx in chunk:
+            logger.info(
+                "ATLAS: Analyzing layer %d/%d",
+                layer_idx + 1,
+                len(resolved_layers),
+            )
+            report = analyzer.analyze(
+                probes=probes,
+                activation_provider=provider,
+                layer=layer_idx,
+                calibration_weights=calibration_weights,
+                progress_callback=progress.callback(
+                    "probes",
+                    total=len(probes),
+                    extra={"layer": layer_idx},
+                ),
+            )
+            reports.append(report)
+        provider.clear_layers(chunk)
 
     study = ConceptDimensionalityStudy.summarize(reports)
 

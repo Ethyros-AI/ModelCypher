@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.ports.embedding import EmbeddingProvider
 
@@ -161,8 +162,14 @@ class TaskDiversionDetector:
 
         # Try Embeddings - embedder handles truncation
         try:
-            embeddings = await self.embedder.embed([expected_trimmed, observed_trimmed])
-            if len(embeddings) == 2:
+            backend = get_default_backend()
+            embeddings = await get_or_compute_embeddings(
+                self.embedder,
+                backend,
+                "task_diversion",
+                [expected_trimmed, observed_trimmed],
+            )
+            if int(backend.shape(embeddings)[0]) == 2:
                 similarity = self._cosine_similarity(embeddings[0], embeddings[1]) or 0.0
 
                 return TaskDiversionAssessment(

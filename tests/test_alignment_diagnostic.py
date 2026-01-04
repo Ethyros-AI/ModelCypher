@@ -114,15 +114,15 @@ class TestAlignmentSignalFields:
         assert 0.0 <= signal.gap <= _eps()
 
     def test_default_lists_empty(self):
-        """Test default list fields are empty."""
+        """Test default tuple fields are empty."""
         signal = AlignmentSignal(
             dimension=2,
             cka_achieved=1.0 - _eps(),
             metadata={"phase_tol": _eps()},
         )
-        assert signal.misaligned_anchors == []
-        assert signal.anchor_labels == []
-        assert signal.anchor_divergence == []
+        assert signal.misaligned_anchors == ()
+        assert signal.anchor_labels == ()
+        assert signal.anchor_divergence == ()
 
     def test_frozen_immutable(self):
         """Test dataclass is frozen."""
@@ -326,7 +326,7 @@ class TestAlignmentSignalFromMatrices:
             cka_achieved=cka_achieved,
         )
 
-        assert signal.anchor_labels == labels
+        assert signal.anchor_labels == tuple(labels)
         for anchor in signal.misaligned_anchors:
             assert anchor in labels
 

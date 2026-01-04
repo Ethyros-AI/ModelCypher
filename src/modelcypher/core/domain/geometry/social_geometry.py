@@ -63,7 +63,7 @@ _AXIS_KINSHIP = "kinship"
 _AXIS_FORMALITY = "formality"
 
 
-@dataclass
+@dataclass(frozen=True)
 class AxisOrthogonality:
     """Measures how independent the social axes are."""
 
@@ -73,7 +73,7 @@ class AxisOrthogonality:
     mean_orthogonality: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class GradientConsistency:
     """Measures whether anchors form monotonic gradients along axes."""
 
@@ -85,18 +85,18 @@ class GradientConsistency:
     formality_correlation: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class PowerGradientResult:
     """Analysis of the power hierarchy axis."""
 
     power_axis_detected: bool
     power_direction: "Array"  # Unit vector pointing "up" in status
     status_correlation: float  # Geodesic correlation between position and expected status
-    high_status_anchors: list[str]
-    low_status_anchors: list[str]
+    high_status_anchors: tuple[str, ...]
+    low_status_anchors: tuple[str, ...]
 
 
-@dataclass
+@dataclass(frozen=True)
 class SocialGeometryReport:
     """Complete social geometry analysis report."""
 
@@ -104,7 +104,7 @@ class SocialGeometryReport:
     axis_orthogonality: AxisOrthogonality
     gradient_consistency: GradientConsistency
     power_gradient: PowerGradientResult
-    principal_components_variance: list[float]
+    principal_components_variance: tuple[float, ...]
     anchor_count: int
 
     def to_dict(self) -> dict:
@@ -128,10 +128,10 @@ class SocialGeometryReport:
             "power_gradient": {
                 "power_axis_detected": self.power_gradient.power_axis_detected,
                 "status_correlation": self.power_gradient.status_correlation,
-                "high_status_anchors": self.power_gradient.high_status_anchors,
-                "low_status_anchors": self.power_gradient.low_status_anchors,
+                "high_status_anchors": list(self.power_gradient.high_status_anchors),
+                "low_status_anchors": list(self.power_gradient.low_status_anchors),
             },
-            "principal_components_variance": self.principal_components_variance,
+            "principal_components_variance": list(self.principal_components_variance),
             "anchor_count": self.anchor_count,
         }
 
@@ -332,8 +332,8 @@ class SocialGeometryAnalyzer:
                 power_axis_detected=False,
                 power_direction=backend.zeros((1,)),
                 status_correlation=0.0,
-                high_status_anchors=[],
-                low_status_anchors=[],
+                high_status_anchors=(),
+                low_status_anchors=(),
             )
 
         # Compute correlation between PC position and expected level
@@ -402,8 +402,8 @@ class SocialGeometryAnalyzer:
             power_axis_detected=abs(correlation) > 0,
             power_direction=power_direction,
             status_correlation=correlation,
-            high_status_anchors=high_status,
-            low_status_anchors=low_status,
+            high_status_anchors=tuple(high_status),
+            low_status_anchors=tuple(low_status),
         )
 
     def full_analysis(self, activations: dict[str, any]) -> SocialGeometryReport:
@@ -445,7 +445,7 @@ class SocialGeometryAnalyzer:
             gradient_consistency=gradient,
             power_gradient=power,
             # Use native tolist() for O(1) extraction
-            principal_components_variance=[float(x) for x in self.backend.tolist(variance)],
+            principal_components_variance=tuple(float(x) for x in self.backend.tolist(variance)),
             anchor_count=len(names),
         )
 

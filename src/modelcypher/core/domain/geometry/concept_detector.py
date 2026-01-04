@@ -31,13 +31,17 @@ from typing import TYPE_CHECKING, Any, Iterable
 import logging
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_batch,
+    geodesic_cosine_between_sets,
+)
 from modelcypher.utils.text import truncate
 
 if TYPE_CHECKING:
@@ -195,21 +199,61 @@ class ConceptDetector:
 
         detections: list[DetectedConcept] = []
 
-        for start, end, segment in segments:
-            embeddings = self._embedding_provider.embed([segment])
-            if not embeddings:
-                continue
+        segment_texts = [segment for _, _, segment in segments]
+        embeddings_batch = self._embedding_provider.embed(segment_texts)
+        use_batch = False
+        segment_matrix = None
+        best_idx_list: list[int] = []
+        best_sim_list: list[float] = []
 
-            segment_embedding = self._ensure_array(embeddings[0])
-            sims = geodesic_cosine_batch(
-                segment_embedding, self._probe_centroids, self._backend
-            )
-            best_idx_arr = self._backend.argmax(sims)
-            self._backend.eval(best_idx_arr)
-            best_idx = int(self._backend.to_scalar(best_idx_arr))
-            best_sim_arr = self._backend.take(sims, self._backend.array([best_idx]))
-            self._backend.eval(best_sim_arr)
-            best_similarity = float(self._backend.to_scalar(best_sim_arr))
+        if embeddings_batch is not None:
+            if hasattr(embeddings_batch, "shape"):
+                segment_matrix = embeddings_batch
+                if int(self._backend.shape(segment_matrix)[0]) != len(segments):
+                    segment_matrix = None
+            else:
+                if embeddings_batch:
+                    segment_matrix = self._backend.array(embeddings_batch)
+                else:
+                    segment_matrix = None
+            if segment_matrix is not None:
+                sim_matrix = geodesic_cosine_between_sets(
+                    segment_matrix, self._probe_centroids, self._backend
+                )
+                if int(self._backend.shape(sim_matrix)[0]) == len(segments):
+                    best_idx_arr = self._backend.argmax(sim_matrix, axis=1)
+                    best_idx_col = self._backend.reshape(best_idx_arr, (-1, 1))
+                    best_sim_arr = self._backend.take_along_axis(
+                        sim_matrix, best_idx_col, axis=1
+                    )
+                    self._backend.eval(best_idx_arr, best_sim_arr)
+                    best_idx_list = [int(x) for x in self._backend.tolist(best_idx_arr)]
+                    best_sim_list = [
+                        float(x[0]) if isinstance(x, list) else float(x)
+                        for x in self._backend.tolist(best_sim_arr)
+                    ]
+                    use_batch = True
+
+        for idx, (start, end, segment) in enumerate(segments):
+            if use_batch and segment_matrix is not None:
+                best_idx = best_idx_list[idx]
+                best_similarity = best_sim_list[idx]
+                segment_embedding = segment_matrix[idx]
+            else:
+                embeddings = self._embedding_provider.embed([segment])
+                if not embeddings:
+                    continue
+                segment_embedding = self._ensure_array(embeddings[0])
+                sims = geodesic_cosine_batch(
+                    segment_embedding, self._probe_centroids, self._backend
+                )
+                best_idx_arr = self._backend.argmax(sims)
+                self._backend.eval(best_idx_arr)
+                best_idx = int(self._backend.to_scalar(best_idx_arr))
+                best_sim_arr = self._backend.take(sims, self._backend.array([best_idx]))
+                self._backend.eval(best_sim_arr)
+                best_similarity = float(self._backend.to_scalar(best_sim_arr))
+
             best_probe = self._probe_embeddings[best_idx]
 
             acceptance_floor = max(best_probe.cohesion_floor, self._separation_floor)
@@ -273,16 +317,21 @@ class ConceptDetector:
                 )
                 continue
 
-            embeddings = self._embedding_provider.embed(texts)
-            if not embeddings:
+            embeddings_arr = get_or_compute_embeddings_sync(
+                self._embedding_provider,
+                self._backend,
+                "concept_detector_support",
+                texts,
+            )
+            if int(self._backend.shape(embeddings_arr)[0]) == 0:
                 logger.warning(
                     "Embedding provider returned no embeddings for probe %s; skipping.",
                     probe.probe_id,
                 )
                 continue
 
-            support_matrix = self._backend.array(embeddings)
-            centroid = self._frechet_centroid(embeddings)
+            support_matrix = embeddings_arr
+            centroid = self._frechet_centroid(embeddings_arr)
             cohesion_floor = self._cohesion_floor(centroid, support_matrix)
 
             probe_embeddings.append(

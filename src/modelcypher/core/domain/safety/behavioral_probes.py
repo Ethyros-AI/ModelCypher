@@ -27,9 +27,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Callable
+from typing import Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.agents.unified_atlas import (
     AtlasProbe,
     AtlasSource,
@@ -171,8 +173,14 @@ def _anchor_embedding(
     texts: tuple[str, ...],
 ) -> list[float]:
     backend = get_default_backend()
-    embeddings = embedder.embed(list(texts))
-    points = backend.array(embeddings)
+    points = get_or_compute_embeddings_sync(
+        embedder,
+        backend,
+        "behavioral_probe_anchor",
+        list(texts),
+    )
+    if int(backend.shape(points)[0]) == 0:
+        return []
     mean = frechet_mean(points, backend=backend)
     backend.eval(mean)
     if len(mean.shape) == 0:
@@ -180,20 +188,27 @@ def _anchor_embedding(
     return backend.tolist(mean)
 
 
-def _geodesic_min_distance(anchor_points: list[list[float]], query: list[float]) -> float:
+def _geodesic_min_distance(
+    anchor_points: list[list[float]] | Any,
+    query: list[float] | Any,
+) -> float:
     if not anchor_points:
         return 0.0
     backend = get_default_backend()
-    points = backend.array(anchor_points + [query])
+    anchor_arr = (
+        anchor_points if hasattr(anchor_points, "shape") else backend.array(anchor_points)
+    )
+    query_arr = query if hasattr(query, "shape") else backend.array(query)
+    if len(backend.shape(query_arr)) == 1:
+        query_arr = backend.reshape(query_arr, (1, -1))
+    points = backend.concatenate([anchor_arr, query_arr], axis=0)
     rg = RiemannianGeometry(backend)
     geo = rg.geodesic_distances(points)
     backend.eval(geo.distances)
     n = int(points.shape[0])
     if n <= 1:
         return 0.0
-    row = backend.take(geo.distances, backend.array([n - 1]), axis=0)
-    row = backend.squeeze(row, axis=0)
-    row = row[: n - 1]
+    row = geo.distances[n - 1, : n - 1]
     backend.eval(row)
     return float(backend.to_scalar(backend.min(row)))
 
@@ -235,6 +250,7 @@ class SemanticDriftProbe(AdapterSafetyProbe):
                 },
             )
         embedder = context.embedder
+        backend = get_default_backend()
         probes = (
             self._probes_override
             if self._probes_override is not None
@@ -250,7 +266,15 @@ class SemanticDriftProbe(AdapterSafetyProbe):
             try:
                 response = context.inference_hook(prompt)
                 anchor = _anchor_embedding(embedder, prompt_texts)
-                response_emb = embedder.embed([response])[0]
+                response_arr = get_or_compute_embeddings_sync(
+                    embedder,
+                    backend,
+                    "behavioral_probe_response",
+                    [response],
+                )
+                if int(backend.shape(response_arr)[0]) == 0:
+                    continue
+                response_emb = response_arr[0]
                 distance = _geodesic_min_distance([anchor], response_emb)
                 distances.append(distance)
                 probe_ids.append(probe.probe_id)
@@ -372,6 +396,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
 
         questions_to_run = self.CANARY_QUESTIONS
         embedder = context.embedder
+        backend = get_default_backend()
         findings: list[str] = []
         distances: list[float] = []
         question_ids: list[str] = []
@@ -380,7 +405,15 @@ class CanaryQAProbe(AdapterSafetyProbe):
             try:
                 response = context.inference_hook(question.prompt)
                 anchor = _anchor_embedding(embedder, question.expected_responses)
-                response_emb = embedder.embed([response])[0]
+                response_arr = get_or_compute_embeddings_sync(
+                    embedder,
+                    backend,
+                    "behavioral_probe_response",
+                    [response],
+                )
+                if int(backend.shape(response_arr)[0]) == 0:
+                    continue
+                response_emb = response_arr[0]
                 distance = _geodesic_min_distance([anchor], response_emb)
                 distances.append(distance)
                 question_ids.append(f"{question.category.value}:{question.prompt}")

@@ -137,7 +137,7 @@ class GroundingRotation:
     confidence: float  # How confident we are in the rotation estimate
 
 
-@dataclass
+@dataclass(frozen=True)
 class GhostAnchor:
     """
     A synthetic anchor for a concept that exists in Source but not in Target.
@@ -166,7 +166,7 @@ class GhostAnchor:
     synthesis_confidence: float  # How confident we are in this Ghost Anchor
 
 
-@dataclass
+@dataclass(frozen=True)
 class CrossGroundingTransferResult:
     """Result of a cross-grounding knowledge transfer."""
 
@@ -175,7 +175,7 @@ class CrossGroundingTransferResult:
     grounding_rotation: GroundingRotation
 
     # Transferred concepts
-    ghost_anchors: list[GhostAnchor]
+    ghost_anchors: tuple[GhostAnchor, ...]
 
     # Quality metrics
     mean_stress_preservation: float
@@ -883,7 +883,7 @@ class CrossGroundingTransferEngine:
             source_model_grounding=source_grounding,
             target_model_grounding=target_grounding,
             grounding_rotation=rotation,
-            ghost_anchors=ghost_anchors,
+            ghost_anchors=tuple(ghost_anchors),
             mean_stress_preservation=mean_preservation,
             min_stress_preservation=min_preservation,
             interpretability_gap=interpretability_gap,

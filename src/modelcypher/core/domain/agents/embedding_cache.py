@@ -111,3 +111,39 @@ async def get_or_compute_embeddings(
 
     cache.set(key, {"embeddings": embeddings_list})
     return arr
+
+
+def get_or_compute_embeddings_sync(
+    embedder: Any,
+    backend: Any,
+    namespace: str,
+    texts: list[str],
+) -> Any:
+    if not texts:
+        return backend.array([])
+
+    cache = _get_embedding_cache()
+    key = make_embedding_cache_key(embedder, namespace, texts)
+    cached = cache.get(key)
+    if cached:
+        embeddings = cached.get("embeddings", [])
+        if embeddings:
+            arr = backend.array(embeddings)
+            backend.eval(arr)
+            return arr
+
+    embeddings = embedder.embed(texts)
+    if not embeddings:
+        return backend.array([])
+
+    if hasattr(embeddings, "shape"):
+        arr = embeddings
+        backend.eval(arr)
+        embeddings_list = backend.tolist(arr)
+    else:
+        embeddings_list = embeddings
+        arr = backend.array(embeddings)
+        backend.eval(arr)
+
+    cache.set(key, {"embeddings": embeddings_list})
+    return arr

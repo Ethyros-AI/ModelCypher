@@ -91,8 +91,8 @@ class SpectralSignatureValidation:
     eigenvalue_max: float
     algebraic_connectivity: float
     component_count: int
-    heat_trace: list[float]
-    heat_times: list[float]
+    heat_trace: tuple[float, ...]
+    heat_times: tuple[float, ...]
     connected: bool
     passed: bool
 
@@ -110,9 +110,9 @@ class DimensionConstraintValidation:
     spectral_eigen_max_abs_diff: float
     spectral_entropy_base: float
     spectral_entropy_padded: float
-    heat_trace_base: list[float]
-    heat_trace_padded: list[float]
-    heat_times: list[float]
+    heat_trace_base: tuple[float, ...]
+    heat_trace_padded: tuple[float, ...]
+    heat_times: tuple[float, ...]
     betti_numbers_base: dict[int, int]
     betti_numbers_padded: dict[int, int]
     component_count_base: int
@@ -128,40 +128,40 @@ class DimensionConstraintValidation:
 
 @dataclass(frozen=True)
 class GromovWassersteinFixture:
-    points_a: list[list[float]]
-    points_b: list[list[float]]
-    permutation: list[int]
-    source_distances: list[list[float]]
-    target_distances: list[list[float]]
-    symmetry_source_distances: list[list[float]]
-    symmetry_target_distances: list[list[float]]
+    points_a: tuple[tuple[float, ...], ...]
+    points_b: tuple[tuple[float, ...], ...]
+    permutation: tuple[int, ...]
+    source_distances: tuple[tuple[float, ...], ...]
+    target_distances: tuple[tuple[float, ...], ...]
+    symmetry_source_distances: tuple[tuple[float, ...], ...]
+    symmetry_target_distances: tuple[tuple[float, ...], ...]
 
 
 @dataclass(frozen=True)
 class TraversalCoherenceFixture:
-    anchor_ids: list[str]
-    anchor_gram: list[float]
-    perturbed_gram: list[float]
-    paths: list[TraversalPath]
+    anchor_ids: tuple[str, ...]
+    anchor_gram: tuple[float, ...]
+    perturbed_gram: tuple[float, ...]
+    paths: tuple[TraversalPath, ...]
 
 
 @dataclass(frozen=True)
 class PathSignatureFixture:
-    gate_embeddings: dict[str, list[float]]
-    shifted_embeddings: dict[str, list[float]]
+    gate_embeddings: dict[str, tuple[float, ...]]
+    shifted_embeddings: dict[str, tuple[float, ...]]
     path: PathSignature
 
 
 @dataclass(frozen=True)
 class SpectralSignatureFixture:
-    points: list[list[float]]
+    points: tuple[tuple[float, ...], ...]
     expected_component_count: int
     expected_connected: bool
 
 
 @dataclass(frozen=True)
 class DimensionConstraintFixture:
-    points: list[list[float]]
+    points: tuple[tuple[float, ...], ...]
     padded_dimension: int
 
 
@@ -195,9 +195,10 @@ class GeometryValidationSuite:
         self._backend = backend or get_default_backend()
         self._gw = GromovWassersteinDistance(self._backend)
 
-    def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
-        """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
-        return self._backend.tolist(array)
+    def _array_to_2d_tuple(self, array: "Array") -> tuple[tuple[float, ...], ...]:
+        """Convert 2D array to nested tuples using native tolist() - O(1) vs O(n*m)."""
+        nested_list = self._backend.tolist(array)
+        return tuple(tuple(row) for row in nested_list)
 
     def run(self) -> Report:
         """Run the full geometry validation suite.
@@ -248,92 +249,92 @@ class GeometryValidationSuite:
     def _build_fixtures(self) -> Fixtures:
         backend = self._backend
 
-        points_a = [
+        points_a_list = [
             [0.0, 0.0],
             [1.0, 0.0],
             [0.0, 1.0],
         ]
-        permutation = [2, 0, 1]
-        points_b = [points_a[idx] for idx in permutation]
+        permutation_list = [2, 0, 1]
+        points_b_list = [points_a_list[idx] for idx in permutation_list]
 
         # Convert to backend arrays and compute distances
-        points_a_arr = backend.array(points_a)
-        points_b_arr = backend.array(points_b)
+        points_a_arr = backend.array(points_a_list)
+        points_b_arr = backend.array(points_b_list)
         source_distances_arr = self._gw.compute_pairwise_distances(points_a_arr)
         target_distances_arr = self._gw.compute_pairwise_distances(points_b_arr)
 
-        # Convert back to lists for fixture storage
+        # Convert back to tuples for fixture storage
         backend.eval(source_distances_arr, target_distances_arr)
-        source_distances = self._array_to_2d_list(source_distances_arr)
-        target_distances = self._array_to_2d_list(target_distances_arr)
-        symmetry_source_distances = [
-            [0.0, 1.0, 3.0],
-            [1.0, 0.0, 1.0],
-            [3.0, 1.0, 0.0],
-        ]
-        symmetry_target_distances = [
-            [0.0, 2.0, 1.0],
-            [2.0, 0.0, 2.0],
-            [1.0, 2.0, 0.0],
-        ]
+        source_distances = self._array_to_2d_tuple(source_distances_arr)
+        target_distances = self._array_to_2d_tuple(target_distances_arr)
+        symmetry_source_distances = (
+            (0.0, 1.0, 3.0),
+            (1.0, 0.0, 1.0),
+            (3.0, 1.0, 0.0),
+        )
+        symmetry_target_distances = (
+            (0.0, 2.0, 1.0),
+            (2.0, 0.0, 2.0),
+            (1.0, 2.0, 0.0),
+        )
         gw_fixture = GromovWassersteinFixture(
-            points_a=points_a,
-            points_b=points_b,
-            permutation=permutation,
+            points_a=tuple(tuple(p) for p in points_a_list),
+            points_b=tuple(tuple(p) for p in points_b_list),
+            permutation=tuple(permutation_list),
             source_distances=source_distances,
             target_distances=target_distances,
             symmetry_source_distances=symmetry_source_distances,
             symmetry_target_distances=symmetry_target_distances,
         )
 
-        anchor_ids = ["A", "B", "C", "D"]
-        anchor_gram = [
-            1,
-            0,
-            -1,
-            0,
-            0,
-            1,
-            0,
-            -1,
-            -1,
-            0,
-            1,
-            0,
-            0,
-            -1,
-            0,
-            1,
+        anchor_ids_list = ["A", "B", "C", "D"]
+        anchor_gram_list = [
+            1.0,
+            0.0,
+            -1.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            -1.0,
+            -1.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            -1.0,
+            0.0,
+            1.0,
         ]
-        perturbed_gram = list(anchor_gram)
-        n = len(anchor_ids)
+        perturbed_gram_list = list(anchor_gram_list)
+        n = len(anchor_ids_list)
         perturbations = [
             (1, 2, -0.4),
             (2, 3, 0.4),
             (0, 3, -0.2),
         ]
         for i, j, delta in perturbations:
-            perturbed_gram[i * n + j] += delta
-            perturbed_gram[j * n + i] += delta
+            perturbed_gram_list[i * n + j] += delta
+            perturbed_gram_list[j * n + i] += delta
         traversal_fixture = TraversalCoherenceFixture(
-            anchor_ids=anchor_ids,
-            anchor_gram=anchor_gram,
-            perturbed_gram=perturbed_gram,
-            paths=[
+            anchor_ids=tuple(anchor_ids_list),
+            anchor_gram=tuple(anchor_gram_list),
+            perturbed_gram=tuple(perturbed_gram_list),
+            paths=(
                 TraversalPath(anchor_ids=["A", "B", "C", "D"]),
                 TraversalPath(anchor_ids=["A", "C", "D", "B"]),
-            ],
+            ),
         )
 
         gate_embeddings = {
-            "A": [0.0, 0.0],
-            "B": [1.0, 0.0],
-            "C": [1.0, 1.0],
+            "A": (0.0, 0.0),
+            "B": (1.0, 0.0),
+            "C": (1.0, 1.0),
         }
         shifted_embeddings = {
-            "A": [2.0, -1.5],
-            "B": [3.0, -1.5],
-            "C": [3.0, -0.5],
+            "A": (2.0, -1.5),
+            "B": (3.0, -1.5),
+            "C": (3.0, -0.5),
         }
         path_id = UUID("00000000-0000-0000-0000-000000000101")
         path = PathSignature(
@@ -356,28 +357,28 @@ class GeometryValidationSuite:
         # Two clusters are spatially separated but derive_k_neighbors finds
         # the minimum k that yields a connected graph, so expected count is 1.
         spectral_fixture = SpectralSignatureFixture(
-            points=[
-                [0.0, 0.0], [1.0, 0.0], [2.0, 0.0],  # Cluster A
-                [100.0, 0.0], [101.0, 0.0], [102.0, 0.0],  # Cluster B
-            ],
+            points=(
+                (0.0, 0.0), (1.0, 0.0), (2.0, 0.0),  # Cluster A
+                (100.0, 0.0), (101.0, 0.0), (102.0, 0.0),  # Cluster B
+            ),
             expected_component_count=1,
             expected_connected=True,
         )
         # Fixture points for connected component test.
         # Linear arrangement ensures connectivity with any k >= 1.
         spectral_connected_fixture = SpectralSignatureFixture(
-            points=[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]],
+            points=((0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)),
             expected_component_count=1,
             expected_connected=True,
         )
         dimension_constraint_fixture = DimensionConstraintFixture(
-            points=[
-                [0.0, 0.0],
-                [1.0, 0.0],
-                [0.5, 0.8],
-                [0.1, 0.7],
-                [0.9, 0.2],
-            ],
+            points=(
+                (0.0, 0.0),
+                (1.0, 0.0),
+                (0.5, 0.8),
+                (0.1, 0.7),
+                (0.9, 0.2),
+            ),
             padded_dimension=4,
         )
 
@@ -594,8 +595,8 @@ class GeometryValidationSuite:
             eigenvalue_max=float(eig_max),
             algebraic_connectivity=float(signature.algebraic_connectivity),
             component_count=signature.component_count,
-            heat_trace=signature.heat_trace,
-            heat_times=signature.heat_times,
+            heat_trace=tuple(signature.heat_trace) if signature.heat_trace else (),
+            heat_times=tuple(signature.heat_times) if signature.heat_times else (),
             connected=signature.connected,
             passed=passed,
         )
@@ -610,7 +611,7 @@ class GeometryValidationSuite:
         base_dim = len(points[0]) if points else 0
 
         padded_points = [
-            row + [0.0] * (fixture.padded_dimension - base_dim) for row in points
+            row + (0.0,) * (fixture.padded_dimension - base_dim) for row in points
         ]
 
         base_arr = backend.array(points)
@@ -735,9 +736,9 @@ class GeometryValidationSuite:
             spectral_eigen_max_abs_diff=spectral_eigen_max_abs_diff,
             spectral_entropy_base=sig_base.spectral_entropy,
             spectral_entropy_padded=sig_padded.spectral_entropy,
-            heat_trace_base=sig_base.heat_trace,
-            heat_trace_padded=sig_padded.heat_trace,
-            heat_times=sig_base.heat_times,
+            heat_trace_base=tuple(sig_base.heat_trace) if sig_base.heat_trace else (),
+            heat_trace_padded=tuple(sig_padded.heat_trace) if sig_padded.heat_trace else (),
+            heat_times=tuple(sig_base.heat_times) if sig_base.heat_times else (),
             betti_numbers_base=fp_base.betti_numbers,
             betti_numbers_padded=fp_padded.betti_numbers,
             component_count_base=fp_base.summary.component_count,

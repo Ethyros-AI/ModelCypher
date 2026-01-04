@@ -34,8 +34,7 @@ Measurements:
 from __future__ import annotations
 
 import logging
-import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -104,7 +103,7 @@ class BatchInvarianceResult:
         per_family_trajectory_cka: Mean trajectory CKA per metaphor family.
     """
 
-    results: list[MetaphorInvarianceResult]
+    results: tuple[MetaphorInvarianceResult, ...]
     mean_trajectory_cka: float
     std_trajectory_cka: float
     mean_convergence_delta: float
@@ -167,8 +166,8 @@ class MetaphorInvarianceAnalyzer:
 
         # Compute convergence layer delta (normalized by max layer count)
         max_layers = max(trajectory_a.layer_count, trajectory_b.layer_count)
-        # Use machine epsilon for division safety
-        eps = sys.float_info.epsilon
+        # Use division_epsilon for numerical stability
+        eps = division_epsilon(self.backend, self.backend.array([float(max_layers)]))
         convergence_delta = abs(
             trajectory_a.convergence_layer - trajectory_b.convergence_layer
         )
@@ -336,7 +335,7 @@ class MetaphorInvarianceAnalyzer:
         }
 
         return BatchInvarianceResult(
-            results=results,
+            results=tuple(results),
             mean_trajectory_cka=mean_cka,
             std_trajectory_cka=std_cka,
             mean_convergence_delta=mean_conv_delta,

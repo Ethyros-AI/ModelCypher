@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -137,11 +137,13 @@ class ConceptDimensionalityAnalyzer:
         activation_provider: ActivationProvider,
         layer: int,
         calibration_weights: dict[str, float] | None = None,
+        progress_callback: Callable[[int, int, int, int], None] | None = None,
     ) -> ConceptDimensionalityReport:
         results: list[ConceptDimensionalityResult] = []
         skipped: list[SkippedProbe] = []
+        total = len(probes)
 
-        for probe in probes:
+        for idx, probe in enumerate(probes, start=1):
             weight = calibration_weights.get(probe.probe_id) if calibration_weights else None
 
             texts = self._build_support_texts(probe)
@@ -155,6 +157,8 @@ class ConceptDimensionalityAnalyzer:
                         calibration_weight=weight,
                     )
                 )
+                if progress_callback:
+                    progress_callback(idx, total, len(results), len(skipped))
                 continue
 
             try:
@@ -170,6 +174,8 @@ class ConceptDimensionalityAnalyzer:
                         calibration_weight=weight,
                     )
                 )
+                if progress_callback:
+                    progress_callback(idx, total, len(results), len(skipped))
                 continue
 
             vectors, invalid_counts = self._filter_vectors(activations)
@@ -185,6 +191,8 @@ class ConceptDimensionalityAnalyzer:
                         invalid_counts=invalid_counts,
                     )
                 )
+                if progress_callback:
+                    progress_callback(idx, total, len(results), len(skipped))
                 continue
 
             estimate = self._compute_intrinsic_dimension(vectors)
@@ -198,6 +206,8 @@ class ConceptDimensionalityAnalyzer:
                         calibration_weight=weight,
                     )
                 )
+                if progress_callback:
+                    progress_callback(idx, total, len(results), len(skipped))
                 continue
 
             results.append(
@@ -217,6 +227,9 @@ class ConceptDimensionalityAnalyzer:
                     ci_upper=estimate.ci.upper if estimate.ci else None,
                 )
             )
+
+            if progress_callback:
+                progress_callback(idx, total, len(results), len(skipped))
 
         histogram = self._dimension_histogram(results)
         mean_dim = self._mean_dimension(results)

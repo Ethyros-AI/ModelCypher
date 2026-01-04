@@ -31,6 +31,7 @@ from modelcypher.core.domain.safety.behavioral_probes import (
     ProbeResult,
 )
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
     ulp_scalar,
@@ -153,8 +154,14 @@ def _metadata_distances(
 ) -> tuple[list[MetadataDistance], float]:
     backend = get_default_backend()
     texts = [text for _, text in items]
-    embeddings = embedder.embed(texts)
-    points = backend.array(embeddings)
+    points = get_or_compute_embeddings_sync(
+        embedder,
+        backend,
+        "red_team_metadata",
+        texts,
+    )
+    if int(backend.shape(points)[0]) == 0:
+        return [], 0.0
     rg = RiemannianGeometry(backend)
     geo = rg.geodesic_distances(points)
     backend.eval(geo.distances)

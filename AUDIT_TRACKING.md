@@ -1,5 +1,7 @@
 # ModelCypher Python File Audit
 
+**Status**: Historical audit. Superseded by `docs/REPO-AUDIT-2025-01-04.md`.
+
 **Started**: 2025-12-27
 **Total Files**: 607 Python files
 **Source Files**: 439

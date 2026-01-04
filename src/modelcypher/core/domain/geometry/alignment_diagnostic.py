@@ -53,9 +53,9 @@ class AlignmentSignal:
     cka_target: float = 1.0
     gap: float = 0.0
 
-    misaligned_anchors: list[str] = field(default_factory=list)
-    anchor_labels: list[str] = field(default_factory=list)
-    anchor_divergence: list[float] = field(default_factory=list)
+    misaligned_anchors: tuple[str, ...] = field(default_factory=tuple)
+    anchor_labels: tuple[str, ...] = field(default_factory=tuple)
+    anchor_divergence: tuple[float, ...] = field(default_factory=tuple)
     iteration: int = 0
     metadata: dict[str, float] = field(default_factory=dict)
 
@@ -119,7 +119,7 @@ def alignment_signal_from_matrices(
     labels = list(labels) if labels is not None else [f"sample:{i}" for i in range(n_samples)]
 
     # Per-anchor divergence: geodesic distance respects manifold curvature.
-        # Chord distance is systematically wrong in high dimensions.
+    # Chord distance is systematically wrong in high dimensions.
     if b.shape(source_matrix) != b.shape(target_matrix):
         # Gram-space comparison when dimensions differ
         source_gram = _cache.get_or_compute_gram(source_matrix, b)
@@ -174,9 +174,9 @@ def alignment_signal_from_matrices(
         dimension=dimension,
         cka_achieved=float(cka_achieved),
         cka_target=1.0,
-        misaligned_anchors=misaligned,
-        anchor_labels=labels,
-        anchor_divergence=dist_list,
+        misaligned_anchors=tuple(misaligned),
+        anchor_labels=tuple(labels),
+        anchor_divergence=tuple(dist_list),
         iteration=iteration,
         metadata=metadata,
     )
