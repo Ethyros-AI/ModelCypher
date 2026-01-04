@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+import tempfile
 from pathlib import Path
 
 from modelcypher.utils.paths import expand_path
@@ -88,32 +89,43 @@ class ASIFPackager:
             capture_output=True,
         )
 
-        subprocess.run(
-            ["hdiutil", "attach", str(dest), "-nobrowse", "-mountpoint", "/tmp/modelcypher-asif"],
-            check=True,
-            capture_output=True,
-        )
+        with tempfile.TemporaryDirectory(prefix="modelcypher-asif-") as mount_dir:
+            mount_point = Path(mount_dir)
+            subprocess.run(
+                ["hdiutil", "attach", str(dest), "-nobrowse", "-mountpoint", str(mount_point)],
+                check=True,
+                capture_output=True,
+            )
 
-        try:
-            if filesystem != "none":
+            try:
+                copy_target = mount_point
+                if filesystem != "none":
+                    subprocess.run(
+                        [
+                            "diskutil",
+                            "erasevolume",
+                            filesystem,
+                            volume_name,
+                            str(mount_point),
+                        ],
+                        check=True,
+                        capture_output=True,
+                    )
+                    volume_path = Path("/Volumes") / volume_name
+                    if volume_path.exists():
+                        copy_target = volume_path
                 subprocess.run(
-                    [
-                        "diskutil",
-                        "erasevolume",
-                        filesystem,
-                        volume_name,
-                        "/tmp/modelcypher-asif",
-                    ],
+                    ["cp", "-R", str(src), str(copy_target)],
                     check=True,
                     capture_output=True,
                 )
-            subprocess.run(
-                ["cp", "-R", str(src), "/tmp/modelcypher-asif"], check=True, capture_output=True
-            )
-        finally:
-            subprocess.run(
-                ["hdiutil", "detach", "/tmp/modelcypher-asif"], check=False, capture_output=True
-            )
+            finally:
+                for candidate in (Path("/Volumes") / volume_name, mount_point):
+                    subprocess.run(
+                        ["hdiutil", "detach", str(candidate)],
+                        check=False,
+                        capture_output=True,
+                    )
 
         sha256 = self._hash_file(dest)
         return {

@@ -255,8 +255,11 @@ class CUDAInferenceEngine(HiddenStateEngine):
         prompt_length = len(token_ids)
 
         if context_limit is None:
-            # Default to reasonable limit if no context info
-            context_limit = 2048
+            if max_tokens is None:
+                raise ValueError(
+                    "Model context length unknown; provide max_tokens explicitly."
+                )
+            return max_tokens
 
         available = context_limit - prompt_length
         if available <= 0:
@@ -269,7 +272,7 @@ class CUDAInferenceEngine(HiddenStateEngine):
                 )
             return max_tokens
 
-        return min(available, 512)  # Default cap for reasonable response length
+        return available
 
     def _generate(
         self,
@@ -291,7 +294,7 @@ class CUDAInferenceEngine(HiddenStateEngine):
         start = time.time()
         first_token_time: float | None = None
 
-        # Generate with streaming callback for first token timing
+        # Generate without streaming (time-to-first-token unavailable)
         with self._torch.no_grad():
             outputs = entry.model.generate(
                 **inputs,
@@ -300,9 +303,6 @@ class CUDAInferenceEngine(HiddenStateEngine):
                 pad_token_id=entry.tokenizer.pad_token_id or entry.tokenizer.eos_token_id,
                 use_cache=True,
             )
-
-        # Measure first token (approximate)
-        first_token_time = time.time() - start
 
         duration = max(time.time() - start, 1e-6)
 
@@ -317,7 +317,7 @@ class CUDAInferenceEngine(HiddenStateEngine):
         stop_reason = "stop"
         if token_count >= resolved_max_tokens:
             stop_reason = "length"
-        elif eos_token_id is not None and generated_ids[-1].item() == eos_token_id:
+        elif token_count > 0 and eos_token_id is not None and generated_ids[-1].item() == eos_token_id:
             stop_reason = "stop"
 
         return _GenerationResult(

@@ -20,7 +20,7 @@ import argparse
 import os
 from pathlib import Path
 
-DEFAULT_PYTHON_ROOT = Path(__file__).resolve().parent / "src/modelcypher/core"
+DEFAULT_PYTHON_ROOT = Path(__file__).resolve().parents[1] / "src" / "modelcypher" / "core"
 
 # Mapping: Swift Filename -> Python Filename (relative to strict domain roots if possible, or just base name)
 # We will define a strict map for the components we ported.
@@ -47,16 +47,6 @@ MAPPINGS = {
     
     # Evaluation
     "EvaluationEngine": ("MLXTrainingEngine+Evaluation.swift", "engine.py"),
-}
-
-# Also defining directory mapping for broader search
-DIR_MAP = {
-    "Domain/Geometry": "domain/geometry",
-    "Domain/Safety": "domain/safety",
-    "Domain/Thermodynamics": "domain/dynamics",
-    "Domain/Training": "domain/training",
-    "Domain/Semantics": "domain/semantics",
-    "Domain/Evaluation": "domain/evaluation" # Python has it in evaluation/engine.py?
 }
 
 def count_lines(path: str) -> int:
@@ -108,7 +98,8 @@ def main() -> None:
         
         print(f"| {component} | {swift_name} | {s_lines} | {py_name} | {p_lines} | {ratio} |")
 
-    print(f"| **TOTAL** | | **{total_swift}** | | **{total_python}** | **{total_python/total_swift:.2f}** |")
+    total_ratio = f"{total_python/total_swift:.2f}" if total_swift > 0 else "N/A"
+    print(f"| **TOTAL** | | **{total_swift}** | | **{total_python}** | **{total_ratio}** |")
 
 if __name__ == "__main__":
     main()

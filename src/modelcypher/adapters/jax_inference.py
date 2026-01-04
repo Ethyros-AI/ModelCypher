@@ -244,8 +244,11 @@ class JAXInferenceEngine(HiddenStateEngine):
         prompt_length = len(token_ids)
 
         if context_limit is None:
-            # Default to reasonable limit if no context info
-            context_limit = 2048
+            if max_tokens is None:
+                raise ValueError(
+                    "max_tokens is required when the model context length cannot be resolved."
+                )
+            return max_tokens
 
         available = context_limit - prompt_length
         if available <= 0:
@@ -258,7 +261,7 @@ class JAXInferenceEngine(HiddenStateEngine):
                 )
             return max_tokens
 
-        return min(available, 512)  # Default cap for reasonable response length
+        return available
 
     def _generate(
         self,
@@ -288,10 +291,9 @@ class JAXInferenceEngine(HiddenStateEngine):
             pad_token_id=entry.tokenizer.pad_token_id or entry.tokenizer.eos_token_id,
         )
 
-        first_token_time = time.time() - start
         duration = max(time.time() - start, 1e-6)
 
-        # Convert JAX array to numpy for decoding
+        # Convert JAX array to a Python list for decoding.
         output_ids = outputs.sequences[0]
         generated_ids = output_ids[input_length:]
         text = entry.tokenizer.decode(generated_ids, skip_special_tokens=True)
@@ -303,14 +305,14 @@ class JAXInferenceEngine(HiddenStateEngine):
         stop_reason = "stop"
         if token_count >= resolved_max_tokens:
             stop_reason = "length"
-        elif eos_token_id is not None and int(generated_ids[-1]) == eos_token_id:
+        elif token_count > 0 and eos_token_id is not None and int(generated_ids[-1]) == eos_token_id:
             stop_reason = "stop"
 
         return _GenerationResult(
             text=text,
             token_count=token_count,
             tokens_per_second=tokens_per_second,
-            time_to_first_token=first_token_time,
+            time_to_first_token=None,
             total_duration=duration,
             stop_reason=stop_reason,
         )

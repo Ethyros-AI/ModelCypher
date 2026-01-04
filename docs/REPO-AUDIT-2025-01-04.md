@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 155
-- Issues found: 82
-- Issues fixed: 82
+- Audited: 179
+- Issues found: 93
+- Issues fixed: 93
 
 ## Audit Log
 
@@ -1210,6 +1210,44 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: none
 
+- `src/modelcypher/adapters/jax_inference.py` (adapter)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK (no NumPy)
+  - Caching: OK (model/cache per model+adapter)
+  - NumPy: none
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: Not present
+  - Best practices: Updated (no heuristic caps, no misleading TTFT)
+  - Issues: Heuristic defaults for max_tokens/context, misleading time-to-first-token, EOS check crash on empty output
+  - Fix: Require max_tokens when context unknown, use full available context, set TTFT to None, guard EOS check
+
+- `src/modelcypher/adapters/jax_model_loader.py` (adapter)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: Updated (no NumPy)
+  - Caching: N/A
+  - NumPy: Removed
+  - Documentation: Updated (CPU arrays)
+  - Hexagonal structure: OK
+  - Tests: Not present
+  - Best practices: Updated (removed unused PT load)
+  - Issues: Used NumPy in CPU load path; unnecessary PT load during conversion
+  - Fix: Load CPU JAX arrays via safetensors + device_put; removed unused PT model load
+
+- `src/modelcypher/adapters/local_exporter.py` (adapter)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: none
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: Not present
+  - Best practices: OK
+  - Issues: none
+
 - `examples/02_safety_audit.py` (example)
   - Duplicate code/math: N/A
   - Geodesic math: N/A
@@ -1402,6 +1440,267 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Unverified counts, outdated CLI examples, and incorrect merge descriptions
   - Fix: Removed numeric claims, updated CLI examples, aligned merge description
+
+- `papers/paper-5-semantic-highway.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (draft framing)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified numeric results and outdated CLI commands
+  - Fix: Removed preliminary data, updated reproducibility commands, softened claims
+
+- `poetry.lock` (auto-generated)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `pyproject.toml` (config)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `scripts/audit_lines.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Wrong default python root and potential divide-by-zero
+  - Fix: Corrected path resolution and guarded total ratio
+
+- `scripts/modernize_typing.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `scripts/run_verification_tests.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Duplicate test call and unused import
+  - Fix: Removed duplicate call and unused import
+
+- `scripts/verify_mlx_freeze.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: PEP 8 spacing
+  - Fix: Added blank lines between top-level definitions
+
+- `src/modelcypher/__init__.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Version mismatch with pyproject
+  - Fix: Updated __version__ to 1.0.0
+
+- `src/modelcypher/adapters/__init__.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/asif_packager.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Fixed mountpoint and potential detach mismatch
+  - Fix: Use temporary mountpoint and robust detach/copy target handling
+
+- `src/modelcypher/adapters/cuda_activation_provider.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/cuda_inference.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: OK
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Heuristic token limits and misleading time-to-first-token
+  - Fix: Removed default caps, require explicit max_tokens when context unknown, set time-to-first-token to None
+
+- `src/modelcypher/adapters/cuda_model_loader.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: Removed
+  - Documentation: Updated
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: NumPy usage in weight loader
+  - Fix: Load CPU tensors via torch to avoid NumPy
+
+- `src/modelcypher/adapters/embedding_defaults.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/embedding_http.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/embedding_mlx.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: OK
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/embedding_stub.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/filesystem_storage.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: OK
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/hf_hub.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: OK
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `src/modelcypher/adapters/hf_model_search.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: OK
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Heuristic memory fit thresholds
+  - Fix: Use direct size vs available memory comparison, return unknown when unavailable
+
+- `src/modelcypher/adapters/jax_activation_provider.py` (code)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
 
 - `docs/research/cross-architecture-transplant-2025-12-28.md` (doc)
   - Duplicate code/math: N/A

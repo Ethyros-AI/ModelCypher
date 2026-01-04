@@ -241,13 +241,10 @@ class HfModelSearchAdapter(ModelSearchService):
 
     @staticmethod
     def _calculate_fit_status(size_gb: float, available_gb: float) -> MemoryFitStatus:
-        training_required = size_gb * 2.5
-        inference_required = size_gb * 1.5
-        buffer = available_gb * 0.85
-        if training_required <= buffer:
+        if available_gb <= 0:
+            return MemoryFitStatus.unknown
+        if size_gb <= available_gb:
             return MemoryFitStatus.fits
-        if inference_required <= buffer:
-            return MemoryFitStatus.tight
         return MemoryFitStatus.too_big
 
     @staticmethod

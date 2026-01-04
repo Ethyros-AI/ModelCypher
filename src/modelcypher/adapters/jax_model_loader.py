@@ -109,13 +109,6 @@ class JAXModelLoader(ModelLoaderPort):
         except Exception as e:
             logger.warning("Flax model loading failed, trying PyTorch conversion: %s", e)
             # Fall back to loading PyTorch weights and converting
-            from transformers import AutoModelForCausalLM
-
-            pt_model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                trust_remote_code=True,
-            )
-            # Convert to Flax
             model = FlaxAutoModelForCausalLM.from_pretrained(
                 model_path,
                 from_pt=True,
@@ -128,15 +121,17 @@ class JAXModelLoader(ModelLoaderPort):
         return model, tokenizer
 
     def load_weights_as_numpy(self, model_path: str) -> dict[str, Any]:
-        """Load model weights as numpy-compatible arrays.
+        """Load model weights as CPU JAX arrays.
 
         Args:
             model_path: Path to model directory with safetensors
 
         Returns:
-            Dictionary mapping weight names to numpy float32 arrays
+            Dictionary mapping weight names to float32 jax.Array on CPU
         """
-        import numpy as np
+        if not self._available:
+            raise RuntimeError("JAX not available. Install: pip install jax jaxlib")
+
         from safetensors import safe_open
 
         model_dir = Path(model_path)
@@ -144,13 +139,23 @@ class JAXModelLoader(ModelLoaderPort):
         if not safetensor_files:
             raise FileNotFoundError(f"No safetensors files found in {model_path}")
 
+        cpu_device = None
+        try:
+            cpu_devices = self.jax.devices("cpu")
+            if cpu_devices:
+                cpu_device = cpu_devices[0]
+        except Exception:
+            cpu_device = None
+
         weights: dict[str, Any] = {}
         for sf_path in safetensor_files:
-            with safe_open(sf_path, framework="numpy") as f:
+            with safe_open(sf_path, framework="flax") as f:
                 for key in f.keys():
                     tensor = f.get_tensor(key)
-                    # Convert to float32 for numpy compatibility
-                    weights[key] = tensor.astype(np.float32)
+                    array = self.jnp.asarray(tensor, dtype=self.jnp.float32)
+                    if cpu_device is not None:
+                        array = self.jax.device_put(array, cpu_device)
+                    weights[key] = array
 
         return weights
 

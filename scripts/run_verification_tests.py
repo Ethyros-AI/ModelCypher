@@ -18,7 +18,6 @@
 
 import sys
 import os
-import mlx.core as mx
 
 # Setup path
 sys.path.append(os.path.abspath("src"))
@@ -43,7 +42,6 @@ try:
     print(" - test_logit_entropy_calculator passed")
     test_entropy_dynamics.test_logit_divergence_calculator()
     print(" - test_logit_divergence_calculator passed")
-    test_entropy_dynamics.test_entropy_delta_tracker_anomaly()
     test_entropy_dynamics.test_entropy_delta_tracker_anomaly()
     print(" - test_entropy_delta_tracker_anomaly passed")
 

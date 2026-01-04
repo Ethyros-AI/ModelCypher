@@ -18,6 +18,7 @@
 import mlx.core as mx
 import mlx.nn as nn
 
+
 class LoRALinear(nn.Module):
     def __init__(self, input_dims, output_dims):
         super().__init__()
@@ -30,6 +31,7 @@ class LoRALinear(nn.Module):
         # Allow default behavior to be checked first
         return super().trainable_parameters()
 
+
 class SelfFreezingLoRA(nn.Module):
     def __init__(self):
         super().__init__()
@@ -37,6 +39,7 @@ class SelfFreezingLoRA(nn.Module):
         self.lora_a = mx.ones((2, 10))
         # Freeze 'weight' immediately
         self.freeze(keys=['weight'])
+
 
 def test_internal_freeze():
     print("--- Test Internal Freeze ---")
