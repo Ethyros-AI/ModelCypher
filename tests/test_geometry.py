@@ -133,10 +133,13 @@ def test_sinkhorn_plan_marginals():
 def test_lora_geometry_metrics():
     backend = get_default_backend()
     engine = GeometryEngine(backend)
+    # LoRA dimensions: a=(rank, in_dim), b=(out_dim, rank)
+    # matmul(b, a) requires b.shape[1] == a.shape[0]
+    # Using rank=4: a=(4, 2)=>(rank=4, in_dim=2), b=(3, 4)=>(out_dim=3, rank=4)
     params = {
         "layer.lora_a": backend.ones((4, 2), dtype="float32"),
-        "layer.lora_b": backend.ones((2, 3), dtype="float32"),
+        "layer.lora_b": backend.ones((3, 4), dtype="float32"),
     }
     metrics = engine.compute_lora_geometry(params, None, scale=1.0)
-    assert metrics.trainable_scalar_count == 4 * 2 + 2 * 3
+    assert metrics.trainable_scalar_count == 4 * 2 + 3 * 4
     assert metrics.parameter_l2 > _eps(backend, metrics.parameter_l2)

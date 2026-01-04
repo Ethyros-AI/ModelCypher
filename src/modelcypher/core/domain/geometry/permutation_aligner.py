@@ -53,7 +53,7 @@ ASSUMPTIONS
 ALGORITHM
 ---------
 1. Use semantic prime anchors to probe each model's neuron responses
-2. Compute cosine similarity between source and target neuron activations
+2. Compute geodesic cosine similarity between source and target neuron activations
 3. Hungarian algorithm for optimal bipartite matching (O(N³))
 4. Sign correction: handle ±1 symmetry per neuron
 5. Return: P (permutation), S (signs) such that W_aligned = S @ P @ W @ P^T @ S^T
@@ -78,8 +78,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_between_sets
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -201,18 +200,8 @@ class PermutationAligner:
         if source_signatures.shape[0] != N or target_signatures.shape[0] != N:
             raise PermutationAlignerError("Anchor signatures shape mismatch")
 
-        # Normalize signatures using geodesic norms (dtype-derived epsilon for stability)
-        eps = division_epsilon(b, source_signatures)
-        source_norms_flat = geodesic_norms(source_signatures, b)
-        target_norms_flat = geodesic_norms(target_signatures, b)
-        b.eval(source_norms_flat, target_norms_flat)
-        source_norms = b.reshape(source_norms_flat, (-1, 1)) + eps
-        target_norms = b.reshape(target_norms_flat, (-1, 1)) + eps
-        source_normalized = source_signatures / source_norms
-        target_normalized = target_signatures / target_norms
-
-        # Compute full similarity matrix: [N, N]
-        similarity = b.matmul(source_normalized, b.transpose(target_normalized))
+        # Compute full geodesic similarity matrix: [N, N]
+        similarity = geodesic_cosine_between_sets(source_signatures, target_signatures, b)
         b.eval(similarity)
 
         # Convert similarity to cost matrix on backend to avoid O(N^2) Python loops.
@@ -399,18 +388,7 @@ class PermutationAligner:
         source_fp32 = b.astype(source_signatures, "float32")
         target_fp32 = b.astype(target_signatures, "float32")
 
-        # Normalize using geodesic norms (dtype-derived epsilon for stability)
-        eps = division_epsilon(b, source_fp32)
-        source_norms_flat = geodesic_norms(source_fp32, b)
-        target_norms_flat = geodesic_norms(target_fp32, b)
-        b.eval(source_norms_flat, target_norms_flat)
-        source_norms = b.reshape(source_norms_flat, (-1, 1)) + eps
-        target_norms = b.reshape(target_norms_flat, (-1, 1)) + eps
-
-        source_normalized = source_fp32 / source_norms
-        target_normalized = target_fp32 / target_norms
-
-        similarity = b.matmul(source_normalized, b.transpose(target_normalized))
+        similarity = geodesic_cosine_between_sets(source_fp32, target_fp32, b)
         b.eval(similarity)
 
         abs_similarity = b.abs(similarity)
