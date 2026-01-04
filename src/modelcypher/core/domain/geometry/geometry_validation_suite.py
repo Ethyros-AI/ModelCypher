@@ -640,19 +640,34 @@ class GeometryValidationSuite:
         sig_base = spectral.compute(points=points)
         sig_padded = spectral.compute(points=padded_points)
 
-        eigen_diffs = [
-            abs(a - b) for a, b in zip(sig_base.eigenvalues, sig_padded.eigenvalues)
-        ]
-        spectral_eigen_mean_abs_diff = (
-            sum(eigen_diffs) / len(eigen_diffs) if eigen_diffs else 0.0
-        )
-        spectral_eigen_max_abs_diff = max(eigen_diffs) if eigen_diffs else 0.0
+        # Vectorized eigenvalue diff computation
+        if sig_base.eigenvalues and sig_padded.eigenvalues:
+            min_eigen_len = min(len(sig_base.eigenvalues), len(sig_padded.eigenvalues))
+            eigen_base_arr = backend.array(sig_base.eigenvalues[:min_eigen_len])
+            eigen_padded_arr = backend.array(sig_padded.eigenvalues[:min_eigen_len])
+            eigen_diff_arr = backend.abs(eigen_base_arr - eigen_padded_arr)
+            eigen_mean_arr = backend.mean(eigen_diff_arr)
+            eigen_max_arr = backend.max(eigen_diff_arr)
+            backend.eval(eigen_mean_arr, eigen_max_arr)
+            spectral_eigen_mean_abs_diff = float(backend.to_scalar(eigen_mean_arr))
+            spectral_eigen_max_abs_diff = float(backend.to_scalar(eigen_max_arr))
+        else:
+            spectral_eigen_mean_abs_diff = 0.0
+            spectral_eigen_max_abs_diff = 0.0
 
         spectral_entropy_diff = abs(sig_base.spectral_entropy - sig_padded.spectral_entropy)
-        heat_diffs = [
-            abs(a - b) for a, b in zip(sig_base.heat_trace, sig_padded.heat_trace)
-        ]
-        heat_trace_max_abs_diff = max(heat_diffs) if heat_diffs else 0.0
+
+        # Vectorized heat trace diff computation
+        if sig_base.heat_trace and sig_padded.heat_trace:
+            min_heat_len = min(len(sig_base.heat_trace), len(sig_padded.heat_trace))
+            heat_base_arr = backend.array(sig_base.heat_trace[:min_heat_len])
+            heat_padded_arr = backend.array(sig_padded.heat_trace[:min_heat_len])
+            heat_diff_arr = backend.abs(heat_base_arr - heat_padded_arr)
+            heat_max_arr = backend.max(heat_diff_arr)
+            backend.eval(heat_max_arr)
+            heat_trace_max_abs_diff = float(backend.to_scalar(heat_max_arr))
+        else:
+            heat_trace_max_abs_diff = 0.0
 
         fp_base = TopologicalFingerprint.compute(points)
         fp_padded = TopologicalFingerprint.compute(padded_points)

@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_nan,
     power_iteration_eigh,
+    regularization_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.vector_math import (
@@ -365,7 +366,10 @@ class SocialGeometryAnalyzer:
             low_vecs = [backend.reshape(backend.array(activations[n]), (1, -1)) for n in low_status]
             low_activations = backend.concatenate(low_vecs, axis=0)
             low_arr = backend.astype(low_activations, "float32")
-            low_result = rg.frechet_mean(low_arr, max_iterations=50, tolerance=1e-5)
+            low_tol = regularization_epsilon(backend, low_arr)
+            low_result = rg.frechet_mean(
+                low_arr, max_iterations=50, tolerance=low_tol
+            )
             backend.eval(low_result.mean)
             low_centroid = low_result.mean
 
@@ -373,7 +377,10 @@ class SocialGeometryAnalyzer:
             high_vecs = [backend.reshape(backend.array(activations[n]), (1, -1)) for n in high_status]
             high_activations = backend.concatenate(high_vecs, axis=0)
             high_arr = backend.astype(high_activations, "float32")
-            high_result = rg.frechet_mean(high_arr, max_iterations=50, tolerance=1e-5)
+            high_tol = regularization_epsilon(backend, high_arr)
+            high_result = rg.frechet_mean(
+                high_arr, max_iterations=50, tolerance=high_tol
+            )
             backend.eval(high_result.mean)
             high_centroid = high_result.mean
 

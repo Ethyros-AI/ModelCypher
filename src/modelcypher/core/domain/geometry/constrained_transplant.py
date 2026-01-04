@@ -31,7 +31,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.vector_math import geodesic_paired_distances
 
 if TYPE_CHECKING:
@@ -42,7 +45,7 @@ def verify_boundary_invariance(
     transplanted_weights: "Array",
     target_weights: "Array",
     boundary_activations: "Array",
-    tolerance: float = 1e-4,
+    tolerance: float | None = None,
     backend: "Backend | None" = None,
 ) -> dict[str, Any]:
     """Verify that boundary outputs are preserved after transplant.
@@ -57,7 +60,7 @@ def verify_boundary_invariance(
         transplanted_weights: Merged weights W' after transplant [out_dim, in_dim]
         target_weights: Original target weights W_target [out_dim, in_dim]
         boundary_activations: Boundary probe activations [n_boundary, in_dim]
-        tolerance: Maximum allowed relative difference
+        tolerance: Maximum allowed relative difference (derived from dtype if None)
         backend: Compute backend
 
     Returns:
@@ -98,6 +101,8 @@ def verify_boundary_invariance(
     b.eval(diff_norms, target_norms)
 
     eps = float(machine_epsilon(b, target))
+    if tolerance is None:
+        tolerance = float(division_epsilon(b, target))
 
     eps_arr = b.full(target_norms.shape, eps)
     mask_target = target_norms > eps
@@ -121,7 +126,7 @@ def verify_boundary_invariance(
         mean_rel_diff = float(b.to_scalar(mean_rel_diff_arr))
 
     return {
-        "passed": max_rel_diff < tolerance,
+        "passed": max_rel_diff < float(tolerance),
         "max_relative_diff": max_rel_diff,
         "mean_relative_diff": mean_rel_diff,
         "boundary_samples": n_boundary,

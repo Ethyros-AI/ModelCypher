@@ -419,8 +419,21 @@ class RiemannianGeometry:
     - Riemannian covariance instead of ambient covariance
     """
 
+    def __new__(cls, backend: "Backend | None" = None) -> "RiemannianGeometry":
+        resolved_backend = backend or get_default_backend()
+        key = id(resolved_backend)
+        cached = _RG_CACHE.get(key)
+        if cached is not None and getattr(cached, "_backend", None) is resolved_backend:
+            return cached
+        instance = super().__new__(cls)
+        _RG_CACHE[key] = instance
+        return instance
+
     def __init__(self, backend: "Backend | None" = None) -> None:
-        self._backend = backend or get_default_backend()
+        resolved_backend = backend or get_default_backend()
+        if getattr(self, "_backend", None) is resolved_backend:
+            return
+        self._backend = resolved_backend
 
     def frechet_mean(
         self,

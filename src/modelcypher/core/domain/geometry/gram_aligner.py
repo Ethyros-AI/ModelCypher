@@ -829,14 +829,19 @@ class GramAligner:
         threshold_s = eps
         threshold_t = eps
 
+        # Clamp eigenvalues to avoid NaN from sqrt of negative (numerical noise)
+        # Note: b.where() evaluates both branches, so sqrt runs on all values
+        eig_s_safe = b.maximum(eig_s, b.zeros_like(eig_s))
+        eig_t_safe = b.maximum(eig_t, b.zeros_like(eig_t))
+
         inv_s_vals = b.where(
             eig_s > threshold_s,
-            1.0 / b.sqrt(eig_s),
+            1.0 / b.sqrt(eig_s_safe),
             b.zeros_like(eig_s),
         )
         sqrt_t_vals = b.where(
             eig_t > threshold_t,
-            b.sqrt(eig_t),
+            b.sqrt(eig_t_safe),
             b.zeros_like(eig_t),
         )
         b.eval(inv_s_vals, sqrt_t_vals)
@@ -1004,13 +1009,6 @@ class GramAligner:
         source_centered_T = b.transpose(source_centered)
         b.eval(source_centered_T)
 
-        # Conservative plateau detection: stop if CKA improvement < 1e-10 for 200 consecutive iters
-        # This avoids wasted iterations near convergence while preserving CKA=1.0 requirement
-        PLATEAU_THRESHOLD = 1e-10
-        PLATEAU_PATIENCE = 200
-        prev_cka = 0.0
-        plateau_count = 0
-
         for iteration in range(max_iters):
             source_transformed = b.matmul(source_centered, F)
             K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
@@ -1028,21 +1026,6 @@ class GramAligner:
                     cka, precision_threshold, iteration + 1
                 )
                 return F, iteration + 1, cka
-
-            # Plateau detection: track improvement rate
-            improvement = cka - prev_cka
-            if iteration > 10 and improvement < PLATEAU_THRESHOLD:
-                plateau_count += 1
-                if plateau_count >= PLATEAU_PATIENCE:
-                    logger.info(
-                        "GramAligner: Plateau detected at CKA=%.10f after %d iterations "
-                        "(improvement < %.0e for %d consecutive iterations)",
-                        cka, iteration + 1, PLATEAU_THRESHOLD, PLATEAU_PATIENCE
-                    )
-                    break
-            else:
-                plateau_count = 0
-            prev_cka = cka
 
             # Gradient step with adaptive learning rate
             diff = K_t_c - K_s_t_c
