@@ -215,13 +215,12 @@ class EntropyMath:
             return 0.0
         backend = get_default_backend()
         values_arr = backend.array(list(values))
-        sorted_arr = backend.sort(values_arr)
-        backend.eval(sorted_arr)
-        n = int(sorted_arr.shape[0])
+        n = int(values_arr.shape[0])
         idx = int(n * p / 100.0)
         idx = min(idx, n - 1)
-        idx_arr = backend.array([idx])
-        selected = backend.take(sorted_arr, idx_arr, axis=0)
+        part = backend.argpartition(values_arr, idx)
+        idx_arr = backend.take(part, backend.array([idx]), axis=0)
+        selected = backend.take(values_arr, idx_arr, axis=0)
         backend.eval(selected)
         return float(backend.to_scalar(selected))
 

@@ -157,5 +157,82 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    # ==========================================================================
+    # BATCHED METHODS - Process multiple texts in a single forward pass
+    # ==========================================================================
+    # These methods are OPTIONAL. Implementations that don't support batching
+    # should raise NotImplementedError, and callers should fall back to
+    # sequential processing.
+
+    def collect_hidden_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Array]]:
+        """
+        Collect per-layer hidden state activations for multiple texts in one pass.
+
+        This is more efficient than calling collect_hidden_activations() multiple
+        times because it batches the forward passes, reducing kernel launch overhead.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding texts.
+            texts: List of text inputs to process.
+
+        Returns:
+            List of dicts, one per input text, each mapping layer_idx -> activation.
+
+        Raises:
+            NotImplementedError: If batching is not supported by this implementation.
+        """
+        ...
+
+    def collect_intermediate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Array]]:
+        """
+        Collect per-layer MLP intermediate activations for multiple texts in one pass.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding texts.
+            texts: List of text inputs to process.
+
+        Returns:
+            List of dicts, one per input text, each mapping layer_idx -> activation.
+
+        Raises:
+            NotImplementedError: If batching is not supported by this implementation.
+        """
+        ...
+
+    def collect_attention_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> tuple[list[dict[int, Array]], list[dict[int, Array]]]:
+        """
+        Collect per-layer attention Q and KV activations for multiple texts in one pass.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding texts.
+            texts: List of text inputs to process.
+
+        Returns:
+            Tuple of (q_activations_list, kv_activations_list), each a list of dicts
+            mapping layer_idx -> activation array.
+
+        Raises:
+            NotImplementedError: If batching is not supported by this implementation.
+        """
+        ...
+
 
 __all__ = ["ActivationProvider", "Array"]

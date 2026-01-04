@@ -330,6 +330,326 @@ class MLXActivationProvider:
         return q_activations, kv_activations
 
 
+    # ==========================================================================
+    # BATCHED METHODS - Process multiple texts in a single forward pass
+    # ==========================================================================
+
+    def collect_hidden_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, "Array"]]:
+        """
+        Collect per-layer hidden state activations for multiple texts in one pass.
+
+        More efficient than calling collect_hidden_activations() multiple times
+        because it batches forward passes, reducing kernel launch overhead.
+
+        Returns list of dicts, one per input text.
+        """
+        import mlx.core as mx
+
+        if not texts:
+            return []
+
+        # Tokenize all texts
+        all_token_ids = []
+        for text in texts:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(list(tokens.ids))
+
+        # Find max length for padding
+        max_len = max(len(ids) for ids in all_token_ids)
+
+        # Pad token ID (use 0 as default, or tokenizer's pad_token_id if available)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+
+        # Pad all sequences to max_len
+        padded = []
+        for ids in all_token_ids:
+            padded.append(ids + [pad_id] * (max_len - len(ids)))
+
+        input_ids = mx.array(padded)  # [batch_size, max_len]
+        batch_size = len(texts)
+
+        # Initialize result structure
+        results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+
+        try:
+            if hasattr(model, "forward_with_hidden_states"):
+                _, hidden_states = model.forward_with_hidden_states(input_ids)
+                for layer_idx, hidden in enumerate(hidden_states):
+                    # hidden: [batch, seq, hidden_dim]
+                    for i in range(batch_size):
+                        # Use only non-padded tokens for mean pooling
+                        seq_len = len(all_token_ids[i])
+                        pooled = mx.mean(hidden[i, :seq_len, :], axis=0)
+                        mx.eval(pooled)
+                        results[i][layer_idx] = pooled
+
+            elif hasattr(model, "model") and hasattr(model.model, "layers"):
+                inner = model.model
+                if hasattr(inner, "embed_tokens"):
+                    h = inner.embed_tokens(input_ids)
+                elif hasattr(inner, "wte"):
+                    h = inner.wte(input_ids)
+                else:
+                    h = model.embed(input_ids) if hasattr(model, "embed") else None
+
+                if h is not None:
+                    for layer_idx, layer in enumerate(inner.layers):
+                        result = layer(h)
+                        if isinstance(result, tuple):
+                            h = result[0]
+                        else:
+                            h = result
+                        # h: [batch, seq, hidden_dim]
+                        for i in range(batch_size):
+                            seq_len = len(all_token_ids[i])
+                            pooled = mx.mean(h[i, :seq_len, :], axis=0)
+                            mx.eval(pooled)
+                            results[i][layer_idx] = pooled
+            else:
+                output = model(input_ids)
+                mx.eval(output)
+                for i in range(batch_size):
+                    seq_len = len(all_token_ids[i])
+                    pooled = mx.mean(output[i, :seq_len, :], axis=0)
+                    mx.eval(pooled)
+                    results[i][0] = pooled
+
+        except Exception as e:
+            logger.warning("Batch activation collection failed: %s", e)
+            # Fall back to sequential processing
+            return [
+                self.collect_hidden_activations(model, tokenizer, text)
+                for text in texts
+            ]
+
+        return results
+
+    def collect_intermediate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, "Array"]]:
+        """
+        Collect per-layer MLP intermediate activations for multiple texts in one pass.
+
+        Returns list of dicts, one per input text.
+        """
+        import mlx.core as mx
+        from mlx import nn
+
+        if not texts:
+            return []
+
+        # Tokenize all texts
+        all_token_ids = []
+        for text in texts:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(list(tokens.ids))
+
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = mx.array(padded)
+        batch_size = len(texts)
+
+        results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+
+        try:
+            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+                logger.debug("Model not compatible with batch intermediate collection")
+                return [
+                    self.collect_intermediate_activations(model, tokenizer, text)
+                    for text in texts
+                ]
+
+            inner = model.model
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
+            else:
+                return [
+                    self.collect_intermediate_activations(model, tokenizer, text)
+                    for text in texts
+                ]
+
+            for layer_idx, layer in enumerate(inner.layers):
+                # Apply input layer norm
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                # Apply self-attention
+                if hasattr(layer, "self_attn"):
+                    attn_out = layer.self_attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                elif hasattr(layer, "attn"):
+                    attn_out = layer.attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = mx.zeros_like(h)
+
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+                # Extract MLP intermediate activation for batch
+                if hasattr(layer, "mlp"):
+                    mlp = layer.mlp
+                    if hasattr(mlp, "up_proj") and hasattr(mlp, "gate_proj"):
+                        up = mlp.up_proj(h_post)
+                        gate = mlp.gate_proj(h_post)
+                        intermediate = nn.silu(gate) * up
+                        mx.eval(intermediate)
+                        for i in range(batch_size):
+                            seq_len = len(all_token_ids[i])
+                            pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
+                            mx.eval(pooled)
+                            results[i][layer_idx] = pooled
+                    elif hasattr(mlp, "fc1"):
+                        intermediate = mlp.fc1(h_post)
+                        mx.eval(intermediate)
+                        for i in range(batch_size):
+                            seq_len = len(all_token_ids[i])
+                            pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
+                            mx.eval(pooled)
+                            results[i][layer_idx] = pooled
+
+                # Complete layer forward
+                if hasattr(layer, "mlp"):
+                    mlp_out = layer.mlp(h_post)
+                    h = h + mlp_out
+                else:
+                    result = layer(h)
+                    h = result[0] if isinstance(result, tuple) else result
+
+        except Exception as e:
+            logger.warning("Batch intermediate collection failed: %s", e)
+            return [
+                self.collect_intermediate_activations(model, tokenizer, text)
+                for text in texts
+            ]
+
+        return results
+
+    def collect_attention_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> tuple[list[dict[int, "Array"]], list[dict[int, "Array"]]]:
+        """
+        Collect per-layer attention Q and KV activations for multiple texts in one pass.
+
+        Returns tuple of (q_activations_list, kv_activations_list).
+        """
+        import mlx.core as mx
+
+        if not texts:
+            return [], []
+
+        all_token_ids = []
+        for text in texts:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(list(tokens.ids))
+
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = mx.array(padded)
+        batch_size = len(texts)
+
+        q_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        kv_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+
+        try:
+            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+                logger.debug("Model not compatible with batch attention collection")
+                q_list, kv_list = [], []
+                for text in texts:
+                    q, kv = self.collect_attention_activations(model, tokenizer, text)
+                    q_list.append(q)
+                    kv_list.append(kv)
+                return q_list, kv_list
+
+            inner = model.model
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
+            else:
+                q_list, kv_list = [], []
+                for text in texts:
+                    q, kv = self.collect_attention_activations(model, tokenizer, text)
+                    q_list.append(q)
+                    kv_list.append(kv)
+                return q_list, kv_list
+
+            for layer_idx, layer in enumerate(inner.layers):
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                attn = layer.self_attn if hasattr(layer, "self_attn") else getattr(layer, "attn", None)
+
+                if attn is not None and hasattr(attn, "q_proj"):
+                    q = attn.q_proj(h_norm)
+                    k = attn.k_proj(h_norm)
+                    mx.eval(q)
+                    mx.eval(k)
+
+                    for i in range(batch_size):
+                        seq_len = len(all_token_ids[i])
+                        q_pooled = mx.mean(q[i, :seq_len, :], axis=0)
+                        k_pooled = mx.mean(k[i, :seq_len, :], axis=0)
+                        mx.eval(q_pooled)
+                        mx.eval(k_pooled)
+                        q_results[i][layer_idx] = q_pooled
+                        kv_results[i][layer_idx] = k_pooled
+
+                result = layer(h)
+                h = result[0] if isinstance(result, tuple) else result
+
+        except Exception as e:
+            logger.warning("Batch attention collection failed: %s", e)
+            q_list, kv_list = [], []
+            for text in texts:
+                q, kv = self.collect_attention_activations(model, tokenizer, text)
+                q_list.append(q)
+                kv_list.append(kv)
+            return q_list, kv_list
+
+        return q_results, kv_results
+
+
 def get_activation_provider() -> MLXActivationProvider:
     """Get the MLX activation provider instance."""
     return MLXActivationProvider()

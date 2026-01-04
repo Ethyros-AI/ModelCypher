@@ -740,7 +740,8 @@ def power_iteration_eigh(
     order = b.argsort(-eigenvalues_full, axis=-1)
     eigenvalues_sorted = b.take_along_axis(eigenvalues_full, order, axis=-1)
     order_exp = b.expand_dims(order, axis=-2)
-    eigenvectors_sorted = b.take_along_axis(eigenvectors_full, order_exp, axis=-1)
+    order_tiled = b.broadcast_to(order_exp, eigenvectors_full.shape)
+    eigenvectors_sorted = b.take_along_axis(eigenvectors_full, order_tiled, axis=-1)
     b.eval(order, eigenvalues_sorted, eigenvectors_sorted)
 
     # Return top-k (but decomposition was exact)

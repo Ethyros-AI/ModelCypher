@@ -566,17 +566,15 @@ class BackendMatrixUtils:
         p = eig_positive / total
 
         # For entropy, we only want non-zero p values
-        # Use safe_log_epsilon to handle zeros
+        # Use safe_log_epsilon to clamp before log
         log_eps = safe_log_epsilon(b, p)
-        # Add eps to avoid log(0)
-        p_safe = p + b.full(p.shape, log_eps)
-        log_p = b.log(p_safe)
 
-        # Entropy = -sum(p * log(p)), but we need to mask out zeros
-        # where p=0, p*log(p) should be 0 (limit as p->0)
-        # Since we added eps, p_safe > 0, but original p may be 0
-        # Use where to set contribution to 0 where original p was 0
+        # Correct approach: use where to compute log only where p > eps
+        # For p <= eps, log contribution is 0 (since lim p*log(p) as p->0 = 0)
         is_positive = eig_flat > 0
+        log_p = b.where(p > log_eps, b.log(p), zeros)
+
+        # p * log(p), masked to 0 where eigenvalue was non-positive
         p_log_p = p * log_p
         p_log_p_masked = b.where(is_positive, p_log_p, zeros)
 
