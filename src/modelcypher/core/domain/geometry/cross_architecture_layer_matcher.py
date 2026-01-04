@@ -387,19 +387,28 @@ class CrossArchitectureLayerMatcher:
         if len(x) != len(y) or len(x) < 2:
             return 0.0
         n = len(x)
-
-        def ranks(values: list[float]) -> list[float]:
-            sorted_indices = sorted(range(n), key=lambda idx: values[idx])
-            result = [0.0] * n
-            for rank, original_idx in enumerate(sorted_indices, start=1):
-                result[original_idx] = float(rank)
-            return result
-
-        rank_x = ranks(x)
-        rank_y = ranks(y)
         backend = get_default_backend()
-        rank_x_arr = backend.array(rank_x)
-        rank_y_arr = backend.array(rank_y)
+
+        # Vectorized ranking using argsort
+        def ranks_vectorized(values_arr):
+            # argsort gives indices that would sort the array
+            sorted_indices = backend.argsort(values_arr)
+            # Create rank array: for each position in sorted order, assign rank
+            # We need the inverse: for each original position, what's its rank?
+            ranks_arr = backend.zeros((n,), dtype="float32")
+            # Use scatter-like operation: ranks[sorted_indices[i]] = i + 1
+            # Since we don't have scatter, use argsort of argsort
+            inverse_indices = backend.argsort(sorted_indices)
+            # Ranks are 1-indexed
+            ranks_arr = backend.astype(inverse_indices, "float32") + 1.0
+            return ranks_arr
+
+        x_arr = backend.array(x, dtype="float32")
+        y_arr = backend.array(y, dtype="float32")
+        rank_x_arr = ranks_vectorized(x_arr)
+        rank_y_arr = ranks_vectorized(y_arr)
+        backend.eval(rank_x_arr, rank_y_arr)
+
         mean_x = backend.mean(rank_x_arr)
         mean_y = backend.mean(rank_y_arr)
         centered_x = rank_x_arr - mean_x
@@ -448,7 +457,10 @@ class CrossArchitectureLayerMatcher:
 
         rows = source_crm.layer_count
         cols = target_crm.layer_count
-        combined = [[0.0 for _ in range(cols)] for _ in range(rows)]
+        backend = get_default_backend()
+
+        # Vectorized weighted sum using backend operations
+        combined_arr = backend.zeros((rows, cols), dtype="float32")
 
         for category, weight in normalized.items():
             anchors = anchors_by_category.get(category)
@@ -459,11 +471,11 @@ class CrossArchitectureLayerMatcher:
                 target_crm,
                 anchors,
             )
-            for i in range(rows):
-                for j in range(cols):
-                    combined[i][j] += weight * matrix[i][j]
+            matrix_arr = backend.array(matrix, dtype="float32")
+            combined_arr = combined_arr + weight * matrix_arr
 
-        return combined
+        backend.eval(combined_arr)
+        return backend.tolist(combined_arr)
 
     @staticmethod
     def _compute_cka_matrix_for_anchors(

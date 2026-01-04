@@ -117,12 +117,21 @@ class DARESparsityAnalyzer:
         # Use the larger of the two thresholds
         drop_threshold = max(zero_threshold, gap_threshold)
 
-        if magnitude_stats.max == 0:
-            droppable_count = len(sorted_magnitudes)
-        else:
-            droppable_count = sum(1 for value in sorted_magnitudes if value <= drop_threshold)
-
+        backend = get_default_backend()
+        mag_arr = backend.array(sorted_magnitudes)
         total_count = len(sorted_magnitudes)
+
+        if magnitude_stats.max == 0:
+            droppable_count = total_count
+            non_zero_count = 0
+        else:
+            # Vectorized counting
+            droppable_arr = backend.sum(mag_arr <= drop_threshold)
+            non_zero_arr = backend.sum(mag_arr > 0)
+            backend.eval(droppable_arr, non_zero_arr)
+            droppable_count = int(backend.to_scalar(droppable_arr))
+            non_zero_count = int(backend.to_scalar(non_zero_arr))
+
         effective_sparsity = float(droppable_count) / float(total_count)
         essential_fraction = 1.0 - effective_sparsity
 
@@ -137,7 +146,7 @@ class DARESparsityAnalyzer:
 
         return SparsityAnalysis(
             total_parameters=total_count,
-            non_zero_parameters=sum(1 for value in sorted_magnitudes if value > 0),
+            non_zero_parameters=non_zero_count,
             effective_sparsity=effective_sparsity,
             essential_fraction=essential_fraction,
             per_layer_sparsity=per_layer_metrics,
@@ -219,8 +228,9 @@ class DARESparsityAnalyzer:
 
             def find_percentile_fast(p: float) -> float:
                 kth = max(0, min(int(p * total_count), total_count - 1))
-                partitioned = b.partition(all_magnitudes, kth)
-                val = partitioned[kth : kth + 1]
+                partitioned = b.argpartition(all_magnitudes, kth)
+                prefix = b.take(partitioned, b.arange(kth + 1), axis=0)
+                val = b.max(b.take(all_magnitudes, prefix, axis=0))
                 b.eval(val)
                 return float(b.to_scalar(val))
 
@@ -392,13 +402,33 @@ class DARESparsityAnalyzer:
                 percentile99=0.0,
             )
 
+        backend = get_default_backend()
+        arr = backend.array(sorted_values)
         count = len(sorted_values)
-        mean = sum(sorted_values) / float(count)
-        variance_sum = sum((value - mean) ** 2 for value in sorted_values)
-        std_dev = (variance_sum / float(count)) ** 0.5
+
+        # Vectorized mean and std
+        mean_arr = backend.mean(arr)
+        backend.eval(mean_arr)
+        mean = float(backend.to_scalar(mean_arr))
+
+        centered = arr - mean
+        variance_arr = backend.mean(centered * centered)
+        backend.eval(variance_arr)
+        variance = float(backend.to_scalar(variance_arr))
+        std_dev = variance**0.5
+
+        # Direct indexing for percentiles (array is already sorted)
         median = sorted_values[count // 2]
         max_value = sorted_values[-1]
-        min_non_zero = next((value for value in sorted_values if value > 0), 0.0)
+
+        # Find min non-zero using backend masking
+        inf_val = float(backend.finfo().max)
+        masked = backend.where(arr > 0, arr, backend.full(arr.shape, inf_val))
+        min_nz_arr = backend.min(masked)
+        backend.eval(min_nz_arr)
+        min_nz_val = float(backend.to_scalar(min_nz_arr))
+        min_non_zero = 0.0 if min_nz_val == inf_val else min_nz_val
+
         p1 = sorted_values[int(count * 0.01)]
         p5 = sorted_values[int(count * 0.05)]
         p95 = sorted_values[min(int(count * 0.95), count - 1)]
@@ -433,17 +463,33 @@ class DARESparsityAnalyzer:
                 has_non_zero_updates=False,
             )
 
-        max_value = max(magnitudes)
+        backend = get_default_backend()
+        arr = backend.array(magnitudes)
+        count = len(magnitudes)
+
+        # Vectorized max
+        max_arr = backend.max(arr)
+        backend.eval(max_arr)
+        max_value = float(backend.to_scalar(max_arr))
+
         if max_value == 0:
-            droppable = len(magnitudes)
+            droppable = count
         else:
-            droppable = sum(1 for value in magnitudes if value <= drop_threshold)
-        sparsity = float(droppable) / float(len(magnitudes))
-        mean = sum(magnitudes) / float(len(magnitudes))
+            # Vectorized count of droppable values
+            droppable_arr = backend.sum(arr <= drop_threshold)
+            backend.eval(droppable_arr)
+            droppable = int(backend.to_scalar(droppable_arr))
+
+        sparsity = float(droppable) / float(count)
+
+        # Vectorized mean
+        mean_arr = backend.mean(arr)
+        backend.eval(mean_arr)
+        mean = float(backend.to_scalar(mean_arr))
 
         return LayerSparsityMetrics(
             layer_name=layer_name,
-            parameter_count=len(magnitudes),
+            parameter_count=count,
             sparsity=float(sparsity),
             mean_magnitude=float(mean),
             max_magnitude=float(max_value),

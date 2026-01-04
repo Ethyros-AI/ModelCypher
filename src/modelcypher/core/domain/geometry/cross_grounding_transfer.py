@@ -51,6 +51,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     ulp_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
     geodesic_pairwise_metrics,
@@ -100,13 +101,17 @@ class RelationalStressProfile:
         if len(self.stress_vector) != len(other.stress_vector):
             # Different anchor sets - use common anchors
             common = set(self.anchor_distances.keys()) & set(other.anchor_distances.keys())
-            self_dists = [self.anchor_distances[a] for a in sorted(common)]
-            other_dists = [other.anchor_distances[a] for a in sorted(common)]
-            diffs = [a - b for a, b in zip(self_dists, other_dists)]
+            common_sorted = sorted(common)
+            self_dists = [self.anchor_distances[a] for a in common_sorted]
+            other_dists = [other.anchor_distances[a] for a in common_sorted]
+            self_arr = backend.array(self_dists)
+            other_arr = backend.array(other_dists)
         else:
-            diffs = [a - b for a, b in zip(self.stress_vector, other.stress_vector)]
-        # Convert to backend array and compute geodesic norm
-        diff_arr = backend.array(diffs)
+            self_arr = backend.array(self.stress_vector)
+            other_arr = backend.array(other.stress_vector)
+
+        # Vectorized difference and geodesic norm
+        diff_arr = self_arr - other_arr
         diff_2d = backend.reshape(diff_arr, (1, -1))
         norm_arr = geodesic_norms(diff_2d, backend)
         backend.eval(norm_arr)
@@ -300,47 +305,47 @@ class RelationalStressComputer:
         neighbors: dict[str, "Array"],
     ) -> tuple[float, ...]:
         """Estimate local manifold curvature using neighbor structure."""
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
-
         b = self._backend
 
         if len(neighbors) < 3:
             return (0.0,)
 
-        # Build point matrix for geodesic distance computation
         neighbor_names = list(neighbors.keys())
-        point_2d = b.reshape(point, (1, -1))
+
+        # Build neighbor matrix and compute all directions at once
         neighbor_list = [b.reshape(neighbors[n], (1, -1)) for n in neighbor_names]
-        all_points = b.concatenate([point_2d] + neighbor_list, axis=0)
-        points_arr = b.astype(all_points, "float32")
-        b.eval(points_arr)
+        neighbor_matrix = b.concatenate(neighbor_list, axis=0)
+        point_broadcast = b.broadcast_to(b.reshape(point, (1, -1)), neighbor_matrix.shape)
+        all_directions = neighbor_matrix - point_broadcast
+        b.eval(all_directions)
 
-        # Build local covariance from neighbor directions
-        directions = []
+        # Compute all norms at once
+        all_norms = geodesic_norms(all_directions, b)
+        b.eval(all_norms)
+
+        # Filter directions with sufficient norm using backend operations
         eps = division_epsilon(b, point)
-        for name in neighbor_names:
-            direction = neighbors[name] - point
-            norm_arr = geodesic_norms(b.reshape(direction, (1, -1)), b)
-            b.eval(norm_arr)
-            norm = float(b.to_scalar(norm_arr[0]))
-            if norm > eps:
-                normalized = direction / norm
-                b.eval(normalized)
-                directions.append(normalized)
+        valid_mask = all_norms > eps
+        valid_count_arr = b.sum(b.astype(valid_mask, "int32"))
+        b.eval(valid_count_arr)
+        valid_count = int(b.to_scalar(valid_count_arr))
 
-        if len(directions) < 2:
+        if valid_count < 2:
             return (0.0,)
 
-        # Stack directions and compute covariance
-        dir_reshaped = [b.reshape(d, (1, -1)) for d in directions]
-        directions_matrix = b.concatenate(dir_reshaped, axis=0)
+        # Normalize valid directions: direction / norm (broadcast safe norms)
+        safe_norms = b.maximum(all_norms, b.full(all_norms.shape, eps))
+        normalized_directions = all_directions / b.reshape(safe_norms, (-1, 1))
+
+        # Mask out invalid directions by setting to zero
+        mask_2d = b.reshape(b.astype(valid_mask, "float32"), (-1, 1))
+        directions_matrix = normalized_directions * mask_2d
+        b.eval(directions_matrix)
 
         # Compute covariance: (X - mean)^T @ (X - mean) / (n-1)
         mean_dir = b.mean(directions_matrix, axis=0, keepdims=True)
         centered = directions_matrix - mean_dir
-        cov = b.matmul(b.transpose(centered), centered) / (len(directions) - 1)
+        cov = b.matmul(b.transpose(centered), centered) / max(valid_count - 1, 1)
         b.eval(cov)
 
         # Eigenvalues as curvature signature
@@ -377,10 +382,6 @@ class GroundingRotationEstimator:
 
         Uses geodesic distances - chord distance is incorrect in curved manifolds.
         """
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
-
         b = self._backend
 
         # Find common anchors
@@ -641,10 +642,6 @@ class CrossGroundingSynthesizer:
         find the position. We use iterative optimization with geodesic distance
         measurement and tangent-space gradient approximation.
         """
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
-
         b = self._backend
 
         # Get target anchor positions
@@ -694,19 +691,16 @@ class CrossGroundingSynthesizer:
         scaled_distances = {k: v * scale_factor for k, v in target_distances.items()}
 
         # Initialize position as weighted centroid of target anchors
-        weights = {name: 1.0 / (d + eps) for name, d in scaled_distances.items()}
-        total_weight = sum(weights.values())
+        weights_list = [1.0 / (scaled_distances[name] + eps) for name in anchor_list]
+        weights_arr = b.array(weights_list)
+        total_weight_arr = b.sum(weights_arr)
+        b.eval(total_weight_arr)
+        total_weight = float(b.to_scalar(total_weight_arr))
 
-        # Get dimensionality from first anchor
-        first_anchor = target_anchors[anchor_list[0]]
-        shape = b.shape(first_anchor)
-        d = int(shape[-1]) if len(shape) > 0 else int(shape[0])
-
-        # Initialize position using weighted sum
-        position = b.zeros((d,))
-        for name in anchor_list:
-            pos = target_anchors[name]
-            position = position + (weights[name] / total_weight) * pos
+        # Vectorized weighted position: sum(weights * positions) / total_weight
+        # anchor_matrix is [n_anchors, d], weights is [n_anchors]
+        normalized_weights = weights_arr / total_weight
+        position = b.sum(anchor_matrix * b.reshape(normalized_weights, (-1, 1)), axis=0)
         b.eval(position)
 
         distance_scale = max(scaled_distances.values()) if scaled_distances else 0.0

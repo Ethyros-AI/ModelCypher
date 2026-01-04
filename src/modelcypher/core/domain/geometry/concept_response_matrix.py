@@ -681,22 +681,27 @@ class ConceptResponseMatrix:
         if len(current) != len(next_layer) or not current:
             return ([], 0.0)
 
-        delta: list[list[float]] = []
-        total_norm = 0.0
         backend = get_default_backend()
-        for curr, nxt in zip(current, next_layer):
-            if len(curr) != len(nxt):
-                continue
-            diff = [float(nxt[idx] - curr[idx]) for idx in range(len(curr))]
-            # Use geodesic norms for high-dimensional difference vectors
-            diff_arr = backend.reshape(backend.array(diff), (1, -1))
-            norm_arr = geodesic_norms(diff_arr, backend)
-            backend.eval(norm_arr)
-            total_norm += float(backend.to_scalar(norm_arr))
-            delta.append(diff)
 
-        mean_norm = total_norm / float(len(delta)) if delta else 0.0
-        return delta, float(mean_norm)
+        # Vectorized: convert to arrays and compute delta in one operation
+        current_arr = backend.array(current)
+        next_arr = backend.array(next_layer)
+        delta_arr = next_arr - current_arr
+        backend.eval(delta_arr)
+
+        # Compute all norms at once using geodesic_norms (handles all rows)
+        norms_arr = geodesic_norms(delta_arr, backend)
+        backend.eval(norms_arr)
+
+        # Mean norm - single backend operation
+        mean_norm_arr = backend.mean(norms_arr)
+        backend.eval(mean_norm_arr)
+        mean_norm = float(backend.to_scalar(mean_norm_arr))
+
+        # Convert delta back to list for downstream CKA compatibility
+        delta = backend.tolist(delta_arr)
+
+        return delta, mean_norm
 
 
 @dataclass(frozen=True)

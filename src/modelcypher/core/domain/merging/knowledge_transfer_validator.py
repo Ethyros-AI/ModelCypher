@@ -125,6 +125,7 @@ class KnowledgeProbeCorpus:
         self._probes: dict[KnowledgeDomain, list[KnowledgeProbe]] = {
             domain: [] for domain in KnowledgeDomain
         }
+        self._probe_index: dict[str, KnowledgeProbe] = {}  # O(1) lookup by ID
         self._load_default_probes()
 
     def _load_default_probes(self):
@@ -376,6 +377,11 @@ class KnowledgeProbeCorpus:
             ]
         )
 
+        # Build O(1) lookup index from all loaded probes
+        for probes in self._probes.values():
+            for probe in probes:
+                self._probe_index[probe.id] = probe
+
     def get_probes(self, domain: KnowledgeDomain | None = None) -> list[KnowledgeProbe]:
         """Get probes, optionally filtered by domain.
 
@@ -394,7 +400,7 @@ class KnowledgeProbeCorpus:
         return [probe for probes in self._probes.values() for probe in probes]
 
     def get_probe_by_id(self, probe_id: str) -> KnowledgeProbe | None:
-        """Get a specific probe by ID.
+        """Get a specific probe by ID in O(1) time.
 
         Parameters
         ----------
@@ -406,11 +412,7 @@ class KnowledgeProbeCorpus:
         KnowledgeProbe or None
             Probe if found, None otherwise.
         """
-        for probes in self._probes.values():
-            for probe in probes:
-                if probe.id == probe_id:
-                    return probe
-        return None
+        return self._probe_index.get(probe_id)
 
     def add_probe(self, probe: KnowledgeProbe) -> None:
         """Add a custom probe.
@@ -421,6 +423,7 @@ class KnowledgeProbeCorpus:
             Probe to add to the corpus.
         """
         self._probes[probe.domain].append(probe)
+        self._probe_index[probe.id] = probe
 
     @property
     def domain_counts(self) -> dict[KnowledgeDomain, int]:
@@ -668,11 +671,20 @@ def compute_retention_by_domain(
         if not source_probes or not merged_probes:
             continue
 
-        source_pass_rate = sum(1 for r in source_probes if r.passed) / len(source_probes)
-        merged_pass_rate = sum(1 for r in merged_probes if r.passed) / len(merged_probes)
+        # Single pass over source probes
+        source_passed = sum(1 for r in source_probes if r.passed)
+        source_pass_rate = source_passed / len(source_probes)
 
-        passed_ids = [r.probe_id for r in merged_probes if r.passed]
-        failed_ids = [r.probe_id for r in merged_probes if not r.passed]
+        # Single pass over merged probes - collect all stats at once
+        passed_ids: list[str] = []
+        failed_ids: list[str] = []
+        for r in merged_probes:
+            if r.passed:
+                passed_ids.append(r.probe_id)
+            else:
+                failed_ids.append(r.probe_id)
+
+        merged_pass_rate = len(passed_ids) / len(merged_probes)
 
         retention[domain] = KnowledgeRetentionResult(
             domain=domain,

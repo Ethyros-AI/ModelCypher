@@ -481,9 +481,23 @@ def _safe_std(values: list[float]) -> float:
     """Compute std, returning 0.0 for empty or single-element lists."""
     if len(values) < 2:
         return 0.0
-    mean = sum(values) / len(values)
-    variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
-    return sqrt_scalar(variance, get_default_backend())
+    backend = get_default_backend()
+    arr = backend.array(values)
+    n = len(values)
+
+    # Vectorized mean
+    mean_arr = backend.mean(arr)
+
+    # Vectorized variance: sum((x - mean)²) / (n - 1)
+    centered = arr - mean_arr
+    squared = centered * centered
+    sum_sq = backend.sum(squared)
+    variance_arr = sum_sq / (n - 1)
+
+    backend.eval(variance_arr)
+    variance = float(backend.to_scalar(variance_arr))
+
+    return sqrt_scalar(variance, backend)
 
 
 def parse_model_info(model_path: str) -> tuple[str, str]:

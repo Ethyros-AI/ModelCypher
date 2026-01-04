@@ -137,18 +137,24 @@ def compute_alignment_guidance(
         guidance = _compute_layer_guidance(src_lc, tgt_lc, src_idx)
         guidance_list.append(guidance)
 
-    # Compute global statistics
+    # Compute global statistics using vectorized operations
     if guidance_list:
-        mean_scale = sum(g.dimension_scale for g in guidance_list) / len(guidance_list)
-        mean_dim_diff = sum(g.intrinsic_dimension_diff for g in guidance_list) / len(
-            guidance_list
-        )
-        mean_ricci_delta = sum(g.ollivier_ricci_delta for g in guidance_list) / len(
-            guidance_list
-        )
-        mean_ricci_rel = sum(g.ollivier_ricci_relative_diff for g in guidance_list) / len(
-            guidance_list
-        )
+        backend = get_default_backend()
+        scales = backend.array([g.dimension_scale for g in guidance_list])
+        dim_diffs = backend.array([g.intrinsic_dimension_diff for g in guidance_list])
+        ricci_deltas = backend.array([g.ollivier_ricci_delta for g in guidance_list])
+        ricci_rels = backend.array([g.ollivier_ricci_relative_diff for g in guidance_list])
+
+        mean_scale_arr = backend.mean(scales)
+        mean_dim_diff_arr = backend.mean(dim_diffs)
+        mean_ricci_delta_arr = backend.mean(ricci_deltas)
+        mean_ricci_rel_arr = backend.mean(ricci_rels)
+        backend.eval(mean_scale_arr, mean_dim_diff_arr, mean_ricci_delta_arr, mean_ricci_rel_arr)
+
+        mean_scale = float(backend.to_scalar(mean_scale_arr))
+        mean_dim_diff = float(backend.to_scalar(mean_dim_diff_arr))
+        mean_ricci_delta = float(backend.to_scalar(mean_ricci_delta_arr))
+        mean_ricci_rel = float(backend.to_scalar(mean_ricci_rel_arr))
     else:
         mean_scale = 1.0
         mean_dim_diff = 0.0

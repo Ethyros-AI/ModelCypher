@@ -196,18 +196,16 @@ class SocialGeometryAnalyzer:
         eigenvalues, eigenvectors = power_iteration_eigh(backend, cov, k=n_cov)
         backend.eval(eigenvalues, eigenvectors)
 
-        # Sort descending by eigenvalue
-        idx = backend.argsort(-eigenvalues)
-        backend.eval(idx)
-        idx_top = idx[:n_components]
+        # power_iteration_eigh returns eigenvalues in descending order.
+        idx_top = slice(0, n_components)
 
         # Project data onto top components
-        eigenvectors_subset = backend.take(eigenvectors, idx_top, axis=1)
+        eigenvectors_subset = eigenvectors[:, idx_top]
         X_pca = backend.matmul(X_centered, eigenvectors_subset)
 
         # Variance explained
         total_var = backend.sum(eigenvalues)
-        top_eigs = backend.take(eigenvalues, idx_top, axis=0)
+        top_eigs = eigenvalues[idx_top]
         variance_explained = top_eigs / total_var
 
         backend.eval(X_pca, variance_explained)

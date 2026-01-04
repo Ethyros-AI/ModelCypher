@@ -211,8 +211,8 @@ def _rbf_gram_matrix(
         # Compute median index BEFORE using it in argpartition
         median_idx = min(zero_count + (non_zero_count // 2), total - 1)
         partitioned = backend.argpartition(flat_dist, median_idx)
-        median_idx_arr = backend.take(partitioned, backend.array([median_idx]), axis=0)
-        median_elem = backend.take(flat_dist, median_idx_arr, axis=0)
+        prefix = backend.take(partitioned, backend.arange(median_idx + 1), axis=0)
+        median_elem = backend.max(backend.take(flat_dist, prefix, axis=0))
         median_elem = backend.squeeze(median_elem)
         backend.eval(median_elem)
         median_dist = float(backend.to_scalar(median_elem))

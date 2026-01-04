@@ -605,14 +605,7 @@ def analyze_eigenvalues(
     n_gram = int(gram.shape[0])
     eigenvalues, _ = power_iteration_eigh(backend, gram, k=n_gram)
 
-    # Sort descending
-    eigenvalues = backend.sort(eigenvalues)
-    n_eig = int(backend.shape(eigenvalues)[0])
-    # Reverse for descending order
-    reverse_idx = backend.arange(n_eig - 1, -1, -1)
-    backend.eval(reverse_idx)
-    eigenvalues = backend.take(eigenvalues, reverse_idx, axis=0)
-    backend.eval(eigenvalues)
+    # power_iteration_eigh returns eigenvalues in descending order.
 
     # Filter positive eigenvalues for stability
     eps = machine_epsilon(backend, eigenvalues)

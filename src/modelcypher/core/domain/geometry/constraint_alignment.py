@@ -143,23 +143,32 @@ class ConstraintAligner:
         if not activations_by_layer:
             return (-1, 0.0)
 
-        peak_layer = -1
-        peak_activation = -float("inf")
+        # Build layer index and activation matrix for vectorized computation
+        layers = sorted(activations_by_layer.keys())
+        activation_rows = []
+        valid_layers = []
 
-        for layer, activations in activations_by_layer.items():
-            # Use geodesic norm as activation strength
-            act_arr = self.backend.array(activations)
-            if len(self.backend.shape(act_arr)) != 1:
-                act_arr = self.backend.reshape(act_arr, (-1,))
-            if int(self.backend.shape(act_arr)[0]) == 0:
-                strength = 0.0
-            else:
-                norm_arr = geodesic_norms(self.backend.reshape(act_arr, (1, -1)), self.backend)
-                self.backend.eval(norm_arr)
-                strength = float(self.backend.to_scalar(norm_arr[0]))
-            if strength > peak_activation:
-                peak_activation = strength
-                peak_layer = layer
+        for layer in layers:
+            acts = activations_by_layer[layer]
+            if acts:
+                activation_rows.append(acts)
+                valid_layers.append(layer)
+
+        if not activation_rows:
+            return (-1, 0.0)
+
+        # Stack all activations and compute norms in one vectorized call
+        act_matrix = self.backend.array(activation_rows)
+        norms_arr = geodesic_norms(act_matrix, self.backend)
+        self.backend.eval(norms_arr)
+
+        # Find peak using backend argmax
+        peak_idx_arr = self.backend.argmax(norms_arr)
+        self.backend.eval(peak_idx_arr)
+        peak_idx = int(self.backend.to_scalar(peak_idx_arr))
+
+        peak_layer = valid_layers[peak_idx]
+        peak_activation = float(self.backend.to_scalar(self.backend.take(norms_arr, self.backend.array([peak_idx]))))
 
         return (peak_layer, peak_activation)
 
@@ -329,32 +338,30 @@ def diagnose_probe_conflict(
 
     # Check for secondary peaks (suggests ambiguous probe)
     def find_secondary_peak(activations: dict[int, list[float]], primary: int) -> tuple[int, float]:
-        secondary_layer = -1
-        secondary_strength = 0.0
-        # Use geodesic norms for high-dimensional activation vectors
-        primary_acts = activations.get(primary, [])
-        if primary_acts:
-            p_arr = backend.reshape(backend.array(primary_acts), (1, -1))
-            p_norm = geodesic_norms(p_arr, backend)
-            backend.eval(p_norm)
-            primary_strength = float(backend.to_scalar(p_norm[0]))
-        else:
-            primary_strength = 0.0
-
+        # Collect non-primary layers with valid activations
+        other_layers = []
+        other_acts = []
         for layer, acts in activations.items():
-            if layer == primary:
+            if layer == primary or not acts:
                 continue
-            if not acts:
-                continue
-            # Use geodesic norms for high-dimensional activation vectors
-            act_arr = backend.reshape(backend.array(acts), (1, -1))
-            norm_arr = geodesic_norms(act_arr, backend)
-            backend.eval(norm_arr)
-            strength = float(backend.to_scalar(norm_arr[0]))
-            # Track the second-highest activation layer
-            if strength > secondary_strength:
-                secondary_strength = strength
-                secondary_layer = layer
+            other_layers.append(layer)
+            other_acts.append(acts)
+
+        if not other_acts:
+            return (-1, 0.0)
+
+        # Vectorized: compute all norms at once
+        act_matrix = backend.array(other_acts)
+        norms_arr = geodesic_norms(act_matrix, backend)
+        backend.eval(norms_arr)
+
+        # Find secondary peak using backend argmax
+        secondary_idx_arr = backend.argmax(norms_arr)
+        backend.eval(secondary_idx_arr)
+        secondary_idx = int(backend.to_scalar(secondary_idx_arr))
+
+        secondary_layer = other_layers[secondary_idx]
+        secondary_strength = float(backend.to_scalar(backend.take(norms_arr, backend.array([secondary_idx]))))
 
         return (secondary_layer, secondary_strength)
 

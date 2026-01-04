@@ -119,10 +119,10 @@ class BackendMatrixUtils:
             non_zero_count = max(n - zero_count, 1)
             median_idx = min(zero_count + (non_zero_count // 2), n - 1)
             partitioned = self.backend.argpartition(flat, median_idx)
-            median_idx_arr = self.backend.take(
-                partitioned, self.backend.array([median_idx]), axis=0
+            prefix = self.backend.take(
+                partitioned, self.backend.arange(median_idx + 1), axis=0
             )
-            median_val = self.backend.take(flat, median_idx_arr, axis=0)
+            median_val = self.backend.max(self.backend.take(flat, prefix, axis=0))
             median_val = self.backend.squeeze(median_val)
             self.backend.eval(median_val)
             median_dist = float(self.backend.to_scalar(median_val))

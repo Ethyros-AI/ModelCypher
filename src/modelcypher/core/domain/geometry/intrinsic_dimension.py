@@ -326,18 +326,18 @@ class IntrinsicDimension:
         mid = n // 2
         if n % 2 == 0:
             low_part = backend.argpartition(r2_sq, mid - 1)
+            low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
+            low = backend.max(backend.take(r2_sq, low_prefix, axis=0))
             high_part = backend.argpartition(r2_sq, mid)
-            low_idx = backend.take(low_part, backend.array([mid - 1]), axis=0)
-            high_idx = backend.take(high_part, backend.array([mid]), axis=0)
-            low = backend.take(r2_sq, low_idx, axis=0)
-            high = backend.take(r2_sq, high_idx, axis=0)
+            high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
+            high = backend.max(backend.take(r2_sq, high_prefix, axis=0))
             backend.eval(low, high)
             median_val = (float(backend.to_scalar(low)) +
                          float(backend.to_scalar(high))) / 2.0
         else:
             part = backend.argpartition(r2_sq, mid)
-            mid_idx = backend.take(part, backend.array([mid]), axis=0)
-            mid_val = backend.take(r2_sq, mid_idx, axis=0)
+            prefix = backend.take(part, backend.arange(mid + 1), axis=0)
+            mid_val = backend.max(backend.take(r2_sq, prefix, axis=0))
             backend.eval(mid_val)
             median_val = float(backend.to_scalar(mid_val))
 
@@ -375,9 +375,10 @@ class IntrinsicDimension:
             mu = mu_all
         else:
             valid_float = backend.astype(valid_mask, r1_sq.dtype)
-            kth = max(0, n - valid_count)
-            partitioned = backend.argpartition(valid_float, kth)
-            valid_indices = partitioned[kth:]
+            neg_valid = -valid_float
+            kth = max(0, valid_count - 1)
+            partitioned = backend.argpartition(neg_valid, kth)
+            valid_indices = backend.take(partitioned, backend.arange(valid_count), axis=0)
             mu = backend.take(mu_all, valid_indices)
 
         return mu
@@ -696,11 +697,10 @@ class IntrinsicDimension:
             backend.eval(mask_int, count_arr)
             count = int(backend.to_scalar(count_arr))
             if count > 0:
-                kth = max(0, n - count)
-                partitioned = backend.argpartition(mask_int, kth)
-                selected = backend.take(
-                    partitioned, backend.arange(kth, n), axis=0
-                )
+                neg_mask = -mask_int
+                kth = max(0, count - 1)
+                partitioned = backend.argpartition(neg_mask, kth)
+                selected = backend.take(partitioned, backend.arange(count), axis=0)
                 backend.eval(selected)
                 sorted_selected = backend.sort(selected)
                 backend.eval(sorted_selected)

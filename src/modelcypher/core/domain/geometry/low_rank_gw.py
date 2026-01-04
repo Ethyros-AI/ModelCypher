@@ -238,15 +238,15 @@ class LowRankGromovWasserstein:
         mid = n_flat // 2
         if n_flat % 2 == 1:
             partitioned = b.argpartition(flat_c1, mid)
-            median_idx = b.take(partitioned, b.array([mid]), axis=0)
-            median_c1 = b.take(flat_c1, median_idx, axis=0)
+            prefix = b.take(partitioned, b.arange(mid + 1), axis=0)
+            median_c1 = b.max(b.take(flat_c1, prefix, axis=0))
         else:
             low_part = b.argpartition(flat_c1, mid - 1)
+            low_prefix = b.take(low_part, b.arange(mid), axis=0)
+            low = b.max(b.take(flat_c1, low_prefix, axis=0))
             high_part = b.argpartition(flat_c1, mid)
-            low_idx = b.take(low_part, b.array([mid - 1]), axis=0)
-            high_idx = b.take(high_part, b.array([mid]), axis=0)
-            low = b.take(flat_c1, low_idx, axis=0)
-            high = b.take(flat_c1, high_idx, axis=0)
+            high_prefix = b.take(high_part, b.arange(mid + 1), axis=0)
+            high = b.max(b.take(flat_c1, high_prefix, axis=0))
             median_c1 = (low + high) * 0.5
         median_c1 = b.squeeze(median_c1)
         b.eval(median_c1)

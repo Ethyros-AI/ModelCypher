@@ -1061,8 +1061,8 @@ class RiemannianDensityEstimator:
             return 0.0
         idx = min(int(count * 0.95), count - 1)
         partitioned = backend.argpartition(centroid_to_points, idx)
-        elem_idx = backend.take(partitioned, backend.array([idx]), axis=0)
-        elem = backend.take(centroid_to_points, elem_idx, axis=0)
+        prefix = backend.take(partitioned, backend.arange(idx + 1), axis=0)
+        elem = backend.max(backend.take(centroid_to_points, prefix, axis=0))
         backend.eval(elem)
         return float(backend.to_scalar(elem))
 

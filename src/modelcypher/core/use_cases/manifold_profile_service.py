@@ -369,8 +369,8 @@ class ManifoldProfileService:
         # Derive threshold from data: 25th percentile of distance distribution
         percentile_idx = max(0, int(count * 0.25) - 1)
         part = backend.argpartition(row0, percentile_idx)
-        thresh_idx = backend.take(part, backend.array([percentile_idx]), axis=0)
-        threshold_arr = backend.take(row0, thresh_idx, axis=0)
+        prefix = backend.take(part, backend.arange(percentile_idx + 1), axis=0)
+        threshold_arr = backend.max(backend.take(row0, prefix, axis=0))
         backend.eval(threshold_arr)
 
         # Count candidates within threshold

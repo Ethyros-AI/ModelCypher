@@ -219,10 +219,11 @@ class EntropyMath:
         idx = int(n * p / 100.0)
         idx = min(idx, n - 1)
         part = backend.argpartition(values_arr, idx)
-        idx_arr = backend.take(part, backend.array([idx]), axis=0)
-        selected = backend.take(values_arr, idx_arr, axis=0)
-        backend.eval(selected)
-        return float(backend.to_scalar(selected))
+        prefix = backend.take(part, backend.arange(idx + 1), axis=0)
+        selected = backend.take(values_arr, prefix, axis=0)
+        kth_val = backend.max(selected)
+        backend.eval(kth_val)
+        return float(backend.to_scalar(kth_val))
 
     @staticmethod
     def entropy_percentiles(values: Sequence[float]) -> dict[int, float]:

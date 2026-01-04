@@ -262,17 +262,17 @@ class ManifoldClusterer:
         backend.eval(nearest)
         mid = n // 2
         if n % 2 == 1:
-            partitioned = backend.argpartition(nearest, mid)
-            median_idx = backend.take(partitioned, backend.array([mid]), axis=0)
-            median = backend.take(nearest, median_idx, axis=0)
+            part = backend.argpartition(nearest, mid)
+            prefix = backend.take(part, backend.arange(mid + 1), axis=0)
+            median = backend.max(backend.take(nearest, prefix, axis=0))
             backend.eval(median)
             return float(backend.to_scalar(backend.squeeze(median)))
-        lower_part = backend.argpartition(nearest, mid - 1)
-        upper_part = backend.argpartition(nearest, mid)
-        lower_idx = backend.take(lower_part, backend.array([mid - 1]), axis=0)
-        upper_idx = backend.take(upper_part, backend.array([mid]), axis=0)
-        lower = backend.take(nearest, lower_idx, axis=0)
-        upper = backend.take(nearest, upper_idx, axis=0)
+        low_part = backend.argpartition(nearest, mid - 1)
+        low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
+        lower = backend.max(backend.take(nearest, low_prefix, axis=0))
+        high_part = backend.argpartition(nearest, mid)
+        high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
+        upper = backend.max(backend.take(nearest, high_prefix, axis=0))
         backend.eval(lower, upper)
         median = (backend.squeeze(lower) + backend.squeeze(upper)) / 2.0
         backend.eval(median)
@@ -318,11 +318,10 @@ class ManifoldClusterer:
         count = int(backend.to_scalar(count_arr))
         if count <= 0:
             return []
-        kth = max(0, int(row.shape[0]) - count)
-        partitioned = backend.argpartition(mask_int, kth)
-        neighbor_idx = backend.take(
-            partitioned, backend.arange(kth, int(row.shape[0])), axis=0
-        )
+        neg_mask = -mask_int
+        kth = max(0, count - 1)
+        partitioned = backend.argpartition(neg_mask, kth)
+        neighbor_idx = backend.take(partitioned, backend.arange(count), axis=0)
         backend.eval(neighbor_idx)
         neighbors = backend.tolist(neighbor_idx)
         return [int(x) for x in neighbors]

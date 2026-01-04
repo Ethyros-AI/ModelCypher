@@ -128,51 +128,46 @@ class LayerMergeValidation:
 
         Returns:
             LayerMergeValidation with raw measurements.
+
+        Note:
+            Uses pure Python arithmetic for scalar operations to avoid
+            GPU kernel launch overhead. Backend is only used for epsilon.
         """
+        import math
 
         # With null space addition, target behavior is PRESERVED
         # Source knowledge is ADDED in null space directions
         # Expected: merged entropy >= target entropy (more knowledge = higher entropy)
         # Reference: target entropy (what we're preserving)
-        backend = get_default_backend()
-        ref_array = backend.array([source_entropy, target_entropy, merged_entropy])
         expected_entropy = target_entropy
 
         # Delta from target - how much the merge changed target's entropy
-        expected_arr = backend.array([expected_entropy])
-        merged_arr = backend.array([merged_entropy])
-        entropy_delta_arr = backend.abs(merged_arr - expected_arr)
+        entropy_delta = abs(merged_entropy - expected_entropy)
+
+        # Get machine epsilon from a reference array (once)
+        backend = get_default_backend()
+        ref_array = backend.array([source_entropy, target_entropy, merged_entropy])
+        eps = division_epsilon(backend, ref_array)
 
         # Ratio normalized by expected - stability signal (lower = more stable)
-        eps = division_epsilon(backend, ref_array)
-        eps_arr = backend.array([eps])
-        entropy_ratio_arr = entropy_delta_arr / (expected_arr + eps_arr)
+        entropy_ratio = entropy_delta / (expected_entropy + eps)
 
         # Knowledge retention score: how close to expected
         # Use the source-target gap as the natural scale for what "large" means
-        # When source == target (gap ≈ 0), use intrinsic variance of measured values
-        source_arr = backend.array([source_entropy])
-        source_target_gap_arr = backend.abs(source_arr - expected_arr)
+        source_target_gap = abs(source_entropy - expected_entropy)
 
         # Data-derived fallback: variance across all three measurements
         # This is the natural scale when source and target are identical
-        mean_arr = backend.mean(ref_array)
-        variance_arr = backend.mean((ref_array - mean_arr) * (ref_array - mean_arr))
-        intrinsic_std_arr = backend.sqrt(variance_arr)
+        mean_val = (source_entropy + target_entropy + merged_entropy) / 3.0
+        variance = (
+            (source_entropy - mean_val) ** 2
+            + (target_entropy - mean_val) ** 2
+            + (merged_entropy - mean_val) ** 2
+        ) / 3.0
+        intrinsic_std = math.sqrt(variance)
 
-        max_delta_arr = backend.maximum(
-            backend.maximum(source_target_gap_arr, intrinsic_std_arr),
-            eps_arr,
-        )
-        retention_arr = backend.maximum(
-            backend.array([0.0]),
-            backend.array([1.0]) - (entropy_delta_arr / max_delta_arr),
-        )
-
-        backend.eval(entropy_delta_arr, entropy_ratio_arr, retention_arr)
-        entropy_delta = float(backend.to_scalar(entropy_delta_arr))
-        entropy_ratio = float(backend.to_scalar(entropy_ratio_arr))
-        retention = float(backend.to_scalar(retention_arr))
+        max_delta = max(source_target_gap, intrinsic_std, eps)
+        retention = max(0.0, 1.0 - (entropy_delta / max_delta))
 
         return cls(
             layer_name=layer_name,

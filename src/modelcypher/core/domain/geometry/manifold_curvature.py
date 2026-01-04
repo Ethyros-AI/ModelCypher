@@ -697,8 +697,9 @@ class SectionalCurvatureEstimator:
         upper_vals = backend.where(upper_mask, dists, pos_inf)
         flat = backend.reshape(upper_vals, (-1,))
         median_idx = upper_count // 2
-        partitioned = backend.partition(flat, median_idx)
-        median_arr = partitioned[median_idx : median_idx + 1]
+        partitioned = backend.argpartition(flat, median_idx)
+        prefix = backend.take(partitioned, backend.arange(median_idx + 1), axis=0)
+        median_arr = backend.max(backend.take(flat, prefix, axis=0))
         backend.eval(median_arr)
         median_dist = float(backend.to_scalar(median_arr))
 

@@ -120,11 +120,16 @@ class CrossCulturalGeometry:
         sharpness_values = sharpness_a + sharpness_b
         eps_source = sharpness_values if sharpness_values else [0.0]
         eps = division_epsilon(backend, backend.array(eps_source))
-        sharpness_ratios = []
-        for s_a, s_b in zip(sharpness_a, sharpness_b):
-            denom = min(s_a, s_b)
-            denom = max(denom, eps)
-            sharpness_ratios.append(max(s_a, s_b) / denom)
+
+        # Vectorized sharpness ratio computation
+        s_a_arr = backend.array(sharpness_a)
+        s_b_arr = backend.array(sharpness_b)
+        min_arr = backend.minimum(s_a_arr, s_b_arr)
+        max_arr = backend.maximum(s_a_arr, s_b_arr)
+        safe_denom = backend.maximum(min_arr, backend.full(min_arr.shape, eps))
+        ratio_arr = max_arr / safe_denom
+        backend.eval(ratio_arr)
+        sharpness_ratios = backend.tolist(ratio_arr)
 
         category_divergence = CrossCulturalGeometry._compute_category_divergence(
             row_correlations,
@@ -284,7 +289,12 @@ class CrossCulturalGeometry:
 
     @staticmethod
     def _average_grams(gram_a: list[float], gram_b: list[float]) -> list[float]:
-        return [(a + b) / 2.0 for a, b in zip(gram_a, gram_b)]
+        backend = get_default_backend()
+        arr_a = backend.array(gram_a)
+        arr_b = backend.array(gram_b)
+        avg = (arr_a + arr_b) / 2.0
+        backend.eval(avg)
+        return backend.tolist(avg)
 
     @staticmethod
     def _compute_category_divergence(

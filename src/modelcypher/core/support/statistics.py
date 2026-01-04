@@ -216,24 +216,21 @@ def percentile_array(arr: Any, p: float, backend: Backend) -> float:
     lower_idx = int(floor_scalar(position, backend))
     upper_idx = int(ceil_scalar(position, backend))
 
+    def _kth_value(k: int) -> float:
+        part = backend.argpartition(arr, k)
+        prefix = backend.take(part, backend.arange(k + 1), axis=0)
+        vals = backend.take(arr, prefix, axis=0)
+        kth_val_arr = backend.max(vals)
+        backend.eval(kth_val_arr)
+        return float(backend.to_scalar(kth_val_arr))
+
     if lower_idx == upper_idx:
-        # Exact index - use partition for O(n) complexity
-        partitioned = backend.partition(arr, kth=lower_idx)
-        lower_val_arr = backend.take(partitioned, backend.array([lower_idx]), axis=0)
-        lower_val_arr = backend.squeeze(lower_val_arr)
-        backend.eval(lower_val_arr)
-        return float(backend.to_scalar(lower_val_arr))
+        return _kth_value(lower_idx)
 
     # Need interpolation between two indices
     # For simplicity, use partial sort on the larger index
-    partitioned = backend.partition(arr, kth=upper_idx)
-    lower_val_arr = backend.take(partitioned, backend.array([lower_idx]), axis=0)
-    upper_val_arr = backend.take(partitioned, backend.array([upper_idx]), axis=0)
-    lower_val_arr = backend.squeeze(lower_val_arr)
-    upper_val_arr = backend.squeeze(upper_val_arr)
-    backend.eval(lower_val_arr, upper_val_arr)
-    lower_val = float(backend.to_scalar(lower_val_arr))
-    upper_val = float(backend.to_scalar(upper_val_arr))
+    lower_val = _kth_value(lower_idx)
+    upper_val = _kth_value(upper_idx)
     fraction = position - float(lower_idx)
 
     return lower_val + (upper_val - lower_val) * fraction

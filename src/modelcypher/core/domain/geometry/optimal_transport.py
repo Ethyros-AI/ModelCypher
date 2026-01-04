@@ -172,15 +172,15 @@ class SinkhornSolver:
         mid = n // 2
         if n % 2 == 1:
             partitioned = backend.argpartition(flat, mid)
-            median_idx = backend.take(partitioned, backend.array([mid]), axis=0)
-            median_arr = backend.take(flat, median_idx, axis=0)
+            prefix = backend.take(partitioned, backend.arange(mid + 1), axis=0)
+            median_arr = backend.max(backend.take(flat, prefix, axis=0))
         else:
             low_part = backend.argpartition(flat, mid - 1)
+            low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
+            low = backend.max(backend.take(flat, low_prefix, axis=0))
             high_part = backend.argpartition(flat, mid)
-            low_idx = backend.take(low_part, backend.array([mid - 1]), axis=0)
-            high_idx = backend.take(high_part, backend.array([mid]), axis=0)
-            low = backend.take(flat, low_idx, axis=0)
-            high = backend.take(flat, high_idx, axis=0)
+            high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
+            high = backend.max(backend.take(flat, high_prefix, axis=0))
             median_arr = (low + high) * 0.5
         median_arr = backend.squeeze(median_arr)
         backend.eval(median_arr)
