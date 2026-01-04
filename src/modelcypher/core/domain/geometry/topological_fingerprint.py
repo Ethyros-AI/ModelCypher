@@ -1190,14 +1190,21 @@ class BackendTopologicalFingerprint:
         points_a = diag_a.points
         points_b = diag_b.points
 
-        dims = set([p.dimension for p in points_a] + [p.dimension for p in points_b])
-        max_dist = 0.0
+        # Pre-group by dimension once (O(n) total) instead of filtering per dim
+        groups_a: dict[int, list[PersistencePoint]] = {}
+        groups_b: dict[int, list[PersistencePoint]] = {}
+        for p in points_a:
+            groups_a.setdefault(p.dimension, []).append(p)
+        for p in points_b:
+            groups_b.setdefault(p.dimension, []).append(p)
+        dims = set(groups_a.keys()) | set(groups_b.keys())
 
+        max_dist = 0.0
         b = self.backend
 
         for dim in dims:
-            pa = [p for p in points_a if p.dimension == dim]
-            pb = [p for p in points_b if p.dimension == dim]
+            pa = groups_a.get(dim, [])
+            pb = groups_b.get(dim, [])
 
             n_a, n_b = len(pa), len(pb)
 
@@ -1265,12 +1272,20 @@ class BackendTopologicalFingerprint:
         total_dist = 0.0
         count = 0
 
-        dims = set([p.dimension for p in diag_a.points] + [p.dimension for p in diag_b.points])
+        # Pre-group by dimension once (O(n) total) instead of filtering per dim
+        groups_a: dict[int, list[PersistencePoint]] = {}
+        groups_b: dict[int, list[PersistencePoint]] = {}
+        for p in diag_a.points:
+            groups_a.setdefault(p.dimension, []).append(p)
+        for p in diag_b.points:
+            groups_b.setdefault(p.dimension, []).append(p)
+        dims = set(groups_a.keys()) | set(groups_b.keys())
+
         b = self.backend
 
         for dim in dims:
-            pa = [p for p in diag_a.points if p.dimension == dim]
-            pb = [p for p in diag_b.points if p.dimension == dim]
+            pa = groups_a.get(dim, [])
+            pb = groups_b.get(dim, [])
 
             n_a, n_b = len(pa), len(pb)
 

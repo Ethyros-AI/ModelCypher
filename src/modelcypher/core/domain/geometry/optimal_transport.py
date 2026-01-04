@@ -48,6 +48,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     regularization_epsilon,
+    safe_log_epsilon,
     tiny_value,
 )
 from modelcypher.core.domain.geometry.vector_math import (
@@ -343,11 +344,13 @@ class SinkhornSolver:
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
 
+        # Use safe_log_epsilon for proper log domain clamping
+        log_eps = safe_log_epsilon(backend, mu)
         log_mu = backend.log(
-            backend.maximum(mu, backend.array(stability_epsilon))
+            backend.maximum(mu, backend.full(mu.shape, log_eps))
         )
         log_nu = backend.log(
-            backend.maximum(nu, backend.array(stability_epsilon))
+            backend.maximum(nu, backend.full(nu.shape, log_eps))
         )
         logK = -cost_matrix / epsilon
         backend.eval(log_mu, log_nu, logK)
@@ -491,12 +494,15 @@ class SinkhornSolver:
         return clamped
 
     def _logsumexp(self, array: "Array", axis: int) -> "Array":
-        """Numerically stable log-sum-exp."""
+        """Numerically stable log-sum-exp with additional guards."""
         backend = self._backend
         max_val = backend.max(array, axis=axis, keepdims=True)
         shifted = array - max_val
         sum_exp = backend.sum(backend.exp(shifted), axis=axis)
-        return backend.squeeze(max_val, axis=axis) + backend.log(sum_exp)
+        # Guard against log(0) when sum_exp is very small
+        log_eps = safe_log_epsilon(backend, sum_exp)
+        safe_sum = backend.maximum(sum_exp, backend.full(sum_exp.shape, log_eps))
+        return backend.squeeze(max_val, axis=axis) + backend.log(safe_sum)
 
     def _to_scalar(self, array: "Array") -> float:
         """Extract scalar value from array."""

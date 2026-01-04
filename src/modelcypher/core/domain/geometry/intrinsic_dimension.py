@@ -55,7 +55,10 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    safe_log_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -333,8 +336,10 @@ class IntrinsicDimension:
         r1_sq_safe = backend.where(valid_mask, r1_sq, backend.ones_like(r1_sq))
         r2_sq_safe = backend.where(valid_mask, r2_sq, backend.zeros_like(r2_sq))
 
-        r1 = backend.sqrt(r1_sq_safe)
-        r2 = backend.sqrt(r2_sq_safe)
+        # Ensure non-negative values before sqrt for numerical safety
+        zeros = backend.zeros_like(r1_sq_safe)
+        r1 = backend.sqrt(backend.maximum(r1_sq_safe, zeros))
+        r2 = backend.sqrt(backend.maximum(r2_sq_safe, zeros))
 
         # mu = r2 / r1 for valid points
         mu_all = r2 / r1
@@ -380,9 +385,9 @@ class IntrinsicDimension:
         F_sliced = F[:-1]
         one_minus_F = 1.0 - F_sliced
 
-        # Clamp to avoid log(0) - use machine epsilon
-        eps = machine_epsilon(backend, one_minus_F)
-        min_val = backend.full(one_minus_F.shape, eps)
+        # Clamp to avoid log(0) - use safe_log_epsilon (tiny value, not machine epsilon)
+        log_eps = safe_log_epsilon(backend, one_minus_F)
+        min_val = backend.full(one_minus_F.shape, log_eps)
         clamped = backend.maximum(min_val, one_minus_F)
         y = -backend.log(clamped)
 
@@ -394,7 +399,8 @@ class IntrinsicDimension:
         sum_xy_val = float(backend.to_scalar(sum_xy))
 
         # Use machine epsilon for degenerate check
-        if sum_xx_val < eps:
+        div_eps = machine_epsilon(backend, x)
+        if sum_xx_val < div_eps:
             raise EstimatorError.regression_degenerate()
 
         d = sum_xy_val / sum_xx_val

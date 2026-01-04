@@ -917,8 +917,9 @@ class RiemannianGeometry:
         tie_breaker = backend.astype(col_indices_row, chord_dist.dtype) * tie_eps
         dist_for_sort = dist_for_sort + tie_breaker
 
-        sorted_idx = backend.argsort(dist_for_sort, axis=1)
-        knn_idx = sorted_idx[:, :k_neighbors]
+        kth = max(0, min(k_neighbors - 1, n - 1))
+        partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
+        knn_idx = partitioned_idx[:, :k_neighbors]
 
         adj = backend.full((n, n), inf_val)
         adj = adj * (1.0 - eye)
@@ -1701,8 +1702,9 @@ class RiemannianGeometry:
             backend.full((n,), inf),
             row,
         )
-        sorted_indices = backend.argsort(row_masked)
-        neighbors = sorted_indices[:k]
+        kth = max(0, min(k - 1, n - 1))
+        partitioned = backend.argpartition(row_masked, kth)
+        neighbors = partitioned[:k]
 
         if int(neighbors.shape[0]) == 0:
             # Isolated point - any direction is sparse

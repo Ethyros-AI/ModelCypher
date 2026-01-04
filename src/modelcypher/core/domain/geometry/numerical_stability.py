@@ -63,6 +63,7 @@ __all__ = [
     "compute_pearson_correlation",
     "compute_spearman_correlation",
     # Matrix decomposition
+    "safe_inverse",
     "solve_full_row_rank_via_qr",
     "solve_via_truncated_svd",
     "solve_via_gram_alignment",
@@ -614,7 +615,10 @@ def gram_schmidt_orthogonalize(
     backend: Backend,
     vectors: Array,
 ) -> Array:
-    """Orthogonalize vectors using backend QR with a Gram-Schmidt fallback.
+    """Orthogonalize vectors using backend QR with reorthogonalization for stability.
+
+    For ill-conditioned inputs, performs a second orthogonalization pass
+    to ensure numerical orthonormality.
 
     Args:
         backend: Compute backend.
@@ -627,9 +631,28 @@ def gram_schmidt_orthogonalize(
     vectors = b.astype(b.array(vectors), "float32")
     b.eval(vectors)
 
+    k = int(vectors.shape[1])
+    if k == 0:
+        return vectors
+
     try:
         q, _ = b.qr(vectors)
         b.eval(q)
+
+        # Check orthonormality: Q^T @ Q should be identity
+        qtq = b.matmul(b.transpose(q), q)
+        eye = b.eye(k)
+        error_arr = b.max(b.abs(qtq - eye))
+        b.eval(error_arr)
+        error_val = float(b.to_scalar(error_arr))
+
+        # If not sufficiently orthonormal, reorthogonalize
+        orth_threshold = division_epsilon(b, q)  # sqrt(eps) ~ 3e-4
+        if error_val > orth_threshold:
+            q2, _ = b.qr(q)
+            b.eval(q2)
+            return q2
+
         return q
     except Exception:
         pass
@@ -807,6 +830,76 @@ def geodesic_pinv(
     b.eval(A_pinv)
 
     return A_pinv
+
+
+def safe_inverse(
+    backend: Backend,
+    matrix: Array,
+    regularize: bool = True,
+) -> tuple[Array, float]:
+    """Compute matrix inverse with condition number check and optional regularization.
+
+    Checks the condition number before inversion. If the matrix is ill-conditioned
+    (condition > 1/eps), optionally regularizes it before inverting.
+
+    Args:
+        backend: Compute backend.
+        matrix: Square matrix to invert.
+        regularize: If True, regularize ill-conditioned matrices before inversion.
+
+    Returns:
+        Tuple of (inverse matrix, condition number estimate).
+    """
+    b = backend
+    matrix = b.astype(b.array(matrix), "float32")
+    b.eval(matrix)
+
+    n = int(matrix.shape[0])
+    if n == 0:
+        return matrix, float("inf")
+
+    # Compute condition number via SVD
+    _, S, _ = geodesic_svd(b, matrix)
+    b.eval(S)
+
+    if int(S.shape[0]) == 0:
+        return b.eye(n), float("inf")
+
+    max_s_arr = b.max(S)
+    b.eval(max_s_arr)
+    max_s = float(b.to_scalar(max_s_arr))
+
+    if max_s == 0:
+        # Zero matrix - return identity and infinite condition
+        return b.eye(n), float("inf")
+
+    eps = division_epsilon(b, matrix)
+    # Find minimum positive singular value
+    pos_mask = S > eps
+    pos_inf = float(b.finfo().max)
+    min_candidates = b.where(pos_mask, S, b.full(S.shape, pos_inf))
+    min_s_arr = b.min(min_candidates)
+    b.eval(min_s_arr)
+    min_s = float(b.to_scalar(min_s_arr))
+
+    if min_s <= 0 or min_s >= pos_inf:
+        min_s = eps
+
+    cond = max_s / min_s
+
+    # Check against condition threshold
+    cond_thresh = condition_threshold(b, matrix)
+
+    if cond > cond_thresh and regularize:
+        # Regularize the matrix
+        reg = regularization_epsilon(b, matrix)
+        matrix = matrix + reg * b.eye(n)
+        b.eval(matrix)
+
+    inv_matrix = b.inv(matrix)
+    b.eval(inv_matrix)
+
+    return inv_matrix, cond
 
 
 def solve_full_row_rank_via_qr(
@@ -1210,9 +1303,12 @@ def solve_via_truncated_svd(
 
     # Truncate to effective rank
     U_k = U[:, :rank]  # [n, k]
-    # Build inverse singular values array
+    # Build inverse singular values array using Tikhonov damping
+    # This provides smooth transition instead of hard cutoff: s / (s^2 + thresh^2)
     S_k = S[:rank]
-    S_k_inv = b.where(S_k > (rank_threshold * max_s), 1.0 / S_k, b.zeros_like(S_k))
+    threshold = rank_threshold * max_s
+    thresh_sq = threshold * threshold
+    S_k_inv = S_k / (S_k * S_k + thresh_sq)
     S_k_inv = b.astype(S_k_inv, "float32")
     b.eval(S_k_inv)
     Vt_k = Vt[:rank, :]  # [k, d]

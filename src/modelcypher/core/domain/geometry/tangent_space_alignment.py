@@ -151,6 +151,7 @@ class TangentSpaceAlignment:
         # Derive epsilon from data
         eps = division_epsilon(self._backend, source_points)
 
+        b = self._backend
         # Compute k-nearest neighbors for each point
         source_neighbors = self._compute_neighbors(source_points, neighbor_count)
         target_neighbors = self._compute_neighbors(target_points, neighbor_count)
@@ -159,27 +160,82 @@ class TangentSpaceAlignment:
         angles: list[float] = []
         used_anchors = 0
 
-        for i in range(n_anchors):
-            source_basis = self._compute_tangent_basis(
-                source_points, i, source_neighbors[i], tangent_rank, eps
+        use_batch = False
+        source_bases = None
+        target_bases = None
+        source_counts: list[int] = []
+        target_counts: list[int] = []
+        try:
+            source_batch = self._compute_tangent_bases_batch(
+                source_points, source_neighbors, tangent_rank, eps
             )
-            target_basis = self._compute_tangent_basis(
-                target_points, i, target_neighbors[i], tangent_rank, eps
+            target_batch = self._compute_tangent_bases_batch(
+                target_points, target_neighbors, tangent_rank, eps
             )
+            if source_batch is not None and target_batch is not None:
+                source_bases, source_counts_arr = source_batch
+                target_bases, target_counts_arr = target_batch
+                b.eval(source_counts_arr, target_counts_arr)
+                source_counts = [int(x) for x in b.tolist(source_counts_arr)]
+                target_counts = [int(x) for x in b.tolist(target_counts_arr)]
+                use_batch = True
+        except Exception:
+            use_batch = False
 
-            if source_basis is None or target_basis is None:
-                continue
+        if use_batch:
+            rank = int(source_bases.shape[2])
+            m_batch = b.matmul(
+                b.transpose(source_bases, axes=(0, 2, 1)), target_bases
+            )
+            s_batch = b.svd(m_batch, compute_uv=False)
+            b.eval(s_batch)
+            s_list = b.tolist(s_batch)
+            for i in range(n_anchors):
+                count_a = source_counts[i] if i < len(source_counts) else 0
+                count_b = target_counts[i] if i < len(target_counts) else 0
+                if count_a <= 0 or count_b <= 0:
+                    continue
+                limit = min(count_a, count_b, rank)
+                if limit <= 0:
+                    continue
+                principal_cosines = [
+                    max(0.0, min(1.0 + eps, float(val)))
+                    for val in s_list[i][:limit]
+                ]
+                if not principal_cosines:
+                    continue
 
-            principal_cosines = self._principal_cosines(source_basis, target_basis, eps)
-            if not principal_cosines:
-                continue
+                for cos in principal_cosines:
+                    clamped = max(0.0, min(1.0, cos))
+                    cosines.append(clamped)
+                    angles.append(acos_scalar(clamped, self._backend))
 
-            for cos in principal_cosines:
-                clamped = max(0.0, min(1.0, cos))
-                cosines.append(clamped)
-                angles.append(acos_scalar(clamped, self._backend))
+                used_anchors += 1
+        else:
+            source_neighbors_list = b.tolist(source_neighbors)
+            target_neighbors_list = b.tolist(target_neighbors)
 
-            used_anchors += 1
+            for i in range(n_anchors):
+                source_basis = self._compute_tangent_basis(
+                    source_points, i, source_neighbors_list[i], tangent_rank, eps
+                )
+                target_basis = self._compute_tangent_basis(
+                    target_points, i, target_neighbors_list[i], tangent_rank, eps
+                )
+
+                if source_basis is None or target_basis is None:
+                    continue
+
+                principal_cosines = self._principal_cosines(source_basis, target_basis, eps)
+                if not principal_cosines:
+                    continue
+
+                for cos in principal_cosines:
+                    clamped = max(0.0, min(1.0, cos))
+                    cosines.append(clamped)
+                    angles.append(acos_scalar(clamped, self._backend))
+
+                used_anchors += 1
 
         if not cosines or not angles:
             return None
@@ -204,26 +260,80 @@ class TangentSpaceAlignment:
         self,
         points: "Array",
         k: int,
-    ) -> list[list[int]]:
+    ) -> "Array":
         """Compute k-nearest neighbor indices for each point."""
-        n = points.shape[0]
-        if n == 0:
-            return []
-
+        n = int(points.shape[0])
         b = self._backend
+        if n == 0:
+            return b.zeros((0, 0), dtype="int32")
+
+        k = max(0, int(k))
+        if k == 0:
+            return b.zeros((n, 0), dtype="int32")
+
         # Use geodesic distances to respect manifold curvature.
         distances = geodesic_distance_matrix(points, backend=b)
         b.eval(distances)
 
-        neighbors: list[list[int]] = []
-        sorted_idx = b.argsort(distances, axis=1)
-        k = max(0, int(k))
-        if k == 0:
-            return [[] for _ in range(int(n))]
-        neighbor_block = sorted_idx[:, 1 : k + 1]
+        max_dist_arr = b.max(distances)
+        b.eval(max_dist_arr)
+        max_dist = float(b.to_scalar(max_dist_arr))
+        eps = division_epsilon(b, distances)
+        base = max(max_dist, eps)
+        inf_val = min(base / eps, b.finfo(distances.dtype).max)
+        dist_no_self = distances + b.eye(n) * inf_val
+
+        kth = max(0, min(k - 1, n - 1))
+        partitioned = b.argpartition(dist_no_self, kth, axis=1)
+        neighbor_block = partitioned[:, :k]
         b.eval(neighbor_block)
-        neighbors_raw = b.tolist(neighbor_block)
-        return [[int(idx) for idx in row] for row in neighbors_raw]
+        return b.astype(neighbor_block, "int32")
+
+    def _compute_tangent_bases_batch(
+        self,
+        points: "Array",
+        neighbor_indices: "Array",
+        rank: int,
+        epsilon: float,
+    ) -> tuple["Array", "Array"] | None:
+        """Compute tangent bases for all anchors in a batch."""
+        b = self._backend
+        n = int(points.shape[0])
+        if n == 0:
+            return None
+
+        shape_neighbors = b.shape(neighbor_indices)
+        if len(shape_neighbors) != 2 or shape_neighbors[1] < 2:
+            return None
+
+        dim = int(points.shape[1])
+        k = int(shape_neighbors[1])
+        rank = min(int(rank), dim)
+        if rank <= 0:
+            return None
+
+        neighbors_flat = b.reshape(neighbor_indices, (-1,))
+        neighbor_points_flat = b.take(points, neighbors_flat, axis=0)
+        neighbor_points = b.reshape(neighbor_points_flat, (n, k, dim))
+        anchors = b.reshape(points, (n, 1, dim))
+        delta = neighbor_points - anchors
+
+        cov = b.matmul(b.transpose(delta, axes=(0, 2, 1)), delta)
+        # Use eigh for symmetric covariance (more efficient than SVD for symmetric PSD)
+        # eigh returns eigenvalues in ascending order, eigenvectors as columns
+        eigenvalues, eigenvectors = b.eigh(cov)
+        b.eval(eigenvalues, eigenvectors)
+
+        # For symmetric PSD matrices, eigenvalues = singular values
+        # Take the largest eigenvalues (from the end due to ascending order)
+        s_max = b.max(eigenvalues, axis=1, keepdims=True)
+        threshold = s_max * epsilon
+        # Check the top rank eigenvalues (from the end)
+        mask = eigenvalues[:, -rank:] > threshold
+        valid_counts = b.sum(b.astype(mask, "int32"), axis=1)
+        b.eval(valid_counts)
+        # Return eigenvectors for the largest eigenvalues
+        return eigenvectors[:, :, -rank:], valid_counts
 
     def _compute_tangent_basis(
         self,

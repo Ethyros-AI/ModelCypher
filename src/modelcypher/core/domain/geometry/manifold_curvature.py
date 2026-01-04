@@ -58,6 +58,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     log_scalar,
     power_iteration_eigh,
     regularization_epsilon,
+    safe_inverse,
     sqrt_scalar,
     tiny_value,
 )
@@ -293,14 +294,20 @@ class ManifoldCurvatureProfile:
         row = backend.squeeze(row, axis=0)
         row = backend.take(row, backend.arange(0, len(self.local_curvatures)), axis=0)
 
-        # Sort by distance to find k nearest
-        sorted_idx = backend.argsort(row)
-        nearest_indices_arr = sorted_idx[:k]
+        total = int(row.shape[0])
+        k = max(1, min(k, total))
+        kth = max(0, k - 1)
+        partitioned = backend.argpartition(row, kth)
+        nearest_indices_arr = partitioned[:k]
         nearest_dists = backend.take(row, nearest_indices_arr, axis=0)
         backend.eval(nearest_indices_arr, nearest_dists)
         nearest_indices = [
             int(val) for val in _array_to_list(backend, nearest_indices_arr)
         ]
+        nearest_local_idx_arr = backend.argmin(nearest_dists)
+        backend.eval(nearest_local_idx_arr)
+        nearest_local_idx = int(backend.to_scalar(nearest_local_idx_arr))
+        nearest_idx = nearest_indices[nearest_local_idx]
 
         # Weighted average by inverse geodesic distance
         eps = division_epsilon(backend, nearest_dists)
@@ -316,7 +323,7 @@ class ManifoldCurvatureProfile:
         )
 
         # Return nearest for full structure, but with interpolated mean
-        nearest = self.local_curvatures[nearest_indices[0]]
+        nearest = self.local_curvatures[nearest_idx]
         return LocalCurvature(
             point=point,
             mean_sectional=mean_sectional,
@@ -394,7 +401,6 @@ class SectionalCurvatureEstimator:
 
         # Compute sectional curvatures for sampled direction pairs
         sectional_curvatures = []
-        directions_used = []
 
         # Derive num_directions from dimension (data-derived)
         # For d dimensions, there are d(d-1)/2 possible 2-planes
@@ -426,37 +432,60 @@ class SectionalCurvatureEstimator:
 
         V_norms = geodesic_norms(V, backend)
         backend.eval(V_norms)
+        V_norms_safe = backend.maximum(V_norms, backend.full(V_norms.shape, eps))
+        V_unit = V / backend.reshape(V_norms_safe, (-1, 1))
+        backend.eval(V_unit)
 
-        # Compute sectional curvatures for each direction pair
-        for i in range(num_directions):
-            v_norm_val = float(backend.to_scalar(V_norms[i]))
-            if v_norm_val < eps:
-                continue
-            u = U[i]
-            v = V[i] / v_norm_val
-            backend.eval(u, v)
+        curvature_arr = self._sectional_curvature_batch(
+            U, V_unit, metric, christoffel, backend
+        )
+        valid_mask = V_norms > eps
+        backend.eval(curvature_arr, valid_mask)
 
-            # Compute sectional curvature K(u, v)
-            K = self._sectional_curvature(u, v, metric, christoffel, backend)
-            sectional_curvatures.append(K)
-            directions_used.append((u, v))
+        # Compute count of valid curvatures on backend
+        valid_float = backend.astype(valid_mask, "float32")
+        valid_count_arr = backend.sum(valid_float)
+        backend.eval(valid_count_arr)
+        valid_count = int(backend.to_scalar(valid_count_arr))
 
-        if not sectional_curvatures:
+        if valid_count == 0:
             return self._flat_curvature(point)
+
+        # Compute statistics on backend using masked operations (no .tolist())
+        zeros = backend.zeros_like(curvature_arr)
+        valid_curvatures = backend.where(valid_mask, curvature_arr, zeros)
+
+        # Mean
+        sum_arr = backend.sum(valid_curvatures)
+        backend.eval(sum_arr)
+        mean_arr = sum_arr / valid_count
+        backend.eval(mean_arr)
+        mean_sectional = float(backend.to_scalar(mean_arr))
+
+        # Variance = E[x^2] - E[x]^2
+        sq_curvatures = backend.where(valid_mask, curvature_arr * curvature_arr, zeros)
+        sum_sq_arr = backend.sum(sq_curvatures)
+        backend.eval(sum_sq_arr)
+        variance_sectional = float(backend.to_scalar(sum_sq_arr)) / valid_count - mean_sectional * mean_sectional
+
+        # Min/Max using inf masking
+        neg_inf = -float(backend.finfo().max)
+        pos_inf = float(backend.finfo().max)
+        max_masked = backend.where(valid_mask, curvature_arr, backend.full(curvature_arr.shape, neg_inf))
+        min_masked = backend.where(valid_mask, curvature_arr, backend.full(curvature_arr.shape, pos_inf))
+        max_arr = backend.max(max_masked)
+        min_arr = backend.min(min_masked)
+        backend.eval(max_arr, min_arr)
+        max_sectional = float(backend.to_scalar(max_arr))
+        min_sectional = float(backend.to_scalar(min_arr))
 
         # Compute principal curvatures via shape operator
         principal_dirs, principal_curvs = self._compute_principal_curvatures(
             point, neighbors, metric, backend
         )
 
-        # Classify curvature sign
-        sign = self._classify_sign(sectional_curvatures)
-
-        # Compute statistics using pure Python
-        mean_sectional = sum(sectional_curvatures) / len(sectional_curvatures)
-        variance_sectional = sum((s - mean_sectional) ** 2 for s in sectional_curvatures) / len(sectional_curvatures)
-        min_sectional = min(sectional_curvatures)
-        max_sectional = max(sectional_curvatures)
+        # Classify curvature sign using backend array + mask
+        sign = self._classify_sign_backend(curvature_arr, valid_mask, backend)
 
         if principal_curvs is not None:
             scalar_curv_arr = backend.sum(principal_curvs)
@@ -530,29 +559,33 @@ class SectionalCurvatureEstimator:
         backend.eval(geo_dist)
 
         local_curvatures = []
+        dtype = geo_dist.dtype if hasattr(geo_dist, "dtype") else None
+        inf_val = float(backend.finfo(dtype).max)
+        eye = backend.eye(n)
+        row_masked = backend.where(eye > 0, backend.full((n, n), inf_val), geo_dist)
+        kth = max(0, min(k_neighbors - 1, n - 1))
+        partitioned = backend.argpartition(row_masked, kth, axis=1)
+        neighbor_indices_all = partitioned[:, :k_neighbors]
+        backend.eval(neighbor_indices_all)
+
+        # Batch gather all neighbors at once: [n, k, d]
+        # This replaces n separate backend.take calls with one batched operation
+        flat_indices = backend.reshape(neighbor_indices_all, (-1,))
+        flat_indices_int = backend.astype(flat_indices, "int32")
+        all_neighbors_flat = backend.take(points, flat_indices_int, axis=0)
+        all_neighbors = backend.reshape(all_neighbors_flat, (n, k_neighbors, d))
+        backend.eval(all_neighbors)
 
         for i in range(n):
             point = points[i]
 
-            # Find k nearest neighbors using geodesic distances (excluding self)
-            row = backend.take(geo_dist, backend.array([i]), axis=0)
-            row = backend.squeeze(row, axis=0)
-            row_masked = backend.where(
-                backend.arange(0, n) == i,
-                backend.full((n,), float("inf")),
-                row,
-            )
-            sorted_idx = backend.argsort(row_masked)
-            neighbor_indices_arr = sorted_idx[:k_neighbors]
-            backend.eval(neighbor_indices_arr)
-            neighbor_count = int(neighbor_indices_arr.shape[0])
-
-            if neighbor_count < d:
+            # Check if we have enough neighbors
+            if k_neighbors < d:
                 local_curvatures.append(self._flat_curvature(point))
                 continue
 
-            # Gather neighbors
-            neighbors = backend.take(points, neighbor_indices_arr, axis=0)
+            # Get pre-gathered neighbors for this point
+            neighbors = all_neighbors[i]
 
             # Compute local curvature - no fallback to flat
             # If this fails, it's a bug we need to fix, not hide
@@ -605,18 +638,9 @@ class SectionalCurvatureEstimator:
         cov = backend.matmul(backend.transpose(centered), centered) / (n - 1)
         backend.eval(cov)
 
-        # Regularize for numerical stability (dtype-derived)
-        reg = regularization_epsilon(backend, cov)
-        max_abs_arr = backend.max(backend.abs(cov))
-        backend.eval(max_abs_arr)
-        max_abs = float(backend.to_scalar(max_abs_arr))
-        reg_scale = reg * max_abs if max_abs > 0 else reg
-        cov = cov + reg_scale * backend.eye(d)
-
         # Metric is inverse of covariance (Fisher information interpretation)
-        # Use regularized inverse - no fallback to identity (flat-space)
-        # Regularization handles near-singular cases while preserving geometry
-        metric = backend.inv(cov)  # cov already regularized above
+        # Use safe_inverse for condition-checked inversion with auto-regularization
+        metric, _ = safe_inverse(backend, cov, regularize=True)
 
         return metric
 
@@ -736,14 +760,8 @@ class SectionalCurvatureEstimator:
             dg = backend.zeros((d, d, d))
 
         # Compute Christoffel symbols
-        # Regularize metric for stable inversion - no fallback to identity
-        reg = regularization_epsilon(backend, g)
-        max_abs_arr = backend.max(backend.abs(g))
-        backend.eval(max_abs_arr)
-        max_abs = float(backend.to_scalar(max_abs_arr))
-        reg_scale = reg * max_abs if max_abs > 0 else reg
-        g_reg = g + reg_scale * backend.eye(d)
-        g_inv = backend.inv(g_reg)
+        # Use safe_inverse for condition-checked inversion with auto-regularization
+        g_inv, _ = safe_inverse(backend, g, regularize=True)
 
         # Build christoffel tensor using backend ops
         backend.eval(g_inv, dg)
@@ -827,6 +845,60 @@ class SectionalCurvatureEstimator:
             return 0.0
 
         return riemann_component / denom
+
+    def _sectional_curvature_batch(
+        self,
+        u: "Array",
+        v: "Array",
+        metric: "Array",
+        christoffel: "Array",
+        backend: "Backend",
+    ) -> "Array":
+        """Compute sectional curvature K(u, v) for a batch of direction pairs."""
+        backend.eval(u, v, metric, christoffel)
+        batch = int(u.shape[0])
+        d = int(u.shape[1])
+
+        u_col = backend.reshape(u, (batch, d, 1))
+        v_col = backend.reshape(v, (batch, d, 1))
+        v_row = backend.reshape(v, (batch, 1, d))
+
+        christ = backend.reshape(christoffel, (1, d, d, d))
+        u_weight = backend.reshape(u, (batch, 1, d, 1))
+        v_weight = backend.reshape(v, (batch, 1, d, 1))
+
+        A = backend.sum(christ * u_weight, axis=2)
+        C = backend.sum(christ * v_weight, axis=2)
+
+        outer_vv = backend.matmul(v_col, v_row)
+        outer_vv = backend.reshape(outer_vv, (batch, 1, d, d))
+        B = backend.sum(christ * outer_vv, axis=(2, 3))
+
+        outer_uv = backend.matmul(u_col, v_row)
+        outer_uv = backend.reshape(outer_uv, (batch, 1, d, d))
+        D = backend.sum(christ * outer_uv, axis=(2, 3))
+
+        B_col = backend.reshape(B, (batch, d, 1))
+        D_col = backend.reshape(D, (batch, d, 1))
+        term1 = backend.sum(backend.matmul(A, B_col) * u_col, axis=(1, 2))
+        term2 = backend.sum(backend.matmul(C, D_col) * u_col, axis=(1, 2))
+        riemann_component = term1 - term2
+
+        metric_exp = backend.reshape(metric, (1, d, d))
+        g_u = backend.matmul(metric_exp, u_col)
+        g_v = backend.matmul(metric_exp, v_col)
+        u_vec_t = backend.transpose(u_col, (0, 2, 1))
+        v_vec_t = backend.transpose(v_col, (0, 2, 1))
+        g_uu = backend.reshape(backend.matmul(u_vec_t, g_u), (batch,))
+        g_vv = backend.reshape(backend.matmul(v_vec_t, g_v), (batch,))
+        g_uv = backend.reshape(backend.matmul(u_vec_t, g_v), (batch,))
+
+        denom = g_uu * g_vv - g_uv * g_uv
+        eps = float(division_epsilon(backend, metric))
+        denom_abs = backend.abs(denom)
+        valid = denom_abs >= eps
+        safe_denom = backend.where(valid, denom, backend.ones_like(denom))
+        return backend.where(valid, riemann_component / safe_denom, backend.zeros_like(denom))
 
     def _compute_principal_curvatures(
         self,
@@ -928,6 +1000,35 @@ class SectionalCurvatureEstimator:
         eps = division_epsilon(backend, curv_arr)
         has_pos_arr = backend.sum(backend.astype(curv_arr > eps, "int32"))
         has_neg_arr = backend.sum(backend.astype(curv_arr < -eps, "int32"))
+        backend.eval(has_pos_arr, has_neg_arr)
+        has_pos = bool(backend.to_scalar(has_pos_arr))
+        has_neg = bool(backend.to_scalar(has_neg_arr))
+
+        if has_pos and has_neg:
+            return CurvatureSign.MIXED
+        if has_pos:
+            return CurvatureSign.POSITIVE
+        if has_neg:
+            return CurvatureSign.NEGATIVE
+        return CurvatureSign.FLAT
+
+    def _classify_sign_backend(
+        self,
+        curvature_arr: "Array",
+        valid_mask: "Array",
+        backend: "Backend",
+    ) -> CurvatureSign:
+        """Classify curvature sign directly from backend arrays (no .tolist())."""
+        backend.eval(curvature_arr, valid_mask)
+        eps = division_epsilon(backend, curvature_arr)
+
+        # Count valid curvatures that are positive / negative
+        valid_int = backend.astype(valid_mask, "int32")
+        pos_mask = backend.astype(curvature_arr > eps, "int32") * valid_int
+        neg_mask = backend.astype(curvature_arr < -eps, "int32") * valid_int
+
+        has_pos_arr = backend.sum(pos_mask)
+        has_neg_arr = backend.sum(neg_mask)
         backend.eval(has_pos_arr, has_neg_arr)
         has_pos = bool(backend.to_scalar(has_pos_arr))
         has_neg = bool(backend.to_scalar(has_neg_arr))
@@ -1245,24 +1346,33 @@ class OllivierRicciCurvature:
         """
         backend = self._backend
         adjacency: dict[int, list[int]] = {}
+        if n <= 0 or k <= 0:
+            return {i: [] for i in range(n)}
 
+        distances = geo_result.distances
+        dtype = distances.dtype if hasattr(distances, "dtype") else None
+        inf_val = float(backend.finfo(dtype).max)
+
+        eye = backend.eye(n)
+        row_masked = backend.where(
+            eye > 0, backend.full((n, n), inf_val), distances
+        )
+        kth = max(0, min(k - 1, n - 1))
+        partitioned = backend.argpartition(row_masked, kth, axis=1)
+        neighbors_arr = partitioned[:, :k]
+
+        row_indices = backend.reshape(backend.arange(n), (n, 1))
+        flat_idx = row_indices * n + neighbors_arr
+        flat = backend.reshape(row_masked, (-1,))
+        neighbor_dists = backend.take(flat, flat_idx, axis=0)
+        backend.eval(neighbors_arr, neighbor_dists)
+
+        idx_list = backend.tolist(neighbors_arr)
+        dist_list = backend.tolist(neighbor_dists)
         for i in range(n):
-            row = backend.take(geo_result.distances, backend.array([i]), axis=0)
-            row = backend.squeeze(row, axis=0)
-            row_masked = backend.where(
-                backend.arange(0, n) == i,
-                backend.full((n,), float("inf")),
-                row,
-            )
-            sorted_idx = backend.argsort(row_masked)
-            neighbors_arr = sorted_idx[:k]
-            neighbor_dists = backend.take(row_masked, neighbors_arr, axis=0)
-            backend.eval(neighbors_arr, neighbor_dists)
-            idx_list = _array_to_list(backend, neighbors_arr)
-            dist_list = _array_to_list(backend, neighbor_dists)
             neighbors = [
                 int(idx)
-                for idx, dist in zip(idx_list, dist_list)
+                for idx, dist in zip(idx_list[i], dist_list[i])
                 if is_finite(float(dist), backend)
             ]
             adjacency[i] = neighbors

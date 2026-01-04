@@ -188,17 +188,24 @@ class KnowledgeDiffer:
         # Rank opportunities (highest first)
         ranked = sorted(all_opportunities, key=lambda x: x.opportunity_score, reverse=True)
 
+        total = len(all_opportunities)
         positive_count = 0
+        sum_source = 0.0
+        sum_target = 0.0
+        sum_opp = 0.0
         for opportunity in all_opportunities:
             if opportunity.opportunity_score > 0.0:
                 positive_count += 1
-        nonpositive_count = len(all_opportunities) - positive_count
+            sum_source += opportunity.source_density
+            sum_target += opportunity.target_density
+            sum_opp += opportunity.opportunity_score
+        nonpositive_count = total - positive_count
 
         # Global statistics
-        if all_opportunities:
-            overall_source = sum(c.source_density for c in all_opportunities) / len(all_opportunities)
-            overall_target = sum(c.target_density for c in all_opportunities) / len(all_opportunities)
-            overall_opp = sum(c.opportunity_score for c in all_opportunities) / len(all_opportunities)
+        if total:
+            overall_source = sum_source / total
+            overall_target = sum_target / total
+            overall_opp = sum_opp / total
         else:
             overall_source = 0.0
             overall_target = 0.0

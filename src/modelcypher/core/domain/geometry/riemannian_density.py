@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     pi_value,
     power_iteration_eigh,
     regularization_epsilon,
+    safe_inverse,
     sqrt_scalar,
     tiny_value,
 )
@@ -152,17 +153,10 @@ class ConceptVolume:
         """Precision matrix (inverse covariance)."""
         if self._precision is None:
             backend = get_default_backend()
-            try:
-                precision = backend.inv(self.covariance)
-                backend.eval(precision)
-                object.__setattr__(self, "_precision", precision)
-            except Exception:
-                # Regularize if singular
-                reg_eps = regularization_epsilon(backend, self.covariance)
-                reg_cov = self.covariance + reg_eps * backend.eye(self.dimension)
-                precision = backend.inv(reg_cov)
-                backend.eval(precision)
-                object.__setattr__(self, "_precision", precision)
+            # Use safe_inverse with automatic condition checking and regularization
+            precision, _ = safe_inverse(backend, self.covariance, regularize=True)
+            backend.eval(precision)
+            object.__setattr__(self, "_precision", precision)
         return self._precision
 
     @property
@@ -179,7 +173,10 @@ class ConceptVolume:
             if float(backend.to_scalar(min_eig)) <= 0.0:
                 logdet = -inf_value(backend)
             else:
-                logdet_arr = backend.sum(backend.log(eigenvalues))
+                # Clamp eigenvalues to tiny_value before log for numerical stability
+                tiny = tiny_value(backend, eigenvalues)
+                clamped_eigenvalues = backend.maximum(eigenvalues, backend.full(eigenvalues.shape, tiny))
+                logdet_arr = backend.sum(backend.log(clamped_eigenvalues))
                 backend.eval(logdet_arr)
                 logdet = float(backend.to_scalar(logdet_arr))
             object.__setattr__(self, "_log_det_cov", logdet)
@@ -221,7 +218,15 @@ class ConceptVolume:
         backend.eval(eigenvalues)
         # Geometric mean via log: exp(mean(log(max(eig, tiny))))
         tiny = tiny_value(backend, eigenvalues)
-        clamped = backend.maximum(eigenvalues, tiny)
+        clamped = backend.maximum(eigenvalues, backend.full(eigenvalues.shape, tiny))
+        backend.eval(clamped)
+        # Verify positivity - if any values still non-positive, add regularization
+        min_clamped = backend.min(clamped)
+        backend.eval(min_clamped)
+        if float(backend.to_scalar(min_clamped)) <= 0.0:
+            reg = regularization_epsilon(backend, eigenvalues)
+            clamped = clamped + reg
+            backend.eval(clamped)
         mean_log = backend.mean(backend.log(clamped))
         backend.eval(mean_log)
         return exp_scalar(0.5 * float(backend.to_scalar(mean_log)), backend)

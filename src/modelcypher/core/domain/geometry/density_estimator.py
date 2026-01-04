@@ -150,23 +150,21 @@ class DensityEstimator:
         dist = geodesic_distance_matrix(points, backend=b)
         b.eval(dist)
 
-        # Find k+1 nearest neighbors (including self at distance 0)
-        # argsort gives indices in ascending order
-        sorted_indices = b.argsort(dist, axis=1)  # [n, n]
-        b.eval(sorted_indices)
+        # Find k nearest neighbors (excluding self) without full sort.
+        max_dist_arr = b.max(dist)
+        b.eval(max_dist_arr)
+        max_dist = float(b.to_scalar(max_dist_arr))
+        eps = division_epsilon(b, dist)
+        base = max(max_dist, eps)
+        inf_val = min(base / eps, b.finfo(dist.dtype).max)
+        dist_no_self = dist + b.eye(n_points) * inf_val
 
-        # Exclude self (index 0), take next k neighbors
-        neighbors = sorted_indices[:, 1:k+1]  # [n, k]
-        b.eval(neighbors)
-
-        # Get distance to k-th nearest neighbor (for radius)
-        # Sort the distances and take the k-th column (k+1 to skip self)
-        sorted_dist = b.sort(dist, axis=1)  # [n, n]
-        b.eval(sorted_dist)
-
-        # k-th neighbor is at index k (0=self, 1=1st neighbor, ..., k=k-th neighbor)
-        radii = sorted_dist[:, k]  # [n]
-        b.eval(radii)
+        kth = max(0, min(k - 1, n_points - 2))
+        partitioned = b.argpartition(dist_no_self, kth, axis=1)
+        neighbors = partitioned[:, :k]  # [n, k] unsorted
+        neighbor_dists = b.take_along_axis(dist, neighbors, axis=1)
+        radii = b.max(neighbor_dists, axis=1)  # distance to k-th neighbor
+        b.eval(neighbors, radii)
 
         # Compute density as 1 / r^d (volume of d-dimensional ball)
         # Actually we use k / r^d for proper scaling

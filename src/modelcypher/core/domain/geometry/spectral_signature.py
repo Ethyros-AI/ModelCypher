@@ -33,6 +33,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     infinity_threshold,
     power_iteration_eigh,
     regularization_epsilon,
+    safe_log_epsilon,
     tiny_value,
 )
 
