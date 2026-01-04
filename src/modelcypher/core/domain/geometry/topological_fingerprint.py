@@ -1017,42 +1017,62 @@ class BackendTopologicalFingerprint:
         # 1-dim persistence (cycles) with Backend-accelerated triangle detection
         if n >= 3 and edge_count > 0:
             possible_cycles: list[PersistencePoint] = []
-            base_mask = b.ones((n,))
-            zero_vec = b.full((n,), 0.0)
-            inf_vec = b.full((n,), inf_val)
+            index = b.arange(n, dtype="int32")
+            index_row = b.reshape(index, (1, n))
+            inf_row = b.full((1, n), inf_val)
+            chunk_size = 64
 
-            for edge_idx in range(edge_count):
-                idx_arr = b.take(sorted_idx, b.array([edge_idx], dtype="int32"), axis=0)
-                dist_arr_edge = b.take(sorted_dist, b.array([edge_idx], dtype="int32"), axis=0)
+            for edge_start in range(0, edge_count, chunk_size):
+                edge_end = min(edge_count, edge_start + chunk_size)
+                edge_idx = b.arange(edge_start, edge_end, dtype="int32")
+                idx_arr = b.take(sorted_idx, edge_idx, axis=0)
+                dist_arr_edge = b.take(sorted_dist, edge_idx, axis=0)
                 b.eval(idx_arr, dist_arr_edge)
 
-                flat_idx_int = int(b.to_scalar(idx_arr))
-                if flat_idx_int in mst_edges:
-                    continue
-                dist_val = float(b.to_scalar(dist_arr_edge))
-                if dist_val > max_filtration:
+                idx_list = b.tolist(idx_arr)
+                dist_list = b.tolist(dist_arr_edge)
+                if dist_list and float(dist_list[0]) > max_filtration:
                     break
 
-                i = flat_idx_int // n
-                j = flat_idx_int % n
+                keep_flags = [
+                    0 if (flat_idx in mst_edges or float(dist) > max_filtration) else 1
+                    for flat_idx, dist in zip(idx_list, dist_list)
+                ]
+                if not any(keep_flags):
+                    continue
 
-                # Vectorized triangle fill detection using Backend
-                row_i = dist_arr[i, :]
-                row_j = dist_arr[j, :]
+                i_idx = idx_arr // n
+                j_idx = idx_arr % n
+                row_i = b.take(dist_arr, i_idx, axis=0)
+                row_j = b.take(dist_arr, j_idx, axis=0)
+                dist_col = b.reshape(dist_arr_edge, (-1, 1))
                 triangle_fills = b.maximum(
-                    b.maximum(row_i, row_j), b.full((n,), dist_val)
+                    b.maximum(row_i, row_j), b.broadcast_to(dist_col, row_i.shape)
                 )
-                # Mask self-edges to inf
-                mask = b.where(index == i, zero_vec, base_mask)
-                mask = b.where(index == j, zero_vec, mask)
-                masked_fills = b.where(mask > 0, triangle_fills, inf_vec)
-                min_fill_arr = b.min(masked_fills)
+
+                i_col = b.reshape(i_idx, (-1, 1))
+                j_col = b.reshape(j_idx, (-1, 1))
+                mask = (index_row != i_col) & (index_row != j_col)
+                inf_mat = b.broadcast_to(inf_row, triangle_fills.shape)
+                masked_fills = b.where(mask, triangle_fills, inf_mat)
+                min_fill_arr = b.min(masked_fills, axis=1)
                 b.eval(min_fill_arr)
-                min_fill = float(b.to_scalar(min_fill_arr))
-                if min_fill < max_filtration and min_fill > dist_val:
-                    possible_cycles.append(PersistencePoint(dist_val, min_fill, 1))
-                    if len(possible_cycles) >= 20:
-                        break
+                min_fill_list = b.tolist(min_fill_arr)
+
+                for keep, dist_val, min_fill in zip(
+                    keep_flags, dist_list, min_fill_list
+                ):
+                    if keep == 0:
+                        continue
+                    dist_val = float(dist_val)
+                    min_fill = float(min_fill)
+                    if min_fill < max_filtration and min_fill > dist_val:
+                        possible_cycles.append(PersistencePoint(dist_val, min_fill, 1))
+                        if len(possible_cycles) >= 20:
+                            break
+
+                if len(possible_cycles) >= 20:
+                    break
 
             persistence_points.extend(possible_cycles)
 

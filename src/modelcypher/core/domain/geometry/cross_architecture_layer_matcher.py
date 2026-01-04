@@ -304,33 +304,50 @@ class CrossArchitectureLayerMatcher:
         if n == 0:
             return [], 0.0
 
-        dp = [[float("-inf") for _ in range(n)] for _ in range(m)]
-        parent: list[list[tuple[int, int] | None]] = [[None for _ in range(n)] for _ in range(m)]
+        backend = get_default_backend()
+        sim = backend.array(similarity_matrix, dtype="float32")
+        backend.eval(sim)
 
-        for j in range(n):
-            dp[0][j] = float(similarity_matrix[0][j])
+        neg_inf = -float(backend.finfo().max)
+        index = backend.arange(n, dtype="int32")
+        row_idx = backend.reshape(index, (n, 1))
+        col_idx = backend.reshape(index, (1, n))
+        prefix_mask = col_idx <= row_idx
+        neg_inf_mat = backend.full((n, n), neg_inf)
+
+        first_row = backend.take(sim, backend.array([0], dtype="int32"), axis=0)
+        first_row = backend.reshape(first_row, (n,))
+        dp_rows = [first_row]
+        parent: list[list[int]] = [[-1 for _ in range(n)]]
 
         for i in range(1, m):
-            best_prev_score = float("-inf")
-            best_prev_j = 0
-            for j in range(n):
-                if dp[i - 1][j] > best_prev_score:
-                    best_prev_score = dp[i - 1][j]
-                    best_prev_j = j
-                dp[i][j] = float(similarity_matrix[i][j]) + best_prev_score
-                parent[i][j] = (i - 1, best_prev_j)
+            row = backend.take(sim, backend.array([i], dtype="int32"), axis=0)
+            row = backend.reshape(row, (n,))
+            dp_prev = dp_rows[-1]
+            dp_prev_row = backend.broadcast_to(backend.reshape(dp_prev, (1, n)), (n, n))
+            masked_prev = backend.where(prefix_mask, dp_prev_row, neg_inf_mat)
+            prefix_max = backend.max(masked_prev, axis=1)
+            prefix_arg = backend.argmax(masked_prev, axis=1)
+            dp_row = row + prefix_max
+            backend.eval(prefix_arg, dp_row)
+            dp_rows.append(dp_row)
+            parent.append([int(x) for x in backend.tolist(prefix_arg)])
 
-        best_j = max(range(n), key=lambda j: dp[m - 1][j])
-        best_score = dp[m - 1][best_j]
+        best_j_arr = backend.argmax(dp_rows[-1])
+        best_score_arr = backend.max(dp_rows[-1])
+        backend.eval(best_j_arr, best_score_arr)
+        best_j = int(backend.to_scalar(best_j_arr))
+        best_score = float(backend.to_scalar(best_score_arr))
 
         path: list[tuple[int, int]] = []
-        current: tuple[int, int] | None = (m - 1, best_j)
-        while current is not None:
-            i, j = current
+        j = best_j
+        for i in range(m - 1, -1, -1):
             path.append((i, j))
-            current = parent[i][j]
+            if i == 0:
+                break
+            j = parent[i][j]
         path.reverse()
-        return path, float(best_score)
+        return path, best_score
 
     # _classify_confidence method removed - use raw CKA values directly.
 
