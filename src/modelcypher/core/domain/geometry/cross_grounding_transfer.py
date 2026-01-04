@@ -780,24 +780,28 @@ class CrossGroundingSynthesizer:
         source_dists = [source_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
         target_dists = [target_stress.normalized_distances.get(a, 0.0) for a in sorted(common_anchors)]
 
-        # Compute std for both
-        n = len(source_dists)
-        s_mean = sum(source_dists) / n
-        t_mean = sum(target_dists) / n
+        # Geodesic correlation between distance patterns
         backend = get_default_backend()
-        s_var = sum((v - s_mean) ** 2 for v in source_dists) / n
-        t_var = sum((v - t_mean) ** 2 for v in target_dists) / n
-        s_std = sqrt_scalar(s_var, backend)
-        t_std = sqrt_scalar(t_var, backend)
-
-        # Correlation between distance patterns
-        if s_std > 0 and t_std > 0:
-            numerator = sum((s - s_mean) * (t - t_mean) for s, t in zip(source_dists, target_dists))
-            correlation = numerator / (s_std * t_std * n)
-            if is_nan(correlation, backend):
-                correlation = 0.0
+        s_arr = backend.array(source_dists)
+        t_arr = backend.array(target_dists)
+        mean_s = backend.mean(s_arr)
+        mean_t = backend.mean(t_arr)
+        centered_s = s_arr - mean_s
+        centered_t = t_arr - mean_t
+        centered_s_mat = backend.reshape(centered_s, (1, -1))
+        centered_t_mat = backend.reshape(centered_t, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(centered_s_mat, centered_t_mat, backend)
+        s_norm = geodesic_norms(centered_s_mat, backend)
+        t_norm = geodesic_norms(centered_t_mat, backend)
+        backend.eval(cos_arr, s_norm, t_norm)
+        if cos_arr.size:
+            correlation = float(backend.to_scalar(cos_arr[0]))
         else:
             correlation = 0.0
+        if is_nan(correlation, backend):
+            correlation = 0.0
+        s_std = float(backend.to_scalar(s_norm[0])) if s_norm.size else 0.0
+        t_std = float(backend.to_scalar(t_norm[0])) if t_norm.size else 0.0
 
         # Also consider absolute distance matching
         eps = ulp_scalar(1.0, backend)

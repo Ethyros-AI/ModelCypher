@@ -20,6 +20,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_finite
+from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +34,7 @@ class ThermoPathAssessment:
     Attributes
     ----------
     correlation : float or None
-        Pearson correlation between entropy and gate count.
+        Geodesic correlation between entropy and gate count.
     spike_rate : float
         Rate of entropy spikes at gate transitions (0.0 to 1.0).
     measurement_count : int
@@ -94,7 +98,7 @@ class ThermoPathIntegration:
 
         entropies = [measurement.mean_entropy for measurement in measurements]
         gate_counts = [float(measurement.gate_count) for measurement in measurements]
-        correlation = self._compute_pearson_correlation(entropies, gate_counts)
+        correlation = self._compute_geodesic_correlation(entropies, gate_counts)
 
         total_transitions = 0
         spike_transitions = 0
@@ -172,7 +176,7 @@ class ThermoPathIntegration:
         ]
         gate_positions = [float(i) for i in range(len(gate_details))]
         correlation = (
-            self._compute_pearson_correlation(gate_positions, gate_local_entropies)
+            self._compute_geodesic_correlation(gate_positions, gate_local_entropies)
             if len(gate_local_entropies) > 2
             else None
         )
@@ -197,31 +201,27 @@ class ThermoPathIntegration:
         )
 
     @staticmethod
-    def _compute_pearson_correlation(x: list[float], y: list[float]) -> float | None:
-        """Compute Pearson correlation between two 1D scalar sequences.
-
-        INTENTIONAL EUCLIDEAN: This is the standard correlation formula using
-        Euclidean norms. Correlation is a statistical measure on 1D sequences,
-        not a geometric distance on a high-dimensional manifold.
-        """
+    def _compute_geodesic_correlation(x: list[float], y: list[float]) -> float | None:
+        """Compute geodesic correlation between two 1D scalar sequences."""
         if len(x) != len(y) or len(x) <= 2:
             return None
-        n = float(len(x))
-        mean_x = sum(x) / n
-        mean_y = sum(y) / n
-        numerator = 0.0
-        denom_x = 0.0
-        denom_y = 0.0
-        for i in range(len(x)):
-            dx = x[i] - mean_x
-            dy = y[i] - mean_y
-            numerator += dx * dy
-            denom_x += dx * dx
-            denom_y += dy * dy
-        denom = (denom_x**0.5) * (denom_y**0.5)
-        if denom <= 0:
+        backend = get_default_backend()
+        x_arr = backend.array(x)
+        y_arr = backend.array(y)
+        mean_x = backend.mean(x_arr)
+        mean_y = backend.mean(y_arr)
+        centered_x = x_arr - mean_x
+        centered_y = y_arr - mean_y
+        centered_x_mat = backend.reshape(centered_x, (1, -1))
+        centered_y_mat = backend.reshape(centered_y, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(centered_x_mat, centered_y_mat, backend)
+        backend.eval(cos_arr)
+        if cos_arr.size == 0:
             return None
-        return numerator / denom
+        correlation = float(backend.to_scalar(cos_arr[0]))
+        if not is_finite(correlation, backend):
+            return None
+        return correlation
 
     @staticmethod
     def _compute_variance(values: list[float]) -> float:
