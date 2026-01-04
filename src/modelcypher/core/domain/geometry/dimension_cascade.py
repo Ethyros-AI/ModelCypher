@@ -49,7 +49,10 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimens
 from modelcypher.core.domain.geometry.manifold_curvature import (
     OllivierRicciCurvature,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    power_iteration_eigh,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     geodesic_distance_matrix,
@@ -410,22 +413,9 @@ class DimensionCascade:
 
         logger.debug("Regularized B with lambda=%.2e (Frobenius=%.2e)", reg_lambda, float(b.to_scalar(B_frob)))
 
-        # Step 3: Eigendecomposition of B
-        # B is symmetric positive semi-definite for valid distance matrices
-        # We need the top-k eigenvectors with largest eigenvalues
-        #
-        # Use eigh for symmetric matrices - correct operation and more stable than svd
-        eigenvalues, eigenvectors = b.eigh(B)
-        b.eval(eigenvalues, eigenvectors)
-
-        # eigh returns eigenvalues in ascending order, we need descending
-        # Get indices for descending sort
-        n_eig = eigenvalues.shape[0]
-        rev_idx = b.arange(n_eig - 1, -1, -1)
-        b.eval(rev_idx)
-
-        eigenvalues = b.take(eigenvalues, rev_idx, axis=0)
-        eigenvectors = b.take(eigenvectors, rev_idx, axis=1)
+        # Step 3: Eigendecomposition of B (top-k only)
+        # B is symmetric positive semi-definite for valid distance matrices.
+        eigenvalues, eigenvectors = power_iteration_eigh(b, B, k=target_dim)
         b.eval(eigenvalues, eigenvectors)
 
         # For MDS, we only use positive eigenvalues
@@ -433,7 +423,9 @@ class DimensionCascade:
         # Count positive eigenvalues
         pos_mask = eigenvalues > eps
         b.eval(pos_mask)
-        n_positive_arr = b.sum(b.where(pos_mask, b.ones_like(eigenvalues), b.zeros_like(eigenvalues)))
+        n_positive_arr = b.sum(
+            b.where(pos_mask, b.ones_like(eigenvalues), b.zeros_like(eigenvalues))
+        )
         b.eval(n_positive_arr)
         n_positive = int(b.to_scalar(n_positive_arr))
 

@@ -21,7 +21,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    power_iteration_eigh,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.ports.backend import Backend
 
@@ -179,14 +182,8 @@ class ModelFingerprintsProjection:
         B = B + reg_lambda * self._backend.eye(int(B.shape[0]))
         self._backend.eval(B)
 
-        eigenvalues, eigenvectors = self._backend.eigh(B)
-        self._backend.eval(eigenvalues, eigenvectors)
-
-        n_eig = eigenvalues.shape[0]
-        rev_idx = self._backend.arange(n_eig - 1, -1, -1)
-        self._backend.eval(rev_idx)
-        eigenvalues = self._backend.take(eigenvalues, rev_idx, axis=0)
-        eigenvectors = self._backend.take(eigenvectors, rev_idx, axis=1)
+        k = min(2, int(B.shape[0]))
+        eigenvalues, eigenvectors = power_iteration_eigh(self._backend, B, k=k)
         self._backend.eval(eigenvalues, eigenvectors)
 
         pos_mask = eigenvalues > eps

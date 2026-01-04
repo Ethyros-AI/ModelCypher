@@ -23,7 +23,10 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_stitcher import ModelFingerprints
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    power_iteration_eigh,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 if TYPE_CHECKING:
@@ -109,14 +112,8 @@ class ModelFingerprintsProjection:
         B = B + reg_lambda * backend.eye(int(B.shape[0]))
         backend.eval(B)
 
-        eigenvalues, eigenvectors = backend.eigh(B)
-        backend.eval(eigenvalues, eigenvectors)
-
-        n_eig = eigenvalues.shape[0]
-        rev_idx = backend.arange(n_eig - 1, -1, -1)
-        backend.eval(rev_idx)
-        eigenvalues = backend.take(eigenvalues, rev_idx, axis=0)
-        eigenvectors = backend.take(eigenvectors, rev_idx, axis=1)
+        k = min(target_dim, int(B.shape[0]))
+        eigenvalues, eigenvectors = power_iteration_eigh(backend, B, k=k)
         backend.eval(eigenvalues, eigenvectors)
 
         pos_mask = eigenvalues > eps

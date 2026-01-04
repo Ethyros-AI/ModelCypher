@@ -1801,22 +1801,12 @@ def solve_via_cca_procrustes(
         b.eval(gram)
 
         # Eigendecomposition of Gram (gives squared singular values)
-        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
-        gram_dtype = str(gram.dtype)
-        if "bfloat16" in gram_dtype:
-            gram_f32 = b.astype(gram, "float32")
-            b.eval(gram_f32)
-            eigenvalues, eigenvectors = b.eigh(gram_f32)
-        else:
-            eigenvalues, eigenvectors = b.eigh(gram)
-        b.eval(eigenvalues, eigenvectors)
-
-        # Sort descending (eigh gives ascending)
-        order = b.argsort(-eigenvalues)
-        eigenvectors_sorted = b.take(eigenvectors, order, axis=1)
-        eigenvalues_sorted = b.take(eigenvalues, order, axis=0)
+        eigenvalues_sorted, eigenvectors_sorted = power_iteration_eigh(
+            b, gram, k=max_components
+        )
+        b.eval(eigenvalues_sorted, eigenvectors_sorted)
         eigenvalues_sorted = b.maximum(eigenvalues_sorted, b.zeros_like(eigenvalues_sorted))
-        b.eval(eigenvectors_sorted, eigenvalues_sorted)
+        b.eval(eigenvalues_sorted)
 
         total_var_arr = b.sum(eigenvalues_sorted)
         b.eval(total_var_arr)
@@ -1881,14 +1871,8 @@ def solve_via_cca_procrustes(
         cov = cov + reg * b.eye(int(b.shape(cov)[0]))
         b.eval(cov)
 
-        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
-        cov_dtype = str(cov.dtype)
-        if "bfloat16" in cov_dtype:
-            cov_f32 = b.astype(cov, "float32")
-            b.eval(cov_f32)
-            eigvals, eigvecs = b.eigh(cov_f32)
-        else:
-            eigvals, eigvecs = b.eigh(cov)
+        k_cov = int(b.shape(cov)[0])
+        eigvals, eigvecs = power_iteration_eigh(b, cov, k=k_cov)
         b.eval(eigvals, eigvecs)
 
         max_eig_arr = b.max(eigvals)
@@ -1923,7 +1907,7 @@ def solve_via_cca_procrustes(
     b.eval(cross_whitened)
 
     # SVD gives canonical directions
-    U, S, Vt = b.svd(cross_whitened)
+    U, S, Vt = geodesic_svd(b, cross_whitened)
     b.eval(U, S, Vt)
 
     # Canonical correlations (SHOULD be in [0, 1] now!)
@@ -1975,7 +1959,7 @@ def solve_via_cca_procrustes(
     M = b.matmul(b.transpose(Z_s), Z_t)  # [k, k]
     b.eval(M)
 
-    U_proc, _, Vt_proc = b.svd(M)
+    U_proc, _, Vt_proc = geodesic_svd(b, M)
     b.eval(U_proc, Vt_proc)
 
     # Orthogonal rotation R = U @ V^T
