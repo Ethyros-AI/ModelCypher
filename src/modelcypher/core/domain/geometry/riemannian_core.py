@@ -1169,11 +1169,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         backend = self._backend
 
         # Validate inputs
-        backend.eval(mu, geo_from_mu)
         mu_isfinite = backend.isfinite(mu)
         geo_isfinite = backend.isfinite(geo_from_mu)
-        backend.eval(mu_isfinite, geo_isfinite)
-
         mu_nonfinite_arr = backend.sum(1 - backend.astype(mu_isfinite, "float32"))
         geo_nonfinite_arr = backend.sum(1 - backend.astype(geo_isfinite, "float32"))
         backend.eval(mu_nonfinite_arr, geo_nonfinite_arr)
@@ -1200,11 +1197,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         scale = geo_from_mu / chord_dist_safe
 
         # Check for numerical issues
-        backend.eval(scale)
         scale_isinf = backend.isinf(scale)
         scale_isnan = backend.isnan(scale)
-        backend.eval(scale_isinf, scale_isnan)
-
         inf_count_arr = backend.sum(backend.astype(scale_isinf, "float32"))
         nan_count_arr = backend.sum(backend.astype(scale_isnan, "float32"))
         backend.eval(inf_count_arr, nan_count_arr)
@@ -1225,11 +1219,9 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         # Gradient is the weighted mean of log vectors
         gradient = backend.sum(log_vectors * weights_col, axis=0)
-        backend.eval(gradient)
 
         # Check for non-finite values in gradient
         grad_isfinite = backend.isfinite(gradient)
-        backend.eval(grad_isfinite)
         grad_nonfinite_arr = backend.sum(1 - backend.astype(grad_isfinite, "float32"))
         backend.eval(grad_nonfinite_arr)
         has_nonfinite = int(backend.to_scalar(grad_nonfinite_arr)) > 0
