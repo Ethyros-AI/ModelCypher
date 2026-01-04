@@ -138,6 +138,7 @@ class ConceptVolume:
 
     # Cached values for efficiency
     _precision: "Array | None" = field(default=None, repr=False)
+    _geo_from_centroid: "Array | None" = field(default=None, repr=False)
     _log_det_cov: float | None = field(default=None, repr=False)
 
     @property
@@ -252,12 +253,15 @@ class ConceptVolume:
         rg = RiemannianGeometry(backend)
 
         # Distances from centroid to all activations
-        geo_from_centroid = rg._geodesic_distances_from_query(
-            self.raw_activations,
-            centroid_arr,
-            geo_result=self._geodesic_context,
-        )
-        backend.eval(geo_from_centroid)
+        geo_from_centroid = self._geo_from_centroid
+        if geo_from_centroid is None:
+            geo_from_centroid = rg._geodesic_distances_from_query(
+                self.raw_activations,
+                centroid_arr,
+                geo_result=self._geodesic_context,
+            )
+            backend.eval(geo_from_centroid)
+            self._geo_from_centroid = geo_from_centroid
 
         # Geodesic distance from centroid to point uses direct attachment:
         # min_i(geo_centroid_to_i + euclidean(point, i)).
@@ -438,12 +442,15 @@ class ConceptVolume:
         rg = RiemannianGeometry(backend)
 
         # Compute geodesic distances from centroid to all activation points
-        geo_from_centroid = rg._geodesic_distances_from_query(
-            self.raw_activations,
-            centroid_arr,
-            geo_result=self._geodesic_context,
-        )
-        backend.eval(geo_from_centroid)
+        geo_from_centroid = self._geo_from_centroid
+        if geo_from_centroid is None:
+            geo_from_centroid = rg._geodesic_distances_from_query(
+                self.raw_activations,
+                centroid_arr,
+                geo_result=self._geodesic_context,
+            )
+            backend.eval(geo_from_centroid)
+            self._geo_from_centroid = geo_from_centroid
 
         # Compute scales for each query point.
         # Use direct attachment distances to avoid O(n^2) per point.
