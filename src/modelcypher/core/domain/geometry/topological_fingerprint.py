@@ -838,7 +838,8 @@ class BackendTopologicalFingerprint:
         b = self.backend
         pts = b.array(points)
 
-        geo_dist = geodesic_distance_matrix(pts, k_neighbors=None, backend=b)
+        k_neighbors = max(1, n - 1)
+        geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
         b.eval(geo_dist)
         return geo_dist
 

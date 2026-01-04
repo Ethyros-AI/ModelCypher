@@ -5,73 +5,76 @@
 
 ## The Problem: The "Bag of Numbers" Fallacy
 
-Traditional model merging (Task Arithmetic, TIES, SLERP) works well for models initialized from the **same seed** and fine-tuned on different tasks. This is because they share a "Linear Mode Connectivity" (LMC)—their loss landscapes are connected by a linear path, and "Neuron 42" in Model A roughly corresponds to "Neuron 42" in Model B.
+Traditional model merging (Task Arithmetic, TIES, SLERP) works best for models initialized from the **same seed** and fine-tuned on different tasks. This is because they share a linear mode connectivity: neurons and directions are more likely to correspond.
 
-However, for **disparate models** (different random seeds, different architectures, or even different sizes), this assumption fails.
--   **Permutation Symmetry**: Many internal features are only defined up to permutations of hidden dimensions across equivalent parameterizations.
--   **Coordinate mismatch**: Even when two models encode similar features, they may do so in different bases; similarity metrics are often insensitive to orthogonal transforms.
+For **disparate models** (different seeds, architectures, or sizes), this assumption fails.
+- **Permutation symmetry**: internal features are only defined up to permutation.
+- **Coordinate mismatch**: similar features can live in different bases.
 
-Trying to average these weights destroys the information.
+Averaging these weights destroys information.
 
 ## The Solution: Geometric Manifold Stitching
 
-**Manifold Stitching** treats models as **high-dimensional representation spaces** and attempts to reduce mismatch by aligning activations under a fixed probe setup.
+**Manifold Stitching** treats models as **high-dimensional representation spaces** and aligns activations under a fixed probe setup.
 
-> **Analogy (intuition)**: “stitching” is like adding a coordinate transform between two spaces so vectors point in more comparable directions.
+> **Analogy (intuition)**: “stitching” adds a coordinate transform between two spaces so vectors point in comparable directions.
 >
 > **Non-claim**: a successful stitch on a probe corpus does not guarantee downstream capability retention; it must be evaluated.
 
-### 1. The Intersection Map ("Venn Diagram")
-We first determine *where* two models overlap. We don't assume full alignment.
--   **Source Model**: Probed with a standardized probe corpus (see `src/modelcypher/core/domain/geometry/probe_corpus.py`).
--   **Target Model**: Probed with the same corpus.
--   **Alignment**: We compute the **Intersection Map**, identifying which dimensions in Model A correlate with which in Model B.
+### 1. The Intersection Map (Overlap Map)
 
-This creates a “Venn diagram” *analogy* of overlap under that probe setup (see `intersection_maps.md` for details).
+We first determine *where* two models overlap. We do not assume full alignment.
+- **Source Model**: probed with triangulated atlas probes (`TriangulatedProbeBuilder`).
+- **Target Model**: probed with the same probe set.
+- **Alignment**: compute the **Intersection Map**, which matches source/target dimensions using similarity on activation fingerprints.
+
+This is a “Venn diagram” *analogy* of overlap under the probe setup (see `intersection_maps.md` for the operational details).
 
 ### 2. Procrustes Alignment (Rotation)
+
 For the matching intrinsic dimensions, we solve the **Orthogonal Procrustes Problem**:
 
-$$ R^* = \arg\min_R \|A R - B\|_F^2 \quad \text{s.t.} \quad R^T R = I $$
+```
+R* = argmin_R ||A R - B||_F^2   subject to  R^T R = I
+```
 
-Where $A$ and $B$ are the activation matrices of the source and target models on the shared probe corpus.
-The solution is given by SVD:
-$$ U, \Sigma, V^T = \text{SVD}(B^T A) $$
-$$ R^* = U V^T $$
+where A and B are activation matrices of the source and target models on the shared probes. The solution is given by SVD:
 
-This yields an **orthogonal transform** (a least-squares rotation/reflection constraint) that aligns Model A’s activations to Model B’s activations under the probe corpus.
+```
+U, Σ, V^T = SVD(B^T A)
+R* = U V^T
+```
 
-### 3. Stitching Layer
-We insert a learnable (or computed) linear layer between the models.
--   **Input**: Model A's hidden states (rotated).
--   **Output**: Model B's expected input states.
--   **Result**: Reduced representational mismatch, measured by similarity metrics; downstream behavior may still change and must be evaluated.
+This yields an **orthogonal transform** that aligns Model A’s activations to Model B’s activations under the probe corpus.
+
+### 3. Applying the Alignment
+
+The stitching process outputs rotation matrices and alignment clusters. These are used to **transform activations** (or weight-derived representations) before downstream merge steps. The alignment reduces representational mismatch; downstream behavior still needs evaluation.
 
 ## Implementation Details
 
-The implementation in `manifold_stitcher.py` uses rigorous `MLX` linear algebra:
+The implementation in `manifold_stitcher.py` uses the Backend protocol for linear algebra:
 
 ```python
 # Procrustes Alignment in ModelCypher
-m = z_source.T @ z_target
-u, _, vt = mx.linalg.svd(m)
-omega = u @ vt
+m = backend.matmul(backend.transpose(z_source), z_target)
+u, _, vt = geodesic_svd(backend, m)
+omega = backend.matmul(u, vt)
 
 # Sign Correction (Ensure rotation, not reflection)
-if mx.linalg.det(omega) < 0:
-    # ... flip sign of last column ...
+omega = _ensure_proper_rotation(u, vt, omega, backend)
 ```
 
 ### Key Components
 
-1.  **`ProbeCorpus`**: Standardized prompt corpus used to elicit comparable activations (not the semantic prime inventory itself).
-2.  **Semantic prime anchors**: Canonical inventory lives in `src/modelcypher/data/semantic_primes.json` and is surfaced via `mc geometry primes …`.
-3.  **`ContinuousFingerprint`**: A stable signature of a model's activation geometry, preserving magnitude and entropy.
-4.  **`IntersectionMap`**: The calculated correspondence (Venn diagram) between two fingerprints.
+1. **`TriangulatedProbeBuilder`**: builds probe sets from the atlas registry for comparable activations.
+2. **Semantic prime anchors**: canonical inventory in `src/modelcypher/data/semantic_primes.json`, surfaced via `mc geometry primes`.
+3. **`ContinuousFingerprint`**: a stable signature of activation geometry (magnitude + entropy).
+4. **`IntersectionMap`**: correspondence between fingerprints (pre-alignment similarity only).
 
 ## Verification
 
-We evaluate stitching with **representation similarity** (e.g., CKA/cosine on stitched activations) and, when available, downstream task checks.
+We evaluate stitching with **raw representation similarity** (e.g., CKA/cosine on stitched activations) and, when available, downstream task checks.
 
-- Similarity thresholds are heuristic and depend on architecture, probe corpus, and layer.
-- Passing similarity checks is necessary but not sufficient for “safe to merge”.
+- Compare against baselines for the same probe corpus.
+- Avoid fixed thresholds; interpret relative changes and raw deltas.

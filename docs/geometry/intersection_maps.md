@@ -1,7 +1,9 @@
 # Theory: Intersection Maps & Representation Overlap
 
 > **Status**: Core Theory
-> **Reference**: `src/modelcypher/core/domain/geometry/manifold_stitcher.py`
+> **References**:
+> - `src/modelcypher/core/domain/geometry/manifold_stitcher.py`
+> - `src/modelcypher/core/domain/geometry/intersection_similarity.py`
 
 ## The Concept
 
@@ -9,53 +11,65 @@ The **Intersection Map** is a diagnostic of **representation overlap** between t
 
 > **Analogy (intuition)**: a “Venn diagram” of overlap.
 >
-> **Operationalization (what we actually measure)**: overlap is computed from activations on a probe corpus (correlation/CKA/Jaccard-style signals), not from “knowledge” directly.
+> **Operationalization**: overlap is computed from **activation fingerprints** (semantic prime probes), not from weights or raw logits.
 
 ### Working assumption
+
 Two models trained on broadly similar data may encode partially similar features, even if they encode them in different coordinates.
 
-Conceptually, there may exist an approximately shared subspace $\mathcal{S}$ such that:
-$$ \mathcal{M}_A \cap \mathcal{M}_B \approx \mathcal{S} $$
+Conceptually, there may exist an approximately shared subspace:
 
-Where $\mathcal{M}_A$ and $\mathcal{M}_B$ are the activation/representation manifolds induced by the chosen probe corpus and capture method.
+```
+M_A ∩ M_B ≈ S
+```
+
+where M_A and M_B are activation manifolds induced by the probe corpus and capture method.
 
 ## Computing the Map
 
-We cannot compare weights directly. We must compare **activations** on identical inputs.
+We do not compare weights directly. We compare **activation fingerprints** for the same probe set.
 
-1.  **Probe**: Feed both models a "Key" input $X$ (e.g., "The quick brown fox...").
-2.  **Act**: Capture activation vectors $a = M_A(X)$ and $b = M_B(X)$.
-3.  **Correlate**: Compute the pairwise correlation matrix between the neurons of $A$ and $B$.
+1. **Probe**: Run semantic-prime probes on both models.
+2. **Fingerprint**: Build `ActivationFingerprint` per probe (activated dimensions per layer).
+3. **Match**: For each layer, compare source/target activated dimensions using a similarity mode.
 
-$$ C_{ij} = \text{corr}(a_i, b_j) $$
+### Similarity Modes
 
-### The "Aligned" Subspace
-We filter this matrix for strong correlations.
--   **Strong Correlation**: Dimensions $i$ and $j$ behave similarly on the probe corpus. What constitutes "strong" depends on the model pair and probe corpus—calibrate against baseline observations for your specific setup.
--   **Weak Correlation**: Concepts unique to one model (or encoded in a basis we haven't found).
+The intersection map uses similarity metrics over sparse activation signatures:
+- **JACCARD**: set overlap of activated dimensions.
+- **WEIGHTED_JACCARD**: magnitude-weighted overlap.
+- **CKA**: cosine² on sparse activation vectors.
 
-The `IntersectionMap` dataclass captures this:
+Each source dimension is paired with the target dimension that yields the **best similarity** in that layer.
+
+### Output Structure
+
 ```python
 @dataclass
 class IntersectionMap:
     source_model: str
     target_model: str
     dimension_correlations: dict[int, list[DimensionCorrelation]]
-    overall_correlation: float
+    raw_fingerprint_similarity: float
     aligned_dimension_count: int
+    total_source_dims: int
+    total_target_dims: int
+    layer_confidences: list[LayerConfidence]
 ```
+
+`raw_fingerprint_similarity` is **pre-alignment only**. Use CKA separately for post-alignment quality checks.
 
 ## Layer-wise Dynamics
 
-The Intersection Map evolves as data flows through the model depth.
+The Intersection Map evolves across depth because fingerprints are tracked per layer:
 
-1.  **Early Layers (0-5)**: Often higher overlap. Basic token/formatting features can be more similar across families.
-2.  **Middle Layers (5-20)**: Divergence is common. Higher-level features can differ due to architecture, tokenizer, training mix, and fine-tuning.
-3.  **Late Layers (20+)**: Convergence sometimes appears due to the shared objective of producing logits, but it is not guaranteed.
+1. **Early layers**: often higher overlap (shared token/formatting features).
+2. **Middle layers**: divergence is common (architecture and data differences).
+3. **Late layers**: convergence may appear due to shared logit objectives, but it is not guaranteed.
 
 ## Applications
 
 Understanding the Intersection Map allows us to:
-1.  **Guide merging**: Prefer merge methods that focus on regions with measured overlap, reducing destructive interference.
-2.  **Support transfer**: Use overlap diagnostics to decide when an adapter/feature transfer is plausible.
-3.  **Detect drift**: A large drop in overlap between a base model and a fine-tuned variant can indicate representational drift that warrants follow-up evaluation.
+1. **Guide merging**: focus on regions with measured overlap to reduce interference.
+2. **Support transfer**: decide when adapter or feature transfer is plausible.
+3. **Detect drift**: large drops in overlap can indicate representational drift that warrants follow-up evaluation.

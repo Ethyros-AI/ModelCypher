@@ -37,7 +37,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 from modelcypher.core.domain.geometry.model_profile import (
     LayerProfile,
     ModelProfile,
@@ -307,10 +310,12 @@ def compare_profiles(
             src_arr = backend.reshape(backend.array(src_vec), (1, -1))
             tgt_arr = backend.reshape(backend.array(tgt_vec), (1, -1))
             # Check for zero-norm vectors (cosine similarity undefined)
-            src_norm = backend.norm(src_arr)
-            tgt_norm = backend.norm(tgt_arr)
-            backend.eval(src_norm, tgt_norm)
-            if float(backend.to_scalar(src_norm)) > eps and float(backend.to_scalar(tgt_norm)) > eps:
+            norm_inputs = backend.concatenate([src_arr, tgt_arr], axis=0)
+            norms = geodesic_norms(norm_inputs, backend)
+            backend.eval(norms)
+            src_norm = float(backend.to_scalar(norms[0]))
+            tgt_norm = float(backend.to_scalar(norms[1]))
+            if src_norm > eps and tgt_norm > eps:
                 cos_arr, _ = geodesic_pairwise_metrics(src_arr, tgt_arr, backend)
                 backend.eval(cos_arr)
                 semantic_cosine_similarity = float(backend.to_scalar(cos_arr))

@@ -4,171 +4,98 @@ Gromov-Wasserstein (GW) distance measures structural similarity between metric s
 
 ## Mathematical Foundation
 
-### Problem Formulation
-
-Given two metric spaces (X, dX) and (Y, dY) with probability measures μ and ν, the Gromov-Wasserstein distance finds an optimal "soft matching" (coupling) between points that preserves pairwise distance relationships.
-
-The GW objective minimizes:
+Given two metric spaces (X, dX) and (Y, dY) with probability measures μ and ν, the GW objective minimizes:
 
 ```
 GW(μ, ν) = min_γ ∑_{i,j,k,l} L(dX(xi, xk), dY(yj, yl)) · γij · γkl
 ```
 
-Where:
-- γ is a coupling matrix with marginals μ and ν
-- L is a loss function (typically squared: L(a,b) = (a-b)²)
-- dX(xi, xk) is the distance between points i and k in source space
-- dY(yj, yl) is the distance between points j and l in target space
+where γ is a coupling matrix with marginals μ and ν and L is typically squared loss.
 
-### Interpretation
-
-The GW distance quantifies how much the internal geometry of one space must be "distorted" to match another:
-- **GW ≈ 0**: Spaces are nearly isomorphic (identical structure)
-- **GW small**: Similar geometry with minor distortions
-- **GW large**: Fundamentally different structural organization
-
-## Entropic Regularization
-
-Direct GW optimization is computationally expensive (O(n⁴) per iteration). We use entropic regularization to make the problem tractable:
+For squared loss L(a, b) = (a-b)², the objective decomposes into terms that allow efficient tensor products:
 
 ```
-GW_ε(μ, ν) = min_γ GW(γ) + ε · H(γ)
+L(a,b) = a² + b² - 2ab
 ```
 
-Where H(γ) is the entropy of the coupling matrix.
+This decomposition enables O(n²m + nm²) computation per outer iteration instead of O(n²m²).
 
-### Epsilon Parameter Effects
+## Algorithm Used in ModelCypher
 
-| Epsilon | Effect | Use Case |
-|---------|--------|----------|
-| ε < 0.01 | Sharp coupling, slow convergence | Final refinement |
-| ε ≈ 0.05 | Balanced (default) | General use |
-| ε > 0.1 | Diffuse coupling, fast convergence | Quick screening |
+ModelCypher implements GW using a **Frank–Wolfe (conditional gradient)** solver, following Peyré, Cuturi, and Solomon (2016).
 
-The implementation uses epsilon annealing: start with larger ε for fast initial progress, then reduce for precision.
+High-level steps:
+1. Compute the GW gradient using the loss decomposition.
+2. Solve a linear OT subproblem to obtain a descent direction.
+3. Perform an analytic line search to choose the Frank–Wolfe step size.
+4. Update the coupling with the convex combination.
 
-## Sinkhorn Algorithm
+**Important:** The update `T ← (1-α)T + αG` is the Frank–Wolfe step, not heuristic blending.
 
-The entropic GW problem is solved via alternating optimization:
+### Linear OT Subproblem
 
-1. **Outer loop**: Update the cost matrix based on current coupling
-2. **Inner loop**: Sinkhorn iterations to project onto transport polytope
-
-### Sinkhorn Step
-
-Given cost matrix C and regularization ε:
-
-```python
-K[i,j] = exp(-C[i,j] / ε)    # Gibbs kernel
-u, v = 1, 1                   # Dual variables
-
-for iteration in range(max_iter):
-    u = μ / (K @ v)           # Row scaling
-    v = ν / (K.T @ u)         # Column scaling
-
-coupling = diag(u) @ K @ diag(v)
-```
-
-Key properties:
-- Convergence is exponential in number of iterations
-- Numerical stability requires log-domain computation for small ε
-- Each iteration is O(nm) for n×m coupling
-
-## Coupling Matrix Interpretation
-
-The output coupling γ shows how probability mass flows between spaces:
-
-```
-γ[i,j] = "strength of correspondence between source point i and target point j"
-```
-
-Analysis patterns:
-- **Diagonal dominance**: Direct 1-to-1 correspondence
-- **Block structure**: Clustered correspondence
-- **Diffuse rows/columns**: Ambiguous matching (structural mismatch)
-
-## Implementation Details
-
-### Cost Matrix Computation
-
-```python
-cost[i,j] = ∑_{i',j'} L(dX[i,i'], dY[j,j']) · coupling[i',j']
-```
-
-This O(n²m²) computation is the bottleneck. For large point clouds, sampling or approximation is necessary.
+The linear OT subproblem is solved with Sinkhorn iterations. The Sinkhorn epsilon is **derived from the cost matrix scale** (median cost × √machine_epsilon). There are **no user-tuned hyperparameters**; convergence thresholds are derived from dtype precision.
 
 ### Convergence Criteria
 
-The solver terminates when either:
-1. **Coupling change** < threshold: max|γ_new - γ_old| < 1e-5
-2. **Objective change** < threshold: |GW_new - GW_old| / GW_old < 1e-5
-3. **Maximum iterations** reached
+The solver checks change in objective value:
+- Absolute change below √machine_epsilon, or
+- Relative change below √machine_epsilon
 
-### Normalized Distance
+after a minimum number of iterations. The maximum outer iterations are capped.
 
-Raw GW values are scale-dependent. The normalized distance provides a [0,1] interpretable measure:
+### Exact Permutation for Small n
 
-```python
-normalized = 1 - exp(-distance)
+When n = m and n ≤ 8, the solver exhaustively searches permutations to return an exact solution.
+
+## Normalized Distance
+
+The implementation exposes a normalized distance:
+
+```
+normalized_distance = 1 - exp(-distance)
 ```
 
-- 0.0: Identical structures
-- 0.5: Moderate structural difference
-- 1.0: Completely different
+This is used for reporting only; the core distance remains the raw GW value.
 
-### Alignment Score
+## CLI Usage
 
-The inverse exponential provides a similarity metric:
-
-```python
-alignment = exp(-distance)
+```bash
+mc geometry metrics gromov-wasserstein source_points.json target_points.json
 ```
 
-This is useful for relative alignment reporting: higher scores indicate closer
-geometry under this metric.
+Output fields:
+- `distance`
+- `normalizedDistance`
+- `aligned`
+- `converged`
+- `iterations`
+- `couplingShape`
+
+Example output shape (values are illustrative):
+
+```json
+{
+  "_schema": "mc.geometry.gromov_wasserstein.v1",
+  "distance": 0.0,
+  "normalizedDistance": 0.0,
+  "aligned": true,
+  "converged": true,
+  "iterations": 12,
+  "couplingShape": [128, 128]
+}
+```
 
 ## Use in ModelCypher
 
-GW distance is used for:
-1. **Pre-merge alignment**: Measure relative geometry before merging
-2. **Layer correspondence**: Find structurally similar layers across architectures
-3. **Training monitoring**: Detect geometric drift during fine-tuning
-
-### Example Usage
-
-```python
-from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
-
-service = GeometryMetricsService()
-result = service.compute_gromov_wasserstein(
-    source_points=[[0.1, 0.2], [0.3, 0.4], ...],
-    target_points=[[0.15, 0.25], [0.35, 0.45], ...],
-    epsilon=0.05,
-    max_iterations=50,
-)
-payload = service.gromov_wasserstein_payload(result)
-
-print(f"Distance: {result.distance:.4f}")
-print(f"Alignment: {payload['alignmentScore']:.2%}")
-```
-
-## Computational Complexity
-
-| Operation | Complexity | Notes |
-|-----------|------------|-------|
-| Pairwise distances | O(n²d) | d = embedding dimension |
-| Cost matrix update | O(n²m²) | Bottleneck operation |
-| Sinkhorn iteration | O(nm) | Per inner iteration |
-| Total per outer iteration | O(n²m² + nm·I) | I = inner iterations |
-
-For n=m=1000, expect ~seconds per outer iteration on CPU.
+GW distance is used in:
+- `GeometryMetricsService` (`mc geometry metrics gromov-wasserstein`)
+- Geometry validation fixtures (identity/permutation checks)
+- Cross-dimensional projection utilities
+- Low-rank GW experiments
 
 ## References
 
-1. Peyré, G., & Cuturi, M. (2019). *Computational Optimal Transport*. Foundations and Trends in Machine Learning.
-
-2. Mémoli, F. (2011). *Gromov-Wasserstein distances and the metric approach to object matching*. Foundations of Computational Mathematics.
-
-3. Solomon, J., et al. (2016). *Entropic metric alignment for correspondence problems*. ACM Transactions on Graphics.
-
-4. Titouan, V., et al. (2019). *Optimal Transport for structured data with application on graphs*. ICML.
+1. Peyré, G., Cuturi, M., & Solomon, J. (2016). *Gromov-Wasserstein Averaging of Kernel and Distance Matrices* (ICML).
+2. Peyré, G., & Cuturi, M. (2019). *Computational Optimal Transport*.
+3. Mémoli, F. (2011). *Gromov-Wasserstein distances and the metric approach to object matching*.

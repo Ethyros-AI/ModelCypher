@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 35
-- Issues found: 24
-- Issues fixed: 24
+- Audited: 97
+- Issues found: 31
+- Issues fixed: 31
 
 ## Audit Log
 
@@ -470,3 +470,754 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Used non-existent commands and unverified metrics/outputs
   - Fix: Aligned to CLI outputs and replaced tables with real fields
+
+- `docs/geometry/gromov_wasserstein.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (algorithm and CLI usage)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described entropic GW + epsilon tuning not used by implementation
+  - Fix: Documented Frank-Wolfe + Sinkhorn workflow and real output fields
+
+- `docs/geometry/intersection_maps.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (IntersectionMap fields)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Dataclass snippet and terminology mismatched implementation
+  - Fix: Updated fields and clarified pre-alignment fingerprint similarity
+
+- `docs/geometry/manifold_stitching.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (alignment workflow and terminology)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described stitching layer insertion and correlation flow not used by implementation
+  - Fix: Aligned to fingerprint-based intersection and rotation-based alignment outputs
+
+- `docs/geometry/mental_model.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/geometry/parameter_geometry.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (clarified usage of gradient smoothness metrics)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Claimed automatic learning-rate/idle-training behavior not in code
+  - Fix: Reframed as advisory metrics
+
+- `docs/geometry/topological_fingerprints.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (matching algorithm and outputs)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Greedy matching and output fields did not match implementation
+  - Fix: Documented Hungarian assignment, real comparison outputs, and geodesic distances
+
+- `docs/getting_started.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (training flags, backend table, preflight wording)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Incomplete training examples, NumPy backend guidance, and ETA claim in preflight
+  - Fix: Added required training flags, removed NumPy row, and clarified preflight output
+
+- `docs/references/BIBLIOGRAPHY.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/references/arxiv/Ainsworth_2023_Git_ReBasin.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Andriushchenko_2024_Adaptive_Jailbreaks.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Angelopoulos_2021_Conformal_Prediction_Intro.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Arditi_2024_Refusal_Single_Direction.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Azar_2024_IPO.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Bai_2022_Constitutional_AI.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Belrose_2023_Tuned_Lens.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/CAMEx_2025_Fisher_Information.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Chen_2024_Two_Tales_Persona.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Chen_2025_Persona_Vectors_Anthropic.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Christiano_2017_Deep_RL_Human_Preferences.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Deletang_2024_Language_Compression.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Dettmers_2023_QLoRA.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/DiSipio_2024_Information_Geometry_LLM.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/ENIGMA_2025_Geometry_Reasoning.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Hu_2022_LoRA_Low_Rank_Adaptation.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Huang_2025_Safety_Tax.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Huh_2024_Platonic_Representation.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Ilharco_2023_Task_Arithmetic.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Inan_2023_Llama_Guard.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Kossen_2024_Semantic_Entropy_Probes.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Li_2023_Inference_Time_Intervention.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Li_2025_TokAlign.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Liu_2024_MKA_Pruning_Merging.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Lobashev_2025_PRH_Information_Geometry.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Mazeika_2024_HarmBench.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Meng_2024_SimPO.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Model_Stitching_2025.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/NUFILT_2025_Null_Space_Projection.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Naitzat_2020_Topology_Deep_Neural_Networks.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Niu_2025_NSPO_Null_Space.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Olsson_2022_Induction_Heads_ICL.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Ouyang_2022_InstructGPT_RLHF.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Rafailov_2023_DPO.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Robinson_2024_Token_Embeddings_Manifold.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Safety_Polytope_2025.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Scherlis_2022_Polysemanticity_Capacity.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Shah_2023_Persona_Modulation_Jailbreaks.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Shape_Happens_2024.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/TSV_2025_Task_Singular_Vectors.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/TokenSpace_2024_Structure.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Turner_2024_Activation_Addition.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/WUDI_2025_Task_Vector_Subspaces.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Wang_2022_IOI_Circuit_GPT2.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Xue_2025_LoRA_Safety_Alignment.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Yadav_2023_TIES_Merging.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Zhang_2024_Activation_Patching.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Zou_2023_Representation_Engineering.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/Zou_2024_Circuit_Breakers.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/arxiv/tHooft_1993_Dimensional_Reduction.pdf` (binary reference)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: N/A (PDF reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: N/A
+  - Issues: none
+
+- `docs/references/download_arxiv.sh` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (missing arXiv IDs)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Missing several arXiv IDs present in references
+  - Fix: Added missing entries and noted non-arXiv reference
+
+- `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/research/cross-architecture-transplant-2025-12-28.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none

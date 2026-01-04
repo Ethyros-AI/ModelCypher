@@ -279,10 +279,8 @@ class KnowledgeDensityAnalyzer:
 
         # Variance along sample axis (axis=0)
         mean_vec = b.mean(activations, axis=0)
-        b.eval(mean_vec)
         diff = activations - mean_vec
         var_vec = b.mean(diff * diff, axis=0)
-        b.eval(var_vec)
 
         # Mean variance across dimensions
         mean_var = b.mean(var_vec)
@@ -300,14 +298,11 @@ class KnowledgeDensityAnalyzer:
 
         # Pairwise geodesic cosine similarities
         sim_matrix = geodesic_cosine_matrix(activations, b)
-        b.eval(sim_matrix)
 
         # Mean similarity to all other samples (exclude self)
         sim_sum = b.sum(sim_matrix, axis=1) - b.diag(sim_matrix)
-        b.eval(sim_sum)
         denom = float(n_samples - 1)
         mean_per_sample = sim_sum / denom
-        b.eval(mean_per_sample)
         mean_tightness = b.mean(mean_per_sample)
         b.eval(mean_tightness)
         return float(b.to_scalar(mean_tightness))

@@ -61,6 +61,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
@@ -551,8 +552,8 @@ class GateDetector:
         vec = vector if hasattr(vector, "shape") else self._backend.array(vector)
         if len(self._backend.shape(vec)) != 1:
             vec = self._backend.reshape(vec, (-1,))
-        # Two-point geodesic equals direct chord length, so this is exact.
-        norm_arr = self._backend.sqrt(self._backend.sum(vec * vec))
+        vec_row = self._backend.reshape(vec, (1, -1))
+        norm_arr = geodesic_norms(vec_row, self._backend)
         eps = division_epsilon(self._backend, vec)
         norm_safe = self._backend.maximum(norm_arr, self._backend.array(eps))
         return vec / norm_safe

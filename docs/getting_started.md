@@ -7,7 +7,6 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
 | **macOS** (Apple Silicon) | MLX | Default. Unified memory, fast local inference. |
 | **Linux** (NVIDIA GPU) | CUDA | PyTorch CUDA backend for NVIDIA GPUs. |
 | **Linux/Cloud** (TPU/GPU) | JAX | Google TPU pods, JAX GPU backends. |
-| **Any** | NumPy | Testing and CI (no GPU required). |
 
 ## Prerequisites
 
@@ -71,19 +70,50 @@ mc model probe ./models/Llama-2-7b-chat-mlx --output json
 Train LoRA adapters (including "sidecar"-style adapters) and manage training jobs.
 
 ```bash
-# Preflight a training configuration (fit + rough ETA estimates)
+# Preflight a training configuration (fit checks + validation)
 mc train preflight \
     --model ./models/Mistral-7B-v0.1-mlx \
     --dataset data/safety.jsonl \
+    --learning-rate 1e-5 \
+    --batch-size 2 \
+    --epochs 1 \
+    --sequence-length 512 \
+    --grad-accum 4 \
+    --warmup-steps 100 \
+    --weight-decay 0.01 \
+    --gradient-checkpointing \
+    --mixed-precision \
+    --compute-precision bfloat16 \
+    --optimizer-type adamw \
+    --seed 42 \
+    --deterministic \
     --lora-rank 8 \
-    --lora-alpha 16
+    --lora-alpha 16 \
+    --lora-dropout 0.05 \
+    --lora-targets q_proj --lora-targets v_proj \
+    --out ./output
 
 # Start training
 mc train start \
     --model ./models/Mistral-7B-v0.1-mlx \
     --dataset data/safety.jsonl \
+    --learning-rate 1e-5 \
+    --batch-size 2 \
+    --epochs 1 \
+    --sequence-length 512 \
+    --grad-accum 4 \
+    --warmup-steps 100 \
+    --weight-decay 0.01 \
+    --gradient-checkpointing \
+    --mixed-precision \
+    --compute-precision bfloat16 \
+    --optimizer-type adamw \
+    --seed 42 \
+    --deterministic \
     --lora-rank 8 \
     --lora-alpha 16 \
+    --lora-dropout 0.05 \
+    --lora-targets q_proj --lora-targets v_proj \
     --out adapters/safety_sidecar
 ```
 

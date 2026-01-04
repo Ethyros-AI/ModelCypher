@@ -8,7 +8,7 @@ Topological fingerprinting uses persistent homology to characterize the "shape" 
 
 Persistent homology studies topological features (connected components, loops, voids) across multiple scales. Instead of choosing a single threshold, we track when features appear ("birth") and disappear ("death") as we vary the scale parameter.
 
-Key insight: Features that persist across many scales are "real" structure; short-lived features are noise.
+Key insight: Features that persist across many scales are stable structure; short-lived features are likely noise.
 
 ### Betti Numbers
 
@@ -22,12 +22,12 @@ Betti numbers count topological features by dimension:
 
 For representation analysis, β₀ and β₁ are most informative:
 - **β₀ = 1**: Single coherent representation space
-- **β₀ > 1**: Fragmented representations (potential problem)
+- **β₀ > 1**: Fragmented representations (compare to baseline)
 - **β₁ > 0**: Cyclic structure (may indicate periodicity or redundancy)
 
 ## Vietoris-Rips Filtration
 
-The Vietoris-Rips complex is built by connecting points within distance ε:
+The Vietoris–Rips complex is built by connecting points within distance ε:
 
 ```
 At scale ε:
@@ -61,6 +61,10 @@ Points far from the diagonal (high persistence) represent significant structure.
 
 ## Implementation Details
 
+### Distance Matrix
+
+Pairwise distances are computed via geodesic distances (`geodesic_distance_matrix`) with k-neighbors set to n-1 to preserve cycles in small point sets.
+
 ### 0-Dimensional Persistence (Components)
 
 Uses Union-Find with the "elder rule":
@@ -89,7 +93,7 @@ def union_with_persistence(i, j, current_distance):
 
 ### 1-Dimensional Persistence (Loops)
 
-Detecting cycles requires tracking when edges form loops without merging components:
+Cycles are detected using a triangle approximation:
 
 ```python
 for edge (i, j, distance) in sorted_edges:
@@ -106,7 +110,7 @@ for edge (i, j, distance) in sorted_edges:
         union(i, j)
 ```
 
-Triangle filling: A cycle through edge (i,j) dies when vertex k exists such that all three edges (i,j), (i,k), (j,k) are present.
+Cycle candidates are capped (20) for stability on large point sets.
 
 ### Persistence Summary Statistics
 
@@ -120,12 +124,11 @@ class TopologySummary:
     persistence_entropy: float  # Distribution uniformity
 ```
 
-**Persistence Entropy**: Measures how uniformly distributed feature lifetimes are.
-```python
+**Persistence Entropy** measures how uniformly distributed feature lifetimes are:
+
+```
 entropy = -∑ (p_i * log(p_i))  where p_i = persistence_i / total_persistence
 ```
-- High entropy: Many features of similar importance
-- Low entropy: Dominated by few features
 
 ## Distance Metrics
 
@@ -137,91 +140,43 @@ The bottleneck distance is the maximum cost of optimally matching persistence di
 d_B(D₁, D₂) = inf_γ max_{p ∈ D₁} ||p - γ(p)||_∞
 ```
 
-Where γ is a bijection (matching) between diagrams, and unmatched points can be matched to the diagonal.
-
-Properties:
-- Captures worst-case structural difference
-- Robust to small perturbations
-- O(n³) for optimal computation (we use greedy approximation)
-
 ### Wasserstein Distance
 
-The p-Wasserstein distance sums all matching costs:
+The p-Wasserstein distance sums all matching costs (p=1 in the implementation):
 
-```
-W_p(D₁, D₂) = [inf_γ ∑_{p ∈ D₁} ||p - γ(p)||^p]^(1/p)
-```
-
-For p=1 (used in implementation):
 ```
 W_1(D₁, D₂) = inf_γ ∑_{p ∈ D₁} ||p - γ(p)||_1
 ```
 
-Properties:
-- Captures total structural difference
-- More sensitive to multiple small differences than bottleneck
-- Better for continuous optimization
+Both distances use an optimal assignment (Hungarian algorithm).
 
-### Greedy Matching Approximation
+## Comparison and Reporting
 
-Full optimal transport is O(n³). We use greedy matching:
+`TopologicalFingerprint.compare(...)` returns raw metrics plus a similarity score:
 
 ```python
-def greedy_bottleneck(diagram_a, diagram_b):
-    max_cost = 0
-    used_b = set()
-
-    for a in diagram_a.points:
-        best_match = None
-        best_cost = infinity
-
-        for j, b in enumerate(diagram_b.points):
-            if j in used_b:
-                continue
-            cost = max(|a.birth - b.birth|, |a.death - b.death|)
-            if cost < best_cost:
-                best_cost = cost
-                best_match = j
-
-        diagonal_cost = (a.death - a.birth) / 2
-        if best_match and best_cost < diagonal_cost:
-            used_b.add(best_match)
-            max_cost = max(max_cost, best_cost)
-        else:
-            max_cost = max(max_cost, diagonal_cost)
-
-    return max_cost
+comparison = TopologicalFingerprint.compare(fp_a, fp_b)
+# comparison.bottleneck_distance
+# comparison.wasserstein_distance
+# comparison.betti_difference
+# comparison.similarity_score
+# comparison.betti_numbers_match
 ```
 
-## Comparison and Alignment
-
-### Alignment Signals
-
-Report raw topology metrics directly: bottleneck distance, Wasserstein distance,
-and Betti number differences. If a binary aligned flag is required, derive it
-from machine epsilon:
-
-```python
-eps = machine_epsilon(backend, backend.array([1.0]))
-aligned = (bottleneck <= eps and wasserstein <= eps and betti_diff == 0)
-```
-
-### Reporting Guidance
-
-Report raw metrics and aligned. Avoid pass/fail thresholds.
-If thresholds are required, derive them from baseline distributions for the
-model family and domain.
+Report raw metrics and `betti_numbers_match`. If thresholds are required, derive them from baselines for your model family and domain.
 
 ## Use in ModelCypher
 
-Topological fingerprints are used for:
-
-1. **Model comparison**: Architecture-invariant similarity
-2. **Merge alignment**: Detect divergent representation structures
-3. **Training monitoring**: Track manifold collapse or fragmentation
-4. **Anomaly detection**: Identify unusual representation topology
+Topological fingerprints are used in:
+1. `GeometryMetricsService` (`mc geometry metrics topological-fingerprint`)
+2. Dimension-constraint invariance checks
+3. Standalone comparison workflows
 
 ### Example Usage
+
+```bash
+mc geometry metrics topological-fingerprint points.json
+```
 
 ```python
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
@@ -244,30 +199,12 @@ print(f"Persistence entropy: {result.persistence_entropy:.3f}")
 | Edge sorting | O(n² log n) | For Rips filtration |
 | Union-Find | O(n² α(n)) | α = inverse Ackermann |
 | Cycle detection | O(n³) | Triangle search |
-| Bottleneck (greedy) | O(k²) | k = diagram points |
-
-For n=1000 points, expect ~seconds for full computation.
+| Bottleneck/Wasserstein | O(k³) | k = diagram points |
 
 ## Limitations
 
-1. **Computational cost**: Scales poorly beyond ~5000 points
-2. **Approximations**: Greedy matching is not optimal
-3. **1D persistence**: Simplified cycle detection may miss some features
-4. **Higher dimensions**: β₂+ requires full Rips complex (exponential)
+1. **Computational cost**: scales poorly for large point sets.
+2. **1D persistence**: triangle approximation may miss higher-order cycles.
+3. **Higher dimensions**: β₂+ requires full Rips complexes (exponential).
 
-For large point clouds, consider:
-- Subsampling (random or landmark-based)
-- Witness complexes
-- Approximate persistent homology
-
-## References
-
-1. Edelsbrunner, H., & Harer, J. (2010). *Computational Topology: An Introduction*. American Mathematical Society.
-
-2. Carlsson, G. (2009). *Topology and Data*. Bulletin of the American Mathematical Society.
-
-3. Cohen-Steiner, D., Edelsbrunner, H., & Harer, J. (2007). *Stability of Persistence Diagrams*. Discrete & Computational Geometry.
-
-4. Zomorodian, A., & Carlsson, G. (2005). *Computing Persistent Homology*. Discrete & Computational Geometry.
-
-5. Chazal, F., et al. (2014). *Stochastic Convergence of Persistence Landscapes and Silhouettes*. SoCG.
+For large point clouds, consider subsampling (random or landmark-based).
