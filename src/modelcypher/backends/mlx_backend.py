@@ -201,6 +201,31 @@ class MLXBackend(Backend):
         self.safe.eval(result)
         return result
 
+    def floyd_warshall(self, dist: Array) -> Array:
+        """Compute all-pairs shortest paths using Floyd-Warshall on device."""
+        mx = self.mx
+        dist_arr = dist if type(dist).__module__.startswith("mlx") else mx.array(dist)
+        if dist_arr.ndim != 2 or dist_arr.shape[0] != dist_arr.shape[1]:
+            raise ValueError("floyd_warshall requires a square [n, n] matrix")
+        n = int(dist_arr.shape[0])
+        if n <= 1:
+            return dist_arr
+
+        cache_key = f"floyd_warshall_{n}_{dist_arr.dtype}"
+        compiled = self._compiled_cache.get(cache_key)
+        if compiled is None:
+            def _fw(mat: Array) -> Array:
+                out = mat
+                for k in range(n):
+                    via = out[:, k : k + 1] + out[k : k + 1, :]
+                    out = mx.minimum(out, via)
+                return out
+
+            compiled = self.compile(_fw)
+            self._compiled_cache[cache_key] = compiled
+
+        return compiled(dist_arr)
+
     # --- Quantization (lazy - no eval) ---
     def quantize(
         self,

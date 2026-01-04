@@ -29,6 +29,16 @@ Status: pass | fail | blocked | needs-doc-update
 | mc --help | pass | Works after help-only backend initialization skip. |
 | mc geometry --help | pass | Previously crashed due to MLX init on help; now OK. |
 | mc system status | pass | MLX probe reports NSRangeException during runtime init. |
+| mc inventory --output json | pass | Lists registry + system snapshot. |
+| mc storage status --output json | pass | Returns disk usage breakdown. |
+| mc job list --output json | pass | Returns empty list when no jobs recorded. |
+| mc checkpoint list --output json | pass | Returns empty list when no checkpoints recorded. |
+| mc eval list --output json | pass | Returns existing eval history entries. |
+| mc compare list --output json | pass | Returns comparison sessions. |
+| mc model list --output json | pass | Registry contains stale path (see Runtime Findings). |
+| mc model probe /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | fail | Unhandled RuntimeError from MLX probe (stack trace). |
+| mc model validate-merge --source /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | fail | Unhandled RuntimeError from MLX probe (stack trace). |
+| mc geometry validate | fail | Backend selection raises RuntimeError; unhandled in CLI. |
 
 ## Known Issues
 - write_error signature mismatch: many call sites pass output_format/pretty but function does not accept them.
@@ -36,6 +46,11 @@ Status: pass | fail | blocked | needs-doc-update
 - geometry metrics commands ignore global output format (write_output called without CLI context).
 - Duplicate/unused mc infer command defined in app.py; mc infer group is the actual entrypoint.
 - MLX runtime crash on macOS 26.2 with M-series GPU (see MLX issue #2691).
+
+## Runtime Findings
+- `mc model list` returns a model path that no longer exists: `/Volumes/CodeCypher/models/hf-cache/hub/models--mlx-community--Qwen2-0.5B/...`.
+- `mc model probe` and `mc model validate-merge` throw unhandled RuntimeError when MLX probe fails.
+- `mc geometry validate` throws unhandled RuntimeError when backend auto-detection fails.
 
 ## Docs Mismatches (Initial)
 - docs/FAQ.md references `mc geometry manifold analyze` (command does not exist).

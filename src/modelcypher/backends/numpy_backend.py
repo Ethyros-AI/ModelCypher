@@ -296,6 +296,20 @@ class NumpyBackend(Backend):
         q, r = self.np.linalg.qr(array)
         return q, r
 
+    def floyd_warshall(self, dist: Array) -> Array:
+        """Compute all-pairs shortest paths using Floyd-Warshall on CPU."""
+        mat = self.np.asarray(dist)
+        if mat.ndim != 2 or mat.shape[0] != mat.shape[1]:
+            raise ValueError("floyd_warshall requires a square [n, n] matrix")
+        n = int(mat.shape[0])
+        if n <= 1:
+            return mat
+        out = mat.copy()
+        for k in range(n):
+            via = out[:, k : k + 1] + out[k : k + 1, :]
+            out = self.np.minimum(out, via)
+        return out
+
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
         return self.np.take(array, indices, axis=axis)

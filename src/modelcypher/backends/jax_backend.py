@@ -50,6 +50,7 @@ class JAXBackend(Backend):
         self.jax = jax
         self.jnp = jnp
         self._rng_key = jax.random.PRNGKey(0)
+        self._compiled_cache: dict[str, Callable] = {}
 
     def _next_key(self) -> Any:
         """Get next PRNG key and update internal state.
@@ -281,6 +282,30 @@ class JAXBackend(Backend):
     def qr(self, array: Array) -> tuple[Array, Array]:
         q, r = self.jnp.linalg.qr(array)
         return q, r
+
+    def floyd_warshall(self, dist: Array) -> Array:
+        """Compute all-pairs shortest paths using Floyd-Warshall on device."""
+        mat = self.jnp.array(dist)
+        if mat.ndim != 2 or mat.shape[0] != mat.shape[1]:
+            raise ValueError("floyd_warshall requires a square [n, n] matrix")
+        n = int(mat.shape[0])
+        if n <= 1:
+            return mat
+
+        cache_key = f"floyd_warshall_{n}_{mat.dtype}"
+        compiled = self._compiled_cache.get(cache_key)
+        if compiled is None:
+            def _fw(d: Array) -> Array:
+                def body(k, current):
+                    via = current[:, k : k + 1] + current[k : k + 1, :]
+                    return self.jnp.minimum(current, via)
+
+                return self.jax.lax.fori_loop(0, n, body, d)
+
+            compiled = self.jax.jit(_fw)
+            self._compiled_cache[cache_key] = compiled
+
+        return compiled(mat)
 
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:

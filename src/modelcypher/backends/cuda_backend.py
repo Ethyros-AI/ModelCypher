@@ -29,6 +29,7 @@ class CUDABackend(Backend):
         except ImportError as exc:
             raise RuntimeError("torch is required for the CUDA backend") from exc
         self.torch = torch
+        self._compiled_cache: dict[str, Callable] = {}
 
     def _tensor(self, data: Any, dtype: Any | None = None) -> Array:
         dtype = dtype or self.torch.float32
@@ -324,6 +325,33 @@ class CUDABackend(Backend):
 
     def qr(self, array: Array) -> tuple[Array, Array]:
         return self.torch.linalg.qr(array)
+
+    def floyd_warshall(self, dist: Array) -> Array:
+        """Compute all-pairs shortest paths using Floyd-Warshall on device."""
+        dist_arr = dist if hasattr(dist, "device") else self._tensor(dist)
+        if dist_arr.ndim != 2 or dist_arr.shape[0] != dist_arr.shape[1]:
+            raise ValueError("floyd_warshall requires a square [n, n] matrix")
+        n = int(dist_arr.shape[0])
+        if n <= 1:
+            return dist_arr
+
+        cache_key = f"floyd_warshall_{n}_{dist_arr.dtype}"
+        compiled = self._compiled_cache.get(cache_key)
+        if compiled is None:
+            def _fw(mat: Array) -> Array:
+                out = mat
+                for k in range(n):
+                    via = out[:, k : k + 1] + out[k : k + 1, :]
+                    out = self.torch.minimum(out, via)
+                return out
+
+            try:
+                compiled = self.compile(_fw)
+            except Exception:
+                compiled = _fw
+            self._compiled_cache[cache_key] = compiled
+
+        return compiled(dist_arr)
 
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:

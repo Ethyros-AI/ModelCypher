@@ -364,6 +364,18 @@ class Backend(Protocol):
         ...
     def qr(self, array: Array) -> tuple[Array, Array]: ...
 
+    # --- Graph Algorithms ---
+    def floyd_warshall(self, dist: Array) -> Array:
+        """Compute all-pairs shortest paths via Floyd-Warshall.
+
+        Args:
+            dist: Square distance matrix [n, n]. Uses current values as initial edges.
+
+        Returns:
+            Array of shortest-path distances [n, n].
+        """
+        ...
+
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array: ...
 

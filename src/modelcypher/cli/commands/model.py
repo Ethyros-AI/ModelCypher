@@ -310,6 +310,16 @@ def model_probe(
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model probe failed",
+            detail=str(exc),
+            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
 
     payload = {
         "architecture": result.architecture,
@@ -369,6 +379,16 @@ def model_validate_merge(
             title="Merge validation failed",
             detail=str(exc),
             hint="Ensure both paths point to valid model directories",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1002",
+            title="Merge validation failed",
+            detail=str(exc),
+            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
@@ -506,6 +526,16 @@ def model_analyze_alignment(
             title="Alignment analysis failed",
             detail=str(exc),
             hint="Ensure both paths point to valid model directories",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1003",
+            title="Alignment analysis failed",
+            detail=str(exc),
+            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)

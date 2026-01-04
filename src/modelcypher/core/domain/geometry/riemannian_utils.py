@@ -878,21 +878,7 @@ class RiemannianGeometry:
             )
 
         # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])
-        # Vectorized per iteration of k
-        geo_dist_arr = adj
-        for k in range(n):
-            # dist_ik: column k broadcast to all columns
-            dist_ik = geo_dist_arr[:, k : k + 1]  # [n, 1]
-            # dist_kj: row k broadcast to all rows
-            dist_kj = geo_dist_arr[k : k + 1, :]  # [1, n]
-            # Path through k
-            via_k = dist_ik + dist_kj  # [n, n]
-            # Update shortest paths
-            geo_dist_arr = backend.minimum(geo_dist_arr, via_k)
-            # Periodic eval to avoid graph buildup
-            if k % 50 == 0:
-                backend.eval(geo_dist_arr)
-
+        geo_dist_arr = backend.floyd_warshall(adj)
         backend.eval(geo_dist_arr)
 
         # Diagnostic: check geodesic matrix after Floyd-Warshall (only when debugging)
