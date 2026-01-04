@@ -894,16 +894,19 @@ class ManifoldStitcher:
             num_centroids = int(centroids_arr.shape[0])
             if num_centroids == 0:
                 return b.zeros((n, 0))
-            rows = []
-            for ci in range(num_centroids):
-                geo_from_centroid = riemannian._geodesic_distances_from_query(
-                    pts,
-                    centroids_arr[ci],
-                    geo_result=geodesic_result,
-                )
-                b.eval(geo_from_centroid)
-                rows.append(geo_from_centroid)
-            return b.stack(rows, axis=1)
+            # Attach centroids to the manifold graph with Euclidean edge weights.
+            cent_sq = b.sum(centroids_arr * centroids_arr, axis=1, keepdims=True)
+            pts_sq = b.sum(pts_arr * pts_arr, axis=1, keepdims=True)
+            cross = b.matmul(centroids_arr, b.transpose(pts_arr))
+            dist_sq = cent_sq + b.transpose(pts_sq) - 2.0 * cross
+            dist_sq = b.maximum(dist_sq, b.zeros_like(dist_sq))
+            euc_dist = b.sqrt(dist_sq)
+
+            candidates = b.expand_dims(euc_dist, axis=2) + b.expand_dims(
+                geodesic_dist_matrix, axis=0
+            )
+            dists = b.min(candidates, axis=1)
+            return b.transpose(dists)
 
         # K-Means++ Initialization using actual data points as initial centroids
         steps = min(k, n)

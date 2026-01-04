@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_cosine_batch,
     geodesic_norms,
+    geodesic_pairwise_metrics,
 )
 
 if TYPE_CHECKING:
@@ -76,7 +77,7 @@ class GradientConsistency:
     """Measures whether anchors form monotonic gradients along axes."""
 
     power_monotonic: bool
-    power_correlation: float  # Spearman correlation with expected ordering
+    power_correlation: float  # Geodesic correlation on rank ordering
     kinship_monotonic: bool
     kinship_correlation: float
     formality_monotonic: bool
@@ -89,7 +90,7 @@ class PowerGradientResult:
 
     power_axis_detected: bool
     power_direction: "Array"  # Unit vector pointing "up" in status
-    status_correlation: float  # Correlation between activation position and expected status
+    status_correlation: float  # Geodesic correlation between position and expected status
     high_status_anchors: list[str]
     low_status_anchors: list[str]
 
@@ -144,6 +145,27 @@ class SocialGeometryAnalyzer:
 
     def __init__(self, backend: "Backend"):
         self.backend = backend
+
+    @staticmethod
+    def _geodesic_correlation(
+        backend: "Backend", values_a: list[float], values_b: list[float]
+    ) -> float:
+        if len(values_a) != len(values_b) or len(values_a) < 2:
+            return 0.0
+        a_arr = backend.array(values_a)
+        b_arr = backend.array(values_b)
+        mean_a = backend.mean(a_arr)
+        mean_b = backend.mean(b_arr)
+        centered_a = a_arr - mean_a
+        centered_b = b_arr - mean_b
+        centered_a_mat = backend.reshape(centered_a, (1, -1))
+        centered_b_mat = backend.reshape(centered_b, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(centered_a_mat, centered_b_mat, backend)
+        backend.eval(cos_arr)
+        if cos_arr.size == 0:
+            return 0.0
+        corr = float(backend.to_scalar(cos_arr[0]))
+        return 0.0 if is_nan(corr, backend) else corr
 
     def _to_array(self, activations: dict[str, any]) -> tuple[list[str], "Array"]:
         """Convert activation dict to backend array matrix."""
@@ -249,8 +271,6 @@ class SocialGeometryAnalyzer:
             if len(indices) < 3:
                 return False, 0.0
 
-            eps = division_epsilon(backend, X_pca)
-
             # Use take + tolist() for O(1) extraction instead of O(n) scalar extractions
             pc1_col = X_pca[:, 0]
             gathered = backend.take(pc1_col, backend.array(indices))
@@ -270,19 +290,8 @@ class SocialGeometryAnalyzer:
             pos_ranks = rank(positions)
             exp_ranks = rank(expected)
 
-            # Spearman correlation = Pearson correlation of ranks
-            n = len(positions)
-            mean_pos = sum(pos_ranks) / n
-            mean_exp = sum(exp_ranks) / n
-
-            num = sum((pos_ranks[i] - mean_pos) * (exp_ranks[i] - mean_exp) for i in range(n))
-            den_pos = sqrt_scalar(sum((pos_ranks[i] - mean_pos) ** 2 for i in range(n)), backend)
-            den_exp = sqrt_scalar(sum((exp_ranks[i] - mean_exp) ** 2 for i in range(n)), backend)
-
-            if den_pos < eps or den_exp < eps:
-                corr = 0.0
-            else:
-                corr = num / (den_pos * den_exp)
+            # Spearman correlation using geodesic correlation on ranks
+            corr = SocialGeometryAnalyzer._geodesic_correlation(backend, pos_ranks, exp_ranks)
 
             # Check monotonicity
             diffs = [positions[i + 1] - positions[i] for i in range(len(positions) - 1)]
@@ -337,22 +346,10 @@ class SocialGeometryAnalyzer:
         positions = [float(x) for x in backend.tolist(gathered)]
         expected_levels = [power_levels[n] for n in power_names]
 
-        # Pearson correlation
-        n = len(positions)
-        mean_pos = sum(positions) / n
-        mean_exp = sum(expected_levels) / n
-        num = sum((positions[i] - mean_pos) * (expected_levels[i] - mean_exp) for i in range(n))
-        den_pos = sqrt_scalar(sum((positions[i] - mean_pos) ** 2 for i in range(n)), backend)
-        den_exp = sqrt_scalar(sum((expected_levels[i] - mean_exp) ** 2 for i in range(n)), backend)
-
-        eps = division_epsilon(backend, X_pca)
-        if den_pos < eps or den_exp < eps:
-            correlation = 0.0
-        else:
-            correlation = num / (den_pos * den_exp)
-
-        if is_nan(correlation, backend):
-            correlation = 0.0
+        # Geodesic correlation between positions and expected levels
+        correlation = SocialGeometryAnalyzer._geodesic_correlation(
+            backend, positions, expected_levels
+        )
 
         # Compute power direction vector
         low_status = [n for n in power_names if power_levels[n] <= 2]

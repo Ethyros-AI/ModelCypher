@@ -438,7 +438,6 @@ class ConceptVolume:
             )
 
         backend.eval(points_arr)
-        n_points = int(points_arr.shape[0])
         rg = RiemannianGeometry(backend)
 
         # Compute geodesic distances from centroid to all activation points
@@ -452,28 +451,25 @@ class ConceptVolume:
             backend.eval(geo_from_centroid)
             self._geo_from_centroid = geo_from_centroid
 
-        # Compute scales for each query point.
-        # Use direct attachment distances to avoid O(n^2) per point.
-        scales = []
+        # Compute geodesic distances to centroid for all points at once.
+        pts_sq = backend.sum(points_arr * points_arr, axis=1, keepdims=True)
+        acts_sq = backend.sum(self.raw_activations * self.raw_activations, axis=1, keepdims=True)
+        cross = backend.matmul(points_arr, backend.transpose(self.raw_activations))
+        dist_sq = pts_sq + backend.transpose(acts_sq) - 2.0 * cross
+        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+        euc_dist = backend.sqrt(dist_sq)
+        total_dists = euc_dist + backend.reshape(geo_from_centroid, (1, -1))
+        geo_dist = backend.min(total_dists, axis=1)
+
+        # Chord length from centroid to each point (geodesic equals Euclidean for 2 points).
+        diff_sq = backend.sum(diff * diff, axis=1)
+        diff_sq = backend.maximum(diff_sq, backend.zeros_like(diff_sq))
+        diff_norms = backend.sqrt(diff_sq)
+
         eps = machine_epsilon(backend, diff)
-        for i in range(n_points):
-            point_i = points_arr[i]
-            diff_nodes = self.raw_activations - point_i
-            dist_sq = backend.sum(diff_nodes * diff_nodes, axis=1)
-            dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-            euc_dist = backend.sqrt(dist_sq)
-            total_dists = geo_from_centroid + euc_dist
-            geo_dist = backend.min(total_dists)
-            diff_i = diff[i]
-            diff_vec = backend.reshape(diff_i, (1, -1))
-            diff_norm_arr = geodesic_norms(diff_vec, backend)
-            scale = backend.where(
-                diff_norm_arr > eps,
-                geo_dist / diff_norm_arr,
-                backend.ones_like(diff_norm_arr),
-            )
-            scales.append(scale)
-        scales_arr = backend.stack(scales, axis=0)
+        safe_norms = backend.maximum(diff_norms, backend.full(diff_norms.shape, eps))
+        scales_arr = geo_dist / safe_norms
+        scales_arr = backend.where(diff_norms > eps, scales_arr, backend.ones_like(scales_arr))
         scales_col = backend.reshape(scales_arr, (-1, 1))
         tangent_vectors = diff * scales_col
 

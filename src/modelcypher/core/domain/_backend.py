@@ -149,23 +149,78 @@ def reset_default_backend() -> None:
     _default_backend = None
 
 
+def _is_sandboxed_environment() -> bool:
+    """Check if running in a sandboxed environment (VSCode extension, etc.)."""
+    # VSCode/Claude Code extension indicators
+    sandbox_indicators = [
+        "VSCODE_PID",
+        "VSCODE_CWD",
+        "TERM_PROGRAM_VERSION",  # Often set by VSCode terminal
+    ]
+    # Check if parent process is codex (Claude Code)
+    if any(os.environ.get(var) for var in sandbox_indicators):
+        return True
+    return False
+
+
 def _probe_mlx_runtime() -> tuple[bool, str | None]:
-    """Probe MLX runtime initialization in a subprocess to avoid hard crashes."""
+    """Probe MLX runtime initialization in a subprocess to avoid hard crashes.
+
+    Uses environment variables to suppress crash dialogs on macOS.
+    """
     code = "import mlx.core as mx; mx.random.key(0); mx.zeros((1,))"
+
+    # Environment variables to suppress crash reporting/dialogs
+    probe_env = os.environ.copy()
+    probe_env.update({
+        # Suppress Apple crash reporter dialog
+        "LLVM_DISABLE_CRASH_REPORT": "1",
+        # Disable os_log activity tracing
+        "OS_ACTIVITY_MODE": "disable",
+        # Prevent core dumps
+        "MALLOC_CHECK_": "0",
+    })
+
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],
             capture_output=True,
             text=True,
             check=False,
+            env=probe_env,
+            timeout=30,  # Prevent hanging
         )
+    except subprocess.TimeoutExpired:
+        return False, "MLX runtime probe timed out (30s)"
     except Exception as exc:
         return False, f"MLX runtime probe failed: {exc}"
 
     if result.returncode == 0:
         return True, None
 
+    # Check for sandbox-related failures
+    is_sandboxed = _is_sandboxed_environment()
+
+    # Parse error details
     detail = (result.stderr or result.stdout).strip()
+
+    # Detect Metal device initialization failure (SIGABRT = -6)
+    if result.returncode == -6 or (not detail and result.returncode != 0):
+        if is_sandboxed:
+            detail = (
+                "MLX crashed initializing Metal GPU. This process appears to be running "
+                "in a sandboxed environment (VSCode extension) that may block GPU access. "
+                "Try running ModelCypher from Terminal.app directly, or set MC_BACKEND=numpy "
+                "to use CPU fallback."
+            )
+        else:
+            detail = (
+                f"MLX crashed initializing Metal GPU (exit code {result.returncode}). "
+                "This may indicate a Metal driver issue or GPU access restriction. "
+                "Set MC_DISABLE_MLX=1 to skip MLX, or MC_BACKEND=numpy for CPU fallback."
+            )
+
     if not detail:
         detail = f"MLX runtime probe exited with code {result.returncode}"
+
     return False, detail

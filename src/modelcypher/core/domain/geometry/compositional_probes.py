@@ -190,8 +190,8 @@ class CompositionalProbes:
                 angles_a.extend(analyses_a[i].component_angles)
                 angles_b.extend(analyses_b[i].component_angles)
 
-        bary_corr = CompositionalProbes._pearson(weights_a, weights_b)
-        ang_corr = CompositionalProbes._pearson(angles_a, angles_b)
+        bary_corr = CompositionalProbes._geodesic_correlation(weights_a, weights_b)
+        ang_corr = CompositionalProbes._geodesic_correlation(angles_a, angles_b)
         # Equal weights - let individual correlations speak for themselves
         score = (max(0.0, bary_corr) + max(0.0, ang_corr)) / 2.0
 
@@ -205,7 +205,9 @@ class CompositionalProbes:
         )
 
     @staticmethod
-    def _pearson(a: list[float], b_list: list[float], backend: "Backend | None" = None) -> float:
+    def _geodesic_correlation(
+        a: list[float], b_list: list[float], backend: "Backend | None" = None
+    ) -> float:
         if len(a) < 2 or len(b_list) < 2:
             return 0.0
 

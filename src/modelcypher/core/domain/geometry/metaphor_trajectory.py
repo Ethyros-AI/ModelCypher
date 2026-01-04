@@ -36,19 +36,16 @@ Example:
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.domain.geometry.numerical_stability import is_nan
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import CMTMapping
@@ -149,7 +146,7 @@ class ConvergenceProfile:
     """Mean CKA in last 25% of layers."""
 
     trajectory_monotonicity: float
-    """Spearman correlation of layer index with CKA (positive = increasing)."""
+    """Geodesic correlation of layer index ranks with CKA (positive = increasing)."""
 
     layer_count: int
     """Total number of layers analyzed."""
@@ -181,22 +178,22 @@ def _compute_spearman_correlation(x: list[float], y: list[float]) -> float:
     rank_x = rank(x)
     rank_y = rank(y)
 
-    # Compute Pearson correlation on ranks (Spearman correlation).
-    # INTENTIONAL EUCLIDEAN: This is the standard correlation formula using
-    # Euclidean norms. Correlation is a statistical measure, not a geometric
-    # distance on a high-dimensional manifold.
-    mean_x = sum(rank_x) / n
-    mean_y = sum(rank_y) / n
-
-    num = sum((rank_x[i] - mean_x) * (rank_y[i] - mean_y) for i in range(n))
-    denom_x = sum((rank_x[i] - mean_x) ** 2 for i in range(n))
-    denom_y = sum((rank_y[i] - mean_y) ** 2 for i in range(n))
-
-    denom = (denom_x * denom_y) ** 0.5
-    if denom < _MACHINE_EPS:
+    # Spearman correlation using geodesic correlation on ranks.
+    backend = get_default_backend()
+    rank_x_arr = backend.array(rank_x)
+    rank_y_arr = backend.array(rank_y)
+    mean_x = backend.mean(rank_x_arr)
+    mean_y = backend.mean(rank_y_arr)
+    centered_x = rank_x_arr - mean_x
+    centered_y = rank_y_arr - mean_y
+    centered_x_mat = backend.reshape(centered_x, (1, -1))
+    centered_y_mat = backend.reshape(centered_y, (1, -1))
+    cos_arr, _ = geodesic_pairwise_metrics(centered_x_mat, centered_y_mat, backend)
+    backend.eval(cos_arr)
+    if cos_arr.size == 0:
         return 0.0
-
-    return num / denom
+    corr = float(backend.to_scalar(cos_arr[0]))
+    return 0.0 if is_nan(corr, backend) else corr
 
 
 def compute_convergence_profile(trajectory: MetaphorTrajectory) -> ConvergenceProfile:

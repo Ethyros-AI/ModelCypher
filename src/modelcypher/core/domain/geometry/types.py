@@ -283,9 +283,9 @@ class ConsistencyResult:
     analyses_b : list of CompositionAnalysis
         Analyses from model B.
     barycentric_correlation : float
-        Pearson correlation of barycentric weights.
+        Geodesic correlation of barycentric weights.
     angular_correlation : float
-        Pearson correlation of component angles.
+        Geodesic correlation of component angles.
     consistency_score : float
         Composite consistency score.
     """

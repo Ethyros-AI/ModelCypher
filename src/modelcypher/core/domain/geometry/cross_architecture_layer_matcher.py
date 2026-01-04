@@ -51,8 +51,10 @@ from dataclasses import dataclass
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    is_nan,
     machine_epsilon,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -378,26 +380,21 @@ class CrossArchitectureLayerMatcher:
 
         rank_x = ranks(x)
         rank_y = ranks(y)
-        mean_x = sum(rank_x) / float(n)
-        mean_y = sum(rank_y) / float(n)
-
-        # INTENTIONAL EUCLIDEAN: This is Spearman rank correlation, a statistical
-        # measure defined by the Pearson formula on ranks. The denominator uses
-        # Euclidean norms because this is the standard correlation formula,
-        # not a geometric distance on a high-dimensional manifold.
-        sum_xy = 0.0
-        sum_x2 = 0.0
-        sum_y2 = 0.0
-        for i in range(n):
-            dx = rank_x[i] - mean_x
-            dy = rank_y[i] - mean_y
-            sum_xy += dx * dy
-            sum_x2 += dx * dx
-            sum_y2 += dy * dy
-        denom = (sum_x2 * sum_y2) ** 0.5
         backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array([denom]))
-        return sum_xy / denom if denom > eps else 0.0
+        rank_x_arr = backend.array(rank_x)
+        rank_y_arr = backend.array(rank_y)
+        mean_x = backend.mean(rank_x_arr)
+        mean_y = backend.mean(rank_y_arr)
+        centered_x = rank_x_arr - mean_x
+        centered_y = rank_y_arr - mean_y
+        centered_x_mat = backend.reshape(centered_x, (1, -1))
+        centered_y_mat = backend.reshape(centered_y, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(centered_x_mat, centered_y_mat, backend)
+        backend.eval(cos_arr)
+        if cos_arr.size == 0:
+            return 0.0
+        corr = float(backend.to_scalar(cos_arr[0]))
+        return 0.0 if is_nan(corr, backend) else corr
 
     @staticmethod
     def _compute_weighted_cka_matrix(
