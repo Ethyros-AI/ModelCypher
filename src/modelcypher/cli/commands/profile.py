@@ -34,6 +34,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.validation import validate_file_exists, validate_model_path
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
@@ -77,6 +78,7 @@ def inspect_profile(
     )
 
     context = _context(ctx)
+    validate_file_exists(profile_path, description="Profile", context=context)
 
     try:
         profile = ModelProfile.load(profile_path)
@@ -125,6 +127,12 @@ def compare_profiles_cmd(
     from modelcypher.core.domain.geometry.profile_comparison import compare_profiles
 
     context = _context(ctx)
+
+    # Validate input files early
+    validate_file_exists(source_path, description="Source profile", context=context)
+    validate_file_exists(target_path, description="Target profile", context=context)
+    if baseline_path:
+        validate_file_exists(baseline_path, description="Baseline profile", context=context)
 
     try:
         source = ModelProfile.load(source_path)
@@ -185,6 +193,11 @@ def import_profile(
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
 
     context = _context(ctx)
+
+    # Validate input files early
+    validate_file_exists(source_path, description="Source profile", context=context)
+    if base_path:
+        validate_file_exists(base_path, description="Base profile", context=context)
 
     # Load base profile if provided
     base_profile = None
@@ -256,6 +269,10 @@ def merge_profiles(
     if not profiles:
         typer.echo("No profiles provided", err=True)
         raise typer.Exit(1)
+
+    # Validate all input files exist before doing any work
+    for path in profiles:
+        validate_file_exists(path, description="Profile", context=context)
 
     # Load and merge profiles
     merged = None
@@ -419,6 +436,7 @@ def generate_profile(
     from modelcypher.core.use_cases.model_profiler_service import ModelProfilerService
 
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
     service = ModelProfilerService()
 
     # Start with empty profile

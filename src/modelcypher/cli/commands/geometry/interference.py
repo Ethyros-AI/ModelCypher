@@ -29,6 +29,7 @@ import typer
 from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.validation import validate_model_path
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
@@ -61,6 +62,10 @@ def predict_interference(
 ) -> None:
     """Analyze merge effort and interference between source and target models."""
     context = _context(ctx)
+
+    # Validate model paths early
+    validate_model_path(source_path, context=context)
+    validate_model_path(target_path, context=context)
 
     from modelcypher.core.domain.domains import AtlasDomain
     from modelcypher.core.domain.geometry.interference_predictor import (
@@ -341,6 +346,7 @@ def compute_volume(
     latent space: centroid, covariance, geodesic radius, curvature.
     """
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
@@ -487,6 +493,7 @@ def null_space_filter(
     Based on MINGLE (arXiv:2509.21413).
     """
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend

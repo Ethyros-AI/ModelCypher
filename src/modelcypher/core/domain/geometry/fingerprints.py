@@ -112,6 +112,7 @@ class ModelFingerprintsProjection:
 
         if method != ProjectionMethod.PCA:
             raise ProjectionError(f"Unsupported method: {method}")
+        # Geodesic MDS is the only supported projection; PCA is an alias.
 
         # 1. Feature Selection
         feature_list = self._select_features(fingerprints, max_features, layers)

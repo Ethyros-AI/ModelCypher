@@ -166,6 +166,7 @@ class ModelFingerprintsProjection:
             raise ProjectionError(
                 f"Projection method {method.value.upper()} is not available in-app yet."
             )
+        # Geodesic MDS is the only supported projection; PCA is an alias.
 
         feature_list = ModelFingerprintsProjection._select_features(
             fingerprints=fingerprints,

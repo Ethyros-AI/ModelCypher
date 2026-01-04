@@ -163,6 +163,7 @@ def atlas_dimensionality(
 ) -> None:
     """Measure intrinsic dimension for UnifiedAtlas probes at a model layer."""
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
@@ -256,6 +257,7 @@ def atlas_dimensionality_study(
 ) -> None:
     """Run atlas dimensionality across all layers and summarize structure."""
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
