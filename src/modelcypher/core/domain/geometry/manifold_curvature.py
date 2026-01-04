@@ -1140,12 +1140,13 @@ class OllivierRicciCurvature:
         self._derived_adaptive_strength = adaptive_strength
 
         measures = self._build_lazy_measures(adjacency_list, max_degree, n)
+        kernel = self._prepare_sinkhorn_kernel(geo_result.distances)
+        cost_matrix = kernel[0]
 
         # 3. Compute edge curvatures (batch Sinkhorn per source node)
         edge_curvatures: list[EdgeCurvature] = []
         processed_edges: set[tuple[int, int]] = set()
         eps = division_epsilon(backend, geo_result.distances)
-        cost_matrix = geo_result.distances
 
         for source_idx in range(n):
             targets = adjacency_list.get(source_idx, [])
@@ -1187,7 +1188,7 @@ class OllivierRicciCurvature:
             mu_batch = backend.take(measures, source_idx_arr, axis=0)
             nu_batch = backend.take(measures, backend.array(valid_targets), axis=0)
             w1_batch = self._compute_wasserstein_1_batch(
-                mu_batch, nu_batch, cost_matrix
+                mu_batch, nu_batch, cost_matrix, kernel=kernel
             )
             backend.eval(w1_batch)
             w1_list = [float(x) for x in backend.tolist(w1_batch)]
@@ -1394,6 +1395,51 @@ class OllivierRicciCurvature:
         stacked = backend.stack(measures, axis=0)
         backend.eval(stacked)
         return stacked
+
+    def _prepare_sinkhorn_kernel(
+        self,
+        cost_matrix: "Array",
+    ) -> tuple["Array", "Array", "Array", float, float]:
+        """Prepare Sinkhorn kernel from a fixed cost matrix."""
+        backend = self._backend
+        cost_matrix = backend.array(cost_matrix)
+
+        eps = division_epsilon(backend, cost_matrix)
+        floor = tiny_value(backend, cost_matrix)
+
+        finite_mask = backend.isfinite(cost_matrix)
+        dtype = cost_matrix.dtype if hasattr(cost_matrix, "dtype") else None
+        neg_inf = -float(backend.finfo(dtype).max)
+        finite_vals = backend.where(
+            finite_mask, cost_matrix, backend.full(cost_matrix.shape, neg_inf)
+        )
+        finite_max_arr = backend.max(finite_vals)
+        backend.eval(finite_max_arr)
+        finite_max = float(backend.to_scalar(finite_max_arr))
+        finite_max = max(finite_max, eps)
+        cost_matrix = backend.where(
+            finite_mask,
+            cost_matrix,
+            backend.full(cost_matrix.shape, finite_max),
+        )
+
+        cost_max_arr = backend.max(cost_matrix)
+        backend.eval(cost_max_arr)
+        cost_max = float(backend.to_scalar(cost_max_arr))
+        epsilon = cost_max * eps if cost_max > 0 else eps
+        threshold = eps
+
+        cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
+        cost_centered = cost_matrix - cost_min
+        log_K = -cost_centered / max(epsilon, eps)
+
+        min_log = log_scalar(floor, backend)
+        log_K = backend.maximum(log_K, backend.full(log_K.shape, min_log))
+        K = backend.exp(log_K)
+        K = backend.maximum(K, backend.full(K.shape, floor))
+        K_T = backend.transpose(K)
+        backend.eval(K, K_T)
+        return cost_matrix, K, K_T, floor, threshold
 
     def _compute_wasserstein_1(
         self,

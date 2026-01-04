@@ -94,10 +94,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    geodesic_pinv,
     geodesic_svd,
     machine_epsilon,
-    power_iteration_eigh,
     regularization_epsilon,
     sqrt_scalar,
 )
@@ -338,7 +336,7 @@ class GramAligner:
         b.eval(residual_pinv_arr)
         residual_val = float(b.to_scalar(residual_pinv_arr))
         rel_residual = residual_val / (target_norm_val + reg_threshold)
-        candidates.append((rel_residual, F_pinv, "geodesic_pinv"))
+        candidates.append((rel_residual, F_pinv, "native_pinv"))
 
         # Select lowest-error method
         if not candidates:
@@ -393,13 +391,13 @@ class GramAligner:
         )
         candidates.append((procrustes_err, F_gram, "geodesic_procrustes"))
 
-        # Method 2: Power iteration eigendecomposition for Gram inverse
+        # Method 2: Native eigendecomposition for Gram inverse (EXACT, no approximation)
         gram = b.matmul(source, b.transpose(source))
         gram_f32 = b.astype(gram, "float32")
 
-        n = int(gram_f32.shape[0])
-        k = min(n, 50)
-        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k)
+        # Use ALL eigenvalues - no k=50 approximation
+        eigvals, eigvecs = b.eigh(gram_f32)
+        b.eval(eigvals, eigvecs)
 
         # Check if positive definite (all eigenvalues positive)
         min_eig_arr = b.min(eigvals)
@@ -430,17 +428,18 @@ class GramAligner:
             b.eval(residual_eig_arr)
             residual_val = float(b.to_scalar(residual_eig_arr))
             rel_residual = residual_val / (target_norm_val + eps)
-            candidates.append((rel_residual, F_eig, "power_iteration_eigh"))
+            candidates.append((rel_residual, F_eig, "native_eigh"))
 
-        # Method 3: Geodesic pseudo-inverse
-        source_pinv = geodesic_pinv(b, source)
+        # Method 3: Native pseudo-inverse (EXACT Moore-Penrose, no regularization)
+        source_pinv = b.pinv(source)
+        b.eval(source_pinv)
         F_pinv = b.matmul(source_pinv, target)
         reconstructed = b.matmul(source, F_pinv)
         residual_pinv_arr = geodesic_norms(b.reshape(reconstructed - target, (1, -1)), b)
         b.eval(residual_pinv_arr)
         residual_val = float(b.to_scalar(residual_pinv_arr))
         rel_residual = residual_val / (target_norm_val + eps)
-        candidates.append((rel_residual, F_pinv, "geodesic_pinv"))
+        candidates.append((rel_residual, F_pinv, "native_pinv"))
 
         # Select lowest-error method
         if not candidates:
@@ -771,12 +770,9 @@ class GramAligner:
         K_t_f32 = b.astype(K_t_c, "float32")
         b.eval(K_s_f32, K_t_f32)
 
-        n = int(K_s_f32.shape[0])
-        k = min(n, 50)  # Use top-50 eigenvectors for efficiency
-
-        # GPU-only power iteration eigendecomposition - iterates until convergence
-        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k)
-        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k)
+        # Native eigendecomposition - ALL eigenvalues, no approximation
+        eig_s, V_s = b.eigh(K_s_f32)
+        eig_t, V_t = b.eigh(K_t_f32)
         b.eval(eig_s, V_s, eig_t, V_t)
 
         regularization = self._regularization if self._regularization is not None else 0.0
@@ -898,15 +894,14 @@ class GramAligner:
         K_s_c_local = b.matmul(b.matmul(H, K_s), H)
         b.eval(K_s_c_local)
 
-        # GPU-only power iteration eigendecomposition for matrix square roots
+        # Native eigendecomposition for matrix square roots - ALL eigenvalues, no approximation
         K_s_f32 = b.astype(K_s_c_local, "float32")
         K_t_f32 = b.astype(K_t_c, "float32")
         b.eval(K_s_f32, K_t_f32)
 
-        n = int(K_s_f32.shape[0])
-        k = min(n, 50)  # Use top-50 eigenvectors for efficiency
-        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k)
-        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k)
+        # Use ALL eigenvalues - no k=50 approximation
+        eig_s, V_s = b.eigh(K_s_f32)
+        eig_t, V_t = b.eigh(K_t_f32)
         b.eval(eig_s, V_s, eig_t, V_t)
 
         # Sample-space approach with dtype-derived regularization (no cascade)

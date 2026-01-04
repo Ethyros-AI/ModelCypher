@@ -192,8 +192,13 @@ class MLXBackend(Backend):
             # We always want compact SVD, so compute_uv=True
             compute_uv = True
 
-        # MLX SVD supports batched inputs; use default stream to stay on device.
-        result = self.mx.linalg.svd(array, compute_uv=compute_uv)
+        # MLX SVD supports batched inputs; use device stream when available.
+        try:
+            result = self.mx.linalg.svd(array, compute_uv=compute_uv)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
         if compute_uv:
             u, s, vt = result
             self.safe.eval(u, s, vt)
@@ -578,7 +583,12 @@ class MLXBackend(Backend):
         det(A) = det(U) * sign(permutation)
         where PA = LU and det(L) = 1 (unit diagonal).
         """
-        p, L, U = self.mx.linalg.lu(array)
+        try:
+            p, L, U = self.mx.linalg.lu(array)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            p, L, U = self.mx.linalg.lu(array, stream=self.mx.cpu)
         self.safe.eval(p, L, U)
 
         diag_U = self.mx.diag(U)
@@ -612,17 +622,32 @@ class MLXBackend(Backend):
         if array.dtype in (self.mx.bfloat16, self.mx.float16):
             array = array.astype(self.mx.float32)
             self.safe.eval(array)
-        eigenvalues, eigenvectors = self.mx.linalg.eigh(array)
+        try:
+            eigenvalues, eigenvectors = self.mx.linalg.eigh(array)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            eigenvalues, eigenvectors = self.mx.linalg.eigh(array, stream=self.mx.cpu)
         self.safe.eval(eigenvalues, eigenvectors)
         return eigenvalues, eigenvectors
 
     def solve(self, a: Array, b: Array) -> Array:
-        arr = self.mx.linalg.solve(a, b)
+        try:
+            arr = self.mx.linalg.solve(a, b)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
         self.safe.eval(arr)
         return arr
 
     def inv(self, array: Array) -> Array:
-        arr = self.mx.linalg.inv(array)
+        try:
+            arr = self.mx.linalg.inv(array)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            arr = self.mx.linalg.inv(array, stream=self.mx.cpu)
         self.safe.eval(arr)
         return arr
 
@@ -631,7 +656,12 @@ class MLXBackend(Backend):
         # Cast to float32, compute, then cast back to original dtype
         original_dtype = array.dtype
         array_f32 = array.astype(self.mx.float32) if "bfloat" in str(original_dtype) else array
-        arr = self.mx.linalg.pinv(array_f32)
+        try:
+            arr = self.mx.linalg.pinv(array_f32)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            arr = self.mx.linalg.pinv(array_f32, stream=self.mx.cpu)
         self.safe.eval(arr)
         # Cast back to original dtype if needed
         if "bfloat" in str(original_dtype):
@@ -650,7 +680,12 @@ class MLXBackend(Backend):
         return self.mx.sum(self.mx.diag(array))
 
     def qr(self, array: Array) -> tuple[Array, Array]:
-        q, r = self.mx.linalg.qr(array)
+        try:
+            q, r = self.mx.linalg.qr(array)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            q, r = self.mx.linalg.qr(array, stream=self.mx.cpu)
         self.safe.eval(q, r)
         return q, r
 

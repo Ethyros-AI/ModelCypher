@@ -48,66 +48,20 @@ from modelcypher.core.domain.geometry.vector_math import (
 
 
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
-    """Compute pseudo-inverse using geodesic-friendly Gram regularization.
+    """Compute EXACT Moore-Penrose pseudo-inverse using native backend operation.
 
-    For high-dimensional manifolds (8kD+), flat-space SVD is inaccurate.
-    This uses regularized Gram matrix inversion which stays on GPU.
+    Uses native b.pinv() which computes the exact pseudo-inverse via SVD.
+    No regularization, no approximation - correctness over efficiency.
 
-    For CKA=1.0 transforms (which preserve Gram structure), F is nearly
-    orthogonal in representation space, so pinv(F) ≈ F.T with scaling.
-
-    Formula: pinv(F) = (F.T @ F + λI)^{-1} @ F.T
-    Computed via Neumann series to stay on GPU.
+    CKA=1.0 requires exact pseudo-inverse. Any regularization or approximation
+    introduces error that prevents perfect kernel alignment.
     """
     b = backend
     F = b.astype(b.array(F), "float32")
     b.eval(F)
 
-    src_dim = int(F.shape[0])
-    tgt_dim = int(F.shape[1])
-
-    # Gram matrix: G = F.T @ F [tgt_dim, tgt_dim]
-    G = b.matmul(b.transpose(F), F)
-    b.eval(G)
-
-    # Regularization from trace (data-derived, not arbitrary)
-    trace_G = b.trace(G)
-    b.eval(trace_G)
-    trace_val = float(b.to_scalar(trace_G))
-    reg = regularization_epsilon(b, F)
-    lambda_reg = max(reg, trace_val / tgt_dim * 0.01) if tgt_dim > 0 else reg
-
-    # Regularized Gram: G_reg = G + λI
-    G_reg = G + lambda_reg * b.eye(tgt_dim, dtype="float32")
-    b.eval(G_reg)
-
-    # Neumann series for (G_reg)^{-1}:
-    # (G_reg)^{-1} = (1/λ_eff) * Σ_{k=0}^{K} (I - G/λ_eff)^k
-    # where λ_eff = λ + trace(G)/d
-    lambda_eff = lambda_reg + trace_val / tgt_dim if tgt_dim > 0 else lambda_reg + reg
-
-    # First-order approximation (sufficient for well-conditioned CKA=1.0 transforms)
-    # (G_reg)^{-1} ≈ (1/λ_eff) * I - (1/λ_eff²) * (G - (trace/d)*I)
-    inv_lambda = 1.0 / lambda_eff
-    mean_diag = trace_val / tgt_dim if tgt_dim > 0 else 0.0
-
-    # G_centered = G - mean_diag * I
-    G_centered = G - mean_diag * b.eye(tgt_dim, dtype="float32")
-    b.eval(G_centered)
-
-    # G_reg_inv ≈ inv_lambda * I - inv_lambda² * G_centered
-    G_reg_inv = inv_lambda * b.eye(tgt_dim, dtype="float32") - (inv_lambda ** 2) * G_centered
-
-    # Refine with one Newton-Schulz iteration: X = X @ (2I - G @ X)
-    # This doubles the accuracy
-    GX = b.matmul(G_reg, G_reg_inv)
-    b.eval(GX)
-    two_I = 2.0 * b.eye(tgt_dim, dtype="float32")
-    G_reg_inv = b.matmul(G_reg_inv, two_I - GX)
-    b.eval(G_reg_inv)
-
-    # pinv(F) = G_reg_inv @ F.T  [tgt_dim, src_dim]
-    F_pinv = b.matmul(G_reg_inv, b.transpose(F))
+    # EXACT Moore-Penrose pseudo-inverse - no approximation
+    F_pinv = b.pinv(F)
     b.eval(F_pinv)
 
     return F_pinv

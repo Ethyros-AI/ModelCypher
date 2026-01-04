@@ -672,18 +672,20 @@ def power_iteration_eigh(
     k: int = 10,
     use_ritz: bool = True,
 ) -> tuple[Array, Array]:
-    """Compute top-k eigenvalues/eigenvectors via backend eigh or power iteration.
+    """Compute EXACT eigendecomposition using native backend operation.
 
-    Prefer backend.eigh for exact decomposition (batched where supported),
-    with a power-iteration fallback if eigh fails.
+    Uses native b.eigh() which computes exact eigendecomposition.
+    No power iteration, no truncation - correctness over efficiency.
 
-    Iterates until convergence (eigenvalues stop changing within machine epsilon).
-    No arbitrary iteration limits - we find the exact decomposition.
+    CKA=1.0 requires exact eigendecomposition. Any approximation
+    (power iteration, truncation) introduces error that prevents
+    perfect kernel alignment.
 
     Args:
         backend: Compute backend.
         matrix: Symmetric matrix [n, n].
-        k: Number of top eigenvectors to compute.
+        k: Number of top eigenvectors to return. The FULL decomposition
+           is always computed; only the return value is truncated.
 
     Returns:
         (eigenvalues, eigenvectors) where:
@@ -699,97 +701,23 @@ def power_iteration_eigh(
     if k == 0:
         return b.zeros((0,), dtype="float32"), b.zeros((n, 0), dtype="float32")
 
-    if k >= n:
-        try:
-            eigenvalues_full, eigenvectors_full = b.eigh(matrix)
-            b.eval(eigenvalues_full, eigenvectors_full)
-            order = b.argsort(-eigenvalues_full)
-            b.eval(order)
-            eigenvalues = b.take(eigenvalues_full, order, axis=0)
-            eigenvectors = b.take(eigenvectors_full, order, axis=1)
-            b.eval(eigenvalues, eigenvectors)
-            return eigenvalues, eigenvectors
-        except Exception:
-            pass
-    eps = machine_epsilon(b, matrix)
-    convergence_tol = sqrt_scalar(eps, b)  # sqrt(machine_epsilon) for convergence
-
-    # Initialize with diverse vectors (not all ones)
-    V_cols = []
-    for j in range(k):
-        col = b.ones((n,), dtype="float32")
-        # Add position-based diversity
-        if j > 0:
-            indices = b.arange(n, dtype="float32")
-            col = col + 0.1 * (indices / n) * j
-        b.eval(col)
-        V_cols.append(col)
-    V = b.stack(V_cols, axis=1)
-    V = gram_schmidt_orthogonalize(b, V)
-    b.eval(V)
-
-    prev_eigenvalues = None
-
-    # Iterate until convergence - no arbitrary limits
-    while True:
-        # Apply matrix: V = M @ V
-        V = b.matmul(matrix, V)
-        b.eval(V)
-
-        # Orthogonalize via Gram-Schmidt
-        V = gram_schmidt_orthogonalize(b, V)
-        b.eval(V)
-
-        # Compute Rayleigh quotients for eigenvalues
-        MV = b.matmul(matrix, V)
-        b.eval(MV)
-
-        # Vectorized Rayleigh quotients: λ_j = v_j^T @ M @ v_j for all j
-        eigenvalues = b.sum(V * MV, axis=0)
-        b.eval(eigenvalues)
-
-        # Check convergence: eigenvalues stopped changing
-        if prev_eigenvalues is not None:
-            diff = b.abs(eigenvalues - prev_eigenvalues)
-            max_diff_arr = b.max(diff)
-            b.eval(max_diff_arr)
-            max_diff = float(b.to_scalar(max_diff_arr))
-
-            # Also check relative convergence for large eigenvalues
-            max_eig_arr = b.max(b.abs(eigenvalues))
-            b.eval(max_eig_arr)
-            max_eig = float(b.to_scalar(max_eig_arr))
-            rel_tol = convergence_tol * max(1.0, max_eig)
-
-            if max_diff < rel_tol:
-                break
-
-        prev_eigenvalues = eigenvalues
-
-    if use_ritz and k > 1:
-        # Ritz refinement: project matrix onto subspace and diagonalize
-        # This corrects eigenvector rotation within the converged subspace
-        # H = V^T @ M @ V is the projected matrix (k x k)
-        H = b.matmul(b.transpose(V), b.matmul(matrix, V))
-        b.eval(H)
-
-        # Diagonalize H via power iteration to stay on backend
-        ritz_eigenvalues, Q = power_iteration_eigh(b, H, k=k, use_ritz=False)
-        b.eval(ritz_eigenvalues, Q)
-
-        # Rotate V by Q to get true eigenvectors: V_final = V @ Q
-        V = b.matmul(V, Q)
-        eigenvalues = ritz_eigenvalues
-        b.eval(V, eigenvalues)
+    # EXACT eigendecomposition - no approximation
+    eigenvalues_full, eigenvectors_full = b.eigh(matrix)
+    b.eval(eigenvalues_full, eigenvectors_full)
 
     # Sort by descending eigenvalue
-    order = b.argsort(-eigenvalues)
+    order = b.argsort(-eigenvalues_full)
     b.eval(order)
-    eigenvalues = b.take(eigenvalues, order, axis=0)
-    V = b.take(V, order, axis=1)
-    b.eval(eigenvalues, V)
+    eigenvalues_sorted = b.take(eigenvalues_full, order, axis=0)
+    eigenvectors_sorted = b.take(eigenvectors_full, order, axis=1)
+    b.eval(eigenvalues_sorted, eigenvectors_sorted)
 
-    return eigenvalues, V
+    # Return top-k (but decomposition was exact)
+    eigenvalues = eigenvalues_sorted[:k]
+    eigenvectors = eigenvectors_sorted[:, :k]
+    b.eval(eigenvalues, eigenvectors)
+
+    return eigenvalues, eigenvectors
 
 
 def geodesic_svd(
@@ -886,15 +814,13 @@ def geodesic_pinv(
     backend: Backend,
     array: Array,
 ) -> Array:
-    """Compute pseudo-inverse using Gram regularization (GPU-only).
+    """Compute EXACT Moore-Penrose pseudo-inverse using native backend operation.
 
-    This replaces safe_pinv which uses SVD (CPU on MLX). Uses regularized
-    Gram matrix inversion with Neumann series, which runs entirely on GPU.
+    Uses native b.pinv() which computes the exact pseudo-inverse via SVD.
+    No regularization, no approximation - correctness over efficiency.
 
-    For CKA=1.0 transforms (which preserve Gram structure), the matrix is
-    nearly orthogonal, so pinv(F) ≈ F.T with scaling.
-
-    Formula: pinv(A) = (A.T @ A + λI)^{-1} @ A.T
+    CKA=1.0 requires exact pseudo-inverse. Any regularization or approximation
+    introduces error that prevents perfect kernel alignment.
 
     Args:
         backend: Compute backend.
@@ -904,49 +830,11 @@ def geodesic_pinv(
         Pseudo-inverse [n, m].
     """
     b = backend
-    A = b.astype(b.array(array), "float32")
+    A = b.array(array)
     b.eval(A)
 
-    m = int(A.shape[0])
-    n = int(A.shape[1])
-    reg = regularization_epsilon(b, A)
-
-    # Gram matrix: G = A.T @ A [n, n]
-    G = b.matmul(b.transpose(A), A)
-    b.eval(G)
-
-    # Regularization from trace (data-derived)
-    trace_G = b.trace(G)
-    b.eval(trace_G)
-    trace_val = float(b.to_scalar(trace_G))
-    lambda_reg = max(reg, trace_val / n * 0.01) if n > 0 else reg
-
-    # Regularized Gram: G_reg = G + λI
-    G_reg = G + lambda_reg * b.eye(n, dtype="float32")
-    b.eval(G_reg)
-
-    # Neumann series approximation for (G_reg)^{-1}
-    lambda_eff = lambda_reg + trace_val / n if n > 0 else lambda_reg + reg
-    inv_lambda = 1.0 / lambda_eff
-    mean_diag = trace_val / n if n > 0 else 0.0
-
-    # G_centered = G - mean_diag * I
-    G_centered = G - mean_diag * b.eye(n, dtype="float32")
-    b.eval(G_centered)
-
-    # First-order approximation: (G_reg)^{-1} ≈ inv_lambda * I - inv_lambda² * G_centered
-    G_reg_inv = inv_lambda * b.eye(n, dtype="float32") - (inv_lambda ** 2) * G_centered
-    b.eval(G_reg_inv)
-
-    # Newton-Schulz refinement: X = X @ (2I - G @ X)
-    GX = b.matmul(G_reg, G_reg_inv)
-    b.eval(GX)
-    two_I = 2.0 * b.eye(n, dtype="float32")
-    G_reg_inv = b.matmul(G_reg_inv, two_I - GX)
-    b.eval(G_reg_inv)
-
-    # pinv(A) = G_reg_inv @ A.T  [n, m]
-    A_pinv = b.matmul(G_reg_inv, b.transpose(A))
+    # EXACT Moore-Penrose pseudo-inverse - no approximation
+    A_pinv = b.pinv(A)
     b.eval(A_pinv)
 
     return A_pinv
