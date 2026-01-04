@@ -65,7 +65,6 @@ from .manifold_curvature import (
 from .riemannian_utils import (
     GeodesicDistanceResult,
     RiemannianGeometry,
-    derive_k_neighbors,
 )
 
 logger = logging.getLogger(__name__)
@@ -646,11 +645,8 @@ class RiemannianDensityEstimator:
         # Compute geodesic context for proper log map in density_at
         # k is derived from the data using elbow detection on k-NN distances
         rg = RiemannianGeometry(backend)
-        k_neighbors = derive_k_neighbors(activations, backend)
-        geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
-        if not geodesic_context.connected:
-            geodesic_context = rg.geodesic_distances(activations, k_neighbors=None)
-            k_neighbors = geodesic_context.k_neighbors
+        geodesic_context = rg.geodesic_distances(activations, k_neighbors=None)
+        k_neighbors = geodesic_context.k_neighbors
 
         # Compute centroid using Fréchet mean - the only correct method on curved manifolds
         # Arithmetic mean is WRONG as it doesn't minimize squared geodesic distances

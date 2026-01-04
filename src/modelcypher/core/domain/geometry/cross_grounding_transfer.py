@@ -585,9 +585,12 @@ class CrossGroundingSynthesizer:
             # when there are insufficient common anchors
             target_stress = RelationalStressProfile(
                 anchor_distances={},
-                stress_vector=self._backend.zeros((0,)),
-                nearest_anchors=[],
-                geodesic_radius=0.0,
+                normalized_distances={},
+                local_density=0.0,
+                curvature_signature=(),
+                activation_magnitude=0.0,
+                nearest_anchors=(),
+                stress_vector=(),
             )
             return GhostAnchor(
                 concept_id=concept_id,

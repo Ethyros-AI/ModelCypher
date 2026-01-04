@@ -304,7 +304,6 @@ class TopologicalFingerprint:
         """
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
-            derive_k_neighbors,
         )
 
         n = len(points)
@@ -316,8 +315,7 @@ class TopologicalFingerprint:
         pts = b.astype(b.array(points), "float32")  # Ensure float for numerical operations
 
         # Use geodesic distances for correct topology on curved manifolds
-        k_neighbors = derive_k_neighbors(pts, b)
-        geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
+        geo_dist = geodesic_distance_matrix(pts, k_neighbors=None, backend=b)
         b.eval(geo_dist)
         return geo_dist
 
@@ -804,7 +802,6 @@ class BackendTopologicalFingerprint:
         """Compute pairwise geodesic distances using Backend."""
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
-            derive_k_neighbors,
         )
 
         n = len(points)
@@ -814,8 +811,7 @@ class BackendTopologicalFingerprint:
         b = self.backend
         pts = b.array(points)
 
-        k_neighbors = derive_k_neighbors(pts, b)
-        geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
+        geo_dist = geodesic_distance_matrix(pts, k_neighbors=None, backend=b)
         b.eval(geo_dist)
         return geo_dist
 

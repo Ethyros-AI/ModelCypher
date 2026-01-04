@@ -54,7 +54,9 @@ References:
 
 from __future__ import annotations
 
+import heapq
 import logging
+import math
 import time
 from typing import TYPE_CHECKING
 
@@ -541,9 +543,26 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             return self._compute_geodesic_for_k(points, k_neighbors)
 
         # Find minimum k for connectivity - this IS the geometric answer
+        k_min, knn_idx, chord_dist = self._minimum_connected_k(points)
+        return self._compute_geodesic_for_k(
+            points, k_min, chord_dist=chord_dist, knn_idx=knn_idx
+        )
+
+    def _minimum_connected_k(
+        self,
+        points: "Array",
+        chord_dist: "Array | None" = None,
+    ) -> tuple[int, "Array", "Array"]:
+        """Find the minimum k that makes the k-NN graph connected."""
+        backend = self._backend
+        n = int(points.shape[0])
+        if n <= 1:
+            return 0, backend.zeros((n, 0)), backend.zeros((n, n))
+
         # Binary search: start at k=1, double until connected, then binary search
-        chord_dist = self._chord_distance_matrix(points)
-        backend.eval(chord_dist)
+        if chord_dist is None:
+            chord_dist = self._chord_distance_matrix(points)
+            backend.eval(chord_dist)
 
         k_low = 1
         k_high = n - 1
@@ -552,9 +571,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         # First, check if k=1 works (rare but possible for dense clouds)
         knn_low, _ = self._knn_indices_from_chord(chord_dist, k_low)
         if self._is_knn_connected(knn_low):
-            return self._compute_geodesic_for_k(
-                points, k_low, chord_dist=chord_dist, knn_idx=knn_low
-            )
+            return k_low, knn_low, chord_dist
 
         # Double k until connected to find upper bound
         k_test = 2
@@ -573,9 +590,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                 k_low = k_high // 2
             else:
                 # Fully connected k-NN still disconnected - degenerate case
-                return self._compute_geodesic_for_k(
-                    points, k_high, chord_dist=chord_dist, knn_idx=knn_high
-                )
+                return k_high, knn_high, chord_dist
 
         # Binary search for minimum k that achieves connectivity
         while k_low < k_high - 1:
@@ -590,10 +605,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         if knn_high is None:
             knn_high, _ = self._knn_indices_from_chord(chord_dist, k_high)
 
-        # Return result for minimum connected k
-        return self._compute_geodesic_for_k(
-            points, k_high, chord_dist=chord_dist, knn_idx=knn_high
-        )
+        return k_high, knn_high, chord_dist
 
     def _knn_indices_from_chord(
         self,
@@ -653,6 +665,59 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                     stack.append(nxt)
 
         return all(seen)
+
+    @staticmethod
+    def _should_use_sparse_shortest_paths(n: int, k_neighbors: int) -> bool:
+        """Decide between sparse Dijkstra and dense Floyd-Warshall."""
+        if n <= 2 or k_neighbors >= n - 1:
+            return False
+        log_n = math.log2(max(n, 2))
+        return (k_neighbors * log_n) < n
+
+    def _all_pairs_shortest_paths_sparse(
+        self,
+        knn_idx: "Array",
+        neighbor_dists: "Array",
+        n: int,
+    ) -> "Array":
+        """Exact all-pairs shortest paths using Dijkstra on a k-NN graph."""
+        backend = self._backend
+        backend.eval(knn_idx, neighbor_dists)
+        neighbors = backend.tolist(knn_idx)
+        weights = backend.tolist(neighbor_dists)
+
+        adjacency: list[dict[int, float]] = [dict() for _ in range(n)]
+        for i, row in enumerate(neighbors):
+            row_weights = weights[i]
+            for j_raw, w_raw in zip(row, row_weights):
+                j = int(j_raw)
+                if j < 0 or j >= n or j == i:
+                    continue
+                w = float(w_raw)
+                prev = adjacency[i].get(j)
+                if prev is None or w < prev:
+                    adjacency[i][j] = w
+                prev = adjacency[j].get(i)
+                if prev is None or w < prev:
+                    adjacency[j][i] = w
+
+        dist_matrix: list[list[float]] = [[float("inf")] * n for _ in range(n)]
+        for src in range(n):
+            dist = dist_matrix[src]
+            dist[src] = 0.0
+            heap: list[tuple[float, int]] = [(0.0, src)]
+            while heap:
+                d_u, u = heapq.heappop(heap)
+                if d_u != dist[u]:
+                    continue
+                for v, w in adjacency[u].items():
+                    alt = d_u + w
+                    if alt < dist[v]:
+                        dist[v] = alt
+                        heapq.heappush(heap, (alt, v))
+
+        dist_arr = backend.array(dist_matrix)
+        return backend.astype(dist_arr, neighbor_dists.dtype)
 
     def _compute_geodesic_for_k(
         self,
@@ -775,9 +840,13 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                 f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
             )
 
-        # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])
-        geo_dist_arr = backend.floyd_warshall(adj)
-        backend.eval(geo_dist_arr)
+        if self._should_use_sparse_shortest_paths(n, k_neighbors):
+            geo_dist_arr = self._all_pairs_shortest_paths_sparse(knn_idx, neighbor_dists, n)
+            backend.eval(geo_dist_arr)
+        else:
+            # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])
+            geo_dist_arr = backend.floyd_warshall(adj)
+            backend.eval(geo_dist_arr)
 
         # Diagnostic: check geodesic matrix after Floyd-Warshall (only when debugging)
         if logger.isEnabledFor(logging.DEBUG):

@@ -117,11 +117,8 @@ class SpectralSignature:
             )
 
         # Build a k-NN graph using geodesic distances on the manifold.
-        from modelcypher.core.domain.geometry.riemannian_utils import derive_k_neighbors
-
-        k_neighbors = derive_k_neighbors(points_arr, backend)
-        adjacency, geodesic_dist, inf_value, k_neighbors, neighbor_indices = self._build_knn_adjacency(
-            points_arr, k_neighbors
+        adjacency, geodesic_dist, inf_value, k_neighbors, neighbor_indices = (
+            self._build_knn_adjacency(points_arr, None)
         )
         backend.eval(adjacency, geodesic_dist, neighbor_indices)
 

@@ -34,11 +34,12 @@ Example:
 
 Canonical operations:
 - Gram matrix computation (with caching)
-- Matrix centering (weighted and unweighted)
 - Pairwise geodesic distances
 - Procrustes rotation (SVD-based orthogonal alignment)
 - Effective rank estimation
 - Cosine similarity matrix
+
+Note: Matrix centering is in cka.py (_center_gram_matrix).
 """
 
 from __future__ import annotations
@@ -146,67 +147,6 @@ class BackendMatrixUtils:
                 self.backend.diag(self.backend.full((arr.shape[0],), scalar)), arr
             )
         )
-
-    def center_matrix(self, K: Array, weights: Array | None = None) -> Array:
-        """Center a kernel matrix (double centering).
-
-        For unweighted centering, computes: H @ K @ H
-        where H = I - (1/n) * 11^T is the centering matrix.
-
-        Args:
-            K: Kernel/Gram matrix of shape (n, n)
-            weights: Optional sample weights of shape (n,)
-
-        Returns:
-            Centered matrix of shape (n, n)
-        """
-        n = K.shape[0]
-
-        if weights is None:
-            # Standard unweighted centering
-            # row_mean = K.mean(axis=1, keepdims=True)
-            row_mean = self.backend.mean(K, axis=1, keepdims=True)
-            col_mean = self.backend.mean(K, axis=0, keepdims=True)
-            grand_mean = self.backend.mean(K)
-
-            # K - row_mean - col_mean + grand_mean
-            result = K
-            # Subtract row_mean (broadcast)
-            result = result - row_mean
-            # Subtract col_mean (broadcast)
-            result = result - col_mean
-            # Add grand_mean
-            self.backend.eval(grand_mean)
-            grand_mean_val = float(self.backend.to_scalar(grand_mean))
-            grand_mean_arr = self.backend.full(K.shape, grand_mean_val)
-            result = result + grand_mean_arr
-            return result
-        else:
-            # Weighted centering
-            w_sum = self.backend.sum(weights)
-            weights_norm = weights / w_sum
-
-            # Weighted row mean
-            weighted_K = K * self.backend.reshape(weights_norm, (1, n))
-            row_mean = self.backend.sum(weighted_K, axis=1, keepdims=True)
-
-            # Weighted col mean
-            weighted_K_col = K * self.backend.reshape(weights_norm, (n, 1))
-            col_mean = self.backend.sum(weighted_K_col, axis=0, keepdims=True)
-
-            # Weighted grand mean
-            outer_weights = self.backend.matmul(
-                self.backend.reshape(weights_norm, (n, 1)),
-                self.backend.reshape(weights_norm, (1, n)),
-            )
-            grand_mean = self.backend.sum(K * outer_weights)
-
-            result = K - row_mean - col_mean
-            self.backend.eval(grand_mean)
-            grand_mean_val = float(self.backend.to_scalar(grand_mean))
-            grand_mean_arr = self.backend.full(K.shape, grand_mean_val)
-            result = result + grand_mean_arr
-            return result
 
     def pairwise_squared_distances(self, X: Array) -> Array:
         """Compute pairwise squared geodesic distances.

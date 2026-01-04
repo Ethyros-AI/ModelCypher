@@ -24,6 +24,7 @@ import pytest
 from modelcypher.core.domain.geometry.backend_matrix_utils import (
     BackendMatrixUtils,
 )
+from modelcypher.core.domain.geometry.cka import _center_gram_matrix
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
@@ -113,7 +114,7 @@ class TestGramMatrix:
 
 
 class TestCenterMatrix:
-    """Tests for matrix centering."""
+    """Tests for matrix centering (canonical implementation in cka.py)."""
 
     def test_centered_matrix_zero_mean(
         self, utils: BackendMatrixUtils, mlx_backend: Backend
@@ -123,7 +124,7 @@ class TestCenterMatrix:
         # Make symmetric
         K_sym = (K + mlx_backend.transpose(K)) * 0.5
 
-        centered = utils.center_matrix(K)
+        centered = _center_gram_matrix(K, mlx_backend)
         tol = regularization_epsilon(mlx_backend, centered)
 
         row_means = mlx_backend.mean(centered, axis=1)
@@ -140,8 +141,8 @@ class TestCenterMatrix:
         K = mlx_backend.random_normal((8, 8))
         K = (K + mlx_backend.transpose(K)) * 0.5
 
-        centered_once = utils.center_matrix(K)
-        centered_twice = utils.center_matrix(centered_once)
+        centered_once = _center_gram_matrix(K, mlx_backend)
+        centered_twice = _center_gram_matrix(centered_once, mlx_backend)
         tol = regularization_epsilon(mlx_backend, centered_once)
 
         diff = _max_abs_diff(mlx_backend, centered_once, centered_twice)

@@ -70,7 +70,9 @@ class MLXEmbeddingProvider(EmbeddingProvider):
         """
         if not texts:
             return []
-        inputs = self._tokenizer.batch_encode_plus(
+        # Use __call__ for compatibility with all tokenizer types
+        # (some MLX tokenizers don't have batch_encode_plus)
+        inputs = self._tokenizer(
             texts,
             return_tensors="mlx",
             padding=True,

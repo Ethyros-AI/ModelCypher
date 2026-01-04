@@ -103,6 +103,10 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
+from modelcypher.core.domain.geometry.cka import (
+    _center_gram_matrix,
+    compute_cka_from_centered_grams,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -273,8 +277,8 @@ class GramAligner:
         # Compute centered Gram matrices
         K_s = b.matmul(source_centered, b.transpose(source_centered))
         K_t = b.matmul(target_centered, b.transpose(target_centered))
-        K_s_c = self._center_gram_efficient(K_s)
-        K_t_c = self._center_gram_efficient(K_t)
+        K_s_c = _center_gram_matrix(K_s, b)
+        K_t_c = _center_gram_matrix(K_t, b)
 
         # Compute sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
         sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
@@ -288,7 +292,7 @@ class GramAligner:
         # Compute alignment error
         source_transformed = b.matmul(source_centered, feature_transform)
         K_s_transformed = b.matmul(source_transformed, b.transpose(source_transformed))
-        K_s_t_c = self._center_gram_efficient(K_s_transformed)
+        K_s_t_c = _center_gram_matrix(K_s_transformed, b)
 
         # Error is geodesic norm of difference (normalized)
         diff = K_s_t_c - K_t_c
@@ -334,40 +338,6 @@ class GramAligner:
         b.eval(H)
         self._centering_cache[n] = H
         return H
-
-    def _center_gram_efficient(self, K: "Array") -> "Array":
-        """Center Gram matrix in O(n²) instead of O(n³).
-
-        Mathematically equivalent to H @ K @ H where H = I - (1/n) * 1 @ 1^T,
-        but computed directly without matrix multiplication:
-
-            K_c = K - row_mean - col_mean + total_mean
-
-        This replaces two n×n matrix multiplications with four O(n²) operations:
-        - mean(K, axis=1): O(n²)
-        - mean(K, axis=0): O(n²)
-        - mean(K): O(n²)
-        - broadcast and subtract: O(n²)
-
-        Total: O(n²) vs O(n³) for H @ K @ H
-
-        Parameters
-        ----------
-        K : Array
-            Gram matrix [n, n] to center.
-
-        Returns
-        -------
-        Array
-            Centered Gram matrix K_c such that K_c = H @ K @ H.
-        """
-        b = self._backend
-        row_mean = b.mean(K, axis=1, keepdims=True)  # [n, 1]
-        col_mean = b.mean(K, axis=0, keepdims=True)  # [1, n]
-        total_mean = b.mean(K)                        # scalar
-        K_c = K - row_mean - col_mean + total_mean
-        b.eval(K_c)
-        return K_c
 
     def _compute_sample_transform(
         self, K_s_c: "Array", K_t_c: "Array"
@@ -455,7 +425,7 @@ class GramAligner:
 
         # Compute source Gram matrix
         K_s = b.matmul(source_centered, b.transpose(source_centered))
-        K_s_c = self._center_gram_efficient(K_s)
+        K_s_c = _center_gram_matrix(K_s, b)
 
         # Eigendecomposition of both centered Gram matrices
         K_s_f32 = b.astype(K_s_c, "float32")
@@ -476,8 +446,8 @@ class GramAligner:
 
             source_aligned = b.matmul(source_centered, F)
             K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
-            K_aligned_c = self._center_gram_efficient(K_aligned)
-            cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
+            K_aligned_c = _center_gram_matrix(K_aligned, b)
+            cka = compute_cka_from_centered_grams(K_aligned_c, K_t_c, b)
             return F, 1, cka
 
         # Clamp eigenvalues for numerical stability
@@ -514,41 +484,10 @@ class GramAligner:
         # Compute achieved CKA
         source_aligned = b.matmul(source_centered, F)
         K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
-        K_aligned_c = self._center_gram_efficient(K_aligned)
-        cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
+        K_aligned_c = _center_gram_matrix(K_aligned, b)
+        cka = compute_cka_from_centered_grams(K_aligned_c, K_t_c, b)
 
         return F, 1, cka
-
-    def _compute_cka_from_centered_grams(
-        self, K_x_c: "Array", K_y_c: "Array"
-    ) -> float:
-        """Compute CKA from pre-centered Gram matrices."""
-        b = self._backend
-        n = b.shape(K_x_c)[0]
-        if n < 2:
-            return 0.0
-
-        # HSIC = trace(K_x_c @ K_y_c) / (n-1)^2
-        hsic_xy_arr = b.sum(K_x_c * K_y_c)
-        hsic_xx_arr = b.sum(K_x_c * K_x_c)
-        hsic_yy_arr = b.sum(K_y_c * K_y_c)
-        b.eval(hsic_xy_arr, hsic_xx_arr, hsic_yy_arr)
-        denom_factor = float((n - 1) ** 2)
-        hsic_xy_val = float(b.to_scalar(hsic_xy_arr))
-        hsic_xx_val = float(b.to_scalar(hsic_xx_arr))
-        hsic_yy_val = float(b.to_scalar(hsic_yy_arr))
-        hsic_xy = hsic_xy_val / denom_factor
-        hsic_xx = hsic_xx_val / denom_factor
-        hsic_yy = hsic_yy_val / denom_factor
-
-        denominator = sqrt_scalar(hsic_xx * hsic_yy, b)
-        # Use dtype-derived epsilon for denominator floor
-        div_eps = division_epsilon(b, K_x_c)
-        if denominator < div_eps:
-            return 0.0
-
-        cka = hsic_xy / denominator
-        return max(0.0, min(1.0, cka))
 
     def _diagnose_alignment(
         self,

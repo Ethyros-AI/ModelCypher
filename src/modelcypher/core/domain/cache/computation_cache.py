@@ -97,6 +97,7 @@ class ComputationCache:
     Provides separate LRU caches for different computation types:
     - Gram matrices (X @ X^T)
     - Geodesic distance matrices
+    - Geodesic null-space bases
     - SVD decompositions
     - Fréchet means
     - Centered Gram matrices
@@ -128,6 +129,7 @@ class ComputationCache:
         max_geodesic_entries: int = 1024,
         max_svd_entries: int = 32,
         max_frechet_entries: int = 1024,
+        max_basis_entries: int = 256,
         max_centered_gram_entries: int = 200,
     ) -> None:
         """
@@ -138,12 +140,14 @@ class ComputationCache:
             max_geodesic_entries: Maximum number of geodesic distance entries.
             max_svd_entries: Maximum number of SVD entries.
             max_frechet_entries: Maximum number of Fréchet mean entries.
+            max_basis_entries: Maximum number of geodesic basis entries.
             max_centered_gram_entries: Maximum number of centered Gram entries.
         """
         self._max_gram_entries = max_gram_entries
         self._max_geodesic_entries = max_geodesic_entries
         self._max_svd_entries = max_svd_entries
         self._max_frechet_entries = max_frechet_entries
+        self._max_basis_entries = max_basis_entries
         self._max_centered_gram_entries = max_centered_gram_entries
 
         # Separate LRU caches for different computation types
@@ -162,6 +166,9 @@ class ComputationCache:
 
         self._frechet_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._frechet_lock = threading.Lock()
+
+        self._basis_cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._basis_lock = threading.Lock()
 
         self._stats = CacheStats()
         self._stats_lock = threading.Lock()
@@ -316,6 +323,18 @@ class ComputationCache:
         bid = self._backend_id(backend)
         return f"geodesic_{bid}_k{k_neighbors}_{base_key}"
 
+    def make_basis_key(
+        self,
+        arr: "Array",
+        backend: "Backend",
+        k_neighbors: int | None,
+    ) -> str:
+        """Create cache key for geodesic null-space basis."""
+        base_key = self.make_array_key(arr, backend)
+        bid = self._backend_id(backend)
+        k_tag = "auto" if k_neighbors is None else f"k{k_neighbors}"
+        return f"basis_{bid}_{k_tag}_{base_key}"
+
     def make_svd_key(
         self,
         arr: "Array",
@@ -445,6 +464,29 @@ class ComputationCache:
             self._max_geodesic_entries,
         )
 
+    # --- Geodesic Basis Cache ---
+
+    def get_basis(self, key: str) -> Any | None:
+        """Get cached geodesic basis result."""
+        return self._get_from_cache(
+            key,
+            self._basis_cache,
+            self._basis_lock,
+            "basis",
+        )
+
+    def set_basis(
+        self, key: str, value: Any, compute_time_ms: float = 0.0
+    ) -> None:
+        """Cache geodesic basis result."""
+        self._set_in_cache(
+            key,
+            value,
+            compute_time_ms,
+            self._basis_cache,
+            self._basis_lock,
+            self._max_basis_entries,
+        )
     # --- SVD Cache ---
 
     def get_svd(self, key: str) -> tuple["Array", "Array", "Array"] | None:
@@ -613,6 +655,9 @@ class ComputationCache:
         with self._frechet_lock:
             self._frechet_cache.clear()
 
+        with self._basis_lock:
+            self._basis_cache.clear()
+
         with self._stats_lock:
             self._stats = CacheStats()
 
@@ -629,4 +674,5 @@ class ComputationCache:
             "geodesic": len(self._geodesic_cache),
             "svd": len(self._svd_cache),
             "frechet": len(self._frechet_cache),
+            "basis": len(self._basis_cache),
         }

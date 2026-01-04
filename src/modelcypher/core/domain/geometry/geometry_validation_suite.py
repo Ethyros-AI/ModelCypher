@@ -35,7 +35,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
-    derive_k_neighbors,
 )
 from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 from modelcypher.core.domain.geometry.topological_fingerprint import TopologicalFingerprint
@@ -622,9 +621,10 @@ class GeometryValidationSuite:
         gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=backend)
 
         geometry = RiemannianGeometry(backend)
-        derived_k = derive_k_neighbors(base_arr, backend)
-        geo_base = geometry.geodesic_distances(points, k_neighbors=derived_k)
-        geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=derived_k)
+        geo_base = geometry.geodesic_distances(points, k_neighbors=None)
+        geo_padded = geometry.geodesic_distances(
+            padded_points, k_neighbors=geo_base.k_neighbors
+        )
 
         geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
         geo_mean = backend.mean(geo_diff)

@@ -66,11 +66,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+import time
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.vector_math import geodesic_norms
@@ -82,6 +83,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+_cache = ComputationCache.shared()
 
 
 @dataclass
@@ -337,6 +339,12 @@ class GeodesicNullSpaceFilter:
         prior_activations = backend.array(prior_activations)
         backend.eval(prior_activations)
 
+        cache_key = _cache.make_basis_key(prior_activations, backend, k_neighbors)
+        cached = _cache.get_basis(cache_key)
+        if cached is not None:
+            return cached
+
+        start = time.perf_counter()
         n_samples = int(prior_activations.shape[0])
         d = int(prior_activations.shape[1])
 
@@ -392,13 +400,19 @@ class GeodesicNullSpaceFilter:
 
         orthogonal_dim = max(0, d - n_samples)
 
-        return GeodesicNullSpaceBasis(
+        basis = GeodesicNullSpaceBasis(
             Q=Q,
             orthogonal_dim=orthogonal_dim,
             k_neighbors=actual_k,
             mean_geodesic_distance=mean_geo,
             regularization=reg,
         )
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        _cache.set_basis(cache_key, basis, elapsed_ms)
+        if k_neighbors is None:
+            explicit_key = _cache.make_basis_key(prior_activations, backend, actual_k)
+            _cache.set_basis(explicit_key, basis, elapsed_ms)
+        return basis
 
 
 def filter_merge_delta_geodesic(
