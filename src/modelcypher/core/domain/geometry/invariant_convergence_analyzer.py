@@ -230,7 +230,6 @@ class InvariantConvergenceAnalyzer:
             layer_cosines: dict[int, float] = {}
 
             if align_mode == AlignMode.NORMALIZED:
-                {p.index: p for p in aligned_pairs}
                 for pair in aligned_pairs:
                     avg_source = self._average_sparse(source_layer_vecs.get(pair.source_layer, []))
                     avg_target = self._average_sparse(target_layer_vecs.get(pair.target_layer, []))

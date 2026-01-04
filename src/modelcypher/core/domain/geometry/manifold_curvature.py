@@ -247,14 +247,27 @@ class ManifoldCurvatureProfile:
     # Estimated intrinsic dimension from curvature
     estimated_dimension: float | None
 
-    def get_high_curvature_regions(self, threshold: float = 2.0) -> list[int]:
-        """Get indices of points with curvature magnitude above threshold."""
+    def get_high_curvature_regions(self, threshold: float | None = None) -> list[int]:
+        """Get indices of points with unusually large curvature magnitude.
+
+        If threshold is None, derives an absolute cutoff from data:
+        abs(mean) + std (no hardcoded multipliers).
+        """
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([self.global_mean]))
+        mean_abs = abs(self.global_mean + eps)
+        std_val = sqrt_scalar(self.global_variance, backend)
+        if threshold is None:
+            abs_threshold = mean_abs + std_val
+            return [
+                i
+                for i, lc in enumerate(self.local_curvatures)
+                if abs(lc.mean_sectional) > abs_threshold
+            ]
         return [
             i
             for i, lc in enumerate(self.local_curvatures)
-            if abs(lc.mean_sectional) > threshold * abs(self.global_mean + eps)
+            if abs(lc.mean_sectional) > threshold * mean_abs
         ]
 
     def curvature_at_point(self, point: "Array", k: int = 3) -> LocalCurvature | None:

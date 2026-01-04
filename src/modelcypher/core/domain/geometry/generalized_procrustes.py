@@ -793,7 +793,7 @@ class RotationContinuityAnalyzer:
         ]
         mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
 
-        # Derive smoothness threshold from provided distribution or use empirical default
+        # Derive smoothness threshold from provided distribution or local ratios
         if smoothness_ratios and len(smoothness_ratios) >= 2:
             # Derive from distribution: mean - 1σ
             mean_sr = sum(smoothness_ratios) / len(smoothness_ratios)
@@ -801,9 +801,18 @@ class RotationContinuityAnalyzer:
             std_sr = variance_sr ** 0.5
             smoothness_threshold = max(0.0, mean_sr - std_sr)
         else:
-            # Use empirical threshold from prior analyses (not arbitrary - derived from data)
-            # This value comes from observing smoothness ratios across many model pairs
-            smoothness_threshold = 0.7
+            # Derive from current layer ratios to avoid hardcoded heuristics
+            ratios = []
+            for layer_r in layer_results:
+                ratio = layer_r.error / max(global_error, error_eps)
+                ratios.append(ratio)
+            if len(ratios) >= 2:
+                mean_sr = sum(ratios) / len(ratios)
+                variance_sr = sum((r - mean_sr) ** 2 for r in ratios) / len(ratios)
+                std_sr = variance_sr ** 0.5
+                smoothness_threshold = max(0.0, mean_sr - std_sr)
+            else:
+                smoothness_threshold = smoothness_ratio
 
         # Requires per-layer alignment if smoothness_ratio < threshold
         requires_per_layer = smoothness_ratio < smoothness_threshold

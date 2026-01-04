@@ -91,10 +91,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    geodesic_svd,
     machine_epsilon,
     regularization_epsilon,
     sqrt_scalar,
@@ -107,7 +105,6 @@ if TYPE_CHECKING:
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
 
 logger = logging.getLogger(__name__)
-_cache = ComputationCache.shared()
 
 __all__ = [
     "AlignmentResult",
@@ -234,237 +231,6 @@ class GramAligner:
     def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
         """Convert 2D array to nested Python list using native tolist() - O(1) vs O(n*m)."""
         return self._backend.tolist(array)
-
-    def _solve_feature_transform(
-        self,
-        source_centered: "Array",
-        target_centered: "Array",
-        reg: float | None = None,
-    ) -> "Array | None":
-        """Solve for F such that Gram(source @ F) = Gram(target).
-
-        Uses GPU-only geodesic operations - no CPU linear algebra.
-        All eigendecomposition uses power iteration, all pseudo-inverse
-        uses Gram regularization with Neumann series.
-        """
-        b = self._backend
-        n_samples = b.shape(source_centered)[0]
-        if n_samples == 0:
-            return None
-
-        eps = machine_epsilon(b, source_centered)
-        reg_threshold = max(eps, reg) if reg is not None else eps
-        candidates: list[tuple[float, "Array", str]] = []
-
-        target_norm_arr = geodesic_norms(b.reshape(target_centered, (1, -1)), b)
-        b.eval(target_norm_arr)
-        target_norm_val = float(b.to_scalar(target_norm_arr))
-
-        # Method 1: Geodesic SVD + Procrustes alignment
-        # Uses power iteration for SVD - runs on GPU, iterates until convergence
-        U_s, S_s, Vt_s = _cache.get_or_compute_svd(source_centered, b)
-        U_t, S_t, Vt_t = _cache.get_or_compute_svd(target_centered, b)
-
-        # Find rotation via cross-correlation
-        cross = b.matmul(b.transpose(U_s), U_t)
-        U_cross, _, Vt_cross = geodesic_svd(b, cross)
-        R = b.matmul(U_cross, Vt_cross)
-
-        # F_gram aligns source singular space to target
-        # F = V_s @ R @ Vt_t.T (assuming similar singular values)
-        F_gram = b.matmul(b.transpose(Vt_s), b.matmul(R, Vt_t))
-
-        reconstructed = b.matmul(source_centered, F_gram)
-        residual_gram_arr = geodesic_norms(
-            b.reshape(reconstructed - target_centered, (1, -1)), b
-        )
-        b.eval(residual_gram_arr)
-        procrustes_err = float(b.to_scalar(residual_gram_arr)) / (
-            target_norm_val + reg_threshold
-        )
-        candidates.append((procrustes_err, F_gram, "geodesic_procrustes"))
-        self._logger.debug(
-            "Geodesic Procrustes: error=%.2e",
-            procrustes_err,
-        )
-
-        # LAZY EVALUATION: Short-circuit if Procrustes achieves near-perfect alignment
-        # If relative error is below sqrt(machine_epsilon), skip expensive alternatives
-        precision_threshold = regularization_epsilon(b, source_centered)
-        if procrustes_err < precision_threshold:
-            self._logger.debug(
-                "Procrustes short-circuit: error %.2e < threshold %.2e",
-                procrustes_err, precision_threshold,
-            )
-            return F_gram
-
-        # Method 2: Native eigendecomposition for Gram inverse (EXACT, no approximation)
-        gram = b.matmul(source_centered, b.transpose(source_centered))
-        gram_f32 = b.astype(gram, "float32")
-
-        # Use ALL eigenvalues - no k=50 approximation
-        eigvals, eigvecs = b.eigh(gram_f32)
-        b.eval(eigvals, eigvecs)
-
-        # Invert eigenvalues above threshold
-        inv_vals = b.where(
-            eigvals > reg_threshold,
-            1.0 / eigvals,
-            b.zeros_like(eigvals),
-        )
-
-        # Reconstruct pseudo-inverse in eigenspace (FULL rank)
-        inv_diag = b.reshape(inv_vals, (1, -1))
-        gram_inv = b.matmul(
-            eigvecs * inv_diag,
-            b.transpose(eigvecs),
-        )
-
-        F_eig = b.matmul(
-            b.transpose(source_centered),
-            b.matmul(gram_inv, target_centered),
-        )
-
-        # Compute residual for eigendecomposition method
-        reconstructed = b.matmul(source_centered, F_eig)
-        residual_eig_arr = geodesic_norms(
-            b.reshape(reconstructed - target_centered, (1, -1)), b
-        )
-        b.eval(residual_eig_arr)
-        residual_val = float(b.to_scalar(residual_eig_arr))
-        rel_residual = residual_val / (target_norm_val + reg_threshold)
-        candidates.append((rel_residual, F_eig, "native_eigh"))
-
-        # LAZY EVALUATION: Short-circuit if eigendecomposition achieves near-perfect alignment
-        if rel_residual < precision_threshold:
-            self._logger.debug(
-                "Eigendecomposition short-circuit: error %.2e < threshold %.2e",
-                rel_residual, precision_threshold,
-            )
-            return F_eig
-
-        # Method 3: Native pseudo-inverse (EXACT Moore-Penrose, no regularization)
-        source_pinv = b.pinv(source_centered)
-        b.eval(source_pinv)
-        F_pinv = b.matmul(source_pinv, target_centered)
-        reconstructed = b.matmul(source_centered, F_pinv)
-        residual_pinv_arr = geodesic_norms(
-            b.reshape(reconstructed - target_centered, (1, -1)), b
-        )
-        b.eval(residual_pinv_arr)
-        residual_val = float(b.to_scalar(residual_pinv_arr))
-        rel_residual = residual_val / (target_norm_val + reg_threshold)
-        candidates.append((rel_residual, F_pinv, "native_pinv"))
-
-        # Select lowest-error method
-        if not candidates:
-            return None
-
-        best_err, best_F, best_method = min(candidates, key=lambda x: x[0])
-        self._logger.debug(
-            "Selected %s with error %.2e (machine_eps=%.2e)",
-            best_method, best_err, eps,
-        )
-        return best_F
-
-    def _solve_feature_transform_uncentered(
-        self,
-        source: "Array",
-        target: "Array",
-    ) -> "Array | None":
-        """Solve for F such that Gram(source @ F) = Gram(target) on uncentered data.
-
-        Uses GPU-only geodesic operations - no CPU linear algebra.
-        """
-        b = self._backend
-        n_samples = b.shape(source)[0]
-        if n_samples == 0:
-            return None
-
-        eps = machine_epsilon(b, source)
-        reg_threshold = regularization_epsilon(b, source)
-        candidates: list[tuple[float, "Array", str]] = []
-
-        target_norm_arr = geodesic_norms(b.reshape(target, (1, -1)), b)
-        b.eval(target_norm_arr)
-        target_norm_val = float(b.to_scalar(target_norm_arr))
-
-        # Method 1: Geodesic SVD + Procrustes alignment
-        # Uses power iteration - iterates until convergence
-        U_s, S_s, Vt_s = _cache.get_or_compute_svd(source, b)
-        U_t, S_t, Vt_t = _cache.get_or_compute_svd(target, b)
-
-        # Find rotation via cross-correlation
-        cross = b.matmul(b.transpose(U_s), U_t)
-        U_cross, _, Vt_cross = geodesic_svd(b, cross)
-        R = b.matmul(U_cross, Vt_cross)
-
-        F_gram = b.matmul(b.transpose(Vt_s), b.matmul(R, Vt_t))
-
-        reconstructed = b.matmul(source, F_gram)
-        residual_gram_arr = geodesic_norms(b.reshape(reconstructed - target, (1, -1)), b)
-        b.eval(residual_gram_arr)
-        procrustes_err = float(b.to_scalar(residual_gram_arr)) / (
-            target_norm_val + reg_threshold
-        )
-        candidates.append((procrustes_err, F_gram, "geodesic_procrustes"))
-
-        # Method 2: Native eigendecomposition for Gram inverse (EXACT, no approximation)
-        gram = b.matmul(source, b.transpose(source))
-        gram_f32 = b.astype(gram, "float32")
-
-        # Use ALL eigenvalues - no k=50 approximation
-        eigvals, eigvecs = b.eigh(gram_f32)
-        b.eval(eigvals, eigvecs)
-
-        # Check if positive definite (all eigenvalues positive)
-        min_eig_arr = b.min(eigvals)
-        b.eval(min_eig_arr)
-        min_eig = float(b.to_scalar(min_eig_arr))
-
-        if min_eig > 0.0:
-            inv_vals = b.where(
-                eigvals > eps,
-                1.0 / eigvals,
-                b.zeros_like(eigvals),
-            )
-
-            gram_inv = b.matmul(
-                eigvecs * b.reshape(inv_vals, (1, -1)),
-                b.transpose(eigvecs),
-            )
-
-            F_eig = b.matmul(
-                b.transpose(source),
-                b.matmul(gram_inv, target),
-            )
-
-            reconstructed = b.matmul(source, F_eig)
-            residual_eig_arr = geodesic_norms(
-                b.reshape(reconstructed - target, (1, -1)), b
-            )
-            b.eval(residual_eig_arr)
-            residual_val = float(b.to_scalar(residual_eig_arr))
-            rel_residual = residual_val / (target_norm_val + eps)
-            candidates.append((rel_residual, F_eig, "native_eigh"))
-
-        # Method 3: Native pseudo-inverse (EXACT Moore-Penrose, no regularization)
-        source_pinv = b.pinv(source)
-        b.eval(source_pinv)
-        F_pinv = b.matmul(source_pinv, target)
-        reconstructed = b.matmul(source, F_pinv)
-        residual_pinv_arr = geodesic_norms(b.reshape(reconstructed - target, (1, -1)), b)
-        b.eval(residual_pinv_arr)
-        residual_val = float(b.to_scalar(residual_pinv_arr))
-        rel_residual = residual_val / (target_norm_val + eps)
-        candidates.append((rel_residual, F_pinv, "native_pinv"))
-
-        # Select lowest-error method
-        if not candidates:
-            return None
-
-        best_err, best_F, best_method = min(candidates, key=lambda x: x[0])
-        return best_F
 
     def find_perfect_alignment(
         self,
@@ -752,21 +518,6 @@ class GramAligner:
         cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
 
         return F, 1, cka
-
-    def _feature_transform_from_sample_transform(
-        self,
-        source_centered: "Array",
-        sample_transform: "Array",
-    ) -> "Array":
-        """Construct a feature transform that reproduces the sample-space alignment."""
-        b = self._backend
-        aligned_samples = b.matmul(sample_transform, source_centered)
-        transform = self._solve_feature_transform(source_centered, aligned_samples)
-        if transform is None:
-            raise ValueError(
-                "GramAligner: solve-based sample transform failed; cannot proceed."
-            )
-        return transform
 
     def _compute_cka_from_centered_grams(
         self, K_x_c: "Array", K_y_c: "Array"

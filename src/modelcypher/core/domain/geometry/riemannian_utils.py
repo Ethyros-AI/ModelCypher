@@ -976,6 +976,22 @@ class RiemannianGeometry:
             chord_dist = self._chord_distance_matrix(points)
             backend.eval(chord_dist)
 
+        # Fully connected graph: geodesic equals chord distance.
+        if k_neighbors >= n - 1:
+            max_dist_arr = backend.max(chord_dist)
+            backend.eval(max_dist_arr)
+            max_dist = float(backend.to_scalar(max_dist_arr))
+            eps = machine_epsilon(backend, chord_dist)
+            base = max(max_dist, eps)
+            inf_val = min(base / eps, backend.finfo(chord_dist.dtype).max)
+            return GeodesicDistanceResult(
+                distances=chord_dist,
+                adjacency=chord_dist,
+                inf_value=inf_val,
+                k_neighbors=k_neighbors,
+                connected=True,
+            )
+
         # Diagnostic: check chord distance matrix for NaN (vectorized)
         if logger.isEnabledFor(logging.DEBUG):
             chord_nan_count = count_nan(chord_dist, backend)

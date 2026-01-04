@@ -312,10 +312,9 @@ class IntrinsicDimension:
         # 1. r1 > eps (avoid division by zero)
         # 2. r2 is not "infinite" (disconnected nodes in geodesic graph)
         #
-        # The infinity threshold is derived from the data:
-        # Disconnected nodes have distance = geodesic "infinity" which is
-        # orders of magnitude larger than typical distances. We use the
-        # median distance as reference - anything > 1e6 * median is infinite.
+        # The infinity threshold is derived from data and dtype precision:
+        # Disconnected nodes have distance = geodesic "infinity" (≈ scale/eps),
+        # which is orders of magnitude larger than typical distances.
         eps = machine_epsilon(backend, r1_sq)
         r1_valid = r1_sq > eps
 
@@ -341,10 +340,9 @@ class IntrinsicDimension:
             backend.eval(mid_val)
             median_val = float(backend.to_scalar(mid_val))
 
-        # Infinity threshold: anything > 1e6 * median is disconnected
-        # This factor is derived from geometry: in connected graphs, max distance
-        # is at most O(n) * min_edge, while disconnected nodes are at dtype max
-        inf_thresh = max(median_val * 1e6, 1.0)
+        # Infinity threshold: anything > median / eps is disconnected
+        # This follows the geodesic "infinity" construction: inf ≈ scale/eps.
+        inf_thresh = max(median_val / eps, 1.0)
         r2_finite = r2_sq < inf_thresh
         valid_mask = r1_valid & r2_finite
 
