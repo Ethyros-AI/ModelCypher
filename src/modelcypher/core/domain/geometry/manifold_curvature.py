@@ -403,34 +403,38 @@ class SectionalCurvatureEstimator:
         num_directions = min(max(d, 5), max_planes)
 
         backend.random_seed(42)  # Reproducible random directions
-        for _ in range(num_directions):
-            # Sample random orthonormal pair
-            u = backend.random_normal((d,))
-            backend.eval(u)
-            u_norm = geodesic_norms(backend.reshape(u, (1, -1)), backend)
-            backend.eval(u_norm)
-            eps = division_epsilon(backend, u)
-            u_norm_val = float(backend.to_scalar(u_norm[0]))
-            u = u / (u_norm_val + eps)
+        eps = division_epsilon(backend, centered)
 
-            v = backend.random_normal((d,))
-            backend.eval(u, v)
-            # Gram-Schmidt
-            u_mat = backend.reshape(u, (1, -1))
-            v_mat = backend.reshape(v, (1, -1))
-            v_norm_arr = geodesic_norms(v_mat, backend)
-            cos_arr, _ = geodesic_pairwise_metrics(u_mat, v_mat, backend)
-            backend.eval(v_norm_arr, cos_arr)
-            v_norm_val = float(backend.to_scalar(v_norm_arr[0]))
-            dot_uv = float(backend.to_scalar(cos_arr[0])) * v_norm_val
-            v = v - dot_uv * u
-            backend.eval(v)
-            v_norm = geodesic_norms(backend.reshape(v, (1, -1)), backend)
-            backend.eval(v_norm)
-            v_norm_val = float(backend.to_scalar(v_norm[0]))
+        # Batch-generate all random direction vectors at once
+        U = backend.random_normal((num_directions, d))
+        V = backend.random_normal((num_directions, d))
+        backend.eval(U, V)
+
+        # Batch normalize U: U / ||U||
+        U_norms = geodesic_norms(U, backend)
+        backend.eval(U_norms)
+        U_norms_safe = backend.maximum(U_norms, backend.zeros_like(U_norms) + eps)
+        U = U / backend.reshape(U_norms_safe, (-1, 1))
+        backend.eval(U)
+
+        # Batch Gram-Schmidt: V = V - (U·V)·U, then V / ||V||
+        # Compute dot products: (U * V).sum(axis=1)
+        dot_UV = backend.sum(U * V, axis=1)
+        backend.eval(dot_UV)
+        V = V - backend.reshape(dot_UV, (-1, 1)) * U
+        backend.eval(V)
+
+        V_norms = geodesic_norms(V, backend)
+        backend.eval(V_norms)
+
+        # Compute sectional curvatures for each direction pair
+        for i in range(num_directions):
+            v_norm_val = float(backend.to_scalar(V_norms[i]))
             if v_norm_val < eps:
                 continue
-            v = v / v_norm_val
+            u = U[i]
+            v = V[i] / v_norm_val
+            backend.eval(u, v)
 
             # Compute sectional curvature K(u, v)
             K = self._sectional_curvature(u, v, metric, christoffel, backend)
