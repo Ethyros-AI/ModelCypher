@@ -120,6 +120,17 @@ class GeodesicNullSpaceResult:
     mean_geodesic_distance: float
 
 
+@dataclass(frozen=True)
+class GeodesicNullSpaceBasis:
+    """Reusable geodesic null-space basis for repeated projections."""
+
+    Q: Any
+    orthogonal_dim: int
+    k_neighbors: int
+    mean_geodesic_distance: float
+    regularization: float
+
+
 class GeodesicNullSpaceFilter:
     """
     GPU-accelerated null-space filter using geodesic geometry.
@@ -142,11 +153,20 @@ class GeodesicNullSpaceFilter:
         self._backend = backend or get_default_backend()
         self._riemannian = RiemannianGeometry(self._backend)
 
+    def prepare_basis(
+        self,
+        prior_activations: Any,
+        k_neighbors: int | None = None,
+    ) -> GeodesicNullSpaceBasis:
+        """Precompute geodesic null-space basis for reuse across deltas."""
+        return self._compute_basis(prior_activations, k_neighbors=k_neighbors)
+
     def filter_delta(
         self,
         weight_delta: Any,
         prior_activations: Any,
         k_neighbors: int | None = None,
+        basis: GeodesicNullSpaceBasis | None = None,
     ) -> GeodesicNullSpaceResult:
         """
         Filter weight delta to geodesic-orthogonal directions.
@@ -175,85 +195,51 @@ class GeodesicNullSpaceFilter:
         backend.eval(weight_delta, prior_activations)
 
         original_shape = weight_delta.shape
-        n_samples = int(prior_activations.shape[0])
         d = int(prior_activations.shape[1])
 
-        # Flatten delta for projection
-        delta_flat = backend.reshape(weight_delta, (-1,))
-        backend.eval(delta_flat)
-        delta_dim = int(delta_flat.shape[0])
+        transpose_back = False
+        delta_matrix = None
+        if len(original_shape) == 1:
+            if int(original_shape[0]) == d:
+                delta_matrix = backend.reshape(weight_delta, (1, d))
+        elif len(original_shape) == 2:
+            if int(original_shape[1]) == d:
+                delta_matrix = weight_delta
+            elif int(original_shape[0]) == d:
+                delta_matrix = backend.transpose(weight_delta)
+                transpose_back = True
 
         # Handle dimension mismatch
-        if delta_dim != d:
-            # Try transposing for [out, in] weights
-            if len(original_shape) == 2 and int(original_shape[0]) == d:
-                delta_flat = backend.reshape(backend.transpose(weight_delta), (-1,))
-                backend.eval(delta_flat)
-                delta_dim = int(delta_flat.shape[0])
+        if delta_matrix is None:
+            delta_flat = backend.reshape(weight_delta, (-1,))
+            backend.eval(delta_flat)
+            delta_dim = int(delta_flat.shape[0])
+            logger.warning(
+                f"Dimension mismatch: delta has {delta_dim} elements, "
+                f"activations have {d} features. Returning original delta."
+            )
+            norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)
+            backend.eval(norm_arr)
+            return GeodesicNullSpaceResult(
+                filtered_delta=weight_delta,
+                original_delta=weight_delta,
+                orthogonal_dim=0,
+                projection_loss=0.0,
+                preserved_fraction=1.0,
+                original_norm=float(backend.to_scalar(norm_arr[0])),
+                filtered_norm=float(backend.to_scalar(norm_arr[0])),
+                filtering_applied=False,
+                k_neighbors=0,
+                mean_geodesic_distance=0.0,
+            )
 
-            if delta_dim != d:
-                logger.warning(
-                    f"Dimension mismatch: delta has {delta_dim} elements, "
-                    f"activations have {d} features. Returning original delta."
-                )
-                norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)
-                backend.eval(norm_arr)
-                return GeodesicNullSpaceResult(
-                    filtered_delta=weight_delta,
-                    original_delta=weight_delta,
-                    orthogonal_dim=0,
-                    projection_loss=0.0,
-                    preserved_fraction=1.0,
-                    original_norm=float(backend.to_scalar(norm_arr[0])),
-                    filtered_norm=float(backend.to_scalar(norm_arr[0])),
-                    filtering_applied=False,
-                    k_neighbors=0,
-                    mean_geodesic_distance=0.0,
-                )
+        delta_flat = backend.reshape(delta_matrix, (-1,))
+        backend.eval(delta_flat)
 
-        # Step 1: Compute geodesic structure (GPU)
-        geo_result = self._riemannian.geodesic_distances(
-            prior_activations, k_neighbors=k_neighbors
-        )
-        actual_k = geo_result.k_neighbors
-        geo_distances = geo_result.distances
-        backend.eval(geo_distances)
-
-        # Compute mean geodesic distance for scale reference
-        # Mask out self-distances (diagonal) and infinite distances
-        n = n_samples
-        eye_mask = backend.eye(n)
-        inf_thresh = backend.full((n, n), float("inf"))
-        finite_mask = backend.isfinite(geo_distances)
-        non_diag_mask = eye_mask < 0.5  # Off-diagonal
-        valid_mask = finite_mask * non_diag_mask
-        valid_count = backend.sum(backend.astype(valid_mask, "float32"))
-        backend.eval(valid_count)
-        valid_count_val = int(backend.to_scalar(valid_count))
-
-        if valid_count_val > 0:
-            masked_geo = backend.where(valid_mask, geo_distances, backend.zeros_like(geo_distances))
-            mean_geo_arr = backend.sum(masked_geo) / valid_count_val
-            backend.eval(mean_geo_arr)
-            mean_geo = float(backend.to_scalar(mean_geo_arr))
-        else:
-            mean_geo = 0.0
-
-        # Step 2: Compute Fréchet mean and tangent space (GPU)
-        frechet_result = self._riemannian.frechet_mean(
+        basis = basis or self._compute_basis(
             prior_activations,
-            k_neighbors=actual_k,
-            geo_result=geo_result,
+            k_neighbors=k_neighbors,
         )
-        frechet_mean = frechet_result.mean
-        backend.eval(frechet_mean)
-
-        # Step 3: Map activations to tangent space at Fréchet mean (GPU)
-        # Log map: tangent vectors from mean to each activation
-        tangent_vectors = self._riemannian.log_map(
-            prior_activations, frechet_mean, geo_result=geo_result
-        )
-        backend.eval(tangent_vectors)
 
         # Step 4: Compute tangent space projection matrix (GPU)
         # The tangent vectors span the "occupied" directions on the manifold.
@@ -270,43 +256,45 @@ class GeodesicNullSpaceFilter:
         # delta_safe = P_null @ delta = delta - Q @ Q^T @ delta
         #
         # CKA=1.0 requires exact projection. No regularization or approximation.
-        T = tangent_vectors  # [n_samples, d]
-        reg = regularization_epsilon(backend, T)
+        reg = basis.regularization
+        Q = basis.Q
 
-        # Project onto the row-space of T (span of tangent vectors in R^d).
-        A = backend.transpose(T)  # [d, n_samples]
-        delta_dtype = backend.dtype(delta_flat)
+        delta_dtype = backend.dtype(delta_matrix)
         proj_dtype = delta_dtype
         if str(delta_dtype) in ("float16", "bfloat16"):
             proj_dtype = "float32"
-        A = backend.astype(A, proj_dtype)
-        delta_col = backend.reshape(backend.astype(delta_flat, proj_dtype), (d, 1))
-        Q, _ = backend.qr(A)  # [d, k] orthonormal basis for column space
-        backend.eval(Q, delta_col)
-
-        # Project delta onto tangent space: Q @ (Q^T @ delta)
-        coeff = backend.matmul(backend.transpose(Q), delta_col)  # [k, 1]
-        delta_tangent = backend.matmul(Q, coeff)  # [d, 1]
-        delta_tangent = backend.reshape(delta_tangent, (d,))
-        backend.eval(delta_tangent)
+        delta_proj = delta_matrix
         if str(proj_dtype) != str(delta_dtype):
-            delta_tangent = backend.astype(delta_tangent, delta_dtype)
-            backend.eval(delta_tangent)
+            delta_proj = backend.astype(delta_matrix, proj_dtype)
+            backend.eval(delta_proj)
+        if str(backend.dtype(Q)) != str(proj_dtype):
+            Q = backend.astype(Q, proj_dtype)
+            backend.eval(Q)
+
+        # Project delta onto tangent space: (delta @ Q) @ Q^T
+        coeff = backend.matmul(delta_proj, Q)  # [rows, k]
+        delta_tangent = backend.matmul(coeff, backend.transpose(Q))  # [rows, d]
+        backend.eval(delta_tangent)
 
         # Geodesic null space component: delta - projection onto tangent space
-        delta_safe = delta_flat - delta_tangent
+        delta_safe = delta_proj - delta_tangent
         backend.eval(delta_safe)
+        if str(proj_dtype) != str(delta_dtype):
+            delta_safe = backend.astype(delta_safe, delta_dtype)
+            backend.eval(delta_safe)
 
         # Check if any filtering was actually applied
         tangent_norm_arr = backend.sqrt(backend.sum(delta_tangent * delta_tangent))
         backend.eval(tangent_norm_arr)
         tangent_norm = float(backend.to_scalar(tangent_norm_arr))
         filtering_applied = tangent_norm > reg
-        orthogonal_dim = max(0, d - n_samples)  # Null space dimension
+        orthogonal_dim = basis.orthogonal_dim
 
         # Compute metrics
         original_norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)
-        filtered_norm_arr = geodesic_norms(backend.reshape(delta_safe, (1, -1)), backend)
+        filtered_norm_arr = geodesic_norms(
+            backend.reshape(delta_safe, (1, -1)), backend
+        )
         backend.eval(original_norm_arr, filtered_norm_arr)
 
         original_norm = float(backend.to_scalar(original_norm_arr[0]))
@@ -320,7 +308,11 @@ class GeodesicNullSpaceFilter:
             projection_loss = 0.0
 
         # Reshape back to original
-        filtered_delta = backend.reshape(delta_safe, original_shape)
+        filtered_delta = delta_safe
+        if transpose_back:
+            filtered_delta = backend.transpose(filtered_delta)
+        if len(original_shape) == 1:
+            filtered_delta = backend.reshape(filtered_delta, original_shape)
         backend.eval(filtered_delta)
 
         return GeodesicNullSpaceResult(
@@ -332,8 +324,81 @@ class GeodesicNullSpaceFilter:
             original_norm=original_norm,
             filtered_norm=filtered_norm,
             filtering_applied=filtering_applied,
+            k_neighbors=basis.k_neighbors,
+            mean_geodesic_distance=basis.mean_geodesic_distance,
+        )
+
+    def _compute_basis(
+        self,
+        prior_activations: Any,
+        k_neighbors: int | None = None,
+    ) -> GeodesicNullSpaceBasis:
+        """Compute a reusable geodesic null-space basis for projections."""
+        backend = self._backend
+        prior_activations = backend.array(prior_activations)
+        backend.eval(prior_activations)
+
+        n_samples = int(prior_activations.shape[0])
+        d = int(prior_activations.shape[1])
+
+        geo_result = self._riemannian.geodesic_distances(
+            prior_activations, k_neighbors=k_neighbors
+        )
+        actual_k = geo_result.k_neighbors
+        geo_distances = geo_result.distances
+        backend.eval(geo_distances)
+
+        # Compute mean geodesic distance for scale reference
+        n = n_samples
+        eye_mask = backend.eye(n)
+        finite_mask = backend.isfinite(geo_distances)
+        non_diag_mask = eye_mask < 0.5  # Off-diagonal
+        valid_mask = finite_mask * non_diag_mask
+        valid_count = backend.sum(backend.astype(valid_mask, "float32"))
+        backend.eval(valid_count)
+        valid_count_val = int(backend.to_scalar(valid_count))
+
+        if valid_count_val > 0:
+            masked_geo = backend.where(
+                valid_mask, geo_distances, backend.zeros_like(geo_distances)
+            )
+            mean_geo_arr = backend.sum(masked_geo) / valid_count_val
+            backend.eval(mean_geo_arr)
+            mean_geo = float(backend.to_scalar(mean_geo_arr))
+        else:
+            mean_geo = 0.0
+
+        # Compute Fréchet mean and tangent space (GPU)
+        frechet_result = self._riemannian.frechet_mean(
+            prior_activations,
+            k_neighbors=actual_k,
+            geo_result=geo_result,
+        )
+        frechet_mean = frechet_result.mean
+        backend.eval(frechet_mean)
+
+        # Log map: tangent vectors from mean to each activation
+        tangent_vectors = self._riemannian.log_map(
+            prior_activations, frechet_mean, geo_result=geo_result
+        )
+        backend.eval(tangent_vectors)
+
+        # Project onto the row-space of T (span of tangent vectors in R^d).
+        A = backend.transpose(tangent_vectors)  # [d, n_samples]
+        if str(backend.dtype(A)) in ("float16", "bfloat16"):
+            A = backend.astype(A, "float32")
+        reg = regularization_epsilon(backend, A)
+        Q, _ = backend.qr(A)  # [d, k] orthonormal basis for column space
+        backend.eval(Q)
+
+        orthogonal_dim = max(0, d - n_samples)
+
+        return GeodesicNullSpaceBasis(
+            Q=Q,
+            orthogonal_dim=orthogonal_dim,
             k_neighbors=actual_k,
             mean_geodesic_distance=mean_geo,
+            regularization=reg,
         )
 
 
@@ -386,6 +451,7 @@ def filter_merge_delta_geodesic(
 
 
 __all__ = [
+    "GeodesicNullSpaceBasis",
     "GeodesicNullSpaceResult",
     "GeodesicNullSpaceFilter",
     "filter_merge_delta_geodesic",

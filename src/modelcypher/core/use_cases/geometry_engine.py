@@ -142,6 +142,11 @@ class GeometryEngine:
 
         if anchor_weights and len(anchor_weights) == int(z_source.shape[0]):
             weights_arr = self.backend.array(anchor_weights, dtype="float32")
+            # Validate non-negative weights before sqrt
+            min_weight = self.backend.min(weights_arr)
+            self.backend.eval(min_weight)
+            if float(self.backend.to_scalar(min_weight)) < 0:
+                raise ValueError("Anchor weights must be non-negative for sqrt")
             sqrt_weights = self.backend.sqrt(weights_arr)
             sqrt_weights = self.backend.reshape(sqrt_weights, (len(anchor_weights), 1))
             z_source = z_source * sqrt_weights

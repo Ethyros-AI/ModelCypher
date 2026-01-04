@@ -21,6 +21,7 @@ from typing import Any
 import mlx.core as mx
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.ports.async_embeddings import EmbedderPort
 
@@ -43,8 +44,11 @@ class MockMLXEmbedder(EmbedderPort):
         backend = get_default_backend()
         norms = geodesic_norms(vecs, backend)
         norms = backend.reshape(norms, (-1, 1))
-        backend.eval(norms)
-        return vecs / norms
+        # Guard against zero norms
+        eps = division_epsilon(backend, norms)
+        safe_norms = backend.maximum(norms, backend.full(norms.shape, eps))
+        backend.eval(safe_norms)
+        return vecs / safe_norms
 
     async def dimension(self) -> int:
         return self._dim

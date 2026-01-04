@@ -619,12 +619,11 @@ class IntrinsicDimension:
         zeros = backend.zeros_like(local_dims)
         local_dims_safe = backend.where(valid_mask, local_dims, zeros)
         mean_dim_arr = backend.sum(local_dims_safe) / valid_count
-        backend.eval(mean_dim_arr)
-        mean_dim = backend.to_scalar(mean_dim_arr)
         diff = backend.where(valid_mask, local_dims_safe - mean_dim_arr, zeros)
         var_dim_arr = backend.sum(diff * diff) / valid_count
         std_dim_arr = backend.sqrt(var_dim_arr)
-        backend.eval(std_dim_arr)
+        backend.eval(mean_dim_arr, std_dim_arr)
+        mean_dim = backend.to_scalar(mean_dim_arr)
         std_dim = backend.to_scalar(std_dim_arr)
 
         # Modal dimension: bin dimensions and find most common
@@ -667,10 +666,8 @@ class IntrinsicDimension:
 
             # Find modal bin using backend argmax
             max_bin_arr = backend.argmax(bin_counts_arr)
-            backend.eval(max_bin_arr)
+            backend.eval(max_bin_arr, bin_width_arr)
             max_bin = int(backend.to_scalar(max_bin_arr))
-
-            backend.eval(bin_width_arr)
             bin_width_val = float(backend.to_scalar(bin_width_arr))
             modal_dim = min_dim + (max_bin + 0.5) * bin_width_val
         else:

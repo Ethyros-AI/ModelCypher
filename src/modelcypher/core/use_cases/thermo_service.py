@@ -21,11 +21,15 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 from modelcypher.core.domain.geometry.thermo_path_integration import (
     CombinedMeasurement,
@@ -536,7 +540,8 @@ class ThermoService:
         denom_x = sum((xi - mean_x) ** 2 for xi in x) ** 0.5
         denom_y = sum((yi - mean_y) ** 2 for yi in y) ** 0.5
 
-        if denom_x == 0 or denom_y == 0:
+        # Use epsilon tolerance instead of exact zero check
+        if denom_x <= _MACHINE_EPS or denom_y <= _MACHINE_EPS:
             return None
 
         return numerator / (denom_x * denom_y)

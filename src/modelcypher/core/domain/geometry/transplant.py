@@ -193,27 +193,13 @@ def compute_transplant_delta(
             preserved_fraction=1.0,
         )
 
-    # Filter each row of delta (each output dimension) through geodesic null space
-    # This projects the input-space components onto geodesic-orthogonal directions
-    delta_filtered_rows = []
-    total_projection_loss = 0.0
-    geodesic_null_dim = 0
-
-    for i in range(out_dim):
-        row = delta[i, :]  # [in_dim]
-        b.eval(row)
-
-        result = geo_filter.filter_delta(
-            weight_delta=row,
-            prior_activations=activations_boundary,
-        )
-
-        delta_filtered_rows.append(result.filtered_delta)
-        total_projection_loss += result.projection_loss
-        geodesic_null_dim = max(geodesic_null_dim, result.orthogonal_dim)
-
-    # Stack filtered rows back into matrix
-    delta_filtered = b.stack(delta_filtered_rows, axis=0)
+    # Filter entire delta matrix in one pass using the shared geodesic basis.
+    result = geo_filter.filter_delta(
+        weight_delta=delta,
+        prior_activations=activations_boundary,
+    )
+    delta_filtered = result.filtered_delta
+    geodesic_null_dim = result.orthogonal_dim
     b.eval(delta_filtered)
 
     # =========================================================================
