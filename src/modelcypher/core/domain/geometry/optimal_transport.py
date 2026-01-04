@@ -50,6 +50,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     tiny_value,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -437,8 +438,11 @@ class SinkhornSolver:
 
         if normalize:
             div_eps = division_epsilon(backend, s)
-            s_norm = backend.sqrt(backend.sum(s * s, axis=1, keepdims=True) + div_eps)
-            t_norm = backend.sqrt(backend.sum(t * t, axis=1, keepdims=True) + div_eps)
+            s_norms = geodesic_norms(s, backend)
+            t_norms = geodesic_norms(t, backend)
+            backend.eval(s_norms, t_norms)
+            s_norm = backend.reshape(s_norms, (-1, 1)) + div_eps
+            t_norm = backend.reshape(t_norms, (-1, 1)) + div_eps
             s = s / s_norm
             t = t / t_norm
             backend.eval(s, t)
@@ -494,8 +498,11 @@ class SinkhornSolver:
         """
         backend = self._backend
         div_eps = division_epsilon(backend, source)
-        s_norm = backend.sqrt(backend.sum(source * source, axis=1, keepdims=True) + div_eps)
-        t_norm = backend.sqrt(backend.sum(target * target, axis=1, keepdims=True) + div_eps)
+        s_norms = geodesic_norms(source, backend)
+        t_norms = geodesic_norms(target, backend)
+        backend.eval(s_norms, t_norms)
+        s_norm = backend.reshape(s_norms, (-1, 1)) + div_eps
+        t_norm = backend.reshape(t_norms, (-1, 1)) + div_eps
         s = source / s_norm
         t = target / t_norm
         similarity = backend.matmul(s, backend.transpose(t))

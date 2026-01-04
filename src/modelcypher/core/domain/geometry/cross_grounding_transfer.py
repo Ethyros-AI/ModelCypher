@@ -90,16 +90,22 @@ class RelationalStressProfile:
     stress_vector: tuple[float, ...]  # Flattened distance vector for optimization
 
     def distance_to(self, other: "RelationalStressProfile") -> float:
-        """Compute stress distance between two profiles."""
+        """Compute stress distance between two profiles using geodesic norms."""
         backend = get_default_backend()
         if len(self.stress_vector) != len(other.stress_vector):
             # Different anchor sets - use common anchors
             common = set(self.anchor_distances.keys()) & set(other.anchor_distances.keys())
             self_dists = [self.anchor_distances[a] for a in sorted(common)]
             other_dists = [other.anchor_distances[a] for a in sorted(common)]
-            return sqrt_scalar(sum((a - b) ** 2 for a, b in zip(self_dists, other_dists)), backend)
-        diffs = [a - b for a, b in zip(self.stress_vector, other.stress_vector)]
-        return sqrt_scalar(sum(d * d for d in diffs), backend)
+            diffs = [a - b for a, b in zip(self_dists, other_dists)]
+        else:
+            diffs = [a - b for a, b in zip(self.stress_vector, other.stress_vector)]
+        # Convert to backend array and compute geodesic norm
+        diff_arr = backend.array(diffs)
+        diff_2d = backend.reshape(diff_arr, (1, -1))
+        norm_arr = geodesic_norms(diff_2d, backend)
+        backend.eval(norm_arr)
+        return float(backend.to_scalar(norm_arr))
 
 
 @dataclass(frozen=True)
@@ -433,8 +439,9 @@ class GroundingRotationEstimator:
         s_centered = source_flat - s_mean
         t_centered = target_flat - t_mean
         numerator_arr = b.sum(s_centered * t_centered)
-        s_std_arr = b.sqrt(b.sum(s_centered * s_centered))
-        t_std_arr = b.sqrt(b.sum(t_centered * t_centered))
+        # Use geodesic norms for standard deviation computation
+        s_std_arr = geodesic_norms(b.reshape(s_centered, (1, -1)), b)
+        t_std_arr = geodesic_norms(b.reshape(t_centered, (1, -1)), b)
         b.eval(numerator_arr, s_std_arr, t_std_arr)
         numerator_val = float(b.to_scalar(numerator_arr))
         s_std = float(b.to_scalar(s_std_arr))

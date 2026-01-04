@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -570,9 +571,12 @@ class LowRankGromovWasserstein:
         V = b.matmul(b.transpose(K), Q_rand)  # [m, r]
         b.eval(U, V)
 
-        # Normalize columns
-        U_norm = b.sqrt(b.sum(U * U, axis=0, keepdims=True) + eps)
-        V_norm = b.sqrt(b.sum(V * V, axis=0, keepdims=True) + eps)
+        # Normalize columns using geodesic norms (transpose for column-wise)
+        U_col_norms = geodesic_norms(b.transpose(U), b)  # [r]
+        V_col_norms = geodesic_norms(b.transpose(V), b)  # [r]
+        b.eval(U_col_norms, V_col_norms)
+        U_norm = b.reshape(U_col_norms, (1, -1)) + eps  # [1, r]
+        V_norm = b.reshape(V_col_norms, (1, -1)) + eps  # [1, r]
         U = U / U_norm
         V = V / V_norm
         b.eval(U, V)
