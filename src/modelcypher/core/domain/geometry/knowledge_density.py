@@ -36,7 +36,9 @@ that capacity yet. Dense concepts have "used up" their null space.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
+from statistics import median
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -196,13 +198,7 @@ class KnowledgeDensityAnalyzer:
         if concept_densities:
             densities = [c.density_score for c in concept_densities]
             mean_density = sum(densities) / len(densities)
-            sorted_densities = sorted(densities)
-            n = len(sorted_densities)
-            median_density = (
-                sorted_densities[n // 2]
-                if n % 2 == 1
-                else (sorted_densities[n // 2 - 1] + sorted_densities[n // 2]) / 2
-            )
+            median_density = median(densities)
         else:
             mean_density = 0.0
             median_density = 0.0
@@ -216,7 +212,7 @@ class KnowledgeDensityAnalyzer:
 
     def analyze_model(
         self,
-        probes: list["AtlasProbe"],
+        probes: list[AtlasProbeProtocol],
         activation_provider: "ActivationProvider",
         layers: list[int],
     ) -> ModelDensityProfile:
@@ -244,16 +240,13 @@ class KnowledgeDensityAnalyzer:
             all_concepts.extend(profile.concept_densities)
 
         # Per-domain aggregates
-        domain_densities: dict[str, list[float]] = {}
+        domain_densities: dict[str, list[float]] = defaultdict(list)
         for c in all_concepts:
-            if c.domain not in domain_densities:
-                domain_densities[c.domain] = []
             domain_densities[c.domain].append(c.density_score)
 
         domain_means = {
             domain: sum(scores) / len(scores)
             for domain, scores in domain_densities.items()
-            if scores
         }
 
         # Overall density
@@ -321,7 +314,7 @@ class KnowledgeDensityAnalyzer:
 
     def _get_support_texts(
         self,
-        probes: list["AtlasProbe"],
+        probes: list[AtlasProbeProtocol],
         probe_id: str,
     ) -> list[str]:
         """Get support texts for a probe."""

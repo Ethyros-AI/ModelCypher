@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from statistics import median as stats_median
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -52,7 +53,7 @@ if TYPE_CHECKING:
 MIN_ANCHOR_COUNT = 3
 
 
-@dataclass
+@dataclass(frozen=True)
 class LayerResult:
     """Tangent alignment metrics for a single layer pair."""
 
@@ -69,7 +70,7 @@ class LayerResult:
     coverage: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class TangentAlignmentReport:
     """Complete tangent space alignment report."""
 
@@ -432,15 +433,17 @@ class TangentSpaceAlignment:
             return []
 
     def _median(self, values: list[float]) -> float:
-        """Compute median of values."""
+        """Compute median of values.
+
+        Args:
+            values: List of float values.
+
+        Returns:
+            Median value, or 0.0 if list is empty.
+        """
         if not values:
             return 0.0
-        sorted_vals = sorted(values)
-        n = len(sorted_vals)
-        mid = n // 2
-        if n % 2 == 0:
-            return (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
-        return sorted_vals[mid]
+        return stats_median(values)
 
 
 # =============================================================================

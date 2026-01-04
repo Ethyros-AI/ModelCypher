@@ -106,7 +106,8 @@ def test_model_fingerprints_projection_single_point() -> None:
 
 
 def test_model_fingerprints_projection_dimensionality_mismatch() -> None:
-    # Test that it handles fingerprints with inconsistent layer coverage
+    # Test that it handles fingerprints with inconsistent layer coverage.
+    # 4+ fingerprints needed for 2D MDS projection (rank n-1 after centering).
     fingerprints = [
         ActivationFingerprint(
             prime_id="p1",
@@ -120,6 +121,16 @@ def test_model_fingerprints_projection_dimensionality_mismatch() -> None:
                 1: [ActivatedDimension(index=0, activation=1.0)]
             },  # Different layer
         ),
+        ActivationFingerprint(
+            prime_id="p3",
+            prime_text="C",
+            activated_dimensions={0: [ActivatedDimension(index=1, activation=1.0)]},
+        ),
+        ActivationFingerprint(
+            prime_id="p4",
+            prime_text="D",
+            activated_dimensions={1: [ActivatedDimension(index=1, activation=1.0)]},
+        ),
     ]
     bundle = ModelFingerprints(
         model_id="model-mismatch",
@@ -130,4 +141,4 @@ def test_model_fingerprints_projection_dimensionality_mismatch() -> None:
         fingerprints=fingerprints,
     )
     projection = ModelFingerprintsProjection.project_2d(bundle)
-    assert len(projection.points) == 2
+    assert len(projection.points) == 4

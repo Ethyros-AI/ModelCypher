@@ -298,15 +298,20 @@ class KnowledgeDiffer:
 
 
 def compute_graft_mask(diff: KnowledgeDiff) -> dict[str, dict[int, bool]]:
-    """Compute a graft mask indicating which concepts to graft."""
-    mask: dict[str, dict[int, bool]] = {}
+    """Compute a graft mask indicating which concepts to graft.
 
+    Args:
+        diff: KnowledgeDiff containing ranked graft opportunities.
+
+    Returns:
+        Nested dict mapping probe_id -> layer -> should_graft.
+        True indicates positive opportunity (source has knowledge target lacks).
+        False indicates non-positive opportunity (target already knows).
+    """
+    mask: dict[str, dict[int, bool]] = defaultdict(dict)
     for opp in diff.ranked_opportunities:
-        if opp.probe_id not in mask:
-            mask[opp.probe_id] = {}
         mask[opp.probe_id][opp.layer] = opp.opportunity_score > 0.0
-
-    return mask
+    return dict(mask)  # Convert back to regular dict for serialization
 
 
 __all__ = [
