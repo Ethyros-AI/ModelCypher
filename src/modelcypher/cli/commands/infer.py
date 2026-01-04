@@ -42,6 +42,9 @@ def infer_run(
     security_scan: bool = typer.Option(
         False, "--security-scan", help="Perform dual-path security analysis"
     ),
+    max_tokens: int | None = typer.Option(
+        None, "--max-tokens", help="Token limit (default: model context)"
+    ),
 ) -> None:
     """Execute inference with optional adapter and security scanning."""
     context = _context(ctx)
@@ -53,6 +56,7 @@ def infer_run(
             prompt=prompt,
             adapter=adapter,
             security_scan=security_scan,
+            max_tokens=max_tokens,
         )
     except ValueError as exc:
         error = ErrorDetail(
@@ -124,6 +128,9 @@ def infer_suite(
     suite_file: str = typer.Option(..., "--suite", help="Path to suite file (.txt, .json, .jsonl)"),
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
     security_scan: bool = typer.Option(False, "--security-scan", help="Perform security analysis"),
+    max_tokens: int | None = typer.Option(
+        None, "--max-tokens", help="Token limit per prompt (default: model context)"
+    ),
 ) -> None:
     """Execute batched inference over a suite of prompts."""
     context = _context(ctx)
@@ -135,6 +142,7 @@ def infer_suite(
             suite_file=suite_file,
             adapter=adapter,
             security_scan=security_scan,
+            max_tokens=max_tokens,
         )
     except ValueError as exc:
         error = ErrorDetail(

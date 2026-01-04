@@ -418,6 +418,10 @@ class SinkhornSolver:
     ) -> "Array":
         """Compute squared Euclidean cost matrix (2D/3D probes only).
 
+        INTENTIONAL EUCLIDEAN: This method is explicitly for low-dimensional
+        (2D/3D) data where Euclidean distance is exact. For high-dimensional
+        data, use squared_geodesic_cost instead.
+
         Args:
             source: Source points [n, d]
             target: Target points [m, d]

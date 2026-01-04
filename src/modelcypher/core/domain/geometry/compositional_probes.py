@@ -24,6 +24,7 @@ from modelcypher.core.domain.geometry.vector_math import (
     BackendVectorMath,
     geodesic_cosine_batch,
     geodesic_norms,
+    geodesic_pairwise_metrics,
 )
 from modelcypher.core.domain.geometry.types import (
     CompositionAnalysis,
@@ -226,20 +227,17 @@ class CompositionalProbes:
         da = va - ma
         db = vb - mb
 
-        num = bk.sum(da * db)
-        # Compute geodesic norms for correlation denominator
-        da_norm_arr = geodesic_norms(bk.reshape(da, (1, -1)), bk)
-        db_norm_arr = geodesic_norms(bk.reshape(db, (1, -1)), bk)
-        bk.eval(da_norm_arr, db_norm_arr)
-        da_norm = bk.to_scalar(da_norm_arr)
-        db_norm = bk.to_scalar(db_norm_arr)
-        den = bk.array([da_norm * db_norm])
-        bk.eval(num, den)
+        # Use geodesic cosine between centered vectors
+        da_mat = bk.reshape(da, (1, -1))
+        db_mat = bk.reshape(db, (1, -1))
+        da_norm_arr = geodesic_norms(da_mat, bk)
+        db_norm_arr = geodesic_norms(db_mat, bk)
+        cos_arr, _ = geodesic_pairwise_metrics(da_mat, db_mat, bk)
+        bk.eval(da_norm_arr, db_norm_arr, cos_arr)
 
-        den_val = float(bk.to_scalar(den))
+        den_val = float(bk.to_scalar(da_norm_arr[0])) * float(bk.to_scalar(db_norm_arr[0]))
         if den_val > eps:
-            num_val = float(bk.to_scalar(num))
-            return num_val / den_val
+            return float(bk.to_scalar(cos_arr[0]))
         return 0.0
 
     @staticmethod

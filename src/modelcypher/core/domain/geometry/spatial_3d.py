@@ -184,7 +184,11 @@ def _backend_corrcoef(backend: "Backend", x: "Array", y: "Array") -> float:
 
 
 def _backend_vector_norm(backend: "Backend", v: "Array") -> float:
-    """Compute L2 norm of vector using backend ops."""
+    """Compute L2 norm of vector using backend ops.
+
+    INTENTIONAL EUCLIDEAN: This operates on 3D spatial vectors representing
+    human-perceptual axes. Physical 3D space IS Euclidean by definition.
+    """
     b = backend
     v_flat = b.reshape(v, (-1,))
     norm_sq = b.sum(v_flat * v_flat)
@@ -194,7 +198,12 @@ def _backend_vector_norm(backend: "Backend", v: "Array") -> float:
 
 
 def _backend_vector_dot(backend: "Backend", v1: "Array", v2: "Array") -> float:
-    """Compute dot product of vectors using backend ops."""
+    """Compute dot product of vectors using backend ops.
+
+    INTENTIONAL EUCLIDEAN: This operates on 3D spatial vectors representing
+    human-perceptual axes (X=lateral, Y=vertical, Z=depth). Physical 3D space
+    IS Euclidean by definition - the curse of dimensionality doesn't apply.
+    """
     b = backend
     v1_flat = b.reshape(v1, (-1,))
     v2_flat = b.reshape(v2, (-1,))

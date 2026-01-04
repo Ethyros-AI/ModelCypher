@@ -159,67 +159,67 @@ class _GlobalOptionsTyperGroup(TyperGroup):
 
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
-validate_app = typer.Typer(no_args_is_help=True)
-estimate_app = typer.Typer(no_args_is_help=True)
-geometry_app = typer.Typer(no_args_is_help=True)
+validate_app = typer.Typer(no_args_is_help=True, help="Validation utilities")
+estimate_app = typer.Typer(no_args_is_help=True, help="Training resource estimates")
+geometry_app = typer.Typer(no_args_is_help=True, help="Geometry analysis commands")
 
 # Hidden dev group for diagnostic/internal commands
 dev_app = typer.Typer(no_args_is_help=True, hidden=True)
 
-app.add_typer(train_commands.train_app, name="train")
-app.add_typer(job_commands.app, name="job")
-app.add_typer(train_commands.checkpoint_app, name="checkpoint")
-app.add_typer(merge_commands.app, name="merge")
-app.add_typer(model_commands.app, name="model")
-app.add_typer(system_commands.app, name="system")
-app.add_typer(eval_commands.eval_app, name="eval")
-app.add_typer(eval_commands.compare_app, name="compare")
-app.add_typer(validate_app, name="validate")
-app.add_typer(estimate_app, name="estimate")
-app.add_typer(geometry_app, name="geometry")
-geometry_app.add_typer(geometry_path_commands.app, name="path")
-geometry_app.add_typer(geometry_training_commands.app, name="training")
-geometry_app.add_typer(geometry_safety_commands.app, name="safety")
-geometry_app.add_typer(geometry_adapter_commands.app, name="adapter")
-geometry_app.add_typer(geometry_atlas_commands.app, name="atlas")
-geometry_app.add_typer(geometry_baseline_commands.app, name="baseline")
-geometry_app.add_typer(geometry_primes_commands.app, name="primes")
-geometry_app.add_typer(geometry_crm_commands.app, name="crm")
-geometry_app.add_typer(geometry_metrics_commands.app, name="metrics")
-geometry_app.add_typer(geometry_concept_commands.app, name="concept")
-geometry_app.add_typer(geometry_cross_cultural_commands.app, name="cross-cultural")
-geometry_app.add_typer(geometry_density_commands.app, name="density")
-geometry_app.add_typer(geometry_sparse_commands.app, name="sparse")
-geometry_app.add_typer(geometry_refusal_commands.app, name="refusal")
-geometry_app.add_typer(geometry_persona_commands.app, name="persona")
-geometry_app.add_typer(geometry_manifold_commands.app, name="manifold")
-geometry_app.add_typer(geometry_metaphor_commands.app, name="metaphor")
-geometry_app.add_typer(geometry_invariant_commands.app, name="invariant")
-geometry_app.add_typer(geometry_emotion_commands.app, name="emotion")
-geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer")
-geometry_app.add_typer(geometry_spatial_commands.app, name="spatial")
-geometry_app.add_typer(geometry_social_commands.app, name="social")
-geometry_app.add_typer(geometry_temporal_commands.app, name="temporal")
-geometry_app.add_typer(geometry_moral_commands.app, name="moral")
-geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory")
-geometry_app.add_typer(geometry_research_commands.app, name="research")
-geometry_app.add_typer(geometry_visualize_commands.app, name="visualize")
-geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
-geometry_app.add_typer(geometry_interference_commands.app, name="interference")
-geometry_app.add_typer(geometry_merge_entropy_commands.app, name="merge-entropy")
-geometry_app.add_typer(geometry_refinement_commands.app, name="refinement")
-app.add_typer(entropy_commands.app, name="entropy")
-app.add_typer(adapter_commands.adapter_app, name="adapter")
-app.add_typer(adapter_commands.calibration_app, name="calibration")
-app.add_typer(thermo_commands.app, name="thermo")
-app.add_typer(safety_commands.app, name="safety")
-app.add_typer(agent_commands.app, name="agent")
-app.add_typer(stability_commands.app, name="stability")
-app.add_typer(dashboard_commands.app, name="dashboard")
-app.add_typer(storage_commands.app, name="storage")
-app.add_typer(infer_commands.app, name="infer")
-app.add_typer(help_commands.app, name="help")
-app.add_typer(profile_commands.app, name="profile")
+app.add_typer(train_commands.train_app, name="train", help="Training jobs and lifecycle")
+app.add_typer(job_commands.app, name="job", help="Job management")
+app.add_typer(train_commands.checkpoint_app, name="checkpoint", help="Checkpoint management")
+app.add_typer(merge_commands.app, name="merge", help="Model merge pipeline")
+app.add_typer(model_commands.app, name="model", help="Model registry and validation")
+app.add_typer(system_commands.app, name="system", help="System probes and benchmarks")
+app.add_typer(eval_commands.eval_app, name="eval", help="Evaluation runs")
+app.add_typer(eval_commands.compare_app, name="compare", help="Checkpoint comparisons")
+app.add_typer(validate_app, name="validate", help="Validation utilities")
+app.add_typer(estimate_app, name="estimate", help="Training resource estimates")
+app.add_typer(geometry_app, name="geometry", help="Geometry analysis commands")
+geometry_app.add_typer(geometry_path_commands.app, name="path", help="Path geometry detection")
+geometry_app.add_typer(geometry_training_commands.app, name="training", help="Training geometry metrics")
+geometry_app.add_typer(geometry_safety_commands.app, name="safety", help="Safety geometry probes")
+geometry_app.add_typer(geometry_adapter_commands.app, name="adapter", help="Adapter geometry analysis")
+geometry_app.add_typer(geometry_atlas_commands.app, name="atlas", help="Atlas dimensionality studies")
+geometry_app.add_typer(geometry_baseline_commands.app, name="baseline", help="Geometry baseline profiles")
+geometry_app.add_typer(geometry_primes_commands.app, name="primes", help="Semantic primes analysis")
+geometry_app.add_typer(geometry_crm_commands.app, name="crm", help="Concept Response Matrix")
+geometry_app.add_typer(geometry_metrics_commands.app, name="metrics", help="Point-cloud geometry metrics")
+geometry_app.add_typer(geometry_concept_commands.app, name="concept", help="Concept detection and comparison")
+geometry_app.add_typer(geometry_cross_cultural_commands.app, name="cross-cultural", help="Cross-cultural analysis")
+geometry_app.add_typer(geometry_density_commands.app, name="density", help="Knowledge density profiling")
+geometry_app.add_typer(geometry_sparse_commands.app, name="sparse", help="Sparse domain analysis")
+geometry_app.add_typer(geometry_refusal_commands.app, name="refusal", help="Refusal pair analysis")
+geometry_app.add_typer(geometry_persona_commands.app, name="persona", help="Persona extraction")
+geometry_app.add_typer(geometry_manifold_commands.app, name="manifold", help="Manifold operations")
+geometry_app.add_typer(geometry_metaphor_commands.app, name="metaphor", help="Metaphor detection")
+geometry_app.add_typer(geometry_invariant_commands.app, name="invariant", help="Invariant analysis")
+geometry_app.add_typer(geometry_emotion_commands.app, name="emotion", help="Emotion geometry")
+geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer", help="Transfer geometry")
+geometry_app.add_typer(geometry_spatial_commands.app, name="spatial", help="Spatial geometry")
+geometry_app.add_typer(geometry_social_commands.app, name="social", help="Social geometry")
+geometry_app.add_typer(geometry_temporal_commands.app, name="temporal", help="Temporal geometry")
+geometry_app.add_typer(geometry_moral_commands.app, name="moral", help="Moral geometry")
+geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory", help="Number theory geometry")
+geometry_app.add_typer(geometry_research_commands.app, name="research", help="Research-only geometry commands")
+geometry_app.add_typer(geometry_visualize_commands.app, name="visualize", help="Geometry visualization")
+geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint", help="Merge guidance waypoints")
+geometry_app.add_typer(geometry_interference_commands.app, name="interference", help="Interference prediction")
+geometry_app.add_typer(geometry_merge_entropy_commands.app, name="merge-entropy", help="Entropy merge validation")
+geometry_app.add_typer(geometry_refinement_commands.app, name="refinement", help="Refinement analysis")
+app.add_typer(entropy_commands.app, name="entropy", help="Entropy analytics")
+app.add_typer(adapter_commands.adapter_app, name="adapter", help="Adapter inspection and projection")
+app.add_typer(adapter_commands.calibration_app, name="calibration", help="Calibration runs")
+app.add_typer(thermo_commands.app, name="thermo", help="Thermodynamics metrics")
+app.add_typer(safety_commands.app, name="safety", help="Safety probes")
+app.add_typer(agent_commands.app, name="agent", help="Agent trace tools")
+app.add_typer(stability_commands.app, name="stability", help="Stability suites")
+app.add_typer(dashboard_commands.app, name="dashboard", help="Metrics export")
+app.add_typer(storage_commands.app, name="storage", help="Storage status and cleanup")
+app.add_typer(infer_commands.app, name="infer", help="Inference commands")
+app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
+app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
 
 
 def _context(ctx: typer.Context) -> CLIContext:
@@ -285,6 +285,7 @@ def main(
 
 @app.command("inventory")
 def inventory(ctx: typer.Context) -> None:
+    """List registered services and inventories."""
     context = _context(ctx)
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
@@ -297,6 +298,7 @@ def inventory(ctx: typer.Context) -> None:
 
 @app.command("explain")
 def explain(ctx: typer.Context, command: str = typer.Argument(...)) -> None:
+    """Explain a CLI command and return structured guidance."""
     context = _context(ctx)
     from modelcypher.core.use_cases.help_service import HelpService
 
@@ -327,6 +329,7 @@ def validate_train(
     seed: int = typer.Option(..., "--seed"),
     deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
 ) -> None:
+    """Validate a training configuration without launching a job."""
     context = _context(ctx)
     service = get_training_service()
     from modelcypher.core.domain.training import (
@@ -652,6 +655,7 @@ def estimate_train(
     seed: int = typer.Option(..., "--seed"),
     deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
 ) -> None:
+    """Estimate training resource usage for a configuration."""
     context = _context(ctx)
     service = get_training_service()
     from modelcypher.core.domain.training import (
@@ -715,6 +719,7 @@ def geometry_validate(
     include_fixtures: bool = typer.Option(False, "--include-fixtures"),
     file: str | None = typer.Option(None, "--file"),
 ) -> None:
+    """Validate geometry invariants on built-in fixtures."""
     context = _context(ctx)
     service = GeometryService()
     report = service.validate(include_fixtures=include_fixtures)
@@ -741,40 +746,9 @@ def geometry_validate(
     write_output(payload, context.output_format, context.pretty)
 
 
-@app.command("infer")
-def infer(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model"),
-    prompt: str = typer.Option(..., "--prompt"),
-    scan: bool = typer.Option(False, "--scan", help="Run security scan on output"),
-) -> None:
-    context = _context(ctx)
-    engine = get_inference_engine()
-
-    # Use the more capable 'run' method
-    from dataclasses import asdict
-
-    result = engine.run(
-        model=model,
-        prompt=prompt,
-        security_scan=scan,
-    )
-
-    # Convert dataclass to dict for output
-    payload = asdict(result)
-
-    # Flatten security info for easier reading if present
-    if result.security:
-        payload["maxAnomalyScore"] = result.security.max_anomaly_score
-        payload["securityAnomalies"] = result.security.anomaly_count
-        payload["securityAvgDelta"] = result.security.avg_delta
-
-    write_output(payload, context.output_format, context.pretty)
-
-
 # Agent-eval commands (extracted to commands/agent_eval.py)
-app.add_typer(agent_eval_commands.app, name="agent-eval")
+app.add_typer(agent_eval_commands.app, name="agent-eval", help="Agent evaluation runs")
 
 
 # Research commands (all commands in research_commands.app)
-app.add_typer(research_commands.app, name="research")
+app.add_typer(research_commands.app, name="research", help="Research experiments")

@@ -34,6 +34,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 logger = logging.getLogger(__name__)
 
@@ -90,16 +91,13 @@ class DiagnosticVector:
 
     @property
     def magnitude(self) -> float:
-        """L2 norm of diagnostic vector (total transformation effort).
-
-        INTENTIONAL EUCLIDEAN: This is a 4D diagnostic vector where geodesic
-        and Euclidean distances are identical. The curse of dimensionality
-        that makes Euclidean unreliable only manifests in high dimensions
-        (100+). In 4D, there's no manifold structure to capture.
-        """
+        """Geodesic norm of diagnostic vector (total transformation effort)."""
         vec = self.vector
         _b = get_default_backend()
-        return sqrt_scalar(sum(v * v for v in vec), _b)
+        vec_arr = _b.reshape(_b.array(vec), (1, -1))
+        norm_arr = geodesic_norms(vec_arr, _b)
+        _b.eval(norm_arr)
+        return float(_b.to_scalar(norm_arr[0]))
 
     @property
     def max_dimension(self) -> str:

@@ -190,6 +190,13 @@ class ModelFingerprintsProjection:
 
     @staticmethod
     def _normalize_rows(matrix: list[float], rows: int, cols: int) -> None:
+        """Normalize rows to unit length.
+
+        INTENTIONAL EUCLIDEAN: Row normalization for PCA preprocessing.
+        PCA finds directions of maximum variance using eigenvector computation,
+        which is a linear algebra operation defined in terms of Euclidean norms.
+        The eigenvectors of a matrix are inherently Euclidean objects.
+        """
         if rows <= 0 or cols <= 0:
             return
         for row in range(rows):
@@ -275,6 +282,12 @@ class ModelFingerprintsProjection:
 
     @staticmethod
     def _normalize(vector: list[float]) -> bool:
+        """Normalize vector to unit length.
+
+        INTENTIONAL EUCLIDEAN: Power iteration for eigenvector computation.
+        The iteration v_{k+1} = Av_k / ||Av_k|| requires Euclidean normalization
+        because eigenvectors are defined by ||Av|| = λ||v|| in Euclidean norm.
+        """
         sum_squares = 0.0
         for value in vector:
             sum_squares += value * value

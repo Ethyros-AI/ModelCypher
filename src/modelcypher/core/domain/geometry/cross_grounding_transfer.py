@@ -49,7 +49,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     ulp_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -438,16 +441,16 @@ class GroundingRotationEstimator:
         t_mean = b.mean(target_flat)
         s_centered = source_flat - s_mean
         t_centered = target_flat - t_mean
-        numerator_arr = b.sum(s_centered * t_centered)
-        # Use geodesic norms for standard deviation computation
-        s_std_arr = geodesic_norms(b.reshape(s_centered, (1, -1)), b)
-        t_std_arr = geodesic_norms(b.reshape(t_centered, (1, -1)), b)
-        b.eval(numerator_arr, s_std_arr, t_std_arr)
-        numerator_val = float(b.to_scalar(numerator_arr))
-        s_std = float(b.to_scalar(s_std_arr))
-        t_std = float(b.to_scalar(t_std_arr))
+        s_centered_mat = b.reshape(s_centered, (1, -1))
+        t_centered_mat = b.reshape(t_centered, (1, -1))
+        s_std_arr = geodesic_norms(s_centered_mat, b)
+        t_std_arr = geodesic_norms(t_centered_mat, b)
+        cos_arr, _ = geodesic_pairwise_metrics(s_centered_mat, t_centered_mat, b)
+        b.eval(s_std_arr, t_std_arr, cos_arr)
+        s_std = float(b.to_scalar(s_std_arr[0]))
+        t_std = float(b.to_scalar(t_std_arr[0]))
         if s_std > 0 and t_std > 0:
-            correlation = numerator_val / (s_std * t_std)
+            correlation = float(b.to_scalar(cos_arr[0]))
         else:
             correlation = 0.0
 

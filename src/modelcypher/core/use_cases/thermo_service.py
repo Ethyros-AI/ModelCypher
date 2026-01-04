@@ -308,6 +308,9 @@ class ThermoService:
         path_length = sum(abs(entropies[i] - entropies[i - 1]) for i in range(1, len(entropies)))
 
         # Compute curvature as variance in entropy deltas
+        # INTENTIONAL EUCLIDEAN: Standard deviation of 1D scalar entropy deltas.
+        # This is a statistical measure on a list of scalars, not a geometric
+        # distance in high-dimensional space. 1D statistics use Euclidean math.
         deltas = [entropies[i] - entropies[i - 1] for i in range(1, len(entropies))]
         mean_delta = sum(deltas) / len(deltas)
         curvature = (sum((d - mean_delta) ** 2 for d in deltas) / len(deltas)) ** 0.5

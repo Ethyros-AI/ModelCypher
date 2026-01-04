@@ -515,6 +515,11 @@ class PathGeometry:
     ) -> float:
         """Compute similarity between two path signatures.
 
+        INTENTIONAL EUCLIDEAN: Frobenius distance between signature tensors.
+        Signatures are finite-dimensional tensor objects from rough path theory.
+        The standard metric on signature space is the Frobenius/L2 metric,
+        which is well-defined for these low-dimensional (d + d×d) objects.
+
         Args:
             sig_a: First signature.
             sig_b: Second signature.
@@ -704,18 +709,23 @@ class BackendPathGeometry:
         level2 = self._to_nested_list(level2_arr)
 
         # Signed area: sqrt(0.5 * sum of squared antisymmetric parts)
+        # INTENTIONAL EUCLIDEAN: Frobenius norm of the antisymmetric tensor.
+        # This is the standard mathematical definition in rough path theory.
+        # The signature is a tensor, and its antisymmetric part's "area" is
+        # defined as the Frobenius norm - a linear algebra concept.
         antisym = level2_arr - self.backend.transpose(level2_arr)
         antisym_sum = self.backend.sum(antisym * antisym)
         antisym_scaled = antisym_sum * 0.5
         self.backend.eval(antisym_scaled)
         signed_area = 0.5 * sqrt_scalar(self._to_scalar(antisym_scaled), self.backend)
 
-        # Signature norm: sqrt(sum of all squared components)
-        level1_norm_sq = self.backend.sum(level1_arr * level1_arr)
-        level2_norm_sq = self.backend.sum(level2_arr * level2_arr)
-        total_norm_sq = level1_norm_sq + level2_norm_sq
-        self.backend.eval(total_norm_sq)
-        signature_norm = sqrt_scalar(self._to_scalar(total_norm_sq), self.backend)
+        # Signature norm using geodesic distance
+        level1_flat = self.backend.reshape(level1_arr, (1, -1))
+        level2_flat = self.backend.reshape(level2_arr, (1, -1))
+        sig_flat = self.backend.concatenate([level1_flat, level2_flat], axis=1)
+        sig_norm_arr = geodesic_norms(sig_flat, self.backend)
+        self.backend.eval(sig_norm_arr)
+        signature_norm = float(self._to_scalar(sig_norm_arr[0]))
 
         return TruncatedSignature(
             level1=level1,
@@ -743,8 +753,7 @@ class BackendPathGeometry:
         a_arr = self.backend.array(sig_a.level1[:count])
         b_arr = self.backend.array(sig_b.level1[:count])
         diff = a_arr - b_arr
-        level1_dist_sq = self.backend.sum(diff * diff)
-        self.backend.eval(level1_dist_sq)
+        level1_flat = self.backend.reshape(diff, (1, -1))
 
         # Level-2 distance
         rows = min(len(sig_a.level2), len(sig_b.level2))
@@ -757,14 +766,17 @@ class BackendPathGeometry:
             a2 = self.backend.array([row[:cols] for row in sig_a.level2[:rows]])
             b2 = self.backend.array([row[:cols] for row in sig_b.level2[:rows]])
             diff2 = a2 - b2
-            level2_dist_sq = self.backend.sum(diff2 * diff2)
-            self.backend.eval(level2_dist_sq)
+            level2_flat = self.backend.reshape(diff2, (1, -1))
         else:
-            level2_dist_sq = self.backend.array(0.0)
+            level2_flat = None
 
-        total_dist_sq = level1_dist_sq + level2_dist_sq
-        self.backend.eval(total_dist_sq)
-        total_dist = sqrt_scalar(self._to_scalar(total_dist_sq), self.backend)
+        if level2_flat is not None:
+            dist_flat = self.backend.concatenate([level1_flat, level2_flat], axis=1)
+        else:
+            dist_flat = level1_flat
+        dist_arr = geodesic_norms(dist_flat, self.backend)
+        self.backend.eval(dist_arr)
+        total_dist = float(self._to_scalar(dist_arr[0]))
         return 1.0 / (1.0 + total_dist)
 
     def analyze_entropy_path(self, path: PathSignature) -> EntropyPathAnalysis:

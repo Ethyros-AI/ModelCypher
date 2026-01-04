@@ -1036,6 +1036,8 @@ class RiemannianGeometry:
             )
 
         # 2D/3D: compute geodesic defect against Euclidean chord distances.
+        # INTENTIONAL EUCLIDEAN: Euclidean is the baseline for geodesic defect.
+        # The defect (geo - euc) / euc quantifies manifold curvature.
         center = points[center_idx]
         neighbor_pts = backend.take(points, neighbors, axis=0)
         diffs = neighbor_pts - center
@@ -1828,7 +1830,9 @@ class RiemannianGeometry:
             k_neighbors = geo_result.k_neighbors
         k_neighbors = max(1, min(int(k_neighbors), n))
 
-        # Euclidean distances from query to all points (graph edge weights)
+        # INTENTIONAL EUCLIDEAN: Bootstrap step for query point attachment.
+        # To compute geodesic distance FROM the query TO existing points,
+        # we first need edge weights to attach the query to the graph.
         diff = points - backend.reshape(query, (1, -1))
         euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
         backend.eval(euc_dist)
@@ -1946,7 +1950,9 @@ class RiemannianGeometry:
                 f"This indicates disconnected manifold components."
             )
 
-        # Euclidean distances from mu
+        # INTENTIONAL EUCLIDEAN: Computing geodesic/Euclidean ratio for curvature.
+        # The ratio geo/euc IS the curvature signal: >1 = negative curvature,
+        # <1 = positive curvature, =1 = flat. We need Euclidean as the baseline.
         diff = points - backend.reshape(mu, (1, -1))
         euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
 
@@ -2145,7 +2151,8 @@ class RiemannianGeometry:
             points, mean, geo_result=geo_result
         )
 
-        # Euclidean vectors from mean
+        # INTENTIONAL EUCLIDEAN: Computing geodesic/Euclidean ratio for curvature.
+        # See _frechet_mean_step for explanation of why this ratio is the signal.
         diff = points - backend.reshape(mean, (1, -1))
         euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
 

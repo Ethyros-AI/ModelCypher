@@ -647,6 +647,10 @@ class SectionalCurvatureEstimator:
             subset = neighbors
 
         # Compute pairwise distances for scale estimation
+        # INTENTIONAL EUCLIDEAN: Bootstrap step for estimating characteristic scale.
+        # We need pairwise distances to determine the k-NN radius, but we can't
+        # compute geodesic distances without first having a k-NN graph. This is
+        # the unavoidable bootstrap: Euclidean for initial edge weights.
         m = int(subset.shape[0])
         norms = backend.sum(subset * subset, axis=1, keepdims=True)
         dots = backend.matmul(subset, backend.transpose(subset))

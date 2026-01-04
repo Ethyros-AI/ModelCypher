@@ -29,7 +29,10 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_batch,
+    geodesic_norms,
+)
 
 
 
@@ -349,9 +352,10 @@ class PersonaVectorMonitor:
         if deltas:
             backend = get_default_backend()
             delta_arr = backend.array(deltas)
-            total_drift_arr = backend.sum(delta_arr * delta_arr)
-            backend.eval(total_drift_arr)
-            overall_magnitude = sqrt_scalar(float(backend.to_scalar(total_drift_arr)), backend)
+            delta_vec = backend.reshape(delta_arr, (1, -1))
+            norm_arr = geodesic_norms(delta_vec, backend)
+            backend.eval(norm_arr)
+            overall_magnitude = float(backend.to_scalar(norm_arr[0]))
         return TrainingDriftMetrics(
             step=step,
             positions=positions,

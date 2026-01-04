@@ -108,6 +108,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     power_iteration_eigh,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -412,16 +413,16 @@ class SharedSubspaceProjector:
         target_projected = b.matmul(target_reduced, b.matmul(inv_sqrt_y, v_truncated))
         b.eval(source_projected, target_projected)
 
-        # Compute alignment error
+        # Compute alignment error using geodesic norms
         diff = source_projected - target_projected
-        error_sum = b.sum(diff * diff)
-        target_norm = b.sum(target_projected * target_projected)
-        b.eval(error_sum, target_norm)
-        error_sum_float = float(b.to_scalar(error_sum))
-        target_norm_float = float(b.to_scalar(target_norm))
-        alignment_error = (
-            sqrt_scalar(error_sum_float / target_norm_float, b) if target_norm_float > 0 else 0.0
-        )
+        diff_flat = b.reshape(diff, (1, -1))
+        target_flat = b.reshape(target_projected, (1, -1))
+        diff_norm_arr = geodesic_norms(diff_flat, b)
+        target_norm_arr = geodesic_norms(target_flat, b)
+        b.eval(diff_norm_arr, target_norm_arr)
+        diff_norm = float(b.to_scalar(diff_norm_arr[0]))
+        target_norm = float(b.to_scalar(target_norm_arr[0]))
+        alignment_error = (diff_norm / target_norm) if target_norm > 0 else 0.0
 
         # Convert projections to lists
         source_proj_list = _array_to_2d_list(b, source_projection)

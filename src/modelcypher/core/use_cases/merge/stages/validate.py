@@ -220,7 +220,13 @@ def stage_validate(
         complexity_samples.append(complexity)
 
         # Compute magnitude for this layer
-        magnitude = sqrt_scalar(interference**2 + importance**2 + instability**2 + complexity**2, b)
+        magnitude_vec = b.reshape(
+            b.array([interference, importance, instability, complexity], dtype="float32"),
+            (1, -1),
+        )
+        magnitude_arr = geodesic_norms(magnitude_vec, b)
+        b.eval(magnitude_arr)
+        magnitude = float(b.to_scalar(magnitude_arr[0]))
         magnitude_samples.append(magnitude)
 
     # Derive bounds from measurements (or skip if no measurements)
