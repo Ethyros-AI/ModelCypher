@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 # Suppress noisy third-party initialization warnings
@@ -249,6 +250,20 @@ def main(
     quiet_mode = very_quiet or quiet or ai_mode
     effective_log_level = "error" if very_quiet else log_level
     configure_logging(effective_log_level, quiet=quiet_mode)
+
+    if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
+        ctx.obj = CLIContext(
+            ai_mode=ai_mode,
+            output_format=output_format,
+            quiet=quiet,
+            very_quiet=very_quiet,
+            yes=yes or ai_mode,
+            no_prompt=no_prompt or ai_mode,
+            pretty=pretty,
+            log_level=effective_log_level,
+            trace_id=trace_id,
+        )
+        return
 
     # Initialize the default backend (required before any domain code runs)
     from modelcypher.backends import initialize_default_backend

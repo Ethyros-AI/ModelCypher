@@ -36,6 +36,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -294,19 +295,23 @@ class MLXModelProbe(BaseModelProbe):
         b_f32 = tensor_b.astype(mx.float32)
 
         diff = a_f32 - b_f32
-        # Flatten and compute norms
-        diff_flat = mx.reshape(diff, (-1,))
-        a_flat = mx.reshape(a_f32, (-1,))
-        b_flat = mx.reshape(b_f32, (-1,))
+        # Flatten and compute geodesic norms
+        _b = get_default_backend()
+        diff_flat = _b.reshape(_b.array(diff), (1, -1))
+        a_flat = _b.reshape(_b.array(a_f32), (1, -1))
+        b_flat = _b.reshape(_b.array(b_f32), (1, -1))
 
-        norm_diff = float(mx.sqrt(mx.sum(diff_flat * diff_flat)))
-        norm_a = float(mx.sqrt(mx.sum(a_flat * a_flat)))
-        norm_b = float(mx.sqrt(mx.sum(b_flat * b_flat)))
+        norm_diff_arr = geodesic_norms(diff_flat, _b)
+        norm_a_arr = geodesic_norms(a_flat, _b)
+        norm_b_arr = geodesic_norms(b_flat, _b)
+        _b.eval(norm_diff_arr, norm_a_arr, norm_b_arr)
+        norm_diff = float(_b.to_scalar(norm_diff_arr))
+        norm_a = float(_b.to_scalar(norm_a_arr))
+        norm_b = float(_b.to_scalar(norm_b_arr))
 
         max_norm = max(norm_a, norm_b, _MACHINE_EPS)
         relative_drift = norm_diff / max_norm
 
         # Normalize to [0, 1] using exponential decay
-        _b = get_default_backend()
         normalized = 1.0 - exp_scalar(-relative_drift, _b)
         return float(min(1.0, max(0.0, normalized)))

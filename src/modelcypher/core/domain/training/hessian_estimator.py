@@ -148,15 +148,13 @@ def gradient_quality(
     stacked = backend.stack(flat_gradients, axis=0)
     mean_grad = backend.mean(stacked, axis=0)
     centered = stacked - mean_grad
-    squared_diffs = backend.sum(centered * centered, axis=1)
-    variance_arr = backend.mean(squared_diffs)
-    mean_norm_sq_arr = backend.sum(mean_grad * mean_grad)
-    backend.eval(variance_arr, mean_norm_sq_arr)
+    centered_norms = geodesic_norms(centered, backend)
+    variance_arr = backend.mean(centered_norms * centered_norms)
+    mean_norm_arr = geodesic_norms(backend.reshape(mean_grad, (1, -1)), backend)
+    backend.eval(variance_arr, mean_norm_arr)
     variance = float(backend.to_scalar(variance_arr))
-    mean_norm_sq = float(backend.to_scalar(mean_norm_sq_arr))
-    mean_norm_arr = backend.sqrt(backend.array([mean_norm_sq]))
-    backend.eval(mean_norm_arr)
     mean_norm = float(backend.to_scalar(mean_norm_arr))
+    mean_norm_sq = mean_norm * mean_norm
     snr = mean_norm_sq / variance if variance > 0 else float("inf")
 
     return GradientQualityMetrics(variance=variance, snr=snr, mean_norm=mean_norm)

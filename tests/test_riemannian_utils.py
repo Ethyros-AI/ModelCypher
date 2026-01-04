@@ -37,6 +37,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.domain.geometry.riemannian_utils import (
     CurvatureEstimate,
     DirectionalCoverage,
@@ -1228,9 +1229,11 @@ class TestSyntheticManifolds:
     def _sample_sphere(self, backend: "Backend", n_points: int, dim: int, seed: int):
         """Sample uniform points on unit (dim-1)-sphere in R^dim."""
         backend.random_seed(seed)
-        # Sample Gaussian, normalize to sphere
+        # Sample Gaussian, normalize to sphere using geodesic norms
         points = backend.random_normal((n_points, dim))
-        norms = backend.sqrt(backend.sum(points * points, axis=1, keepdims=True))
+        norms_flat = geodesic_norms(points, backend)
+        backend.eval(norms_flat)
+        norms = backend.reshape(norms_flat, (-1, 1))
         # Avoid division by zero
         eps = division_epsilon(backend, norms)
         norms = backend.maximum(norms, backend.ones_like(norms) * eps)

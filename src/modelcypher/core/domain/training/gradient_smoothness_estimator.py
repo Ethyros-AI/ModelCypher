@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -123,15 +124,13 @@ class GradientSmoothnessEstimator:
         # 2. Compute Mean Norm (E[||g||])
         total_norm_sum = 0.0
         for sample in per_sample_gradients:
-            # L2 norm of the full parameter vector for this sample
-            # sum(norm(p)^2) for all p
-            squared_norm = 0.0
-            for k, v in sample.items():
-                flattened = b.reshape(v, (-1,))
-                sq_sum = b.sum(flattened * flattened)
-                b.eval(sq_sum)
-                squared_norm += float(b.to_scalar(sq_sum))
-            total_norm_sum += squared_norm**0.5
+            flats = [b.reshape(v, (-1,)) for v in sample.values()]
+            if not flats:
+                continue
+            concat = b.concatenate(flats, axis=0)
+            norm_arr = geodesic_norms(b.reshape(concat, (1, -1)), b)
+            b.eval(norm_arr)
+            total_norm_sum += float(b.to_scalar(norm_arr))
 
         mean_norm = total_norm_sum / count
 
@@ -139,15 +138,18 @@ class GradientSmoothnessEstimator:
         # Variance of the gradient vector
         variance_sum = 0.0
         for sample in per_sample_gradients:
-            sample_diff_sq = 0.0
+            flats = []
             for k, v in sample.items():
                 if k in mean_grad:
                     diff = v - mean_grad[k]
-                    flattened = b.reshape(diff, (-1,))
-                    sq_sum = b.sum(flattened * flattened)
-                    b.eval(sq_sum)
-                    sample_diff_sq += float(b.to_scalar(sq_sum))
-            variance_sum += sample_diff_sq
+                    flats.append(b.reshape(diff, (-1,)))
+            if not flats:
+                continue
+            concat = b.concatenate(flats, axis=0)
+            diff_norm_arr = geodesic_norms(b.reshape(concat, (1, -1)), b)
+            b.eval(diff_norm_arr)
+            diff_norm = float(b.to_scalar(diff_norm_arr))
+            variance_sum += diff_norm * diff_norm
 
         variance = variance_sum / (count - 1)
 
@@ -155,12 +157,14 @@ class GradientSmoothnessEstimator:
         # Typically SNR = ||E[g]||^2 / Tr(Var(g))
         # Here we use: SNR = ||mean_grad||^2 / variance
 
+        mean_flats = [b.reshape(v, (-1,)) for v in mean_grad.values()]
         mean_grad_norm_sq = 0.0
-        for k, v in mean_grad.items():
-            flattened = b.reshape(v, (-1,))
-            sq_sum = b.sum(flattened * flattened)
-            b.eval(sq_sum)
-            mean_grad_norm_sq += float(b.to_scalar(sq_sum))
+        if mean_flats:
+            mean_concat = b.concatenate(mean_flats, axis=0)
+            mean_norm_arr = geodesic_norms(b.reshape(mean_concat, (1, -1)), b)
+            b.eval(mean_norm_arr)
+            mean_norm = float(b.to_scalar(mean_norm_arr))
+            mean_grad_norm_sq = mean_norm * mean_norm
 
         snr = mean_grad_norm_sq / (variance + _MACHINE_EPS)
 

@@ -65,8 +65,8 @@ def register(app: typer.Typer) -> None:
             KnowledgeDiffer,
             compute_graft_mask,
         )
-from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+        from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
+        from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
         # Load target model (primary model for null space analysis)
         logger.info("Loading target model: %s", target_path)

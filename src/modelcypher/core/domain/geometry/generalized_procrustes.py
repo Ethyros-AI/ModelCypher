@@ -730,9 +730,9 @@ class RotationContinuityAnalyzer:
                 cos_angle = max(-1.0, min(1.0, cos_angle))
                 angular_deviation = acos_scalar(cos_angle, backend)
 
-                # Frobenius norm of difference
+                # Frobenius norm of difference using geodesic norms
                 diff = rotation - prev_rotation
-                fro_norm_arr = backend.sqrt(backend.sum(diff * diff))
+                fro_norm_arr = geodesic_norms(backend.reshape(diff, (1, -1)), backend)
                 backend.eval(fro_norm_arr)
                 rotation_delta = float(backend.to_scalar(fro_norm_arr))
 
