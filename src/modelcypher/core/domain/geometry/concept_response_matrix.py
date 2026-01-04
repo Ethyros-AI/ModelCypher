@@ -281,6 +281,42 @@ class ConceptResponseMatrix:
                 correction, _ = _feature_sampling_correction(gram, feature_dim, backend)
             target_grams[layer] = (gram, frob, correction)
 
+        gram_shape = None
+        for entry in source_grams.values():
+            gram_shape = entry[0].shape
+            break
+        if gram_shape is None:
+            for entry in target_grams.values():
+                gram_shape = entry[0].shape
+                break
+        if gram_shape is None:
+            return cka_matrix
+
+        zero_gram = backend.zeros(gram_shape)
+        target_valid = []
+        target_frob = []
+        target_corr = []
+        target_gram_list = []
+        for layer in range(other.layer_count):
+            target_entry = target_grams.get(layer)
+            if target_entry is None:
+                target_valid.append(0)
+                target_frob.append(0.0)
+                target_corr.append(1.0)
+                target_gram_list.append(zero_gram)
+                continue
+            target_gram, target_frob_val, target_corr_val = target_entry
+            target_valid.append(1)
+            target_frob.append(target_frob_val)
+            target_corr.append(target_corr_val)
+            target_gram_list.append(target_gram)
+
+        target_grams_arr = backend.stack(target_gram_list, axis=0)
+        target_frob_arr = backend.array(target_frob)
+        target_corr_arr = backend.array(target_corr)
+        target_valid_arr = backend.array(target_valid)
+        backend.eval(target_grams_arr, target_frob_arr, target_corr_arr, target_valid_arr)
+
         for source_layer in range(self.layer_count):
             source_entry = source_grams.get(source_layer)
             if source_entry is None:
@@ -289,28 +325,23 @@ class ConceptResponseMatrix:
             eps = division_epsilon(backend, source_gram)
             if source_frob <= eps:
                 continue
-            for target_layer in range(other.layer_count):
-                target_entry = target_grams.get(target_layer)
-                if target_entry is None:
-                    continue
-                target_gram, target_frob, target_correction = target_entry
-                denom = sqrt_scalar(source_frob * target_frob, backend)
-                if denom < eps:
-                    continue
-                hsic_xy_arr = backend.sum(source_gram * target_gram)
-                backend.eval(hsic_xy_arr)
-                hsic_xy = float(backend.to_scalar(hsic_xy_arr))
-                cka = hsic_xy / denom
-                cka = max(0.0, min(1.0, cka))
-                if cka >= 1.0 - eps:
-                    cka = 1.0
-                if feature_bias_correction:
-                    correction = source_correction * target_correction
-                    if correction > 0.0 and is_finite(correction, backend):
-                        cka = min(1.0, cka * correction)
-                        if cka >= 1.0 - eps:
-                            cka = 1.0
-                cka_matrix[source_layer][target_layer] = float(cka)
+
+            hsic_xy = backend.sum(source_gram * target_grams_arr, axis=(1, 2))
+            denom = backend.sqrt(target_frob_arr * source_frob)
+            valid = (target_valid_arr > 0) & (denom >= eps)
+            cka = backend.where(valid, hsic_xy / denom, backend.zeros_like(denom))
+            cka = backend.clip(cka, 0.0, 1.0)
+            cka = backend.where(cka >= 1.0 - eps, backend.ones_like(cka), cka)
+
+            if feature_bias_correction:
+                correction = target_corr_arr * source_correction
+                corr_mask = (correction > 0) & backend.isfinite(correction)
+                cka = backend.where(corr_mask, cka * correction, cka)
+                cka = backend.clip(cka, 0.0, 1.0)
+                cka = backend.where(cka >= 1.0 - eps, backend.ones_like(cka), cka)
+
+            backend.eval(cka)
+            cka_matrix[source_layer] = [float(x) for x in backend.tolist(cka)]
         return cka_matrix
 
     def compute_layer_cka(
