@@ -91,10 +91,9 @@ class BasinTopology:
             Basin topology derived from the entropy landscape.
         """
         if max_entropy <= 0:
-            raise ValueError(
-                f"max_entropy must be positive, got {max_entropy}. "
-                "This indicates invalid vocabulary size or degenerate distribution."
-            )
+            # Degenerate single-token vocab or logit collapse: fall back to dtype tiny.
+            _b = get_default_backend()
+            max_entropy = safe_log_epsilon(_b, _b.array([1.0]))
 
         # Normalized entropy position [0, 1]
         normalized_entropy = min(1.0, entropy / max_entropy)

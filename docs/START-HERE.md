@@ -29,20 +29,21 @@ mc geometry spatial probe-model ./models/qwen-0.5b
 ============================================================
 
 Anchors Probed: 23/23
-Layer Analyzed: last
+Layer Analyzed: 23
 
 World Model Score: 0.40
 
 ----------------------------------------
 Key Metrics:
-  Axis Orthogonality: 94.58%
   Gravity Correlation: 0.61
+  Inverse-Square Compliance: 0.72
+  Axis Orthogonality (mean): 94.58%
 ```
 
 **What you just measured:**
 - This output reports spatial geometry measurements for the probed model.
 - We call this the "Blind Physicist" — it knows the math of 3D space without seeing it
-- Axis Orthogonality of 94.58% means axes separate cleanly (compare to baseline)
+- Axis Orthogonality (mean) shows how close the axes are to orthogonal; higher is more orthogonal.
 
 If you got different numbers, that's real data about your model. If the command failed, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues).
 
@@ -54,10 +55,10 @@ A toolkit for measuring the geometric structure of LLM representations.
 
 | Without ModelCypher | With ModelCypher |
 | :--- | :--- |
-| "The merge feels off" | "Layer 12 has 3x higher curvature than baseline" |
-| "It refuses too much" | "Refusal boundary expanded 40% after fine-tuning" |
-| "The models are similar-ish" | "94.2% structural alignment via Procrustes analysis" |
-| "Training seems stable" | "Entropy gradient: -0.003/step (baseline: -0.002 ± 0.001)" |
+| "The merge feels off" | "Curvature deltas show where geometry shifted" |
+| "It refuses too much" | "Refusal boundary movement quantified" |
+| "The models are similar-ish" | "Structural alignment measured via Procrustes/CKA" |
+| "Training seems stable" | "Entropy gradients tracked per step (raw values)" |
 
 **The insight:** Inside every language model is a high-dimensional space where concepts live as points. That space has *shape*—curves, boundaries, distances. That shape *is* the model's knowledge. ModelCypher gives you a ruler and a map.
 
@@ -132,12 +133,12 @@ START-HERE.md (you are here)
     │   └── geometry/*.md (6 deep dives)  │
     │                                     │
     └── For Research ─────────────────────┤
-        ├── papers/paper-0 (framework)    │  ← Start here for theory
-        ├── papers/paper-1 (CKA)          │
-        ├── papers/paper-2 (entropy)      │
-        ├── papers/paper-3 (transfer)     │
-        ├── papers/paper-4 (toolkit)      │
-        └── papers/paper-5 (highway)      │
+        ├── papers/paper-0-the-shape-of-knowledge.md    │  ← Start here for theory
+        ├── papers/paper-1-invariant-semantic-structure.md
+        ├── papers/paper-2-entropy-safety-signal.md
+        ├── papers/paper-3-cross-architecture-transfer.md
+        ├── papers/paper-4-modelcypher-toolkit.md
+        └── papers/paper-5-semantic-highway.md
                                           │
     All paths converge at:────────────────┘
         └── CLI-REFERENCE.md (how to measure)
@@ -165,15 +166,15 @@ START-HERE.md (you are here)
 ModelCypher/
 ├── src/modelcypher/          # Source code
 │   ├── core/domain/          # Pure math + business logic
-│   ├── adapters/             # Hardware integrations
+│   ├── adapters/             # Concrete integrations (hf_hub, filesystem)
 │   ├── cli/                  # CLI commands
-│   └── mcp/                  # MCP server (148 tools)
+│   └── mcp/                  # MCP server (tool registry)
 ├── docs/                     # Documentation (you are here)
 │   ├── geometry/             # Deep-dive geometry docs
 │   ├── research/             # Research methodology
-│   └── references/arxiv/     # 51 reference PDFs
+│   └── references/arxiv/     # Reference PDFs
 ├── papers/                   # Research manuscripts (0-5)
-└── tests/                    # 3060 tests
+└── tests/                    # Test suite
 ```
 
 ---

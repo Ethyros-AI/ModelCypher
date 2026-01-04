@@ -270,6 +270,44 @@ class GramAligner:
 
         precision_threshold = regularization_epsilon(b, source_activations)
 
+        if source_activations is target_activations:
+            ident_feat = b.eye(int(d_s))
+            ident_sample = b.eye(int(n_s))
+            b.eval(ident_feat, ident_sample)
+            return AlignmentResult(
+                feature_transform=self._array_to_2d_list(ident_feat),
+                sample_transform=self._array_to_2d_list(ident_sample),
+                achieved_cka=1.0,
+                iterations=0,
+                alignment_error=0.0,
+                diagnostic=None,
+                precision_threshold=precision_threshold,
+            )
+
+        if d_s == d_t:
+            diff = source_activations - target_activations
+            diff_flat = b.reshape(diff, (1, -1))
+            base_flat = b.reshape(source_activations, (1, -1))
+            diff_norm_arr = geodesic_norms(diff_flat, b)
+            base_norm_arr = geodesic_norms(base_flat, b)
+            b.eval(diff_norm_arr, base_norm_arr)
+            diff_norm = float(b.to_scalar(diff_norm_arr))
+            base_norm = float(b.to_scalar(base_norm_arr))
+            scale = base_norm + division_epsilon(b, source_activations)
+            if diff_norm <= precision_threshold * scale:
+                ident_feat = b.eye(int(d_s))
+                ident_sample = b.eye(int(n_s))
+                b.eval(ident_feat, ident_sample)
+                return AlignmentResult(
+                    feature_transform=self._array_to_2d_list(ident_feat),
+                    sample_transform=self._array_to_2d_list(ident_sample),
+                    achieved_cka=1.0,
+                    iterations=0,
+                    alignment_error=0.0,
+                    diagnostic=None,
+                    precision_threshold=precision_threshold,
+                )
+
         # Center activations
         source_centered = self._center(source_activations)
         target_centered = self._center(target_activations)

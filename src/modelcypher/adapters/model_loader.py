@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from modelcypher.core.domain.training.lora_mlx import LoRASettings
 
 logger = logging.getLogger(__name__)
+mlx_lm_load: Any | None = None
 
 
 def _ensure_mlx() -> tuple[Any, Any]:
@@ -119,13 +120,16 @@ def load_model_for_training(
                 f"Ensure mlx_vlm is properly installed and the model is compatible."
             ) from e
     else:
-        try:
-            from mlx_lm import load as mlx_lm_load
-        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
-            raise ImportError(
-                "mlx_lm is required to load text models for training. "
-                "Install with: pip install mlx-lm"
-            ) from exc
+        global mlx_lm_load
+        if mlx_lm_load is None:
+            try:
+                from mlx_lm import load as _mlx_lm_load
+            except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+                raise ImportError(
+                    "mlx_lm is required to load text models for training. "
+                    "Install with: pip install mlx-lm"
+                ) from exc
+            mlx_lm_load = _mlx_lm_load
         model, tokenizer = mlx_lm_load(model_path)
 
     if lora_settings is not None:

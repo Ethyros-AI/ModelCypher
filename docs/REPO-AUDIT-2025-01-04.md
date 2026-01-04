@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 31
-- Issues found: 20
-- Issues fixed: 20
+- Audited: 33
+- Issues found: 22
+- Issues fixed: 22
 
 ## Audit Log
 
@@ -418,3 +418,29 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Outdated geometry file counts and incorrect code references/examples
   - Fix: Updated counts, examples, and references to match current code
+
+- `docs/START-HERE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (output example and repo map)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Example output and repository map contained outdated counts/labels
+  - Fix: Updated sample output and cleaned repo map labels
+
+- `docs/TRAINING-GUIDE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (training commands, metrics, exports)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: CLI flags, metric descriptions, and export formats were out of date
+  - Fix: Aligned commands/fields with current CLI and export behavior

@@ -315,8 +315,10 @@ class TopologicalFingerprint:
         b = backend or get_default_backend()
         pts = b.astype(b.array(points), "float32")  # Ensure float for numerical operations
 
-        # Use geodesic distances for correct topology on curved manifolds
-        geo_dist = geodesic_distance_matrix(pts, k_neighbors=None, backend=b)
+        # Use geodesic distances on the fully connected graph to preserve cycles
+        # in small point sets used for persistent homology.
+        k_neighbors = max(1, n - 1)
+        geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
         b.eval(geo_dist)
         return geo_dist
 

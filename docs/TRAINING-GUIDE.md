@@ -109,8 +109,8 @@ mc train preflight \
 | Field | Description |
 |-------|-------------|
 | `predictedBatchSize` | Effective batch size (batch × grad_accum) |
-| `estimatedVramBytes` | Estimated VRAM requirement |
-| `availableVramBytes` | Available GPU memory |
+| `estimatedVRAMUsageBytes` | Estimated VRAM requirement |
+| `availableVRAMBytes` | Available GPU memory |
 | `canProceed` | Whether training can start |
 
 ---
@@ -139,7 +139,7 @@ mc train start \
   --seed <int> \
   --deterministic / --stochastic \
   --out <output_dir> \
-  [--resume-from <checkpoint_path>] \
+  [--resume-from <output_dir>] \
   [--lora-rank <int>] \
   [--lora-alpha <float>] \
   [--lora-dropout <float>] \
@@ -167,7 +167,7 @@ mc train start \
 | `--optimizer-type` | Yes | Optimizer (adamw only) |
 | `--seed` | Yes | Random seed |
 | `--deterministic` | Yes | Deterministic training |
-| `--resume-from` | No | Resume from checkpoint |
+| `--resume-from` | No | Resume from output directory with checkpoints |
 | `--detach` | No | Run in background |
 | `--stream` | No | Stream progress events |
 
@@ -207,13 +207,13 @@ Export trained model or job output.
 mc train export --job <job_id> --format safetensors --output-path ./model
 
 # Export from model directory
-mc train export --model ./fine-tuned --format gguf --output-path ./model.gguf
+mc train export --model ./fine-tuned --format safetensors --output-path ./model.safetensors
 ```
 
 **Export formats:**
-- `safetensors` (default)
-- `gguf` (for llama.cpp)
-- `pytorch` (legacy .bin)
+- `safetensors` (supported)
+
+Other formats currently raise NotImplemented in the built-in exporter.
 
 ### mc train logs
 
@@ -415,20 +415,17 @@ ModelCypher provides unique geometric monitoring of training dynamics.
 
 ```bash
 # Get current geometric metrics
-mc geometry training-status <job_id>
+mc geometry training status --job <job_id>
 
 # Get full history
-mc geometry training-history <job_id>
+mc geometry training history --job <job_id>
 ```
 
 ### Available Metrics
 
-| Metric | Description |
-|--------|-------------|
-| Intrinsic Dimension | Effective dimensionality of learned representations |
-| Manifold Curvature | Local curvature of the loss landscape |
-| Gradient Norm | Magnitude of gradient updates |
-| Hessian Eigenvalues | Curvature in principal directions |
+`mc geometry training status` returns flatness, gradient SNR, circuit-breaker severity, and active layers.
+Use `--format full` to include hessian trace, top eigenvalue, hessian condition proxy, gradient variance,
+effective step ratio, per-layer gradient norms, and refusal distance when available.
 
 ### Thermodynamic Analysis
 
@@ -442,7 +439,7 @@ mc thermo analyze <job_id>
 mc thermo entropy <job_id>
 
 # Compute path integral over checkpoints
-mc thermo path <checkpoint1> <checkpoint2> <checkpoint3>
+mc thermo path --checkpoint <checkpoint1> --checkpoint <checkpoint2> --checkpoint <checkpoint3>
 ```
 
 ---
@@ -479,19 +476,20 @@ mc train export --job <job_id> --format safetensors --output-path ./adapter
 mc train start ... --out ./output
 
 # If interrupted, resume from checkpoint
-mc train start ... --resume-from ./output/checkpoints/step-1000
+mc train start ... --resume-from ./output
 ```
 
-### Workflow 3: Evaluate During Training
+### Workflow 3: Evaluate After Export
 
 ```bash
 # Start training in background
 mc train start ... --detach
 
-# Periodically evaluate checkpoints
-for ckpt in ./output/checkpoints/step-*; do
-  mc eval run --model "$ckpt" --dataset ./eval.jsonl
-done
+# Export latest checkpoint to safetensors
+mc train export --job <job_id> --format safetensors --output-path ./exports/model.safetensors
+
+# Evaluate a model directory that includes config.json + model.safetensors
+mc eval run --model ./exported-model --dataset ./eval.jsonl
 ```
 
 ### Workflow 4: Geometry-Aware Training
@@ -501,11 +499,11 @@ done
 mc train start ... --out ./output
 
 # Monitor geometry evolution
-watch -n 30 "mc geometry training-status <job_id> --output json | jq"
+watch -n 30 "mc geometry training status --job <job_id> --output json | jq"
 
 # Analyze final model geometry
 mc geometry spatial probe-model ./output/final
-mc geometry density-profile ./output/final
+mc geometry density profile ./output/final
 ```
 
 ---
