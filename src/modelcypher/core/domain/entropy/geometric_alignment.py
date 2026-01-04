@@ -36,7 +36,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration import (
     GeometricAlignmentCalibration,
     SentinelThresholds,
@@ -335,10 +338,13 @@ class GeometricAlignmentSystem:
             if sample_count < 2:
                 severity = 0.0
             else:
-                max_sign_changes = sample_count - 1
-                max_spikes = sample_count
-                max_pseudo_dips = sample_count
-                max_w_shapes = max(sample_count - 2, 1)
+                backend = get_default_backend()
+                eps = division_epsilon(backend, backend.array([0.0]))
+                # Use epsilon guards for robustness
+                max_sign_changes = max(sample_count - 1, eps)
+                max_spikes = max(sample_count, eps)
+                max_pseudo_dips = max(sample_count, eps)
+                max_w_shapes = max(sample_count - 2, 1, eps)
                 severity = max(
                     float(sign_changes) / max_sign_changes,
                     float(spike_count) / max_spikes,

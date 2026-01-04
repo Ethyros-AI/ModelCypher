@@ -91,7 +91,10 @@ class BasinTopology:
             Basin topology derived from the entropy landscape.
         """
         if max_entropy <= 0:
-            max_entropy = 1.0  # Fallback to prevent division by zero
+            raise ValueError(
+                f"max_entropy must be positive, got {max_entropy}. "
+                "This indicates invalid vocabulary size or degenerate distribution."
+            )
 
         # Normalized entropy position [0, 1]
         normalized_entropy = min(1.0, entropy / max_entropy)

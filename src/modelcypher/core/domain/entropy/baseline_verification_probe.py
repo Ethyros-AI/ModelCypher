@@ -470,7 +470,10 @@ class BaselineVerificationProbe:
         mean_arr = backend.mean(deltas_arr)
         if len(deltas) > 1:
             diff = deltas_arr - mean_arr
-            variance_arr = backend.sum(diff * diff) / float(len(deltas) - 1)
+            # Use epsilon guard for variance division
+            eps = division_epsilon(backend, deltas_arr)
+            safe_denom = max(float(len(deltas) - 1), eps)
+            variance_arr = backend.sum(diff * diff) / safe_denom
             std_arr = backend.sqrt(variance_arr)
         else:
             std_arr = backend.array([0.0])

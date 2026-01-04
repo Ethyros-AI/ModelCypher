@@ -279,13 +279,18 @@ class EntropyPatternAnalyzer:
 
         values_arr = backend.array(values)
         z_scores_arr = backend.abs((values_arr - mean) / std_dev)
-        sorted_scores = backend.sort(z_scores_arr)
-        backend.eval(sorted_scores)
-        z_scores = backend.tolist(z_scores_arr)
-        threshold = find_magnitude_gap_threshold(
-            [float(v) for v in backend.tolist(sorted_scores)],
-            eps=eps,
-        )
+
+        # E10: Filter non-finite values before threshold detection
+        finite_mask = backend.isfinite(z_scores_arr)
+        z_scores_filtered = backend.where(finite_mask, z_scores_arr, backend.zeros_like(z_scores_arr))
+
+        sorted_scores = backend.sort(z_scores_filtered)
+        backend.eval(sorted_scores, z_scores_filtered)
+
+        # E8: Consolidate tolist() - convert once and reuse
+        z_scores = backend.tolist(z_scores_filtered)
+        sorted_scores_list = backend.tolist(sorted_scores)
+        threshold = find_magnitude_gap_threshold(sorted_scores_list, eps=eps)
         if threshold <= 0.0:
             return []
 

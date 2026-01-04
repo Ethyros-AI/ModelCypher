@@ -240,7 +240,11 @@ class GeodesicNullSpaceFilter:
             mean_geo = 0.0
 
         # Step 2: Compute Fréchet mean and tangent space (GPU)
-        frechet_result = self._riemannian.frechet_mean(prior_activations, k_neighbors=actual_k)
+        frechet_result = self._riemannian.frechet_mean(
+            prior_activations,
+            k_neighbors=actual_k,
+            geo_result=geo_result,
+        )
         frechet_mean = frechet_result.mean
         backend.eval(frechet_mean)
 

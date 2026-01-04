@@ -356,9 +356,11 @@ class DualPathGenerator:
 
         # Apply temp
         scaled_logits = logits / self.temperature
-        # Use backend's random_categorical if available, otherwise argmax
-        if hasattr(b, "random_categorical"):
-            return b.random_categorical(scaled_logits)
-        else:
-            # Fallback to greedy if random_categorical not available
-            return b.argmax(scaled_logits, axis=-1)
+        # Use backend's random_categorical - required for proper sampling
+        if not hasattr(b, "random_categorical"):
+            raise NotImplementedError(
+                f"Backend {type(b).__name__} does not support random_categorical. "
+                "Sampling requires this operation. Use a backend that supports it, "
+                "or set temperature=0.0 for greedy decoding."
+            )
+        return b.random_categorical(scaled_logits)

@@ -308,17 +308,35 @@ class LowRankGromovWasserstein:
                 logger.warning("NaN detected in iteration %d, using previous values", it)
                 break
 
-            # Update coupling via convex combination
-            # TODO: Implement proper line search like gromov_wasserstein.py
-            # Currently using full step (alpha=1.0) to let algorithm converge naturally.
-            # A fixed 0.5 damping factor is arbitrary - either derive analytically or use 1.0.
-            Q = Q_new
-            g = g_new
-            R = R_new
+            # Backtracking line search for step size
+            # Try α = 1.0, 0.5, 0.25, ... until we find improvement or hit minimum
+            best_alpha = 1.0
+            best_distance = float("inf")
+
+            for alpha in [1.0, 0.5, 0.25, 0.125]:
+                Q_trial = (1.0 - alpha) * Q + alpha * Q_new
+                g_trial = (1.0 - alpha) * g + alpha * g_new
+                R_trial = (1.0 - alpha) * R + alpha * R_new
+                b.eval(Q_trial, g_trial, R_trial)
+
+                trial_distance = self._compute_gw_distance(Q_trial, g_trial, R_trial, C1, C2, b)
+
+                if trial_distance < best_distance:
+                    best_distance = trial_distance
+                    best_alpha = alpha
+
+                # Early exit if we found improvement over previous iteration
+                if trial_distance < prev_distance:
+                    break
+
+            # Apply best step
+            Q = (1.0 - best_alpha) * Q + best_alpha * Q_new
+            g = (1.0 - best_alpha) * g + best_alpha * g_new
+            R = (1.0 - best_alpha) * R + best_alpha * R_new
             b.eval(Q, g, R)
 
-            # Compute current distance
-            distance = self._compute_gw_distance(Q, g, R, C1, C2, b)
+            # Use best distance found
+            distance = best_distance
 
             # Check convergence
             if abs(distance - prev_distance) < convergence_threshold:

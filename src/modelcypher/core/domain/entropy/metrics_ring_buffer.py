@@ -34,7 +34,11 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import is_nan, sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    is_nan,
+    sqrt_scalar,
+)
 
 # =============================================================================
 # MetricSample
@@ -144,7 +148,10 @@ class MetricSample:
                 return float("nan")
             if len(values) == 1:
                 return values[0]
-            mean = sum(values) / len(values)
+            # Use epsilon guard for robustness
+            eps = division_epsilon(_b, _b.array([0.0]))
+            safe_len = max(len(values), eps)
+            mean = sum(values) / safe_len
             min_val, max_val = min(values), max(values)
             return max_val if abs(max_val - mean) >= abs(mean - min_val) else min_val
 
