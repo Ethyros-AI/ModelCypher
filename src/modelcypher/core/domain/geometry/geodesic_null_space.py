@@ -186,6 +186,7 @@ class GeodesicNullSpaceFilter:
             weight_delta: Weight update to filter. Shape: [out, in] or [d].
             prior_activations: Activation matrix. Shape: [n_samples, d].
             k_neighbors: k for k-NN graph. If None, auto-derived.
+            basis: Optional precomputed geodesic basis for reuse.
 
         Returns:
             GeodesicNullSpaceResult with filtered delta and diagnostics.

@@ -24,10 +24,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    infinity_threshold,
-)
+
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

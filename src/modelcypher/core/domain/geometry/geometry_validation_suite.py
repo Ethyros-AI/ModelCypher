@@ -726,7 +726,7 @@ class GeometryValidationSuite:
             base_dimension=base_dim,
             padded_dimension=fixture.padded_dimension,
             sample_count=sample_count,
-            k_neighbors=derived_k,
+            k_neighbors=geo_base.k_neighbors,
             gram_cka=float(gram_cka),
             geodesic_mean_abs_diff=geodesic_mean_abs_diff,
             geodesic_max_abs_diff=geodesic_max_abs_diff,

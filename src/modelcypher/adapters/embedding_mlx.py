@@ -70,15 +70,18 @@ class MLXEmbeddingProvider(EmbeddingProvider):
         """
         if not texts:
             return []
-        # Use __call__ for compatibility with all tokenizer types
-        # (some MLX tokenizers don't have batch_encode_plus)
-        inputs = self._tokenizer(
+        # TokenizerWrapper from mlx_embeddings doesn't expose __call__
+        # Access the underlying tokenizer and convert numpy to MLX
+        raw_tokenizer = getattr(self._tokenizer, "_tokenizer", self._tokenizer)
+        np_inputs = raw_tokenizer(
             texts,
-            return_tensors="mlx",
+            return_tensors="np",
             padding=True,
             truncation=True,
             max_length=self._max_length,
         )
+        # Convert numpy arrays to MLX arrays
+        inputs = {k: self._mx.array(v) for k, v in np_inputs.items()}
         outputs = self._model(**inputs)
         embeddings = self._extract_embeddings(outputs, inputs)
         self._safe.eval(embeddings)

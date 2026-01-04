@@ -504,7 +504,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         This implements the Isomap-style geodesic computation:
         1. Build a k-NN graph where edge weights are chord distances (local edges)
-        2. Compute shortest paths (geodesics) using Floyd-Warshall algorithm
+        2. Compute shortest paths (geodesics) using Floyd-Warshall or sparse Dijkstra
 
         When k_neighbors is None, the method finds the MINIMUM k that makes
         the graph connected. This is a geometric property of the point cloud -
@@ -772,7 +772,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                     f"Points shape: {points.shape}, points NaN: {points_nan}, points Inf: {points_inf}"
                 )
 
-        # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy).
+        # Build k-NN adjacency and run shortest paths (Floyd-Warshall or sparse Dijkstra).
         # Use a sentinel derived from data scale and dtype precision to avoid overflow.
         max_dist_arr = backend.max(chord_dist)
         backend.eval(max_dist_arr)
