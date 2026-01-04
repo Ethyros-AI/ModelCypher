@@ -25,7 +25,7 @@ Where $P$ is the orthogonal Procrustes rotation matrix derived from Semantic Pri
 4.  **Smooth**: Fine-tune the projected adapter on a small "calibration set" (orders of magnitude cheaper than full training).
 
 **Repo note:** In ModelCypher, “semantic primes” are an anchor inventory stored in `src/modelcypher/data/semantic_primes.json` and surfaced via `mc geometry primes …`.
-`ProbeCorpus` is a separate concept: a standardized set of prompts for activation probing (see `src/modelcypher/core/domain/geometry/probe_corpus.py`).
+`KnowledgeProbeCorpus` is a separate concept: a standardized set of prompts for knowledge probing (see `src/modelcypher/core/domain/merging/knowledge_transfer_validator.py`).
 
 ## Rotation Field Roughness
 

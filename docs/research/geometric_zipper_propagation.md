@@ -1,10 +1,10 @@
-# Geometric Zipper: Layer-to-Layer Propagation in Model Merging
+# Geometric Zipper: MLP Block Consistency in Model Merging
 
 ## Overview
 
-The "geometric zipper" is a layer-propagation mechanism ensuring that transformations applied at layer N are properly compensated at layer N+1, maintaining functional equivalence during model merging.
+The "geometric zipper" is the rule that each MLP block applies a consistent permutation across its up/gate/down projections, preserving functional equivalence while re-basing neuron orderings.
 
-This document describes the implementation in `merge/stages/permute.py` based on the Git Re-Basin algorithm.
+This document describes the implementation in `src/modelcypher/core/use_cases/merge/stages/permute.py` and `src/modelcypher/core/domain/geometry/permutation_aligner.py`, based on the Git Re-Basin algorithm.
 
 ---
 
@@ -24,10 +24,11 @@ For a weight matrix W with shape [out_dim, in_dim]:
 - **Output permutation**: P @ W (P is [out_dim, out_dim])
 - **Input permutation**: W @ P^T (P is [in_dim, in_dim])
 
-The zipper constraint ensures consistency:
+The zipper constraint ensures consistency within the MLP triplet:
 ```
-W_ℓ' = P @ W_ℓ           (permute output neurons at layer ℓ)
-W_{ℓ+1}' = W_{ℓ+1} @ P^T  (compensate at layer ℓ+1 inputs)
+W_up' = S @ P @ W_up
+W_gate' = S @ P @ W_gate
+W_down' = W_down @ P^T @ S
 ```
 
 This maintains functional equivalence: f(x; Θ) = f(x; Θ') for all inputs.
@@ -36,33 +37,28 @@ This maintains functional equivalence: f(x; Θ) = f(x; Θ') for all inputs.
 
 ## Weight Matching Algorithm
 
-### The Linear Assignment Problem
+### Anchor-Guided Signatures
 
-Given source weights S and target weights T, find permutation π that maximizes:
+Each model provides its own anchor embeddings (from `embed_tokens` / `wte`).
+For each MLP block, signatures are computed by projecting weights through the anchors
+(or through per-layer anchor activations when available).
 
-```
-max_π Σ_i ⟨S[i,:], T[π(i),:]⟩
-```
+### Similarity Matrix and Assignment
 
-This is solved via the **Hungarian algorithm** in O(n³) time.
-
-### Similarity Matrix
-
-```python
-S = source_w @ target_w.T  # [n, n]
-# S[i,j] measures similarity between source neuron i and target neuron j
-```
-
-### Permutation Matrix Construction
+Similarity is computed as geodesic cosine between signature sets. The assignment is
+solved with the internal Hungarian implementation on the Backend (no NumPy/SciPy).
 
 ```python
-from scipy.optimize import linear_sum_assignment
-
-row_ind, col_ind = linear_sum_assignment(-S)  # Minimize negative = maximize
-
-P = np.zeros((n, n))
-P[col_ind, row_ind] = 1.0  # P @ source aligns neurons to target
+similarity = geodesic_cosine_between_sets(source_signatures, target_signatures, backend)
+cost = backend.max(backend.abs(similarity)) - backend.abs(similarity)
+assignment = hungarian_assignment(cost, backend)
 ```
+
+### Permutation + Sign Construction
+
+The assignment is materialized as either a dense permutation matrix or a sparse
+index list (for large intermediate dimensions). Signed similarities determine
+per-neuron sign flips, which are applied consistently across the MLP triplet.
 
 ---
 
@@ -75,29 +71,27 @@ P[col_ind, row_ind] = 1.0  # P @ source aligns neurons to target
 
 ### Key Methods
 
-1. **`PermutationAligner.align(source_w, target_w, anchors=None)`**
-   - Computes optimal permutation and sign alignment using the Hungarian algorithm
-   - Returns permutation/sign alignment plus match-quality metrics
+1. **`PermutationAligner.rebasin_mlp_with_activations(...)`**
+   - Aligns each MLP block (up/gate/down) using anchor-guided signatures
+   - Applies permutation + sign correction, returns mean match quality
 
-2. **`stage_permute(...)`**
-   - Orchestrates anchor selection and applies permutation alignment across MLP weights
+2. **`PermutationAligner.align_via_anchor_activations(...)`**
+   - Computes assignment from anchor-projected signatures using Hungarian matching
+
+3. **`stage_permute(...)`**
+   - Selects embedding anchors, enforces exact kernel alignment (CKA=1), then runs MLP re-basin
 
 ### Zipper Flow in Merge Loop
 
 ```
-For each weight in model:
-  1. Identify layer index and weight type
-
-  2. If RESIDUAL OUTPUT (o_proj, down_proj):
-     - Compute P = weight_matching(source, target)
-     - Apply: source' = P @ source
-     - Store P for layer propagation
-
-  3. If INPUT PROJECTION (q/k/v_proj, gate/up_proj):
-     - Retrieve P from previous layer
-     - Apply: source' = source @ P^T
-
-  4. Blend transformed source with target
+1. Extract source/target embedding anchors (embed_tokens / wte).
+2. If anchor CKA < 1 - eps, compute a polar-decomposition rotation and apply it
+   to all source weights operating on the hidden dimension.
+3. For each MLP block (up/gate/down):
+   - Build signatures via anchors (or per-layer anchor activations).
+   - Compute assignment + sign flips via Hungarian matching.
+   - Apply P and signs to up/gate rows; apply P^T and signs to down columns.
+4. Pass aligned weights forward to the transplant stage (no blending here).
 ```
 
 ### Configuration
@@ -120,7 +114,7 @@ Permutation alignment is always run; there is no configuration toggle.
 1. **Exact**: No numerical error accumulates
 2. **Discrete**: Maps neurons 1:1 (interpretable)
 3. **Composable**: Chain permutations cleanly
-4. **Efficient**: Hungarian is O(n³), not O(n^3) like full SVD
+4. **Efficient**: Hungarian is O(n³) on intermediate dims; full rotations require dense SVDs
 
 ### High-Dimensional Geometry Considerations
 
@@ -129,18 +123,20 @@ In high-dimensional spaces (hidden_dim ~ 4096):
 - Small misalignments scramble semantic content
 - Low-rank approximations miss most of the "volume"
 
-The permutation-based zipper uses the **full hidden dimension**, avoiding the rank mismatch that plagued the earlier spectral approach.
+The permutation-based zipper uses the **full intermediate dimension** without low-rank shortcuts.
+Rotations are only used to bring embedding anchors to exact kernel alignment (CKA=1).
 
 ---
 
 ## Test Coverage
 
-See `tests/test_unified_geometric_merge.py::TestZipperPropagation`:
+See:
 
-- `test_weight_matching_permutation_identity`: Identical matrices → identity P
-- `test_weight_matching_permutation_shuffled`: Recovers shuffled neurons
-- `test_permutation_is_orthogonal`: Verifies P @ P^T = I
-- `test_full_rank_rotation_*`: Tests the continuous relaxation
+- `tests/test_stage_permute.py::test_stage_permute_aligns_mlp_blocks`
+- `tests/test_permutation_aligner.py` (Hungarian assignment + permutation application)
+- `tests/test_permutation_aligner_properties.py` (permutation invariants)
+- `tests/test_permutation_aligner_advanced.py` (anchor activations + sparse permutations)
+- `tests/test_permutation_aligner_mlx.py` (backend-specific validation)
 
 ---
 

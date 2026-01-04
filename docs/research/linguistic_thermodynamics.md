@@ -42,11 +42,7 @@ Where:
 - $\sigma_z$ = standard deviation of logits
 - $V_{\text{eff}}$ = effective vocabulary size (tokens with $P > \epsilon$)
 
-For typical LLMs with $\sigma_z \approx 4$ and $V_{\text{eff}} \approx 2000$:
-
-$$T_c \approx \frac{4.0}{\sqrt{2 \cdot 7.6}} \approx 1.03$$
-
-This explains why $T = 1.0$ often sits near the phase boundary.
+Compute $T_c$ from measured logit statistics for the target model and context.
 
 **Derivation**: The critical temperature emerges from the condition where the distribution transitions from being dominated by a single mode (ordered) to having comparable probability across many tokens (disordered). See Jaynes (1957) on maximum entropy methods.
 
@@ -54,11 +50,12 @@ This explains why $T = 1.0$ often sits near the phase boundary.
 
 | Physical Concept | LLM Equivalent | Measured By |
 |------------------|----------------|-------------|
-| **Energy ($E$)** | Negative log-likelihood | `compute_entropy()` |
+| **Energy ($E$)** | $-T \\log(p/p_{\\text{ref}})$ from observed outcomes | `MeasuredEnergy.from_probability()` / `MeasuredBasinTopology.from_outcome_counts()` |
 | **Temperature ($T$)** | Softmax scaling | Generation config |
 | **Entropy ($H$)** | Shannon entropy | `PhaseTransitionTheory.compute_entropy()` |
-| **Phase** | T/T_c ratio | `PhaseTransitionTheory.analyze()` |
-| **Basin Depth** | Behavioral outcome probability | `ThermoCalibrator.calibrate()` |
+| **Critical Temp ($T_c$)** | Logit std dev / effective vocabulary | `PhaseTransitionTheory.estimate_critical_temperature()` |
+| **Phase** | $T/T_c$ ratio | `PhaseTransitionTheory.classify_phase()` |
+| **Basin Weights** | Boltzmann weights from calibrated topology | `BasinTopology.basin_weights()` / `MeasuredBasinTopology.basin_weights()` |
 
 ## 5. Basin Topology
 
@@ -86,7 +83,7 @@ refusal   ├─╱                ╲───
 
 $$w_i = \exp(-E_i / T) / Z$$
 
-At low temperature, probability concentrates in the deepest basin (refusal).
+At low temperature, probability concentrates in the deepest basin (model-specific).
 At high temperature, probability spreads across basins.
 
 **Escape probability** from basin $a$ to $b$:
@@ -105,9 +102,9 @@ All basin depths and threshold values MUST come from calibration. There are no v
 
 **Calibration process** (`ThermoCalibrator`):
 1. Run probe prompts across behavioral domains
-2. Measure outcome probabilities (refusal/caution/solution)
-3. Compute energy levels from observed probabilities
-4. Validate against held-out test set
+2. Measure outcomes (refused/hedged/attempted/solved) for baseline and modifiers
+3. Derive energy levels and modifier profiles from observed probabilities
+4. Persist `ThermoCalibration` for reuse
 
 ## 7. Implementation
 
@@ -116,11 +113,12 @@ All basin depths and threshold values MUST come from calibration. There are no v
 | Class | Purpose |
 |-------|---------|
 | `PhaseTransitionTheory` | Entropy/T_c computation from logits |
-| `BasinTopology` | Energy levels for attractor basins (from calibration) |
-| `ThermoCalibrator` | Measures basin depths from behavioral data |
-| `RegimeStateDetector` | Computes T/T_c ratio and phase classification |
+| `MeasuredBasinTopology` | Empirical basin energies and weights |
+| `ThermoCalibrator` | Builds `ThermoCalibration` from probe corpora |
+| `LinguisticCalorimeter` | Measures entropy and delta_H from inference |
 | `RidgeCrossDetector` | Detects transitions between behavioral basins |
 | `MultilingualCalibrator` | Cross-lingual effect calibration |
+| `ThermoBenchmarkRunner` | Benchmark runs and effect-size reporting |
 
 ### Usage Example
 
@@ -134,9 +132,15 @@ print(f"T/T_c = {analysis.temperature / analysis.estimated_tc:.2f}")
 print(f"Entropy = {analysis.entropy:.3f} nats")
 
 # For basin topology, calibration is required
-calibrator = ThermoCalibrator()
-topology = calibrator.calibrate(model, probe_prompts)  # Returns BasinTopology
-weights = topology.basin_weights(temperature=1.0)  # Returns list[float] with 3 basin weights
+calibrator = ThermoCalibrator(model_path="/path/to/model")
+probes = [
+    "The concept of justice represents",
+    "A chair is used for",
+]
+calibration = calibrator.calibrate(probes)
+topology = calibration.basin_topology
+if topology is not None:
+    weights = topology.basin_weights(temperature=1.0)
 ```
 
 ## 8. Key Citations

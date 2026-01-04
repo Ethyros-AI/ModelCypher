@@ -48,10 +48,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sin_scalar,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import (
-    RiemannianGeometry,
-    _get_riemannian_geometry,
-)
 
 # math.pi is just a constant, no GPU acceleration needed
 _PI = 3.141592653589793
@@ -110,35 +106,38 @@ def _geodesic_distance_from_origin(point: Any, backend: "Backend") -> float:
     """Compute geodesic distance between a point and the origin."""
     shape = backend.shape(point)
     if len(shape) == 1:
-        # With only 2 points (origin and this point), geodesic equals the direct edge.
         vec = backend.reshape(point, (1, -1))
         norm_arr = geodesic_norms(vec, backend)
         backend.eval(norm_arr)
         return float(backend.to_scalar(norm_arr[0]))
 
-    zero = backend.zeros_like(point)
-    rg = _get_riemannian_geometry(backend)
-    points = backend.stack([zero, point], axis=0)
-    geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
-    distances = geo_result.distances
-    backend.eval(distances)
-    return float(backend.to_scalar(distances[0, 1]))
+    # Complete graph geodesic equals chord distance: exact, not an approximation.
+    vec = backend.reshape(point, (1, -1))
+    norm_arr = geodesic_norms(vec, backend)
+    backend.eval(norm_arr)
+    return float(backend.to_scalar(norm_arr[0]))
 
 
 def _geodesic_distances_from_origin(
     a: Any, b: Any, backend: "Backend"
 ) -> tuple[float, float, float]:
     """Compute geodesic distances (origin->a, origin->b, a->b)."""
-    zero = backend.zeros_like(a)
-    rg = _get_riemannian_geometry(backend)
-    points = backend.stack([zero, a, b], axis=0)
-    geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
-    distances = geo_result.distances
-    backend.eval(distances)
-    d0a = float(backend.to_scalar(distances[0, 1]))
-    d0b = float(backend.to_scalar(distances[0, 2]))
-    dab = float(backend.to_scalar(distances[1, 2]))
-    return d0a, d0b, dab
+    a_arr = a if hasattr(a, "shape") else backend.array(a)
+    b_arr = b if hasattr(b, "shape") else backend.array(b)
+    a_vec = backend.reshape(a_arr, (1, -1))
+    b_vec = backend.reshape(b_arr, (1, -1))
+    a_norms = geodesic_norms(a_vec, backend)
+    b_norms = geodesic_norms(b_vec, backend)
+    diff = a_vec - b_vec
+    diff_sq = backend.sum(diff * diff, axis=1)
+    diff_sq = backend.maximum(diff_sq, backend.zeros_like(diff_sq))
+    dab_arr = backend.sqrt(diff_sq)
+    backend.eval(a_norms, b_norms, dab_arr)
+    return (
+        float(backend.to_scalar(a_norms[0])),
+        float(backend.to_scalar(b_norms[0])),
+        float(backend.to_scalar(dab_arr[0])),
+    )
 
 
 def _geodesic_cosine_from_origin(a: Any, b: Any, backend: "Backend") -> float:
@@ -174,32 +173,26 @@ def geodesic_cosine_batch(anchor: Any, vectors: Any, backend: "Backend") -> Any:
     if shape_anchor[0] != shape_vectors[1]:
         raise ValueError("Anchor and vectors must share feature dimension")
 
-    zero = backend.zeros_like(anchor_arr)
-    points = backend.concatenate(
-        [
-            backend.reshape(zero, (1, -1)),
-            backend.reshape(anchor_arr, (1, -1)),
-            vectors_arr,
-        ],
-        axis=0,
-    )
-    rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
-    distances = geo_result.distances
-    backend.eval(distances)
+    # Complete graph geodesic equals chord distance: exact, not an approximation.
+    anchor_vec = backend.reshape(anchor_arr, (1, -1))
+    d0a_arr = geodesic_norms(anchor_vec, backend)
+    d0v = geodesic_norms(vectors_arr, backend)
+    anchor_sq = backend.sum(anchor_vec * anchor_vec, axis=1)
+    vecs_sq = backend.sum(vectors_arr * vectors_arr, axis=1)
+    cross = backend.matmul(vectors_arr, backend.transpose(anchor_vec))
+    dist_sq = vecs_sq + anchor_sq - 2.0 * backend.reshape(cross, (-1,))
+    dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+    dav = backend.sqrt(dist_sq)
+    backend.eval(d0a_arr, d0v, dav)
 
-    d0a = distances[0, 1]
-    d0v = distances[0, 2:]
-    dav = distances[1, 2:]
-
-    eps = division_epsilon(backend, distances)
-    d0a_val = float(backend.to_scalar(d0a))
+    eps = division_epsilon(backend, d0v)
+    d0a_val = float(backend.to_scalar(d0a_arr[0]))
     if d0a_val <= eps:
         return backend.zeros_like(d0v)
 
-    denom = 2.0 * d0a * d0v
+    denom = 2.0 * d0a_arr[0] * d0v
     safe_denom = backend.maximum(denom, backend.full(d0v.shape, eps))
-    cos_vals = (d0a * d0a + d0v * d0v - dav * dav) / safe_denom
+    cos_vals = (d0a_arr[0] * d0a_arr[0] + d0v * d0v - dav * dav) / safe_denom
     cos_vals = backend.clip(cos_vals, -1.0, 1.0)
     cos_vals = backend.where(d0v > eps, cos_vals, backend.zeros_like(cos_vals))
     return cos_vals
@@ -214,14 +207,10 @@ def geodesic_norms(vectors: Any, backend: "Backend") -> Any:
     if shape_vectors[0] == 0:
         return backend.array([])
 
-    zero = backend.zeros_like(vectors_arr[:1])
-    points = backend.concatenate([zero, vectors_arr], axis=0)
-    rg = _get_riemannian_geometry(backend)
-    point_count = int(backend.shape(points)[0])
-    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
-    distances = geo_result.distances
-    backend.eval(distances)
-    return distances[0, 1:]
+    # Complete graph geodesic equals chord distance: exact, not an approximation.
+    norms_sq = backend.sum(vectors_arr * vectors_arr, axis=1)
+    norms_sq = backend.maximum(norms_sq, backend.zeros_like(norms_sq))
+    return backend.sqrt(norms_sq)
 
 
 def geodesic_cosine_matrix(vectors: Any, backend: "Backend") -> Any:
@@ -233,16 +222,16 @@ def geodesic_cosine_matrix(vectors: Any, backend: "Backend") -> Any:
     if shape_vectors[0] == 0:
         return backend.array([])
 
-    zero = backend.zeros_like(vectors_arr[:1])
-    points = backend.concatenate([zero, vectors_arr], axis=0)
-    rg = _get_riemannian_geometry(backend)
-    point_count = int(backend.shape(points)[0])
-    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
-    distances = geo_result.distances
-    backend.eval(distances)
-
-    d0 = distances[0, 1:]
-    dij = distances[1:, 1:]
+    # Complete graph geodesic equals chord distance: exact, not an approximation.
+    d0 = geodesic_norms(vectors_arr, backend)
+    norms_sq = backend.sum(vectors_arr * vectors_arr, axis=1)
+    norms_col = backend.reshape(norms_sq, (-1, 1))
+    norms_row = backend.reshape(norms_sq, (1, -1))
+    cross = backend.matmul(vectors_arr, backend.transpose(vectors_arr))
+    dist_sq = norms_col + norms_row - 2.0 * cross
+    dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+    dij = backend.sqrt(dist_sq)
+    backend.eval(d0, dij)
     d0_row = backend.reshape(d0, (1, -1))
     d0_col = backend.reshape(d0, (-1, 1))
 
@@ -270,18 +259,18 @@ def geodesic_cosine_between_sets(a: Any, b: Any, backend: "Backend") -> Any:
     if shape_a[1] != shape_b[1]:
         raise ValueError("Inputs must share feature dimension")
 
-    zero = backend.zeros_like(a_arr[:1])
-    points = backend.concatenate([zero, a_arr, b_arr], axis=0)
-    rg = _get_riemannian_geometry(backend)
-    point_count = int(backend.shape(points)[0])
-    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
-    distances = geo_result.distances
-    backend.eval(distances)
-
-    m = int(shape_a[0])
-    d0a = distances[0, 1 : 1 + m]
-    d0b = distances[0, 1 + m :]
-    dab = distances[1 : 1 + m, 1 + m :]
+    # Complete graph geodesic equals chord distance: exact, not an approximation.
+    d0a = geodesic_norms(a_arr, backend)
+    d0b = geodesic_norms(b_arr, backend)
+    a_sq = backend.sum(a_arr * a_arr, axis=1)
+    b_sq = backend.sum(b_arr * b_arr, axis=1)
+    a_col = backend.reshape(a_sq, (-1, 1))
+    b_row = backend.reshape(b_sq, (1, -1))
+    cross = backend.matmul(a_arr, backend.transpose(b_arr))
+    dist_sq = a_col + b_row - 2.0 * cross
+    dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+    dab = backend.sqrt(dist_sq)
+    backend.eval(d0a, d0b, dab)
 
     d0a_col = backend.reshape(d0a, (-1, 1))
     d0b_row = backend.reshape(d0b, (1, -1))
@@ -309,21 +298,16 @@ def geodesic_pairwise_metrics(a: Any, b: Any, backend: "Backend") -> tuple[Any, 
     if shape_a != shape_b:
         raise ValueError("Inputs must share shape for paired metrics")
 
-    zero = backend.zeros_like(a_arr[:1])
-    points = backend.concatenate([zero, a_arr, b_arr], axis=0)
-    rg = _get_riemannian_geometry(backend)
-    point_count = int(backend.shape(points)[0])
-    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
-    distances = geo_result.distances
-    backend.eval(distances)
+    # Complete graph geodesic equals chord distance: exact, not an approximation.
+    d0a = geodesic_norms(a_arr, backend)
+    d0b = geodesic_norms(b_arr, backend)
+    diff = a_arr - b_arr
+    diff_sq = backend.sum(diff * diff, axis=1)
+    diff_sq = backend.maximum(diff_sq, backend.zeros_like(diff_sq))
+    dab_diag = backend.sqrt(diff_sq)
+    backend.eval(d0a, d0b, dab_diag)
 
-    n = int(shape_a[0])
-    d0a = distances[0, 1 : 1 + n]
-    d0b = distances[0, 1 + n :]
-    dab = distances[1 : 1 + n, 1 + n :]
-    dab_diag = backend.diag(dab)
-
-    eps = division_epsilon(backend, distances)
+    eps = division_epsilon(backend, d0a)
     denom = 2.0 * d0a * d0b
     safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
     cos_vals = (d0a * d0a + d0b * d0b - dab_diag * dab_diag) / safe_denom

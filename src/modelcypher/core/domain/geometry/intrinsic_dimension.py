@@ -658,11 +658,10 @@ class IntrinsicDimension:
             # Sum columns to get bin counts
             valid_mask_col = backend.reshape(valid_mask_float, (-1, 1))
             bin_counts_arr = backend.sum(one_hot * valid_mask_col, axis=0)
-            backend.eval(bin_counts_arr)
 
             # Find modal bin using backend argmax
             max_bin_arr = backend.argmax(bin_counts_arr)
-            backend.eval(max_bin_arr, bin_width_arr)
+            backend.eval(bin_counts_arr, max_bin_arr, bin_width_arr)
             max_bin = int(backend.to_scalar(max_bin_arr))
             bin_width_val = float(backend.to_scalar(bin_width_arr))
             modal_dim = min_dim + (max_bin + 0.5) * bin_width_val

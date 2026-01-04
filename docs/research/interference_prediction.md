@@ -1,17 +1,18 @@
-# Interference Prediction: Pre-Merge Quality Estimation
+# Merge Analysis: Interference Geometry (Pre-Merge)
 
 **Status**: Implemented
 **Date**: 2025-12-23
-**Module**: `core/domain/geometry/interference_predictor.py`
+**Module**: `src/modelcypher/core/domain/geometry/interference_predictor.py`
 **CLI**: `mc geometry interference predict`
 
 ---
 
 ## Abstract
 
-Interference prediction uses Riemannian density estimation to model concepts as probability distributions (not single points) and predict whether merging two models will result in constructive or destructive interference. This enables pre-merge quality assessment without expensive post-merge evaluation.
-
-**Key Insight**: A concept in neural network latent space is not a single point, but a distribution of activations that vary with input phrasing, context, and model stochasticity. By measuring volume overlap and curvature mismatch BEFORE merging, we can predict merge quality.
+Merge analysis models concepts as Riemannian distributions and reports raw geometric measurements
+that summarize how two models align before a merge. The CLI extracts domain probe activations,
+computes per-domain metrics, and emits overlap, curvature divergence, distance, and CKA alignment
+signals without prescribing thresholds or verdicts.
 
 ---
 
@@ -19,35 +20,16 @@ Interference prediction uses Riemannian density estimation to model concepts as 
 
 ### Concepts as Distributions
 
-Traditional merge analysis treats concepts as point centroids. This ignores:
-- **Activation variance**: Different phrasings of the same concept produce different activations
-- **Context sensitivity**: The same word in different contexts activates different regions
-- **Model stochasticity**: Floating-point non-determinism creates activation noise
+Concepts are treated as probability distributions over the representation manifold (ConceptVolume):
+- **Centroid**: Frechet mean on the geodesic graph
+- **Covariance**: Tangent-space covariance with curvature correction
+- **Geodesic radius**: 95th percentile geodesic distance from centroid
+- **Local curvature**: Sectional curvature at the centroid
 
-**ConceptVolume** models concepts as multivariate distributions with:
-- **Centroid**: Mean position in activation space
-- **Covariance**: Shape and extent of the distribution
-- **Geodesic Radius**: Extent along the manifold (curvature-corrected)
-- **Local Curvature**: Riemannian geometry at the centroid
+### Relation Computation
 
-### Interference Types
-
-| Type | Description | Implication |
-|------|-------------|-------------|
-| **CONSTRUCTIVE** | Concepts reinforce each other | Good merge quality, enhanced capabilities |
-| **NEUTRAL** | Minimal interaction | Safe to merge, no significant changes |
-| **PARTIAL_DESTRUCTIVE** | Some conflict detected | Risky, apply mitigations before merge |
-| **DESTRUCTIVE** | Major conflict | High risk, review before proceeding |
-
-### Interference Mechanisms
-
-| Mechanism | Description | Mitigation |
-|-----------|-------------|------------|
-| **VOLUME_OVERLAP** | Physical overlap in activation space | Reduce alpha for overlapping layers |
-| **CURVATURE_MISMATCH** | Different local geometries | Use curvature-corrected alpha |
-| **SUBSPACE_CONFLICT** | Misaligned principal directions | Apply Procrustes alignment |
-| **BOUNDARY_COLLISION** | Edge effects at volume boundaries | Apply Gaussian smoothing |
-| **SEMANTIC_COLLISION** | Same region, different meanings | Use knowledge probes post-merge |
+When raw activations are available, relations are computed with CKA (dimension-agnostic).
+Otherwise, the estimator falls back to geodesic comparisons using the k-NN geodesic graph.
 
 ---
 
@@ -55,93 +37,76 @@ Traditional merge analysis treats concepts as point centroids. This ignores:
 
 ### Bhattacharyya Coefficient
 
-Measures similarity between two Gaussian distributions:
+Used for Gaussian overlap when geodesic fallback is required:
 
 ```
 BC = exp(-D_B)
 
-D_B = (1/8)(μ_a - μ_b)^T Σ^{-1} (μ_a - μ_b) + (1/2)ln(det(Σ)/sqrt(det(Σ_a)det(Σ_b)))
+D_B = (1/8)(mu_a - mu_b)^T Sigma^{-1} (mu_a - mu_b)
+    + (1/2) ln(det(Sigma) / sqrt(det(Sigma_a) det(Sigma_b)))
 
-where Σ = (Σ_a + Σ_b)/2
+Sigma = (Sigma_a + Sigma_b) / 2
 ```
 
-Higher BC (closer to 1) indicates more overlap.
+### CKA-Derived Relations
 
-### Geodesic Distance with Curvature Correction
-
-For manifold with sectional curvature K:
-- **K > 0** (spherical): `s = (1/sqrt(K)) * arcsin(sqrt(K) * d_euclidean)`
-- **K < 0** (hyperbolic): `s = (1/sqrt(-K)) * arcsinh(sqrt(-K) * d_euclidean)`
-- **K = 0** (flat): `s = d_euclidean`
+When raw activations are stored, CKA is used to define overlap and alignment:
+- overlap_coefficient = CKA
+- jaccard_index = CKA
+- bhattacharyya_coefficient = CKA
+- subspace_alignment = CKA
+- distance = 1 - CKA
 
 ### Curvature-Corrected Covariance
 
-Standard covariance assumes flat space. For curved manifolds:
+Curvature correction scales covariance using the effective radius:
 
 ```
-Cov_corrected = Cov * correction_factor
-
-correction_factor = 1 + K*r²/6  (for K > 0)
-                  = 1/(1 - K*r²/6)  (for K < 0)
+correction = 1 + K * r^2 / 6          (K > 0)
+correction = 1 / (1 - K * r^2 / 6)    (K < 0)
 ```
 
-### Safety Score Computation
-
-Composite score from multiple factors:
-
-```
-safety = 0.4 * overlap_safety * distance_modifier
-       + 0.2 * curvature_safety
-       + 0.2 * alignment_safety
-       + 0.2 * distance_score
-
-where:
-  overlap_safety = max(1 - overlap_score, distance_score)
-  curvature_safety = 1 - curvature_mismatch
-  alignment_safety = subspace_alignment
-  distance_modifier = 0.5 + 0.5 * normalized_distance
-```
+The correction factor is clamped to a stable range before application.
 
 ---
 
-## Integration with Domain Waypoints
+## Domains and Probes
 
-Interference prediction integrates with the 4 validated domain geometries:
+`mc geometry interference predict` analyzes all domains in `AtlasDomain` using
+`UnifiedAtlasInventory` probes:
 
-| Domain | Probes | Interference Relevance |
-|--------|--------|------------------------|
-| **Spatial** | 23 | Physics/3D world model conflicts |
-| **Social** | 25 | Power hierarchy distortions |
-| **Temporal** | 23 | Temporal ordering conflicts |
-| **Moral** | 30 | Ethical valence collisions |
-
-The CLI command `mc geometry interference predict` analyzes all domains and provides:
-- Per-domain safety scores
-- Domain-specific critical pairs
-- Aggregate summary
+- mathematical, logical, linguistic, mental
+- computational, structural
+- affective, relational
+- temporal, spatial
+- moral, safety
+- philosophical, factual
 
 ---
 
 ## CLI Usage
 
 ```bash
-# Predict interference between two models
+# Predict merge geometry between two models
 mc geometry interference predict /path/to/source /path/to/target
 
-# Compute volume for a single concept
+# Save a detailed JSON report
+mc geometry interference predict /path/to/source /path/to/target --output-file interference_report.json
+
+# Compute ConceptVolume for a single concept
 mc geometry interference volume /path/to/model "justice"
 
-# Save detailed report
-mc geometry interference predict source target -o interference_report.json
+# Inspect null-space capacity (related diagnostic)
+mc geometry interference null-space /path/to/model
 ```
 
 ---
 
-## Example Output
+## Example Output (Text)
 
 ```
 ======================================================================
-INTERFERENCE PREDICTION REPORT
+MERGE ANALYSIS REPORT
 ======================================================================
 
 Source: Qwen2.5-0.5B-Instruct-bf16
@@ -149,49 +114,47 @@ Target: Qwen2-0.5B-Instruct-4bit
 Layer: last
 
 --------------------------------------------------
-VERDICT: SAFE
-Overall Safety: 100.0%
---------------------------------------------------
-
 Per-Domain Analysis:
   MORAL:
     Concepts: 30
-    Safety: 100.0% (min: 100.0%)
-    neutral: 30
-
-Recommendation:
-  LOW RISK: Models have aligned concept geometry.
+    Mean Overlap: 0.82
+    Domain CKA: 0.9134
+    Domain Aligned: False
+    Mean Curvature Divergence: 0.07
+    Mean Distance: 0.41
 ```
 
 ---
 
 ## Understanding Output
 
-### Safety Score
+### Per-Domain Fields
 
-The safety score (0.0 to 1.0) is a composite measurement derived from:
-- **Overlap score**: Bhattacharyya coefficient of concept distributions
-- **Curvature mismatch**: Difference in local Riemannian curvature
-- **Subspace alignment**: Principal direction correlation
-- **Centroid distance**: Geodesic distance between concept centroids
+- **Concepts**: Number of shared probes used for that domain.
+- **Mean Overlap**: Average overlap score (mean of Bhattacharyya, overlap coefficient, Jaccard).
+- **Domain CKA**: CKA over stacked concept activations (dimension-agnostic).
+- **Domain Aligned**: True only when `abs(domain_cka - 1.0) <= machine_epsilon`.
+- **Mean Curvature Divergence**: Average curvature divergence across concepts.
+- **Mean Distance**: Average normalized geodesic distance.
 
-Higher values indicate less predicted interference. The score is a raw measurement; interpret relative to your baseline observations for similar model pairs.
+### Global Metrics (JSON)
 
-### Critical Pair Analysis
+The JSON report includes:
+- `meanOverlap`
+- `meanCka`
+- `meanCurvatureDivergence`
+- `meanDistance`
 
-When critical pairs are detected, the report identifies:
-1. **Concept ID**: Which concept has interference
-2. **Mechanism**: Root cause of interference
-3. **Mitigation**: Action
+These are raw measurements; interpret relative to baselines from similar model pairs.
 
 ---
 
 ## Limitations
 
-1. **Sample Requirements**: Volume estimation requires multiple activation samples per concept; single-sample analysis treats concepts as point masses
-2. **Curvature Estimation**: Requires sufficient samples (n ≥ d+2) for reliable curvature estimation
-3. **Dimensionality**: In very high dimensions (896+), covariance becomes singular without many samples
-4. **Semantic Validation**: Interference prediction doesn't verify semantic meaning preservation
+1. **Single-sample volumes in predict**: Each concept is extracted from a single probe prompt,
+   so per-concept volumes are point masses; CKA is computed at the domain level instead.
+2. **Layer scope**: `predict` currently analyzes the last layer only (`layer = -1`).
+3. **Probe coverage**: Results depend on available probes for each domain.
 
 ---
 
@@ -199,26 +162,25 @@ When critical pairs are detected, the report identifies:
 
 | File | Purpose |
 |------|---------|
-| `core/domain/geometry/riemannian_density.py` | ConceptVolume, RiemannianDensityEstimator |
-| `core/domain/geometry/interference_predictor.py` | InterferencePredictor, GlobalInterferenceReport |
-| `core/domain/geometry/manifold_curvature.py` | Curvature estimation |
-| `cli/commands/geometry/interference.py` | CLI commands |
+| `src/modelcypher/core/domain/geometry/riemannian_density.py` | ConceptVolume + relation metrics |
+| `src/modelcypher/core/domain/geometry/interference_predictor.py` | MergeAnalyzer + report types |
+| `src/modelcypher/core/domain/geometry/manifold_curvature.py` | Curvature estimation |
+| `src/modelcypher/cli/commands/geometry/interference.py` | CLI commands |
 | `docs/research/interference_prediction.md` | This document |
 
 ---
 
 ## Future Directions
 
-1. **Multi-Sample Probing**: Generate multiple prompt variations for robust volume estimation
-2. **Cross-Domain Interference**: Detect conflicts between different domains (e.g., moral-social)
-3. **Temporal Evolution**: Track interference changes during fine-tuning
-4. **Merge Guidance Integration**: Feed interference predictions into alpha adjustment
+1. **Multi-sample probing**: Multiple prompt variants per concept for true volumes.
+2. **Cross-domain analysis**: Track interference across domain boundaries.
+3. **Temporal tracking**: Monitor drift across fine-tuning checkpoints.
+4. **Merge planning integration**: Use metrics to prioritize domains for transplant.
 
 ---
 
 ## Related Work
 
-- **Riemannian Geometry in ML**: Pennec, 2006 - Intrinsic Statistics on Riemannian Manifolds
-- **Manifold Learning**: Belkin & Niyogi, 2003 - Laplacian Eigenmaps
-- **ModelCypher Domain Waypoints**: Domain-aware merge guidance using validated geometries
-- **Ghost Anchor Synthesis**: CABE-1 uses interference prediction for concept transplantation
+- Pennec (2006): Intrinsic Statistics on Riemannian Manifolds
+- Belkin & Niyogi (2003): Laplacian Eigenmaps
+- Ainsworth et al. (2022): Git Re-Basin

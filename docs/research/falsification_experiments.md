@@ -19,16 +19,21 @@ Each experiment targets a specific claim. A failed experiment should narrow or r
 **Run It**:
 ```bash
 # Fetch models (optional; requires network)
-mc model fetch mlx-community/Llama-3-8B --auto-register
-mc model fetch mlx-community/Qwen2.5-7B --auto-register
+mc model fetch mlx-community/Llama-3-8B --auto-register --alias llama3-8b
+mc model fetch mlx-community/Qwen2.5-7B --auto-register --alias qwen2p5-7b
 
-# Compare semantic-prime anchor signals (proxy implementation)
-mc geometry primes compare --model-a <llama_dir> --model-b <qwen_dir> --output json
+# Probe semantic primes to produce activation files
+mc geometry primes probe-model <llama_dir> --output-file llama_primes.json
+mc geometry primes probe-model <qwen_dir> --output-file qwen_primes.json
+
+# Compare semantic-prime anchor signals (CKA on prime activations)
+mc geometry primes compare llama_primes.json qwen_primes.json --output json
 ```
 
 Notes:
 - Replace `<llama_dir>` / `<qwen_dir>` with local model directories (e.g., the paths printed by `mc model fetch`).
-- CKA is the *target* metric for this hypothesis; `mc geometry primes compare` is currently a lightweight proxy.
+- `mc geometry primes compare` expects activation JSON files from `mc geometry primes probe-model`.
+- CKA is the *target* metric for this hypothesis; prime-activation CKA is a lightweight proxy for the full probe corpus.
 
 ## 2. The Alignment Tax (Entropy vs Control)
 

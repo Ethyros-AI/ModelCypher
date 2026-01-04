@@ -519,6 +519,8 @@ class GromovWassersteinDistance:
         hC2: "Array",
         T: "Array",
         G: "Array",
+        grad_T: "Array | None" = None,
+        hC2_T: "Array | None" = None,
     ) -> float:
         """
         Compute optimal step size for Frank-Wolfe using line search.
@@ -543,8 +545,11 @@ class GromovWassersteinDistance:
         #   b = ∂φ/∂α at α=0 = <grad_f(T), deltaT>
         #   c = coefficient of α² from the quadratic term
 
-        # Gradient at T
-        grad_T = self._gw_gradient(constC, hC1, hC2, T)
+        # Gradient at T (reuse if already computed)
+        if grad_T is None:
+            grad_T = self._gw_gradient(constC, hC1, hC2, T)
+        if hC2_T is None:
+            hC2_T = backend.transpose(hC2)
 
         # b = <grad, deltaT>
         b_arr = backend.sum(grad_T * deltaT)
@@ -552,7 +557,7 @@ class GromovWassersteinDistance:
         # For GW with squared loss, the quadratic coefficient c comes from:
         # c = 2 * <hC1 @ deltaT @ hC2.T, deltaT>
         # (This is the Hessian-vector product term)
-        hessian_term = backend.matmul(backend.matmul(hC1, deltaT), backend.transpose(hC2))
+        hessian_term = backend.matmul(backend.matmul(hC1, deltaT), hC2_T)
         c_arr = 2.0 * backend.sum(hessian_term * deltaT)
 
         backend.eval(b_arr, c_arr)
@@ -606,6 +611,7 @@ class GromovWassersteinDistance:
         # Initialize loss decomposition matrices (reuse across restarts when provided)
         if constC is None or hC1 is None or hC2 is None:
             constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
+        hC2_T = backend.transpose(hC2)
 
         # Derive convergence thresholds from dtype
         # Using sqrt(eps) as standard numerical tolerance for convergence
@@ -623,7 +629,10 @@ class GromovWassersteinDistance:
             iterations = outer + 1
 
             # Current loss
-            loss = self._gw_loss(constC, hC1, hC2, T)
+            tens = constC - backend.matmul(backend.matmul(hC1, T), hC2_T)
+            loss_arr = backend.sum(tens * T)
+            backend.eval(loss_arr)
+            loss = float(backend.to_scalar(loss_arr))
 
             # Check convergence
             if iterations >= _MIN_OUTER_ITERATIONS:
@@ -639,7 +648,7 @@ class GromovWassersteinDistance:
             prev_loss = loss
 
             # Step 1: Compute gradient
-            grad = self._gw_gradient(constC, hC1, hC2, T)
+            grad = 2.0 * tens
 
             # Step 2: Solve linear OT to get descent direction
             # G = argmin_G <grad, G> subject to marginal constraints
@@ -655,7 +664,7 @@ class GromovWassersteinDistance:
             )
 
             # Step 3: Line search for optimal step size
-            alpha = self._compute_step_size(constC, hC1, hC2, T, G)
+            alpha = self._compute_step_size(constC, hC1, hC2, T, G, grad_T=grad, hC2_T=hC2_T)
 
             # Step 4: Update coupling via Frank-Wolfe convex combination
             # NOTE: This is NOT arbitrary blending. The step size α is computed

@@ -1,50 +1,48 @@
 # Entropy Differential & The Sidecar Safety Architecture
 
 > **Status**: Core Architecture
-> **Implementation**: `src/modelcypher/core/domain/safety/circuit_breaker_integration.py`
+> **Implementation**:
+> - Entropy differential: `src/modelcypher/core/use_cases/thermo_service.py`
+> - Jailbreak detection: `src/modelcypher/core/use_cases/geometry_safety_service.py`
+> - Sidecar divergence: `src/modelcypher/core/domain/safety/sidecar/`
+> - Signal aggregation: `src/modelcypher/core/domain/safety/circuit_breaker_integration.py`
 > **Theory**: Control Theory & Information Geometry
 
 ## The Core Thesis: Safety as a Signal
 
 Many safety approaches (RLHF and related preference/constraint training) modify a single model’s behavior. These can be effective, but tradeoffs and failure modes are often hard to diagnose from outputs alone.
 
-**Entropy Differential Safety** takes a different approach. We let the powerful Base Model compute whatever it wants, but we **measure** its trajectory before tokens are emitted.
+**Entropy Differential Safety** takes a different approach. We measure **trajectory signals** before tokens are emitted and report raw measurements instead of hard-coded judgments.
 
-We do this by running a lightweight **Safety Sidecar** (a specialized LoRA) in parallel and monitoring divergence signals.
+## Entropy Differential (ΔH)
 
-## The Two-Sided Seismograph
+ΔH is measured between a **baseline prompt** and a **modified/intensity prompt**:
 
-We treat the generation process as a physical system with two competing forces. We measure the difference (differential) between them.
+```
+ΔH = H(intensity) - H(baseline)
+```
 
-### 1. The Base Model (The Engine)
--   **Role**: Maximizes probability of the next token based on the prompt.
--   **Characteristics**: General-purpose behavior; may be capable of both benign and harmful continuations depending on prompt + decoding regime.
--   **Signal**: $P_{base}(t)$
+This is used to detect instability shifts during probing and safety evaluations. Interpretation is relative to baseline distributions for the model family and probe set.
 
-### 2. The Safety Sidecar (The Brakes)
--   **Role**: Trained *exclusively* on refusal patterns and safe boundaries.
--   **Characteristics**: Specialized toward refusal/boundary behavior; may introduce false positives/negatives depending on task domain.
--   **Signal**: $P_{sidecar}(t)$
+## Sidecar Divergence (KL)
 
-### The Differential ($\Delta H$)
+The Safety Sidecar (a specialized LoRA) runs in parallel. Divergence is monitored using KL distances to sidecar or sentinel distributions, not ΔH.
 
-For every token $t$, we compare the distributions.
+- **Signal**: KL divergence to a safety probe distribution
+- **Policy**: Thresholds derived from baseline KL measurements
+- **Outcome**: Normal / Caution / Intervention
 
-$$ \Delta H = H(P_{base}) - H(P_{sidecar}) $$
+See `sidecar_safety_policy.py` and `sidecar_safety_session.py` for the threshold and session logic.
 
--   **High Differential**: The Base distribution is substantially more diffuse than the Sidecar under the same input, indicating disagreement between policies.
-    -   *Interpretation*: A candidate **boundary condition**. In safety contexts this can correlate with near-threshold prompts, but it is not sufficient as a standalone harm classifier.
--   **Low Differential**: Both agree.
-    -   *Interpretation*: Safe operation.
+## Circuit Breaker
 
-## The Circuit Breaker
+The `CircuitBreaker` aggregates multiple raw signals (normalized entropy, refusal distance, persona drift, oscillation patterns) into a severity magnitude. It does not do keyword matching.
 
-The `CircuitBreaker` monitors this differential in real-time. It does not look for "bad words". It looks for **geometric divergence**.
+### Trigger Conditions (examples)
 
-### Trigger Conditions
-
-1.  **Refusal-Region Proximity (optional)**: Compare activations/logits against a reference refusal direction or a reference safety adapter. (This repository focuses on measurement tooling; it does not ship “harm probes”.)
-2.  **Divergence Spike**: If $\Delta H$ (or related divergence signals) spikes, the base and sidecar disagree sharply under the same prompt + decoding setup.
+1. **Refusal proximity**: distance to refusal boundary decreases.
+2. **Entropy signal shift**: normalized entropy spikes relative to baseline.
+3. **Oscillation pattern**: repeated instability windows.
 
 ## Architecture: The "Co-Orbiting" Model
 
@@ -52,21 +50,17 @@ The `CircuitBreaker` monitors this differential in real-time. It does not look f
 graph LR
     Input[User Prompt] --> Base[Base Model]
     Input --> Sidecar[Safety Sidecar (LoRA)]
-    
+
     Base -->|Logits A| Monitor[Circuit Breaker]
     Sidecar -->|Logits B| Monitor
-    
-    Monitor -->|Calculate| Diff[Entropy Differential]
-    
-    Diff -- "Safe (ΔH < T)" --> Output[Token A]
-    Diff -- "Unsafe (ΔH > T)" --> Intervene[Intervention]
-    
-    Intervene -->|Steer| Base
-    Intervene -->|Stop| Output
+
+    Monitor -->|Aggregate signals| Diff[Divergence / Entropy Signals]
+
+    Diff -->|Baseline-derived policy| Output[Next Token / Intervention]
 ```
 
 ## Why This Works
 
-1.  **Modularity**: The base model remains unchanged; safety behavior is introduced as a separate, inspectable component.
-2.  **Beyond keyword filters**: Divergence signals can surface boundary cases that are not captured by simple string rules (this requires empirical validation per domain).
-3.  **Actionable reporting**: The system can report which signal(s) triggered an intervention (e.g., entropy differential threshold, refusal-direction proximity), without claiming to infer internal “intent.”
+1. **Modularity**: The base model remains unchanged; safety behavior is introduced as a separate, inspectable component.
+2. **Beyond keyword filters**: Divergence signals can surface boundary cases that are not captured by string rules (validate per domain).
+3. **Actionable reporting**: The system reports which signals contributed, without claiming to infer internal “intent.”

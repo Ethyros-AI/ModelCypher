@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 97
-- Issues found: 31
-- Issues fixed: 31
+- Audited: 103
+- Issues found: 37
+- Issues fixed: 37
 
 ## Audit Log
 
@@ -1221,3 +1221,81 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Tests: N/A
   - Best practices: OK
   - Issues: none
+
+- `docs/research/cross_lora_transfer.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (probe corpus reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-existent `probe_corpus.py`
+  - Fix: Pointed to `KnowledgeProbeCorpus` in merge validation module
+
+- `docs/research/dimensional_hierarchy.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (merge touchpoints)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-existent vocabulary merge stage
+  - Fix: Pointed to merge pipeline vocabulary preservation and probe stage alignment
+
+- `docs/research/entropy_differential_safety.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (entropy vs sidecar divergence)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described ΔH as base/sidecar entropy and tied it to circuit breaker behavior
+  - Fix: Aligned ΔH to baseline/intensity prompts and sidecar divergence to KL signals
+
+- `docs/research/falsification_experiments.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (primes CLI workflow)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Used invalid primes compare flags and omitted auto-register alias requirement
+  - Fix: Added probe-model activation step, corrected compare invocation, and required alias for auto-register
+
+- `docs/research/geometric_zipper_propagation.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (permute algorithm + tests)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described SciPy/NumPy workflow, incorrect zipper flow, and non-existent tests
+  - Fix: Aligned with backend Hungarian + geodesic cosine, corrected MLP-only flow, updated test references
+
+- `docs/research/interference_prediction.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (merge analysis reality)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Claimed safety scores/mitigations, wrong domains/CLI output, and non-existent predictors
+  - Fix: Rewrote to match MergeAnalyzer outputs, domain coverage, and CLI behavior

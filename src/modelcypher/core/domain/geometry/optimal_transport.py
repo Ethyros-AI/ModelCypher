@@ -225,6 +225,9 @@ class SinkhornSolver:
         # Use precision-aware epsilon and tiny value
         eps = division_epsilon(backend, cost)
         floor = tiny_value(backend, cost)
+        floor_vec_n = backend.full((n,), floor)
+        floor_vec_m = backend.full((m,), floor)
+        floor_mat = backend.full((n, m), floor)
 
         # Stabilized Sinkhorn with row-wise centering
         cost_min = backend.min(cost, axis=1, keepdims=True)
@@ -232,9 +235,9 @@ class SinkhornSolver:
         log_K = -cost_centered / max(epsilon, eps)
 
         # Clamp to avoid underflow
-        log_K = backend.maximum(log_K, backend.full(log_K.shape, -80.0))
+        log_K = backend.maximum(log_K, backend.full((n, m), -80.0))
         K = backend.exp(log_K)
-        K = backend.maximum(K, backend.full(K.shape, floor))
+        K = backend.maximum(K, floor_mat)
 
         # Initialize scaling vectors
         u = backend.ones((n,))
@@ -244,12 +247,12 @@ class SinkhornSolver:
         for _ in range(max_iterations):
             # Row scaling: u = p / (K @ v)
             Kv = backend.matmul(K, v)
-            Kv = backend.maximum(Kv, backend.full(Kv.shape, floor))
+            Kv = backend.maximum(Kv, floor_vec_n)
             u_new = p / Kv
 
             # Column scaling: v = q / (K.T @ u)
             Ktu = backend.matmul(K_T, u_new)
-            Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
+            Ktu = backend.maximum(Ktu, floor_vec_m)
             v_new = q / Ktu
 
             # Check convergence if threshold > 0

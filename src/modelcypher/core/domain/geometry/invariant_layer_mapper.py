@@ -743,23 +743,22 @@ class InvariantLayerMapper:
         if source_count == 0 or target_count == 0:
             return []
 
-        dim: int | None = len(weights) if weights is not None else None
-        if dim is None:
-            for layer in source_layers:
-                vec = source_profile.vectors.get(layer)
-                if vec:
-                    dim = len(vec)
-                    break
-        if dim is None:
-            for layer in target_layers:
-                vec = target_profile.vectors.get(layer)
-                if vec:
-                    dim = len(vec)
-                    break
-        if dim is None or dim == 0:
+        dims: list[int] = []
+        if weights is not None and len(weights) > 0:
+            dims.append(len(weights))
+        for layer in source_layers:
+            vec = source_profile.vectors.get(layer)
+            if vec:
+                dims.append(len(vec))
+        for layer in target_layers:
+            vec = target_profile.vectors.get(layer)
+            if vec:
+                dims.append(len(vec))
+        if not dims:
             return [[0.0] * target_count for _ in range(source_count)]
-        if weights is not None and len(weights) != dim:
-            return None
+        dim = min(dims)
+        if dim == 0:
+            return [[0.0] * target_count for _ in range(source_count)]
 
         source_vectors: list[list[float]] = []
         for layer in source_layers:
@@ -767,9 +766,7 @@ class InvariantLayerMapper:
             if not vec:
                 source_vectors.append([0.0] * dim)
                 continue
-            if len(vec) != dim:
-                return None
-            source_vectors.append(vec)
+            source_vectors.append(vec[:dim])
 
         target_vectors: list[list[float]] = []
         for layer in target_layers:
@@ -777,16 +774,14 @@ class InvariantLayerMapper:
             if not vec:
                 target_vectors.append([0.0] * dim)
                 continue
-            if len(vec) != dim:
-                return None
-            target_vectors.append(vec)
+            target_vectors.append(vec[:dim])
 
         b = get_default_backend()
         source_arr = b.array(source_vectors)
         target_arr = b.array(target_vectors)
 
         if weights is not None:
-            weights_arr = b.array(weights)
+            weights_arr = b.array(weights[:dim])
             weights_row = b.reshape(weights_arr, (1, -1))
             source_arr = source_arr * weights_row
             target_arr = target_arr * weights_row
