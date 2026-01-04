@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_from_grams
 from modelcypher.core.domain.geometry.numerical_stability import (
-    compute_pearson_correlation,
     division_epsilon,
 )
 from modelcypher.core.domain.geometry.path_geometry import (
@@ -30,6 +29,7 @@ from modelcypher.core.domain.geometry.path_geometry import (
     PathGeometry,
     PathSignature,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
 
 
 @dataclass(frozen=True)
@@ -210,23 +210,11 @@ class CrossCulturalGeometry:
             # Compute Pearson correlation: cov(a,b) / (std(a) * std(b))
             centered_a = (gram_a_arr - mean_a) * mask
             centered_b = (gram_b_arr - mean_b) * mask
-            cov_sum = backend.sum(centered_a * centered_b)
-            var_a_sum = backend.sum(centered_a * centered_a)
-            var_b_sum = backend.sum(centered_b * centered_b)
-            backend.eval(cov_sum, var_a_sum, var_b_sum)
-
-            cov_val = float(backend.to_scalar(cov_sum))
-            var_a_val = float(backend.to_scalar(var_a_sum))
-            var_b_val = float(backend.to_scalar(var_b_sum))
-            cov = cov_val / off_diag_count
-            var_a = var_a_val / off_diag_count
-            var_b = var_b_val / off_diag_count
-
-            eps = division_epsilon(backend, gram_a_arr)
-            # INTENTIONAL EUCLIDEAN: Standard Pearson correlation formula.
-            # Std dev is defined by Euclidean norm of centered values.
-            std_product = (var_a ** 0.5) * (var_b ** 0.5)
-            pearson = cov / max(std_product, eps) if std_product > eps else 0.0
+            centered_a_flat = backend.reshape(centered_a, (1, -1))
+            centered_b_flat = backend.reshape(centered_b, (1, -1))
+            cos_arr, _ = geodesic_pairwise_metrics(centered_a_flat, centered_b_flat, backend)
+            backend.eval(cos_arr)
+            pearson = float(backend.to_scalar(cos_arr[0]))
         else:
             pearson = raw_pearson
 

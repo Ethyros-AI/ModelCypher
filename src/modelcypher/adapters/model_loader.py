@@ -20,17 +20,9 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import mlx.core as mx
-import mlx.nn as nn
-
-try:
-    from mlx_lm import load as mlx_lm_load
-except ModuleNotFoundError:  # pragma: no cover - optional dependency
-    mlx_lm_load = None
-
-from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain._backend import get_default_backend, get_mlx_probe_error, probe_mlx_available
 from modelcypher.core.domain.training.lora_mlx import (
     LoRASettings,
     apply_lora_to_model,
@@ -39,10 +31,21 @@ from modelcypher.core.domain.training.lora_mlx import (
 logger = logging.getLogger(__name__)
 
 
+def _ensure_mlx() -> tuple[Any, Any]:
+    if not probe_mlx_available(explicit=True):
+        detail = get_mlx_probe_error() or "Unknown MLX initialization error"
+        raise RuntimeError(f"MLX runtime unavailable: {detail}")
+
+    import mlx.core as mx
+    import mlx.nn as nn
+
+    return mx, nn
+
+
 def load_model_for_training(
     model_path: str,
     lora_settings: LoRASettings | None = None,
-) -> tuple[nn.Module, any]:
+) -> tuple["nn.Module", Any]:
     """Load model and tokenizer for training.
 
     Parameters
@@ -59,6 +62,7 @@ def load_model_for_training(
         Base weights are frozen if LoRA is used.
     """
     logger.info("Loading model for training from %s", model_path)
+    _ensure_mlx()
 
     # Check model type from config
     config_path = Path(model_path) / "config.json"
@@ -115,11 +119,13 @@ def load_model_for_training(
                 f"Ensure mlx_vlm is properly installed and the model is compatible."
             ) from e
     else:
-        if mlx_lm_load is None:
+        try:
+            from mlx_lm import load as mlx_lm_load
+        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
             raise ImportError(
                 "mlx_lm is required to load text models for training. "
                 "Install with: pip install mlx-lm"
-            )
+            ) from exc
         model, tokenizer = mlx_lm_load(model_path)
 
     if lora_settings is not None:
