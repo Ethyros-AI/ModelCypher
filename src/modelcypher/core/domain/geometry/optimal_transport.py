@@ -416,29 +416,10 @@ class SinkhornSolver:
     def squared_euclidean_cost(
         self, source: "Array", target: "Array", normalize: bool = True
     ) -> "Array":
-        """Compute squared Euclidean cost matrix (2D/3D probes only).
-
-        INTENTIONAL EUCLIDEAN: This method is explicitly for low-dimensional
-        (2D/3D) data where Euclidean distance is exact. For high-dimensional
-        data, use squared_geodesic_cost instead.
-
-        Args:
-            source: Source points [n, d]
-            target: Target points [m, d]
-            normalize: Whether to L2-normalize points before computing cost
-
-        Returns:
-            Cost matrix [n, m]
-        """
+        """Compute squared geodesic cost matrix (legacy name)."""
         backend = self._backend
         s = backend.array(source)
         t = backend.array(target)
-        dim = int(s.shape[-1]) if hasattr(s, "shape") else 0
-        if dim not in (2, 3):
-            raise ValueError(
-                "Euclidean cost is only valid for 2D/3D probes. "
-                "Use squared_geodesic_cost for higher dimensions."
-            )
 
         if normalize:
             div_eps = division_epsilon(backend, s)
@@ -450,14 +431,7 @@ class SinkhornSolver:
             s = s / s_norm
             t = t / t_norm
             backend.eval(s, t)
-
-        s_norm_sq = backend.sum(s * s, axis=1, keepdims=True)
-        t_norm_sq = backend.sum(t * t, axis=1, keepdims=True)
-        inner = backend.matmul(s, backend.transpose(t))
-        cost = s_norm_sq + backend.transpose(t_norm_sq) - 2 * inner
-        clamped = backend.maximum(cost, backend.array(0.0))
-        backend.eval(clamped)
-        return clamped
+        return self.squared_geodesic_cost(s, t, k_neighbors=None)
 
     def squared_geodesic_cost(
         self,

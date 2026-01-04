@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
 from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
@@ -863,17 +864,11 @@ def compute_lowrank_gw(
     target = b.array(target_points)
     b.eval(source, target)
 
-    # Compute pairwise squared distances (Gram-based for efficiency)
-    # d(i,k)² = ||x_i||² + ||x_k||² - 2<x_i, x_k>
-    source_sq = b.sum(source ** 2, axis=1, keepdims=True)
-    target_sq = b.sum(target ** 2, axis=1, keepdims=True)
-
-    C1 = source_sq + b.transpose(source_sq) - 2.0 * b.matmul(source, b.transpose(source))
-    C2 = target_sq + b.transpose(target_sq) - 2.0 * b.matmul(target, b.transpose(target))
-
-    # Ensure non-negative
-    C1 = b.maximum(C1, b.zeros_like(C1))
-    C2 = b.maximum(C2, b.zeros_like(C2))
+    # Compute pairwise squared geodesic distances
+    source_dist = geodesic_distance_matrix(source, k_neighbors=None, backend=b)
+    target_dist = geodesic_distance_matrix(target, k_neighbors=None, backend=b)
+    C1 = source_dist * source_dist
+    C2 = target_dist * target_dist
     b.eval(C1, C2)
 
     solver = LowRankGromovWasserstein(b)
