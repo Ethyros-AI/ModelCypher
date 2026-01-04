@@ -723,13 +723,12 @@ def stage_transplant(
 
         # Get intermediate activations for this layer (MLP internal states)
         # CRITICAL: For cross-architecture merge, source layer index may differ from target.
-        # Use layer_mapping to translate target layer_idx → source layer index.
-        # For unmapped layers, use proportional mapping based on layer counts.
-        if layer_mapping and layer_idx in layer_mapping:
-            source_layer_idx = layer_mapping[layer_idx]
-        elif layer_mapping and source_intermediate_activations:
-            # Proportional fallback: target_i * (source_layers / target_layers)
-            n_source = max(source_intermediate_activations.keys()) + 1 if source_intermediate_activations else layer_idx + 1
+        # IMPORTANT: The hidden-space layer_mapping is optimized for hidden activations, but
+        # intermediate space has different semantic structure. ALWAYS use proportional mapping
+        # for intermediate activations to ensure we compare semantically similar layers.
+        if source_intermediate_activations:
+            # Proportional mapping: target_i * (source_layers / target_layers)
+            n_source = max(source_intermediate_activations.keys()) + 1
             n_target = len(layer_indices)
             source_layer_idx = int(round(layer_idx * n_source / n_target))
             source_layer_idx = min(source_layer_idx, n_source - 1)  # Clamp to valid range
@@ -737,13 +736,10 @@ def stage_transplant(
             source_layer_idx = layer_idx
         
         # DEBUG: Log which source layer is being used for this target layer
-        if layer_num < 5 or layer_idx >= 15:  # Log first 5 and layers 15+
-            available_keys = sorted(source_intermediate_activations.keys()) if source_intermediate_activations else []
-            has_source = source_layer_idx in available_keys if source_intermediate_activations else False
+        if layer_num < 3 or layer_idx >= 15:  # Log first 3 and layers 15+
             logger.info(
-                "Layer %d: Intermediate alignment using source layer %d (mapped=%s, has_data=%s, available_keys_sample=%s)",
-                layer_idx, source_layer_idx, layer_idx in layer_mapping if layer_mapping else "N/A",
-                has_source, str(available_keys[:5]) if available_keys else "[]"
+                "Layer %d: Intermediate alignment using source layer %d (proportional mapping n_src=%d, n_tgt=%d)",
+                layer_idx, source_layer_idx, n_source if source_intermediate_activations else 0, len(layer_indices)
             )
         
         src_inter_list = (
@@ -819,11 +815,11 @@ def stage_transplant(
                 aligner = GramAligner(b)
                 inter_result = aligner.find_perfect_alignment(src_inter, tgt_inter)
 
-                # For cross-architecture with significant dimension reduction, CKA = 1.0
-                # may be mathematically impossible due to information loss.
-                # Accept CKA > 0.99 when reducing dimensions; require exact 1.0 otherwise.
+                # With the corrected GramAligner that computes CKA on sample-space
+                # Gram-aligned source (T @ source), CKA = 1.0 is mathematically guaranteed
+                # for all dimension ratios. The Gram sqrt transform operates in sample space.
                 dim_ratio = max(src_inter_dim, tgt_inter_dim) / min(src_inter_dim, tgt_inter_dim)
-                cka_threshold = 0.99 if dim_ratio > 1.5 else (1.0 - inter_result.precision_threshold)
+                cka_threshold = 1.0 - inter_result.precision_threshold
                 is_acceptable = inter_result.achieved_cka >= cka_threshold
 
                 if is_acceptable:
