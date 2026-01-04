@@ -105,7 +105,7 @@ def compute_transplant_delta(
 
     Uses geodesic null-space filtering - ALL operations on GPU.
     No SVD, no pinv, no eigendecomposition. Geodesic math is accurate for
-    high-dimensional manifolds (8kD+). Euclidean is only accurate up to 3D.
+    high-dimensional manifolds (8kD+). Chord distance is only reliable up to 3D.
 
     The geometry determines everything - no configuration needed.
     """
@@ -158,13 +158,13 @@ def compute_transplant_delta(
     # =========================================================================
     # GEODESIC NULL-SPACE FILTERING (GPU-only, no SVD/pinv/eigendecomp)
     # =========================================================================
-    # Instead of Euclidean linear algebra (wrong for 8kD manifolds), we use:
+    # Instead of flat-space linear algebra (wrong for 8kD manifolds), we use:
     # 1. k-NN graph construction (GPU: matmul + argsort)
     # 2. Geodesic distances via Floyd-Warshall (GPU: vectorized min)
     # 3. Tangent space projection at Fréchet mean (GPU: Gram matrix ops)
     #
     # This finds directions orthogonal to the manifold's geodesic structure,
-    # not just orthogonal in flat Euclidean space.
+    # not just orthogonal in flat space.
 
     geo_filter = GeodesicNullSpaceFilter(b)
 

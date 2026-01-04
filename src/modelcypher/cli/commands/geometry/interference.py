@@ -571,7 +571,7 @@ def null_space_filter(
             logger.warning(f"Failed to extract: {e}")
 
     # Compute geodesic orthogonal profile - accurate for high-D manifolds (8kD+)
-    # Euclidean SVD-based methods are only accurate up to 3D
+    # Flat-space SVD-based methods are only accurate up to 3D
     geo_filter = GeodesicNullSpaceFilter(backend)
 
     # Stack activations and compute geodesic profile per layer

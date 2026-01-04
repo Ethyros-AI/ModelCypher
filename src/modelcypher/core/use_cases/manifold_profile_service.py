@@ -360,19 +360,34 @@ class ManifoldProfileService:
         result = rg.geodesic_distances(features, k_neighbors=k_neighbors)
 
         # Extract distances from query (row 0) to each candidate (rows 1..n)
-        # Use tolist() for O(1) extraction instead of O(n) scalar extractions
-        row0 = result.distances[0, :]
+        row0 = result.distances[0, 1:]
         backend.eval(row0)
-        row0_list = backend.tolist(row0)
-        candidate_distances = [float(row0_list[i + 1]) for i in range(len(points))]
+        count = int(backend.shape(row0)[0])
+        if count == 0:
+            return []
+
+        sorted_idx = backend.argsort(row0)
+        sorted_vals = backend.take(row0, sorted_idx, axis=0)
+        backend.eval(sorted_idx, sorted_vals)
 
         # Derive threshold from data: 25th percentile of distance distribution
-        # This captures "similar" relative to the actual data geometry
-        sorted_distances = sorted(candidate_distances)
-        percentile_idx = max(0, int(len(sorted_distances) * 0.25) - 1)
-        threshold = sorted_distances[percentile_idx] if sorted_distances else 0.0
+        percentile_idx = max(0, int(count * 0.25) - 1)
+        threshold_arr = backend.take(
+            sorted_vals, backend.array([percentile_idx]), axis=0
+        )
+        backend.eval(threshold_arr)
 
-        distances = [(points[i], candidate_distances[i]) for i in range(len(points))]
-        filtered = [item for item in distances if item[1] <= threshold]
-        filtered.sort(key=lambda item: item[1])
-        return [item[0] for item in filtered[:max_results]]
+        # Select candidates within threshold, then take closest max_results
+        within = sorted_vals <= threshold_arr
+        within_count_arr = backend.sum(backend.astype(within, "int32"))
+        backend.eval(within_count_arr)
+        within_count = int(backend.to_scalar(within_count_arr))
+        if within_count == 0:
+            return []
+        take_count = min(within_count, max_results)
+
+        prefix_idx = backend.arange(take_count)
+        selected_idx = backend.take(sorted_idx, prefix_idx, axis=0)
+        backend.eval(selected_idx)
+        selected_list = backend.tolist(selected_idx)
+        return [points[int(i)] for i in selected_list]

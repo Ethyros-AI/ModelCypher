@@ -606,7 +606,7 @@ def compute_spearman_correlation(
 # GPU-FRIENDLY GEODESIC ALTERNATIVES (NO CPU LINEAR ALGEBRA)
 # =============================================================================
 # These functions replace SVD, eigendecomposition, and pinv with GPU-only
-# operations. For high-dimensional manifolds (8kD+), Euclidean linear algebra
+# operations. For high-dimensional manifolds (8kD+), flat-space linear algebra
 # is mathematically inaccurate - geodesic methods are required.
 
 

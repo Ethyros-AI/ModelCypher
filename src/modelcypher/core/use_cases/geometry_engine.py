@@ -228,7 +228,7 @@ class GeometryEngine:
     def _geodesic_cost_matrix(self, source: Array, target: Array) -> Array:
         """Compute geodesic cost matrix for Sinkhorn alignment.
 
-        Geodesic distance is the correct metric on curved manifolds; Euclidean
+        Geodesic distance is the correct metric on curved manifolds; chord
         costs are invalid for high-dimensional geometry.
 
         k-neighbors for the geodesic graph is derived from sqrt(n), which is

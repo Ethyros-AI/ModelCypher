@@ -27,9 +27,9 @@ Mathematical Foundation:
     requires computing distances and means on this curved space:
 
     1. Geodesic Distance: Shortest path along the manifold surface, computed via
-       k-NN graph. Euclidean distance systematically errs:
-       - Positive curvature: Euclidean underestimates true distance
-       - Negative curvature: Euclidean overestimates true distance
+       k-NN graph. Chord distance systematically errs:
+       - Positive curvature: chord underestimates true distance
+       - Negative curvature: chord overestimates true distance
 
     2. Frechet Mean (Karcher Mean): Riemannian center of mass.
        Minimizes sum of squared geodesic distances: mu = argmin_p sum(d^2(p, x_i))
@@ -52,7 +52,7 @@ Algorithm:
        SVD. The Schonemann (1966) sign correction ensures det(R) = +1.
 
 Key Principles:
-    - Curvature is inherent: Always use geodesic distance, not Euclidean.
+    - Curvature is inherent: Always use geodesic distance, not chord.
       The k-NN graph IS the discrete manifold representation.
 
     - Proper rotations only: det(R) = +1. Reflections (det = -1) are corrected
@@ -252,7 +252,7 @@ class ContinuousFingerprint:
     # Layer -> Full activation vector
     activation_vectors: dict[int, list[float]]
 
-    # Layer -> L2 Magnitude
+    # Layer -> geodesic magnitude
     magnitudes: dict[int, float]
 
     # Layer -> Entropy (0-1)
@@ -842,9 +842,9 @@ class ManifoldStitcher:
         1. Geodesic distances (via k-NN graph) for assignment step
         2. Fréchet mean (Karcher mean) for centroid updates
 
-        This correctly handles curved manifolds where Euclidean K-means fails:
-        - Positive curvature: Euclidean underestimates distances → clusters too spread
-        - Negative curvature: Euclidean overestimates distances → clusters too tight
+        This correctly handles curved manifolds where chord K-means fails:
+        - Positive curvature: chord underestimates distances → clusters too spread
+        - Negative curvature: chord overestimates distances → clusters too tight
 
         Args:
             points: [N, D] list of points to cluster
@@ -895,7 +895,7 @@ class ManifoldStitcher:
             num_centroids = int(centroids_arr.shape[0])
             if num_centroids == 0:
                 return b.zeros((n, 0))
-            # Attach centroids to the manifold graph with Euclidean edge weights.
+            # Attach centroids to the manifold graph with chord edge weights.
             cent_sq = b.sum(centroids_arr * centroids_arr, axis=1, keepdims=True)
             pts_sq = b.sum(pts * pts, axis=1, keepdims=True)
             cross = b.matmul(centroids_arr, b.transpose(pts))

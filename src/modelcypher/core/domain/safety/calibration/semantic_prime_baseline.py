@@ -78,7 +78,7 @@ class SemanticPrimeSignature:
         return self._cosine_similarity_backend(self.values, other.values)
 
     def l2_normalized(self) -> SemanticPrimeSignature:
-        """Return L2-normalized version of this signature."""
+        """Return geodesic-normalized version of this signature."""
         normalized = self._l2_normalized_backend(self.values)
         return SemanticPrimeSignature(prime_ids=self.prime_ids, values=tuple(normalized))
 
@@ -90,7 +90,7 @@ class SemanticPrimeSignature:
             signatures: List of signatures to average.
 
         Returns:
-            Mean signature (L2-normalized), or None if prime_ids don't match.
+            Mean signature (geodesic-normalized), or None if prime_ids don't match.
         """
         if not signatures:
             return None

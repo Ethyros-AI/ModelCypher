@@ -90,8 +90,8 @@ def verify_boundary_invariance(
     b.eval(output_transplanted, output_target)
 
     # Compute per-sample relative difference using geodesic distance.
-    # Geodesic works in all dimensions (reduces to Euclidean in flat spaces).
-    # Euclidean systematically errs in high dimensions (4D+).
+    # Geodesic works in all dimensions (reduces to chord in flat spaces).
+    # Chord distance systematically errs in high dimensions (4D+).
     diff_norms = geodesic_paired_distances(output_transplanted, output_target, b)
     origin = b.zeros_like(output_target)
     target_norms = geodesic_paired_distances(origin, output_target, b)

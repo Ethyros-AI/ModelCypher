@@ -50,7 +50,7 @@ from modelcypher.core.domain.geometry.vector_math import (
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
     """Compute pseudo-inverse using geodesic-friendly Gram regularization.
 
-    For high-dimensional manifolds (8kD+), Euclidean SVD is inaccurate.
+    For high-dimensional manifolds (8kD+), flat-space SVD is inaccurate.
     This uses regularized Gram matrix inversion which stays on GPU.
 
     For CKA=1.0 transforms (which preserve Gram structure), F is nearly
@@ -219,7 +219,7 @@ def _compute_alignment_metrics(
     output_source = b.matmul(core_acts, b.transpose(weight_source))
     b.eval(output_before, output_after, output_source)
 
-    # Geodesic distance respects manifold curvature. Euclidean systematically errs.
+        # Geodesic distance respects manifold curvature. Chord distance systematically errs.
     # Aggregate per-sample geodesic distances using geodesic norms.
     geo_distances_before = geodesic_paired_distances(output_before, output_source, b)
     geo_distances_after = geodesic_paired_distances(output_after, output_source, b)
@@ -1436,8 +1436,8 @@ def stage_transplant(
                     merged_output = b.matmul(
                         boundary_acts, b.transpose(actual_merged_weight)
                     )
-                    # Geodesic distance: works in all dimensions (reduces to Euclidean
-                    # in flat spaces). Euclidean fails in high dimensions (4D+).
+                    # Geodesic distance: works in all dimensions (reduces to chord
+                    # in flat spaces). Chord distance fails in high dimensions (4D+).
                     geo_diffs = geodesic_paired_distances(merged_output, target_output, b)
                     origin = b.zeros_like(target_output)
                     geo_target_norms = geodesic_paired_distances(origin, target_output, b)

@@ -273,7 +273,7 @@ class BaseAtlas(ABC, Generic[C, S]):
         instance. This avoids redundant embedding API calls.
 
         Returns:
-            List of L2-normalized embedding vectors, one per concept in inventory order.
+            List of geodesic-normalized embedding vectors, one per concept in inventory order.
             Returns empty list if no embedder is configured.
         """
         if self._cached_concept_embeddings is not None:

@@ -32,17 +32,27 @@ class CUDABackend(Backend):
         self._compiled_cache: dict[str, Callable] = {}
 
     def _tensor(self, data: Any, dtype: Any | None = None) -> Array:
-        dtype = dtype or self.torch.float32
-        return self.torch.tensor(data, dtype=dtype, device="cuda")
+        mapped_dtype = self._map_dtype(dtype)
+        if isinstance(data, self.torch.Tensor):
+            tensor = data
+            if tensor.device.type != "cuda":
+                tensor = tensor.to(device="cuda")
+            if mapped_dtype is not None and tensor.dtype != mapped_dtype:
+                tensor = tensor.to(dtype=mapped_dtype)
+            return tensor
+        resolved = mapped_dtype or self.torch.float32
+        return self.torch.tensor(data, dtype=resolved, device="cuda")
 
     def array(self, data: Any, dtype: Any | None = None) -> Array:
         return self._tensor(data, dtype=dtype)
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
-        return self.torch.zeros(shape, dtype=dtype or self.torch.float32, device="cuda")
+        resolved = self._map_dtype(dtype) or self.torch.float32
+        return self.torch.zeros(shape, dtype=resolved, device="cuda")
 
     def ones(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
-        return self.torch.ones(shape, dtype=dtype or self.torch.float32, device="cuda")
+        resolved = self._map_dtype(dtype) or self.torch.float32
+        return self.torch.ones(shape, dtype=resolved, device="cuda")
 
     def shape(self, array: Array) -> tuple[int, ...]:
         return tuple(array.shape)
@@ -86,7 +96,7 @@ class CUDABackend(Backend):
         return array.abs()
 
     def astype(self, array: Array, dtype: Any) -> Array:
-        return array.to(dtype)
+        return array.to(self._map_dtype(dtype) or dtype)
 
     def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array:
         if compute_uv:
@@ -162,7 +172,8 @@ class CUDABackend(Backend):
 
     # --- Array Creation (new) ---
     def eye(self, n: int, m: int | None = None, dtype: Any | None = None) -> Array:
-        return self.torch.eye(n, m or n, dtype=dtype or self.torch.float32, device="cuda")
+        resolved = self._map_dtype(dtype) or self.torch.float32
+        return self.torch.eye(n, m or n, dtype=resolved, device="cuda")
 
     def arange(
         self,
@@ -171,29 +182,67 @@ class CUDABackend(Backend):
         step: int | float = 1,
         dtype: Any | None = None,
     ) -> Array:
+        resolved = self._map_dtype(dtype)
         if stop is None:
-            return self.torch.arange(start, dtype=dtype, device="cuda")
-        return self.torch.arange(start, stop, step, dtype=dtype, device="cuda")
+            return self.torch.arange(start, dtype=resolved, device="cuda")
+        return self.torch.arange(start, stop, step, dtype=resolved, device="cuda")
 
     def diag(self, array: Array, k: int = 0) -> Array:
         return self.torch.diag(array, diagonal=k)
 
     def full(self, shape: tuple[int, ...], fill_value: float, dtype: Any | None = None) -> Array:
-        return self.torch.full(shape, fill_value, dtype=dtype or self.torch.float32, device="cuda")
+        resolved = self._map_dtype(dtype) or self.torch.float32
+        return self.torch.full(shape, fill_value, dtype=resolved, device="cuda")
 
     def ones_like(self, array: Array, dtype: Any | None = None) -> Array:
-        return self.torch.ones_like(array, dtype=dtype)
+        resolved = self._map_dtype(dtype)
+        return self.torch.ones_like(array, dtype=resolved)
 
     def zeros_like(self, array: Array, dtype: Any | None = None) -> Array:
-        return self.torch.zeros_like(array, dtype=dtype)
+        resolved = self._map_dtype(dtype)
+        return self.torch.zeros_like(array, dtype=resolved)
 
     def linspace(self, start: float, stop: float, num: int, dtype: Any | None = None) -> Array:
+        resolved = self._map_dtype(dtype) or self.torch.float32
         return self.torch.linspace(
-            start, stop, num, dtype=dtype or self.torch.float32, device="cuda"
+            start, stop, num, dtype=resolved, device="cuda"
         )
 
     def meshgrid(self, *arrays: Array, indexing: str = "xy") -> list[Array]:
         return list(self.torch.meshgrid(*arrays, indexing=indexing))
+
+    def _map_dtype(self, dtype: Any | None) -> Any | None:
+        if dtype is None:
+            return None
+        if isinstance(dtype, str):
+            dtype_map = {
+                "float32": self.torch.float32,
+                "float16": self.torch.float16,
+                "bfloat16": self.torch.bfloat16,
+                "float64": self.torch.float64,
+                "int32": self.torch.int32,
+                "int64": self.torch.int64,
+                "int16": self.torch.int16,
+                "int8": self.torch.int8,
+                "uint8": self.torch.uint8,
+                "bool": self.torch.bool,
+            }
+            return dtype_map.get(dtype, dtype)
+        name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
+        name = name.replace("torch.", "")
+        dtype_map = {
+            "float32": self.torch.float32,
+            "float16": self.torch.float16,
+            "bfloat16": self.torch.bfloat16,
+            "float64": self.torch.float64,
+            "int32": self.torch.int32,
+            "int64": self.torch.int64,
+            "int16": self.torch.int16,
+            "int8": self.torch.int8,
+            "uint8": self.torch.uint8,
+            "bool": self.torch.bool,
+        }
+        return dtype_map.get(name, dtype)
 
     # --- Shape Manipulation (new) ---
     def stack(self, arrays: list[Array], axis: int = 0) -> Array:

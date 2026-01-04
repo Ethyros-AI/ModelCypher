@@ -58,12 +58,12 @@ Research Connections:
     curvature is inherent in high-dimensional spaces. This aligns with the
     Platonic Representation Hypothesis (Huh et al., ICML 2024): if models
     converge to shared representations, they must be compared using the correct
-    geometry—not flat Euclidean approximations.
+    geometry—not flat chord approximations.
 
     The k-NN graph IS the discrete manifold. Geodesic = shortest path on graph
-    (exact, not approximate). Euclidean distance systematically errs:
-    - Positive curvature: Euclidean underestimates true distance
-    - Negative curvature: Euclidean overestimates true distance
+    (exact, not approximate). Chord distance systematically errs:
+    - Positive curvature: chord underestimates true distance
+    - Negative curvature: chord overestimates true distance
 
     See also: docs/RESEARCH-CONNECTIONS.md
 """
@@ -401,10 +401,10 @@ class RiemannianGeometry:
     """
     Riemannian geometry operations for representation spaces.
 
-    This class provides curvature-aware alternatives to Euclidean operations:
+    This class provides curvature-aware alternatives to chord-based operations:
     - Fréchet mean instead of arithmetic mean
-    - Geodesic distance instead of Euclidean distance
-    - Riemannian covariance instead of Euclidean covariance
+    - Geodesic distance instead of chord distance
+    - Riemannian covariance instead of ambient covariance
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -429,7 +429,7 @@ class RiemannianGeometry:
         same point set is used multiple times.
 
         Algorithm:
-            1. Initialize at the Euclidean mean (deterministic starting point)
+            1. Initialize at the geodesic medoid (distance-minimizing point)
             2. Compute geodesic distances from current estimate to all points
             3. Update estimate using Riemannian gradient descent
             4. Repeat until convergence
@@ -537,10 +537,6 @@ class RiemannianGeometry:
 
             start = time.perf_counter()
 
-            # Initialize at weighted Euclidean mean (deterministic starting point for iteration)
-            weights_col = backend.reshape(weights_arr, (n, 1))
-            mu = backend.sum(points * weights_col, axis=0)
-
             # Compute geodesic distance matrix once (expensive but reusable, now cached)
             try:
                 geo_result = (
@@ -572,6 +568,17 @@ class RiemannianGeometry:
                         attempt_k = next_k
                         continue
 
+            # Initialize at geodesic medoid (distance-minimizing point).
+            geo_dist = geo_result.distances
+            backend.eval(geo_dist)
+            weights_row = backend.reshape(weights_arr, (1, n))
+            weighted = geo_dist * weights_row
+            sum_per_point = backend.sum(weighted, axis=1)
+            medoid_idx_arr = backend.argmin(sum_per_point)
+            backend.eval(sum_per_point, medoid_idx_arr)
+            medoid_idx = int(backend.to_scalar(medoid_idx_arr))
+            mu = points[medoid_idx]
+
             # Gradient descent for Fréchet mean
             converged = False
             iterations = 0
@@ -595,16 +602,14 @@ class RiemannianGeometry:
                     # On the discrete manifold, log maps are defined by geodesic scaling.
                     new_mu = self._frechet_mean_step(points, mu, geo_from_mu, weights_arr)
 
-                    # Check convergence in embedding coordinates.
-                    # INTENTIONAL EUCLIDEAN: This measures how much the mean moved in
-                    # embedding space. Since both mu and new_mu are points in the same
-                    # coordinate system, Euclidean distance is appropriate for convergence
-                    # checking - we're measuring iteration stability, not manifold distance.
-                    diff = backend.sqrt(backend.sum((new_mu - mu) ** 2))
-                    backend.eval(diff)
-                    diff_val = float(backend.to_scalar(diff))
+                    # Convergence in geodesic distance by attaching new_mu to the graph.
+                    diffs = points - backend.reshape(new_mu, (1, -1))
+                    chord_dist = backend.sqrt(backend.sum(diffs * diffs, axis=1))
+                    geo_step = backend.min(geo_from_mu + chord_dist)
+                    backend.eval(geo_step)
+                    step_val = float(backend.to_scalar(geo_step))
 
-                    if diff_val < tol:
+                    if step_val < tol:
                         converged = True
                         mu = new_mu
                         break
@@ -687,7 +692,7 @@ class RiemannianGeometry:
         Compute geodesic distances using a k-NN graph and shortest paths.
 
         This implements the Isomap-style geodesic computation:
-        1. Build a k-NN graph where edge weights are Euclidean distances
+        1. Build a k-NN graph where edge weights are chord distances (local edges)
         2. Compute shortest paths (geodesics) using Floyd-Warshall algorithm
 
         When k_neighbors is None, the method finds the MINIMUM k that makes
@@ -699,9 +704,9 @@ class RiemannianGeometry:
         riemannian_covariance, and curvature estimation).
 
         The key insight is that on a curved manifold, the geodesic distance
-        follows the manifold surface, while Euclidean distance "cuts through"
-        the manifold. For nearby points, geodesic ≈ Euclidean. For distant
-        points, geodesic > Euclidean on positive curvature.
+        follows the manifold surface, while chord distance "cuts through"
+        the manifold. For nearby points, geodesic ≈ chord. For distant
+        points, geodesic > chord on positive curvature.
 
         Args:
             points: Point cloud [n, d]
@@ -792,38 +797,38 @@ class RiemannianGeometry:
 
         start = time.perf_counter()
 
-        # Compute Euclidean distance matrix
-        euclidean_dist = self._euclidean_distance_matrix(points)
-        backend.eval(euclidean_dist)
+        # Compute chord distance matrix (local edge lengths)
+        chord_dist = self._chord_distance_matrix(points)
+        backend.eval(chord_dist)
 
-        # Diagnostic: check euclidean distance matrix for NaN (vectorized)
+        # Diagnostic: check chord distance matrix for NaN (vectorized)
         if logger.isEnabledFor(logging.DEBUG):
-            euc_nan_count = count_nan(euclidean_dist, backend)
-            if euc_nan_count > 0:
+            chord_nan_count = count_nan(chord_dist, backend)
+            if chord_nan_count > 0:
                 # Also check source points for issues
                 points_nan = count_nan(points, backend)
                 points_inf = count_inf(points, backend)
                 logger.warning(
-                    f"Euclidean distance matrix has {euc_nan_count} NaN values! "
+                    f"Chord distance matrix has {chord_nan_count} NaN values! "
                     f"Points shape: {points.shape}, points NaN: {points_nan}, points Inf: {points_inf}"
                 )
 
         # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy).
         # Use a sentinel derived from data scale and dtype precision to avoid overflow.
-        max_dist_arr = backend.max(euclidean_dist)
+        max_dist_arr = backend.max(chord_dist)
         backend.eval(max_dist_arr)
         max_dist = float(backend.to_scalar(max_dist_arr))
-        eps = machine_epsilon(backend, euclidean_dist)
+        eps = machine_epsilon(backend, chord_dist)
         base = max(max_dist, eps)
-        inf_val = min(base / eps, backend.finfo(euclidean_dist.dtype).max)
+        inf_val = min(base / eps, backend.finfo(chord_dist.dtype).max)
         eye = backend.eye(n)
-        dist_for_sort = euclidean_dist + eye * inf_val
+        dist_for_sort = chord_dist + eye * inf_val
 
         # Deterministic tie-breaker by column index at machine-epsilon scale.
-        tie_eps = machine_epsilon(backend, euclidean_dist)
+        tie_eps = machine_epsilon(backend, chord_dist)
         col_indices = backend.arange(n)
         col_indices_row = backend.reshape(col_indices, (1, n))
-        tie_breaker = backend.astype(col_indices_row, euclidean_dist.dtype) * tie_eps
+        tie_breaker = backend.astype(col_indices_row, chord_dist.dtype) * tie_eps
         dist_for_sort = dist_for_sort + tie_breaker
 
         sorted_idx = backend.argsort(dist_for_sort, axis=1)
@@ -836,13 +841,13 @@ class RiemannianGeometry:
         # very small non-zero distances to prevent numerical issues.
         # Identical points should have geodesic distance 0.
         # Use tiny_value (smallest positive normal) to detect effectively-zero distances
-        edge_eps = float(division_epsilon(backend, euclidean_dist))
-        zero_threshold = tiny_value(backend, euclidean_dist)
-        is_effectively_zero = euclidean_dist < zero_threshold
+        edge_eps = float(division_epsilon(backend, chord_dist))
+        zero_threshold = tiny_value(backend, chord_dist)
+        is_effectively_zero = chord_dist < zero_threshold
         dist_floor = backend.where(
             is_effectively_zero,
-            backend.zeros_like(euclidean_dist),
-            backend.maximum(euclidean_dist, edge_eps),
+            backend.zeros_like(chord_dist),
+            backend.maximum(chord_dist, edge_eps),
         )
 
         for neighbor_rank in range(k_neighbors):
@@ -962,7 +967,7 @@ class RiemannianGeometry:
         """
         Estimate local sectional curvature at a point.
 
-        Uses geodesic defect (geodesic vs Euclidean chord) for 2D/3D probes.
+        Uses geodesic defect (geodesic vs chord length) for 2D/3D probes.
         For 4D+, falls back to geodesic-only curvature estimation.
 
         This uses the formula from differential geometry relating the geodesic
@@ -1021,23 +1026,23 @@ class RiemannianGeometry:
                 confidence=confidence,
             )
 
-        # 2D/3D: compute geodesic defect against Euclidean chord distances.
-        # INTENTIONAL EUCLIDEAN: Euclidean is the baseline for geodesic defect.
-        # The defect (geo - euc) / euc quantifies manifold curvature.
+        # 2D/3D: compute geodesic defect against chord distances.
+        # INTENTIONAL CHORD: chord length is the baseline for geodesic defect.
+        # The defect (geo - chord) / chord quantifies manifold curvature.
         center = points[center_idx]
         neighbor_pts = backend.take(points, neighbors, axis=0)
         diffs = neighbor_pts - center
-        center_euc_k = backend.sqrt(backend.sum(diffs * diffs, axis=1))
-        backend.eval(center_euc_k)
+        center_chord_k = backend.sqrt(backend.sum(diffs * diffs, axis=1))
+        backend.eval(center_chord_k)
 
         # Compute precision-aware epsilon before numpy conversion
-        eps = division_epsilon(backend, center_euc_k)
+        eps = division_epsilon(backend, center_chord_k)
 
         center_geo_k = backend.take(center_geo, neighbors)
         backend.eval(center_geo_k)
 
-        # Compute geodesic defect: (geodesic - euclidean) / euclidean
-        valid_mask = center_euc_k > eps
+        # Compute geodesic defect: (geodesic - chord) / chord
+        valid_mask = center_chord_k > eps
         valid_count = backend.sum(backend.astype(valid_mask, "float32"))
         backend.eval(valid_count)
         valid_count_val = int(backend.to_scalar(valid_count))
@@ -1050,7 +1055,7 @@ class RiemannianGeometry:
                 confidence=0.0,
             )
 
-        defects = (center_geo_k - center_euc_k) / center_euc_k
+        defects = (center_geo_k - center_chord_k) / center_chord_k
         defects = backend.where(valid_mask, defects, backend.zeros_like(defects))
         sum_defects = backend.sum(defects)
         mean_defect_arr = sum_defects / max(valid_count_val, 1)
@@ -1068,11 +1073,11 @@ class RiemannianGeometry:
             std_defect = 0.0
 
         # Estimate curvature from defect
-        # For a sphere of radius R, geodesic/euclidean ≈ 1 + K*r²/6 for small r
+        # For a sphere of radius R, geodesic/chord ≈ 1 + K*r²/6 for small r
         # where K = 1/R² is the sectional curvature
         # So defect ≈ K*r²/6, giving K ≈ 6*defect/r²
 
-        avg_radius_arr = backend.mean(center_euc_k)
+        avg_radius_arr = backend.mean(center_chord_k)
         backend.eval(avg_radius_arr)
         avg_radius = float(backend.to_scalar(avg_radius_arr))
         if avg_radius > eps:
@@ -1102,7 +1107,7 @@ class RiemannianGeometry:
         On a Riemannian manifold, covariance is computed by:
         1. Finding the Fréchet mean μ
         2. Mapping all points to the tangent space at μ via Log_μ
-        3. Computing Euclidean covariance in the tangent space
+        3. Computing covariance in the tangent space
 
         For high-dimensional representations, we compute Log_μ(x) on the
         discrete manifold as the direction from μ to x scaled by the
@@ -1134,7 +1139,7 @@ class RiemannianGeometry:
         geo_result = self.geodesic_distances(points)
 
         # Map points to tangent space at mean
-        # Log_μ(x) = (x - μ) * (geodesic_dist / euclidean_dist)
+        # Log_μ(x) = (x - μ) * (geodesic_dist / chord_dist)
         tangent_vectors = self._log_map_approximate(points, mean, geo_result)
 
         # Standard covariance in tangent space
@@ -1354,7 +1359,7 @@ class RiemannianGeometry:
         """
         Compute cumulative arc lengths along a path.
 
-        Uses Euclidean distance between consecutive points on the path.
+        Uses chord length between consecutive points on the path.
         This gives the actual length traveled along the discrete geodesic.
 
         Args:
@@ -1372,9 +1377,9 @@ class RiemannianGeometry:
         path_idx_arr = backend.array(path_indices)
         path_points = backend.take(points, path_idx_arr, axis=0)
         diffs = path_points[1:] - path_points[:-1]
-        # INTENTIONAL EUCLIDEAN: Discretized arc length along geodesic path.
+        # INTENTIONAL CHORD: Discretized arc length along geodesic path.
         # The path is a sequence of k-NN edges that approximates the geodesic.
-        # Each segment is short enough that Euclidean distance is a good
+        # Each segment is short enough that chord length is a good
         # approximation to arc length (first-order Taylor). The sum of these
         # segment lengths IS the geodesic distance by construction.
         segment_lengths = backend.sqrt(backend.sum(diffs * diffs, axis=1))
@@ -1455,7 +1460,7 @@ class RiemannianGeometry:
                - Select the point with maximum min-distance
             3. Return selected indices
 
-        This is the geodesic analog of Euclidean FPS, respecting the
+        This is the geodesic analog of ambient FPS, respecting the
         manifold's intrinsic geometry.
 
         Args:
@@ -1634,10 +1639,9 @@ class RiemannianGeometry:
         tangent_vecs = neighbor_pts - backend.reshape(center, (1, d))
 
         # Normalize to unit tangent sphere.
-        # INTENTIONAL EUCLIDEAN: The tangent space at a point IS Euclidean by
-        # definition - it's the local linear approximation to the manifold.
-        # Normalizing tangent vectors to unit length uses Euclidean norm because
-        # the tangent space has a Euclidean metric inherited from the embedding.
+        # INTENTIONAL TANGENT: The tangent space is the local linear
+        # approximation to the manifold. Normalizing tangent vectors uses the
+        # inherited tangent metric in the embedding coordinates.
         norms = backend.sqrt(backend.sum(tangent_vecs * tangent_vecs, axis=1, keepdims=True))
         eps = division_epsilon(backend, norms)
         norms_safe = backend.maximum(norms, backend.full(norms.shape, eps))
@@ -1645,9 +1649,9 @@ class RiemannianGeometry:
         backend.eval(tangent_dirs)
 
         # Find sparse direction by sampling candidates on the unit sphere.
-        # INTENTIONAL EUCLIDEAN: We're sampling directions in tangent space,
-        # which is Euclidean by definition. The unit sphere here is the set of
-        # unit tangent vectors, not points on the data manifold.
+        # INTENTIONAL TANGENT: We're sampling directions in tangent space.
+        # The unit sphere here is the set of unit tangent vectors, not points
+        # on the data manifold.
         backend.random_seed(42)  # Deterministic for reproducibility
         candidates = backend.random_normal((n_candidates, d))
         cand_norms = backend.sqrt(
@@ -1752,7 +1756,7 @@ class RiemannianGeometry:
 
     # --- Private helper methods ---
 
-    def _euclidean_distance_matrix(self, points: "Array") -> "Array":
+    def _chord_distance_matrix(self, points: "Array") -> "Array":
         """Compute pairwise geodesic-compatible distances.
 
         Uses the direct difference formula ||a - b||² = sum((a_i - b_i)²)
@@ -1816,12 +1820,12 @@ class RiemannianGeometry:
             k_neighbors = geo_result.k_neighbors
         k_neighbors = max(1, min(int(k_neighbors), n))
 
-        # INTENTIONAL EUCLIDEAN: Bootstrap step for query point attachment.
+        # INTENTIONAL CHORD: Bootstrap step for query point attachment.
         # To compute geodesic distance FROM the query TO existing points,
         # we first need edge weights to attach the query to the graph.
         diff = points - backend.reshape(query, (1, -1))
-        euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
-        backend.eval(euc_dist)
+        chord_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
+        backend.eval(chord_dist)
 
         # For query attachment, always use all points to ensure direct paths exist.
         # This is mathematically necessary because excluding any point forces a detour:
@@ -1829,7 +1833,7 @@ class RiemannianGeometry:
         # Equality holds only when j is on the geodesic from q to i.
         # In flat space, excluding the farthest point causes overestimation.
         # Using all points ensures the minimum always includes the direct path.
-        weights_col = backend.reshape(euc_dist, (n, 1))
+        weights_col = backend.reshape(chord_dist, (n, 1))
         candidates = geo_result.distances + weights_col
         geo_from_query = backend.min(candidates, axis=0)
 
@@ -1853,14 +1857,14 @@ class RiemannianGeometry:
             # Check the underlying geodesic matrix for issues
             mat_nonfinite = count_nonfinite(geo_result.distances, backend)
 
-            # Check euclidean distances for issues
-            euc_nonfinite = count_nonfinite(euc_dist, backend)
+            # Check chord distances for issues
+            chord_nonfinite = count_nonfinite(chord_dist, backend)
 
             logger.warning(
                 f"_geodesic_distances_from_query: {final_nonfinite}/{n} points unreachable "
                 f"even with k={current_k} neighbors. "
                 f"Geodesic matrix has {mat_nonfinite} non-finite values. "
-                f"Euclidean distances have {euc_nonfinite} non-finite values."
+                f"Chord distances have {chord_nonfinite} non-finite values."
             )
 
         return geo_from_query
@@ -1896,17 +1900,17 @@ class RiemannianGeometry:
         The update is: μ_new = μ + η * Σᵢ wᵢ * log_μ(xᵢ)
 
         Log maps are defined by the discrete manifold's geodesic scaling.
-        The geodesic/Euclidean ratio captures the curvature correction:
-        - ratio > 1: negative curvature (geodesic longer than Euclidean)
-        - ratio < 1: positive curvature (geodesic shorter than Euclidean)
-        - ratio = 1: flat space (geodesic equals Euclidean)
+        The geodesic/chord ratio captures the curvature correction:
+        - ratio > 1: negative curvature (geodesic longer than chord)
+        - ratio < 1: positive curvature (geodesic shorter than chord)
+        - ratio = 1: flat space (geodesic equals chord)
 
-        NO CLAMPING: We use the true geodesic/Euclidean ratio. Extreme values
+        NO CLAMPING: We use the true geodesic/chord ratio. Extreme values
         indicate extreme curvature and should be handled by adjusting k_neighbors
         or using a different algorithm, not by silently corrupting the geometry.
 
         Raises:
-            ValueError: If geodesic/Euclidean scale contains inf or nan values,
+            ValueError: If geodesic/chord scale contains inf or nan values,
                 indicating disconnected manifold components or coincident points.
         """
         backend = self._backend
@@ -1936,20 +1940,20 @@ class RiemannianGeometry:
                 f"This indicates disconnected manifold components."
             )
 
-        # INTENTIONAL EUCLIDEAN: Computing geodesic/Euclidean ratio for curvature.
-        # The ratio geo/euc IS the curvature signal: >1 = negative curvature,
-        # <1 = positive curvature, =1 = flat. We need Euclidean as the baseline.
+        # INTENTIONAL CHORD: Computing geodesic/chord ratio for curvature.
+        # The ratio geo/chord IS the curvature signal: >1 = negative curvature,
+        # <1 = positive curvature, =1 = flat. We need chord as the baseline.
         diff = points - backend.reshape(mu, (1, -1))
-        euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
+        chord_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
 
-        # Compute scaling factor: geodesic / euclidean
+        # Compute scaling factor: geodesic / chord
         # This corrects the tangent vector length for curvature
         # Use precision-aware floor for safe division
-        eps = division_epsilon(backend, euc_dist)
-        euc_dist_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, eps))
-        scale = geo_from_mu / euc_dist_safe
+        eps = division_epsilon(backend, chord_dist)
+        chord_dist_safe = backend.maximum(chord_dist, backend.full(chord_dist.shape, eps))
+        scale = geo_from_mu / chord_dist_safe
 
-        # NO CLAMPING - use true geodesic/Euclidean ratio
+        # NO CLAMPING - use true geodesic/chord ratio
         # The ratio IS the curvature signal. Clamping corrupts the geometry.
         #
         # Extreme scales indicate:
@@ -1974,7 +1978,7 @@ class RiemannianGeometry:
 
         if inf_count > 0 or nan_count > 0:
             raise ValueError(
-                f"Geodesic/Euclidean scale contains {inf_count} inf and {nan_count} nan values. "
+                f"Geodesic/chord scale contains {inf_count} inf and {nan_count} nan values. "
                 f"This indicates disconnected manifold components or coincident points. "
                 f"Increase k_neighbors to improve graph connectivity, or check for "
                 f"duplicate points in the input."
@@ -2034,9 +2038,8 @@ class RiemannianGeometry:
             gradient = backend.where(grad_isinf, inf_replacement, gradient)
             backend.eval(gradient)
 
-        # INTENTIONAL EUCLIDEAN: Gradient lives in tangent space, which is
-        # Euclidean by definition. The gradient norm determines step size in
-        # the optimization, not distance on the manifold.
+        # INTENTIONAL TANGENT: Gradient lives in tangent space. The gradient
+        # norm determines step size in the optimization, not distance on the manifold.
         grad_norm_arr = backend.sqrt(backend.sum(gradient * gradient))
         backend.eval(grad_norm_arr)
         grad_norm = float(backend.to_scalar(grad_norm_arr))
@@ -2119,12 +2122,12 @@ class RiemannianGeometry:
         """
         Compute logarithmic map from mean to all points.
 
-        log_μ(x) = (x - μ) * (geodesic_dist / euclidean_dist)
+        log_μ(x) = (x - μ) * (geodesic_dist / chord_dist)
 
-        This scales the Euclidean tangent vector by the ratio of
-        geodesic to Euclidean distance, accounting for curvature.
+        This scales the tangent vector by the ratio of
+        geodesic to chord distance, accounting for curvature.
 
-        NO CLAMPING: Uses true geodesic/Euclidean ratio. See _frechet_mean_step
+        NO CLAMPING: Uses true geodesic/chord ratio. See _frechet_mean_step
         for detailed explanation of why clamping corrupts the geometry.
 
         Raises:
@@ -2137,18 +2140,18 @@ class RiemannianGeometry:
             points, mean, geo_result=geo_result
         )
 
-        # INTENTIONAL EUCLIDEAN: Computing geodesic/Euclidean ratio for curvature.
+        # INTENTIONAL CHORD: Computing geodesic/chord ratio for curvature.
         # See _frechet_mean_step for explanation of why this ratio is the signal.
         diff = points - backend.reshape(mean, (1, -1))
-        euc_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
+        chord_dist = backend.sqrt(backend.sum(diff * diff, axis=1))
 
         # Scale factor
         # Use precision-aware floor for safe division
-        eps = division_epsilon(backend, euc_dist)
-        euc_safe = backend.maximum(euc_dist, backend.full(euc_dist.shape, eps))
-        scale = geo_from_mean / euc_safe
+        eps = division_epsilon(backend, chord_dist)
+        chord_safe = backend.maximum(chord_dist, backend.full(chord_dist.shape, eps))
+        scale = geo_from_mean / chord_safe
 
-        # NO CLAMPING - use true geodesic/Euclidean ratio
+        # NO CLAMPING - use true geodesic/chord ratio
         # See _frechet_mean_step for detailed explanation.
         backend.eval(scale)
 

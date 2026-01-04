@@ -386,7 +386,7 @@ class GroundingRotationEstimator:
         to universal anchors in both models. If the relative distances are
         similar, the axes are aligned. If they're different, there's rotation.
 
-        Uses geodesic distances - Euclidean is incorrect in curved manifolds.
+        Uses geodesic distances - chord distance is incorrect in curved manifolds.
         """
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,

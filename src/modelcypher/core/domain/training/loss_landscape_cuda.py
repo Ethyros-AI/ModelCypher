@@ -313,8 +313,8 @@ class LossLandscapeComputerCUDA:
                 d = direction[k]
                 p = params[k]
                 # Compute geodesic norm for each tensor
-                d_flat = _b.reshape(_b.array(d.flatten().cpu().numpy()), (1, -1))
-                p_flat = _b.reshape(_b.array(p.flatten().cpu().numpy()), (1, -1))
+                d_flat = _b.reshape(_b.array(d), (1, -1))
+                p_flat = _b.reshape(_b.array(p), (1, -1))
                 d_norm_arr = geodesic_norms(d_flat, _b)
                 p_norm_arr = geodesic_norms(p_flat, _b)
                 _b.eval(d_norm_arr, p_norm_arr)
@@ -330,7 +330,7 @@ class LossLandscapeComputerCUDA:
             _b = get_default_backend()
             total_norm_sq = 0.0
             for d in direction.values():
-                d_flat = _b.reshape(_b.array(d.flatten().cpu().numpy()), (1, -1))
+                d_flat = _b.reshape(_b.array(d), (1, -1))
                 d_norm_arr = geodesic_norms(d_flat, _b)
                 _b.eval(d_norm_arr)
                 d_norm = float(_b.to_scalar(d_norm_arr))

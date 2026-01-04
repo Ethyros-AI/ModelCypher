@@ -70,7 +70,7 @@ class SignatureMixin:
     def l2_norm(self) -> float | None:
         """Compute geodesic norm of this signature's values."""
         if not self.values:
-            raise ValueError("Cannot compute L2 norm of empty vector")
+            raise ValueError("Cannot compute geodesic norm of empty vector")
         backend = get_default_backend()
         arr = backend.array(self.values)
         norm = self._geodesic_norm_backend(arr)
@@ -83,7 +83,7 @@ class SignatureMixin:
             New signature instance with normalized values.
         """
         if not self.values:
-            raise ValueError("Cannot compute L2 norm of empty vector")
+            raise ValueError("Cannot compute geodesic norm of empty vector")
         backend = get_default_backend()
         arr = backend.array(self.values)
         norm_val = float(self._geodesic_norm_backend(arr))

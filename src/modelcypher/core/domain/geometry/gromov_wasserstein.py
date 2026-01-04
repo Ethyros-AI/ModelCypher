@@ -672,7 +672,7 @@ class GromovWassersteinDistance:
 
         # Geodesic distances account for manifold curvature.
         # geodesic_distances handles all cases including n <= 2
-        # (where k-NN graph has a single edge, making geodesic = Euclidean).
+        # (where k-NN graph has a single edge, making geodesic = chord).
         from .riemannian_utils import RiemannianGeometry
 
         rg = RiemannianGeometry(backend)

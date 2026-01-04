@@ -76,7 +76,7 @@ class ManifoldClusterer:
             )
 
         # Compute geodesic distance matrix over the full point set.
-        # Geodesic distance accounts for manifold curvature - Euclidean is
+        # Geodesic distance accounts for manifold curvature - chord distance is
         # only an approximation that fails in high-dimensional curved spaces.
         geodesic_matrix = self._compute_geodesic_matrix(points)
 
@@ -156,7 +156,7 @@ class ManifoldClusterer:
 
         # For incremental assignment, compute geodesic distance between each new point
         # and region centroids. When comparing a single point to a single centroid,
-        # the k-NN graph has exactly one edge, so geodesic = Euclidean by construction.
+        # the k-NN graph has exactly one edge, so geodesic = chord by construction.
         # We still use the geodesic code path for correctness and consistency.
         region_point_additions: dict[str, list[ManifoldPoint]] = {}
         for point in new_points:
@@ -221,7 +221,7 @@ class ManifoldClusterer:
         """Compute pairwise geodesic distances via k-NN graph.
 
         Geodesic distance is the correct metric on curved manifolds.
-        Euclidean distance is only valid in flat spaces and systematically
+        Chord distance is only valid in flat spaces and systematically
         underestimates (positive curvature) or overestimates (negative curvature)
         true manifold distances.
 
@@ -278,7 +278,7 @@ class ManifoldClusterer:
         """Compute geodesic distance between two points.
 
         For exactly 2 points, the k-NN graph has a single edge, so
-        geodesic = Euclidean by construction. We use the geodesic code
+        geodesic = chord by construction. We use the geodesic code
         path for consistency and correctness.
         """
         backend = get_default_backend()
@@ -569,7 +569,7 @@ class ManifoldClusterer:
             )
 
         # Use geodesic distance for each point-centroid comparison.
-        # For 2 points, geodesic = Euclidean by construction (k-NN has one edge).
+        # For 2 points, geodesic = chord by construction (k-NN has one edge).
         nearest_region: ManifoldRegion | None = None
         nearest_distance = float("inf")
         for region in regions:

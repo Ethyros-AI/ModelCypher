@@ -157,7 +157,7 @@ class ManifoldPoint:
         """Compute geodesic distance to another ManifoldPoint.
 
         For two points, the k-NN graph has exactly one edge, so geodesic
-        equals Euclidean by construction. We use the geodesic code path
+        equals chord by construction. We use the geodesic code path
         for consistency with manifold-aware operations.
 
         Args:

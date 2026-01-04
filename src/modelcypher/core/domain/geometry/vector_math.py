@@ -333,9 +333,9 @@ def geodesic_paired_distances(a: Any, b: Any, backend: "Backend") -> Any:
     distances where result[i] = geodesic_distance(A[i], B[i]).
 
     Uses k-NN graph to model the discrete manifold structure. This is the
-    correct distance metric for curved representation spaces. Euclidean
-    distance is systematically wrong: it underestimates on positive curvature
-    and overestimates on negative curvature.
+    correct distance metric for curved representation spaces. Chord distance
+    is systematically wrong: it underestimates on positive curvature and
+    overestimates on negative curvature.
 
     Args:
         a: First matrix [n, d]
@@ -423,7 +423,7 @@ class VectorMath:
             ValueError: If vector is empty.
         """
         if _len(a) == 0:
-            raise ValueError("Cannot compute L2 norm of empty vector")
+            raise ValueError("Cannot compute geodesic norm of empty vector")
 
         a_list = _to_list(a)
         _b = get_default_backend()
@@ -762,7 +762,7 @@ class SparseVectorMath:
             ValueError: If vector is empty (no keys).
         """
         if not vector:
-            raise ValueError("Cannot compute L2 norm of empty sparse vector")
+            raise ValueError("Cannot compute geodesic norm of empty sparse vector")
         values = [float(v) for v in vector.values()]
         return VectorMath.l2_norm(values)
 
@@ -858,13 +858,13 @@ class BackendVectorMath:
         """
         a_arr = self._ensure_array(a)
         if a_arr is None:
-            raise ValueError("Cannot compute L2 norm of invalid array")
+            raise ValueError("Cannot compute geodesic norm of invalid array")
 
         shape = self.backend.shape(a_arr)
         if len(shape) != 1:
-            raise ValueError("L2 norm requires 1D array")
+            raise ValueError("Geodesic norm requires 1D array")
         if shape[0] == 0:
-            raise ValueError("Cannot compute L2 norm of empty array")
+            raise ValueError("Cannot compute geodesic norm of empty array")
 
         norm = _geodesic_distance_from_origin(a_arr, self.backend)
         return max(0.0, float(norm))

@@ -329,7 +329,7 @@ class ManifoldFidelitySweep:
     def _compute_knn_overlap(self, x: "Array", y: "Array", k: int = None) -> float:
         """k-NN neighborhood preservation using geodesic distances.
 
-        Geodesic distances account for manifold curvature. Euclidean distance
+        Geodesic distances account for manifold curvature. Chord distance
         would give incorrect neighbor rankings in curved spaces.
         """
         from .riemannian_utils import RiemannianGeometry
@@ -382,7 +382,7 @@ class ManifoldFidelitySweep:
     def _compute_distance_correlation(self, x: "Array", y: "Array") -> float:
         """Geodesic correlation of pairwise geodesic distances.
 
-        Geodesic distances account for manifold curvature. Comparing Euclidean
+        Geodesic distances account for manifold curvature. Comparing chord
         distances would give incorrect correlation in curved spaces.
         """
         from .riemannian_utils import RiemannianGeometry

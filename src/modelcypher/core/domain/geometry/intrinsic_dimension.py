@@ -26,8 +26,8 @@ Mathematical Foundation:
     second nearest neighbors. For a d-dimensional manifold, the ratio r = d₂/d₁
     follows a specific distribution that depends only on d.
 
-    The estimator uses geodesic distances (not Euclidean) because curvature is
-    inherent in high-dimensional spaces. Euclidean distance systematically
+    The estimator uses geodesic distances (not chord) because curvature is
+    inherent in high-dimensional spaces. Chord distance systematically
     under/overestimates true manifold distance depending on local curvature.
 
 References:
@@ -219,14 +219,14 @@ class IntrinsicDimension:
         """Computes pairwise squared geodesic distances via k-NN graph.
 
         Uses the Isomap-style approach:
-        1. Build k-nearest-neighbor graph with Euclidean edge weights
+        1. Build k-nearest-neighbor graph with chord edge weights
         2. Compute shortest paths = geodesics on the discrete manifold
 
         The k-NN graph represents the discrete manifold. Geodesic distance on
         this graph is exact (not an approximation). This corrects for curvature
-        effects where Euclidean distance is incorrect:
-        - Positive curvature: Euclidean underestimates true distance
-        - Negative curvature: Euclidean overestimates true distance
+        effects where chord distance is incorrect:
+        - Positive curvature: chord underestimates true distance
+        - Negative curvature: chord overestimates true distance
 
         k_neighbors has TWO requirements (both data-derived):
         1. CONNECTIVITY: minimum k for connected graph (Berry & Sauer 2016)
@@ -276,7 +276,7 @@ class IntrinsicDimension:
         """Computes the ratio mu = r2 / r1 for each point from a distance matrix.
 
         Args:
-            dist_sq: [N, N] squared distance matrix (Euclidean or geodesic)
+            dist_sq: [N, N] squared distance matrix (chord or geodesic)
 
         Returns:
             [M] array of mu ratios for M valid points (where r1 > 0)

@@ -116,8 +116,8 @@ class Result:
 class GeneralizedProcrustes:
     """Generalized Procrustes Analysis using backend acceleration.
 
-    Supports both arithmetic mean (Euclidean) and Fréchet mean (Riemannian)
-    for consensus computation. Use Fréchet mean for curved embedding spaces.
+    Supports Fréchet mean (Riemannian) for consensus computation. Use the
+    Fréchet mean for curved embedding spaces.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:

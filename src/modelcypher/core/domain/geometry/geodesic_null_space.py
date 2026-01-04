@@ -19,7 +19,7 @@
 Geodesic Null-Space Filtering for interference-free model merging.
 
 This module provides GPU-accelerated geodesic null-space filtering for model merging.
-Euclidean linear algebra (SVD, pinv, eigendecomposition) is mathematically wrong for
+Flat-space linear algebra (SVD, pinv, eigendecomposition) is mathematically wrong for
 high-dimensional manifolds (8kD+) - it only works up to 3D. This module uses geodesic
 geometry to find directions orthogonal to the manifold structure accurately.
 
@@ -129,7 +129,7 @@ class GeodesicNullSpaceFilter:
 
     The key insight is that on curved manifolds, "null space" should mean
     "directions that don't disturb the manifold structure" - not just
-    "directions orthogonal in flat Euclidean space."
+    "directions orthogonal in flat space."
 
     All operations are GPU-accelerated:
     - Pairwise distances: matmul

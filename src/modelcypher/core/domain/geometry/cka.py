@@ -161,7 +161,7 @@ def _compute_pairwise_squared_distances(
     """
     # Use geodesic distances that account for manifold curvature.
     # geodesic_distances handles all cases including n <= 2 (where geodesic
-    # equals Euclidean by construction - the k-NN graph has only one edge).
+    # equals chord by construction - the k-NN graph has only one edge).
     from .riemannian_utils import RiemannianGeometry
 
     rg = RiemannianGeometry(backend)

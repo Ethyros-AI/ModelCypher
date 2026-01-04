@@ -119,7 +119,7 @@ def alignment_signal_from_matrices(
     labels = list(labels) if labels is not None else [f"sample:{i}" for i in range(n_samples)]
 
     # Per-anchor divergence: geodesic distance respects manifold curvature.
-    # Euclidean is systematically wrong in high dimensions.
+        # Chord distance is systematically wrong in high dimensions.
     if b.shape(source_matrix) != b.shape(target_matrix):
         # Gram-space comparison when dimensions differ
         source_gram = _cache.get_or_compute_gram(source_matrix, b)

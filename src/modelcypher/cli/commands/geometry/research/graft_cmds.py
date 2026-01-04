@@ -116,7 +116,7 @@ def register(app: typer.Typer) -> None:
 
         # Step 2: Compute geodesic orthogonal space profile for target model
         # Geodesic math is accurate for high-D manifolds (8kD+)
-        # Euclidean SVD-based methods are only accurate up to 3D
+        # Flat-space SVD-based methods are only accurate up to 3D
         logger.info("Computing geodesic orthogonal space profile for target...")
         geo_filter = GeodesicNullSpaceFilter(backend=target_backend)
 

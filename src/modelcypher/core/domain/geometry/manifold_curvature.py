@@ -25,7 +25,7 @@ Mathematical Background:
 - Sectional curvature K(σ) measures how geodesics diverge/converge
 - Positive curvature: geodesics converge (like a sphere)
 - Negative curvature: geodesics diverge (like a saddle)
-- Zero curvature: geodesics stay parallel (Euclidean)
+- Zero curvature: geodesics stay parallel (flat)
 
 For neural network latent spaces, curvature indicates:
 - High positive: concepts are tightly clustered, interference likely
@@ -84,7 +84,7 @@ class CurvatureSign(str, Enum):
 
     POSITIVE = "positive"  # Spherical, converging
     NEGATIVE = "negative"  # Hyperbolic, diverging
-    FLAT = "flat"  # Euclidean
+    FLAT = "flat"  # flat
     MIXED = "mixed"  # Variable sign in neighborhood
 
 
@@ -259,7 +259,7 @@ class ManifoldCurvatureProfile:
     def curvature_at_point(self, point: "Array", k: int = 3) -> LocalCurvature | None:
         """Find curvature at nearest measured point (k-NN interpolation).
 
-        Uses geodesic distances for neighbor finding - Euclidean distance
+        Uses geodesic distances for neighbor finding - chord distance
         is incorrect in curved spaces where curvature itself affects distances.
         """
         if not self.local_curvatures:
@@ -334,7 +334,7 @@ class ManifoldCurvatureProfile:
 class SectionalCurvatureEstimator:
     """Estimates sectional curvature using geodesic deviation.
 
-    For a Riemannian manifold embedded in Euclidean space, we estimate
+    For a Riemannian manifold embedded in ambient space, we estimate
     sectional curvature by measuring how neighboring geodesics deviate.
 
     Method:
@@ -482,7 +482,7 @@ class SectionalCurvatureEstimator:
         """Estimate curvature profile across all points.
 
         Uses geodesic distances for neighbor finding - this is critical
-        because Euclidean k-NN in curved spaces will systematically
+        because chord k-NN in curved spaces will systematically
         misidentify neighbors, leading to incorrect curvature estimates.
 
         k_neighbors is derived from data via Berry & Sauer (2016):
@@ -610,7 +610,7 @@ class SectionalCurvatureEstimator:
         cov = cov + reg_scale * backend.eye(d)
 
         # Metric is inverse of covariance (Fisher information interpretation)
-        # Use regularized inverse - no fallback to identity (Euclidean)
+        # Use regularized inverse - no fallback to identity (flat-space)
         # Regularization handles near-singular cases while preserving geometry
         metric = backend.inv(cov)  # cov already regularized above
 

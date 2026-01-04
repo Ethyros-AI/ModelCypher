@@ -660,7 +660,7 @@ class JailbreakEntropyTaxonomy:
         return float(backend.to_scalar(cell))
 
     # Backward compatibility alias
-    _euclidean_distance = _geodesic_distance
+    _chord_distance = _geodesic_distance
 
     @staticmethod
     def map_jailbreakbench_category(category: str) -> str:

@@ -29,9 +29,9 @@ Mathematical Framework:
        σ(X') = Σᵢ wᵢ |d_t(X', P_i) - d_s(X, P_i)|²
 
     Distances are computed as geodesics on the k-NN graph of the point cloud.
-    Euclidean distance is incorrect in high-dimensional curved manifolds:
-    - Positive curvature: Euclidean underestimates true distance
-    - Negative curvature: Euclidean overestimates true distance
+    Chord distance is incorrect in high-dimensional curved manifolds:
+    - Positive curvature: chord underestimates true distance
+    - Negative curvature: chord overestimates true distance
 
     The k-NN graph represents the discrete manifold structure. Geodesic
     distance = shortest path on this graph. This is exact for the
@@ -93,7 +93,7 @@ class AnchorDistanceProfile:
 
     This is analogous to the "landmark coordinates" in Landmark MDS
     (de Silva & Tenenbaum, 2004), but uses geodesic rather than
-    Euclidean distances.
+    Chord distances.
 
     Attributes:
         concept_id: Identifier for the concept.

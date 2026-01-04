@@ -416,10 +416,10 @@ class SinkhornSolver:
             cost=float(self._to_scalar(cost)),
         )
 
-    def squared_euclidean_cost(
+    def squared_chord_cost(
         self, source: "Array", target: "Array", normalize: bool = True
     ) -> "Array":
-        """Compute squared geodesic cost matrix (legacy name)."""
+        """Compute squared geodesic cost matrix (preferred name)."""
         backend = self._backend
         s = backend.array(source)
         t = backend.array(target)
@@ -435,6 +435,12 @@ class SinkhornSolver:
             t = t / t_norm
             backend.eval(s, t)
         return self.squared_geodesic_cost(s, t, k_neighbors=None)
+
+    def squared_euclidean_cost(
+        self, source: "Array", target: "Array", normalize: bool = True
+    ) -> "Array":
+        """Legacy alias for squared_chord_cost."""
+        return self.squared_chord_cost(source, target, normalize=normalize)
 
     def squared_geodesic_cost(
         self,

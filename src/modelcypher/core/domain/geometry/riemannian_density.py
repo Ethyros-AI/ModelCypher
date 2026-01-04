@@ -25,7 +25,7 @@ Notes
 -----
 Each concept is modeled as a Riemannian Gaussian: a normal distribution on
 the curved manifold where covariance accounts for the local metric tensor.
-Geodesic radius measures extent along the manifold, not Euclidean distance.
+Geodesic radius measures extent along the manifold, not chord distance.
 """
 
 from __future__ import annotations
@@ -229,7 +229,7 @@ class ConceptVolume:
     def _compute_tangent_vector(self, point: "Array") -> "Array":
         """Compute tangent vector from centroid to point using log map.
 
-        Requires geodesic context; Euclidean fallback is invalid on curved manifolds.
+        Requires geodesic context; chord-only fallback is invalid on curved manifolds.
 
         Args:
             point: Point in activation space
@@ -263,13 +263,15 @@ class ConceptVolume:
             backend.eval(geo_from_centroid)
             self._geo_from_centroid = geo_from_centroid
 
-        # Geodesic distance from centroid to point uses direct attachment:
-        # min_i(geo_centroid_to_i + euclidean(point, i)).
-        diff_nodes = self.raw_activations - point_arr
-        dist_sq = backend.sum(diff_nodes * diff_nodes, axis=1)
-        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-        euc_dist = backend.sqrt(dist_sq)
-        total_dists = geo_from_centroid + euc_dist
+        # Geodesic distance from centroid to point uses discrete manifold paths:
+        # min_i(geo_centroid_to_i + geo_query_to_i).
+        geo_from_query = rg._geodesic_distances_from_query(
+            self.raw_activations,
+            point_arr,
+            geo_result=self._geodesic_context,
+        )
+        backend.eval(geo_from_query)
+        total_dists = geo_from_centroid + geo_from_query
         geo_dist = backend.min(total_dists)
         backend.eval(geo_dist)
         geo_dist_float = float(backend.to_scalar(geo_dist))
@@ -280,7 +282,7 @@ class ConceptVolume:
         backend.eval(diff_norm_arr)
         diff_norm = float(backend.to_scalar(diff_norm_arr[0]))
 
-        # Scale factor: geodesic / euclidean
+        # Scale factor: geodesic / chord
         # Use machine_epsilon for near-zero check
         if diff_norm < machine_epsilon(backend, diff):
             return diff  # Point is at centroid
@@ -292,7 +294,7 @@ class ConceptVolume:
         """Compute probability density at a point.
 
         Uses proper Riemannian log map when geodesic context is available,
-        scaling the tangent vector by geodesic/Euclidean ratio.
+        scaling the tangent vector by geodesic/chord ratio.
 
         Args:
             point: Point in activation space (d-dimensional)
@@ -417,7 +419,7 @@ class ConceptVolume:
     def _compute_tangent_vectors_batch(self, points: "Array") -> "Array":
         """Compute tangent vectors from centroid to multiple points using log map.
 
-        Requires geodesic context; scales by geodesic/Euclidean ratio.
+        Requires geodesic context; scales by geodesic/chord ratio.
 
         Args:
             points: Array of points (n x d)
@@ -430,7 +432,7 @@ class ConceptVolume:
         centroid_arr = backend.array(self.centroid)
         diff = points_arr - centroid_arr  # (n, d)
 
-        # Geodesic context is required - no Euclidean fallback on curved manifolds
+        # Geodesic context is required - no chord-only fallback on curved manifolds
         if self._geodesic_context is None or self.raw_activations is None:
             raise ValueError(
                 "Geodesic context required for Riemannian log map. "
@@ -457,11 +459,11 @@ class ConceptVolume:
         cross = backend.matmul(points_arr, backend.transpose(self.raw_activations))
         dist_sq = pts_sq + backend.transpose(acts_sq) - 2.0 * cross
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-        euc_dist = backend.sqrt(dist_sq)
-        total_dists = euc_dist + backend.reshape(geo_from_centroid, (1, -1))
+        chord_dist = backend.sqrt(dist_sq)
+        total_dists = chord_dist + backend.reshape(geo_from_centroid, (1, -1))
         geo_dist = backend.min(total_dists, axis=1)
 
-        # Chord length from centroid to each point (geodesic equals Euclidean for 2 points).
+        # Chord length from centroid to each point (geodesic equals chord for 2 points).
         diff_sq = backend.sum(diff * diff, axis=1)
         diff_sq = backend.maximum(diff_sq, backend.zeros_like(diff_sq))
         diff_norms = backend.sqrt(diff_sq)
@@ -886,7 +888,7 @@ class RiemannianDensityEstimator:
         subspace_align = cka_similarity
 
         # Distance is inverse of similarity: CKA=1→distance=0, CKA=0→distance=1
-        # This is a "representational distance" not Euclidean
+        # This is a "representational distance" not chord-length
         centroid_distance = 1.0 - cka_similarity
         geodesic_centroid_distance = centroid_distance
 
@@ -920,7 +922,7 @@ class RiemannianDensityEstimator:
     ) -> "Array":
         """Estimate covariance with optional curvature correction.
 
-        Standard covariance assumes flat (Euclidean) space. In curved
+        Standard covariance assumes flat (ambient) space. In curved
         spaces, we compute covariance in the tangent space at the Fréchet mean,
         using the logarithmic map to project points onto the tangent space.
 
@@ -1031,7 +1033,7 @@ class RiemannianDensityEstimator:
     ) -> float:
         """Compute geodesic radius (95th percentile distance from centroid).
 
-        Uses geodesic distances via k-NN graph. No fallback to Euclidean -
+        Uses geodesic distances via k-NN graph. No chord fallback -
         if this fails, it's a bug we need to fix.
         """
         backend = get_default_backend()

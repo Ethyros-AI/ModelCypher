@@ -26,11 +26,9 @@ from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    atan2_scalar,
-    cos_scalar,
     division_epsilon,
+    power_iteration_eigh,
     regularization_epsilon,
-    sin_scalar,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
@@ -177,57 +175,15 @@ class GeometricFingerprint:
         if n == 1:
             return [float(gram[0])]
 
-        matrix = [float(val) for val in gram]
         backend = get_default_backend()
-        tol = max(tolerance, regularization_epsilon(backend, backend.array(matrix)))
-
-        def idx(i: int, j: int) -> int:
-            return i * n + j
-
-        for _ in range(max_iterations):
-            max_off = 0.0
-            p = 0
-            q = 1
-            for i in range(n):
-                for j in range(i + 1, n):
-                    value = abs(matrix[idx(i, j)])
-                    if value > max_off:
-                        max_off = value
-                        p = i
-                        q = j
-            if max_off < tol:
-                break
-
-            app = matrix[idx(p, p)]
-            aqq = matrix[idx(q, q)]
-            apq = matrix[idx(p, q)]
-            if apq == 0.0:
-                continue
-
-            phi = 0.5 * atan2_scalar(2.0 * apq, aqq - app, backend)
-            c = cos_scalar(phi, backend)
-            s = sin_scalar(phi, backend)
-
-            for i in range(n):
-                if i == p or i == q:
-                    continue
-                aip = matrix[idx(i, p)]
-                aiq = matrix[idx(i, q)]
-                new_aip = c * aip - s * aiq
-                new_aiq = s * aip + c * aiq
-                matrix[idx(i, p)] = new_aip
-                matrix[idx(p, i)] = new_aip
-                matrix[idx(i, q)] = new_aiq
-                matrix[idx(q, i)] = new_aiq
-
-            new_app = c * c * app - 2.0 * s * c * apq + s * s * aqq
-            new_aqq = s * s * app + 2.0 * s * c * apq + c * c * aqq
-            matrix[idx(p, p)] = new_app
-            matrix[idx(q, q)] = new_aqq
-            matrix[idx(p, q)] = 0.0
-            matrix[idx(q, p)] = 0.0
-
-        return [matrix[idx(i, i)] for i in range(n)]
+        # Convergence is dtype-derived inside power_iteration_eigh.
+        matrix = backend.reshape(backend.array(gram, dtype="float32"), (n, n))
+        eigenvalues, _ = power_iteration_eigh(backend, matrix, k=n)
+        backend.eval(eigenvalues)
+        eigen_list = backend.tolist(eigenvalues)
+        if not isinstance(eigen_list, list):
+            return [float(eigen_list)]
+        return [float(val) for val in eigen_list]
 
 
 GeometricFingerprint.placeholder = GeometricFingerprint(

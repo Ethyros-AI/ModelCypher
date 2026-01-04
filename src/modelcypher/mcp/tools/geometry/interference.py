@@ -148,7 +148,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
 
             backend = get_default_backend()
             # Use geodesic null-space filter - accurate for high-D manifolds (8kD+)
-            # Euclidean SVD-based filtering is only accurate up to 3D
+            # Flat-space SVD-based filtering is only accurate up to 3D
             geo_filter = GeodesicNullSpaceFilter(backend)
             result = geo_filter.filter_delta(weightDelta, priorActivations)
 
