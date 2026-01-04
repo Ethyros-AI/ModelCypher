@@ -32,6 +32,8 @@ from modelcypher.core.domain.geometry.model_fingerprints_projection import (
 
 
 def test_model_fingerprints_projection_pca() -> None:
+    # MDS requires sufficient rank in the distance matrix for 2D projection.
+    # 4+ well-separated points ensure the centered matrix has rank >= 2.
     fingerprints = [
         ActivationFingerprint(
             prime_id="prime-a",
@@ -43,18 +45,28 @@ def test_model_fingerprints_projection_pca() -> None:
             prime_text="B",
             activated_dimensions={0: [ActivatedDimension(index=1, activation=1.0)]},
         ),
+        ActivationFingerprint(
+            prime_id="prime-c",
+            prime_text="C",
+            activated_dimensions={0: [ActivatedDimension(index=2, activation=1.0)]},
+        ),
+        ActivationFingerprint(
+            prime_id="prime-d",
+            prime_text="D",
+            activated_dimensions={0: [ActivatedDimension(index=0, activation=0.3), ActivatedDimension(index=1, activation=0.7)]},
+        ),
     ]
     bundle = ModelFingerprints(
         model_id="model-1",
         probe_space=ProbeSpace.output_logits,
         probe_capture_key=None,
-        hidden_dim=2,
+        hidden_dim=3,
         layer_count=1,
         fingerprints=fingerprints,
     )
 
     projection = ModelFingerprintsProjection.project_2d(bundle, max_features=4)
-    assert len(projection.points) == 2
+    assert len(projection.points) == 4
     assert len(projection.features) >= 2
 
 

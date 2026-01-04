@@ -37,6 +37,7 @@ Negative values indicate concepts where:
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -46,7 +47,34 @@ from modelcypher.core.domain.geometry.knowledge_density import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Callable, Sequence
+
+
+def _aggregate_opportunities(
+    items: "Sequence[GraftOpportunity]",
+) -> tuple[float, float, float, int]:
+    """Compute aggregate statistics for graft opportunities.
+
+    Args:
+        items: Sequence of GraftOpportunity objects to aggregate.
+
+    Returns:
+        Tuple of (mean_source, mean_target, mean_opportunity, positive_count).
+    """
+    if not items:
+        return 0.0, 0.0, 0.0, 0
+    sum_source = 0.0
+    sum_target = 0.0
+    sum_opp = 0.0
+    positive = 0
+    for item in items:
+        sum_source += item.source_density
+        sum_target += item.target_density
+        sum_opp += item.opportunity_score
+        if item.opportunity_score > 0.0:
+            positive += 1
+    n = len(items)
+    return sum_source / n, sum_target / n, sum_opp / n, positive
 
 
 @dataclass(frozen=True)
@@ -188,28 +216,12 @@ class KnowledgeDiffer:
         # Rank opportunities (highest first)
         ranked = sorted(all_opportunities, key=lambda x: x.opportunity_score, reverse=True)
 
+        # Global statistics using helper
+        overall_source, overall_target, overall_opp, positive_count = (
+            _aggregate_opportunities(all_opportunities)
+        )
         total = len(all_opportunities)
-        positive_count = 0
-        sum_source = 0.0
-        sum_target = 0.0
-        sum_opp = 0.0
-        for opportunity in all_opportunities:
-            if opportunity.opportunity_score > 0.0:
-                positive_count += 1
-            sum_source += opportunity.source_density
-            sum_target += opportunity.target_density
-            sum_opp += opportunity.opportunity_score
         nonpositive_count = total - positive_count
-
-        # Global statistics
-        if total:
-            overall_source = sum_source / total
-            overall_target = sum_target / total
-            overall_opp = sum_opp / total
-        else:
-            overall_source = 0.0
-            overall_target = 0.0
-            overall_opp = 0.0
 
         return KnowledgeDiff(
             source_path=source_profile.model_path,
@@ -229,59 +241,59 @@ class KnowledgeDiffer:
         self,
         opportunities: list[GraftOpportunity],
     ) -> dict[int, LayerDiff]:
-        """Group opportunities by layer."""
-        by_layer: dict[int, list[GraftOpportunity]] = {}
+        """Group opportunities by layer.
 
+        Args:
+            opportunities: List of graft opportunities to group.
+
+        Returns:
+            Dictionary mapping layer index to LayerDiff.
+        """
+        by_layer: dict[int, list[GraftOpportunity]] = defaultdict(list)
         for opp in opportunities:
-            if opp.layer not in by_layer:
-                by_layer[opp.layer] = []
             by_layer[opp.layer].append(opp)
 
         result: dict[int, LayerDiff] = {}
         for layer, opps in by_layer.items():
-            mean_opp = sum(o.opportunity_score for o in opps) / len(opps) if opps else 0.0
-            positive_count = sum(1 for o in opps if o.opportunity_score > 0.0)
-            nonpositive_count = len(opps) - positive_count
-
+            _, _, mean_opp, positive_count = _aggregate_opportunities(opps)
             result[layer] = LayerDiff(
                 layer=layer,
                 opportunities=opps,
                 mean_opportunity=mean_opp,
                 positive_opportunity_count=positive_count,
-                nonpositive_opportunity_count=nonpositive_count,
+                nonpositive_opportunity_count=len(opps) - positive_count,
             )
-
         return result
 
     def _group_by_domain(
         self,
         opportunities: list[GraftOpportunity],
     ) -> dict[str, DomainDiff]:
-        """Group opportunities by domain."""
-        by_domain: dict[str, list[GraftOpportunity]] = {}
+        """Group opportunities by domain.
 
+        Args:
+            opportunities: List of graft opportunities to group.
+
+        Returns:
+            Dictionary mapping domain name to DomainDiff.
+        """
+        by_domain: dict[str, list[GraftOpportunity]] = defaultdict(list)
         for opp in opportunities:
-            if opp.domain not in by_domain:
-                by_domain[opp.domain] = []
             by_domain[opp.domain].append(opp)
 
         result: dict[str, DomainDiff] = {}
         for domain, opps in by_domain.items():
-            n = len(opps)
-            mean_source = sum(o.source_density for o in opps) / n if n else 0.0
-            mean_target = sum(o.target_density for o in opps) / n if n else 0.0
-            mean_opp = sum(o.opportunity_score for o in opps) / n if n else 0.0
-            positive_count = sum(1 for o in opps if o.opportunity_score > 0.0)
-
+            mean_source, mean_target, mean_opp, positive_count = (
+                _aggregate_opportunities(opps)
+            )
             result[domain] = DomainDiff(
                 domain=domain,
                 mean_source_density=mean_source,
                 mean_target_density=mean_target,
                 mean_opportunity=mean_opp,
-                concept_count=n,
+                concept_count=len(opps),
                 positive_opportunity_count=positive_count,
             )
-
         return result
 
 

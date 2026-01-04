@@ -231,13 +231,17 @@ class TestSpectralSignatureValidation:
     """Tests for spectral signature validation component."""
 
     def test_component_count_matches_fixture(self) -> None:
-        """Spectral fixture should reflect disconnected components."""
+        """Spectral fixture should be connected via auto-derived k.
+
+        The fixture has spatially separated clusters, but derive_k_neighbors
+        finds the minimum k that yields a connected graph, so component_count=1.
+        """
         suite = GeometryValidationSuite()
         report = suite.run()
         spectral = report.spectral_signature
 
-        assert spectral.component_count == 2, "Spectral fixture should produce 2 components"
-        assert spectral.connected is False
+        assert spectral.component_count == 1, "Spectral fixture should produce 1 component with auto-k"
+        assert spectral.connected is True
 
     def test_connected_fixture_properties(self) -> None:
         """Connected spectral fixture should reflect connectivity."""

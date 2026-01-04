@@ -405,11 +405,13 @@ def test_mc_geometry_dora_decomposition_schema(mcp_env: dict[str, str], tmp_path
 
 def test_mc_geometry_path_detect_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
+        # Gate detection loads 76 gate embeddings which takes ~15 seconds
         return await _await_with_timeout(
             session.call_tool(
                 "mc_geometry_path_detect",
                 arguments={"text": "Hello from ModelCypher."},
-            )
+            ),
+            timeout=30,
         )
 
     result = _run_mcp(mcp_env, runner)
@@ -423,11 +425,13 @@ def test_mc_geometry_path_detect_schema(mcp_env: dict[str, str]):
 
 def test_mc_geometry_path_compare_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
+        # Gate detection loads 76 gate embeddings which takes ~15 seconds
         return await _await_with_timeout(
             session.call_tool(
                 "mc_geometry_path_compare",
                 arguments={"textA": "Alpha path", "textB": "Beta path"},
-            )
+            ),
+            timeout=30,
         )
 
     result = _run_mcp(mcp_env, runner)

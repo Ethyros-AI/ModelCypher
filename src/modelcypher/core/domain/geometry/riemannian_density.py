@@ -92,7 +92,7 @@ class InfluenceType(str, Enum):
 # - student_t_df: derived from kurtosis: df = 4 + 6/(kurtosis - 3)
 # - covariance_regularization: from machine epsilon
 # - curvature_correction: always enabled (manifolds are curved)
-# - k_neighbors: from Berry & Sauer 2016 / elbow detection
+# - k_neighbors: minimum k that yields a connected geodesic graph
 # =============================================================================
 
 

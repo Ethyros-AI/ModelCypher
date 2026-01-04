@@ -352,15 +352,16 @@ class GeometryValidationSuite:
             path=path,
         )
 
-        # Fixture points for disconnected components test.
-        # Two clusters far apart so derived k stays within each cluster.
+        # Fixture points for spectral signature test.
+        # Two clusters are spatially separated but derive_k_neighbors finds
+        # the minimum k that yields a connected graph, so expected count is 1.
         spectral_fixture = SpectralSignatureFixture(
             points=[
                 [0.0, 0.0], [1.0, 0.0], [2.0, 0.0],  # Cluster A
                 [100.0, 0.0], [101.0, 0.0], [102.0, 0.0],  # Cluster B
             ],
-            expected_component_count=2,
-            expected_connected=False,
+            expected_component_count=1,
+            expected_connected=True,
         )
         # Fixture points for connected component test.
         # Linear arrangement ensures connectivity with any k >= 1.
