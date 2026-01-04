@@ -283,6 +283,36 @@ class Backend(Protocol):
     def std(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
     ) -> Array: ...
+    def all(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        """Test whether all elements evaluate to True along axis.
+
+        Args:
+            array: Input array.
+            axis: Axis or axes along which to perform the reduction.
+                  If None, reduces over all elements.
+            keepdims: If True, retains reduced dimensions with size 1.
+
+        Returns:
+            Boolean array with True where all elements are True.
+        """
+        ...
+    def any(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        """Test whether any element evaluates to True along axis.
+
+        Args:
+            array: Input array.
+            axis: Axis or axes along which to perform the reduction.
+                  If None, reduces over all elements.
+            keepdims: If True, retains reduced dimensions with size 1.
+
+        Returns:
+            Boolean array with True where any element is True.
+        """
+        ...
 
     # --- Element-wise Operations ---
     def sqrt(self, array: Array) -> Array: ...

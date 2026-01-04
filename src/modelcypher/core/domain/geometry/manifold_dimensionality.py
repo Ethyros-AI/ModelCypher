@@ -15,6 +15,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Manifold dimensionality analysis for model representations.
+
+Provides tools to analyze the intrinsic dimensionality of neural network
+activation spaces, entropy traces, and prior tension signals.
+
+Key Classes:
+    ManifoldDimensionality: Pure Python implementation (CPU)
+    BackendManifoldDimensionality: GPU-accelerated using Backend protocol
+
+Key Metrics:
+    - Entropy trace features: Statistical summary of token entropy sequences
+    - Feature statistics: Per-dimension mean and standard deviation
+    - Prior tension: Measures of base model uncertainty and disagreement
+    - Intrinsic dimension: Two-NN estimator (Facco et al.) using geodesic distances
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -256,6 +272,9 @@ class BackendManifoldDimensionality:
     ) -> list[FeatureStat]:
         """Compute per-feature statistics using GPU acceleration.
 
+        Uses vectorized axis-wise operations when all values are finite.
+        Falls back to per-column computation when NaN/inf filtering is needed.
+
         Args:
             points: List of feature vectors [n_samples, n_features].
             feature_names: Names for each feature dimension.
@@ -271,11 +290,44 @@ class BackendManifoldDimensionality:
             return []
 
         names = feature_names if len(feature_names) == d else _get_default_feature_names(d)
+        n = len(points)
 
-        # Convert to backend array [n, d]
-        # Filter out non-finite values per column
-        stats: list[FeatureStat] = []
+        # Convert to backend array and check for non-finite values
+        arr = self.backend.array(points)
+        self.backend.eval(arr)
 
+        # Check if all values are finite for fast vectorized path
+        is_all_finite = self.backend.all(self.backend.isfinite(arr))
+        self.backend.eval(is_all_finite)
+
+        if bool(self.backend.to_scalar(is_all_finite)):
+            # Fast vectorized path: compute all column stats at once
+            means = self.backend.mean(arr, axis=0)
+            self.backend.eval(means)
+
+            # Sample variance (N-1) for each column
+            diffs = arr - means
+            sum_sqs = self.backend.sum(diffs * diffs, axis=0)
+            self.backend.eval(sum_sqs)
+
+            stats: list[FeatureStat] = []
+            for j in range(d):
+                mean_float = float(self.backend.to_scalar(
+                    self.backend.take(means, self.backend.array([j]))
+                ))
+                sum_sq_j = float(self.backend.to_scalar(
+                    self.backend.take(sum_sqs, self.backend.array([j]))
+                ))
+                if n < 2:
+                    std_float = 0.0
+                else:
+                    variance = sum_sq_j / float(n - 1)
+                    std_float = sqrt_scalar(variance, self.backend)
+                stats.append(FeatureStat(index=j, name=names[j], mean=mean_float, std_dev=std_float))
+            return stats
+
+        # Fallback: per-column filtering for non-finite values
+        stats = []
         for j in range(d):
             values = [
                 float(row[j]) for row in points if row[j] is not None and is_finite(row[j], self.backend)
@@ -283,14 +335,13 @@ class BackendManifoldDimensionality:
             if not values:
                 continue
 
-            arr = self.backend.array(values)
+            col_arr = self.backend.array(values)
             n_vals = len(values)
-            mean_val = self.backend.mean(arr)
+            mean_val = self.backend.mean(col_arr)
             self.backend.eval(mean_val)
             mean_float = self._to_scalar(mean_val)
 
-            # Sample variance (N-1) to match statistics.standard_deviation
-            diff = arr - mean_val
+            diff = col_arr - mean_val
             sum_sq = self.backend.sum(diff * diff)
             self.backend.eval(sum_sq)
             if n_vals < 2:

@@ -50,6 +50,13 @@ class EmbeddingDefaults:
         source, value = EmbeddingDefaults.resolved_source(environment)
         if source == "http" and value:
             return HTTPEmbeddingProvider(base_url=value)
+        allow_stub = (env.get("MC_ALLOW_STUB_EMBEDDINGS") or "").strip().lower()
+        if allow_stub in {"1", "true", "yes"}:
+            from modelcypher.adapters.embedding_stub import (
+                ByteFrequencyEmbeddingProvider,
+            )
+
+            return ByteFrequencyEmbeddingProvider()
         try:
             return MLXEmbeddingProvider()
         except MLXEmbeddingError:

@@ -470,6 +470,16 @@ class MLXBackend(Backend):
     ) -> Array:
         return self.mx.std(array, axis=axis, keepdims=keepdims)
 
+    def all(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        return self.mx.all(array, axis=axis, keepdims=keepdims)
+
+    def any(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        return self.mx.any(array, axis=axis, keepdims=keepdims)
+
     # --- Element-wise Operations (lazy - no eval) ---
     def sign(self, array: Array) -> Array:
         return self.mx.sign(array)

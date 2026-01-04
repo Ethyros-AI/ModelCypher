@@ -47,24 +47,46 @@ See also: modelcypher.core.domain.agents.computational_gate_atlas
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import TwoLevelCache, content_hash
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
 from modelcypher.ports.embedding import EmbeddingProvider
+from modelcypher.utils.paths import get_modelcypher_home
 from modelcypher.utils.text import truncate
 
 logger = logging.getLogger(__name__)
+
+_GATE_CACHE: TwoLevelCache[dict] | None = None
+_GATE_CACHE_LOCK = threading.Lock()
+
+
+def _get_gate_cache() -> TwoLevelCache[dict]:
+    global _GATE_CACHE
+    if _GATE_CACHE is None:
+        with _GATE_CACHE_LOCK:
+            if _GATE_CACHE is None:
+                cache_dir = get_modelcypher_home() / "cache" / "gate_embeddings"
+                _GATE_CACHE = TwoLevelCache(
+                    cache_directory=cache_dir,
+                    serializer=lambda payload: payload,
+                    deserializer=lambda payload: payload,
+                    memory_limit=4,
+                    disk_ttl_seconds=30 * 24 * 60 * 60,
+                    cache_version=1,
+                )
+    return _GATE_CACHE
 
 
 @dataclass(frozen=True)
@@ -130,6 +152,10 @@ class GateDetector:
         self.gate_metadata: dict[str, ComputationalGateProtocol] = {}
         self._gate_ids: list[str] = []
         self._gate_matrix = None
+        self._gate_points = None
+        self._gate_geo_result = None
+        self._gate_origin_distances = None
+        self._gate_cache_key = None
 
         if gate_inventory is None:
             gate_inventory = get_gate_inventory()
@@ -155,6 +181,13 @@ class GateDetector:
         self._ensure_gate_embeddings()
         if not self.gate_embeddings:
             raise ValueError("No gate embeddings available for detection")
+        if self._gate_matrix is None or not self._gate_ids:
+            return DetectionResult(
+                model_id=model_id,
+                prompt_id=prompt_id,
+                response_text=text,
+                detected_gates=[],
+            )
 
         segments = self._segment_text(text)
         if not segments:
@@ -168,14 +201,22 @@ class GateDetector:
         candidates: list[tuple[DetectedGate, int, float]] = []
         best_similarities: list[float] = []
 
+        segment_texts = [segment[2] for segment in segments]
+        embeddings_batch = self.embedder.embed(segment_texts)
+        if len(embeddings_batch) != len(segments):
+            embeddings_batch = []
+
         for index, (window_start, window_end, window_text) in enumerate(segments):
-            embeddings = self.embedder.embed([window_text])
-            if not embeddings:
-                continue
-            if self._gate_matrix is None or not self._gate_ids:
-                continue
-            window_vec = self._normalize_vector(embeddings[0])
-            sims = geodesic_cosine_batch(window_vec, self._gate_matrix, self._backend)
+            if embeddings_batch:
+                window_embedding = embeddings_batch[index]
+            else:
+                embeddings = self.embedder.embed([window_text])
+                if not embeddings:
+                    continue
+                window_embedding = embeddings[0]
+
+            window_vec = self._normalize_vector(window_embedding)
+            sims = self._geodesic_cosine_to_gates(window_vec)
             best_idx_arr = self._backend.argmax(sims)
             self._backend.eval(best_idx_arr)
             best_idx = int(self._backend.to_scalar(best_idx_arr))
@@ -260,9 +301,66 @@ class GateDetector:
         self._ensure_gate_embeddings()
         return dict(self.gate_embeddings)
 
+    def _gate_cache_key_value(self) -> str:
+        if self._gate_cache_key is not None:
+            return self._gate_cache_key
+
+        embedder_sig: dict[str, object] = {
+            "class": type(self.embedder).__name__,
+            "dimension": getattr(self.embedder, "dimension", None),
+        }
+        base_url = getattr(self.embedder, "base_url", None)
+        if base_url:
+            embedder_sig["base_url"] = base_url
+
+        gate_payload: list[dict[str, object]] = []
+        for gate_id in sorted(self.gate_metadata):
+            gate = self.gate_metadata[gate_id]
+            gate_payload.append(
+                {
+                    "id": gate.id,
+                    "name": gate.name,
+                    "description": gate.description,
+                    "examples": list(gate.examples),
+                    "polyglot_examples": list(gate.polyglot_examples),
+                }
+            )
+
+        self._gate_cache_key = content_hash(
+            {"embedder": embedder_sig, "gates": gate_payload}
+        )
+        return self._gate_cache_key
+
+    def _hydrate_gate_embeddings(
+        self, gate_ids: list[str], gate_matrix: list[list[float]]
+    ) -> None:
+        if not gate_ids or not gate_matrix:
+            return
+        if len(gate_ids) != len(gate_matrix):
+            return
+        self._gate_ids = list(gate_ids)
+        self.gate_embeddings = {
+            gate_id: vector for gate_id, vector in zip(gate_ids, gate_matrix)
+        }
+        self._gate_matrix = self._backend.array(gate_matrix)
+        self._backend.eval(self._gate_matrix)
+        self._prepare_gate_geometry()
+
     def _ensure_gate_embeddings(self) -> None:
         if self.gate_embeddings:
             return
+
+        cache_key = self._gate_cache_key_value()
+        cached = _get_gate_cache().get(cache_key)
+        if cached:
+            cached_ids = cached.get("gate_ids", [])
+            cached_matrix = cached.get("gate_matrix", [])
+            self._hydrate_gate_embeddings(cached_ids, cached_matrix)
+            if self.gate_embeddings:
+                logger.info(
+                    "Loaded %s gate embeddings from cache", len(self.gate_embeddings)
+                )
+                return
 
         vectors = []
         ids: list[str] = []
@@ -290,10 +388,58 @@ class GateDetector:
             ids.append(gate.id)
 
         if vectors:
-            self._gate_matrix = self._backend.stack(vectors, axis=0)
-            self._gate_ids = ids
+            gate_matrix = [self.gate_embeddings[gate_id] for gate_id in ids]
+            self._hydrate_gate_embeddings(ids, gate_matrix)
+            _get_gate_cache().set(
+                cache_key, {"gate_ids": ids, "gate_matrix": gate_matrix}
+            )
 
         logger.info("Loaded %s gate embeddings", len(self.gate_embeddings))
+
+    def _prepare_gate_geometry(self) -> None:
+        if self._gate_matrix is None:
+            return
+        zero = self._backend.zeros_like(self._gate_matrix[:1])
+        self._gate_points = self._backend.concatenate([zero, self._gate_matrix], axis=0)
+        rg = RiemannianGeometry(self._backend)
+        point_count = int(self._backend.shape(self._gate_points)[0])
+        self._gate_geo_result = rg.geodesic_distances(
+            self._gate_points, k_neighbors=point_count - 1
+        )
+        distances = self._gate_geo_result.distances
+        self._backend.eval(distances)
+        self._gate_origin_distances = distances[0, 1:]
+
+    def _geodesic_cosine_to_gates(self, vector: object) -> object:
+        if self._gate_geo_result is None or self._gate_origin_distances is None:
+            self._prepare_gate_geometry()
+        if (
+            self._gate_geo_result is None
+            or self._gate_origin_distances is None
+            or self._gate_points is None
+        ):
+            return self._backend.array([])
+
+        rg = RiemannianGeometry(self._backend)
+        geo_from_query = rg._geodesic_distances_from_query(
+            self._gate_points, vector, geo_result=self._gate_geo_result
+        )
+        d0a = geo_from_query[0]
+        dav = geo_from_query[1:]
+        d0v = self._gate_origin_distances
+
+        eps = division_epsilon(self._backend, geo_from_query)
+        denom = 2.0 * d0a * d0v
+        safe_denom = self._backend.maximum(
+            denom, self._backend.full(d0v.shape, eps)
+        )
+        cos_vals = (d0a * d0a + d0v * d0v - dav * dav) / safe_denom
+        cos_vals = self._backend.clip(cos_vals, -1.0, 1.0)
+        valid = self._backend.minimum(d0v > eps, d0a > eps)
+        cos_vals = self._backend.where(
+            valid, cos_vals, self._backend.zeros_like(cos_vals)
+        )
+        return cos_vals
 
     @staticmethod
     def _segment_text(text: str) -> list[tuple[int, int, str]]:
@@ -366,16 +512,7 @@ class GateDetector:
         vec = vector if hasattr(vector, "shape") else self._backend.array(vector)
         if len(self._backend.shape(vec)) != 1:
             vec = self._backend.reshape(vec, (-1,))
-        vec_row = self._backend.reshape(vec, (1, -1))
-        zero = self._backend.zeros_like(vec_row)
-        points = self._backend.concatenate([zero, vec_row], axis=0)
-        rg = RiemannianGeometry(self._backend)
-        point_count = int(self._backend.shape(points)[0])
-        geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
-        distances = geo_result.distances
-        self._backend.eval(distances)
-        norm_val = float(self._backend.to_scalar(distances[0, 1]))
+        norm_arr = self._backend.sqrt(self._backend.sum(vec * vec))
         eps = division_epsilon(self._backend, vec)
-        if norm_val <= eps:
-            return vec
-        return vec / norm_val
+        norm_safe = self._backend.maximum(norm_arr, self._backend.array(eps))
+        return vec / norm_safe

@@ -59,14 +59,34 @@ _CACHE_MAX_SIZE = 128
 
 
 def _hash_cost_matrix(cost: "Array", backend: "Backend") -> int:
-    """Compute hash of cost matrix for caching."""
-    # Use sum and shape as hash - fast and collision-resistant for our use case
+    """Compute hash of cost matrix for caching.
+
+    Uses multiple statistics to reduce collisions between matrices
+    with different structure but similar aggregate values.
+    """
     flat = backend.reshape(cost, (-1,))
-    hash_arr = backend.sum(flat)
-    backend.eval(hash_arr)
-    hash_val = float(backend.to_scalar(hash_arr))
     n = int(cost.shape[0])
-    return hash((hash_val, n))
+
+    # Combine multiple statistics for collision resistance
+    sum_arr = backend.sum(flat)
+    sum_sq_arr = backend.sum(flat * flat)
+    # Sample diagonal and corners for structure
+    diag = backend.diag(cost)
+    diag_sum = backend.sum(diag)
+    # First and last elements provide positional info
+    first_elem = flat[0] if flat.shape[0] > 0 else backend.array([0.0])
+    last_elem = flat[-1] if flat.shape[0] > 0 else backend.array([0.0])
+    backend.eval(sum_arr, sum_sq_arr, diag_sum, first_elem, last_elem)
+
+    hash_tuple = (
+        float(backend.to_scalar(sum_arr)),
+        float(backend.to_scalar(sum_sq_arr)),
+        float(backend.to_scalar(diag_sum)),
+        float(backend.to_scalar(first_elem)),
+        float(backend.to_scalar(last_elem)),
+        n,
+    )
+    return hash(hash_tuple)
 
 
 def hungarian_assignment(
