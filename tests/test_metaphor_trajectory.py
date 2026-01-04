@@ -94,7 +94,7 @@ class TestMetaphorTrajectory:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=[],
+            points=(),
         )
         assert traj.convergence_layer == -1
         assert traj.peak_cka == 0.0
@@ -115,7 +115,7 @@ class TestMetaphorTrajectory:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=[point],
+            points=(point,),
         )
         assert traj.convergence_layer == 5
         assert traj.peak_cka == 0.8
@@ -147,7 +147,7 @@ class TestMetaphorTrajectory:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=points,
+            points=tuple(points),
         )
         assert traj.convergence_layer == 2
         assert traj.peak_cka == 0.9
@@ -170,7 +170,7 @@ class TestMetaphorTrajectory:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=points,
+            points=tuple(points),
         )
         assert traj.cka_at_layer(0) == 0.2
         assert traj.cka_at_layer(5) == 0.8
@@ -188,7 +188,7 @@ class TestConvergenceProfile:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=[],
+            points=(),
         )
         profile = compute_convergence_profile(traj)
         assert profile.convergence_layer == -1
@@ -210,7 +210,7 @@ class TestConvergenceProfile:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=points,
+            points=tuple(points),
         )
         profile = compute_convergence_profile(traj)
         assert profile.trajectory_monotonicity > 0.9  # Should be ~1.0
@@ -234,7 +234,7 @@ class TestConvergenceProfile:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=points,
+            points=tuple(points),
         )
         profile = compute_convergence_profile(traj)
         # Early = first 25% = 2 layers -> mean(0.1, 0.2) = 0.15
@@ -298,7 +298,7 @@ class TestSerialization:
             source_domain="A",
             target_domain="B",
             model_id="model",
-            points=points,
+            points=tuple(points),
         )
         d = trajectory_to_dict(traj)
         assert d["metaphor_id"] == "test"

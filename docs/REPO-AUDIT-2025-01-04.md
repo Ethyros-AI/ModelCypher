@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 18
-- Issues found: 8
-- Issues fixed: 8
+- Audited: 20
+- Issues found: 10
+- Issues fixed: 10
 
 ## Audit Log
 
@@ -250,3 +250,29 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: CLI field lists/examples referenced non-existent fields
   - Fix: Updated fields/examples to match CLI output
+
+- `docs/GLOSSARY.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (fixed CLI command references)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: CLI commands referenced non-existent subcommands
+  - Fix: Updated to existing CLI commands
+
+- `docs/HEXAGONAL-AUDIT-REPORT.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (marked historical)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Historical audit conflicts with fresh audit scope
+  - Fix: Added superseded note at top

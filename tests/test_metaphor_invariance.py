@@ -58,7 +58,7 @@ def make_trajectory(
         source_domain="SOURCE",
         target_domain="TARGET",
         model_id=model_id,
-        points=points,
+        points=tuple(points),
     )
 
 

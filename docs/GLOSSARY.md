@@ -21,7 +21,7 @@ The minimum number of variables needed to describe a model's state.
 A conceptual primitive (e.g., "I", "YOU", "GOOD", "BAD") from the Natural Semantic Metalanguage (NSM) tradition, proposed (and debated) as cross-linguistically universal.
 -   **ModelCypher usage**: We use semantic primes as a *candidate* anchor inventory. Whether they are invariant across model families is a falsifiable hypothesis, not an assumption.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md) (includes full 65-item inventory in Appendix A)
--   **CLI**: `mc geometry primes probe`
+-   **CLI**: `mc geometry primes probe-model`
 
 ### Co-Orbiting
 When two models (a Base Model and a Sidecar Adapter) process the same input in parallel without merging their weights.
@@ -45,7 +45,7 @@ A measure of similarity between two neural network layers that is robust to rota
 -   **Bias note**: Finite sampling can bias CKA (inflate or deflate). Use debiased HSIC and
     feature-sampling correction when possible.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md), [Paper 3](../papers/paper-3-cross-architecture-transfer.md), [Paper 4](../papers/paper-4-modelcypher-toolkit.md), [Paper 5](../papers/paper-5-semantic-highway.md)
--   **CLI**: `mc geometry cka compute`
+-   **CLI**: `mc geometry concept compare`
 
 ### Spectral Signature (Graph Laplacian)
 Raw spectral measurements of a geodesic k-NN graph: Laplacian eigenvalues, algebraic connectivity (λ₂), component count (zero-eigenvalue multiplicity), and heat trace $H(t)=\sum_i e^{-t\lambda_i}$.

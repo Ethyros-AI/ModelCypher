@@ -94,7 +94,7 @@ class MetaphorTrajectory:
     source_domain: str
     target_domain: str
     model_id: str
-    points: list[MetaphorTrajectoryPoint] = field(default_factory=list)
+    points: tuple[MetaphorTrajectoryPoint, ...] = field(default_factory=tuple)
 
     @property
     def convergence_layer(self) -> int:
