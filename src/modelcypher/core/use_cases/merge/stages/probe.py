@@ -788,7 +788,7 @@ def _probe_precise(
             # - 2-4× speedup for multi-layer alignments
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            ALIGNMENT_MAX_WORKERS = 4  # MLX handles concurrent submissions well
+            ALIGNMENT_MAX_WORKERS = 1  # Reduced from 4 - MLX segfaults with concurrent GPU access
 
             def _align_single_layer(
                 src_idx: int,
