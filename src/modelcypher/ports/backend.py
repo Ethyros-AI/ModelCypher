@@ -380,6 +380,16 @@ class Backend(Protocol):
         """
         ...
 
+    # --- Transforms ---
+    def vmap(
+        self,
+        fun: Callable,
+        in_axes: int | tuple[int | None, ...] | None = 0,
+        out_axes: int | tuple[int | None, ...] | None = 0,
+    ) -> Callable:
+        """Vectorize a function over batch axes."""
+        ...
+
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array: ...
 

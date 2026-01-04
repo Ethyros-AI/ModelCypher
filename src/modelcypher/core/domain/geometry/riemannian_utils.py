@@ -663,6 +663,80 @@ class RiemannianGeometry:
 
             return result
 
+    def frechet_mean_batch(
+        self,
+        points_batch: "Array",
+        weights_batch: "Array | None" = None,
+        max_iterations: int = 100,
+        tolerance: float | None = None,
+        k_neighbors: int | None = None,
+        max_k_neighbors: int | None = None,
+    ) -> "Array":
+        """Compute Fréchet means for a batch of point sets.
+
+        Args:
+            points_batch: [B, n, d] batch of point clouds
+            weights_batch: Optional [B, n] weights per batch
+        Returns:
+            [B, d] array of Fréchet means
+        """
+        backend = self._backend
+        points_batch = backend.array(points_batch)
+        backend.eval(points_batch)
+
+        if len(points_batch.shape) != 3:
+            result = self.frechet_mean(
+                points_batch,
+                weights=weights_batch,
+                max_iterations=max_iterations,
+                tolerance=tolerance,
+                k_neighbors=k_neighbors,
+                max_k_neighbors=max_k_neighbors,
+            )
+            return backend.reshape(result.mean, (1, -1))
+
+        def _mean_only(points: "Array", weights: "Array | None" = None) -> "Array":
+            result = self.frechet_mean(
+                points,
+                weights=weights,
+                max_iterations=max_iterations,
+                tolerance=tolerance,
+                k_neighbors=k_neighbors,
+                max_k_neighbors=max_k_neighbors,
+            )
+            return result.mean
+
+        vmap = getattr(backend, "vmap", None)
+        if vmap is not None:
+            try:
+                if weights_batch is None:
+                    mapped = backend.vmap(_mean_only)
+                    means = mapped(points_batch)
+                else:
+                    mapped = backend.vmap(_mean_only, in_axes=(0, 0))
+                    means = mapped(points_batch, weights_batch)
+                backend.eval(means)
+                return means
+            except Exception:
+                pass
+
+        batch = int(points_batch.shape[0])
+        means = []
+        for i in range(batch):
+            weights = weights_batch[i] if weights_batch is not None else None
+            result = self.frechet_mean(
+                points_batch[i],
+                weights=weights,
+                max_iterations=max_iterations,
+                tolerance=tolerance,
+                k_neighbors=k_neighbors,
+                max_k_neighbors=max_k_neighbors,
+            )
+            means.append(result.mean)
+        stacked = backend.stack(means, axis=0)
+        backend.eval(stacked)
+        return stacked
+
     @staticmethod
     def _should_retry_k(
         exc: Exception,

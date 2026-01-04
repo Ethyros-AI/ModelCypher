@@ -641,14 +641,13 @@ def gram_schmidt_orthogonalize(
     Q_cols = []
     for j in range(k):
         v = vectors[:, j]
-        b.eval(v)
 
         # Subtract projections onto previous orthonormal vectors
+        # Batched: accumulate all projections before eval
         for q in Q_cols:
             proj = b.sum(v * q)
-            b.eval(proj)
             v = v - proj * q
-            b.eval(v)
+        b.eval(v)  # Single eval after all projections
 
         # Normalize
         norm_val = _geodesic_norm_scalar(v, b)
@@ -673,10 +672,10 @@ def power_iteration_eigh(
     k: int = 10,
     use_ritz: bool = True,
 ) -> tuple[Array, Array]:
-    """Compute top-k eigenvalues/eigenvectors via power iteration (GPU-only).
+    """Compute top-k eigenvalues/eigenvectors via backend eigh or power iteration.
 
-    This replaces backend.eigh() which requires CPU on MLX. Power iteration
-    uses only matmul and is fully GPU-accelerated.
+    Prefer backend.eigh for exact decomposition (batched where supported),
+    with a power-iteration fallback if eigh fails.
 
     Iterates until convergence (eigenvalues stop changing within machine epsilon).
     No arbitrary iteration limits - we find the exact decomposition.
@@ -697,6 +696,20 @@ def power_iteration_eigh(
 
     n = int(matrix.shape[0])
     k = min(k, n)
+    if k == 0:
+        return b.zeros((0,), dtype="float32"), b.zeros((n, 0), dtype="float32")
+
+    try:
+        eigenvalues_full, eigenvectors_full = b.eigh(matrix)
+        b.eval(eigenvalues_full, eigenvectors_full)
+        idx = b.arange(0, k, dtype="int32")
+        idx = b.array(n - 1, dtype="int32") - idx
+        eigenvalues = b.take(eigenvalues_full, idx, axis=-1)
+        eigenvectors = b.take(eigenvectors_full, idx, axis=-1)
+        b.eval(eigenvalues, eigenvectors)
+        return eigenvalues, eigenvectors
+    except Exception:
+        pass
     eps = machine_epsilon(b, matrix)
     convergence_tol = sqrt_scalar(eps, b)  # sqrt(machine_epsilon) for convergence
 
@@ -730,16 +743,8 @@ def power_iteration_eigh(
         MV = b.matmul(matrix, V)
         b.eval(MV)
 
-        eigenvalues_list = []
-        for j in range(k):
-            v_j = V[:, j]
-            mv_j = MV[:, j]
-            b.eval(v_j, mv_j)
-            lambda_j = b.sum(v_j * mv_j)
-            b.eval(lambda_j)
-            eigenvalues_list.append(lambda_j)
-
-        eigenvalues = b.stack(eigenvalues_list, axis=0)
+        # Vectorized Rayleigh quotients: λ_j = v_j^T @ M @ v_j for all j
+        eigenvalues = b.sum(V * MV, axis=0)
         b.eval(eigenvalues)
 
         # Check convergence: eigenvalues stopped changing
@@ -791,14 +796,12 @@ def geodesic_svd(
     array: Array,
     k: int | None = None,
 ) -> tuple[Array, Array, Array]:
-    """Compute SVD via power iteration (GPU-only, no CPU linear algebra).
+    """Compute SVD using backend linalg with a power-iteration fallback.
 
-    This replaces svd_via_eigh which uses backend.eigh (CPU on MLX).
-    Uses power iteration on A.T @ A to get right singular vectors,
-    then derives left singular vectors via A @ V / S.
-
-    Iterates until convergence - no arbitrary iteration limits.
-    We find the exact decomposition.
+    Uses backend.svd when a full decomposition is requested and available.
+    Falls back to power iteration for top-k requests or when backend.svd
+    fails. This keeps operations on-device while preserving numerical
+    stability for geodesic alignment.
 
     Args:
         backend: Compute backend.
@@ -817,13 +820,28 @@ def geodesic_svd(
 
     m = int(A.shape[0])
     n = int(A.shape[1])
-    k = min(k or min(m, n), m, n)
+    max_rank = min(m, n)
     reg = regularization_epsilon(b, A)
 
-    if m == 0 or n == 0 or k == 0:
-        U = b.zeros((m, k), dtype="float32")
-        S = b.zeros((k,), dtype="float32")
-        Vt = b.zeros((k, n), dtype="float32")
+    if m == 0 or n == 0:
+        U = b.zeros((m, 0), dtype="float32")
+        S = b.zeros((0,), dtype="float32")
+        Vt = b.zeros((0, n), dtype="float32")
+        return U, S, Vt
+
+    if k is None or k >= max_rank:
+        try:
+            U, S, Vt = b.svd(A, compute_uv=True)
+            b.eval(U, S, Vt)
+            return U, S, Vt
+        except Exception:
+            pass
+
+    k = min(k or max_rank, m, n)
+    if k == 0:
+        U = b.zeros((m, 0), dtype="float32")
+        S = b.zeros((0,), dtype="float32")
+        Vt = b.zeros((0, n), dtype="float32")
         return U, S, Vt
 
     # Form A.T @ A (Gram matrix of columns)
@@ -842,23 +860,21 @@ def geodesic_svd(
     AV = b.matmul(A, V)
     b.eval(AV)
 
-    # Normalize each column of AV by corresponding singular value
-    U_cols = []
-    for j in range(k):
-        s_j_arr = S[j]
-        b.eval(s_j_arr)
-        s_j = float(b.to_scalar(s_j_arr))
+    # Vectorized column normalization: U = AV / S (zero where S < reg)
+    reg_arr = b.zeros((k,), dtype="float32") + reg
+    S_safe = b.maximum(S, reg_arr)  # Avoid division by zero
+    b.eval(S_safe)
 
-        u_j = AV[:, j]
-        if s_j > reg:
-            u_j = u_j / s_j
-        else:
-            # Zero singular value - use zero vector
-            u_j = b.zeros((m,), dtype="float32")
-        b.eval(u_j)
-        U_cols.append(u_j)
+    # Broadcasting: U[i,j] = AV[i,j] / S_safe[j]
+    inv_S = 1.0 / S_safe
+    U = AV * b.reshape(inv_S, (1, k))
+    b.eval(U)
 
-    U = b.stack(U_cols, axis=1)
+    # Zero out columns where singular value was below threshold
+    valid_mask = S > reg_arr  # Shape: (k,)
+    valid_broadcast = b.reshape(b.astype(valid_mask, "float32"), (1, k))
+    U = U * valid_broadcast
+    b.eval(U)
     Vt = b.transpose(V)
     b.eval(U, Vt)
 

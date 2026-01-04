@@ -1139,29 +1139,72 @@ class OllivierRicciCurvature:
         self._derived_base_alpha = base_alpha
         self._derived_adaptive_strength = adaptive_strength
 
-        # 3. Compute edge curvatures
+        # 3. Compute edge curvatures (batch Sinkhorn per source node)
         edge_curvatures: list[EdgeCurvature] = []
         processed_edges: set[tuple[int, int]] = set()
+        eps = division_epsilon(backend, geo_result.distances)
+        cost_matrix = geo_result.distances
 
         for source_idx in range(n):
-            for target_idx in adjacency_list.get(source_idx, []):
-                # Track edges to avoid duplicates (always symmetrize - geometrically correct)
+            targets = adjacency_list.get(source_idx, [])
+            if not targets:
+                continue
+
+            batch_targets: list[int] = []
+            for target_idx in targets:
                 edge_key = (min(source_idx, target_idx), max(source_idx, target_idx))
                 if edge_key in processed_edges:
                     continue
                 processed_edges.add(edge_key)
+                batch_targets.append(target_idx)
 
-                ec = self._compute_edge_curvature(
-                    source_idx,
-                    target_idx,
-                    geo_result,
-                    geo_result.distances,
-                    adjacency_list,
-                    max_degree,
-                    n,
+            if not batch_targets:
+                continue
+
+            targets_arr = backend.array(batch_targets)
+            row = backend.take(cost_matrix, backend.array([source_idx]), axis=0)
+            row = backend.squeeze(row, axis=0)
+            edge_weights_arr = backend.take(row, targets_arr, axis=0)
+            backend.eval(edge_weights_arr)
+            edge_weights = [float(x) for x in backend.tolist(edge_weights_arr)]
+
+            valid_targets: list[int] = []
+            valid_weights: list[float] = []
+            for target_idx, edge_weight in zip(batch_targets, edge_weights):
+                if not is_finite(edge_weight, backend) or edge_weight < eps:
+                    continue
+                valid_targets.append(target_idx)
+                valid_weights.append(edge_weight)
+
+            if not valid_targets:
+                continue
+
+            mu = self._build_lazy_measure(source_idx, adjacency_list, max_degree, n)
+            mu_batch = backend.stack([mu] * len(valid_targets), axis=0)
+            nu_batch = backend.stack(
+                [
+                    self._build_lazy_measure(t, adjacency_list, max_degree, n)
+                    for t in valid_targets
+                ],
+                axis=0,
+            )
+            w1_batch = self._compute_wasserstein_1_batch(
+                mu_batch, nu_batch, cost_matrix
+            )
+            backend.eval(w1_batch)
+            w1_list = [float(x) for x in backend.tolist(w1_batch)]
+
+            for target_idx, edge_weight, w1 in zip(valid_targets, valid_weights, w1_list):
+                curvature = 1.0 - w1 / edge_weight
+                edge_curvatures.append(
+                    EdgeCurvature(
+                        source_idx=source_idx,
+                        target_idx=target_idx,
+                        curvature=curvature,
+                        wasserstein_distance=w1,
+                        edge_weight=edge_weight,
+                    )
                 )
-                if ec is not None:
-                    edge_curvatures.append(ec)
 
         # 4. Aggregate to nodes
         node_curvatures = self._aggregate_to_nodes(edge_curvatures, n)
@@ -1443,6 +1486,93 @@ class OllivierRicciCurvature:
         backend.eval(w1)
 
         return float(backend.to_scalar(w1))
+
+    def _compute_wasserstein_1_batch(
+        self,
+        mu_batch: "Array",
+        nu_batch: "Array",
+        cost_matrix: "Array",
+    ) -> "Array":
+        """Compute Wasserstein-1 distances for a batch of marginals."""
+        backend = self._backend
+        mu_batch = backend.array(mu_batch)
+        nu_batch = backend.array(nu_batch)
+        cost_matrix = backend.array(cost_matrix)
+
+        batch = int(mu_batch.shape[0])
+        n = int(mu_batch.shape[1])
+        if batch == 0 or n == 0:
+            return backend.zeros((batch,))
+
+        eps = division_epsilon(backend, cost_matrix)
+        floor = tiny_value(backend, cost_matrix)
+
+        finite_mask = backend.isfinite(cost_matrix)
+        dtype = cost_matrix.dtype if hasattr(cost_matrix, "dtype") else None
+        neg_inf = -float(backend.finfo(dtype).max)
+        finite_vals = backend.where(
+            finite_mask, cost_matrix, backend.full(cost_matrix.shape, neg_inf)
+        )
+        finite_max_arr = backend.max(finite_vals)
+        backend.eval(finite_max_arr)
+        finite_max = float(backend.to_scalar(finite_max_arr))
+        finite_max = max(finite_max, eps)
+        cost_matrix = backend.where(
+            finite_mask,
+            cost_matrix,
+            backend.full(cost_matrix.shape, finite_max),
+        )
+
+        cost_max_arr = backend.max(cost_matrix)
+        backend.eval(cost_max_arr)
+        cost_max = float(backend.to_scalar(cost_max_arr))
+        epsilon = cost_max * eps if cost_max > 0 else eps
+        threshold = eps
+        max_iter = max(100, n * 10)
+
+        cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
+        cost_centered = cost_matrix - cost_min
+        log_K = -cost_centered / max(epsilon, eps)
+
+        min_log = log_scalar(floor, backend)
+        log_K = backend.maximum(log_K, backend.full(log_K.shape, min_log))
+        K = backend.exp(log_K)
+        K = backend.maximum(K, backend.full(K.shape, floor))
+
+        u = backend.ones((batch, n))
+        v = backend.ones((batch, n))
+
+        for _ in range(max_iter):
+            Kv = backend.matmul(K, backend.reshape(v, (batch, n, 1)))
+            Kv = backend.squeeze(Kv, axis=2)
+            Kv = backend.maximum(Kv, backend.full(Kv.shape, floor))
+            u_new = mu_batch / Kv
+
+            Ktu = backend.matmul(backend.transpose(K), backend.reshape(u_new, (batch, n, 1)))
+            Ktu = backend.squeeze(Ktu, axis=2)
+            Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
+            v_new = nu_batch / Ktu
+
+            if threshold > 0:
+                u_diff = backend.max(backend.abs(u_new - u), axis=1)
+                v_diff = backend.max(backend.abs(v_new - v), axis=1)
+                diff_max = backend.maximum(u_diff, v_diff)
+                diff_max_arr = backend.max(diff_max)
+                backend.eval(diff_max_arr)
+                if float(backend.to_scalar(diff_max_arr)) < threshold:
+                    u, v = u_new, v_new
+                    break
+
+            u, v = u_new, v_new
+
+        gamma = (
+            K
+            * backend.reshape(u, (batch, n, 1))
+            * backend.reshape(v, (batch, 1, n))
+        )
+        w1 = backend.sum(cost_matrix * gamma, axis=(1, 2))
+        backend.eval(w1)
+        return w1
 
     def _aggregate_to_nodes(
         self,

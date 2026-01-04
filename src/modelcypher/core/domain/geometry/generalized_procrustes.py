@@ -167,32 +167,17 @@ class GeneralizedProcrustes:
         backend = self._backend
         _M, N, K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
 
-        # For each sample point, compute Fréchet mean across M models
-        # Each sample is a set of M points in K-dimensional space
-        consensus_rows = []
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
-        for sample_idx in range(N):
-            # Get all M model representations for this sample: [M, K]
-            sample_points = aligned_X[:, sample_idx, :]
+        tol = sqrt_scalar(machine_epsilon(backend, aligned_X), backend)
+        frechet_max_iter = max(50, 10 * K)
 
-            # Derive tolerance from machine epsilon
-            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-            tol = sqrt_scalar(machine_epsilon(backend, sample_points), backend)
-
-            # Derive max_iterations from dimension
-            # Fréchet mean typically converges in O(d) iterations; use 10*K as safety
-            frechet_max_iter = max(50, 10 * K)
-
-            # Compute Fréchet mean of these M points (uses geodesic distances)
-            result = self._riemannian.frechet_mean(
-                sample_points,
-                max_iterations=frechet_max_iter,
-                tolerance=tol,
-            )
-            consensus_rows.append(result.mean)
-
-        # Stack into consensus matrix [N, K]
-        return backend.stack(consensus_rows, axis=0)
+        points_batch = backend.transpose(aligned_X, axes=(1, 0, 2))
+        return self._riemannian.frechet_mean_batch(
+            points_batch,
+            max_iterations=frechet_max_iter,
+            tolerance=tol,
+        )
 
     def align(
         self,
@@ -655,9 +640,11 @@ class RotationContinuityAnalyzer:
         target_dim = len(first_target_act)
         shared_dim = min(source_dim, target_dim)
 
-        # Compute per-layer alignments
+        # Compute per-layer alignments (batched SVD)
         layer_results: list[LayerRotationResult] = []
         prev_rotation: "Array | None" = None
+        layer_payloads: list[tuple[int, "Array", "Array"]] = []
+        m_matrices: list["Array"] = []
 
         for layer_idx in common_layers:
             source_layer = source_activations.get(layer_idx, {})
@@ -677,7 +664,7 @@ class RotationContinuityAnalyzer:
             if len(source_mat) < 3:
                 continue
 
-            # Compute Procrustes rotation using backend
+            # Compute Procrustes rotation inputs using backend
             source_arr = backend.array(source_mat)  # [n_anchors, shared_dim]
             target_arr = backend.array(target_mat)
 
@@ -688,18 +675,27 @@ class RotationContinuityAnalyzer:
             # M = source^T @ target
             M = backend.matmul(backend.transpose(source_arr), target_arr)  # [d, d]
 
-            # Geodesic SVD - iterates until convergence
-            U, _, Vt = geodesic_svd(backend, M)
+            layer_payloads.append((layer_idx, source_arr, target_arr))
+            m_matrices.append(M)
 
-            # R = U @ Vt
-            rotation = backend.matmul(U, Vt)
+        if not layer_payloads:
+            return None
+
+        m_batch = backend.stack(m_matrices, axis=0)
+        U_batch, _, Vt_batch = backend.svd(m_batch)
+        rotations_batch = backend.matmul(U_batch, Vt_batch)
+
+        for idx, (layer_idx, source_arr, target_arr) in enumerate(layer_payloads):
+            rotation = rotations_batch[idx]
 
             # Never allow reflections - preserves orientation
             det_val = backend.det(rotation)
             backend.eval(det_val)
             if float(backend.to_scalar(det_val)) < 0:
-                U_fixed = backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
-                rotation = backend.matmul(U_fixed, Vt)
+                U_i = U_batch[idx]
+                Vt_i = Vt_batch[idx]
+                U_fixed = backend.concatenate([U_i[:, :-1], -U_i[:, -1:]], axis=1)
+                rotation = backend.matmul(U_fixed, Vt_i)
 
             # Compute error using geodesic distances
             aligned_source = backend.matmul(source_arr, rotation)

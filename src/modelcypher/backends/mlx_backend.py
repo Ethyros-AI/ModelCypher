@@ -177,7 +177,7 @@ class MLXBackend(Backend):
             array = self.mx.array(array)
         return array.astype(self._map_dtype(dtype))
 
-    # --- Linear Algebra (requires eval for CPU stream ops) ---
+    # --- Linear Algebra (eval to force compute) ---
     def svd(
         self,
         array: Array,
@@ -192,8 +192,8 @@ class MLXBackend(Backend):
             # We always want compact SVD, so compute_uv=True
             compute_uv = True
 
-        # MLX SVD requires CPU stream - must eval before returning
-        result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
+        # MLX SVD supports batched inputs; use default stream to stay on device.
+        result = self.mx.linalg.svd(array, compute_uv=compute_uv)
         if compute_uv:
             u, s, vt = result
             self.safe.eval(u, s, vt)
@@ -578,7 +578,7 @@ class MLXBackend(Backend):
         det(A) = det(U) * sign(permutation)
         where PA = LU and det(L) = 1 (unit diagonal).
         """
-        p, L, U = self.mx.linalg.lu(array, stream=self.mx.cpu)
+        p, L, U = self.mx.linalg.lu(array)
         self.safe.eval(p, L, U)
 
         diag_U = self.mx.diag(U)
@@ -608,24 +608,23 @@ class MLXBackend(Backend):
         return self.det(array)
 
     def eigh(self, array: Array) -> tuple[Array, Array]:
-        # MLX eigh requires CPU stream - must eval
         # MLX eigh only supports float32, float64, complex64 - convert others to float32
         if array.dtype in (self.mx.bfloat16, self.mx.float16):
             array = array.astype(self.mx.float32)
             self.safe.eval(array)
-        eigenvalues, eigenvectors = self.mx.linalg.eigh(array, stream=self.mx.cpu)
+        eigenvalues, eigenvectors = self.mx.linalg.eigh(array)
         self.safe.eval(eigenvalues, eigenvectors)
         return eigenvalues, eigenvectors
 
     def solve(self, a: Array, b: Array) -> Array:
         # MLX solve requires CPU stream - must eval
-        arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
+        arr = self.mx.linalg.solve(a, b)
         self.safe.eval(arr)
         return arr
 
     def inv(self, array: Array) -> Array:
         # MLX inv requires CPU stream - must eval
-        arr = self.mx.linalg.inv(array, stream=self.mx.cpu)
+        arr = self.mx.linalg.inv(array)
         self.safe.eval(arr)
         return arr
 
@@ -635,7 +634,7 @@ class MLXBackend(Backend):
         original_dtype = array.dtype
         array_f32 = array.astype(self.mx.float32) if "bfloat" in str(original_dtype) else array
         # MLX pinv requires CPU stream - must eval
-        arr = self.mx.linalg.pinv(array_f32, stream=self.mx.cpu)
+        arr = self.mx.linalg.pinv(array_f32)
         self.safe.eval(arr)
         # Cast back to original dtype if needed
         if "bfloat" in str(original_dtype):
@@ -654,8 +653,7 @@ class MLXBackend(Backend):
         return self.mx.sum(self.mx.diag(array))
 
     def qr(self, array: Array) -> tuple[Array, Array]:
-        # MLX QR requires CPU stream - must eval
-        q, r = self.mx.linalg.qr(array, stream=self.mx.cpu)
+        q, r = self.mx.linalg.qr(array)
         self.safe.eval(q, r)
         return q, r
 
