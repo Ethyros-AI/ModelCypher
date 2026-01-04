@@ -36,6 +36,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.validation import validate_json_file
 from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 
 app = typer.Typer(no_args_is_help=True)
@@ -55,8 +56,15 @@ def geometry_metrics_gromov_wasserstein(
     ),
 ) -> None:
     """Compute Gromov-Wasserstein distance between two point clouds."""
-    source_points = json.loads(Path(source_file).read_text())
-    target_points = json.loads(Path(target_file).read_text())
+    context = _context(ctx)
+
+    # Validate inputs early for clear error messages
+    source_points = validate_json_file(
+        source_file, description="Source point cloud", context=context
+    )
+    target_points = validate_json_file(
+        target_file, description="Target point cloud", context=context
+    )
 
     service = GeometryMetricsService()
     result = service.compute_gromov_wasserstein(
@@ -64,7 +72,6 @@ def geometry_metrics_gromov_wasserstein(
         target_points=target_points,
     )
 
-    context = _context(ctx)
     payload = service.gromov_wasserstein_payload(result)
     payload["_schema"] = "mc.geometry.gromov_wasserstein.v1"
     write_output(payload, context.output_format, context.pretty)
@@ -78,7 +85,12 @@ def geometry_metrics_intrinsic_dimension(
     ),
 ) -> None:
     """Estimate intrinsic dimension of a point cloud using TwoNN."""
-    raw_points = json.loads(Path(points_file).read_text())
+    context = _context(ctx)
+
+    # Validate input early for clear error messages
+    raw_points = validate_json_file(
+        points_file, description="Point cloud", context=context
+    )
     if isinstance(raw_points, dict):
         points = [raw_points[key] for key in sorted(raw_points.keys())]
     else:
@@ -87,7 +99,6 @@ def geometry_metrics_intrinsic_dimension(
     service = GeometryMetricsService()
     result = service.estimate_intrinsic_dimension(points=points)
 
-    context = _context(ctx)
     payload = service.intrinsic_dimension_payload(result)
     payload["_schema"] = "mc.geometry.intrinsic_dimension.v1"
     write_output(payload, context.output_format, context.pretty)

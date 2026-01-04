@@ -37,6 +37,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -222,6 +223,10 @@ def thermo_measure(
 ) -> None:
     """Measure entropy across linguistic modifiers for a prompt."""
     context = _context(ctx)
+
+    # Validate model path early for clear error messages
+    validate_model_path(model, context=context)
+
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     service = ThermoService()

@@ -24,6 +24,7 @@ import typer
 from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -48,6 +49,10 @@ def infer_run(
 ) -> None:
     """Execute inference with optional adapter and security scanning."""
     context = _context(ctx)
+
+    # Validate model path early for clear error messages
+    validate_model_path(model, context=context)
+
     engine = get_inference_engine()
 
     try:
