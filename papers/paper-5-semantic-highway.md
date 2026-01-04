@@ -4,15 +4,15 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025
 
-> **Status**: Preliminary empirical observation across three model families; hypothesis for further testing.
+> **Status**: Draft observation; reproduction pending.
 
 ## Abstract
 
-Across three transformer language models (Qwen2.5-0.5B-Instruct, Llama-3.2-3B-Instruct, Mistral-7B-Instruct-v0.3), we observe a consistent pattern in intrinsic dimension (ID) profiles measured with TwoNN on a 439-probe semantic corpus: (1) a sharp early-layer drop in ID ("dimensionality cliff"), and (2) a mid-layer plateau in the range 1.3–1.5. The magnitude and layer index of the cliff vary by architecture (40–79% drop across the tested models). Using Qwen with broader layer coverage, we also observe that domains with higher initial ID compress more strongly (Spearman ρ = 0.832). We present these results as an observation, not a universal law, and propose a working hypothesis: early transformer layers rapidly project tokenized representations onto a low-dimensional conceptual manifold, after which representations evolve primarily within that manifold. We outline follow-up tests needed to determine how broadly this pattern holds across architectures, scales, languages, and training regimes.
+Pilot runs on three transformer language models (Qwen, Llama, Mistral) suggested a consistent pattern in intrinsic dimension (ID) profiles measured with TwoNN: (1) a sharp early-layer drop in ID ("dimensionality cliff"), and (2) a mid-layer low-ID plateau. The magnitude and layer index of the cliff varied by architecture. We present these results as an observation, not a universal law, and propose a working hypothesis: early transformer layers rapidly project tokenized representations onto a low-dimensional conceptual manifold, after which representations evolve primarily within that manifold. We outline follow-up tests needed to determine how broadly this pattern holds across architectures, scales, languages, and training regimes.
 
 ## 1. Introduction
 
-The Platonic Representation Hypothesis (Huh et al., 2024) suggests that independently trained neural networks converge to similar internal representations. Our prior work ([Paper 1](paper-1-invariant-semantic-structure.md)) validates strong cross-family similarity with CKA > 0.9 on several anchor sets. An open question remains: *what dynamics produce this convergence across architectures?*
+The Platonic Representation Hypothesis (Huh et al., 2024) suggests that independently trained neural networks converge to similar internal representations. Our prior work ([Paper 1](paper-1-invariant-semantic-structure.md)) reported high cross-family similarity on several anchor sets (reproduction pending). An open question remains: *what dynamics produce this convergence across architectures?*
 
 This paper reports a simple empirical observation about *intrinsic dimension over depth* in three transformer LLMs. When we measure ID using TwoNN across a fixed semantic probe corpus, all three models show an early-layer ID collapse followed by a low-ID plateau. We use "semantic highway" as a shorthand label for this plateau regime, but treat it as a **working hypothesis** rather than a universal property.
 

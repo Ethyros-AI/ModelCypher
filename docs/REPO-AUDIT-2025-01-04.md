@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 150
-- Issues found: 77
-- Issues fixed: 77
+- Audited: 155
+- Issues found: 82
+- Issues fixed: 82
 
 ## Audit Log
 
@@ -1337,6 +1337,71 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Numeric claims, thresholds, and validation assertions
   - Fix: Reframed as draft summaries with raw-metric commands only
+
+- `papers/paper-0-the-shape-of-knowledge.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (historical framing)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified quantitative claims and outdated CLI commands
+  - Fix: Marked claims as historical, removed numeric assertions, updated CLI commands
+
+- `papers/paper-1-invariant-semantic-structure.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (draft framing)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified results, thresholds, and outdated CLI commands
+  - Fix: Reframed as historical snapshot, removed thresholds, corrected CLI usage
+
+- `papers/paper-2-entropy-safety-signal.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (methodology focus)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Preliminary results and thresholds presented as validated; outdated CLI usage
+  - Fix: Removed preliminary data, converted to draft protocol, updated CLI commands
+
+- `papers/paper-3-cross-architecture-transfer.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (draft framing)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Preliminary results, thresholds, and incompatible gating
+  - Fix: Removed preliminary data, aligned CKA policy, removed thresholds
+
+- `papers/paper-4-modelcypher-toolkit.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (capability alignment)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified counts, outdated CLI examples, and incorrect merge descriptions
+  - Fix: Removed numeric claims, updated CLI examples, aligned merge description
 
 - `docs/research/cross-architecture-transplant-2025-12-28.md` (doc)
   - Duplicate code/math: N/A

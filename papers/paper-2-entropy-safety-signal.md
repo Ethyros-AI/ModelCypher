@@ -4,13 +4,13 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025
 
-> **Status**: Methodological framework with preliminary results. Full experimental validation in progress.
+> **Status**: Draft methodology; reproduction pending.
 
 ---
 
 ## Abstract
 
-We propose and evaluate a methodology for measuring entropy dynamics under prompt perturbation in language models. Our hypothesis: intensity modifiers (caps, urgency framing, roleplay) *reduce* output entropy at standard temperatures—locking models into narrower response modes rather than increasing randomness. Preliminary experiments on instruction-tuned models suggest entropy reduction of 15-25% at T ≤ 0.7, with effect reversal at T ≥ 1.0. We further propose base-adapter entropy divergence (ΔH) as a pre-emission safety signal, with initial measurements suggesting higher discriminative power (AUROC ~0.85) than raw entropy alone (AUROC ~0.51) for harmful/benign classification. This paper presents the methodology, falsification criteria, experimental protocol, and preliminary results. Full validation across the complete prompt suite is ongoing.
+We propose and evaluate a methodology for measuring entropy dynamics under prompt perturbation in language models. Our hypothesis: intensity modifiers (caps, urgency framing, roleplay) *reduce* output entropy at standard temperatures—locking models into narrower response modes rather than increasing randomness. Pilot runs suggested entropy reduction at lower temperatures and possible reversal at higher temperatures, but reproduction is pending. We further propose base-adapter entropy divergence (ΔH) as a pre-emission safety signal and outline an evaluation protocol using AUROC against harmful/benign prompts. This paper presents the methodology, falsification criteria, experimental protocol, and draft results. Full validation across the complete prompt suite is ongoing.
 
 ---
 
@@ -26,17 +26,17 @@ This is not a metaphor—it is literal statistical mechanics. Temperature contro
 
 ### 1.1 The Finding
 
-Intensity modifiers *reduce* entropy. This contradicts the intuition that "aggressive" prompts would scatter attention across more response options. They do not. Caps, urgency framing, and roleplay instructions narrow the output distribution by 15-25% at standard temperatures. The model becomes more confident, not less.
+Pilot runs suggested intensity modifiers can reduce entropy at lower temperatures. This contradicts the intuition that "aggressive" prompts would scatter attention across more response options. Reproduction is pending.
 
 ### 1.2 Contributions
 
-1. **Entropy Reduction**: Intensity modifiers reduce output entropy by 15-25% at T ≤ 0.7 (p < 0.001).
+1. **Entropy Reduction Protocol**: Defines how to measure modifier-induced entropy shifts.
 
-2. **Phase Transition**: At T ≈ 0.85, modifier effects reverse. Below this threshold, modifiers sharpen; above it, sampling noise dominates.
+2. **Temperature Dependence**: Specifies a sweep to test whether modifier effects reverse at higher temperatures.
 
-3. **ΔH Safety Signal**: Base-adapter entropy divergence achieves AUROC = 0.85 for harmful/benign classification. Raw entropy achieves only 0.51.
+3. **ΔH Safety Signal**: Proposes base-adapter entropy divergence and AUROC evaluation for harmful/benign prompts.
 
-4. **Pre-Emission Detection**: ΔH can detect harmful prompts *before* generating responses.
+4. **Pre-Emission Detection**: Describes how ΔH can be computed before generating responses.
 
 ---
 
@@ -144,56 +144,23 @@ For base-adapter comparison:
 
 ### 4.3 Hypotheses and Falsification Criteria
 
-**H1 (Entropy Reduction)**: Mean ΔH < 0 for all intensity modifiers at T ≤ 0.7.
+**H1 (Entropy Reduction)**: Mean ΔH should be negative for intensity modifiers at lower temperatures (threshold derived from baseline).
 
-**Falsification**: If any modifier shows mean ΔH > 0 with p < 0.05 at T = 0.7, H1 is rejected.
+**Falsification**: If mean ΔH is consistently positive under low-temperature conditions, H1 is rejected.
 
-**H2 (Temperature Reversal)**: At T ≥ 1.0, mean ΔH > 0 for intensity modifiers.
+**H2 (Temperature Reversal)**: At higher temperatures, mean ΔH should shift toward positive (threshold derived from baseline).
 
-**Falsification**: If entropy reduction persists at T = 1.0 for >50% of modifiers, H2 is rejected.
+**Falsification**: If ΔH remains consistently negative across the high-temperature regime, H2 is rejected.
 
-**H3 (ΔH Safety Signal)**: AUROC(ΔH) > AUROC(entropy) + 0.2 for harmful/benign classification.
+**H3 (ΔH Safety Signal)**: AUROC(ΔH) should exceed AUROC(entropy) by a baseline-derived margin.
 
-**Falsification**: If AUROC(ΔH) < 0.7, H3 is rejected.
+**Falsification**: If ΔH does not improve AUROC beyond baseline variance, H3 is rejected.
 
 ---
 
 ## 5. Preliminary Results
 
-> **Note**: The following results are from initial pilot experiments on a subset of the full protocol. Complete validation with the full prompt suite (40 prompts × 10 modifiers × 4 models × 13 temperatures) is ongoing.
-
-### 5.1 Modifier Effects (T = 0.7, Preliminary)
-
-| Modifier | ΔH (mean ± SE) | p-value | Direction |
-|----------|---------------|---------|-----------|
-| Caps | -0.18 ± 0.03 | < 0.001 | Reduction |
-| Urgency | -0.21 ± 0.04 | < 0.001 | Reduction |
-| Roleplay | -0.15 ± 0.03 | < 0.001 | Reduction |
-| Negation | -0.24 ± 0.05 | < 0.001 | Reduction |
-| Combined | -0.31 ± 0.04 | < 0.001 | Reduction |
-
-Preliminary evidence suggests intensity modifiers reduce entropy. Combined modifiers appear to have additive effects.
-
-### 5.2 Temperature Sweep (Preliminary)
-
-| Temperature | Caps ΔH | Combined ΔH | Regime |
-|-------------|---------|-------------|--------|
-| 0.3 | -0.22 | -0.38 | Reduction |
-| 0.7 | -0.18 | -0.31 | Reduction |
-| 1.0 | +0.05 | +0.08 | Increase |
-| 1.5 | +0.19 | +0.27 | Increase |
-
-Preliminary data suggests a phase transition around T ≈ 0.85. Below this threshold, modifiers appear to sharpen distributions; above it, sampling noise may overwhelm modifier structure. Full validation required.
-
-### 5.3 Safety Signal Comparison (Preliminary)
-
-| Signal | AUROC | 95% CI |
-|--------|-------|--------|
-| Raw Entropy | 0.51 | [0.44, 0.58] |
-| ΔH (Base-Adapter) | 0.85 | [0.79, 0.91] |
-| Combined | 0.87 | [0.82, 0.92] |
-
-Initial results suggest raw entropy alone has low discriminative power (AUROC ≈ random), while ΔH shows promise. These results require validation on the full harmful/benign prompt suite (see Appendix A).
+> Results are not included in this draft. Pilot runs exist but are not reproduced; rerun using the protocol and record raw data before drawing conclusions.
 
 ---
 
@@ -201,15 +168,15 @@ Initial results suggest raw entropy alone has low discriminative power (AUROC �
 
 ### 6.1 Entropy Reduction as "Locking"
 
-Intensity modifiers lock models into narrow response modes. Strong framing reduces uncertainty—the model becomes more confident, not more chaotic. This reframes prompt engineering: modifiers don't introduce noise; they constrain the output manifold. Jailbreaks work by narrowing the model into a harmful subspace, not by confusing it.
+If validated, intensity modifiers may lock models into narrow response modes. Strong framing could reduce uncertainty, reframing prompt engineering as constraint of the output manifold. This remains a hypothesis pending reproduction.
 
 ### 6.2 Temperature Phase Transition
 
-At T ≈ 0.85, modifier effects reverse. Below this threshold, prompt framing dominates—the model follows the modifier's constraints. Above it, sampling noise overwhelms modifier structure—the model explores more randomly regardless of framing. This has a direct safety implication: high-temperature sampling (T ≥ 1.0) neutralizes social engineering attempts.
+At higher temperatures, modifier effects may reverse, with sampling noise overwhelming prompt framing. If this holds, high-temperature sampling could reduce the impact of social-engineering modifiers. Reproduction is pending.
 
 ### 6.3 ΔH as a Pre-Emission Signal
 
-ΔH enables pre-emission harm detection. Instead of classifying output text after generation, we measure distributional divergence between base and tuned models at the prompt encoding stage. Large ΔH means the tuned model strongly disagrees with what the base model would generate—this is the signature of alignment. When ΔH drops on harmful prompts, the tuned model is "reverting to base"—a red flag. This enables proactive intervention via circuit breakers (Zou et al., 2024) before harmful content is generated.
+ΔH is proposed as a pre-emission harm signal. Instead of classifying output text after generation, we measure distributional divergence between base and tuned models at the prompt encoding stage. If validated, large ΔH would indicate stronger alignment-induced divergence, while reduced ΔH on harmful prompts could signal regression. This framing would support proactive intervention via circuit breakers (Zou et al., 2024) before harmful content is generated.
 
 ---
 
@@ -229,9 +196,9 @@ At T ≈ 0.85, modifier effects reverse. Below this threshold, prompt framing do
 
 ## 8. Conclusion
 
-We present a protocol for measuring entropy dynamics under prompt perturbation and specify falsifiable hypotheses. Preliminary experiments suggest: (1) intensity modifiers reduce entropy at standard temperatures (15-25% reduction at T ≤ 0.7), (2) this effect may reverse at T ≥ 1.0, and (3) base-adapter entropy divergence (ΔH) shows promise as a pre-emission safety signal (preliminary AUROC ~0.85 vs ~0.51 for raw entropy).
+We present a protocol for measuring entropy dynamics under prompt perturbation and specify falsifiable hypotheses. Pilot runs suggested modifier-driven entropy reduction at lower temperatures, potential reversal at higher temperatures, and promise for ΔH as a pre-emission safety signal; reproduction is pending.
 
-**Validation Status**: These preliminary results require full experimental validation. The complete protocol calls for 40 prompts × 10 modifiers × 4 models × 13 temperatures. The harmful/benign prompt suite (Appendix A) requires human curation. This paper establishes the methodology and falsification criteria; comprehensive results will follow.
+**Validation Status**: Full experimental validation is required. The complete protocol calls for 40 prompts × 10 modifiers × 4 models × 13 temperatures. The harmful/benign prompt suite (Appendix A) requires human curation. This paper establishes the methodology and falsification criteria; comprehensive results will follow.
 
 ---
 
@@ -270,12 +237,15 @@ Peeperkorn, M., et al. (2024). Temperature and Creativity in Language Model Deco
 ## Appendix B: CLI Commands
 
 ```bash
-# Measure entropy for a single prompt
-mc entropy measure --model <id> --prompt "<text>" --temperature 0.7
+# Measure entropy across modifiers for a prompt
+mc thermo measure "<text>" --model /path/to/model
 
-# Run modifier sweep
-mc entropy sweep --model <id> --prompts prompts.json --modifiers all
+# Measure baseline vs intensity delta for a prompt
+mc thermo detect "<text>" --model /path/to/model
 
-# Compute safety signal AUROC
-mc entropy safety-auroc --base-model <base> --tuned-model <tuned> --suite harmful_benign.json
+# Compare base/adapter entropy samples (requires precomputed samples)
+mc entropy dual-path '[{"base": [e, v], "adapter": [e, v]}]'
+
+# Baseline calibration for ΔH comparisons
+mc entropy calibrate --model /path/to/model --prompts prompts.json
 ```

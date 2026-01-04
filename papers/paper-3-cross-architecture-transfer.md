@@ -4,13 +4,13 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025
 
-> **Status**: Methodological framework with preliminary validation. Full benchmark suite in progress.
+> **Status**: Draft methodology; reproduction pending.
 
 ---
 
 ## Abstract
 
-We propose a methodology for transferring LoRA adapters across model architectures via geometric alignment. The approach: (1) measure layer-wise compatibility via CKA on semantic anchor sets, (2) rotate weight matrices using anchor-locked Procrustes to align representation spaces, (3) apply DARE sparsification to reduce interference. Preliminary experiments on Qwen→Llama and Mistral→Llama transfers suggest 65-78% skill retention versus ~0% for naive weight copying, with limited safety drift. The key insight: adapters may encode task-specific modifications in a subspace approximately shared across model families trained on similar data. We hypothesize that when CKA coverage exceeds 0.7, transfer works; below 0.5, it fails. This paper presents the methodology, diagnostic tools, and preliminary results. Full validation on standardized benchmark suites is ongoing.
+We propose a methodology for transferring LoRA adapters across model architectures via geometric alignment. The approach: (1) measure layer-wise compatibility via CKA on semantic anchor sets, (2) rotate weight matrices using anchor-locked Procrustes to align representation spaces, (3) optionally apply sparsification to reduce interference. Pilot results are not included in this draft; reproduction is pending. The key insight is that adapters may encode task-specific modifications in a subspace approximately shared across model families trained on similar data. This paper presents the methodology, diagnostic tools, and draft protocols. Full validation on standardized benchmark suites is ongoing.
 
 ---
 
@@ -39,9 +39,9 @@ We align in three spaces:
 
 ### 1.3 Contributions
 
-1. **Transfer Works**: 65-78% skill retention on Qwen→Llama and Mistral→Llama (vs 0% naive)
-2. **Predictive Diagnostics**: CKA coverage > 0.7 predicts success; < 0.5 predicts failure
-3. **Safety Preserved**: <8% safety drift across all tested transfers
+1. **Transfer Methodology**: Defines a geometric alignment protocol for cross-architecture adapters.
+2. **Diagnostic Metrics**: Uses CKA and coverage as raw measurements (no thresholds).
+3. **Safety Tracking**: Specifies how to measure safety drift as a raw metric.
 
 ---
 
@@ -74,9 +74,9 @@ Before attempting transfer, we compute layer-wise compatibility:
 **Intersection Map**: For each layer pair (l_S, l_T):
 1. Extract anchor embeddings A_S ∈ ℝ^{n×d_S}, A_T ∈ ℝ^{n×d_T}
 2. Compute CKA(G_S, G_T) where G = AA^T
-3. Flag layers with CKA < threshold as incompatible
+3. Record CKA for each layer pair; CKA < 1.0 indicates alignment failure and must be debugged before transfer
 
-**Coverage Score**: Fraction of layers with CKA > 0.7.
+**Coverage Score**: Fraction of layers with CKA == 1.0 (reported as a raw measurement).
 
 ### 3.2 Anchor-Locked Procrustes
 
@@ -98,7 +98,7 @@ After rotation, we apply DARE-style sparsification:
 2. Drop parameters below the p-th percentile
 3. Rescale remaining parameters by 1/(1-p)
 
-We sweep p ∈ {0.8, 0.9, 0.95, 0.99} and select based on validation performance.
+Select p based on validation performance and data-derived baselines (no fixed defaults).
 
 ### 3.4 Algorithm
 
@@ -108,12 +108,12 @@ Input: Source model S, target model T, adapter Δ_S
 Output: Adapted adapter Δ_T
 
 1. Compute intersection map I = CKA(layer pairs)
-2. If coverage(I) < 0.5: ABORT (incompatible)
+2. If CKA is not exact (CKA < 1.0): STOP and debug alignment (do not merge)
 3. For each compatible layer pair (l_S, l_T):
    a. Extract anchor matrices A_S, A_T
    b. Compute R = AnchorLockedProcrustes(A_S, A_T)
    c. Rotate: Δ_T[l] = R @ Δ_S[l] @ R^T  (for square matrices)
-4. Apply DARE sparsification with p=0.9
+4. Apply DARE sparsification with p derived from validation baselines
 5. Return Δ_T
 ```
 
@@ -138,7 +138,7 @@ $$\text{Retention}(S, T) = \frac{\text{Score}(T + Δ_T, \text{task})}{\text{Scor
 
 ### 4.2 Baselines
 
-- **Naive**: Direct weight copy (expected: 0% retention)
+- **Naive**: Direct weight copy (baseline)
 - **Weight Average**: Simple averaging of source and target weights
 - **TIES**: TIES-Merging without rotation
 - **Ours**: Anchor-locked Procrustes + DARE
@@ -151,49 +151,19 @@ $$\text{Retention}(S, T) = \frac{\text{Score}(T + Δ_T, \text{task})}{\text{Scor
 
 ### 4.4 Hypotheses and Falsification
 
-**H1 (Transfer Possible)**: Our method achieves >50% skill retention for at least one transfer pair.
+**H1 (Transfer Possible)**: Our method should exceed baseline retention for at least one transfer pair (threshold derived from benchmark variance).
 
-**Falsification**: If all pairs show <30% retention, cross-architecture transfer is not viable with our approach.
+**Falsification**: If all pairs fail to exceed baseline retention beyond variance, cross-architecture transfer is not supported by this method.
 
-**H2 (Safety Preserved)**: Safety drift <10% across all pairs.
+**H2 (Safety Preserved)**: Safety drift should remain within baseline variance across all pairs.
 
-**Falsification**: If any pair shows >20% safety drift, the method is unsafe.
+**Falsification**: If safety drift exceeds baseline variance for any pair, the method is unsafe.
 
 ---
 
 ## 5. Preliminary Results
 
-> **Note**: The following results are from initial experiments. Full validation on standardized benchmark suites (HumanEval, safety evaluation with curated prompts) is in progress.
-
-### 5.1 Compatibility Assessment
-
-| Pair | Coverage Score | Compatible? |
-|------|---------------|-------------|
-| Qwen-7B → Llama-8B | 0.76 | ✓ Yes |
-| Qwen-3B → Llama-3B | 0.72 | ✓ Yes |
-| Mistral-7B → Llama-8B | 0.71 | ✓ Yes |
-
-All tested pairs exceed the 0.7 coverage threshold, suggesting models trained on similar web data share subspace structure.
-
-### 5.2 Skill Retention (Preliminary)
-
-| Method | Qwen→Llama (Code) | Mistral→Llama (Creative) |
-|--------|-------------------|-------------------------|
-| Naive | ~0% | ~0% |
-| Weight Avg | ~12% | ~8% |
-| TIES | ~31% | ~24% |
-| **Ours** | **~78%** | **~65%** |
-
-Preliminary data suggests anchor-locked Procrustes + DARE achieves substantially higher retention than baselines. Validation on full HumanEval (50 problems) and creative writing rubrics is required.
-
-### 5.3 Safety Drift (Preliminary)
-
-| Transfer | Baseline Refusal | Post-Transfer Refusal | Drift |
-|----------|-----------------|----------------------|-------|
-| Qwen→Llama | ~94% | ~89% | ~-5% |
-| Mistral→Llama | ~91% | ~84% | ~-7% |
-
-Initial measurements suggest safety drift is limited (<10%). Full validation with curated harmful/benign prompt suite (see TEST_DATA_REQUIREMENTS.md) is required.
+> Results are not included in this draft. Pilot runs exist but are not reproduced; rerun using the protocol and record raw data before drawing conclusions.
 
 ---
 
@@ -208,9 +178,9 @@ Initial measurements suggest safety drift is limited (<10%). Full validation wit
 
 ## 7. Conclusion
 
-We present a methodology for cross-architecture adapter transfer via geometric alignment: measure compatibility via CKA, rotate via anchor-locked Procrustes, sparsify via DARE. Preliminary experiments suggest 65-78% skill retention (vs ~0% for naive transfer) with limited safety drift (<10%). The underlying hypothesis: adapters encode task-specific modifications in subspaces approximately shared across model families trained on similar data.
+We present a methodology for cross-architecture adapter transfer via geometric alignment: measure compatibility via CKA, rotate via anchor-locked Procrustes, and optionally sparsify via DARE. The underlying hypothesis is that adapters encode task-specific modifications in subspaces approximately shared across model families trained on similar data.
 
-**Validation Status**: These preliminary results require validation on standardized benchmarks. Full HumanEval evaluation (50 problems), creative writing rubrics, and curated safety prompt suites are in progress. The methodology and diagnostic tools are released; comprehensive results will follow.
+**Validation Status**: These results require validation on standardized benchmarks. Full HumanEval evaluation, creative writing rubrics, and curated safety prompt suites are in progress. The methodology and diagnostic tools are released; comprehensive results will follow.
 
 ---
 

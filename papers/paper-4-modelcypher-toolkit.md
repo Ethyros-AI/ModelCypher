@@ -8,7 +8,7 @@
 
 ## Abstract
 
-**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements 274 domain modules for measuring representation geometry, entropy dynamics, safety constraints, and cross-architecture transfer. Three core capabilities: (1) CKA-based cross-model comparison reveals high alignment (>0.9) across model families for both semantic primes and random word sets, demonstrating universal representation convergence, (2) entropy divergence (ΔH) methodology for detecting safety-relevant prompts before generation, (3) anchor-locked Procrustes enables adapter transfer across architectures. The framework integrates with CLI and Model Context Protocol (MCP) for agentic workflows. Validated with 3,060 passing tests. Implements methodology from 46 foundational papers. AGPLv3 license.
+**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements modules for measuring representation geometry, entropy dynamics, safety constraints, and merge pipelines. Three core capabilities: (1) CKA-based cross-model comparison via Gram matrices, (2) entropy divergence (ΔH) methodology for safety monitoring, (3) null-space transplant for model merging. The framework integrates with the CLI and Model Context Protocol (MCP) for agentic workflows. Test coverage and module counts evolve with the codebase; see the repository for current totals. AGPLv3 license.
 
 ---
 
@@ -18,21 +18,21 @@ Knowledge has shape. **ModelCypher** measures it.
 
 The toolkit implements four core capabilities:
 
-1. **Geometric Diagnostics**: CKA measures cross-model alignment (>0.9 for both semantic primes and random word sets across model families). Topological fingerprints capture manifold structure. Intrinsic dimension estimates representation complexity.
+1. **Geometric Diagnostics**: CKA measures cross-model alignment. Topological fingerprints capture manifold structure. Intrinsic dimension estimates representation complexity.
 
 2. **Entropy Monitoring**: Token-level entropy tracks uncertainty. ΔH (base-adapter divergence) provides a methodology for detecting safety-relevant behavior. Circuit breakers intervene before generation.
 
 3. **Safety Analysis**: Refusal is a direction (Arditi et al., 2024). We detect it, measure it, and verify it survives adapter merging.
 
-4. **Model Operations**: Cross-architecture adapter transfer via Procrustes alignment. TIES-Merging and DARE for multi-model composition.
+4. **Model Operations**: Null-space transplant for model merges. Permutation alignment for same-architecture pairs. DARE sparsity analysis as a diagnostic.
 
 ### 1.1 Design Principles
 
 **Measurement Before Metaphor**: Every geometric claim is a computable metric with falsification criteria.
 
-**Diagnostics Before Intervention**: Compatibility assessment precedes merge attempts. Bad merges are prevented, not debugged.
+**Diagnostics Before Intervention**: Compatibility assessment precedes merge attempts. Alignment failures are debugged before merging.
 
-**Reproducibility**: Deterministic seeds. Version-pinned dependencies. 3,060 passing tests.
+**Reproducibility**: Deterministic seeds. Version-pinned dependencies. Test suite for regressions.
 
 ---
 
@@ -42,28 +42,29 @@ The toolkit implements four core capabilities:
 
 ```
 modelcypher/core/domain/
-├── geometry/     (60+ modules)  # CKA, fingerprints, alignment
-├── entropy/      (20+ modules)  # Tracking, windows, probes
-├── safety/       (30+ modules)  # Guards, calibration, sidecar
-├── agents/       (25+ modules)  # Traces, atlases, validators
-├── training/     (25+ modules)  # Checkpoints, metrics
-├── thermo/       (15+ modules)  # Linguistic thermodynamics
-├── adapters/     (20+ modules)  # LoRA, DARE, DoRA
-└── merging/      (15+ modules)  # Transport, TIES, DARE
+├── geometry/     # CKA, fingerprints, alignment
+├── entropy/      # Tracking, windows, probes
+├── safety/       # Guards, calibration, sidecar
+├── agents/       # Traces, atlases, validators
+├── training/     # Checkpoints, metrics
+├── thermo/       # Linguistic thermodynamics
+├── adapters/     # LoRA, DARE, DoRA
+└── merging/      # Merge primitives
 ```
 
 ### 2.2 Interface Layers
 
-**CLI** (`mc`): 32+ commands across 6 groups
+**CLI** (`mc`): Command groups for geometry, entropy, safety, merge, and model inspection
 
 | Command Group | Examples |
 |--------------|----------|
-| `mc geometry` | `primes probe`, `fingerprint`, `cka compare` |
-| `mc entropy` | `measure`, `sweep`, `window` |
-| `mc safety` | `adapter-probe`, `guard-check` |
-| `mc model` | `merge`, `analyze-alignment`, `stitch` |
+| `mc geometry` | `primes probe-model`, `metrics topological-fingerprint`, `atlas dimensionality-study` |
+| `mc entropy` | `analyze`, `dual-path`, `verify-baseline` |
+| `mc geometry safety` | `probe-redteam`, `probe-behavioral` |
+| `mc merge` | `merge -s ... -t ... -o ...` |
+| `mc model` | `probe`, `analyze-alignment` |
 
-**MCP Server**: 36+ tools for integration with agentic systems (e.g., Claude Desktop, codeium).
+**MCP Server**: Tools for integration with agentic systems (e.g., Claude Desktop, codeium).
 
 ---
 
@@ -113,20 +114,18 @@ Identifies the linear direction mediating refusal behavior (Arditi et al., 2024)
 
 $$d_{\text{refusal}} = \mathbb{E}[h_{\text{refuse}}] - \mathbb{E}[h_{\text{comply}}]$$
 
-**Implementation**: `src/modelcypher/core/domain/safety/refusal_direction_detector.py`
+**Implementation**: `src/modelcypher/core/domain/geometry/refusal_direction_detector.py`
 
 ### 3.4 Model Merging
 
-**TIES-Merging** (Yadav et al., 2023):
-1. **Trim**: Zero parameters below threshold
-2. **Elect Sign**: Resolve sign conflicts by majority vote
-3. **Merge**: Average surviving parameters
+**Null-Space Transplant**:
+1. Align representations via probe-derived transforms
+2. Project source deltas into the target null space
+3. Add projected deltas to preserve target behavior
 
-**DARE** (Yu et al., 2024):
-1. Drop random fraction p of delta parameters
-2. Rescale remaining by 1/(1-p)
+**Implementation**: `src/modelcypher/core/use_cases/merge/`
 
-**Implementation**: `src/modelcypher/core/domain/merging/`
+TIES/DARE are tracked as research references and are not part of the merge pipeline.
 
 ---
 
@@ -134,11 +133,7 @@ $$d_{\text{refusal}} = \mathbb{E}[h_{\text{refuse}}] - \mathbb{E}[h_{\text{compl
 
 ### 4.1 Test Coverage
 
-| Metric | Value |
-|--------|-------|
-| Domain modules | 274 |
-| Unit tests | 3,060 |
-| Pass rate | 100% |
+Run `poetry run pytest` to verify current test coverage and pass status.
 
 ### 4.2 Module Import Guard
 
@@ -161,12 +156,10 @@ def test_module_imports(module_path):
 
 **Protocol**:
 ```bash
-mc geometry primes probe --model qwen2.5-3b --output qwen_primes.json
-mc geometry primes probe --model llama-3.2-3b --output llama_primes.json
-mc geometry primes compare --file-a qwen_primes.json --file-b llama_primes.json
+mc geometry primes probe-model /path/to/qwen --output-file qwen_primes.json
+mc geometry primes probe-model /path/to/llama --output-file llama_primes.json
+mc geometry primes compare qwen_primes.json llama_primes.json
 ```
-
-**Expected Output**: CKA score and statistical significance vs null distribution.
 
 ### 5.2 Entropy-Based Safety Signal
 
@@ -174,20 +167,19 @@ mc geometry primes compare --file-a qwen_primes.json --file-b llama_primes.json
 
 **Protocol**:
 ```bash
-mc entropy measure --model base-model --prompt "<harmful>" --output base.json
-mc entropy measure --model tuned-model --prompt "<harmful>" --output tuned.json
-# Compute ΔH = H_base - H_tuned
+mc thermo detect "<harmful>" --model /path/to/tuned
+# Compare base vs tuned samples with mc entropy dual-path (requires precomputed samples)
 ```
 
-### 5.3 Cross-Architecture Adapter Transfer
+### 5.3 Model Merge Pipeline
 
-**Objective**: Transfer LoRA from Qwen to Llama while measuring skill retention.
+**Objective**: Merge two models with null-space transplant and inspect geometry metrics.
 
 **Protocol**:
 ```bash
-mc model analyze-alignment --source qwen2.5-7b --target llama-3.2-8b
-mc model stitch --source qwen2.5-7b --adapter coding.safetensors --target llama-3.2-8b
-mc eval suite --model merged --suite humaneval-subset.json
+mc merge -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
+mc merge -s /path/to/source -t /path/to/target -o /path/to/output
+mc model probe /path/to/output --output json
 ```
 
 ---
@@ -208,13 +200,13 @@ mc eval suite --model merged --suite humaneval-subset.json
 1. **MLX-Centric**: Optimized for Apple Silicon; CUDA support is secondary.
 2. **English-Centric**: Anchor sets are primarily English; multilingual probe support is in development.
 3. **Model Coverage**: Tested on Qwen, Llama, Mistral; other families may require adaptation.
-4. **Approximate Methods**: Geometric alignment is not exact; compatibility assessment is heuristic.
+4. **Alignment Requirements**: Geometric alignment must be exact (CKA=1.0); compatibility metrics are raw measurements and require debugging when not aligned.
 
 ---
 
 ## 8. Conclusion
 
-ModelCypher makes the Geometric Knowledge Thesis operational. The results from Papers I–III are not theoretical claims—they are CLI commands. `mc geometry primes compare` produces CKA values, revealing that cross-model alignment exceeds 0.9 for both semantic primes and random word sets. The toolkit provides methodology for entropy-based safety analysis and cross-architecture adapter transfer. 274 modules. 3,060 tests. 46 papers implemented. Knowledge has shape, and now we can measure it.
+ModelCypher makes the Geometric Knowledge Thesis operational. The results from Papers I–III are not theoretical claims—they are CLI commands that produce raw measurements. The toolkit provides methodology for entropy-based safety analysis and model merging. Module and test counts evolve with the codebase; consult the repository for current totals. Knowledge has shape, and now we can measure it.
 
 ---
 

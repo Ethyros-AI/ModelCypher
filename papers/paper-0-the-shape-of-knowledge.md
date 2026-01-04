@@ -5,10 +5,11 @@
 **Date**: December 2025
 
 > **Status**: Framework paper establishing the Geometric Knowledge Thesis and Dimensional Hierarchy.
+> **Note**: Draft; quantitative results referenced here are historical snapshots and require reproduction with current code.
 
 ## Abstract
 
-Knowledge in large language models has shape. Concepts occupy bounded regions in high-dimensional representation space. Inference follows trajectories through this space. Mathematical formulas define constraint surfaces. Safety can be enforced by constraining these trajectories. These are not metaphors---they are measurable geometric properties that we demonstrate across model families using [Centered Kernel Alignment](../docs/research/math/centered_kernel_alignment.md), [topological fingerprinting](../docs/research/math/persistent_homology.md), [Procrustes alignment](../docs/research/math/procrustes_analysis.md), and entropy dynamics.
+Knowledge in large language models has shape. Concepts occupy bounded regions in high-dimensional representation space. Inference follows trajectories through this space. Mathematical formulas define constraint surfaces. Safety can be enforced by constraining these trajectories. These are not metaphors---they are measurable geometric properties that we study using [Centered Kernel Alignment](../docs/research/math/centered_kernel_alignment.md), [topological fingerprinting](../docs/research/math/persistent_homology.md), [Procrustes alignment](../docs/research/math/procrustes_analysis.md), and entropy dynamics. Empirical validation is reported separately and should be reproduced with current code.
 
 This paper synthesizes foundational work into the **Geometric Knowledge Thesis** and introduces a new claim: **dimensions are nested compressions**. Binary encoding (1D) compresses to vocabulary (2D), which compresses to physical reality (3D), which compresses to the conceptual manifold (4D+). Alignment at dimension N requires prior alignment at dimensions 1 through N-1. This hierarchical structure explains why cross-family model merges fail despite high semantic [CKA](../docs/research/math/centered_kernel_alignment.md): convergent 4D+ geometry cannot compensate for divergent 1D/2D projections.
 
@@ -59,15 +60,15 @@ Language models trained on text are not merely predicting tokens---they are **re
 
 ### 1.2 Contributions
 
-1. **The Geometric Knowledge Thesis**: Knowledge has invariant *relational* geometry across model families. We operationalize this with normalized [Gram matrices](paper-1-invariant-semantic-structure.md#31-representation-extraction) and CKA, showing cross-family alignment consistently exceeds 0.9 across diverse anchor sets ([Paper 1](paper-1-invariant-semantic-structure.md)).
+1. **The Geometric Knowledge Thesis**: Knowledge has invariant *relational* geometry across model families. We operationalize this with normalized [Gram matrices](paper-1-invariant-semantic-structure.md#31-representation-extraction) and CKA; prior runs reported high alignment across anchor sets (reproduction pending).
 
 2. **The Dimensional Hierarchy**: Dimensions are nested compressions. Alignment at dimension N requires alignment at dimensions 1 through N-1. This explains cross-family merge failures despite high semantic CKA.
 
 3. **Operational Geometry**: We define computable constructs---anchor sets, Gram matrices, topological fingerprints---that make "knowledge as geometry" measurable.
 
-4. **The Operational Semantics Hypothesis**: Mathematical formulas are encoded as constraint surfaces. Pythagorean triples show 88.5% cross-model position similarity; classification accuracy reaches 100% on Llama 3.2 3B.
+4. **The Operational Semantics Hypothesis**: Mathematical formulas are encoded as constraint surfaces. Prototype measurements reported strong cross-model similarity and separability (reproduction pending).
 
-5. **The ModelCypher Toolkit**: 274 modules, 3,000+ tests, implementing geometry from 46 foundational papers ([Paper 4](paper-4-modelcypher-toolkit.md)).
+5. **The ModelCypher Toolkit**: Toolkit overview and implementation notes ([Paper 4](paper-4-modelcypher-toolkit.md)).
 
 ## 2. The Geometric Knowledge Thesis
 
@@ -87,13 +88,13 @@ Token generation is trajectory through representation space. Each forward pass m
 
 Across independently trained model families, many concept sets induce stable relational structure when compared via centered, normalized Gram matrices. This invariance is broad rather than limited to theoretically-motivated sets.
 
-**Evidence**: [Paper 1](paper-1-invariant-semantic-structure.md) finds cross-family CKA > 0.9 across Qwen, Llama, and Mistral. [Semantic primes](../docs/GLOSSARY.md#semantic-prime) reach CKA = 0.92, while frequency-matched random word sets reach CKA = 0.94---indicating invariance is universal, not prime-specific.
+**Evidence**: [Paper 1](paper-1-invariant-semantic-structure.md) reports high cross-family CKA across multiple anchor sets; reproduction pending (see [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md)).
 
 ### Claim 4: Formulas Are Constraint Surfaces
 
 Mathematical relationships are encoded as geometric constraints in latent space. The Pythagorean theorem $a^2 + b^2 = c^2$ is not stored as tokens---it is the shape of how number concepts relate. We call this the **Operational Semantics Hypothesis**: mathematical formulas define constraint surfaces that valid instances must satisfy.
 
-**Evidence**: Cross-model invariance testing on Pythagorean triples achieves 88.5% position similarity after Procrustes alignment across Llama, Mistral, and Qwen families. The triangle formed by (9, 16, 25) shows 99.4% shape similarity across architectures. Llama 3.2 3B achieves 100% classification accuracy separating valid Pythagorean triples from invalid ones using only embedding geometry.
+**Evidence**: Prototype alignment tests reported strong cross-model similarity for Pythagorean triples and separability between valid and invalid sets (reproduction pending).
 
 ### Claim 5: Dimensions Are Nested Compressions
 
@@ -108,19 +109,19 @@ This is the new theoretical contribution. Dimensions form a hierarchy where each
 
 **The Alignment Constraint**: To achieve alignment at dimension N, one must first achieve alignment at dimensions 1 through N-1.
 
-This explains a puzzling empirical observation: cross-family models achieve CKA > 0.94 on semantic embeddings (Paper 1), yet cross-family merges often fail catastrophically. The resolution: **high-dimensional semantic geometry converges, but the 1D/2D projections diverge**.
+This explains a puzzling empirical observation: cross-family models can show high semantic CKA (Paper 1, reproduction pending), yet cross-family merges often fail. The resolution: **high-dimensional semantic geometry converges, but the 1D/2D projections diverge**.
 
 ```
 Model A (Llama family):
   Binary → TokenizerA → VocabA → Embedding → ... → Semantic Manifold
                 ↓
-              62% overlap
+              partial overlap
                 ↓
 Model B (Qwen family):
   Binary → TokenizerB → VocabB → Embedding → ... → Semantic Manifold
 ```
 
-When vocabularies share only 62% of tokens, 38% of the 2D foundation is misaligned. The semantic manifold (4D+) may be geometrically similar, but it is anchored to incompatible 2D structures. Merging weights without aligning the dimensional hierarchy produces incoherent outputs.
+When vocabularies share only a subset of tokens, a large fraction of the 2D foundation is misaligned. The semantic manifold (4D+) may be geometrically similar, but it is anchored to incompatible 2D structures. Merging weights without aligning the dimensional hierarchy produces incoherent outputs.
 
 #### The Holographic Analogy
 
@@ -167,7 +168,7 @@ Recent theoretical work by Lobashev (2025) provides information-geometric founda
 
 ### 3.3 Linguistic Thermodynamics
 
-Semantic entropy (Farquhar et al., 2024) measures distributional uncertainty at the meaning level. High entropy = model is uncertain. Low entropy = model is confident. [Paper 2](paper-2-entropy-safety-signal.md) shows this signal predicts safety-relevant behavior.
+Semantic entropy (Farquhar et al., 2024) measures distributional uncertainty at the meaning level. High entropy = model is uncertain. Low entropy = model is confident. [Paper 2](paper-2-entropy-safety-signal.md) proposes and evaluates this signal (reproduction pending).
 
 ### 3.4 Representation Engineering
 
@@ -175,7 +176,7 @@ Zou et al. (2023) block specific directions to remove capabilities. Arditi et al
 
 ### 3.5 Information Bottleneck
 
-Tishby & Zaslavsky (2015) proposed that deep networks compress inputs while retaining task-relevant information. [Paper 5](paper-5-semantic-highway.md) observes this empirically: a sharp early-layer "dimensionality cliff" followed by a low-[intrinsic dimension](../docs/GLOSSARY.md#intrinsic-dimension) plateau. The cliff corresponds to projection from 2D (tokenized input) to the conceptual manifold (4D+), discarding architecture-specific degrees of freedom while retaining semantic structure.
+Tishby & Zaslavsky (2015) proposed that deep networks compress inputs while retaining task-relevant information. [Paper 5](paper-5-semantic-highway.md) explores whether an early-layer "dimensionality cliff" appears followed by a low-[intrinsic dimension](../docs/GLOSSARY.md#intrinsic-dimension) plateau (reproduction pending). The cliff corresponds to projection from 2D (tokenized input) to the conceptual manifold (4D+), discarding architecture-specific degrees of freedom while retaining semantic structure.
 
 ## 4. Safety Through Geometry
 
@@ -219,7 +220,7 @@ The dimensional hierarchy makes specific, falsifiable predictions:
 
 **Prediction**: CKA at the semantic level (4D+) cannot exceed CKA at the vocabulary level (2D) when comparing cross-family models.
 
-**Test**: Compute vocabulary overlap and embedding CKA for cross-family pairs. If vocab_overlap = 0.62 but semantic_cka = 0.94, the prediction requires that vocab_cka (measured on shared tokens) must be >= 0.94.
+**Test**: Compute vocabulary overlap and embedding CKA for cross-family pairs. If vocab overlap is low but semantic CKA is high, the prediction requires vocab-level CKA (measured on shared tokens) to be at least as high.
 
 ### 5.2 Merge Success Correlation
 
@@ -268,7 +269,7 @@ Delétang et al. (2024) prove the equivalence of prediction and compression. We 
 Li et al. (2025) demonstrate that "vocabulary mismatch greatly hinders deep knowledge transfer between different models." TokAlign addresses this at the 2D level; our framework explains why this is necessary (dimensional prerequisite) and predicts when it is sufficient.
 
 ### Cross-Architecture Transfer
-Our [Paper 3](paper-3-cross-architecture-transfer.md) demonstrates 65-78% skill retention on cross-family transfer. The dimensional hierarchy predicts this partial success: high CKA at 4D+ enables meaningful transfer, but 2D misalignment limits achievable quality.
+Our [Paper 3](paper-3-cross-architecture-transfer.md) reports partial retention in cross-family transfer (reproduction pending). The dimensional hierarchy predicts this partial success: high CKA at 4D+ enables meaningful transfer, but 2D misalignment limits achievable quality.
 
 ### Holographic Principle
 Bekenstein (2003) and 't Hooft (1993) established that information in volumes can be encoded on boundaries. We apply this principle analogically: higher-dimensional semantic structure is encoded in lower-dimensional projections, and alignment must respect this encoding hierarchy.
@@ -284,7 +285,7 @@ The dimensional hierarchy provides a new lens for understanding model behavior:
 3. **Why transfer works partially**: High-dimensional structure transfers; low-dimensional encodings do not
 4. **Where to intervene**: Safety must address all levels of the hierarchy
 
-This is not speculation---it is the theoretical foundation for the empirical results in [Papers 1](paper-1-invariant-semantic-structure.md)-[5](paper-5-semantic-highway.md) and the 3,000+ tests in ModelCypher.
+This is not speculation---it is the theoretical foundation for the empirical results in [Papers 1](paper-1-invariant-semantic-structure.md)-[5](paper-5-semantic-highway.md) and the ModelCypher test suite.
 
 ## References
 
@@ -354,7 +355,7 @@ $$ \text{Alignable}(X^{(D)}, Y^{(D)}) \iff \forall d < D, \exists \phi_d : X^{(d
 3.  **3D+ (Manifold)**: Phase-lock (CKA $\approx$ 1.0) is only meaningful if the coordinate systems defined by $d=1,2$ are isometric.
 
 ### A.5 The Phase-Lock Paradox
-**Observation**: Models $A$ and $B$ show Semantic CKA $\approx$ 0.94 (Paper 1) but merge failure.
+**Observation**: Models $A$ and $B$ show high semantic CKA (Paper 1, reproduction pending) but merge failure.
 
 **Resolution**: The models converged to the same 4D manifold ($\mathcal{M}$), but projected it onto non-isometric 2D grids ($\mathcal{V}_A, \mathcal{V}_B$). CKA (see [Centered Kernel Alignment](../docs/research/math/centered_kernel_alignment.md)) measures the similarity of $\mathcal{M}_A$ and $\mathcal{M}_B$ *post-alignment*, hiding the fact that the transformation $\phi_{2D}: \mathcal{V}_A \to \mathcal{V}_B$ required to merge weights does not exist or was not found.
 
@@ -364,18 +365,18 @@ See [CLI-REFERENCE.md](../docs/CLI-REFERENCE.md) for complete command documentat
 
 ```bash
 # Measure vocabulary overlap between models
-mc model vocab-overlap /path/to/model_a /path/to/model_b --output json
+mc model vocab-compare --model-a /path/to/model_a --model-b /path/to/model_b --output json
 
-# Compute CKA on shared vocabulary tokens only
-mc geometry cka compute /path/to/model_a /path/to/model_b \
-  --anchor-set shared-vocab --output json
+# Probe and compare semantic primes (CKA on shared anchor set)
+mc geometry primes probe --model /path/to/model_a --output model_a_primes.json
+mc geometry primes probe --model /path/to/model_b --output model_b_primes.json
+mc geometry primes compare model_a_primes.json model_b_primes.json
 
 # Measure dimensionality profile across layers
-mc geometry atlas dimensionality-study /path/to/model --layers all --output json
+mc geometry atlas dimensionality-study /path/to/model --summary-only --output json
 
 # Attempt cross-family merge with diagnostic output
-mc merge geometric /path/to/source /path/to/target \
-  --analyze-vocab-alignment --output /path/to/output
+mc merge -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
 
 # Validate merge quality
 mc model eval /path/to/merged_model --benchmark perplexity --output json

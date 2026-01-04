@@ -3,13 +3,13 @@
 **Author**: Jason Kempf
 **Affiliation**: EthyrosAI
 **Date**: December 2025
-**Status**: Experimentally validated; ongoing refinement
+**Status**: Draft; reproduction pending
 
 ---
 
 ## Abstract
 
-Large language models trained independently on different data exhibit invariant geometric structure in their representation spaces. Using Centered Kernel Alignment (CKA) on normalized Gram matrices, we demonstrate cross-family CKA > 0.9 between Qwen, Llama, and Mistral models—regardless of architecture or scale. This invariance extends broadly: semantic primes from the Natural Semantic Metalanguage tradition show CKA = 0.92, while frequency-matched random word sets show CKA = 0.94. The discovery that *all* word sets exhibit high cross-model alignment strengthens rather than weakens the Geometric Knowledge Thesis: representation geometry is convergent across independently trained models. Ongoing work investigates whether semantic primes differ from other concepts in probability cloud density, connectivity, or cross-linguistic stability.
+Large language models trained independently on different data may exhibit invariant geometric structure in their representation spaces. Using Centered Kernel Alignment (CKA) on normalized Gram matrices, prior runs reported high cross-family alignment between Qwen, Llama, and Mistral models (reproduction pending). Those runs also suggested similar CKA for semantic primes and random word sets. Ongoing work investigates whether semantic primes differ from other concepts in probability cloud density, connectivity, or cross-linguistic stability.
 
 ---
 
@@ -19,11 +19,11 @@ Can we compare representations across neural networks without a shared coordinat
 
 ### 1.1 Contributions
 
-1. **Universal Invariance**: Cross-model CKA exceeds 0.9 for both semantic primes and random word sets, demonstrating that representation geometry is convergent.
+1. **Universal Invariance**: Prior runs reported high cross-model CKA for both semantic primes and random word sets (reproduction pending).
 
-2. **Gram Matrix Methodology**: Dimension-independent comparison via normalized Gram matrices enables alignment between models of any hidden dimension (896 to 4096 tested).
+2. **Gram Matrix Methodology**: Dimension-independent comparison via normalized Gram matrices enables alignment between models of different hidden dimensions.
 
-3. **Scale Limits Characterized**: 80B + 8B model pairs fit comfortably in 128GB RAM (36% utilization), establishing practical limits for geometric analysis.
+3. **Scale Limits Tracked**: Historical run logs track memory utilization for large model pairs (reproduction pending).
 
 ### 1.2 The Core Finding
 
@@ -54,7 +54,7 @@ where $\tilde{K} = HG_AH$ and $\tilde{L} = HG_BH$ are centered kernels, and $H =
 
 CKA = 1 means identical relational structure. CKA = 0 means orthogonal structure.
 
-**Critical implementation detail**: Gram matrices must be normalized to unit diagonal before comparison to handle scale differences between model families (e.g., Mistral embeddings have ~20x smaller norms than Qwen).
+**Critical implementation detail**: Gram matrices are centered and normalized to mitigate scale differences between model families; see the implementation for specifics.
 
 ### 2.2 Semantic Primes
 
@@ -77,7 +77,7 @@ For each model M and anchor set A = {a₁, ..., aₙ}:
 
 1. Extract embedding vectors from the embedding matrix
 2. Compute Gram matrix: $G = XX^T \in \mathbb{R}^{n \times n}$
-3. Normalize to unit diagonal: $\hat{G}_{ij} = G_{ij} / \sqrt{G_{ii} G_{jj}}$
+3. Normalize Gram matrix entries to mitigate scale differences (see CKA implementation)
 
 ### 3.2 Cross-Model Comparison
 
@@ -88,12 +88,14 @@ For models with different hidden dimensions, Gram matrices provide dimension-ind
 
 ### 3.3 Null Distribution
 
-200 random word sets (same size as prime inventory) sampled from vocabulary intersection.
-Each null sample uses identical words across both models being compared.
+Random word sets (same size as prime inventory) sampled from vocabulary intersection.
+Null sample count should be derived from desired confidence and runtime budget.
 
 ---
 
 ## 4. Experiments
+
+> Historical snapshot (2025-12-25). Results are not reproduced and data files are not in this repo.
 
 ### 4.1 Models Tested
 
@@ -120,11 +122,11 @@ Each null sample uses identical words across both models being compared.
 
 ### 4.3 Semantic Primes vs Random Words
 
-| Metric | Semantic Primes | Random Words (n=200) |
+| Metric | Semantic Primes | Random Words (snapshot) |
 |--------|-----------------|---------------------|
 | CKA (Qwen-Mistral) | 0.9175 | 0.9380 ± 0.003 |
 
-**Interpretation**: Both semantic primes and random words show high cross-model CKA. The invariance is universal, not specific to semantic primes. This strengthens the core thesis while opening questions about what *does* distinguish fundamental concepts geometrically.
+**Observation**: In this snapshot, semantic primes and random words show similar cross-model CKA. Reproduction is pending; differences may emerge with other metrics.
 
 ---
 
@@ -132,21 +134,21 @@ Each null sample uses identical words across both models being compared.
 
 ### 5.1 What This Means
 
-The relational structure of word embeddings is preserved across:
+In the historical snapshot, CKA appeared stable across:
 - Different random initializations
 - Different architectures (Qwen vs Llama vs Mistral)
 - Different training corpora
-- Different scales (0.5B to 8B parameters)
-- Different hidden dimensions (896 to 4096)
+- Different scales
+- Different hidden dimensions
 
-This is **geometric convergence**. Models trained independently arrive at similar representational structure.
+Reproduction is pending; results may shift with additional model pairs.
 
 ### 5.2 Why Universal Invariance is Stronger
 
 Our initial hypothesis was: "Semantic primes are special."
-Our finding is: "Everything is invariant."
+The historical snapshot suggested broad invariance.
 
-This is a stronger result. It suggests that:
+If this holds under reproduction, it would suggest that:
 1. Training on human language induces convergent geometry
 2. The Platonic Representation Hypothesis (Huh et al., 2024) extends to embedding spaces
 3. Cross-model alignment may be achievable without explicit training
@@ -166,22 +168,19 @@ These hypotheses require metrics beyond CKA and are under active development.
 
 ## 6. Falsification Criteria
 
-**H1**: Cross-model CKA > 0.8 for semantic primes.
-**Result**: CKA = 0.92. **PASSED.**
+**H1**: Cross-model CKA should be high for semantic primes (threshold derived from baseline).
 
-**H2**: Semantic primes show higher CKA than random controls.
-**Result**: Primes (0.92) ≈ Controls (0.94). **NOT SUPPORTED** by CKA alone.
+**H2**: Semantic primes should show higher CKA than random controls (effect size measured against null distribution).
 
-**H3**: If cross-model CKA < 0.6 for any word set, reject universal invariance.
-**Result**: All tested sets show CKA > 0.9. **NOT TRIGGERED.**
+**H3**: If cross-model CKA falls below baseline for any word set, reject universal invariance.
 
 ---
 
 ## 7. Conclusion
 
-Representation geometry is invariant across language model families. Cross-model CKA exceeds 0.9 for both semantic primes and random word sets, demonstrating that independently trained models converge to similar relational structure. This validates the Geometric Knowledge Thesis in its strongest form: invariance is universal, not limited to theoretically-motivated concept sets.
+Historical runs suggest representation geometry may be invariant across language model families, with similar CKA for semantic primes and random word sets. Reproduction is pending.
 
-Whether semantic primes possess special properties—larger probability clouds, higher conceptual connectivity, or greater cross-linguistic stability—remains an open question requiring metrics beyond CKA. The search continues.
+Whether semantic primes possess special properties—larger probability clouds, higher conceptual connectivity, or greater cross-linguistic stability—remains an open question requiring metrics beyond CKA.
 
 ---
 
@@ -213,20 +212,16 @@ Wierzbicka, A. (1996). *Semantics: Primes and Universals*. [Oxford University Pr
 
 ## Appendix B: Experimental Data
 
-Data files from December 2025 validation experiments:
-- `paper1_cka_validation_FIXED.json` - 15 pairwise CKA values across 6 models
-- `paper1_null_distribution.json` - 200 null samples with statistical analysis
-- `scale_limit_tests.json` - Memory stress test results on 128GB M4 Max
+Historical data files are not stored in this repo. If you rerun these experiments, capture inputs and outputs under a local `experiments/` directory and note the paths here.
 
 ## Appendix C: CLI Commands
 
 ```bash
 # Extract prime embeddings
-mc geometry primes probe --model <model_id> --anchors semantic_primes --output <file>
+mc geometry primes probe-model /path/to/model --output-file primes.json
 
 # Compare Gram matrices
-mc geometry primes compare --model-a <id_a> --model-b <id_b> --metric cka
+mc geometry primes compare model_a_primes.json model_b_primes.json
 
-# Generate null distribution
-mc geometry primes null-test --model-a <id_a> --model-b <id_b> --samples 200
+# Null distribution generation is not yet exposed as a CLI command (tracked as future work).
 ```
