@@ -1139,6 +1139,8 @@ class OllivierRicciCurvature:
         self._derived_base_alpha = base_alpha
         self._derived_adaptive_strength = adaptive_strength
 
+        measures = self._build_lazy_measures(adjacency_list, max_degree, n)
+
         # 3. Compute edge curvatures (batch Sinkhorn per source node)
         edge_curvatures: list[EdgeCurvature] = []
         processed_edges: set[tuple[int, int]] = set()
@@ -1179,15 +1181,11 @@ class OllivierRicciCurvature:
             if not valid_targets:
                 continue
 
-            mu = self._build_lazy_measure(source_idx, adjacency_list, max_degree, n)
-            mu_batch = backend.stack([mu] * len(valid_targets), axis=0)
-            nu_batch = backend.stack(
-                [
-                    self._build_lazy_measure(t, adjacency_list, max_degree, n)
-                    for t in valid_targets
-                ],
-                axis=0,
+            source_idx_arr = backend.full(
+                (len(valid_targets),), source_idx, dtype="int32"
             )
+            mu_batch = backend.take(measures, source_idx_arr, axis=0)
+            nu_batch = backend.take(measures, backend.array(valid_targets), axis=0)
             w1_batch = self._compute_wasserstein_1_batch(
                 mu_batch, nu_batch, cost_matrix
             )
@@ -1380,6 +1378,23 @@ class OllivierRicciCurvature:
 
         return backend.array(measure_list)
 
+    def _build_lazy_measures(
+        self,
+        adjacency_list: dict[int, list[int]],
+        max_degree: int,
+        n_points: int,
+    ) -> "Array":
+        """Build lazy random walk measures for all nodes."""
+        backend = self._backend
+        measures = []
+        for node_idx in range(n_points):
+            measures.append(
+                self._build_lazy_measure(node_idx, adjacency_list, max_degree, n_points)
+            )
+        stacked = backend.stack(measures, axis=0)
+        backend.eval(stacked)
+        return stacked
+
     def _compute_wasserstein_1(
         self,
         mu: "Array",
@@ -1455,13 +1470,14 @@ class OllivierRicciCurvature:
         # Sinkhorn iterations
         u = backend.ones((n,))
         v = backend.ones((n,))
+        K_T = backend.transpose(K)
 
         for _ in range(max_iter):
             Kv = backend.matmul(K, v)
             Kv = backend.maximum(Kv, backend.full(Kv.shape, floor))
             u_new = mu / Kv
 
-            Ktu = backend.matmul(backend.transpose(K), u_new)
+            Ktu = backend.matmul(K_T, u_new)
             Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
             v_new = nu / Ktu
 
@@ -1541,6 +1557,7 @@ class OllivierRicciCurvature:
 
         u = backend.ones((batch, n))
         v = backend.ones((batch, n))
+        K_T = backend.transpose(K)
 
         for _ in range(max_iter):
             Kv = backend.matmul(K, backend.reshape(v, (batch, n, 1)))
@@ -1548,7 +1565,7 @@ class OllivierRicciCurvature:
             Kv = backend.maximum(Kv, backend.full(Kv.shape, floor))
             u_new = mu_batch / Kv
 
-            Ktu = backend.matmul(backend.transpose(K), backend.reshape(u_new, (batch, n, 1)))
+            Ktu = backend.matmul(K_T, backend.reshape(u_new, (batch, n, 1)))
             Ktu = backend.squeeze(Ktu, axis=2)
             Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
             v_new = nu_batch / Ktu

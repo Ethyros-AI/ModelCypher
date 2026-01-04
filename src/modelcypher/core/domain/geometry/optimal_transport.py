@@ -235,6 +235,7 @@ class SinkhornSolver:
         u = backend.ones((n,))
         v = backend.ones((m,))
 
+        K_T = backend.transpose(K)
         for _ in range(max_iterations):
             # Row scaling: u = p / (K @ v)
             Kv = backend.matmul(K, v)
@@ -242,7 +243,7 @@ class SinkhornSolver:
             u_new = p / Kv
 
             # Column scaling: v = q / (K.T @ u)
-            Ktu = backend.matmul(backend.transpose(K), u_new)
+            Ktu = backend.matmul(K_T, u_new)
             Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
             v_new = q / Ktu
 
@@ -292,13 +293,12 @@ class SinkhornSolver:
         iterations = 0
         marginal_error = float("inf")
 
+        K_T = backend.transpose(K)
         for i in range(max_iterations):
             iterations = i + 1
             Kv = backend.matmul(K, v.reshape((m, 1))).reshape((n,))
             u_new = mu / backend.maximum(Kv, backend.array(stability_epsilon))
-            KTu = backend.matmul(backend.transpose(K), u_new.reshape((n, 1))).reshape(
-                (m,)
-            )
+            KTu = backend.matmul(K_T, u_new.reshape((n, 1))).reshape((m,))
             v_new = nu / backend.maximum(KTu, backend.array(stability_epsilon))
             Kv_new = backend.matmul(K, v_new.reshape((m, 1))).reshape((n,))
             row_marginal = u_new * Kv_new
@@ -360,11 +360,12 @@ class SinkhornSolver:
         iterations = 0
         marginal_error = float("inf")
 
+        logK_T = backend.transpose(logK)
         for i in range(max_iterations):
             iterations = i + 1
             logK_plus_g = logK + g.reshape((1, m))
             f_new = log_mu - self._logsumexp(logK_plus_g, axis=1)
-            logKT_plus_f = backend.transpose(logK) + f_new.reshape((1, n))
+            logKT_plus_f = logK_T + f_new.reshape((1, n))
             col_log_sum = self._logsumexp(logKT_plus_f, axis=1)
             g_new = log_nu - col_log_sum
 

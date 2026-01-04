@@ -78,6 +78,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_finite
 from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_between_sets
 
 if TYPE_CHECKING:
@@ -213,13 +214,15 @@ class PermutationAligner:
         max_abs_sim = float(b.to_scalar(max_abs_sim_arr))
         cost_matrix_arr = max_abs_sim - abs_similarity
         b.eval(cost_matrix_arr)
-        cost_matrix = b.tolist(cost_matrix_arr)
-
-        # Hungarian algorithm for optimal assignment
-        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+        try:
+            assignment_arr = PermutationAligner._hungarian_backend(cost_matrix_arr, b)
+            assignment = [int(x) for x in b.tolist(assignment_arr)]
+        except Exception:
+            cost_matrix = b.tolist(cost_matrix_arr)
+            assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+            assignment_arr = b.array(assignment, dtype="int32")
 
         # Compute signed similarity for assigned pairs without pulling full matrix to CPU.
-        assignment_arr = b.array(assignment, dtype="int32")
         row_idx = b.arange(N)
         flat_idx = row_idx * N + assignment_arr
         flat_sim = b.reshape(similarity, (-1,))
@@ -397,11 +400,14 @@ class PermutationAligner:
         max_abs_sim = float(b.to_scalar(max_abs_sim_arr))
         cost_matrix_arr = max_abs_sim - abs_similarity
         b.eval(cost_matrix_arr)
-        cost_matrix = b.tolist(cost_matrix_arr)
+        try:
+            assignment_arr = PermutationAligner._hungarian_backend(cost_matrix_arr, b)
+            assignment = [int(x) for x in b.tolist(assignment_arr)]
+        except Exception:
+            cost_matrix = b.tolist(cost_matrix_arr)
+            assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+            assignment_arr = b.array(assignment, dtype="int32")
 
-        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
-
-        assignment_arr = b.array(assignment, dtype="int32")
         row_idx = b.arange(N)
         flat_idx = row_idx * N + assignment_arr
         flat_sim = b.reshape(similarity, (-1,))
@@ -798,6 +804,111 @@ class PermutationAligner:
                 result[p[j] - 1] = j - 1
 
         return result
+
+    @staticmethod
+    def _hungarian_backend(cost_matrix: "Array", backend: "Backend") -> "Array":
+        """Hungarian algorithm using Backend ops for cost updates."""
+        b = backend
+        cost = b.array(cost_matrix, dtype="float32")
+        b.eval(cost)
+
+        n = int(cost.shape[0])
+        if n == 0:
+            return b.zeros((0,), dtype="int32")
+
+        size = n + 1
+        u = b.zeros((size,), dtype="float32")
+        v = b.zeros((size,), dtype="float32")
+        p = b.zeros((size,), dtype="int32")
+        way = b.zeros((n,), dtype="int32")
+
+        col_idx = b.arange(1, n + 1, dtype="int32")
+        row_idx = b.arange(size, dtype="int32")
+        row_idx_matrix = b.reshape(row_idx, (1, size))
+
+        inf_vec = b.full((n,), float("inf"), dtype="float32")
+        zeros = b.zeros((n,), dtype="float32")
+        ones = b.ones((n,), dtype="float32")
+
+        for i in range(1, n + 1):
+            p = b.where(row_idx == 0, b.full(p.shape, i, dtype="int32"), p)
+            j0 = 0
+            minv = inf_vec
+            used = zeros
+            way = b.zeros((n,), dtype="int32")
+
+            while True:
+                if j0 > 0:
+                    used = b.where(col_idx == j0, ones, used)
+
+                p_j0 = b.take(p, b.array([j0], dtype="int32"), axis=0)
+                b.eval(p_j0)
+                i0 = int(b.to_scalar(p_j0))
+                if i0 == 0:
+                    break
+
+                row = b.take(cost, b.array([i0 - 1], dtype="int32"), axis=0)
+                row = b.reshape(row, (n,))
+                u_i0 = b.take(u, b.array([i0], dtype="int32"), axis=0)
+                v_cols = b.take(v, col_idx, axis=0)
+                cur = row - u_i0 - v_cols
+
+                unused_mask = used == 0
+                update = unused_mask * (cur < minv)
+                minv = b.where(update, cur, minv)
+                way = b.where(update, b.full(way.shape, j0, dtype="int32"), way)
+
+                masked_minv = b.where(unused_mask, minv, inf_vec)
+                delta = b.min(masked_minv)
+                b.eval(delta)
+                delta_val = float(b.to_scalar(delta))
+                if not is_finite(delta_val, b):
+                    break
+
+                j1_idx = b.argmin(masked_minv)
+                b.eval(j1_idx)
+                j1 = int(b.to_scalar(j1_idx)) + 1
+
+                p_cols = b.take(p, col_idx, axis=0)
+                p_cols_row = b.reshape(p_cols, (n, 1))
+                used_col = b.reshape(used, (n, 1))
+                row_match = b.astype(p_cols_row == row_idx_matrix, "float32")
+                counts = b.sum(row_match * used_col, axis=0)
+
+                p0 = b.take(p, b.array([0], dtype="int32"), axis=0)
+                p0_mask = row_idx == p0
+                p0_one = b.astype(p0_mask, "float32")
+                u = u + (counts + p0_one) * delta
+
+                v0 = b.take(v, b.array([0], dtype="int32"), axis=0)
+                v0 = v0 - delta
+                v_cols = v_cols - used * delta
+                v = b.concatenate([v0, v_cols], axis=0)
+
+                minv = b.where(unused_mask, minv - delta, minv)
+                j0 = j1
+
+            while True:
+                if j0 == 0:
+                    break
+                way_j0 = b.take(way, b.array([j0 - 1], dtype="int32"), axis=0)
+                b.eval(way_j0)
+                j1 = int(b.to_scalar(way_j0))
+                p_j1 = b.take(p, b.array([j1], dtype="int32"), axis=0)
+                b.eval(p_j1)
+                p_val = int(b.to_scalar(p_j1))
+                p = b.where(row_idx == j0, b.full(p.shape, p_val, dtype="int32"), p)
+                j0 = j1
+
+        cols = b.take(p, col_idx, axis=0)
+        rows = cols - 1
+        row_idx_small = b.arange(n, dtype="int32")
+        rows_matrix = b.reshape(rows, (n, 1))
+        row_idx_matrix = b.reshape(row_idx_small, (1, n))
+        one_hot = b.astype(rows_matrix == row_idx_matrix, "float32")
+        col_vals = b.reshape(col_idx - 1, (n, 1))
+        result = b.sum(one_hot * col_vals, axis=0)
+        return b.astype(result, "int32")
 
     @staticmethod
     def is_mlp_weight(key: str) -> bool:

@@ -290,13 +290,13 @@ class GramAligner:
             procrustes_err,
         )
 
-        # Method 2: Power iteration eigendecomposition for Gram inverse
+        # Method 2: Native eigendecomposition for Gram inverse (EXACT, no approximation)
         gram = b.matmul(source_centered, b.transpose(source_centered))
         gram_f32 = b.astype(gram, "float32")
 
-        n = int(gram_f32.shape[0])
-        k = min(n, 50)  # Use top-50 eigenvectors for efficiency
-        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k)
+        # Use ALL eigenvalues - no k=50 approximation
+        eigvals, eigvecs = b.eigh(gram_f32)
+        b.eval(eigvals, eigvecs)
 
         # Invert eigenvalues above threshold
         inv_vals = b.where(
@@ -305,16 +305,16 @@ class GramAligner:
             b.zeros_like(eigvals),
         )
 
-        # Reconstruct pseudo-inverse in eigenspace
+        # Reconstruct pseudo-inverse in eigenspace (FULL rank)
         inv_diag = b.reshape(inv_vals, (1, -1))
-        gram_inv_subspace = b.matmul(
+        gram_inv = b.matmul(
             eigvecs * inv_diag,
             b.transpose(eigvecs),
         )
 
         F_eig = b.matmul(
             b.transpose(source_centered),
-            b.matmul(gram_inv_subspace, target_centered),
+            b.matmul(gram_inv, target_centered),
         )
 
         # Compute residual for eigendecomposition method
@@ -325,11 +325,11 @@ class GramAligner:
         b.eval(residual_eig_arr)
         residual_val = float(b.to_scalar(residual_eig_arr))
         rel_residual = residual_val / (target_norm_val + reg_threshold)
-        candidates.append((rel_residual, F_eig, "power_iteration_eigh"))
+        candidates.append((rel_residual, F_eig, "native_eigh"))
 
-        # Method 3: Geodesic pseudo-inverse (Gram + Neumann series)
-        # Runs entirely on GPU - no CPU linear algebra
-        source_pinv = geodesic_pinv(b, source_centered)
+        # Method 3: Native pseudo-inverse (EXACT Moore-Penrose, no regularization)
+        source_pinv = b.pinv(source_centered)
+        b.eval(source_pinv)
         F_pinv = b.matmul(source_pinv, target_centered)
         reconstructed = b.matmul(source_centered, F_pinv)
         residual_pinv_arr = geodesic_norms(

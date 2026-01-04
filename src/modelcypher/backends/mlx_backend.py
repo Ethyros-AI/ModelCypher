@@ -617,13 +617,11 @@ class MLXBackend(Backend):
         return eigenvalues, eigenvectors
 
     def solve(self, a: Array, b: Array) -> Array:
-        # MLX solve requires CPU stream - must eval
         arr = self.mx.linalg.solve(a, b)
         self.safe.eval(arr)
         return arr
 
     def inv(self, array: Array) -> Array:
-        # MLX inv requires CPU stream - must eval
         arr = self.mx.linalg.inv(array)
         self.safe.eval(arr)
         return arr
@@ -633,7 +631,6 @@ class MLXBackend(Backend):
         # Cast to float32, compute, then cast back to original dtype
         original_dtype = array.dtype
         array_f32 = array.astype(self.mx.float32) if "bfloat" in str(original_dtype) else array
-        # MLX pinv requires CPU stream - must eval
         arr = self.mx.linalg.pinv(array_f32)
         self.safe.eval(arr)
         # Cast back to original dtype if needed

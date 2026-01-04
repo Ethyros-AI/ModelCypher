@@ -94,8 +94,20 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
+# Cache RiemannianGeometry instances by backend for reuse of internal caches.
+_RG_CACHE: dict[int, "RiemannianGeometry"] = {}
+
 # Session-scoped cache for geodesic distances and Fréchet means
 _cache = ComputationCache.shared()
+
+
+def _get_riemannian_geometry(backend: "Backend") -> "RiemannianGeometry":
+    key = id(backend)
+    cached = _RG_CACHE.get(key)
+    if cached is None or getattr(cached, "_backend", None) is not backend:
+        cached = RiemannianGeometry(backend)
+        _RG_CACHE[key] = cached
+    return cached
 
 
 # =============================================================================
@@ -151,7 +163,7 @@ def derive_k_neighbors(points: "Array", backend: "Backend") -> int:
     if n <= 2:
         return 1
 
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     geo_result = rg.geodesic_distances(points, k_neighbors=None)
     dists = geo_result.distances
     backend.eval(dists)
@@ -2285,7 +2297,7 @@ def frechet_mean(
     if backend is None:
         backend = get_default_backend()
 
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     result = rg.frechet_mean(
         points,
         weights,
@@ -2316,7 +2328,7 @@ def geodesic_distance_matrix(
     if backend is None:
         backend = get_default_backend()
 
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     result = rg.geodesic_distances(points, k_neighbors)
     return result.distances
 
@@ -2346,7 +2358,7 @@ def farthest_point_sampling(
     if backend is None:
         backend = get_default_backend()
 
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     result = rg.farthest_point_sampling(points, n_samples, seed_idx, k_neighbors)
     return result.selected_indices
 
@@ -2374,6 +2386,6 @@ def find_sparse_direction(
     if backend is None:
         backend = get_default_backend()
 
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     result = rg.directional_coverage(point_idx, points, k=k)
     return result.sparse_direction

@@ -699,17 +699,18 @@ def power_iteration_eigh(
     if k == 0:
         return b.zeros((0,), dtype="float32"), b.zeros((n, 0), dtype="float32")
 
-    try:
-        eigenvalues_full, eigenvectors_full = b.eigh(matrix)
-        b.eval(eigenvalues_full, eigenvectors_full)
-        idx = b.arange(0, k, dtype="int32")
-        idx = b.array(n - 1, dtype="int32") - idx
-        eigenvalues = b.take(eigenvalues_full, idx, axis=-1)
-        eigenvectors = b.take(eigenvectors_full, idx, axis=-1)
-        b.eval(eigenvalues, eigenvectors)
-        return eigenvalues, eigenvectors
-    except Exception:
-        pass
+    if k >= n:
+        try:
+            eigenvalues_full, eigenvectors_full = b.eigh(matrix)
+            b.eval(eigenvalues_full, eigenvectors_full)
+            order = b.argsort(-eigenvalues_full)
+            b.eval(order)
+            eigenvalues = b.take(eigenvalues_full, order, axis=0)
+            eigenvectors = b.take(eigenvectors_full, order, axis=1)
+            b.eval(eigenvalues, eigenvectors)
+            return eigenvalues, eigenvectors
+        except Exception:
+            pass
     eps = machine_epsilon(b, matrix)
     convergence_tol = sqrt_scalar(eps, b)  # sqrt(machine_epsilon) for convergence
 
