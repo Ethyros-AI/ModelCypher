@@ -722,8 +722,11 @@ def stage_transplant(
         kv_stitch_input = None   # pinv(F).T for KV attention input [src_kv, tgt_kv] (GQA)
 
         # Get intermediate activations for this layer (MLP internal states)
+        # CRITICAL: For cross-architecture merge, source layer index may differ from target.
+        # Use layer_mapping to translate target layer_idx → source layer index.
+        source_layer_idx = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
         src_inter_list = (
-            source_intermediate_activations.get(layer_idx)
+            source_intermediate_activations.get(source_layer_idx)
             if source_intermediate_activations else None
         )
         tgt_inter_list = (
