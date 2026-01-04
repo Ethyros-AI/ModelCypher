@@ -20,87 +20,273 @@
 """
 Safety Audit Example
 
-This example demonstrates how to run safety probes against a model or adapter
-to detect potential risks before deployment.
+This example demonstrates how to run safety probes and entropy diagnostics
+against adapter metadata and entropy baselines.
 
 Usage:
-    python examples/02_safety_audit.py /path/to/adapter.safetensors
+    python examples/02_safety_audit.py --name "adapter-name"
+    python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/baseline.json \
+        --observed "[0.1, 0.12, 0.09]"
+    python examples/02_safety_audit.py --name "adapter-name" --samples /path/to/samples.json
 
-Requirements:
-    - A LoRA adapter file (.safetensors)
-    - Base model path (optional, for behavioral probes)
+You can also pass an adapter path as the first argument; its filename will be
+used as the adapter name.
+
+Observed deltas format:
+    [0.12, 0.08, 0.15]
+
+Samples format:
+    [
+      [entropy, variance],
+      [entropy, variance]
+    ]
 """
-import sys
+from __future__ import annotations
+
+import argparse
+import json
 from pathlib import Path
 
-from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python 02_safety_audit.py /path/to/adapter.safetensors")
-        sys.exit(1)
+def _load_json_payload(value: str, description: str) -> object:
+    path = Path(value)
+    raw = path.read_text(encoding="utf-8") if path.exists() else value
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{description} must be JSON or a path to JSON: {exc}"
+        ) from exc
 
-    adapter_path = Path(sys.argv[1])
-    if not adapter_path.exists():
-        print(f"Error: Adapter path does not exist: {adapter_path}")
-        sys.exit(1)
 
-    print(f"Running safety audit on: {adapter_path}")
+def _resolve_adapter_name(adapter_arg: str | None, name_override: str | None) -> str | None:
+    if name_override:
+        return name_override
+    if not adapter_arg:
+        return None
+    adapter_path = Path(adapter_arg)
+    return adapter_path.name if adapter_path.exists() else adapter_arg
+
+
+def _parse_observed_deltas(raw: str | None) -> list[float] | None:
+    if raw is None:
+        return None
+    payload = _load_json_payload(raw, "Observed deltas")
+    if not isinstance(payload, list):
+        raise ValueError("Observed deltas must be a JSON array of numbers")
+    return [float(value) for value in payload]
+
+
+def _parse_samples(raw: str | None) -> list[tuple[float, float]] | None:
+    if raw is None:
+        return None
+    payload = _load_json_payload(raw, "Entropy samples")
+    if not isinstance(payload, list):
+        raise ValueError("Entropy samples must be a JSON array of [entropy, variance] pairs")
+    samples: list[tuple[float, float]] = []
+    for idx, entry in enumerate(payload):
+        if (
+            not isinstance(entry, (list, tuple))
+            or len(entry) != 2
+        ):
+            raise ValueError(f"Entropy sample {idx} must be [entropy, variance]")
+        samples.append((float(entry[0]), float(entry[1])))
+    return samples
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Run safety probes and entropy diagnostics on adapter metadata",
+    )
+    parser.add_argument(
+        "adapter",
+        nargs="?",
+        help="Adapter name or path (optional)",
+    )
+    parser.add_argument(
+        "--name",
+        help="Adapter name for metadata probes",
+    )
+    parser.add_argument(
+        "--description",
+        help="Adapter description",
+    )
+    parser.add_argument(
+        "--tag",
+        action="append",
+        dest="tags",
+        help="Skill tag (repeatable)",
+    )
+    parser.add_argument(
+        "--creator",
+        help="Creator identifier",
+    )
+    parser.add_argument(
+        "--base-model",
+        dest="base_model",
+        help="Base model ID",
+    )
+    parser.add_argument(
+        "--target-module",
+        action="append",
+        dest="target_modules",
+        help="Target module name (repeatable)",
+    )
+    parser.add_argument(
+        "--training-dataset",
+        action="append",
+        dest="training_datasets",
+        help="Training dataset identifier (repeatable)",
+    )
+    parser.add_argument(
+        "--baseline",
+        help="Path to baseline JSON (from mc entropy calibrate)",
+    )
+    parser.add_argument(
+        "--observed",
+        help="JSON array or path to JSON array of observed deltas",
+    )
+    parser.add_argument(
+        "--samples",
+        help="JSON array or path to JSON array of [entropy, variance] pairs",
+    )
+    args = parser.parse_args()
+
+    adapter_name = _resolve_adapter_name(args.adapter, args.name)
+
+    try:
+        observed_deltas = _parse_observed_deltas(args.observed)
+        samples = _parse_samples(args.samples)
+    except ValueError as exc:
+        print(f"Input error: {exc}")
+        return 1
+
+    print("Safety Audit (Raw Metrics)")
     print("=" * 60)
 
-    # Initialize services
-    safety_service = SafetyProbeService()
-    entropy_service = EntropyProbeService()
-
-    # 1. Static analysis - check adapter structure
-    print("\n[1/3] Static Analysis")
+    # 1. Static metadata scan
+    print("\n[1/4] Static Metadata Scan")
     print("-" * 40)
-    try:
-        static_result = safety_service.static_scan(str(adapter_path))
-        print(f"  Threat indicators found: {len(static_result.indicators)}")
-        for indicator in static_result.indicators[:3]:
-            print(f"    - {indicator.threat_type}: {indicator.description}")
-        print(f"  Overall risk: {static_result.risk_level}")
-    except Exception as e:
-        print(f"  Static scan skipped: {e}")
+    if adapter_name is None:
+        print("  Skipped: provide --name or adapter argument")
+    else:
+        embedder = EmbeddingDefaults.make_default_embedder()
+        if embedder is None:
+            print("  Skipped: embedder unavailable")
+        else:
+            safety_service = SafetyProbeService(embedder=embedder)
+            indicators = safety_service.scan_adapter_metadata(
+                name=adapter_name,
+                description=args.description,
+                skill_tags=args.tags,
+                creator=args.creator,
+                base_model_id=args.base_model,
+                target_modules=args.target_modules,
+                training_datasets=args.training_datasets,
+            )
+            payload = SafetyProbeService.threat_indicators_payload(indicators)
+            print(f"  Adapter: {adapter_name}")
+            print(f"  Indicator count: {payload['count']}")
+            print(f"  Max mean distance: {payload['maxMeanDistance']:.4f}")
+            if indicators:
+                print("  Indicators:")
+                for ind in indicators[:5]:
+                    print(f"    - [{ind.mean_distance:.4f}] {ind.field}: {ind.text}")
 
-    # 2. Entropy baseline verification
-    print("\n[2/3] Entropy Baseline Check")
+    # 2. Behavioral probes
+    print("\n[2/4] Behavioral Probes")
     print("-" * 40)
-    try:
-        entropy_result = entropy_service.verify_baseline(
-            adapter_path=str(adapter_path),
-            threshold=0.1,
+    if adapter_name is None:
+        print("  Skipped: provide --name or adapter argument")
+    else:
+        safety_service = SafetyProbeService(embedder=EmbeddingDefaults.make_default_embedder())
+        result = safety_service.run_behavioral_probes(
+            adapter_name=adapter_name,
+            adapter_description=args.description,
+            skill_tags=args.tags,
+            creator=args.creator,
+            base_model_id=args.base_model,
         )
-        divergence = entropy_result.comparison.divergence_score
-        z_score = entropy_result.comparison.mean_z_score
-        print(f"  Divergence score: {divergence:.4f}")
-        print(f"  Mean Z-score: {z_score:.2f}")
-        if divergence < 0.3:
-            print("  Low divergence from baseline.")
-        elif z_score > 3.0:
-            print("  Warning: High Z-score deviation detected!")
-    except Exception as e:
-        print(f"  Entropy check skipped: {e}")
+        payload = SafetyProbeService.composite_result_payload(result)
+        print(f"  Adapter: {adapter_name}")
+        print(f"  Probes run: {payload['probeCount']}")
+        print(f"  Any findings: {payload['anyFindings']}")
+        if payload["aggregateFindingCounts"]:
+            counts = ", ".join(
+                f"{key}: {value}" for key, value in payload["aggregateFindingCounts"].items()
+            )
+            print(f"  Aggregate finding counts: {counts}")
+        if payload["allFindings"]:
+            print("  Findings:")
+            for finding in payload["allFindings"][:5]:
+                print(f"    - {finding}")
 
-    # 3. Pattern analysis
-    print("\n[3/3] Entropy Pattern Analysis")
+    # 3. Entropy baseline verification
+    print("\n[3/4] Entropy Baseline Verification")
     print("-" * 40)
-    try:
-        pattern_result = entropy_service.analyze_patterns(
-            adapter_path=str(adapter_path),
-        )
-        print(f"  Pattern detected: {pattern_result.pattern}")
-        print(f"  Trend: {pattern_result.trend}")
-        print(f"  Distress level: {pattern_result.distress_level}")
-    except Exception as e:
-        print(f"  Pattern analysis skipped: {e}")
+    if args.baseline and observed_deltas is not None:
+        entropy_service = EntropyProbeService()
+        try:
+            result = entropy_service.verify_baseline(
+                baseline_path=args.baseline,
+                observed_deltas=observed_deltas,
+                adapter_path=adapter_name or "unknown",
+            )
+        except ValueError as exc:
+            print(f"  Baseline verification failed: {exc}")
+        else:
+            declared = result.declared_baseline
+            observed = result.observed_baseline
+            comparison = result.comparison
+            print(f"  Declared mean/std: {declared.delta_mean:.4f} / {declared.delta_std_dev:.4f}")
+            print(f"  Observed mean/std: {observed.delta_mean:.4f} / {observed.delta_std_dev:.4f}")
+            print(f"  Mean Z-score: {comparison.mean_z_score:.4f}")
+            print(f"  StdDev ratio: {comparison.std_dev_ratio:.4f}")
+            print(f"  Max deviation: {comparison.max_deviation:.4f}")
+            print(f"  Min deviation: {comparison.min_deviation:.4f}")
+            print(f"  Declared range: {comparison.declared_range:.4f}")
+            print(f"  Observed range: {comparison.observed_range:.4f}")
+    else:
+        print("  Skipped: provide --baseline and --observed")
+
+    # 4. Entropy pattern analysis
+    print("\n[4/4] Entropy Pattern Analysis")
+    print("-" * 40)
+    if samples is None:
+        print("  Skipped: provide --samples")
+    else:
+        entropy_service = EntropyProbeService()
+        pattern = entropy_service.analyze_pattern(samples)
+        distress = entropy_service.detect_distress(samples)
+        print(f"  Sample count: {pattern.sample_count}")
+        print(f"  Trend slope: {pattern.trend_slope:.6f}")
+        print(f"  Volatility: {pattern.volatility:.6f}")
+        print(f"  Entropy mean/std: {pattern.entropy_mean:.6f} / {pattern.entropy_std_dev:.6f}")
+        print(f"  Variance mean/std: {pattern.variance_mean:.6f} / {pattern.variance_std_dev:.6f}")
+        print(f"  Entropy-variance correlation: {pattern.entropy_variance_correlation:.6f}")
+        print(f"  Sustained high count: {pattern.sustained_high_count}")
+        print(f"  Sustained significance: {pattern.sustained_significance:.6f}")
+        print(f"  Peak entropy: {pattern.peak_entropy:.6f}")
+        print(f"  Min entropy: {pattern.min_entropy:.6f}")
+        if pattern.anomaly_indices:
+            indices = ", ".join(str(idx) for idx in pattern.anomaly_indices)
+            print(f"  Anomaly indices: {indices}")
+        if distress is not None:
+            print("  Distress metrics:")
+            print(f"    Sustained high count: {distress.sustained_high_count}")
+            print(f"    Sustained significance: {distress.sustained_significance:.6f}")
+            print(f"    Entropy mean: {distress.entropy_mean:.6f}")
+            print(f"    Variance mean: {distress.variance_mean:.6f}")
+            print(f"    Entropy-variance correlation: {distress.entropy_variance_correlation:.6f}")
 
     print("\n" + "=" * 60)
-    print("Audit complete. Review findings before deployment.")
+    print("Audit complete.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

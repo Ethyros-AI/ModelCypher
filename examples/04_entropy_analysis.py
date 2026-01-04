@@ -20,8 +20,8 @@
 """
 Entropy Analysis Example
 
-This example demonstrates how to analyze entropy patterns in model outputs.
-Entropy metrics can reveal training dynamics, model confidence, and potential issues.
+This example demonstrates how to measure entropy across linguistic modifiers
+and compute raw thermodynamic metrics for a prompt.
 
 Usage:
     python examples/04_entropy_analysis.py /path/to/model --prompt "Explain quantum computing"
@@ -36,9 +36,9 @@ from pathlib import Path
 from modelcypher.core.use_cases.thermo_service import ThermoService
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Analyze entropy patterns in model outputs"
+        description="Measure entropy across linguistic modifiers"
     )
     parser.add_argument(
         "model",
@@ -49,12 +49,6 @@ def main():
         default="Explain the concept of entropy in information theory.",
         help="Prompt to analyze",
     )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=1.0,
-        help="Sampling temperature (default: 1.0)",
-    )
     args = parser.parse_args()
 
     model_path = Path(args.model)
@@ -62,50 +56,57 @@ def main():
         print(f"Error: Model not found: {model_path}")
         return 1
 
-    print("Entropy Analysis")
+    print("Entropy Analysis (Raw Metrics)")
     print("=" * 60)
     print(f"Model: {model_path}")
     print(f"Prompt: {args.prompt[:50]}...")
-    print(f"Temperature: {args.temperature}")
     print()
 
     # Initialize service
     service = ThermoService()
 
     # Run thermodynamic measurement
-    print("Running thermodynamic analysis...")
+    print("Running entropy measurements...")
     result = service.measure(
-        model_path=str(model_path),
         prompt=args.prompt,
-        temperature=args.temperature,
+        model_path=str(model_path),
     )
 
-    print("\nResults:")
+    print("\nMeasurements:")
     print("-" * 40)
-    print(f"Entropy: {result.entropy:.4f}")
-    print(f"Temperature: {result.temperature:.4f}")
-    print(f"Free Energy: {result.free_energy:.4f}")
-    print(f"\nInterpretation:")
-    print(f"  {result.interpretation}")
-
-    # Additional analysis: ridge detection
-    print("\n" + "-" * 40)
-    print("Phase transition analysis...")
-    try:
-        ridge_result = service.detect_ridge(
-            model_path=str(model_path),
-            prompt=args.prompt,
+    for measurement in result.measurements:
+        delta_h = "baseline" if measurement.delta_h is None else f"{measurement.delta_h:.6f}"
+        print(
+            f"{measurement.modifier:>10}: entropy={measurement.mean_entropy:.6f}, "
+            f"delta_h={delta_h}, ridge_crossed={measurement.ridge_crossed}"
         )
-        print(f"Ridge detected: {ridge_result.ridge_detected}")
-        if ridge_result.ridge_detected:
-            print(f"Ridge location: {ridge_result.ridge_position}")
-            print(f"Transition type: {ridge_result.transition_type}")
-    except Exception as e:
-        print(f"Ridge detection skipped: {e}")
+
+    stats = result.statistics
+    print("\nStatistics:")
+    print("-" * 40)
+    print(f"Mean entropy: {stats.mean_entropy:.6f}")
+    print(f"Std entropy: {stats.std_entropy:.6f}")
+    print(f"Min entropy: {stats.min_entropy:.6f}")
+    print(f"Max entropy: {stats.max_entropy:.6f}")
+    if stats.mean_delta_h is not None:
+        print(f"Mean delta_h: {stats.mean_delta_h:.6f}")
+
+    # Differential measurement (baseline vs intensity)
+    detect_result = service.detect(
+        prompt=args.prompt,
+        model_path=str(model_path),
+    )
+    print("\nDifferential measurement:")
+    print("-" * 40)
+    print(f"Baseline entropy: {detect_result.baseline_entropy:.6f}")
+    print(f"Intensity entropy: {detect_result.intensity_entropy:.6f}")
+    print(f"Delta H: {detect_result.delta_h:.6f}")
+    print(f"Processing time: {detect_result.processing_time:.3f}s")
 
     print("\n" + "=" * 60)
     print("Analysis complete.")
+    return 0
 
 
 if __name__ == "__main__":
-    exit(main() or 0)
+    raise SystemExit(main())

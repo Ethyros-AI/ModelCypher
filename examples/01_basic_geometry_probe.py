@@ -58,25 +58,24 @@ def main():
     result = service.probe(str(model_path))
 
     # Display results
-    print(f"Model: {result.model_id}")
+    print(f"Model: {model_path.name}")
     print(f"Architecture: {result.architecture}")
     print(f"Parameter count: {result.parameter_count:,}")
     print(f"Hidden size: {result.hidden_size}")
-    print(f"Number of layers: {result.num_layers}")
+    print(f"Number of layers: {len(result.layers)}")
     print(f"Vocabulary size: {result.vocab_size}")
+    print(f"Attention heads: {result.num_attention_heads}")
+    if result.quantization:
+        print(f"Quantization: {result.quantization}")
 
     print("\nLayer breakdown:")
     for layer in result.layers[:5]:  # Show first 5 layers
-        print(f"  {layer.name}: {layer.parameter_count:,} params")
+        print(f"  {layer.name}: {layer.parameters:,} params")
 
     if len(result.layers) > 5:
         print(f"  ... and {len(result.layers) - 5} more layers")
 
-    print("\nGeometric metrics:")
-    if hasattr(result, "geometric_metrics") and result.geometric_metrics:
-        metrics = result.geometric_metrics
-        print(f"  Intrinsic dimension: {metrics.get('intrinsic_dimension', 'N/A')}")
-        print(f"  Effective rank: {metrics.get('effective_rank', 'N/A')}")
+    print("\nGeometric metrics: N/A (use geometry CLI or probes for metrics)")
 
 
 if __name__ == "__main__":

@@ -11,8 +11,8 @@ ModelCypher handles sensitive model weights and potential training data. Securit
 ## 2. Safe Tensors & Weights
 
 -   **Prefer `safetensors`**: We default to `safetensors` for all model saving/loading to avoid pickle execution vulnerabilities.
--   **Pickle Warning**: ModelCypher will emit a warning if you load a `.bin` or `.CHECKPOINT` file that relies on `torch.load` (pickle).
--   **Untrusted Models**: Do not run `mc train …` or `mc model …` workflows on models from untrusted sources if they rely on pickle formats.
+-   **Pickle Warning**: Some workflows (e.g., LoRA adapter merge) may use `torch.load` for `.bin`/`.pt` files, which relies on pickle.
+-   **Untrusted Models**: Do not load `.bin`/`.pt` weights from untrusted sources.
 
 ## 3. Network Security
 
@@ -37,7 +37,7 @@ export MC_MCP_AUTH_JWKS_URI=https://auth.example.com/.well-known/jwks.json
 
 **Supported Features:**
 - RFC 8707 audience validation
-- RFC 9728 token introspection
+- JWT validation via JWKS
 - RS256/ES256 signature algorithms
 - Automatic JWKS key rotation
 

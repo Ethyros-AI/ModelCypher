@@ -133,6 +133,7 @@ class ComputationCache:
         max_kmin_entries: int = 1024,
         max_centered_gram_entries: int = 200,
         max_chord_entries: int = 256,
+        max_stitch_entries: int = 128,
     ) -> None:
         """
         Initialize the computation cache.
@@ -146,6 +147,7 @@ class ComputationCache:
             max_kmin_entries: Maximum number of cached k-min entries.
             max_centered_gram_entries: Maximum number of centered Gram entries.
             max_chord_entries: Maximum number of chord distance matrix entries.
+            max_stitch_entries: Maximum number of stitch transform entries.
         """
         self._max_gram_entries = max_gram_entries
         self._max_geodesic_entries = max_geodesic_entries
@@ -155,6 +157,7 @@ class ComputationCache:
         self._max_kmin_entries = max_kmin_entries
         self._max_centered_gram_entries = max_centered_gram_entries
         self._max_chord_entries = max_chord_entries
+        self._max_stitch_entries = max_stitch_entries
 
         # Separate LRU caches for different computation types
         # Using OrderedDict for O(1) move_to_end() and eviction
@@ -166,6 +169,9 @@ class ComputationCache:
 
         self._chord_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._chord_lock = threading.Lock()
+
+        self._stitch_cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._stitch_lock = threading.Lock()
 
         self._geodesic_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._geodesic_lock = threading.Lock()
@@ -334,6 +340,22 @@ class ComputationCache:
         bid = self._backend_id(backend)
         return f"chord_{bid}_{base_key}"
 
+    def make_stitch_key(
+        self,
+        source_gram: "Array",
+        target_gram: "Array",
+        backend: "Backend",
+    ) -> str:
+        """Create cache key for stitch (alignment) transform.
+
+        Stitch transforms are keyed by both source and target Gram matrices,
+        enabling reuse when the same alignment is needed multiple times.
+        """
+        source_key = self.make_array_key(source_gram, backend)
+        target_key = self.make_array_key(target_gram, backend)
+        bid = self._backend_id(backend)
+        return f"stitch_{bid}_{source_key}_{target_key}"
+
     def make_geodesic_key(
         self,
         arr: "Array",
@@ -494,6 +516,34 @@ class ComputationCache:
             self._chord_cache,
             self._chord_lock,
             self._max_chord_entries,
+        )
+
+    # --- Stitch Transform Cache ---
+
+    def get_stitch(self, key: str) -> Any | None:
+        """Get cached stitch (alignment) transform.
+
+        Stitch transforms map source Gram geometry to target Gram geometry.
+        Caching avoids repeated eigendecomposition for same Gram pairs.
+        """
+        return self._get_from_cache(
+            key,
+            self._stitch_cache,
+            self._stitch_lock,
+            "stitch",
+        )
+
+    def set_stitch(
+        self, key: str, value: Any, compute_time_ms: float = 0.0
+    ) -> None:
+        """Cache stitch transform."""
+        self._set_in_cache(
+            key,
+            value,
+            compute_time_ms,
+            self._stitch_cache,
+            self._stitch_lock,
+            self._max_stitch_entries,
         )
 
     # --- Geodesic Distance Cache ---

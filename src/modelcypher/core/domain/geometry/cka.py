@@ -69,7 +69,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -308,28 +307,30 @@ def _compute_hsic(
     if centered_y is None:
         centered_y = _center_gram_matrix(gram_y, backend)
 
-    # Normalize before multiplication to avoid overflow
-    x_norms = geodesic_norms(backend.reshape(centered_x, (1, -1)), backend)
-    y_norms = geodesic_norms(backend.reshape(centered_y, (1, -1)), backend)
-    backend.eval(x_norms, y_norms)
+    # Normalize by max absolute value to avoid overflow while preserving
+    # spectral shape. Frobenius norm compresses the spectrum; max value
+    # keeps relative magnitudes intact for better numerical precision.
+    x_max_arr = backend.max(backend.abs(centered_x))
+    y_max_arr = backend.max(backend.abs(centered_y))
+    backend.eval(x_max_arr, y_max_arr)
 
-    x_norm_val = float(backend.to_scalar(x_norms[0]))
-    y_norm_val = float(backend.to_scalar(y_norms[0]))
+    x_max_val = float(backend.to_scalar(x_max_arr))
+    y_max_val = float(backend.to_scalar(y_max_arr))
 
     # Use precision-aware threshold for near-zero detection
     eps = division_epsilon(backend, centered_x)
-    if x_norm_val < eps or y_norm_val < eps:
+    if x_max_val < eps or y_max_val < eps:
         return 0.0
 
-    centered_x_normalized = centered_x / x_norm_val
-    centered_y_normalized = centered_y / y_norm_val
+    centered_x_normalized = centered_x / x_max_val
+    centered_y_normalized = centered_y / y_max_val
 
     # Compute trace of normalized product using element-wise multiply and sum
     trace_product = backend.sum(centered_x_normalized * centered_y_normalized)
     backend.eval(trace_product)
 
     # Scale back
-    trace_val = float(backend.to_scalar(trace_product)) * x_norm_val * y_norm_val
+    trace_val = float(backend.to_scalar(trace_product)) * x_max_val * y_max_val
 
     # Normalize by (n-1)^2
     hsic = trace_val / ((n - 1) ** 2)
@@ -628,10 +629,14 @@ def compute_cka(
     else:
         cka = hsic_xy / denominator
 
-    # Clamp to [0, 1] (can exceed due to numerical issues)
-    cka = max(0.0, min(1.0, cka))
-    if cka >= 1.0 - eps:
+    # Clamp to [0, 1] - only snap overshoot values to 1.0.
+    # Don't snap values that are legitimately close to (but below) 1.0.
+    if cka > 1.0:
+        # Numerical overshoot - snap to 1.0
         cka = 1.0
+    elif cka < 0.0:
+        cka = 0.0
+    # Values in [0, 1] are preserved as-is
 
     cka_corrected: float | None = None
     correction_factor: float | None = None
@@ -647,9 +652,12 @@ def compute_cka(
         )
         correction_factor = correction_x * correction_y
         if correction_factor > 0.0:
-            cka_corrected = min(1.0, cka * correction_factor)
-            if cka_corrected >= 1.0 - eps:
+            cka_corrected = cka * correction_factor
+            # Only clamp overshoot, preserve legitimate values in [0, 1]
+            if cka_corrected > 1.0:
                 cka_corrected = 1.0
+            elif cka_corrected < 0.0:
+                cka_corrected = 0.0
 
     return CKAResult(
         cka=cka,
@@ -858,9 +866,11 @@ def compute_cka_backend(
         return 0.0
 
     cka = hsic_xy / denom
-    cka = max(0.0, min(1.0, cka))
-    if cka >= 1.0 - eps:
+    # Only clamp overshoot, preserve legitimate values in [0, 1]
+    if cka > 1.0:
         cka = 1.0
+    elif cka < 0.0:
+        cka = 0.0
     return cka
 
 
@@ -1025,18 +1035,23 @@ def compute_cka_from_grams(
         return 0.0
 
     cka = hsic_ab / denom
-    cka = max(0.0, min(1.0, cka))
-    if cka >= 1.0 - eps:
+    # Only clamp overshoot, preserve legitimate values in [0, 1]
+    if cka > 1.0:
         cka = 1.0
+    elif cka < 0.0:
+        cka = 0.0
 
     if feature_bias_correction and feature_dim_a and feature_dim_b:
         correction_a, _ = _feature_sampling_correction(centered_a, feature_dim_a, backend)
         correction_b, _ = _feature_sampling_correction(centered_b, feature_dim_b, backend)
         correction = correction_a * correction_b
         if correction > 0.0 and is_finite(correction, backend):
-            cka = min(1.0, cka * correction)
-            if cka >= 1.0 - eps:
+            cka = cka * correction
+            # Only clamp overshoot
+            if cka > 1.0:
                 cka = 1.0
+            elif cka < 0.0:
+                cka = 0.0
     return cka
 
 

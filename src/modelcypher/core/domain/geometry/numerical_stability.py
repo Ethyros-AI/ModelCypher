@@ -906,14 +906,20 @@ def safe_inverse(
 
     cond = max_s / min_s
 
-    # Check against condition threshold
+    # Check against condition threshold with smooth ramp regularization.
+    # Instead of hard cutoff (all or nothing), use linear ramp from 1.0
+    # to cond_thresh. This provides stability without abrupt transitions.
     cond_thresh = condition_threshold(b, matrix)
 
-    if cond > cond_thresh and regularize:
-        # Regularize the matrix
-        reg = regularization_epsilon(b, matrix)
-        matrix = matrix + reg * b.eye(n)
-        b.eval(matrix)
+    if regularize and cond > 1.0:
+        # Linear ramp: 0 at cond=1, max_reg at cond>=cond_thresh
+        ramp = min(1.0, (cond - 1.0) / (cond_thresh - 1.0)) if cond_thresh > 1.0 else 1.0
+        max_reg = regularization_epsilon(b, matrix)
+        reg = max_reg * ramp
+
+        if reg > 0:
+            matrix = matrix + reg * b.eye(n)
+            b.eval(matrix)
 
     inv_matrix = b.inv(matrix)
     b.eval(inv_matrix)
@@ -1270,7 +1276,15 @@ def solve_via_truncated_svd(
 
     eps = machine_epsilon(b, source)
     if rank_threshold is None:
-        rank_threshold = eps * max(n_samples, d_source)
+        # Data-aware rank threshold: use Frobenius norm to capture actual
+        # data scale rather than just dimension. This prevents overly
+        # aggressive rank truncation on well-conditioned matrices.
+        frob_sq = b.sum(source * source)
+        b.eval(frob_sq)
+        frob_norm = sqrt_scalar(float(b.to_scalar(frob_sq)), b)
+        min_dim = min(n_samples, d_source)
+        # Threshold scales with eps * (Frobenius norm / sqrt(min_dim))
+        rank_threshold = eps * frob_norm / sqrt_scalar(float(min_dim), b) if min_dim > 0 else eps
 
     diagnostics: dict = {
         "rank": 0,
@@ -1322,12 +1336,25 @@ def solve_via_truncated_svd(
 
     # Truncate to effective rank
     U_k = U[:, :rank]  # [n, k]
-    # Build inverse singular values array using Tikhonov damping
-    # This provides smooth transition instead of hard cutoff: s / (s^2 + thresh^2)
+
+    # Build inverse singular values array using spectral-aware Tikhonov damping
+    # Use the singular value at the rank cutoff as the noise floor.
+    # This adapts damping to the actual spectral structure of the data.
     S_k = S[:rank]
-    threshold = rank_threshold * max_s
-    thresh_sq = threshold * threshold
-    S_k_inv = S_k / (S_k * S_k + thresh_sq)
+    total_sv = int(S.shape[0])
+
+    if rank < total_sv:
+        # Noise floor = first singular value below rank cutoff
+        noise_floor_arr = S[rank]
+        b.eval(noise_floor_arr)
+        noise_floor = float(b.to_scalar(noise_floor_arr))
+    else:
+        # All singular values retained, use relative threshold
+        noise_floor = rank_threshold * max_s
+
+    # Tikhonov formula: s / (s² + floor²)
+    noise_sq = noise_floor * noise_floor
+    S_k_inv = S_k / (S_k * S_k + noise_sq)
     S_k_inv = b.astype(S_k_inv, "float32")
     b.eval(S_k_inv)
     Vt_k = Vt[:rank, :]  # [k, d]

@@ -87,10 +87,12 @@ References:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
@@ -115,6 +117,9 @@ __all__ = [
     "GramAligner",
     "find_alignment",
 ]
+
+# Module-level cache reference
+_cache = ComputationCache.shared()
 
 
 @dataclass(frozen=True)
@@ -447,12 +452,21 @@ class GramAligner:
         K_t_c: "Array",
         initial_transform: "Array | None" = None,
         max_iterations: int | None = None,
+        use_cache: bool = True,
     ) -> tuple["Array", int, float]:
         """Find feature-space transform F such that (A_s @ F)'s Gram = K_t.
 
         ONE METHOD: Sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
         Mathematical guarantee: T @ K_s @ T^T = K_t exactly.
         Then F = pinv(A_s) @ T @ A_s gives the feature-space equivalent.
+
+        Args:
+            source_centered: Centered source activations.
+            target_centered: Centered target activations.
+            K_t_c: Centered target Gram matrix.
+            initial_transform: Optional initial transform (unused).
+            max_iterations: Maximum iterations (unused - single-shot).
+            use_cache: If True, check/populate stitch transform cache.
 
         Returns (transform, iterations, achieved_cka).
         """
@@ -463,6 +477,17 @@ class GramAligner:
         # Compute source Gram matrix
         K_s = b.matmul(source_centered, b.transpose(source_centered))
         K_s_c = _center_gram_matrix(K_s, b)
+
+        # Check stitch cache (avoids repeated eigendecomposition for same Gram pairs)
+        cache_key: str | None = None
+        if use_cache:
+            cache_key = _cache.make_stitch_key(K_s_c, K_t_c, b)
+            cached = _cache.get_stitch(cache_key)
+            if cached is not None:
+                F, cka = cached
+                return F, 1, cka
+
+        start_time = time.perf_counter()
 
         # Eigendecomposition of both centered Gram matrices
         K_s_f32 = b.astype(K_s_c, "float32")
@@ -485,6 +510,12 @@ class GramAligner:
             K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
             K_aligned_c = _center_gram_matrix(K_aligned, b)
             cka = compute_cka_from_centered_grams(K_aligned_c, K_t_c, b)
+
+            # Cache the result
+            if use_cache and cache_key is not None:
+                compute_time_ms = (time.perf_counter() - start_time) * 1000
+                _cache.set_stitch(cache_key, (F, cka), compute_time_ms)
+
             return F, 1, cka
 
         # Clamp eigenvalues for numerical stability

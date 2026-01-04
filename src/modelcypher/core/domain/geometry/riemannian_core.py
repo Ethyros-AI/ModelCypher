@@ -749,7 +749,17 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
     @staticmethod
     def _should_use_sparse_shortest_paths(n: int, k_neighbors: int) -> bool:
-        """Decide between sparse Dijkstra and dense Floyd-Warshall."""
+        """Decide between sparse Dijkstra and dense Floyd-Warshall.
+
+        Complexity analysis:
+        - Floyd-Warshall: O(n³) with excellent cache locality
+        - Sparse Dijkstra: O(n² * k * log(n)) with poor cache locality
+
+        Crossover when: n² * k * log(n) < n³  →  k * log(n) < n
+
+        Use sparse when graph is truly sparse (k << n) to avoid
+        Floyd-Warshall's cubic cost.
+        """
         if n <= 2 or k_neighbors >= n - 1:
             return False
         log_n = math.log2(max(n, 2))
@@ -1183,13 +1193,32 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
     # --- Private helper methods ---
 
-    def _chord_distance_matrix(self, points: "Array") -> "Array":
+    def _chord_distance_matrix(
+        self, points: "Array", use_cache: bool = True
+    ) -> "Array":
         """Compute pairwise geodesic-compatible distances.
 
         Uses the identity ||a - b||² = ||a||² + ||b||² - 2*a·b to avoid
         O(n² * d) intermediate memory while preserving rotation invariance.
+
+        Args:
+            points: Input points [n, d].
+            use_cache: If True, check/populate the chord distance cache.
+                      Unlike geodesic cache, chord cache is k-independent.
+
+        Returns:
+            Chord distance matrix [n, n].
         """
         backend = self._backend
+
+        # Check cache first (chord distance is k-independent, so highly reusable)
+        if use_cache:
+            cache_key = _cache.make_chord_key(points, backend)
+            cached = _cache.get_chord(cache_key)
+            if cached is not None:
+                return cached
+
+        start_time = time.perf_counter()
 
         # Force float32 to avoid bfloat16 precision issues
         if hasattr(backend, 'astype'):
@@ -1207,7 +1236,14 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         dist_sq = norms_col + norms_row - 2.0 * cross
         backend.eval(dist_sq)
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-        return backend.sqrt(dist_sq)
+        result = backend.sqrt(dist_sq)
+
+        # Cache the result
+        if use_cache:
+            compute_time_ms = (time.perf_counter() - start_time) * 1000
+            _cache.set_chord(cache_key, result, compute_time_ms)
+
+        return result
 
     def _geodesic_distances_from_query(
         self,

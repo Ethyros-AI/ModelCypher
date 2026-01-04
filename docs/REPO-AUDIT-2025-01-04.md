@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 135
-- Issues found: 67
-- Issues fixed: 67
+- Audited: 143
+- Issues found: 71
+- Issues fixed: 71
 
 ## Audit Log
 
@@ -1210,6 +1210,44 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: none
 
+- `examples/02_safety_audit.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (API alignment and inputs)
+  - Hexagonal structure: OK (use cases only)
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated APIs, interpretation/threshold output, and incorrect inputs
+  - Fix: Updated to current Safety/Entropy services, removed thresholds, added JSON input parsing
+
+- `examples/03_adapter_inspection.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: OK (use cases only)
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `examples/04_entropy_analysis.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (API alignment)
+  - Hexagonal structure: OK (use cases only)
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated ThermoService API usage and interpretation output
+  - Fix: Updated to ThermoService.measure/detect with raw metrics only
+
 - `docs/research/cross-architecture-transplant-2025-12-28.md` (doc)
   - Duplicate code/math: N/A
   - Geodesic math: N/A
@@ -1221,6 +1259,68 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Tests: N/A
   - Best practices: OK
   - Issues: none
+
+- `docs/research/cross_lora_transfer.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/research/dimensional_hierarchy.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/research/entropy_differential_safety.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/security.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (auth + pickle notes)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Overstated token introspection support and pickle warning scope
+  - Fix: Clarified JWT/JWKS validation and torch.load usage
+
+- `examples/01_basic_geometry_probe.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: OK
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (result fields)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-existent result fields
+  - Fix: Aligned output to ModelProbeResult attributes
 
 - `docs/research/cross-architecture-transplant-2025-12-28.md` (doc)
   - Duplicate code/math: N/A
