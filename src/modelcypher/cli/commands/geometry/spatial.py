@@ -41,6 +41,7 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.validation import validate_file_exists, validate_model_path
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -213,6 +214,18 @@ def spatial_gravity(
     """
     context = _context(ctx)
 
+    # Validate inputs early
+    if model:
+        validate_model_path(model, context=context)
+    elif activations_file:
+        validate_file_exists(activations_file, description="Activations file", context=context)
+    else:
+        raise typer.BadParameter(
+            "Provide either --model or activations_file.\n"
+            "  --model /path/to/model  (extracts activations automatically)\n"
+            "  activations.json        (pre-extracted activations file)"
+        )
+
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.spatial_3d import (
         GravityGradientAnalyzer,
@@ -223,15 +236,9 @@ def spatial_gravity(
     # Get activations from model or file
     if model:
         anchor_activations = _extract_activations_from_model(model)
-    elif activations_file:
+    else:
         activations_data = json.loads(Path(activations_file).read_text())
         anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
-    else:
-        raise typer.BadParameter(
-            "Provide either --model or activations_file.\n"
-            "  --model /path/to/model  (extracts activations automatically)\n"
-            "  activations.json        (pre-extracted activations file)"
-        )
 
     analyzer = GravityGradientAnalyzer(backend=backend)
     result = analyzer.analyze(anchor_activations)
@@ -287,6 +294,7 @@ def spatial_density(
     Input: JSON file with {anchor_name: [activation_vector]} mapping.
     """
     context = _context(ctx)
+    validate_file_exists(activations_file, description="Activations file", context=context)
 
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.spatial_3d import (
@@ -354,6 +362,18 @@ def spatial_analyze(
     """
     context = _context(ctx)
 
+    # Validate inputs early
+    if model:
+        validate_model_path(model, context=context)
+    elif activations_file:
+        validate_file_exists(activations_file, description="Activations file", context=context)
+    else:
+        raise typer.BadParameter(
+            "Provide either --model or activations_file.\n"
+            "  --model /path/to/model  (extracts activations automatically)\n"
+            "  activations.json        (pre-extracted activations file)"
+        )
+
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.spatial_3d import (
         Spatial3DAnalyzer,
@@ -364,15 +384,9 @@ def spatial_analyze(
     # Get activations from model or file
     if model:
         anchor_activations = _extract_activations_from_model(model)
-    elif activations_file:
+    else:
         activations_data = json.loads(Path(activations_file).read_text())
         anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
-    else:
-        raise typer.BadParameter(
-            "Provide either --model or activations_file.\n"
-            "  --model /path/to/model  (extracts activations automatically)\n"
-            "  activations.json        (pre-extracted activations file)"
-        )
 
     analyzer = Spatial3DAnalyzer(backend=backend)
     report = analyzer.full_analysis(anchor_activations)
@@ -428,6 +442,7 @@ def spatial_probe_model(
 ) -> None:
     """Probe a model for 3D world model geometry."""
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
@@ -564,6 +579,8 @@ def cross_grounding_feasibility(
     Input: Two JSON files with {anchor_name: [activation_vector]} mappings.
     """
     context = _context(ctx)
+    validate_file_exists(source_activations_file, description="Source activations file", context=context)
+    validate_file_exists(target_activations_file, description="Target activations file", context=context)
 
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (
@@ -629,6 +646,8 @@ def cross_grounding_transfer(
     Output: Ghost Anchors with synthesized target positions.
     """
     context = _context(ctx)
+    validate_file_exists(source_activations_file, description="Source activations file", context=context)
+    validate_file_exists(target_activations_file, description="Target activations file", context=context)
 
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (

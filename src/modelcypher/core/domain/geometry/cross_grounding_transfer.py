@@ -43,9 +43,11 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
+    geodesic_svd,
     is_nan,
     machine_epsilon,
     pi_value,
+    power_iteration_eigh,
     sqrt_scalar,
     ulp_scalar,
 )
@@ -86,7 +88,7 @@ class RelationalStressProfile:
     # Local geometry
     local_density: float  # Neighborhood crowding (inverse of mean neighbor distance)
     curvature_signature: tuple[float, ...]  # Eigenvalues of local Hessian approximation
-    activation_magnitude: float  # L2 norm of the activation vector
+    activation_magnitude: float  # Geodesic norm of the activation vector
 
     # Relational structure
     nearest_anchors: tuple[str, ...]  # Top-k nearest anchors (ordered)
@@ -354,15 +356,12 @@ class RelationalStressComputer:
 
         # Eigenvalues as curvature signature
         try:
-            eigenvalues, _ = b.eigh(cov)
+            k = min(3, int(cov.shape[0]))
+            if k <= 0:
+                return (0.0,)
+            eigenvalues, _ = power_iteration_eigh(b, cov, k=k)
             b.eval(eigenvalues)
-            # Sort descending and keep top 3
-            sorted_idx = b.argsort(-eigenvalues)
-            top_idx = sorted_idx[:3]
-            top_vals = b.take(eigenvalues, top_idx, axis=0)
-            b.eval(top_vals)
-            # Use tolist() for O(1) extraction
-            eig_sorted = [float(x) for x in b.tolist(top_vals)]
+            eig_sorted = [float(x) for x in b.tolist(eigenvalues)]
             return tuple(eig_sorted)
         except Exception:
             return (0.0,)
@@ -512,8 +511,8 @@ class GroundingRotationEstimator:
 
         # Compute principal components via SVD
         try:
-            _, _, source_vh = b.svd(source_centered)
-            _, _, target_vh = b.svd(target_centered)
+            _, _, source_vh = geodesic_svd(b, source_centered, k=3)
+            _, _, target_vh = geodesic_svd(b, target_centered, k=3)
             b.eval(source_vh, target_vh)
 
             # Match axes by correlation

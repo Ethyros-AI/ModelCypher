@@ -35,6 +35,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.validation import validate_model_path
 
 app = typer.Typer(help="Domain geometry waypoint commands for merge guidance")
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ def waypoint_profile(
     - Moral: Valence, agency, scope (Haidt foundations)
     """
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
@@ -127,6 +129,8 @@ def waypoint_audit(
     Computes geometry deltas and strength ratio variance before merging.
     """
     context = _context(ctx)
+    validate_model_path(source_path, context=context)
+    validate_model_path(target_path, context=context)
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
@@ -201,6 +205,8 @@ def waypoint_validate(
     Run this AFTER merging to verify geometry preservation.
     """
     context = _context(ctx)
+    validate_model_path(source_path, context=context)
+    validate_model_path(merged_path, context=context)
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
@@ -263,6 +269,8 @@ def waypoint_strength_profile(
     entirely from the geometric relationship between source and target.
     """
     context = _context(ctx)
+    validate_model_path(source_path, context=context)
+    validate_model_path(target_path, context=context)
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 

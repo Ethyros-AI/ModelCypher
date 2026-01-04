@@ -38,6 +38,7 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.validation import validate_file_exists, validate_model_path
 
 app = typer.Typer(help="Temporal topology analysis commands")
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ def temporal_probe_model(
     - Temporal Manifold Score (TMS)
     """
     context = _context(ctx)
+    validate_model_path(model_path, context=context)
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.core.domain._backend import get_default_backend
@@ -270,15 +272,12 @@ def temporal_analyze(
     Input format: JSON with {anchor_concept: [activation_vector]} mappings.
     """
     context = _context(ctx)
+    validate_file_exists(activations_file, description="Activations file", context=context)
 
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
 
     path = Path(activations_file)
-    if not path.exists():
-        typer.echo(f"File not found: {activations_file}", err=True)
-        raise typer.Exit(1)
-
     with open(path) as f:
         raw_activations = json.load(f)
 

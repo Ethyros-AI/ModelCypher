@@ -37,6 +37,7 @@ import typer
 from modelcypher.cli.composition import get_compare_service, get_evaluation_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.cli.validation import validate_file_exists, validate_model_path
 from modelcypher.cli.presenters import (
     compare_detail_payload,
     compare_list_payload,
@@ -95,6 +96,9 @@ def eval_run(
         mc eval run --model ./model --dataset ./data.jsonl --batch-size 8
     """
     context = _context(ctx)
+    validate_model_path(model, context=context)
+    validate_file_exists(dataset, description="Dataset file", context=context)
+
     service = get_evaluation_service()
     result = service.run(
         model,
@@ -155,12 +159,9 @@ def eval_benchmark(
     from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
 
     context = _context(ctx)
+    validate_model_path(model, context=context)
 
     model_path = Path(model).resolve()
-    if not model_path.exists():
-        typer.echo(f"Error: Model path does not exist: {model_path}", err=True)
-        raise typer.Exit(1)
-
     task_list = [t.strip() for t in tasks.split(",")]
     typer.echo(f"Running benchmarks on {model_path}")
     typer.echo(f"Tasks: {task_list}")
@@ -248,11 +249,9 @@ def eval_domain(
     from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
 
     context = _context(ctx)
+    validate_model_path(model, context=context)
 
     model_path = Path(model).resolve()
-    if not model_path.exists():
-        typer.echo(f"Error: Model path does not exist: {model_path}", err=True)
-        raise typer.Exit(1)
 
     # Determine tasks to run
     tasks: list[str] = []
@@ -560,6 +559,11 @@ def compare_run(
         mc compare run --checkpoint ./ckpt1 --checkpoint ./ckpt2 --prompt "Test"
     """
     context = _context(ctx)
+
+    # Validate all checkpoint paths
+    for checkpoint in checkpoints:
+        validate_model_path(checkpoint, context=context)
+
     service = get_compare_service()
     result = service.run(checkpoints, prompt)
 
@@ -616,6 +620,8 @@ def compare_baseline(
         mc compare baseline --model ./model
     """
     context = _context(ctx)
+    validate_model_path(model, context=context)
+
     service = get_compare_service()
     result = service.baseline(model)
 

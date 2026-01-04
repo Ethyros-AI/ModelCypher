@@ -39,6 +39,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
+    geodesic_svd,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
@@ -235,7 +236,7 @@ class TangentSpaceAlignment:
         """
         Compute local tangent basis at an anchor point.
 
-        Uses SVD on difference vectors to neighbors.
+        Uses geodesic SVD on difference vectors to neighbors.
         """
         if len(neighbor_indices) < 2:
             return None
@@ -253,7 +254,7 @@ class TangentSpaceAlignment:
 
         # SVD
         try:
-            u, s, _ = b.svd(cov)
+            u, s, _ = geodesic_svd(b, cov, k=rank)
             b.eval(u, s)
 
             # Filter by eigenvalue threshold (relative to max singular value)
@@ -294,7 +295,7 @@ class TangentSpaceAlignment:
         """
         Compute principal cosines (canonical correlations) between two bases.
 
-        Uses SVD of B_a^T @ B_b.
+        Uses geodesic SVD of B_a^T @ B_b.
         """
         if basis_a.shape[0] != basis_b.shape[0]:
             return []
@@ -311,7 +312,7 @@ class TangentSpaceAlignment:
         m = b.matmul(b.transpose(basis_a[:, :rank]), basis_b[:, :rank])
 
         try:
-            _, s, _ = b.svd(m)
+            _, s, _ = geodesic_svd(b, m, k=rank)
             b.eval(s)
 
             cosines = [float(x) for x in b.tolist(s)][:rank]

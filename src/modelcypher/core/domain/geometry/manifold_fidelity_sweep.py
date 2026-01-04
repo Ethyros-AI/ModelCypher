@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     machine_epsilon,
     sqrt_scalar,
 )
@@ -244,7 +245,7 @@ class ManifoldFidelitySweep:
         """Compute SVD, return (s, vT)."""
         b = self._backend
         try:
-            _, s, vT = b.svd(x)
+            _, s, vT = geodesic_svd(b, x)
             b.eval(s, vT)
             return (s, vT)
         except Exception:
@@ -298,7 +299,7 @@ class ManifoldFidelitySweep:
         m = b.matmul(b.transpose(x), y)
 
         try:
-            u, _, vT = b.svd(m)
+            u, _, vT = geodesic_svd(b, m)
             b.eval(u, vT)
 
             # Optimal rotation: Omega = U @ V^T

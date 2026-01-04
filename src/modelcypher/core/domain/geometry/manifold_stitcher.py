@@ -99,6 +99,7 @@ from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol,
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     log_scalar,
     regularization_epsilon,
     sqrt_scalar,
@@ -708,7 +709,7 @@ class ManifoldStitcher:
 
         # Procrustes: R = U @ V^T minimizes ||source @ R - target||_F
         m = b.matmul(b.transpose(z_source), z_target)
-        u, _, vt = b.svd(m)
+        u, _, vt = geodesic_svd(b, m)
         omega = b.matmul(u, vt)
 
         # Ensure proper rotation (det = +1), not reflection
@@ -793,7 +794,7 @@ class ManifoldStitcher:
             t_centered = t_members - t_mean
 
             m = b.matmul(b.transpose(s_centered), t_centered)
-            u, _, vt = b.svd(m)
+            u, _, vt = geodesic_svd(b, m)
             omega = b.matmul(u, vt)
 
             # Ensure proper rotation (det = +1), not reflection
