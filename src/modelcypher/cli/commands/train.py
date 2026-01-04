@@ -111,7 +111,10 @@ def train_start(
     try:
         precision = ComputePrecision(compute_precision)
     except ValueError as exc:
-        raise typer.BadParameter(f"Invalid compute-precision: {compute_precision}") from exc
+        valid = ", ".join(m.value for m in ComputePrecision)
+        raise typer.BadParameter(
+            f"Invalid compute-precision '{compute_precision}'. Valid options: {valid}"
+        ) from exc
     if optimizer_type != "adamw":
         raise typer.BadParameter("optimizer-type must be adamw")
     hyperparams = Hyperparameters(
@@ -213,7 +216,10 @@ def train_preflight(
     try:
         precision = ComputePrecision(compute_precision)
     except ValueError as exc:
-        raise typer.BadParameter(f"Invalid compute-precision: {compute_precision}") from exc
+        valid = ", ".join(m.value for m in ComputePrecision)
+        raise typer.BadParameter(
+            f"Invalid compute-precision '{compute_precision}'. Valid options: {valid}"
+        ) from exc
     if optimizer_type != "adamw":
         raise typer.BadParameter("optimizer-type must be adamw")
     hyperparams = Hyperparameters(

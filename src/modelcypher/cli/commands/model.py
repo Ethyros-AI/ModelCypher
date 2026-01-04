@@ -692,43 +692,32 @@ def model_vocab_compare(
 
 def _parse_model_search_library(value: str) -> ModelSearchLibraryFilter:
     normalized = value.lower()
-    if normalized == "mlx":
-        return ModelSearchLibraryFilter.mlx
-    if normalized == "safetensors":
-        return ModelSearchLibraryFilter.safetensors
-    if normalized == "pytorch":
-        return ModelSearchLibraryFilter.pytorch
-    if normalized == "any":
-        return ModelSearchLibraryFilter.any
-    raise typer.BadParameter("Invalid library filter. Use: mlx, safetensors, pytorch, or any.")
+    for member in ModelSearchLibraryFilter:
+        if normalized == member.value.lower():
+            return member
+    valid = ", ".join(m.value for m in ModelSearchLibraryFilter)
+    raise typer.BadParameter(f"Invalid library filter '{value}'. Valid options: {valid}")
 
 
 def _parse_model_search_quant(value: str | None) -> ModelSearchQuantization | None:
     if value is None:
         return None
     normalized = value.lower()
-    if normalized == "4bit":
-        return ModelSearchQuantization.four_bit
-    if normalized == "8bit":
-        return ModelSearchQuantization.eight_bit
-    if normalized == "any":
-        return ModelSearchQuantization.any
-    raise typer.BadParameter("Invalid quantization filter. Use: 4bit, 8bit, or any.")
+    for member in ModelSearchQuantization:
+        if normalized == member.value.lower():
+            return member
+    valid = ", ".join(m.value for m in ModelSearchQuantization)
+    raise typer.BadParameter(f"Invalid quantization filter '{value}'. Valid options: {valid}")
 
 
 def _parse_model_search_sort(value: str) -> ModelSearchSortOption:
-    normalized = value.lower()
-    if normalized == "downloads":
-        return ModelSearchSortOption.downloads
-    if normalized == "likes":
-        return ModelSearchSortOption.likes
-    if normalized in {"lastmodified", "last_modified"}:
-        return ModelSearchSortOption.last_modified
-    if normalized == "trending":
-        return ModelSearchSortOption.trending
-    raise typer.BadParameter(
-        "Invalid sort option. Use: downloads, likes, lastModified, or trending."
-    )
+    normalized = value.lower().replace("_", "")
+    for member in ModelSearchSortOption:
+        # Match against both the enum value and a normalized version
+        if normalized == member.value.lower().replace("_", ""):
+            return member
+    valid = ", ".join(m.value for m in ModelSearchSortOption)
+    raise typer.BadParameter(f"Invalid sort option '{value}'. Valid options: {valid}")
 
 
 def _print_model_search_text(page: ModelSearchPage) -> None:

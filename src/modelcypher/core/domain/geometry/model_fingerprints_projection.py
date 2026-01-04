@@ -19,10 +19,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_stitcher import ModelFingerprints
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
 
 
 class ProjectionMethod(str, Enum):
@@ -65,6 +70,84 @@ class Projection:
 
 class ModelFingerprintsProjection:
     @staticmethod
+    def _project_geodesic_mds(
+        points: "Array",
+        backend: "Backend",
+        target_dim: int,
+    ) -> "Array":
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points, k_neighbors=None)
+        geo_dist = geo_result.distances
+        backend.eval(geo_dist)
+
+        max_val = float(backend.finfo(geo_dist.dtype).max)
+        finite = backend.where(geo_dist < max_val, geo_dist, backend.zeros_like(geo_dist))
+        max_finite = backend.max(finite)
+        backend.eval(max_finite)
+        geo_dist = backend.where(geo_dist < max_val, geo_dist, max_finite)
+        backend.eval(geo_dist)
+
+        D_sq = geo_dist * geo_dist
+        backend.eval(D_sq)
+
+        row_mean = backend.mean(D_sq, axis=1, keepdims=True)
+        col_mean = backend.mean(D_sq, axis=0, keepdims=True)
+        grand_mean = backend.mean(D_sq)
+        backend.eval(row_mean, col_mean, grand_mean)
+
+        B = -0.5 * (D_sq - row_mean - col_mean + grand_mean)
+        B = 0.5 * (B + backend.transpose(B))
+        backend.eval(B)
+
+        B_frob_sq = backend.sum(B * B)
+        backend.eval(B_frob_sq)
+        B_frob = backend.sqrt(B_frob_sq)
+        backend.eval(B_frob)
+
+        eps = division_epsilon(backend, B)
+        reg_lambda = eps * float(backend.to_scalar(B_frob))
+        B = B + reg_lambda * backend.eye(int(B.shape[0]))
+        backend.eval(B)
+
+        eigenvalues, eigenvectors = backend.eigh(B)
+        backend.eval(eigenvalues, eigenvectors)
+
+        n_eig = eigenvalues.shape[0]
+        rev_idx = backend.arange(n_eig - 1, -1, -1)
+        backend.eval(rev_idx)
+        eigenvalues = backend.take(eigenvalues, rev_idx, axis=0)
+        eigenvectors = backend.take(eigenvectors, rev_idx, axis=1)
+        backend.eval(eigenvalues, eigenvectors)
+
+        pos_mask = eigenvalues > eps
+        backend.eval(pos_mask)
+        n_positive_arr = backend.sum(
+            backend.where(pos_mask, backend.ones_like(eigenvalues), backend.zeros_like(eigenvalues))
+        )
+        backend.eval(n_positive_arr)
+        n_positive = int(backend.to_scalar(n_positive_arr))
+        if n_positive < target_dim:
+            raise ProjectionError(
+                f"Only {n_positive} positive eigenvalues, need {target_dim}. "
+                "Distance matrix is non-metric."
+            )
+
+        U_k = eigenvectors[:, :target_dim]
+        S_k = eigenvalues[:target_dim]
+        backend.eval(U_k, S_k)
+
+        eps_arr = backend.zeros_like(S_k) + eps
+        S_k = backend.maximum(S_k, eps_arr)
+        backend.eval(S_k)
+
+        sqrt_S_k = backend.sqrt(S_k)
+        backend.eval(sqrt_S_k)
+        projected = U_k * sqrt_S_k[None, :]
+        backend.eval(projected)
+
+        return projected
+
+    @staticmethod
     def project_2d(
         fingerprints: ModelFingerprints,
         method: ProjectionMethod = ProjectionMethod.pca,
@@ -102,9 +185,8 @@ class ModelFingerprintsProjection:
             (feature.layer, feature.dimension): idx for idx, feature in enumerate(feature_list)
         }
 
-        matrix = [0.0] * (n * d)
+        matrix = [[0.0] * d for _ in range(n)]
         for row, fingerprint in enumerate(fingerprints.fingerprints):
-            row_offset = row * d
             for layer, dims in fingerprint.activated_dimensions.items():
                 if layers and layer not in layers:
                     continue
@@ -112,45 +194,26 @@ class ModelFingerprintsProjection:
                     col = feature_index.get((layer, dim.index))
                     if col is None:
                         continue
-                    matrix[row_offset + col] = float(dim.activation)
+                    matrix[row][col] = float(dim.activation)
 
-        ModelFingerprintsProjection._normalize_rows(matrix, rows=n, cols=d)
-        ModelFingerprintsProjection._center_columns(matrix, rows=n, cols=d)
+        backend = get_default_backend()
+        points_arr = backend.array(matrix, dtype="float32")
+        backend.eval(points_arr)
 
-        rng = _LCG(seed=seed)
-        v1 = ModelFingerprintsProjection._power_iteration_top_eigenvector(
-            matrix=matrix,
-            rows=n,
-            cols=d,
-            rng=rng,
+        projected = ModelFingerprintsProjection._project_geodesic_mds(
+            points_arr, backend, target_dim=2
         )
-        if v1 is None:
-            raise ProjectionError(f"Projection requires at least 2 features (got {d}).")
-        v2 = ModelFingerprintsProjection._power_iteration_top_eigenvector(
-            matrix=matrix,
-            rows=n,
-            cols=d,
-            rng=rng,
-            orthogonal_to=v1,
-        )
-        if v2 is None:
-            raise ProjectionError(f"Projection requires at least 2 features (got {d}).")
+        backend.eval(projected)
 
+        coords_list = backend.tolist(projected)
         points: list[ProjectionPoint] = []
         for row, fingerprint in enumerate(fingerprints.fingerprints):
-            row_offset = row * d
-            x = 0.0
-            y = 0.0
-            for col in range(d):
-                value = matrix[row_offset + col]
-                x += value * v1[col]
-                y += value * v2[col]
             points.append(
                 ProjectionPoint(
                     prime_id=fingerprint.prime_id,
                     prime_text=fingerprint.prime_text,
-                    x=x,
-                    y=y,
+                    x=float(coords_list[row][0]),
+                    y=float(coords_list[row][1]),
                 )
             )
 
@@ -187,137 +250,3 @@ class ModelFingerprintsProjection:
         for (layer, dimension), count in sorted_items[:limit]:
             features.append(ProjectionFeature(layer=layer, dimension=dimension, frequency=count))
         return features
-
-    @staticmethod
-    def _normalize_rows(matrix: list[float], rows: int, cols: int) -> None:
-        """Normalize rows to unit length.
-
-        INTENTIONAL EUCLIDEAN: Row normalization for PCA preprocessing.
-        PCA finds directions of maximum variance using eigenvector computation,
-        which is a linear algebra operation defined in terms of Euclidean norms.
-        The eigenvectors of a matrix are inherently Euclidean objects.
-        """
-        if rows <= 0 or cols <= 0:
-            return
-        for row in range(rows):
-            offset = row * cols
-            sum_squares = 0.0
-            for col in range(cols):
-                value = matrix[offset + col]
-                sum_squares += value * value
-            if sum_squares <= 0:
-                continue
-            _b = get_default_backend()
-            inv_norm = 1.0 / sqrt_scalar(sum_squares, _b)
-            for col in range(cols):
-                matrix[offset + col] = matrix[offset + col] * inv_norm
-
-    @staticmethod
-    def _center_columns(matrix: list[float], rows: int, cols: int) -> None:
-        if rows <= 0 or cols <= 0:
-            return
-        sums = [0.0] * cols
-        for row in range(rows):
-            offset = row * cols
-            for col in range(cols):
-                sums[col] += matrix[offset + col]
-        means = [value / float(rows) for value in sums]
-        for row in range(rows):
-            offset = row * cols
-            for col in range(cols):
-                matrix[offset + col] = matrix[offset + col] - means[col]
-
-    @staticmethod
-    def _power_iteration_top_eigenvector(
-        matrix: list[float],
-        rows: int,
-        cols: int,
-        rng: "_LCG",
-        orthogonal_to: list[float] | None = None,
-        max_iterations: int = 64,
-        tolerance: float = 1e-6,
-    ) -> list[float] | None:
-        if rows <= 0 or cols <= 0:
-            return None
-        v = [rng.next_double() - 0.5 for _ in range(cols)]
-        if orthogonal_to is not None:
-            ModelFingerprintsProjection._orthogonalize(v, orthogonal_to)
-        if not ModelFingerprintsProjection._normalize(v):
-            return None
-
-        temp = [0.0] * rows
-        w = [0.0] * cols
-
-        for _ in range(max_iterations):
-            for row in range(rows):
-                offset = row * cols
-                total = 0.0
-                for col in range(cols):
-                    total += matrix[offset + col] * v[col]
-                temp[row] = total
-
-            for col in range(cols):
-                w[col] = 0.0
-            for row in range(rows):
-                offset = row * cols
-                t = temp[row]
-                for col in range(cols):
-                    w[col] += matrix[offset + col] * t
-
-            if orthogonal_to is not None:
-                ModelFingerprintsProjection._orthogonalize(w, orthogonal_to)
-            if not ModelFingerprintsProjection._normalize(w):
-                break
-
-            delta = 0.0
-            for i in range(cols):
-                diff = w[i] - v[i]
-                delta += diff * diff
-            if delta < tolerance * tolerance:
-                v = list(w)
-                break
-            v = list(w)
-
-        return v
-
-    @staticmethod
-    def _normalize(vector: list[float]) -> bool:
-        """Normalize vector to unit length.
-
-        INTENTIONAL EUCLIDEAN: Power iteration for eigenvector computation.
-        The iteration v_{k+1} = Av_k / ||Av_k|| requires Euclidean normalization
-        because eigenvectors are defined by ||Av|| = λ||v|| in Euclidean norm.
-        """
-        sum_squares = 0.0
-        for value in vector:
-            sum_squares += value * value
-        if sum_squares <= 0:
-            return False
-        _b = get_default_backend()
-        inv_norm = 1.0 / sqrt_scalar(sum_squares, _b)
-        for i in range(len(vector)):
-            vector[i] *= inv_norm
-        return True
-
-    @staticmethod
-    def _orthogonalize(vector: list[float], basis: list[float]) -> None:
-        if len(vector) != len(basis):
-            return
-        dot = 0.0
-        for i in range(len(vector)):
-            dot += vector[i] * basis[i]
-        for i in range(len(vector)):
-            vector[i] -= dot * basis[i]
-
-
-class _LCG:
-    def __init__(self, seed: int) -> None:
-        self.state = seed if seed != 0 else 0xDEAD_BEEF
-
-    def next_uint64(self) -> int:
-        self.state = (self.state * 6_364_136_223_846_793_005 + 1) & 0xFFFFFFFFFFFFFFFF
-        return self.state
-
-    def next_double(self) -> float:
-        value = self.next_uint64() >> 11
-        return float(value) / float(1 << 53)

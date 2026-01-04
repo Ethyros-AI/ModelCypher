@@ -230,24 +230,12 @@ class DimensionCascade:
             # Use Isomap for GEODESIC-preserving projection
             # Isomap preserves manifold structure via geodesic distances
             # PCA only preserves Euclidean variance - WRONG for curved manifolds
-            try:
-                projected, coupling_matrix = self._project_via_isomap(current, target_dim)
-                logger.debug(
-                    "Stored Isomap coupling: [%d, %d]",
-                    coupling_matrix.shape[0],
-                    coupling_matrix.shape[1],
-                )
-            except Exception as exc:
-                # Fall back to PCA if Isomap fails (e.g., disconnected graph)
-                logger.warning(
-                    "Isomap failed (%s), falling back to PCA", exc
-                )
-                projected, coupling_matrix = self._project_via_pca(current, target_dim)
-                logger.debug(
-                    "Stored PCA coupling: [%d, %d]",
-                    coupling_matrix.shape[0],
-                    coupling_matrix.shape[1],
-                )
+            projected, coupling_matrix = self._project_via_isomap(current, target_dim)
+            logger.debug(
+                "Stored Isomap coupling: [%d, %d]",
+                coupling_matrix.shape[0],
+                coupling_matrix.shape[1],
+            )
 
             # Store coupling for streaming reuse
             couplings[target_dim] = coupling_matrix
@@ -302,11 +290,10 @@ class DimensionCascade:
         self, points: "Array", target_dim: int
     ) -> tuple["Array", "Array"]:
         """
-        Project points to target dimension via PCA.
+        Legacy entry point for projection.
 
-        PCA preserves maximum variance and gives reliable 3D spread.
-        Returns both the projected points and the coupling matrix (V_k)
-        which can be reused for streaming projection.
+        Geodesic manifolds require geodesic-preserving embeddings. This method
+        is retained for compatibility but now delegates to Isomap.
 
         Args:
             points: Source points [n_points, source_dim]
@@ -316,31 +303,7 @@ class DimensionCascade:
             Tuple of (projected points [n_points, target_dim],
                       coupling matrix [source_dim, target_dim])
         """
-        b = self.backend
-
-        # SVD requires float32 or higher precision
-        if 'float16' in str(points.dtype):
-            points_f32 = b.astype(points, "float32")
-            b.eval(points_f32)
-        else:
-            points_f32 = points
-
-        # SVD to find principal components
-        # points = U @ S @ Vt
-        # The projection matrix is V[:, :target_dim] = Vt[:target_dim, :].T
-        U, S, Vt = b.svd(points_f32, full_matrices=False)
-        b.eval(U, S, Vt)
-
-        # Coupling matrix: V_k is the projection from source_dim to target_dim
-        # This is REUSABLE for streaming: new_point @ V_k gives target_dim projection
-        V_k = b.transpose(Vt[:target_dim, :])  # [source_dim, target_dim]
-        b.eval(V_k)
-
-        # Project all points
-        projected = b.matmul(points_f32, V_k)  # [n_points, target_dim]
-        b.eval(projected)
-
-        return projected, V_k
+        return self._project_via_isomap(points, target_dim)
 
     def _project_via_isomap(
         self, points: "Array", target_dim: int, k_neighbors: int | None = None
@@ -477,7 +440,7 @@ class DimensionCascade:
         if n_positive < target_dim:
             raise ValueError(
                 f"Only {n_positive} positive eigenvalues, need {target_dim}. "
-                "Distance matrix may be non-metric. Falling back to PCA."
+                "Distance matrix is non-metric."
             )
 
         # Take top-k eigenvectors (largest positive eigenvalues)
@@ -650,8 +613,8 @@ class DimensionCascade:
         """
         Create target basis for GRAM_TRANSPORT projection.
 
-        Uses PCA to find the principal subspace as the target.
-        The coupling matrix will then map source features to this subspace.
+        Uses geodesic Isomap to define the target subspace.
+        The coupling matrix then maps source features to this subspace.
 
         Args:
             points: Source points [n_points, source_dim]

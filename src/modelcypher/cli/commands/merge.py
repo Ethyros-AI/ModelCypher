@@ -39,6 +39,7 @@ import typer
 from modelcypher.cli.commands.model import prevent_sleep
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
 # Support BOTH syntaxes:
@@ -51,17 +52,127 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _run_dry_run(
+    ctx: typer.Context,
+    source: str,
+    target: str,
+    output_dir: str,
+) -> None:
+    """Show what a merge would do without actually running it."""
+    from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+
+    context = _context(ctx)
+    service = ModelProbeService()
+
+    # Probe both models
+    source_info = service.probe(source)
+    target_info = service.probe(target)
+
+    # Calculate estimated output size (roughly same as target since we're adding to it)
+    output_path = Path(output_dir)
+
+    payload = {
+        "_schema": "mc.merge.dry_run.v1",
+        "source": {
+            "path": source,
+            "architecture": source_info.architecture,
+            "parameters": source_info.parameter_count,
+            "vocabSize": source_info.vocab_size,
+            "hiddenSize": source_info.hidden_size,
+            "layers": len(source_info.layers),
+            "quantization": source_info.quantization,
+        },
+        "target": {
+            "path": target,
+            "architecture": target_info.architecture,
+            "parameters": target_info.parameter_count,
+            "vocabSize": target_info.vocab_size,
+            "hiddenSize": target_info.hidden_size,
+            "layers": len(target_info.layers),
+            "quantization": target_info.quantization,
+        },
+        "outputDir": str(output_path),
+        "outputExists": output_path.exists(),
+        "sameArchitecture": source_info.architecture == target_info.architecture,
+        "sameVocab": source_info.vocab_size == target_info.vocab_size,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 70,
+            "MERGE DRY RUN (no changes will be made)",
+            "=" * 70,
+            "",
+            "SOURCE MODEL (knowledge donor)",
+            f"  Path: {source}",
+            f"  Architecture: {source_info.architecture}",
+            f"  Parameters: {source_info.parameter_count:,}",
+            f"  Vocab Size: {source_info.vocab_size:,}",
+            f"  Hidden Size: {source_info.hidden_size}",
+            f"  Layers: {len(source_info.layers)}",
+        ]
+        if source_info.quantization:
+            lines.append(f"  Quantization: {source_info.quantization}")
+
+        lines.extend([
+            "",
+            "TARGET MODEL (receives knowledge)",
+            f"  Path: {target}",
+            f"  Architecture: {target_info.architecture}",
+            f"  Parameters: {target_info.parameter_count:,}",
+            f"  Vocab Size: {target_info.vocab_size:,}",
+            f"  Hidden Size: {target_info.hidden_size}",
+            f"  Layers: {len(target_info.layers)}",
+        ])
+        if target_info.quantization:
+            lines.append(f"  Quantization: {target_info.quantization}")
+
+        lines.extend([
+            "",
+            "OUTPUT",
+            f"  Directory: {output_path}",
+            f"  Exists: {'Yes' if output_path.exists() else 'No'}",
+        ])
+
+        # Compatibility notes
+        lines.extend(["", "COMPATIBILITY"])
+        if source_info.architecture == target_info.architecture:
+            lines.append("  Same architecture: Yes (within-cluster merge)")
+        else:
+            lines.append("  Same architecture: No (cross-architecture merge)")
+        if source_info.vocab_size == target_info.vocab_size:
+            lines.append("  Same vocabulary: Yes")
+        else:
+            lines.append(f"  Same vocabulary: No ({source_info.vocab_size:,} vs {target_info.vocab_size:,})")
+
+        lines.extend(["", "=" * 70])
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 def _run_merge(
     ctx: typer.Context,
     source: str,
     target: str,
     output_dir: str,
     output_file: str | None,
+    dry_run: bool = False,
 ) -> None:
     """Core merge logic shared by callback and run command."""
     from modelcypher.cli.composition import get_merge_pipeline_service
 
     context = _context(ctx)
+
+    # Validate model paths early
+    validate_model_path(source, context=context)
+    validate_model_path(target, context=context)
+
+    # Dry-run mode: show what would happen without merging
+    if dry_run:
+        _run_dry_run(ctx, source, target, output_dir)
+        return
 
     service = get_merge_pipeline_service()
 
@@ -192,6 +303,7 @@ def merge_callback(
     target: str | None = typer.Option(None, "--target", "-t", help="Path to target model (receives knowledge)"),
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="Output directory for merged model"),
     output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -200,6 +312,7 @@ def merge_callback(
 
     Examples:
         mc merge -s ./qwen -t ./smol -o ./merged
+        mc merge -s ./qwen -t ./smol -o ./merged --dry-run
     """
     # If a subcommand was invoked (like 'run'), don't do anything here
     if ctx.invoked_subcommand is not None:
@@ -207,7 +320,7 @@ def merge_callback(
 
     # If options were provided directly, run the merge
     if source and target and output_dir:
-        _run_merge(ctx, source, target, output_dir, output_file)
+        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
     elif source or target or output_dir:
         # Partial options provided - show error
         missing = []
@@ -234,6 +347,7 @@ def run(
         "-f",
         help="Save full pipeline result to JSON file",
     ),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -242,5 +356,6 @@ def run(
 
     Examples:
         mc merge run -s ./qwen -t ./smol -o ./merged
+        mc merge run -s ./qwen -t ./smol -o ./merged --dry-run
     """
-    _run_merge(ctx, source, target, output_dir, output_file)
+    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
