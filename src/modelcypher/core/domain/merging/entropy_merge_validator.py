@@ -28,7 +28,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.model_loader import ModelLoaderPort
@@ -133,8 +136,6 @@ class LayerMergeValidation:
             Uses pure Python arithmetic for scalar operations to avoid
             GPU kernel launch overhead. Backend is only used for epsilon.
         """
-        import math
-
         # With null space addition, target behavior is PRESERVED
         # Source knowledge is ADDED in null space directions
         # Expected: merged entropy >= target entropy (more knowledge = higher entropy)
@@ -164,7 +165,8 @@ class LayerMergeValidation:
             + (target_entropy - mean_val) ** 2
             + (merged_entropy - mean_val) ** 2
         ) / 3.0
-        intrinsic_std = math.sqrt(variance)
+        # Use sqrt_scalar to guard against numerical noise producing negative variance
+        intrinsic_std = sqrt_scalar(variance, backend)
 
         max_delta = max(source_target_gap, intrinsic_std, eps)
         retention = max(0.0, 1.0 - (entropy_delta / max_delta))

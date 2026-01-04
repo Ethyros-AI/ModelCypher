@@ -210,10 +210,7 @@ class GeneralizedProcrustes:
                 return None
 
         # Build tensor stack [M, N, K]
-        try:
-            X = self._backend.array(activations)
-        except Exception:
-            return None
+        X = self._backend.array(activations)
 
         # Derive convergence threshold from machine epsilon
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon

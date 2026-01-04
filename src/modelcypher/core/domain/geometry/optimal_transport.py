@@ -73,7 +73,6 @@ class SinkhornResult:
 
 # Algorithm constants - not configurable, derived from numerical analysis
 _MAX_ITERATIONS = 100  # Convergence typically triggers before this
-_LOG_DOMAIN = True  # Always use log-domain for numerical stability
 
 
 class SinkhornSolver:
@@ -272,67 +271,6 @@ class SinkhornSolver:
         # Recover transport plan: G = diag(u) @ K @ diag(v)
         G = K * backend.reshape(u, (n, 1)) * backend.reshape(v, (1, m))
         return G
-
-    def _solve_standard(
-        self,
-        cost_matrix: "Array",
-        mu: "Array",
-        nu: "Array",
-        epsilon: float,
-        convergence_threshold: float,
-        stability_epsilon: float,
-        max_iterations: int,
-    ) -> SinkhornResult:
-        """Standard Sinkhorn algorithm (non-log-domain)."""
-        backend = self._backend
-        n = int(cost_matrix.shape[0])
-        m = int(cost_matrix.shape[1])
-
-        K = backend.exp(-cost_matrix / epsilon)
-        backend.eval(K)
-
-        u = backend.ones((n,), dtype="float32")
-        v = backend.ones((m,), dtype="float32")
-        backend.eval(u, v)
-
-        converged = False
-        iterations = 0
-        marginal_error = float("inf")
-
-        K_T = backend.transpose(K)
-        for i in range(max_iterations):
-            iterations = i + 1
-            Kv = backend.matmul(K, v.reshape((m, 1))).reshape((n,))
-            u_new = mu / backend.maximum(Kv, backend.array(stability_epsilon))
-            KTu = backend.matmul(K_T, u_new.reshape((n, 1))).reshape((m,))
-            v_new = nu / backend.maximum(KTu, backend.array(stability_epsilon))
-            Kv_new = backend.matmul(K, v_new.reshape((m, 1))).reshape((n,))
-            row_marginal = u_new * Kv_new
-            col_marginal = v_new * KTu
-            row_error = backend.max(backend.abs(row_marginal - mu))
-            col_error = backend.max(backend.abs(col_marginal - nu))
-            backend.eval(row_error, col_error)
-            marginal_error = max(
-                float(self._to_scalar(row_error)), float(self._to_scalar(col_error))
-            )
-            u = u_new
-            v = v_new
-            if marginal_error < convergence_threshold:
-                converged = True
-                break
-
-        plan = u.reshape((n, 1)) * K * v.reshape((1, m))
-        backend.eval(plan)
-        cost = backend.sum(cost_matrix * plan)
-        backend.eval(cost)
-
-        return SinkhornResult(
-            plan=plan,
-            converged=converged,
-            iterations=iterations,
-            marginal_error=marginal_error,
-            cost=float(self._to_scalar(cost)),
-        )
 
     def _solve_log_domain(
         self,

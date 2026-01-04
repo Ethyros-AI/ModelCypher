@@ -154,8 +154,8 @@ class LoRAAdapterMerger:
                 import torch
                 raw_weights = torch.load(str(weights_path), map_location="cpu", weights_only=True)
                 for key, value in raw_weights.items():
-                    # Convert torch tensor to backend array via numpy
-                    weights[key] = backend.array(value.numpy())
+                    # Convert torch tensor to backend array
+                    weights[key] = backend.array(value)
                     module_keys.append(key)
             except ImportError:
                 raise MergeError(
