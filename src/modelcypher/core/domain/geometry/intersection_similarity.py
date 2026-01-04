@@ -189,16 +189,11 @@ def build_layer_correlations(
                     cosine = compute_cosine_similarity(s_vec, t_vec)
                     similarity = cosine * cosine  # CKA ≈ cos^2 for centered vectors
             elif mode == IntersectionSimilarityMode.GROMOV_WASSERSTEIN:
-                # GW requires full pairwise distance matrices - defer to external module
-                # For now, fall back to CKA as approximation
-                common_primes = set(s_primes.keys()) & set(t_primes.keys())
-                if not common_primes:
-                    similarity = 0.0
-                else:
-                    s_vec = {i: s_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
-                    t_vec = {i: t_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
-                    cosine = compute_cosine_similarity(s_vec, t_vec)
-                    similarity = cosine * cosine
+                # GW requires full pairwise distance matrices from raw activations
+                raise NotImplementedError(
+                    "GROMOV_WASSERSTEIN mode requires raw activations, not semantic prime "
+                    "signatures. Use gromov_wasserstein.py directly with activation matrices."
+                )
             else:
                 similarity = 0.0
 

@@ -596,12 +596,14 @@ class VectorMath:
             return result
 
         # Handle near-antipodal case (θ ≈ π) - SLERP is undefined
-        # Use linear interpolation as fallback (defined but not geodesic)
+        # There are infinitely many geodesics between antipodal points.
+        # We fail hard rather than silently degrading to linear interpolation.
         if theta > _PI - epsilon:
-            result = [
-                (1.0 - t) * v0_list[i] + t * v1_list[i] for i in range(len_v0)
-            ]
-            return result
+            raise ValueError(
+                f"SLERP is undefined for near-antipodal vectors (θ={theta:.6f} ≈ π). "
+                "Antipodal points have infinitely many shortest paths. "
+                "Use a different interpolation method or perturb one vector slightly."
+            )
 
         # SLERP formula: s0 * v0_unit + s1 * v1_unit
         sin_theta = sin_scalar(theta, _b)

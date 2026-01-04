@@ -506,24 +506,16 @@ class DimensionCascade:
         coupling = b.solve(XtX_reg, XtY)
         b.eval(coupling)
 
-        # Check for numerical issues in coupling
+        # Check for numerical issues in coupling - FAIL HARD, no fallback
         coupling_max_arr = b.max(b.abs(coupling))
         b.eval(coupling_max_arr)
         coupling_max = float(b.to_scalar(coupling_max_arr))
         if coupling_max > 1e10 or coupling_max != coupling_max:  # NaN check
-            # Fallback: use simple least squares via projection
-            # This is less accurate but numerically stable
-            logger.warning(
-                "Coupling has numerical issues (max=%.2e), using fallback",
-                coupling_max,
+            raise ValueError(
+                f"Coupling matrix has numerical issues (max={coupling_max:.2e}). "
+                "This indicates ill-conditioned input data. Increase regularization "
+                "or check input activations for NaN/Inf values."
             )
-            # Simple projection: W = X^T @ Y / (||X||^2 + eps)
-            XtX_diag = b.diag(XtX)
-            b.eval(XtX_diag)
-            XtX_diag_inv = 1.0 / (XtX_diag + reg_lambda)
-            b.eval(XtX_diag_inv)
-            coupling = XtX_diag_inv[:, None] * XtY
-            b.eval(coupling)
 
         logger.debug(
             "Coupling via regularized normal equations: reg_lambda=%.2e",

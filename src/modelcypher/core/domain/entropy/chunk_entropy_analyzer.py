@@ -36,6 +36,7 @@ from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     is_finite,
     log2_scalar,
 )
@@ -463,7 +464,10 @@ class ChunkEntropyAnalyzer:
         off_diag = backend.ones_like(dist_filled) - backend.eye(n)
         sum_rows = backend.sum(dist_filled * off_diag, axis=1)
         mean_distances = sum_rows / max(1, n - 1)
-        scores = 1.0 - (mean_distances / max_distance)
+        # Use epsilon guard for division to handle extremely small max_distance
+        eps = division_epsilon(backend, mean_distances)
+        safe_max_distance = max(max_distance, eps)
+        scores = 1.0 - (mean_distances / safe_max_distance)
         scores = backend.maximum(backend.minimum(scores, backend.full(scores.shape, 1.0)), backend.zeros_like(scores))
         backend.eval(scores)
         return backend.tolist(scores)

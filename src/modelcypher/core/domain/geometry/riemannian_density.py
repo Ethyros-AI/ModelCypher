@@ -643,22 +643,34 @@ class RiemannianDensityEstimator:
                 _geodesic_context=geodesic_context if store_raw_activations else None,
             )
 
+        # Compute geodesic context for proper log map in density_at
+        # k is derived from the data using elbow detection on k-NN distances
+        rg = RiemannianGeometry(backend)
+        k_neighbors = derive_k_neighbors(activations, backend)
+        geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
+        if not geodesic_context.connected:
+            geodesic_context = rg.geodesic_distances(activations, k_neighbors=None)
+            k_neighbors = geodesic_context.k_neighbors
+
         # Compute centroid using Fréchet mean - the only correct method on curved manifolds
         # Arithmetic mean is WRONG as it doesn't minimize squared geodesic distances
         # No fallback to arithmetic mean - if this fails, it's a bug we need to fix
-        rg = RiemannianGeometry(backend)
         result = rg.frechet_mean(
             activations,
             max_iterations=50,
             tolerance=regularization_epsilon(backend, activations),
+            k_neighbors=k_neighbors,
+            geo_result=geodesic_context,
         )
         centroid = result.mean
         backend.eval(centroid)
 
-        # Compute geodesic context for proper log map in density_at
-        # k is derived from the data using elbow detection on k-NN distances
-        k_neighbors = derive_k_neighbors(activations, backend)
-        geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
+        geo_from_centroid = rg._geodesic_distances_from_query(
+            activations,
+            centroid,
+            geo_result=geodesic_context,
+        )
+        backend.eval(geo_from_centroid)
 
         # Estimate local curvature at centroid (always enabled - manifolds are curved)
         local_curvature = None
@@ -671,10 +683,21 @@ class RiemannianDensityEstimator:
                 logger.warning(f"Curvature estimation failed for {concept_id}: {e}")
 
         # Compute covariance with curvature correction
-        covariance = self._estimate_covariance(activations, centroid, local_curvature, metric_fn)
+        covariance = self._estimate_covariance(
+            activations,
+            centroid,
+            local_curvature,
+            metric_fn,
+            geo_result=geodesic_context,
+        )
 
         # Compute geodesic radius (extent of activations from centroid)
-        geodesic_radius = self._compute_geodesic_radius(activations, centroid)
+        geodesic_radius = self._compute_geodesic_radius(
+            activations,
+            centroid,
+            geo_from_centroid=geo_from_centroid,
+            geo_result=geodesic_context,
+        )
 
         # Derive influence type and student_t_df from data kurtosis
         # Formula: df = 4 + 6/(kurtosis - 3), where kurtosis > 3 for heavy tails
@@ -718,6 +741,7 @@ class RiemannianDensityEstimator:
             student_t_df=student_t_df,
             raw_activations=activations if store_raw_activations else None,
             _geodesic_context=geodesic_context if store_raw_activations else None,
+            _geo_from_centroid=geo_from_centroid if store_raw_activations else None,
         )
 
     def compute_relation(
@@ -924,6 +948,7 @@ class RiemannianDensityEstimator:
         centroid: "Array",
         local_curvature: LocalCurvature | None,
         metric_fn: Callable[["Array"], "Array"] | None,
+        geo_result: GeodesicDistanceResult | None = None,
     ) -> "Array":
         """Estimate covariance with optional curvature correction.
 
@@ -944,6 +969,7 @@ class RiemannianDensityEstimator:
         cov = rg.riemannian_covariance(
             activations,
             mean=centroid,
+            geo_result=geo_result,
         )
 
         # Regularize - always use machine epsilon
@@ -1035,6 +1061,8 @@ class RiemannianDensityEstimator:
         self,
         activations: "Array",
         centroid: "Array",
+        geo_from_centroid: "Array | None" = None,
+        geo_result: GeodesicDistanceResult | None = None,
     ) -> float:
         """Compute geodesic radius (95th percentile distance from centroid).
 
@@ -1046,16 +1074,25 @@ class RiemannianDensityEstimator:
         n = int(shape[0])
         rg = RiemannianGeometry(backend)
 
-        # Add centroid to points for distance computation
-        centroid_2d = backend.reshape(centroid, (1, -1))
-        points_with_centroid = backend.concatenate([centroid_2d, activations], axis=0)
-        points_arr = backend.astype(points_with_centroid, "float32")
-        backend.eval(points_arr)
+        if geo_from_centroid is None:
+            if geo_result is not None:
+                geo_from_centroid = rg._geodesic_distances_from_query(
+                    activations, centroid, geo_result=geo_result
+                )
+                backend.eval(geo_from_centroid)
+            else:
+                # Add centroid to points for distance computation
+                centroid_2d = backend.reshape(centroid, (1, -1))
+                points_with_centroid = backend.concatenate([centroid_2d, activations], axis=0)
+                points_arr = backend.astype(points_with_centroid, "float32")
+                backend.eval(points_arr)
 
-        # Get geodesic distances from centroid (index 0) to all points
-        k_neighbors = min(max(3, n // 3), n)
-        geo_result = rg.geodesic_distances(points_arr, k_neighbors=k_neighbors)
-        centroid_to_points = geo_result.distances[0, 1:]
+                # Get geodesic distances from centroid (index 0) to all points
+                k_neighbors = min(max(3, n // 3), n)
+                geo_result = rg.geodesic_distances(points_arr, k_neighbors=k_neighbors)
+                geo_from_centroid = geo_result.distances[0, 1:]
+
+        centroid_to_points = geo_from_centroid
         count = int(centroid_to_points.shape[0])
         if count == 0:
             return 0.0

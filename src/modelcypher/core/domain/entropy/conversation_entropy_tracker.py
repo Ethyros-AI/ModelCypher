@@ -216,7 +216,8 @@ class ConversationEntropyTracker:
             change_mean_arr = backend.mean(changes_arr)
             backend.eval(change_mean_arr)
             delta_change_mean = float(backend.to_scalar(change_mean_arr))
-            delta_change_std = self._compute_std(backend.tolist(changes_arr))
+            # Stay on backend - avoid tolist() conversion
+            delta_change_std = self._compute_std_arr(changes_arr, backend)
         else:
             delta_change_mean = 0.0
             delta_change_std = 0.0
@@ -242,9 +243,21 @@ class ConversationEntropyTracker:
             return 0.0
         backend = get_default_backend()
         values_arr = backend.array(values)
+        return self._compute_std_arr(values_arr, backend)
+
+    def _compute_std_arr(self, values_arr, backend=None) -> float:
+        """Compute population standard deviation from backend array."""
+        count = int(values_arr.shape[0])
+        if count < 2:
+            return 0.0
+        if backend is None:
+            backend = get_default_backend()
         mean_arr = backend.mean(values_arr)
         diff = values_arr - mean_arr
-        variance_arr = backend.sum(diff * diff) / float(len(values))
+        # Use epsilon guard for division
+        eps = division_epsilon(backend, values_arr)
+        safe_count = max(float(count), eps)
+        variance_arr = backend.sum(diff * diff) / safe_count
         std_arr = backend.sqrt(variance_arr)
         backend.eval(std_arr)
         return float(backend.to_scalar(std_arr))
@@ -271,8 +284,10 @@ class ConversationEntropyTracker:
         next_sign = backend.take(signs, idx_next_s, axis=0)
         sign_change = (prev_sign * next_sign) < 0
         count_arr = backend.sum(backend.astype(sign_change, "float32"))
-        max_changes_arr = backend.array([float(count - 2)])
-        freq_arr = count_arr / max_changes_arr
+        # Use epsilon guard for division
+        eps = division_epsilon(backend, count_arr)
+        max_changes = max(float(count - 2), eps)
+        freq_arr = count_arr / max_changes
         backend.eval(freq_arr)
         return float(backend.to_scalar(freq_arr))
 

@@ -202,9 +202,11 @@ class ConflictScoreCalculator:
         q_probs = q_exp / q_sum
 
         # KL = sum(p * log(p/q)) = sum(p * (log(p) - log(q)))
-        eps = division_epsilon(b, p_probs)
-        p_log_probs = b.log(p_probs + eps)
-        q_log_probs = b.log(q_probs + eps)
+        # Use separate epsilon for each distribution to handle different scales
+        eps_p = division_epsilon(b, p_probs)
+        eps_q = division_epsilon(b, q_probs)
+        p_log_probs = b.log(p_probs + eps_p)
+        q_log_probs = b.log(q_probs + eps_q)
 
         kl = b.sum(p_probs * (p_log_probs - q_log_probs))
 

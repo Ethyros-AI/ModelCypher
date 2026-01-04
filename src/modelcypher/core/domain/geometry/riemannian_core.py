@@ -145,6 +145,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         tolerance: float | None = None,
         k_neighbors: int | None = None,
         max_k_neighbors: int | None = None,
+        geo_result: GeodesicDistanceResult | None = None,
     ) -> FrechetMeanResult:
         """
         Compute the Fréchet mean (Riemannian center of mass) of a point set.
@@ -241,6 +242,13 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         else:
             k_max = k_start
 
+        if geo_result is not None:
+            geo_k = max(1, min(int(geo_result.k_neighbors), n - 1))
+            if k_start is None or k_start != geo_k:
+                k_start = geo_k
+            if k_max is None:
+                k_max = k_start
+
         # Initialize weights
         if weights is None:
             weights_arr = backend.ones((n,)) / n
@@ -263,11 +271,14 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
             # Compute geodesic distance matrix once (expensive but reusable, now cached)
             try:
-                geo_result = (
-                    self.geodesic_distances(points, k_neighbors=attempt_k)
-                    if attempt_k is not None
-                    else self.geodesic_distances(points)
-                )
+                if geo_result is None or (
+                    attempt_k is not None and geo_result.k_neighbors != attempt_k
+                ):
+                    geo_result = (
+                        self.geodesic_distances(points, k_neighbors=attempt_k)
+                        if attempt_k is not None
+                        else self.geodesic_distances(points)
+                    )
             except ValueError as exc:
                 if self._should_retry_k(exc, attempt_k, k_max):
                     prev_k = attempt_k
@@ -977,6 +988,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         self,
         points: "Array",
         mean: "Array | None" = None,
+        geo_result: GeodesicDistanceResult | None = None,
     ) -> "Array":
         """
         Compute covariance matrix in the tangent space at the Fréchet mean.
@@ -1009,7 +1021,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             mean = result.mean
 
         # Get geodesic distances for proper scaling
-        geo_result = self.geodesic_distances(points)
+        if geo_result is None:
+            geo_result = self.geodesic_distances(points)
 
         # Map points to tangent space at mean
         # Log_μ(x) = (x - μ) * (geodesic_dist / chord_dist)

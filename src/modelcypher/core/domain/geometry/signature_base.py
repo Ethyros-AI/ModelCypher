@@ -169,18 +169,9 @@ class SignatureMixin:
         Returns:
             New signature instance.
         """
-        # Try to use dataclass replace if available
-        try:
-            from dataclasses import replace
+        from dataclasses import replace
 
-            return replace(self, values=new_values)
-        except (TypeError, ImportError):
-            # Fallback: try direct attribute copy
-            import copy
-
-            new_sig = copy.copy(self)
-            new_sig.values = new_values
-            return new_sig
+        return replace(self, values=new_values)
 
     def _has_same_dimensions(self, other: "SignatureMixin") -> bool:
         """Check if another signature has the same dimension count.

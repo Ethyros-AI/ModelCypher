@@ -60,6 +60,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     log_scalar,
     safe_log_epsilon,
 )
@@ -145,7 +146,9 @@ class ModelLayerEntropyProfile:
 
     def normalized_trajectory(self) -> list[float]:
         """Return entropy values normalized to [0, 1] by max possible entropy."""
-        if self.max_possible_entropy <= 0:
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        if self.max_possible_entropy <= eps:
             return [0.0] * len(self.layer_results)
         return [
             self.layer_results[i].mean_entropy / self.max_possible_entropy

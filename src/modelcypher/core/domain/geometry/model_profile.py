@@ -916,12 +916,15 @@ class ModelProfileExtractor:
                 id_value, id_std = self._compute_intrinsic_dimension(activations)
 
                 # k is derived from geometry: k = 2 * intrinsic_dimension (minimum for manifold connectivity)
-                # If ID estimation failed, use n_samples^(1/3) as fallback (geometric heuristic)
-                if id_value > 0 and not is_nan(id_value, self._backend):
-                    k = max(3, int(2 * id_value))
-                else:
-                    n_samples = activations.shape[0]
-                    k = max(3, int(n_samples ** (1.0 / 3.0)))
+                # No arbitrary fallbacks - if ID estimation fails, we need to know
+                if id_value <= 0 or is_nan(id_value, self._backend):
+                    raise ValueError(
+                        f"Intrinsic dimension estimation failed for layer {layer_idx}: "
+                        f"id_value={id_value}, std={id_std}. "
+                        "This indicates degenerate or insufficient activation data. "
+                        "Check that the layer has sufficient variance and enough samples."
+                    )
+                k = max(3, int(2 * id_value))
 
                 # Compute Ollivier-Ricci curvature with computed k
                 orc = OllivierRicciCurvature(

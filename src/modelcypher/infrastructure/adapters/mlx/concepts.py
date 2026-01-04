@@ -96,15 +96,23 @@ def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
         return concepts
 
     except ImportError as e:
-        logger.warning(f"UnifiedAtlas not available, using fallback concepts: {e}")
-        return _fallback_concepts()
+        raise ImportError(
+            f"UnifiedAtlas not available: {e}. "
+            "Install modelcypher with full dependencies or check your installation."
+        ) from e
 
 
 def _fallback_concepts() -> list[tuple[str, list[str]]]:
-    """Fallback concept inventory when UnifiedAtlas is unavailable.
+    """DEPRECATED: Fallback concepts are no longer used.
 
-    Provides essential mathematical and semantic anchors for basic operation.
+    UnifiedAtlas is required. This function exists only for backwards
+    compatibility and will be removed in a future version.
     """
+    raise NotImplementedError(
+        "Fallback concepts are disabled. UnifiedAtlas is required for concept inventory."
+    )
+
+    # Dead code below - kept for reference during deprecation period
     return [
         # Mathematical invariants
         (

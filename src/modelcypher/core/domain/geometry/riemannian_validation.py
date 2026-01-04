@@ -163,7 +163,8 @@ def derive_k_neighbors(points: "Array", backend: "Backend") -> int:
     """Derive k for k-NN graph from the distance elbow.
 
     Uses the elbow in the mean k-th neighbor distance curve to select k
-    without arbitrary constants or user tuning.
+    without arbitrary constants or user tuning. Uses chord distances for
+    this diagnostic step to avoid O(n^3) geodesic computation.
 
     Args:
         points: Point cloud [n, d].
@@ -182,8 +183,9 @@ def derive_k_neighbors(points: "Array", backend: "Backend") -> int:
         return 1
 
     rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points, k_neighbors=None)
-    dists = geo_result.distances
+    # Use chord distances for k selection (local distances approximate geodesics
+    # and avoid O(n^3) shortest paths for this diagnostic-only step).
+    dists = rg._chord_distance_matrix(points)
     backend.eval(dists)
 
     inf_thresh = infinity_threshold(backend, dists)
