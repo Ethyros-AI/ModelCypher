@@ -168,8 +168,10 @@ def derive_k_neighbors(points: "Array", backend: "Backend") -> int:
     )
 
     n = int(points.shape[0])
-    if n <= 2:
-        return max(1, n - 1)
+    if n <= 1:
+        return 0
+    if n == 2:
+        return 1
 
     rg = _get_riemannian_geometry(backend)
     k_min, _, _ = rg._minimum_connected_k(points)

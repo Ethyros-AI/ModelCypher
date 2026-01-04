@@ -543,7 +543,18 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             return self._compute_geodesic_for_k(points, k_neighbors)
 
         # Find minimum k for connectivity - this IS the geometric answer
+        kmin_key = _cache.make_kmin_key(points, backend)
+        cached_k = _cache.get_kmin(kmin_key)
+        if cached_k is not None:
+            cached_geo = _cache.get_geodesic(
+                _cache.make_geodesic_key(points, backend, int(cached_k))
+            )
+            if cached_geo is not None:
+                return cached_geo
+
+        k_start_time = time.perf_counter()
         k_min, knn_idx, chord_dist = self._minimum_connected_k(points)
+        _cache.set_kmin(kmin_key, k_min, (time.perf_counter() - k_start_time) * 1000)
         return self._compute_geodesic_for_k(
             points, k_min, chord_dist=chord_dist, knn_idx=knn_idx
         )

@@ -552,13 +552,14 @@ class TopologicalFingerprint:
             # Deterministic tie-breaker to align assignment results.
             backend = get_default_backend()
             tie_eps = machine_epsilon(backend, backend.array([1.0]))
+            cost_for_matching = [row[:] for row in cost]
             for i in range(n):
                 for j in range(n):
-                    if cost[i][j] < float("inf"):
-                        cost[i][j] += tie_eps * (i * n + j)
+                    if cost_for_matching[i][j] < float("inf"):
+                        cost_for_matching[i][j] += tie_eps * (i * n + j)
 
             # Use Hungarian algorithm for optimal matching
-            matching = hungarian_assignment_list(cost)
+            matching = hungarian_assignment_list(cost_for_matching)
 
             # Bottleneck = max cost in matching (excluding dummy-dummy pairs)
             for i, j in enumerate(matching):
@@ -643,13 +644,14 @@ class TopologicalFingerprint:
             # Deterministic tie-breaker to align assignment results.
             backend = get_default_backend()
             tie_eps = machine_epsilon(backend, backend.array([1.0]))
+            cost_for_matching = [row[:] for row in cost]
             for i in range(n):
                 for j in range(n):
-                    if cost[i][j] < float("inf"):
-                        cost[i][j] += tie_eps * (i * n + j)
+                    if cost_for_matching[i][j] < float("inf"):
+                        cost_for_matching[i][j] += tie_eps * (i * n + j)
 
             # Use Hungarian algorithm to find optimal matching
-            matching = hungarian_assignment_list(cost)
+            matching = hungarian_assignment_list(cost_for_matching)
 
             # Sum up the costs from the matching
             for i, j in enumerate(matching):
@@ -1099,9 +1101,11 @@ class BackendTopologicalFingerprint:
             tie = (row_idx * n + col_idx)
             tie = b.astype(tie, cost_matrix_arr.dtype) * tie_eps
             finite_mask = b.isfinite(cost_matrix_arr)
-            cost_matrix_arr = b.where(finite_mask, cost_matrix_arr + tie, cost_matrix_arr)
-            b.eval(cost_matrix_arr)
-            matching = hungarian_assignment(cost_matrix_arr, b)
+            cost_match_arr = b.where(
+                finite_mask, cost_matrix_arr + tie, cost_matrix_arr
+            )
+            b.eval(cost_match_arr)
+            matching = hungarian_assignment(cost_match_arr, b)
             row_idx = b.arange(n, dtype="int32")
             flat = b.reshape(cost_matrix_arr, (-1,))
             flat_idx = b.astype(row_idx * n + matching, "int32")
@@ -1189,9 +1193,11 @@ class BackendTopologicalFingerprint:
             tie = (row_idx * n + col_idx)
             tie = b.astype(tie, cost_matrix_arr.dtype) * tie_eps
             finite_mask = b.isfinite(cost_matrix_arr)
-            cost_matrix_arr = b.where(finite_mask, cost_matrix_arr + tie, cost_matrix_arr)
-            b.eval(cost_matrix_arr)
-            matching = hungarian_assignment(cost_matrix_arr, b)
+            cost_match_arr = b.where(
+                finite_mask, cost_matrix_arr + tie, cost_matrix_arr
+            )
+            b.eval(cost_match_arr)
+            matching = hungarian_assignment(cost_match_arr, b)
             row_idx = b.arange(n, dtype="int32")
             flat = b.reshape(cost_matrix_arr, (-1,))
             flat_idx = b.astype(row_idx * n + matching, "int32")
