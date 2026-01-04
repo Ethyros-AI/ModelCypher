@@ -368,6 +368,39 @@ class MLXBackend(Backend):
             return self.mx.arange(start, dtype=self._map_dtype(dtype))
         return self.mx.arange(start, stop, step, dtype=self._map_dtype(dtype))
 
+    def triu_indices(self, n: int, k: int = 0) -> tuple[Array, Array]:
+        if n <= 0:
+            empty = self.array([], dtype="int32")
+            return empty, empty
+
+        idx = self.mx.arange(n, dtype=self.mx.int32)
+        row = self.mx.reshape(idx, (n, 1))
+        col = self.mx.reshape(idx, (1, n))
+        row_idx = self.mx.broadcast_to(row, (n, n))
+        col_idx = self.mx.broadcast_to(col, (n, n))
+        mask = (col_idx - row_idx) >= k
+
+        row_flat = self.mx.reshape(row_idx, (-1,))
+        col_flat = self.mx.reshape(col_idx, (-1,))
+        mask_flat = self.mx.reshape(mask, (-1,))
+        mask_int = self.astype(mask_flat, "int32")
+        valid_count = self.mx.sum(mask_int)
+
+        sentinel = n * n + 1
+        sentinel_arr = self.mx.full(row_flat.shape, sentinel, dtype=row_flat.dtype)
+        key = self.mx.where(mask_flat, row_flat * n + col_flat, sentinel_arr)
+        sorted_idx = self.mx.argsort(key)
+        self.eval(sorted_idx, valid_count)
+
+        count = int(self.to_scalar(valid_count))
+        if count == 0:
+            empty = self.array([], dtype="int32")
+            return empty, empty
+
+        row_sorted = self.mx.take(row_flat, sorted_idx, axis=0)
+        col_sorted = self.mx.take(col_flat, sorted_idx, axis=0)
+        return row_sorted[:count], col_sorted[:count]
+
     def diag(self, array: Array, k: int = 0) -> Array:
         return self.mx.diag(array, k=k)
 
@@ -519,6 +552,9 @@ class MLXBackend(Backend):
     def log2(self, array: Array) -> Array:
         # MLX has native log2 support
         return self.mx.log2(array)
+
+    def mod(self, lhs: Array, rhs: Array | float | int) -> Array:
+        return lhs % rhs
 
     # --- Linear Algebra (lazy except CPU stream ops) ---
     def dot(self, a: Array, b: Array) -> Array:

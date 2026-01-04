@@ -91,6 +91,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_pinv,
@@ -108,6 +109,7 @@ if TYPE_CHECKING:
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
 
 logger = logging.getLogger(__name__)
+_cache = ComputationCache.shared()
 
 __all__ = [
     "AlignmentResult",
@@ -262,22 +264,17 @@ class GramAligner:
 
         # Method 1: Geodesic SVD + Procrustes alignment
         # Uses power iteration for SVD - runs on GPU, iterates until convergence
-        U_s, S_s, Vt_s = geodesic_svd(b, source_centered)
-        U_t, S_t, Vt_t = geodesic_svd(b, target_centered)
-        b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
+        U_s, S_s, Vt_s = _cache.get_or_compute_svd(source_centered, b)
+        U_t, S_t, Vt_t = _cache.get_or_compute_svd(target_centered, b)
 
         # Find rotation via cross-correlation
         cross = b.matmul(b.transpose(U_s), U_t)
-        b.eval(cross)
         U_cross, _, Vt_cross = geodesic_svd(b, cross)
-        b.eval(U_cross, Vt_cross)
         R = b.matmul(U_cross, Vt_cross)
-        b.eval(R)
 
         # F_gram aligns source singular space to target
         # F = V_s @ R @ Vt_t.T (assuming similar singular values)
         F_gram = b.matmul(b.transpose(Vt_s), b.matmul(R, Vt_t))
-        b.eval(F_gram)
 
         reconstructed = b.matmul(source_centered, F_gram)
         residual_gram_arr = geodesic_norms(
@@ -295,15 +292,11 @@ class GramAligner:
 
         # Method 2: Power iteration eigendecomposition for Gram inverse
         gram = b.matmul(source_centered, b.transpose(source_centered))
-        b.eval(gram)
-
         gram_f32 = b.astype(gram, "float32")
-        b.eval(gram_f32)
 
         n = int(gram_f32.shape[0])
         k = min(n, 50)  # Use top-50 eigenvectors for efficiency
         eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k)
-        b.eval(eigvals, eigvecs)
 
         # Invert eigenvalues above threshold
         inv_vals = b.where(
@@ -311,7 +304,6 @@ class GramAligner:
             1.0 / eigvals,
             b.zeros_like(eigvals),
         )
-        b.eval(inv_vals)
 
         # Reconstruct pseudo-inverse in eigenspace
         inv_diag = b.reshape(inv_vals, (1, -1))
@@ -319,13 +311,11 @@ class GramAligner:
             eigvecs * inv_diag,
             b.transpose(eigvecs),
         )
-        b.eval(gram_inv_subspace)
 
         F_eig = b.matmul(
             b.transpose(source_centered),
             b.matmul(gram_inv_subspace, target_centered),
         )
-        b.eval(F_eig)
 
         # Compute residual for eigendecomposition method
         reconstructed = b.matmul(source_centered, F_eig)
@@ -341,7 +331,6 @@ class GramAligner:
         # Runs entirely on GPU - no CPU linear algebra
         source_pinv = geodesic_pinv(b, source_centered)
         F_pinv = b.matmul(source_pinv, target_centered)
-        b.eval(F_pinv)
         reconstructed = b.matmul(source_centered, F_pinv)
         residual_pinv_arr = geodesic_norms(
             b.reshape(reconstructed - target_centered, (1, -1)), b
@@ -386,20 +375,15 @@ class GramAligner:
 
         # Method 1: Geodesic SVD + Procrustes alignment
         # Uses power iteration - iterates until convergence
-        U_s, S_s, Vt_s = geodesic_svd(b, source)
-        U_t, S_t, Vt_t = geodesic_svd(b, target)
-        b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
+        U_s, S_s, Vt_s = _cache.get_or_compute_svd(source, b)
+        U_t, S_t, Vt_t = _cache.get_or_compute_svd(target, b)
 
         # Find rotation via cross-correlation
         cross = b.matmul(b.transpose(U_s), U_t)
-        b.eval(cross)
         U_cross, _, Vt_cross = geodesic_svd(b, cross)
-        b.eval(U_cross, Vt_cross)
         R = b.matmul(U_cross, Vt_cross)
-        b.eval(R)
 
         F_gram = b.matmul(b.transpose(Vt_s), b.matmul(R, Vt_t))
-        b.eval(F_gram)
 
         reconstructed = b.matmul(source, F_gram)
         residual_gram_arr = geodesic_norms(b.reshape(reconstructed - target, (1, -1)), b)
@@ -412,12 +396,10 @@ class GramAligner:
         # Method 2: Power iteration eigendecomposition for Gram inverse
         gram = b.matmul(source, b.transpose(source))
         gram_f32 = b.astype(gram, "float32")
-        b.eval(gram_f32)
 
         n = int(gram_f32.shape[0])
         k = min(n, 50)
         eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k)
-        b.eval(eigvals, eigvecs)
 
         # Check if positive definite (all eigenvalues positive)
         min_eig_arr = b.min(eigvals)
@@ -430,19 +412,16 @@ class GramAligner:
                 1.0 / eigvals,
                 b.zeros_like(eigvals),
             )
-            b.eval(inv_vals)
 
             gram_inv = b.matmul(
                 eigvecs * b.reshape(inv_vals, (1, -1)),
                 b.transpose(eigvecs),
             )
-            b.eval(gram_inv)
 
             F_eig = b.matmul(
                 b.transpose(source),
                 b.matmul(gram_inv, target),
             )
-            b.eval(F_eig)
 
             reconstructed = b.matmul(source, F_eig)
             residual_eig_arr = geodesic_norms(
@@ -456,7 +435,6 @@ class GramAligner:
         # Method 3: Geodesic pseudo-inverse
         source_pinv = geodesic_pinv(b, source)
         F_pinv = b.matmul(source_pinv, target)
-        b.eval(F_pinv)
         reconstructed = b.matmul(source, F_pinv)
         residual_pinv_arr = geodesic_norms(b.reshape(reconstructed - target, (1, -1)), b)
         b.eval(residual_pinv_arr)
@@ -612,14 +590,11 @@ class GramAligner:
                 # Gram matrices are equal - this is a rotation/reflection
                 # Find the rotation via geodesic Procrustes (GPU-only, iterates until convergence)
                 cross = b.matmul(b.transpose(source_centered), target_centered)
-                b.eval(cross)
                 U, _, Vt = geodesic_svd(b, cross)
                 rotation = b.matmul(U, Vt)
-                b.eval(rotation)
                 H = self._centering_matrix(n_samples)
                 K_s_c = b.matmul(b.matmul(H, K_s), H)
                 sample_transform = self._compute_sample_transform(K_s_c, K_s_c)
-                b.eval(sample_transform)
                 return AlignmentResult(
                     feature_transform=self._array_to_2d_list(rotation),
                     sample_transform=self._array_to_2d_list(sample_transform),

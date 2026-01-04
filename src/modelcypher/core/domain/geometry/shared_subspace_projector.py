@@ -446,7 +446,6 @@ class SharedSubspaceProjector:
         )
 
     @staticmethod
-    @staticmethod
     def _extract_activation_matrix(
         crm: ConceptResponseMatrix,
         layer: int,
@@ -503,7 +502,6 @@ class SharedSubspaceProjector:
 
         return source_matrix, target_matrix
 
-    @staticmethod
     @staticmethod
     def _center_array(
         array: "Array",

@@ -56,6 +56,17 @@ if TYPE_CHECKING:
 # Type alias for array-like inputs (list or MLX array)
 ArrayLike = list[float] | Sequence[float]
 
+_RG_CACHE: dict[int, RiemannianGeometry] = {}
+
+
+def _get_riemannian_geometry(backend: "Backend") -> RiemannianGeometry:
+    key = id(backend)
+    cached = _RG_CACHE.get(key)
+    if cached is None or getattr(cached, "_backend", None) is not backend:
+        cached = RiemannianGeometry(backend)
+        _RG_CACHE[key] = cached
+    return cached
+
 
 def _to_list(arr: ArrayLike) -> list[float]:
     """Convert array-like to Python list, handling MLX arrays."""
@@ -109,7 +120,7 @@ def _geodesic_distance_from_origin(point: Any, backend: "Backend") -> float:
         return float(backend.to_scalar(norm_arr[0]))
 
     zero = backend.zeros_like(point)
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     points = backend.stack([zero, point], axis=0)
     geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
     distances = geo_result.distances
@@ -122,7 +133,7 @@ def _geodesic_distances_from_origin(
 ) -> tuple[float, float, float]:
     """Compute geodesic distances (origin->a, origin->b, a->b)."""
     zero = backend.zeros_like(a)
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     points = backend.stack([zero, a, b], axis=0)
     geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
     distances = geo_result.distances
@@ -175,7 +186,7 @@ def geodesic_cosine_batch(anchor: Any, vectors: Any, backend: "Backend") -> Any:
         ],
         axis=0,
     )
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
     distances = geo_result.distances
     backend.eval(distances)
@@ -208,7 +219,7 @@ def geodesic_norms(vectors: Any, backend: "Backend") -> Any:
 
     zero = backend.zeros_like(vectors_arr[:1])
     points = backend.concatenate([zero, vectors_arr], axis=0)
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     point_count = int(backend.shape(points)[0])
     geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
     distances = geo_result.distances
@@ -227,7 +238,7 @@ def geodesic_cosine_matrix(vectors: Any, backend: "Backend") -> Any:
 
     zero = backend.zeros_like(vectors_arr[:1])
     points = backend.concatenate([zero, vectors_arr], axis=0)
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     point_count = int(backend.shape(points)[0])
     geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
     distances = geo_result.distances
@@ -264,7 +275,7 @@ def geodesic_cosine_between_sets(a: Any, b: Any, backend: "Backend") -> Any:
 
     zero = backend.zeros_like(a_arr[:1])
     points = backend.concatenate([zero, a_arr, b_arr], axis=0)
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     point_count = int(backend.shape(points)[0])
     geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
     distances = geo_result.distances
@@ -303,7 +314,7 @@ def geodesic_pairwise_metrics(a: Any, b: Any, backend: "Backend") -> tuple[Any, 
 
     zero = backend.zeros_like(a_arr[:1])
     points = backend.concatenate([zero, a_arr, b_arr], axis=0)
-    rg = RiemannianGeometry(backend)
+    rg = _get_riemannian_geometry(backend)
     point_count = int(backend.shape(points)[0])
     geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
     distances = geo_result.distances

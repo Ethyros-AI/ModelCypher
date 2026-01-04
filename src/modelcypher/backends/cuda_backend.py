@@ -187,6 +187,10 @@ class CUDABackend(Backend):
             return self.torch.arange(start, dtype=resolved, device="cuda")
         return self.torch.arange(start, stop, step, dtype=resolved, device="cuda")
 
+    def triu_indices(self, n: int, k: int = 0) -> tuple[Array, Array]:
+        indices = self.torch.triu_indices(n, n, offset=k, device="cuda")
+        return indices[0], indices[1]
+
     def diag(self, array: Array, k: int = 0) -> Array:
         return self.torch.diag(array, diagonal=k)
 

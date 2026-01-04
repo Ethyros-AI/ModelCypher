@@ -188,8 +188,11 @@ class KnowledgeDiffer:
         # Rank opportunities (highest first)
         ranked = sorted(all_opportunities, key=lambda x: x.opportunity_score, reverse=True)
 
-        positive = [c for c in all_opportunities if c.opportunity_score > 0.0]
-        nonpositive = [c for c in all_opportunities if c.opportunity_score <= 0.0]
+        positive_count = 0
+        for opportunity in all_opportunities:
+            if opportunity.opportunity_score > 0.0:
+                positive_count += 1
+        nonpositive_count = len(all_opportunities) - positive_count
 
         # Global statistics
         if all_opportunities:
@@ -211,8 +214,8 @@ class KnowledgeDiffer:
             overall_opportunity=overall_opp,
             ranked_opportunities=ranked,
             total_concepts=len(all_opportunities),
-            positive_opportunity_count=len(positive),
-            nonpositive_opportunity_count=len(nonpositive),
+            positive_opportunity_count=positive_count,
+            nonpositive_opportunity_count=nonpositive_count,
         )
 
     def _group_by_layer(

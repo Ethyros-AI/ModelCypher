@@ -622,13 +622,12 @@ class IntrinsicDimension:
             zero_idx = backend.array(0, dtype="int32")
             bin_indices = backend.where(bin_indices > max_bin_idx, max_bin_idx, bin_indices)
             bin_indices = backend.where(bin_indices < zero_idx, zero_idx, bin_indices)
-            backend.eval(bin_indices)
 
             # Count bins using backend one-hot encoding (fully vectorized)
             # Create one-hot via eye indexing: one_hot[i] = eye[bin_idx[i]]
             eye_mat = backend.eye(n_bins)
             one_hot = eye_mat[bin_indices]  # [n_points, n_bins] with 1 at bin index
-            backend.eval(one_hot)
+            backend.eval(bin_indices, one_hot)
             # Sum columns to get bin counts
             valid_mask_col = backend.reshape(valid_mask_float, (-1, 1))
             bin_counts_arr = backend.sum(one_hot * valid_mask_col, axis=0)

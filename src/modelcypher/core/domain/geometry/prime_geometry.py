@@ -319,33 +319,50 @@ def generate_primes(n: int, backend: "Backend | None" = None) -> PrimeSequence:
         ln_ln_n = log_scalar(ln_n, backend)
         limit = int(n * (ln_n + ln_ln_n)) + 100
 
-    # Sieve of Eratosthenes
-    is_prime = [True] * (limit + 1)
-    is_prime[0] = is_prime[1] = False
+    # Sieve of Eratosthenes (backend-only)
+    indices = backend.arange(limit + 1, dtype="int32")
+    ones = backend.ones((limit + 1,), dtype="int32")
+    zeros = backend.zeros((limit + 1,), dtype="int32")
+    is_prime = backend.where(indices < 2, zeros, ones)
 
-    for i in range(2, int(sqrt_scalar(float(limit), backend)) + 1):
-        if is_prime[i]:
-            for j in range(i * i, limit + 1, i):
-                is_prime[j] = False
+    max_factor = int(sqrt_scalar(float(limit), backend))
+    for i in range(2, max_factor + 1):
+        idx_arr = backend.array([i], dtype="int32")
+        is_prime_i = backend.take(is_prime, idx_arr, axis=0)
+        backend.eval(is_prime_i)
+        if int(backend.to_scalar(is_prime_i)) == 0:
+            continue
 
-    # Collect primes
-    primes_list = [i for i, p in enumerate(is_prime) if p][:n]
+        start = i * i
+        mask_range = indices >= start
+        is_multiple = backend.mod(indices, i) == 0
+        composite_mask = mask_range & is_multiple
+        is_prime = backend.where(composite_mask, zeros, is_prime)
 
-    if len(primes_list) < n:
+    prime_count_arr = backend.sum(is_prime)
+    backend.eval(prime_count_arr)
+    prime_count = int(backend.to_scalar(prime_count_arr))
+    if prime_count < n:
         # Recursively increase limit if needed
         return generate_primes(n, backend)
 
-    primes = backend.array(primes_list)
+    non_prime = ones - is_prime
+    keys = indices + non_prime * (limit + 1)
+    sorted_idx = backend.argsort(keys)
+    prime_indices = backend.take(indices, sorted_idx, axis=0)
+    primes = prime_indices[:n]
 
-    # Compute gaps
-    gaps_list = [primes_list[i + 1] - primes_list[i] for i in range(len(primes_list) - 1)]
-    gaps = backend.array(gaps_list)
+    gaps = primes[1:] - primes[:-1]
+
+    max_prime_arr = backend.take(primes, backend.array([n - 1], dtype="int32"), axis=0)
+    backend.eval(max_prime_arr)
+    max_prime = int(backend.to_scalar(max_prime_arr))
 
     return PrimeSequence(
         primes=primes,
         gaps=gaps,
         count=n,
-        max_prime=primes_list[-1],
+        max_prime=max_prime,
     )
 
 

@@ -51,7 +51,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_batch,
+    geodesic_cosine_between_sets,
+)
 
 AtlasProbe: TypeAlias = AtlasProbeProtocol
 SequenceInvariant: TypeAlias = SequenceInvariantProtocol
@@ -518,36 +521,27 @@ class InvariantLayerMapper:
         # Cross-domain weights from probes - universal across all models
         weights = [probe.cross_domain_weight for probe in probes]
 
-        matrix = [[0.0] * target_count for _ in range(source_count)]
+        batched = InvariantLayerMapper._build_similarity_matrix_batched(
+            source_layers,
+            target_layers,
+            source_profile,
+            target_profile,
+            weights,
+            source_triangulation,
+            target_triangulation,
+        )
+        if batched is not None:
+            return batched
 
-        for i, source_layer in enumerate(source_layers):
-            source_vector = source_profile.vectors.get(source_layer, [])
-            source_confidence = source_profile.confidence_by_layer.get(source_layer, 0.0)
-
-            for j, target_layer in enumerate(target_layers):
-                target_vector = target_profile.vectors.get(target_layer, [])
-                target_confidence = target_profile.confidence_by_layer.get(target_layer, 0.0)
-
-                # Compute weighted cosine similarity
-                similarity = InvariantLayerMapper._weighted_cosine_similarity(
-                    source_vector, target_vector, weights
-                )
-
-                _b = get_default_backend()
-                confidence_weight = sqrt_scalar(max(0, source_confidence) * max(0, target_confidence), _b)
-                similarity *= confidence_weight
-
-                source_ts = source_triangulation.get(source_layer)
-                target_ts = target_triangulation.get(target_layer)
-                if source_ts and target_ts:
-                    tri_boost = sqrt_scalar(
-                        source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier, _b
-                    )
-                    similarity *= sqrt_scalar(tri_boost, _b)
-
-                matrix[i][j] = max(0.0, min(1.0, similarity))
-
-        return matrix
+        return InvariantLayerMapper._build_similarity_matrix_loop(
+            source_layers,
+            target_layers,
+            source_profile,
+            target_profile,
+            weights,
+            source_triangulation,
+            target_triangulation,
+        )
 
     @staticmethod
     def _build_profile(
@@ -713,43 +707,27 @@ class InvariantLayerMapper:
         if invariants:
             weights = [inv.cross_domain_weight for inv in invariants]
 
-        matrix = [[0.0] * target_count for _ in range(source_count)]
+        batched = InvariantLayerMapper._build_similarity_matrix_batched(
+            source_layers,
+            target_layers,
+            source_profile,
+            target_profile,
+            weights,
+            source_triangulation,
+            target_triangulation,
+        )
+        if batched is not None:
+            return batched
 
-        for i, source_layer in enumerate(source_layers):
-            source_vector = source_profile.vectors.get(source_layer, [])
-            source_confidence = source_profile.confidence_by_layer.get(source_layer, 0.0)
-
-            for j, target_layer in enumerate(target_layers):
-                target_vector = target_profile.vectors.get(target_layer, [])
-                target_confidence = target_profile.confidence_by_layer.get(target_layer, 0.0)
-
-                # Compute similarity with optional cross-domain weighting
-                if weights:
-                    similarity = InvariantLayerMapper._weighted_cosine_similarity(
-                        source_vector, target_vector, weights
-                    )
-                else:
-                    similarity = InvariantLayerMapper._cosine_similarity(
-                        source_vector, target_vector
-                    )
-
-                _b = get_default_backend()
-                confidence_weight = sqrt_scalar(max(0, source_confidence) * max(0, target_confidence), _b)
-                similarity *= confidence_weight
-
-                # Apply triangulation boost if available
-                if source_triangulation and target_triangulation:
-                    source_ts = source_triangulation.get(source_layer)
-                    target_ts = target_triangulation.get(target_layer)
-                    if source_ts and target_ts:
-                        tri_boost = sqrt_scalar(
-                            source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier, _b
-                        )
-                        similarity *= sqrt_scalar(tri_boost, _b)
-
-                matrix[i][j] = max(0.0, min(1.0, similarity))
-
-        return matrix
+        return InvariantLayerMapper._build_similarity_matrix_loop(
+            source_layers,
+            target_layers,
+            source_profile,
+            target_profile,
+            weights,
+            source_triangulation,
+            target_triangulation,
+        )
 
     @staticmethod
     def _weighted_cosine_similarity(a: list[float], b: list[float], weights: list[float]) -> float:

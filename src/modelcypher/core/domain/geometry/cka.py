@@ -590,7 +590,7 @@ def compute_cka(
 
     # Center Gram matrices (with caching) - needed for biased estimator
     centered_x = _center_gram_matrix(gram_x, backend, gram_key_x)
-    centered_y = _center_gram_matrix(gram_y, backend, gram_key_y)
+    centered_y = centered_x if same_grams else _center_gram_matrix(gram_y, backend, gram_key_y)
 
     # Get feature dimensions for AUTO mode
     n_features_x = activations_x.shape[1] if len(activations_x.shape) > 1 else 1

@@ -334,9 +334,9 @@ class ConceptDetector:
             valid, cos_matrix, self._backend.zeros_like(cos_matrix)
         )
 
-        max_sim = self._backend.max(cos_matrix)
-        shift = max_sim + eps
-        masked = cos_matrix - (self._backend.eye(self._probe_count) * shift)
+        diag_mask = self._backend.eye(self._probe_count)
+        neg_inf = self._backend.array(float("-inf"), dtype=cos_matrix.dtype)
+        masked = self._backend.where(diag_mask > 0, neg_inf, cos_matrix)
         max_off_diag = self._backend.max(masked)
         self._backend.eval(max_off_diag)
         return float(self._backend.to_scalar(max_off_diag))

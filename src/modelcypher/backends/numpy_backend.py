@@ -92,6 +92,9 @@ class NumpyBackend(Backend):
             return self.np.arange(start, dtype=mapped)
         return self.np.arange(start, stop, step, dtype=mapped)
 
+    def triu_indices(self, n: int, k: int = 0) -> tuple[Array, Array]:
+        return self.np.triu_indices(n, k=k)
+
     def diag(self, array: Array, k: int = 0) -> Array:
         return self.np.diag(array, k=k)
 

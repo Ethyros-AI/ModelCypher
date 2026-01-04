@@ -396,10 +396,17 @@ class TopologicalFingerprint:
 
         component_birth = [0.0] * n  # All points born at 0 in Rips
 
-        edges = []
-        for i in range(n):
-            for j in range(i + 1, n):
-                edges.append((i, j, distances[i][j]))
+        b = get_default_backend()
+        dist_arr = b.astype(b.array(distances), "float32")
+        row_idx, col_idx = b.triu_indices(n, k=1)
+        flat_dist = b.reshape(dist_arr, (-1,))
+        flat_idx = row_idx * n + col_idx
+        edge_dist = b.take(flat_dist, flat_idx, axis=0)
+        b.eval(row_idx, col_idx, edge_dist)
+        row_list = b.tolist(row_idx)
+        col_list = b.tolist(col_idx)
+        dist_list = b.tolist(edge_dist)
+        edges = list(zip(row_list, col_list, dist_list))
         edges.sort(key=lambda x: x[2])
 
         # Process edges

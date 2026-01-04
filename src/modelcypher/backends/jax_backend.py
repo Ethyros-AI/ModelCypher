@@ -88,6 +88,9 @@ class JAXBackend(Backend):
             return self.jnp.arange(start, dtype=self._map_dtype(dtype))
         return self.jnp.arange(start, stop, step, dtype=self._map_dtype(dtype))
 
+    def triu_indices(self, n: int, k: int = 0) -> tuple[Array, Array]:
+        return self.jnp.triu_indices(n, k=k)
+
     def diag(self, array: Array, k: int = 0) -> Array:
         return self.jnp.diag(array, k=k)
 
@@ -234,6 +237,9 @@ class JAXBackend(Backend):
 
     def log2(self, array: Array) -> Array:
         return self.jnp.log2(array)
+
+    def mod(self, lhs: Array, rhs: Array | float | int) -> Array:
+        return self.jnp.mod(lhs, rhs)
 
     # --- Linear Algebra ---
     def matmul(self, lhs: Array, rhs: Array) -> Array:

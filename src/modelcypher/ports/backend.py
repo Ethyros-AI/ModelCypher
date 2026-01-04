@@ -340,6 +340,9 @@ class Backend(Protocol):
     def log2(self, array: Array) -> Array:
         """Element-wise base-2 logarithm."""
         ...
+    def mod(self, lhs: Array, rhs: Array | float | int) -> Array:
+        """Element-wise modulus (remainder)."""
+        ...
 
     # --- Linear Algebra ---
     def matmul(self, lhs: Array, rhs: Array) -> Array: ...
