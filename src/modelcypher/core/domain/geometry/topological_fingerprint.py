@@ -772,10 +772,16 @@ class BackendTopologicalFingerprint:
         Returns:
             ComparisonResult with distance metrics and similarity score.
         """
-        bottleneck_ab = self._bottleneck_distance(fingerprint_a.diagram, fingerprint_b.diagram)
-        bottleneck_ba = self._bottleneck_distance(fingerprint_b.diagram, fingerprint_a.diagram)
+        bottleneck_ab = TopologicalFingerprint._bottleneck_distance(
+            fingerprint_a.diagram, fingerprint_b.diagram
+        )
+        bottleneck_ba = TopologicalFingerprint._bottleneck_distance(
+            fingerprint_b.diagram, fingerprint_a.diagram
+        )
         bottleneck = max(bottleneck_ab, bottleneck_ba)
-        wasserstein = self._wasserstein_distance(fingerprint_a.diagram, fingerprint_b.diagram)
+        wasserstein = TopologicalFingerprint._wasserstein_distance(
+            fingerprint_a.diagram, fingerprint_b.diagram
+        )
 
         betti_diff = 0
         all_dims = set(fingerprint_a.betti_numbers.keys()) | set(fingerprint_b.betti_numbers.keys())
