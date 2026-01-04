@@ -101,7 +101,10 @@ def _geodesic_distance_from_origin(point: Any, backend: "Backend") -> float:
     """Compute geodesic distance between a point and the origin."""
     shape = backend.shape(point)
     if len(shape) == 1:
-        # On a two-point discrete manifold, the geodesic is the direct edge.
+        # INTENTIONAL EUCLIDEAN: With only 2 points (origin and this point),
+        # there's no k-NN graph to build (k >= 1 requires at least 2 neighbors).
+        # The geodesic on a 2-point manifold IS the direct edge, which equals
+        # Euclidean distance. This is not an approximation - it's exact.
         dist_arr = backend.sqrt(backend.sum(point * point))
         backend.eval(dist_arr)
         return float(backend.to_scalar(dist_arr))

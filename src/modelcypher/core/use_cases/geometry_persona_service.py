@@ -358,6 +358,15 @@ class GeometryPersonaService:
     @staticmethod
     def persona_vector_payload(vector: PersonaVector) -> dict:
         """Convert persona vector to CLI/MCP payload."""
+        backend = get_default_backend()
+        if vector.direction:
+            direction_arr = backend.array(vector.direction)
+            direction_arr = backend.reshape(direction_arr, (1, -1))
+            norm_arr = geodesic_norms(direction_arr, backend)
+            backend.eval(norm_arr)
+            direction_norm = float(backend.to_scalar(norm_arr[0]))
+        else:
+            direction_norm = 0.0
         return {
             "id": vector.id,
             "name": vector.name,
@@ -367,7 +376,7 @@ class GeometryPersonaService:
             "correlationCoefficient": vector.correlation_coefficient,
             "modelId": vector.model_id,
             "computedAt": vector.computed_at.isoformat(),
-            "directionNorm": sum(x * x for x in vector.direction) ** 0.5,
+            "directionNorm": direction_norm,
         }
 
     @staticmethod

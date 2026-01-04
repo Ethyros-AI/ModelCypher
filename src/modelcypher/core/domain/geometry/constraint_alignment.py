@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -146,8 +147,16 @@ class ConstraintAligner:
         peak_activation = -float("inf")
 
         for layer, activations in activations_by_layer.items():
-            # Use L2 norm as activation strength
-            strength = sum(a * a for a in activations) ** 0.5
+            # Use geodesic norm as activation strength
+            act_arr = self.backend.array(activations)
+            if len(self.backend.shape(act_arr)) != 1:
+                act_arr = self.backend.reshape(act_arr, (-1,))
+            if int(self.backend.shape(act_arr)[0]) == 0:
+                strength = 0.0
+            else:
+                norm_arr = geodesic_norms(self.backend.reshape(act_arr, (1, -1)), self.backend)
+                self.backend.eval(norm_arr)
+                strength = float(self.backend.to_scalar(norm_arr[0]))
             if strength > peak_activation:
                 peak_activation = strength
                 peak_layer = layer

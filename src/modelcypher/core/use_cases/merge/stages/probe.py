@@ -47,6 +47,7 @@ from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -650,9 +651,11 @@ def _probe_precise(
                             src_kv_rotated = b.matmul(src_kv_shared, R_procrustes)
                             b.eval(src_kv_rotated)
 
-                            # Log Procrustes alignment improvement
-                            pre_err = b.sum((src_centered - tgt_centered) ** 2)
-                            post_err = b.sum((src_kv_rotated - tgt_mean - tgt_centered) ** 2)
+                            # Log Procrustes alignment improvement using geodesic distances
+                            _, pre_dist = geodesic_pairwise_metrics(src_centered, tgt_centered, b)
+                            _, post_dist = geodesic_pairwise_metrics(src_kv_rotated, tgt_kv_shared, b)
+                            pre_err = b.sum(pre_dist * pre_dist)
+                            post_err = b.sum(post_dist * post_dist)
                             b.eval(pre_err, post_err)
                             logger.debug(
                                 "PROBE: KV Procrustes layer %d: error %.4f -> %.4f",

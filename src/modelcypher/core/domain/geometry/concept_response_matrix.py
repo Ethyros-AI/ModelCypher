@@ -636,11 +636,16 @@ class ConceptResponseMatrix:
 
         delta: list[list[float]] = []
         total_norm = 0.0
+        backend = get_default_backend()
         for curr, nxt in zip(current, next_layer):
             if len(curr) != len(nxt):
                 continue
             diff = [float(nxt[idx] - curr[idx]) for idx in range(len(curr))]
-            total_norm += sqrt_scalar(sum(value * value for value in diff), get_default_backend())
+            # Use geodesic norms for high-dimensional difference vectors
+            diff_arr = backend.reshape(backend.array(diff), (1, -1))
+            norm_arr = geodesic_norms(diff_arr, backend)
+            backend.eval(norm_arr)
+            total_norm += float(backend.to_scalar(norm_arr))
             delta.append(diff)
 
         mean_norm = total_norm / float(len(delta)) if delta else 0.0

@@ -48,7 +48,10 @@ from typing import Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -409,14 +412,33 @@ class LossLandscapeComputerJAX:
         a: dict[str, Any],
         b: dict[str, Any],
     ) -> float:
-        """Compute dot product between two parameter pytrees."""
+        """Compute geodesic dot between two parameter pytrees."""
         leaves_a = jax.tree_util.tree_leaves(a)
         leaves_b = jax.tree_util.tree_leaves(b)
-        total = 0.0
+        _b = get_default_backend()
+        flat_a = []
+        flat_b = []
         for la, lb in zip(leaves_a, leaves_b):
-            if hasattr(la, "shape") and hasattr(lb, "shape"):
-                total += float(jnp.sum(la * lb))
-        return total
+            if not (hasattr(la, "shape") and hasattr(lb, "shape")):
+                continue
+            a_val = la if hasattr(la, "shape") else _b.array(la)
+            b_val = lb if hasattr(lb, "shape") else _b.array(lb)
+            flat_a.append(_b.reshape(a_val, (-1,)))
+            flat_b.append(_b.reshape(b_val, (-1,)))
+        if not flat_a or not flat_b:
+            return 0.0
+        vec_a = _b.concatenate(flat_a, axis=0)
+        vec_b = _b.concatenate(flat_b, axis=0)
+        a_mat = _b.reshape(vec_a, (1, -1))
+        b_mat = _b.reshape(vec_b, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(a_mat, b_mat, _b)
+        norm_a = geodesic_norms(a_mat, _b)
+        norm_b = geodesic_norms(b_mat, _b)
+        _b.eval(cos_arr, norm_a, norm_b)
+        cos_val = float(_b.to_scalar(cos_arr[0]))
+        norm_a_val = float(_b.to_scalar(norm_a[0]))
+        norm_b_val = float(_b.to_scalar(norm_b[0]))
+        return cos_val * norm_a_val * norm_b_val
 
 
 # =============================================================================

@@ -34,7 +34,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 
 class AnchorSet(str, Enum):
@@ -117,11 +120,17 @@ class GeometricFingerprint:
             w = backend.matmul(gram_arr, v)
             backend.eval(w)
 
-            dot_arr = backend.sum(v * w)
-            norm_arr = geodesic_norms(backend.reshape(w, (1, -1)), backend)
-            backend.eval(dot_arr, norm_arr)
-            lam = float(backend.to_scalar(dot_arr))
-            norm = float(backend.to_scalar(norm_arr[0]))
+            v_mat = backend.reshape(v, (1, -1))
+            w_mat = backend.reshape(w, (1, -1))
+            cos_arr, _ = geodesic_pairwise_metrics(v_mat, w_mat, backend)
+            v_norm_arr = geodesic_norms(v_mat, backend)
+            w_norm_arr = geodesic_norms(w_mat, backend)
+            backend.eval(cos_arr, v_norm_arr, w_norm_arr)
+            cos_val = float(backend.to_scalar(cos_arr[0]))
+            v_norm_val = float(backend.to_scalar(v_norm_arr[0]))
+            w_norm_val = float(backend.to_scalar(w_norm_arr[0]))
+            lam = cos_val * v_norm_val * w_norm_val
+            norm = w_norm_val
             eps = division_epsilon(backend, w)
             if norm <= eps:
                 break

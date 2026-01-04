@@ -361,10 +361,12 @@ def _generate_normal_direction(
 
 
 def _normalize_direction(direction: dict[str, "Array"], backend) -> dict[str, "Array"]:
-    norm_sq = 0.0
-    for value in direction.values():
-        norm_sq += _sum_scalar(value ** 2, backend)
-    norm = float(sqrt_scalar(norm_sq, backend))
+    flat = _flatten_parameters(direction, backend)
+    if int(backend.shape(flat)[0]) == 0:
+        return direction
+    norm_arr = geodesic_norms(backend.reshape(flat, (1, -1)), backend)
+    backend.eval(norm_arr)
+    norm = float(backend.to_scalar(norm_arr[0]))
     eps_ref = _reference_array(direction, backend)
     if norm <= division_epsilon(backend, eps_ref):
         return direction

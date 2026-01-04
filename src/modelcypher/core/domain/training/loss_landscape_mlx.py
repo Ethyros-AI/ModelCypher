@@ -51,7 +51,10 @@ import mlx.core as mx
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -384,9 +387,28 @@ class LossLandscapeComputer:
         a: dict[str, mx.array],
         b: dict[str, mx.array],
     ) -> float:
-        """Compute dot product between two parameter dicts."""
-        total = 0.0
+        """Compute geodesic dot between two parameter dicts."""
+        _b = get_default_backend()
+        flat_a = []
+        flat_b = []
         for k in a:
-            if k in b:
-                total += float(mx.sum(a[k] * b[k]).item())
-        return total
+            if k not in b:
+                continue
+            a_val = a[k] if hasattr(a[k], "shape") else _b.array(a[k])
+            b_val = b[k] if hasattr(b[k], "shape") else _b.array(b[k])
+            flat_a.append(_b.reshape(a_val, (-1,)))
+            flat_b.append(_b.reshape(b_val, (-1,)))
+        if not flat_a or not flat_b:
+            return 0.0
+        vec_a = _b.concatenate(flat_a, axis=0)
+        vec_b = _b.concatenate(flat_b, axis=0)
+        a_mat = _b.reshape(vec_a, (1, -1))
+        b_mat = _b.reshape(vec_b, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(a_mat, b_mat, _b)
+        norm_a = geodesic_norms(a_mat, _b)
+        norm_b = geodesic_norms(b_mat, _b)
+        _b.eval(cos_arr, norm_a, norm_b)
+        cos_val = float(_b.to_scalar(cos_arr[0]))
+        norm_a_val = float(_b.to_scalar(norm_a[0]))
+        norm_b_val = float(_b.to_scalar(norm_b[0]))
+        return cos_val * norm_a_val * norm_b_val

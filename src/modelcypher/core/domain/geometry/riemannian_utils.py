@@ -595,7 +595,11 @@ class RiemannianGeometry:
                     # On the discrete manifold, log maps are defined by geodesic scaling.
                     new_mu = self._frechet_mean_step(points, mu, geo_from_mu, weights_arr)
 
-                    # Check convergence
+                    # Check convergence in embedding coordinates.
+                    # INTENTIONAL EUCLIDEAN: This measures how much the mean moved in
+                    # embedding space. Since both mu and new_mu are points in the same
+                    # coordinate system, Euclidean distance is appropriate for convergence
+                    # checking - we're measuring iteration stability, not manifold distance.
                     diff = backend.sqrt(backend.sum((new_mu - mu) ** 2))
                     backend.eval(diff)
                     diff_val = float(backend.to_scalar(diff))
@@ -1380,6 +1384,11 @@ class RiemannianGeometry:
         path_idx_arr = backend.array(path_indices)
         path_points = backend.take(points, path_idx_arr, axis=0)
         diffs = path_points[1:] - path_points[:-1]
+        # INTENTIONAL EUCLIDEAN: Discretized arc length along geodesic path.
+        # The path is a sequence of k-NN edges that approximates the geodesic.
+        # Each segment is short enough that Euclidean distance is a good
+        # approximation to arc length (first-order Taylor). The sum of these
+        # segment lengths IS the geodesic distance by construction.
         segment_lengths = backend.sqrt(backend.sum(diffs * diffs, axis=1))
         cumulative = backend.cumsum(segment_lengths, axis=0)
         backend.eval(cumulative)
@@ -1636,15 +1645,21 @@ class RiemannianGeometry:
         neighbor_pts = backend.take(points, neighbors, axis=0)
         tangent_vecs = neighbor_pts - backend.reshape(center, (1, d))
 
-        # Normalize to unit tangent sphere
+        # Normalize to unit tangent sphere.
+        # INTENTIONAL EUCLIDEAN: The tangent space at a point IS Euclidean by
+        # definition - it's the local linear approximation to the manifold.
+        # Normalizing tangent vectors to unit length uses Euclidean norm because
+        # the tangent space has a Euclidean metric inherited from the embedding.
         norms = backend.sqrt(backend.sum(tangent_vecs * tangent_vecs, axis=1, keepdims=True))
         eps = division_epsilon(backend, norms)
         norms_safe = backend.maximum(norms, backend.full(norms.shape, eps))
         tangent_dirs = tangent_vecs / norms_safe
         backend.eval(tangent_dirs)
 
-        # Find sparse direction by sampling candidates on the unit sphere
-        # Generate random unit vectors
+        # Find sparse direction by sampling candidates on the unit sphere.
+        # INTENTIONAL EUCLIDEAN: We're sampling directions in tangent space,
+        # which is Euclidean by definition. The unit sphere here is the set of
+        # unit tangent vectors, not points on the data manifold.
         backend.random_seed(42)  # Deterministic for reproducibility
         candidates = backend.random_normal((n_candidates, d))
         cand_norms = backend.sqrt(
@@ -2027,6 +2042,9 @@ class RiemannianGeometry:
             gradient = backend.where(grad_isinf, inf_replacement, gradient)
             backend.eval(gradient)
 
+        # INTENTIONAL EUCLIDEAN: Gradient lives in tangent space, which is
+        # Euclidean by definition. The gradient norm determines step size in
+        # the optimization, not distance on the manifold.
         grad_norm_arr = backend.sqrt(backend.sum(gradient * gradient))
         backend.eval(grad_norm_arr)
         grad_norm = float(backend.to_scalar(grad_norm_arr))

@@ -61,7 +61,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -711,9 +714,10 @@ class RotationContinuityAnalyzer:
                 U_fixed = backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
                 rotation = backend.matmul(U_fixed, Vt)
 
-            # Compute error
+            # Compute error using geodesic distances
             aligned_source = backend.matmul(source_arr, rotation)
-            error_arr = backend.sum((aligned_source - target_arr) ** 2)
+            _, error_dist = geodesic_pairwise_metrics(aligned_source, target_arr, backend)
+            error_arr = backend.sum(error_dist * error_dist)
             backend.eval(error_arr)
             error = float(backend.to_scalar(error_arr))
 
@@ -785,7 +789,8 @@ class RotationContinuityAnalyzer:
             global_rotation = backend.matmul(U_g_fixed, Vt_g)
 
         aligned_global = backend.matmul(global_source, global_rotation)
-        global_error_arr = backend.sum((aligned_global - global_target) ** 2)
+        _, global_dist = geodesic_pairwise_metrics(aligned_global, global_target, backend)
+        global_error_arr = backend.sum(global_dist * global_dist)
         backend.eval(global_error_arr)
         global_error = float(backend.to_scalar(global_error_arr))
 

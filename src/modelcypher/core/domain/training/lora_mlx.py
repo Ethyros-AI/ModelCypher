@@ -54,6 +54,9 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+
 # Infrastructure dependencies (MLX-specific neural network layers and file I/O)
 # These cannot be abstracted via Backend protocol
 import mlx.core as mx
@@ -465,10 +468,17 @@ def snapshot_lora_parameters(model: nn.Module) -> dict[str, mx.array]:
 
 def compute_adapter_norm(adapters: dict[str, mx.array]) -> float:
     """Compute Frobenius norm of all adapter weights."""
-    total = 0.0
+    if not adapters:
+        return 0.0
+    _b = get_default_backend()
+    flat_parts = []
     for weight in adapters.values():
-        total += float(mx.sum(weight**2).item())
-    return total**0.5
+        arr = weight if hasattr(weight, "shape") else _b.array(weight)
+        flat_parts.append(_b.reshape(arr, (-1,)))
+    flat = _b.concatenate(flat_parts, axis=0)
+    norm_arr = geodesic_norms(_b.reshape(flat, (1, -1)), _b)
+    _b.eval(norm_arr)
+    return float(_b.to_scalar(norm_arr[0]))
 
 
 def compute_adapter_delta_norm(
@@ -476,9 +486,17 @@ def compute_adapter_delta_norm(
     current: dict[str, mx.array],
 ) -> float:
     """Compute norm of weight change from initial to current."""
-    total = 0.0
-    for name in initial:
-        if name in current:
-            delta = current[name] - initial[name]
-            total += float(mx.sum(delta**2).item())
-    return total**0.5
+    _b = get_default_backend()
+    flat_parts = []
+    for name, init_val in initial.items():
+        if name not in current:
+            continue
+        delta = current[name] - init_val
+        arr = delta if hasattr(delta, "shape") else _b.array(delta)
+        flat_parts.append(_b.reshape(arr, (-1,)))
+    if not flat_parts:
+        return 0.0
+    flat = _b.concatenate(flat_parts, axis=0)
+    norm_arr = geodesic_norms(_b.reshape(flat, (1, -1)), _b)
+    _b.eval(norm_arr)
+    return float(_b.to_scalar(norm_arr[0]))

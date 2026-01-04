@@ -48,6 +48,7 @@ import re
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -553,11 +554,17 @@ def snapshot_lora_parameters_cuda(model: nn.Module) -> dict[str, torch.Tensor]:
 
 def compute_adapter_norm_cuda(adapters: dict[str, torch.Tensor]) -> float:
     """Compute Frobenius norm of all adapter weights."""
-    total = 0.0
-    for weight in adapters.values():
-        total += float(torch.sum(weight**2).item())
+    if not adapters:
+        return 0.0
     _b = get_default_backend()
-    return sqrt_scalar(total, _b)
+    flat_parts = []
+    for weight in adapters.values():
+        arr = weight if hasattr(weight, "shape") else _b.array(weight)
+        flat_parts.append(_b.reshape(arr, (-1,)))
+    flat = _b.concatenate(flat_parts, axis=0)
+    norm_arr = geodesic_norms(_b.reshape(flat, (1, -1)), _b)
+    _b.eval(norm_arr)
+    return float(_b.to_scalar(norm_arr[0]))
 
 
 def compute_adapter_delta_norm_cuda(
@@ -565,13 +572,20 @@ def compute_adapter_delta_norm_cuda(
     current: dict[str, torch.Tensor],
 ) -> float:
     """Compute norm of weight change from initial to current."""
-    total = 0.0
-    for name in initial:
-        if name in current:
-            delta = current[name] - initial[name]
-            total += float(torch.sum(delta**2).item())
     _b = get_default_backend()
-    return sqrt_scalar(total, _b)
+    flat_parts = []
+    for name, init_val in initial.items():
+        if name not in current:
+            continue
+        delta = current[name] - init_val
+        arr = delta if hasattr(delta, "shape") else _b.array(delta)
+        flat_parts.append(_b.reshape(arr, (-1,)))
+    if not flat_parts:
+        return 0.0
+    flat = _b.concatenate(flat_parts, axis=0)
+    norm_arr = geodesic_norms(_b.reshape(flat, (1, -1)), _b)
+    _b.eval(norm_arr)
+    return float(_b.to_scalar(norm_arr[0]))
 
 
 __all__ = [

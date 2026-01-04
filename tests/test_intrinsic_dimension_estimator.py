@@ -23,6 +23,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 
 def _eps(backend, *values: float) -> float:
@@ -354,30 +355,21 @@ class TestSyntheticManifoldDimension:
         overestimate dimension slightly due to curvature effects.
         We check that the point estimate is within [1.5, 3.0].
         """
-        import math
-
         backend = get_default_backend()
         backend.random_seed(42)
         n_samples = 200  # Use more samples for stable estimate
 
-        # Sample uniformly on unit sphere S^2 using rejection sampling
-        # Generate random 3D points and normalize
-        points_list = []
+        # Sample uniformly on unit sphere S^2 using Gaussian projection
+        # Generate random 3D points and normalize using geodesic norms
         backend.random_seed(42)
-        for i in range(n_samples * 3):  # Generate extra to ensure enough valid points
-            backend.random_seed(42 + i)
-            point = backend.random_normal((3,))
-            backend.eval(point)
-            point_np = backend.tolist(point)
-            norm = math.sqrt(sum(x * x for x in point_np))
-            eps = _eps(backend, norm)
-            if norm > eps:
-                normalized = [x / norm for x in point_np]
-                points_list.append(normalized)
-            if len(points_list) >= n_samples:
-                break
-
-        points = backend.array(points_list[:n_samples])
+        raw_points = backend.random_normal((n_samples, 3))
+        backend.eval(raw_points)
+        norms_flat = geodesic_norms(raw_points, backend)
+        backend.eval(norms_flat)
+        norms = backend.reshape(norms_flat, (-1, 1))
+        eps = _eps(backend, 1.0)
+        norms = backend.maximum(norms, backend.ones_like(norms) * eps)
+        points = raw_points / norms
         backend.eval(points)
 
         computer = IntrinsicDimension(backend)
