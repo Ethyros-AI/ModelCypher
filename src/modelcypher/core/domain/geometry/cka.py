@@ -68,6 +68,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
@@ -162,8 +163,6 @@ def _compute_pairwise_squared_distances(
     # Use geodesic distances that account for manifold curvature.
     # geodesic_distances handles all cases including n <= 2 (where geodesic
     # equals chord by construction - the k-NN graph has only one edge).
-    from .riemannian_utils import RiemannianGeometry
-
     rg = RiemannianGeometry(backend)
     result = rg.geodesic_distances(X)
     # Square the geodesic distances for RBF kernel

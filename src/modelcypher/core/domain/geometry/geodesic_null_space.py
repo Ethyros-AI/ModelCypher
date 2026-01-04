@@ -292,15 +292,19 @@ class GeodesicNullSpaceFilter:
         filtering_applied = tangent_norm > reg
         orthogonal_dim = basis.orthogonal_dim
 
-        # Compute metrics
-        original_norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)
-        filtered_norm_arr = geodesic_norms(
-            backend.reshape(delta_safe, (1, -1)), backend
+        # Compute metrics (single geodesic pass for original/filtered norms)
+        norm_inputs = backend.concatenate(
+            [
+                backend.reshape(delta_flat, (1, -1)),
+                backend.reshape(delta_safe, (1, -1)),
+            ],
+            axis=0,
         )
-        backend.eval(original_norm_arr, filtered_norm_arr)
+        norms_arr = geodesic_norms(norm_inputs, backend)
+        backend.eval(norms_arr)
 
-        original_norm = float(backend.to_scalar(original_norm_arr[0]))
-        filtered_norm = float(backend.to_scalar(filtered_norm_arr[0]))
+        original_norm = float(backend.to_scalar(norms_arr[0]))
+        filtered_norm = float(backend.to_scalar(norms_arr[1]))
 
         if original_norm > 0:
             preserved_fraction = filtered_norm / original_norm

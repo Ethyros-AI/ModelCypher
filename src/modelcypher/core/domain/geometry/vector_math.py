@@ -34,8 +34,11 @@ which are dimension-independent. Single-vector operations require matching dimen
 
 from __future__ import annotations
 
+import logging
 import sys
 from typing import TYPE_CHECKING, Any, Sequence
+
+logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -45,7 +48,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sin_scalar,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    _get_riemannian_geometry,
+)
 
 # math.pi is just a constant, no GPU acceleration needed
 _PI = 3.141592653589793
@@ -56,17 +62,6 @@ if TYPE_CHECKING:
 # Type alias for array-like inputs (list or MLX array)
 ArrayLike = list[float] | Sequence[float]
 
-_RG_CACHE: dict[int, RiemannianGeometry] = {}
-
-
-def _get_riemannian_geometry(backend: "Backend") -> RiemannianGeometry:
-    key = id(backend)
-    cached = _RG_CACHE.get(key)
-    if cached is None or getattr(cached, "_backend", None) is not backend:
-        cached = RiemannianGeometry(backend)
-        _RG_CACHE[key] = cached
-    return cached
-
 
 def _to_list(arr: ArrayLike) -> list[float]:
     """Convert array-like to Python list, handling MLX arrays."""
@@ -74,7 +69,8 @@ def _to_list(arr: ArrayLike) -> list[float]:
         backend = get_default_backend()
         try:
             return backend.tolist(arr)
-        except Exception:
+        except Exception as exc:
+            logger.debug("backend.tolist failed, falling back to arr.tolist: %s", exc)
             return arr.tolist()
     return list(arr)
 
@@ -93,7 +89,8 @@ def _to_scalar(val: Any) -> float:
         try:
             backend.eval(val)
             return float(backend.to_scalar(val))
-        except Exception:
+        except Exception as exc:
+            logger.debug("backend.to_scalar failed, trying fallback: %s", exc)
             if hasattr(val, "item"):
                 return float(val.item())
             if hasattr(val, "tolist"):

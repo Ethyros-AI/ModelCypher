@@ -128,6 +128,7 @@ class ConceptResponseMatrixService:
         self.engine = engine
         self._anchor_prompt_cache: list[tuple[str, list[str]]] | None = None
         self._prompt_state_cache: dict[tuple[str, str | None, str], dict[int, list[float]]] = {}
+        self._anchor_activation_cache: dict[tuple[str, str | None, str], dict[int, list[float]]] = {}
 
     def build(
         self,
@@ -170,6 +171,12 @@ class ConceptResponseMatrixService:
         for anchor_id, prompts in anchor_entries:
             if not prompts:
                 continue
+            anchor_key = (str(resolved_model), adapter, anchor_id)
+            cached_avg = self._anchor_activation_cache.get(anchor_key)
+            if cached_avg is not None:
+                crm.record_activations(anchor_id, cached_avg)
+                used_anchor_ids.append(anchor_id)
+                continue
             layer_sums: dict[int, object] = {}
             layer_counts: dict[int, int] = {}
             for prompt in prompts:
@@ -211,6 +218,7 @@ class ConceptResponseMatrixService:
                 averaged[layer] = backend.tolist(avg_arr)
             crm.record_activations(anchor_id, averaged)
             used_anchor_ids.append(anchor_id)
+            self._anchor_activation_cache[anchor_key] = averaged
 
         if used_anchor_ids:
             prime_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("prime:"))

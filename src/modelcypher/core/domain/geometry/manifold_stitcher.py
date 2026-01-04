@@ -871,6 +871,9 @@ class ManifoldStitcher:
         from modelcypher.core.domain.geometry.riemannian_utils import (
             RiemannianGeometry,
         )
+        from modelcypher.core.domain.geometry.riemannian_types import (
+            GeodesicDistanceResult,
+        )
 
         riemannian = RiemannianGeometry(backend=b)
         # If geodesic_k_neighbors is specified, cap at n-1; otherwise let geodesic_distances
@@ -880,6 +883,7 @@ class ManifoldStitcher:
         # Get actual k from result (may differ if None was passed)
         geodesic_k_neighbors = geodesic_result.k_neighbors
         geodesic_dist_matrix = geodesic_result.distances
+        geodesic_adj_matrix = geodesic_result.adjacency
         def compute_distance_to_centroids(
             pts_arr: "Array", centroid_indices: list[int]
         ) -> "Array":
@@ -965,16 +969,32 @@ class ManifoldStitcher:
 
             # Update step: compute new centroids using Fréchet mean
             assignments_list = [int(x) for x in b.tolist(assignments)]
+            indices_by_cluster: list[list[int]] = [[] for _ in range(k)]
+            for idx, cluster_id in enumerate(assignments_list):
+                if 0 <= cluster_id < k:
+                    indices_by_cluster[cluster_id].append(idx)
             new_centroids = []
             for c in range(k):
-                indices = [i for i, val in enumerate(assignments_list) if val == c]
+                indices = indices_by_cluster[c]
                 if indices:
                     idx_arr = b.array(indices)
                     cluster_pts = b.take(pts, idx_arr, axis=0)
+                    cluster_dist = b.take(geodesic_dist_matrix, idx_arr, axis=0)
+                    cluster_dist = b.take(cluster_dist, idx_arr, axis=1)
+                    cluster_adj = b.take(geodesic_adj_matrix, idx_arr, axis=0)
+                    cluster_adj = b.take(cluster_adj, idx_arr, axis=1)
+                    cluster_geo = GeodesicDistanceResult(
+                        distances=cluster_dist,
+                        adjacency=cluster_adj,
+                        inf_value=geodesic_result.inf_value,
+                        k_neighbors=geodesic_k_neighbors,
+                        connected=geodesic_result.connected,
+                    )
                     result = riemannian.frechet_mean(
                         cluster_pts,
                         max_iterations=20,
                         tolerance=regularization_epsilon(b, cluster_pts),
+                        geo_result=cluster_geo,
                     )
                     new_centroids.append(result.mean)
                 else:

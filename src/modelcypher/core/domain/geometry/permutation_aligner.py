@@ -114,10 +114,10 @@ class AlignmentResult:
     permutation: "Array"  # [N, N]
     signs: "Array"  # [N, N] diagonal or [N] vector
     match_quality: float
-    match_confidences: list[float]
+    match_confidences: tuple[float, ...]
     sign_flip_count: int
     is_sparse_permutation: bool = False
-    assignment_indices: list[int] | None = None
+    assignment_indices: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -265,7 +265,7 @@ class PermutationAligner:
             permutation=permutation,
             signs=sign_matrix,
             match_quality=mean_quality,
-            match_confidences=confidences_target,
+            match_confidences=tuple(confidences_target),
             sign_flip_count=sign_flip_count,
         )
 
@@ -433,10 +433,10 @@ class PermutationAligner:
                 permutation=b.astype(b.array(assignment), "float32"),
                 signs=b.astype(b.array(signs_target), "float32"),
                 match_quality=avg_quality,
-                match_confidences=confidences_target,
+                match_confidences=tuple(confidences_target),
                 sign_flip_count=sign_flip_count,
                 is_sparse_permutation=True,
-                assignment_indices=assignment,
+                assignment_indices=tuple(assignment),
             )
 
         identity = b.eye(N)
@@ -448,7 +448,7 @@ class PermutationAligner:
             permutation=permutation,
             signs=sign_matrix,
             match_quality=avg_quality,
-            match_confidences=confidences_target,
+            match_confidences=tuple(confidences_target),
             sign_flip_count=sign_flip_count,
         )
 

@@ -359,9 +359,8 @@ class GramAligner:
         eig_t, V_t = b.eigh(K_t_f32)
         b.eval(eig_s, V_s, eig_t, V_t)
 
-        regularization = self._regularization if self._regularization is not None else 0.0
+        # Derive eps from dtype (IGNORE self._regularization as documented)
         eps = max(
-            regularization,
             machine_epsilon(b, K_s_c),
             machine_epsilon(b, K_t_c),
         )
@@ -496,7 +495,6 @@ class GramAligner:
         cka: float,
     ) -> "AlignmentSignal":
         from modelcypher.core.domain.geometry.alignment_diagnostic import (
-            AlignmentSignal,
             alignment_signal_from_matrices,
         )
 

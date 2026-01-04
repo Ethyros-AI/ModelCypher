@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 27
-- Issues found: 17
-- Issues fixed: 17
+- Audited: 31
+- Issues found: 20
+- Issues fixed: 20
 
 ## Audit Log
 
@@ -367,3 +367,54 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Schema and CLI sections out of date
   - Fix: Aligned fields and commands with current implementation
+
+- `docs/PROFILING.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (profiling commands and caching info)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated CLI flags, caches, and profiling examples
+  - Fix: Updated commands and cache details to match current code
+
+- `docs/README.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/RESEARCH-CONNECTIONS.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (fixed API references)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Examples referenced outdated classes/methods
+  - Fix: Aligned snippets with current APIs
+
+- `docs/SKEPTICS-GUIDE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (corrected counts and code references)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated geometry file counts and incorrect code references/examples
+  - Fix: Updated counts, examples, and references to match current code

@@ -109,4 +109,4 @@ def test_clusterer_groups_identical_points() -> None:
     result = clusterer.cluster(points)
     assert len(result.regions) == 1
     assert result.regions[0].member_count == 5
-    assert result.noise_points == []
+    assert result.noise_points == ()

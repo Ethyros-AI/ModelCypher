@@ -250,8 +250,9 @@ class RegimeStateDetector:
         v_eff = self.effective_vocabulary_size(logits, 1.0)
         base_entropy = self.compute_entropy(logits, temperature)
 
-        # Maximum possible entropy: log(V_eff)
-        max_entropy = log_scalar(float(max(1, v_eff)), get_default_backend())
+        # Maximum possible entropy: log(V_eff), minimum of log(2) for numerical stability
+        # When v_eff = 1 (degenerate distribution), use log(2) as floor
+        max_entropy = log_scalar(float(max(2, v_eff)), get_default_backend())
 
         # Estimate T_c from logit statistics
         tc = self.estimate_critical_temperature(std_dev, v_eff)

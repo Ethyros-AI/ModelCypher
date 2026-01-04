@@ -496,8 +496,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                     means = mapped(points_batch, weights_batch)
                 backend.eval(means)
                 return means
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("vmap failed for frechet_mean_batch, falling back to sequential: %s", exc)
 
         means = []
         for i in range(batch):

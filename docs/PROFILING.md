@@ -44,26 +44,30 @@ Stores precomputed geometry fingerprints.
 
 | Property | Value |
 |----------|-------|
-| Location | `~/.modelcypher/caches/fingerprints/` |
-| Key | Model hash + probe configuration |
-| TTL | Indefinite (invalidate manually) |
-| Size | ~1-5 MB per model |
+| Location | `~/Library/Caches/ModelCypher/fingerprints/` |
+| Key | Model path hash + config hash + model mtime |
+| TTL | 30 days |
+| Size | Varies by probe count |
 
 **Invalidation:**
 ```bash
-rm -rf ~/.modelcypher/caches/fingerprints/
+rm -rf ~/Library/Caches/ModelCypher/fingerprints/
 ```
 
-### Activation Cache
+### Geometry Metrics Cache
 
-Stores layer activations for probe texts.
+Caches expensive point-cloud metrics (GW, intrinsic dimension, topological fingerprint,
+spectral signature).
 
 | Property | Value |
 |----------|-------|
-| Location | `~/.modelcypher/caches/activations/` |
-| Key | Model + layer + probe batch |
-| TTL | 7 days (configurable) |
-| Size | 10-100 MB per model |
+| Location | `~/Library/Caches/ModelCypher/geometry_metrics/` |
+| TTL | 7 days |
+
+### Computation Cache (Memory-Only)
+
+Session-scoped cache for Gram matrices, geodesic distances, SVDs, and Fréchet means.
+Cleared when the process exits.
 
 ### CRM Cache
 
@@ -76,44 +80,12 @@ mc geometry crm compare --crm-a ./crm1.json --crm-b ./crm2.json
 
 ## Optimizing Geometry Operations
 
-### Batch Size Tuning
+### Atlas Dimensionality Tuning
 
-Larger batches improve throughput but require more memory:
-
-```bash
-# Memory-constrained (e.g., 8GB RAM)
-mc geometry crm-build --batch-size 4 ./model
-
-# High-memory systems (32GB+)
-mc geometry crm-build --batch-size 32 ./model
-```
-
-**Guidelines:**
-| RAM | Batch Size Range |
-|-----|------------------------|
-| 8 GB | 2-4 |
-| 16 GB | 8-16 |
-| 32 GB+ | 16-32 |
-
-### Layer Selection
-
-Probe only specific layers to reduce computation:
+The atlas dimensionality command exposes batch size and pooling controls:
 
 ```bash
-# Every 6th layer (typical for 24-layer models)
-mc geometry crm-build --layers 0,6,12,18,24 ./model
-
-# Just the last few layers
-mc geometry crm-build --layers -4,-3,-2,-1 ./model
-```
-
-### Probe Subset
-
-Use fewer probes for quick estimates:
-
-```bash
-# Use only semantic primes (65 probes instead of full atlas)
-mc geometry crm-build --atlas semantic_primes ./model
+mc geometry atlas dimensionality /path/to/model --batch-size 4 --pooling frechet
 ```
 
 ## Python Profiling
@@ -126,14 +98,14 @@ For detailed function-level timing:
 import cProfile
 import pstats
 
-from modelcypher.core.use_cases.geometry_service import GeometryService
+from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
 
-svc = GeometryService()
+svc = GeometryMetricsService()
 
 # Profile a specific operation
 profiler = cProfile.Profile()
 profiler.enable()
-result = svc.compute_fingerprint(model_path)
+result = svc.compute_topological_fingerprint(points=[[0.0, 0.0], [1.0, 1.0]])
 profiler.disable()
 
 # Print top 20 functions by cumulative time
@@ -199,20 +171,18 @@ print(f"Memory used: {(after - before) / 1e9:.2f} GB")
 **Cause:** Batch size too large or too many layers
 
 **Solutions:**
-1. Reduce batch size: `--batch-size 4`
-2. Select fewer layers: `--layers 0,12,24`
-3. Use streaming mode where available
-4. Close other applications
+1. Reduce batch size where supported (e.g., `mc geometry atlas dimensionality --batch-size 4`).
+2. Reduce scope (smaller models or fewer operations).
+3. Close other applications.
 
 ### Issue: Slow CRM Build
 
 **Cause:** All probes × N layers × batch inference
 
 **Solutions:**
-1. Use layer subset: `--layers 0,6,12,18,24`
-2. Use probe subset: `--atlas semantic_primes`
-3. Enable caching: `--cache-activations`
-4. Increase batch size if memory allows
+1. Reuse existing CRM outputs instead of rebuilding.
+2. Run on the fastest available backend (MLX/CUDA).
+3. Use targeted probe commands when a full CRM is unnecessary (e.g., `mc geometry primes probe-model`).
 
 ### Issue: Fingerprint Mismatch After Model Update
 
@@ -220,20 +190,15 @@ print(f"Memory used: {(after - before) / 1e9:.2f} GB")
 
 **Solution:** Clear fingerprint cache:
 ```bash
-rm ~/.modelcypher/caches/fingerprints/*model_name*
+rm ~/Library/Caches/ModelCypher/fingerprints/*model_name*
 ```
 
 ## Performance Benchmarks
 
-Typical timings on M1 Max (32GB):
+Use local measurements for accuracy:
 
-| Operation | Time | Notes |
-|-----------|------|-------|
-| Model probe (0.5B) | ~5s | Full atlas |
-| Model probe (7B) | ~30s | Full atlas |
-| CRM build (0.5B) | ~15s | All layers |
-| CRM build (7B) | ~2min | All layers |
-| Merge validation | ~10s | Two adapters |
-| Intrinsic dimension | ~2s | Per layer |
+```bash
+mc system benchmark cache
+```
 
-*Timings vary based on hardware, model architecture, and configuration.*
+End-to-end timings vary widely by model size, backend, and probe set.

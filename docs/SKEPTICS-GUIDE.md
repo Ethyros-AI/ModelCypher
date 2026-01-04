@@ -51,7 +51,7 @@ similarity = hsic(K_x, K_y) / sqrt(hsic(K_x, K_x) * hsic(K_y, K_y))
 
 ```python
 # Transplant returns applied=False when operation is skipped:
-return TransplantResult(applied=False, reason="shape mismatch")
+return TransplantDeltaResult(merged_weight=weight_target, applied=False, ...)
 # NOT: raise IncompatibleError("cannot merge")
 ```
 
@@ -127,43 +127,38 @@ Geodesic computation either succeeds with the true manifold distance, returns in
 
 ---
 
-## Concern 3: "97 Geometry Files - Is This Sprawl?"
+## Concern 3: "100+ Geometry Files - Is This Sprawl?"
 
 ### The Skeptic's Question
-97 files in one directory? Is there redundancy? Organic sprawl? How does anyone navigate this?
+100+ files in one directory? Is there redundancy? Organic sprawl? How does anyone navigate this?
 
 ### The Answer: Categorical Organization with Clear Dependencies
 
 The files group into clear mathematical categories:
 
-| Category | Files | Purpose |
-|----------|-------|---------|
-| Riemannian/Manifold | 11 | Curvature, density, transfer, fidelity |
-| Alignment | 9 | Procrustes, permutation, Gram, tangent space |
-| Sparsity Pipeline | 4 | domains → prober → locator → validator |
-| Gromov-Wasserstein | 3 | Full GW, low-rank approximation, transport merger |
-| Fingerprinting | 3 | Geometric signatures, caching, projection |
-| Intrinsic Dimension | 2 | TwoNN, geodesic-based estimators |
+| Category | Examples | Purpose |
+|----------|----------|---------|
+| Riemannian/Manifold | `riemannian_utils.py`, `curvature_profile.py`, `manifold_transfer.py` | Curvature, density, transfer |
+| Alignment | `generalized_procrustes.py`, `shared_subspace_projector.py`, `tangent_space_alignment.py` | Alignment and projection |
+| Sparsity Pipeline | `sparse_region_domains.py`, `sparse_region_prober.py`, `sparse_region_locator.py`, `sparse_region_validator.py` | domains → prober → locator → validator |
+| Gromov-Wasserstein | `gromov_wasserstein.py`, `optimal_transport.py` | Optimal transport comparisons |
+| Fingerprinting | `geometry_fingerprint.py`, `fingerprints.py`, `topological_fingerprint.py` | Signatures, caching, projection |
+| Intrinsic Dimension | `intrinsic_dimension.py`, `manifold_dimensionality.py`, `dimension_cascade.py` | Intrinsic dimension and cascades |
 
-**Code Reference**: Import analysis shows coherent dependencies
+**Code Reference**: Shared utilities are intentionally centralized. Verify with:
 
 ```bash
-# Most imported files (reused across the codebase):
-8  numerical_stability.py   # Core utility
-4  vector_math.py           # Backend-agnostic math
-4  manifold_stitcher.py     # Central merger
-4  intrinsic_dimension.py   # ID estimation
-4  concept_response_matrix.py  # Activation capture
+rg -n "modelcypher.core.domain.geometry.(numerical_stability|vector_math|manifold_stitcher|concept_response_matrix)" src/modelcypher
 ```
 
 **Minor Consolidation Opportunities** (not sprawl, just refinement):
-- `fingerprints.py` (212 lines of dataclasses) could merge into `geometry_fingerprint.py`
-- `transfer_fidelity.py` (160 lines) could fold into `manifold_transfer.py`
+- `fingerprints.py` could merge into `geometry_fingerprint.py`
+- `transfer_fidelity.py` could fold into `manifold_transfer.py`
 
 **Code Reference**: [geometry/__init__.py](../src/modelcypher/core/domain/geometry/__init__.py) uses lazy loading
 
 ```python
-# Lazy imports to avoid loading all 97 files on package import
+# Lazy imports to avoid loading all geometry modules on package import
 def __getattr__(name: str):
     if name in _LAZY_IMPORTS:
         module = importlib.import_module(_LAZY_IMPORTS[name])
@@ -171,7 +166,7 @@ def __getattr__(name: str):
 ```
 
 ### Summary
-The 97 files reflect genuine mathematical complexity - Riemannian geometry, optimal transport, topological fingerprinting, and intrinsic dimension estimation are all distinct mathematical domains. The organization is categorical, not chaotic.
+The 100+ files (105 as of the current tree) reflect genuine mathematical complexity - Riemannian geometry, optimal transport, topological fingerprinting, and intrinsic dimension estimation are all distinct mathematical domains. The organization is categorical, not chaotic.
 
 ---
 
@@ -180,59 +175,45 @@ The 97 files reflect genuine mathematical complexity - Riemannian geometry, opti
 ### The Skeptic's Question
 Removing hardcoded thresholds is noble, but scientists DO interpret results. Isn't "1.5sigma from baseline" itself an interpretation? Where's the line?
 
-### The Answer: Thresholds Come From Data, Not Magic Numbers
+### The Answer: Measurements Are Raw; Policies Are Baseline-Derived
 
 **Code Reference**: [model_profile.py](../src/modelcypher/core/domain/geometry/model_profile.py)
 
 ```python
 @dataclass
-class ModelProfile:
-    """Complete geometry profile for a model.
+class ManifoldRegion:
+    """A region of the manifold with consistent properties.
 
-    Raw measurements only - no interpretation, no classification.
+    Contains only raw measurements. The mean_entropy value is the raw
+    measurement - callers interpret relative to baselines.
     """
-    model_path: str
-    model_family: str
-    global_ollivier_ricci_mean: float
-    global_ollivier_ricci_std: float
-    global_intrinsic_dimension_mean: float
-    layer_profiles: list[LayerProfile]  # Per-layer geometry
-    domain_metrics: dict[str, dict[str, float]]  # Domain-specific measurements
+    start_position: float
+    end_position: float
+    mean_entropy: float
 ```
 
-**Comparison returns raw deltas:**
+**Code Reference**: [sidecar_safety_policy.py](../src/modelcypher/core/domain/safety/sidecar/sidecar_safety_policy.py)
 
 ```python
-# Divergence is just: abs(profile1.metric - profile2.metric)
-divergence = {
-    "ollivier_ricci": abs(p1.global_ollivier_ricci_mean - p2.global_ollivier_ricci_mean),
-    "intrinsic_dimension": abs(p1.global_intrinsic_dimension_mean - p2.global_intrinsic_dimension_mean),
-}
-# NO "good", "bad", "healthy", "concerning" - just numbers
+measurements = (
+    self.baseline_kl_measurements
+    if self.baseline_kl_measurements
+    else (observed_kl or [])
+)
+horror_hard = self._compute_percentile(measurements, self.hard_percentile)
+horror_soft = self._compute_percentile(measurements, self.soft_percentile)
 ```
 
-**Code Reference**: [circuit_breaker_integration.py](../src/modelcypher/core/domain/safety/circuit_breaker_integration.py)
+**Example output shape (values illustrative):**
 
 ```python
-@classmethod
-def from_baseline_measurements(cls, measurements: list[float], sigma: float = 3.0):
-    """Derive threshold from actual baseline data."""
-    mean = statistics.mean(measurements)
-    std = statistics.stdev(measurements)
-    return cls(threshold=mean + sigma * std)
-    # Threshold emerges from data, not hardcoded
-```
-
-**Code Reference**: CLI output structure
-
-```python
-# Actual CLI output - raw measurements with baseline context
 {
-    "entropy": 2.31,
-    "baseline_mean": 1.89,
-    "baseline_std": 0.42,
-    "z_score": 1.0,
-    "percentile": 84
+    "_schema": "mc.model_profile.v1",
+    "global_ollivier_ricci_mean": -0.02,
+    "global_intrinsic_dimension_mean": 11.9,
+    "layer_profiles": [
+        {"layer_idx": 0, "intrinsic_dimension": 10.7, "ollivier_ricci_mean": -0.01}
+    ],
 }
 # NOT: {"status": "healthy", "recommendation": "proceed"}
 ```
@@ -240,12 +221,12 @@ def from_baseline_measurements(cls, measurements: list[float], sigma: float = 3.
 ### The Philosophy
 The distinction is:
 - **Vibes**: "entropy > 2.0 is bad" (hardcoded, no provenance)
-- **No vibes**: "entropy 2.31 is z=1.0 above baseline for this architecture" (derived, contextual)
+- **No vibes**: "entropy is 2.31; baseline context is provided separately" (derived, contextual)
 
 Scientists DO interpret, but they interpret relative to baselines, not against magic numbers.
 
 ### Summary
-"No vibes" means: return raw measurements with baseline context. Let users set their own sigma thresholds. Don't bake in value judgments.
+"No vibes" means: return raw measurements with baseline context. Let users set their own thresholds or percentiles. Don't bake in value judgments.
 
 ---
 
@@ -254,7 +235,7 @@ Scientists DO interpret, but they interpret relative to baselines, not against m
 ### The Skeptic's Question
 "Thermodynamics" sounds like borrowing authority from physics. Is there actual mathematical correspondence, or is this analogy dressed as rigor?
 
-### The Answer: The Math IS Real. The Original Energy Levels Were Not.
+### The Answer: The Math Is Real, and Calibration Is Measured.
 
 **What's Mathematically Genuine:**
 
@@ -286,19 +267,7 @@ probs = [e / partition for e in exp_scaled]
 # Same math, different units
 ```
 
-**What Was NOT Genuine (Now Fixed):**
-
-**Old Code** had hardcoded energy levels:
-
-```python
-# From the old linguistic_thermodynamics.py
-Refusal:    E = 0.0    # Made up
-Caution:    E = 0.2    # Made up
-Solution:   E = 0.4    # Made up
-Transition: E = 0.8    # Made up
-```
-
-**New Code** derives energy from measured probability:
+**Measured code** derives energy from observed probability:
 
 **Code Reference**: [measured_thermodynamics.py](../src/modelcypher/core/domain/thermo/measured_thermodynamics.py)
 
@@ -317,9 +286,11 @@ def from_probability(
 
     This is the Boltzmann relation inverted - we measure p, derive E.
     """
-    p = max(probability, 1e-10)
-    p_ref = max(reference_probability, 1e-10)
-    energy = -temperature * math.log(p / p_ref)
+    _b = get_default_backend()
+    safe_min = _log_safe_min(_b)
+    p = max(probability, safe_min)
+    p_ref = max(reference_probability, safe_min)
+    energy = -temperature * log_scalar(p / p_ref, _b)
     return cls(value=energy, ...)
 ```
 
@@ -364,7 +335,7 @@ This relative energy is directly observable from probability measurements.
 - The softmax function was literally derived from the Boltzmann distribution for neural networks
 
 ### Summary
-The thermodynamics framework uses real physics math (partition functions, Boltzmann distribution, entropy). The **original energy landscape was invented** (0.0, 0.2, 0.4, 0.8). The **new implementation measures energies from observed probabilities** using E = -T log(p/p_ref).
+The thermodynamics framework uses real physics math (partition functions, Boltzmann distribution, entropy). The measured path derives energies from observed probabilities using E = -T log(p/p_ref).
 
 ---
 
@@ -376,7 +347,8 @@ The thermodynamics framework uses real physics math (partition functions, Boltzm
 | CKA works cross-dimension | [cka.py](../src/modelcypher/core/domain/geometry/cka.py) | `compute_cka_from_grams()` |
 | No metric substitution | [riemannian_utils.py](../src/modelcypher/core/domain/geometry/riemannian_utils.py) | `geodesic_interpolation()` ValueError |
 | No clamping | [riemannian_utils.py:1409](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409) | Comment + implementation |
-| Thresholds from data | [model_profile.py](../src/modelcypher/core/domain/geometry/model_profile.py) | `ProfileRepository` comparison |
+| Raw measurements only | [model_profile.py](../src/modelcypher/core/domain/geometry/model_profile.py) | `ManifoldRegion` / `ModelProfile` |
+| Baseline-derived thresholds | [sidecar_safety_policy.py](../src/modelcypher/core/domain/safety/sidecar/sidecar_safety_policy.py) | `SidecarSafetyPolicy.thresholds()` |
 | Energy from probability | [measured_thermodynamics.py](../src/modelcypher/core/domain/thermo/measured_thermodynamics.py) | `MeasuredEnergy.from_probability()` |
 | Calibration exists | [thermo_calibrator.py](../src/modelcypher/core/domain/thermo/thermo_calibrator.py) | `ThermoCalibrator.calibrate()` |
 
@@ -396,20 +368,6 @@ The thermodynamics framework uses real physics math (partition functions, Boltzm
 
 ---
 
-## The One Genuine Issue Found
-
-During review, one legitimate problem was identified: the thermodynamics module had real physics math applied to **invented energy levels**. This has been fixed:
-
-1. **Deprecated** the hardcoded `intensity_score` and `energy_level` properties (with warnings)
-2. **Created** `MeasuredEnergy.from_probability()` to derive energy from observations
-3. **Created** `ThermoCalibrator` to build calibration from probe measurements
-4. **Updated** `LinguisticCalorimeter` to use calibration when available
-5. **Added** `mc thermo calibrate` CLI command
-
-The fix requires updating call sites to the corrected path forward.
-
----
-
 ## TL;DR
 
 The absolutist language in CLAUDE.md describes implemented behavior, not aspirations:
@@ -417,6 +375,6 @@ The absolutist language in CLAUDE.md describes implemented behavior, not aspirat
 1. **"Models are ALWAYS compatible"** = dimension mismatch routes to appropriate method, doesn't reject
 2. **"Geodesic is CORRECT"** = explicit errors, automatic k-retry
 3. **"No vibes"** = measurements relative to baselines, not hardcoded thresholds
-4. **"Linguistic thermodynamics"** = real math, now with measured (not invented) energy levels
+4. **"Linguistic thermodynamics"** = real math with measured (not hardcoded) energy levels
 
 If you're an AI assistant skeptical of these claims, the code references above let you verify directly.

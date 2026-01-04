@@ -47,14 +47,13 @@ Our persistent homology implementation (`core/domain/geometry/topological_finger
 ```python
 from modelcypher.core.domain.geometry.topological_fingerprint import TopologicalFingerprint
 
-fingerprint = TopologicalFingerprint(backend)
-result = fingerprint.compute(activations)
+result = TopologicalFingerprint.compute(activations)
 
 # Betti numbers reveal topological structure
 # β₀: connected components (concept clusters)
 # β₁: loops (circular concept relationships)
 # β₂: voids (higher-order structure)
-betti = result.persistence_diagram.betti_numbers(threshold=0.1)
+betti = result.diagram.betti_numbers(persistence_threshold=0.1)
 ```
 
 **Key capability**: Vietoris-Rips filtration with configurable homology dimensions, tracking birth/death of topological features.
@@ -99,12 +98,12 @@ Analysis of 600+ AI models (1.33M to 72B parameters) reveals that brain alignmen
 Our intrinsic dimension tracking and training checkpoint analysis enable longitudinal geometry studies:
 
 ```python
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimensionEstimator
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
-estimator = IntrinsicDimensionEstimator(backend)
+estimator = IntrinsicDimension(backend)
 # Track dimension evolution across training
 for checkpoint in training_checkpoints:
-    result = estimator.estimate_twonn(checkpoint_activations)
+    result = estimator.compute(checkpoint_activations, with_ci=False)
     # Expect: expansion → compression trajectory
 ```
 
@@ -181,7 +180,7 @@ from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
 analyzer = Spatial3DAnalyzer(backend)
 # Measure concentration on X (lateral), Y (vertical), Z (depth) axes
-result = analyzer.analyze(model_activations, spatial_probes)
+result = analyzer.full_analysis(anchor_activations=spatial_activations)
 # All models encode physics geometrically; differences are density over the invariant manifold
 ```
 
