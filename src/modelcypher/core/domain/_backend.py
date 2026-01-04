@@ -204,19 +204,22 @@ def _probe_mlx_runtime() -> tuple[bool, str | None]:
     # Parse error details
     detail = (result.stderr or result.stdout).strip()
 
-    # Detect Metal device initialization failure (SIGABRT = -6)
-    if result.returncode == -6 or (not detail and result.returncode != 0):
+    # Detect crash failures (SIGABRT=-6, SIGKILL=-9)
+    if result.returncode in (-6, -9) or (not detail and result.returncode != 0):
         if is_sandboxed:
             detail = (
-                "MLX crashed initializing Metal GPU. This process appears to be running "
-                "in a sandboxed environment (VSCode extension) that may block GPU access. "
-                "Try running ModelCypher from Terminal.app directly, or set MC_BACKEND=numpy "
-                "to use CPU fallback."
+                "MLX failed to load in this sandboxed environment (VSCode/Claude Code). "
+                "This can occur due to GPU access restrictions or code signing enforcement. "
+                "Workarounds:\n"
+                "  1. Run ModelCypher from Terminal.app directly\n"
+                "  2. Set MC_BACKEND=numpy for CPU fallback\n"
+                "  3. If using dev MLX, try a signed release version"
             )
         else:
             detail = (
-                f"MLX crashed initializing Metal GPU (exit code {result.returncode}). "
-                "This may indicate a Metal driver issue or GPU access restriction. "
+                f"MLX crashed during initialization (exit code {result.returncode}). "
+                "This may indicate a Metal driver issue, GPU access restriction, or "
+                "code signing problem. "
                 "Set MC_DISABLE_MLX=1 to skip MLX, or MC_BACKEND=numpy for CPU fallback."
             )
 
