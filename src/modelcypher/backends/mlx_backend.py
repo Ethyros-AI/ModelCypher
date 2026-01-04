@@ -737,6 +737,12 @@ class MLXBackend(Backend):
         result = self.mx.stack(results, axis=0)
         return self.mx.moveaxis(result, 0, axis)
 
+    def put_along_axis(
+        self, array: Array, indices: Array, values: Array, axis: int | None = None
+    ) -> Array:
+        indices_int = indices.astype(self.mx.int32)
+        return self.mx.put_along_axis(array, indices_int, values, axis=axis)
+
     # --- Sorting (lazy - no eval) ---
     def sort(self, array: Array, axis: int = -1) -> Array:
         return self.mx.sort(array, axis=axis)

@@ -320,6 +320,18 @@ class NumpyBackend(Backend):
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
         return self.np.take(array, indices, axis=axis)
 
+    def take_along_axis(self, array: Array, indices: Array, axis: int) -> Array:
+        indices_int = indices.astype(self.np.intp)
+        return self.np.take_along_axis(array, indices_int, axis=axis)
+
+    def put_along_axis(
+        self, array: Array, indices: Array, values: Array, axis: int | None = None
+    ) -> Array:
+        out = self.np.array(array, copy=True)
+        indices_int = indices.astype(self.np.intp)
+        self.np.put_along_axis(out, indices_int, values, axis=axis)
+        return out
+
     # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array:
         return self.np.sort(array, axis=axis)

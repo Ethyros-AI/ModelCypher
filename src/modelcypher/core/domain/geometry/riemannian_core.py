@@ -734,12 +734,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             backend.maximum(chord_dist, edge_eps),
         )
 
-        col_indices = backend.arange(n)
-        col_indices_row = backend.reshape(col_indices, (1, n))
-        for neighbor_rank in range(k_neighbors):
-            neighbor_cols = knn_idx[:, neighbor_rank]
-            mask = backend.reshape(neighbor_cols, (n, 1)) == col_indices_row
-            adj = backend.where(mask, dist_floor, adj)
+        neighbor_dists = backend.take_along_axis(dist_floor, knn_idx, axis=1)
+        adj = backend.put_along_axis(adj, knn_idx, neighbor_dists, axis=1)
 
         adj = backend.minimum(adj, backend.transpose(adj))
         backend.eval(adj)

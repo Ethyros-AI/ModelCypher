@@ -407,6 +407,24 @@ class Backend(Protocol):
             Array with same shape as indices, containing gathered values.
         """
         ...
+    def put_along_axis(
+        self, array: Array, indices: Array, values: Array, axis: int | None = None
+    ) -> Array:
+        """Put values into array along axis at the specified indices.
+
+        Similar to numpy.put_along_axis. For each position in indices,
+        writes the corresponding value into array along the specified axis.
+
+        Args:
+            array: Destination array to update.
+            indices: Index array (broadcastable with array except along axis).
+            values: Values array (broadcastable with indices).
+            axis: Axis along which to put values, or None to flatten.
+
+        Returns:
+            Updated array with values written at indices.
+        """
+        ...
 
     # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array: ...

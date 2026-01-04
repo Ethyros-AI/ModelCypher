@@ -415,6 +415,23 @@ class CUDABackend(Backend):
             return array.flatten()[indices]
         return self.torch.index_select(array, dim=axis, index=indices)
 
+    def take_along_axis(self, array: Array, indices: Array, axis: int) -> Array:
+        indices_long = indices.long()
+        return self.torch.gather(array, dim=axis, index=indices_long)
+
+    def put_along_axis(
+        self, array: Array, indices: Array, values: Array, axis: int | None = None
+    ) -> Array:
+        if axis is None:
+            flat = array.flatten()
+            idx = indices.long().flatten()
+            vals = values.flatten()
+            out = flat.clone()
+            out[idx] = vals
+            return out.reshape(array.shape)
+        indices_long = indices.long()
+        return array.scatter(dim=axis, index=indices_long, src=values)
+
     # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array:
         return self.torch.sort(array, dim=axis).values

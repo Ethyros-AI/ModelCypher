@@ -317,6 +317,16 @@ class JAXBackend(Backend):
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
         return self.jnp.take(array, indices, axis=axis)
 
+    def take_along_axis(self, array: Array, indices: Array, axis: int) -> Array:
+        indices_int = indices.astype(self.jnp.int32)
+        return self.jnp.take_along_axis(array, indices_int, axis=axis)
+
+    def put_along_axis(
+        self, array: Array, indices: Array, values: Array, axis: int | None = None
+    ) -> Array:
+        indices_int = indices.astype(self.jnp.int32)
+        return self.jnp.put_along_axis(array, indices_int, values, axis=axis)
+
     # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array:
         return self.jnp.sort(array, axis=axis)

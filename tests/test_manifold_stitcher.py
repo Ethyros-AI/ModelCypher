@@ -265,7 +265,9 @@ class TestCosineSimilarity:
         eps = _eps(norm_sq)
         assume(norm_sq > eps)  # Non-trivial vector
         result = compute_cosine_similarity(d, d)
-        eps = _eps(result)
+        # Use 3 * machine_epsilon for tolerance - cosine involves multiple
+        # floating-point operations (dot, norm, division) that accumulate error
+        eps = 3 * _eps(result)
         assert abs(result - 1.0) <= eps
 
     def test_cosine_orthogonal_is_zero(self):
