@@ -1,6 +1,6 @@
 # Why Geometry Matters: The Proof
 
-This document shows empirical results comparing geometric methods against naive approaches.
+This document shows empirical procedures and output fields that demonstrate why geometric methods outperform naive approaches. Replace example values with your own runs.
 
 ---
 
@@ -31,22 +31,25 @@ graph LR
 
 ---
 
-## Empirical Results: Geometry vs. Vibes
+## Empirical Results: Geometry vs. Naive Baselines
 
-### Experiment: Merging Two 7B Models (example output; replace with your run)
+### Experiment: Merge Analysis Metrics (example fields; replace with your run)
 
-| Method | GW Distance | MMLU Score | Traversal Coherence |
-|--------|-------------|------------|------------|
-| **Naive Merge** (weight average) | 0.85 | 42.1% | 0.21 |
-| **ModelCypher** (Procrustes) | **0.12** | **68.4%** | 0.74 |
+`mc geometry interference predict` emits `globalMetrics`. Example comparison:
+
+| Pair | meanOverlap | meanCka | meanCurvatureDivergence | meanDistance |
+|------|-------------|---------|-------------------------|--------------|
+| Source vs Target | ... | ... | ... | ... |
+| Merged vs Target | ... | ... | ... | ... |
 
 **How to read the numbers (no vibes):**
 
-- **GW Distance** (Gromov-Wasserstein): Structural divergence between the merged geometry and the originals. Compare to baselines; do not use fixed thresholds.
+- **meanOverlap**: Mean overlap across domain probes.
+- **meanCka**: Alignment of domain activations (CKA).
+- **meanCurvatureDivergence**: Mean curvature divergence across domains.
+- **meanDistance**: Mean distance metric from merge analysis.
 
-- **MMLU Score**: Downstream behavior check. Use it to validate post-merge outcomes, not to explain geometry.
-
-- **Traversal Coherence**: Raw path consistency metric. Higher means more stable traversal on the probe set.
+Compare against your own baselines; do not use fixed thresholds.
 
 ---
 
@@ -68,13 +71,16 @@ Averaging these gives `[0.5, 0.5, 0.1]` — which is neither cat. Procrustes fin
 When concepts overlap in merged weight space, they interfere. ModelCypher predicts this *before* you merge:
 
 ```bash
-mc geometry interference predict --source model-A --target model-B
+mc geometry interference predict model-A model-B
 ```
 
-Output:
+Output (excerpt):
 ```
-Bhattacharyya Distance: 0.15
-Volume Overlap: 0.23
+SPATIAL:
+  Mean Overlap: 0.23
+  Domain CKA: 0.94
+  Mean Curvature Divergence: 0.15
+  Mean Distance: 0.32
 ```
 
 If high interference is predicted, you can use **null-space projection** to merge only in directions that don't collide.
@@ -85,10 +91,10 @@ If high interference is predicted, you can use **null-space projection** to merg
 
 Traditional safety filters check *after* the model generates a token. ModelCypher detects distress *during* the forward pass.
 
-| Input | Baseline Entropy | Delta H (ΔH) |
-|-------|------------------|--------------|
-| "Explain math" | 0.25 | 0.02 |
-| "Adversarial Jailbreak" | 0.22 | **0.95** |
+| Input | baselineEntropy | attackEntropy | deltaH | thresholdExceedance |
+|-------|-----------------|--------------|--------|---------------------|
+| "Explain math" | ... | ... | ... | ... |
+| "Adversarial Jailbreak" | ... | ... | ... | ... |
 
 **What this means:**
 - ΔH is a raw instability signal; compare against baselines for the model family.
@@ -131,7 +137,7 @@ See [papers/](../papers/) for the full research foundation.
 
 ```bash
 # Verify geometric invariants
-mc geometry validate
+mc geometry waypoint validate
 
 # Run merge comparison
 mc merge \

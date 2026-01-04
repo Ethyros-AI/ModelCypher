@@ -285,13 +285,6 @@ class GeodesicNullSpaceFilter:
             delta_safe = backend.astype(delta_safe, delta_dtype)
             backend.eval(delta_safe)
 
-        # Check if any filtering was actually applied
-        tangent_norm_arr = backend.sqrt(backend.sum(delta_tangent * delta_tangent))
-        backend.eval(tangent_norm_arr)
-        tangent_norm = float(backend.to_scalar(tangent_norm_arr))
-        filtering_applied = tangent_norm > reg
-        orthogonal_dim = basis.orthogonal_dim
-
         # Compute metrics (single geodesic pass for original/filtered norms)
         norm_inputs = backend.concatenate(
             [
@@ -305,6 +298,8 @@ class GeodesicNullSpaceFilter:
 
         original_norm = float(backend.to_scalar(norms_arr[0]))
         filtered_norm = float(backend.to_scalar(norms_arr[1]))
+        filtering_applied = abs(original_norm - filtered_norm) > reg
+        orthogonal_dim = basis.orthogonal_dim
 
         if original_norm > 0:
             preserved_fraction = filtered_norm / original_norm
@@ -403,7 +398,7 @@ class GeodesicNullSpaceFilter:
         Q, _ = backend.qr(A)  # [d, k] orthonormal basis for column space
         backend.eval(Q)
 
-        orthogonal_dim = max(0, d - n_samples)
+        orthogonal_dim = max(0, d - int(Q.shape[1]))
 
         basis = GeodesicNullSpaceBasis(
             Q=Q,

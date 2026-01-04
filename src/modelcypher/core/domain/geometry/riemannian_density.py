@@ -140,6 +140,8 @@ class ConceptVolume:
     _precision: "Array | None" = field(default=None, repr=False)
     _geo_from_centroid: "Array | None" = field(default=None, repr=False)
     _log_det_cov: float | None = field(default=None, repr=False)
+    _cov_eigenvalues: "Array | None" = field(default=None, repr=False)
+    _cov_eigenvectors: "Array | None" = field(default=None, repr=False)
 
     @property
     def dimension(self) -> int:
@@ -164,9 +166,7 @@ class ConceptVolume:
         if self._log_det_cov is None:
             backend = get_default_backend()
             # slogdet returns (sign, logdet) - we compute via eigenvalues (geodesic - GPU-only)
-            n_cov = int(self.covariance.shape[0])
-            eigenvalues, _ = power_iteration_eigh(backend, self.covariance, k=n_cov)
-            backend.eval(eigenvalues)
+            eigenvalues, _ = self._covariance_eigendecomposition()
             min_eig = backend.min(eigenvalues)
             backend.eval(min_eig)
             if float(backend.to_scalar(min_eig)) <= 0.0:
@@ -212,9 +212,7 @@ class ConceptVolume:
         """Effective radius from covariance (geometric mean of eigenvalues)."""
         backend = get_default_backend()
         # Geodesic eigendecomposition (GPU-only)
-        n_cov = int(self.covariance.shape[0])
-        eigenvalues, _ = power_iteration_eigh(backend, self.covariance, k=n_cov)
-        backend.eval(eigenvalues)
+        eigenvalues, _ = self._covariance_eigendecomposition()
         # Geometric mean via log: exp(mean(log(max(eig, tiny))))
         tiny = tiny_value(backend, eigenvalues)
         clamped = backend.maximum(eigenvalues, backend.full(eigenvalues.shape, tiny))
@@ -229,6 +227,17 @@ class ConceptVolume:
         mean_log = backend.mean(backend.log(clamped))
         backend.eval(mean_log)
         return exp_scalar(0.5 * float(backend.to_scalar(mean_log)), backend)
+
+    def _covariance_eigendecomposition(self) -> tuple["Array", "Array"]:
+        """Cache covariance eigendecomposition for reuse across metrics."""
+        if self._cov_eigenvalues is None or self._cov_eigenvectors is None:
+            backend = get_default_backend()
+            n_cov = int(self.covariance.shape[0])
+            eigenvalues, eigenvectors = power_iteration_eigh(backend, self.covariance, k=n_cov)
+            backend.eval(eigenvalues, eigenvectors)
+            object.__setattr__(self, "_cov_eigenvalues", eigenvalues)
+            object.__setattr__(self, "_cov_eigenvectors", eigenvectors)
+        return self._cov_eigenvalues, self._cov_eigenvectors
 
     def _compute_tangent_vector(self, point: "Array") -> "Array":
         """Compute tangent vector from centroid to point using log map.
@@ -363,24 +372,50 @@ class ConceptVolume:
         return sqrt_scalar(mahal_sq, backend)
 
     def geodesic_distance(self, point: "Array") -> float:
-        """Compute geodesic distance from centroid to point.
+        """Compute geodesic distance from centroid to point."""
+        return self.geodesic_distance_to(point)
 
-        Uses k-NN graph shortest path estimation. This is the only correct
-        distance metric in curved high-dimensional spaces.
-        """
+    def geodesic_distance_to(self, point: "Array") -> float:
+        """Compute geodesic distance from centroid to point using cached graph."""
+        backend = get_default_backend()
+        point_arr = backend.array(point)
+        centroid_arr = backend.array(self.centroid)
+
+        # Use cached geodesic context when available for precision and speed.
+        if self._geodesic_context is not None and self.raw_activations is not None:
+            rg = RiemannianGeometry(backend)
+            geo_from_centroid = self._geo_from_centroid
+            if geo_from_centroid is None:
+                geo_from_centroid = rg._geodesic_distances_from_query(
+                    self.raw_activations,
+                    centroid_arr,
+                    geo_result=self._geodesic_context,
+                )
+                backend.eval(geo_from_centroid)
+                self._geo_from_centroid = geo_from_centroid
+
+            geo_from_query = rg._geodesic_distances_from_query(
+                self.raw_activations,
+                point_arr,
+                geo_result=self._geodesic_context,
+            )
+            backend.eval(geo_from_query)
+            total_dists = geo_from_centroid + geo_from_query
+            geo_dist = backend.min(total_dists)
+            backend.eval(geo_dist)
+            return float(backend.to_scalar(geo_dist))
+
+        # Fallback for volumes without raw activations: 2-point geodesic.
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
 
-        backend = get_default_backend()
-        # Stack centroid and point into (2, d) array
         centroid_2d = backend.reshape(self.centroid, (1, -1))
-        point_2d = backend.reshape(point, (1, -1))
+        point_2d = backend.reshape(point_arr, (1, -1))
         points = backend.concatenate([centroid_2d, point_2d], axis=0)
         points_arr = backend.astype(points, "float32")
         backend.eval(points_arr)
 
-        # Compute geodesic distance
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=1, backend=backend)
         geo_elem = geo_dist[0, 1]
         backend.eval(geo_elem)
@@ -1264,9 +1299,8 @@ class RiemannianDensityEstimator:
 
         if dim_a == dim_b:
             # Same dimension: use principal angles (geodesic - GPU-only)
-            _, Va = power_iteration_eigh(backend, volume_a.covariance, k=dim_a)
-            _, Vb = power_iteration_eigh(backend, volume_b.covariance, k=dim_b)
-            backend.eval(Va, Vb)
+            _, Va = volume_a._covariance_eigendecomposition()
+            _, Vb = volume_b._covariance_eigendecomposition()
 
             # Compute singular values of Va^T @ Vb (geodesic - GPU-only)
             # These are cosines of principal angles

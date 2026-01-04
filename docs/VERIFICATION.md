@@ -1,122 +1,86 @@
 # ModelCypher Verification: Data-Driven Proof of Work
 
-ModelCypher is built on the principle of **Falsifiability**. This document provides empirical results comparing ModelCypher's geometric methods against industry-standard "Vibes-based" merging.
+ModelCypher is built on the principle of **Falsifiability**. This document outlines what to measure and which fields to compare when validating geometry-based merging and safety detection. Replace any example values with outputs from your own runs; this repo does not ship canonical baselines.
 
-## 1. Merging Stability: Geometry vs. Naive Averaging
+## 1. Merging Stability: Geometry Metrics
 
-When merging two 7B models (e.g., Llama-3 and Mistral-7B), a naive weighted average often results in "Catastrophic Interference" at deeper layers.
+Command:
 
-| Method | GW Distance (Lower is Better) | MMLU Score (Higher is Better) | Trajectory Roughness |
-| :--- | :---: | :---: | :---: |
-| **Naive Merge (Average)** | 0.85 | 42.1% | High (Erratic) |
-| **ModelCypher (Procrustes)** | **0.12** | **68.4%** | **Low (Smooth)** |
+```bash
+mc geometry interference predict <source_model> <target_model>
+```
+
+Inspect these fields in the output:
+- `globalMetrics.meanOverlap`
+- `globalMetrics.meanCka`
+- `globalMetrics.meanCurvatureDivergence`
+- `globalMetrics.meanDistance`
+
+Compare these raw measurements across merge strategies you test.
 
 ## 2. 3D Spatial Grounding: Spatial Metrics
 
-We measured spatial grounding metrics across model sizes using the `mc geometry spatial` suite.
+Command:
 
-| Model | World Model Score |
-| :--- | :---: |
-| **Qwen2-0.5B-4bit** | 0.45 |
-| **Qwen2.5-3B-bf16** | 0.50 |
-| **Mistral-7B-4bit** | 0.48 |
+```bash
+mc geometry spatial probe-model <model_path>
+```
 
-## 3. Safety: Pre-Emission Detection ($\Delta H$)
+Inspect these fields in the output:
+- `world_model_score`
+- `gravity_gradient.mass_correlation`
+- `volumetric_density.inverse_square_compliance`
+- `axis_orthogonality` (mean in text output)
 
-Standard safety filters act *after* a model generates a harmful token. ModelCypher identifies the "Distress Signal" in the activation manifold *during* the forward pass.
+## 3. Safety: Pre-Emission Detection (Delta H)
 
-| Input Type | Baseline Entropy | Delta H ($\Delta H$) | Verdict |
-| :--- | :---: | :---: | :---: |
-| "Explain math" | 0.25 | 0.02 | Safe |
-| "Adversarial Jailbreak" | 0.22 | **0.95** | **REFUSED** |
+Command:
+
+```bash
+mc geometry safety jailbreak-test --model <model_path> --prompts <prompts.json>
+```
+
+Inspect these fields in the output:
+- `vulnerabilitiesFound`
+- `meanThresholdExceedance`
+- `vulnerabilityDetails[].baselineEntropy`
+- `vulnerabilityDetails[].attackEntropy`
+- `vulnerabilityDetails[].deltaH`
 
 ---
 
-## Reproducing these Results
-
-To verify these claims yourself, run the integrated verification suite:
+## Reproducing These Results
 
 ```bash
-# Verify Geometric Invariants
-mc geometry validate
+# Verify domain geometry waypoints
+mc geometry waypoint validate
 
-# Run Safety Red-Teaming
-mc geometry safety jailbreak-test --model <your-merged-model>
+# Merge analysis metrics
+mc geometry interference predict ./model-A ./model-B
+
+# Spatial grounding probe
+mc geometry spatial probe-model ./model
+
+# Safety jailbreak testing
+mc geometry safety jailbreak-test --model ./model --prompts ./prompts.json
 ```
 
 For the formal mathematical proofs, see [**Research Papers**](../papers/README.md).
 
+---
 
+## Verification Log (Template)
 
-## Verification Log
+Use this format to record your own runs:
 
+```
+### YYYY-MM-DD: <Model> (<Hardware>)
 
+Command: `mc geometry spatial probe-model <model_path>`
 
-### 2025-12-23: GLM-4.6V-Flash Multimodal Probing (VALIDATED)
-
-
-
-**Model**: GLM-4.6V-Flash-MLX-4bit (Full Multimodal Graph)
-
-
-
-**Hardware**: Darwin (Apple Silicon)
-
-
-
-**Architecture**: Vision Tower + Language Model (MLX-VLM)
-
-
-
-**Command**: `mc geometry spatial probe-model`
-
-
-
-
-
-
-
-**Results**:
-
-
-
-- **World Model Score**: 0.42
-
-
-
-
-
-
-
-
-
-
-
-
-
-- **Isolated Text Core**: 0.38
-
-
-
-- **Full Multimodal Graph**: 0.42
-- **Delta**: 0.04
-
-
-
-The delta (+0.04) represents the **Visual Grounding Pressure** exerted by the vision tower on the language manifold. While the model still classifies as "Alternative Grounding" (Blind Physicist regime), the active multimodal weights significantly tighten the 3D consistency of linguistic anchors compared to pure text models.
-
-
-
-
-
-
-
-### 2025-12-23: Qwen2-0.5B Baseline
-
-**Model**: Qwen2-0.5B-Instruct (MLX)
-
-**Hardware**: Darwin (Apple Silicon)
-
-**Results**:
-
-- **World Model Score**: 0.34
+Results:
+- world_model_score: <value>
+- gravity_gradient.mass_correlation: <value>
+- volumetric_density.inverse_square_compliance: <value>
+- axis_orthogonality_mean: <value>
+```

@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 33
-- Issues found: 22
-- Issues fixed: 22
+- Audited: 35
+- Issues found: 24
+- Issues fixed: 24
 
 ## Audit Log
 
@@ -444,3 +444,29 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: CLI flags, metric descriptions, and export formats were out of date
   - Fix: Aligned commands/fields with current CLI and export behavior
+
+- `docs/VERIFICATION.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (verification steps and log template)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Included unverifiable metrics and non-existent CLI commands
+  - Fix: Replaced with concrete command outputs and a log template
+
+- `docs/WHY-GEOMETRY-MATTERS.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (merge metrics, safety outputs, commands)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Used non-existent commands and unverified metrics/outputs
+  - Fix: Aligned to CLI outputs and replaced tables with real fields

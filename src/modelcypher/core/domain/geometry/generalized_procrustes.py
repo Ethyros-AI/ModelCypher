@@ -325,6 +325,7 @@ class GeneralizedProcrustes:
         consensus = self._compute_consensus(X)  # [N, K]
 
         aligned_X = X  # Initially aligned is just centered X
+        X_t = self._backend.transpose(X, axes=(0, 2, 1))
 
         # Derive max_iterations from number of models
         # GPA typically converges in O(k) iterations; use 10*M as safety limit
@@ -336,7 +337,6 @@ class GeneralizedProcrustes:
         for iter_idx in range(gpa_max_iterations):
             iterations = iter_idx + 1
 
-            X_t = self._backend.transpose(X, axes=(0, 2, 1))
             M_matrices = self._backend.matmul(X_t, consensus)
 
             b = self._backend

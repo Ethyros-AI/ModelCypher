@@ -655,7 +655,6 @@ class IntrinsicDimension:
             # Create one-hot via eye indexing: one_hot[i] = eye[bin_idx[i]]
             eye_mat = backend.eye(n_bins)
             one_hot = eye_mat[bin_indices]  # [n_points, n_bins] with 1 at bin index
-            backend.eval(bin_indices, one_hot)
             # Sum columns to get bin counts
             valid_mask_col = backend.reshape(valid_mask_float, (-1, 1))
             bin_counts_arr = backend.sum(one_hot * valid_mask_col, axis=0)
