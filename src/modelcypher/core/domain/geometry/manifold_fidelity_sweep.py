@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-@dataclass
+@dataclass(frozen=True)
 class RankMetrics:
     """Metrics for a single rank level."""
 
@@ -67,7 +67,7 @@ class RankMetrics:
     variance_captured_target: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class PlateauSummary:
     """Plateau ranks for each metric."""
 
@@ -78,18 +78,18 @@ class PlateauSummary:
     variance_captured: int | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class LayerSweep:
     """Sweep results for a single layer pair."""
 
     source_layer: int
     target_layer: int
     anchor_count: int
-    metrics: list[RankMetrics]
+    metrics: tuple[RankMetrics, ...]
     plateau: PlateauSummary
 
 
-@dataclass
+@dataclass(frozen=True)
 class SweepReport:
     """Complete sweep report."""
 
@@ -98,8 +98,8 @@ class SweepReport:
     timestamp: datetime
     anchor_count: int
     layer_count: int
-    ranks: list[int]
-    layer_sweeps: list[LayerSweep]
+    ranks: tuple[int, ...]
+    layer_sweeps: tuple[LayerSweep, ...]
     plateau: PlateauSummary
 
 
@@ -174,9 +174,13 @@ class ManifoldFidelitySweep:
         if n_anchors < min_anchor_count:
             return None
 
+        # Truncate to common anchor count
+        source_truncated = source_activations[:n_anchors, :]
+        target_truncated = target_activations[:n_anchors, :]
+
         # Center matrices
-        source_centered = self._center(source_activations)
-        target_centered = self._center(target_activations)
+        source_centered = self._center(source_truncated)
+        target_centered = self._center(target_truncated)
 
         # SVD for projection
         source_svd = self._compute_svd(source_centered)
@@ -232,7 +236,7 @@ class ManifoldFidelitySweep:
             source_layer=source_layer,
             target_layer=target_layer,
             anchor_count=n_anchors,
-            metrics=metrics_list,
+            metrics=tuple(metrics_list),
             plateau=plateau,
         )
 
