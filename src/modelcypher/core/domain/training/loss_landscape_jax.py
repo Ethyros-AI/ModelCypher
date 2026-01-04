@@ -42,19 +42,18 @@ References:
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
 
 try:
     import jax
@@ -211,7 +210,7 @@ class LossLandscapeComputerJAX:
         model_params: dict[str, Any],
         loss_fn: Callable[[dict[str, Any]], float],
         num_samples: int = 20,
-        epsilon: float = 1e-3,
+        epsilon: float | None = None,
     ) -> CurvatureMetricsJAX:
         """
         Estimate curvature metrics using Hessian-vector products.
@@ -222,11 +221,13 @@ class LossLandscapeComputerJAX:
             model_params: Current model parameters
             loss_fn: Loss function
             num_samples: Number of power iterations
-            epsilon: Finite difference step size
+            epsilon: Finite difference step size (dtype/scale-derived if None)
 
         Returns:
             CurvatureMetricsJAX with eigenvalue estimates
         """
+        epsilon = self._finite_diff_epsilon(model_params, epsilon)
+
         # Initialize random vector
         self.key, subkey = jax.random.split(self.key)
         v = self._random_direction(model_params, subkey)
@@ -270,7 +271,8 @@ class LossLandscapeComputerJAX:
             trace += self._dot_product(r, hr)
         trace /= 5
 
-        condition_number = max_eigenvalue / max(min_eigenvalue, _MACHINE_EPS)
+        precision_eps = self._precision_epsilon(model_params)
+        condition_number = max_eigenvalue / max(min_eigenvalue, precision_eps)
         sharpness = max_eigenvalue / (1.0 + max_eigenvalue)
 
         logger.info(
@@ -315,6 +317,7 @@ class LossLandscapeComputerJAX:
         corresponding parameters, providing architecture-independent
         visualization.
         """
+        eps = self._precision_epsilon(params)
         if filter_norm:
             # Filter-wise normalization using geodesic norms
             _b = get_default_backend()
@@ -330,7 +333,7 @@ class LossLandscapeComputerJAX:
                 _b.eval(d_norm_arr, p_norm_arr)
                 d_norm = float(_b.to_scalar(d_norm_arr))
                 p_norm = float(_b.to_scalar(p_norm_arr))
-                if d_norm > _MACHINE_EPS:
+                if d_norm > eps:
                     return d * (p_norm / d_norm)
                 return d
 
@@ -349,7 +352,7 @@ class LossLandscapeComputerJAX:
                     total_norm_sq += d_norm * d_norm
             total_norm = sqrt_scalar(total_norm_sq, _b)
 
-            if total_norm > _MACHINE_EPS:
+            if total_norm > eps:
                 return jax.tree.map(
                     lambda d: d / total_norm if hasattr(d, "shape") else d,
                     direction,
@@ -406,6 +409,41 @@ class LossLandscapeComputerJAX:
     ) -> dict[str, Any]:
         """Compute gradient using JAX autodiff."""
         return jax.grad(loss_fn)(params)
+
+    def _precision_epsilon(self, params: dict[str, Any]) -> float:
+        """Derive epsilon from dtype precision of the parameters."""
+        _b = get_default_backend()
+        leaves = jax.tree_util.tree_leaves(params)
+        for leaf in leaves:
+            if hasattr(leaf, "shape"):
+                ref = _b.array(leaf)
+                return float(division_epsilon(_b, ref))
+        return float(division_epsilon(_b, _b.array([1.0])))
+
+    def _finite_diff_epsilon(
+        self,
+        params: dict[str, Any],
+        epsilon: float | None,
+    ) -> float:
+        """Finite difference step derived from dtype precision and parameter scale."""
+        if epsilon is not None:
+            return float(epsilon)
+        _b = get_default_backend()
+        max_norm = 0.0
+        leaves = jax.tree_util.tree_leaves(params)
+        for leaf in leaves:
+            if not hasattr(leaf, "shape"):
+                continue
+            p_arr = _b.array(leaf)
+            p_flat = _b.reshape(p_arr, (-1,))
+            norm_sq = _b.sum(p_flat * p_flat)
+            norm = _b.sqrt(norm_sq)
+            _b.eval(norm)
+            norm_val = float(_b.to_scalar(norm))
+            if norm_val > max_norm:
+                max_norm = norm_val
+        scale = max(max_norm, 1.0)
+        return self._precision_epsilon(params) * scale
 
     def _dot_product(
         self,
@@ -484,7 +522,7 @@ def estimate_curvature_for_model(
     data_batch: tuple[jnp.ndarray, jnp.ndarray],
     loss_fn: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
     num_samples: int = 20,
-    epsilon: float = 1e-3,
+    epsilon: float | None = None,
 ) -> CurvatureMetricsJAX:
     """
     Estimate curvature metrics for a JAX model.
@@ -495,7 +533,7 @@ def estimate_curvature_for_model(
         data_batch: Tuple of (inputs, targets)
         loss_fn: Loss function
         num_samples: Number of power iterations
-        epsilon: Finite difference step
+        epsilon: Finite difference step (dtype/scale-derived if None)
 
     Returns:
         CurvatureMetricsJAX with sharpness and eigenvalue estimates

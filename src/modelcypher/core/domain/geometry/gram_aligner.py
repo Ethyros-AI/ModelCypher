@@ -474,9 +474,8 @@ class GramAligner:
     ) -> AlignmentResult:
         """Find the transformation that achieves CKA = 1.0.
 
-        This method WILL find the exact alignment. If it can't,
-        that indicates a bug in the implementation, not a property
-        of the inputs.
+        ONE METHOD: T = K_t^{1/2} @ K_s^{-1/2}, then F = pinv(source) @ T @ source.
+        Mathematical guarantee: T @ K_s @ T^T = K_t exactly, so CKA = 1.0.
 
         Parameters
         ----------
@@ -497,224 +496,28 @@ class GramAligner:
         n_t, d_t = b.shape(target_activations)
 
         if n_s != n_t:
-            raise ValueError(
-                f"Sample counts must match: source={n_s}, target={n_t}"
-            )
+            raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
 
-        n_samples = n_s
-        if initial_transform is not None:
-            shape = b.shape(initial_transform)
-            if shape[0] != d_s or shape[1] != d_t:
-                initial_transform = None
-
-        # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
-        # Uses sqrt(machine_epsilon) as the convergence criterion
-        # This is the standard numerical tolerance for iterative algorithms
         precision_threshold = regularization_epsilon(b, source_activations)
 
-        # PARADIGM SHIFT: CKA = 1.0 is achievable at ANY precision.
-        # The algorithm aligns SHARED RELATIONAL SPACE (signal), not full
-        # representations. If CKA < 1.0, we're trying to align noise.
-        # Use native hardware precision - no float64 hardcoding.
-        # (MLX/Apple Silicon doesn't support float64 on GPU)
-        b.eval(source_activations, target_activations)
-
-        # Fast path: identical inputs → identity transform, CKA = 1.0
-        # This avoids numerical noise from SVD/Procrustes on the same data.
-        if d_s == d_t:
-            diff = source_activations - target_activations
-            diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
-            source_norm_arr = geodesic_norms(b.reshape(source_activations, (1, -1)), b)
-            target_norm_arr = geodesic_norms(b.reshape(target_activations, (1, -1)), b)
-            b.eval(diff_norm_arr, source_norm_arr, target_norm_arr)
-            diff_norm = float(b.to_scalar(diff_norm_arr))
-            source_norm = float(b.to_scalar(source_norm_arr))
-            target_norm = float(b.to_scalar(target_norm_arr))
-
-            # Check for identical inputs
-            if diff_norm < precision_threshold * (source_norm + precision_threshold):
-                # Inputs are identical (or nearly so) - use identity transform
-                identity = b.eye(d_s)
-                b.eval(identity)
-                source_centered = self._center(source_activations)
-                K_s = b.matmul(source_centered, b.transpose(source_centered))
-                K_s_c = self._center_gram_efficient(K_s)
-                sample_transform = self._compute_sample_transform(K_s_c, K_s_c)
-                b.eval(sample_transform)
-                return AlignmentResult(
-                    feature_transform=self._array_to_2d_list(identity),
-                    sample_transform=self._array_to_2d_list(sample_transform),
-                    achieved_cka=1.0,
-                    iterations=0,
-                    alignment_error=0.0,
-                    diagnostic=self._diagnose_alignment(
-                        source_centered, source_centered, 1.0
-                    ),
-                    precision_threshold=precision_threshold,
-                )
-
-            # Check for scaled inputs (target = c * source for some scalar c)
-            # CKA is scale-invariant, so if Gram matrices are proportional, CKA = 1.0
-            if source_norm > precision_threshold and target_norm > precision_threshold:
-                scale = target_norm / source_norm
-                scaled_diff = target_activations - source_activations * scale
-                scaled_diff_norm_arr = geodesic_norms(
-                    b.reshape(scaled_diff, (1, -1)), b
-                )
-                b.eval(scaled_diff_norm_arr)
-                scaled_diff_norm = float(b.to_scalar(scaled_diff_norm_arr))
-                if scaled_diff_norm < precision_threshold * target_norm:
-                    # Inputs are scaled versions - use scaling transform
-                    scale_transform = b.eye(d_s) * scale
-                    b.eval(scale_transform)
-                    source_centered = self._center(source_activations)
-                    target_centered = self._center(target_activations)
-                    K_s = b.matmul(source_centered, b.transpose(source_centered))
-                    K_t = b.matmul(target_centered, b.transpose(target_centered))
-                    K_s_c = self._center_gram_efficient(K_s)
-                    K_t_c = self._center_gram_efficient(K_t)
-                    sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
-                    b.eval(sample_transform)
-                    return AlignmentResult(
-                        feature_transform=self._array_to_2d_list(scale_transform),
-                        sample_transform=self._array_to_2d_list(sample_transform),
-                        achieved_cka=1.0,
-                        iterations=0,
-                        alignment_error=0.0,
-                        diagnostic=self._diagnose_alignment(
-                            target_centered, target_centered, 1.0
-                        ),
-                        precision_threshold=precision_threshold,
-                    )
-
-            # Check for rotated inputs (target = source @ R where R is orthogonal)
-            # Rotation preserves Gram matrices: Gram(source @ R) = Gram(source)
-            source_centered = self._center(source_activations)
-            target_centered = self._center(target_activations)
-            K_s = b.matmul(source_centered, b.transpose(source_centered))
-            K_t = b.matmul(target_centered, b.transpose(target_centered))
-            b.eval(K_s, K_t)
-
-            gram_diff = K_s - K_t
-            gram_diff_norm_arr = geodesic_norms(b.reshape(gram_diff, (1, -1)), b)
-            gram_norm_arr = geodesic_norms(b.reshape(K_s, (1, -1)), b)
-            b.eval(gram_diff_norm_arr, gram_norm_arr)
-            gram_diff_norm = float(b.to_scalar(gram_diff_norm_arr))
-            gram_norm = float(b.to_scalar(gram_norm_arr))
-            if gram_diff_norm < precision_threshold * (gram_norm + precision_threshold):
-                # Gram matrices are equal - this is a rotation/reflection
-                # Find the rotation via geodesic Procrustes (GPU-only, iterates until convergence)
-                cross = b.matmul(b.transpose(source_centered), target_centered)
-                U, _, Vt = geodesic_svd(b, cross)
-                rotation = b.matmul(U, Vt)
-                K_s_c = self._center_gram_efficient(K_s)
-                sample_transform = self._compute_sample_transform(K_s_c, K_s_c)
-                return AlignmentResult(
-                    feature_transform=self._array_to_2d_list(rotation),
-                    sample_transform=self._array_to_2d_list(sample_transform),
-                    achieved_cka=1.0,
-                    iterations=0,
-                    alignment_error=0.0,
-                    diagnostic=self._diagnose_alignment(
-                        target_centered, target_centered, 1.0
-                    ),
-                    precision_threshold=precision_threshold,
-                )
-
-        # Try uncentered direct solve first (fast path for exact alignment)
-        uncentered_transform = self._solve_feature_transform_uncentered(
-            source_activations,
-            target_activations,
-        )
-        if uncentered_transform is not None:
-            aligned_uncentered = b.matmul(source_activations, uncentered_transform)
-            K_s = b.matmul(source_activations, b.transpose(source_activations))
-            K_t = b.matmul(target_activations, b.transpose(target_activations))
-            K_s_c = self._center_gram_efficient(K_s)
-            K_t_c = self._center_gram_efficient(K_t)
-            K_a = b.matmul(aligned_uncentered, b.transpose(aligned_uncentered))
-            K_a_c = self._center_gram_efficient(K_a)
-            b.eval(K_s_c, K_t_c, K_a_c)
-
-            cka_uncentered = self._compute_cka_from_centered_grams(K_a_c, K_t_c)
-            if cka_uncentered >= 1.0 - precision_threshold:
-                sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
-                b.eval(sample_transform)
-                return AlignmentResult(
-                    feature_transform=self._array_to_2d_list(uncentered_transform),
-                    sample_transform=self._array_to_2d_list(sample_transform),
-                    achieved_cka=1.0,
-                    iterations=0,
-                    alignment_error=0.0,
-                    diagnostic=self._diagnose_alignment(
-                        aligned_uncentered, target_activations, cka_uncentered
-                    ),
-                    precision_threshold=precision_threshold,
-                )
-
-        # Center the activations
+        # Center activations
         source_centered = self._center(source_activations)
         target_centered = self._center(target_activations)
-        b.eval(source_centered, target_centered)
 
-        # Compute Gram matrices
+        # Compute centered Gram matrices
         K_s = b.matmul(source_centered, b.transpose(source_centered))
         K_t = b.matmul(target_centered, b.transpose(target_centered))
-        b.eval(K_s, K_t)
-
-        # Center the Gram matrices (for CKA) - O(n²) instead of O(n³)
         K_s_c = self._center_gram_efficient(K_s)
         K_t_c = self._center_gram_efficient(K_t)
 
-        # Step 1: Compute the exact sample-space transformation
-        # T = K_t^{1/2} @ K_s^{-1/2}
-        # This GUARANTEES T @ K_s @ T^T = K_t
+        # Compute sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
         sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
         b.eval(sample_transform)
 
-        # Step 2: Build a feature-space transformation that reproduces
-        # the sample-space alignment, then refine until CKA = 1.
-        #
-        # We want: (A_s @ F) @ (A_s @ F)^T = T @ K_s @ T^T = K_t
-        # i.e., A_s @ F @ F^T @ A_s^T = K_t
-        feature_transform = initial_transform
-        if feature_transform is None:
-            feature_transform = self._solve_feature_transform(
-                source_centered, target_centered
-            )
-        if feature_transform is None:
-            feature_transform = self._feature_transform_from_sample_transform(
-                source_centered, sample_transform
-            )
-        if b.shape(feature_transform)[1] != b.shape(target_centered)[1]:
-            # Sample-space transform preserves source dimensionality; reset for cross-dim.
-            feature_transform = None
-        total_iterations = 0
-        max_iterations = self._max_iterations
-        final_cka = 0.0
-
-        # Iterate until perfect alignment - there is no max_rounds.
-        # CKA = 1.0 or we keep iterating. All models encode the same shape.
-        while final_cka < 1.0 - precision_threshold:
-            feature_transform, iterations, final_cka = self._find_feature_transform(
-                source_centered,
-                target_centered,
-                K_t_c,
-                initial_transform=feature_transform,  # Use previous best as starting point
-                max_iterations=max_iterations,
-            )
-            total_iterations += iterations
-
-            if final_cka >= 1.0 - precision_threshold:
-                break
-
-            max_iterations *= 2
-            logger.info(
-                "GramAligner: Iterating toward perfect alignment (cka=%.8f, target=1.0). "
-                "Expanding search to %d iterations.",
-                final_cka,
-                max_iterations,
-            )
+        # Compute feature-space transform
+        feature_transform, iterations, final_cka = self._find_feature_transform(
+            source_centered, target_centered, K_t_c
+        )
 
         # Compute alignment error
         source_transformed = b.matmul(source_centered, feature_transform)
@@ -738,7 +541,7 @@ class GramAligner:
             feature_transform=self._array_to_2d_list(feature_transform),
             sample_transform=self._array_to_2d_list(sample_transform),
             achieved_cka=final_cka,
-            iterations=total_iterations,
+            iterations=iterations,
             alignment_error=alignment_error,
             diagnostic=diagnostic,
             precision_threshold=precision_threshold,
@@ -874,182 +677,81 @@ class GramAligner:
     ) -> tuple["Array", int, float]:
         """Find feature-space transform F such that (A_s @ F)'s Gram = K_t.
 
-        Uses CLOSED-FORM solution F = A_s^T (A_s A_s^T)^-1 A_t for exact CKA = 1.0.
-
-        Mathematical guarantee:
-        - For A_s [n, d_s] with full row rank (n <= d_s), A_s A_s^T is invertible
-        - So A_s @ F = A_s @ A_s^T (A_s A_s^T)^-1 @ A_t = A_t exactly
-        - Therefore (A_s @ F) @ (A_s @ F)^T = A_t @ A_t^T = K_t
-        - CKA = 1.0 exactly, no iteration needed
-
-        All thresholds are derived from dtype, not user-configured.
+        ONE METHOD: Sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
+        Mathematical guarantee: T @ K_s @ T^T = K_t exactly.
+        Then F = pinv(A_s) @ T @ A_s gives the feature-space equivalent.
 
         Returns (transform, iterations, achieved_cka).
         """
         b = self._backend
-        n_samples = b.shape(source_centered)[0]
         d_s = b.shape(source_centered)[1]
         d_t = b.shape(target_centered)[1]
 
-        # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
-        # Uses sqrt(machine_epsilon) as the convergence criterion
-        precision_threshold = regularization_epsilon(b, source_centered)
-
-        # CLOSED-FORM SOLUTION: F = A_s^T (A_s A_s^T)^-1 @ A_t
-        # This GUARANTEES CKA = 1.0 when A_s has full row rank (n <= d_s)
-        if initial_transform is not None:
-            shape = b.shape(initial_transform)
-            if shape[0] != d_s or shape[1] != d_t:
-                initial_transform = None
-
-        if initial_transform is None:
-            F = self._solve_feature_transform(source_centered, target_centered)
-            if F is None:
-                raise ValueError(
-                    "GramAligner: solve-based transform failed; cannot proceed without stable alignment."
-                )
-
-            # Verify CKA = 1.0
-            source_transformed = b.matmul(source_centered, F)
-            K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-            K_s_t_c = self._center_gram_efficient(K_s_t)
-            cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-
-            if cka >= 1.0 - precision_threshold:
-                logger.info(
-                    "GramAligner: Converged to CKA=%.8f (threshold=%.2e) in %d iterations",
-                    cka, precision_threshold, 1
-                )
-                return F, 1, cka
-
-            # If closed-form didn't reach 1.0, try with tighter regularization
-        else:
-            F = initial_transform
-
-        # SAMPLE-SPACE APPROACH for rank-deficient sources
-        # When feature-space closed-form fails (rank deficiency), use sample-space transform directly:
-        # T @ K_s @ T^T = K_t is EXACT regardless of rank
-        # Apply: A_s' = T @ A_s
-        #
-        # This implements the dimensional hierarchy: 1D (binary) encodes 2D (vocabulary) encodes 3D+
-        # The Gram matrix relationship is the invariant; we transform in sample space.
-
-        # Compute sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
+        # Compute source Gram matrix
         K_s = b.matmul(source_centered, b.transpose(source_centered))
-        K_s_c_local = self._center_gram_efficient(K_s)
+        K_s_c = self._center_gram_efficient(K_s)
 
-        # Native eigendecomposition for matrix square roots - ALL eigenvalues, no approximation
-        K_s_f32 = b.astype(K_s_c_local, "float32")
+        # Eigendecomposition of both centered Gram matrices
+        K_s_f32 = b.astype(K_s_c, "float32")
         K_t_f32 = b.astype(K_t_c, "float32")
-        b.eval(K_s_f32, K_t_f32)
 
-        # Use ALL eigenvalues - no k=50 approximation
         eig_s, V_s = b.eigh(K_s_f32)
         eig_t, V_t = b.eigh(K_t_f32)
         b.eval(eig_s, V_s, eig_t, V_t)
 
-        # Sample-space approach with dtype-derived regularization (no cascade)
-        reg = regularization_epsilon(b, K_s_c_local)
-        eig_s_reg = b.maximum(eig_s, b.array(reg))
-        eig_t_reg = b.maximum(eig_t, b.array(reg))
+        # Regularization from dtype
+        reg = regularization_epsilon(b, K_s_c)
+
+        # Cross-dimensional case: solve directly for A_s @ F = A_t
+        if d_s != d_t:
+            source_pinv = b.pinv(source_centered)
+            F = b.matmul(source_pinv, target_centered)
+            b.eval(F)
+
+            source_aligned = b.matmul(source_centered, F)
+            K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
+            K_aligned_c = self._center_gram_efficient(K_aligned)
+            cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
+            return F, 1, cka
+
+        # Clamp eigenvalues for numerical stability
+        eig_s_safe = b.maximum(eig_s, b.full(eig_s.shape, reg))
+        eig_t_safe = b.maximum(eig_t, b.full(eig_t.shape, reg))
 
         # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
+        inv_sqrt_s_vals = 1.0 / b.sqrt(eig_s_safe)
         inv_sqrt_s = b.matmul(
-            V_s * b.reshape(1.0 / b.sqrt(eig_s_reg), (1, -1)),
+            V_s * b.reshape(inv_sqrt_s_vals, (1, -1)),
             b.transpose(V_s)
         )
 
         # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
+        sqrt_t_vals = b.sqrt(eig_t_safe)
         sqrt_t = b.matmul(
-            V_t * b.reshape(b.sqrt(eig_t_reg), (1, -1)),
+            V_t * b.reshape(sqrt_t_vals, (1, -1)),
             b.transpose(V_t)
         )
-        b.eval(inv_sqrt_s, sqrt_t)
 
         # T = K_t^{1/2} @ K_s^{-1/2}
+        # This guarantees: T @ K_s @ T^T = K_t
         T = b.matmul(sqrt_t, inv_sqrt_s)
         b.eval(T)
 
-        # Transform source in sample space: A_s' = T @ A_s
-        # Result: A_s' @ A_s'^T = T @ K_s @ T^T = K_t
-        source_transformed_sample = b.matmul(T, source_centered)
-        b.eval(source_transformed_sample)
+        # Transform source: A_s' = T @ A_s
+        source_transformed = b.matmul(T, source_centered)
 
-        # Compute feature transform F that achieves this: A_s @ F = A_s'
-        # F = A_s^T (A_s A_s^T)^-1 @ A_s' = A_s^T (A_s A_s^T)^-1 @ T @ A_s
-        F_sample = self._solve_feature_transform(
-            source_centered,
-            source_transformed_sample,
-            reg=reg,
-        )
-        if F_sample is not None:
-            # Verify CKA
-            source_aligned = b.matmul(source_centered, F_sample)
-            K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
-            K_aligned_c = self._center_gram_efficient(K_aligned)
-            cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
+        # Feature transform: F = pinv(A_s) @ A_s'
+        source_pinv = b.pinv(source_centered)
+        F = b.matmul(source_pinv, source_transformed)
+        b.eval(F)
 
-            if cka >= 1.0 - precision_threshold:
-                logger.info(
-                    "GramAligner: Sample-space converged to CKA=%.8f (threshold=%.2e) with reg=%.2e",
-                    cka, precision_threshold, reg
-                )
-                return F_sample, 1, cka
+        # Compute achieved CKA
+        source_aligned = b.matmul(source_centered, F)
+        K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
+        K_aligned_c = self._center_gram_efficient(K_aligned)
+        cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
 
-        # Last resort: gradient descent refinement
-        max_iters = max_iterations or self._max_iterations
-        best_F = F
-        best_cka = 0.0
-
-        # dtype-derived thresholds for gradient descent
-        eps = machine_epsilon(b, source_centered)
-        div_eps = division_epsilon(b, source_centered)
-
-        # Cache fixed values before loop to avoid recomputation
-        source_centered_T = b.transpose(source_centered)
-        b.eval(source_centered_T)
-
-        for iteration in range(max_iters):
-            source_transformed = b.matmul(source_centered, F)
-            K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-            K_s_t_c = self._center_gram_efficient(K_s_t)
-
-            cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-
-            if cka > best_cka:
-                best_cka = cka
-                best_F = F
-
-            if cka >= 1.0 - precision_threshold:
-                logger.info(
-                    "GramAligner: Gradient converged to CKA=%.8f (threshold=%.2e) in %d iterations",
-                    cka, precision_threshold, iteration + 1
-                )
-                return F, iteration + 1, cka
-
-            # Gradient step with adaptive learning rate
-            diff = K_t_c - K_s_t_c
-            grad = b.matmul(source_centered_T, b.matmul(diff, source_transformed))
-            b.eval(grad)
-
-            grad_flat = b.reshape(grad, (1, -1))
-            grad_norm = geodesic_norms(grad_flat, b)
-            b.eval(grad_norm)
-            grad_norm_val = float(b.to_scalar(grad_norm))
-            if grad_norm_val < eps:
-                break
-
-            # Learning rate decay: 1/(1 + sqrt(eps)*iteration) derived from precision
-            lr = 1.0 / (1.0 + sqrt_scalar(eps, b) * iteration)
-            F = F + lr * (grad / (grad_norm_val + div_eps))
-            b.eval(F)
-
-        # Return lowest-error result
-        source_transformed = b.matmul(source_centered, best_F)
-        K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-        K_s_t_c = self._center_gram_efficient(K_s_t)
-        final_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-        return best_F, max_iters, final_cka
+        return F, 1, cka
 
     def _feature_transform_from_sample_transform(
         self,
@@ -1072,6 +774,8 @@ class GramAligner:
         """Compute CKA from pre-centered Gram matrices."""
         b = self._backend
         n = b.shape(K_x_c)[0]
+        if n < 2:
+            return 0.0
 
         # HSIC = trace(K_x_c @ K_y_c) / (n-1)^2
         hsic_xy_arr = b.sum(K_x_c * K_y_c)

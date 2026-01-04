@@ -43,21 +43,20 @@ MLX-Specific:
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from typing import Callable
 
 import mlx.core as mx
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
 
 
 @dataclass
@@ -173,7 +172,7 @@ class LossLandscapeComputer:
         model_params: dict[str, mx.array],
         loss_fn: Callable[[dict[str, mx.array]], float],
         num_samples: int = 20,
-        epsilon: float = 1e-3,
+        epsilon: float | None = None,
     ) -> CurvatureMetrics:
         """
         Estimate curvature metrics using Hessian-vector products.
@@ -184,11 +183,13 @@ class LossLandscapeComputer:
             model_params: Current model parameters
             loss_fn: Loss function
             num_samples: Number of power iterations
-            epsilon: Finite difference step size
+            epsilon: Finite difference step size (dtype/scale-derived if None)
 
         Returns:
             CurvatureMetrics with eigenvalue estimates
         """
+        epsilon = self._finite_diff_epsilon(model_params, epsilon)
+
         # Initialize random vector
         v = self._random_direction(model_params)
         v = self._normalize_direction(v, model_params, filter_norm=False)
@@ -228,7 +229,8 @@ class LossLandscapeComputer:
             trace += self._dot_product(r, hr)
         trace /= 5
 
-        condition_number = max_eigenvalue / max(min_eigenvalue, _MACHINE_EPS)
+        precision_eps = self._precision_epsilon(model_params)
+        condition_number = max_eigenvalue / max(min_eigenvalue, precision_eps)
         sharpness = max_eigenvalue / (1.0 + max_eigenvalue)
 
         return CurvatureMetrics(
@@ -256,6 +258,7 @@ class LossLandscapeComputer:
         corresponding parameters, providing architecture-independent
         visualization.
         """
+        eps = self._precision_epsilon(params)
         if filter_norm:
             # Filter-wise normalization using geodesic norms
             _b = get_default_backend()
@@ -271,7 +274,7 @@ class LossLandscapeComputer:
                 _b.eval(d_norm_arr, p_norm_arr)
                 d_norm = float(_b.to_scalar(d_norm_arr))
                 p_norm = float(_b.to_scalar(p_norm_arr))
-                if d_norm > _MACHINE_EPS:
+                if d_norm > eps:
                     result[k] = d * (p_norm / d_norm)
                 else:
                     result[k] = d
@@ -288,7 +291,7 @@ class LossLandscapeComputer:
                 total_norm_sq += d_norm * d_norm
             total_norm = sqrt_scalar(total_norm_sq, _b)
 
-            if total_norm > _MACHINE_EPS:
+            if total_norm > eps:
                 return {k: d / total_norm for k, d in direction.items()}
             return direction
 
@@ -350,7 +353,7 @@ class LossLandscapeComputer:
             return dict(zip(params.keys(), grads))
 
         # Fallback: numeric gradients for scalar Python loss functions using MLX operations
-        step = float(epsilon) if epsilon is not None else 1e-4
+        step = self._finite_diff_epsilon(params, epsilon)
         gradients: dict[str, mx.array] = {}
         for name, param in params.items():
             grad = mx.zeros_like(param)
@@ -381,6 +384,39 @@ class LossLandscapeComputer:
             grad_flat = mx.array(grad_values)
             gradients[name] = mx.reshape(grad_flat, param.shape)
         return gradients
+
+    def _precision_epsilon(self, params: dict[str, mx.array]) -> float:
+        """Derive epsilon from dtype precision of the parameters."""
+        _b = get_default_backend()
+        for value in params.values():
+            if hasattr(value, "shape"):
+                ref = _b.array(value)
+                return float(division_epsilon(_b, ref))
+        return float(division_epsilon(_b, _b.array([1.0])))
+
+    def _finite_diff_epsilon(
+        self,
+        params: dict[str, mx.array],
+        epsilon: float | None,
+    ) -> float:
+        """Finite difference step derived from dtype precision and parameter scale."""
+        if epsilon is not None:
+            return float(epsilon)
+        _b = get_default_backend()
+        max_norm = 0.0
+        for value in params.values():
+            if not hasattr(value, "shape"):
+                continue
+            p_arr = _b.array(value)
+            p_flat = _b.reshape(p_arr, (-1,))
+            norm_sq = _b.sum(p_flat * p_flat)
+            norm = _b.sqrt(norm_sq)
+            _b.eval(norm)
+            norm_val = float(_b.to_scalar(norm))
+            if norm_val > max_norm:
+                max_norm = norm_val
+        scale = max(max_norm, 1.0)
+        return self._precision_epsilon(params) * scale
 
     def _dot_product(
         self,

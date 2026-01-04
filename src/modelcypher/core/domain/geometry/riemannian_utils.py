@@ -839,49 +839,124 @@ class RiemannianGeometry:
 
         # Find minimum k for connectivity - this IS the geometric answer
         # Binary search: start at k=1, double until connected, then binary search
+        chord_dist = self._chord_distance_matrix(points)
+        backend.eval(chord_dist)
+
         k_low = 1
         k_high = n - 1
+        knn_high = None
 
         # First, check if k=1 works (rare but possible for dense clouds)
-        result = self._compute_geodesic_for_k(points, k_low)
-        if result.connected:
-            return result
+        knn_low, _ = self._knn_indices_from_chord(chord_dist, k_low)
+        if self._is_knn_connected(knn_low):
+            return self._compute_geodesic_for_k(
+                points, k_low, chord_dist=chord_dist, knn_idx=knn_low
+            )
 
         # Double k until connected to find upper bound
         k_test = 2
         while k_test < k_high:
-            result = self._compute_geodesic_for_k(points, k_test)
-            if result.connected:
+            knn_test, _ = self._knn_indices_from_chord(chord_dist, k_test)
+            if self._is_knn_connected(knn_test):
                 k_high = k_test
+                knn_high = knn_test
                 break
             k_low = k_test
             k_test = min(k_test * 2, k_high)
         else:
             # Need maximum k
-            result = self._compute_geodesic_for_k(points, k_high)
-            if result.connected:
+            knn_high, _ = self._knn_indices_from_chord(chord_dist, k_high)
+            if self._is_knn_connected(knn_high):
                 k_low = k_high // 2
-                k_high = k_high
             else:
-                # Fully connected graph still disconnected - degenerate case
-                return result
+                # Fully connected k-NN still disconnected - degenerate case
+                return self._compute_geodesic_for_k(
+                    points, k_high, chord_dist=chord_dist, knn_idx=knn_high
+                )
 
         # Binary search for minimum k that achieves connectivity
         while k_low < k_high - 1:
             k_mid = (k_low + k_high) // 2
-            result = self._compute_geodesic_for_k(points, k_mid)
-            if result.connected:
+            knn_mid, _ = self._knn_indices_from_chord(chord_dist, k_mid)
+            if self._is_knn_connected(knn_mid):
                 k_high = k_mid
+                knn_high = knn_mid
             else:
                 k_low = k_mid
 
+        if knn_high is None:
+            knn_high, _ = self._knn_indices_from_chord(chord_dist, k_high)
+
         # Return result for minimum connected k
-        return self._compute_geodesic_for_k(points, k_high)
+        return self._compute_geodesic_for_k(
+            points, k_high, chord_dist=chord_dist, knn_idx=knn_high
+        )
+
+    def _knn_indices_from_chord(
+        self,
+        chord_dist: "Array",
+        k_neighbors: int,
+    ) -> tuple["Array", float]:
+        """Compute k-NN indices from chord distances (no Floyd-Warshall)."""
+        backend = self._backend
+        n = int(chord_dist.shape[0])
+        k_neighbors = max(1, min(k_neighbors, n - 1))
+
+        max_dist_arr = backend.max(chord_dist)
+        backend.eval(max_dist_arr)
+        max_dist = float(backend.to_scalar(max_dist_arr))
+        eps = machine_epsilon(backend, chord_dist)
+        base = max(max_dist, eps)
+        inf_val = min(base / eps, backend.finfo(chord_dist.dtype).max)
+        eye = backend.eye(n)
+        dist_for_sort = chord_dist + eye * inf_val
+
+        # Deterministic tie-breaker by column index at machine-epsilon scale.
+        tie_eps = machine_epsilon(backend, chord_dist)
+        col_indices = backend.arange(n)
+        col_indices_row = backend.reshape(col_indices, (1, n))
+        tie_breaker = backend.astype(col_indices_row, chord_dist.dtype) * tie_eps
+        dist_for_sort = dist_for_sort + tie_breaker
+
+        kth = max(0, min(k_neighbors - 1, n - 1))
+        partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
+        knn_idx = partitioned_idx[:, :k_neighbors]
+        backend.eval(knn_idx)
+        return knn_idx, inf_val
+
+    def _is_knn_connected(self, knn_idx: "Array") -> bool:
+        """Check graph connectivity from k-NN indices without Floyd-Warshall."""
+        neighbors = self._backend.tolist(knn_idx)
+        n = len(neighbors)
+        if n <= 1:
+            return True
+
+        undirected: list[set[int]] = [set() for _ in range(n)]
+        for i, row in enumerate(neighbors):
+            for j in row:
+                j_int = int(j)
+                if 0 <= j_int < n:
+                    undirected[i].add(j_int)
+                    undirected[j_int].add(i)
+
+        seen = [False] * n
+        stack = [0]
+        seen[0] = True
+        while stack:
+            node = stack.pop()
+            for nxt in undirected[node]:
+                if not seen[nxt]:
+                    seen[nxt] = True
+                    stack.append(nxt)
+
+        return all(seen)
 
     def _compute_geodesic_for_k(
         self,
         points: "Array",
         k_neighbors: int,
+        chord_dist: "Array | None" = None,
+        knn_idx: "Array | None" = None,
     ) -> GeodesicDistanceResult:
         """Compute geodesic distances for a specific k value."""
         backend = self._backend
@@ -897,8 +972,9 @@ class RiemannianGeometry:
         start = time.perf_counter()
 
         # Compute chord distance matrix (local edge lengths)
-        chord_dist = self._chord_distance_matrix(points)
-        backend.eval(chord_dist)
+        if chord_dist is None:
+            chord_dist = self._chord_distance_matrix(points)
+            backend.eval(chord_dist)
 
         # Diagnostic: check chord distance matrix for NaN (vectorized)
         if logger.isEnabledFor(logging.DEBUG):
@@ -921,18 +997,20 @@ class RiemannianGeometry:
         base = max(max_dist, eps)
         inf_val = min(base / eps, backend.finfo(chord_dist.dtype).max)
         eye = backend.eye(n)
-        dist_for_sort = chord_dist + eye * inf_val
 
-        # Deterministic tie-breaker by column index at machine-epsilon scale.
-        tie_eps = machine_epsilon(backend, chord_dist)
-        col_indices = backend.arange(n)
-        col_indices_row = backend.reshape(col_indices, (1, n))
-        tie_breaker = backend.astype(col_indices_row, chord_dist.dtype) * tie_eps
-        dist_for_sort = dist_for_sort + tie_breaker
+        if knn_idx is None:
+            dist_for_sort = chord_dist + eye * inf_val
 
-        kth = max(0, min(k_neighbors - 1, n - 1))
-        partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
-        knn_idx = partitioned_idx[:, :k_neighbors]
+            # Deterministic tie-breaker by column index at machine-epsilon scale.
+            tie_eps = machine_epsilon(backend, chord_dist)
+            col_indices = backend.arange(n)
+            col_indices_row = backend.reshape(col_indices, (1, n))
+            tie_breaker = backend.astype(col_indices_row, chord_dist.dtype) * tie_eps
+            dist_for_sort = dist_for_sort + tie_breaker
+
+            kth = max(0, min(k_neighbors - 1, n - 1))
+            partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
+            knn_idx = partitioned_idx[:, :k_neighbors]
 
         adj = backend.full((n, n), inf_val)
         adj = adj * (1.0 - eye)
@@ -950,6 +1028,8 @@ class RiemannianGeometry:
             backend.maximum(chord_dist, edge_eps),
         )
 
+        col_indices = backend.arange(n)
+        col_indices_row = backend.reshape(col_indices, (1, n))
         for neighbor_rank in range(k_neighbors):
             neighbor_cols = knn_idx[:, neighbor_rank]
             mask = backend.reshape(neighbor_cols, (n, 1)) == col_indices_row
