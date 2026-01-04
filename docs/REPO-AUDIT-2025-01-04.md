@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 127
-- Issues found: 61
-- Issues fixed: 61
+- Audited: 135
+- Issues found: 67
+- Issues fixed: 67
 
 ## Audit Log
 
@@ -1222,6 +1222,18 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: none
 
+- `docs/research/cross-architecture-transplant-2025-12-28.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
 - `docs/research/cross_lora_transfer.md` (doc)
   - Duplicate code/math: N/A
   - Geodesic math: N/A
@@ -1611,3 +1623,93 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Claimed missing modules and outdated merge status
   - Fix: Rewrote with implementation map and aligned to current code
+
+- `docs/research/moral_geometry.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (raw metrics only)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Included verdicts, thresholds, and experimental claims
+  - Fix: Rewrote to match analyzer outputs and CLI usage
+
+- `docs/research/number_theory_geometry.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (CLI + metrics alignment)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Contained empirical results, thresholds, and outdated command list
+  - Fix: Rewrote to match CLI commands and raw outputs
+
+- `docs/research/semantic_primes.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (CLI and inventory alignment)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Mismatched CLI commands and unimplemented methodology
+  - Fix: Rewrote to match current probe/compare flow and inventories
+
+- `docs/research/social_geometry.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (raw metrics only)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Included verdicts, thresholds, and outdated anchor counts
+  - Fix: Rewrote to match SocialGeometryAnalyzer outputs and CLI commands
+
+- `docs/research/spatial_grounding.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (raw metrics only)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Included empirical claims and outdated CLI usage
+  - Fix: Rewrote to match Spatial3DAnalyzer metrics and command list
+
+- `docs/research/temporal_topology.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (raw metrics only)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Included empirical results, thresholds, and outdated counts
+  - Fix: Rewrote to match TemporalTopologyAnalyzer outputs and CLI usage
+
+- `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none

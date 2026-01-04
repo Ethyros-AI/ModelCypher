@@ -245,6 +245,51 @@ def set_matrix_element(
     return result
 
 
+def validate_array_numerics(
+    arr: "Array",
+    backend: "Backend",
+) -> tuple[int, int, int]:
+    """Validate array numerics in a single pass.
+
+    Efficiently checks for NaN, Inf, and non-finite values using
+    vectorized operations. All computation stays on GPU.
+
+    This is more efficient than multiple calls to count_nan(), count_inf()
+    as it uses a single evaluation pass.
+
+    Args:
+        arr: Array to validate.
+        backend: Backend protocol implementation.
+
+    Returns:
+        Tuple of (nan_count, inf_count, nonfinite_count).
+    """
+    # Single pass: compute all masks at once
+    is_nan = backend.isnan(arr)
+    is_inf = backend.isinf(arr)
+    is_finite = backend.isfinite(arr)
+
+    # Compute counts with batch eval
+    nan_sum = backend.sum(is_nan)
+    inf_sum = backend.sum(is_inf)
+    # nonfinite = total elements where isfinite is False
+    nonfinite_mask = backend.where(
+        is_finite,
+        backend.zeros_like(is_finite),
+        backend.ones_like(is_finite),
+    )
+    nonfinite_sum = backend.sum(nonfinite_mask)
+
+    # Batch eval for efficiency
+    backend.eval(nan_sum, inf_sum, nonfinite_sum)
+
+    nan_count = int(float(backend.to_scalar(nan_sum)))
+    inf_count = int(float(backend.to_scalar(inf_sum)))
+    nonfinite_count = int(float(backend.to_scalar(nonfinite_sum)))
+
+    return nan_count, inf_count, nonfinite_count
+
+
 __all__ = [
     "count_nan",
     "count_inf",
@@ -256,4 +301,5 @@ __all__ = [
     "derive_k_neighbors",
     "safe_arithmetic_mean",
     "set_matrix_element",
+    "validate_array_numerics",
 ]

@@ -132,6 +132,7 @@ class ComputationCache:
         max_basis_entries: int = 256,
         max_kmin_entries: int = 1024,
         max_centered_gram_entries: int = 200,
+        max_chord_entries: int = 256,
     ) -> None:
         """
         Initialize the computation cache.
@@ -144,6 +145,7 @@ class ComputationCache:
             max_basis_entries: Maximum number of geodesic basis entries.
             max_kmin_entries: Maximum number of cached k-min entries.
             max_centered_gram_entries: Maximum number of centered Gram entries.
+            max_chord_entries: Maximum number of chord distance matrix entries.
         """
         self._max_gram_entries = max_gram_entries
         self._max_geodesic_entries = max_geodesic_entries
@@ -152,6 +154,7 @@ class ComputationCache:
         self._max_basis_entries = max_basis_entries
         self._max_kmin_entries = max_kmin_entries
         self._max_centered_gram_entries = max_centered_gram_entries
+        self._max_chord_entries = max_chord_entries
 
         # Separate LRU caches for different computation types
         # Using OrderedDict for O(1) move_to_end() and eviction
@@ -160,6 +163,9 @@ class ComputationCache:
 
         self._centered_gram_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._centered_gram_lock = threading.Lock()
+
+        self._chord_cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._chord_lock = threading.Lock()
 
         self._geodesic_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._geodesic_lock = threading.Lock()
@@ -318,6 +324,16 @@ class ComputationCache:
         """Create cache key for centered Gram matrix."""
         return f"centered_{gram_key}"
 
+    def make_chord_key(self, arr: "Array", backend: "Backend") -> str:
+        """Create cache key for chord (Euclidean) distance matrix.
+
+        Unlike geodesic keys which include k_neighbors, chord distance
+        is computed from raw points and can be reused across different k values.
+        """
+        base_key = self.make_array_key(arr, backend)
+        bid = self._backend_id(backend)
+        return f"chord_{bid}_{base_key}"
+
     def make_geodesic_key(
         self,
         arr: "Array",
@@ -450,6 +466,34 @@ class ComputationCache:
             self._centered_gram_cache,
             self._centered_gram_lock,
             self._max_centered_gram_entries,
+        )
+
+    # --- Chord Distance Cache ---
+
+    def get_chord(self, key: str) -> Any | None:
+        """Get cached chord distance matrix.
+
+        Chord distance is the pairwise Euclidean distance matrix,
+        reusable across different k values for geodesic computation.
+        """
+        return self._get_from_cache(
+            key,
+            self._chord_cache,
+            self._chord_lock,
+            "chord",
+        )
+
+    def set_chord(
+        self, key: str, value: Any, compute_time_ms: float = 0.0
+    ) -> None:
+        """Cache chord distance matrix."""
+        self._set_in_cache(
+            key,
+            value,
+            compute_time_ms,
+            self._chord_cache,
+            self._chord_lock,
+            self._max_chord_entries,
         )
 
     # --- Geodesic Distance Cache ---

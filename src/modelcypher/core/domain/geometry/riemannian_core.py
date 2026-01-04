@@ -86,6 +86,7 @@ from modelcypher.core.domain.geometry.riemannian_validation import (
     count_inf,
     count_nan,
     count_nonfinite,
+    validate_array_numerics,
 )
 
 logger = logging.getLogger(__name__)
@@ -889,22 +890,17 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         # Compute infinity threshold from dtype precision (not arbitrary 0.9)
         inf_thresh = infinity_threshold(backend, adj)
 
-        # Diagnostic: check adjacency matrix construction (vectorized)
+        # Diagnostic: check adjacency matrix construction (single-pass validation)
         if logger.isEnabledFor(logging.DEBUG):
-            # Count edges (finite and below inf threshold)
+            # Single-pass validation for NaN/Inf/nonfinite
+            nan_count_adj, inf_count_adj, _ = validate_array_numerics(adj, backend)
+            # Count edges (finite and below inf threshold) - needed for connectivity info
             finite_mask = backend.isfinite(adj)
             below_inf = adj < inf_thresh
-            edge_mask = finite_mask * below_inf  # element-wise AND
+            edge_mask = finite_mask * below_inf
             edge_count_arr = backend.sum(edge_mask)
             backend.eval(edge_count_arr)
             edge_count = int(float(backend.to_scalar(edge_count_arr)))
-            # Count inf entries (at or above inf threshold)
-            inf_mask = adj >= inf_thresh
-            inf_count_arr = backend.sum(inf_mask)
-            backend.eval(inf_count_arr)
-            inf_count_adj = int(float(backend.to_scalar(inf_count_arr)))
-            # Count NaN entries
-            nan_count_adj = count_nan(adj, backend)
             logger.debug(
                 f"Adjacency matrix: n={n}, k={k_neighbors}, "
                 f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
@@ -918,17 +914,16 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             geo_dist_arr = backend.floyd_warshall(adj)
             backend.eval(geo_dist_arr)
 
-        # Diagnostic: check geodesic matrix after Floyd-Warshall (only when debugging)
+        # Diagnostic: check geodesic matrix after Floyd-Warshall (single-pass validation)
         if logger.isEnabledFor(logging.DEBUG):
-            # Vectorized counts - O(1) vs O(n²)
+            # Single-pass validation for NaN/Inf/nonfinite
+            fw_nan, fw_inf, _ = validate_array_numerics(geo_dist_arr, backend)
+            # Count finite values below threshold
             finite_mask = backend.isfinite(geo_dist_arr)
             below_inf = geo_dist_arr < inf_thresh
             fw_finite_arr = backend.sum(finite_mask * below_inf)
-            fw_inf_arr = backend.sum(geo_dist_arr >= inf_thresh)
-            backend.eval(fw_finite_arr, fw_inf_arr)
+            backend.eval(fw_finite_arr)
             fw_finite = int(float(backend.to_scalar(fw_finite_arr)))
-            fw_inf = int(float(backend.to_scalar(fw_inf_arr)))
-            fw_nan = count_nan(geo_dist_arr, backend)
             logger.debug(
                 f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
             )

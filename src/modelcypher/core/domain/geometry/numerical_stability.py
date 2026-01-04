@@ -409,16 +409,22 @@ def infinity_threshold(backend: Backend, array: Array) -> float:
     (e.g., disconnected nodes in a graph). Derived from machine epsilon
     to be numerically principled rather than arbitrary.
 
-    Uses: max_representable * (1 - sqrt(eps))
+    Uses: max_representable * sqrt(eps)
 
-    This places the threshold at sqrt(eps) relative distance from max,
-    matching the precision available for the dtype.
+    This provides a threshold ~4 orders of magnitude below max for float32,
+    robustly detecting overflow while avoiding false positives.
+
+    For float32: eps ~ 1.2e-7, sqrt(eps) ~ 3.5e-4, max ~ 3.4e38
+    Threshold ~ 3.4e38 * 3.5e-4 ~ 1.2e35
+
+    Previous formula (1 - sqrt(eps)) * max was only 0.034% below max,
+    allowing near-overflow values to slip through.
     """
     finfo = backend.finfo(array.dtype)
     eps = finfo.eps
     max_val = finfo.max
-    margin = sqrt_scalar(eps, backend)
-    return float(max_val) * (1.0 - margin)
+    # Use sqrt(eps) * max for robust overflow detection
+    return float(max_val) * sqrt_scalar(eps, backend)
 
 
 def find_magnitude_gap_threshold(

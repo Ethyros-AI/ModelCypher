@@ -1,60 +1,66 @@
-# Semantic Primes: The Skeleton of Meaning
+# Semantic Primes: Anchor Inventory for Cross-Model Comparison
 
-> **Status**: Core Theory
-> **Inventory**: `src/modelcypher/data/semantic_primes.json` (+ `semantic_prime_multilingual.json`, `semantic_prime_frames.json`)
-> **Core Types**: `src/modelcypher/core/domain/agents/semantic_primes.py`
-> **CLI**: `mc geometry primes` (list/probe/compare)
+> **Status**: Core inventory and CLI support
+> **Data**: `src/modelcypher/data/semantic_primes.json`,
+>           `semantic_prime_multilingual.json`, `semantic_prime_frames.json`
+> **Code**: `src/modelcypher/core/domain/agents/semantic_primes.py`,
+>           `src/modelcypher/core/domain/agents/semantic_prime_atlas.py`
+> **CLI**: `mc geometry primes` (list / probe-model / compare)
 
-## The Problem: Cross-Model Alignment Without Shared Coordinates
+---
 
-Comparing representations between disjoint model families (e.g., Llama-3 vs Qwen-2.5) is challenging because their weight matrices W and activation spaces A reside in different bases and dimensions. Direct comparison (e.g., $||W_A - W_B||$) is undefined.
+## Overview
 
-To measure relational structure, we require a **shared anchor inventory**—a set of concepts $C = \{c_1, ..., c_k\}$ assumed to define a stable subspace across models.
+Semantic primes (NSM) are treated as a small, standardized anchor set for
+cross-model comparison. ModelCypher uses the English 2014 inventory to probe
+embedding-space structure and compute CKA-based coherence metrics.
 
-## The Solution: Anchor-Based Probing
+---
 
-We utilize the **Natural Semantic Metalanguage (NSM)** inventory: ~65 proposed semantic primes (e.g., "I", "YOU", "BS", "GOOD") which serve as cross-linguistically stable anchors.
+## Inventory Sources
 
-**Hypothesis**: If these primes induce a stable relational structure, the Gram matrices $G = XX^T$ of their embeddings should exhibit high Centered Kernel Alignment (CKA) between models, significantly exceeding that of frequency-matched controls.
+- `semantic_primes.json` provides the English 2014 prime list and categories.
+- `semantic_prime_multilingual.json` and `semantic_prime_frames.json` are
+  available for future multilingual/frames analysis.
+- `semantic_prime_atlas.py` contains a static English 2014 inventory used by
+  the CLI.
 
-### Methodology
+---
 
-1.  **Probe**: Extract embedding vectors $v_i$ for each prime $c_i$ in both models.
-2.  **Multilingual Averaging**: Compute $v_i = \frac{1}{|L|} \sum_{l \in L} v_{i,l}$ across languages to reduce tokenizer bias.
-3.  **Gram Matrix Comparison**: Compute CKA($G_A, G_B$) to measure structural similarity invariant to rotation.
-
-## Empirical Validation
-
-See [Paper 1: Invariant Semantic Structure](../../papers/paper-1-invariant-semantic-structure.md) for full results, including:
--   CKA scores vs null distributions
--   Falsification criteria (failed convergence > 10% drift)
--   Control baselines (frequency-matched random words)
-- [Scientific Method: Falsification Experiments](falsification_experiments.md)
-
-## Usage in ModelCypher
-
-Semantic primes are treated as an **anchor inventory** (a small, standardized probe set).
-In ModelCypher, the canonical inventories live in `src/modelcypher/data/`.
-
-```python
-# Inventory types (see src/modelcypher/core/domain/agents/semantic_primes.py)
-# - SemanticPrimeInventory.english2014()
-# - SemanticPrimeSignature
-```
-
-### CLI workflow
+## CLI Workflow
 
 ```bash
 # List the prime inventory
 mc geometry primes list
 
-# Probe a local model directory for prime signals (lightweight proxy)
-mc geometry primes probe /path/to/model
+# Probe a local model directory (writes optional JSON)
+mc geometry primes probe-model /path/to/model --output-file primes.json
 
-# Compare two local model directories
-mc geometry primes compare --model-a /path/to/model-a --model-b /path/to/model-b
+# Compare two activation JSON files
+mc geometry primes compare model_a_primes.json model_b_primes.json
 ```
 
 Notes:
-- `mc geometry primes …` currently uses a lightweight, embedding-based proxy for "prime activation".
-- `ProbeCorpus` is a separate concept: a standardized **prompt corpus** for activation probing (see `src/modelcypher/core/domain/geometry/probe_corpus.py`).
+- `probe-model` extracts mean activations for each prime and computes CKA
+  coherence (overall and per category).
+- `compare` computes CKA between two activation JSONs and reports the most
+  similar/divergent primes. If dimensions differ, it falls back to a centroid
+  similarity heuristic for per-prime ranking.
+
+---
+
+## Implementation Details (Probe)
+
+1. Encode each prime’s first English exponent.
+2. Run a forward pass to the final layer and mean-pool activations.
+3. Compute CKA for all primes (overall coherence) and within each category.
+
+This is a lightweight embedding-based proxy; use activation corpora for deeper
+analysis when needed.
+
+---
+
+## Related
+
+- [falsification_experiments.md](falsification_experiments.md)
+- [math/centered_kernel_alignment.md](math/centered_kernel_alignment.md)
