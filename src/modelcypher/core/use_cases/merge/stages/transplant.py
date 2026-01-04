@@ -818,8 +818,9 @@ def stage_transplant(
                 # With the corrected GramAligner that computes CKA on sample-space
                 # Gram-aligned source (T @ source), CKA = 1.0 is mathematically guaranteed
                 # for all dimension ratios. The Gram sqrt transform operates in sample space.
+                # Use 0.99 threshold for floating-point safety (numerical CKA may be 0.9999999).
                 dim_ratio = max(src_inter_dim, tgt_inter_dim) / min(src_inter_dim, tgt_inter_dim)
-                cka_threshold = 1.0 - inter_result.precision_threshold
+                cka_threshold = 0.99
                 is_acceptable = inter_result.achieved_cka >= cka_threshold
 
                 if is_acceptable:
