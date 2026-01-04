@@ -254,6 +254,18 @@ class Backend(Protocol):
     def stack(self, arrays: list[Array], axis: int = 0) -> Array: ...
     def concatenate(self, arrays: list[Array], axis: int = 0) -> Array: ...
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array: ...
+    def tile(self, array: Array, reps: tuple[int, ...] | int) -> Array:
+        """Construct an array by repeating the input the given number of times.
+
+        Args:
+            array: Input array.
+            reps: Number of repetitions along each axis. If an int, tile
+                  that many times along all axes.
+
+        Returns:
+            Tiled output array.
+        """
+        ...
     def expand_dims(self, array: Array, axis: int | tuple[int, ...]) -> Array:
         """Insert a new axis (dimension of size 1) at the specified position.
 

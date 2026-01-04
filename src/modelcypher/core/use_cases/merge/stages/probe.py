@@ -359,8 +359,19 @@ def _probe_precise(
             break
 
         if probe_text is None:
+            fallback = None
+            if probe.name and probe.description:
+                fallback = f"{probe.name}: {probe.description}"
+            elif probe.name:
+                fallback = probe.name
+            elif probe.description:
+                fallback = probe.description
+            if fallback and len(fallback.strip()) >= 2:
+                probe_text = fallback
+
+        if probe_text is None:
             logger.warning(
-                "Probe '%s' skipped: no valid support_texts (all empty or too short)",
+                "Probe '%s' skipped: no valid support texts or fallback",
                 probe.probe_id,
             )
             probes_failed += 1

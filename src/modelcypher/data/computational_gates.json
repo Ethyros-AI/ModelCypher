@@ -1176,7 +1176,10 @@
       "category": "uncategorized",
       "name": "UNKNOWN",
       "description": "Unrecognized or unclassifiable pattern",
-      "examples": []
+      "examples": [
+        "/* unknown */",
+        "unrecognized_pattern"
+      ]
     }
   ],
   "compositeGates": [
@@ -1186,7 +1189,10 @@
       "category": "composite",
       "name": "LOCK_GATE",
       "description": "Acquire lock / enter critical section",
-      "examples": [],
+      "examples": [
+        "lock.acquire()",
+        "mutex.lock()"
+      ],
       "decomposesTo": [
         "32_SYNCHRONIZATION",
         "20_MUTATION"
@@ -1198,7 +1204,10 @@
       "category": "composite",
       "name": "CONTRACT_GATE",
       "description": "Contract/interface declaration",
-      "examples": [],
+      "examples": [
+        "interface Runnable { void run(); }",
+        "protocol Runnable { func run() }"
+      ],
       "decomposesTo": [
         "13_CLASS",
         "57_ATTRIBUTE",
@@ -1211,7 +1220,10 @@
       "category": "composite",
       "name": "INVARIANT_GATE",
       "description": "Type/value invariants that must always hold",
-      "examples": [],
+      "examples": [
+        "assert x > 0",
+        "precondition(count >= 0)"
+      ],
       "decomposesTo": [
         "44_ASSERTION",
         "62_TYPE_CHECK"
@@ -1223,7 +1235,10 @@
       "category": "composite",
       "name": "ROLLBACK_GATE",
       "description": "Transactional rollback / state reversal",
-      "examples": [],
+      "examples": [
+        "db.rollback()",
+        "transaction.rollback()"
+      ],
       "decomposesTo": [
         "36_TRANSACTION",
         "20_MUTATION",
@@ -1236,7 +1251,10 @@
       "category": "composite",
       "name": "CACHE_GATE",
       "description": "Caching/memoization",
-      "examples": [],
+      "examples": [
+        "cache.get(key)",
+        "memoize(fn)"
+      ],
       "decomposesTo": [
         "26_MEMORY",
         "45_MAP",
@@ -1250,7 +1268,10 @@
       "category": "composite",
       "name": "MEASURE_GATE",
       "description": "Performance measurement / profiling",
-      "examples": [],
+      "examples": [
+        "timer.start()",
+        "metrics.increment(\"requests\")"
+      ],
       "decomposesTo": [
         "30_RESOURCE",
         "38_RETRIEVE",
@@ -1263,7 +1284,10 @@
       "category": "composite",
       "name": "VISIBILITY_GATE",
       "description": "Symbol visibility and access control",
-      "examples": [],
+      "examples": [
+        "private var token",
+        "public class Service"
+      ],
       "decomposesTo": [
         "57_ATTRIBUTE",
         "21_BLOCK"
@@ -1275,7 +1299,10 @@
       "category": "composite",
       "name": "UNLOCK_GATE",
       "description": "Release lock / exit critical section",
-      "examples": [],
+      "examples": [
+        "lock.release()",
+        "mutex.unlock()"
+      ],
       "decomposesTo": [
         "32_SYNCHRONIZATION",
         "20_MUTATION"
@@ -1287,7 +1314,10 @@
       "category": "composite",
       "name": "DECISION_GATE",
       "description": "Binary decision point",
-      "examples": [],
+      "examples": [
+        "if approved: grant() else: deny()",
+        "return condition ? a : b"
+      ],
       "decomposesTo": [
         "2_CONDITIONAL",
         "14_MATCH"
@@ -1299,7 +1329,10 @@
       "category": "composite",
       "name": "CONSENT_GATE",
       "description": "Explicit user authorization",
-      "examples": [],
+      "examples": [
+        "if user_consents(): proceed()",
+        "confirm(\"Allow?\")"
+      ],
       "decomposesTo": [
         "23_INPUT",
         "2_CONDITIONAL",

@@ -303,12 +303,18 @@ def _project_gram_transport(
             # For very large matrices (> 50k), we compute row Gram in chunks to avoid OOM
             if current_rows > 50000 or m_t > 50000:
                 # Use sampling for extremely large dimensions
+                # Generate evenly-spaced indices using backend operations (no Python lists)
                 sample_size = 10000
-                idx_source = list(range(0, current_rows, max(1, current_rows // sample_size)))[:sample_size]
-                idx_target = list(range(0, m_t, max(1, m_t // sample_size)))[:sample_size]
+                step_source = max(1, current_rows // sample_size)
+                n_source = min(sample_size, (current_rows + step_source - 1) // step_source)
+                idx_source = b.arange(0, n_source * step_source, step_source)
 
-                projected_sample = b.take(projected, b.array(idx_source), axis=0)
-                target_sample = b.take(target, b.array(idx_target), axis=0)
+                step_target = max(1, m_t // sample_size)
+                n_target = min(sample_size, (m_t + step_target - 1) // step_target)
+                idx_target = b.arange(0, n_target * step_target, step_target)
+
+                projected_sample = b.take(projected, idx_source, axis=0)
+                target_sample = b.take(target, idx_target, axis=0)
                 b.eval(projected_sample, target_sample)
 
                 G_source_row = b.matmul(projected_sample, b.transpose(projected_sample))
@@ -603,7 +609,7 @@ def _project_svd(
             else:
                 # Need more rows than target has - tile and truncate
                 repeats = (n_new // m_t) + 1
-                tiled = b.concatenate([target_k] * repeats, axis=0)
+                tiled = b.tile(target_k, (repeats, 1))  # Tile along axis 0, keep axis 1
                 expansion = tiled[:n_new, :] * scale
             b.eval(expansion)
             source_k = b.concatenate([source_k, expansion], axis=0)

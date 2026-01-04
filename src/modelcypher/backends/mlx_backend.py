@@ -442,6 +442,9 @@ class MLXBackend(Backend):
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array:
         return self.mx.broadcast_to(array, shape)
 
+    def tile(self, array: Array, reps: tuple[int, ...] | int) -> Array:
+        return self.mx.tile(array, reps)
+
     def expand_dims(self, array: Array, axis: int | tuple[int, ...]) -> Array:
         return self.mx.expand_dims(array, axis=axis)
 
