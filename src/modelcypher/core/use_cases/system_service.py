@@ -67,6 +67,7 @@ class SystemService:
         system_memory = self._system_memory_bytes()
         memory_gb = int(system_memory / (1024**3)) if system_memory else 0
         mlx_version = self._mlx_version()
+        mlx_probe_error = self._mlx_probe_error()
         cuda_version = self._cuda_version()
         jax_version = self._jax_version()
         preferred_backend = self._preferred_backend(
@@ -99,6 +100,7 @@ class SystemService:
             "machineName": platform.node(),
             "unifiedMemoryGB": memory_gb,
             "mlxVersion": mlx_version,
+            "mlxProbeError": mlx_probe_error,
             "cudaVersion": cuda_version,
             "jaxVersion": jax_version,
             "preferredBackend": preferred_backend,
@@ -144,7 +146,11 @@ class SystemService:
         data = {
             "target": target,
             "metal": {"available": metal_available, "deviceName": platform.machine()},
-            "mlx": {"version": self._mlx_version(), "gpuAvailable": metal_available},
+            "mlx": {
+                "version": self._mlx_version(),
+                "gpuAvailable": metal_available,
+                "probeError": self._mlx_probe_error(),
+            },
             "cuda": {
                 "available": cuda_available,
                 "version": self._cuda_version(),
@@ -177,6 +183,12 @@ class SystemService:
         from modelcypher.core.domain import _backend as backend_manager
 
         return backend_manager.probe_mlx_available(explicit=False)
+
+    @staticmethod
+    def _mlx_probe_error() -> str | None:
+        from modelcypher.core.domain import _backend as backend_manager
+
+        return backend_manager.get_mlx_probe_error()
 
     @staticmethod
     def _mlx_version() -> str:

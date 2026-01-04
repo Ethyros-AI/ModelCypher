@@ -42,6 +42,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import platform
+import subprocess
 import sys
 from typing import TYPE_CHECKING
 
@@ -88,6 +89,14 @@ def probe_mlx_available(*, explicit: bool = False) -> bool:
         _mlx_probe_result = False
         _mlx_probe_error = "MLX not installed"
         return False
+
+    runtime_check = os.environ.get("MC_MLX_RUNTIME_CHECK", "1").lower() in ("1", "true", "yes")
+    if runtime_check:
+        ok, err = _probe_mlx_runtime()
+        if not ok:
+            _mlx_probe_result = False
+            _mlx_probe_error = err or "MLX runtime probe failed"
+            return False
 
     _mlx_probe_result = True
     _mlx_probe_error = None
@@ -138,3 +147,25 @@ def reset_default_backend() -> None:
     """
     global _default_backend
     _default_backend = None
+
+
+def _probe_mlx_runtime() -> tuple[bool, str | None]:
+    """Probe MLX runtime initialization in a subprocess to avoid hard crashes."""
+    code = "import mlx.core as mx; mx.random.key(0); mx.zeros((1,))"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as exc:
+        return False, f"MLX runtime probe failed: {exc}"
+
+    if result.returncode == 0:
+        return True, None
+
+    detail = (result.stderr or result.stdout).strip()
+    if not detail:
+        detail = f"MLX runtime probe exited with code {result.returncode}"
+    return False, detail

@@ -35,7 +35,7 @@ def detect_default_backend_type() -> BackendType:
         2. MLX on macOS (Apple Silicon)
         3. CUDA if available
         4. JAX if available
-        5. NumPy CPU fallback
+        5. (No automatic CPU fallback; use MC_BACKEND=numpy explicitly)
 
     Returns:
         The backend type string to use.
@@ -84,7 +84,13 @@ def detect_default_backend_type() -> BackendType:
     except ImportError:
         pass
 
-    return "numpy"
+    detail = get_mlx_probe_error()
+    message = "No GPU backend available."
+    if detail:
+        message = f"{message} MLX probe error: {detail}."
+    raise RuntimeError(
+        f"{message} Set MC_BACKEND=numpy to force CPU fallback."
+    )
 
 
 def get_backend(backend_type: BackendType) -> Backend:
@@ -145,7 +151,12 @@ def initialize_default_backend() -> Backend:
         from modelcypher.backends import initialize_default_backend
         initialize_default_backend()  # Now domain code can use get_default_backend()
     """
-    from modelcypher.core.domain._backend import set_default_backend
+    from modelcypher.core.domain._backend import get_default_backend, set_default_backend
+
+    try:
+        return get_default_backend()
+    except RuntimeError:
+        pass
 
     backend_type = detect_default_backend_type()
     backend = get_backend(backend_type)
