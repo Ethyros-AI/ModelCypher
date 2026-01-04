@@ -174,14 +174,14 @@ def derive_k_neighbors(points: "Array", backend: "Backend") -> int:
     """
     # Import here to avoid circular dependency
     from modelcypher.core.domain.geometry.riemannian_core import (
-        get_riemannian_geometry,
+        _get_riemannian_geometry,
     )
 
     n = int(points.shape[0])
     if n <= 2:
         return 1
 
-    rg = get_riemannian_geometry(backend)
+    rg = _get_riemannian_geometry(backend)
     geo_result = rg.geodesic_distances(points, k_neighbors=None)
     dists = geo_result.distances
     backend.eval(dists)

@@ -22,9 +22,9 @@ This module tests the GPU-accelerated geodesic null-space filter that uses
 Riemannian geometry instead of linear algebra SVD. The geodesic approach
 is mathematically correct for high-dimensional curved manifolds.
 
-Key differences from Euclidean null-space filter:
-- Uses geodesic distances (k-NN graph + Floyd-Warshall) instead of Euclidean
-- Uses Frechet mean instead of centroid
+Key differences from flat-space null-space filters:
+- Uses geodesic distances (k-NN graph + Floyd-Warshall)
+- Uses Fréchet mean instead of centroid
 - Uses tangent space projection instead of SVD
 - All operations stay on GPU (no CPU fallback)
 """
@@ -446,46 +446,3 @@ class TestPropertyBased:
 
         eps = machine_epsilon(backend, backend.array(1.0))
         assert result.filtered_norm <= result.original_norm + eps
-
-
-class TestCompareWithEuclidean:
-    """Compare geodesic filter with Euclidean filter behavior."""
-
-    def test_both_filters_preserve_fraction_bounded(self):
-        """Both filters should have preserved_fraction in [0, 1]."""
-        from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
-
-        backend = get_default_backend()
-        euclidean_filter = NullSpaceFilter(backend)
-        geodesic_filter = GeodesicNullSpaceFilter(backend)
-
-        backend.random_seed(42)
-        activations = backend.random_normal((30, 20))
-        delta = backend.random_normal((20,))
-        backend.eval(activations, delta)
-
-        euclidean_result = euclidean_filter.filter_delta(delta, activations)
-        geodesic_result = geodesic_filter.filter_delta(delta, activations)
-
-        assert 0.0 <= euclidean_result.preserved_fraction <= 1.0
-        assert 0.0 <= geodesic_result.preserved_fraction <= 1.0
-
-    def test_both_filters_reduce_or_preserve_norm(self):
-        """Both filters should not increase delta norm."""
-        from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
-
-        backend = get_default_backend()
-        euclidean_filter = NullSpaceFilter(backend)
-        geodesic_filter = GeodesicNullSpaceFilter(backend)
-
-        backend.random_seed(42)
-        activations = backend.random_normal((30, 20))
-        delta = backend.random_normal((20,))
-        backend.eval(activations, delta)
-
-        euclidean_result = euclidean_filter.filter_delta(delta, activations)
-        geodesic_result = geodesic_filter.filter_delta(delta, activations)
-
-        eps = machine_epsilon(backend, backend.array(1.0))
-        assert euclidean_result.filtered_norm <= euclidean_result.original_norm + eps
-        assert geodesic_result.filtered_norm <= geodesic_result.original_norm + eps

@@ -49,7 +49,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_cosine_batch,

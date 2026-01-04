@@ -511,13 +511,7 @@ class LowRankGromovWasserstein:
         cost_sampled = diag1 + diag2
         b.eval(cost_sampled)
 
-        # Interpolate to full size
-        cost = b.zeros((n, m))
-        # This is a simplified interpolation - just tile the sampled cost
-        (n + sample_size - 1) // sample_size
-        (m + sample_size - 1) // sample_size
-
-        # For simplicity, use the mean cost value as a constant matrix
+        # Use the mean cost value as a constant matrix
         # This is a rough approximation but numerically stable
         mean_cost = b.mean(cost_sampled)
         b.eval(mean_cost)

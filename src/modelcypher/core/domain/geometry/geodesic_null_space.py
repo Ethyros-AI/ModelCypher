@@ -49,7 +49,7 @@ GPU Acceleration:
     - vectorized min: Floyd-Warshall shortest paths
     - Gram matrix operations: Tangent space projection
 
-    NO SVD, NO PINV, NO EIGENDECOMPOSITION - all stay on GPU.
+    All linear algebra stays on the backend (no CPU fallbacks).
 
 Usage:
     filter = GeodesicNullSpaceFilter(backend)
@@ -260,26 +260,34 @@ class GeodesicNullSpaceFilter:
         #
         # Uses native b.pinv() for EXACT pseudo-inverse computation on GPU.
 
-        # EXACT null space projection using native pinv (GPU)
-        # P_T = T @ pinv(T)  (projection onto column space of T)
+        # EXACT null space projection using QR (GPU)
+        # P_T = Q @ Q^T  (projection onto column space of A)
         # P_null = I - P_T   (projection onto null space)
-        # delta_safe = P_null @ delta = delta - T @ pinv(T) @ delta
+        # delta_safe = P_null @ delta = delta - Q @ Q^T @ delta
         #
         # CKA=1.0 requires exact projection. No regularization or approximation.
         T = tangent_vectors  # [n_samples, d]
         reg = regularization_epsilon(backend, T)
 
-        # Use native pinv for exact pseudo-inverse
-        T_pinv = backend.pinv(T)  # [d, n_samples]
-        backend.eval(T_pinv)
+        # Project onto the row-space of T (span of tangent vectors in R^d).
+        A = backend.transpose(T)  # [d, n_samples]
+        delta_dtype = backend.dtype(delta_flat)
+        proj_dtype = delta_dtype
+        if str(delta_dtype) in ("float16", "bfloat16"):
+            proj_dtype = "float32"
+        A = backend.astype(A, proj_dtype)
+        delta_col = backend.reshape(backend.astype(delta_flat, proj_dtype), (d, 1))
+        Q, _ = backend.qr(A)  # [d, k] orthonormal basis for column space
+        backend.eval(Q, delta_col)
 
-        # Project delta onto tangent space: T @ pinv(T) @ delta
-        delta_col = backend.reshape(delta_flat, (d, 1))
-        T_pinv_delta = backend.matmul(T_pinv, delta_col)  # [n_samples, 1]
-        backend.eval(T_pinv_delta)
-        delta_tangent = backend.matmul(T, T_pinv_delta)  # [d, 1]
+        # Project delta onto tangent space: Q @ (Q^T @ delta)
+        coeff = backend.matmul(backend.transpose(Q), delta_col)  # [k, 1]
+        delta_tangent = backend.matmul(Q, coeff)  # [d, 1]
         delta_tangent = backend.reshape(delta_tangent, (d,))
         backend.eval(delta_tangent)
+        if str(proj_dtype) != str(delta_dtype):
+            delta_tangent = backend.astype(delta_tangent, delta_dtype)
+            backend.eval(delta_tangent)
 
         # Geodesic null space component: delta - projection onto tangent space
         delta_safe = delta_flat - delta_tangent
