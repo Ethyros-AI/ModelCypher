@@ -356,19 +356,8 @@ class GeneralizedProcrustes:
             M_matrices = self._backend.matmul(X_t, consensus)
 
             b = self._backend
-            # Apply geodesic_svd to each matrix in the batch
-            # Store U, Vt for each matrix to avoid redundant SVD calls
-            U_list = []
-            Vt_list = []
-            Rs_list = []
-            for i in range(model_count):
-                U_i, _, Vt_i = geodesic_svd(b, M_matrices[i])
-                U_list.append(U_i)
-                Vt_list.append(Vt_i)
-                Rs_list.append(b.matmul(U_i, Vt_i))
-            Rs = b.stack(Rs_list, axis=0)
-            U_batch = b.stack(U_list, axis=0)
-            Vt_batch = b.stack(Vt_list, axis=0)
+            U_batch, _, Vt_batch = b.svd(M_matrices)
+            Rs = b.matmul(U_batch, Vt_batch)
 
             # Never allow reflections - preserves orientation
             for i in range(model_count):

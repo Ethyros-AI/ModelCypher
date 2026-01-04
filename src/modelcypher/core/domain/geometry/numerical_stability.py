@@ -614,9 +614,7 @@ def gram_schmidt_orthogonalize(
     backend: Backend,
     vectors: Array,
 ) -> Array:
-    """Orthogonalize vectors using modified Gram-Schmidt (GPU-only).
-
-    This is numerically stable and runs entirely on GPU via matmul.
+    """Orthogonalize vectors using backend QR with a Gram-Schmidt fallback.
 
     Args:
         backend: Compute backend.
@@ -628,6 +626,13 @@ def gram_schmidt_orthogonalize(
     b = backend
     vectors = b.astype(b.array(vectors), "float32")
     b.eval(vectors)
+
+    try:
+        q, _ = b.qr(vectors)
+        b.eval(q)
+        return q
+    except Exception:
+        pass
 
     n = int(vectors.shape[0])
     k = int(vectors.shape[1])

@@ -441,113 +441,17 @@ class PathGeometry:
         path: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> TruncatedSignature:
-        projection_dim = PathGeometry._projection_dim(gate_embeddings)
-        if len(path.nodes) < 2:
-            return TruncatedSignature(
-                level1=[0.0] * projection_dim,
-                level2=[[0.0] * projection_dim for _ in range(projection_dim)],
-                signed_area=0.0,
-                signature_norm=0.0,
-            )
-
-        entropies = [node.entropy for node in path.nodes]
-        entropy_mean, entropy_scale = PathGeometry._entropy_normalization(entropies)
-
-        coords: list[list[float]] = []
-        for node in path.nodes:
-            emb = gate_embeddings.get(node.gate_id)
-            if emb:
-                proj = list(emb[: projection_dim - 1])
-                while len(proj) < projection_dim - 1:
-                    proj.append(0.0)
-                proj.append((node.entropy - entropy_mean) / entropy_scale)
-                coords.append(proj)
-            else:
-                proj = [0.0] * (projection_dim - 1)
-                proj.append((node.entropy - entropy_mean) / entropy_scale)
-                coords.append(proj)
-
-        level1 = [0.0] * projection_dim
-        for i in range(1, len(coords)):
-            for d in range(projection_dim):
-                level1[d] += coords[i][d] - coords[i - 1][d]
-
-        level2 = [[0.0] * projection_dim for _ in range(projection_dim)]
-        cumulative = [0.0] * projection_dim
-        for i in range(1, len(coords)):
-            d_x = [coords[i][d] - coords[i - 1][d] for d in range(projection_dim)]
-            for p in range(projection_dim):
-                cumulative_p = cumulative[p]
-                d_xp = d_x[p]
-                for q in range(projection_dim):
-                    level2[p][q] += cumulative_p * d_x[q] + 0.5 * d_xp * d_x[q]
-            for d in range(projection_dim):
-                cumulative[d] += d_x[d]
-
         backend = get_default_backend()
-        level1_arr = backend.array(level1, dtype="float32")
-        level2_arr = backend.array(level2, dtype="float32")
-        backend.eval(level1_arr, level2_arr)
-
-        antisym = level2_arr - backend.transpose(level2_arr)
-        antisym_flat = backend.reshape(antisym, (1, -1))
-        antisym_norm = geodesic_norms(antisym_flat, backend)
-        backend.eval(antisym_norm)
-        signed_area = 0.5 * float(backend.to_scalar(antisym_norm[0]))
-
-        level1_flat = backend.reshape(level1_arr, (1, -1))
-        level2_flat = backend.reshape(level2_arr, (1, -1))
-        sig_flat = backend.concatenate([level1_flat, level2_flat], axis=1)
-        sig_norm_arr = geodesic_norms(sig_flat, backend)
-        backend.eval(sig_norm_arr)
-        signature_norm = float(backend.to_scalar(sig_norm_arr[0]))
-
-        return TruncatedSignature(
-            level1=level1,
-            level2=level2,
-            signed_area=signed_area,
-            signature_norm=signature_norm,
-        )
+        return BackendPathGeometry(backend).compute_signature(path, gate_embeddings)
 
     @staticmethod
     def signature_similarity(
         sig_a: TruncatedSignature,
         sig_b: TruncatedSignature,
     ) -> float:
-        """Compute similarity between two path signatures.
-
-        Args:
-            sig_a: First signature.
-            sig_b: Second signature.
-        """
+        """Compute similarity between two path signatures."""
         backend = get_default_backend()
-        count = min(len(sig_a.level1), len(sig_b.level1))
-        a1 = backend.array(sig_a.level1[:count], dtype="float32")
-        b1 = backend.array(sig_b.level1[:count], dtype="float32")
-        a1_flat = backend.reshape(a1, (1, -1))
-        b1_flat = backend.reshape(b1, (1, -1))
-
-        rows = min(len(sig_a.level2), len(sig_b.level2))
-        cols = (
-            min(len(sig_a.level2[0]), len(sig_b.level2[0]))
-            if rows > 0 and sig_a.level2[0] and sig_b.level2[0]
-            else 0
-        )
-        if rows > 0 and cols > 0:
-            a2 = backend.array([row[:cols] for row in sig_a.level2[:rows]], dtype="float32")
-            b2 = backend.array([row[:cols] for row in sig_b.level2[:rows]], dtype="float32")
-            a2_flat = backend.reshape(a2, (1, -1))
-            b2_flat = backend.reshape(b2, (1, -1))
-            a_vec = backend.concatenate([a1_flat, a2_flat], axis=1)
-            b_vec = backend.concatenate([b1_flat, b2_flat], axis=1)
-        else:
-            a_vec = a1_flat
-            b_vec = b1_flat
-
-        _, dist_arr = geodesic_pairwise_metrics(a_vec, b_vec, backend)
-        backend.eval(dist_arr)
-        total_dist = float(backend.to_scalar(dist_arr[0])) if dist_arr.size else 0.0
-        return 1.0 / (1.0 + total_dist)
+        return BackendPathGeometry(backend).signature_similarity(sig_a, sig_b)
 
     @staticmethod
     def analyze_entropy_path(path: PathSignature) -> EntropyPathAnalysis:

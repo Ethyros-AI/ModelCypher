@@ -1759,9 +1759,8 @@ class RiemannianGeometry:
     def _chord_distance_matrix(self, points: "Array") -> "Array":
         """Compute pairwise geodesic-compatible distances.
 
-        Uses the direct difference formula ||a - b||² = sum((a_i - b_i)²)
-        which is rotation-invariant by construction and avoids catastrophic
-        cancellation in the alternative formula ||a||² + ||b||² - 2*a·b.
+        Uses the identity ||a - b||² = ||a||² + ||b||² - 2*a·b to avoid
+        O(n² * d) intermediate memory while preserving rotation invariance.
 
         For high-dimensional spaces, these local distances are used as edge
         weights in the k-NN graph. The true geodesic distances are computed
@@ -1774,15 +1773,15 @@ class RiemannianGeometry:
             points = backend.astype(points, "float32")
 
         n = int(points.shape[0])
-        d = int(points.shape[1]) if len(points.shape) > 1 else 1
+        points_2d = (
+            backend.reshape(points, (n, 1)) if len(points.shape) == 1 else points
+        )
 
-        # Direct difference formula: ||a - b||² = sum((a_i - b_i)²)
-        # This is rotation-invariant: ||Qa - Qb||² = ||(Q(a-b))||² = ||a-b||²
-        # Uses O(n² * d) memory but is the correct approach for manifolds.
-        points_i = backend.reshape(points, (n, 1, d))  # [n, 1, d]
-        points_j = backend.reshape(points, (1, n, d))  # [1, n, d]
-        diffs = points_i - points_j  # [n, n, d] via broadcasting
-        dist_sq = backend.sum(diffs * diffs, axis=2)  # [n, n]
+        norms_sq = backend.sum(points_2d * points_2d, axis=1)
+        norms_col = backend.reshape(norms_sq, (n, 1))
+        norms_row = backend.reshape(norms_sq, (1, n))
+        cross = backend.matmul(points_2d, backend.transpose(points_2d))
+        dist_sq = norms_col + norms_row - 2.0 * cross
         backend.eval(dist_sq)
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         return backend.sqrt(dist_sq)
