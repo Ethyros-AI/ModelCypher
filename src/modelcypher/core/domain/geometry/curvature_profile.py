@@ -36,7 +36,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -48,15 +48,12 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "mc.geometry.research.curvature_profile.v1"
 
 
-@dataclass
+@dataclass(frozen=True)
 class LayerCurvature:
     """Curvature measurements for a single layer."""
 
@@ -119,7 +116,7 @@ class LayerCurvature:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class CurvatureProfile:
     """Complete curvature profile for a model.
 
@@ -136,7 +133,7 @@ class CurvatureProfile:
     model_size: str  # 0.5B, 3B, 7B, etc.
 
     # Per-layer curvature
-    layer_curvatures: list[LayerCurvature] = field(default_factory=list)
+    layer_curvatures: tuple[LayerCurvature, ...] = field(default_factory=tuple)
     total_layers: int = 0
 
     # Global statistics (aggregated across layers)
@@ -185,7 +182,7 @@ class CurvatureProfile:
             model_path=d["model_path"],
             model_family=d["model_family"],
             model_size=d["model_size"],
-            layer_curvatures=[LayerCurvature.from_dict(lc) for lc in d.get("layer_curvatures", [])],
+            layer_curvatures=tuple(LayerCurvature.from_dict(lc) for lc in d.get("layer_curvatures", [])),
             total_layers=d.get("total_layers", 0),
             global_sectional_mean=safe_get("global_sectional_mean", 0.0),
             global_sectional_std=safe_get("global_sectional_std", 0.0),
@@ -212,7 +209,7 @@ class CurvatureProfile:
         return cls.from_dict(data)
 
 
-@dataclass
+@dataclass(frozen=True)
 class FamilyBaseline:
     """Aggregated curvature baseline for a model family.
 
@@ -224,21 +221,21 @@ class FamilyBaseline:
 
     # Per-layer statistics (indexed by relative layer position 0.0-1.0)
     # This allows comparison across models with different layer counts
-    layer_positions: list[float] = field(default_factory=list)  # [0.0, 0.1, ..., 1.0]
+    layer_positions: tuple[float, ...] = field(default_factory=tuple)  # (0.0, 0.1, ..., 1.0)
 
     # Sectional curvature baseline per position
-    sectional_mean_by_position: list[float] = field(default_factory=list)
-    sectional_std_by_position: list[float] = field(default_factory=list)
+    sectional_mean_by_position: tuple[float, ...] = field(default_factory=tuple)
+    sectional_std_by_position: tuple[float, ...] = field(default_factory=tuple)
 
     # Ollivier-Ricci baseline per position
-    ollivier_ricci_mean_by_position: list[float] = field(default_factory=list)
-    ollivier_ricci_std_by_position: list[float] = field(default_factory=list)
+    ollivier_ricci_mean_by_position: tuple[float, ...] = field(default_factory=tuple)
+    ollivier_ricci_std_by_position: tuple[float, ...] = field(default_factory=tuple)
 
     # Intrinsic dimension baseline per position
-    intrinsic_dimension_by_position: list[float] = field(default_factory=list)
+    intrinsic_dimension_by_position: tuple[float, ...] = field(default_factory=tuple)
 
     # Contributing models
-    contributing_models: list[str] = field(default_factory=list)
+    contributing_models: tuple[str, ...] = field(default_factory=tuple)
     sample_count: int = 0
 
     # Metadata
@@ -263,13 +260,13 @@ class FamilyBaseline:
     def from_dict(cls, d: dict[str, Any]) -> FamilyBaseline:
         return cls(
             family=d["family"],
-            layer_positions=d.get("layer_positions", []),
-            sectional_mean_by_position=d.get("sectional_mean_by_position", []),
-            sectional_std_by_position=d.get("sectional_std_by_position", []),
-            ollivier_ricci_mean_by_position=d.get("ollivier_ricci_mean_by_position", []),
-            ollivier_ricci_std_by_position=d.get("ollivier_ricci_std_by_position", []),
-            intrinsic_dimension_by_position=d.get("intrinsic_dimension_by_position", []),
-            contributing_models=d.get("contributing_models", []),
+            layer_positions=tuple(d.get("layer_positions", [])),
+            sectional_mean_by_position=tuple(d.get("sectional_mean_by_position", [])),
+            sectional_std_by_position=tuple(d.get("sectional_std_by_position", [])),
+            ollivier_ricci_mean_by_position=tuple(d.get("ollivier_ricci_mean_by_position", [])),
+            ollivier_ricci_std_by_position=tuple(d.get("ollivier_ricci_std_by_position", [])),
+            intrinsic_dimension_by_position=tuple(d.get("intrinsic_dimension_by_position", [])),
+            contributing_models=tuple(d.get("contributing_models", [])),
             sample_count=d.get("sample_count", 0),
             created_date=d.get("created_date", ""),
         )
@@ -422,7 +419,7 @@ def build_family_baseline(
     if not profiles:
         return FamilyBaseline(
             family=family,
-            layer_positions=[i / (num_positions - 1) for i in range(num_positions)],
+            layer_positions=tuple(i / (num_positions - 1) for i in range(num_positions)),
             created_date=datetime.now().isoformat(),
         )
 
@@ -465,13 +462,13 @@ def build_family_baseline(
 
     return FamilyBaseline(
         family=family,
-        layer_positions=positions,
-        sectional_mean_by_position=sectional_means,
-        sectional_std_by_position=sectional_stds,
-        ollivier_ricci_mean_by_position=ricci_means,
-        ollivier_ricci_std_by_position=ricci_stds,
-        intrinsic_dimension_by_position=dim_means,
-        contributing_models=[p.model_path for p in profiles],
+        layer_positions=tuple(positions),
+        sectional_mean_by_position=tuple(sectional_means),
+        sectional_std_by_position=tuple(sectional_stds),
+        ollivier_ricci_mean_by_position=tuple(ricci_means),
+        ollivier_ricci_std_by_position=tuple(ricci_stds),
+        intrinsic_dimension_by_position=tuple(dim_means),
+        contributing_models=tuple(p.model_path for p in profiles),
         sample_count=len(profiles),
         created_date=datetime.now().isoformat(),
     )

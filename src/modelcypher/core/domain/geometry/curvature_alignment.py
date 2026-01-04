@@ -80,7 +80,7 @@ class AlignmentPlan:
     target_model: str
 
     # Per-layer guidance
-    layer_guidance: list[AlignmentGuidance]
+    layer_guidance: tuple[AlignmentGuidance, ...]
 
     # Global statistics (raw measurements)
     mean_dimension_scale: float
@@ -164,7 +164,7 @@ def compute_alignment_guidance(
     return AlignmentPlan(
         source_model=source_profile.model_path,
         target_model=target_profile.model_path,
-        layer_guidance=guidance_list,
+        layer_guidance=tuple(guidance_list),
         mean_dimension_scale=mean_scale,
         mean_intrinsic_dimension_diff=mean_dim_diff,
         mean_ollivier_ricci_delta=mean_ricci_delta,

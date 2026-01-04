@@ -41,14 +41,15 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
     log_scalar,
     regularization_epsilon,
-    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.ports.embedding import EmbeddingProvider
 
@@ -1140,21 +1141,16 @@ class EmotionConceptAtlas:
         sig_a: EmotionConceptSignature,
         sig_b: EmotionConceptSignature,
     ) -> float:
-        """Compute distance between VAD projections in 3D psychological space.
-
-        Note: VAD (Valence-Arousal-Dominance) is an explicit 3D theoretical model
-        from psychology literature. Distance in this projected 3D space uses
-        standard 3D geometry - this is not the curved high-dimensional latent space.
-        """
+        """Compute geodesic distance between VAD projections in 3D space."""
         vad_a = sig_a.vad_projection()
         vad_b = sig_b.vad_projection()
         backend = get_default_backend()
-        a = backend.array(vad_a)
-        b = backend.array(vad_b)
-        diff = a - b
-        dist_sq = backend.sum(diff * diff)
-        backend.eval(dist_sq)
-        return sqrt_scalar(float(backend.to_scalar(dist_sq)), backend)
+        points = backend.array([vad_a, vad_b])
+        rg = RiemannianGeometry(backend)
+        geo = rg.geodesic_distances(points, k_neighbors=1)
+        dist = geo.distances[0, 1]
+        backend.eval(dist)
+        return float(backend.to_scalar(dist))
 
     async def _get_or_create_emotion_embeddings(self) -> Any:
         """Get or create cached emotion embeddings using triangulation."""
@@ -1166,11 +1162,14 @@ class EmotionConceptAtlas:
         # Triangulate: embed all support texts and average
         # For now, simplified: embed "name: description" as centroid
         texts = [f"{e.name}: {e.description}" for e in self.inventory]
-        embeddings = await self.embedder.embed(texts)
-        if not embeddings:
+        emotion_embeddings = await get_or_compute_embeddings(
+            self.embedder,
+            self._backend,
+            "emotion_concept_atlas",
+            texts,
+        )
+        if self._backend.shape(emotion_embeddings)[0] == 0:
             return self._backend.array([])
-
-        emotion_embeddings = self._backend.array(embeddings)
         self._cached_emotion_embeddings = emotion_embeddings
         return emotion_embeddings
 

@@ -33,6 +33,7 @@ from enum import Enum
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
@@ -299,11 +300,14 @@ class SemanticPrimeAtlas:
 
         # In Python port, we'll just embed canonical English for now (skipping complex triangulation)
         texts = [p.canonical_english for p in self.inventory]
-        embeddings = await self.embedder.embed(texts)
-        if not embeddings:
+        prime_embeddings = await get_or_compute_embeddings(
+            self.embedder,
+            self._backend,
+            "semantic_prime_atlas",
+            texts,
+        )
+        if self._backend.shape(prime_embeddings)[0] == 0:
             return self._backend.array([])
-
-        prime_embeddings = self._backend.array(embeddings)
         self._cached_prime_embeddings = prime_embeddings
         return prime_embeddings
 

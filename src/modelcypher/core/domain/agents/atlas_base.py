@@ -40,6 +40,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
@@ -290,11 +291,14 @@ class BaseAtlas(ABC, Generic[C, S]):
             return self._backend.array([])
 
         texts = [self._get_concept_text(c) for c in self.inventory]
-        embeddings = await self.embedder.embed(texts)
-        if not embeddings:
+        concept_embeddings = await get_or_compute_embeddings(
+            self.embedder,
+            self._backend,
+            f"{type(self).__name__}_concepts",
+            texts,
+        )
+        if self._backend.shape(concept_embeddings)[0] == 0:
             return self._backend.array([])
-
-        concept_embeddings = self._backend.array(embeddings)
         self._cached_concept_embeddings = concept_embeddings
         return concept_embeddings
 

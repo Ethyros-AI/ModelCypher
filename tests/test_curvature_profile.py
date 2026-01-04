@@ -171,7 +171,7 @@ class TestCurvatureProfile:
         assert profile.model_path == "/path/to/model"
         assert profile.model_family == "qwen"
         assert profile.model_size == "0.5B"
-        assert profile.layer_curvatures == []
+        assert profile.layer_curvatures == ()
         assert profile.total_layers == 0
         assert abs(profile.global_sectional_mean) <= _eps()
 
@@ -270,20 +270,20 @@ class TestFamilyBaseline:
         """FamilyBaseline initializes with defaults."""
         baseline = FamilyBaseline(family="qwen")
         assert baseline.family == "qwen"
-        assert baseline.layer_positions == []
+        assert baseline.layer_positions == ()
         assert baseline.sample_count == 0
 
     def test_with_values(self):
         """FamilyBaseline stores provided values."""
         baseline = FamilyBaseline(
             family="llama",
-            layer_positions=[0.0, 0.5, 1.0],
-            sectional_mean_by_position=[-0.1, -0.05, -0.02],
-            sectional_std_by_position=[0.02, 0.03, 0.01],
-            ollivier_ricci_mean_by_position=[-0.15, -0.12, -0.1],
-            ollivier_ricci_std_by_position=[0.03, 0.02, 0.02],
-            intrinsic_dimension_by_position=[100.0, 150.0, 200.0],
-            contributing_models=["/path/a", "/path/b"],
+            layer_positions=(0.0, 0.5, 1.0),
+            sectional_mean_by_position=(-0.1, -0.05, -0.02),
+            sectional_std_by_position=(0.02, 0.03, 0.01),
+            ollivier_ricci_mean_by_position=(-0.15, -0.12, -0.1),
+            ollivier_ricci_std_by_position=(0.03, 0.02, 0.02),
+            intrinsic_dimension_by_position=(100.0, 150.0, 200.0),
+            contributing_models=("/path/a", "/path/b"),
             sample_count=2,
         )
         assert baseline.family == "llama"
@@ -294,13 +294,13 @@ class TestFamilyBaseline:
         """FamilyBaseline survives dict roundtrip."""
         original = FamilyBaseline(
             family="qwen",
-            layer_positions=[0.0, 0.25, 0.5, 0.75, 1.0],
-            sectional_mean_by_position=[-0.1, -0.08, -0.06, -0.04, -0.02],
-            sectional_std_by_position=[0.02] * 5,
-            ollivier_ricci_mean_by_position=[-0.15] * 5,
-            ollivier_ricci_std_by_position=[0.03] * 5,
-            intrinsic_dimension_by_position=[100.0] * 5,
-            contributing_models=["model1", "model2"],
+            layer_positions=(0.0, 0.25, 0.5, 0.75, 1.0),
+            sectional_mean_by_position=(-0.1, -0.08, -0.06, -0.04, -0.02),
+            sectional_std_by_position=(0.02,) * 5,
+            ollivier_ricci_mean_by_position=(-0.15,) * 5,
+            ollivier_ricci_std_by_position=(0.03,) * 5,
+            intrinsic_dimension_by_position=(100.0,) * 5,
+            contributing_models=("model1", "model2"),
             sample_count=2,
             created_date="2025-12-31",
         )
@@ -313,8 +313,8 @@ class TestFamilyBaseline:
         """FamilyBaseline saves to and loads from file."""
         baseline = FamilyBaseline(
             family="mistral",
-            layer_positions=[0.0, 1.0],
-            sectional_mean_by_position=[-0.1, -0.05],
+            layer_positions=(0.0, 1.0),
+            sectional_mean_by_position=(-0.1, -0.05),
             sample_count=1,
         )
 
@@ -435,7 +435,7 @@ class TestBuildFamilyBaseline:
         )
         baseline = build_family_baseline([profile], "test", num_positions=5)
         assert len(baseline.layer_positions) == 5
-        assert baseline.layer_positions == [0.0, 0.25, 0.5, 0.75, 1.0]
+        assert baseline.layer_positions == (0.0, 0.25, 0.5, 0.75, 1.0)
 
 
 # =============================================================================

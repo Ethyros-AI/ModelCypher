@@ -1276,40 +1276,48 @@ class OllivierRicciCurvature:
             row = backend.take(cost_matrix, backend.array([source_idx]), axis=0)
             row = backend.squeeze(row, axis=0)
             edge_weights_arr = backend.take(row, targets_arr, axis=0)
-            backend.eval(edge_weights_arr)
-            edge_weights = [float(x) for x in backend.tolist(edge_weights_arr)]
-
-            valid_targets: list[int] = []
-            valid_weights: list[float] = []
-            for target_idx, edge_weight in zip(batch_targets, edge_weights):
-                if not is_finite(edge_weight, backend) or edge_weight < eps:
-                    continue
-                valid_targets.append(target_idx)
-                valid_weights.append(edge_weight)
-
-            if not valid_targets:
+            finite_mask = backend.isfinite(edge_weights_arr)
+            weight_mask = edge_weights_arr >= eps
+            valid_mask = finite_mask * weight_mask
+            mask_int = backend.astype(valid_mask, "int32")
+            count_arr = backend.sum(mask_int)
+            backend.eval(edge_weights_arr, count_arr)
+            count = int(backend.to_scalar(count_arr))
+            if count == 0:
                 continue
 
-            source_idx_arr = backend.full(
-                (len(valid_targets),), source_idx, dtype="int32"
-            )
+            neg_mask = -mask_int
+            kth = max(0, count - 1)
+            partitioned = backend.argpartition(neg_mask, kth)
+            valid_idx = backend.take(partitioned, backend.arange(count), axis=0)
+            valid_idx = backend.sort(valid_idx)
+
+            valid_targets_arr = backend.take(targets_arr, valid_idx, axis=0)
+            valid_weights_arr = backend.take(edge_weights_arr, valid_idx, axis=0)
+            source_idx_arr = backend.full((count,), source_idx, dtype="int32")
             mu_batch = backend.take(measures, source_idx_arr, axis=0)
-            nu_batch = backend.take(measures, backend.array(valid_targets), axis=0)
+            nu_batch = backend.take(measures, valid_targets_arr, axis=0)
             w1_batch = self._compute_wasserstein_1_batch(
                 mu_batch, nu_batch, cost_matrix, kernel=kernel
             )
-            backend.eval(w1_batch)
+            backend.eval(w1_batch, valid_targets_arr, valid_weights_arr)
             w1_list = [float(x) for x in backend.tolist(w1_batch)]
+            valid_targets = backend.tolist(valid_targets_arr)
+            valid_weights = backend.tolist(valid_weights_arr)
+            if not isinstance(valid_targets, list):
+                valid_targets = [int(valid_targets)]
+            if not isinstance(valid_weights, list):
+                valid_weights = [float(valid_weights)]
 
             for target_idx, edge_weight, w1 in zip(valid_targets, valid_weights, w1_list):
                 curvature = 1.0 - w1 / edge_weight
                 edge_curvatures.append(
                     EdgeCurvature(
                         source_idx=source_idx,
-                        target_idx=target_idx,
+                        target_idx=int(target_idx),
                         curvature=curvature,
                         wasserstein_distance=w1,
-                        edge_weight=edge_weight,
+                        edge_weight=float(edge_weight),
                     )
                 )
 

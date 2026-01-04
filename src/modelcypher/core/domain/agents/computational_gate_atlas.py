@@ -33,6 +33,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
@@ -799,11 +800,14 @@ class ComputationalGateAtlas:
         # Let's do a simplified centroid: Embed (Name + Description) as the representational vector.
 
         descriptions = [f"{g.name}: {g.description}" for g in self.inventory]
-        embeddings = await self.embedder.embed(descriptions)
-        if not embeddings:
+        gate_embeddings = await get_or_compute_embeddings(
+            self.embedder,
+            self._backend,
+            "computational_gate_atlas",
+            descriptions,
+        )
+        if self._backend.shape(gate_embeddings)[0] == 0:
             return self._backend.array([])
-
-        gate_embeddings = self._backend.array(embeddings)
         self._cached_gate_embeddings = gate_embeddings
         return gate_embeddings
 
