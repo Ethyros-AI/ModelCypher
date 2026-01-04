@@ -581,10 +581,26 @@ class CrossGroundingSynthesizer:
         common = set(source_stress.anchor_distances.keys()) & set(target_anchors.keys())
         common_anchor_count = len(common)
         if common_anchor_count < 3:
-            raise ValueError(
-                f"Insufficient common anchors for cross-grounding transfer: "
-                f"found {common_anchor_count}, need at least 3. "
-                f"Source has {source_anchor_count} anchors, target has {target_anchor_count}."
+            # Return degenerate GhostAnchor with zero preservation
+            # when there are insufficient common anchors
+            target_stress = RelationalStressProfile(
+                anchor_distances={},
+                stress_vector=self._backend.zeros((0,)),
+                nearest_anchors=[],
+                geodesic_radius=0.0,
+            )
+            return GhostAnchor(
+                concept_id=concept_id,
+                source_position=source_pos,
+                target_position=source_pos,  # Use source position as fallback
+                stress_preservation=0.0,
+                grounding_rotation=grounding_rotation,
+                common_anchor_count=common_anchor_count,
+                source_anchor_count=source_anchor_count,
+                target_anchor_count=target_anchor_count,
+                source_stress=source_stress,
+                target_stress=target_stress,
+                synthesis_confidence=0.0,
             )
 
         # Solve for target position that preserves relational stress

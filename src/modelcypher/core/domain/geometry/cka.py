@@ -1041,6 +1041,64 @@ def compute_cka_from_grams(
     return cka
 
 
+def compute_cka_from_centered_grams(
+    centered_a: "Array",
+    centered_b: "Array",
+    backend: "Backend | None" = None,
+) -> float:
+    """Compute CKA from pre-centered Gram matrices.
+
+    Use this when you have already centered the Gram matrices and want to
+    avoid redundant centering. This is an optimization for iterative algorithms
+    that reuse centered Grams across multiple CKA computations.
+
+    The centering should have been done as:
+        K_c = K - row_mean - col_mean + grand_mean
+
+    which is mathematically equivalent to H @ K @ H where H = I - (1/n) * 1 @ 1^T.
+
+    Args:
+        centered_a: Pre-centered Gram matrix for representation A [n, n].
+        centered_b: Pre-centered Gram matrix for representation B [n, n].
+        backend: Backend protocol implementation. If None, uses default.
+
+    Returns:
+        CKA similarity value in [0, 1].
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    n = int(centered_a.shape[0])
+    if n <= 1:
+        return 0.0
+
+    if centered_a.shape != centered_b.shape:
+        return 0.0
+
+    # HSIC = trace(K_a_c @ K_b_c) / (n-1)^2
+    # Using element-wise multiply + sum instead of trace(matmul) for efficiency
+    hsic_ab_arr = backend.sum(centered_a * centered_b)
+    hsic_aa_arr = backend.sum(centered_a * centered_a)
+    hsic_bb_arr = backend.sum(centered_b * centered_b)
+    backend.eval(hsic_ab_arr, hsic_aa_arr, hsic_bb_arr)
+
+    denom_factor = float((n - 1) ** 2)
+    hsic_ab = float(backend.to_scalar(hsic_ab_arr)) / denom_factor
+    hsic_aa = float(backend.to_scalar(hsic_aa_arr)) / denom_factor
+    hsic_bb = float(backend.to_scalar(hsic_bb_arr)) / denom_factor
+
+    # CKA = HSIC(A,B) / sqrt(HSIC(A,A) * HSIC(B,B))
+    denominator = sqrt_scalar(hsic_aa * hsic_bb, backend)
+
+    # Use precision-aware threshold for near-zero detection
+    eps = division_epsilon(backend, centered_a)
+    if denominator < eps:
+        return 0.0
+
+    cka = hsic_ab / denominator
+    return max(0.0, min(1.0, cka))
+
+
 class CKAComputer:
     """Configurable CKA computation with HSIC estimator selection.
 
