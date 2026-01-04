@@ -75,21 +75,21 @@ class DetectionResult:
         return tuple(c.concept_id for c in self.detected_concepts)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ConceptComparisonResult:
     model_a: str
     model_b: str
-    concept_path_a: list[str]
-    concept_path_b: list[str]
+    concept_path_a: tuple[str, ...]
+    concept_path_b: tuple[str, ...]
     cka: float | None
     cosine_similarity: float | None
-    aligned_concepts: list[str]
-    unique_to_a: list[str]
-    unique_to_b: list[str]
+    aligned_concepts: tuple[str, ...]
+    unique_to_a: tuple[str, ...]
+    unique_to_b: tuple[str, ...]
 
     @property
     def alignment_ratio(self) -> float:
-        total = len(set(self.concept_path_a + self.concept_path_b))
+        total = len(set(self.concept_path_a) | set(self.concept_path_b))
         if total == 0:
             return 1.0
         return len(self.aligned_concepts) / float(total)

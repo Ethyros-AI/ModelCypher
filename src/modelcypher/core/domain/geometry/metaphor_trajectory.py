@@ -329,7 +329,7 @@ class MetaphorTrajectoryCollector:
             source_domain=cmt_mapping.source_domain,
             target_domain=cmt_mapping.target_domain,
             model_id=model_id,
-            points=points,
+            points=tuple(points),
         )
 
     def collect_trajectory(

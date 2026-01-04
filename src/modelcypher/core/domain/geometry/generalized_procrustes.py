@@ -165,6 +165,7 @@ class GeneralizedProcrustes:
             self._riemannian = RiemannianGeometry(backend=self._backend)
 
         backend = self._backend
+        model_count = int(aligned_X.shape[0])
         _M, N, K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
 
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -177,6 +178,7 @@ class GeneralizedProcrustes:
             points_batch,
             max_iterations=frechet_max_iter,
             tolerance=tol,
+            k_neighbors=max(1, model_count - 1),
         )
 
     def align(

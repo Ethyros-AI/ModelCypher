@@ -462,9 +462,9 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         set_a = set(result_a.concept_sequence)
         set_b = set(result_b.concept_sequence)
 
-        aligned = sorted(list(set_a.intersection(set_b)))
-        unique_a = sorted(list(set_a - set_b))
-        unique_b = sorted(list(set_b - set_a))
+        aligned = tuple(sorted(set_a.intersection(set_b)))
+        unique_a = tuple(sorted(set_a - set_b))
+        unique_b = tuple(sorted(set_b - set_a))
 
         return ConceptComparisonResult(
             model_a=result_a.model_id,

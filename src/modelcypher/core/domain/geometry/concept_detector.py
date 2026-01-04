@@ -24,11 +24,10 @@ to decide whether a response segment activates a concept.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, Iterable
-
 import logging
+import time
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
@@ -37,6 +36,11 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
+)
+from modelcypher.core.domain.geometry.types import (
+    ConceptComparisonResult,
+    DetectedConcept,
+    DetectionResult,
 )
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_cosine_batch,
@@ -49,84 +53,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.embedding import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class DetectedConcept:
-    """A detected concept activation in the response."""
-
-    concept_id: str
-    category: str
-    similarity: float
-    character_span: tuple[int, int]
-    trigger_text: str
-    cross_modal_similarity: float | None = None
-
-
-@dataclass(frozen=True)
-class DetectionResult:
-    """Complete detection result for a response."""
-
-    model_id: str
-    prompt_id: str
-    response_text: str
-    detected_concepts: tuple[DetectedConcept, ...]
-    timestamp: datetime = field(default_factory=datetime.utcnow)
-
-    @property
-    def mean_similarity(self) -> float:
-        """Mean similarity across all detected concepts."""
-        if not self.detected_concepts:
-            return 0.0
-        backend = get_default_backend()
-        scores = backend.array([c.similarity for c in self.detected_concepts])
-        mean_score = backend.mean(scores)
-        backend.eval(mean_score)
-        return float(backend.to_scalar(mean_score))
-
-    @property
-    def mean_cross_modal_similarity(self) -> float | None:
-        """Mean cross-modal similarity across concepts that have it."""
-        with_cross_modal = [
-            c.cross_modal_similarity
-            for c in self.detected_concepts
-            if c.cross_modal_similarity is not None
-        ]
-        if not with_cross_modal:
-            return None
-        backend = get_default_backend()
-        scores = backend.array(with_cross_modal)
-        mean_score = backend.mean(scores)
-        backend.eval(mean_score)
-        return float(backend.to_scalar(mean_score))
-
-    @property
-    def concept_sequence(self) -> list[str]:
-        """The sequence of concept IDs in order of detection."""
-        return [c.concept_id for c in self.detected_concepts]
-
-
-@dataclass(frozen=True)
-class ConceptComparisonResult:
-    """Result of comparing concept detections between two models."""
-
-    model_a: str
-    model_b: str
-    concept_path_a: tuple[str, ...]
-    concept_path_b: tuple[str, ...]
-    cka: float | None
-    cosine_similarity: float | None
-    aligned_concepts: tuple[str, ...]
-    unique_to_a: tuple[str, ...]
-    unique_to_b: tuple[str, ...]
-
-    @property
-    def alignment_ratio(self) -> float:
-        """Ratio of aligned concepts to total unique concepts."""
-        total = len(set(self.concept_path_a) | set(self.concept_path_b))
-        if total == 0:
-            return 1.0
-        return len(self.aligned_concepts) / total
 
 
 @dataclass(frozen=True)
@@ -186,6 +112,8 @@ class ConceptDetector:
                 prompt_id=prompt_id,
                 response_text=response,
                 detected_concepts=(),
+                mean_similarity=0.0,
+                mean_cross_modal_similarity=None,
             )
 
         segments = self._segment_text(trimmed)
@@ -195,6 +123,8 @@ class ConceptDetector:
                 prompt_id=prompt_id,
                 response_text=response,
                 detected_concepts=(),
+                mean_similarity=0.0,
+                mean_cross_modal_similarity=None,
             )
 
         detections: list[DetectedConcept] = []
@@ -269,7 +199,7 @@ class ConceptDetector:
                     concept_id=best_probe.probe_id,
                     category=best_probe.category,
                     similarity=float(best_similarity),
-                    character_span=(start, end),
+                    character_span=slice(start, end),
                     trigger_text=truncate(segment, 100),
                     cross_modal_similarity=cross_modal_similarity,
                 )
@@ -277,11 +207,34 @@ class ConceptDetector:
 
         collapsed = self._collapse_consecutive(detections)
 
+        # Compute mean_similarity
+        mean_similarity = 0.0
+        if collapsed:
+            scores = self._backend.array([c.similarity for c in collapsed])
+            mean_score = self._backend.mean(scores)
+            self._backend.eval(mean_score)
+            mean_similarity = float(self._backend.to_scalar(mean_score))
+
+        # Compute mean_cross_modal_similarity
+        mean_cross_modal: float | None = None
+        with_cross_modal = [
+            c.cross_modal_similarity
+            for c in collapsed
+            if c.cross_modal_similarity is not None
+        ]
+        if with_cross_modal:
+            cross_scores = self._backend.array(with_cross_modal)
+            mean_cross_score = self._backend.mean(cross_scores)
+            self._backend.eval(mean_cross_score)
+            mean_cross_modal = float(self._backend.to_scalar(mean_cross_score))
+
         return DetectionResult(
             model_id=model_id,
             prompt_id=prompt_id,
             response_text=response,
             detected_concepts=tuple(collapsed),
+            mean_similarity=mean_similarity,
+            mean_cross_modal_similarity=mean_cross_modal,
         )
 
     @staticmethod

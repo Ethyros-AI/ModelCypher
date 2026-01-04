@@ -263,6 +263,30 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             weights_key = _cache.make_array_key(weights_arr, backend)
 
         attempt_k = k_start
+        if attempt_k is not None and attempt_k >= n - 1:
+            # Fully connected graph => geodesic distances reduce to chord distances.
+            # The Fréchet mean is the exact weighted mean in this case.
+            cache_key = _cache.make_frechet_key(points, backend, weights_key, attempt_k)
+            cached = _cache.get_frechet(cache_key)
+            if cached is not None:
+                return cached
+
+            weights_col = backend.reshape(weights_arr, (n, 1))
+            mean = backend.sum(points * weights_col, axis=0)
+            diffs = points - mean
+            sq_norms = backend.sum(diffs * diffs, axis=1)
+            variance = backend.sum(sq_norms * weights_arr)
+            backend.eval(mean, variance)
+
+            result = FrechetMeanResult(
+                mean=mean,
+                iterations=1,
+                converged=True,
+                final_variance=float(backend.to_scalar(variance)),
+            )
+            _cache.set_frechet(cache_key, result, 0.0)
+            return result
+
         while True:
             cache_key = _cache.make_frechet_key(points, backend, weights_key, attempt_k)
             cached = _cache.get_frechet(cache_key)
@@ -432,6 +456,24 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             )
             return backend.reshape(result.mean, (1, -1))
 
+        batch = int(points_batch.shape[0])
+        n = int(points_batch.shape[1])
+        if k_neighbors is not None and n > 0 and k_neighbors >= n - 1:
+            # Fully connected graph => geodesic distances reduce to chord distances.
+            # The Fréchet mean is the exact weighted mean in this case.
+            if weights_batch is None:
+                mean = backend.mean(points_batch, axis=1)
+                backend.eval(mean)
+                return mean
+
+            weights_batch = backend.array(weights_batch)
+            weight_sum = backend.sum(weights_batch, axis=1, keepdims=True)
+            weights_norm = weights_batch / weight_sum
+            weights_norm = backend.reshape(weights_norm, (batch, n, 1))
+            mean = backend.sum(points_batch * weights_norm, axis=1)
+            backend.eval(mean)
+            return mean
+
         def _mean_only(points: "Array", weights: "Array | None" = None) -> "Array":
             result = self.frechet_mean(
                 points,
@@ -457,7 +499,6 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
             except Exception:
                 pass
 
-        batch = int(points_batch.shape[0])
         means = []
         for i in range(batch):
             weights = weights_batch[i] if weights_batch is not None else None

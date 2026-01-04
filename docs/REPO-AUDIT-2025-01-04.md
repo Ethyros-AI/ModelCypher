@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 20
-- Issues found: 10
-- Issues fixed: 10
+- Audited: 21
+- Issues found: 11
+- Issues fixed: 11
 
 ## Audit Log
 
@@ -276,3 +276,16 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Historical audit conflicts with fresh audit scope
   - Fix: Added superseded note at top
+
+- `docs/INFERENCE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (aligned inference APIs, CLI, adapter pool, security scan)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Outdated API references and incorrect CLI commands
+  - Fix: Updated to match current inference and adapter pool APIs
