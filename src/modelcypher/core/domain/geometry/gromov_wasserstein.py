@@ -72,6 +72,7 @@ See also: docs/geometry/gromov_wasserstein.md
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -195,6 +196,9 @@ class GromovWassersteinDistance:
         p = backend.ones((n,)) / n
         q = backend.ones((m,)) / m
 
+        # Precompute loss decomposition matrices once (reuse across restarts)
+        constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
+
         # Multiple restarts to escape local minima
         best_result: Result | None = None
         total_iterations = 0
@@ -202,7 +206,12 @@ class GromovWassersteinDistance:
         # Fixed seed for reproducibility
         backend.random_seed(_RANDOM_SEED)
 
-        for restart in range(_NUM_RESTARTS):
+        restart_budget = max(
+            1,
+            min(_NUM_RESTARTS, int(math.ceil(math.log2(max(min(n, m), 2))))),
+        )
+
+        for restart in range(restart_budget):
             # Generate initial coupling
             if restart == 0:
                 # First: uniform coupling (outer product of marginals)
@@ -211,7 +220,7 @@ class GromovWassersteinDistance:
                 # Random perturbation of uniform, projected to valid transport polytope
                 T0 = self._random_coupling(n, m, backend)
 
-            result = self._frank_wolfe(C1, C2, p, q, T0)
+            result = self._frank_wolfe(C1, C2, p, q, T0, constC=constC, hC1=hC1, hC2=hC2)
             total_iterations += result.iterations
 
             if best_result is None or result.distance < best_result.distance:
@@ -562,6 +571,9 @@ class GromovWassersteinDistance:
         p: "Array",
         q: "Array",
         T0: "Array",
+        constC: "Array | None" = None,
+        hC1: "Array | None" = None,
+        hC2: "Array | None" = None,
     ) -> Result:
         """
         Conditional Gradient (Frank-Wolfe) algorithm for GW.
@@ -576,8 +588,9 @@ class GromovWassersteinDistance:
         """
         backend = self._backend
 
-        # Initialize loss decomposition matrices
-        constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
+        # Initialize loss decomposition matrices (reuse across restarts when provided)
+        if constC is None or hC1 is None or hC2 is None:
+            constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
 
         # Derive convergence thresholds from dtype
         # Using sqrt(eps) as standard numerical tolerance for convergence

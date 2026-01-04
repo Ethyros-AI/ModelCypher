@@ -1,5 +1,7 @@
 # CLI Deep Dive Audit
 
+**Status**: Historical snapshot. Superseded by `docs/REPO-AUDIT-2025-01-04.md`.
+
 Purpose: track CLI command coverage, help quality, and documentation alignment.
 
 ## Environment

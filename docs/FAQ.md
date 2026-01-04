@@ -8,12 +8,13 @@ No. PCA assumes Euclidean geometry. LLM activations live on curved manifolds.
 
 **The math:** PCA finds linear projections that maximize variance. But in high-dimensional curved space, the shortest path between two points isn't a straight line—it's a geodesic. Euclidean distance *underestimates* true distance in positively curved regions and *overestimates* in negatively curved regions.
 
-**The proof:** Run `mc geometry manifold analyze` on any model. If sectional curvature ≈ 0 everywhere, it's flat (PCA works). If curvature varies by layer (it does), you need Riemannian tools.
+**The proof:** Run `mc geometry research curvature-profile` on any model. If sectional curvature ≈ 0 everywhere, it's flat (PCA works). If curvature varies by layer (it does), you need Riemannian tools.
 
 ```bash
-mc geometry manifold analyze ./your-model --output text
-# Typical output: Layer 12 curvature = 0.23, Layer 18 = -0.15
-# Non-zero curvature = curved manifold = PCA insufficient
+mc geometry research curvature-profile ./your-model --output text
+# Typical output:
+#   L12: sectional= 0.2300 (positive), ricci=-0.1500, dim= 52.0
+#   L18: sectional=-0.1500 (negative), ricci=-0.2100, dim= 49.5
 ```
 
 ### "Where's the peer review?"

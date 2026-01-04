@@ -65,14 +65,14 @@ class DetectionResult:
     model_id: str
     prompt_id: str
     response_text: str
-    detected_concepts: list[DetectedConcept]
+    detected_concepts: tuple[DetectedConcept, ...]
     mean_similarity: float
     mean_cross_modal_similarity: float | None
     timestamp: float = field(default_factory=time.time)
 
     @property
-    def concept_sequence(self) -> list[str]:
-        return [c.concept_id for c in self.detected_concepts]
+    def concept_sequence(self) -> tuple[str, ...]:
+        return tuple(c.concept_id for c in self.detected_concepts)
 
 
 @dataclass
@@ -117,15 +117,13 @@ class RefusalDirection:
 
 @dataclass(frozen=True)
 class RefusalDistanceMetrics:
+    """Distance metrics relative to refusal direction."""
+
     distance_to_refusal: float
     projection_magnitude: float
     is_approaching: bool
     layer_index: int
     token_index: int
-
-
-    failed_layers: list[str]
-    quality_score: float
 
 
 # --- Manifold Clusterer Types ---
@@ -177,13 +175,13 @@ class ActivatedDimension:
 class Fingerprint:
     prime_id: str
     prime_text: str
-    activated_dimensions: dict[int, list[ActivatedDimension]]
+    activated_dimensions: dict[int, tuple[ActivatedDimension, ...]]
 
 
 @dataclass(frozen=True)
 class ModelFingerprints:
     model_id: str
-    fingerprints: list[Fingerprint]
+    fingerprints: tuple[Fingerprint, ...]
 
 
 class ProjectionMethod(Enum):
@@ -238,7 +236,7 @@ class CompositionCategory(Enum):
 @dataclass(frozen=True)
 class CompositionProbe:
     phrase: str
-    components: list[str]
+    components: tuple[str, ...]
     category: CompositionCategory
 
 
@@ -254,10 +252,10 @@ class CompositionAnalysis:
     """
 
     probe: CompositionProbe
-    barycentric_weights: list[float]
+    barycentric_weights: tuple[float, ...]
     residual_norm: float
     centroid_similarity: float
-    component_angles: list[float]
+    component_angles: tuple[float, ...]
 
     @property
     def is_compositional(self) -> bool:
@@ -278,9 +276,9 @@ class ConsistencyResult:
     ----------
     probe_count : int
         Number of probes compared.
-    analyses_a : list of CompositionAnalysis
+    analyses_a : tuple of CompositionAnalysis
         Analyses from model A.
-    analyses_b : list of CompositionAnalysis
+    analyses_b : tuple of CompositionAnalysis
         Analyses from model B.
     barycentric_correlation : float
         Geodesic correlation of barycentric weights.
@@ -291,8 +289,8 @@ class ConsistencyResult:
     """
 
     probe_count: int
-    analyses_a: list[CompositionAnalysis]
-    analyses_b: list[CompositionAnalysis]
+    analyses_a: tuple[CompositionAnalysis, ...]
+    analyses_b: tuple[CompositionAnalysis, ...]
     barycentric_correlation: float
     angular_correlation: float
     consistency_score: float
@@ -303,14 +301,14 @@ class ConsistencyResult:
 
 @dataclass(frozen=True)
 class ProcrustesResult:
-    consensus: list[list[float]]
-    rotations: list[list[list[float]]]
-    scales: list[float]
-    residuals: list[list[list[float]]]
+    consensus: tuple[tuple[float, ...], ...]
+    rotations: tuple[tuple[tuple[float, ...], ...], ...]
+    scales: tuple[float, ...]
+    residuals: tuple[tuple[tuple[float, ...], ...], ...]
     converged: bool
     iterations: int
     alignment_error: float
-    per_model_errors: list[float]
+    per_model_errors: tuple[float, ...]
     consensus_variance_ratio: float
     sample_count: int
     dimension: int

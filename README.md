@@ -46,7 +46,7 @@ Run `mc --help` for full command list. Run `mc <command> --help` for subcommands
 poetry run modelcypher-mcp
 ```
 
-155+ tools available. See [docs/MCP.md](docs/MCP.md) for the full catalog.
+Tools available. See [docs/MCP.md](docs/MCP.md) for the full catalog.
 
 ## Documentation
 

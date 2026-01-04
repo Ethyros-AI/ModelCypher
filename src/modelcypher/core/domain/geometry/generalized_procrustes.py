@@ -341,17 +341,17 @@ class GeneralizedProcrustes:
             U_batch, _, Vt_batch = b.svd(M_matrices)
             Rs = b.matmul(U_batch, Vt_batch)
 
-            # Never allow reflections - preserves orientation
-            for i in range(model_count):
-                det_val = b.det(Rs[i])
-                b.eval(det_val)
-                if float(b.to_scalar(det_val)) < 0:
-                    U_i = U_batch[i]
-                    U_fixed = b.concatenate([U_i[:, :-1], -U_i[:, -1:]], axis=1)
-                    R_fixed = b.matmul(U_fixed, Vt_batch[i])
-                    b.eval(R_fixed)
-                    Rs_list = [Rs[j] if j != i else R_fixed for j in range(model_count)]
-                    Rs = b.stack(Rs_list, axis=0)
+            # Never allow reflections - preserves orientation (batched)
+            dets = b.det(Rs)
+            b.eval(dets)
+            signs = b.where(dets < 0, b.full(dets.shape, -1.0), b.full(dets.shape, 1.0))
+            k = int(U_batch.shape[2])
+            if k > 0:
+                ones = b.ones((model_count, k - 1), dtype=U_batch.dtype)
+                last = b.reshape(signs, (-1, 1))
+                scale = b.concatenate([ones, last], axis=1)
+                U_batch = U_batch * b.reshape(scale, (model_count, 1, k))
+                Rs = b.matmul(U_batch, Vt_batch)
 
             # Update Aligned X
             aligned_X = self._backend.matmul(X, Rs)

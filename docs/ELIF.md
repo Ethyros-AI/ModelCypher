@@ -346,7 +346,7 @@ Concrete CLI entry points (see `docs/CLI-REFERENCE.md`):
   - `mc geometry crm delta-mask`
 - Merge and validate:
   - `mc merge`
-  - `mc geometry validate`
+  - `mc geometry waypoint validate`
 
 ---
 

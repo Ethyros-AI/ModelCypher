@@ -9,10 +9,13 @@ All commands support these options:
 | Option | Description |
 |--------|-------------|
 | `--ai` | Enable AI-assisted mode |
-| `--output json\|text` | Output format (default: json) |
-| `--quiet` | Suppress diagnostic messages |
-| `--pretty` | Pretty-print JSON output |
-| `--log-level` | Logging verbosity: debug, info, warning, error |
+| `--output json\|yaml\|text` | Output format (default: json) |
+| `--quiet` | Suppress info logs |
+| `--very-quiet` | Suppress all logs |
+| `--yes` | Auto-confirm prompts |
+| `--no-prompt` | Fail if confirmation required |
+| `--pretty` | Pretty-print structured output |
+| `--log-level` | Logging verbosity: trace, debug, info, warn, error |
 | `--trace-id` | Custom trace ID for debugging |
 
 ---
@@ -38,6 +41,7 @@ mc merge \
 | `-t, --target` | path | Path to target model (receives knowledge) |
 | `-o, --output-dir` | path | Output directory for merged model |
 | `-f, --output-file` | path | Save full result to JSON file |
+| `-n, --dry-run` | flag | Show what would happen without merging |
 
 ---
 

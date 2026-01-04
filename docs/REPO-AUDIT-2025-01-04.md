@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 4
-- Issues found: 1
-- Issues fixed: 1
+- Audited: 17
+- Issues found: 7
+- Issues fixed: 7
 
 ## Audit Log
 
@@ -75,3 +75,165 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Tests: N/A
   - Best practices: OK
   - Issues: none
+
+- `CODE_OF_CONDUCT.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `CONTRIBUTING.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `DISCLAIMER.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `LICENSE` (license)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `README.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (removed unverifiable tool count)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified MCP tool count
+  - Fix: Removed numeric claim
+
+- `docs/AI-ASSISTANT-GUIDE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/ARCHITECTURE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (removed unverifiable numeric counts)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Unverified tool/method counts in diagrams/text
+  - Fix: Removed numeric claims
+
+- `docs/BACKEND-COMPARISON.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/BACKEND-PARITY.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `docs/CLI-DEEPDIVE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (marked historical)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Historical audit could mislead fresh audit
+  - Fix: Added superseded note at top
+
+- `docs/CLI-REFERENCE.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (global options and merge flags aligned to CLI)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Global options and merge flags outdated
+  - Fix: Updated options table and added dry-run flag
+
+- `docs/ELIF.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (fixed CLI command reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-existent `mc geometry validate`
+  - Fix: Updated to `mc geometry waypoint validate`
+
+- `docs/FAQ.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (fixed CLI command reference)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Referenced non-existent `mc geometry manifold analyze`
+  - Fix: Updated to `mc geometry research curvature-profile`

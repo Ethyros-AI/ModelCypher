@@ -42,47 +42,47 @@ class CompositionalProbes:
     Compositional probe analysis for cross-model semantic structure verification.
     """
 
-    STANDARD_PROBES = [
+    STANDARD_PROBES = (
         # Mental predicates
-        CompositionProbe("I THINK", ["I", "THINK"], CompositionCategory.MENTAL_PREDICATE),
-        CompositionProbe("I KNOW", ["I", "KNOW"], CompositionCategory.MENTAL_PREDICATE),
-        CompositionProbe("I WANT", ["I", "WANT"], CompositionCategory.MENTAL_PREDICATE),
-        CompositionProbe("I FEEL", ["I", "FEEL"], CompositionCategory.MENTAL_PREDICATE),
-        CompositionProbe("I SEE", ["I", "SEE"], CompositionCategory.MENTAL_PREDICATE),
-        CompositionProbe("I HEAR", ["I", "HEAR"], CompositionCategory.MENTAL_PREDICATE),
+        CompositionProbe("I THINK", ("I", "THINK"), CompositionCategory.MENTAL_PREDICATE),
+        CompositionProbe("I KNOW", ("I", "KNOW"), CompositionCategory.MENTAL_PREDICATE),
+        CompositionProbe("I WANT", ("I", "WANT"), CompositionCategory.MENTAL_PREDICATE),
+        CompositionProbe("I FEEL", ("I", "FEEL"), CompositionCategory.MENTAL_PREDICATE),
+        CompositionProbe("I SEE", ("I", "SEE"), CompositionCategory.MENTAL_PREDICATE),
+        CompositionProbe("I HEAR", ("I", "HEAR"), CompositionCategory.MENTAL_PREDICATE),
         # Actions
-        CompositionProbe("SOMEONE DO", ["SOMEONE", "DO"], CompositionCategory.ACTION),
-        CompositionProbe("PEOPLE DO", ["PEOPLE", "DO"], CompositionCategory.ACTION),
-        CompositionProbe("I SAY", ["I", "SAY"], CompositionCategory.ACTION),
+        CompositionProbe("SOMEONE DO", ("SOMEONE", "DO"), CompositionCategory.ACTION),
+        CompositionProbe("PEOPLE DO", ("PEOPLE", "DO"), CompositionCategory.ACTION),
+        CompositionProbe("I SAY", ("I", "SAY"), CompositionCategory.ACTION),
         # Evaluatives
-        CompositionProbe("GOOD THINGS", ["GOOD", "SOMETHING"], CompositionCategory.EVALUATIVE),
-        CompositionProbe("BAD THINGS", ["BAD", "SOMETHING"], CompositionCategory.EVALUATIVE),
-        CompositionProbe("GOOD PEOPLE", ["GOOD", "PEOPLE"], CompositionCategory.EVALUATIVE),
+        CompositionProbe("GOOD THINGS", ("GOOD", "SOMETHING"), CompositionCategory.EVALUATIVE),
+        CompositionProbe("BAD THINGS", ("BAD", "SOMETHING"), CompositionCategory.EVALUATIVE),
+        CompositionProbe("GOOD PEOPLE", ("GOOD", "PEOPLE"), CompositionCategory.EVALUATIVE),
         # Temporal
-        CompositionProbe("BEFORE NOW", ["BEFORE", "NOW"], CompositionCategory.TEMPORAL),
-        CompositionProbe("AFTER THIS", ["AFTER", "THIS"], CompositionCategory.TEMPORAL),
+        CompositionProbe("BEFORE NOW", ("BEFORE", "NOW"), CompositionCategory.TEMPORAL),
+        CompositionProbe("AFTER THIS", ("AFTER", "THIS"), CompositionCategory.TEMPORAL),
         CompositionProbe(
-            "A LONG TIME BEFORE", ["A_LONG_TIME", "BEFORE"], CompositionCategory.TEMPORAL
+            "A LONG TIME BEFORE", ("A_LONG_TIME", "BEFORE"), CompositionCategory.TEMPORAL
         ),
         # Spatial
-        CompositionProbe("ABOVE HERE", ["ABOVE", "HERE"], CompositionCategory.SPATIAL),
-        CompositionProbe("FAR FROM HERE", ["FAR", "HERE"], CompositionCategory.SPATIAL),
-        CompositionProbe("NEAR THIS", ["NEAR", "THIS"], CompositionCategory.SPATIAL),
+        CompositionProbe("ABOVE HERE", ("ABOVE", "HERE"), CompositionCategory.SPATIAL),
+        CompositionProbe("FAR FROM HERE", ("FAR", "HERE"), CompositionCategory.SPATIAL),
+        CompositionProbe("NEAR THIS", ("NEAR", "THIS"), CompositionCategory.SPATIAL),
         # Quantified
-        CompositionProbe("MUCH GOOD", ["MUCH_MANY", "GOOD"], CompositionCategory.QUANTIFIED),
-        CompositionProbe("MANY PEOPLE", ["MUCH_MANY", "PEOPLE"], CompositionCategory.QUANTIFIED),
+        CompositionProbe("MUCH GOOD", ("MUCH_MANY", "GOOD"), CompositionCategory.QUANTIFIED),
+        CompositionProbe("MANY PEOPLE", ("MUCH_MANY", "PEOPLE"), CompositionCategory.QUANTIFIED),
         # Complex
         CompositionProbe(
             "I WANT GOOD THINGS",
-            ["I", "WANT", "GOOD", "SOMETHING"],
+            ("I", "WANT", "GOOD", "SOMETHING"),
             CompositionCategory.MENTAL_PREDICATE,
         ),
         CompositionProbe(
             "SOMEONE DO BAD THINGS",
-            ["SOMEONE", "DO", "BAD", "SOMETHING"],
+            ("SOMEONE", "DO", "BAD", "SOMETHING"),
             CompositionCategory.ACTION,
         ),
-    ]
+    )
 
     @staticmethod
     def analyze_composition(
@@ -105,7 +105,7 @@ class CompositionalProbes:
         n = comps.shape[0]
 
         if n == 0 or d == 0:
-            return CompositionAnalysis(probe, [], float("inf"), 0.0, [])
+            return CompositionAnalysis(probe, (), float("inf"), 0.0, ())
 
         # Centroid via Frechet mean (geodesic-only on curved manifolds)
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -126,7 +126,7 @@ class CompositionalProbes:
         # Component angles via geodesic cosine similarity
         angles_arr = geodesic_cosine_batch(comp, comps, b)
         b.eval(angles_arr)
-        angles = [float(x) for x in b.tolist(angles_arr)]
+        angles = tuple(float(x) for x in b.tolist(angles_arr))
 
         # Barycentric weights via normal equations
         # G = component_embeddings @ component_embeddings.T [N, N]
@@ -139,7 +139,7 @@ class CompositionalProbes:
 
         weights_arr = b.solve(G, rhs)  # [N]
         b.eval(weights_arr)
-        weights = b.tolist(weights_arr)
+        weights = tuple(b.tolist(weights_arr))
 
         # Calc residual
         reconstructed = b.matmul(weights_arr, comps)  # [D]
@@ -170,7 +170,7 @@ class CompositionalProbes:
     ) -> ConsistencyResult:
         """Check compositional consistency between two models."""
         if len(analyses_a) != len(analyses_b) or not analyses_a:
-            return ConsistencyResult(0, [], [], 0.0, 0.0, 0.0)
+            return ConsistencyResult(0, (), (), 0.0, 0.0, 0.0)
 
         n = len(analyses_a)
 
@@ -197,8 +197,8 @@ class CompositionalProbes:
 
         return ConsistencyResult(
             probe_count=n,
-            analyses_a=analyses_a,
-            analyses_b=analyses_b,
+            analyses_a=tuple(analyses_a),
+            analyses_b=tuple(analyses_b),
             barycentric_correlation=bary_corr,
             angular_correlation=ang_corr,
             consistency_score=score,

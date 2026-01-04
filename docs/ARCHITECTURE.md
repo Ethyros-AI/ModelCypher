@@ -8,7 +8,7 @@ ModelCypher follows a strict **Hexagonal Architecture** (also known as Ports and
 flowchart TB
     subgraph EXTERNAL["External Drivers"]
         CLI["CLI<br/>(mc / modelcypher)"]
-        MCP["MCP Server<br/>(148 tools)"]
+        MCP["MCP Server<br/>(tools)"]
     end
 
     subgraph ADAPTERS["Adapters Layer"]
@@ -19,7 +19,7 @@ flowchart TB
     end
 
     subgraph PORTS["Ports Layer"]
-        BE["Backend Protocol<br/>(58 methods)"]
+        BE["Backend Protocol"]
         TR["Training Port"]
         ST["Storage Port"]
         INF["Inference Port"]
@@ -123,7 +123,7 @@ The core domain is organized by concern:
 
 ## Backend Protocol
 
-The Backend protocol (58 methods) enables platform-agnostic geometry code. All tensor operations go through this abstraction, allowing the same algorithms to run on MLX, JAX, CUDA, or NumPy.
+The Backend protocol enables platform-agnostic geometry code. All tensor operations go through this abstraction, allowing the same algorithms to run on MLX, JAX, CUDA, or NumPy.
 
 ```mermaid
 flowchart LR

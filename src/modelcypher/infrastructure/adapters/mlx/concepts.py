@@ -264,7 +264,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
 
         trimmed = response.strip()
         if not trimmed:
-            return DetectionResult(model_id, prompt_id, response, [], 0.0, None)
+            return DetectionResult(model_id, prompt_id, response, (), 0.0, None)
 
         # Tokenize - extract (word, start_idx, end_idx) tuples
         words = []
@@ -272,7 +272,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
             words.append((m.group(), m.start(), m.end()))
 
         if not words:
-            return DetectionResult(model_id, prompt_id, response, [], 0.0, None)
+            return DetectionResult(model_id, prompt_id, response, (), 0.0, None)
 
         # Collect all candidate detections with similarities
         all_candidates: list[tuple[DetectedConcept, float]] = []
@@ -300,7 +300,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
                     all_candidates.append((res, res.similarity))
 
         if not all_candidates:
-            return DetectionResult(model_id, prompt_id, response, [], 0.0, None)
+            return DetectionResult(model_id, prompt_id, response, (), 0.0, None)
 
         # Otsu thresholding: find optimal split in similarity distribution
         similarities = [s for _, s in all_candidates]
@@ -335,7 +335,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
             model_id=model_id,
             prompt_id=prompt_id,
             response_text=response,
-            detected_concepts=unique,
+            detected_concepts=tuple(unique),
             mean_similarity=mean_similarity,
             mean_cross_modal_similarity=None,
         )
