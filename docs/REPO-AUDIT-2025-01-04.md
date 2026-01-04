@@ -19,8 +19,8 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 179
-- Issues found: 93
+- Audited: 225
+- Issues found: 94
 - Issues fixed: 93
 
 ## Audit Log
@@ -2267,3 +2267,904 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Tests: N/A
   - Best practices: OK
   - Issues: none
+
+- `docs/security.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `examples/README.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `examples/01_basic_geometry_probe.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A (uses service layer)
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (docstring, usage)
+  - Hexagonal structure: OK (uses use_cases layer)
+  - Tests: N/A
+  - Best practices: OK (argparse, proper exit)
+  - Issues: none
+
+- `examples/02_safety_audit.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A (uses service layer)
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (docstring, usage, formats)
+  - Hexagonal structure: OK (uses use_cases layer)
+  - Tests: N/A
+  - Best practices: OK (argparse, type hints, error handling)
+  - Issues: none
+
+- `examples/03_adapter_inspection.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A (uses service layer)
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (docstring, usage)
+  - Hexagonal structure: OK (uses use_cases layer)
+  - Tests: N/A
+  - Best practices: OK (argparse, JSON output, type hints)
+  - Issues: none
+
+- `examples/04_entropy_analysis.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A (uses service layer)
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (docstring, usage)
+  - Hexagonal structure: OK (uses use_cases layer)
+  - Tests: N/A
+  - Best practices: OK (argparse, type hints)
+  - Issues: none
+
+- `examples/05_model_merge.py` (example)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A (uses service layer)
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (docstring, pipeline, usage)
+  - Hexagonal structure: OK (uses composition layer)
+  - Tests: N/A
+  - Best practices: OK (argparse, error handling)
+  - Issues: none
+
+- `papers/README.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `papers/NEGATIVE-RESULTS.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (negative results transparency)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `papers/RELEASE_NOTES.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `papers/SUMMARIES.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: none
+
+- `scripts/audit_lines.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (clear purpose)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK (argparse, type hints)
+  - Issues: none
+
+- `scripts/modernize_typing.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK (docstring with transformations)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK (type hints, error handling)
+  - Issues: none
+
+- `scripts/run_verification_tests.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A (this IS a test runner)
+  - Best practices: OK
+  - Issues: none
+
+- `scripts/verify_mlx_freeze.py` (script)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A (MLX-specific test)
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: OK
+  - Hexagonal structure: N/A
+  - Tests: N/A (this IS a verification script)
+  - Best practices: OK
+  - Issues: none
+
+## Source Code Deep Audit (2025-01-04)
+
+### Core Geometry Domain
+
+- `src/modelcypher/core/domain/geometry/gram_aligner.py` (470 lines)
+  - **Duplicate code/math**: NONE
+    - Unique implementation of Gram matrix square root transform T = K_t^{1/2} @ K_s^{-1/2}
+    - Uses caching via ComputationCache.shared() (lines 58, 82-84)
+    - Imports _center_gram_matrix from cka.py instead of duplicating (line 61)
+  - **Geodesic math**: EXCELLENT
+    - Uses geodesic_norms for all norm computations (lines 69, 321-322, 431-432)
+    - No chord distance usage
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend protocol: matmul, transpose, eigh, pinv, qr (lines 263-264, 342-343, 351-363, 391-402)
+    - Proper b.eval() calls for lazy evaluation (lines 304, 344, 363, 392, 403)
+    - Uses b.astype(K_s_c, "float32") for numerical stability (lines 340-341)
+  - **Caching**: EXCELLENT
+    - Uses _cache.make_stitch_key() and get_stitch()/set_stitch() (lines 382-408)
+    - Cache key includes both Gram matrices
+    - Timing recorded for cache metrics (line 387, 395, 407)
+  - **NumPy**: NONE (verified via grep - no imports, no np. usage)
+  - **Documentation**: EXCELLENT
+    - Module docstring explains core principle, mathematical guarantee, references (lines 18-48)
+    - All public methods have docstrings with Parameters/Returns sections
+    - References to Kornblith et al. (2019) and Williams (2001)
+    - Clear explanation of "no user-configurable thresholds" design (lines 36-41)
+  - **Hexagonal structure**: OK
+    - Located in domain geometry layer
+    - Uses _backend protocol, not concrete MLX imports
+    - Returns dataclass result types (AlignmentResult)
+  - **Tests**: 10 tests in test_gram_aligner.py (180 lines)
+    - TestGramAlignerInit: 2 tests (initialization, default backend)
+    - TestGramAlignerFindPerfectAlignment: 4 tests (identical, orthonormal, valid transforms, cross-dim)
+    - TestFindAlignment: 2 tests (basic, default backend)
+    - TestEdgeCases: 2 tests (small matrices, single sample)
+    - Test quality: Uses Backend protocol, random seeds, precision assertions derived from dtype
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclass for AlignmentResult
+    - Properties for derived values (is_perfect, is_converged)
+    - Backward compat preserved (tolerance/regularization params kept but IGNORED)
+    - Explicit __all__ export list
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/cka.py` (1228 lines)
+  - **Duplicate code/math**: NONE
+    - Canonical CKA implementation with multiple entry points
+    - Imports geodesic utilities from riemannian_utils.py and vector_math.py (lines 66-72)
+    - Gram matrix caching via ComputationCache (lines 79-87, 566-589)
+  - **Geodesic math**: EXCELLENT
+    - RBF kernel uses geodesic_distances from RiemannianGeometry (lines 163-168)
+    - _compute_pairwise_squared_distances uses geodesic not Euclidean (lines 144-168)
+    - Module docstring notes "geodesic distance via graph" reference to Tenenbaum (2000)
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend: matmul, transpose, eigh, mean, sum, exp (throughout)
+    - Proper b.eval() calls for lazy evaluation (lines 204, 315-316, 330, 854)
+    - Cross-dimensional support via Gram matrices (dimension-independent)
+    - CKAComputer class for service integration (lines 1116-1228)
+  - **Caching**: EXCELLENT
+    - _get_cache() function ensures fresh shared instance (lines 79-87)
+    - make_gram_key(), get_gram(), set_gram() with timing (lines 566-589)
+    - make_centered_gram_key(), get_centered_gram(), set_centered_gram() (lines 252-280)
+    - Cache-aware fast path for identical Gram keys (line 568, 617-620, 832-834)
+  - **NumPy**: NONE (verified via grep - no imports, no np. usage)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation, HSIC formula, CKA properties (lines 18-52)
+    - References: Kornblith (2019), Cristianini (2002), Chun (2025) (lines 23-26)
+    - Research connections to Platonic Representation Hypothesis (lines 29-35)
+    - HSICEstimator enum with detailed docstrings (lines 89-108)
+    - CKAResult dataclass with is_valid, best properties documented
+  - **Hexagonal structure**: OK
+    - Located in domain geometry layer
+    - Uses _backend protocol, not concrete MLX imports
+    - Returns dataclass result types (CKAResult)
+    - CKAComputer class for stateful service integration
+  - **Tests**: EXCELLENT (5 test files, 50+ tests)
+    - test_cka.py: Core tests (HSICEstimator, CKAResult, centering, HSIC, compute_cka)
+    - test_cka_multi_backend.py: Backend portability tests
+    - test_cka_properties.py: Mathematical property tests (symmetry, bounds)
+    - test_cka_rbf.py: RBF kernel specific tests
+    - integration/test_cka_pipeline.py: End-to-end pipeline tests
+    - Covers: biased/unbiased estimators, feature-sampling correction, edge cases
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclass for CKAResult
+    - Properties for derived values (is_valid, best)
+    - Multiple API entry points (compute_cka, compute_cka_backend, compute_cka_from_lists, etc.)
+    - Explicit __all__ export list
+    - Feature-sampling bias correction from Chun et al. (2025)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/numerical_stability.py` (2031 lines)
+  - **Duplicate code/math**: NONE
+    - Canonical implementation of ALL numerical stability primitives
+    - 32+ scalar helpers (sqrt, is_finite, log, exp, trig functions)
+    - All epsilon utilities centralized here (machine_epsilon, division_epsilon, regularization_epsilon, etc.)
+    - GPU-friendly decompositions: power_iteration_eigh, geodesic_svd, geodesic_pinv
+  - **Geodesic math**: EXCELLENT
+    - _geodesic_norm_scalar uses geodesic_norms from vector_math (line 83-89)
+    - Correlation functions use geodesic_pairwise_metrics (lines 537-547, 606-612)
+    - All norm computations via geodesic API
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend: eigh, svd, pinv, qr, solve, inv (throughout)
+    - Proper b.eval() calls ubiquitous (every function)
+    - Native b.finfo() for dtype-derived precision (lines 200-201, 260, 339, etc.)
+    - No CPU fallback - all operations GPU-native
+  - **Caching**: N/A (this is a primitives module - caching handled by callers)
+  - **NumPy**: NONE (verified via grep - no imports, no np. usage)
+  - **Documentation**: EXCELLENT
+    - Module docstring: "All epsilons derived from tensor precision, not arbitrary constants"
+    - Each scalar helper has docstring explaining "Use instead of math.X"
+    - Extensive docstrings on solvers with mathematical derivations (lines 930-963, 1219-1265, 1554-1592)
+    - Explicit __all__ export list (lines 31-74)
+  - **Hexagonal structure**: OK
+    - Located in domain geometry layer
+    - Uses Backend protocol, not concrete MLX imports
+    - Pure functions with no side effects
+  - **Tests**: EXCELLENT (test_numerical_stability.py: 1346 lines, 50+ tests)
+    - TestMachineEpsilon: float32/64, smallest distinguishable
+    - TestDivisionEpsilon, TestRegularizationEpsilon, TestConditionThreshold
+    - TestSvdRankThreshold, TestTinyValue, TestSafeLogEpsilon
+    - TestSolveFullRowRankViaQR: overdetermined, underdetermined, reconstruction, empty, ill-conditioned
+    - TestSolveViaTruncatedSvd: consistent, reconstruction, rank-deficient, custom threshold
+    - TestComputeEntropyEffectiveRank: uniform, concentrated, bounds, edge cases
+    - TestComputeSharedRelationalRank: maximum preservation, diagnostics
+    - TestSolveViaGramAlignment: same/different dimensions, edge cases
+    - TestSolveViaCcaProcrustes: correlated/uncorrelated data
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - All thresholds derived from machine epsilon (no hardcoded 1e-8, 1e-10)
+    - Pure functions with clear contracts
+    - Diagnostics dicts returned from solvers for observability
+    - _get_native_precision for hardware-aware precision selection
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/vector_math.py` (1209 lines)
+  - **Duplicate code/math**: NONE
+    - Canonical implementations of: dot, l2_norm, cosine_similarity, SLERP, Spearman correlation
+    - Static VectorMath class (pure Python) + BackendVectorMath class (GPU-accelerated)
+    - geodesic_norms, geodesic_pairwise_metrics as batch operations (lines 75-175)
+    - Sparse vector math utilities (lines 670-755)
+  - **Geodesic math**: EXCELLENT
+    - _geodesic_distance_from_origin as core primitive (lines 43-70)
+    - _geodesic_distances_from_origin for triplet distances (lines 188-210)
+    - _geodesic_cosine_from_origin based on Law of Cosines (lines 213-232)
+    - All norms computed via geodesic distance, not L2
+  - **Backend usage**: EXCELLENT
+    - BackendVectorMath class wraps all operations with Backend protocol
+    - geodesic_norms/pairwise_metrics use backend.matmul, sqrt, sum (lines 75-175)
+    - Proper b.eval() calls throughout
+    - division_epsilon used for numerical safety (lines 235, 315-316, etc.)
+  - **Caching**: N/A (stateless operations - caching handled by callers)
+  - **NumPy**: NONE (verified via grep - no imports, no np. usage)
+  - **Documentation**: EXCELLENT
+    - Module docstring: "geodesic-first implementations" philosophy
+    - WARNING comments on SLERP: "Do NOT use for model weight merging" (lines 380-385, 933-934, 1021-1023)
+    - Clear guidance to use null space addition instead
+    - Explicit __all__ export list (lines 22-39)
+  - **Hexagonal structure**: OK
+    - Located in domain geometry layer
+    - Uses Backend protocol, not concrete MLX imports
+    - Pure functions + two class variants (pure Python / GPU)
+  - **Tests**: GOOD (2 test files: test_vector_math.py, test_vector_math_properties.py)
+    - Basic vector operations covered
+    - Property-based tests for mathematical invariants
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Two-tier design: VectorMath (CPU) + BackendVectorMath (GPU)
+    - get_vector_math() factory function for backend selection
+    - Explicit warnings against misuse (SLERP for merging)
+    - division_epsilon for safe division
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_utils.py` (250 lines)
+  - **Duplicate code/math**: NONE
+    - This is a RE-EXPORT module - contains no implementation logic
+    - Re-exports from riemannian_core.py, riemannian_types.py, riemannian_validation.py
+    - Provides convenience functions: frechet_mean, geodesic_distance_matrix, farthest_point_sampling
+  - **Geodesic math**: N/A (delegates to riemannian_core.py)
+  - **Backend usage**: N/A (delegates to riemannian_core.py)
+  - **Caching**: N/A (delegates to riemannian_core.py)
+  - **NumPy**: NONE (verified via grep - no imports, no np. usage)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical background on Riemannian manifolds, Fréchet mean
+    - References: Pennec (2006), Tenenbaum (2000), Sra & Hosseini (2015)
+    - Research connections to Platonic Representation Hypothesis
+    - Explicit __all__ export list with categories (lines 219-249)
+  - **Hexagonal structure**: OK (API facade pattern)
+  - **Tests**: Covered via riemannian_core.py tests
+  - **Best practices**: EXCELLENT (clear re-export pattern, legacy aliases)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_core.py` (1568 lines)
+  - **Duplicate code/math**: NONE
+    - RiemannianGeometry class: Fréchet mean, geodesic distances, curvature
+    - Uses mixins for organization: RiemannianSamplingMixin, RiemannianInterpolationMixin
+    - _minimum_connected_k with binary search - unique algorithm
+    - _all_pairs_shortest_paths_sparse via Dijkstra (lines 768-840)
+  - **Geodesic math**: EXCELLENT
+    - Fréchet mean via geodesic gradient descent (lines 143-439)
+    - Geodesic distance via k-NN graph + shortest paths (lines 552-616)
+    - _chord_distance_matrix as local approximation only (for k-NN edges)
+    - Adaptive k-neighbor selection for connectivity
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend: matmul, argpartition, take_along_axis
+    - Proper b.eval() calls throughout
+    - division_epsilon, machine_epsilon from numerical_stability
+  - **Caching**: EXCELLENT
+    - ComputationCache.shared() for session-scoped caching (line 101)
+    - _RG_CACHE for RiemannianGeometry instances (line 98)
+    - Fréchet mean results cached (lines 271-288, 435-437)
+    - Geodesic distances cached via make_geodesic_key
+    - k_min cached via make_kmin_key (lines 601-612)
+  - **NumPy**: NONE (verified via grep - no imports, no np. usage)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical derivations for Fréchet mean
+    - References: Pennec (2006), Tenenbaum (2000), Sra & Hosseini (2015)
+    - Detailed docstrings on all public methods
+  - **Hexagonal structure**: OK
+    - Located in domain geometry layer
+    - Uses Backend protocol, not concrete MLX imports
+    - Result types from riemannian_types.py
+  - **Tests**: Covered via test_riemannian_*.py files
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Singleton pattern for RiemannianGeometry via __new__
+    - Retry logic for k-neighbor adaptation
+    - Tolerance derived from machine_epsilon when not specified
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/permutation_aligner.py` (753 lines)
+  - **Duplicate code/math**: NONE
+    - PermutationAligner class: Git Re-Basin implementation
+    - Hungarian assignment via separate hungarian.py module
+    - Sparse permutation for N > 4096 to avoid OOM (line 93)
+    - _SPARSE_THRESHOLD_N = 4096 (derived from 64MB memory budget)
+  - **Geodesic math**: EXCELLENT
+    - geodesic_cosine_between_sets for similarity matrix (line 205)
+    - Sign correction handles ±1 neuron symmetry (lines 227-236)
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend: matmul, transpose, take, diag
+    - Proper b.eval() calls throughout
+    - Cost matrix built on backend to avoid O(N²) Python loops
+  - **Caching**: N/A (stateless alignment operations)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: scope (MLP only, not attention), dimension handling
+    - Algorithm explanation with references: Ainsworth (2022), Kuhn (1955), Yadav (2023)
+    - Clear ASSUMPTIONS section (lines 47-51)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: EXCELLENT (4 test files)
+    - test_permutation_aligner.py
+    - test_permutation_aligner_advanced.py
+    - test_permutation_aligner_mlx.py
+    - test_permutation_aligner_properties.py
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Frozen dataclasses (AlignmentResult, AnchorActivationContext)
+    - Memory-aware sparse/dense selection
+    - Enum for error kinds
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/manifold_stitcher.py` (1246 lines)
+  - **Duplicate code/math**: NONE
+    - ManifoldStitcher class: cross-architecture model merging
+    - ContinuousFingerprint with magnitude, entropy, sparsity metadata
+    - TriangulatedProbeBuilder for multi-domain fingerprinting
+    - Riemannian K-means with Fréchet centroids (lines 830-1018)
+  - **Geodesic math**: EXCELLENT
+    - geodesic_norms for magnitude computation (line 278)
+    - geodesic_pairwise_metrics for cosine similarity (line 628)
+    - RiemannianGeometry for geodesic distances and Fréchet means (lines 763-788)
+    - geodesic_svd for Procrustes rotation (lines 712, 797)
+    - Error computed via geodesic_norms (lines 808-812)
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend protocol
+    - division_epsilon, regularization_epsilon from numerical_stability
+    - Proper b.eval() calls throughout
+  - **Caching**: N/A (delegates to RiemannianGeometry caching)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical background, algorithm overview
+    - Key principles: curvature is inherent, proper rotations only, no interpolation
+    - References: Schönemann (1966), Tenenbaum (2000), Pennec (2006)
+    - Explicit __all__ export list with categories (lines 112-140)
+  - **Hexagonal structure**: OK
+    - Located in domain geometry layer
+    - Uses atlas_protocols for AtlasProbeProtocol
+    - References riemannian_utils for geodesic operations
+  - **Tests**: Expected in test_manifold_stitcher.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclasses for result types
+    - _ensure_proper_rotation fix for det(R) < 0 reflections (lines 200-240)
+    - K-Means++ initialization with geodesic distances
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/generalized_procrustes.py` (832 lines)
+  - **Duplicate code/math**: NONE
+    - GeneralizedProcrustes class: multi-model alignment via GPA algorithm
+    - RotationContinuityAnalyzer: per-layer vs global rotation analysis
+    - Result dataclass with summary generation
+    - All config derived from data (lines 77-86) - no arbitrary constants
+  - **Geodesic math**: EXCELLENT
+    - Fréchet mean for consensus (always enabled - arithmetic is WRONG) (lines 140-182)
+    - geodesic_norms for residual computation (lines 243-246, 290-298)
+    - geodesic_pairwise_metrics for alignment error (lines 701, 774)
+    - geodesic_svd for Procrustes rotation (lines 273, 712, 763)
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend: matmul, svd, det, transpose
+    - Proper b.eval() calls throughout
+    - machine_epsilon, division_epsilon for thresholds
+  - **Caching**: N/A (uses RiemannianGeometry which handles caching)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical background, algorithm, references
+    - References: Gower (1975), Schönemann (1966), Karcher (1977)
+    - "NO CONFIGURATION CLASSES" comment block explaining data-derived parameters
+    - LayerRotationResult, RotationContinuityResult with detailed docstrings
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_generalized_procrustes.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclasses for Result types
+    - Proper rotation enforcement (det > 0) throughout
+    - Closed-form solution for M=2 to avoid iteration
+    - Convergence threshold from sqrt(machine_epsilon)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/topological_fingerprint.py` (1268 lines)
+  - **Duplicate code/math**: NONE
+    - TopologicalFingerprint: persistent homology via Vietoris-Rips filtration
+    - BackendTopologicalFingerprint: GPU-accelerated variant
+    - Union-Find with elder rule for 0-dim persistence
+    - Triangle approximation for 1-dim persistence (with KNOWN LIMITATION comment)
+    - Hungarian algorithm for bottleneck/Wasserstein distances
+  - **Geodesic math**: EXCELLENT
+    - geodesic_distance_matrix for pairwise distances (lines 306-323)
+    - Preserves true topological structure on curved manifold
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend: triu_indices, argsort, where, take
+    - division_epsilon, machine_epsilon for thresholds
+    - Vectorized edge sorting and triangle fill detection (lines 404-418, 471-481)
+  - **Caching**: N/A (stateless computation)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation, key concepts, algorithm overview
+    - References: Edelsbrunner & Harer (2010), Carlsson (2009)
+    - Research connections: Blue Brain Project comparison
+    - KNOWN LIMITATION comment for 1-dim approximation (lines 437-450)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_topological_fingerprint.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclasses (PersistencePoint, PersistenceDiagram, Fingerprint)
+    - Pure geometric similarity scoring (no arbitrary classification thresholds)
+    - ComparisonResult notes: "Different topologies do NOT mean incompatible"
+    - Complexity analysis: O(n² log n) for edges, O(n³) for cycles
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/hungarian.py` (331 lines)
+  - **Duplicate code/math**: NONE
+    - Canonical Hungarian algorithm implementation for all assignment problems
+    - GPU-accelerated via Backend (_hungarian_backend_impl)
+    - CPU fallback (hungarian_assignment_list)
+  - **Geodesic math**: N/A (discrete optimization, not geometry)
+  - **Backend usage**: EXCELLENT
+    - All matrix ops via Backend: reshape, sum, diag, take, argsort
+    - Proper b.eval() calls throughout
+    - is_finite check for numerical robustness (line 272)
+  - **Caching**: EXCELLENT
+    - Session-scoped _hungarian_cache with FIFO eviction (lines 56-58)
+    - Hash via multiple matrix statistics for collision resistance (lines 61-89)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring with usage example
+    - O(N³) complexity noted
+    - Reference: Kuhn (1955)
+  - **Hexagonal structure**: OK (domain geometry layer, pure function)
+  - **Tests**: Expected in test_hungarian.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints (TYPE_CHECKING pattern)
+    - explicit __all__ export list
+    - clear_hungarian_cache utility
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/geodesic_null_space.py` (472 lines)
+  - **Duplicate code/math**: NONE
+    - GeodesicNullSpaceFilter: interference-free model merging
+    - Geodesic-orthogonal directions replace flat null space
+    - QR-based exact projection (not SVD approximation)
+  - **Geodesic math**: EXCELLENT
+    - RiemannianGeometry for geodesic distances and Fréchet mean
+    - geodesic_norms for norm computation (lines 77, 223, 296)
+    - Log map for tangent vectors (line 388)
+    - "Flat-space linear algebra is mathematically WRONG" (lines 22-24)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, qr, transpose
+    - regularization_epsilon from numerical_stability
+    - Proper dtype handling (float16/bfloat16 → float32 for projection)
+  - **Caching**: EXCELLENT
+    - ComputationCache.shared() for geodesic basis (lines 86, 342-346)
+    - make_basis_key for cache keying
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation, GPU acceleration details
+    - References: Tenenbaum (2000), Pennec (2006)
+    - "NO ALPHA. NO BLENDING" comment (line 430)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_geodesic_null_space.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints (TYPE_CHECKING pattern)
+    - Frozen dataclass (GeodesicNullSpaceBasis)
+    - Reusable basis for repeated projections (prepare_basis)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/concept_response_matrix.py` (984 lines)
+  - **Duplicate code/math**: NONE
+    - ConceptResponseMatrix: model fingerprinting via anchor activations
+    - CKA matrix computation (batched and per-layer)
+    - Hungarian assignment for layer correspondence
+    - Transition alignment for layer-to-layer delta comparison
+  - **Geodesic math**: EXCELLENT
+    - geodesic_norms for activation norms (lines 115-117, 777)
+    - geodesic_cosine_matrix for similarity (line 92)
+    - sqrt_scalar for std computation (line 186)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, mean, sum, concatenate, stack
+    - division_epsilon, machine_epsilon for thresholds
+    - Batched CKA computation with 4D tensor ops (lines 268-332)
+  - **Caching**: N/A (uses CKA which has its own caching)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation, usage examples
+    - INVARIANT: CKA = 1.0 for matching layers (lines 47-51)
+    - Warning log for imperfect matches (lines 501-510)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_concept_response_matrix.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints (TYPE_CHECKING pattern)
+    - Frozen dataclasses (AnchorActivation, LayerStatistics, AnchorMetadata)
+    - JSON serialization/deserialization
+    - Feature-sampling bias correction (lines 306-329)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/atlas_protocols.py` (136 lines)
+  - **Duplicate code/math**: NONE
+    - Protocol definitions for hexagonal decoupling
+    - AtlasProbeProtocol, SequenceInvariantProtocol, etc.
+    - Helper functions: enum_key, enum_key_set, axis_key
+  - **Geodesic math**: N/A (protocol definitions only)
+  - **Backend usage**: N/A (protocol definitions only)
+  - **Caching**: N/A
+  - **NumPy**: N/A (no computation)
+  - **Documentation**: EXCELLENT
+    - Module docstring: hexagonal architecture purpose
+    - "Geometry must not import agents directly" (line 19)
+    - @runtime_checkable protocols for duck typing
+  - **Hexagonal structure**: CRITICAL
+    - This IS the hexagonal boundary for geometry→agents
+    - Defines protocols that outer layers implement
+    - No concrete imports from agents
+  - **Tests**: N/A (protocols are structural)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Protocol pattern (PEP 544)
+    - @runtime_checkable for isinstance checks
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/atlas_registry.py` (138 lines)
+  - **Duplicate code/math**: NONE
+    - Global registry for probe inventories
+    - Register/get pattern for each inventory type
+    - Tuple immutability for registered sequences
+  - **Geodesic math**: N/A (registry only)
+  - **Backend usage**: N/A (registry only)
+  - **Caching**: N/A (global registration)
+  - **NumPy**: N/A (no computation)
+  - **Documentation**: EXCELLENT
+    - Module docstring: inversion of control pattern
+    - Clear register/get API pairs
+  - **Hexagonal structure**: CRITICAL
+    - This IS the dependency inversion point
+    - Outer layers register, geometry consumes
+    - No imports from agents
+  - **Tests**: N/A (registry is infrastructure)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Tuple immutability for registered data
+    - Multiple inventory types supported
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_types.py` (95 lines)
+  - **Duplicate code/math**: NONE
+    - Pure dataclass definitions for Riemannian results
+    - FrechetMeanResult, GeodesicDistanceResult, CurvatureEstimate
+    - DirectionalCoverage, FarthestPointSamplingResult
+  - **Geodesic math**: N/A (dataclass definitions only)
+  - **Backend usage**: N/A (dataclass definitions only)
+  - **Caching**: N/A
+  - **NumPy**: N/A (no computation)
+  - **Documentation**: OK
+    - Brief module docstring
+    - Each dataclass has attribute docstrings
+  - **Hexagonal structure**: OK (domain types layer)
+  - **Tests**: N/A (dataclasses are structural)
+  - **Best practices**: EXCELLENT
+    - All frozen=True dataclasses
+    - TYPE_CHECKING for Array import
+    - explicit __all__ export list
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_validation.py` (306 lines)
+  - **Duplicate code/math**: NONE
+    - Vectorized validation helpers replacing Python loops
+    - count_nan, count_inf, has_nan, has_inf, all_finite
+    - validate_array_numerics (single-pass GPU validation)
+    - set_matrix_element (GPU element update)
+    - derive_k_neighbors (connectivity-based k derivation)
+  - **Geodesic math**: EXCELLENT
+    - derive_k_neighbors uses RiemannianGeometry for connectivity
+    - _minimum_connected_k for Berry & Sauer 2016 approach
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: isnan, isinf, isfinite, sum, where
+    - Batch eval for efficiency (lines 284)
+    - O(1) vs O(n*d) for validation
+  - **Caching**: N/A (stateless utilities)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Each function shows replaced Python loop (e.g., lines 36-40)
+    - O(1) complexity noted throughout
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_riemannian_validation.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - explicit __all__ export list
+    - Vectorized pattern consistently applied
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/intrinsic_dimension.py` (733 lines)
+  - **Duplicate code/math**: NONE
+    - IntrinsicDimension class: TwoNN estimator (Facco et al., 2017)
+    - LocalDimensionMap for per-point dimension analysis
+    - Bootstrap CI computation
+    - "NO CONFIGURATION CLASSES" comment block (lines 68-79)
+  - **Geodesic math**: EXCELLENT
+    - RiemannianGeometry for geodesic_distances (lines 252-275)
+    - Squared geodesic is the correct metric (line 73)
+    - "chord distance systematically under/overestimates" (lines 229-234)
+    - Berry & Sauer 2016 connectivity-based k (lines 186, 255-257)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: argpartition, sort, take, maximum
+    - machine_epsilon, safe_log_epsilon for thresholds
+    - Proper dtype handling throughout
+    - Histogram via one-hot encoding (lines 655-660)
+  - **Caching**: N/A (delegated to RiemannianGeometry)
+  - **NumPy**: NONE (verified via grep - only math.log, math.ceil)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation, references
+    - References: Facco et al. (2017), Levina & Bickel (2005)
+    - Research connections: Blue Brain Project "build then raze" pattern
+    - "Intrinsic dimension is a DIRECT geometric measurement - NOT an estimate" (lines 133-135)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_intrinsic_dimension.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclasses (ConfidenceInterval, TwoNNEstimate, LocalDimensionMap)
+    - EstimatorError for validation failures
+    - Deficiency detection via z-score (data-derived, not arbitrary)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/curvature_alignment.py` (366 lines)
+  - **Duplicate code/math**: NONE
+    - AlignmentGuidance: per-layer guidance for alignment
+    - AlignmentPlan: complete alignment plan from curvature profiles
+    - curvature_weighted_procrustes: Procrustes with curvature damping
+    - compute_layer_correspondence_by_curvature: feature-based layer matching
+  - **Geodesic math**: EXCELLENT
+    - geodesic_svd for dimension reduction and Procrustes (lines 251, 273)
+    - Curvature damping via hyperbolic decay (line 281)
+    - division_epsilon for safe division (lines 38-41)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: array, mean, matmul, transpose, diag
+    - Proper eval calls (line 152)
+  - **Caching**: N/A (stateless functions)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: key insight about curvature as transformation guide
+    - "Curvature differences = rotation/transformation needed" (lines 99-101)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_curvature_alignment.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclasses (AlignmentGuidance, AlignmentPlan)
+    - Monotonic mapping constraint in correspondence (lines 319-321)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/curvature_profile.py` (536 lines)
+  - **Duplicate code/math**: NONE
+    - LayerCurvature: per-layer curvature measurements
+    - CurvatureProfile: complete model curvature profile
+    - FamilyBaseline: aggregated family curvature baseline
+    - CurvatureAlignment: z-score based alignment measurement
+    - build_family_baseline: aggregate profiles to baseline
+  - **Geodesic math**: N/A (curvature storage/aggregation, not computation)
+  - **Backend usage**: EXCELLENT
+    - is_nan, is_inf for JSON serialization safety (lines 81-82)
+    - division_epsilon, machine_epsilon for thresholds
+    - Vectorized std computation (_safe_std lines 477-497)
+  - **Caching**: N/A (data structures)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: EXCELLENT
+    - Module docstring: curvature vs knowledge density distinction
+    - Schema version: "mc.geometry.research.curvature_profile.v1"
+    - z-score based alignment (not arbitrary thresholds)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_curvature_profile.py (not verified)
+  - **Best practices**: EXCELLENT
+    - All frozen=True dataclasses
+    - JSON serialization/deserialization with safe_float
+    - Relative layer position (0.0-1.0) for cross-model comparison
+    - parse_model_info utility (lines 500-535)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/fingerprints.py` (263 lines)
+  - **Duplicate code/math**: NOTE (line 33 acknowledges duplication with types.py)
+    - ModelFingerprintsProjection: 2D projection via geodesic MDS
+    - Ported from Swift ManifoldStitcher.swift
+  - **Geodesic math**: EXCELLENT
+    - RiemannianGeometry for geodesic_distances (lines 148-151)
+    - Classical MDS on squared geodesic distances (lines 162-172)
+    - power_iteration_eigh for symmetric eigendecomposition (line 185)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: array, mean, matmul, sqrt, where
+    - division_epsilon for regularization (line 179)
+    - Proper eval calls throughout
+  - **Caching**: N/A (stateless projection)
+  - **NumPy**: NONE (verified via grep)
+  - **Documentation**: OK
+    - Ported from Swift noted
+    - Method only supports PCA (alias for geodesic MDS)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_fingerprints.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclasses (ActivatedDimension, Fingerprint, ModelFingerprints)
+    - ProjectionError for insufficient samples/features
+    - Feature selection by frequency (lines 240-262)
+  - **Issues**: MINOR - Line 33 notes consolidation needed with types.py
+
+- `src/modelcypher/core/domain/geometry/_primitives/epsilon_utils.py` (412 lines)
+  - **Duplicate code/math**: NONE
+    - Canonical source for all scalar math operations on GPU
+    - Replaces math module (sqrt, log, exp, cos, sin, etc.)
+    - Dtype-derived epsilon functions (machine_epsilon, division_epsilon, etc.)
+  - **Geodesic math**: N/A (scalar utilities)
+  - **Backend usage**: EXCELLENT
+    - ALL scalar ops through Backend: array, sqrt, log, exp, arccos, etc.
+    - pi_value computed as 4 * arctan(1) (lines 285-289)
+    - infinity_threshold derived from sqrt(eps) (lines 389-411)
+  - **Caching**: N/A (stateless utilities)
+  - **NumPy**: NONE (verified - module explicitly avoids NumPy line 23)
+  - **Documentation**: EXCELLENT
+    - Module docstring: "No NumPy" (line 23)
+    - Each function documents which math.* function it replaces
+    - infinity_threshold has detailed numerical derivation
+  - **Hexagonal structure**: OK (internal primitives layer)
+  - **Tests**: Expected in test_epsilon_utils.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Comprehensive __all__ export list
+    - Non-negativity guard in sqrt_scalar (lines 78-79)
+    - atan2_scalar handles all quadrants correctly (lines 249-266)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/_primitives/convergence.py` (212 lines)
+  - **Duplicate code/math**: NONE
+    - ConvergenceMonitor: unified convergence checking for iterative algorithms
+    - ConvergenceState: immutable snapshot of convergence status
+    - Used by GW, Fréchet, GPA, power iteration
+  - **Geodesic math**: N/A (iteration control)
+  - **Backend usage**: EXCELLENT
+    - machine_epsilon for thresholds
+    - log2_scalar for min_iterations derivation
+    - sqrt_scalar for abs_threshold
+  - **Caching**: N/A (stateful monitor)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: lists algorithms using this monitor
+    - "All thresholds derived from machine precision" (line 26)
+    - Usage example in docstring (lines 76-83)
+  - **Hexagonal structure**: OK (internal primitives layer)
+  - **Tests**: Expected in test_convergence.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclass (ConvergenceState)
+    - min_iterations from log2(max_dim)
+    - max_iterations from 10 * max_dim
+    - reset() for reuse
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/_primitives/validation.py` (181 lines)
+  - **Duplicate code/math**: NONE
+    - ArrayNumerics: results from validation
+    - validate_array_numerics: single-pass GPU validation
+    - count_nan, count_inf, count_nonfinite: individual checks
+  - **Geodesic math**: N/A (validation utilities)
+  - **Backend usage**: EXCELLENT
+    - isnan, isinf, isfinite via Backend
+    - Batch eval for efficiency (lines 103, 109)
+    - Single-pass computation
+  - **Caching**: N/A (stateless)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: "GPU-accelerated validation" (lines 20-22)
+    - "Prefer validate_array_numerics() for multiple checks" notes
+  - **Hexagonal structure**: OK (internal primitives layer)
+  - **Tests**: Expected in test_validation.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclass (ArrayNumerics)
+    - is_healthy, nan_fraction, inf_fraction properties
+    - Efficient single-pass design
+  - **Issues**: NONE
