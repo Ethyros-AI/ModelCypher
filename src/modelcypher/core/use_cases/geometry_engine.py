@@ -31,6 +31,7 @@ from modelcypher.core.domain.geometry.optimal_transport import (
     SinkhornResult,
     SinkhornSolver,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -68,24 +69,32 @@ class GeometryEngine:
                 weight_update_fro_norm=None,
             )
 
-        parameter_squared_sum = self.backend.zeros((), dtype="float32")
-        step_squared_sum = self.backend.zeros((), dtype="float32")
+        flat_params: list[Array] = []
+        flat_deltas: list[Array] = []
         has_step_delta = False
 
         for key, parameter in trainable_parameters.items():
             # Convert to backend array if needed
             parameter = self.backend.array(parameter)
             fp32 = self.backend.astype(parameter, "float32")
-            parameter_squared_sum = parameter_squared_sum + self.backend.sum(fp32 * fp32)
+            flat_params.append(self.backend.reshape(fp32, (-1,)))
             if previous_trainable_parameters and key in previous_trainable_parameters:
                 prev_param = self.backend.array(previous_trainable_parameters[key])
                 prev = self.backend.astype(prev_param, "float32")
                 delta = fp32 - prev
-                step_squared_sum = step_squared_sum + self.backend.sum(delta * delta)
+                flat_deltas.append(self.backend.reshape(delta, (-1,)))
                 has_step_delta = True
 
-        parameter_l2_tensor = self.backend.sqrt(parameter_squared_sum)
-        step_l2_tensor = self.backend.sqrt(step_squared_sum) if has_step_delta else None
+        param_concat = self.backend.concatenate(flat_params, axis=0)
+        parameter_l2_tensor = geodesic_norms(
+            self.backend.reshape(param_concat, (1, -1)), self.backend
+        )
+        step_l2_tensor = None
+        if has_step_delta:
+            step_concat = self.backend.concatenate(flat_deltas, axis=0)
+            step_l2_tensor = geodesic_norms(
+                self.backend.reshape(step_concat, (1, -1)), self.backend
+            )
 
         weight_update_fro_tensor = None
         if scale and is_finite(scale, self.backend) and scale > 0:
@@ -144,8 +153,9 @@ class GeometryEngine:
         self.backend.eval(omega)
 
         diff = self.backend.matmul(z_source, omega) - z_target
-        rss = self.backend.sqrt(self.backend.sum(diff * diff))
-        denom = self.backend.sqrt(self.backend.sum(z_target * z_target))
+        # Use geodesic norms for Procrustes residual
+        rss = geodesic_norms(self.backend.reshape(diff, (1, -1)), self.backend)
+        denom = geodesic_norms(self.backend.reshape(z_target, (1, -1)), self.backend)
         self.backend.eval(omega, rss, denom)
 
         rss_value = float(self._item(rss))
@@ -203,8 +213,9 @@ class GeometryEngine:
 
         aligned = self.backend.matmul(z_source, omega)
         diff = aligned - transported_target
-        rss = self.backend.sqrt(self.backend.sum(diff * diff))
-        denom = self.backend.sqrt(self.backend.sum(transported_target * transported_target))
+        # Use geodesic norms for soft Procrustes residual
+        rss = geodesic_norms(self.backend.reshape(diff, (1, -1)), self.backend)
+        denom = geodesic_norms(self.backend.reshape(transported_target, (1, -1)), self.backend)
         self.backend.eval(rss, denom)
         rss_value = float(self._item(rss))
         denom_value = float(self._item(denom))
@@ -283,28 +294,28 @@ class GeometryEngine:
         if not lora_a_by_prefix or not lora_b_by_prefix:
             return None
 
-        squared_sum = self.backend.zeros((), dtype="float32")
-        had_pairs = False
+        update_flats: list[Array] = []
 
         for prefix, lora_a in lora_a_by_prefix.items():
             lora_b = lora_b_by_prefix.get(prefix)
             if lora_b is None:
                 continue
-            had_pairs = True
             # Convert to backend arrays if needed
             lora_a = self.backend.array(lora_a)
             lora_b = self.backend.array(lora_b)
             a = self.backend.astype(lora_a, "float32")
             b = self.backend.astype(lora_b, "float32")
-            a_gram = self.backend.matmul(self.backend.transpose(a), a)
-            b_gram = self.backend.matmul(b, self.backend.transpose(b))
-            pair_squared = self.backend.sum(a_gram * b_gram)
-            squared_sum = squared_sum + pair_squared
+            update = self.backend.matmul(b, a)
+            update_flats.append(self.backend.reshape(update, (-1,)))
 
-        if not had_pairs:
+        if not update_flats:
             return None
 
-        return self.backend.array(scale, dtype="float32") * self.backend.sqrt(squared_sum)
+        update_concat = self.backend.concatenate(update_flats, axis=0)
+        update_norm = geodesic_norms(
+            self.backend.reshape(update_concat, (1, -1)), self.backend
+        )
+        return self.backend.array(scale, dtype="float32") * update_norm
 
     @staticmethod
     def _lora_key_parts(key: str) -> tuple[str | None, str | None]:

@@ -41,6 +41,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -209,12 +210,8 @@ class TangentSpaceAlignment:
             return []
 
         b = self._backend
-        # Bootstrap k-NN graph using Euclidean (required - can't compute geodesic without graph).
-        # Once graph exists, geodesic distances are computed via shortest paths on graph edges.
-        # ||a - b||^2 = ||a||^2 + ||b||^2 - 2 * a.b
-        sq_norms = b.sum(points**2, axis=1, keepdims=True)
-        dots = b.matmul(points, b.transpose(points))
-        distances = sq_norms + b.transpose(sq_norms) - 2 * dots
+        # Use geodesic distances to respect manifold curvature.
+        distances = geodesic_distance_matrix(points, backend=b)
         b.eval(distances)
 
         neighbors: list[list[int]] = []

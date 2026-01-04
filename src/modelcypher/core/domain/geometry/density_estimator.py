@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -145,19 +146,13 @@ class DensityEstimator:
                 f"got {n_points}"
             )
 
-        # Compute pairwise squared distances
-        # ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x @ y^T
-        points_sq = b.sum(points ** 2, axis=1, keepdims=True)  # [n, 1]
-        dot = b.matmul(points, b.transpose(points))  # [n, n]
-        dist_sq = points_sq + b.transpose(points_sq) - 2 * dot  # [n, n]
-
-        # Ensure non-negative (numerical precision)
-        dist_sq = b.maximum(dist_sq, 0.0)
-        b.eval(dist_sq)
+        # Compute pairwise geodesic distances on the manifold
+        dist = geodesic_distance_matrix(points, backend=b)
+        b.eval(dist)
 
         # Find k+1 nearest neighbors (including self at distance 0)
         # argsort gives indices in ascending order
-        sorted_indices = b.argsort(dist_sq, axis=1)  # [n, n]
+        sorted_indices = b.argsort(dist, axis=1)  # [n, n]
         b.eval(sorted_indices)
 
         # Exclude self (index 0), take next k neighbors
@@ -166,15 +161,11 @@ class DensityEstimator:
 
         # Get distance to k-th nearest neighbor (for radius)
         # Sort the distances and take the k-th column (k+1 to skip self)
-        sorted_dist_sq = b.sort(dist_sq, axis=1)  # [n, n]
-        b.eval(sorted_dist_sq)
+        sorted_dist = b.sort(dist, axis=1)  # [n, n]
+        b.eval(sorted_dist)
 
         # k-th neighbor is at index k (0=self, 1=1st neighbor, ..., k=k-th neighbor)
-        radii_sq = sorted_dist_sq[:, k]  # [n]
-        b.eval(radii_sq)
-
-        radius_eps = division_epsilon(b, radii_sq)
-        radii = b.sqrt(radii_sq + radius_eps)
+        radii = sorted_dist[:, k]  # [n]
         b.eval(radii)
 
         # Compute density as 1 / r^d (volume of d-dimensional ball)
@@ -257,24 +248,23 @@ class DensityEstimator:
         ], axis=1)  # [grid_size^3, 3]
         b.eval(grid_points)
 
-        # Compute distances from each grid point to all data points
+        # Compute geodesic distances from each grid point to all data points
         # [grid_size^3, n_points]
-        grid_sq = b.sum(grid_points ** 2, axis=1, keepdims=True)
-        points_sq = b.sum(points ** 2, axis=1, keepdims=True)
-        dot = b.matmul(grid_points, b.transpose(points))
-        dist_sq = grid_sq + b.transpose(points_sq) - 2 * dot
-        dist_sq = b.maximum(dist_sq, 0.0)
-        b.eval(dist_sq)
+        combined = b.concatenate([grid_points, points], axis=0)
+        b.eval(combined)
+        dist_full = geodesic_distance_matrix(combined, backend=b)
+        b.eval(dist_full)
+        grid_count = int(grid_points.shape[0])
+        dist = dist_full[:grid_count, grid_count:]
+        b.eval(dist)
 
         # Find k-th nearest neighbor distance for each grid point
-        sorted_dists = b.sort(dist_sq, axis=1)
+        sorted_dists = b.sort(dist, axis=1)
         b.eval(sorted_dists)
 
         # Derive k from Berry & Sauer 2016: k >= ceil(log(n))
         k = max(1, min(n_points - 1, int(math.ceil(math.log(n_points)))))
-        kth_dist_sq = sorted_dists[:, k]
-        distance_eps = division_epsilon(b, kth_dist_sq)
-        kth_dist = b.sqrt(kth_dist_sq + distance_eps)
+        kth_dist = sorted_dists[:, k]
         b.eval(kth_dist)
 
         # Density = k / r^3

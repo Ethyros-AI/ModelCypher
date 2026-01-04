@@ -36,6 +36,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.core.ports.backend import Array, Backend
@@ -562,9 +563,12 @@ class TestSVDProjection:
             source, target, method=ProjectionMethod.SVD_PROJECT, backend=backend
         )
 
-        # Compute Frobenius norms
-        target_fro = float(backend.tolist(backend.sqrt(backend.sum(target ** 2))))
-        proj_fro = float(backend.tolist(backend.sqrt(backend.sum(result.projected ** 2))))
+        # Compute geodesic norms (Frobenius-equivalent for matrices)
+        target_fro_arr = geodesic_norms(backend.reshape(target, (1, -1)), backend)
+        proj_fro_arr = geodesic_norms(backend.reshape(result.projected, (1, -1)), backend)
+        backend.eval(target_fro_arr, proj_fro_arr)
+        target_fro = float(backend.to_scalar(target_fro_arr))
+        proj_fro = float(backend.to_scalar(proj_fro_arr))
 
         # Frobenius norms should match target within precision limits
         eps = division_epsilon(backend, result.projected)

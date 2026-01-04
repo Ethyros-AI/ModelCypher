@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     machine_epsilon,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 
 # =============================================================================
@@ -509,7 +510,7 @@ class TestCurvatureWeightedProcrustes:
         backend.eval(RTR, I)
 
         diff = RTR - I
-        fro_norm_arr = backend.sqrt(backend.sum(diff * diff))
+        fro_norm_arr = geodesic_norms(backend.reshape(diff, (1, -1)), backend)
         backend.eval(fro_norm_arr)
         frobenius_norm = float(backend.to_scalar(fro_norm_arr))
         eps = machine_epsilon(backend, R_low)

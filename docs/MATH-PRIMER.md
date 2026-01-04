@@ -21,13 +21,16 @@ Once you accept “it’s a vector”, the rest is distance + direction + shape.
 
 ### Distance (magnitude)
 
-Distance answers: **“How much changed?”**
+Distance answers: **"How much changed?"**
 
-- In practice, this is often an L2 norm (Euclidean distance) or a normalized variant.
+- ModelCypher uses **geodesic distance** (distance along the data manifold), not Euclidean distance.
+- Geodesic distance captures the true structure of high-dimensional representation spaces.
 - Bigger distance usually means bigger updates or bigger drift.
 
 How to explain to a human:
-“Distance is the size of the change. It’s like ‘how far the weights moved’.”
+"Distance is the size of the change, measured along the shape of the data—like road distance between cities, not straight-line distance through the earth."
+
+> **Why geodesic?** Euclidean distance becomes meaningless in high dimensions (1000D+). All points appear roughly equidistant. Geodesic distance follows the actual manifold structure and remains meaningful at any dimension.
 
 ### Direction (angle)
 

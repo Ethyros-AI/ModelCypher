@@ -44,6 +44,7 @@ from modelcypher.core.use_cases.geometry_engine import (
 )
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 
 def _eps(backend, *values: float) -> float:
@@ -96,8 +97,8 @@ def test_procrustes_alignment_recovers_rotation():
     aligned = backend.matmul(source, result.omega)
     backend.eval(aligned)
     diff = backend.abs(aligned - target)
-    rss = backend.sqrt(backend.sum(diff * diff))
-    denom = backend.sqrt(backend.sum(target * target))
+    rss = geodesic_norms(backend.reshape(diff, (1, -1)), backend)
+    denom = geodesic_norms(backend.reshape(target, (1, -1)), backend)
     backend.eval(rss, denom)
     rss_val = float(backend.to_scalar(rss))
     denom_val = float(backend.to_scalar(denom))

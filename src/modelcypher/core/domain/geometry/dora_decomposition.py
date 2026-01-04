@@ -42,7 +42,10 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_finite
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -147,13 +150,10 @@ class DoRADecomposition:
         absolute_change = abs(current_mag - base_mag)
         relative_change = (current_mag - base_mag) / base_mag
 
-        # Compute directional similarity (cosine)
-        dot_arr = b.sum(base_flat * current_flat)
-        b.eval(dot_arr)
-        dot = float(b.to_scalar(dot_arr))
-        eps = division_epsilon(b, base_flat)
-        cosine = dot / (base_mag * current_mag + eps)
-        cosine = max(-1.0, min(1.0, cosine))  # Clamp
+        # Compute directional similarity (geodesic cosine)
+        cos_arr, _ = geodesic_pairwise_metrics(base_flat, current_flat, b)
+        b.eval(cos_arr)
+        cosine = float(b.to_scalar(cos_arr))
 
         directional_drift = 1.0 - cosine
 

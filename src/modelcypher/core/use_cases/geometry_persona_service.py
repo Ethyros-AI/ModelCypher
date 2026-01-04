@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.manifold_dimensionality import (
     ManifoldDimensionality,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
@@ -196,7 +197,13 @@ class GeometryPersonaService:
             normalized_position = p.get("normalized_position")
             if normalized_position is None:
                 # Use projection magnitude normalized to unit scale
-                norm = (sum(x * x for x in position) ** 0.5) if isinstance(position, list) else abs(position)
+                if isinstance(position, list):
+                    pos_arr = backend.array(position)
+                    norm_arr = geodesic_norms(backend.reshape(pos_arr, (1, -1)), backend)
+                    backend.eval(norm_arr)
+                    norm = float(backend.to_scalar(norm_arr))
+                else:
+                    norm = abs(position)
                 normalized_position = projection / (norm + eps) if norm > 0 else 0.0
 
             parsed_positions.append(

@@ -41,6 +41,30 @@ Instead, we provide:
 
 **Why?** Thresholds are model-specific, task-specific, and evolve over time. A researcher knows their domain; we provide measurements, they decide meaning.
 
+## Geodesic Distance (Core Principle)
+
+**All distances in ModelCypher are geodesic, not Euclidean.**
+
+LLM representations live in high-dimensional spaces (768D to 8192D+). Euclidean distance—the straight-line "as the crow flies" distance—becomes increasingly meaningless in high dimensions due to the [curse of dimensionality](https://en.wikipedia.org/wiki/Curse_of_dimensionality). In 1000D space, all points appear roughly equidistant under Euclidean measure.
+
+**Geodesic distance** measures distance along the data manifold itself—like measuring road distance between cities rather than straight-line distance through the earth. This captures the true structure of the representation space.
+
+### How it works
+
+1. **Build a k-NN graph**: Connect each point to its k nearest neighbors (using Euclidean for initial edges—the one unavoidable bootstrap step)
+2. **Compute shortest paths**: Use Floyd-Warshall or Dijkstra to find shortest path distances through the graph
+3. **Report geodesic distances**: All subsequent distance computations use these manifold-aware distances
+
+### What this means for you
+
+- **Distance values are not directly comparable to Euclidean benchmarks**. A geodesic distance of 5.0 doesn't mean "5 units apart in space"—it means "5 hops through the nearest-neighbor graph."
+- **Distances scale with manifold complexity**. A convoluted manifold will have larger geodesic distances between the same Euclidean-close points.
+- **Comparisons are meaningful**. "Model A is 2x farther from B than from C" is geometrically meaningful, even if the raw numbers aren't.
+
+### Why not Euclidean?
+
+Euclidean geometry is a special case that only works well in low dimensions (≤3D). Geodesic geometry works correctly in ALL dimensions—1D, 3D, 1000D, 8000D. Rather than maintain two code paths (Euclidean for simple cases, geodesic for complex), ModelCypher uses geodesic everywhere. The math is correct for all cases.
+
 ## Quick translation rules
 
 - Report the raw metric values, not interpretations

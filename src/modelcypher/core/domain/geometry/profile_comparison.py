@@ -37,6 +37,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
 from modelcypher.core.domain.geometry.model_profile import (
     LayerProfile,
     ModelProfile,
@@ -303,12 +304,11 @@ def compare_profiles(
         src_vec = source.semantic_signature.vector
         tgt_vec = target.semantic_signature.vector
         if src_vec and tgt_vec and len(src_vec) == len(tgt_vec):
-            # Cosine similarity
-            dot = sum(a * b for a, b in zip(src_vec, tgt_vec))
-            norm_src = sqrt_scalar(sum(a * a for a in src_vec), backend)
-            norm_tgt = sqrt_scalar(sum(b * b for b in tgt_vec), backend)
-            if norm_src > 0 and norm_tgt > 0:
-                semantic_cosine_similarity = dot / (norm_src * norm_tgt)
+            src_arr = backend.reshape(backend.array(src_vec), (1, -1))
+            tgt_arr = backend.reshape(backend.array(tgt_vec), (1, -1))
+            cos_arr, _ = geodesic_pairwise_metrics(src_arr, tgt_arr, backend)
+            backend.eval(cos_arr)
+            semantic_cosine_similarity = float(backend.to_scalar(cos_arr))
 
     # === ALIGNMENT FLAG ===
     aligned = False

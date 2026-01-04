@@ -32,7 +32,10 @@ from modelcypher.core.domain.geometry.constrained_transplant import (
     verify_boundary_invariance,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.geometry.vector_math import geodesic_paired_distances
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_paired_distances,
+)
 from modelcypher.core.domain.geometry.transplant import (
     TransplantDeltaResult,
     compute_transplant_delta,
@@ -159,8 +162,8 @@ class TestComputeTransplantDelta:
         geo_distances = geodesic_paired_distances(output_before, output_after, backend)
         backend.eval(geo_distances)
 
-        # Aggregate geodesic distance (RSS for consistency with Frobenius norm)
-        geo_dist_rss = backend.sqrt(backend.sum(geo_distances * geo_distances))
+        # Aggregate geodesic distance using geodesic norms
+        geo_dist_rss = geodesic_norms(backend.reshape(geo_distances, (1, -1)), backend)
         backend.eval(geo_dist_rss)
         geo_dist_val = float(backend.to_scalar(geo_dist_rss))
 

@@ -31,6 +31,13 @@ When two models (a Base Model and a Sidecar Adapter) process the same input in p
 
 ## Metrics
 
+### Geodesic Distance
+Distance measured along the data manifold via shortest paths on a k-NN graph.
+-   **Key principle**: All distances in ModelCypher are geodesic, not Euclidean.
+-   **Why it matters**: Euclidean distance becomes meaningless in high dimensions (1000D+) due to the curse of dimensionality. Geodesic distance follows the actual manifold structure.
+-   **How it works**: Build a k-NN graph (edges weighted by Euclidean distance—the one bootstrap step), then compute shortest paths through the graph.
+-   **Human explanation**: "Distance measured by roads, not as the crow flies. In curved high-dimensional space, the straight line isn't the true path."
+
 ### CKA (Centered Kernel Alignment)
 A measure of similarity between two neural network layers that is robust to rotation.
 -   **Range**: 0.0 (Different) to 1.0 (Identical).

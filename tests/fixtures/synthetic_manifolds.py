@@ -37,6 +37,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     pi_value,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -95,7 +96,9 @@ def sample_sphere(
 
     # Sample from Gaussian and normalize to sphere
     points = b.random_normal((n_samples, ambient_dim))
-    norms = b.sqrt(b.sum(points * points, axis=1, keepdims=True))
+    norms_flat = geodesic_norms(points, b)
+    b.eval(norms_flat)
+    norms = b.reshape(norms_flat, (-1, 1))
     eps = division_epsilon(b, points)
     points = (points / (norms + eps)) * radius
     b.eval(points)
