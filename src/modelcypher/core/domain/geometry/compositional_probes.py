@@ -15,6 +15,40 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Compositional Probes for Cross-Model Semantic Structure Verification.
+
+Analyzes how well composite concepts (e.g., "I THINK", "SOMEONE DO") can be
+reconstructed from their component embeddings on the representation manifold.
+
+Mathematical Foundation:
+    Compositionality on manifolds requires geodesic operations. For a composition
+    c and components {c_1, ..., c_n}, we compute:
+
+    1. Centroid via Fréchet mean: μ = argmin_p Σ d²_geo(p, c_i)
+       This is the Riemannian center of mass, not the Euclidean mean.
+
+    2. Centroid similarity: sim(c, μ) via geodesic cosine
+       Measures how well the composition aligns with component geometry
+
+    3. Barycentric weights: w = (A^T A)^{-1} A^T c
+       Where A = [c_1 | ... | c_n], solved via normal equations
+       Weights indicate contribution of each component to the composition
+
+    4. Residual: r = c - Σ w_i c_i
+       ||r||_geo measures reconstruction error on the manifold
+
+Consistency Checking:
+    To verify cross-model alignment, we compare barycentric weight patterns:
+    - corr(w_source, w_target): Pearson correlation of weight vectors
+    - angle_corr: Correlation of component angles to composition
+    High correlation indicates shared compositional structure.
+
+See Also:
+    - types.CompositionProbe: Probe definition structure
+    - types.CompositionCategory: mental, action, evaluative, temporal, spatial
+    - riemannian_utils.frechet_mean: Geodesic centroid computation
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

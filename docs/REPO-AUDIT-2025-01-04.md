@@ -19,7 +19,7 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 225
+- Audited: 302
 - Issues found: 94
 - Issues fixed: 93
 
@@ -3167,4 +3167,980 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
     - Frozen dataclass (ArrayNumerics)
     - is_healthy, nan_fraction, inf_fraction properties
     - Efficient single-pass design
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/exceptions.py` (67 lines)
+  - **Duplicate code/math**: NONE
+    - EstimatorError: exception for geometric estimators
+    - ProjectionError: exception for dimensionality reduction
+    - Factory methods: insufficient_samples, invalid_point_dimension, etc.
+  - **Geodesic math**: N/A (exception definitions only)
+  - **Backend usage**: N/A (exception definitions only)
+  - **Caching**: N/A
+  - **NumPy**: N/A (no computation)
+  - **Documentation**: OK (brief class docstrings)
+  - **Hexagonal structure**: OK (domain exception layer)
+  - **Tests**: N/A (exceptions are structural)
+  - **Best practices**: EXCELLENT
+    - Factory methods for common error cases
+    - kind attribute for error classification
+    - count attribute for metric tracking
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/gromov_wasserstein.py` (722 lines)
+  - **Duplicate code/math**: NONE
+    - GromovWassersteinDistance: metric space comparison
+    - Frank-Wolfe algorithm with multiple restarts
+    - Exhaustive permutation search for n ≤ 8 (GPU-vectorized)
+    - Loss decomposition for O(n²m + nm²) complexity
+  - **Geodesic math**: EXCELLENT
+    - RiemannianGeometry for geodesic_distances (lines 717-720)
+    - geodesic_svd would be nice but not needed here
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, argmin, argpartition
+    - division_epsilon, machine_epsilon for thresholds
+    - SinkhornSolver for linear OT subproblem
+    - _derive_sinkhorn_epsilon from cost matrix scale
+  - **Caching**: EXCELLENT
+    - _PERM_CACHE for permutation matrices (lines 91, 294-313)
+  - **NumPy**: NONE (verified - only math.log, math.ceil)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation, algorithm
+    - References: Peyré, Cuturi, Solomon (2016)
+    - "DO NOT REFACTOR to remove blending" warning (lines 57-58)
+    - Explains Frank-Wolfe update is NOT arbitrary (lines 51-56)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_gromov_wasserstein.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclass (Result)
+    - __post_init__ enforces non-negative distance (lines 101-105)
+    - Symmetry via bidirectional loss averaging (lines 328-346)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/birkhoff_projector.py` (392 lines)
+  - **Duplicate code/math**: NONE
+    - BirkhoffProjector: mHC paper implementation (arXiv:2512.24880)
+    - Sinkhorn-Knopp iteration for doubly stochastic projection
+    - Spectral norm bounding for compositional stability
+    - project_weight_delta for non-square matrices via Gram
+  - **Geodesic math**: EXCELLENT
+    - geodesic_svd for spectral norm computation (lines 262, 300)
+    - geodesic_norms for Gram matrix normalization (line 363)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: exp, matmul, sum, maximum
+    - division_epsilon, regularization_epsilon, tiny_value
+    - Proper eval calls throughout
+  - **Caching**: N/A (stateless projector)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mHC paper reference with arXiv ID
+    - Constants from paper: _SINKHORN_MAX_ITERATIONS, _MAX_SPECTRAL_NORM
+    - "All parameters derived from data and dtype" (line 44)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_birkhoff_projector.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclass (BirkhoffProjectionResult)
+    - __all__ export list
+    - Non-square handling via Gram matrix approach
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/optimal_transport.py` (461 lines)
+  - **Duplicate code/math**: NONE
+    - SinkhornSolver: entropy-regularized OT via Sinkhorn algorithm
+    - solve_linear_ot: fast inner loop for GW Frank-Wolfe
+    - Log-domain solver for numerical stability
+    - squared_geodesic_cost, cosine_cost utilities
+  - **Geodesic math**: EXCELLENT
+    - geodesic_cosine_between_sets (line 434)
+    - geodesic_norms for normalization (lines 379-383)
+    - geodesic_distance_matrix (line 412)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: exp, log, matmul, sum, argpartition
+    - _derive_epsilon from cost matrix scale (lines 158-190)
+    - division_epsilon, regularization_epsilon, safe_log_epsilon
+    - Proper eval calls throughout
+  - **Caching**: N/A (stateless solver)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation, entropy regularization
+    - References: Cuturi (2013), Peyré & Cuturi (2019)
+    - "All parameters derived from data" (lines 105-106)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_optimal_transport.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclass (SinkhornResult)
+    - Log-domain for numerical stability
+    - _logsumexp with additional guards (lines 442-451)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/dare_sparsity.py` (499 lines)
+  - **Duplicate code/math**: NONE
+    - DARESparsityAnalyzer: DARE sparsity analysis (Drop And REscale)
+    - Spectral gap detection for natural magnitude breaks
+    - GPU-accelerated analyze_with_backend
+    - identify_essential_parameters for mask generation
+  - **Geodesic math**: N/A (magnitude statistics)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: abs, sum, max, mean, where
+    - find_magnitude_gap_threshold from numerical_stability
+    - ulp_scalar for machine epsilon
+    - Fast path vs slow path for large arrays (line 223)
+  - **Caching**: N/A (stateless analyzer)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - "NO CONFIGURATION CLASSES" comment block (lines 34-43)
+    - "All thresholds derived from data" (lines 37-40)
+    - Spectral gap explanation (lines 115, 244)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_dare_sparsity.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclasses (LayerSparsityMetrics, MagnitudeStatistics, SparsityAnalysis)
+    - Vectorized percentile computation (lines 229-241)
+    - to_metrics_dictionary for standardized output
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/dora_decomposition.py` (300 lines)
+  - **Duplicate code/math**: NONE
+    - DoRADecomposition: Weight = Magnitude × Direction analysis
+    - MagnitudeDirectionMetrics for per-layer measurements
+    - DecompositionResult for complete adapter analysis
+    - Ported 1:1 from Swift reference implementation
+  - **Geodesic math**: EXCELLENT
+    - geodesic_norms for magnitude computation (lines 138-140)
+    - geodesic_pairwise_metrics for directional similarity (line 154)
+    - division_epsilon for safe division
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: reshape, matmul, to_scalar
+    - Proper eval calls throughout
+  - **Caching**: N/A (stateless analyzer)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation
+    - Reference: Liu et al. 2024 "DoRA" ICML 2024
+    - Key concept: "Fine-tuning primarily changes direction" (line 29)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_dora_decomposition.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - ChangeType enum for classification
+    - DoRAMetricKey for standardized metric names
+    - to_metrics_dict for standardized output
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/geometric_lora.py` (542 lines)
+  - **Duplicate code/math**: NONE
+    - GeometricLoRAGenerator: LoRA from geometric specs
+    - LayerLoRAWeights, GeometricLoRA dataclasses
+    - Analytic LoRA computation via SVD rank truncation
+    - Safetensors serialization with metadata
+  - **Geodesic math**: EXCELLENT
+    - geodesic_norms for input normalization (lines 381-387)
+    - geodesic_svd for low-rank approximation (line 408)
+    - geodesic_pairwise_metrics for geometric loss (line 431)
+    - condition_threshold for rank determination (lines 130, 471)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, stack, take, reshape
+    - regularization_epsilon for Tikhonov (line 402)
+    - tiny_value for near-zero detection (line 389)
+  - **Caching**: N/A (stateless generator)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical framework with SVD solution
+    - References: Hu et al. (2021) LoRA, Eckart & Young (1936)
+    - "All numerical parameters derived from data" (lines 239-241, 487-488)
+  - **Hexagonal structure**: OK (domain geometry layer, imports manifold_transfer)
+  - **Tests**: Expected in test_geometric_lora.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Frozen dataclasses where appropriate
+    - to_safetensors_dict for serialization
+    - save_geometric_lora convenience function
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/density_estimator.py` (278 lines)
+  - **Duplicate code/math**: NONE
+    - DensityEstimator: k-NN local density estimation
+    - compute_grid_density for volumetric rendering
+    - DensityResult dataclass
+  - **Geodesic math**: EXCELLENT
+    - geodesic_distance_matrix for manifold distances (lines 150, 253)
+    - "direct geometric measurement, not statistical estimate" (line 29)
+    - k derived from Berry & Sauer 2016: ceil(log(n)) (lines 74, 141, 260)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: min, max, argpartition, take_along_axis
+    - division_epsilon for safe division
+    - Proper eval calls throughout
+    - meshgrid, linspace for volumetric grid
+  - **Caching**: N/A (stateless estimator)
+  - **NumPy**: NONE (verified - only math.log, math.ceil)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation
+    - "NO CONFIGURATION CLASSES" comment block (lines 70-76)
+    - "All parameters derived from data" (lines 122-124, 195-197)
+  - **Hexagonal structure**: OK (domain geometry layer)
+  - **Tests**: Expected in test_density_estimator.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Frozen dataclass (DensityResult)
+    - "Raw geometric measurements - no normalization" (lines 175-176)
+    - 3D grid density for volumetric rendering
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/manifold_transfer.py` (761 lines)
+  - **Duplicate code/math**: NONE
+    - CrossManifoldProjector: landmark MDS for cross-manifold projection
+    - AnchorDistanceProfile, TransferPoint, TransferReport dataclasses
+    - Stress minimization via gradient descent
+    - ConceptVolume projection with curvature correction
+  - **Geodesic math**: EXCELLENT
+    - geodesic_distance_matrix for manifold distances (lines 292, 332, 383, 465, 508)
+    - geodesic_norms for gradient computation (line 490)
+    - "Chord distance is incorrect in high-dimensional curved manifolds" (lines 32-35)
+    - Reference: de Silva & Tenenbaum (2004) landmark MDS
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, reshape, stack, transpose
+    - division_epsilon, regularization_epsilon for safe ops
+    - Proper eval calls throughout
+  - **Caching**: Via RiemannianDensityEstimator and SectionalCurvatureEstimator
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical framework
+    - "All numerical parameters derived from data" (lines 260-261, 737-738)
+    - Reference: Tenenbaum et al. (2000) Isomap
+  - **Hexagonal structure**: OK (imports from manifold_curvature, riemannian_density)
+  - **Tests**: Expected in test_manifold_transfer.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - MIN_ANCHORS constant (line 82)
+    - to_dict for serialization
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/gram_aligner.py` (470 lines)
+  - **Duplicate code/math**: NONE
+    - GramAligner: finds transformation for CKA = 1.0
+    - Uses T = K_t^{1/2} @ K_s^{-1/2} for exact alignment
+    - AlignmentResult frozen dataclass
+    - Stitch cache for eigendecomposition reuse
+  - **Geodesic math**: EXCELLENT
+    - geodesic_norms for near-identical check (lines 321-323)
+    - geodesic_norms for alignment error (lines 431-433)
+    - _center_gram_matrix for HSIC computation
+    - Reference: Kornblith et al. (2019), Williams (2001)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, eigh, pinv, transpose
+    - regularization_epsilon, division_epsilon for stable ops
+    - machine_epsilon for convergence threshold
+  - **Caching**: EXCELLENT
+    - ComputationCache.shared() for stitch matrices
+    - make_stitch_key, get_stitch, set_stitch
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - "CKA = 1.0 is ALWAYS achievable" mathematical guarantee (lines 27-33)
+    - "No User-Configurable Thresholds" (lines 36-42)
+    - "All tolerances derived from machine epsilon"
+  - **Hexagonal structure**: OK (imports alignment_diagnostic, cka)
+  - **Tests**: Expected in test_gram_aligner.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints, frozen dataclass
+    - Explicit __all__ exports (lines 76-80)
+    - find_alignment convenience function
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/generalized_procrustes.py` (832 lines)
+  - **Duplicate code/math**: NONE
+    - GeneralizedProcrustes: multi-model alignment
+    - RotationContinuityAnalyzer: per-layer rotation analysis
+    - Result, LayerRotationResult, RotationContinuityResult dataclasses
+    - Fréchet mean (curvature-aware) for consensus
+  - **Geodesic math**: EXCELLENT
+    - geodesic_svd for Procrustes rotation (lines 273, 763)
+    - geodesic_norms for error computation (lines 243-247, 291-299, 367-375)
+    - geodesic_pairwise_metrics for alignment error (lines 701, 774)
+    - "NO CONFIGURATION CLASSES" comment (lines 75-86)
+    - Reference: Gower (1975), Schönemann (1966), Karcher (1977)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, stack, svd, det
+    - machine_epsilon for convergence threshold (line 219)
+    - division_epsilon for scale-invariant error (lines 248-250, 379-381)
+  - **Caching**: RiemannianGeometry.frechet_mean_batch cached
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Comprehensive summary property (lines 104-113)
+    - RotationContinuityResult with semantic interpretation (lines 497-512)
+    - "Fréchet mean: always enabled (arithmetic mean is WRONG)" (lines 81, 191-192)
+  - **Hexagonal structure**: OK (imports concept_response_matrix, numerical_stability)
+  - **Tests**: Expected in test_generalized_procrustes.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints, frozen dataclasses
+    - Dimension truncation warning (lines 447-454)
+    - Two-model fast path (lines 229-318)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/permutation_aligner.py` (753 lines)
+  - **Duplicate code/math**: NONE
+    - PermutationAligner: Git Re-Basin for neural network merging
+    - Hungarian algorithm for optimal bipartite matching
+    - Sign correction for ±1 symmetry
+    - Sparse permutation for memory efficiency (>4096 neurons)
+  - **Geodesic math**: EXCELLENT
+    - geodesic_cosine_between_sets for similarity (lines 205, 388)
+    - "O(N³) via Hungarian" (line 57)
+    - Reference: Ainsworth et al. (2022) Git Re-Basin, Kuhn (1955) Hungarian
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, abs, take, diag, eye
+    - hungarian_assignment for optimal matching
+    - Sparse path avoids 800MB+ allocation (lines 595-649)
+  - **Caching**: Via hungarian.py _hungarian_cache
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: scope, dimension handling, algorithm (lines 26-71)
+    - "MLP blocks: FULLY RE-BASINED, Attention: NOT re-basined" (lines 28-30)
+    - _SPARSE_THRESHOLD_N = 4096 for memory budget (lines 91-93)
+  - **Hexagonal structure**: OK (imports hungarian, vector_math)
+  - **Tests**: Expected in test_permutation_aligner.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints, frozen dataclass
+    - PermutationAlignerError with kinds enum
+    - is_mlp_weight, is_attention_weight helpers
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/cka.py` (1228 lines)
+  - **Duplicate code/math**: NONE
+    - compute_cka: HSIC-based CKA with caching
+    - HSICEstimator enum (BIASED, UNBIASED, AUTO)
+    - Feature-sampling bias correction (Chun et al. 2025)
+    - Participation ratio intrinsic dimension
+  - **Geodesic math**: EXCELLENT
+    - RiemannianGeometry.geodesic_distances for RBF kernel (lines 162-168)
+    - Median bandwidth derived from distances (lines 196-222)
+    - Reference: Kornblith et al. (2019), Cristianini et al. (2002)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, exp, sum, mean
+    - division_epsilon, regularization_epsilon for stable ops
+    - power_iteration_eigh for GPU eigendecomposition (line 496)
+  - **Caching**: EXCELLENT
+    - ComputationCache.shared() for Gram and centered Gram
+    - make_gram_key, get_gram, set_gram
+    - make_centered_gram_key, get_centered_gram
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Mathematical foundation (lines 38-51)
+    - Research connections to Platonic Representation Hypothesis (lines 28-35)
+    - HSICEstimator enum with detailed docstrings (lines 89-107)
+    - CKAResult.best property for preferred value (lines 133-141)
+  - **Hexagonal structure**: OK (imports cache, numerical_stability, riemannian_utils)
+  - **Tests**: Expected in test_cka.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Frozen dataclass (CKAResult)
+    - compute_cka_backend for hot-path GPU ops
+    - compute_cka_from_centered_grams for efficiency
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/vector_math.py` (1209 lines)
+  - **Duplicate code/math**: NONE
+    - VectorMath: Pure Python fallback for vector ops
+    - BackendVectorMath: GPU-accelerated via Backend protocol
+    - SparseVectorMath: For dict-based sparse vectors
+    - geodesic_norms, geodesic_cosine_matrix, geodesic_pairwise_metrics
+  - **Geodesic math**: EXCELLENT
+    - "Complete graph geodesic equals chord distance: exact" (lines 114, 176, 210, 225, 262, 301)
+    - geodesic_cosine_batch, geodesic_cosine_between_sets for batched ops
+    - SLERP with curvature-aware angle computation (lines 504-606)
+    - "WARNING: Do NOT use SLERP for model weight merging" (lines 509-511)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, sqrt, clip, where
+    - division_epsilon for safe division
+    - Proper eval calls throughout
+  - **Caching**: Via get_default_backend()
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: two implementations explained (lines 24-32)
+    - "For cross-dimensional comparison, use CKA" (lines 30-32, 390, 467, 543)
+    - Reference: Shoemake (1985) for SLERP (lines 533-534)
+  - **Hexagonal structure**: OK (imports numerical_stability)
+  - **Tests**: Expected in test_vector_math.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - ArrayLike type alias
+    - _to_list, _to_scalar helpers for backend agnostic ops
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/numerical_stability.py` (2031 lines)
+  - **Duplicate code/math**: NONE
+    - sqrt_scalar, is_finite, log_scalar, exp_scalar, etc. (GPU scalar ops)
+    - machine_epsilon, division_epsilon, regularization_epsilon, condition_threshold
+    - power_iteration_eigh, geodesic_svd (GPU-only decomposition)
+    - gram_schmidt_orthogonalize with reorthogonalization
+    - solve_via_truncated_svd, solve_via_gram_alignment, solve_via_cca_procrustes
+  - **Geodesic math**: EXCELLENT
+    - "All epsilons and tolerances derived from tensor precision" (lines 20-21)
+    - infinity_threshold: "max_representable * sqrt(eps)" (lines 405-428)
+    - "GPU-FRIENDLY GEODESIC ALTERNATIVES" section header (lines 615-621)
+    - power_iteration_eigh: "EXACT eigendecomposition" (lines 701-758)
+    - geodesic_svd: "EXACT SVD using native backend" (lines 761-800)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: array, sqrt, exp, log, eigh, svd, qr
+    - "Use these instead of math.sqrt, math.isfinite" (line 80)
+    - Explicit __all__ exports (lines 31-74)
+  - **Caching**: N/A (stateless utilities)
+  - **NumPy**: NONE (verified - replaces all math module usage)
+  - **Documentation**: EXCELLENT
+    - Module docstring: purpose and design rationale
+    - Each function documented with "Use instead of math.X"
+    - "CKA=1.0 requires exact eigendecomposition" (lines 712-715, 770-772)
+  - **Hexagonal structure**: CORE (foundational utilities for all geometry)
+  - **Tests**: Expected in test_numerical_stability.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout (TYPE_CHECKING pattern)
+    - Comprehensive __all__ export list
+    - Non-negativity guard in sqrt_scalar (lines 98-99)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_utils.py` (250 lines)
+  - **Duplicate code/math**: NONE
+    - Re-exports from riemannian_core, riemannian_types, riemannian_validation
+    - Convenience functions: frechet_mean, geodesic_distance_matrix, farthest_point_sampling
+    - find_sparse_direction for directional coverage
+  - **Geodesic math**: EXCELLENT
+    - "Geodesic distance = shortest path on this graph" (lines 36-37)
+    - "Geodesic distance is the correct metric for neural representations" (lines 45-46)
+    - Reference: Pennec (2006), Tenenbaum (2000), Sra & Hosseini (2015)
+    - Research connection: Platonic Representation Hypothesis (lines 45-49)
+  - **Backend usage**: EXCELLENT
+    - Via RiemannianGeometry class
+    - Convenience functions delegate to cached geometry instance
+  - **Caching**: Via _get_riemannian_geometry, _RG_CACHE
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical background
+    - Fréchet mean formula: μ = argmin Σᵢ d²(p, xᵢ) (lines 31-34)
+    - "See also: docs/RESEARCH-CONNECTIONS.md" (line 49)
+  - **Hexagonal structure**: API (re-exports from implementation modules)
+  - **Tests**: Expected in test_riemannian_utils.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Comprehensive __all__ export list (lines 219-249)
+    - Legacy alias _set_matrix_element for backward compat
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_core.py` (1568 lines)
+  - **Duplicate code/math**: NONE
+    - RiemannianGeometry: main class for geodesic and Fréchet mean computation
+    - frechet_mean: Riemannian center of mass via gradient descent
+    - geodesic_distances: k-NN graph shortest paths (Isomap-style)
+    - _minimum_connected_k: binary search for minimum connected k
+  - **Geodesic math**: EXCELLENT
+    - "Geodesic distance = shortest path on this graph" (lines 46-47)
+    - Fréchet mean: μ = argmin Σᵢ d²(p, xᵢ) (lines 154-157)
+    - Log map gradient: ∇f(p) = -2 Σᵢ Log_p(xᵢ) (lines 39-43)
+    - Reference: Pennec (2006), Tenenbaum (2000), Sra & Hosseini (2015)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, stack, argmin, argpartition
+    - machine_epsilon for convergence (line 364)
+    - division_epsilon, regularization_epsilon throughout
+  - **Caching**: EXCELLENT
+    - _RG_CACHE for RiemannianGeometry instances
+    - ComputationCache for geodesic, frechet, kmin
+    - make_geodesic_key, make_frechet_key, make_kmin_key
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical background (lines 18-53)
+    - Algorithm descriptions for frechet_mean and geodesic_distances
+    - "NO CONFIGURATION CLASSES" philosophy
+  - **Hexagonal structure**: CORE (central Riemannian geometry engine)
+  - **Tests**: Expected in test_riemannian_core.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - __new__ for singleton caching (lines 127-135)
+    - Sparse vs dense shortest paths decision (lines 751-766)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/manifold_curvature.py` (1741 lines)
+  - **Duplicate code/math**: NONE
+    - SectionalCurvatureEstimator: local curvature via geodesic deviation
+    - OllivierRicciCurvature: edge curvature via optimal transport
+    - LocalCurvature, ManifoldCurvatureProfile dataclasses
+    - EdgeCurvature, NodeRicciCurvature for graph-based curvature
+  - **Geodesic math**: EXCELLENT
+    - "K(σ) measures how geodesics diverge/converge" (lines 25-28)
+    - Sectional curvature: K(u,v) = R(u,v,v,u) / (|u|²|v|² - ⟨u,v⟩²) (line 365)
+    - Ollivier-Ricci: κ = 1 - W₁(m_x, m_y) / d(x,y) (line 115)
+    - Reference: do Carmo (1992), Fefferman et al. (2016), Tenenbaum (2000)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, eigh, svd (via numerical_stability)
+    - geodesic_norms for direction normalization
+    - geodesic_distance_matrix for neighbor finding
+    - "NO CONFIGURATION CLASSES" sections (lines 94-106, 161-170)
+  - **Caching**: Via RiemannianGeometry for geodesic distances
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: curvature interpretation (lines 30-33)
+    - CurvatureSign enum with semantic meaning
+    - "All parameters derived from data" comments
+  - **Hexagonal structure**: OK (imports numerical_stability, riemannian_utils, vector_math)
+  - **Tests**: Expected in test_manifold_curvature.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Frozen dataclass (EdgeCurvature, NodeRicciCurvature)
+    - Adaptive epsilon from neighbor distances (lines 660-733)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_density.py` (1478 lines)
+  - **Duplicate code/math**: NONE
+    - RiemannianDensityEstimator: concept volumes with curvature awareness
+    - ConceptVolume: Riemannian Gaussian distribution on manifold
+    - ConceptVolumeRelation: overlap metrics between volumes
+    - InfluenceType enum: Gaussian, Laplacian, Student-t, Uniform
+  - **Geodesic math**: EXCELLENT
+    - "Geodesic radius measures extent along the manifold" (line 28)
+    - Log map for tangent vectors: scales by geodesic/chord (lines 297-359)
+    - Mahalanobis distance in tangent space (lines 411-420)
+    - Fréchet mean: "the only correct method on curved manifolds" (lines 769-770)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, exp, log, sqrt
+    - power_iteration_eigh, geodesic_svd for eigendecomposition
+    - safe_inverse for precision matrix (line 165)
+    - "NO CONFIGURATION CLASSES" section (lines 85-96)
+  - **Caching**: EXCELLENT
+    - ComputationCache.shared() for geodesic context
+    - _precision, _log_det_cov, _covariance_eigendecomposition cached
+    - _geo_from_centroid, _raw_activations_sq cached
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: concept modeling explanation
+    - ConceptVolume attributes fully documented
+    - Influence type auto-derivation from kurtosis (lines 89-92)
+  - **Hexagonal structure**: OK (imports manifold_curvature, riemannian_utils)
+  - **Tests**: Expected in test_riemannian_density.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Cached properties with object.__setattr__
+    - Batch versions: density_at_batch, mahalanobis_distance_batch
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_interpolation.py` (341 lines)
+  - **Duplicate code/math**: NONE
+    - RiemannianInterpolationMixin: geodesic path interpolation
+    - geodesic_interpolation: t ∈ [0,1] parameter along geodesic
+    - _reconstruct_geodesic_path: triangle equality for path finding
+    - _compute_path_arc_lengths, _interpolate_along_path
+  - **Geodesic math**: EXCELLENT
+    - "Geodesic is the shortest path on the k-NN graph" (lines 63-64)
+    - Triangle equality: d(i,k) + d(k,j) = d(i,j) (lines 169-173)
+    - "INTENTIONAL CHORD: Discretized arc length along geodesic" (lines 277-281)
+    - "NO EUCLIDEAN FALLBACK" - requires manifold context (lines 93-98)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: take, squeeze, argmin, cumsum
+    - division_epsilon for near-zero checks (line 147)
+    - regularization_epsilon for path tolerance (line 208)
+  - **Caching**: Via geodesic_distances() which uses ComputationCache
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Algorithm description: 5-step process (lines 67-70)
+    - Clear error messages for missing context
+  - **Hexagonal structure**: MIXIN (composable with RiemannianGeometry)
+  - **Tests**: Expected in test_riemannian_interpolation.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Explicit __all__ export (line 340)
+    - Infinite loop protection (line 246)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/riemannian_sampling.py` (371 lines)
+  - **Duplicate code/math**: NONE
+    - RiemannianSamplingMixin: FPS and directional coverage
+    - farthest_point_sampling: geodesic maximin design
+    - directional_coverage: sparse direction in tangent space
+    - propose_in_sparse_direction: tangent space exploration
+  - **Geodesic math**: EXCELLENT
+    - "FPS iteratively selects point maximizing min geodesic distance" (lines 63-65)
+    - "This is the geodesic analog of ambient FPS" (lines 73-75)
+    - "INTENTIONAL TANGENT: tangent space is local linear approx" (lines 254-256, 264-266)
+    - Exponential map approx: x_new = x + step * v (lines 363-365)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: take, argmax, argpartition, matmul
+    - division_epsilon for safe normalization (line 258)
+    - pi_value from numerical_stability (lines 207, 243)
+  - **Caching**: Via geodesic_distances() which uses ComputationCache
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Algorithm complexity: O(n * n_samples) (line 67)
+    - DirectionalCoverage dataclass explanation
+  - **Hexagonal structure**: MIXIN (composable with RiemannianGeometry)
+  - **Tests**: Expected in test_riemannian_sampling.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Explicit __all__ export (line 370)
+    - Deterministic seeding (line 267)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/alignment_diagnostic.py` (198 lines)
+  - **Duplicate code/math**: NONE
+    - AlignmentSignal: dataclass for CKA gap diagnostics
+    - alignment_signal_from_matrices: builds signal from anchor matrices
+    - _matrix_rank: effective rank via eigendecomposition
+  - **Geodesic math**: EXCELLENT
+    - "Per-anchor divergence: geodesic distance respects manifold curvature" (lines 121-122)
+    - "Chord distance is systematically wrong in high dimensions" (line 123)
+    - geodesic_paired_distances for divergence (lines 127, 129)
+    - geodesic_norms for scale diagnostics (lines 149-150)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: argsort, mean, max
+    - machine_epsilon for phase tolerance (line 109)
+    - power_iteration_eigh for rank (line 189)
+    - division_epsilon for safe ratios (line 148)
+  - **Caching**: ComputationCache.shared() for Gram matrices (lines 125-126)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: GOOD
+    - Module docstring: diagnostic purpose (lines 21-25)
+    - is_phase_locked requires phase_tol in metadata (lines 77-80)
+  - **Hexagonal structure**: OK (imports numerical_stability, vector_math)
+  - **Tests**: Expected in test_alignment_diagnostic.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Frozen dataclass (AlignmentSignal)
+    - to_dict serialization method
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/anchor_invariance_analyzer.py` (523 lines)
+  - **Duplicate code/math**: NONE
+    - AnchorInvarianceAnalyzer: measures anchor stability across model pairs
+    - RunInput, RunResult, AnchorScore, Report dataclasses
+    - _build_anchor_vectors, _build_layer_alignment, _apply_alignment
+    - _cosine_sparse delegates to geodesic_cosine_sparse
+  - **Geodesic math**: GOOD
+    - Uses geodesic_cosine_sparse for sparse vector similarity (line 522)
+    - sqrt_scalar from numerical_stability (line 298)
+    - Stability score: mean - std (line 301)
+  - **Backend usage**: EXCELLENT
+    - get_default_backend() for scalar ops
+    - geodesic_cosine_sparse via Backend (line 44)
+    - sqrt_scalar from numerical_stability (line 43)
+  - **Caching**: N/A (stateless analyzer)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Mathematical Foundation: stability score formula S_i = μ_i - σ_i
+    - Algorithm steps: build vectors, align layers, compute geodesic cosine
+    - Geodesic rationale: curvature affects angular separation
+  - **Hexagonal structure**: OK (imports manifold_stitcher, metaphor_convergence_analyzer)
+  - **Tests**: Expected in test_anchor_invariance_analyzer.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Custom exception classes (NoRunsError, NoAnchorsError)
+    - Frozen dataclasses (AnchorScore, TopAnchor, Summary, Report)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/compositional_probes.py` (282 lines)
+  - **Duplicate code/math**: NONE
+    - CompositionalProbes: semantic composition analysis
+    - analyze_composition: barycentric weights via normal equations
+    - check_consistency: Pearson correlation via geodesic cosine
+    - analyze_all_probes: batch probe analysis
+  - **Geodesic math**: EXCELLENT
+    - Uses geodesic_cosine_batch for component angles (line 127)
+    - geodesic_norms for residual norm (lines 147, 235-236)
+    - geodesic_pairwise_metrics for correlation (line 237)
+    - Fréchet mean for centroid: "geodesic-only on curved manifolds" (lines 110-116)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, solve, mean
+    - RiemannianGeometry for Fréchet mean
+  - **Caching**: Via RiemannianGeometry frechet_mean
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Mathematical Foundation: Fréchet mean, barycentric weights, residual norm
+    - Formulas: μ = argmin_p Σ d²_geo(p, c_i), w = (A^T A)^{-1} A^T c
+    - Consistency checking via weight/angle correlation
+  - **Hexagonal structure**: OK (imports riemannian_utils, vector_math, types)
+  - **Tests**: Expected in test_compositional_probes.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - CompositionAnalysis, ConsistencyResult dataclasses
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/concept_detector.py` (381 lines)
+  - **Duplicate code/math**: NONE
+    - ConceptDetector: semantic concept activation via embeddings
+    - detect: segment text, embed, match to probe centroids
+    - compare_results: concept overlap between models
+    - _frechet_centroid via RiemannianGeometry
+  - **Geodesic math**: EXCELLENT
+    - Uses geodesic_cosine_batch for segment-probe similarity (lines 174, 347, 363)
+    - geodesic_cosine_between_sets for batched matching (line 147)
+    - geodesic_cosine_matrix for separation floor (line 310)
+    - frechet_mean for probe centroid: "Fréchet centroids" (line 21)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: argmax, take_along_axis, where, mean, min
+    - Batched embedding comparison (lines 136-162)
+  - **Caching**: get_or_compute_embeddings_sync from embedding_cache
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Mathematical Foundation: Fréchet centroid, acceptance floor, detection
+    - Algorithm: embed probes, segment text, geodesic cosine matching
+    - Cross-Modal Comparison: Jaccard overlap, order correlation
+  - **Hexagonal structure**: OK (imports atlas_protocols, riemannian_utils, vector_math)
+  - **Tests**: Expected in test_concept_detector.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Type hints throughout
+    - Frozen dataclass (ProbeEmbedding)
+    - _collapse_consecutive for deduplication
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/constraint_alignment.py` (413 lines)
+  - **Duplicate code/math**: NONE
+    - ConstraintAligner: GPS-like triangulation for layer correspondence
+    - ProbeConstraint, LayerCorrespondence, ConstraintAlignmentResult dataclasses
+    - find_peak_layer, extract_constraints, align_from_constraints
+    - diagnose_probe_conflict for measurement error investigation
+  - **Geodesic math**: EXCELLENT
+    - "GPS triangulation: each probe provides a constraint" (lines 28-30)
+    - geodesic_norms for activation peak finding (lines 162, 355)
+    - CKA for layer pair matching (lines 175-217)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: array, argmax, take
+    - Vectorized norm computation (lines 161-163)
+    - compute_cka with feature_bias_correction (lines 201-207)
+  - **Caching**: N/A (stateless aligner)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: probe-as-calibration philosophy (lines 18-31)
+    - "NOT a vote with weight. It's a calibration measurement." (lines 55-56)
+    - "NOTE: alignment_quality removed per No Vibes rule" (lines 105-110)
+  - **Hexagonal structure**: OK (imports cka for per-layer CKA)
+  - **Tests**: Expected in test_constraint_alignment.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclasses (ProbeConstraint, LayerCorrespondence)
+    - is_unanimous, has_conflicts, is_fully_aligned properties
+    - diagnose_probe_conflict helper function (lines 316-412)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/curvature_alignment.py` (366 lines)
+  - **Duplicate code/math**: NONE
+    - compute_alignment_guidance: curvature-guided layer mapping
+    - curvature_weighted_procrustes: SVD-based alignment with damping
+    - compute_layer_correspondence_by_curvature: feature-based matching
+    - AlignmentGuidance, AlignmentPlan dataclasses
+  - **Geodesic math**: EXCELLENT
+    - "Curvature differences = rotation/transformation needed" (lines 99-101)
+    - geodesic_svd for dimension reduction (line 251)
+    - geodesic_svd for Procrustes: R = V @ U^T (lines 272-276)
+    - Curvature-aware damping: hyperbolic decay (lines 279-282)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: mean, matmul, diag, concatenate
+    - Vectorized global stats (lines 143-157)
+    - division_epsilon for safe division (lines 39-41, 182-185, 306)
+  - **Caching**: N/A (stateless alignment)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: curvature = view of same topology (lines 20-22)
+    - Intrinsic dimension scaling explanation (lines 187-195)
+    - Feature distance for layer correspondence (lines 349-352)
+  - **Hexagonal structure**: OK (imports curvature_profile, numerical_stability)
+  - **Tests**: Expected in test_curvature_alignment.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclasses (AlignmentGuidance, AlignmentPlan)
+    - Monotonic mapping constraint (lines 320-321)
+    - Type hints throughout
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/interference_predictor.py` (292 lines)
+  - **Duplicate code/math**: NONE
+    - MergeAnalyzer: ConceptVolume-based merge geometry analysis
+    - MergeAnalysisResult, GlobalMergeAnalysisReport dataclasses
+    - analyze, analyze_global, quick_merge_analysis
+    - _compute_overlap_score, _compute_distance_score helpers
+  - **Geodesic math**: GOOD
+    - Uses ConceptVolumeRelation with geodesic_centroid_distance (line 213)
+    - Bhattacharyya coefficient, overlap coefficient, Jaccard index (lines 186-191)
+    - Subspace alignment from relation (line 199)
+  - **Backend usage**: EXCELLENT
+    - get_default_backend() for epsilon computation
+    - machine_epsilon for alignment check (line 145)
+    - division_epsilon for safe distance normalization (line 240)
+  - **Caching**: Via RiemannianDensityEstimator
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Mathematical Foundation: overlap metrics (Bhattacharyya, Jaccard)
+    - Formulas: overlap = (BC + OC + J) / 3, d_norm clamped [0,1]
+    - Algorithm: estimate volumes, compute relations, aggregate
+  - **Hexagonal structure**: OK (imports riemannian_density, numerical_stability)
+  - **Tests**: Expected in test_interference_predictor.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Quick interface: quick_merge_analysis (lines 248-323)
+    - Defensive handling of no common concepts (lines 264-274)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/invariant_layer_mapper.py` (991 lines)
+  - **Duplicate code/math**: NONE
+    - InvariantLayerMapper: multi-atlas layer correspondence
+    - map_layers: dynamic programming alignment with triangulation
+    - _compute_multi_atlas_scores: log-based cross-domain multiplier
+    - _build_similarity_matrix_batched: GPU-accelerated cosine matrix
+  - **Geodesic math**: EXCELLENT
+    - Uses geodesic_cosine_batch, geodesic_cosine_between_sets (lines 54-56)
+    - log2_scalar, sqrt_scalar from numerical_stability (lines 469-473)
+    - "Geometric mean of multipliers (principled combination)" (line 473)
+    - "Concepts occupy fixed probability clouds in hyperspace" (lines 197-201)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: array, reshape, argmax
+    - Batched similarity matrix computation (lines 731-853)
+    - division_epsilon for safe normalization (line 52)
+  - **Caching**: N/A (stateless mapper)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: multi-atlas triangulation (lines 26-28)
+    - "Conceptual shapes ARE knowledge itself" (lines 199-201)
+  - **Hexagonal structure**: OK (imports atlas_protocols, atlas_registry, numerical_stability)
+  - **Tests**: Expected in test_invariant_layer_mapper.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclasses (LayerMapping, Summary, Report)
+    - TypeAlias for protocol types (lines 58-60)
+    - __all__ export list (lines 62-73)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/manifold_stitcher.py` (1246 lines)
+  - **Duplicate code/math**: NONE
+    - ManifoldStitcher: cross-architecture model merging
+    - ContinuousFingerprint: magnitude, entropy, sparsity metadata
+    - TriangulatedProbeBuilder: multi-domain probe assembly
+    - compute_cka_matrix, cluster_activations, k_means (Riemannian)
+  - **Geodesic math**: EXCELLENT
+    - "Geodesic Distance: Shortest path along manifold" (lines 29-32)
+    - "Fréchet Mean (Karcher Mean): Riemannian center of mass" (lines 34-35)
+    - geodesic_svd for Procrustes (lines 712, 797)
+    - geodesic_norms for magnitude (line 278)
+    - _ensure_proper_rotation for det(R) = +1 (lines 200-240)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: matmul, exp, log, det
+    - division_epsilon, regularization_epsilon throughout
+    - RiemannianGeometry for Fréchet means in clustering (lines 763-790)
+  - **Caching**: N/A (stateless stitcher)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: mathematical foundation (lines 25-89)
+    - References: Schönemann (1966), Tenenbaum (2000), Pennec (2006)
+    - "Curvature is inherent: Always use geodesic distance" (lines 55-56)
+  - **Hexagonal structure**: CORE (central stitching engine)
+  - **Tests**: Expected in test_manifold_stitcher.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclasses (IntersectionMap, TriangulatedProbeResult)
+    - __all__ export list (lines 112-140)
+    - output_layer_marker constant (line 184)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/metaphor_convergence_analyzer.py` (481 lines)
+  - **Duplicate code/math**: NONE
+    - MetaphorConvergenceAnalyzer: layer-wise metaphor invariant analysis
+    - analyze: computes family-level convergence heatmap
+    - DimensionAlignmentBuilder: simplified alignment helper
+    - AlignMode enum: LAYER vs NORMALIZED depth
+  - **Geodesic math**: EXCELLENT
+    - Uses geodesic_cosine_sparse for similarity (line 501)
+    - Dimension alignment via intersection map (lines 266-268)
+    - Geodesic rationale in docstring (lines 39-43)
+  - **Backend usage**: EXCELLENT
+    - get_default_backend() for sparse cosine (line 500)
+    - Heatmap construction leverages geodesic similarity scores
+  - **Caching**: N/A (stateless analyzer)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Mathematical Foundation: Layer alignment modes, geodesic rationale
+    - Formulas: normalized depth d = (l_s/L_s + l_t/L_t) / 2
+    - Output structure: Heatmap, per-family means, per-layer means
+  - **Hexagonal structure**: OK (imports atlas_registry, manifold_stitcher)
+  - **Tests**: Expected in test_metaphor_convergence_analyzer.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Nested dataclasses (Report, Summary, Heatmap, FamilyResult)
+    - _format_layer_label for normalized depth display
+    - See Also references to related modules
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/_primitives/__init__.py` (99 lines)
+  - **Duplicate code/math**: NONE (re-exports from submodules)
+    - Exports epsilon_utils, convergence, validation functions
+  - **Geodesic math**: N/A (package init)
+  - **Backend usage**: N/A (re-exports)
+  - **Caching**: N/A
+  - **NumPy**: NONE (verified)
+  - **Documentation**: GOOD
+    - Module docstring: "All operations stay on GPU via Backend. No NumPy." (line 25)
+  - **Hexagonal structure**: PRIMITIVES (foundational utilities)
+  - **Tests**: Via submodule tests
+  - **Best practices**: Good __all__ export list (lines 64-98)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/_primitives/convergence.py` (212 lines)
+  - **Duplicate code/math**: NONE
+    - ConvergenceMonitor: unified convergence checking
+    - ConvergenceState: frozen dataclass for iteration state
+    - check, should_stop, reset methods
+  - **Geodesic math**: N/A (convergence monitoring)
+  - **Backend usage**: EXCELLENT
+    - machine_epsilon for thresholds (line 103)
+    - sqrt_scalar for abs_threshold (line 106)
+    - log2_scalar for min_iterations (line 119)
+    - "All thresholds derived from machine precision" (line 26)
+  - **Caching**: Stateful (_prev_value, _iteration)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: lists algorithms using this (lines 21-25)
+    - "Derives all thresholds from dtype precision" (lines 71-74)
+    - Usage example in docstring (lines 76-83)
+  - **Hexagonal structure**: PRIMITIVES (convergence utility)
+  - **Tests**: Expected in test_convergence.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclass (ConvergenceState)
+    - Property accessors for thresholds
+    - Reset capability for reuse
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/_primitives/epsilon_utils.py` (412 lines)
+  - **Duplicate code/math**: NONE
+    - Backend scalar helpers: sqrt_scalar, log_scalar, exp_scalar, etc.
+    - Epsilon utilities: machine_epsilon, division_epsilon, regularization_epsilon
+    - Derived thresholds: svd_rank_threshold, infinity_threshold
+  - **Geodesic math**: N/A (numerical utilities)
+  - **Backend usage**: EXCELLENT
+    - All scalar ops via Backend: array, sqrt, log, exp, arctan
+    - "Use instead of math.sqrt(value)" (lines 75-76)
+    - finfo for dtype-aware epsilons (lines 317-323)
+  - **Caching**: N/A (stateless functions)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: "No NumPy" (line 23)
+    - Each function documents what it replaces from math module
+    - infinity_threshold: detailed derivation (lines 389-411)
+  - **Hexagonal structure**: PRIMITIVES (core epsilon utilities)
+  - **Tests**: Expected in test_epsilon_utils.py (not verified)
+  - **Best practices**: EXCELLENT
+    - __all__ export list (lines 33-63)
+    - sqrt_scalar guards against negative values (line 79)
+    - atan2_scalar handles all quadrants (lines 228-266)
+  - **Issues**: NONE
+
+- `src/modelcypher/core/domain/geometry/_primitives/validation.py` (181 lines)
+  - **Duplicate code/math**: NONE
+    - ArrayNumerics: frozen dataclass for validation results
+    - validate_array_numerics: single-pass NaN/Inf detection
+    - count_nan, count_inf, count_nonfinite helpers
+  - **Geodesic math**: N/A (validation utilities)
+  - **Backend usage**: EXCELLENT
+    - All ops via Backend: isnan, isinf, isfinite, sum
+    - "Single-pass computation for efficiency" (line 21)
+    - Batch eval for GPU efficiency (line 103)
+  - **Caching**: N/A (stateless functions)
+  - **NumPy**: NONE (verified)
+  - **Documentation**: EXCELLENT
+    - Module docstring: "GPU-accelerated validation" (lines 20-22)
+    - ArrayNumerics attributes fully documented
+    - "Prefer validate_array_numerics() for multiple checks" (lines 132-133)
+  - **Hexagonal structure**: PRIMITIVES (validation utilities)
+  - **Tests**: Expected in test_validation.py (not verified)
+  - **Best practices**: EXCELLENT
+    - Frozen dataclass (ArrayNumerics)
+    - is_healthy property (line 59)
+    - nan_fraction, inf_fraction properties
   - **Issues**: NONE

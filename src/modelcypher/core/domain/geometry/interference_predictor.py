@@ -18,6 +18,38 @@
 """Merge analysis using ConceptVolume geometry.
 
 Reports raw geometric measurements used to align models for merging.
+Provides diagnostic signals for understanding concept overlap, curvature
+divergence, and subspace alignment between source and target representations.
+
+Mathematical Foundation:
+    Each concept occupies a volume on the representation manifold. Merge
+    compatibility depends on geometric relationships between these volumes:
+
+    1. Overlap Score: Mean of distribution similarity metrics
+       - Bhattacharyya coefficient: BC = ∫ √(p(x) q(x)) dx ∈ [0, 1]
+       - Overlap coefficient: OC = |A ∩ B| / min(|A|, |B|)
+       - Jaccard index: J = |A ∩ B| / |A ∪ B|
+       Combined: overlap = (BC + OC + J) / 3
+
+    2. Curvature Divergence: From ConceptVolumeRelation
+       Measures local geometry mismatch (positive vs negative curvature)
+
+    3. Subspace Alignment: Principal direction agreement ∈ [0, 1]
+       1.0 = identical principal subspaces (aligned = True)
+
+    4. Distance Score: Normalized geodesic centroid separation
+       d_norm = d_geodesic(C_a, C_b) / (r_a + r_b)
+       Clamped to [0, 1] where 1.0 = centroids separated by sum of radii
+
+Algorithm:
+    1. Estimate ConceptVolume for each concept in source and target
+    2. Compute pairwise ConceptVolumeRelation via Riemannian density
+    3. Aggregate geometric measurements across all concept pairs
+    4. Report raw metrics (no gating - caller interprets significance)
+
+See Also:
+    - riemannian_density: ConceptVolume and relation estimation
+    - numerical_stability: machine_epsilon for aligned check
 """
 
 from __future__ import annotations

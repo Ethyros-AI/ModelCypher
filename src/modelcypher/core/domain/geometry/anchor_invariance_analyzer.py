@@ -18,9 +18,34 @@
 """
 Anchor Invariance Analyzer.
 
-Measures stability of semantic anchors across model pairs.
-Anchors that maintain high cosine similarity across multiple model comparisons
-are considered "invariant" - they represent stable semantic features.
+Measures stability of semantic anchors across model pairs using geodesic
+cosine similarity on the representation manifold.
+
+Mathematical Foundation:
+    Anchors are semantic waypoints in the knowledge manifold. Their invariance
+    across models reveals shared geometric structure. For each anchor i across
+    runs r ∈ R, we compute:
+
+    1. Per-run similarity: sim(a_r, b_r) via geodesic cosine on aligned dimensions
+    2. Mean: μ_i = (1/|R|) Σ sim_r
+    3. Std: σ_i = sqrt((1/|R|) Σ (sim_r - μ_i)²)
+    4. Stability: S_i = μ_i - σ_i (higher = more stable)
+
+    Geodesic cosine is used instead of Euclidean cosine because the embedding
+    space is curved. Chord distance underestimates true angular separation in
+    positive curvature regions and overestimates in negative curvature.
+
+Algorithm:
+    1. Build sparse anchor vectors from activation fingerprints
+    2. Align layers between models (exact match or normalized depth)
+    3. Apply dimension alignment via intersection map
+    4. Compute geodesic cosine similarity per anchor per layer
+    5. Aggregate across runs to find stable invariants
+
+See Also:
+    - vector_math.geodesic_cosine_sparse: Geodesic-aware sparse cosine
+    - metaphor_convergence_analyzer: Layer-wise convergence analysis
+    - manifold_stitcher: Cross-architecture alignment
 
 Ported 1:1 from the reference Swift implementation.
 """
