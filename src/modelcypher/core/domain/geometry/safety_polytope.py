@@ -34,7 +34,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms, VectorMath
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 logger = logging.getLogger(__name__)
 
@@ -271,12 +271,14 @@ class SafetyPolytope:
         transformations: list[TransformationType] = []
 
         x = diagnostics.vector
-
-        # Check each dimension against boundary
-        constraint_values = []
-        for row in self.A:
-            val = VectorMath.dot(row, x)
-            constraint_values.append(val)
+        _b = get_default_backend()
+        x_arr = _b.array(x)
+        a_arr = _b.array(self.A)
+        x_col = _b.reshape(x_arr, (-1, 1))
+        constraint_vals_arr = _b.matmul(a_arr, x_col)
+        constraint_vals_arr = _b.squeeze(constraint_vals_arr, axis=1)
+        _b.eval(constraint_vals_arr)
+        constraint_values = [float(v) for v in _b.tolist(constraint_vals_arr)]
 
         dimension_names = ["interference", "importance", "instability", "complexity"]
         transformation_map = {
@@ -287,8 +289,7 @@ class SafetyPolytope:
             "complexity": TransformationType.TSV_PRUNE,
         }
 
-        _b = get_default_backend()
-        eps = machine_epsilon(_b, _b.array([1.0]))
+        eps = machine_epsilon(_b, x_arr)
         for val, threshold, name in zip(constraint_values, self.b, dimension_names):
             if val > threshold:
                 denom = max(1.0 - threshold, eps)
@@ -335,19 +336,20 @@ class SafetyPolytope:
     def _compute_confidence(self, diagnostics: DiagnosticVector) -> float:
         """Compute confidence in the measurements."""
         x = diagnostics.vector
-
-        distances = []
-        for i in range(len(self.b)):
-            row = self.A[i]
-            constraint_val = VectorMath.dot(row, x)
-            distances.append(self.b[i] - constraint_val)
-
         _b = get_default_backend()
-        eps = machine_epsilon(_b, _b.array([1.0]))
-        normalized_distances = [
-            distances[i] / max(self.b[i], eps) for i in range(len(distances))
-        ]
-        min_distance = min(normalized_distances)
+        x_arr = _b.array(x)
+        a_arr = _b.array(self.A)
+        b_arr = _b.array(self.b)
+        x_col = _b.reshape(x_arr, (-1, 1))
+        constraint_vals = _b.matmul(a_arr, x_col)
+        constraint_vals = _b.squeeze(constraint_vals, axis=1)
+        distances = b_arr - constraint_vals
+        eps = machine_epsilon(_b, b_arr)
+        denom = _b.maximum(b_arr, _b.full(b_arr.shape, eps))
+        normalized = distances / denom
+        min_distance_arr = _b.min(normalized)
+        _b.eval(min_distance_arr)
+        min_distance = float(_b.to_scalar(min_distance_arr))
 
         if min_distance < 0:
             return max(0.3, 1.0 + min_distance)
