@@ -34,7 +34,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms, VectorMath
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +275,7 @@ class SafetyPolytope:
         # Check each dimension against boundary
         constraint_values = []
         for row in self.A:
-            val = sum(row[i] * x[i] for i in range(len(x)))
+            val = VectorMath.dot(row, x)
             constraint_values.append(val)
 
         dimension_names = ["interference", "importance", "instability", "complexity"]
@@ -339,7 +339,7 @@ class SafetyPolytope:
         distances = []
         for i in range(len(self.b)):
             row = self.A[i]
-            constraint_val = sum(row[j] * x[j] for j in range(len(x)))
+            constraint_val = VectorMath.dot(row, x)
             distances.append(self.b[i] - constraint_val)
 
         _b = get_default_backend()
