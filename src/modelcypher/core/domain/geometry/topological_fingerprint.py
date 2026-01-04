@@ -1193,14 +1193,21 @@ class BackendTopologicalFingerprint:
             bottom_block = b.concatenate([diag_block_b, b.zeros((n_b, n_a))], axis=1)
             cost_matrix_arr = b.concatenate([top_block, bottom_block], axis=0)
             b.eval(cost_matrix_arr)
-            cost = b.tolist(cost_matrix_arr)
-
-            matching = TopologicalFingerprint._hungarian_algorithm(cost)
-
-            for i, j in enumerate(matching):
-                if i < n_a or j < n_b:
-                    if cost[i][j] < float("inf"):
-                        max_dist = max(max_dist, cost[i][j])
+            matching = self._hungarian_backend(cost_matrix_arr, b)
+            row_idx = b.arange(n, dtype="int32")
+            flat = b.reshape(cost_matrix_arr, (-1,))
+            flat_idx = b.astype(row_idx * n + matching, "int32")
+            matched = b.take(flat, flat_idx, axis=0)
+            real_mask = (row_idx < n_a) | (matching < n_b)
+            finite_mask = b.isfinite(matched)
+            neg_inf = -float(b.finfo().max)
+            mask = b.astype(real_mask, "int32") * b.astype(finite_mask, "int32")
+            masked = b.where(mask > 0, matched, b.full(matched.shape, neg_inf))
+            max_arr = b.max(masked)
+            b.eval(max_arr)
+            max_val = float(b.to_scalar(max_arr))
+            if is_finite(max_val, b):
+                max_dist = max(max_dist, max_val)
 
         return max_dist
 
@@ -1260,15 +1267,20 @@ class BackendTopologicalFingerprint:
             bottom_block = b.concatenate([diag_block_b, b.zeros((n_b, n_a))], axis=1)
             cost_matrix_arr = b.concatenate([top_block, bottom_block], axis=0)
             b.eval(cost_matrix_arr)
-            cost = b.tolist(cost_matrix_arr)
-
-            matching = TopologicalFingerprint._hungarian_algorithm(cost)
-
-            for i, j in enumerate(matching):
-                if cost[i][j] < float("inf"):
-                    total_dist += cost[i][j]
-                    if i < n_a or j < n_b:
-                        count += 1
+            matching = self._hungarian_backend(cost_matrix_arr, b)
+            row_idx = b.arange(n, dtype="int32")
+            flat = b.reshape(cost_matrix_arr, (-1,))
+            flat_idx = b.astype(row_idx * n + matching, "int32")
+            matched = b.take(flat, flat_idx, axis=0)
+            real_mask = (row_idx < n_a) | (matching < n_b)
+            finite_mask = b.isfinite(matched)
+            mask = b.astype(real_mask, "int32") * b.astype(finite_mask, "int32")
+            masked = b.where(mask > 0, matched, b.zeros_like(matched))
+            sum_arr = b.sum(masked)
+            count_arr = b.sum(mask)
+            b.eval(sum_arr, count_arr)
+            total_dist += float(b.to_scalar(sum_arr))
+            count += int(b.to_scalar(count_arr))
 
         return total_dist / count if count > 0 else 0.0
 

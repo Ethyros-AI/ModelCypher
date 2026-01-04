@@ -18,8 +18,8 @@
 """Generalized Procrustes Analysis (GPA) for multi-model alignment.
 
 Aligns multiple neural network representations to a common consensus space
-using orthogonal Procrustes transformations. Supports both Fréchet mean
-(curvature-aware) and arithmetic mean for consensus computation.
+using orthogonal Procrustes transformations. Uses Fréchet mean
+(curvature-aware) for consensus computation.
 
 Mathematical Background:
     Given k models with representations X_1, ..., X_k, GPA finds:
@@ -299,7 +299,7 @@ class GeneralizedProcrustes:
 
             Rs = b.stack([base_eye, R1], axis=0)
             aligned_X = b.stack([X0, b.matmul(X1, R1)], axis=0)
-            consensus = b.mean(aligned_X, axis=0)
+            consensus = self._compute_consensus(aligned_X)
 
             residuals = aligned_X - consensus
             # Compute geodesic norms for each model's residuals
@@ -337,10 +337,8 @@ class GeneralizedProcrustes:
         base_eye = self._backend.eye(k)
         Rs = self._backend.stack([base_eye] * model_count)  # [M, K, K]
 
-        # Initial Consensus (use arithmetic mean for first iteration)
-        consensus = self._backend.mean(X, axis=0)  # [N, K]
-        # Note: Initial consensus uses arithmetic mean; iterative updates
-        # will use Fréchet mean if configured
+        # Initial consensus (Fréchet mean for curvature-aware initialization)
+        consensus = self._compute_consensus(X)  # [N, K]
 
         aligned_X = X  # Initially aligned is just centered X
 
