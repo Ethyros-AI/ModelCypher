@@ -6,12 +6,12 @@
 
 ## Why This Matters for Model Merging
 
-Not all parameters are equally important. The Fisher Information Matrix quantifies **how much each parameter contributes to the model's predictions**. In geometry-first merging, Fisher can:
+Not all parameters are equally important. The Fisher Information Matrix quantifies **how much each parameter contributes to the model's predictions**. In geometry-first merging, Fisher can (in principle):
 1. **Identify sensitive directions** that must be preserved
 2. **Bound transplant deltas** in high-curvature regions
 3. **Diagnose interference risk** before grafting
 
-**In ModelCypher**: Fisher-weighted averaging is prohibited. Use Fisher only as a diagnostic or constraint.
+**In ModelCypher**: Fisher-weighted averaging is prohibited. Fisher matrices are not computed today; this is background for future diagnostics/constraints.
 
 ---
 
@@ -132,9 +132,9 @@ must apply to constraining or diagnostics inside the transplant pipeline.
 | Method | Geometry Role |
 |--------|-----------------|
 | Simple Average | Prohibited (averaging) |
-| Fisher Geometry | Importance diagnostics |
+| Fisher Geometry | Potential importance diagnostics |
 | TIES-Merge | Sign-based with trimming |
-| DARE | Random with rescaling |
+| DARE | Sparsity analysis (delta magnitude distribution) |
 | Task Arithmetic | Task vector addition |
 
 Fisher merging is complementary to these; can combine approaches.

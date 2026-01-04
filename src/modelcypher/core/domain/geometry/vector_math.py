@@ -235,7 +235,7 @@ def geodesic_cosine_matrix(vectors: Any, backend: "Backend") -> Any:
     d0_row = backend.reshape(d0, (1, -1))
     d0_col = backend.reshape(d0, (-1, 1))
 
-    eps = division_epsilon(backend, distances)
+    eps = division_epsilon(backend, dij)
     denom = 2.0 * d0_col * d0_row
     safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
     cos_matrix = (d0_col * d0_col + d0_row * d0_row - dij * dij) / safe_denom
@@ -274,7 +274,7 @@ def geodesic_cosine_between_sets(a: Any, b: Any, backend: "Backend") -> Any:
 
     d0a_col = backend.reshape(d0a, (-1, 1))
     d0b_row = backend.reshape(d0b, (1, -1))
-    eps = division_epsilon(backend, distances)
+    eps = division_epsilon(backend, dab)
     denom = 2.0 * d0a_col * d0b_row
     safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
     cos_matrix = (d0a_col * d0a_col + d0b_row * d0b_row - dab * dab) / safe_denom

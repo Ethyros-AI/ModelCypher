@@ -32,11 +32,7 @@ from typing import TYPE_CHECKING, Any, Iterable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.riemannian_utils import (
-    RiemannianGeometry,
-    frechet_mean,
-)
+from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.geometry.types import (
     ConceptComparisonResult,
     DetectedConcept,
@@ -45,6 +41,7 @@ from modelcypher.core.domain.geometry.types import (
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_cosine_batch,
     geodesic_cosine_between_sets,
+    geodesic_cosine_matrix,
 )
 from modelcypher.utils.text import truncate
 
@@ -310,31 +307,7 @@ class ConceptDetector:
     def _compute_separation_floor(self) -> float:
         if self._probe_count < 2:
             return -1.0
-        zero = self._backend.zeros_like(self._probe_centroids[:1])
-        points = self._backend.concatenate([zero, self._probe_centroids], axis=0)
-        rg = RiemannianGeometry(self._backend)
-        point_count = int(self._backend.shape(points)[0])
-        geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
-        distances = geo_result.distances
-        self._backend.eval(distances)
-
-        d0 = distances[0, 1:]
-        dij = distances[1:, 1:]
-        d0_row = self._backend.reshape(d0, (1, -1))
-        d0_col = self._backend.reshape(d0, (-1, 1))
-
-        eps = division_epsilon(self._backend, distances)
-        denom = 2.0 * d0_col * d0_row
-        safe_denom = self._backend.maximum(
-            denom, self._backend.full(self._backend.shape(denom), eps)
-        )
-        cos_matrix = (d0_col * d0_col + d0_row * d0_row - dij * dij) / safe_denom
-        cos_matrix = self._backend.clip(cos_matrix, -1.0, 1.0)
-
-        valid = self._backend.minimum(d0_col > eps, d0_row > eps)
-        cos_matrix = self._backend.where(
-            valid, cos_matrix, self._backend.zeros_like(cos_matrix)
-        )
+        cos_matrix = geodesic_cosine_matrix(self._probe_centroids, self._backend)
 
         diag_mask = self._backend.eye(self._probe_count)
         neg_inf = self._backend.array(float("-inf"), dtype=cos_matrix.dtype)

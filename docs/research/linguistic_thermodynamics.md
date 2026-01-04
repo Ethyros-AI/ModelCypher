@@ -164,7 +164,7 @@ The following are explicitly NOT part of this framework:
 - **Hardcoded intensity scores**: Modifier effects are measured, not assumed
 - **Default basin depths**: All values require calibration
 - **Predicted modifier effects**: We measure actual entropy changes
-- **Qualitative labels**: We return raw measurements (T/T_c ratio, entropy)
+- **Qualitative judgments**: Outputs are raw measurements plus deterministic phase classification from T/T_c
 - **Magic numbers**: All thresholds derived from baseline measurements
 
 The geometry IS the answer. We measure it; we don't guess.

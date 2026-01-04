@@ -19,9 +19,9 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
 
 ## Progress
 - Total files: 918
-- Audited: 103
-- Issues found: 37
-- Issues fixed: 37
+- Audited: 110
+- Issues found: 44
+- Issues fixed: 44
 
 ## Audit Log
 
@@ -1299,3 +1299,94 @@ Scope: Full repo, file-by-file. Prior audits are ignored.
   - Best practices: OK
   - Issues: Claimed safety scores/mitigations, wrong domains/CLI output, and non-existent predictors
   - Fix: Rewrote to match MergeAnalyzer outputs, domain coverage, and CLI behavior
+
+- `docs/research/linguistic_thermodynamics.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (thermo API alignment)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Incorrect class list, energy/entropy mapping, calibration steps, and example usage
+  - Fix: Aligned tables and examples with thermo APIs and removed unverified critical-temp example
+
+- `docs/research/manifold_swapping.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (speculative scope + stitching reality)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Claimed non-existent stitcher training and experimental results
+  - Fix: Reframed as hypothesis and aligned stitching to existing transplant transforms
+
+- `docs/research/math/MATH_REFERENCE_INDEX.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (index summary)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Incorrect file count and over-specific claims
+  - Fix: Replaced counts with index summary and softened unverifiable phrasing
+
+- `docs/research/math/centered_kernel_alignment.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (CKA implementation notes)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Stale line references and imprecise implementation notes
+  - Fix: Removed line numbers, corrected usage list, and clarified kernel/caching behavior
+
+- `docs/research/math/dare_sparsity.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (DARE implementation scope)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Described random drop/rescale workflow and merge gains not implemented in code
+  - Fix: Rewrote to reflect ModelCypher's deterministic sparsity analysis
+
+- `docs/research/math/dora_decomposition.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (DoRA analysis focus)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Mixed training/merge claims and non-implemented strategies
+  - Fix: Rewrote to match DoRA analysis implementation and metrics
+
+- `docs/research/math/fisher_information.md` (doc)
+  - Duplicate code/math: N/A
+  - Geodesic math: N/A
+  - Backend usage: N/A
+  - Caching: N/A
+  - NumPy: N/A
+  - Documentation: Updated (implementation status)
+  - Hexagonal structure: N/A
+  - Tests: N/A
+  - Best practices: OK
+  - Issues: Implied Fisher diagnostics exist and mischaracterized DARE in comparison table
+  - Fix: Clarified non-implementation and updated method comparison

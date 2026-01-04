@@ -97,9 +97,11 @@ Two distinct biases matter:
 - **Feature-sampling bias** can *underestimate* CKA when only a subset of features is observed,
   and the underestimation grows with intrinsic dimensionality (Chun et al., 2025).
 
-### The Solution
+### The Solution (Optional in ModelCypher)
 
-Use **debiased CKA** with unbiased HSIC estimators:
+ModelCypher exposes unbiased HSIC estimators and feature-sampling correction.
+Enable `HSICEstimator.UNBIASED`/`AUTO` and `feature_bias_correction=True` when
+feature sampling is sparse or features >> samples.
 
 $$\text{CKA}_{debiased}(X, Y) = \frac{\widehat{\text{HSIC}}_u(K, L)}{\sqrt{\widehat{\text{HSIC}}_u(K, K) \cdot \widehat{\text{HSIC}}_u(L, L)}}$$
 
@@ -129,25 +131,26 @@ This unifies several representation comparison methods under one framework.
 
 **Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../../src/modelcypher/core/domain/geometry/cka.py)
 
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `CKAResult` | 68 | Result dataclass with similarity, kernel type |
-| `compute_cka()` | 270 | Main CKA computation function |
-| `compute_cka_matrix()` | 376 | Pairwise CKA between multiple representations |
-| `compute_cka_backend()` | 458 | Backend-agnostic CKA computation |
-| `compute_cka_from_lists()` | 515 | CKA from Python lists |
-| `compute_cka_from_grams()` | 548 | CKA directly from Gram matrices |
+**Key entry points**:
+- `CKAResult` (result dataclass)
+- `compute_cka()` (main entry point)
+- `compute_cka_backend()` (backend-agnostic entry)
+- `compute_cka_matrix()` (pairwise CKA across activations)
+- `compute_cka_from_lists()`, `compute_cka_from_grams()`, `compute_cka_from_centered_grams()`
+- `compute_layer_cka()` (weight-matrix CKA)
 
 **Also used in**:
-- [`manifold_stitcher.py:928`](../../../../src/modelcypher/core/domain/geometry/manifold_stitcher.py) - CKA for stitching quality
-- [`probe_calibration.py:110`](../../../../src/modelcypher/core/domain/geometry/probe_calibration.py) - probe similarity
-- [`concept_response_matrix.py:155`](../../../../src/modelcypher/core/domain/geometry/concept_response_matrix.py) - concept alignment
+- `src/modelcypher/core/use_cases/merge/stages/probe.py`
+- `src/modelcypher/core/use_cases/merge/stages/permute.py`
+- `src/modelcypher/core/domain/geometry/probe_calibration.py`
+- `src/modelcypher/core/domain/geometry/concept_response_matrix.py`
 
 **Design decisions**:
 1. **Backend-agnostic**: Works with MLX, JAX, or any backend
-2. **Geodesic-aware**: Uses geodesic Gram matrices when appropriate
-3. **Numerical stability**: Handles edge cases (zero variance, etc.)
-4. **Feature correction**: Optional participation-ratio correction for feature sampling bias (Chun et al., 2025)
+2. **Kernel options**: Linear kernel by default; RBF uses geodesic distances
+3. **Caching**: Gram and centered-Gram matrices are cached per session
+4. **Numerical stability**: Handles edge cases (zero variance, small samples)
+5. **Feature correction**: Optional participation-ratio correction for feature sampling bias (Chun et al., 2025)
 
 ---
 

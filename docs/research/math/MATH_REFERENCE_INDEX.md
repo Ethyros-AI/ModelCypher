@@ -4,9 +4,9 @@
 
 This directory contains rigorous mathematical documentation for every geometric and high-dimensional concept used in ModelCypher. Each file includes:
 - Formal definitions and theorems
-- The exact formulas we implement
-- Full citations to foundational and 2025 research
-- How we apply the concept in model merging
+- The formulas we implement or reference
+- Citations to foundational and recent research
+- How we apply the concept in ModelCypher (where applicable)
 
 ---
 
@@ -170,16 +170,16 @@ And the many researchers advancing these fields in 2024-2025.
 
 ---
 
-## File Count: 21 Reference Documents
+## Index Summary
 
-| Category | Count | Files |
-|----------|-------|-------|
-| Core Geometry | 6 | frechet_mean, geodesic_distance, manifold_curvature, intrinsic_dimension, tangent_space, persistent_homology |
-| Similarity | 5 | cka, hsic, gromov_wasserstein, procrustes, relative_representations |
-| Merging | 6 | slerp, ties_merge, dare_sparsity, task_singular_vectors, fisher_information, permutation_alignment |
-| Weight Analysis | 2 | dora_decomposition, spectral_analysis |
-| Number Theory | 1 | prime_spectral_geometry |
+| Category | Files |
+|----------|-------|
+| Core Geometry | frechet_mean, geodesic_distance, manifold_curvature, intrinsic_dimension, tangent_space, persistent_homology |
+| Similarity | centered_kernel_alignment, hsic, gromov_wasserstein, procrustes_analysis, relative_representations |
+| Merging | slerp, ties_merge, dare_sparsity, task_singular_vectors, fisher_information, permutation_alignment |
+| Weight Analysis | dora_decomposition, spectral_analysis |
+| Number Theory | prime_spectral_geometry |
 
 ---
 
-*Last updated: 2025-12-29*
+*Last updated: 2025-01-04*
