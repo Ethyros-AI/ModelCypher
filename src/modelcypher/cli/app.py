@@ -724,7 +724,18 @@ def geometry_validate(
     """Validate geometry invariants on built-in fixtures."""
     context = _context(ctx)
     service = GeometryService()
-    report = service.validate(include_fixtures=include_fixtures)
+    try:
+        report = service.validate(include_fixtures=include_fixtures)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-2005",
+            title="Geometry validation failed",
+            detail=str(exc),
+            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
     payload = service.validation_payload(
         report,
         include_schema=context.output_format in {"json", "yaml"},

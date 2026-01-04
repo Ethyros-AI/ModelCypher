@@ -36,9 +36,9 @@ Status: pass | fail | blocked | needs-doc-update
 | mc eval list --output json | pass | Returns existing eval history entries. |
 | mc compare list --output json | pass | Returns comparison sessions. |
 | mc model list --output json | pass | Registry contains stale path (see Runtime Findings). |
-| mc model probe /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | fail | Unhandled RuntimeError from MLX probe (stack trace). |
-| mc model validate-merge --source /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | fail | Unhandled RuntimeError from MLX probe (stack trace). |
-| mc geometry validate | fail | Backend selection raises RuntimeError; unhandled in CLI. |
+| mc model probe /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | blocked | MLX probe fails; now returns structured error. |
+| mc model validate-merge --source /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | blocked | MLX probe fails; now returns structured error. |
+| mc geometry validate | blocked | Backend auto-detection fails; now returns structured error. |
 
 ## Known Issues
 - write_error signature mismatch: many call sites pass output_format/pretty but function does not accept them.
@@ -49,8 +49,8 @@ Status: pass | fail | blocked | needs-doc-update
 
 ## Runtime Findings
 - `mc model list` returns a model path that no longer exists: `/Volumes/CodeCypher/models/hf-cache/hub/models--mlx-community--Qwen2-0.5B/...`.
-- `mc model probe` and `mc model validate-merge` throw unhandled RuntimeError when MLX probe fails.
-- `mc geometry validate` throws unhandled RuntimeError when backend auto-detection fails.
+- `mc model probe` and `mc model validate-merge` blocked by MLX probe failure (now handled with structured errors).
+- `mc geometry validate` blocked by MLX probe failure (now handled with structured errors).
 
 ## Docs Mismatches (Initial)
 - docs/FAQ.md references `mc geometry manifold analyze` (command does not exist).

@@ -251,24 +251,21 @@ class ConceptVolume:
         # Compute geodesic distance from centroid to point
         rg = RiemannianGeometry(backend)
 
-        # Attach point to the manifold graph
-        geo_from_point = rg._geodesic_distances_from_query(
-            self.raw_activations,
-            point_arr,
-            geo_result=self._geodesic_context,
-        )
-
-        # Also get distances from centroid to all activations
+        # Distances from centroid to all activations
         geo_from_centroid = rg._geodesic_distances_from_query(
             self.raw_activations,
             centroid_arr,
             geo_result=self._geodesic_context,
         )
-        backend.eval(geo_from_point, geo_from_centroid)
+        backend.eval(geo_from_centroid)
 
-        # Geodesic distance from centroid to point is approximated by
-        # finding the path through the graph: min_i(geo_centroid_to_i + geo_i_to_point)
-        total_dists = geo_from_centroid + geo_from_point
+        # Geodesic distance from centroid to point uses direct attachment:
+        # min_i(geo_centroid_to_i + euclidean(point, i)).
+        diff_nodes = self.raw_activations - point_arr
+        dist_sq = backend.sum(diff_nodes * diff_nodes, axis=1)
+        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+        euc_dist = backend.sqrt(dist_sq)
+        total_dists = geo_from_centroid + euc_dist
         geo_dist = backend.min(total_dists)
         backend.eval(geo_dist)
         geo_dist_float = float(backend.to_scalar(geo_dist))
@@ -448,41 +445,28 @@ class ConceptVolume:
         )
         backend.eval(geo_from_centroid)
 
-        # Compute geodesic distances for each query point
-        # This is the expensive part - done point by point
+        # Compute scales for each query point.
+        # Use direct attachment distances to avoid O(n^2) per point.
         scales = []
+        eps = machine_epsilon(backend, diff)
         for i in range(n_points):
             point_i = points_arr[i]
-
-            # Geodesic distances from this point to all activations
-            geo_from_point = rg._geodesic_distances_from_query(
-                self.raw_activations,
-                point_i,
-                geo_result=self._geodesic_context,
-            )
-            backend.eval(geo_from_point)
-
-            # Geodesic distance to centroid via shortest path through graph
-            total_dists = geo_from_centroid + geo_from_point
+            diff_nodes = self.raw_activations - point_i
+            dist_sq = backend.sum(diff_nodes * diff_nodes, axis=1)
+            dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+            euc_dist = backend.sqrt(dist_sq)
+            total_dists = geo_from_centroid + euc_dist
             geo_dist = backend.min(total_dists)
-            backend.eval(geo_dist)
-            geo_dist_float = float(backend.to_scalar(geo_dist))
-
-            # Euclidean distance
             diff_i = diff[i]
             diff_vec = backend.reshape(diff_i, (1, -1))
             diff_norm_arr = geodesic_norms(diff_vec, backend)
-            backend.eval(diff_norm_arr)
-            diff_norm = float(backend.to_scalar(diff_norm_arr[0]))
-
-            # Scale factor (use machine_epsilon for near-zero check)
-            if diff_norm < machine_epsilon(backend, diff_i):
-                scales.append(1.0)
-            else:
-                scales.append(geo_dist_float / diff_norm)
-
-        # Apply scales to differences
-        scales_arr = backend.array(scales)
+            scale = backend.where(
+                diff_norm_arr > eps,
+                geo_dist / diff_norm_arr,
+                backend.ones_like(diff_norm_arr),
+            )
+            scales.append(scale)
+        scales_arr = backend.stack(scales, axis=0)
         scales_col = backend.reshape(scales_arr, (-1, 1))
         tangent_vectors = diff * scales_col
 

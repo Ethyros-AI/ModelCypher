@@ -23,7 +23,7 @@ mc merge --source /path/to/source --target /path/to/target --output-dir /path/to
 mc geometry spatial probe-model /path/to/model
 
 # Measure entropy dynamics
-mc thermo measure "Your prompt here" /path/to/model
+mc thermo measure --model /path/to/model "Your prompt here"
 ```
 
 ## Core Capabilities
