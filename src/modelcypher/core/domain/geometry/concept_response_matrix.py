@@ -329,7 +329,8 @@ class ConceptResponseMatrix:
             hsic_xy = backend.sum(source_gram * target_grams_arr, axis=(1, 2))
             denom = backend.sqrt(target_frob_arr * source_frob)
             valid = (target_valid_arr > 0) & (denom >= eps)
-            cka = backend.where(valid, hsic_xy / denom, backend.zeros_like(denom))
+            safe_denom = backend.where(valid, denom, backend.ones_like(denom))
+            cka = backend.where(valid, hsic_xy / safe_denom, backend.zeros_like(denom))
             cka = backend.clip(cka, 0.0, 1.0)
             cka = backend.where(cka >= 1.0 - eps, backend.ones_like(cka), cka)
 

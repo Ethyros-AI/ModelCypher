@@ -65,22 +65,22 @@ class TransferFidelityPrediction:
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return None
 
-        # Extract upper triangular elements (i < j)
-        vec_a: list[float] = []
-        vec_b: list[float] = []
+        # Extract upper triangular elements (i < j) using backend indexing.
+        _b = get_default_backend()
+        gram_a_arr = _b.reshape(_b.array(gram_a), (n, n))
+        gram_b_arr = _b.reshape(_b.array(gram_b), (n, n))
+        row_idx, col_idx = _b.triu_indices(n, k=1)
+        flat_idx = row_idx * n + col_idx
+        flat_a = _b.reshape(gram_a_arr, (-1,))
+        flat_b = _b.reshape(gram_b_arr, (-1,))
+        vec_a_arr = _b.take(flat_a, flat_idx, axis=0)
+        vec_b_arr = _b.take(flat_b, flat_idx, axis=0)
+        _b.eval(vec_a_arr, vec_b_arr)
 
-        for i in range(n):
-            for j in range(i + 1, n):
-                vec_a.append(float(gram_a[i * n + j]))
-                vec_b.append(float(gram_b[i * n + j]))
-
-        sample_size = len(vec_a)
+        sample_size = int(_b.shape(vec_a_arr)[0])
         if sample_size == 0:
             return None
 
-        _b = get_default_backend()
-        vec_a_arr = _b.array(vec_a)
-        vec_b_arr = _b.array(vec_b)
         mean_a = _b.mean(vec_a_arr)
         mean_b = _b.mean(vec_b_arr)
         centered_a = vec_a_arr - mean_a
