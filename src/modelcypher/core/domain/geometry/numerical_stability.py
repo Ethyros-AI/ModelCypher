@@ -1637,17 +1637,9 @@ def solve_via_gram_alignment(
     R = b.matmul(U_proc, Vt_proc)  # [k, k]
     b.eval(R)
 
-    # Check for reflection and correct
-    R_det = _determinant_sign(b, R)
-    if R_det < 0:
-        # Flip sign of last column of U_proc
-        sign = b.ones((actual_rank,))
-        idx = b.arange(actual_rank)
-        sign = b.where(idx == (actual_rank - 1), b.full(sign.shape, -1.0), sign)
-        U_proc = U_proc * b.reshape(sign, (1, -1))
-        b.eval(U_proc)
-        R = b.matmul(U_proc, Vt_proc)
-        b.eval(R)
+    # Note: R may include reflection (det(R) < 0). This is the OPTIMAL
+    # orthogonal transformation for Procrustes alignment - reflection is
+    # allowed and often necessary for correct alignment.
 
     # Compute Procrustes error: ||U_s @ R - U_t||_F / ||U_t||_F
     U_s_rotated = b.matmul(U_s_k, R)

@@ -52,7 +52,9 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
+    geodesic_distance_matrix,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -603,20 +605,10 @@ class DimensionCascade:
             geo_dist = geo_result.distances
             b.eval(geo_dist)
 
-            # Compute distances in embedded space.
-            # Euclidean is valid for 2D/3D probes; higher dims use geodesic.
-            proj_dim = int(projected.shape[1]) if len(projected.shape) > 1 else 1
-            if proj_dim <= 3:
-                diff = projected[:, None, :] - projected[None, :, :]  # [n, n, d]
-                embed_dist = b.sqrt(b.sum(diff * diff, axis=2))  # [n, n]
-            else:
-                from modelcypher.core.domain.geometry.riemannian_utils import (
-                    geodesic_distance_matrix,
-                )
-
-                embed_dist = geodesic_distance_matrix(
-                    projected, k_neighbors=None, backend=b
-                )
+            # Compute geodesic distances in embedded space (all dimensions)
+            embed_dist = geodesic_distance_matrix(
+                projected, k_neighbors=None, backend=b
+            )
             b.eval(embed_dist)
 
             # Flatten and compute correlation
@@ -632,8 +624,9 @@ class DimensionCascade:
             b.eval(geo_centered, embed_centered)
 
             numerator = b.sum(geo_centered * embed_centered)
-            geo_std = b.sqrt(b.sum(geo_centered * geo_centered))
-            embed_std = b.sqrt(b.sum(embed_centered * embed_centered))
+            # Use geodesic norms for standard deviation computation
+            geo_std = geodesic_norms(b.reshape(geo_centered, (1, -1)), b)
+            embed_std = geodesic_norms(b.reshape(embed_centered, (1, -1)), b)
             b.eval(numerator, geo_std, embed_std)
 
             eps = division_epsilon(b, geo_flat)

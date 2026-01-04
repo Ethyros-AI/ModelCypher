@@ -60,6 +60,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -486,7 +487,7 @@ class CrossManifoldProjector:
 
             # Compute gradient in tangent space (local linear approximation)
             diffs = position - target_centroids_arr
-            diff_norms = backend.sqrt(backend.sum(diffs * diffs, axis=1))
+            diff_norms = geodesic_norms(diffs, backend)
             eps_vec = backend.full(diff_norms.shape, eps)
             safe_norms = backend.maximum(diff_norms, eps_vec)
             valid_mask = backend.astype(current_distances > eps, "float32") * backend.astype(
