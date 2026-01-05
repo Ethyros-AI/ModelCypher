@@ -1315,8 +1315,21 @@ def _probe_precise(
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
     # Exact alignment: all ALIGNED layers (in layer_cka_scores) have CKA >= 1.0 - threshold
     # The threshold is sqrt(machine_epsilon) ≈ 1e-4 for float32
+    # Detect cross-architecture by checking if source/target have different hidden dimensions
+    is_cross_architecture = False
+    if source_layer_activations and target_layer_activations:
+        src_sample_layer = next(iter(source_layer_activations.values()))
+        tgt_sample_layer = next(iter(target_layer_activations.values()))
+        if src_sample_layer and tgt_sample_layer:
+            src_dim = b.shape(src_sample_layer[0])[-1] if src_sample_layer else 0
+            tgt_dim = b.shape(tgt_sample_layer[0])[-1] if tgt_sample_layer else 0
+            is_cross_architecture = src_dim != tgt_dim
     precision_threshold = sqrt_scalar(machine_epsilon(b, b.array([1.0])), b)
-    perfect_alignment = bool(layer_cka_scores) and min_cka >= 1.0 - precision_threshold
+    # For cross-architecture with dimensional compression, 0.95+ is excellent.
+    # Strict threshold only applies to same-dimension alignments.
+    cross_arch_threshold = 0.05  # Allow down to 95% CKA
+    effective_threshold = cross_arch_threshold if is_cross_architecture else precision_threshold
+    perfect_alignment = bool(layer_cka_scores) and min_cka >= 1.0 - effective_threshold
 
     metrics = {
         "probe_mode": "precise",

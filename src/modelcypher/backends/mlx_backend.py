@@ -166,6 +166,22 @@ class MLXBackend(Backend):
     def minimum(self, lhs: Array, rhs: Array) -> Array:
         return self.mx.minimum(lhs, rhs)
 
+    def add(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise addition."""
+        return self.mx.add(lhs, rhs)
+
+    def subtract(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise subtraction."""
+        return self.mx.subtract(lhs, rhs)
+
+    def multiply(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise multiplication."""
+        return self.mx.multiply(lhs, rhs)
+
+    def divide(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise division."""
+        return self.mx.divide(lhs, rhs)
+
     def abs(self, array: Array) -> Array:
         return self.mx.abs(array)
 
