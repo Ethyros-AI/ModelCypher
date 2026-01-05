@@ -1042,10 +1042,12 @@ def stage_transplant(
 
             metrics["weights_considered"] += 1
 
-            # Skip non-2D weights (bias vectors, etc)
+            # Skip non-1D/2D weights (only handle 1D norms and 2D matrices)
             if not hasattr(target_w, "shape") or not hasattr(source_w, "shape"):
                 continue
-            if len(target_w.shape) != 2 or len(source_w.shape) != 2:
+            ndim_t = len(target_w.shape)
+            ndim_s = len(source_w.shape)
+            if ndim_t not in (1, 2) or ndim_s not in (1, 2) or ndim_t != ndim_s:
                 continue
 
             # Dequantize quantized weights (uint32/int dtypes) using scales/biases
