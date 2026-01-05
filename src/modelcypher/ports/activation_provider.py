@@ -97,6 +97,34 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    def collect_embedding_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> Array:
+        """
+        Collect post-embedding activation for a text input.
+
+        This captures the OUTPUT of embed_tokens (before layer 0 input_layernorm).
+        Shape: [hidden_dim] (mean-pooled over sequence length).
+
+        Used for GramAlign at the 1D→2D interface (token IDs → embedding space).
+        Same CKA=1.0, same geodesic math - applied at the embedding dimension.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            text: The text input to process.
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Activation array of shape [hidden_dim] representing the mean-pooled
+            embedding output.
+        """
+        ...
+
     def collect_intermediate_activations(
         self,
         model: Any,

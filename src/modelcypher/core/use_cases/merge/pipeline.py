@@ -120,6 +120,7 @@ def run_merge(
         source_kv_activations,
         target_kv_activations,
         feature_transforms,
+        embedding_transform,  # 2D GramAlign for embed_tokens
         attention_transforms,
         kv_transforms,
         layer_mapping,
@@ -328,6 +329,7 @@ def run_merge(
         backend=backend,
         graft_mask=graft_mask,
         feature_transforms=feature_transforms,
+        embedding_transform=embedding_transform,  # 2D GramAlign for embed_tokens
         attention_transforms=attention_transforms,
         kv_transforms=kv_transforms,
         layer_mapping=layer_mapping,

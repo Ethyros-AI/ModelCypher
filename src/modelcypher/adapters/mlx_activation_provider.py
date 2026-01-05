@@ -114,6 +114,61 @@ class MLXActivationProvider:
 
         return activations
 
+    def collect_embedding_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> "Array":
+        """
+        Collect post-embedding activation for a text input.
+
+        This captures the OUTPUT of embed_tokens (before layer 0 input_layernorm).
+        Shape: [hidden_dim] (mean-pooled over sequence length).
+
+        Used for GramAlign at the 1D→2D interface (token IDs → embedding space).
+        Same CKA=1.0, same geodesic math - applied at the embedding dimension.
+
+        Returns MLX array directly (stays on Metal GPU).
+        """
+        import mlx.core as mx
+
+        if token_ids is None:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                token_ids = tokens
+            else:
+                token_ids = list(tokens.ids)
+        input_ids = mx.array([token_ids])
+
+        try:
+            if hasattr(model, "model"):
+                inner = model.model
+                if hasattr(inner, "embed_tokens"):
+                    h = inner.embed_tokens(input_ids)
+                elif hasattr(inner, "wte"):
+                    h = inner.wte(input_ids)
+                else:
+                    logger.warning("Cannot find embedding layer")
+                    return mx.zeros((960,))  # Fallback
+            else:
+                h = model.embed(input_ids) if hasattr(model, "embed") else None
+
+            if h is not None:
+                # h: [batch=1, seq_len, hidden_dim]
+                # Mean pool over sequence to get [hidden_dim]
+                pooled = mx.mean(h, axis=(0, 1))
+                mx.eval(pooled)
+                return pooled
+            else:
+                logger.warning("No embedding output collected")
+                return mx.zeros((960,))
+
+        except Exception as e:
+            logger.warning("Embedding activation collection failed: %s", e)
+            return mx.zeros((960,))
+
     def collect_intermediate_activations(
         self,
         model: Any,

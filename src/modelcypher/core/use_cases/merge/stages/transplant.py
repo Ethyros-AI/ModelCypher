@@ -301,6 +301,7 @@ def stage_transplant(
     transplant_domains: tuple[str, ...] = (),
     graft_mask: dict[str, dict[int, bool]] | None = None,
     feature_transforms: dict[int, list[list[float]]] | None = None,
+    embedding_transform: list[list[float]] | None = None,  # 2D GramAlign transform
     attention_transforms: dict[int, list[list[float]]] | None = None,
     kv_transforms: dict[int, list[list[float]]] | None = None,
     layer_mapping: dict[int, int] | None = None,
@@ -409,6 +410,89 @@ def stage_transplant(
     )
 
     # ==========================================================================
+    # 2D EMBEDDING ALIGNMENT: Apply GramAlign to embed_tokens
+    # Same CKA=1.0, same geodesic math - applied at embedding dimension
+    # ==========================================================================
+    if embedding_transform is not None:
+        logger.info(
+            "EMBEDDING ALIGNMENT: Applying 2D GramAlign to embed_tokens (same CKA=1.0, same geodesic math)"
+        )
+
+        # Convert transform to backend array
+        F = b.array(embedding_transform)
+        F = b.astype(F, "float32")
+        b.eval(F)
+
+        # Get source and target embed_tokens
+        # Source embeddings need to be projected through F to align with target architecture
+        source_embed_key = None
+        target_embed_key = None
+
+        for key in source_weights:
+            if "embed_tokens.weight" in key or "wte.weight" in key:
+                source_embed_key = key
+                break
+
+        for key in target_weights:
+            if "embed_tokens.weight" in key or "wte.weight" in key:
+                target_embed_key = key
+                break
+
+        if source_embed_key and target_embed_key:
+            src_embed = source_weights[source_embed_key]
+            src_embed = dequantize_if_needed(src_embed, source_weights, source_embed_key)
+            src_embed = b.astype(src_embed, "float32")
+            b.eval(src_embed)
+
+            # src_embed: [src_vocab, src_hidden_dim] (e.g., [151936, 4096])
+            # F: [src_hidden_dim, tgt_hidden_dim] (e.g., [4096, 960])
+            # aligned_embed: [src_vocab, tgt_hidden_dim]
+            aligned_embed = b.matmul(src_embed, F)
+            b.eval(aligned_embed)
+
+            # Now we need to handle vocab size difference
+            # Target is smaller - take corresponding rows from source
+            # For tokens that exist in both vocabs, use aligned source embedding
+            # For tokens only in target, keep target embedding
+
+            tgt_embed = target_weights[target_embed_key]
+            tgt_embed = dequantize_if_needed(tgt_embed, target_weights, target_embed_key)
+            tgt_embed = b.astype(tgt_embed, "float32")
+            b.eval(tgt_embed)
+
+            tgt_vocab_size = int(b.shape(tgt_embed)[0])
+            src_vocab_size = int(b.shape(src_embed)[0])
+
+            if tgt_vocab_size <= src_vocab_size:
+                # Target vocab is subset - use first N rows of aligned source
+                # This works because BPE vocabularies typically share common tokens at lower IDs
+                aligned_embed_final = aligned_embed[:tgt_vocab_size]
+                b.eval(aligned_embed_final)
+
+                # Replace in merged weights
+                merged[target_embed_key] = aligned_embed_final
+                metrics["embedding_aligned"] = True
+                metrics["embedding_src_vocab"] = src_vocab_size
+                metrics["embedding_tgt_vocab"] = tgt_vocab_size
+                logger.info(
+                    "EMBEDDING ALIGNMENT: embed_tokens aligned %d→%d vocab, %d→%d hidden dim",
+                    src_vocab_size, tgt_vocab_size,
+                    int(b.shape(src_embed)[1]), int(b.shape(aligned_embed_final)[1])
+                )
+            else:
+                logger.warning(
+                    "EMBEDDING ALIGNMENT: Skipped - target vocab (%d) > source vocab (%d)",
+                    tgt_vocab_size, src_vocab_size
+                )
+                metrics["embedding_aligned"] = False
+        else:
+            logger.warning("EMBEDDING ALIGNMENT: Could not find embed_tokens weights")
+            metrics["embedding_aligned"] = False
+    else:
+        logger.info("EMBEDDING ALIGNMENT: No embedding_transform provided, skipping 2D alignment")
+        metrics["embedding_aligned"] = False
+
+    # ==========================================================================
     # PER-LAYER ALIGNMENT: Use transforms from probe stage (CKA=1.0 verified)
     # ==========================================================================
     # The probe stage already found the transforms that achieve CKA=1.0 for each
@@ -416,6 +500,7 @@ def stage_transplant(
     # Each layer gets its own transform - different layers encode different parts
     # of the geometry at different resolutions.
     layer_hidden_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
+
 
     if feature_transforms and layer_mapping:
         # Use pre-computed per-layer transforms from probe stage

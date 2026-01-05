@@ -157,12 +157,18 @@ class ProbeResult:
     # (e.g., 320 for SmolLM=5*64, 128 for Qwen=2*64) - for k_proj/v_proj stitching (GQA)
     source_kv_activations: dict[int, list[Any]] | None = None
     target_kv_activations: dict[int, list[Any]] | None = None
+    # Embedding-space activations: shape [hidden_dim] per sample (post-embed_tokens, pre-layer-0)
+    # Used for GramAlign at 2D interface - same CKA=1.0, same geodesic math
+    source_embedding_activations: list[Any] | None = None
+    target_embedding_activations: list[Any] | None = None
     probe_ids: list[str] | None = None
     probe_domains: list[str] | None = None
     # Layer alignment transforms: source_acts @ transforms[layer] -> aligned_source
     # These transforms achieve CKA = 1.0 for each aligned layer pair
     # Hidden-space transforms: for hidden dimension (e.g., 960 -> 896)
     feature_transforms: dict[int, list[list[float]]] | None = None
+    # Embedding-space transform: for embed_tokens alignment (same CKA=1.0, same geodesic math)
+    embedding_transform: list[list[float]] | None = None
     # Attention Q-space transforms: for q_proj/o_proj (e.g., 960 -> 896 for Q heads)
     attention_transforms: dict[int, list[list[float]]] | None = None
     # Attention KV-space transforms: for k_proj/v_proj (e.g., 320 -> 128 for GQA)
@@ -323,6 +329,10 @@ def _probe_precise(
 
     source_layer_activations: dict[int, list["Array"]] = {}
     target_layer_activations: dict[int, list["Array"]] = {}
+    # Embedding-space activations for 2D GramAlign (post-embed_tokens, pre-layer-0)
+    # Same CKA=1.0, same geodesic math - applied at embedding dimension
+    source_embedding_activations: list["Array"] = []
+    target_embedding_activations: list["Array"] = []
     # Intermediate-space activations for multi-space stitching (cross-architecture merges)
     source_intermediate_activations: dict[int, list["Array"]] = {}
     target_intermediate_activations: dict[int, list["Array"]] = {}
@@ -436,6 +446,20 @@ def _probe_precise(
                     activation_provider.collect_hidden_activations(target_model, target_tokenizer, text)
                     for text in batch_texts
                 ]
+
+            # ===== EMBEDDING ACTIVATIONS (2D GramAlign) =====
+            # Same CKA=1.0, same geodesic math - applied at embedding dimension
+            has_embedding = hasattr(activation_provider, "collect_embedding_activations")
+            if has_embedding:
+                for text in batch_texts:
+                    source_emb = activation_provider.collect_embedding_activations(
+                        source_model, source_tokenizer, text
+                    )
+                    target_emb = activation_provider.collect_embedding_activations(
+                        target_model, target_tokenizer, text
+                    )
+                    source_embedding_activations.append(source_emb)
+                    target_embedding_activations.append(target_emb)
 
             # ===== INTERMEDIATE ACTIVATIONS =====
             if has_batch_intermediate:
@@ -1187,6 +1211,42 @@ def _probe_precise(
                 nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
                 kv_transforms[tgt_layer] = kv_transforms[nearest]
 
+    # =========================================================================
+    # EMBEDDING GRAMALIGN (2D layer)
+    # Same CKA=1.0, same geodesic math - applied at embedding dimension
+    # =========================================================================
+    embedding_transform: list[list[float]] | None = None
+    if source_embedding_activations and target_embedding_activations:
+        n_samples = min(len(source_embedding_activations), len(target_embedding_activations))
+        if n_samples >= 2:
+            logger.info(
+                "EMBEDDING GRAMALIGN: Computing 2D alignment with %d samples (same CKA=1.0, same geodesic math)",
+                n_samples,
+            )
+            try:
+                src_stacked = b.stack(source_embedding_activations[:n_samples], axis=0)
+                tgt_stacked = b.stack(target_embedding_activations[:n_samples], axis=0)
+                src_stacked = b.astype(src_stacked, "float32")
+                tgt_stacked = b.astype(tgt_stacked, "float32")
+                b.eval(src_stacked, tgt_stacked)
+
+                # Use same GramAligner as hidden layers - same math, same CKA=1.0 target
+                emb_result = gram_aligner.align(src_stacked, tgt_stacked)
+                if emb_result.achieved_cka >= 0.99:
+                    embedding_transform = b.tolist(emb_result.transform)
+                    logger.info(
+                        "EMBEDDING GRAMALIGN: CKA = %.4f (same geometry preserved at 2D)",
+                        emb_result.achieved_cka,
+                    )
+                    metrics["embedding_cka"] = emb_result.achieved_cka
+                else:
+                    logger.warning(
+                        "EMBEDDING GRAMALIGN: CKA = %.4f < 0.99 - alignment failed",
+                        emb_result.achieved_cka,
+                    )
+            except Exception as e:
+                logger.warning("EMBEDDING GRAMALIGN failed: %s", e)
+
     return ProbeResult(
         correlations=weight_correlations,
         confidences=layer_confidences,
@@ -1201,9 +1261,12 @@ def _probe_precise(
         target_attention_activations=target_attention_activations,
         source_kv_activations=source_kv_activations,
         target_kv_activations=target_kv_activations,
+        source_embedding_activations=source_embedding_activations,
+        target_embedding_activations=target_embedding_activations,
         probe_ids=probe_ids,
         probe_domains=probe_domains,
         feature_transforms=feature_transforms if feature_transforms else None,
+        embedding_transform=embedding_transform,
         attention_transforms=attention_transforms if attention_transforms else None,
         kv_transforms=kv_transforms if kv_transforms else None,
         layer_mapping=layer_mapping if layer_mapping else None,

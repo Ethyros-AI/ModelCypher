@@ -90,6 +90,7 @@ def stage_probe(
     dict | None,
     dict | None,
     dict[int, list[list[float]]] | None,  # feature_transforms (hidden)
+    list[list[float]] | None,  # embedding_transform (2D GramAlign)
     dict[int, list[list[float]]] | None,  # attention_transforms (Q)
     dict[int, list[list[float]]] | None,  # kv_transforms (KV)
     dict[int, int] | None,  # layer_mapping
@@ -126,6 +127,7 @@ def stage_probe(
         result.source_kv_activations,
         result.target_kv_activations,
         result.feature_transforms,
+        result.embedding_transform,
         result.attention_transforms,
         result.kv_transforms,
         result.layer_mapping,
@@ -195,6 +197,7 @@ def stage_transplant(
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
     feature_transforms: dict[int, list[list[float]]] | None = None,
+    embedding_transform: list[list[float]] | None = None,  # 2D GramAlign
     attention_transforms: dict[int, list[list[float]]] | None = None,
     kv_transforms: dict[int, list[list[float]]] | None = None,
     layer_mapping: dict[int, int] | None = None,
@@ -219,6 +222,7 @@ def stage_transplant(
         transplant_domains=tuple(transplant_domains),
         graft_mask=graft_mask,
         feature_transforms=feature_transforms,
+        embedding_transform=embedding_transform,
         attention_transforms=attention_transforms,
         kv_transforms=kv_transforms,
         layer_mapping=layer_mapping,
