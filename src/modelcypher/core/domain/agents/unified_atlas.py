@@ -109,6 +109,10 @@ from modelcypher.core.domain.agents.temporal_atlas import (
     TemporalCategory,
     TemporalConceptInventory,
 )
+from modelcypher.core.domain.agents.physical_existence_atlas import (
+    PhysicalCategory,
+    PhysicalExistenceInventory,
+)
 
 
 class AtlasSource(str, Enum):
@@ -129,6 +133,7 @@ class AtlasSource(str, Enum):
     CONCEPTUAL_METAPHOR = "conceptual_metaphor"  # CMT pairs (Lakoff & Johnson)
     SYNTAX_CONCEPT = "syntax_concept"
     SAFETY_ETHICS = "safety_ethics"  # Consent, autonomy, coercion, boundaries, vulnerability
+    PHYSICAL_EXISTENCE = "physical_existence"  # 3D embodied grounding: dynamics, constraints, permanence
 
 
 # Import AtlasDomain from the canonical location
@@ -301,6 +306,17 @@ _SAFETY_DOMAIN_MAP: dict[SafetyCategory, AtlasDomain] = {
     SafetyCategory.VULNERABILITY: AtlasDomain.SAFETY,
 }
 
+# Physical existence probes map to PHYSICAL domain
+# These test embodied grounding - without which models build on quicksand
+# NOTE: Classical constraints only - quantum physics breaks them at 0D
+_PHYSICAL_DOMAIN_MAP: dict[PhysicalCategory, AtlasDomain] = {
+    PhysicalCategory.DYNAMICS: AtlasDomain.PHYSICAL,
+    PhysicalCategory.CLASSICAL_CONSTRAINTS: AtlasDomain.PHYSICAL,
+    PhysicalCategory.PERMANENCE: AtlasDomain.PHYSICAL,
+    PhysicalCategory.EMBODIMENT: AtlasDomain.PHYSICAL,
+    PhysicalCategory.CONTINUITY: AtlasDomain.PHYSICAL,
+}
+
 
 @dataclass(frozen=True)
 class AtlasProbe:
@@ -346,6 +362,7 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.CONCEPTUAL_METAPHOR: 1.0,
     AtlasSource.SYNTAX_CONCEPT: 1.0,
     AtlasSource.SAFETY_ETHICS: 1.0,
+    AtlasSource.PHYSICAL_EXISTENCE: 1.0,  # 3D embodied grounding
 }
 
 
@@ -369,8 +386,9 @@ class UnifiedAtlasInventory:
     - 8 conceptual metaphors (CMT pairs: TIME IS MONEY, ARGUMENT IS WAR, etc.)
     - 24 syntax concepts (parts of speech, morphology, word order)
     - 34 safety ethics concepts (consent, autonomy, coercion, boundaries, vulnerability)
+    - 34 physical existence concepts (3D embodied grounding - NOT quantum)
 
-    Total: 507 probes for cross-domain triangulation
+    Total: 541 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -397,9 +415,11 @@ class UnifiedAtlasInventory:
         probes.extend(cls._conceptual_metaphor_probes())
         probes.extend(cls._syntax_concept_probes())
         probes.extend(cls._safety_ethics_probes())
+        probes.extend(cls._physical_existence_probes())
 
         cls._cached_probes = probes
         return list(probes)
+
 
     @classmethod
     def probes_by_source(cls, sources: set[AtlasSource]) -> list[AtlasProbe]:
@@ -875,6 +895,45 @@ class UnifiedAtlasInventory:
                     cross_domain_weight=concept.cross_domain_weight * base_weight,
                     category_name=concept.category.value,
                     support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _physical_existence_probes(cls) -> list[AtlasProbe]:
+        """Convert physical existence concepts to unified probes.
+
+        Physical existence probes test 3D embodied grounding:
+        - DYNAMICS: Cause → effect (ball hits window → breaks)
+        - CLASSICAL_CONSTRAINTS: Macroscopic physics (NOT quantum)
+        - PERMANENCE: Object persistence (book in drawer still exists)
+        - EMBODIMENT: Bodily sensation (stub toe → feel pain)
+        - CONTINUITY: Identity through change (chair painted blue → same chair)
+
+        Total: 34 probes testing embodied grounding.
+        Without physical existence understanding, models build on quicksand.
+
+        NOTE: Classical constraints only - at quantum level (0D), particles
+        CAN be in superposition, CAN tunnel through barriers, etc.
+        """
+        concepts = PhysicalExistenceInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.PHYSICAL_EXISTENCE]
+
+        for concept in concepts:
+            domain = _PHYSICAL_DOMAIN_MAP.get(concept.category, AtlasDomain.PHYSICAL)
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.PHYSICAL_EXISTENCE,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.prompt,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=(concept.prompt,),
                 )
             )
 

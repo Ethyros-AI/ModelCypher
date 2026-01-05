@@ -75,6 +75,9 @@ class AtlasDomain(str, Enum):
     # Philosophical domains (fundamental categories of thought)
     PHILOSOPHICAL = "philosophical"  # Ontology, epistemology, logic, modality, mereology
 
+    # Physical existence domains (3D embodied grounding)
+    PHYSICAL = "physical"  # Dynamics, constraints, permanence, embodiment, continuity
+
     # Factual domain (uses LINGUISTIC + PHILOSOPHICAL probes)
     FACTUAL = "factual"  # Factual knowledge
 
