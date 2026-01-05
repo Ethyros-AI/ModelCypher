@@ -904,8 +904,11 @@ def _probe_precise(
                                 )
 
                     # ================================================================
-                    # ATTENTION KV TRANSFORMS with Procrustes pre-alignment
+                    # ATTENTION KV TRANSFORMS - Direct GramAlign (same as hidden)
                     # ================================================================
+                    # GramAlign works in sample-space (Gram matrices), which is
+                    # dimension-agnostic. The feature_transform maps [d_src, d_tgt]
+                    # directly, achieving CKA=1.0 regardless of dimension mismatch.
                     if (
                         src_layer in source_kv_activations
                         and tgt_layer in target_kv_activations
@@ -920,85 +923,19 @@ def _probe_precise(
                             tgt_kv = b.astype(tgt_kv, "float32")
                             b.eval(src_kv, tgt_kv)
 
-                            # Procrustes pre-alignment
-                            src_dim = b.shape(src_kv)[1]
-                            tgt_dim = b.shape(tgt_kv)[1]
-                            shared_dim = min(src_dim, tgt_dim)
-
-                            src_kv_shared = src_kv[:, :shared_dim]
-                            tgt_kv_shared = tgt_kv[:, :shared_dim]
-
-                            src_mean = b.mean(src_kv_shared, axis=0, keepdims=True)
-                            tgt_mean = b.mean(tgt_kv_shared, axis=0, keepdims=True)
-                            src_centered = src_kv_shared - src_mean
-                            tgt_centered = tgt_kv_shared - tgt_mean
-                            b.eval(src_centered, tgt_centered)
-
-                            M = b.matmul(b.transpose(src_centered), tgt_centered)
-                            b.eval(M)
-                            U, _, Vt = geodesic_svd(b, M)
-                            R_procrustes = b.matmul(U, Vt)
-
-                            det_val = b.det(R_procrustes)
-                            b.eval(det_val)
-                            if float(b.to_scalar(det_val)) < 0:
-                                U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
-                                R_procrustes = b.matmul(U_fixed, Vt)
-                            b.eval(R_procrustes)
-
-                            src_kv_rotated = b.matmul(src_kv_shared, R_procrustes)
-                            b.eval(src_kv_rotated)
-
-                            # Log Procrustes alignment improvement
-                            _, pre_dist = geodesic_pairwise_metrics(src_centered, tgt_centered, b)
-                            _, post_dist = geodesic_pairwise_metrics(src_kv_rotated, tgt_kv_shared, b)
-                            pre_err = b.sum(pre_dist * pre_dist)
-                            post_err = b.sum(post_dist * post_dist)
-                            b.eval(pre_err, post_err)
-                            logger.debug(
-                                "PROBE: KV Procrustes layer %d: error %.4f -> %.4f",
-                                src_layer,
-                                float(b.to_scalar(pre_err)),
-                                float(b.to_scalar(post_err)),
-                            )
-
+                            # Direct GramAlign - handles cross-dimensional alignment
+                            # just like hidden layers do (4096→960 achieves CKA=1.0)
                             kv_result = local_aligner.find_perfect_alignment(
-                                src_kv_rotated,
-                                tgt_kv_shared,
+                                src_kv,
+                                tgt_kv,
                             )
 
-                            # Build combined transform
-                            if src_dim > shared_dim:
-                                pad_rows = b.zeros((src_dim - shared_dim, shared_dim))
-                                R_padded = b.concatenate([R_procrustes, pad_rows], axis=0)
-                                b.eval(R_padded)
-                                R_procrustes_full = R_padded
-                            else:
-                                R_procrustes_full = R_procrustes
-
-                            gram_transform = b.array(kv_result.feature_transform)
-                            combined_transform = b.matmul(R_procrustes_full, gram_transform)
-                            b.eval(combined_transform)
-
-                            if tgt_dim > shared_dim:
-                                pad_cols = b.zeros((src_dim, tgt_dim - shared_dim))
-                                combined_transform = b.concatenate(
-                                    [combined_transform, pad_cols], axis=1
-                                )
-                                b.eval(combined_transform)
-                                logger.debug(
-                                    "PROBE: KV transform layer %d: padded [%d,%d] -> [%d,%d]",
-                                    tgt_layer, src_dim, shared_dim, src_dim, tgt_dim,
-                                )
-
-                            result["kv_transform"] = [
-                                [float(x) for x in row] for row in b.tolist(combined_transform)
-                            ]
+                            result["kv_transform"] = kv_result.feature_transform
 
                             if not kv_result.is_perfect:
                                 logger.warning(
                                     "PROBE: Layer %d -> %d attention KV alignment not exact "
-                                    "(achieved_cka=%.4f after Procrustes).",
+                                    "(achieved_cka=%.4f). This indicates an alignment algorithm bug.",
                                     src_layer,
                                     tgt_layer,
                                     kv_result.achieved_cka,
