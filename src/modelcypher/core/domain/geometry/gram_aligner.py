@@ -281,10 +281,9 @@ class GramAligner:
             raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
 
         # Ensure float32 for stability
-        if str(source_activations.dtype) != "float32":
-            source_activations = source_activations.astype("float32")
-        if str(target_activations.dtype) != "float32":
-            target_activations = target_activations.astype("float32")
+        # Ensure float32 for stability
+        source_activations = b.astype(source_activations, "float32")
+        target_activations = b.astype(target_activations, "float32")
 
         precision = division_epsilon(b, source_activations)
 
