@@ -881,7 +881,11 @@ def _probe_precise(
                     n_samples = min(n_samples, len(s_list))
                 
                 if n_samples < 2:
-                    return result
+                    raise RuntimeError(
+                        f"Insufficient activation samples for layer group {src_layers} -> {tgt_layer}. "
+                        f"Got {n_samples} samples, need at least 2. "
+                        "This indicates a bug in activation collection."
+                    )
 
                 # Create thread-local GramAligner
                 local_aligner = GramAligner(backend=b)
@@ -1006,11 +1010,11 @@ def _probe_precise(
                     )
 
                 except Exception as e:
-                    result["error"] = str(e)
-                    logger.warning(
-                        "PROBE: GramAligner failed for group %s -> %d: %s",
-                        src_layers, tgt_layer, e
-                    )
+                    # RIGOROUS GEOMETRY: Do not swallow exceptions.
+                    # If GramAligner fails, the geometry is broken - fail loudly.
+                    raise RuntimeError(
+                        f"GramAligner failed for group {src_layers} -> {tgt_layer}: {e}"
+                    ) from e
 
                 return result
 
@@ -1058,12 +1062,15 @@ def _probe_precise(
                     # we map to the first source layer. But the TRANSFORM handles the combination.
                     layer_mapping[tgt_layer] = src_layers[0]
 
-                    if result["feature_transform"] is not None:
-                        # feature_transform is now [sum(d_s), d_t]
-                        feature_transforms[tgt_layer] = result["feature_transform"]
-                        layer_cka_scores[tgt_layer] = result["achieved_cka"]
-                    else:
-                        layer_cka_scores[tgt_layer] = result["raw_cka"]
+                    # RIGOROUS GEOMETRY: Transform must always exist.
+                    # If GramAligner succeeded, it returned a transform.
+                    if result["feature_transform"] is None:
+                        raise RuntimeError(
+                            f"GramAligner returned no transform for {src_layers} -> {tgt_layer}. "
+                            "This should never happen if the geometry is correct."
+                        )
+                    feature_transforms[tgt_layer] = result["feature_transform"]
+                    layer_cka_scores[tgt_layer] = result["achieved_cka"]
 
                     layer_cka_scores_raw[tgt_layer] = result["raw_cka"]
 
