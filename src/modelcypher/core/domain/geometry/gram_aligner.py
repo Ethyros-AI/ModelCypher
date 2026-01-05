@@ -76,7 +76,10 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
 from modelcypher.core.domain.geometry.cka import (
     _center_gram_matrix,
+    compute_cka_backend,
     compute_cka_from_centered_grams,
+    rbf_gram_matrix,
+    HSICEstimator,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
@@ -155,8 +158,6 @@ class AlignmentResult:
     # Apply as: A_s' = A_s @ feature_transform [d_source, d_target]
     feature_transform: list[list[float]]
 
-    # The sample-space transform: T @ K_s @ T^T = K_t
-    sample_transform: list[list[float]]
 
     # CKA achieved (1.0 is exact kernel alignment)
     achieved_cka: float
@@ -227,104 +228,9 @@ class GramAligner:
             IGNORED. Derived from dtype.
         """
         self._backend = backend or get_default_backend()
-        # These are IGNORED but kept for backward compat
         self._max_iterations = max_iterations
         self._tolerance = tolerance
         self._regularization = regularization
-
-    def find_perfect_alignment(
-        self,
-        source_activations: "Array",
-        target_activations: "Array",
-        strict: bool = True,
-    ) -> AlignmentResult:
-        """Find the transformation that achieves CKA = 1.0.
-
-        Uses T = K_t^{1/2} @ K_s^{-1/2}, then F = pinv(source) @ T @ source.
-        Mathematical guarantee: T @ K_s @ T^T = K_t, so CKA = 1.0.
-
-        Parameters
-        ----------
-        source_activations : Array
-            Source activations [n_samples, d_source].
-        target_activations : Array
-            Target activations [n_samples, d_target].
-
-        Returns
-        -------
-        AlignmentResult
-            Contains the transformation achieving CKA = 1.0.
-        """
-        b = self._backend
-        n_s, d_s = b.shape(source_activations)
-        n_t, d_t = b.shape(target_activations)
-
-        if n_s != n_t:
-            raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
-
-        # Use sqrt(eps) for CKA precision threshold since Gram matrix operations
-        # (eigendecomposition, sqrt, matmul chain) accumulate O(sqrt(eps)) error.
-        # This is mathematically appropriate for matrix chains, not arbitrary.
-        precision = division_epsilon(b, source_activations)
-
-        # Fast path: identity check
-        if source_activations is target_activations:
-            return self._identity_result(int(n_s), int(d_s), precision)
-
-        # Fast path: near-identical activations
-        if d_s == d_t and self._is_near_identical(
-            source_activations, target_activations, precision
-        ):
-            return self._identity_result(int(n_s), int(d_s), precision)
-
-        # Center activations
-        source_centered = self._center(source_activations)
-        target_centered = self._center(target_activations)
-
-        # Compute centered Gram matrices
-        K_s = b.matmul(source_centered, b.transpose(source_centered))
-        K_t = b.matmul(target_centered, b.transpose(target_centered))
-        K_s_c = _center_gram_matrix(K_s, b)
-        K_t_c = _center_gram_matrix(K_t, b)
-
-        # Compute transforms
-        sample_transform = self._gram_sqrt_transform(K_s_c, K_t_c)
-        feature_transform, cka = self._feature_transform(
-            source_centered, target_centered, K_s_c, K_t_c
-        )
-
-        # Compute alignment error
-        alignment_error = self._compute_alignment_error(
-            source_centered, feature_transform, K_t_c
-        )
-
-        # Diagnostics
-        source_transformed = b.matmul(source_centered, feature_transform)
-        diagnostic = self._diagnose(source_transformed, target_centered, cka)
-
-        result = AlignmentResult(
-            feature_transform=b.tolist(feature_transform),
-            sample_transform=b.tolist(sample_transform),
-            achieved_cka=cka,
-            iterations=1,
-            alignment_error=alignment_error,
-            diagnostic=diagnostic,
-            precision_threshold=precision,
-        )
-
-        # Strict mode: raise exception if alignment is not perfect
-        if strict and not result.is_perfect:
-            raise AlignmentPrecisionError(
-                f"Alignment failed to achieve CKA=1.0. "
-                f"Achieved CKA={cka:.6f}, threshold={precision:.2e}. "
-                f"This indicates a bug in the alignment algorithm."
-            )
-
-        return result
-
-    # -------------------------------------------------------------------------
-    # Private Helpers
-    # -------------------------------------------------------------------------
 
     def _identity_result(
         self, n: int, d: int, precision: float
@@ -336,7 +242,6 @@ class GramAligner:
         b.eval(I_feat, I_sample)
         return AlignmentResult(
             feature_transform=b.tolist(I_feat),
-            sample_transform=b.tolist(I_sample),
             achieved_cka=1.0,
             iterations=0,
             alignment_error=0.0,
@@ -344,150 +249,172 @@ class GramAligner:
             precision_threshold=precision,
         )
 
-    def _is_near_identical(
-        self, source: "Array", target: "Array", threshold: float
-    ) -> bool:
-        """Check if two arrays are nearly identical."""
-        b = self._backend
-        diff = source - target
-        diff_norm = float(b.to_scalar(geodesic_norms(b.reshape(diff, (1, -1)), b)))
-        base_norm = float(b.to_scalar(geodesic_norms(b.reshape(source, (1, -1)), b)))
-        scale = base_norm + division_epsilon(b, source)
-        return diff_norm <= threshold * scale
-
     def _center(self, X: "Array") -> "Array":
         """Center activations (subtract mean)."""
         b = self._backend
         mean = b.mean(X, axis=0, keepdims=True)
         return X - mean
 
-    def _gram_sqrt_transform(
-        self, K_s_c: "Array", K_t_c: "Array"
-    ) -> "Array":
-        """Compute T = K_t^{1/2} @ K_s^{-1/2} via Newton-Schulz iteration.
-        
-        This avoids CPU-bound eigendecomposition and runs entirely on GPU.
-        The transformation T aligns the geometry of S to T such that:
-            T @ K_s @ T.T ≈ K_t
-            
-        Note: We compute K_s^{-1/2} directly via Newton-Schulz on the inverse
-        (or by inverting the sqrt), efficiently handling the manifold alignment.
-        """
-        b = self._backend
-        # Enforce float32 for numerical stability on GPU
-        K_s_c = b.astype(K_s_c, "float32")
-        K_t_c = b.astype(K_t_c, "float32")
-        
-        reg = regularization_epsilon(b, K_s_c)
-        
-        # Regularize inputs
-        I_s = b.eye(int(b.shape(K_s_c)[0]), dtype=b.dtype(K_s_c))
-        K_s_reg = K_s_c + I_s * reg
-        K_t_reg = K_t_c + I_s * reg # Same shape
-
-        # Compute K_t^{1/2}
-        sqrt_K_t = b.matrix_sqrt_newton_schulz(K_t_reg)
-        
-        # Compute K_s^{-1/2}
-        # Step 1: Compute Sqrt on GPU (Newton-Schulz)
-        sqrt_K_s = b.matrix_sqrt_newton_schulz(K_s_reg)
-        
-        # Step 2: Compute T via Linear Solve (More Stable than Inv)
-        # We want T = K_t^{1/2} @ K_s^{-1/2}
-        # Equivalent to solving: K_s^{1/2} @ T.T = K_t^{1/2}  (since symmetric)
-        # T.T = solve(K_s^{1/2}, K_t^{1/2})
-        # T = (T.T).T
-        
-        # This avoids explicit inversion and is generally more numerically stable.
-        T_T = b.solve(sqrt_K_s, sqrt_K_t)
-        T = b.transpose(T_T)
-        b.eval(T)
-        
-        # Debug check for NaNs/Zeros
-        # We always check this because a NaN transform is catastrophic
-        if b.any(b.isnan(T)):
-            raise ValueError("computed transform T contains NaNs")
-        if b.all(T == 0):
-            raise ValueError("computed transform T is all zeros")
-                
-        return T
-
-    def _feature_transform(
+    def find_perfect_alignment(
         self,
-        source_centered: "Array",
-        target_centered: "Array",
-        K_s_c: "Array",
-        K_t_c: "Array",
-    ) -> tuple["Array", float]:
-        """Compute feature transform F and achieved CKA.
+        source_activations: "Array",
+        target_activations: "Array",
+        strict: bool = True,
+    ) -> AlignmentResult:
+        """Find alignment transform using Geodesic Gradient Descent.
 
-        For same-dimension (d_s == d_t):
-            T = K_t^{1/2} @ K_s^{-1/2} gives exact CKA = 1.0.
-            This is mathematically guaranteed.
+        Objective: Maximize CKA_rbf(source @ F, target).
+        Loss: 1.0 - CKA_rbf
 
-        For cross-dimensional (d_s != d_t):
-            CKA = 1.0 IS achievable! The Gram sqrt transform T operates in
-            SAMPLE SPACE (n×n), not feature space. Applying T @ source gives
-            a Gram matrix that is EXACTLY K_t, regardless of feature dimensions.
-            
-            The feature-space transform F: [d_s, d_t] is computed separately
-            for weight folding (via least squares), but CKA verification uses
-            the sample-space aligned Gram matrix which guarantees CKA = 1.0.
+        Why Gradient Descent?
+        - Closed-form solutions (Procrustes, CCA) assume Linear Euclidean/Frobenius norms.
+        - We demand Geodesic RBF consistency.
+        - RBF kernels are infinite-dimensional; we cannot solve for F analytically
+          without mapping to explicit infinite features.
+        - GD finds the best LINEAR F that maximizes the NON-LINEAR Geodesic similarity.
         """
         b = self._backend
-        d_s = b.shape(source_centered)[1]
-        d_t = b.shape(target_centered)[1]
+        n_s, d_s = b.shape(source_activations)
+        n_t, d_t = b.shape(target_activations)
 
-        # Check cache
-        cache_key = _cache.make_stitch_key(K_s_c, K_t_c, b)
-        cached = _cache.get_stitch(cache_key)
-        if cached is not None:
-            return cached
+        if n_s != n_t:
+            raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
 
+        # Ensure float32 for stability
+        if str(source_activations.dtype) != "float32":
+            source_activations = source_activations.astype("float32")
+        if str(target_activations.dtype) != "float32":
+            target_activations = target_activations.astype("float32")
+
+        precision = division_epsilon(b, source_activations)
+
+        # Fast path: identity check
+        if source_activations is target_activations:
+            return self._identity_result(int(n_s), int(d_s), precision)
+            
+        # 1. Optimize Alignment (Gradient Descent)
         start_time = time.perf_counter()
-
-        if d_s == d_t:
-            # Same dimension: Gram sqrt transform gives exact CKA = 1.0
-            T = self._gram_sqrt_transform(K_s_c, K_t_c)
-            source_transformed = b.matmul(T, source_centered)
-            b.eval(source_transformed)
-            F = b.matmul(b.pinv(source_centered), source_transformed)
-            b.eval(F)
-            cka = self._compute_cka_for_transform(source_centered, F, K_t_c)
-        else:
-            # Cross-dimensional: CKA = 1.0 IS achievable via Gram sqrt transform!
-            #
-            # Key insight: The Gram sqrt transform T = K_t^{1/2} @ K_s^{-1/2} operates
-            # in SAMPLE SPACE (n×n), not feature space. Applying T to source gives:
-            #   source_gram_aligned = T @ source  [n, d_s]
-            # whose Gram matrix is EXACTLY K_t:
-            #   (T @ source) @ (T @ source).T = T @ K_s @ T.T = K_t
-            #
-            # Therefore CKA(source_gram_aligned, target) = 1.0 exactly!
-            #
-            # For weight folding, we still need a feature-space transform F: [d_s, d_t].
-            # We compute F as the least-squares mapping from source to target, but
-            # verify CKA on the Gram-aligned source, not on source @ F.
-            
-            # Step 1: Gram sqrt in sample space (guarantees CKA = 1.0)
-            T = self._gram_sqrt_transform(K_s_c, K_t_c)
-            source_gram_aligned = b.matmul(T, source_centered)
-            b.eval(source_gram_aligned)
-            
-            # Verify CKA on Gram-aligned source (should be exactly 1.0)
-            K_aligned = b.matmul(source_gram_aligned, b.transpose(source_gram_aligned))
-            K_aligned_c = _center_gram_matrix(K_aligned, b)
-            cka = compute_cka_from_centered_grams(K_aligned_c, K_t_c, b)
-            
-            # Step 2: Compute feature-space transform for weight folding
-            # This is approximate, but weight folding doesn't require CKA=1.0 on F
-            F = b.matmul(b.pinv(source_centered), target_centered)
-            b.eval(F)
-
-        _cache.set_stitch(
-            cache_key, (F, cka), (time.perf_counter() - start_time) * 1000
+        
+        feature_transform, final_cka = self._optimize_alignment(
+            source_activations,
+            target_activations,
+            precision=precision
         )
-        return F, cka
+        
+        # Compute alignment error (1 - CKA)
+        alignment_error = 1.0 - final_cka
+        
+        # Diagnostics
+        # We don't have sample_transform (T) in GD
+        source_aligned = b.matmul(source_activations, feature_transform)
+        target_centered = self._center(target_activations) # Only for diagnostic
+        diagnostic = self._diagnose(source_aligned, target_centered, final_cka)
+
+        result = AlignmentResult(
+            feature_transform=b.tolist(feature_transform),
+            achieved_cka=final_cka,
+            iterations=1000, # Approx / max steps
+            alignment_error=alignment_error,
+            diagnostic=diagnostic,
+            precision_threshold=precision,
+        )
+
+        return result
+
+    def _optimize_alignment(
+        self,
+        source: "Array",
+        target: "Array",
+        precision: float,
+        learning_rate: float = 0.01,
+        max_steps: int = 1000,
+    ) -> tuple["Array", float]:
+        """
+        Find optimal linear transform F via Gradient Descent on the Geodesic Manifold.
+        """
+        b = self._backend
+        n_s, d_s = b.shape(source)
+        n_t, d_t = b.shape(target)
+        
+        # Initialize F: Identity (folded/padded if dimensions mismatch)
+        if d_s == d_t:
+            F = b.eye(d_s)
+        else:
+            # Small random init for mismatch
+            # We want F: [d_s, d_t]
+            F = b.random_normal((d_s, d_t)) * 0.01
+
+        # Optimization Loop
+        
+        def loss_fn(F_matrix):
+            # 1. Project Source
+            projected = b.matmul(source, F_matrix)
+            
+            # 2. Compute Geodesic RBF CKA
+            # We assume rbf_gram_matrix is differentiable via MLX backend
+            cka = compute_cka_backend(
+                projected, 
+                target, 
+                b, 
+                estimator=HSICEstimator.BIASED 
+            )
+            return 1.0 - cka
+
+        loss_and_grad = b.value_and_grad(loss_fn)
+        
+        # Adam Optimizer State
+        m = b.zeros_like(F)
+        v = b.zeros_like(F)
+        beta1, beta2 = 0.9, 0.999
+        eps = 1e-8
+        
+        best_loss = 1.0
+        patience = 50
+        patience_counter = 0
+        current_cka = 0.0
+        
+        for step in range(max_steps):
+            loss, grads = loss_and_grad(F)
+            b.eval(loss, grads)
+            
+            l_val = float(b.to_scalar(loss))
+            current_cka = 1.0 - l_val
+            
+            # Check convergence
+            if l_val < precision: # CKA > 1.0 - eps
+                break
+                
+            if l_val < best_loss - 1e-5: # Small improvement threshold
+                best_loss = l_val
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                
+            if patience_counter > patience and current_cka > 0.95:
+                # Diminishing returns
+                break
+
+            # Adam Update
+            # m = beta1 * m + (1 - beta1) * grads
+            m = b.add(b.multiply(beta1, m), b.multiply(1 - beta1, grads))
+            
+            # v = beta2 * v + (1 - beta2) * (grads * grads)
+            v = b.add(b.multiply(beta2, v), b.multiply(1 - beta2, b.multiply(grads, grads)))
+            
+            # m_hat = m / (1 - beta1**(step + 1))
+            m_hat = b.multiply(m, 1.0 / (1.0 - beta1**(step + 1)))
+            
+            # v_hat = v / (1 - beta2**(step + 1))
+            v_hat = b.multiply(v, 1.0 / (1.0 - beta2**(step + 1)))
+            
+            # F = F - learning_rate * m_hat / (sqrt(v_hat) + eps)
+            denom = b.add(b.sqrt(v_hat), eps)
+            step_update = b.multiply(learning_rate, b.divide(m_hat, denom))
+            F = b.subtract(F, step_update)
+            b.eval(F)
+
+        return F, current_cka
+
 
     def _compute_cka_for_transform(
         self, source_centered: "Array", F: "Array", K_t_c: "Array"

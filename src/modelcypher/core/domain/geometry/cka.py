@@ -168,7 +168,8 @@ def _compute_pairwise_squared_distances(
     return result.distances * result.distances
 
 
-def _rbf_gram_matrix(
+
+def rbf_gram_matrix(
     X: "Array",
     backend: "Backend",
     sigma: float | None = None,
@@ -510,7 +511,6 @@ def compute_cka(
     activations_x: "Array",
     activations_y: "Array",
     backend: "Backend | None" = None,
-    use_linear_kernel: bool = True,
     estimator: HSICEstimator = HSICEstimator.BIASED,
     feature_bias_correction: bool = False,
 ) -> CKAResult:
@@ -525,8 +525,6 @@ def compute_cka(
         activations_x: Activations from model X [n_samples, n_features_x]
         activations_y: Activations from model Y [n_samples, n_features_y]
         backend: Backend protocol implementation. If None, uses default.
-        use_linear_kernel: If True, use linear kernel (X @ X^T).
-                          If False, use RBF kernel.
         estimator: Which HSIC estimator to use (BIASED, UNBIASED, or AUTO).
                    BIASED is the default for backward compatibility.
                    Use UNBIASED or AUTO when features >> samples.
@@ -561,40 +559,20 @@ def compute_cka(
             sample_count=n_samples,
         )
 
-    kernel_type = "linear" if use_linear_kernel else "rbf"
+    kernel_type = "rbf"
 
     gram_key_x = _get_cache().make_gram_key(activations_x, backend, kernel_type)
     gram_key_y = _get_cache().make_gram_key(activations_y, backend, kernel_type)
     same_grams = gram_key_x == gram_key_y
 
-    if use_linear_kernel:
-        # Use cached Gram matrices for linear kernel
-        gram_x = _get_cache().get_gram(gram_key_x)
-        if gram_x is None:
-            start = time.perf_counter()
-            gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
-            backend.eval(gram_x)
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            _get_cache().set_gram(gram_key_x, gram_x, elapsed_ms)
-
-        if same_grams:
-            gram_y = gram_x
-        else:
-            gram_y = _get_cache().get_gram(gram_key_y)
-            if gram_y is None:
-                start = time.perf_counter()
-                gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
-                backend.eval(gram_y)
-                elapsed_ms = (time.perf_counter() - start) * 1000
-                _get_cache().set_gram(gram_key_y, gram_y, elapsed_ms)
-    else:
-        # RBF kernel - compute directly (less frequently reused)
-        gram_x = _rbf_gram_matrix(activations_x, backend)
-        gram_y = gram_x if same_grams else _rbf_gram_matrix(activations_y, backend)
+    # RBF kernel - compute directly (less frequently reused)
+    gram_x = rbf_gram_matrix(activations_x, backend)
+    gram_y = gram_x if same_grams else rbf_gram_matrix(activations_y, backend)
 
     # Center Gram matrices (with caching) - needed for biased estimator
     centered_x = _center_gram_matrix(gram_x, backend, gram_key_x)
     centered_y = centered_x if same_grams else _center_gram_matrix(gram_y, backend, gram_key_y)
+
 
     # Get feature dimensions for AUTO mode
     n_features_x = activations_x.shape[1] if len(activations_x.shape) > 1 else 1
