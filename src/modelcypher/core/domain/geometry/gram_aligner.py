@@ -374,6 +374,10 @@ class GramAligner:
         (or by inverting the sqrt), efficiently handling the manifold alignment.
         """
         b = self._backend
+        # Enforce float32 for numerical stability on GPU
+        K_s_c = b.astype(K_s_c, "float32")
+        K_t_c = b.astype(K_t_c, "float32")
+        
         reg = regularization_epsilon(b, K_s_c)
         
         # Regularize inputs
