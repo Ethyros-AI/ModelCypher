@@ -440,6 +440,18 @@ class Backend(Protocol):
         """Vectorize a function over batch axes."""
         ...
 
+    def value_and_grad(self, fun: Callable, argnums: int | list[int] = 0) -> Callable:
+        """Return a function that computes both value and gradient of fun.
+        
+        Args:
+            fun: Function to differentiate.
+            argnums: Argument index(es) to differentiate with respect to.
+            
+        Returns:
+            Function taking same args as fun, returning (value, gradient).
+        """
+        ...
+
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array: ...
     def take_along_axis(self, array: Array, indices: Array, axis: int) -> Array:

@@ -1031,6 +1031,10 @@ class MLXBackend(Backend):
         """
         return self.mx.vmap(fun, in_axes=in_axes, out_axes=out_axes)
 
+    def value_and_grad(self, fun: Callable, argnums: int | list[int] = 0) -> Callable:
+        """Return a function that computes both value and gradient of fun."""
+        return self.mx.value_and_grad(fun, argnums=argnums)
+
     def async_eval(self, *arrays: Array) -> None:
         """Asynchronously evaluate arrays without blocking.
 

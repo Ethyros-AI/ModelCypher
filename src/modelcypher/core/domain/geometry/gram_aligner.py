@@ -357,7 +357,12 @@ class GramAligner:
                 b, 
                 estimator=HSICEstimator.BIASED 
             )
-            return 1.0 - cka
+            # Ensure return is a scalar array for value_and_grad
+            # MLX requires the function to return an array, not a python float
+            loss = 1.0 - cka
+            if isinstance(loss, float):
+                return b.array(loss)
+            return loss
 
         loss_and_grad = b.value_and_grad(loss_fn)
         

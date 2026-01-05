@@ -320,23 +320,161 @@ def _probe_precise(
         ActivationFingerprint,
         IntersectionMap,
     )
+    from modelcypher.core.domain.geometry.model_profile import ProfileRepository, ModelProfile
 
     # Always use all probes - no configuration
     probes = UnifiedAtlasInventory.all_probes()
     num_probes = len(probes)
+
+    # Initialize ProfileRepository
+    profile_repo = ProfileRepository()
+    
+    # Try to load cached fingerprints from profiles
+    source_profile = None
+    target_profile = None
+    
+    # Helper to infer family/size for profile lookup (simple heuristic)
+    def _get_model_key(path: str, model: Any) -> tuple[str, str]:
+        path_lower = path.lower()
+        family = "unknown"
+        if "qwen" in path_lower: family = "qwen"
+        elif "smol" in path_lower: family = "smollm"
+        elif "llama" in path_lower: family = "llama"
+        elif "mistral" in path_lower: family = "mistral"
+        
+        # Extract basic size from path or config if possible (very rough)
+        size = "unknown"
+        if "8b" in path_lower: size = "8B"
+        elif "360m" in path_lower: size = "360M"
+        elif "7b" in path_lower: size = "7B"
+        
+        return family, size
+
+    source_family, source_size = _get_model_key(source_path, source_model)
+    target_family, target_size = _get_model_key(target_path, target_model)
+    
+    source_profile = profile_repo.get_profile(source_family, source_size)
+    target_profile = profile_repo.get_profile(target_family, target_size)
+    
+    source_fingerprints: list[ActivationFingerprint] = []
+    target_fingerprints: list[ActivationFingerprint] = []
+    
+    # Check cache hit for source
+    if source_profile and source_profile.probe_fingerprints:
+        logger.info("PROBE: Found CACHED fingerprints for source model (%s)", source_path)
+        source_fingerprints = source_profile.probe_fingerprints
+        
+    # Check cache hit for target
+    if target_profile and target_profile.probe_fingerprints:
+        logger.info("PROBE: Found CACHED fingerprints for target model (%s)", target_path)
+        target_fingerprints = target_profile.probe_fingerprints
+
+    # If both cached, skip probing!
+    if source_fingerprints and target_fingerprints:
+        logger.info("PROBE: ALL fingerprints cached. Skipping inference loop.")
+        # Reconstruct layer activations from fingerprints if needed, or rely on sparse data
+        # Note: Fingerprints contain TOP-K sparse data. For full CKA we technically need full vectors.
+        # However, for GramAligner we primarily need the layer correspondence signal.
+        # 
+        # CRITICAL: GramAligner `_optimize_alignment` expects DENSE vectors for CKA.
+        # Fingerprints only store sparse top-k. 
+        #
+        # OPTIMIZATION: If we really want to skip inference, we'd need to cache full activation vectors
+        # or accepted that we are doing alignment on reconstructed sparse vectors.
+        # 
+        # Given the user's request, we will assume fingerprints are sufficient OR we need to load
+        # dense activations if we saved them (we didn't). 
+        # 
+        # WAIT: `ActivationFingerprint` only has `ActivatedDimension` (sparse).
+        # We need the full `source_layer_activations` for `GramAligner`.
+        # 
+        # If we only have sparse fingerprints, we CANNOT do precise dense CKA. 
+        # But maybe we can do sparse reconstruction?
+        # 
+        # CORRECT APPROACH: We should cache the FULL DENSE ACTIVATIONS for CKA alignment?
+        # That's huge (GBs). 
+        # 
+        # ALTERNATIVE: Verify if `GramAligner` can work with what we have.
+        # `GramAligner` takes `source_activations` (n x d). 
+        # 
+        # If we cache, we avoid inference. But `ActivationFingerprint` is sparse.
+        # 
+        # Use `ContinuousFingerprint`? `manifold_stitcher.py` has `ContinuousFingerprint` 
+        # which stores `activation_vectors`.
+        # 
+        # Let's check `ContinuousFingerprint`. It stores `activation_vectors: dict[int, list[float]]`.
+        # This seems to be the full vector? No, let's check `manifold_stitcher.py` again.
+        # 
+        # If `ContinuousFingerprint` stores full vectors, we should potentially cache THAT.
+        # `ModelProfile` has `probe_fingerprints` as `list[ActivationFingerprint]`.
+        # 
+        # If we can't fully reconstruct dense vectors from sparse fingerprints, we can't do dense CKA.
+        # However, the user insists on caching.
+        # 
+        # Compromise: We will use the sparse fingerprints to reconstruct dense vectors (filling zeros).
+        # This is strictly less accurate than dense CKA but allows skipping inference.
+        pass
 
     logger.info(
         "PROBE PRECISE: Running %d probes through source and target models...",
         len(probes),
     )
 
-    source_fingerprints: list[ActivationFingerprint] = []
-    target_fingerprints: list[ActivationFingerprint] = []
-
     source_layer_activations: dict[int, list["Array"]] = {}
     target_layer_activations: dict[int, list["Array"]] = {}
     # Embedding-space activations for 2D GramAlign (post-embed_tokens, pre-layer-0)
     # Same CKA=1.0, same geodesic math - applied at embedding dimension
+    # If fingerprints are ALREADY loaded from cache, we don't need to probe.
+    # However, we DO need to populate xxx_layer_activations for GramAligner.
+    # We will reconstruct them from sparse fingerprints if cached.
+    
+    run_inference = True
+    if source_fingerprints and target_fingerprints:
+        run_inference = False
+        logger.info("PROBE: Reconstructing activation arrays from cached sparse fingerprints (approximate)...")
+        # NOTE: This approximation (filling zeros) is the trade-off for caching.
+        # Real storage of dense activations is too large (GBs).
+        
+        # Helper to reconstruct dense array from sparse ActivatedDimension list
+        def _reconstruct_dense(dims: list[ActivatedDimension], dim_size: int) -> "Array":
+            arr = b.zeros((dim_size,), dtype="float32")
+            # This is slow per-item, but faster than inference
+            # To vectorize: create indices and values lists
+            indices = [d.index for d in dims]
+            values = [d.activation for d in dims]
+            if indices:
+                # MLX index update
+                arr[b.array(indices)] = b.array(values)
+            return arr
+
+        # We need to know hidden_dim. From fingerprints? No, they don't store it.
+        # Retrieve from model config/weights roughly
+        # Or from profile if available
+        s_dim = source_profile.hidden_dim if source_profile else 0
+        t_dim = target_profile.hidden_dim if target_profile else 0
+        
+        # If 0, we can't reconstruct safely without knowing dimension. 
+        # Fallback to inference if dimensions unknown.
+        if s_dim == 0 or t_dim == 0:
+            logger.warning("PROBE: Cached profile missing hidden_dim. Forcing re-inference.")
+            run_inference = True
+            source_fingerprints = []
+            target_fingerprints = []
+        else:
+            # Reconstruct source_layer_activations
+            for fp in source_fingerprints:
+                for layer_idx, dims in fp.activated_dimensions.items():
+                    if layer_idx not in source_layer_activations:
+                        source_layer_activations[layer_idx] = []
+                    source_layer_activations[layer_idx].append(_reconstruct_dense(dims, s_dim))
+            
+            # Reconstruct target_layer_activations
+            for fp in target_fingerprints:
+                for layer_idx, dims in fp.activated_dimensions.items():
+                    if layer_idx not in target_layer_activations:
+                        target_layer_activations[layer_idx] = []
+                    target_layer_activations[layer_idx].append(_reconstruct_dense(dims, t_dim))
+
     source_embedding_activations: list["Array"] = []
     target_embedding_activations: list["Array"] = []
     # Intermediate-space activations for multi-space stitching (cross-architecture merges)
@@ -360,81 +498,83 @@ def _probe_precise(
     # =========================================================================
     # BATCHED PROBE COLLECTION - Process probes in batches for efficiency
     # =========================================================================
-    # Instead of 806 individual forward passes (403 probes × 2 models),
-    # we batch probes into groups and use batch methods for ~5-10× speedup.
-    #
-    # The batch size is tuned for GPU memory vs throughput tradeoff.
-    # Too large = OOM, too small = lose batching benefit.
-    PROBE_BATCH_SIZE = 8
+    
+    if run_inference:
+        # Instead of 806 individual forward passes (403 probes × 2 models),
+        # we batch probes into groups and use batch methods for ~5-10× speedup.
+        #
+        # The batch size is tuned for GPU memory vs throughput tradeoff.
+        # Too large = OOM, too small = lose batching benefit.
+        PROBE_BATCH_SIZE = 8
 
-    # First pass: Validate probes and extract texts
-    valid_probes: list[tuple[Any, str]] = []  # (probe, probe_text)
-    for probe in probes:
-        probe_text = None
-        for candidate in probe.support_texts or []:
-            if not candidate or len(candidate.strip()) < 2:
+        # First pass: Validate probes and extract texts
+        valid_probes: list[tuple[Any, str]] = []  # (probe, probe_text)
+        for probe in probes:
+            probe_text = None
+            for candidate in probe.support_texts or []:
+                if not candidate or len(candidate.strip()) < 2:
+                    continue
+                probe_text = candidate
+                break
+
+            if probe_text is None:
+                fallback = None
+                if probe.name and probe.description:
+                    fallback = f"{probe.name}: {probe.description}"
+                elif probe.name:
+                    fallback = probe.name
+                elif probe.description:
+                    fallback = probe.description
+                if fallback and len(fallback.strip()) >= 2:
+                    probe_text = fallback
+
+            if probe_text is None:
+                logger.warning(
+                    "Probe '%s' skipped: no valid support texts or fallback",
+                    probe.probe_id,
+                )
+                probes_failed += 1
                 continue
-            probe_text = candidate
-            break
 
-        if probe_text is None:
-            fallback = None
-            if probe.name and probe.description:
-                fallback = f"{probe.name}: {probe.description}"
-            elif probe.name:
-                fallback = probe.name
-            elif probe.description:
-                fallback = probe.description
-            if fallback and len(fallback.strip()) >= 2:
-                probe_text = fallback
+            valid_probes.append((probe, probe_text))
 
-        if probe_text is None:
-            logger.warning(
-                "Probe '%s' skipped: no valid support texts or fallback",
-                probe.probe_id,
-            )
-            probes_failed += 1
-            continue
+        logger.info(
+            "PROBE PRECISE: %d valid probes, processing in batches of %d...",
+            len(valid_probes),
+            PROBE_BATCH_SIZE,
+        )
 
-        valid_probes.append((probe, probe_text))
+        # =========================================================================
+        # CHECKPOINT: Check for existing checkpoint to resume from
+        # =========================================================================
+        checkpoint_path: Path | None = None
+        start_probe_idx = 0
+        completed_probe_ids: set[str] = set()
 
-    logger.info(
-        "PROBE PRECISE: %d valid probes, processing in batches of %d...",
-        len(valid_probes),
-        PROBE_BATCH_SIZE,
-    )
+        if checkpoint_dir is not None:
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            checkpoint_path = checkpoint_dir / ".probe_checkpoint.json"
+            existing_checkpoint = _load_probe_checkpoint(checkpoint_path)
 
-    # =========================================================================
-    # CHECKPOINT: Check for existing checkpoint to resume from
-    # =========================================================================
-    checkpoint_path: Path | None = None
-    start_probe_idx = 0
-    completed_probe_ids: set[str] = set()
+            if existing_checkpoint is not None:
+                completed_probe_ids = set(existing_checkpoint.get("probe_ids", []))
+                # Find how many valid probes were already completed
+                # We'll skip probes that are in completed_probe_ids
+                logger.info(
+                    "PROBE: Found checkpoint with %d completed probes, resuming...",
+                    len(completed_probe_ids),
+                )
 
-    if checkpoint_dir is not None:
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        checkpoint_path = checkpoint_dir / ".probe_checkpoint.json"
-        existing_checkpoint = _load_probe_checkpoint(checkpoint_path)
+        # Check if activation provider supports batch methods
+        has_batch_hidden = hasattr(activation_provider, "collect_hidden_activations_batch")
+        has_batch_intermediate = hasattr(activation_provider, "collect_intermediate_activations_batch")
+        has_batch_attention = hasattr(activation_provider, "collect_attention_activations_batch")
 
-        if existing_checkpoint is not None:
-            completed_probe_ids = set(existing_checkpoint.get("probe_ids", []))
-            # Find how many valid probes were already completed
-            # We'll skip probes that are in completed_probe_ids
-            logger.info(
-                "PROBE: Found checkpoint with %d completed probes, resuming...",
-                len(completed_probe_ids),
-            )
-
-    # Check if activation provider supports batch methods
-    has_batch_hidden = hasattr(activation_provider, "collect_hidden_activations_batch")
-    has_batch_intermediate = hasattr(activation_provider, "collect_intermediate_activations_batch")
-    has_batch_attention = hasattr(activation_provider, "collect_attention_activations_batch")
-
-    # Second pass: Batch forward passes
-    for batch_start in range(0, len(valid_probes), PROBE_BATCH_SIZE):
-        batch_end = min(batch_start + PROBE_BATCH_SIZE, len(valid_probes))
-        batch = valid_probes[batch_start:batch_end]
-        batch_texts = [probe_text for _, probe_text in batch]
+        # Second pass: Batch forward passes
+        for batch_start in range(0, len(valid_probes), PROBE_BATCH_SIZE):
+            batch_end = min(batch_start + PROBE_BATCH_SIZE, len(valid_probes))
+            batch = valid_probes[batch_start:batch_end]
+            batch_texts = [probe_text for _, probe_text in batch]
 
         try:
             # ===== HIDDEN ACTIVATIONS =====
@@ -742,6 +882,24 @@ def _probe_precise(
     # Clear checkpoint after successful completion
     if checkpoint_path is not None:
         _clear_probe_checkpoint(checkpoint_path)
+
+    # Save fingerprints to profile cache
+    if run_inference:
+        if source_fingerprints and source_profile:
+            source_profile.probe_fingerprints = source_fingerprints
+            try:
+                profile_repo.save_profile(source_profile)
+                logger.info("PROBE: Saved source fingerprints to profile cache")
+            except Exception as e:
+                logger.warning("PROBE: Failed to save source profile cache: %s", e)
+
+        if target_fingerprints and target_profile:
+            target_profile.probe_fingerprints = target_fingerprints
+            try:
+                profile_repo.save_profile(target_profile)
+                logger.info("PROBE: Saved target fingerprints to profile cache")
+            except Exception as e:
+                logger.warning("PROBE: Failed to save target profile cache: %s", e)
 
     # Build IntersectionMap
     intersection_map_obj: IntersectionMap | None = None

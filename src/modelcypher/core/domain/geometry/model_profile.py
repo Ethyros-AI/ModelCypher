@@ -50,6 +50,9 @@ if TYPE_CHECKING:
         CurvatureProfile,
     )
     from modelcypher.core.domain.geometry.knowledge_density import ModelDensityProfile
+    from modelcypher.core.domain.geometry.manifold_stitcher import (
+        ActivationFingerprint,
+    )
     from modelcypher.core.domain.geometry.topological_fingerprint import Fingerprint
     from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
@@ -357,6 +360,9 @@ class ModelProfile:
     # === COMPUTED SECTIONS (track what's been computed) ===
     computed_sections: list[str] = field(default_factory=list)
 
+    # === PROBE FINGERPRINTS ===
+    probe_fingerprints: list[ActivationFingerprint] | None = None
+
     # === METADATA ===
     probe_corpus_hash: str = ""  # Which probes generated this profile
     backend_used: str = ""  # "mlx", "jax", etc.
@@ -421,6 +427,12 @@ class ModelProfile:
             "density_summary": (
                 self.density_summary.to_dict() if self.density_summary else None
             ),
+            # Probe Fingerprints
+            "probe_fingerprints": (
+                [fp.to_dict() for fp in self.probe_fingerprints]
+                if self.probe_fingerprints
+                else None
+            ),
             # Domain-specific metrics
             "domain_metrics": self.domain_metrics,
             # Computed sections
@@ -457,6 +469,16 @@ class ModelProfile:
         if d.get("density_summary"):
             density = DensitySummary.from_dict(d["density_summary"])
 
+        probe_fingerprints = None
+        if d.get("probe_fingerprints"):
+            from modelcypher.core.domain.geometry.manifold_stitcher import (
+                ActivationFingerprint,
+            )
+
+            probe_fingerprints = [
+                ActivationFingerprint.from_dict(fp) for fp in d["probe_fingerprints"]
+            ]
+
         return cls(
             model_path=d["model_path"],
             profile_version=d.get("profile_version", SCHEMA_VERSION),
@@ -479,6 +501,7 @@ class ModelProfile:
             topology_summary=topology,
             semantic_signature=semantic,
             density_summary=density,
+            probe_fingerprints=probe_fingerprints,
             domain_metrics=d.get("domain_metrics", {}),
             computed_sections=d.get("computed_sections", []),
             probe_corpus_hash=d.get("probe_corpus_hash", ""),

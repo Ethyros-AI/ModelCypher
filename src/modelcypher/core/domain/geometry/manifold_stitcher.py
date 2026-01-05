@@ -1125,12 +1125,40 @@ class ActivatedDimension:
     def __lt__(self, other: "ActivatedDimension") -> bool:
         return self.activation > other.activation
 
+    def to_dict(self) -> dict[str, Any]:
+        return {"index": self.index, "activation": self.activation}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ActivatedDimension:
+        return cls(index=d["index"], activation=d["activation"])
+
 
 @dataclass(frozen=True)
 class ActivationFingerprint:
     prime_id: str
     prime_text: str
     activated_dimensions: dict[int, list[ActivatedDimension]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "prime_id": self.prime_id,
+            "prime_text": self.prime_text,
+            "activated_dimensions": {
+                str(k): [d.to_dict() for d in v] for k, v in self.activated_dimensions.items()
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ActivationFingerprint:
+        activated_dimensions = {}
+        for k, v in d.get("activated_dimensions", {}).items():
+            activated_dimensions[int(k)] = [ActivatedDimension.from_dict(x) for x in v]
+        
+        return cls(
+            prime_id=d["prime_id"],
+            prime_text=d.get("prime_text", ""),
+            activated_dimensions=activated_dimensions,
+        )
 
 
 @dataclass(frozen=True)
