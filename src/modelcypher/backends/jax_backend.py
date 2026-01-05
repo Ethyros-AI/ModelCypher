@@ -417,7 +417,16 @@ class JAXBackend(Backend):
         return array.astype(self._map_dtype(dtype))
 
     def to_numpy(self, array: Array) -> Any:
-        return self.jax.device_get(array)
+        """DISABLED: CPU arrays are not permitted in ModelCypher.
+
+        Use backend.tolist() or backend.to_scalar() for extracting values.
+        Use backend.save_safetensors() for serialization.
+        """
+        raise RuntimeError(
+            "to_numpy() is disabled. ModelCypher does not permit CPU arrays. "
+            "Use backend.tolist() for lists, backend.to_scalar() for scalars, "
+            "or backend.save_safetensors() for serialization."
+        )
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.

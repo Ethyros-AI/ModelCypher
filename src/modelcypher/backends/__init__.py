@@ -94,11 +94,11 @@ def detect_default_backend_type() -> BackendType:
         pass
 
     detail = get_mlx_probe_error()
-    message = "No GPU backend available."
+    message = "No GPU backend available. ModelCypher requires GPU acceleration."
     if detail:
         message = f"{message} MLX probe error: {detail}."
     raise RuntimeError(
-        f"{message} Set MC_BACKEND=numpy to force CPU fallback."
+        f"{message} Install MLX (macOS), CUDA (NVIDIA), or JAX (TPU/GPU)."
     )
 
 

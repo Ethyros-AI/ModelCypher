@@ -62,13 +62,16 @@ class CUDAActivationProvider:
             import torch
 
             self.torch = torch
-            self._available = torch.cuda.is_available()
-            if not self._available:
-                logger.warning("CUDA not available. PyTorch will fall back to CPU.")
-        except ImportError:
-            self._available = False
-            self.torch = None
-            logger.warning("PyTorch not available. Install with: pip install torch")
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "CUDA not available. ModelCypher requires GPU acceleration. "
+                    "CPU fallback is not supported. Ensure CUDA is properly installed."
+                )
+            self._available = True
+        except ImportError as exc:
+            raise RuntimeError(
+                "PyTorch not available. Install with: pip install torch"
+            ) from exc
 
     @property
     def available(self) -> bool:

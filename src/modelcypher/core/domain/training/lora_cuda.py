@@ -178,6 +178,7 @@ class LoRALinearCUDA(nn.Module):
         dropout: float = 0.0,
         bias: bool = False,
         use_rslora: bool = False,
+        device: str = "cuda",
     ) -> None:
         super().__init__()
         self.in_features = in_features
@@ -185,6 +186,7 @@ class LoRALinearCUDA(nn.Module):
         self.rank = rank
         self.alpha = alpha
         self.use_rslora = use_rslora
+        self.device = device
 
         # Compute scaling factor
         if use_rslora:
@@ -194,16 +196,16 @@ class LoRALinearCUDA(nn.Module):
             self.scale = alpha / max(rank, 1)
 
         # Base linear layer (frozen)
-        self.linear = nn.Linear(in_features, out_features, bias=bias)
+        self.linear = nn.Linear(in_features, out_features, bias=bias, device=device)
         self.linear.weight.requires_grad = False
         if bias and self.linear.bias is not None:
             self.linear.bias.requires_grad = False
 
-        # LoRA adapters (trainable)
+        # LoRA adapters (trainable) - MUST be created on GPU
         # A: down-projection (rank x in_features), initialized with Kaiming
         # B: up-projection (out_features x rank), initialized to zeros
-        self.lora_a = nn.Parameter(torch.empty(rank, in_features))
-        self.lora_b = nn.Parameter(torch.zeros(out_features, rank))
+        self.lora_a = nn.Parameter(torch.empty(rank, in_features, device=device))
+        self.lora_b = nn.Parameter(torch.zeros(out_features, rank, device=device))
 
         # Initialize lora_a with Kaiming uniform (per PEFT reference initialization)
         _b = get_default_backend()
@@ -231,11 +233,20 @@ class LoRALinearCUDA(nn.Module):
         alpha: float,
         dropout: float = 0.0,
         use_rslora: bool = False,
+        device: str | None = None,
     ) -> "LoRALinearCUDA":
         """Create LoRALinear by wrapping an existing Linear layer."""
         in_features = linear.in_features
         out_features = linear.out_features
         has_bias = linear.bias is not None
+        # Inherit device from source linear layer if not specified
+        if device is None:
+            device = str(linear.weight.device)
+        if device == "cpu":
+            raise RuntimeError(
+                "LoRA adapter cannot be created from a CPU tensor. "
+                "ModelCypher requires GPU acceleration. Move the base model to GPU first."
+            )
 
         lora = cls(
             in_features=in_features,
@@ -245,6 +256,7 @@ class LoRALinearCUDA(nn.Module):
             dropout=dropout,
             bias=has_bias,
             use_rslora=use_rslora,
+            device=device,
         )
 
         # Copy frozen weights

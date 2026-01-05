@@ -289,17 +289,16 @@ class MLXBackend(Backend):
         return mask
 
     def to_numpy(self, array: Array) -> Any:
-        """Convert to a host list - requires eval first.
+        """DISABLED: CPU arrays are not permitted in ModelCypher.
 
-        Note: Returns a Python list, not a numpy array. Use backend operations
-        for array math. This method exists for serialization/interop only.
+        Use backend.tolist() or backend.to_scalar() for extracting values.
+        Use backend.save_safetensors() for serialization.
         """
-        self.safe.eval(array)
-        # Handle bfloat16 which some protocols may not support
-        if array.dtype == self.mx.bfloat16:
-            array = array.astype(self.mx.float32)
-            self.safe.eval(array)
-        return array.tolist()
+        raise RuntimeError(
+            "to_numpy() is disabled. ModelCypher does not permit CPU arrays. "
+            "Use backend.tolist() for lists, backend.to_scalar() for scalars, "
+            "or backend.save_safetensors() for serialization."
+        )
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.

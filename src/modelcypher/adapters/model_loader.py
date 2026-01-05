@@ -60,7 +60,7 @@ def load_model_for_training(
         Model with optional LoRA adapters and tokenizer.
         Base weights are frozen if LoRA is used.
     """
-    logger.info("Loading model for training from %s", model_path)
+    logger.info("Loading model from %s", model_path)
     _ensure_mlx()
 
     # Check model type from config
