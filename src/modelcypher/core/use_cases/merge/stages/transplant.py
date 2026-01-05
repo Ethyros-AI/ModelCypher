@@ -716,7 +716,12 @@ def stage_transplant(
         hidden_stitch_input = None
 
         if layer_idx in layer_hidden_stitches:
-            hidden_stitch_output, hidden_stitch_input = layer_hidden_stitches[layer_idx]
+            # layer_hidden_stitches[layer_idx] is a dict {src_layer: (P, Q)}
+            # For now, use the first/only source's stitch (most layers have 1:1 or composite merged)
+            src_stitches_dict = layer_hidden_stitches[layer_idx]
+            if src_stitches_dict:
+                first_src = next(iter(src_stitches_dict))
+                hidden_stitch_output, hidden_stitch_input = src_stitches_dict[first_src]
             # Log only on first layer to avoid spam
             if layer_num == 0:
                 stitch_shape = hidden_stitch_output.shape if hidden_stitch_output is not None else "N/A"

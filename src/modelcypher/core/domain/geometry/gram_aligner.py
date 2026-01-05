@@ -255,6 +255,79 @@ class GramAligner:
         mean = b.mean(X, axis=0, keepdims=True)
         return X - mean
 
+    def _matrix_sqrt(self, K: "Array") -> "Array":
+        """Compute matrix square root of positive semi-definite matrix.
+        
+        Uses eigendecomposition: sqrt(K) = V @ diag(sqrt(λ)) @ V.T
+        This is numerically stable on GPU via power iteration.
+        """
+        b = self._backend
+        from modelcypher.core.domain.geometry.numerical_stability import power_iteration_eigh
+        
+        n = int(b.shape(K)[0])
+        eigenvalues, eigenvectors = power_iteration_eigh(b, K, k=n)
+        b.eval(eigenvalues, eigenvectors)
+        
+        # Clamp negative eigenvalues to 0 (numerical noise)
+        eps = regularization_epsilon(b, K)
+        eigenvalues = b.maximum(eigenvalues, b.full(b.shape(eigenvalues), 0.0))
+        
+        # sqrt(diag(λ))
+        sqrt_eig = b.sqrt(eigenvalues + eps)
+        
+        # V @ diag(sqrt(λ)) @ V.T
+        sqrt_diag = b.diag(sqrt_eig)
+        sqrt_K = b.matmul(b.matmul(eigenvectors, sqrt_diag), b.transpose(eigenvectors))
+        b.eval(sqrt_K)
+        return sqrt_K
+
+    def _matrix_inv_sqrt(self, K: "Array") -> "Array":
+        """Compute inverse square root of positive definite matrix.
+        
+        Uses eigendecomposition: inv_sqrt(K) = V @ diag(1/sqrt(λ)) @ V.T
+        """
+        b = self._backend
+        from modelcypher.core.domain.geometry.numerical_stability import power_iteration_eigh
+        
+        n = int(b.shape(K)[0])
+        eigenvalues, eigenvectors = power_iteration_eigh(b, K, k=n)
+        b.eval(eigenvalues, eigenvectors)
+        
+        # Clamp small eigenvalues to avoid division by zero
+        eps = regularization_epsilon(b, K)
+        eigenvalues_safe = b.maximum(eigenvalues, b.full(b.shape(eigenvalues), eps))
+        
+        # 1/sqrt(λ)
+        inv_sqrt_eig = b.divide(1.0, b.sqrt(eigenvalues_safe))
+        
+        # V @ diag(1/sqrt(λ)) @ V.T
+        inv_sqrt_diag = b.diag(inv_sqrt_eig)
+        inv_sqrt_K = b.matmul(b.matmul(eigenvectors, inv_sqrt_diag), b.transpose(eigenvectors))
+        b.eval(inv_sqrt_K)
+        return inv_sqrt_K
+
+    def _compute_sample_transform(self, K_s: "Array", K_t: "Array") -> "Array":
+        """Compute closed-form sample-space transform T = K_t^{1/2} @ K_s^{-1/2}.
+        
+        This is the EXACT mathematical transformation that achieves:
+        T @ K_s @ T.T = K_t
+        
+        The geometry is GUARANTEED correct in sample space.
+        """
+        b = self._backend
+        
+        # K_t^{1/2}
+        sqrt_K_t = self._matrix_sqrt(K_t)
+        
+        # K_s^{-1/2}
+        inv_sqrt_K_s = self._matrix_inv_sqrt(K_s)
+        
+        # T = K_t^{1/2} @ K_s^{-1/2}
+        T = b.matmul(sqrt_K_t, inv_sqrt_K_s)
+        b.eval(T)
+        return T
+
+
     def find_perfect_alignment(
         self,
         source_activations: "Array",
@@ -325,41 +398,67 @@ class GramAligner:
         source: "Array",
         target: "Array",
         precision: float,
-        learning_rate: float = 0.01,
-        max_steps: int = 1000,
+        learning_rate: float = 0.1,
+        max_steps: int = 5000,
     ) -> tuple["Array", float]:
         """
-        Find optimal linear transform F via Gradient Descent on the Geodesic Manifold.
+        Find optimal linear transform F via HYBRID approach:
+        1. Compute closed-form sample transform T = K_t^{1/2} @ K_s^{-1/2}
+        2. Initialize F from F_init = pinv(source) @ (T @ source)
+        3. Refine F via geodesic gradient descent with geodesic Gram distance loss
         """
         b = self._backend
         n_s, d_s = b.shape(source)
         n_t, d_t = b.shape(target)
         
-        # Initialize F: Identity (folded/padded if dimensions mismatch)
-        if d_s == d_t:
-            F = b.eye(d_s)
-        else:
-            # Small random init for mismatch
-            # We want F: [d_s, d_t]
-            F = b.random_normal((d_s, d_t)) * 0.01
-
-        # Optimization Loop
+        logger.info("HYBRID ALIGNMENT: Computing geodesic Gram matrices...")
         
+        # Step 1: Compute geodesic Gram matrices
+        K_s = rbf_gram_matrix(source, b)
+        K_t = rbf_gram_matrix(target, b)
+        K_s_c = _center_gram_matrix(K_s, b)
+        K_t_c = _center_gram_matrix(K_t, b)
+        b.eval(K_s_c, K_t_c)
+        
+        # Step 2: Compute closed-form sample transform T
+        logger.info("HYBRID ALIGNMENT: Computing closed-form sample transform T...")
+        T = self._compute_sample_transform(K_s_c, K_t_c)
+        
+        # Step 3: Initialize F from closed-form projection
+        # The ideal: source @ F should produce activations whose Gram = T @ K_s @ T.T = K_t
+        # Closed-form projection: F_init = pinv(source) @ (T @ source)
+        # But T is in sample space, so we compute: aligned_source = T @ source
+        # F_init = pinv(source) @ aligned_source
+        logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
+        aligned_source_samples = b.matmul(T, source)  # [n, d_s]
+        if d_s == d_t:
+            F = b.pinv(source)
+            F = b.matmul(F, aligned_source_samples)  # [d_s, d_s]
+        else:
+            # Cross-dimensional: F maps [d_s] -> [d_t]
+            # We want source @ F to approximate target geometry
+            # Use: F = pinv(source) @ target (direct mapping to target space)
+            F = b.matmul(b.pinv(source), target)  # [d_s, d_t]
+        b.eval(F)
+        
+        logger.info("HYBRID ALIGNMENT: Starting geodesic gradient refinement...")
+        
+        # Step 4: Define loss as geodesic distance to target Gram
         def loss_fn(F_matrix):
-            # 1. Project Source
+            # Project Source
             projected = b.matmul(source, F_matrix)
             
-            # 2. Compute Geodesic RBF CKA
-            # We assume rbf_gram_matrix is differentiable via MLX backend
-            cka = compute_cka_backend(
-                projected, 
-                target, 
-                b, 
-                estimator=HSICEstimator.BIASED 
-            )
-            # Ensure return is a scalar array for value_and_grad
-            # MLX requires the function to return an array, not a python float
-            loss = 1.0 - cka
+            # Compute geodesic Gram of projected source
+            K_proj = rbf_gram_matrix(projected, b)
+            K_proj_c = _center_gram_matrix(K_proj, b)
+            
+            # Geodesic Gram distance: ||K_proj - K_t||_F^2 / ||K_t||_F^2
+            diff = K_proj_c - K_t_c
+            diff_norm_sq = b.sum(diff * diff)
+            target_norm_sq = b.sum(K_t_c * K_t_c) + 1e-8
+            loss = b.divide(diff_norm_sq, target_norm_sq)
+            
+            # Ensure scalar array
             if isinstance(loss, float):
                 return b.array(loss)
             return loss
@@ -373,7 +472,8 @@ class GramAligner:
         eps = 1e-8
         
         best_loss = 1.0
-        patience = 50
+        best_F = F
+        patience = 100
         patience_counter = 0
         current_cka = 0.0
         
@@ -388,14 +488,15 @@ class GramAligner:
             if l_val < precision: # CKA > 1.0 - eps
                 break
                 
-            if l_val < best_loss - 1e-5: # Small improvement threshold
+            if l_val < best_loss - 1e-6: # Tighter improvement threshold
                 best_loss = l_val
+                best_F = F  # Save best transform
                 patience_counter = 0
             else:
                 patience_counter += 1
                 
-            if patience_counter > patience and current_cka > 0.95:
-                # Diminishing returns
+            # Only allow early stopping if we've achieved near-perfect alignment
+            if patience_counter > patience and current_cka >= 0.9999:
                 break
 
             # Adam Update
