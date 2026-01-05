@@ -450,16 +450,69 @@ def stage_transplant(
             src_vocab_size = int(b.shape(src_embed)[0])
 
             if tgt_vocab_size <= src_vocab_size:
-                # Target vocab is subset - use first N rows of aligned source
-                # This works because BPE vocabularies typically share common tokens at lower IDs
-                aligned_embed_final = aligned_embed[:tgt_vocab_size]
+                # =================================================================
+                # GRAM-BASED VOCABULARY ALIGNMENT
+                # =================================================================
+                # For each target token, find the source token whose aligned 
+                # embedding is geometrically closest (by cosine similarity).
+                # This is Gram-based: cosine = normalized inner product = Gram entry.
+                #
+                # aligned_embed: [src_vocab, tgt_hidden] - source projected to target space
+                # tgt_embed: [tgt_vocab, tgt_hidden] - target embeddings
+                # 
+                # We compute: similarity[i, j] = cosine(tgt_embed[i], aligned_embed[j])
+                # Then: best_match[i] = argmax_j(similarity[i, j])
+                # =================================================================
+                logger.info(
+                    "EMBEDDING ALIGNMENT: Computing Gram-based token correspondence (%d tgt → %d src)...",
+                    tgt_vocab_size, src_vocab_size
+                )
+                
+                # Normalize embeddings for cosine similarity
+                tgt_norm = b.sqrt(b.sum(tgt_embed * tgt_embed, axis=1, keepdims=True) + 1e-8)
+                src_norm = b.sqrt(b.sum(aligned_embed * aligned_embed, axis=1, keepdims=True) + 1e-8)
+                tgt_normalized = tgt_embed / tgt_norm
+                src_normalized = aligned_embed / src_norm
+                b.eval(tgt_normalized, src_normalized)
+                
+                # Compute cosine similarity matrix: [tgt_vocab, src_vocab]
+                # This is the Gram matrix in normalized embedding space
+                # Process in batches to avoid OOM for large vocabs
+                batch_size = 4096
+                best_matches = []
+                
+                for batch_start in range(0, tgt_vocab_size, batch_size):
+                    batch_end = min(batch_start + batch_size, tgt_vocab_size)
+                    tgt_batch = tgt_normalized[batch_start:batch_end]  # [batch, hidden]
+                    
+                    # Similarity: [batch, src_vocab] = [batch, hidden] @ [hidden, src_vocab]
+                    similarity = b.matmul(tgt_batch, b.transpose(src_normalized))
+                    b.eval(similarity)
+                    
+                    # Find best match for each target token in this batch
+                    batch_matches = b.argmax(similarity, axis=1)
+                    b.eval(batch_matches)
+                    best_matches.extend([int(x) for x in b.tolist(batch_matches)])
+                
+                # Build aligned embedding using best matches
+                # aligned_embed_final[i] = aligned_embed[best_matches[i]]
+                match_indices = b.array(best_matches)
+                aligned_embed_final = b.take(aligned_embed, match_indices, axis=0)
                 b.eval(aligned_embed_final)
+                
+                # Log match statistics
+                unique_matches = len(set(best_matches))
+                logger.info(
+                    "EMBEDDING ALIGNMENT: %d target tokens matched to %d unique source tokens (%.1f%% coverage)",
+                    tgt_vocab_size, unique_matches, 100.0 * unique_matches / tgt_vocab_size
+                )
 
                 # Replace in merged weights
                 merged[target_embed_key] = aligned_embed_final
                 metrics["embedding_aligned"] = True
                 metrics["embedding_src_vocab"] = src_vocab_size
                 metrics["embedding_tgt_vocab"] = tgt_vocab_size
+                metrics["embedding_unique_matches"] = unique_matches
                 logger.info(
                     "EMBEDDING ALIGNMENT: embed_tokens aligned %d→%d vocab, %d→%d hidden dim",
                     src_vocab_size, tgt_vocab_size,
