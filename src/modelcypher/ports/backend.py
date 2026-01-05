@@ -600,6 +600,14 @@ class Backend(Protocol):
         """
         ...
 
+    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> tuple[Array, Array]:
+        """Compute matrix square root AND inverse square root via Newton-Schulz.
+        
+        Returns:
+            (sqrtA, invSqrtA) where invSqrtA is approximately A^{-1/2}
+        """
+        ...
+
     def async_eval(self, *arrays: Array) -> None:
         """Asynchronously evaluate arrays for pipeline parallelism.
 

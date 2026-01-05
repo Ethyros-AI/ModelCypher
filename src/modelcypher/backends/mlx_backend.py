@@ -646,6 +646,62 @@ class MLXBackend(Backend):
         """Alias for det() for compatibility."""
         return self.det(array)
 
+    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> tuple[Array, Array]:
+        """Compute matrix square root AND inverse square root via Newton-Schulz.
+        
+        Converges to (A^{1/2}, A^{-1/2}) for positive semi-definite A.
+        Runs entirely on GPU.
+        
+        Algorithm:
+            Y₀ = A / norm(A)
+            Z₀ = I
+            for k=0..N:
+                T = (3I - ZₖYₖ)
+                Yₖ₊₁ = ½ Yₖ T
+                Zₖ₊₁ = ½ T Zₖ
+            
+            A^{1/2}   ≈ Y_final * sqrt(norm(A))
+            A^{-1/2}  ≈ Z_final / sqrt(norm(A))
+        """
+        # Ensure float32 for stability
+        A_f32 = self.astype(A, "float32")
+        
+        # Scaling to ensure convergence (spectral norm <= 1)
+        padding = self.mx.array(1e-7, dtype=self.mx.float32)
+        normA_val = self.mx.sqrt(self.mx.sum(A_f32 * A_f32)) + padding
+        Y = A_f32 / normA_val
+        
+        shape = A.shape
+        I = self.eye(shape[0], dtype="float32")
+        Z = I
+        
+        three = self.mx.array(3.0, dtype=self.mx.float32)
+        half = self.mx.array(0.5, dtype=self.mx.float32)
+        
+        # Iteration
+        for _ in range(num_iters):
+            ZY = self.mx.matmul(Z, Y)
+            T = three * I - ZY
+            
+            Y_new = half * self.mx.matmul(Y, T)
+            Z_new = half * self.mx.matmul(T, Z)
+            
+            Y = Y_new
+            Z = Z_new
+            
+        # Rescale
+        sqrt_norm = self.mx.sqrt(normA_val)
+        sqrtA = Y * sqrt_norm
+        invSqrtA = Z / sqrt_norm
+        
+        # Cast back if necessary
+        if A.dtype != self.mx.float32:
+            sqrtA = self.astype(sqrtA, A.dtype)
+            invSqrtA = self.astype(invSqrtA, A.dtype)
+            
+        self.safe.eval(sqrtA, invSqrtA)
+        return sqrtA, invSqrtA
+
     def eigh(self, array: Array) -> tuple[Array, Array]:
         # MLX eigh only supports float32, float64, complex64 - convert others to float32
         if array.dtype in (self.mx.bfloat16, self.mx.float16):

@@ -364,49 +364,41 @@ class GramAligner:
     def _gram_sqrt_transform(
         self, K_s_c: "Array", K_t_c: "Array"
     ) -> "Array":
-        """Compute T = K_t^{1/2} @ K_s^{-1/2} via eigendecomposition.
+        """Compute T = K_t^{1/2} @ K_s^{-1/2} via Newton-Schulz iteration.
         
-        The mathematical guarantee T @ K_s @ T.T = K_t requires working in
-        the SHARED non-null subspace of both matrices. Eigenvalues are only
-        used if they're numerically non-zero in BOTH source and target.
+        This avoids CPU-bound eigendecomposition and runs entirely on GPU.
+        The transformation T aligns the geometry of S to T such that:
+            T @ K_s @ T.T ≈ K_t
+            
+        Note: We compute K_s^{-1/2} directly via Newton-Schulz on the inverse
+        (or by inverting the sqrt), efficiently handling the manifold alignment.
         """
         b = self._backend
         reg = regularization_epsilon(b, K_s_c)
-
-        # Eigendecomposition
-        K_s_f32 = b.astype(K_s_c, "float32")
-        K_t_f32 = b.astype(K_t_c, "float32")
-        eig_s, V_s = b.eigh(K_s_f32)
-        eig_t, V_t = b.eigh(K_t_f32)
-        b.eval(eig_s, V_s, eig_t, V_t)
-
-        # Create mask for eigenvalues that are non-zero in BOTH matrices
-        # This ensures we work in the shared non-null subspace
-        s_nonzero = b.abs(eig_s) > reg
-        t_nonzero = b.abs(eig_t) > reg
-        both_nonzero = s_nonzero & t_nonzero
-        b.eval(both_nonzero)
         
-        # For eigenvalues near zero, use the regularization value
-        # but ONLY where BOTH are near zero (shared null space)
-        eig_s_safe = b.where(both_nonzero, eig_s, b.full(eig_s.shape, reg))
-        eig_t_safe = b.where(both_nonzero, eig_t, b.full(eig_t.shape, reg))
-        b.eval(eig_s_safe, eig_t_safe)
+        # Regularize inputs
+        I_s = b.eye(int(b.shape(K_s_c)[0]), dtype=b.dtype(K_s_c))
+        K_s_reg = K_s_c + I_s * reg
+        K_t_reg = K_t_c + I_s * reg # Same shape
 
-        # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
-        inv_sqrt_s = b.matmul(
-            V_s * b.reshape(1.0 / b.sqrt(b.abs(eig_s_safe) + reg), (1, -1)),
-            b.transpose(V_s),
-        )
-
-        # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
-        sqrt_t = b.matmul(
-            V_t * b.reshape(b.sqrt(b.maximum(eig_t_safe, b.full(eig_t_safe.shape, 0.0))), (1, -1)),
-            b.transpose(V_t),
-        )
-
-        T = b.matmul(sqrt_t, inv_sqrt_s)
+        # Compute K_t^{1/2}
+        sqrt_K_t, _ = b.matrix_sqrt_newton_schulz(K_t_reg)
+        
+        # Compute K_s^{-1/2} directly (Z output of Newton-Schulz)
+        # This avoids explicit inversion and is more stable
+        _, inv_sqrt_K_s = b.matrix_sqrt_newton_schulz(K_s_reg)
+        
+        # T = K_t^{1/2} @ K_s^{-1/2}
+        T = b.matmul(sqrt_K_t, inv_sqrt_K_s)
         b.eval(T)
+        
+        # Debug check for NaNs/Zeros
+        if self._strict:
+            if b.any(b.isnan(T)):
+                raise ValueError("computed transform T contains NaNs")
+            if b.all(T == 0):
+                raise ValueError("computed transform T is all zeros")
+                
         return T
 
     def _feature_transform(
