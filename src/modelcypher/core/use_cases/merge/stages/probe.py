@@ -760,10 +760,9 @@ def _probe_precise(
             )
             dimension_correlations = intersection_map_obj.dimension_correlations
             logger.info(
-                "PROBE PRECISE: Built IntersectionMap (%d layers) - "
-                "NOTE: fingerprint_similarity=%.3f is legacy sparse metric, see actual raw CKA below",
+                "PROBE PRECISE: Built IntersectionMap (%d layers), sparse mean_layer_cka=%.3f",
                 len(intersection_map_obj.layer_confidences),
-                intersection_map_obj.raw_fingerprint_similarity,
+                intersection_map_obj.mean_layer_cka,
             )
         except Exception as e:
             logger.warning("Failed to build IntersectionMap: %s", e)
