@@ -1076,7 +1076,63 @@ def stage_transplant(
                     logger.debug("Skipping still-quantized source weight: %s", key)
                     continue
 
-            # Skip if shapes became non-2D after dequantization
+            # =================================================================
+            # 1D WEIGHT STITCHING (layer norms, biases)
+            # =================================================================
+            # Layer norms are the 0D→1D transition - they constrain activation
+            # variance from unrestricted potential to structured information.
+            # Without proper alignment, the model loses its "grounding".
+            if len(source_w.shape) == 1 and len(target_w.shape) == 1:
+                src_dim = int(source_w.shape[0])
+                tgt_dim = int(target_w.shape[0])
+                
+                if src_dim != tgt_dim and hidden_stitch_output is not None:
+                    # Project 1D source weight to target dimension
+                    # For layer norm: w_tgt = mean(F.T @ diag(w_src), axis=1) weighted
+                    # Simpler approach: use F.T @ w_src (treating as column vector)
+                    try:
+                        source_w_2d = b.reshape(source_w, (src_dim, 1))
+                        b.eval(source_w_2d)
+                        
+                        # F.T is [tgt_hidden, src_hidden], source_w_2d is [src_hidden, 1]
+                        # Result is [tgt_hidden, 1]
+                        projected = b.matmul(hidden_stitch_output, source_w_2d)
+                        b.eval(projected)
+                        
+                        source_aligned = b.reshape(projected, (tgt_dim,))
+                        b.eval(source_aligned)
+                        
+                        # Replace in merged weights
+                        merged[key] = source_aligned
+                        metrics.setdefault("norm_weights_stitched", 0)
+                        metrics["norm_weights_stitched"] += 1
+                        logger.info(
+                            "1D stitch (norm/bias): %s [%d] → [%d]",
+                            key, src_dim, tgt_dim
+                        )
+                        weights_transplanted += 1
+                        manifest_records.append(
+                            WeightTransformRecord(
+                                weight_key=key,
+                                status=WeightStatus.TRANSPLANTED,
+                                source_shape=[src_dim],
+                                target_shape=[tgt_dim],
+                                transform_type="1d_norm_stitch",
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to stitch 1D weight %s: %s", key, e)
+                    continue
+                elif src_dim == tgt_dim:
+                    # Same dimension - can directly use source
+                    merged[key] = source_w
+                    weights_transplanted += 1
+                    continue
+                else:
+                    # No stitch available for 1D weight
+                    continue
+
+            # Skip if shapes became non-2D after dequantization (2D logic below)
             if len(target_w.shape) != 2 or len(source_w.shape) != 2:
                 continue
 

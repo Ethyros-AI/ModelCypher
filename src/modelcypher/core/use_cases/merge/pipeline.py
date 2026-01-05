@@ -369,16 +369,17 @@ def run_merge(
             except Exception as exc:
                 logger.warning("Could not read target config for quantization: %s", exc)
 
-        # Preserve vocabulary-tied weights from target that we did NOT align.
-        # embed_tokens was aligned in transplant stage, so don't overwrite it.
-        # lm_head ties to target vocab and wasn't aligned, so preserve it.
+        # Preserve vocabulary-tied weights (embeddings, lm_head) from target.
+        # Cross-vocab merging: we can't align embeddings by vocab row because
+        # token ID N in source != token ID N in target. Use target's original
+        # vocabulary weights and let the hidden layer alignment transfer knowledge.
         vocab_keys = {
             k for k in loaded_target_weights.keys()
-            if "lm_head" in k.lower()  # Only preserve lm_head, NOT embed_tokens
+            if "embed" in k.lower() or "lm_head" in k.lower()
         }
         vocab_weights = {k: loaded_target_weights[k] for k in vocab_keys}
         logger.info(
-            "Preserving %d vocabulary-tied weights from target (lm_head only, embed_tokens was aligned)",
+            "Preserving %d vocabulary-tied weights from target (cross-vocab merge)",
             len(vocab_weights),
         )
 
