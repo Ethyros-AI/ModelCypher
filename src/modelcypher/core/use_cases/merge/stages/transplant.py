@@ -1118,7 +1118,7 @@ def stage_transplant(
                     if stitch_success:
                         metrics.setdefault("norm_weights_stitched", 0)
                         metrics["norm_weights_stitched"] += 1
-                        weights_transplanted += 1
+                        metrics["weights_transplanted"] += 1
                         manifest_records.append(
                             WeightTransformRecord(
                                 weight_key=key,
@@ -1132,7 +1132,7 @@ def stage_transplant(
                 elif src_dim == tgt_dim:
                     # Same dimension - can directly use source
                     merged[key] = source_w
-                    weights_transplanted += 1
+                    metrics["weights_transplanted"] += 1
                     continue
                 else:
                     # No stitch available for 1D weight
