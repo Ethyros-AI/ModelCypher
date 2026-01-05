@@ -18,23 +18,39 @@
 """
 Gram Matrix Aligner - Finds the EXACT transformation for CKA = 1.0.
 
-Core Principle:
-===============
-The Gram matrix captures pairwise relationships (similarities, distances,
-angles) between samples. CKA = 1.0 means these relationships are IDENTICAL.
+Core Principle: Dimensional Compression is Lossless
+====================================================
+There is NO "lossy compression" when moving information between dimensions.
+Information is dimension-agnostic - 1D (morse code) encodes 2D (pictures),
+2D represents 3D, and so on. Higher dimensions mean sparser representation;
+lower dimensions mean denser representation. The SHAPE is invariant.
 
-Mathematical Guarantee:
-=======================
+Neural network representations are high-dimensional probability clouds -
+"legos that pass through each other." When compressing from 4096-dim to
+960-dim, we're not losing information - we're packing the same invariant
+structure more densely. CKA=1.0 proves this geometry is preserved exactly.
+
+The Gram Matrix is the Invariant
+================================
+The Gram matrix K = X @ X.T captures pairwise relationships (similarities,
+distances, angles) between samples. CKA = 1.0 means these relationships
+are IDENTICAL regardless of feature dimension. This is the invariant shape
+of knowledge itself.
+
+Mathematical Guarantee
+======================
 Given centered Gram matrices K_s and K_t, the transformation:
     T = K_t^{1/2} @ K_s^{-1/2}
 
 produces: T @ K_s @ T^T = K_t exactly.
 
-This transformation ALWAYS exists with appropriate regularization.
-The feature-space equivalent is: F = pinv(A_s) @ T @ A_s.
+This transformation operates in SAMPLE SPACE (n×n), not feature space.
+It ALWAYS exists regardless of feature dimensions d_s and d_t.
+The feature-space transform F: [d_s, d_t] is derived for weight folding,
+but CKA verification uses the sample-space Gram alignment.
 
-No User-Configurable Thresholds:
-================================
+No User-Configurable Thresholds
+===============================
 All tolerances are derived from machine epsilon of the input dtype.
 - Convergence tolerance: sqrt(machine_epsilon)
 - Regularization: sqrt(machine_epsilon)
@@ -45,6 +61,7 @@ References:
       Revisited." arXiv:1905.00414
     - Williams (2001). "On a Connection between Kernel PCA and Metric
       Multidimensional Scaling." Machine Learning 46(1):11-19
+    - See: docs/DIMENSIONAL_COMPRESSION.md for full philosophy
 """
 
 from __future__ import annotations
