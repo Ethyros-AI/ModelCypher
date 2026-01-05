@@ -369,16 +369,16 @@ def run_merge(
             except Exception as exc:
                 logger.warning("Could not read target config for quantization: %s", exc)
 
-        # Preserve vocabulary-tied weights (embeddings, lm_head) from target.
-        # These weren't modified during transplant but requantization would corrupt them
-        # because dequantize→requantize is lossy.
+        # Preserve vocabulary-tied weights from target that we did NOT align.
+        # embed_tokens was aligned in transplant stage, so don't overwrite it.
+        # lm_head ties to target vocab and wasn't aligned, so preserve it.
         vocab_keys = {
             k for k in loaded_target_weights.keys()
-            if "embed" in k.lower() or "lm_head" in k.lower()
+            if "lm_head" in k.lower()  # Only preserve lm_head, NOT embed_tokens
         }
         vocab_weights = {k: loaded_target_weights[k] for k in vocab_keys}
         logger.info(
-            "Preserving %d vocabulary-tied weights from target (skip requant)",
+            "Preserving %d vocabulary-tied weights from target (lm_head only, embed_tokens was aligned)",
             len(vocab_weights),
         )
 
@@ -389,7 +389,7 @@ def run_merge(
             quant_hint,
         )
 
-        # Restore vocabulary weights (original target quantization)
+        # Restore vocabulary weights (only lm_head - embed_tokens was already aligned)
         for k, v in vocab_weights.items():
             merged_weights[k] = v
 
