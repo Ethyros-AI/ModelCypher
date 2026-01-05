@@ -79,13 +79,7 @@ def load_weights(model_loader: "ModelLoaderPort", model_path: str) -> tuple[dict
     return weights, "safetensors"
 
 
-def load_weights_cpu(
-    model_loader: "ModelLoaderPort",
-    model_path: str,
-) -> tuple[dict[str, Any], str]:
-    """Load model weights as CPU arrays to reduce GPU memory pressure."""
-    weights = model_loader.load_weights_as_numpy(model_path)
-    return weights, "safetensors"
+
 
 
 def load_weights_as_arrays(

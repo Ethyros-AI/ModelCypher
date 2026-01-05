@@ -600,11 +600,11 @@ class Backend(Protocol):
         """
         ...
 
-    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> tuple[Array, Array]:
-        """Compute matrix square root AND inverse square root via Newton-Schulz.
+    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> Array:
+        """Compute matrix square root iteratively via Newton-Schulz.
         
-        Returns:
-            (sqrtA, invSqrtA) where invSqrtA is approximately A^{-1/2}
+        Converges to A^{1/2} for positive semi-definite A.
+        Runs entirely on GPU.
         """
         ...
 

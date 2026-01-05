@@ -189,8 +189,7 @@ class UnifiedGeometricMerger:
     def _load_weights(self, model_path: str) -> tuple[dict[str, Any], str]:
         return merge_helpers.load_weights(self._model_loader, model_path)
 
-    def _load_weights_cpu(self, model_path: str) -> tuple[dict[str, Any], str]:
-        return merge_helpers.load_weights_cpu(self._model_loader, model_path)
+
 
     def _load_weights_as_arrays(self, model_path: str) -> tuple[dict[str, "Array"], str]:
         return merge_helpers.load_weights_as_arrays(self._model_loader, model_path)

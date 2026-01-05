@@ -120,44 +120,7 @@ class JAXModelLoader(ModelLoaderPort):
 
         return model, tokenizer
 
-    def load_weights_as_numpy(self, model_path: str) -> dict[str, Any]:
-        """Load model weights as CPU JAX arrays.
 
-        Args:
-            model_path: Path to model directory with safetensors
-
-        Returns:
-            Dictionary mapping weight names to float32 jax.Array on CPU
-        """
-        if not self._available:
-            raise RuntimeError("JAX not available. Install: pip install jax jaxlib")
-
-        from safetensors import safe_open
-
-        model_dir = Path(model_path)
-        safetensor_files = list(model_dir.glob("*.safetensors"))
-        if not safetensor_files:
-            raise FileNotFoundError(f"No safetensors files found in {model_path}")
-
-        cpu_device = None
-        try:
-            cpu_devices = self.jax.devices("cpu")
-            if cpu_devices:
-                cpu_device = cpu_devices[0]
-        except Exception:
-            cpu_device = None
-
-        weights: dict[str, Any] = {}
-        for sf_path in safetensor_files:
-            with safe_open(sf_path, framework="flax") as f:
-                for key in f.keys():
-                    tensor = f.get_tensor(key)
-                    array = self.jnp.asarray(tensor, dtype=self.jnp.float32)
-                    if cpu_device is not None:
-                        array = self.jax.device_put(array, cpu_device)
-                    weights[key] = array
-
-        return weights
 
     def load_weights(self, model_path: str) -> dict[str, Any]:
         """Load model weights as native JAX arrays (GPU/TPU-accelerated).

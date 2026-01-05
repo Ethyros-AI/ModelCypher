@@ -120,17 +120,14 @@ def load_model_for_training(
                 f"Ensure mlx_vlm is properly installed and the model is compatible."
             ) from e
     else:
-        global mlx_lm_load
-        if mlx_lm_load is None:
-            try:
-                from mlx_lm import load as _mlx_lm_load
-            except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
-                raise ImportError(
-                    "mlx_lm is required to load text models for training. "
-                    "Install with: pip install mlx-lm"
-                ) from exc
-            mlx_lm_load = _mlx_lm_load
-        model, tokenizer = mlx_lm_load(model_path)
+        try:
+            from mlx_lm import load as _mlx_lm_load
+        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+            raise ImportError(
+                "mlx_lm is required to load text models for training. "
+                "Install with: pip install mlx-lm"
+            ) from exc
+        model, tokenizer = _mlx_lm_load(model_path)
 
     if lora_settings is not None:
         # Freeze base weights first
@@ -163,26 +160,4 @@ def load_model_for_training(
     return model, tokenizer
 
 
-def load_weights_as_numpy(model_path: str) -> "dict[str, Any]":  # noqa: F821
-    """Load model weights as backend arrays (GPU-accelerated).
 
-    Note: Despite the name, this now returns backend-native arrays for performance.
-    The name is kept for backwards compatibility with callers that expect
-    array-like objects. Backend arrays support the same operations.
-    """
-    import glob
-    from pathlib import Path
-
-    backend = get_default_backend()
-    path = Path(model_path)
-    safetensor_files = glob.glob(str(path / "*.safetensors"))
-
-    if not safetensor_files:
-        raise FileNotFoundError(f"No safetensors files found in {model_path}")
-
-    # Use backend's native safetensors loading (GPU-accelerated)
-    weights: dict[str, Any] = {}
-    for sf_path in safetensor_files:
-        weights.update(backend.load_safetensors(sf_path))
-
-    return weights

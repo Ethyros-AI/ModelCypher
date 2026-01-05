@@ -646,7 +646,16 @@ class MLXBackend(Backend):
         """Alias for det() for compatibility."""
         return self.det(array)
 
-    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> tuple[Array, Array]:
+    def inv(self, array: Array) -> Array:
+        """Compute the inverse of a square matrix.
+
+        Uses backend native implementation (GPU acceleration where available).
+        """
+        return self.mx.linalg.inv(array)
+
+
+
+    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> Array:
         """Compute matrix square root AND inverse square root via Newton-Schulz.
         
         Converges to (A^{1/2}, A^{-1/2}) for positive semi-definite A.
@@ -690,17 +699,14 @@ class MLXBackend(Backend):
             Z = Z_new
             
         # Rescale
-        sqrt_norm = self.mx.sqrt(normA_val)
-        sqrtA = Y * sqrt_norm
-        invSqrtA = Z / sqrt_norm
+        sqrtA = Y * self.mx.sqrt(normA_val)
         
         # Cast back if necessary
         if A.dtype != self.mx.float32:
             sqrtA = self.astype(sqrtA, A.dtype)
-            invSqrtA = self.astype(invSqrtA, A.dtype)
             
-        self.safe.eval(sqrtA, invSqrtA)
-        return sqrtA, invSqrtA
+        self.safe.eval(sqrtA)
+        return sqrtA
 
     def eigh(self, array: Array) -> tuple[Array, Array]:
         # MLX eigh only supports float32, float64, complex64 - convert others to float32

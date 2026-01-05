@@ -382,22 +382,26 @@ class GramAligner:
         K_t_reg = K_t_c + I_s * reg # Same shape
 
         # Compute K_t^{1/2}
-        sqrt_K_t, _ = b.matrix_sqrt_newton_schulz(K_t_reg)
+        sqrt_K_t = b.matrix_sqrt_newton_schulz(K_t_reg)
         
-        # Compute K_s^{-1/2} directly (Z output of Newton-Schulz)
-        # This avoids explicit inversion and is more stable
-        _, inv_sqrt_K_s = b.matrix_sqrt_newton_schulz(K_s_reg)
+        # Compute K_s^{-1/2}
+        # Step 1: Compute Sqrt on GPU (Newton-Schulz)
+        sqrt_K_s = b.matrix_sqrt_newton_schulz(K_s_reg)
+        
+        # Step 2: Compute Inverse (Backend Native)
+        # We rely on backend.inv() for standard inversion.
+        inv_sqrt_K_s = b.inv(sqrt_K_s)
         
         # T = K_t^{1/2} @ K_s^{-1/2}
         T = b.matmul(sqrt_K_t, inv_sqrt_K_s)
         b.eval(T)
         
         # Debug check for NaNs/Zeros
-        if self._strict:
-            if b.any(b.isnan(T)):
-                raise ValueError("computed transform T contains NaNs")
-            if b.all(T == 0):
-                raise ValueError("computed transform T is all zeros")
+        # We always check this because a NaN transform is catastrophic
+        if b.any(b.isnan(T)):
+            raise ValueError("computed transform T contains NaNs")
+        if b.all(T == 0):
+            raise ValueError("computed transform T is all zeros")
                 
         return T
 

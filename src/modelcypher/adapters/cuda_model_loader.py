@@ -117,33 +117,7 @@ class CUDAModelLoader(ModelLoaderPort):
 
         return model, tokenizer
 
-    def load_weights_as_numpy(self, model_path: str) -> dict[str, Any]:
-        """Load model weights as CPU tensors for analysis.
 
-        Args:
-            model_path: Path to model directory with safetensors
-
-        Returns:
-            Dictionary mapping weight names to float32 torch.Tensor on CPU
-        """
-        if self.torch is None:
-            raise RuntimeError("PyTorch not available. Install: pip install torch")
-
-        from safetensors import safe_open
-
-        model_dir = Path(model_path)
-        safetensor_files = list(model_dir.glob("*.safetensors"))
-        if not safetensor_files:
-            raise FileNotFoundError(f"No safetensors files found in {model_path}")
-
-        weights: dict[str, Any] = {}
-        for sf_path in safetensor_files:
-            with safe_open(sf_path, framework="pt", device="cpu") as f:
-                for key in f.keys():
-                    tensor = f.get_tensor(key)
-                    weights[key] = tensor.to(dtype=self.torch.float32, device="cpu")
-
-        return weights
 
     def load_weights(self, model_path: str) -> dict[str, Any]:
         """Load model weights as native PyTorch tensors (GPU-accelerated).

@@ -59,21 +59,7 @@ class MLXModelLoader(ModelLoaderPort):
 
         return _load_model_for_training(model_path, lora_settings)
 
-    def load_weights_as_numpy(self, model_path: str) -> dict[str, Any]:
-        """Load model weights as numpy-compatible arrays.
 
-        Args:
-            model_path: Path to model directory with safetensors
-
-        Returns:
-            Dictionary mapping weight names to numpy-compatible float32 arrays
-        """
-        # Import here to avoid circular imports and MLX dependency at module level
-        from modelcypher.adapters.model_loader import (
-            load_weights_as_numpy as _load_weights_as_numpy,
-        )
-
-        return _load_weights_as_numpy(model_path)
 
     def load_weights(self, model_path: str) -> dict[str, Any]:
         """Load model weights as native MLX arrays (GPU-accelerated).
