@@ -349,20 +349,29 @@ class GramAligner:
     def _gram_sqrt_transform(
         self, K_s_c: "Array", K_t_c: "Array"
     ) -> "Array":
-        """Compute T = K_t^{1/2} @ K_s^{-1/2} via eigendecomposition."""
+        """Compute T = K_t^{1/2} @ K_s^{-1/2} via eigendecomposition.
+        
+        Uses float64 for eigendecomposition to achieve exact CKA=1.0.
+        The mathematical guarantee T @ K_s @ T.T = K_t requires precise
+        eigenvalues without clamping artifacts.
+        """
         b = self._backend
+        original_dtype = K_s_c.dtype
         reg = regularization_epsilon(b, K_s_c)
 
-        # Eigendecomposition
-        K_s_f32 = b.astype(K_s_c, "float32")
-        K_t_f32 = b.astype(K_t_c, "float32")
-        eig_s, V_s = b.eigh(K_s_f32)
-        eig_t, V_t = b.eigh(K_t_f32)
+        # Use float64 for eigendecomposition to avoid numerical noise
+        # that would require clamping (which breaks the exact guarantee)
+        K_s_f64 = b.astype(K_s_c, "float64")
+        K_t_f64 = b.astype(K_t_c, "float64")
+        eig_s, V_s = b.eigh(K_s_f64)
+        eig_t, V_t = b.eigh(K_t_f64)
         b.eval(eig_s, V_s, eig_t, V_t)
 
-        # Clamp eigenvalues (numerical stability)
-        eig_s_safe = b.maximum(eig_s, b.full(eig_s.shape, reg))
-        eig_t_safe = b.maximum(eig_t, b.full(eig_t.shape, reg))
+        # With float64, eigenvalues are precise - use minimal regularization
+        # only to prevent true zeros (not numerical noise)
+        reg_f64 = float(reg) * 1e-8  # Much tighter with float64
+        eig_s_safe = b.maximum(eig_s, b.full(eig_s.shape, reg_f64, dtype="float64"))
+        eig_t_safe = b.maximum(eig_t, b.full(eig_t.shape, reg_f64, dtype="float64"))
 
         # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
         inv_sqrt_s = b.matmul(
@@ -377,6 +386,8 @@ class GramAligner:
         )
 
         T = b.matmul(sqrt_t, inv_sqrt_s)
+        # Convert back to original dtype for downstream ops
+        T = b.astype(T, original_dtype)
         b.eval(T)
         return T
 
