@@ -1092,6 +1092,7 @@ def stage_transplant(
                     # Project 1D source weight to target dimension
                     # For layer norm: w_tgt = mean(F.T @ diag(w_src), axis=1) weighted
                     # Simpler approach: use F.T @ w_src (treating as column vector)
+                    stitch_success = False
                     try:
                         source_w_2d = b.reshape(source_w, (src_dim, 1))
                         b.eval(source_w_2d)
@@ -1106,12 +1107,17 @@ def stage_transplant(
                         
                         # Replace in merged weights
                         merged[key] = source_aligned
-                        metrics.setdefault("norm_weights_stitched", 0)
-                        metrics["norm_weights_stitched"] += 1
+                        stitch_success = True
                         logger.info(
                             "1D stitch (norm/bias): %s [%d] → [%d]",
                             key, src_dim, tgt_dim
                         )
+                    except Exception as e:
+                        logger.warning("Failed to stitch 1D weight %s: %s", key, e)
+                    
+                    if stitch_success:
+                        metrics.setdefault("norm_weights_stitched", 0)
+                        metrics["norm_weights_stitched"] += 1
                         weights_transplanted += 1
                         manifest_records.append(
                             WeightTransformRecord(
@@ -1122,8 +1128,6 @@ def stage_transplant(
                                 transform_type="1d_norm_stitch",
                             )
                         )
-                    except Exception as e:
-                        logger.warning("Failed to stitch 1D weight %s: %s", key, e)
                     continue
                 elif src_dim == tgt_dim:
                     # Same dimension - can directly use source
