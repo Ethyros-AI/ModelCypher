@@ -812,7 +812,11 @@ def stage_transplant(
 
         # USE PER-LAYER ATTENTION stitch (from probe stage with CKA=1.0)
         if layer_idx in layer_attention_stitches:
-            attention_stitch_output, attention_stitch_input = layer_attention_stitches[layer_idx]
+            # layer_attention_stitches[layer_idx] is a dict {src_layer: (P, Q)}
+            src_stitches_dict = layer_attention_stitches[layer_idx]
+            if src_stitches_dict:
+                first_src = next(iter(src_stitches_dict))
+                attention_stitch_output, attention_stitch_input = src_stitches_dict[first_src]
             if layer_num == 0:
                 stitch_shape = attention_stitch_output.shape if attention_stitch_output is not None else "N/A"
                 logger.info(
@@ -822,7 +826,11 @@ def stage_transplant(
 
         # USE PER-LAYER K stitch for k_proj (from probe stage with CKA=1.0)
         if layer_idx in layer_k_stitches:
-            k_stitch_output, k_stitch_input = layer_k_stitches[layer_idx]
+            # layer_k_stitches[layer_idx] is a dict {src_layer: (P, Q)}
+            src_stitches_dict = layer_k_stitches[layer_idx]
+            if src_stitches_dict:
+                first_src = next(iter(src_stitches_dict))
+                k_stitch_output, k_stitch_input = src_stitches_dict[first_src]
             if layer_num == 0:
                 stitch_shape = k_stitch_output.shape if k_stitch_output is not None else "N/A"
                 logger.info(
@@ -832,7 +840,11 @@ def stage_transplant(
 
         # USE PER-LAYER V stitch for v_proj (from probe stage with CKA=1.0)
         if layer_idx in layer_v_stitches:
-            v_stitch_output, v_stitch_input = layer_v_stitches[layer_idx]
+            # layer_v_stitches[layer_idx] is a dict {src_layer: (P, Q)}
+            src_stitches_dict = layer_v_stitches[layer_idx]
+            if src_stitches_dict:
+                first_src = next(iter(src_stitches_dict))
+                v_stitch_output, v_stitch_input = src_stitches_dict[first_src]
             if layer_num == 0:
                 stitch_shape = v_stitch_output.shape if v_stitch_output is not None else "N/A"
                 logger.info(
