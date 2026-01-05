@@ -117,12 +117,13 @@ def run_merge(
         target_intermediate_activations,
         source_attention_activations,
         target_attention_activations,
-        source_kv_activations,
-        target_kv_activations,
+        source_k_activations,
+        target_k_activations,
         feature_transforms,
         embedding_transform,  # 2D GramAlign for embed_tokens
         attention_transforms,
-        kv_transforms,
+        k_transforms,
+        v_transforms,
         layer_mapping,
     ) = stage_probe(
         source_weights=source_weights,
@@ -174,10 +175,17 @@ def run_merge(
             len(attention_transforms),
         )
 
-    if kv_transforms:
+
+    if k_transforms:
         logger.info(
-            "PROBE: Computed %d KV transforms",
-            len(kv_transforms),
+            "PROBE: Computed %d K transforms",
+            len(k_transforms),
+        )
+
+    if v_transforms:
+        logger.info(
+            "PROBE: Computed %d V transforms",
+            len(v_transforms),
         )
 
     if layer_mapping:
@@ -208,11 +216,11 @@ def run_merge(
             len(source_attention_activations),
             len(target_attention_activations),
         )
-    if source_kv_activations and target_kv_activations:
+    if source_k_activations and target_k_activations:
         logger.info(
-            "PROBE: Collected ATTENTION (KV) activations for %d source layers, %d target layers",
-            len(source_kv_activations),
-            len(target_kv_activations),
+            "PROBE: Collected ATTENTION (K) activations for %d source layers, %d target layers",
+            len(source_k_activations),
+            len(target_k_activations),
         )
 
     # Clear GPU memory
@@ -322,8 +330,8 @@ def run_merge(
         target_intermediate_activations=target_intermediate_activations,
         source_attention_activations=source_attention_activations,
         target_attention_activations=target_attention_activations,
-        source_kv_activations=source_kv_activations,
-        target_kv_activations=target_kv_activations,
+        source_kv_activations=source_k_activations,  # K activations (V computed compositionally)
+        target_kv_activations=target_k_activations,  # K activations (V computed compositionally)
         transplant_domains=(),
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
@@ -331,7 +339,8 @@ def run_merge(
         feature_transforms=feature_transforms,
         embedding_transform=embedding_transform,  # 2D GramAlign for embed_tokens
         attention_transforms=attention_transforms,
-        kv_transforms=kv_transforms,
+        k_transforms=k_transforms,
+        v_transforms=v_transforms,
         layer_mapping=layer_mapping,
     )
 

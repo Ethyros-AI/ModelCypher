@@ -82,6 +82,19 @@ class AlignmentFailureError(MergeValidationError):
     pass
 
 
+class AlignmentPrecisionError(MergeError):
+    """Strict mode: GramAligner failed to achieve CKA = 1.0.
+
+    This is raised in strict mode when the alignment algorithm doesn't achieve
+    perfect CKA=1.0 (within float32 precision). This indicates a bug in the
+    alignment algorithm, not model incompatibility.
+
+    The geometry is INVARIANT across all LLMs. CKA = 1.0 is ALWAYS achievable.
+    """
+
+    pass
+
+
 class DimensionMismatchError(MergeValidationError):
     """Weight dimensions differ and stitch transformation was not applied.
 

@@ -92,7 +92,8 @@ def stage_probe(
     dict[int, list[list[float]]] | None,  # feature_transforms (hidden)
     list[list[float]] | None,  # embedding_transform (2D GramAlign)
     dict[int, list[list[float]]] | None,  # attention_transforms (Q)
-    dict[int, list[list[float]]] | None,  # kv_transforms (KV)
+    dict[int, list[list[float]]] | None,  # k_transforms (K)
+    dict[int, list[list[float]]] | None,  # v_transforms (V)
     dict[int, int] | None,  # layer_mapping
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
@@ -124,12 +125,13 @@ def stage_probe(
         result.target_intermediate_activations,
         result.source_attention_activations,
         result.target_attention_activations,
-        result.source_kv_activations,
-        result.target_kv_activations,
+        result.source_k_activations,
+        result.target_k_activations,
         result.feature_transforms,
         result.embedding_transform,
         result.attention_transforms,
-        result.kv_transforms,
+        result.k_transforms,
+        result.v_transforms,
         result.layer_mapping,
     )
 
@@ -199,7 +201,8 @@ def stage_transplant(
     feature_transforms: dict[int, list[list[float]]] | None = None,
     embedding_transform: list[list[float]] | None = None,  # 2D GramAlign
     attention_transforms: dict[int, list[list[float]]] | None = None,
-    kv_transforms: dict[int, list[list[float]]] | None = None,
+    k_transforms: dict[int, list[list[float]]] | None = None,
+    v_transforms: dict[int, list[list[float]]] | None = None,
     layer_mapping: dict[int, int] | None = None,
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
@@ -224,7 +227,8 @@ def stage_transplant(
         feature_transforms=feature_transforms,
         embedding_transform=embedding_transform,
         attention_transforms=attention_transforms,
-        kv_transforms=kv_transforms,
+        k_transforms=k_transforms,
+        v_transforms=v_transforms,
         layer_mapping=layer_mapping,
     )
 

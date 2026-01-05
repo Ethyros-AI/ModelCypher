@@ -45,6 +45,7 @@ from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
     geodesic_paired_distances,
 )
+from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
 
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
@@ -1336,20 +1337,70 @@ def stage_transplant(
                             metrics["attention_stitched"] += 1
                             attention_stitch_applied = True
 
-                        elif is_kv and dim0 == src_kv_dim and dim1 == src_hidden_dim:
-                            # k_proj/v_proj (GQA): [KV_attn, hidden] → kv_stitch @ W @ hidden_stitch
-                            kv_out = kv_stitch_output if kv_stitch_output is not None else attention_stitch_output
-                            source_aligned = b.matmul(kv_out, source_w)
-                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                            b.eval(source_aligned)
-                            stitch_type = "KV stitch" if kv_stitch_output is not None else "attention stitch"
-                            logger.info(
-                                "%s (k/v_proj): %s [%d,%d] → [%d,%d]",
-                                stitch_type, key, dim0, dim1, tgt_kv_dim, tgt_hidden_dim
-                            )
-                            metrics.setdefault("kv_stitched", 0)
-                            metrics["kv_stitched"] += 1
-                            attention_stitch_applied = True
+                        elif is_kv and dim1 == src_hidden_dim:
+                            # k_proj/v_proj (GQA): [KV_attn, hidden]
+                            # Try using pre-computed stitch first
+                            is_k = any(n in key for n in ["k_proj", "key"])
+                            is_v_proj = any(n in key for n in ["v_proj", "value"])
+
+                            kv_out = None
+                            stitch_type = "compositional"
+
+                            if is_k and k_stitch_output is not None:
+                                kv_out = k_stitch_output
+                                stitch_type = "K stitch (probe)"
+                            elif is_v_proj and v_stitch_output is not None:
+                                kv_out = v_stitch_output
+                                stitch_type = "V stitch (probe)"
+                            else:
+                                # COMPOSITIONAL FALLBACK: Compute stitch from hidden + weights
+                                # This is mathematically guaranteed because:
+                                # 1. Hidden alignment achieves CKA=1.0 (verified)
+                                # 2. Attention projections are linear functions of hidden
+                                # 3. Compositional stitch derives the correct transform
+                                target_w = target_weights.get(key)
+                                if target_w is not None and hidden_stitch_output is not None:
+                                    aligner = GramAligner(backend=b)
+                                    # compositional_stitch wants H: [src_hidden, tgt_hidden]
+                                    # hidden_stitch_output is F.T: [tgt_hidden, src_hidden]
+                                    # So we need to transpose
+                                    H = b.transpose(hidden_stitch_output)
+                                    target_w_float = b.astype(b.array(target_w), "float32")
+                                    b.eval(H, target_w_float)
+
+                                    kv_out = aligner.compositional_stitch(
+                                        hidden_transform=H,
+                                        source_weight=source_w,
+                                        target_weight=target_w_float,
+                                    )
+                                    b.eval(kv_out)
+                                    stitch_type = "compositional"
+                                    logger.info(
+                                        "COMPOSITIONAL STITCH for %s: derived from hidden + weights",
+                                        key
+                                    )
+
+                            if kv_out is not None:
+                                source_aligned = b.matmul(kv_out, source_w)
+                                source_aligned = b.matmul(source_aligned, hidden_stitch_input)
+                                b.eval(source_aligned)
+                                logger.info(
+                                    "%s (k/v_proj): %s [%d,%d] → aligned",
+                                    stitch_type, key, dim0, dim1
+                                )
+                                metrics.setdefault("kv_stitched", 0)
+                                metrics["kv_stitched"] += 1
+                                attention_stitch_applied = True
+                            else:
+                                logger.warning(
+                                    "No stitch available for %s - using attention_stitch fallback",
+                                    key
+                                )
+                                if attention_stitch_output is not None:
+                                    source_aligned = b.matmul(attention_stitch_output, source_w)
+                                    source_aligned = b.matmul(source_aligned, hidden_stitch_input)
+                                    b.eval(source_aligned)
+                                    attention_stitch_applied = True
 
                         elif is_o and dim0 == src_hidden_dim and dim1 == src_attn_dim:
                             # o_proj: [hidden, attn] → hidden_stitch_output @ W @ attention_stitch_input

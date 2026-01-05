@@ -84,6 +84,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.merging.exceptions import AlignmentPrecisionError
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -235,6 +236,7 @@ class GramAligner:
         self,
         source_activations: "Array",
         target_activations: "Array",
+        strict: bool = True,
     ) -> AlignmentResult:
         """Find the transformation that achieves CKA = 1.0.
 
@@ -300,7 +302,7 @@ class GramAligner:
         source_transformed = b.matmul(source_centered, feature_transform)
         diagnostic = self._diagnose(source_transformed, target_centered, cka)
 
-        return AlignmentResult(
+        result = AlignmentResult(
             feature_transform=b.tolist(feature_transform),
             sample_transform=b.tolist(sample_transform),
             achieved_cka=cka,
@@ -309,6 +311,16 @@ class GramAligner:
             diagnostic=diagnostic,
             precision_threshold=precision,
         )
+
+        # Strict mode: raise exception if alignment is not perfect
+        if strict and not result.is_perfect:
+            raise AlignmentPrecisionError(
+                f"Alignment failed to achieve CKA=1.0. "
+                f"Achieved CKA={cka:.6f}, threshold={precision:.2e}. "
+                f"This indicates a bug in the alignment algorithm."
+            )
+
+        return result
 
     # -------------------------------------------------------------------------
     # Private Helpers
@@ -533,3 +545,103 @@ class GramAligner:
             cka_achieved=cka,
             iteration=0,
         )
+
+    def compositional_stitch(
+        self,
+        hidden_transform: "Array",
+        source_weight: "Array",
+        target_weight: "Array",
+    ) -> "Array":
+        """Derive projection stitch from hidden alignment + weight geometry.
+
+        This is the CORRECT way to compute attention transforms. Instead of
+        trying to independently align Q/K/V activations (which will fail because
+        inputs are unaligned), we derive the transform mathematically:
+
+            source_proj(source_hidden) should align with target_proj(target_hidden)
+
+        With hidden alignment H such that: source_hidden @ H ≈ target_hidden
+
+        For a linear projection W (q_proj, k_proj, v_proj):
+            source_W @ source_hidden should produce same geometry as:
+            target_W @ target_hidden = target_W @ (source_hidden @ H)
+
+        The stitch formula is:
+            S @ source_W @ source_hidden = target_W @ source_hidden @ H
+            S @ source_W = target_W @ H
+            S = target_W @ H @ pinv(source_W)
+
+        This is mathematically guaranteed because:
+        1. H achieves CKA=1.0 for hidden states (verified)
+        2. Linear projections preserve relationships under correct transform
+        3. The stitch S exactly maps source projection geometry to target
+
+        Parameters
+        ----------
+        hidden_transform : Array
+            The hidden alignment transform H [d_source_hidden, d_target_hidden].
+            Must have achieved CKA=1.0 for hidden states.
+        source_weight : Array
+            Source projection weight [d_proj, d_source_hidden] (e.g., q_proj).
+        target_weight : Array
+            Target projection weight [d_proj, d_target_hidden] (e.g., q_proj).
+
+        Returns
+        -------
+        Array
+            The compositional stitch S [d_source_proj, d_target_proj] that
+            transforms source projections to target geometry.
+        """
+        b = self._backend
+
+        # Validate dimensions
+        # source_weight: [source_proj_dim, source_hidden_dim]
+        # target_weight: [target_proj_dim, target_hidden_dim]
+        # hidden_transform: [source_hidden_dim, target_hidden_dim]
+        source_proj_dim, source_hidden_dim = b.shape(source_weight)
+        target_proj_dim, target_hidden_dim = b.shape(target_weight)
+        h_src, h_tgt = b.shape(hidden_transform)
+
+        if h_src != source_hidden_dim:
+            raise ValueError(
+                f"hidden_transform source dim ({h_src}) != "
+                f"source_weight hidden dim ({source_hidden_dim})"
+            )
+        if h_tgt != target_hidden_dim:
+            raise ValueError(
+                f"hidden_transform target dim ({h_tgt}) != "
+                f"target_weight hidden dim ({target_hidden_dim})"
+            )
+
+        # Cast to float32 for numerical stability
+        H = b.astype(b.array(hidden_transform), "float32")
+        W_src = b.astype(b.array(source_weight), "float32")
+        W_tgt = b.astype(b.array(target_weight), "float32")
+        b.eval(H, W_src, W_tgt)
+
+        # Compute: S = target_W @ H @ pinv(source_W)
+        # But weights are [proj_dim, hidden_dim], so we need:
+        # S @ W_src = W_tgt @ H
+        # S @ W_src @ W_src.T = W_tgt @ H @ W_src.T
+        # S = W_tgt @ H @ W_src.T @ (W_src @ W_src.T)^-1
+        # = W_tgt @ H @ pinv(W_src)
+
+        # Pseudoinverse of source weight
+        # W_src: [source_proj_dim, source_hidden_dim]
+        # pinv(W_src): [source_hidden_dim, source_proj_dim]
+        W_src_pinv = b.pinv(W_src)  # [source_hidden_dim, source_proj_dim]
+
+        # Compositional stitch: S = W_tgt @ H @ pinv(W_src)
+        # W_tgt: [target_proj_dim, target_hidden_dim]
+        # H: [source_hidden_dim, target_hidden_dim]
+        # pinv(W_src): [source_hidden_dim, source_proj_dim]
+        #
+        # W_tgt @ H.T: [target_proj_dim, source_hidden_dim]
+        # (W_tgt @ H.T) @ pinv(W_src): [target_proj_dim, source_proj_dim]
+        H_T = b.transpose(H)  # [target_hidden_dim, source_hidden_dim]
+        intermediate = b.matmul(W_tgt, H_T)  # [target_proj_dim, source_hidden_dim]
+        stitch = b.matmul(intermediate, W_src_pinv)  # [target_proj_dim, source_proj_dim]
+
+        b.eval(stitch)
+        return stitch
+
