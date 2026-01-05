@@ -1149,8 +1149,8 @@ def stage_transplant(
 
                         # Get KV stitch dimensions for GQA detection
                         # GQA models: K/V have fewer heads than Q (e.g., SmolLM: Q=960, KV=320)
-                        src_kv_dim = int(kv_stitch_output.shape[1]) if kv_stitch_output is not None else src_attn_dim
-                        tgt_kv_dim = int(kv_stitch_output.shape[0]) if kv_stitch_output is not None else tgt_attn_dim
+                        src_kv_dim = int(k_stitch_output.shape[1]) if k_stitch_output is not None else src_attn_dim
+                        tgt_kv_dim = int(k_stitch_output.shape[0]) if k_stitch_output is not None else tgt_attn_dim
 
                         # Determine attention weight pattern
                         # GQA: q_proj uses Q-attention dim, k_proj/v_proj use KV-attention dim
