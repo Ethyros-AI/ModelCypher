@@ -58,6 +58,19 @@ class DomainGeometryScore:
     layer_analyzed: int  # Which layer was analyzed
 
 
+@dataclass(frozen=True)
+class DomainWaypoint:
+    """A waypoint extracted from a domain for merge alignment.
+    
+    Represents a concept activation that can be used for geometric alignment.
+    """
+    concept_id: str
+    activations: "Array"
+    domain: AtlasDomain
+    layer: int
+
+
+
 @dataclass
 class ModelGeometryProfile:
     """Complete geometry profile for a model across all domains."""
@@ -225,6 +238,66 @@ class DomainGeometryWaypointService:
         self._social_analyzer = None
         self._temporal_analyzer = None
         self._moral_analyzer = None
+
+    def extract(
+        self,
+        model,
+        tokenizer,
+        domain: AtlasDomain,
+        layer_idx: int = -1,
+    ) -> list[DomainWaypoint]:
+        """Extract domain waypoints for merge alignment.
+        
+        Returns waypoints with concept activations that can be used
+        for geometric alignment during model merging.
+        
+        Args:
+            model: Pre-loaded model instance
+            tokenizer: Pre-loaded tokenizer instance
+            domain: Domain to extract waypoints for
+            layer_idx: Layer to analyze (-1 for last)
+            
+        Returns:
+            List of DomainWaypoint objects with concept activations
+        """
+        from modelcypher.core.domain.geometry.atlas_registry import (
+            get_moral_concepts,
+            get_social_concepts,
+            get_spatial_concepts,
+        )
+        
+        # Get probes for the domain
+        if domain == AtlasDomain.SPATIAL:
+            concepts = list(get_spatial_concepts())
+        elif domain == AtlasDomain.RELATIONAL:
+            concepts = list(get_social_concepts())
+        elif domain == AtlasDomain.MORAL:
+            concepts = list(get_moral_concepts())
+        else:
+            # For domains without dedicated atlas, return empty
+            # These domains don't have geometric waypoints yet
+            return []
+        
+        if not concepts:
+            return []
+        
+        # Extract activations for all concept probes
+        probes = [(p.id, p.prompt) for p in concepts]
+        activations = self._extract_activations(
+            model, tokenizer, layer_idx, probes, self._backend
+        )
+        
+        # Convert to waypoints
+        waypoints = []
+        for concept_id, activation in activations.items():
+            waypoints.append(DomainWaypoint(
+                concept_id=concept_id,
+                activations=activation,
+                domain=domain,
+                layer=layer_idx,
+            ))
+        
+        return waypoints
 
     def compute_profile(
         self,
@@ -662,6 +735,7 @@ class DomainGeometryWaypointService:
 __all__ = [
     "AtlasDomain",
     "DomainGeometryScore",
+    "DomainWaypoint",
     "ModelGeometryProfile",
     "DomainGeometryDelta",
     "PreMergeGeometryAudit",
