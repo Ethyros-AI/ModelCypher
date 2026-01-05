@@ -159,17 +159,16 @@ class IntersectionMap:
     """Map of dimension correlations between source and target models.
 
     Attributes:
-        raw_fingerprint_similarity: PRE-ALIGNMENT similarity from raw activation
-            fingerprints (0-1). Measures how well the invariant relationships
-            are captured before alignment. Should be 1.0 if we're correctly
-            identifying the same semantic concepts across models. If < 1.0,
-            there's a bug in how we're matching or measuring fingerprints.
+        mean_layer_cka: Mean CKA across layer correlations from sparse dimension
+            matching. This is NOT a geometric invariant - it just measures how
+            well the sparse fingerprints correlate. The true invariant CKA is
+            computed separately from actual activation vectors.
     """
 
     source_model: str
     target_model: str
     dimension_correlations: dict[int, list[DimensionCorrelation]]
-    raw_fingerprint_similarity: float  # Should be 1.0 if invariants match
+    mean_layer_cka: float  # Mean correlation from sparse fingerprints
     aligned_dimension_count: int
     total_source_dims: int
     total_target_dims: int

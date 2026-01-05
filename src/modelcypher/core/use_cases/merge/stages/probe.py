@@ -760,9 +760,10 @@ def _probe_precise(
             )
             dimension_correlations = intersection_map_obj.dimension_correlations
             logger.info(
-                "PROBE PRECISE: Built IntersectionMap with raw_fingerprint_similarity=%.3f, %d layers",
-                intersection_map_obj.raw_fingerprint_similarity,
+                "PROBE PRECISE: Built IntersectionMap (%d layers) - "
+                "NOTE: fingerprint_similarity=%.3f is legacy sparse metric, see actual raw CKA below",
                 len(intersection_map_obj.layer_confidences),
+                intersection_map_obj.raw_fingerprint_similarity,
             )
         except Exception as e:
             logger.warning("Failed to build IntersectionMap: %s", e)
@@ -1151,18 +1152,21 @@ def _probe_precise(
         "atlas_sources": list(set(p.source.value for p in probes)),
         "atlas_domains": list(set(p.domain.value for p in probes)),
         "intersection_map_built": intersection_map_obj is not None,
-        "raw_fingerprint_similarity": (
-            intersection_map_obj.raw_fingerprint_similarity if intersection_map_obj else 0.0
+        # TRUE pre-alignment CKA from actual activation vectors (not sparse fingerprints)
+        "raw_cka_mean": (
+            sum(layer_cka_scores_raw.values()) / len(layer_cka_scores_raw)
+            if layer_cka_scores_raw
+            else 0.0
         ),
     }
 
     # mean_cka = POST-ALIGNMENT quality (should be 1.0 when aligned correctly)
-    # raw_fingerprint_similarity = PRE-ALIGNMENT intrinsic similarity (expected low for different architectures)
+    # raw_cka_mean = PRE-ALIGNMENT CKA from actual activations (geometric invariant)
     logger.info(
-        "PROBE PRECISE: %d layers, cka=%.3f (post-alignment), raw_similarity=%.3f (pre-alignment)",
+        "PROBE PRECISE: %d layers, post_cka=%.4f, raw_cka=%.4f",
         len(layer_confidences),
         mean_cka,
-        metrics["raw_fingerprint_similarity"],
+        metrics["raw_cka_mean"],
     )
 
     # =========================================================================

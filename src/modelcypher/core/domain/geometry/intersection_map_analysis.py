@@ -54,7 +54,7 @@ class LayerStats:
 
 @dataclass(frozen=True)
 class Analysis:
-    raw_fingerprint_similarity: float  # Pre-alignment similarity, NOT post-alignment CKA
+    mean_layer_cka: float  # Mean CKA from sparse fingerprint correlations (NOT invariant)
     aligned_dimension_count: int
     total_source_dims: int
     total_target_dims: int
@@ -152,7 +152,7 @@ class IntersectionMapAnalysis:
             avg_layer_confidence = None
 
         return Analysis(
-            raw_fingerprint_similarity=map_data.raw_fingerprint_similarity,
+            mean_layer_cka=map_data.mean_layer_cka,
             aligned_dimension_count=map_data.aligned_dimension_count,
             total_source_dims=map_data.total_source_dims,
             total_target_dims=map_data.total_target_dims,
@@ -211,8 +211,8 @@ class IntersectionMapAnalysis:
         lines.append(f"- Source: `{map_data.source_model}`\n")
         lines.append(f"- Target: `{map_data.target_model}`\n")
         lines.append(
-            f"- Raw fingerprint similarity: **{f3(map_data.raw_fingerprint_similarity)}** "
-            "(pre-alignment, low values expected for different architectures)\n"
+            f"- Mean layer CKA (sparse): **{f3(map_data.mean_layer_cka)}** "
+            "(fingerprint correlation, NOT geometric invariant)\n"
         )
         lines.append(
             f"- Aligned dimensions: **{map_data.aligned_dimension_count}** "

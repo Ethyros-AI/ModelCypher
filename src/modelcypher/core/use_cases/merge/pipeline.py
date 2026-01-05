@@ -491,7 +491,7 @@ def run_merge(
                 "weights_transplanted": transplant_metrics.get("weights_transplanted"),
             },
             "probe": {
-                "raw_fingerprint_similarity": probe_metrics.get("raw_fingerprint_similarity"),
+                "raw_cka_mean": probe_metrics.get("raw_cka_mean"),
                 "layer_count": probe_metrics.get("layer_count"),
                 "cka_after_alignment": probe_metrics.get("cka_after_alignment"),
             },
