@@ -1231,9 +1231,9 @@ def _probe_precise(
                 b.eval(src_stacked, tgt_stacked)
 
                 # Use same GramAligner as hidden layers - same math, same CKA=1.0 target
-                emb_result = gram_aligner.align(src_stacked, tgt_stacked)
+                emb_result = gram_aligner.find_perfect_alignment(src_stacked, tgt_stacked)
                 if emb_result.achieved_cka >= 0.99:
-                    embedding_transform = b.tolist(emb_result.transform)
+                    embedding_transform = b.tolist(b.array(emb_result.feature_transform))
                     logger.info(
                         "EMBEDDING GRAMALIGN: CKA = %.4f (same geometry preserved at 2D)",
                         emb_result.achieved_cka,
