@@ -160,16 +160,16 @@ class IntersectionMap:
 
     Attributes:
         raw_fingerprint_similarity: PRE-ALIGNMENT similarity from raw activation
-            fingerprints (0-1). Measures intrinsic similarity before any alignment.
-            NOT the same as CKA (which measures post-alignment quality).
-            Low values are EXPECTED for different architectures - this does NOT
-            indicate alignment failure. Check CKA score for alignment quality.
+            fingerprints (0-1). Measures how well the invariant relationships
+            are captured before alignment. Should be 1.0 if we're correctly
+            identifying the same semantic concepts across models. If < 1.0,
+            there's a bug in how we're matching or measuring fingerprints.
     """
 
     source_model: str
     target_model: str
     dimension_correlations: dict[int, list[DimensionCorrelation]]
-    raw_fingerprint_similarity: float  # Pre-alignment only. Use CKA for post-alignment.
+    raw_fingerprint_similarity: float  # Should be 1.0 if invariants match
     aligned_dimension_count: int
     total_source_dims: int
     total_target_dims: int

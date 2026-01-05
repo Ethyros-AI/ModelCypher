@@ -303,7 +303,8 @@ def stage_transplant(
     feature_transforms: dict[int, list[list[float]]] | None = None,
     embedding_transform: list[list[float]] | None = None,  # 2D GramAlign transform
     attention_transforms: dict[int, list[list[float]]] | None = None,
-    kv_transforms: dict[int, list[list[float]]] | None = None,
+    k_transforms: dict[int, list[list[float]]] | None = None,
+    v_transforms: dict[int, list[list[float]]] | None = None,
     layer_mapping: dict[int, int] | None = None,
     checkpoint_dir: Path | None = None,
     progress_callback: Callable[[str, int, int], None] | None = None,
@@ -674,42 +675,77 @@ def stage_transplant(
     #   - Qwen: Q = 14 heads × 64 = 896, KV = 2 heads × 64 = 128
     #
     # k_proj and v_proj weights have shape [kv_attention_dim, hidden_dim], NOT
-    # [q_attention_dim, hidden_dim]. We MUST compute a separate stitch for KV.
-    layer_kv_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
+    # [q_attention_dim, hidden_dim]. We MUST compute separate stitches for K and V.
+    layer_k_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in) for k_proj
+    layer_v_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in) for v_proj
 
-    if kv_transforms and layer_mapping:
+    if k_transforms and layer_mapping:
         logger.info(
-            "PER-LAYER KV: Using %d transforms from probe stage (CKA=1.0 verified)",
-            len(kv_transforms),
+            "PER-LAYER K: Using %d transforms from probe stage (CKA=1.0 verified)",
+            len(k_transforms),
         )
 
-        # Convert all transforms to backend arrays in one batch for MLX efficiency
-        kv_transforms_to_eval = []
-        for tgt_layer, transform_list in kv_transforms.items():
+        # Convert all K transforms to backend arrays in one batch for MLX efficiency
+        k_transforms_to_eval = []
+        for tgt_layer, transform_list in k_transforms.items():
             F = b.array(transform_list)
             F = b.astype(F, "float32")
-            kv_transforms_to_eval.append((tgt_layer, F))
+            k_transforms_to_eval.append((tgt_layer, F))
 
         # Batch eval for MLX efficiency
-        if kv_transforms_to_eval:
-            b.eval(*[t[1] for t in kv_transforms_to_eval])
+        if k_transforms_to_eval:
+            b.eval(*[t[1] for t in k_transforms_to_eval])
 
         # Compute stitch matrices for each layer
-        for tgt_layer, F in kv_transforms_to_eval:
+        for tgt_layer, F in k_transforms_to_eval:
             stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
             F_pinv = _geodesic_pinv(b, F)
             stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
-            layer_kv_stitches[tgt_layer] = (stitch_output, stitch_input)
+            layer_k_stitches[tgt_layer] = (stitch_output, stitch_input)
 
         # Batch eval all stitch matrices for MLX efficiency
-        all_kv_stitches = []
-        for stitch_out, stitch_in in layer_kv_stitches.values():
-            all_kv_stitches.extend([stitch_out, stitch_in])
-        if all_kv_stitches:
-            b.eval(*all_kv_stitches)
+        all_k_stitches = []
+        for stitch_out, stitch_in in layer_k_stitches.values():
+            all_k_stitches.extend([stitch_out, stitch_in])
+        if all_k_stitches:
+            b.eval(*all_k_stitches)
 
-        metrics["per_layer_kv_alignment"] = True
-        metrics["layers_with_kv_transforms"] = len(layer_kv_stitches)
+        metrics["per_layer_k_alignment"] = True
+        metrics["layers_with_k_transforms"] = len(layer_k_stitches)
+
+    if v_transforms and layer_mapping:
+        logger.info(
+            "PER-LAYER V: Using %d transforms from probe stage (CKA=1.0 verified)",
+            len(v_transforms),
+        )
+
+        # Convert all V transforms to backend arrays in one batch for MLX efficiency
+        v_transforms_to_eval = []
+        for tgt_layer, transform_list in v_transforms.items():
+            F = b.array(transform_list)
+            F = b.astype(F, "float32")
+            v_transforms_to_eval.append((tgt_layer, F))
+
+        # Batch eval for MLX efficiency
+        if v_transforms_to_eval:
+            b.eval(*[t[1] for t in v_transforms_to_eval])
+
+        # Compute stitch matrices for each layer
+        for tgt_layer, F in v_transforms_to_eval:
+            stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
+            F_pinv = _geodesic_pinv(b, F)
+            stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
+            layer_v_stitches[tgt_layer] = (stitch_output, stitch_input)
+
+        # Batch eval all stitch matrices for MLX efficiency
+        all_v_stitches = []
+        for stitch_out, stitch_in in layer_v_stitches.values():
+            all_v_stitches.extend([stitch_out, stitch_in])
+        if all_v_stitches:
+            b.eval(*all_v_stitches)
+
+        metrics["per_layer_v_alignment"] = True
+        metrics["layers_with_v_transforms"] = len(layer_v_stitches)
 
     elif source_kv_activations and target_kv_activations:
         # Same-architecture case: check if identity transform works
@@ -724,21 +760,24 @@ def stage_transplant(
                 identity = b.eye(src_kv_dim)
                 b.eval(identity)
                 for layer_idx in layer_indices:
-                    layer_kv_stitches[layer_idx] = (identity, identity)
+                    layer_k_stitches[layer_idx] = (identity, identity)
+                    layer_v_stitches[layer_idx] = (identity, identity)
                 logger.info(
-                    "SAME-DIM KV: Using identity for %d layers (dim=%d)",
+                    "SAME-DIM K/V: Using identity for %d layers (dim=%d)",
                     len(layer_indices),
                     src_kv_dim,
                 )
-                metrics["per_layer_kv_alignment"] = True
-                metrics["layers_with_kv_transforms"] = len(layer_indices)
+                metrics["per_layer_k_alignment"] = True
+                metrics["per_layer_v_alignment"] = True
+                metrics["layers_with_k_transforms"] = len(layer_indices)
+                metrics["layers_with_v_transforms"] = len(layer_indices)
             else:
                 raise AlignmentFailureError(
                     stage="PER_LAYER_KV_ALIGNMENT",
                     weight_key=None,
                     message=(
                         f"KV dimension mismatch ({src_kv_dim} vs {tgt_kv_dim}) "
-                        "but no kv_transforms from probe stage."
+                        "but no k_transforms/v_transforms from probe stage."
                     ),
                     context={"source_dim": src_kv_dim, "target_dim": tgt_kv_dim},
                 )
@@ -803,8 +842,10 @@ def stage_transplant(
         intermediate_stitch_input = None   # pinv(F).T for input side
         attention_stitch_output = None  # F.T for Q attention output [tgt_attn, src_attn]
         attention_stitch_input = None   # pinv(F).T for Q attention input [src_attn, tgt_attn]
-        kv_stitch_output = None  # F.T for KV attention output [tgt_kv, src_kv] (GQA)
-        kv_stitch_input = None   # pinv(F).T for KV attention input [src_kv, tgt_kv] (GQA)
+        k_stitch_output = None  # F.T for K attention output [tgt_k, src_k]
+        k_stitch_input = None   # pinv(F).T for K attention input [src_k, tgt_k]
+        v_stitch_output = None  # F.T for V attention output [tgt_v, src_v]
+        v_stitch_input = None   # pinv(F).T for V attention input [src_v, tgt_v]
 
         # Get intermediate activations for this layer (MLP internal states)
         # CRITICAL: For cross-architecture merge, source layer index may differ from target.
@@ -956,13 +997,23 @@ def stage_transplant(
                     layer_idx, stitch_shape
                 )
 
-        # USE PER-LAYER KV stitch for GQA models (from probe stage with CKA=1.0)
-        if layer_idx in layer_kv_stitches:
-            kv_stitch_output, kv_stitch_input = layer_kv_stitches[layer_idx]
+        # USE PER-LAYER K stitch for k_proj (from probe stage with CKA=1.0)
+        if layer_idx in layer_k_stitches:
+            k_stitch_output, k_stitch_input = layer_k_stitches[layer_idx]
             if layer_num == 0:
-                stitch_shape = kv_stitch_output.shape if kv_stitch_output is not None else "N/A"
+                stitch_shape = k_stitch_output.shape if k_stitch_output is not None else "N/A"
                 logger.info(
-                    "Layer %d: Using per-layer KV stitch (shape=%s)",
+                    "Layer %d: Using per-layer K stitch (shape=%s)",
+                    layer_idx, stitch_shape
+                )
+
+        # USE PER-LAYER V stitch for v_proj (from probe stage with CKA=1.0)
+        if layer_idx in layer_v_stitches:
+            v_stitch_output, v_stitch_input = layer_v_stitches[layer_idx]
+            if layer_num == 0:
+                stitch_shape = v_stitch_output.shape if v_stitch_output is not None else "N/A"
+                logger.info(
+                    "Layer %d: Using per-layer V stitch (shape=%s)",
                     layer_idx, stitch_shape
                 )
 

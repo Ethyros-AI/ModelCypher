@@ -153,10 +153,14 @@ class ProbeResult:
     # (e.g., 960 for SmolLM=15*64, 896 for Qwen=14*64) - for q_proj/o_proj stitching
     source_attention_activations: dict[int, list[Any]] | None = None
     target_attention_activations: dict[int, list[Any]] | None = None
-    # KV Attention-space activations: shape [num_kv_heads * head_dim] per sample
-    # (e.g., 320 for SmolLM=5*64, 128 for Qwen=2*64) - for k_proj/v_proj stitching (GQA)
-    source_kv_activations: dict[int, list[Any]] | None = None
-    target_kv_activations: dict[int, list[Any]] | None = None
+    # K Attention-space activations: shape [num_kv_heads * head_dim] per sample
+    # Separate from V for granular alignment - for k_proj stitching
+    source_k_activations: dict[int, list[Any]] | None = None
+    target_k_activations: dict[int, list[Any]] | None = None
+    # V Attention-space activations: shape [num_kv_heads * head_dim] per sample
+    # Separate from K for granular alignment - for v_proj stitching
+    source_v_activations: dict[int, list[Any]] | None = None
+    target_v_activations: dict[int, list[Any]] | None = None
     # Embedding-space activations: shape [hidden_dim] per sample (post-embed_tokens, pre-layer-0)
     # Used for GramAlign at 2D interface - same CKA=1.0, same geodesic math
     source_embedding_activations: list[Any] | None = None
@@ -171,8 +175,10 @@ class ProbeResult:
     embedding_transform: list[list[float]] | None = None
     # Attention Q-space transforms: for q_proj/o_proj (e.g., 960 -> 896 for Q heads)
     attention_transforms: dict[int, list[list[float]]] | None = None
-    # Attention KV-space transforms: for k_proj/v_proj (e.g., 320 -> 128 for GQA)
-    kv_transforms: dict[int, list[list[float]]] | None = None
+    # Attention K-space transforms: for k_proj (granular alignment)
+    k_transforms: dict[int, list[list[float]]] | None = None
+    # Attention V-space transforms: for v_proj (granular alignment)
+    v_transforms: dict[int, list[list[float]]] | None = None
     # Layer mapping: target_layer -> source_layer (from DP alignment)
     layer_mapping: dict[int, int] | None = None
 
@@ -339,9 +345,12 @@ def _probe_precise(
     # Q Attention-space activations for q_proj/o_proj stitching (cross-architecture merges)
     source_attention_activations: dict[int, list["Array"]] = {}
     target_attention_activations: dict[int, list["Array"]] = {}
-    # KV Attention-space activations for k_proj/v_proj stitching (GQA models)
-    source_kv_activations: dict[int, list["Array"]] = {}
-    target_kv_activations: dict[int, list["Array"]] = {}
+    # K Attention-space activations for k_proj stitching (separate for granular alignment)
+    source_k_activations: dict[int, list["Array"]] = {}
+    target_k_activations: dict[int, list["Array"]] = {}
+    # V Attention-space activations for v_proj stitching (separate for granular alignment)
+    source_v_activations: dict[int, list["Array"]] = {}
+    target_v_activations: dict[int, list["Array"]] = {}
     probe_ids: list[str] = []
     probe_domains: list[str] = []
 
@@ -479,28 +488,30 @@ def _probe_precise(
                     for text in batch_texts
                 ]
 
-            # ===== ATTENTION ACTIVATIONS (Q and KV) =====
+            # ===== ATTENTION ACTIVATIONS (Q, K, V separately) =====
             if has_batch_attention:
-                source_q_batch, source_kv_batch = activation_provider.collect_attention_activations_batch(
+                source_q_batch, source_k_batch, source_v_batch = activation_provider.collect_attention_activations_batch(
                     source_model, source_tokenizer, batch_texts
                 )
-                target_q_batch, target_kv_batch = activation_provider.collect_attention_activations_batch(
+                target_q_batch, target_k_batch, target_v_batch = activation_provider.collect_attention_activations_batch(
                     target_model, target_tokenizer, batch_texts
                 )
             else:
-                source_q_batch, source_kv_batch = [], []
-                target_q_batch, target_kv_batch = [], []
+                source_q_batch, source_k_batch, source_v_batch = [], [], []
+                target_q_batch, target_k_batch, target_v_batch = [], [], []
                 for text in batch_texts:
-                    src_q, src_kv = activation_provider.collect_attention_activations(
+                    src_q, src_k, src_v = activation_provider.collect_attention_activations(
                         source_model, source_tokenizer, text
                     )
-                    tgt_q, tgt_kv = activation_provider.collect_attention_activations(
+                    tgt_q, tgt_k, tgt_v = activation_provider.collect_attention_activations(
                         target_model, target_tokenizer, text
                     )
                     source_q_batch.append(src_q)
-                    source_kv_batch.append(src_kv)
+                    source_k_batch.append(src_k)
+                    source_v_batch.append(src_v)
                     target_q_batch.append(tgt_q)
-                    target_kv_batch.append(tgt_kv)
+                    target_k_batch.append(tgt_k)
+                    target_v_batch.append(tgt_v)
 
             # Process batch results
             for i, (probe, probe_text) in enumerate(batch):
@@ -513,9 +524,11 @@ def _probe_precise(
                 source_intermediate_acts = source_intermediate_batch[i]
                 target_intermediate_acts = target_intermediate_batch[i]
                 source_attention_acts = source_q_batch[i] if source_q_batch else {}
-                source_kv_acts = source_kv_batch[i] if source_kv_batch else {}
+                source_k_acts = source_k_batch[i] if source_k_batch else {}
+                source_v_acts = source_v_batch[i] if source_v_batch else {}
                 target_attention_acts = target_q_batch[i] if target_q_batch else {}
-                target_kv_acts = target_kv_batch[i] if target_kv_batch else {}
+                target_k_acts = target_k_batch[i] if target_k_batch else {}
+                target_v_acts = target_v_batch[i] if target_v_batch else {}
 
                 source_activated: dict[int, list[ActivatedDimension]] = {}
                 target_activated: dict[int, list[ActivatedDimension]] = {}
@@ -554,16 +567,27 @@ def _probe_precise(
                         target_attention_activations[layer_idx] = []
                     target_attention_activations[layer_idx].append(act)
 
-                # Store KV attention activations for k_proj/v_proj stitching (GQA models)
-                for layer_idx, act in source_kv_acts.items():
-                    if layer_idx not in source_kv_activations:
-                        source_kv_activations[layer_idx] = []
-                    source_kv_activations[layer_idx].append(act)
+                # Store K attention activations for k_proj stitching
+                for layer_idx, act in source_k_acts.items():
+                    if layer_idx not in source_k_activations:
+                        source_k_activations[layer_idx] = []
+                    source_k_activations[layer_idx].append(act)
 
-                for layer_idx, act in target_kv_acts.items():
-                    if layer_idx not in target_kv_activations:
-                        target_kv_activations[layer_idx] = []
-                    target_kv_activations[layer_idx].append(act)
+                for layer_idx, act in target_k_acts.items():
+                    if layer_idx not in target_k_activations:
+                        target_k_activations[layer_idx] = []
+                    target_k_activations[layer_idx].append(act)
+
+                # Store V attention activations for v_proj stitching
+                for layer_idx, act in source_v_acts.items():
+                    if layer_idx not in source_v_activations:
+                        source_v_activations[layer_idx] = []
+                    source_v_activations[layer_idx].append(act)
+
+                for layer_idx, act in target_v_acts.items():
+                    if layer_idx not in target_v_activations:
+                        target_v_activations[layer_idx] = []
+                    target_v_activations[layer_idx].append(act)
 
                 source_fingerprints.append(
                     ActivationFingerprint(
@@ -623,10 +647,10 @@ def _probe_precise(
                     target_intermediate_acts = activation_provider.collect_intermediate_activations(
                         target_model, target_tokenizer, probe_text
                     )
-                    source_attention_acts, source_kv_acts = activation_provider.collect_attention_activations(
+                    source_attention_acts, source_k_acts, source_v_acts = activation_provider.collect_attention_activations(
                         source_model, source_tokenizer, probe_text
                     )
-                    target_attention_acts, target_kv_acts = activation_provider.collect_attention_activations(
+                    target_attention_acts, target_k_acts, target_v_acts = activation_provider.collect_attention_activations(
                         target_model, target_tokenizer, probe_text
                     )
 
@@ -665,15 +689,25 @@ def _probe_precise(
                             target_attention_activations[layer_idx] = []
                         target_attention_activations[layer_idx].append(act)
 
-                    for layer_idx, act in source_kv_acts.items():
-                        if layer_idx not in source_kv_activations:
-                            source_kv_activations[layer_idx] = []
-                        source_kv_activations[layer_idx].append(act)
+                    for layer_idx, act in source_k_acts.items():
+                        if layer_idx not in source_k_activations:
+                            source_k_activations[layer_idx] = []
+                        source_k_activations[layer_idx].append(act)
 
-                    for layer_idx, act in target_kv_acts.items():
-                        if layer_idx not in target_kv_activations:
-                            target_kv_activations[layer_idx] = []
-                        target_kv_activations[layer_idx].append(act)
+                    for layer_idx, act in target_k_acts.items():
+                        if layer_idx not in target_k_activations:
+                            target_k_activations[layer_idx] = []
+                        target_k_activations[layer_idx].append(act)
+
+                    for layer_idx, act in source_v_acts.items():
+                        if layer_idx not in source_v_activations:
+                            source_v_activations[layer_idx] = []
+                        source_v_activations[layer_idx].append(act)
+
+                    for layer_idx, act in target_v_acts.items():
+                        if layer_idx not in target_v_activations:
+                            target_v_activations[layer_idx] = []
+                        target_v_activations[layer_idx].append(act)
 
                     source_fingerprints.append(
                         ActivationFingerprint(
@@ -744,7 +778,8 @@ def _probe_precise(
     layer_mapping: dict[int, int] = {}  # target_layer -> source_layer
     feature_transforms: dict[int, list[list[float]]] = {}  # target_layer -> hidden transform
     attention_transforms: dict[int, list[list[float]]] = {}  # target_layer -> Q attention transform
-    kv_transforms: dict[int, list[list[float]]] = {}  # target_layer -> KV attention transform
+    k_transforms: dict[int, list[list[float]]] = {}  # target_layer -> K attention transform
+    v_transforms: dict[int, list[list[float]]] = {}  # target_layer -> V attention transform
     gram_aligner = GramAligner(backend=b)
 
     if source_layer_activations and target_layer_activations:
@@ -904,41 +939,61 @@ def _probe_precise(
                                 )
 
                     # ================================================================
-                    # ATTENTION KV TRANSFORMS - Direct GramAlign (same as hidden)
+                    # ATTENTION K TRANSFORMS - Direct GramAlign (granular)
                     # ================================================================
-                    # GramAlign works in sample-space (Gram matrices), which is
-                    # dimension-agnostic. The feature_transform maps [d_src, d_tgt]
-                    # directly, achieving CKA=1.0 regardless of dimension mismatch.
                     if (
-                        src_layer in source_kv_activations
-                        and tgt_layer in target_kv_activations
+                        src_layer in source_k_activations
+                        and tgt_layer in target_k_activations
                     ):
-                        src_kv_list = source_kv_activations[src_layer]
-                        tgt_kv_list = target_kv_activations[tgt_layer]
-                        n_kv = min(len(src_kv_list), len(tgt_kv_list))
-                        if n_kv >= 2:
-                            src_kv = b.stack(src_kv_list[:n_kv], axis=0)
-                            tgt_kv = b.stack(tgt_kv_list[:n_kv], axis=0)
-                            src_kv = b.astype(src_kv, "float32")
-                            tgt_kv = b.astype(tgt_kv, "float32")
-                            b.eval(src_kv, tgt_kv)
+                        src_k_list = source_k_activations[src_layer]
+                        tgt_k_list = target_k_activations[tgt_layer]
+                        n_k = min(len(src_k_list), len(tgt_k_list))
+                        if n_k >= 2:
+                            src_k = b.stack(src_k_list[:n_k], axis=0)
+                            tgt_k = b.stack(tgt_k_list[:n_k], axis=0)
+                            src_k = b.astype(src_k, "float32")
+                            tgt_k = b.astype(tgt_k, "float32")
+                            b.eval(src_k, tgt_k)
 
-                            # Direct GramAlign - handles cross-dimensional alignment
-                            # just like hidden layers do (4096→960 achieves CKA=1.0)
-                            kv_result = local_aligner.find_perfect_alignment(
-                                src_kv,
-                                tgt_kv,
-                            )
+                            k_result = local_aligner.find_perfect_alignment(src_k, tgt_k)
+                            result["k_transform"] = k_result.feature_transform
 
-                            result["kv_transform"] = kv_result.feature_transform
-
-                            if not kv_result.is_perfect:
+                            if not k_result.is_perfect:
                                 logger.warning(
-                                    "PROBE: Layer %d -> %d attention KV alignment not exact "
+                                    "PROBE: Layer %d -> %d attention K alignment not exact "
                                     "(achieved_cka=%.4f). This indicates an alignment algorithm bug.",
                                     src_layer,
                                     tgt_layer,
-                                    kv_result.achieved_cka,
+                                    k_result.achieved_cka,
+                                )
+
+                    # ================================================================
+                    # ATTENTION V TRANSFORMS - Direct GramAlign (granular)
+                    # ================================================================
+                    if (
+                        src_layer in source_v_activations
+                        and tgt_layer in target_v_activations
+                    ):
+                        src_v_list = source_v_activations[src_layer]
+                        tgt_v_list = target_v_activations[tgt_layer]
+                        n_v = min(len(src_v_list), len(tgt_v_list))
+                        if n_v >= 2:
+                            src_v = b.stack(src_v_list[:n_v], axis=0)
+                            tgt_v = b.stack(tgt_v_list[:n_v], axis=0)
+                            src_v = b.astype(src_v, "float32")
+                            tgt_v = b.astype(tgt_v, "float32")
+                            b.eval(src_v, tgt_v)
+
+                            v_result = local_aligner.find_perfect_alignment(src_v, tgt_v)
+                            result["v_transform"] = v_result.feature_transform
+
+                            if not v_result.is_perfect:
+                                logger.warning(
+                                    "PROBE: Layer %d -> %d attention V alignment not exact "
+                                    "(achieved_cka=%.4f). This indicates an alignment algorithm bug.",
+                                    src_layer,
+                                    tgt_layer,
+                                    v_result.achieved_cka,
                                 )
 
                 except Exception as e:
@@ -990,8 +1045,11 @@ def _probe_precise(
                     if result["attention_transform"] is not None:
                         attention_transforms[tgt_layer] = result["attention_transform"]
 
-                    if result["kv_transform"] is not None:
-                        kv_transforms[tgt_layer] = result["kv_transform"]
+                    if result.get("k_transform") is not None:
+                        k_transforms[tgt_layer] = result["k_transform"]
+
+                    if result.get("v_transform") is not None:
+                        v_transforms[tgt_layer] = result["v_transform"]
 
                     completed += 1
                     if completed % 5 == 0 or completed == len(dp_path):
@@ -1141,12 +1199,19 @@ def _probe_precise(
                 nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
                 attention_transforms[tgt_layer] = attention_transforms[nearest]
 
-    if kv_transforms and len(kv_transforms) < len(all_target_layers):
-        mapped_layers = sorted(kv_transforms.keys())
+    if k_transforms and len(k_transforms) < len(all_target_layers):
+        mapped_layers = sorted(k_transforms.keys())
         for tgt_layer in all_target_layers:
-            if tgt_layer not in kv_transforms:
+            if tgt_layer not in k_transforms:
                 nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
-                kv_transforms[tgt_layer] = kv_transforms[nearest]
+                k_transforms[tgt_layer] = k_transforms[nearest]
+
+    if v_transforms and len(v_transforms) < len(all_target_layers):
+        mapped_layers = sorted(v_transforms.keys())
+        for tgt_layer in all_target_layers:
+            if tgt_layer not in v_transforms:
+                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
+                v_transforms[tgt_layer] = v_transforms[nearest]
 
     # =========================================================================
     # EMBEDDING GRAMALIGN (2D layer)
@@ -1196,8 +1261,10 @@ def _probe_precise(
         target_intermediate_activations=target_intermediate_activations,
         source_attention_activations=source_attention_activations,
         target_attention_activations=target_attention_activations,
-        source_kv_activations=source_kv_activations,
-        target_kv_activations=target_kv_activations,
+        source_k_activations=source_k_activations,
+        target_k_activations=target_k_activations,
+        source_v_activations=source_v_activations,
+        target_v_activations=target_v_activations,
         source_embedding_activations=source_embedding_activations,
         target_embedding_activations=target_embedding_activations,
         probe_ids=probe_ids,
@@ -1205,7 +1272,8 @@ def _probe_precise(
         feature_transforms=feature_transforms if feature_transforms else None,
         embedding_transform=embedding_transform,
         attention_transforms=attention_transforms if attention_transforms else None,
-        kv_transforms=kv_transforms if kv_transforms else None,
+        k_transforms=k_transforms if k_transforms else None,
+        v_transforms=v_transforms if v_transforms else None,
         layer_mapping=layer_mapping if layer_mapping else None,
     )
 

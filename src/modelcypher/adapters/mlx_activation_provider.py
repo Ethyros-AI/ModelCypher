@@ -293,23 +293,18 @@ class MLXActivationProvider:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
-    ) -> tuple[dict[int, "Array"], dict[int, "Array"]]:
+    ) -> tuple[dict[int, "Array"], dict[int, "Array"], dict[int, "Array"]]:
         """
-        Collect per-layer attention Q and KV activations for a text input.
+        Collect per-layer attention Q, K, and V activations for a text input.
 
-        Returns TWO dicts:
-        1. Q activations: [num_heads * head_dim] (e.g., 960 for SmolLM, 896 for Qwen)
-        2. KV activations: [num_kv_heads * head_dim] (e.g., 320 for SmolLM, 128 for Qwen)
+        Returns THREE dicts for finest-level granular alignment:
+        1. Q activations: [num_heads * head_dim] - for q_proj/o_proj stitching
+        2. K activations: [num_kv_heads * head_dim] - for k_proj stitching
+        3. V activations: [num_kv_heads * head_dim] - for v_proj stitching
 
-        For Grouped Query Attention (GQA) models, Q and KV have different dimensions:
-        - SmolLM: Q = 15 heads × 64 = 960, KV = 5 heads × 64 = 320
-        - Qwen: Q = 14 heads × 64 = 896, KV = 2 heads × 64 = 128
+        Each component gets its own CKA=1.0 alignment transform.
 
-        Separate transforms are needed for each space:
-        - Q activations: For q_proj and o_proj weight stitching
-        - KV activations: For k_proj and v_proj weight stitching
-
-        Returns tuple of (q_activations, kv_activations) as MLX arrays directly.
+        Returns tuple of (q_activations, k_activations, v_activations).
         """
         import mlx.core as mx
 
@@ -322,12 +317,13 @@ class MLXActivationProvider:
         input_ids = mx.array([token_ids])
 
         q_activations: dict[int, "Array"] = {}
-        kv_activations: dict[int, "Array"] = {}
+        k_activations: dict[int, "Array"] = {}
+        v_activations: dict[int, "Array"] = {}
 
         try:
             if not (hasattr(model, "model") and hasattr(model.model, "layers")):
                 logger.debug("Model structure not compatible with attention activation collection")
-                return q_activations, kv_activations
+                return q_activations, k_activations, v_activations
 
             inner = model.model
 
@@ -338,7 +334,7 @@ class MLXActivationProvider:
                 h = inner.wte(input_ids)
             else:
                 logger.debug("Cannot find embedding layer")
-                return q_activations, kv_activations
+                return q_activations, k_activations, v_activations
 
             for layer_idx, layer in enumerate(inner.layers):
                 # Apply input layer norm
@@ -353,7 +349,7 @@ class MLXActivationProvider:
                 attn = layer.self_attn if hasattr(layer, "self_attn") else getattr(layer, "attn", None)
 
                 if attn is not None:
-                    # Compute Q, K, V projections
+                    # Compute Q, K, V projections separately
                     if hasattr(attn, "q_proj"):
                         q = attn.q_proj(h_norm)
                         k = attn.k_proj(h_norm)
@@ -362,19 +358,20 @@ class MLXActivationProvider:
                         mx.eval(k)
                         mx.eval(v)
 
-                        # Q activations: [batch, seq, num_heads * head_dim]
-                        # Mean pool over sequence to get [num_heads * head_dim]
+                        # Q activations
                         q_pooled = mx.mean(q, axis=(0, 1))
                         mx.eval(q_pooled)
                         q_activations[layer_idx] = q_pooled
 
-                        # KV activations: Must include BOTH K and V for complete geometry
-                        # Concatenate K and V to capture full invariant structure
-                        # Shape: [batch, seq, 2 * num_kv_heads * head_dim]
-                        kv_concat = mx.concatenate([k, v], axis=-1)
-                        kv_pooled = mx.mean(kv_concat, axis=(0, 1))
-                        mx.eval(kv_pooled)
-                        kv_activations[layer_idx] = kv_pooled
+                        # K activations (separate from V for granular alignment)
+                        k_pooled = mx.mean(k, axis=(0, 1))
+                        mx.eval(k_pooled)
+                        k_activations[layer_idx] = k_pooled
+
+                        # V activations (separate from K for granular alignment)
+                        v_pooled = mx.mean(v, axis=(0, 1))
+                        mx.eval(v_pooled)
+                        v_activations[layer_idx] = v_pooled
 
                 # Complete the layer forward for next iteration
                 result = layer(h)
@@ -386,7 +383,7 @@ class MLXActivationProvider:
         except Exception as e:
             logger.warning("Attention activation collection failed: %s", e)
 
-        return q_activations, kv_activations
+        return q_activations, k_activations, v_activations
 
 
     # ==========================================================================
@@ -618,16 +615,16 @@ class MLXActivationProvider:
         model: Any,
         tokenizer: Any,
         texts: list[str],
-    ) -> tuple[list[dict[int, "Array"]], list[dict[int, "Array"]]]:
+    ) -> tuple[list[dict[int, "Array"]], list[dict[int, "Array"]], list[dict[int, "Array"]]]:
         """
-        Collect per-layer attention Q and KV activations for multiple texts in one pass.
+        Collect per-layer attention Q, K, and V activations for multiple texts.
 
-        Returns tuple of (q_activations_list, kv_activations_list).
+        Returns tuple of (q_activations_list, k_activations_list, v_activations_list).
         """
         import mlx.core as mx
 
         if not texts:
-            return [], []
+            return [], [], []
 
         all_token_ids = []
         for text in texts:
@@ -644,17 +641,19 @@ class MLXActivationProvider:
         batch_size = len(texts)
 
         q_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
-        kv_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        k_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        v_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
 
         try:
             if not (hasattr(model, "model") and hasattr(model.model, "layers")):
                 logger.debug("Model not compatible with batch attention collection")
-                q_list, kv_list = [], []
+                q_list, k_list, v_list = [], [], []
                 for text in texts:
-                    q, kv = self.collect_attention_activations(model, tokenizer, text)
+                    q, k, v = self.collect_attention_activations(model, tokenizer, text)
                     q_list.append(q)
-                    kv_list.append(kv)
-                return q_list, kv_list
+                    k_list.append(k)
+                    v_list.append(v)
+                return q_list, k_list, v_list
 
             inner = model.model
             if hasattr(inner, "embed_tokens"):
@@ -662,12 +661,13 @@ class MLXActivationProvider:
             elif hasattr(inner, "wte"):
                 h = inner.wte(input_ids)
             else:
-                q_list, kv_list = [], []
+                q_list, k_list, v_list = [], [], []
                 for text in texts:
-                    q, kv = self.collect_attention_activations(model, tokenizer, text)
+                    q, k, v = self.collect_attention_activations(model, tokenizer, text)
                     q_list.append(q)
-                    kv_list.append(kv)
-                return q_list, kv_list
+                    k_list.append(k)
+                    v_list.append(v)
+                return q_list, k_list, v_list
 
             for layer_idx, layer in enumerate(inner.layers):
                 if hasattr(layer, "input_layernorm"):
@@ -687,32 +687,32 @@ class MLXActivationProvider:
                     mx.eval(k)
                     mx.eval(v)
 
-                    # Concatenate K and V for complete KV geometry
-                    kv_concat = mx.concatenate([k, v], axis=-1)
-                    mx.eval(kv_concat)
-
                     for i in range(batch_size):
                         seq_len = len(all_token_ids[i])
                         q_pooled = mx.mean(q[i, :seq_len, :], axis=0)
-                        kv_pooled = mx.mean(kv_concat[i, :seq_len, :], axis=0)
+                        k_pooled = mx.mean(k[i, :seq_len, :], axis=0)
+                        v_pooled = mx.mean(v[i, :seq_len, :], axis=0)
                         mx.eval(q_pooled)
-                        mx.eval(kv_pooled)
+                        mx.eval(k_pooled)
+                        mx.eval(v_pooled)
                         q_results[i][layer_idx] = q_pooled
-                        kv_results[i][layer_idx] = kv_pooled
+                        k_results[i][layer_idx] = k_pooled
+                        v_results[i][layer_idx] = v_pooled
 
                 result = layer(h)
                 h = result[0] if isinstance(result, tuple) else result
 
         except Exception as e:
             logger.warning("Batch attention collection failed: %s", e)
-            q_list, kv_list = [], []
+            q_list, k_list, v_list = [], [], []
             for text in texts:
-                q, kv = self.collect_attention_activations(model, tokenizer, text)
+                q, k, v = self.collect_attention_activations(model, tokenizer, text)
                 q_list.append(q)
-                kv_list.append(kv)
-            return q_list, kv_list
+                k_list.append(k)
+                v_list.append(v)
+            return q_list, k_list, v_list
 
-        return q_results, kv_results
+        return q_results, k_results, v_results
 
 
 def get_activation_provider() -> MLXActivationProvider:
