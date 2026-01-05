@@ -178,7 +178,6 @@ class UnifiedGeometricMerger:
             extract_layer_index_fn=merge_helpers.extract_layer_index,
             backend=self._backend,
             graft_mask=graft_mask,
-            transplant_domains=(),
         )
 
     def _load_tokenizer(self, model_path: str) -> Any | None:

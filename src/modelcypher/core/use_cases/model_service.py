@@ -113,7 +113,6 @@ class ModelService:
         source_model: str,
         target_model: str,
         output_path: str,
-        transplant_domains: list[str] | None = None,
         auto_register: bool = False,
         alias: str | None = None,
     ) -> dict[str, Any]:
@@ -125,15 +124,11 @@ class ModelService:
         """
         from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
 
-        if not transplant_domains:
-            raise ValueError("transplant_domains is required for geometric transplant merges.")
-
         merger = UnifiedGeometricMerger(model_loader=self._model_loader)
         merge_result = merger.merge(
             source_path=source_model,
             target_path=target_model,
             output_dir=output_path,
-            transplant_domains=transplant_domains,
         )
 
         result: dict[str, Any] = {

@@ -194,7 +194,6 @@ def stage_transplant(
     target_attention_activations: dict | None,
     source_kv_activations: dict | None = None,
     target_kv_activations: dict | None = None,
-    transplant_domains: tuple[str, ...] = (),
     extract_layer_index_fn: Callable[[str], int | None] = lambda x: None,
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
@@ -222,7 +221,6 @@ def stage_transplant(
         target_kv_activations=target_kv_activations,
         extract_layer_index_fn=extract_layer_index_fn,
         backend=backend,
-        transplant_domains=tuple(transplant_domains),
         graft_mask=graft_mask,
         feature_transforms=feature_transforms,
         embedding_transform=embedding_transform,
@@ -287,7 +285,7 @@ __all__ = [
     "stage_permute",
     "PermuteResult",
     "infer_hidden_dim",
-    # Stage 3: Transplant (simplified - only transplant_domains and graft_mask)
+    # Stage 3: Transplant (geometry-driven, graft_mask only)
     "stage_transplant",
     "TransplantStageResult",
     # Stage 4: Validate (safety checks for merged weights)

@@ -332,7 +332,6 @@ def run_merge(
         target_attention_activations=target_attention_activations,
         source_kv_activations=source_k_activations,  # K activations (V computed compositionally)
         target_kv_activations=target_k_activations,  # K activations (V computed compositionally)
-        transplant_domains=(),
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
         graft_mask=graft_mask,

@@ -98,8 +98,6 @@ class TransplantStageResult:
     manifest: TransplantManifest | None = None  # Track every weight's status
 
 
-def _normalize_domains(domains: Iterable[str]) -> set[str]:
-    return {d.strip().lower() for d in domains if d.strip()}
 
 
 def _save_checkpoint(
@@ -299,7 +297,6 @@ def stage_transplant(
     target_attention_activations: dict[int, list["Array"]] | None = None,
     source_kv_activations: dict[int, list["Array"]] | None = None,
     target_kv_activations: dict[int, list["Array"]] | None = None,
-    transplant_domains: tuple[str, ...] = (),
     graft_mask: dict[str, dict[int, bool]] | None = None,
     feature_transforms: dict[int, list[list[float]]] | None = None,
     embedding_transform: list[list[float]] | None = None,  # 2D GramAlign transform
@@ -355,29 +352,16 @@ def stage_transplant(
         metrics["transplant_skipped"] = "probe_metadata_mismatch"
         return TransplantStageResult(merged_weights=merged, metrics=metrics)
 
-    core_domains = _normalize_domains(transplant_domains)
-
-    if core_domains:
-        # Legacy: domain-based filtering
-        core_probe_ids = {
-            probe_id
-            for probe_id, domain in zip(probe_ids, probe_domains)
-            if domain and domain.lower() in core_domains
-        }
-        logger.info(
-            "TRANSPLANT: Domain-based mode - %d core probes from domains %s",
-            len(core_probe_ids), list(core_domains)
-        )
-    else:
-        # Density-only: ALL probes are candidates, graft_mask decides
-        core_probe_ids = set(probe_ids)
-        logger.info(
-            "TRANSPLANT: Density-only mode - %d candidate probes (geometry decides)",
-            len(core_probe_ids)
-        )
+    # PURE GEOMETRY: All probes are candidates, graft_mask decides
+    # No domain filtering - the geometry determines what gets transplanted
+    core_probe_ids = set(probe_ids)
+    logger.info(
+        "TRANSPLANT: Geometry-driven mode - %d candidate probes, graft_mask decides",
+        len(core_probe_ids)
+    )
 
     metrics["core_probes"] = len(core_probe_ids)
-    metrics["density_only_mode"] = not bool(core_domains)
+    metrics["density_only_mode"] = True  # Always geometry-driven now
 
     if not core_probe_ids:
         metrics["transplant_skipped"] = "no_core_probes"
