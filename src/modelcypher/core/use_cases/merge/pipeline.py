@@ -399,8 +399,11 @@ def run_merge(
         )
 
         # Restore vocabulary weights (only lm_head - embed_tokens was already aligned)
+        # IMPORTANT: Do NOT restore embed_tokens - transplant stage already aligned it!
         for k, v in vocab_weights.items():
-            merged_weights[k] = v
+            if "lm_head" in k.lower():
+                merged_weights[k] = v
+                logger.info("Preserved target lm_head: %s", k)
 
         logger.info("Requantization complete: %d weights", len(merged_weights))
 

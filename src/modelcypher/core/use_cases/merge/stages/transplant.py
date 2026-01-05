@@ -518,6 +518,35 @@ def stage_transplant(
                     src_vocab_size, tgt_vocab_size,
                     int(b.shape(src_embed)[1]), int(b.shape(aligned_embed_final)[1])
                 )
+                
+                # =================================================================
+                # LM_HEAD ALIGNMENT (must match embed_tokens for weight tying)
+                # =================================================================
+                # lm_head: [vocab, hidden] projects hidden states to vocabulary logits
+                # If embed_tokens was aligned with projected source embeddings,
+                # lm_head must also be aligned with the SAME embeddings.
+                #
+                # For weight-tied models: lm_head = embed_tokens (shared)
+                # For untied models: lm_head needs same alignment as embed_tokens
+                # =================================================================
+                lm_head_key = None
+                for key in target_weights:
+                    if "lm_head" in key.lower() and "weight" in key:
+                        lm_head_key = key
+                        break
+                
+                if lm_head_key:
+                    # Use the SAME aligned embeddings for lm_head
+                    # This ensures the logit space matches the embedding space
+                    merged[lm_head_key] = aligned_embed_final
+                    logger.info(
+                        "LM_HEAD ALIGNMENT: %s aligned with same geometry as embed_tokens",
+                        lm_head_key
+                    )
+                    metrics["lm_head_aligned"] = True
+                else:
+                    logger.warning("LM_HEAD ALIGNMENT: Could not find lm_head weights")
+                    metrics["lm_head_aligned"] = False
             else:
                 logger.warning(
                     "EMBEDDING ALIGNMENT: Skipped - target vocab (%d) > source vocab (%d)",
