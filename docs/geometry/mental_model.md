@@ -77,3 +77,69 @@ venn
 ```
 
 *Note: One approach is to focus merges on the measured overlap and avoid blending regions with low overlap; the actual overlap depends on probe corpus, layer, and similarity metric.*
+
+---
+
+## 4. Null-Space Knowledge Transfer
+
+**The Problem with Weight Replacement**
+
+Weights are not probabilities. They are **directions in concept space**. If you replace or blend them, you literally change what the model knows into something else entirely.
+
+```mermaid
+graph LR
+    subgraph "Weight Space = Concept Space"
+        W1["Direction [1,0]
+= 'Cat'"]
+        W2["Direction [0,1]
+= 'Dog'"]
+        W3["Direction [0.5,0.5]
+= Neither Cat nor Dog"]
+    end
+    W1 -->|"Blend"| W3
+    W2 -->|"Blend"| W3
+```
+
+**The Null-Space Solution**
+
+Instead of blending, we find directions where the target has **no representation** (null space) and add new knowledge there.
+
+```mermaid
+flowchart TD
+    subgraph "Target Model (SmolLM)"
+        T["Existing knowledge
+(spans some dimensions)"]
+        N["Null space
+(unoccupied dimensions)"]
+    end
+    subgraph "Source Model (Qwen)"
+        S["Source knowledge
+(denser in some areas)"]
+    end
+    
+    S -->|"Project to aligned coords"| Sa["Aligned source"]
+    Sa -->|"Compute delta"| D["Δ = aligned - target"]
+    D -->|"Filter through null-space"| Dn["Δ_safe (orthogonal to existing)"]
+    T -->|"Add"| M["Merged = target + Δ_safe"]
+    Dn -->|"Add"| M
+    
+    style N fill:#90EE90
+    style Dn fill:#90EE90
+```
+
+**Mathematical Guarantee**
+```
+A_boundary @ W_merged = A_boundary @ W_target
+```
+Boundary behavior is preserved. The existing shape is unchanged. New knowledge lives in orthogonal directions.
+
+---
+
+## 5. Why Small Models Can Be Denser
+
+A 360M model trained well has **lower intrinsic dimension** than a 7B model.
+
+This doesn't mean it knows more. It means it compressed **what it knows** more effectively. The 7B model has more dimensions to spread the same concepts, resulting in sparser representation.
+
+The goal of geometric merging: take the **denser regions** from larger models and pack them into the smaller model's **unused null space**.
+
