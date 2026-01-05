@@ -456,7 +456,7 @@ def stage_transplant(
             # For tokens only in target, keep target embedding
 
             tgt_embed = target_weights[target_embed_key]
-            tgt_embed = dequantize_if_needed(tgt_embed, target_weights, target_embed_key)
+            tgt_embed = dequantize_if_needed(tgt_embed, target_weights, target_embed_key, b)
             tgt_embed = b.astype(tgt_embed, "float32")
             b.eval(tgt_embed)
 
