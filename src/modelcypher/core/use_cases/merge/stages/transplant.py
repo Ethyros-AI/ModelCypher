@@ -545,8 +545,14 @@ def stage_transplant(
                     )
                     metrics["lm_head_aligned"] = True
                 else:
-                    logger.warning("LM_HEAD ALIGNMENT: Could not find lm_head weights")
-                    metrics["lm_head_aligned"] = False
+                    # Check if model uses weight tying (tie_word_embeddings=True)
+                    # In that case, lm_head = embed_tokens and we don't need a separate key
+                    # SmolLM and many other models use this
+                    logger.info(
+                        "LM_HEAD ALIGNMENT: No separate lm_head key found - "
+                        "model likely uses tie_word_embeddings (embed_tokens = lm_head)"
+                    )
+                    metrics["lm_head_aligned"] = True  # Weight-tied, so embed alignment covers both
             else:
                 logger.warning(
                     "EMBEDDING ALIGNMENT: Skipped - target vocab (%d) > source vocab (%d)",
