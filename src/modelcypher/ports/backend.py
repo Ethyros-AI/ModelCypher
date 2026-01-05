@@ -399,6 +399,14 @@ class Backend(Protocol):
     def inv(self, array: Array) -> Array:
         """Compute the inverse of a square matrix."""
         ...
+
+    def solve(self, a: Array, b: Array) -> Array:
+        """Solve a linear matrix equation, or system of linear scalar equations.
+
+        Computes the "exact" solution, x, of the well-determined, i.e., full rank,
+        linear matrix equation ax = b.
+        """
+        ...
     def pinv(self, array: Array) -> Array:
         """Compute the Moore-Penrose pseudoinverse of a matrix."""
         ...

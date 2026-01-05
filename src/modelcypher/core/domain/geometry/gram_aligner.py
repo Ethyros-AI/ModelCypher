@@ -388,12 +388,15 @@ class GramAligner:
         # Step 1: Compute Sqrt on GPU (Newton-Schulz)
         sqrt_K_s = b.matrix_sqrt_newton_schulz(K_s_reg)
         
-        # Step 2: Compute Inverse (Backend Native)
-        # We rely on backend.inv() for standard inversion.
-        inv_sqrt_K_s = b.inv(sqrt_K_s)
+        # Step 2: Compute T via Linear Solve (More Stable than Inv)
+        # We want T = K_t^{1/2} @ K_s^{-1/2}
+        # Equivalent to solving: K_s^{1/2} @ T.T = K_t^{1/2}  (since symmetric)
+        # T.T = solve(K_s^{1/2}, K_t^{1/2})
+        # T = (T.T).T
         
-        # T = K_t^{1/2} @ K_s^{-1/2}
-        T = b.matmul(sqrt_K_t, inv_sqrt_K_s)
+        # This avoids explicit inversion and is generally more numerically stable.
+        T_T = b.solve(sqrt_K_s, sqrt_K_t)
+        T = b.transpose(T_T)
         b.eval(T)
         
         # Debug check for NaNs/Zeros
