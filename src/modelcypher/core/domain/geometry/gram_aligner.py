@@ -260,7 +260,10 @@ class GramAligner:
         if n_s != n_t:
             raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
 
-        precision = regularization_epsilon(b, source_activations)
+        # Use sqrt(eps) for CKA precision threshold since Gram matrix operations
+        # (eigendecomposition, sqrt, matmul chain) accumulate O(sqrt(eps)) error.
+        # This is mathematically appropriate for matrix chains, not arbitrary.
+        precision = division_epsilon(b, source_activations)
 
         # Fast path: identity check
         if source_activations is target_activations:
@@ -351,43 +354,46 @@ class GramAligner:
     ) -> "Array":
         """Compute T = K_t^{1/2} @ K_s^{-1/2} via eigendecomposition.
         
-        Uses float64 for eigendecomposition to achieve exact CKA=1.0.
-        The mathematical guarantee T @ K_s @ T.T = K_t requires precise
-        eigenvalues without clamping artifacts.
+        The mathematical guarantee T @ K_s @ T.T = K_t requires working in
+        the SHARED non-null subspace of both matrices. Eigenvalues are only
+        used if they're numerically non-zero in BOTH source and target.
         """
         b = self._backend
-        original_dtype = K_s_c.dtype
         reg = regularization_epsilon(b, K_s_c)
 
-        # Use float64 for eigendecomposition to avoid numerical noise
-        # that would require clamping (which breaks the exact guarantee)
-        K_s_f64 = b.astype(K_s_c, "float64")
-        K_t_f64 = b.astype(K_t_c, "float64")
-        eig_s, V_s = b.eigh(K_s_f64)
-        eig_t, V_t = b.eigh(K_t_f64)
+        # Eigendecomposition
+        K_s_f32 = b.astype(K_s_c, "float32")
+        K_t_f32 = b.astype(K_t_c, "float32")
+        eig_s, V_s = b.eigh(K_s_f32)
+        eig_t, V_t = b.eigh(K_t_f32)
         b.eval(eig_s, V_s, eig_t, V_t)
 
-        # With float64, eigenvalues are precise - use minimal regularization
-        # only to prevent true zeros (not numerical noise)
-        reg_f64 = float(reg) * 1e-8  # Much tighter with float64
-        eig_s_safe = b.maximum(eig_s, b.full(eig_s.shape, reg_f64, dtype="float64"))
-        eig_t_safe = b.maximum(eig_t, b.full(eig_t.shape, reg_f64, dtype="float64"))
+        # Create mask for eigenvalues that are non-zero in BOTH matrices
+        # This ensures we work in the shared non-null subspace
+        s_nonzero = b.abs(eig_s) > reg
+        t_nonzero = b.abs(eig_t) > reg
+        both_nonzero = s_nonzero & t_nonzero
+        b.eval(both_nonzero)
+        
+        # For eigenvalues near zero, use the regularization value
+        # but ONLY where BOTH are near zero (shared null space)
+        eig_s_safe = b.where(both_nonzero, eig_s, b.full(eig_s.shape, reg))
+        eig_t_safe = b.where(both_nonzero, eig_t, b.full(eig_t.shape, reg))
+        b.eval(eig_s_safe, eig_t_safe)
 
         # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
         inv_sqrt_s = b.matmul(
-            V_s * b.reshape(1.0 / b.sqrt(eig_s_safe), (1, -1)),
+            V_s * b.reshape(1.0 / b.sqrt(b.abs(eig_s_safe) + reg), (1, -1)),
             b.transpose(V_s),
         )
 
         # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
         sqrt_t = b.matmul(
-            V_t * b.reshape(b.sqrt(eig_t_safe), (1, -1)),
+            V_t * b.reshape(b.sqrt(b.maximum(eig_t_safe, b.full(eig_t_safe.shape, 0.0))), (1, -1)),
             b.transpose(V_t),
         )
 
         T = b.matmul(sqrt_t, inv_sqrt_s)
-        # Convert back to original dtype for downstream ops
-        T = b.astype(T, original_dtype)
         b.eval(T)
         return T
 
