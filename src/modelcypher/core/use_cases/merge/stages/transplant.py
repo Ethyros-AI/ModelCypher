@@ -440,7 +440,7 @@ def stage_transplant(
 
         if source_embed_key and target_embed_key:
             src_embed = source_weights[source_embed_key]
-            src_embed = dequantize_if_needed(src_embed, source_weights, source_embed_key)
+            src_embed = dequantize_if_needed(src_embed, source_weights, source_embed_key, b)
             src_embed = b.astype(src_embed, "float32")
             b.eval(src_embed)
 
