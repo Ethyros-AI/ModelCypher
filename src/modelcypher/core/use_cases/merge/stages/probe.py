@@ -849,192 +849,217 @@ def _probe_precise(
 
             ALIGNMENT_MAX_WORKERS = 1  # Reduced from 4 - MLX segfaults with concurrent GPU access
 
-            def _align_single_layer(
-                src_idx: int,
+            def _align_target_group(
                 tgt_idx: int,
-                raw_cka: float,
+                src_indices: list[int],
             ) -> dict:
-                """Align a single layer pair and return all transforms."""
-                src_layer = source_layers[src_idx]
+                """Align a group of source layers to a single target layer via concatenation."""
                 tgt_layer = target_layers[tgt_idx]
+                src_layers = [source_layers[i] for i in src_indices]
+                
                 result: dict = {
-                    "src_layer": src_layer,
                     "tgt_layer": tgt_layer,
-                    "raw_cka": raw_cka,
+                    "src_layers": src_layers,
+                    "raw_cka": 0.0,
                     "achieved_cka": 0.0,
-                    "feature_transform": None,
-                    "attention_transform": None,
-                    "kv_transform": None,
+                    "feature_transform": None,  # Will be a dict {src_layer: transform}
+                    "attention_transform": None, # Dict
+                    "k_transform": None, # Dict
+                    "v_transform": None, # Dict
                     "error": None,
                 }
 
-                # Get activations for this layer pair
-                src_list = source_layer_activations[src_layer]
+                # -----------------------------------------------------------
+                # 1. Prepare Activations (Concat Source)
+                # -----------------------------------------------------------
+                src_act_lists = [source_layer_activations[s] for s in src_layers]
                 tgt_list = target_layer_activations[tgt_layer]
-                n_samples = min(len(src_list), len(tgt_list))
-
+                
+                # Find common sample count
+                n_samples = len(tgt_list)
+                for s_list in src_act_lists:
+                    n_samples = min(n_samples, len(s_list))
+                
                 if n_samples < 2:
                     return result
 
-                # Create thread-local GramAligner to avoid any potential state issues
+                # Create thread-local GramAligner
                 local_aligner = GramAligner(backend=b)
 
                 try:
-                    src_stacked = b.stack(src_list[:n_samples], axis=0)
+                    # Stack samples for each source
+                    src_stacks = []
+                    src_dims = []
+                    for s, s_list in zip(src_layers, src_act_lists):
+                        stack = b.stack(s_list[:n_samples], axis=0)
+                        stack = b.astype(stack, "float32")
+                        src_stacks.append(stack)
+                        src_dims.append(stack.shape[1])
+                    
+                    # Stack target
                     tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
-                    src_stacked = b.astype(src_stacked, "float32")
                     tgt_stacked = b.astype(tgt_stacked, "float32")
-                    b.eval(src_stacked, tgt_stacked)
+                    
+                    # Concatenate source features: [N, D1] + [N, D2] -> [N, D1+D2]
+                    src_combined = b.concatenate(src_stacks, axis=1)
+                    
+                    b.eval(src_combined, tgt_stacked)
+                    
+                    # -----------------------------------------------------------
+                    # 2. Compute Match Metrics
+                    # -----------------------------------------------------------
+                    # Calculate raw CKA of the COMBINED representation
+                    # This should be much higher than individual layers
+                    from modelcypher.core.domain.geometry.cka import compute_cka_backend
+                    result["raw_cka"] = float(compute_cka_backend(src_combined, tgt_stacked, b))
 
-                    # GramAligner finds the transformation that achieves CKA = 1.0
+                    # -----------------------------------------------------------
+                    # 3. Align Hidden States
+                    # -----------------------------------------------------------
                     alignment_result = local_aligner.find_perfect_alignment(
-                        src_stacked,
+                        src_combined,
                         tgt_stacked,
                     )
-
-                    result["feature_transform"] = alignment_result.feature_transform
+                    
                     result["achieved_cka"] = alignment_result.achieved_cka
+                    
+                    # Split the composite transform back to per-source transforms
+                    composite_F = alignment_result.feature_transform
+                    # F is [Sum(Ds), Dt]
+                    # We split Sum(Ds) back into slices
+                    
+                    # Convert list to array for slicing if needed, but it's likely a list/array from GramAligner
+                    # GramAligner returns list (serialization ready). Convert to array for splitting.
+                    F_arr = b.array(composite_F)
+                    
+                    split_transforms = {}
+                    start_idx = 0
+                    for s_layer, s_dim in zip(src_layers, src_dims):
+                        # F_slice: [s_dim, Dt]
+                        F_slice = F_arr[start_idx : start_idx + s_dim, :]
+                        split_transforms[s_layer] = b.tolist(F_slice)
+                        start_idx += s_dim
+                        
+                    result["feature_transform"] = split_transforms
 
                     if not alignment_result.is_perfect:
                         logger.warning(
-                            "PROBE: Layer %d -> %d hidden alignment not exact "
-                            "(achieved_cka=%.4f, threshold=%.2e). "
-                            "This indicates an alignment algorithm bug.",
-                            src_layer,
-                            tgt_layer,
-                            alignment_result.achieved_cka,
-                            alignment_result.precision_threshold,
+                            "PROBE: Group %s -> %d hidden alignment not exact (CKA=%.4f).",
+                            src_layers, tgt_layer, alignment_result.achieved_cka
                         )
 
-                    # ================================================================
-                    # ATTENTION Q TRANSFORMS
-                    # ================================================================
-                    if (
-                        src_layer in source_attention_activations
-                        and tgt_layer in target_attention_activations
-                    ):
-                        src_attn_list = source_attention_activations[src_layer]
-                        tgt_attn_list = target_attention_activations[tgt_layer]
-                        n_attn = min(len(src_attn_list), len(tgt_attn_list))
-                        if n_attn >= 2:
-                            src_attn = b.stack(src_attn_list[:n_attn], axis=0)
-                            tgt_attn = b.stack(tgt_attn_list[:n_attn], axis=0)
-                            src_attn = b.astype(src_attn, "float32")
-                            tgt_attn = b.astype(tgt_attn, "float32")
-                            b.eval(src_attn, tgt_attn)
+                    # -----------------------------------------------------------
+                    # 4. Attention Q/K/V (Optional)
+                    # -----------------------------------------------------------
+                    # Only if ALL source layers have attention data? Or ANY?
+                    # Generally corresponding layers should all have attention if one does.
+                    
+                    def align_subcomponent(attr_name, src_dict, tgt_dict):
+                        # Use same n_samples
+                        if tgt_layer not in tgt_dict:
+                            return None
+                        
+                        sub_src_stacks = []
+                        sub_src_dims = []
+                        valid_src_layers = []
+                        
+                        for s in src_layers:
+                            if s in src_dict:
+                                s_list = src_dict[s]
+                                if len(s_list) >= n_samples:
+                                    st = b.stack(s_list[:n_samples], axis=0)
+                                    st = b.astype(st, "float32")
+                                    sub_src_stacks.append(st)
+                                    sub_src_dims.append(st.shape[1])
+                                    valid_src_layers.append(s)
+                        
+                        if not sub_src_stacks:
+                            return None
+                            
+                        # Concatenate
+                        sub_src_comb = b.concatenate(sub_src_stacks, axis=1)
+                        tgt_st = b.stack(tgt_dict[tgt_layer][:n_samples], axis=0)
+                        tgt_st = b.astype(tgt_st, "float32")
+                        b.eval(sub_src_comb, tgt_st)
+                        
+                        res = local_aligner.find_perfect_alignment(sub_src_comb, tgt_st)
+                        
+                        # Split
+                        F_sub = b.array(res.feature_transform)
+                        sub_splits = {}
+                        idx = 0
+                        for s_lay, s_d in zip(valid_src_layers, sub_src_dims):
+                            sli = F_sub[idx : idx + s_d, :]
+                            sub_splits[s_lay] = b.tolist(sli)
+                            idx += s_d
+                            
+                        return sub_splits
 
-                            attn_result = local_aligner.find_perfect_alignment(
-                                src_attn,
-                                tgt_attn,
-                            )
-                            result["attention_transform"] = attn_result.feature_transform
-
-                            if not attn_result.is_perfect:
-                                logger.warning(
-                                    "PROBE: Layer %d -> %d attention Q alignment not exact "
-                                    "(achieved_cka=%.4f).",
-                                    src_layer,
-                                    tgt_layer,
-                                    attn_result.achieved_cka,
-                                )
-
-                    # ================================================================
-                    # ATTENTION K TRANSFORMS - Direct GramAlign (granular)
-                    # ================================================================
-                    if (
-                        src_layer in source_k_activations
-                        and tgt_layer in target_k_activations
-                    ):
-                        src_k_list = source_k_activations[src_layer]
-                        tgt_k_list = target_k_activations[tgt_layer]
-                        n_k = min(len(src_k_list), len(tgt_k_list))
-                        if n_k >= 2:
-                            src_k = b.stack(src_k_list[:n_k], axis=0)
-                            tgt_k = b.stack(tgt_k_list[:n_k], axis=0)
-                            src_k = b.astype(src_k, "float32")
-                            tgt_k = b.astype(tgt_k, "float32")
-                            b.eval(src_k, tgt_k)
-
-                            k_result = local_aligner.find_perfect_alignment(src_k, tgt_k)
-                            result["k_transform"] = k_result.feature_transform
-
-                            if not k_result.is_perfect:
-                                logger.warning(
-                                    "PROBE: Layer %d -> %d attention K alignment not exact "
-                                    "(achieved_cka=%.4f). This indicates an alignment algorithm bug.",
-                                    src_layer,
-                                    tgt_layer,
-                                    k_result.achieved_cka,
-                                )
-
-                    # ================================================================
-                    # ATTENTION V TRANSFORMS - Direct GramAlign (granular)
-                    # ================================================================
-                    if (
-                        src_layer in source_v_activations
-                        and tgt_layer in target_v_activations
-                    ):
-                        src_v_list = source_v_activations[src_layer]
-                        tgt_v_list = target_v_activations[tgt_layer]
-                        n_v = min(len(src_v_list), len(tgt_v_list))
-                        if n_v >= 2:
-                            src_v = b.stack(src_v_list[:n_v], axis=0)
-                            tgt_v = b.stack(tgt_v_list[:n_v], axis=0)
-                            src_v = b.astype(src_v, "float32")
-                            tgt_v = b.astype(tgt_v, "float32")
-                            b.eval(src_v, tgt_v)
-
-                            v_result = local_aligner.find_perfect_alignment(src_v, tgt_v)
-                            result["v_transform"] = v_result.feature_transform
-
-                            if not v_result.is_perfect:
-                                logger.warning(
-                                    "PROBE: Layer %d -> %d attention V alignment not exact "
-                                    "(achieved_cka=%.4f). This indicates an alignment algorithm bug.",
-                                    src_layer,
-                                    tgt_layer,
-                                    v_result.achieved_cka,
-                                )
+                    result["attention_transform"] = align_subcomponent(
+                        "attention_transform", source_attention_activations, target_attention_activations
+                    )
+                    result["k_transform"] = align_subcomponent(
+                        "k_transform", source_k_activations, target_k_activations
+                    )
+                    result["v_transform"] = align_subcomponent(
+                        "v_transform", source_v_activations, target_v_activations
+                    )
 
                 except Exception as e:
                     result["error"] = str(e)
                     logger.warning(
-                        "PROBE: GramAligner failed for layer %d -> %d: %s",
-                        src_layer,
-                        tgt_layer,
-                        e,
+                        "PROBE: GramAligner failed for group %s -> %d: %s",
+                        src_layers, tgt_layer, e
                     )
 
                 return result
 
-            # Submit all layer alignments to thread pool
+            # Group source layers by target layer (for many-to-one alignment)
+            target_to_sources: dict[int, list[int]] = {}
+            for src_idx, tgt_idx in dp_path:
+                if tgt_idx not in target_to_sources:
+                    target_to_sources[tgt_idx] = []
+                target_to_sources[tgt_idx].append(src_idx)
+
+            # Define alignment tasks
+            alignment_tasks = []
+            for tgt_idx, src_indices in target_to_sources.items():
+                alignment_tasks.append((tgt_idx, src_indices))
+
+            # Submit grouped alignments
             logger.info(
-                "PROBE: Aligning %d layer pairs in parallel (max_workers=%d)...",
+                "PROBE: Aligning %d target layers (from %d total mappings)...",
+                len(alignment_tasks),
                 len(dp_path),
-                ALIGNMENT_MAX_WORKERS,
             )
 
             with ThreadPoolExecutor(max_workers=ALIGNMENT_MAX_WORKERS) as executor:
                 futures = {
                     executor.submit(
-                        _align_single_layer,
-                        src_idx,
+                        _align_target_group,
                         tgt_idx,
-                        cka_matrix[src_idx][tgt_idx],
-                    ): (src_idx, tgt_idx)
-                    for src_idx, tgt_idx in dp_path
+                        src_indices,
+                    ): tgt_idx
+                    for tgt_idx, src_indices in alignment_tasks
                 }
 
                 completed = 0
                 for future in as_completed(futures):
                     result = future.result()
-                    src_layer = result["src_layer"]
                     tgt_layer = result["tgt_layer"]
+                    src_layers = result["src_layers"]
 
-                    # Store results
-                    layer_mapping[tgt_layer] = src_layer
+                    # Store mapping (using principal source layer - usually the first or middle)
+                    # For metrics, we just log the primary mapping, but the transforms cover all
+                    # This logic handles the 1:1 assumption in some downstream parts, which might need update
+                    # But feature_transforms will now contain a composite transform or list
+                    
+                    # NOTE: To maintain compatibility with existing pipeline which expects 1:1 mapping in some places,
+                    # we map to the first source layer. But the TRANSFORM handles the combination.
+                    layer_mapping[tgt_layer] = src_layers[0]
 
                     if result["feature_transform"] is not None:
+                        # feature_transform is now [sum(d_s), d_t]
                         feature_transforms[tgt_layer] = result["feature_transform"]
                         layer_cka_scores[tgt_layer] = result["achieved_cka"]
                     else:
@@ -1052,11 +1077,11 @@ def _probe_precise(
                         v_transforms[tgt_layer] = result["v_transform"]
 
                     completed += 1
-                    if completed % 5 == 0 or completed == len(dp_path):
+                    if completed % 5 == 0 or completed == len(alignment_tasks):
                         logger.info(
-                            "PROBE: Aligned %d/%d layer pairs...",
+                            "PROBE: Aligned %d/%d target layers...",
                             completed,
-                            len(dp_path),
+                            len(alignment_tasks),
                         )
 
             logger.info(
