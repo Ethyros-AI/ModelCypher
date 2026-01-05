@@ -357,8 +357,10 @@ class MLXActivationProvider:
                     if hasattr(attn, "q_proj"):
                         q = attn.q_proj(h_norm)
                         k = attn.k_proj(h_norm)
+                        v = attn.v_proj(h_norm)
                         mx.eval(q)
                         mx.eval(k)
+                        mx.eval(v)
 
                         # Q activations: [batch, seq, num_heads * head_dim]
                         # Mean pool over sequence to get [num_heads * head_dim]
@@ -366,11 +368,13 @@ class MLXActivationProvider:
                         mx.eval(q_pooled)
                         q_activations[layer_idx] = q_pooled
 
-                        # K activations: [batch, seq, num_kv_heads * head_dim]
-                        # For GQA, this is smaller than Q (e.g., 320 vs 960)
-                        k_pooled = mx.mean(k, axis=(0, 1))
-                        mx.eval(k_pooled)
-                        kv_activations[layer_idx] = k_pooled
+                        # KV activations: Must include BOTH K and V for complete geometry
+                        # Concatenate K and V to capture full invariant structure
+                        # Shape: [batch, seq, 2 * num_kv_heads * head_dim]
+                        kv_concat = mx.concatenate([k, v], axis=-1)
+                        kv_pooled = mx.mean(kv_concat, axis=(0, 1))
+                        mx.eval(kv_pooled)
+                        kv_activations[layer_idx] = kv_pooled
 
                 # Complete the layer forward for next iteration
                 result = layer(h)
@@ -678,17 +682,23 @@ class MLXActivationProvider:
                 if attn is not None and hasattr(attn, "q_proj"):
                     q = attn.q_proj(h_norm)
                     k = attn.k_proj(h_norm)
+                    v = attn.v_proj(h_norm)
                     mx.eval(q)
                     mx.eval(k)
+                    mx.eval(v)
+
+                    # Concatenate K and V for complete KV geometry
+                    kv_concat = mx.concatenate([k, v], axis=-1)
+                    mx.eval(kv_concat)
 
                     for i in range(batch_size):
                         seq_len = len(all_token_ids[i])
                         q_pooled = mx.mean(q[i, :seq_len, :], axis=0)
-                        k_pooled = mx.mean(k[i, :seq_len, :], axis=0)
+                        kv_pooled = mx.mean(kv_concat[i, :seq_len, :], axis=0)
                         mx.eval(q_pooled)
-                        mx.eval(k_pooled)
+                        mx.eval(kv_pooled)
                         q_results[i][layer_idx] = q_pooled
-                        kv_results[i][layer_idx] = k_pooled
+                        kv_results[i][layer_idx] = kv_pooled
 
                 result = layer(h)
                 h = result[0] if isinstance(result, tuple) else result
