@@ -136,6 +136,12 @@ _SUBMODULES = {
 # Attribute to submodule mapping for commonly used classes
 # Format: "ExportedName": ("module_name", "actual_attr_name")
 _ATTR_TO_MODULE = {
+    # Core merge infrastructure
+    "BirkhoffProjector": ("birkhoff_projector", "BirkhoffProjector"),
+    "GeneralizedProcrustes": ("generalized_procrustes", "GeneralizedProcrustes"),
+    "GramAligner": ("gram_aligner", "GramAligner"),
+    "GeodesicNullSpaceFilter": ("geodesic_null_space", "GeodesicNullSpaceFilter"),
+    # DoRA analysis
     "ChangeType": ("dora_decomposition", "ChangeType"),
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),
     "PathNode": ("path_geometry", "PathNode"),

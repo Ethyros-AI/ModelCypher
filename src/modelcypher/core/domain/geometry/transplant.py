@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.birkhoff_projector import BirkhoffProjector
 from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
@@ -313,6 +314,31 @@ def compute_transplant_delta(
         # For weight W [out_dim, in_dim], we want outputs transformed by F
         # Math: (A @ W.T) @ F = A @ (W.T @ F) = A @ (F.T @ W).T
         # Therefore: W_corrected = F.T @ W (not W @ F.T!)
+        
+        # BIRKHOFF PROJECTION: Project F onto doubly stochastic matrices
+        # This ensures compositional stability when chaining layer transforms
+        birkhoff_applied = False
+        birkhoff_converged = False
+        birkhoff_iterations = 0
+        birkhoff_spectral_clipped_extra = False
+        
+        if F_correction.shape[0] == F_correction.shape[1]:  # Only for square transforms
+            try:
+                birkhoff = BirkhoffProjector(b)
+                birkhoff_result = birkhoff.project(F_correction, ensure_positive=True)
+                F_correction = birkhoff_result.projected_matrix
+                b.eval(F_correction)
+                birkhoff_applied = True
+                birkhoff_converged = birkhoff_result.converged
+                birkhoff_iterations = birkhoff_result.iterations_used
+                birkhoff_spectral_clipped_extra = birkhoff_result.spectral_clipped
+                logger.debug(
+                    "Birkhoff projection applied: converged=%s, iters=%d, clipped=%s",
+                    birkhoff_converged, birkhoff_iterations, birkhoff_spectral_clipped_extra
+                )
+            except Exception as be:
+                logger.debug("Birkhoff projection skipped: %s", be)
+        
         F_T = b.transpose(F_correction)
         merged_weight = b.matmul(F_T, merged_weight_prelim)  # F.T @ W
         b.eval(merged_weight)
@@ -322,6 +348,10 @@ def compute_transplant_delta(
         # If re-alignment fails, use uncorrected merge
         logger.warning("Post-merge re-alignment failed: %s. Using uncorrected merge.", e)
         merged_weight = merged_weight_prelim
+        birkhoff_applied = False
+        birkhoff_converged = False
+        birkhoff_iterations = 0
+        birkhoff_spectral_clipped_extra = False
 
     # Compute metrics
     source_norm_arr = geodesic_norms(b.reshape(weight_source_aligned, (1, -1)), b)
@@ -346,8 +376,8 @@ def compute_transplant_delta(
         filtered_norm=contribution_norm,  # Now means: source after null-space projection
         projection_loss=projection_loss,
         preserved_fraction=preserved_fraction,
-        birkhoff_applied=False,
-        birkhoff_converged=False,
-        birkhoff_iterations=0,
-        birkhoff_spectral_clipped=spectral_clipped,
+        birkhoff_applied=birkhoff_applied,
+        birkhoff_converged=birkhoff_converged,
+        birkhoff_iterations=birkhoff_iterations,
+        birkhoff_spectral_clipped=spectral_clipped or birkhoff_spectral_clipped_extra,
     )

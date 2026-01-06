@@ -41,6 +41,9 @@ from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     partition_core_boundary,
 )
+from modelcypher.core.domain.geometry.constrained_transplant import (
+    verify_boundary_invariance,
+)
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
     geodesic_paired_distances,
