@@ -37,6 +37,10 @@ from typing import TYPE_CHECKING
 
 # Import from canonical location - AtlasDomain is the single source of truth
 from modelcypher.core.domain.domains import AtlasDomain
+from modelcypher.core.domain.geometry.domain_signal_profile import (
+    DomainSignalProfile,
+    LayerSignal,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
