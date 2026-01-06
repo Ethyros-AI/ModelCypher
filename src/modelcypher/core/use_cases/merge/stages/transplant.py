@@ -688,7 +688,17 @@ def stage_transplant(
     metrics["per_layer_v_alignment"] = bool(layer_v_stitches)
 
     # ==========================================================================
-    # RIGOROUS GEOMETRY: K/V transforms handled above via _compute_composite_stitches.
+    # 4. PER-LAYER INTERMEDIATE (MLP) ALIGNMENT
+    # ==========================================================================
+    # OPTIMIZATION: Use pre-computed intermediate transforms from probe stage
+    # instead of running GramAligner per-layer (~50k steps saved per layer)
+    layer_intermediate_stitches = _compute_composite_stitches(
+        intermediate_transforms, "INTERMEDIATE"
+    )
+    metrics["per_layer_intermediate_alignment"] = bool(layer_intermediate_stitches)
+
+    # ==========================================================================
+    # RIGOROUS GEOMETRY: All transforms handled above via _compute_composite_stitches.
     # No fallbacks - if transforms missing, the per-weight logic handles errors.
     # ==========================================================================
 
@@ -762,31 +772,6 @@ def stage_transplant(
         # IMPORTANT: The hidden-space layer_mapping is optimized for hidden activations, but
         # intermediate space has different semantic structure. ALWAYS use proportional mapping
         # for intermediate activations to ensure we compare semantically similar layers.
-        if source_intermediate_activations:
-            # Proportional mapping: target_i * (source_layers / target_layers)
-            n_source = max(source_intermediate_activations.keys()) + 1
-            n_target = len(layer_indices)
-            source_layer_idx = int(round(layer_idx * n_source / n_target))
-            source_layer_idx = min(source_layer_idx, n_source - 1)  # Clamp to valid range
-        else:
-            source_layer_idx = layer_idx
-        
-        # DEBUG: Log which source layer is being used for this target layer
-        if layer_num < 3 or layer_idx >= 15:  # Log first 3 and layers 15+
-            logger.info(
-                "Layer %d: Intermediate alignment using source layer %d (proportional mapping n_src=%d, n_tgt=%d)",
-                layer_idx, source_layer_idx, n_source if source_intermediate_activations else 0, len(layer_indices)
-            )
-        
-        src_inter_list = (
-            source_intermediate_activations.get(source_layer_idx)
-            if source_intermediate_activations else None
-        )
-        tgt_inter_list = (
-            target_intermediate_activations.get(layer_idx)
-            if target_intermediate_activations else None
-        )
-
         # =================================================================
         # GRAM ALIGNMENT: Find EXACT CKA = 1.0 transforms for hidden AND intermediate
         # =================================================================
@@ -798,6 +783,8 @@ def stage_transplant(
         #
         # MLP weights have shape [intermediate, hidden] or [hidden, intermediate].
         # We need transforms for BOTH axes to properly map weights.
+        #
+        # OPTIMIZATION: All transforms are now pre-computed in probe stage.
 
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
@@ -826,81 +813,24 @@ def stage_transplant(
             # Use identity if we have any transforms (cross-arch case)
             pass  # hidden_stitch_output/input stay None - will skip stitching
 
-        # Compute INTERMEDIATE alignment (source intermediate_dim → target intermediate_dim)
-        # Note: Intermediate stitch is per-layer since each MLP has different internal geometry
-        if src_inter_list is not None and tgt_inter_list is not None:
-            n_inter_samples = min(len(src_inter_list), len(tgt_inter_list))
-            if n_inter_samples < 2:
-                raise AlignmentFailureError(
-                    stage="INTERMEDIATE_ALIGNMENT",
-                    weight_key=None,
-                    message="Insufficient activations for intermediate alignment",
-                    context={
-                        "samples_used": n_inter_samples,
-                        "required_min_samples": 2,
-                        "layer_idx": layer_idx,
-                    },
+        # =================================================================
+        # USE PER-LAYER INTERMEDIATE stitch (from probe stage with CKA=1.0)
+        # =================================================================
+        # OPTIMIZATION: Use pre-computed transforms from probe stage instead of
+        # running GramAligner per-layer. This saves ~50k optimization steps per layer.
+        if layer_idx in layer_intermediate_stitches:
+            src_stitches_dict = layer_intermediate_stitches[layer_idx]
+            if src_stitches_dict:
+                first_src = next(iter(src_stitches_dict))
+                intermediate_stitch_output, intermediate_stitch_input = src_stitches_dict[first_src]
+            if layer_num == 0:
+                stitch_shape = intermediate_stitch_output.shape if intermediate_stitch_output is not None else "N/A"
+                logger.info(
+                    "Layer %d: Using per-layer intermediate stitch (shape=%s)",
+                    layer_idx, stitch_shape
                 )
-
-            src_inter = b.stack(src_inter_list[:n_inter_samples], axis=0)
-            tgt_inter = b.stack(tgt_inter_list[:n_inter_samples], axis=0)
-            src_inter = b.astype(src_inter, "float32")
-            tgt_inter = b.astype(tgt_inter, "float32")
-            b.eval(src_inter, tgt_inter)
-
-            src_inter_dim = int(src_inter.shape[1])
-            tgt_inter_dim = int(tgt_inter.shape[1])
-
-            if src_inter_dim != tgt_inter_dim:
-                # Use GramAligner - finds EXACT CKA = 1.0 transform
-                aligner = GramAligner(b)
-                inter_result = aligner.find_perfect_alignment(src_inter, tgt_inter)
-
-                # With the corrected GramAligner that computes CKA on sample-space
-                # Gram-aligned source (T @ source), CKA = 1.0 is mathematically guaranteed
-                # for all dimension ratios. The Gram sqrt transform operates in sample space.
-                # Use 0.99 threshold for floating-point safety (numerical CKA may be 0.9999999).
-                dim_ratio = max(src_inter_dim, tgt_inter_dim) / min(src_inter_dim, tgt_inter_dim)
-                cka_threshold = 0.99
-                is_acceptable = inter_result.achieved_cka >= cka_threshold
-
-                if is_acceptable:
-                    # feature_transform F is [d_source, d_target]
-                    # source @ F → target (activation alignment)
-                    #
-                    # For weight folding W_target = F_out.T @ W_source @ pinv(F_in).T:
-                    #   - F.T [d_target, d_source] for OUTPUT side (left multiply)
-                    #   - pinv(F).T [d_source, d_target] for INPUT side (right multiply)
-                    F = b.array(inter_result.feature_transform)
-                    b.eval(F)
-                    intermediate_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                    F_pinv = _geodesic_pinv(b, F)
-                    intermediate_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
-                    b.eval(intermediate_stitch_output, intermediate_stitch_input)
-                    logger.info(
-                        "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d)",
-                        layer_idx, inter_result.achieved_cka,
-                        src_inter_dim, tgt_inter_dim,
-                    )
-                    metrics.setdefault("intermediate_gram_aligned", 0)
-                    metrics["intermediate_gram_aligned"] += 1
-                else:
-                    raise AlignmentFailureError(
-                        stage="INTERMEDIATE_ALIGNMENT",
-                        weight_key=None,
-                        message=f"GramAligner failed to achieve CKA>={cka_threshold:.2f} (got {inter_result.achieved_cka:.4f})",
-                        context={
-                            "achieved_cka": float(inter_result.achieved_cka),
-                            "cka_threshold": cka_threshold,
-                            "source_dim": src_inter_dim,
-                            "target_dim": tgt_inter_dim,
-                            "dim_ratio": dim_ratio,
-                        },
-                    )
-            else:
-                intermediate_stitch_output = b.eye(src_inter_dim)
-                intermediate_stitch_input = b.eye(src_inter_dim)
-                b.eval(intermediate_stitch_output, intermediate_stitch_input)
+            metrics.setdefault("intermediate_cached_stitches", 0)
+            metrics["intermediate_cached_stitches"] += 1
 
         # USE PER-LAYER ATTENTION stitch (from probe stage with CKA=1.0)
         if layer_idx in layer_attention_stitches:

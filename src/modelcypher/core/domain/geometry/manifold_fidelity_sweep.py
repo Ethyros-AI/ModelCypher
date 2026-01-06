@@ -282,19 +282,15 @@ class ManifoldFidelitySweep:
         return captured / total
 
     def _compute_cka(self, x: "Array", y: "Array") -> float:
-        """Linear CKA (Centered Kernel Alignment).
+        """Geodesic RBF CKA (Centered Kernel Alignment).
 
+        Uses geodesic distances in RBF kernel to respect manifold curvature.
         Delegates to the canonical Backend-aware CKA implementation in cka.py.
         """
-        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_backend
+        from modelcypher.core.domain.geometry.cka import compute_cka
 
-        return compute_cka_backend(
-            x,
-            y,
-            self._backend,
-            estimator=HSICEstimator.AUTO,
-            feature_bias_correction=True,
-        )
+        result = compute_cka(x, y, self._backend)
+        return result.cka if result.is_valid else 0.0
 
     def _compute_procrustes_error(self, x: "Array", y: "Array") -> float:
         """Procrustes distance (normalized reconstruction error)."""

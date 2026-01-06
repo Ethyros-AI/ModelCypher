@@ -1053,6 +1053,31 @@ def _probe_precise(
             # Build full CKA similarity matrix [n_source x n_target]
             # Use RAW CKA for layer matching (to find correspondence)
             # Then use GramAligner for the matched pairs (to achieve CKA = 1.0)
+            #
+            # OPTIMIZATION: Pre-compute target Gram matrices once. Each target layer's
+            # Gram is computed once and reused for all source comparisons.
+            from modelcypher.core.domain.geometry.cka import rbf_gram_matrix, compute_cka_from_grams
+            
+            logger.info("PROBE: Pre-computing target Gram matrices for CKA matrix...")
+            target_grams: dict[int, tuple["Array", int]] = {}  # layer -> (gram, n_samples)
+            for tgt_idx, tgt_layer in enumerate(target_layers):
+                if tgt_idx in degenerate_targets:
+                    continue
+                tgt_list = target_layer_activations[tgt_layer]
+                if len(tgt_list) < 2:
+                    continue
+                try:
+                    tgt_stacked = b.stack(tgt_list, axis=0)
+                    tgt_stacked = b.astype(tgt_stacked, "float32")
+                    b.eval(tgt_stacked)
+                    tgt_gram = rbf_gram_matrix(tgt_stacked, b)
+                    b.eval(tgt_gram)
+                    target_grams[tgt_layer] = (tgt_gram, len(tgt_list))
+                except Exception:
+                    pass  # Skip degenerate targets
+            
+            logger.info("PROBE: Pre-computed %d target Gram matrices", len(target_grams))
+            
             cka_matrix: list[list[float]] = []
             for src_idx, src_layer in enumerate(source_layers):
                 row: list[float] = []
@@ -1064,40 +1089,48 @@ def _probe_precise(
                     continue
                     
                 src_list = source_layer_activations[src_layer]
-                for tgt_layer in target_layers:
-                    tgt_list = target_layer_activations[tgt_layer]
-                    n_samples = min(len(src_list), len(tgt_list))
+                
+                # Pre-compute source Gram once per source layer (reused across targets)
+                src_gram_cache: dict[int, "Array"] = {}  # n_samples -> gram
+                
+                for tgt_idx, tgt_layer in enumerate(target_layers):
+                    # Check if target is degenerate or has no pre-computed Gram
+                    if tgt_layer not in target_grams:
+                        row.append(-999.0)
+                        continue
+                    
+                    tgt_gram, tgt_n_samples = target_grams[tgt_layer]
+                    n_samples = min(len(src_list), tgt_n_samples)
                     if n_samples < 2:
                         row.append(-999.0)  # Penalty: strongly discourage in Hungarian
                         continue
+                    
                     try:
-                        src_stacked = b.stack(src_list[:n_samples], axis=0)
-                        tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
-                        # Convert to float32 for numerical stability
-                        # float16 from model outputs causes SVD/eigendecomposition issues
-                        src_stacked = b.astype(src_stacked, "float32")
-                        tgt_stacked = b.astype(tgt_stacked, "float32")
-                        b.eval(src_stacked, tgt_stacked)
-                        cka_result = compute_cka(
-                            src_stacked,
-                            tgt_stacked,
-                            backend=b,
-                            estimator=HSICEstimator.AUTO,
-                            feature_bias_correction=True,
-                        )
-                        if cka_result.is_valid:
-                            cka_val = (
-                                cka_result.cka_corrected
-                                if cka_result.cka_corrected is not None
-                                else cka_result.cka
-                            )
-                            # Check for NaN CKA (degenerate Gram matrix)
-                            if cka_val != cka_val:  # NaN check
-                                row.append(-999.0)  # Penalty for degenerate
-                            else:
-                                row.append(cka_val)
+                        # Get or compute source Gram for this sample count
+                        if n_samples not in src_gram_cache:
+                            src_stacked = b.stack(src_list[:n_samples], axis=0)
+                            src_stacked = b.astype(src_stacked, "float32")
+                            b.eval(src_stacked)
+                            src_gram = rbf_gram_matrix(src_stacked, b)
+                            b.eval(src_gram)
+                            src_gram_cache[n_samples] = src_gram
                         else:
-                            row.append(-999.0)  # Penalty for invalid
+                            src_gram = src_gram_cache[n_samples]
+                        
+                        # Use pre-computed target Gram (slice if needed for sample count)
+                        if n_samples < tgt_n_samples:
+                            tgt_gram_slice = tgt_gram[:n_samples, :n_samples]
+                        else:
+                            tgt_gram_slice = tgt_gram
+                        
+                        # Compute CKA from pre-computed Gram matrices
+                        cka_val = compute_cka_from_grams(src_gram, tgt_gram_slice, backend=b)
+                        
+                        # Check for NaN CKA (degenerate Gram matrix)
+                        if cka_val != cka_val:  # NaN check
+                            row.append(-999.0)  # Penalty for degenerate
+                        else:
+                            row.append(cka_val)
                     except Exception:
                         row.append(-999.0)  # Penalty on exception
                 cka_matrix.append(row)

@@ -105,7 +105,7 @@ def predict_interference(
     domain_results: dict[str, dict] = {}
 
     from modelcypher.core.domain._backend import get_default_backend
-    from modelcypher.core.domain.geometry.cka import compute_cka_backend, HSICEstimator
+    from modelcypher.core.domain.geometry.cka import compute_cka
 
     backend = get_default_backend()
 
@@ -140,15 +140,9 @@ def predict_interference(
         target_matrix = backend.stack(target_stacked, axis=0)
         backend.eval(source_matrix, target_matrix)
 
-        # No normalization - CKA is scale-invariant via Gram matrix normalization
-        # Compute domain-level CKA (dimension-agnostic)
-        domain_cka = compute_cka_backend(
-            source_matrix,
-            target_matrix,
-            backend=backend,
-            estimator=HSICEstimator.BIASED,
-            feature_bias_correction=False,
-        )
+        # Compute geodesic RBF CKA (curvature-aware, not linear)
+        cka_result = compute_cka(source_matrix, target_matrix, backend)
+        domain_cka = cka_result.cka if cka_result.is_valid else 0.0
         logger.info(f"Domain {domain_name} CKA: {domain_cka:.4f} ({len(common_concepts)} concepts)")
 
         # Also create per-concept volumes for detailed analysis

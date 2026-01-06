@@ -122,29 +122,7 @@ class Report:
     aligned_layers: list[AlignmentPair]
 
 
-# =============================================================================
-# Legacy Compatibility Classes
-# =============================================================================
 
-
-@dataclass
-class ConvergenceMetric:
-    """Legacy: Per-family convergence metric at a training step."""
-
-    sequence_family: str
-    step: int
-    cosine_similarity: float
-    variance: float
-
-
-@dataclass
-class ConvergenceReport:
-    """Legacy: Overall convergence report for a model."""
-
-    model_id: str
-    metrics: list[ConvergenceMetric]
-    overall_mean_cosine: float
-    stable_families: list[str]
 
 
 # =============================================================================

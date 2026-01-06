@@ -29,8 +29,6 @@ import pytest
 from modelcypher.core.domain.geometry.invariant_convergence_analyzer import (
     AlignmentPair,
     AlignMode,
-    ConvergenceMetric,
-    ConvergenceReport,
     FamilyResult,
     InvariantConvergenceAnalyzer,
     Report,
@@ -274,29 +272,4 @@ class TestCSVExport:
         assert "fibonacci,5,0.950000" in lines[1]
 
 
-class TestLegacyInterface:
-    """Tests for backward compatibility."""
 
-    def test_convergence_metric_fields(self):
-        """ConvergenceMetric should have expected fields."""
-        metric = ConvergenceMetric(
-            sequence_family="fibonacci",
-            step=100,
-            cosine_similarity=0.85,
-            variance=0.01,
-        )
-
-        assert metric.sequence_family == "fibonacci"
-        assert metric.step == 100
-
-    def test_convergence_report_fields(self):
-        """ConvergenceReport should have expected fields."""
-        report = ConvergenceReport(
-            model_id="test-model",
-            metrics=[],
-            overall_mean_cosine=0.9,
-            stable_families=["fibonacci"],
-        )
-
-        assert report.model_id == "test-model"
-        assert report.stable_families == ["fibonacci"]

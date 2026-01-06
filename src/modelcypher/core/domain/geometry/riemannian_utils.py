@@ -85,8 +85,7 @@ from modelcypher.core.domain.geometry.riemannian_validation import (
     set_matrix_element,
 )
 
-# Legacy alias for backward compatibility
-_set_matrix_element = set_matrix_element
+
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -236,7 +235,7 @@ __all__ = [
     "derive_k_neighbors",
     "safe_arithmetic_mean",
     "set_matrix_element",
-    "_set_matrix_element",  # Legacy alias
+
     # Convenience functions
     "frechet_mean",
     "geodesic_distance_matrix",
