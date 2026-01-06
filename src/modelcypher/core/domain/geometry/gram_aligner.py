@@ -84,6 +84,7 @@ from modelcypher.core.domain.geometry.cka import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     machine_epsilon,
     regularization_epsilon,
 )
@@ -493,12 +494,81 @@ class GramAligner:
             logger.warning("HYBRID ALIGNMENT: Sample transform T contains NaN, using direct projection")
             F = b.matmul(source_pinv, target)  # [d_s, d_t]
         elif d_s == d_t:
+            # Same dimension: use closed-form T alignment
             aligned_source_samples = b.matmul(T, source)  # [n, d_s]
             F = b.matmul(source_pinv, aligned_source_samples)  # [d_s, d_s]
         else:
-            # Cross-dimensional: F maps [d_s] -> [d_t]
-            F = b.matmul(source_pinv, target)  # [d_s, d_t]
-        b.eval(F)
+            # =================================================================
+            # SPECTRAL CROSS-DIMENSIONAL ALIGNMENT
+            # =================================================================
+            # Key insight: Gram matrices capture SHAPE (relative relationships),
+            # which is dimension-agnostic. A shape in 1000D can exist in 100D
+            # if it only uses 100 degrees of freedom.
+            #
+            # Strategy: Align principal axes via SVD, then direct projection.
+            # 1. SVD of source: reveals structure in source feature space
+            # 2. SVD of target: reveals structure in target feature space  
+            # 3. F = V_s @ scale @ V_t.T aligns the axes directly
+            #
+            # This is closed-form and preserves the geometric structure.
+            
+            # Apply sample transform T first to align in sample space
+            aligned_source = b.matmul(T, source)  # [n, d_s] - aligned samples
+            b.eval(aligned_source)
+            
+            # SVD of aligned source and target
+            # geodesic_svd returns (U, S, Vt) with S as 1D singular values
+            U_s, S_s, Vt_s = geodesic_svd(b, aligned_source)  # U:[n,k], S:[k], Vt:[k,d_s]
+            U_t, S_t, Vt_t = geodesic_svd(b, target)  # U:[n,k], S:[k], Vt:[k,d_t]
+            b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
+            
+            # Determine shared rank (min of non-zero singular values)
+            k_s = int(b.shape(S_s)[0])
+            k_t = int(b.shape(S_t)[0])
+            k = min(k_s, k_t, n_s)  # Shared dimensions
+            
+            # Truncate to shared rank using array indexing
+            U_s_k = U_s[:n_s, :k]  # [n, k]
+            U_t_k = U_t[:n_t, :k]  # [n, k]
+            Vt_s_k = Vt_s[:k, :d_s]  # [k, d_s]
+            Vt_t_k = Vt_t[:k, :d_t]  # [k, d_t]
+            S_s_k = S_s[:k]  # [k]
+            S_t_k = S_t[:k]  # [k]
+            b.eval(U_s_k, U_t_k, Vt_s_k, Vt_t_k, S_s_k, S_t_k)
+            
+            # Orthogonal Procrustes: find rotation R that aligns U_s to U_t
+            # R = argmin ||U_s @ R - U_t||_F = V @ U.T from SVD(U_s.T @ U_t)
+            M = b.matmul(b.transpose(U_s_k), U_t_k)  # [k, k]
+            U_m, S_m, Vt_m = geodesic_svd(b, M)
+            b.eval(U_m, S_m, Vt_m)
+            R = b.matmul(U_m, Vt_m)  # [k, k] orthogonal rotation
+            b.eval(R)
+            
+            # Scale factors: ratio of singular values preserves magnitude
+            # s_ratio = S_t / S_s (with regularization for stability)
+            eps = regularization_epsilon(b, S_s_k)
+            S_s_safe = b.add(S_s_k, eps)
+            s_ratio = b.divide(S_t_k, S_s_safe)  # [k]
+            b.eval(s_ratio)
+            
+            # Construct F = V_s.T @ diag(s_ratio) @ R @ V_t
+            # F: [d_s, d_t] maps source features to target features
+            # Step by step:
+            # 1. V_s.T: [d_s, k] - project to source principal components
+            # 2. diag(s_ratio): [k, k] - scale to match target magnitudes
+            # 3. R: [k, k] - rotate to align with target axes
+            # 4. V_t: [k, d_t] - project to target feature space
+            V_s = b.transpose(Vt_s_k)  # [d_s, k]
+            V_t = b.transpose(Vt_t_k)  # [d_t, k]
+            
+            # Apply scaling: V_s @ diag(s_ratio)
+            scaled_V_s = b.multiply(V_s, b.reshape(s_ratio, (1, k)))  # [d_s, k]
+            
+            # Apply rotation and final projection: scaled_V_s @ R @ V_t.T
+            F = b.matmul(b.matmul(scaled_V_s, R), Vt_t_k)  # [d_s, d_t]
+            b.eval(F)
+            
+            logger.info("SPECTRAL ALIGNMENT: Cross-dim initialized via SVD+Procrustes (k=%d)", k)
         
         # Check for NaN in F initialization
         F_sum = b.sum(F)
