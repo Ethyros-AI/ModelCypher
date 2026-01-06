@@ -679,10 +679,10 @@ class TestComputeCKA:
         X = backend.random_normal((12, 8))
         Y = backend.random_normal((12, 8))
 
-        result = compute_cka(X, Y, backend, use_linear_kernel=True)
+        # Use compute_cka_backend for linear CKA
+        cka = compute_cka_backend(X, Y, backend)
 
-        assert result.is_valid
-        _assert_unit_interval(result.cka, _scalar_tol(backend))
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_cka_rbf_kernel(self, any_backend: "Backend") -> None:
         """CKA with RBF kernel should work."""
@@ -691,7 +691,8 @@ class TestComputeCKA:
         X = backend.random_normal((12, 8))
         Y = backend.random_normal((12, 8))
 
-        result = compute_cka(X, Y, backend, use_linear_kernel=False)
+        # compute_cka now defaults to RBF kernel
+        result = compute_cka(X, Y, backend)
 
         assert result.is_valid
         _assert_unit_interval(result.cka, _scalar_tol(backend))

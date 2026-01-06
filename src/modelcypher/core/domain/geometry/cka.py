@@ -886,7 +886,6 @@ def compute_cka_from_lists(
         x_arr,
         y_arr,
         backend,
-        use_linear_kernel=True,
         estimator=estimator,
         feature_bias_correction=feature_bias_correction,
     )
@@ -1143,12 +1142,10 @@ class CKAComputer:
         Returns:
             CKA similarity value in [0, 1]
         """
-        result = compute_cka(
+        return compute_cka_backend(
             x, y, self._backend,
-            use_linear_kernel=True,
             estimator=self._estimator,
         )
-        return result.cka
 
     def rbf_cka(self, x: "Array", y: "Array") -> float:
         """Compute RBF kernel CKA between activation matrices.
@@ -1162,7 +1159,6 @@ class CKAComputer:
         """
         result = compute_cka(
             x, y, self._backend,
-            use_linear_kernel=False,
             estimator=self._estimator,
         )
         return result.cka
@@ -1178,11 +1174,24 @@ class CKAComputer:
         Returns:
             CKAResult with CKA similarity and HSIC values
         """
-        return compute_cka(
-            x, y, self._backend,
-            use_linear_kernel=use_linear,
-            estimator=self._estimator,
-        )
+        if use_linear:
+            # Linear kernel via compute_cka_backend
+            cka_val = compute_cka_backend(
+                x, y, self._backend,
+                estimator=self._estimator,
+            )
+            return CKAResult(
+                cka=cka_val,
+                hsic_xy=0.0,
+                hsic_xx=0.0,
+                hsic_yy=0.0,
+                sample_count=x.shape[0],
+            )
+        else:
+            return compute_cka(
+                x, y, self._backend,
+                estimator=self._estimator,
+            )
 
     def from_grams(self, gram_a: "Array", gram_b: "Array") -> float:
         """Compute CKA from pre-computed Gram matrices.

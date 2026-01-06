@@ -379,7 +379,8 @@ class TestCKAEdgeCases:
         x = _random_matrix(backend, 20, 10, 42)
         y = _random_matrix(backend, 20, 10, 43)
 
-        result = compute_cka(x, y, backend, use_linear_kernel=False)
+        # compute_cka now defaults to RBF kernel
+        result = compute_cka(x, y, backend)
         tol = _scalar_tol(backend)
         assert -tol <= result.cka <= 1.0 + tol
         assert result.is_valid

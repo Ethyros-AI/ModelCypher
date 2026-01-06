@@ -339,49 +339,6 @@ class TestProcrustesAlign:
         )
         assert abs(error - expected) < eps
 
-
-# =============================================================================
-# Unit Tests: _permutation_align
-# =============================================================================
-
-
-class TestPermutationAlign:
-    """Tests for permutation alignment."""
-
-    def test_result_has_valid_structure(self, backend):
-        """Result should have permutation matrix and signs."""
-        default_backend = get_default_backend()
-        default_backend.random_seed(42)
-        source = default_backend.random_normal((8, 16))
-        target = default_backend.random_normal((8, 16))
-        default_backend.eval(source, target)
-        source_list = default_backend.tolist(source)
-        target_list = default_backend.tolist(target)
-        source_arr = backend.array(source_list)
-        target_arr = backend.array(target_list)
-
-        result = LoRAAdapterMerger._permutation_align(
-            source_arr, target_arr, backend
-        )
-
-        assert hasattr(result, 'permutation')
-        assert hasattr(result, 'signs')
-        assert hasattr(result, 'match_quality')
-
-    def test_self_alignment_high_quality(self, backend):
-        """Self-alignment should have high quality."""
-        default_backend = get_default_backend()
-        default_backend.random_seed(42)
-        matrix = default_backend.random_normal((8, 16))
-        default_backend.eval(matrix)
-        matrix_list = default_backend.tolist(matrix)
-        arr = backend.array(matrix_list)
-
-        result = LoRAAdapterMerger._permutation_align(arr, arr, backend)
-
-        assert abs(result.match_quality - 1.0) < _div_eps()
-
-
 # =============================================================================
 # Edge Case Tests
 # =============================================================================

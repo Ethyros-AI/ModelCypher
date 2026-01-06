@@ -79,7 +79,6 @@ class TestMergeReportDataclass:
             rank=16,
             scale=1.5,
             mean_procrustes_error=0.05,
-            mean_permutation_cka=0.92,
             total_merged_parameters=1000000,
             layer_count=32,
             mean_merge_cka=0.87,
@@ -91,7 +90,6 @@ class TestMergeReportDataclass:
         assert report.rank == 16
         assert report.scale == 1.5
         assert report.mean_procrustes_error == 0.05
-        assert report.mean_permutation_cka == 0.92
         assert report.total_merged_parameters == 1000000
         assert report.layer_count == 32
         assert report.mean_merge_cka == 0.87

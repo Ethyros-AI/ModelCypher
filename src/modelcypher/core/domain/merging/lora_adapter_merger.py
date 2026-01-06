@@ -54,7 +54,6 @@ class MergeReport:
     rank: int
     scale: float
     mean_procrustes_error: float
-    mean_permutation_cka: float
     total_merged_parameters: int
     layer_count: int
     mean_merge_cka: float
@@ -104,7 +103,6 @@ class LoRAAdapterMerger:
             rank=rank,
             scale=scale,
             mean_procrustes_error=float(mean_error),
-            mean_permutation_cka=float(mean_cka),
             total_merged_parameters=int(merged_parameters),
             layer_count=len(layer_indices),
             mean_merge_cka=float(mean_cka),
@@ -261,19 +259,6 @@ class LoRAAdapterMerger:
         return aligned, error
 
     @staticmethod
-    def _permutation_align(
-        source: "Array",
-        target: "Array",
-        backend: "Backend",
-    ):
-        from modelcypher.core.domain.geometry.permutation_aligner import PermutationAligner
-
-        source_arr = backend.array(source)
-        target_arr = backend.array(target)
-        backend.eval(source_arr, target_arr)
-        return PermutationAligner.align(source_arr, target_arr, backend=backend)
-
-    @staticmethod
     def _compute_cka(
         source: "Array",
         target: "Array",
@@ -283,7 +268,6 @@ class LoRAAdapterMerger:
             source,
             target,
             backend,
-            use_linear_kernel=True,
             estimator=HSICEstimator.AUTO,
             feature_bias_correction=True,
         )
