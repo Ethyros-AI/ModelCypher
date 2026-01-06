@@ -947,12 +947,55 @@ def _probe_precise(
         n_target = len(target_layers)
 
         if n_source > 0 and n_target > 0:
+            # Pre-detect degenerate source layers (RBF Gram produces NaN)
+            # These will be marked with -999 penalty so Hungarian skips them
+            degenerate_sources: set[int] = set()
+            
+            logger.info("PROBE: Pre-detecting degenerate source layers...")
+            for src_idx, src_layer in enumerate(source_layers):
+                src_list = source_layer_activations[src_layer]
+                if len(src_list) < 2:
+                    degenerate_sources.add(src_idx)
+                    continue
+                try:
+                    # Test RBF Gram matrix for degeneracy (same as GramAligner uses)
+                    src_stacked = b.stack(src_list[:min(len(src_list), 50)], axis=0)
+                    src_stacked = b.astype(src_stacked, "float32")
+                    b.eval(src_stacked)
+                    
+                    # Compute RBF Gram and check for NaN
+                    from modelcypher.core.domain.geometry.cka import rbf_gram_matrix
+                    gram = rbf_gram_matrix(src_stacked, b)
+                    gram_sum = b.sum(gram)
+                    b.eval(gram_sum)
+                    sum_val = float(b.to_scalar(gram_sum))
+                    
+                    if sum_val != sum_val:  # NaN check
+                        degenerate_sources.add(src_idx)
+                        logger.warning("PROBE: Source layer %d (idx %d) has degenerate RBF Gram", 
+                                     src_layer, src_idx)
+                except Exception:
+                    degenerate_sources.add(src_idx)
+                    logger.warning("PROBE: Source layer %d (idx %d) failed Gram check", 
+                                 src_layer, src_idx)
+            
+            if degenerate_sources:
+                logger.info("PROBE: Found %d degenerate source layers: %s", 
+                          len(degenerate_sources), list(degenerate_sources))
+            
             # Build full CKA similarity matrix [n_source x n_target]
             # Use RAW CKA for layer matching (to find correspondence)
             # Then use GramAligner for the matched pairs (to achieve CKA = 1.0)
             cka_matrix: list[list[float]] = []
-            for src_layer in source_layers:
+            for src_idx, src_layer in enumerate(source_layers):
                 row: list[float] = []
+                
+                # Skip degenerate source layers (apply penalty for all targets)
+                if src_idx in degenerate_sources:
+                    row = [-999.0] * n_target
+                    cka_matrix.append(row)
+                    continue
+                    
                 src_list = source_layer_activations[src_layer]
                 for tgt_layer in target_layers:
                     tgt_list = target_layer_activations[tgt_layer]
@@ -1025,6 +1068,7 @@ def _probe_precise(
             # Build 1:1 alignment tasks (target → source)
             # Each target layer gets exactly one source layer
             alignment_tasks: list[tuple[int, list[int]]] = []
+            skipped_targets: list[int] = []  # Targets with degenerate sources (no transfer)
             
             for tgt_idx in range(n_target):
                 # Find which source was assigned to this target
@@ -1038,17 +1082,40 @@ def _probe_precise(
                             best_src_idx = src_idx
                 
                 if best_src_idx is not None:
+                    # Check if source is degenerate (no denser representation to transfer)
+                    if best_src_idx in degenerate_sources:
+                        logger.info(
+                            "PROBE: Skipping target layer %d (source %d is degenerate, no transfer)",
+                            target_layers[tgt_idx], source_layers[best_src_idx]
+                        )
+                        skipped_targets.append(tgt_idx)
+                        continue
                     # 1:1 mapping: single source layer (NOT a list of multiple)
                     alignment_tasks.append((tgt_idx, [best_src_idx]))
                 else:
-                    # No source was assigned - use fallback (best CKA source)
-                    best_src = 0
+                    # No source was assigned - use fallback (best CKA source that's not degenerate)
+                    best_src = None
                     best_cka = -1.0
                     for src_idx in range(n_source):
+                        if src_idx in degenerate_sources:
+                            continue
                         if cka_matrix[src_idx][tgt_idx] > best_cka:
                             best_cka = cka_matrix[src_idx][tgt_idx]
                             best_src = src_idx
-                    alignment_tasks.append((tgt_idx, [best_src]))
+                    if best_src is not None:
+                        alignment_tasks.append((tgt_idx, [best_src]))
+                    else:
+                        logger.warning(
+                            "PROBE: Target layer %d has no valid source (all degenerate)",
+                            target_layers[tgt_idx]
+                        )
+                        skipped_targets.append(tgt_idx)
+            
+            if skipped_targets:
+                logger.info(
+                    "PROBE: Skipped %d target layers (degenerate source geometry): %s",
+                    len(skipped_targets), [target_layers[t] for t in skipped_targets]
+                )
 
             # Submit 1:1 alignments (now we have n_target tasks, not 7 groups)
             logger.info(
