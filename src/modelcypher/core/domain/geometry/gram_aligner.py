@@ -213,6 +213,7 @@ class GramAligner:
         max_iterations: int = 1000,  # Kept for backward compat
         tolerance: float | None = None,  # IGNORED
         regularization: float | None = None,  # IGNORED
+        max_steps: int = 50000,  # Max optimization steps for find_perfect_alignment
     ) -> None:
         """Initialize the aligner.
 
@@ -226,11 +227,14 @@ class GramAligner:
             IGNORED. Derived from dtype.
         regularization : float
             IGNORED. Derived from dtype.
+        max_steps : int
+            Maximum optimization steps for gradient descent. 50000 for precision, 5000 for speed.
         """
         self._backend = backend or get_default_backend()
         self._max_iterations = max_iterations
         self._tolerance = tolerance
         self._regularization = regularization
+        self._max_steps = max_steps
 
     def _identity_result(
         self, n: int, d: int, precision: float
@@ -370,7 +374,8 @@ class GramAligner:
         feature_transform, final_cka = self._optimize_alignment(
             source_activations,
             target_activations,
-            precision=precision
+            precision=precision,
+            max_steps=self._max_steps,
         )
         
         # Compute alignment error (1 - CKA)

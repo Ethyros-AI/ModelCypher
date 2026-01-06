@@ -1205,6 +1205,8 @@ def _probe_precise(
                     )
 
                 local_aligner = GramAligner(backend=b)
+                # Fast aligner for attention (5000 steps vs 50000) - good enough for trajectory guidance
+                fast_aligner = GramAligner(backend=b, max_steps=5000)
 
                 try:
                     # Stack source (for 1:1, this is just 1 source)
@@ -1287,7 +1289,7 @@ def _probe_precise(
                                 b.eval(src_q_combined, tgt_q_stacked)
                                 
                                 # Align Q attention
-                                q_alignment = local_aligner.find_perfect_alignment(
+                                q_alignment = fast_aligner.find_perfect_alignment(
                                     src_q_combined,
                                     tgt_q_stacked,
                                 )
@@ -1342,7 +1344,7 @@ def _probe_precise(
                                 
                                 b.eval(src_k_combined, tgt_k_stacked)
                                 
-                                k_alignment = local_aligner.find_perfect_alignment(
+                                k_alignment = fast_aligner.find_perfect_alignment(
                                     src_k_combined,
                                     tgt_k_stacked,
                                 )
@@ -1396,7 +1398,7 @@ def _probe_precise(
                                 
                                 b.eval(src_v_combined, tgt_v_stacked)
                                 
-                                v_alignment = local_aligner.find_perfect_alignment(
+                                v_alignment = fast_aligner.find_perfect_alignment(
                                     src_v_combined,
                                     tgt_v_stacked,
                                 )
