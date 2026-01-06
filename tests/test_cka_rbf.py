@@ -25,7 +25,7 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import (
     _compute_pairwise_squared_distances,
-    _rbf_gram_matrix,
+    rbf_gram_matrix,
     compute_cka,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -133,7 +133,7 @@ class TestRBFGramMatrix:
         """RBF Gram diagonal should be 1 (K(x,x) = 1)."""
         backend = get_default_backend()
         X = _random_matrix(backend, 10, 5, 42)
-        gram = _rbf_gram_matrix(X, backend)
+        gram = rbf_gram_matrix(X, backend)
         diag = backend.diag(gram)
         ones = backend.ones_like(diag)
 
@@ -143,7 +143,7 @@ class TestRBFGramMatrix:
         """RBF Gram matrix should be symmetric."""
         backend = get_default_backend()
         X = _random_matrix(backend, 10, 5, 42)
-        gram = _rbf_gram_matrix(X, backend)
+        gram = rbf_gram_matrix(X, backend)
         gram_T = backend.transpose(gram)
 
         assert _all_close(backend, gram, gram_T)
@@ -152,7 +152,7 @@ class TestRBFGramMatrix:
         """RBF kernel values should be in (0, 1]."""
         backend = get_default_backend()
         X = _random_matrix(backend, 10, 5, 42)
-        gram = _rbf_gram_matrix(X, backend)
+        gram = rbf_gram_matrix(X, backend)
 
         assert _all_in_unit_interval(backend, gram)
 
@@ -174,8 +174,8 @@ class TestRBFGramMatrix:
         else:
             sigma_large = sigma_small
 
-        gram_small = _rbf_gram_matrix(X, backend, sigma=sigma_small)
-        gram_large = _rbf_gram_matrix(X, backend, sigma=sigma_large)
+        gram_small = rbf_gram_matrix(X, backend, sigma=sigma_small)
+        gram_large = rbf_gram_matrix(X, backend, sigma=sigma_large)
 
         backend.eval(gram_small, gram_large)
         small_01 = float(backend.to_scalar(gram_small[0, 1]))
@@ -192,7 +192,7 @@ class TestCKARBFKernel:
         backend = get_default_backend()
         X = _random_matrix(backend, 20, 10, 42)
 
-        result = compute_cka(X, X, backend, use_linear_kernel=False)
+        result = compute_cka(X, X, backend)
 
         tol = _scalar_tol(backend)
         assert abs(result.cka - 1.0) <= tol
@@ -208,8 +208,8 @@ class TestCKARBFKernel:
         Y_similar = X + noise
         Y_random = _random_matrix(backend, 20, 10, 44)
 
-        result_similar = compute_cka(X, Y_similar, backend, use_linear_kernel=False)
-        result_random = compute_cka(X, Y_random, backend, use_linear_kernel=False)
+        result_similar = compute_cka(X, Y_similar, backend)
+        result_random = compute_cka(X, Y_random, backend)
 
         tol = _scalar_tol(backend)
         assert result_similar.is_valid
@@ -222,7 +222,7 @@ class TestCKARBFKernel:
         X = _random_matrix(backend, 20, 10, 42)
         Y = _random_matrix(backend, 20, 10, 43)
 
-        result = compute_cka(X, Y, backend, use_linear_kernel=False)
+        result = compute_cka(X, Y, backend)
 
         assert result.is_valid
 
@@ -237,8 +237,8 @@ class TestCKARBFKernel:
         Q, _ = backend.qr(random_mat)
         Y_rotated = backend.matmul(Y, Q)
 
-        result_original = compute_cka(X, Y, backend, use_linear_kernel=False)
-        result_rotated = compute_cka(X, Y_rotated, backend, use_linear_kernel=False)
+        result_original = compute_cka(X, Y, backend)
+        result_rotated = compute_cka(X, Y_rotated, backend)
 
         tol = _scalar_tol(backend)
         assert abs(result_original.cka - result_rotated.cka) <= tol
@@ -249,7 +249,7 @@ class TestCKARBFKernel:
         X = _random_matrix(backend, 20, 10, 42)
         Y = _random_matrix(backend, 20, 15, 43)
 
-        result = compute_cka(X, Y, backend, use_linear_kernel=False)
+        result = compute_cka(X, Y, backend)
 
         assert 0.0 <= result.cka <= 1.0
         assert result.is_valid
@@ -264,14 +264,12 @@ class TestCKARBFKernel:
         Y_similar = X + noise
         Y_random = _random_matrix(backend, 20, 10, 44)
 
-        result_linear_sim = compute_cka(X, Y_similar, backend, use_linear_kernel=True)
-        result_linear_rand = compute_cka(X, Y_random, backend, use_linear_kernel=True)
-        result_rbf_sim = compute_cka(X, Y_similar, backend, use_linear_kernel=False)
-        result_rbf_rand = compute_cka(X, Y_random, backend, use_linear_kernel=False)
+        # Both use RBF kernel now (default)
+        result_sim = compute_cka(X, Y_similar, backend)
+        result_rand = compute_cka(X, Y_random, backend)
 
         tol = _scalar_tol(backend)
-        assert result_linear_sim.cka >= result_linear_rand.cka - tol
-        assert result_rbf_sim.cka >= result_rbf_rand.cka - tol
+        assert result_sim.cka >= result_rand.cka - tol
 
     def test_rbf_small_sample_count(self):
         """RBF CKA should handle small sample counts."""
@@ -279,7 +277,7 @@ class TestCKARBFKernel:
         X = _random_matrix(backend, 3, 10, 42)
         Y = _random_matrix(backend, 3, 10, 43)
 
-        result = compute_cka(X, Y, backend, use_linear_kernel=False)
+        result = compute_cka(X, Y, backend)
 
         assert 0.0 <= result.cka <= 1.0
         assert result.sample_count == 3

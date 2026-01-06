@@ -796,7 +796,6 @@ def compute_cka_backend(
             x,
             y,
             backend,
-            use_linear_kernel=True,
             estimator=estimator,
             feature_bias_correction=feature_bias_correction,
         )
