@@ -79,6 +79,7 @@ from modelcypher.core.domain.geometry.cka import (
     compute_cka_backend,
     compute_cka_from_centered_grams,
     rbf_gram_matrix,
+    rbf_gram_matrix_with_sigma,
     HSICEstimator,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -411,6 +412,11 @@ class GramAligner:
         1. Compute closed-form sample transform T = K_t^{1/2} @ K_s^{-1/2}
         2. Initialize F from F_init = pinv(source) @ (T @ source)
         3. Refine F via geodesic gradient descent with geodesic Gram distance loss
+        
+        OPTIMIZATION: Target Gram matrix is computed ONCE and cached. The same
+        sigma (bandwidth) is reused for projected source to ensure comparable
+        geometry. This maintains full geodesic precision while avoiding redundant
+        O(n³) geodesic distance computation for the unchanging target.
         """
         b = self._backend
         n_s, d_s = b.shape(source)
@@ -418,12 +424,25 @@ class GramAligner:
         
         logger.info("HYBRID ALIGNMENT: Computing geodesic Gram matrices...")
         
-        # Step 1: Compute geodesic Gram matrices
-        K_s = rbf_gram_matrix(source, b)
-        K_t = rbf_gram_matrix(target, b)
+        # Step 1: Compute geodesic Gram matrices with sigma caching
+        # OPTIMIZATION: Use rbf_gram_matrix_with_sigma to capture the bandwidth
+        # The target never changes, so compute its Gram and sigma ONCE
+        K_s, sigma_s = rbf_gram_matrix_with_sigma(source, b)
+        K_t, sigma_t = rbf_gram_matrix_with_sigma(target, b)
+        
+        # Use target sigma for consistency in loss computation
+        # This ensures source projections are compared at the same geometric scale
+        shared_sigma = sigma_t
+        
         K_s_c = _center_gram_matrix(K_s, b)
         K_t_c = _center_gram_matrix(K_t, b)
         b.eval(K_s_c, K_t_c)
+        
+        # Pre-compute target norm (used in every loss evaluation)
+        reg_eps = regularization_epsilon(b, K_t_c)
+        target_norm_sq_base = b.sum(K_t_c * K_t_c)
+        b.eval(target_norm_sq_base)
+        target_norm_sq = float(b.to_scalar(target_norm_sq_base)) + reg_eps
         
         # Step 2: Compute closed-form sample transform T
         logger.info("HYBRID ALIGNMENT: Computing closed-form sample transform T...")
@@ -436,10 +455,6 @@ class GramAligner:
         T_has_nan = float(b.to_scalar(T_sum)) != float(b.to_scalar(T_sum))  # NaN check
         
         # Step 3: Initialize F from closed-form projection
-        # The ideal: source @ F should produce activations whose Gram = T @ K_s @ T.T = K_t
-        # Closed-form projection: F_init = pinv(source) @ (T @ source)
-        # But T is in sample space, so we compute: aligned_source = T @ source
-        # F_init = pinv(source) @ aligned_source
         logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
         
         if T_has_nan:
@@ -452,8 +467,6 @@ class GramAligner:
             F = b.matmul(F, aligned_source_samples)  # [d_s, d_s]
         else:
             # Cross-dimensional: F maps [d_s] -> [d_t]
-            # We want source @ F to approximate target geometry
-            # Use: F = pinv(source) @ target (direct mapping to target space)
             F = b.matmul(b.pinv(source), target)  # [d_s, d_t]
         b.eval(F)
         
@@ -464,27 +477,17 @@ class GramAligner:
         
         if F_has_nan:
             logger.warning("HYBRID ALIGNMENT: Initial F contains NaN, using small random fallback")
-            # Use small random values (MLX can't VJP through zeros or eye in some cases)
             if d_s == d_t:
-                # Small perturbation of identity
                 F = b.add(b.eye(d_s), b.multiply(0.01, b.random_normal((d_s, d_t))))
             else:
-                # Small random values (not zeros - VJP fails with scatter_axis)
                 F = b.multiply(0.01, b.random_normal((d_s, d_t)))
             b.eval(F)
         
         logger.info("HYBRID ALIGNMENT: Starting geodesic gradient refinement...")
         
-        # Compute robust epsilon for numerical stability
-        reg_eps = regularization_epsilon(b, K_t_c)
-        target_norm_sq_base = b.sum(K_t_c * K_t_c)
-        b.eval(target_norm_sq_base)
-        target_norm_sq = float(b.to_scalar(target_norm_sq_base)) + reg_eps
-        
         # Check for degenerate target (near-zero Gram norm)
         if target_norm_sq < reg_eps * 10:
             logger.warning("HYBRID ALIGNMENT: Target Gram norm near-zero, using identity-like transform")
-            # Return identity-like transform for degenerate case
             if d_s == d_t:
                 F = b.eye(d_s)
             else:
@@ -492,12 +495,15 @@ class GramAligner:
             return F, 0.0  # CKA = 0 for degenerate case
         
         # Step 4: Define loss as geodesic distance to target Gram
+        # OPTIMIZATION: K_t_c and target_norm_sq are CAPTURED from outer scope
+        # They are computed once, not recomputed in every loss evaluation
         def loss_fn(F_matrix):
             # Project Source
             projected = b.matmul(source, F_matrix)
             
-            # Compute geodesic Gram of projected source
-            K_proj = rbf_gram_matrix(projected, b)
+            # Compute geodesic Gram of projected source with SAME sigma as target
+            # This ensures consistent bandwidth for comparable geometry
+            K_proj = rbf_gram_matrix(projected, b, sigma=shared_sigma)
             K_proj_c = _center_gram_matrix(K_proj, b)
             
             # Geodesic Gram distance: ||K_proj - K_t||_F^2 / ||K_t||_F^2

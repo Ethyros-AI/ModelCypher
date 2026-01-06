@@ -229,6 +229,66 @@ def rbf_gram_matrix(
     return gram
 
 
+def rbf_gram_matrix_with_sigma(
+    X: "Array",
+    backend: "Backend",
+    sigma: float | None = None,
+) -> tuple["Array", float]:
+    """
+    Compute RBF Gram matrix with geodesic distances AND return the sigma used.
+
+    This is useful for caching: compute sigma once for target activations,
+    then reuse it for projected source to ensure comparable bandwidth.
+
+    Args:
+        X: Data matrix [n_samples, n_features]
+        backend: Backend protocol implementation
+        sigma: RBF bandwidth. If None, uses median bandwidth (data-derived).
+
+    Returns:
+        Tuple of (RBF Gram matrix [n_samples, n_samples], sigma used)
+    """
+    distances = _compute_pairwise_squared_distances(X, backend)
+    n = X.shape[0]
+
+    computed_sigma: float
+    if sigma is None:
+        # Median bandwidth: sigma = median of non-zero distances
+        flat_dist = backend.reshape(distances, (-1,))
+
+        # Skip near-zeros (diagonal elements and exact duplicates)
+        div_eps = division_epsilon(backend, distances)
+        zero_mask = flat_dist <= div_eps
+        zero_count_arr = backend.sum(zero_mask)
+        backend.eval(zero_count_arr)
+        zero_count = int(backend.to_scalar(zero_count_arr))
+        total = n * n
+        non_zero_count = max(total - zero_count, 1)
+
+        # Compute median index BEFORE using it in argpartition
+        median_idx = min(zero_count + (non_zero_count // 2), total - 1)
+        partitioned = backend.argpartition(flat_dist, median_idx)
+        prefix = backend.take(partitioned, backend.arange(median_idx + 1), axis=0)
+        median_elem = backend.max(backend.take(flat_dist, prefix, axis=0))
+        median_elem = backend.squeeze(median_elem)
+        backend.eval(median_elem)
+        median_dist = float(backend.to_scalar(median_elem))
+        if median_dist > 0:
+            computed_sigma = sqrt_scalar(median_dist / 2, backend)
+        else:
+            computed_sigma = 1.0
+        # Use precision-aware minimum to avoid zero sigma
+        computed_sigma = max(computed_sigma, regularization_epsilon(backend, X))
+    else:
+        computed_sigma = sigma
+
+    # K = exp(-D / (2 * sigma^2))
+    neg_dist_scaled = -distances / (2 * computed_sigma**2)
+    gram = backend.exp(neg_dist_scaled)
+
+    return gram, computed_sigma
+
+
 def _center_gram_matrix(
     gram: "Array",
     backend: "Backend",

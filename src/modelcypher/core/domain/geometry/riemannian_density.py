@@ -972,7 +972,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> ConceptVolumeRelation:
-        """Compute relation between volumes using CKA (GPU-accelerated).
+        """Compute relation between volumes using geodesic CKA (GPU-accelerated).
 
         CKA (Centered Kernel Alignment) computes Gram matrices (n x n) which
         are dimension-agnostic - it measures representational similarity
@@ -980,6 +980,10 @@ class RiemannianDensityEstimator:
         - Works for same or different dimensions
         - Runs entirely on GPU
         - Captures invariant representational geometry
+
+        GEODESIC PRECISION: Uses RBF kernel CKA with geodesic distances in the
+        kernel K = exp(-d_geo²/2σ²). This respects manifold curvature, unlike
+        linear CKA (K = X @ X^T) which assumes flat geometry.
 
         CKA = 1.0 means identical representational geometry (exact alignment)
         CKA = 0.0 means orthogonal representations (no overlap)
@@ -991,7 +995,7 @@ class RiemannianDensityEstimator:
         Returns:
             ConceptVolumeRelation with CKA-derived metrics
         """
-        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_backend
+        from modelcypher.core.domain.geometry.cka import compute_cka
 
         backend = get_default_backend()
 
@@ -1004,16 +1008,14 @@ class RiemannianDensityEstimator:
                 f"Enable store_raw_activations=True when creating volumes."
             )
 
-        # Compute CKA - this is dimension-agnostic
-        # CKA uses Gram matrices K = X @ X.T (n x n) not raw dimensions
-        # Use BIASED estimator to avoid eigh on potentially ill-conditioned matrices
-        cka_similarity = compute_cka_backend(
+        # Compute geodesic RBF CKA - this is dimension-agnostic AND curvature-aware
+        # Uses geodesic distances in RBF kernel: K = exp(-d_geo²/2σ²)
+        cka_result = compute_cka(
             volume_a.raw_activations,
             volume_b.raw_activations,
-            backend=backend,
-            estimator=HSICEstimator.BIASED,
-            feature_bias_correction=False,
+            backend,
         )
+        cka_similarity = cka_result.cka if cka_result.is_valid else 0.0
 
         # CKA measures representational similarity:
         # - CKA ~ 1.0 = same representational structure = high overlap
