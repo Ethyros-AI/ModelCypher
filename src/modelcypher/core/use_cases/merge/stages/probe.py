@@ -223,6 +223,37 @@ def stage_probe(
         source_tokenizer = source_tokenizer or tokenizer
         target_tokenizer = target_tokenizer or tokenizer
 
+    # =========================================================================
+    # PRE-FLIGHT: Check tokenizer alignment before expensive probing
+    # =========================================================================
+    if source_tokenizer is not None and target_tokenizer is not None:
+        try:
+            from modelcypher.core.domain.geometry.dimensional_alignment import (
+                measure_1d_alignment,
+            )
+            alignment_1d = measure_1d_alignment(source_tokenizer, target_tokenizer)
+            
+            # Warn if tokenizer alignment is poor
+            if alignment_1d.vocab_jaccard < 0.5:
+                logger.warning(
+                    "PRE-FLIGHT: Low tokenizer overlap detected (Jaccard=%.2f). "
+                    "Cross-tokenizer merges may produce degraded outputs.",
+                    alignment_1d.vocab_jaccard,
+                )
+            elif alignment_1d.vocab_jaccard < 0.8:
+                logger.info(
+                    "PRE-FLIGHT: Moderate tokenizer overlap (Jaccard=%.2f). "
+                    "Some token-level misalignment expected.",
+                    alignment_1d.vocab_jaccard,
+                )
+            else:
+                logger.debug(
+                    "PRE-FLIGHT: Good tokenizer alignment (Jaccard=%.2f)",
+                    alignment_1d.vocab_jaccard,
+                )
+        except Exception as e:
+            logger.debug("PRE-FLIGHT: Skipped tokenizer check: %s", e)
+
     # ALWAYS use precise mode - this is not configurable.
     # Activation-level CKA is required for correct geometric alignment.
 

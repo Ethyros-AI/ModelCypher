@@ -322,3 +322,95 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
                 },
                 "installCommand": "poetry install -E viz",
             }
+
+    if "mc_geometry_visualize_fingerprints_2d" in tool_set:
+
+        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
+        def mc_geometry_visualize_fingerprints_2d(
+            modelPath: str,
+            output: str = "fingerprints_2d.json",
+            maxFeatures: int = 1200,
+        ) -> dict:
+            """Project model fingerprints to 2D for visualization.
+
+            Uses geodesic MDS to project high-dimensional fingerprint activations
+            to a 2D representation that preserves manifold structure. This enables
+            visualization of how different probes cluster in the model's
+            representation space.
+
+            Args:
+                modelPath: Path to the model directory
+                output: Output JSON file path for the projection data
+                maxFeatures: Maximum features to use (default 1200)
+
+            Returns:
+                Projection metadata including points and feature information
+            """
+            from modelcypher.core.domain.geometry.manifold_stitcher import (
+                ManifoldStitcher,
+                ProbeSpace,
+            )
+            from modelcypher.core.domain.geometry.model_fingerprints_projection import (
+                ModelFingerprintsProjection,
+                ProjectionMethod,
+            )
+
+            model_path = require_existing_directory(modelPath)
+            output_path = Path(output)
+
+            # Get fingerprints
+            stitcher = ManifoldStitcher()
+            fingerprints = stitcher.fingerprint_model(
+                str(model_path),
+                probe_space=ProbeSpace.prelogits_hidden,
+            )
+
+            if not fingerprints.fingerprints:
+                raise ValueError(f"No fingerprints generated for model at {model_path}")
+
+            # Project to 2D
+            projection = ModelFingerprintsProjection.project_2d(
+                fingerprints,
+                method=ProjectionMethod.pca,
+                max_features=maxFeatures,
+            )
+
+            # Format output
+            result_data = {
+                "modelId": projection.model_id,
+                "method": projection.method.value,
+                "maxFeatures": projection.max_features,
+                "featureCount": len(projection.features),
+                "pointCount": len(projection.points),
+                "points": [
+                    {
+                        "primeId": p.prime_id,
+                        "primeText": p.prime_text,
+                        "x": p.x,
+                        "y": p.y,
+                    }
+                    for p in projection.points
+                ],
+                "features": [
+                    {
+                        "layer": f.layer,
+                        "dimension": f.dimension,
+                        "frequency": f.frequency,
+                    }
+                    for f in projection.features[:50]  # Limit features in output
+                ],
+            }
+
+            # Save to file
+            import json
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(json.dumps(result_data, indent=2))
+
+            return {
+                "_schema": "mc.geometry.visualize.fingerprints2d.v1",
+                "modelPath": str(model_path),
+                "outputFile": str(output_path.absolute()),
+                "pointCount": len(projection.points),
+                "featureCount": len(projection.features),
+                "method": projection.method.value,
+            }

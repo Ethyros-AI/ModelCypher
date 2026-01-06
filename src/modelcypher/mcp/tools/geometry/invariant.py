@@ -142,3 +142,103 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                     },
                 },
             }
+
+    if "mc_geometry_anchor_invariance" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_anchor_invariance(
+            sourceModelPath: str,
+            targetModelPath: str,
+            anchorPrefix: str = "invariant:",
+            alignMode: str = "normalized",
+        ) -> dict:
+            """Analyze semantic anchor stability across model pairs.
+
+            Measures how consistently semantic anchors maintain their representation
+            geometry across different models. Uses geodesic cosine similarity on
+            the representation manifold.
+
+            Args:
+                sourceModelPath: Path to the source model.
+                targetModelPath: Path to the target model.
+                anchorPrefix: Prefix for anchor probes (default: "invariant:").
+                alignMode: Layer alignment mode - "layer" (exact) or "normalized" (proportional).
+            """
+            from modelcypher.core.domain.geometry.anchor_invariance_analyzer import (
+                AnchorInvarianceAnalyzer,
+                RunInput,
+            )
+            from modelcypher.core.domain.geometry.manifold_stitcher import (
+                ManifoldStitcher,
+                ProbeSpace,
+            )
+            from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
+                MetaphorConvergenceAnalyzer,
+            )
+
+            source_path = require_existing_directory(sourceModelPath)
+            target_path = require_existing_directory(targetModelPath)
+
+            # Map align mode string to enum
+            if alignMode.lower() == "layer":
+                mode = MetaphorConvergenceAnalyzer.AlignMode.LAYER
+            else:
+                mode = MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED
+
+            # Get fingerprints using ManifoldStitcher
+            stitcher = ManifoldStitcher()
+            source_fingerprints = stitcher.fingerprint_model(
+                str(source_path),
+                probe_space=ProbeSpace.prelogits_hidden,
+            )
+            target_fingerprints = stitcher.fingerprint_model(
+                str(target_path),
+                probe_space=ProbeSpace.prelogits_hidden,
+            )
+
+            # Create run input
+            run_input = RunInput(
+                id="run-1",
+                source=source_fingerprints,
+                target=target_fingerprints,
+            )
+
+            # Run analysis
+            analyzer = AnchorInvarianceAnalyzer()
+            report = analyzer.analyze(
+                runs=[run_input],
+                align_mode=mode,
+                anchor_prefix=anchorPrefix,
+            )
+
+            # Format response
+            return {
+                "_schema": "mc.geometry.anchor_invariance.v1",
+                "anchorPrefix": report.anchor_prefix,
+                "alignMode": report.align_mode.value,
+                "runCount": len(report.runs),
+                "summary": {
+                    "anchorCount": report.summary.anchor_count,
+                    "overallMeanCosine": report.summary.overall_mean_cosine,
+                    "topAnchors": [
+                        {
+                            "anchorId": a.anchor_id,
+                            "meanCosine": a.mean_cosine,
+                            "stabilityScore": a.stability_score,
+                        }
+                        for a in report.summary.top_anchors
+                    ],
+                },
+                "anchors": [
+                    {
+                        "anchorId": a.anchor_id,
+                        "prompt": a.prompt,
+                        "category": a.category,
+                        "family": a.family,
+                        "meanCosine": a.mean_cosine,
+                        "stdCosine": a.std_cosine,
+                        "stabilityScore": a.stability_score,
+                    }
+                    for a in report.anchors[:20]  # Limit to top 20
+                ],
+            }

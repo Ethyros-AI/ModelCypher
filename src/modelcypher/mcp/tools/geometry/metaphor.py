@@ -380,3 +380,82 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
                     "metaphorsFailed": len(results) - len(valid),
                 },
             }
+
+    if "mc_geometry_metaphor_generate_probes" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_metaphor_generate_probes(
+            domains: list[str] | None = None,
+            includeCrossCultural: bool = False,
+        ) -> dict:
+            """Generate conceptual metaphor probes for invariance testing.
+
+            Creates probe text pairs that test whether models preserve conceptual
+            structure across different metaphor surface realizations. Based on
+            Lakoff & Johnson's Conceptual Metaphor Theory.
+
+            Args:
+                domains: Optional list of domains to include (e.g., ["time", "emotion"]).
+                         If None, all domains are included.
+                includeCrossCultural: If True, also generate cross-cultural probe pairs.
+            """
+            from modelcypher.core.domain.geometry.metaphor_invariants import (
+                MetaphorDomain,
+                generate_all_metaphor_probes,
+                generate_cross_cultural_pairs,
+            )
+
+            # Parse domain filter
+            domain_set = None
+            if domains:
+                domain_set = set()
+                for d in domains:
+                    try:
+                        domain_set.add(MetaphorDomain(d.lower()))
+                    except ValueError:
+                        pass  # Skip invalid domains
+
+            # Generate probes
+            probes = generate_all_metaphor_probes(domain_set)
+            probe_list = [
+                {
+                    "probeId": p.probe_id,
+                    "domain": p.domain.value,
+                    "sourceConcept": p.source_concept,
+                    "culturalContext": p.cultural_context.value,
+                    "probeText": p.probe_text,
+                    "underlyingConcept": p.underlying_concept,
+                    "category": p.category,
+                }
+                for p in probes
+            ]
+
+            result: dict = {
+                "_schema": "mc.geometry.metaphor.probes.v1",
+                "probes": probe_list,
+                "count": len(probe_list),
+                "domains": [d.value for d in (domain_set or MetaphorDomain)],
+            }
+
+            if includeCrossCultural:
+                pairs = generate_cross_cultural_pairs()
+                result["crossCulturalPairs"] = [
+                    {
+                        "concept": pair.concept,
+                        "probeA": {
+                            "probeId": pair.probe_a.probe_id,
+                            "probeText": pair.probe_a.probe_text,
+                            "culturalContext": pair.probe_a.cultural_context.value,
+                        },
+                        "probeB": {
+                            "probeId": pair.probe_b.probe_id,
+                            "probeText": pair.probe_b.probe_text,
+                            "culturalContext": pair.probe_b.cultural_context.value,
+                        },
+                        "isCrossCultural": pair.is_cross_cultural,
+                    }
+                    for pair in pairs
+                ]
+                result["crossCulturalPairCount"] = len(pairs)
+
+            return result
