@@ -21,19 +21,19 @@ Merge pipeline stages.
 Each stage is a standalone module that can be imported and tested independently.
 The UnifiedGeometricMerger orchestrates these stages in sequence.
 
-Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
+Pipeline: PROBE → DENSITY → TRANSPLANT → VALIDATE
 
-Stage 1: PROBE - Build intersection map from probe responses
-Stage 2a: DENSITY - Knowledge density profiling for graft mask
-Stage 2b: PERMUTE - Git Re-Basin permutation alignment for MLP neurons (same-arch)
+Stage 1: PROBE - Build intersection map from probe responses, compute GramAlign transforms
+Stage 2: DENSITY - Knowledge density profiling for graft mask
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
 Stage 4: VALIDATE - Safety checks (numerical stability, refusal preservation, behavioral probes)
 
-REMOVED (proven broken):
+REMOVED (proven redundant):
+- PERMUTE: GramAligner's CKA=1.0 in geodesic RKHS subsumes discrete permutation alignment.
+  Permutation is a special case of continuous linear transforms already optimized by probe.
 - ROTATE/PROPAGATE: No mathematical guarantee of boundary preservation.
 
 References:
-- Git Re-Basin: Ainsworth et al. (2023) arXiv:2209.04836
 - AlphaEdit (null-space transplant): Fang et al. (2025) ICLR Outstanding Paper
 """
 
@@ -49,14 +49,8 @@ from .density import (
     DensityStageResult,
     stage_density as stage_density_impl,
 )
-from .permute import (
-    PermuteResult,
-    infer_hidden_dim,
-    stage_permute as stage_permute_impl,
-)
-# NOTE: ProbeConfig and PermuteConfig were REMOVED.
-# Probe always uses precise mode with all probes.
-# Permute always runs (no enable_permutation toggle).
+# NOTE: ProbeConfig was REMOVED - Probe always uses precise mode with all probes.
+# PERMUTE STAGE REMOVED: GramAligner's CKA=1.0 alignment subsumes permutation.
 from .transplant import (
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,
@@ -158,25 +152,6 @@ def stage_density(
     return result.graft_mask, result.metrics
 
 
-def stage_permute(
-    *,
-    source_weights: dict[str, Any],
-    target_weights: dict[str, Any],
-    intersection_map_obj: Any | None,
-    layer_confidences: dict[int, float],
-    backend: "Backend",
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Stage 2: Git Re-Basin permutation alignment."""
-    result = stage_permute_impl(
-        source_weights=source_weights,
-        target_weights=target_weights,
-        intersection_map_obj=intersection_map_obj,
-        layer_confidences=layer_confidences,
-        infer_hidden_dim_fn=infer_hidden_dim,
-        backend=backend,
-    )
-
-    return result.weights, result.metrics
 
 
 def stage_transplant(
@@ -278,13 +253,9 @@ __all__ = [
     # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
     "stage_probe",
     "ProbeResult",
-    # Stage 2a: Density
+    # Stage 2: Density
     "stage_density",
     "DensityStageResult",
-    # Stage 2b: Permute (PermuteConfig REMOVED - always runs)
-    "stage_permute",
-    "PermuteResult",
-    "infer_hidden_dim",
     # Stage 3: Transplant (geometry-driven, graft_mask only)
     "stage_transplant",
     "TransplantStageResult",

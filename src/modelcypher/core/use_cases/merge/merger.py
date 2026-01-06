@@ -19,26 +19,24 @@
 Unified Geometric Merge Pipeline.
 
 Pipeline:
-    PROBE → DENSITY → PERMUTE → TRANSPLANT
+    PROBE → DENSITY → TRANSPLANT
 
-Stage 1: PROBE - Build intersection map from probe responses
-Stage 2a: DENSITY - Knowledge density profiling for graft mask
-Stage 2b: PERMUTE - Git Re-Basin permutation alignment (same-arch only)
+Stage 1: PROBE - Build intersection map from probe responses, compute GramAlign transforms
+Stage 2: DENSITY - Knowledge density profiling for graft mask
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
 
 Key Principles:
 1. Null-space projection guarantees: A_boundary @ W' = A_boundary @ W_target
 2. Layer targeting enables surgical transplants
-3. Cross-dimensional projection via GRAM_TRANSPORT
-4. Permutation alignment reduces delta magnitude before transplant (same-arch)
+3. Cross-dimensional projection via GramAligner achieves CKA=1.0
+4. Geodesic RKHS alignment subsumes discrete permutation alignment
 
 References:
-- Git Re-Basin: Ainsworth et al. (2023) arXiv:2209.04836
 - AlphaEdit (null-space): Fang et al. (2025) ICLR Outstanding Paper
 
-REMOVED (proven broken):
-- rotate: No boundary preservation guarantee
-- ROTATE/PROPAGATE: Only served rotate
+REMOVED (proven redundant):
+- PERMUTE: GramAligner's CKA=1.0 in geodesic RKHS subsumes discrete permutation alignment
+- ROTATE/PROPAGATE: No boundary preservation guarantee
 
 Stage implementations are in merge/stages for modularity.
 """
@@ -74,10 +72,11 @@ class UnifiedGeometricMerger:
     """
     Unified geometric merge pipeline.
 
-    Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
+    Pipeline: PROBE → DENSITY → TRANSPLANT
 
-    - PERMUTE (Git Re-Basin): Solves permutation symmetry for same-architecture models.
-      Reduces delta magnitude before transplant by aligning neuron orderings.
+    - PROBE (GramAlign): Computes CKA=1.0 transforms in geodesic RKHS.
+      This continuous alignment subsumes discrete permutation alignment.
+    - DENSITY: Identifies regions where source is denser than target.
     - TRANSPLANT: Null-space constrained projection preserves boundary behavior
       while transferring knowledge.
 
@@ -141,20 +140,6 @@ class UnifiedGeometricMerger:
             extract_layer_index_fn=merge_helpers.extract_layer_index,
         )
 
-    def _stage_permute(
-        self,
-        source_weights: dict[str, Any],
-        target_weights: dict[str, Any],
-        intersection_map_obj: Any | None,
-        layer_confidences: dict[int, float],
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        return merge_stages.stage_permute(
-            source_weights=source_weights,
-            target_weights=target_weights,
-            intersection_map_obj=intersection_map_obj,
-            layer_confidences=layer_confidences,
-            backend=self._backend,
-        )
 
     def _stage_transplant(
         self,

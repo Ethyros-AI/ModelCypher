@@ -38,7 +38,6 @@ from .helpers import (
 from .models import UnifiedMergeResult
 from .stages import (
     stage_density,
-    stage_permute,
     stage_probe,
     stage_transplant,
 )
@@ -230,41 +229,10 @@ def run_merge(
     default_backend.clear_cache()
     logger.info("Cleared GPU cache after probe stage")
 
-    # =================================================================
-    # STAGE 2: PERMUTE (Git Re-Basin alignment for same-architecture)
-    # =================================================================
-    # Permutation alignment reduces delta magnitude before transplant.
-    # Only enabled for same-architecture models (hidden dimensions must match).
-    source_hidden = infer_hidden_dim(source_weights)
-    target_hidden = infer_hidden_dim(loaded_target_weights)
-    enable_permutation = source_hidden == target_hidden
-
-    if enable_permutation:
-        # PermuteConfig was REMOVED - permutation always runs when hidden dims match
-        logger.info("STAGE 2: PERMUTE (Git Re-Basin, hidden_dim=%d)", target_hidden)
-        permuted_weights, permute_metrics = stage_permute(
-            source_weights=source_weights,
-            target_weights=loaded_target_weights,
-            intersection_map_obj=intersection_map_obj,
-            layer_confidences=layer_confidences,
-            backend=backend,
-        )
-        if not permute_metrics.get("skipped"):
-            source_weights = permuted_weights
-            logger.info(
-                "PERMUTE: Aligned %d MLP blocks, mean_quality=%.3f",
-                permute_metrics.get("layers_permuted", 0),
-                permute_metrics.get("mean_quality", 0.0),
-            )
-        else:
-            logger.info("PERMUTE: Skipped (%s)", permute_metrics.get("reason", "unknown"))
-    else:
-        logger.info(
-            "STAGE 2: PERMUTE (skipped - hidden_dim mismatch: source=%d, target=%d)",
-            source_hidden,
-            target_hidden,
-        )
-        permute_metrics = {"skipped": True, "reason": "hidden_dim_mismatch"}
+    # PERMUTE STAGE REMOVED: GramAligner's CKA=1.0 alignment in geodesic RKHS
+    # subsumes discrete permutation alignment. Permutation matrices are a special
+    # case of continuous linear transforms already optimized by the probe stage.
+    permute_metrics = {"skipped": True, "reason": "subsumed_by_gram_alignment"}
 
     # =================================================================
     # STAGE 3: TRANSPLANT (Null-space constrained knowledge transfer)
