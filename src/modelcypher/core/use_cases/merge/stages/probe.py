@@ -958,7 +958,7 @@ def _probe_precise(
                     tgt_list = target_layer_activations[tgt_layer]
                     n_samples = min(len(src_list), len(tgt_list))
                     if n_samples < 2:
-                        row.append(0.0)
+                        row.append(-999.0)  # Penalty: strongly discourage in Hungarian
                         continue
                     try:
                         src_stacked = b.stack(src_list[:n_samples], axis=0)
@@ -976,15 +976,20 @@ def _probe_precise(
                             feature_bias_correction=True,
                         )
                         if cka_result.is_valid:
-                            row.append(
+                            cka_val = (
                                 cka_result.cka_corrected
                                 if cka_result.cka_corrected is not None
                                 else cka_result.cka
                             )
+                            # Check for NaN CKA (degenerate Gram matrix)
+                            if cka_val != cka_val:  # NaN check
+                                row.append(-999.0)  # Penalty for degenerate
+                            else:
+                                row.append(cka_val)
                         else:
-                            row.append(0.0)
+                            row.append(-999.0)  # Penalty for invalid
                     except Exception:
-                        row.append(0.0)
+                        row.append(-999.0)  # Penalty on exception
                 cka_matrix.append(row)
 
             # =========================================================================
