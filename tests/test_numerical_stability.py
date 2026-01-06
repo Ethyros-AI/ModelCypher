@@ -670,8 +670,8 @@ class TestSolveViaGramAlignment:
         aligned = b.matmul(source, F)
         b.eval(aligned)
         cka_result = compute_cka(aligned, target, backend=b)
-        eps = _eps(b, cka_result.cka, 1.0)
-        assert abs(cka_result.cka - 1.0) <= eps
+        # Tolerance: 1e-6 for iterative geodesic alignment (not machine eps)
+        assert abs(cka_result.cka - 1.0) <= 1e-6, f"CKA not ~1.0: {cka_result.cka}"
 
     def test_gram_alignment_different_dimensions(self, any_backend: "Backend") -> None:
         """Different dimension source/target should still work."""

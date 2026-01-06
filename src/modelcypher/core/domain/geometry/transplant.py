@@ -153,6 +153,25 @@ def compute_transplant_delta(
             preserved_fraction=1.0,
         )
 
+    # Early-exit: if source == target, there's nothing to transplant
+    # This handles the edge case where weights are already identical
+    diff = weight_source_aligned - weight_target
+    diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
+    b.eval(diff_norm_arr)
+    diff_norm = float(b.to_scalar(diff_norm_arr[0]))
+    reg = regularization_epsilon(b, weight_target)
+    if diff_norm <= reg:
+        return TransplantDeltaResult(
+            merged_weight=weight_target,
+            applied=True,
+            null_dim=0,
+            delta_norm=0.0,
+            filtered_norm=0.0,
+            projection_loss=0.0,
+            preserved_fraction=1.0,
+        )
+
+
     # ==========================================================================
     # ADDITIVE NULL-SPACE MERGING (GPU-only, no SVD/pinv/eigendecomp)
     # ==========================================================================

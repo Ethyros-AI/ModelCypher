@@ -54,6 +54,7 @@ class TestAtlasDomainEnum:
             "safety",
             "philosophical",
             "factual",
+            "physical",
         }
         actual = {d.value for d in AtlasDomain}
         assert actual == expected

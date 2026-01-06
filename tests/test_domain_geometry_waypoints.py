@@ -84,8 +84,8 @@ class TestAtlasDomain:
     def test_domain_iteration(self) -> None:
         """Should be able to iterate all domains."""
         domains = list(AtlasDomain)
-        # Now includes all AtlasDomain values (14 total)
-        assert len(domains) == 14
+        # Now includes all AtlasDomain values (15 total, including PHYSICAL)
+        assert len(domains) == 15
         assert AtlasDomain.SPATIAL in domains
         assert AtlasDomain.RELATIONAL in domains  # Was SOCIAL
         assert AtlasDomain.TEMPORAL in domains
@@ -94,6 +94,7 @@ class TestAtlasDomain:
         assert AtlasDomain.MATHEMATICAL in domains
         assert AtlasDomain.LOGICAL in domains
         assert AtlasDomain.COMPUTATIONAL in domains
+        assert AtlasDomain.PHYSICAL in domains
 
 
 # =============================================================================

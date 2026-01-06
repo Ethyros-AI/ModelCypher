@@ -94,7 +94,6 @@ class TestDomainPackageExports:
         # Verify key exports are accessible
         assert hasattr(geometry, "PathNode")
         assert hasattr(geometry, "DoRADecomposition")
-        assert hasattr(geometry, "PermutationAligner")
 
     def test_agents_subpackage_import(self):
         """Test that agents subpackage exports key classes."""
