@@ -950,8 +950,11 @@ def _probe_precise(
             # Pre-detect degenerate source layers (RBF Gram produces NaN)
             # These will be marked with -999 penalty so Hungarian skips them
             degenerate_sources: set[int] = set()
+            degenerate_targets: set[int] = set()  # Also check targets
             
             logger.info("PROBE: Pre-detecting degenerate source layers...")
+            from modelcypher.core.domain.geometry.cka import rbf_gram_matrix
+            
             for src_idx, src_layer in enumerate(source_layers):
                 src_list = source_layer_activations[src_layer]
                 if len(src_list) < 2:
@@ -964,7 +967,6 @@ def _probe_precise(
                     b.eval(src_stacked)
                     
                     # Compute RBF Gram and check for NaN
-                    from modelcypher.core.domain.geometry.cka import rbf_gram_matrix
                     gram = rbf_gram_matrix(src_stacked, b)
                     gram_sum = b.sum(gram)
                     b.eval(gram_sum)
@@ -982,6 +984,37 @@ def _probe_precise(
             if degenerate_sources:
                 logger.info("PROBE: Found %d degenerate source layers: %s", 
                           len(degenerate_sources), list(degenerate_sources))
+            
+            # Also check target layers for degeneracy
+            logger.info("PROBE: Pre-detecting degenerate target layers...")
+            for tgt_idx, tgt_layer in enumerate(target_layers):
+                tgt_list = target_layer_activations[tgt_layer]
+                if len(tgt_list) < 2:
+                    degenerate_targets.add(tgt_idx)
+                    continue
+                try:
+                    tgt_stacked = b.stack(tgt_list[:min(len(tgt_list), 50)], axis=0)
+                    tgt_stacked = b.astype(tgt_stacked, "float32")
+                    b.eval(tgt_stacked)
+                    
+                    gram = rbf_gram_matrix(tgt_stacked, b)
+                    gram_sum = b.sum(gram)
+                    b.eval(gram_sum)
+                    sum_val = float(b.to_scalar(gram_sum))
+                    
+                    if sum_val != sum_val:  # NaN check
+                        degenerate_targets.add(tgt_idx)
+                        logger.warning("PROBE: Target layer %d (idx %d) has degenerate RBF Gram", 
+                                     tgt_layer, tgt_idx)
+                except Exception:
+                    degenerate_targets.add(tgt_idx)
+                    logger.warning("PROBE: Target layer %d (idx %d) failed Gram check", 
+                                 tgt_layer, tgt_idx)
+            
+            if degenerate_targets:
+                logger.info("PROBE: Found %d degenerate target layers: %s", 
+                          len(degenerate_targets), 
+                          [target_layers[t] for t in degenerate_targets])
             
             # Build full CKA similarity matrix [n_source x n_target]
             # Use RAW CKA for layer matching (to find correspondence)
@@ -1071,6 +1104,15 @@ def _probe_precise(
             skipped_targets: list[int] = []  # Targets with degenerate sources (no transfer)
             
             for tgt_idx in range(n_target):
+                # Skip degenerate target layers (no geometry to match against)
+                if tgt_idx in degenerate_targets:
+                    logger.info(
+                        "PROBE: Skipping target layer %d (degenerate geometry)",
+                        target_layers[tgt_idx]
+                    )
+                    skipped_targets.append(tgt_idx)
+                    continue
+                    
                 # Find which source was assigned to this target
                 best_src_idx = None
                 best_cka = -1.0
@@ -1329,8 +1371,16 @@ def _probe_precise(
             weight_correlations[key] = 0.0
 
     cka_vals = list(layer_cka_scores.values())
-    mean_cka = sum(cka_vals) / len(cka_vals) if cka_vals else 0.0
-    min_cka = min(cka_vals) if cka_vals else 0.0
+    # Filter out NaN and near-zero CKA (failed alignments where transfer doesn't make sense)
+    valid_cka_vals = [v for v in cka_vals if v == v and v > 0.01]  # NaN check + threshold
+    failed_alignments = len(cka_vals) - len(valid_cka_vals)
+    if failed_alignments > 0:
+        logger.info(
+            "PROBE: Excluded %d layers with failed alignment (CKA < 0.01 or NaN) from barometer",
+            failed_alignments
+        )
+    mean_cka = sum(valid_cka_vals) / len(valid_cka_vals) if valid_cka_vals else 0.0
+    min_cka = min(valid_cka_vals) if valid_cka_vals else 0.0
     raw_cka_vals = list(layer_cka_scores_raw.values())
     mean_cka_raw = sum(raw_cka_vals) / len(raw_cka_vals) if raw_cka_vals else 0.0
     min_cka_raw = min(raw_cka_vals) if raw_cka_vals else 0.0
@@ -1339,10 +1389,11 @@ def _probe_precise(
     # For cross-architecture, DP alignment only matches a subset of layers.
     # missing_cka_layers is for reporting - it doesn't block exact alignment
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
-    # Exact alignment: all ALIGNED layers (in layer_cka_scores) have CKA >= 1.0 - threshold
-    # The threshold is sqrt(machine_epsilon) ≈ 1e-4 for float32
+    # Exact alignment: all VALID ALIGNED layers have CKA >= 1.0 - threshold
+    # Use sqrt(machine_epsilon) ≈ 1e-4 for float32 as strict threshold
+    # GramAligner now iterates up to 50000 steps to reach this precision
     precision_threshold = sqrt_scalar(machine_epsilon(b, b.array([1.0])), b)
-    perfect_alignment = bool(layer_cka_scores) and min_cka >= 1.0 - precision_threshold
+    perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
 
     metrics = {
         "probe_mode": "precise",

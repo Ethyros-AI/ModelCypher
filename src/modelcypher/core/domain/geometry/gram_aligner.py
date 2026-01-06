@@ -399,7 +399,7 @@ class GramAligner:
         target: "Array",
         precision: float,
         learning_rate: float = 0.1,
-        max_steps: int = 5000,
+        max_steps: int = 50000,  # Increased to allow full convergence to CKA=1.0
     ) -> tuple["Array", float]:
         """
         Find optimal linear transform F via HYBRID approach:
@@ -585,6 +585,12 @@ class GramAligner:
             step_update = b.multiply(current_lr, b.divide(m_hat, denom))
             F = b.subtract(F, step_update)
             b.eval(F)
+        else:
+            # max_steps exhausted without convergence
+            logger.warning(
+                "HYBRID ALIGNMENT: max_steps=%d exhausted without reaching CKA=1.0 (best=%.6f)",
+                max_steps, 1.0 - best_loss
+            )
         
         # Final true CKA computation
         projected = b.matmul(source, best_F)
