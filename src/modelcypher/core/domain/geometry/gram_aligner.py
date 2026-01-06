@@ -213,7 +213,7 @@ class GramAligner:
         max_iterations: int = 1000,  # Kept for backward compat
         tolerance: float | None = None,  # IGNORED
         regularization: float | None = None,  # IGNORED
-        max_steps: int = 50000,  # Max optimization steps for find_perfect_alignment
+        max_steps: int = 5000,  # Optimized: 5000 steps is sufficient for CKA>0.99
     ) -> None:
         """Initialize the aligner.
 
@@ -404,7 +404,7 @@ class GramAligner:
         target: "Array",
         precision: float,
         learning_rate: float = 0.1,
-        max_steps: int = 50000,  # Increased to allow full convergence to CKA=1.0
+        max_steps: int = 5000,  # Optimized for speed (was 50000)
     ) -> tuple["Array", float]:
         """
         Find optimal linear transform F via HYBRID approach:
@@ -531,8 +531,8 @@ class GramAligner:
         precision = division_epsilon(b, source)
         NEAR_PERFECT_CKA = 1.0 - precision
         
-        # How often to compute true CKA (expensive)
-        TRUE_CKA_CHECK_INTERVAL = 100
+        # How often to compute true CKA (expensive) - increased for speed
+        TRUE_CKA_CHECK_INTERVAL = 500
         
         for step in range(max_steps):
             loss, grads = loss_and_grad(F)

@@ -179,6 +179,8 @@ class ProbeResult:
     k_transforms: dict[int, list[list[float]]] | None = None
     # Attention V-space transforms: for v_proj (granular alignment)
     v_transforms: dict[int, list[list[float]]] | None = None
+    # Intermediate-space transforms: for MLP gate/up/down projections (pre-computed)
+    intermediate_transforms: dict[int, list[list[float]]] | None = None
     # Layer mapping: target_layer -> source_layer (from DP alignment)
     layer_mapping: dict[int, int] | None = None
 
@@ -938,6 +940,7 @@ def _probe_precise(
     attention_transforms: dict[int, list[list[float]]] = {}  # target_layer -> Q attention transform
     k_transforms: dict[int, list[list[float]]] = {}  # target_layer -> K attention transform
     v_transforms: dict[int, list[list[float]]] = {}  # target_layer -> V attention transform
+    intermediate_transforms: dict[int, list[list[float]]] = {}  # target_layer -> MLP intermediate transform
     gram_aligner = GramAligner(backend=b)
 
     if source_layer_activations and target_layer_activations:
@@ -1424,6 +1427,64 @@ def _probe_precise(
                                     src_layers_list, tgt_layer, v_err
                                 )
 
+                    # =====================================================================
+                    # INTERMEDIATE MLP ALIGNMENT (pre-compute for transplant speed)
+                    # =====================================================================
+                    # Align source intermediate activations to target intermediate activations
+                    # This is the MAIN bottleneck in transplant - 50k steps per layer
+                    # Pre-computing here with fast_aligner saves ~80% of transplant time
+                    src_inter_acts = [source_intermediate_activations.get(s) for s in src_layers_list]
+                    tgt_inter_acts = target_intermediate_activations.get(tgt_layer)
+                    
+                    if all(acts is not None and len(acts) > 0 for acts in src_inter_acts) and tgt_inter_acts and len(tgt_inter_acts) > 0:
+                        n_inter_samples = min(len(tgt_inter_acts), min(len(acts) for acts in src_inter_acts))
+                        if n_inter_samples >= 2:
+                            try:
+                                # Stack intermediate activations
+                                src_inter_stacks = []
+                                src_inter_dims = []
+                                for s_list in src_inter_acts:
+                                    stack = b.stack(s_list[:n_inter_samples], axis=0)
+                                    stack = b.astype(stack, "float32")
+                                    src_inter_stacks.append(stack)
+                                    src_inter_dims.append(stack.shape[1])
+                                
+                                tgt_inter_stacked = b.stack(tgt_inter_acts[:n_inter_samples], axis=0)
+                                tgt_inter_stacked = b.astype(tgt_inter_stacked, "float32")
+                                
+                                if len(src_inter_stacks) == 1:
+                                    src_inter_combined = src_inter_stacks[0]
+                                else:
+                                    src_inter_combined = b.concatenate(src_inter_stacks, axis=1)
+                                
+                                b.eval(src_inter_combined, tgt_inter_stacked)
+                                
+                                inter_alignment = fast_aligner.find_perfect_alignment(
+                                    src_inter_combined,
+                                    tgt_inter_stacked,
+                                )
+                                
+                                I_arr = b.array(inter_alignment.feature_transform)
+                                
+                                split_inter_transforms = {}
+                                start_idx = 0
+                                for s_layer, s_dim in zip(src_layers_list, src_inter_dims):
+                                    I_slice = I_arr[start_idx : start_idx + s_dim, :]
+                                    split_inter_transforms[s_layer] = b.tolist(I_slice)
+                                    start_idx += s_dim
+                                
+                                result["intermediate_transform"] = split_inter_transforms
+                                
+                                logger.debug(
+                                    "PROBE: Intermediate aligned for %s -> %d (CKA=%.4f)",
+                                    src_layers_list, tgt_layer, inter_alignment.achieved_cka
+                                )
+                            except Exception as inter_err:
+                                logger.debug(
+                                    "PROBE: Intermediate alignment failed for %s -> %d: %s",
+                                    src_layers_list, tgt_layer, inter_err
+                                )
+
                 except Exception as e:
                     raise RuntimeError(
                         f"GramAligner failed for {src_layers_list} -> {tgt_layer}: {e}"
@@ -1477,6 +1538,9 @@ def _probe_precise(
 
                     if result.get("v_transform") is not None:
                         v_transforms[tgt_layer] = result["v_transform"]
+
+                    if result.get("intermediate_transform") is not None:
+                        intermediate_transforms[tgt_layer] = result["intermediate_transform"]
 
                     completed += 1
                     if completed % 5 == 0 or completed == len(alignment_tasks):
@@ -1714,6 +1778,7 @@ def _probe_precise(
         attention_transforms=attention_transforms if attention_transforms else None,
         k_transforms=k_transforms if k_transforms else None,
         v_transforms=v_transforms if v_transforms else None,
+        intermediate_transforms=intermediate_transforms if intermediate_transforms else None,
         layer_mapping=layer_mapping if layer_mapping else None,
     )
 

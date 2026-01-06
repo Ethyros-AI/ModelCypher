@@ -303,6 +303,7 @@ def stage_transplant(
     attention_transforms: dict[int, list[list[float]]] | None = None,
     k_transforms: dict[int, list[list[float]]] | None = None,
     v_transforms: dict[int, list[list[float]]] | None = None,
+    intermediate_transforms: dict[int, list[list[float]]] | None = None,  # MLP intermediate
     layer_mapping: dict[int, int] | None = None,
     checkpoint_dir: Path | None = None,
     progress_callback: Callable[[str, int, int], None] | None = None,
