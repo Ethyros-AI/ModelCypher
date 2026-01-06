@@ -308,11 +308,18 @@ def stage_transplant(
     v_transforms: dict[int, list[list[float]]] | None = None,
     intermediate_transforms: dict[int, list[list[float]]] | None = None,  # MLP intermediate
     layer_mapping: dict[int, int] | None = None,
+    layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
     checkpoint_dir: Path | None = None,
     progress_callback: Callable[[str, int, int], None] | None = None,
     backend: "Backend | None" = None,
 ) -> TransplantStageResult:
-    """Stage 3: Null-space constrained transplant using probe activations."""
+    """Stage 3: Null-space constrained transplant using probe activations.
+    
+    Per DIMENSIONAL_COMPRESSION.md, layer_status controls selective transplant:
+    - "converged": Full knowledge transfer (CKA >= 0.9995)
+    - "boundary_preserved": Skip injection, preserve transitions (0.5 <= CKA < 0.9995)
+    - "skipped": Geometrically incompatible (CKA < 0.5)
+    """
     b = backend or get_default_backend()
     merged: dict[str, "Array"] = dict(target_weights)
 
@@ -709,8 +716,30 @@ def stage_transplant(
             logger.debug("TRANSPLANT: Skipping layer %d (already completed)", layer_idx)
             continue
 
-        # NOTE: transplant_layers filter was REMOVED. Always transplant all layers.
-        # The geometry determines which weights need transplanting, not arbitrary layer selection.
+        # =======================================================================
+        # BOUNDARY PRESERVATION: Per DIMENSIONAL_COMPRESSION.md
+        # =======================================================================
+        # Only inject knowledge for "converged" layers. For "boundary_preserved"
+        # and "skipped" layers, preserve the target weights to maintain transitions.
+        if layer_status:
+            status = layer_status.get(layer_idx, "converged")  # Default to converged if not specified
+            if status == "skipped":
+                weights_processed += len(weights_by_layer.get(layer_idx, []))
+                logger.info(
+                    "TRANSPLANT: Layer %d SKIPPED (geometry incompatible, CKA < 0.5)",
+                    layer_idx
+                )
+                metrics.setdefault("skipped_layers", []).append(layer_idx)
+                continue
+            elif status == "boundary_preserved":
+                weights_processed += len(weights_by_layer.get(layer_idx, []))
+                logger.info(
+                    "TRANSPLANT: Layer %d BOUNDARY PRESERVED (0.5 <= CKA < 0.9995)",
+                    layer_idx
+                )
+                metrics.setdefault("boundary_preserved_layers", []).append(layer_idx)
+                continue
+            # status == "converged" falls through to normal transplant
 
         layer_keys = weights_by_layer.get(layer_idx, [])
         if not layer_keys:

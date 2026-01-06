@@ -1692,6 +1692,40 @@ def _probe_precise(
     # sqrt(machine_epsilon) ≈ 1e-4 is too strict for practical cross-arch alignment.
     precision_threshold = 5e-4  # 0.9995 threshold
     perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
+    
+    # =========================================================================
+    # LAYER CLASSIFICATION: Per DIMENSIONAL_COMPRESSION.md philosophy
+    # =========================================================================
+    # - "converged": CKA >= 1.0 - threshold → Full knowledge transfer
+    # - "boundary_preserved": 0.5 <= CKA < threshold → Preserve transitions, skip injection  
+    # - "skipped": CKA < 0.5 → Geometrically incompatible, don't transfer
+    layer_status: dict[int, str] = {}
+    converged_layers: list[int] = []
+    boundary_preserved_layers: list[int] = []
+    skipped_layers: list[int] = []
+    
+    CONVERGED_THRESHOLD = 1.0 - precision_threshold  # 0.9995
+    BOUNDARY_THRESHOLD = 0.5  # Below this, geometry is too different
+    
+    for layer_idx, cka in layer_cka_scores.items():
+        if cka != cka:  # NaN
+            layer_status[layer_idx] = "skipped"
+            skipped_layers.append(layer_idx)
+        elif cka >= CONVERGED_THRESHOLD:
+            layer_status[layer_idx] = "converged"
+            converged_layers.append(layer_idx)
+        elif cka >= BOUNDARY_THRESHOLD:
+            layer_status[layer_idx] = "boundary_preserved"
+            boundary_preserved_layers.append(layer_idx)
+        else:
+            layer_status[layer_idx] = "skipped"
+            skipped_layers.append(layer_idx)
+    
+    # Log classification summary
+    logger.info(
+        "PROBE CLASSIFICATION: %d converged, %d boundary_preserved, %d skipped",
+        len(converged_layers), len(boundary_preserved_layers), len(skipped_layers)
+    )
 
     metrics = {
         "probe_mode": "precise",
@@ -1713,6 +1747,14 @@ def _probe_precise(
         "cka_estimator": "auto",
         "feature_bias_correction": True,
         "perfect_alignment": perfect_alignment,
+        # NEW: Layer classification for adaptive barometer
+        "layer_status": layer_status,
+        "converged_layers": converged_layers,
+        "boundary_preserved_layers": boundary_preserved_layers,
+        "skipped_layers": skipped_layers,
+        "converged_count": len(converged_layers),
+        "boundary_preserved_count": len(boundary_preserved_layers),
+        "skipped_count": len(skipped_layers),
         "atlas_sources": list(set(p.source.value for p in probes)),
         "atlas_domains": list(set(p.domain.value for p in probes)),
         "intersection_map_built": intersection_map_obj is not None,

@@ -150,12 +150,32 @@ def run_merge(
         )
 
     if not perfect_alignment:
+        # =====================================================================
+        # ADAPTIVE BAROMETER: Per DIMENSIONAL_COMPRESSION.md
+        # =====================================================================
+        # Instead of failing, classify layers and proceed with selective transplant:
+        # - "converged": Full knowledge transfer (CKA >= 0.9995)
+        # - "boundary_preserved": Skip injection, preserve transitions (0.5 <= CKA < 0.9995)
+        # - "skipped": Geometrically incompatible (CKA < 0.5)
+        converged_count = probe_metrics.get("converged_count", 0)
+        boundary_count = probe_metrics.get("boundary_preserved_count", 0)
+        skipped_count = probe_metrics.get("skipped_count", 0)
         min_cka = probe_metrics.get("min_cka", 0.0)
         mean_cka = probe_metrics.get("mean_cka", 0.0)
-        raise RuntimeError(
-            "PROBE BAROMETER: Alignment not exact kernel aligned "
-            "(mean_cka=%.4f, min_cka=%.4f). Resolve alignment before merge."
-            % (mean_cka, min_cka)
+        
+        if converged_count == 0:
+            # No converged layers at all - this is a true failure
+            raise RuntimeError(
+                "PROBE BAROMETER: No layers converged to CKA=1.0 "
+                "(mean_cka=%.4f, min_cka=%.4f). Architecture may be incompatible."
+                % (mean_cka, min_cka)
+            )
+        
+        # Proceed with selective transplant
+        logger.warning(
+            "ADAPTIVE BAROMETER: %d converged, %d boundary-preserved, %d skipped. "
+            "Proceeding with selective transplant (mean_cka=%.4f).",
+            converged_count, boundary_count, skipped_count, mean_cka
         )
 
     # Log transform results from probe stage
@@ -309,6 +329,7 @@ def run_merge(
         k_transforms=k_transforms,
         v_transforms=v_transforms,
         layer_mapping=layer_mapping,
+        layer_status=probe_metrics.get("layer_status"),  # NEW: Per DIMENSIONAL_COMPRESSION.md
     )
 
     # =================================================================
