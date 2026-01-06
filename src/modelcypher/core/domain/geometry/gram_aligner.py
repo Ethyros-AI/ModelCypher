@@ -457,17 +457,20 @@ class GramAligner:
         # Step 3: Initialize F from closed-form projection
         logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
         
+        # Cache source pseudoinverse (computed once, used multiple times)
+        source_pinv = b.pinv(source)
+        b.eval(source_pinv)
+        
         if T_has_nan:
             # Fallback: T is NaN from degenerate Gram matrix, use direct projection
             logger.warning("HYBRID ALIGNMENT: Sample transform T contains NaN, using direct projection")
-            F = b.matmul(b.pinv(source), target)  # [d_s, d_t]
+            F = b.matmul(source_pinv, target)  # [d_s, d_t]
         elif d_s == d_t:
             aligned_source_samples = b.matmul(T, source)  # [n, d_s]
-            F = b.pinv(source)
-            F = b.matmul(F, aligned_source_samples)  # [d_s, d_s]
+            F = b.matmul(source_pinv, aligned_source_samples)  # [d_s, d_s]
         else:
             # Cross-dimensional: F maps [d_s] -> [d_t]
-            F = b.matmul(b.pinv(source), target)  # [d_s, d_t]
+            F = b.matmul(source_pinv, target)  # [d_s, d_t]
         b.eval(F)
         
         # Check for NaN in F initialization
@@ -491,7 +494,7 @@ class GramAligner:
             if d_s == d_t:
                 F = b.eye(d_s)
             else:
-                F = b.matmul(b.pinv(source), target)
+                F = b.matmul(source_pinv, target)
             return F, 0.0  # CKA = 0 for degenerate case
         
         # Step 4: Define loss as geodesic distance to target Gram

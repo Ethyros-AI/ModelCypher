@@ -123,7 +123,7 @@ class TestCKAResult:
             sample_count=50,
             cka_corrected=0.88,
         )
-        assert result.best() == 0.88
+        assert result.best == 0.88
 
 
 # =============================================================================

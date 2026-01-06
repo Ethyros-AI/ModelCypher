@@ -87,6 +87,7 @@ class CKAResult:
         import math
         return math.isfinite(self.cka) and self.cka >= 0.0
 
+    @property
     def best(self) -> float:
         """Return corrected CKA if available, else raw."""
         if self.cka_corrected is not None:
@@ -368,6 +369,14 @@ def compute_cka(
     if backend is None:
         backend = get_default_backend()
     
+    # Auto-convert lists to arrays
+    if isinstance(activations_x, list):
+        activations_x = backend.array(activations_x)
+        activations_x = backend.astype(activations_x, "float32")
+    if isinstance(activations_y, list):
+        activations_y = backend.array(activations_y)
+        activations_y = backend.astype(activations_y, "float32")
+    
     n = int(activations_x.shape[0])
     if n <= 1:
         return CKAResult(0.0, 0.0, 0.0, 0.0, n)
@@ -569,7 +578,7 @@ def compute_cka_backend(
     Kept for API compatibility during transition.
     """
     result = compute_cka(x, y, backend, estimator, feature_bias_correction)
-    return result.best() if result.is_valid else 0.0
+    return result.best if result.is_valid else 0.0
 
 
 def compute_cka_from_lists(
@@ -589,7 +598,7 @@ def compute_cka_from_lists(
     arr_y = backend.astype(arr_y, "float32")
     
     result = compute_cka(arr_x, arr_y, backend, estimator, feature_bias_correction)
-    return result.best() if result.is_valid else 0.0
+    return result.best if result.is_valid else 0.0
 
 
 # =============================================================================

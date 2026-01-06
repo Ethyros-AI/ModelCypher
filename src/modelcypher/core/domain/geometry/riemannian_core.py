@@ -771,13 +771,24 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         neighbor_dists: "Array",
         n: int,
     ) -> "Array":
-        """Exact all-pairs shortest paths using Dijkstra on a k-NN graph."""
+        """Exact all-pairs shortest paths using scipy's Dijkstra on a k-NN graph.
+        
+        Uses scipy.sparse.csgraph.dijkstra which is implemented in C and 
+        significantly faster than Python heapq-based implementation.
+        """
+        import numpy as np
+        from scipy.sparse import csr_matrix
+        from scipy.sparse.csgraph import dijkstra
+        
         backend = self._backend
         backend.eval(knn_idx, neighbor_dists)
         neighbors = backend.tolist(knn_idx)
         weights = backend.tolist(neighbor_dists)
 
-        adjacency: list[dict[int, float]] = [dict() for _ in range(n)]
+        # Build adjacency dict first to deduplicate edges (take minimum weight)
+        # This matches the original heapq behavior
+        adjacency: dict[tuple[int, int], float] = {}
+        
         for i, row in enumerate(neighbors):
             row_weights = weights[i]
             for j_raw, w_raw in zip(row, row_weights):
@@ -785,30 +796,29 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                 if j < 0 or j >= n or j == i:
                     continue
                 w = float(w_raw)
-                prev = adjacency[i].get(j)
-                if prev is None or w < prev:
-                    adjacency[i][j] = w
-                prev = adjacency[j].get(i)
-                if prev is None or w < prev:
-                    adjacency[j][i] = w
-
-        dist_matrix: list[list[float]] = [[float("inf")] * n for _ in range(n)]
-        for src in range(n):
-            dist = dist_matrix[src]
-            dist[src] = 0.0
-            heap: list[tuple[float, int]] = [(0.0, src)]
-            while heap:
-                d_u, u = heapq.heappop(heap)
-                if d_u != dist[u]:
-                    continue
-                for v, w in adjacency[u].items():
-                    alt = d_u + w
-                    if alt < dist[v]:
-                        dist[v] = alt
-                        heapq.heappush(heap, (alt, v))
-
-        dist_arr = backend.array(dist_matrix)
-        return backend.astype(dist_arr, neighbor_dists.dtype)
+                # Take minimum weight for duplicate edges (symmetric)
+                for edge in [(i, j), (j, i)]:
+                    if edge not in adjacency or w < adjacency[edge]:
+                        adjacency[edge] = w
+        
+        # Convert to COO format
+        rows = []
+        cols = []
+        data = []
+        for (i, j), w in adjacency.items():
+            rows.append(i)
+            cols.append(j)
+            data.append(w)
+        
+        # Create sparse matrix
+        graph = csr_matrix((data, (rows, cols)), shape=(n, n))
+        
+        # Run scipy's C-optimized Dijkstra (all-pairs)
+        dist_matrix = dijkstra(graph, directed=False, return_predecessors=False)
+        
+        # Convert back to backend array
+        dist_arr = backend.array(dist_matrix.astype(np.float32))
+        return dist_arr
 
     def _compute_geodesic_for_k(
         self,

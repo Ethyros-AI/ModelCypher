@@ -134,6 +134,7 @@ class ComputationCache:
         max_centered_gram_entries: int = 200,
         max_chord_entries: int = 256,
         max_stitch_entries: int = 128,
+        max_pinv_entries: int = 64,
     ) -> None:
         """
         Initialize the computation cache.
@@ -148,6 +149,7 @@ class ComputationCache:
             max_centered_gram_entries: Maximum number of centered Gram entries.
             max_chord_entries: Maximum number of chord distance matrix entries.
             max_stitch_entries: Maximum number of stitch transform entries.
+            max_pinv_entries: Maximum number of pseudoinverse entries.
         """
         self._max_gram_entries = max_gram_entries
         self._max_geodesic_entries = max_geodesic_entries
@@ -158,6 +160,7 @@ class ComputationCache:
         self._max_centered_gram_entries = max_centered_gram_entries
         self._max_chord_entries = max_chord_entries
         self._max_stitch_entries = max_stitch_entries
+        self._max_pinv_entries = max_pinv_entries
 
         # Separate LRU caches for different computation types
         # Using OrderedDict for O(1) move_to_end() and eviction
@@ -187,6 +190,9 @@ class ComputationCache:
 
         self._kmin_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._kmin_lock = threading.Lock()
+
+        self._pinv_cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._pinv_lock = threading.Lock()
 
         self._stats = CacheStats()
         self._stats_lock = threading.Lock()
@@ -269,25 +275,35 @@ class ComputationCache:
             # xxhash is ~10-50× faster than SHA256 for non-cryptographic hashing
             return xxhash.xxh64(shape_bytes + content_bytes).hexdigest()[:16]
         else:
-            # Large array - sample strategically
-            # Use native tolist() for O(1) extraction
-            flat_list = backend.tolist(flat)
-            samples = []
-            # First 10
-            samples.extend(flat_list[:min(10, flat_len)])
-            # Last 10
-            samples.extend(flat_list[max(0, flat_len - 10):])
-            # Middle 10
+            # Large array - sample BEFORE tolist to avoid full array conversion
+            # This is the critical optimization: we only extract ~40 values instead of all
+            
+            # Build sample indices
+            sample_indices = []
+            # First 8 indices
+            sample_indices.extend(range(min(8, flat_len)))
+            # Last 8 indices
+            sample_indices.extend(range(max(0, flat_len - 8), flat_len))
+            # Middle 8 indices
             mid = flat_len // 2
-            start_mid = max(0, mid - 5)
-            end_mid = min(flat_len, mid + 5)
-            samples.extend(flat_list[start_mid:end_mid])
-            # Random-ish samples based on position (deterministic)
-            step = max(1, flat_len // 20)
+            for offset in range(-4, 4):
+                idx = mid + offset
+                if 0 <= idx < flat_len and idx not in sample_indices:
+                    sample_indices.append(idx)
+            # Strided samples (deterministic "random")
+            step = max(1, flat_len // 16)
             for i in range(0, flat_len, step):
-                samples.append(flat_list[i])
-                if len(samples) >= 40:
+                if i not in sample_indices:
+                    sample_indices.append(i)
+                if len(sample_indices) >= 40:
                     break
+            
+            # Extract only the samples we need using backend.take
+            indices_arr = backend.array(sample_indices)
+            samples_arr = backend.take(flat, indices_arr, axis=0)
+            backend.eval(samples_arr)
+            samples = backend.tolist(samples_arr)
+            
             shape_bytes = f"{shape}|dtype={dtype}".encode()
             sample_bytes = b"".join(struct.pack(">d", float(val)) for val in samples)
             return xxhash.xxh64(shape_bytes + sample_bytes).hexdigest()[:16]
@@ -617,6 +633,61 @@ class ComputationCache:
             self._kmin_lock,
             self._max_kmin_entries,
         )
+
+    # --- Pseudoinverse Cache ---
+
+    def make_pinv_key(self, arr: "Array", backend: "Backend") -> str:
+        """Create cache key for pseudoinverse computation."""
+        base_key = self.make_array_key(arr, backend)
+        bid = self._backend_id(backend)
+        return f"pinv_{bid}_{base_key}"
+
+    def get_pinv(self, key: str) -> "Array | None":
+        """Get cached pseudoinverse."""
+        return self._get_from_cache(key, self._pinv_cache, self._pinv_lock, "pinv")
+
+    def set_pinv(
+        self, key: str, value: "Array", compute_time_ms: float = 0.0
+    ) -> None:
+        """Cache pseudoinverse."""
+        self._set_in_cache(
+            key,
+            value,
+            compute_time_ms,
+            self._pinv_cache,
+            self._pinv_lock,
+            self._max_pinv_entries,
+        )
+
+    def get_or_compute_pinv(
+        self,
+        matrix: "Array",
+        backend: "Backend",
+    ) -> "Array":
+        """Get pseudoinverse from cache or compute it.
+
+        Args:
+            matrix: Input matrix
+            backend: Backend for computation
+
+        Returns:
+            Pseudoinverse of the matrix
+        """
+        import time as time_module
+
+        key = self.make_pinv_key(matrix, backend)
+        cached = self.get_pinv(key)
+        if cached is not None:
+            return cached
+
+        start = time_module.perf_counter()
+        pinv = backend.pinv(matrix)
+        backend.eval(pinv)
+        elapsed_ms = (time_module.perf_counter() - start) * 1000
+
+        self.set_pinv(key, pinv, elapsed_ms)
+        return pinv
+
     # --- SVD Cache ---
 
     def get_svd(self, key: str) -> tuple["Array", "Array", "Array"] | None:
@@ -791,6 +862,9 @@ class ComputationCache:
         with self._kmin_lock:
             self._kmin_cache.clear()
 
+        with self._pinv_lock:
+            self._pinv_cache.clear()
+
         with self._stats_lock:
             self._stats = CacheStats()
 
@@ -809,4 +883,5 @@ class ComputationCache:
             "frechet": len(self._frechet_cache),
             "basis": len(self._basis_cache),
             "kmin": len(self._kmin_cache),
+            "pinv": len(self._pinv_cache),
         }

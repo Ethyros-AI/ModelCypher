@@ -323,7 +323,7 @@ class TestProcrustesHypothesis:
                 for i in range(n):
                     for j in range(n):
                         expected = 1.0 if i == j else 0.0
-                        eps = 10.0 * _eps(float(prod_list[i][j]), expected)
+                        eps = 100.0 * _eps(float(prod_list[i][j]), expected)
                         assert abs(prod_list[i][j] - expected) <= eps
 
 

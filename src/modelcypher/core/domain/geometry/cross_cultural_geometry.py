@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_from_grams
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
 )
@@ -167,20 +167,16 @@ class CrossCulturalGeometry:
     ) -> float:
         """Compute CKA between two flattened gram matrices.
 
-        Delegates to the canonical implementation in cka.py.
-        Uses feature_bias_correction when feature dimensions are provided.
+        Delegates to the canonical geodesic RBF implementation in cka.py.
         """
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return 0.0
-        return compute_cka_from_grams(
-            gram_a,
-            gram_b,
-            n,
-            estimator=HSICEstimator.AUTO,
-            feature_dim_a=feature_dim_a,
-            feature_dim_b=feature_dim_b,
-            feature_bias_correction=feature_dim_a is not None and feature_dim_b is not None,
-        )
+        
+        backend = get_default_backend()
+        arr_a = backend.reshape(backend.array(gram_a), (n, n))
+        arr_b = backend.reshape(backend.array(gram_b), (n, n))
+        
+        return compute_cka_from_grams(arr_a, arr_b, backend)
 
     @staticmethod
     def analyze_alignment(
