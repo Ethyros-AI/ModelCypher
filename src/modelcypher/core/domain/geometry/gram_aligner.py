@@ -423,6 +423,12 @@ class GramAligner:
         # Step 2: Compute closed-form sample transform T
         logger.info("HYBRID ALIGNMENT: Computing closed-form sample transform T...")
         T = self._compute_sample_transform(K_s_c, K_t_c)
+        b.eval(T)
+        
+        # Check for NaN in T (degenerate Gram matrix from edge layers)
+        T_sum = b.sum(T)
+        b.eval(T_sum)
+        T_has_nan = float(b.to_scalar(T_sum)) != float(b.to_scalar(T_sum))  # NaN check
         
         # Step 3: Initialize F from closed-form projection
         # The ideal: source @ F should produce activations whose Gram = T @ K_s @ T.T = K_t
@@ -430,8 +436,13 @@ class GramAligner:
         # But T is in sample space, so we compute: aligned_source = T @ source
         # F_init = pinv(source) @ aligned_source
         logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
-        aligned_source_samples = b.matmul(T, source)  # [n, d_s]
-        if d_s == d_t:
+        
+        if T_has_nan:
+            # Fallback: T is NaN from degenerate Gram matrix, use direct projection
+            logger.warning("HYBRID ALIGNMENT: Sample transform T contains NaN, using direct projection")
+            F = b.matmul(b.pinv(source), target)  # [d_s, d_t]
+        elif d_s == d_t:
+            aligned_source_samples = b.matmul(T, source)  # [n, d_s]
             F = b.pinv(source)
             F = b.matmul(F, aligned_source_samples)  # [d_s, d_s]
         else:
@@ -440,6 +451,22 @@ class GramAligner:
             # Use: F = pinv(source) @ target (direct mapping to target space)
             F = b.matmul(b.pinv(source), target)  # [d_s, d_t]
         b.eval(F)
+        
+        # Check for NaN in F initialization
+        F_sum = b.sum(F)
+        b.eval(F_sum)
+        F_has_nan = float(b.to_scalar(F_sum)) != float(b.to_scalar(F_sum))
+        
+        if F_has_nan:
+            logger.warning("HYBRID ALIGNMENT: Initial F contains NaN, using small random fallback")
+            # Use small random values (MLX can't VJP through zeros or eye in some cases)
+            if d_s == d_t:
+                # Small perturbation of identity
+                F = b.add(b.eye(d_s), b.multiply(0.01, b.random_normal((d_s, d_t))))
+            else:
+                # Small random values (not zeros - VJP fails with scatter_axis)
+                F = b.multiply(0.01, b.random_normal((d_s, d_t)))
+            b.eval(F)
         
         logger.info("HYBRID ALIGNMENT: Starting geodesic gradient refinement...")
         
