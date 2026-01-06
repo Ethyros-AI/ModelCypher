@@ -310,10 +310,11 @@ def compute_transplant_delta(
         b.eval(F_correction)
         
         # Apply correction to merged weights
-        # If outputs need transform F: (A @ W.T) @ F = A @ (W.T @ F) = A @ (F.T @ W).T
-        # So W_corrected = W @ F.T
+        # For weight W [out_dim, in_dim], we want outputs transformed by F
+        # Math: (A @ W.T) @ F = A @ (W.T @ F) = A @ (F.T @ W).T
+        # Therefore: W_corrected = F.T @ W (not W @ F.T!)
         F_T = b.transpose(F_correction)
-        merged_weight = b.matmul(merged_weight_prelim, F_T)
+        merged_weight = b.matmul(F_T, merged_weight_prelim)  # F.T @ W
         b.eval(merged_weight)
         
         logger.debug("Post-merge geodesic re-alignment applied successfully")
