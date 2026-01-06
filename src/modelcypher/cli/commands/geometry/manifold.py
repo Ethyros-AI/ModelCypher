@@ -51,8 +51,6 @@ def geometry_manifold_cluster(
     compute_dimension: bool = typer.Option(
         True,
         "--dimension/--no-dimension",
-        is_flag=True,
-        flag_value=True,
         help="Compute intrinsic dimension",
     ),
 ):

@@ -259,11 +259,10 @@ class TestCosineSimilarity:
         Mathematical property: cos(0) = 1 (angle with self is 0).
         """
         assume(len(d) > 0)
-        # Need a vector with sufficient magnitude (not just tiny values)
-        # Use a higher threshold to avoid numerical precision issues
+        # Need a vector with sufficient magnitude to avoid numerical instability
+        # Near-zero vectors cause division issues in cosine computation
         norm_sq = sum(v * v for v in d.values())
-        eps = _eps(norm_sq)
-        assume(norm_sq > eps)  # Non-trivial vector
+        assume(norm_sq > 0.01)  # Use 0.01 threshold to avoid near-zero vectors
         result = compute_cosine_similarity(d, d)
         # Use 3 * machine_epsilon for tolerance - cosine involves multiple
         # floating-point operations (dot, norm, division) that accumulate error

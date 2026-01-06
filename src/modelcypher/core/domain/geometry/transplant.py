@@ -326,43 +326,58 @@ def compute_transplant_delta(
     aligner = GramAligner(b)
     try:
         result = aligner.find_perfect_alignment(merged_output, target_output)
-        F_correction = b.array(result.feature_transform)
-        b.eval(F_correction)
         
-        # Apply correction to merged weights
-        # For weight W [out_dim, in_dim], we want outputs transformed by F
-        # Math: (A @ W.T) @ F = A @ (W.T @ F) = A @ (F.T @ W).T
-        # Therefore: W_corrected = F.T @ W (not W @ F.T!)
-        
-        # BIRKHOFF PROJECTION: Project F onto doubly stochastic matrices
-        # This ensures compositional stability when chaining layer transforms
-        birkhoff_applied = False
-        birkhoff_converged = False
-        birkhoff_iterations = 0
-        birkhoff_spectral_clipped_extra = False
-        
-        if F_correction.shape[0] == F_correction.shape[1]:  # Only for square transforms
-            try:
-                birkhoff = BirkhoffProjector(b)
-                birkhoff_result = birkhoff.project(F_correction, ensure_positive=True)
-                F_correction = birkhoff_result.projected_matrix
-                b.eval(F_correction)
-                birkhoff_applied = True
-                birkhoff_converged = birkhoff_result.converged
-                birkhoff_iterations = birkhoff_result.iterations_used
-                birkhoff_spectral_clipped_extra = birkhoff_result.spectral_clipped
-                logger.debug(
-                    "Birkhoff projection applied: converged=%s, iters=%d, clipped=%s",
-                    birkhoff_converged, birkhoff_iterations, birkhoff_spectral_clipped_extra
-                )
-            except Exception as be:
-                logger.debug("Birkhoff projection skipped: %s", be)
-        
-        F_T = b.transpose(F_correction)
-        merged_weight = b.matmul(F_T, merged_weight_prelim)  # F.T @ W
-        b.eval(merged_weight)
-        
-        logger.debug("Post-merge geodesic re-alignment applied successfully")
+        # Only apply correction if alignment achieved high CKA (>= 0.9)
+        # Random/incompatible geometries can't align - applying bad correction
+        # would violate boundary invariance guarantees
+        if result.achieved_cka < 0.9:
+            logger.debug(
+                "Post-merge re-alignment skipped: CKA=%.4f < 0.9 threshold",
+                result.achieved_cka
+            )
+            merged_weight = merged_weight_prelim
+            birkhoff_applied = False
+            birkhoff_converged = False
+            birkhoff_iterations = 0
+            birkhoff_spectral_clipped_extra = False
+        else:
+            F_correction = b.array(result.feature_transform)
+            b.eval(F_correction)
+            
+            # Apply correction to merged weights
+            # For weight W [out_dim, in_dim], we want outputs transformed by F
+            # Math: (A @ W.T) @ F = A @ (W.T @ F) = A @ (F.T @ W).T
+            # Therefore: W_corrected = F.T @ W (not W @ F.T!)
+            
+            # BIRKHOFF PROJECTION: Project F onto doubly stochastic matrices
+            # This ensures compositional stability when chaining layer transforms
+            birkhoff_applied = False
+            birkhoff_converged = False
+            birkhoff_iterations = 0
+            birkhoff_spectral_clipped_extra = False
+            
+            if F_correction.shape[0] == F_correction.shape[1]:  # Only for square transforms
+                try:
+                    birkhoff = BirkhoffProjector(b)
+                    birkhoff_result = birkhoff.project(F_correction, ensure_positive=True)
+                    F_correction = birkhoff_result.projected_matrix
+                    b.eval(F_correction)
+                    birkhoff_applied = True
+                    birkhoff_converged = birkhoff_result.converged
+                    birkhoff_iterations = birkhoff_result.iterations_used
+                    birkhoff_spectral_clipped_extra = birkhoff_result.spectral_clipped
+                    logger.debug(
+                        "Birkhoff projection applied: converged=%s, iters=%d, clipped=%s",
+                        birkhoff_converged, birkhoff_iterations, birkhoff_spectral_clipped_extra
+                    )
+                except Exception as be:
+                    logger.debug("Birkhoff projection skipped: %s", be)
+            
+            F_T = b.transpose(F_correction)
+            merged_weight = b.matmul(F_T, merged_weight_prelim)  # F.T @ W
+            b.eval(merged_weight)
+            
+            logger.debug("Post-merge geodesic re-alignment applied successfully")
     except Exception as e:
         # If re-alignment fails, use uncorrected merge
         logger.warning("Post-merge re-alignment failed: %s. Using uncorrected merge.", e)

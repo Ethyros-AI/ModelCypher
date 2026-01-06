@@ -38,26 +38,27 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
                 "dimension_correlations": {},
             },
             {"probe_failed": False, "perfect_alignment": True},
-            {0: ["s0"]},
-            {0: ["t0"]},
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            {0: ["s0"]},  # source_activations
+            {0: ["t0"]},  # target_activations
+            None,  # source_intermediate_activations
+            None,  # target_intermediate_activations
+            None,  # source_attention_activations
+            None,  # target_attention_activations
+            None,  # source_k_activations
+            None,  # target_k_activations
+            None,  # feature_transforms
+            None,  # embedding_transform
+            None,  # attention_transforms
+            None,  # k_transforms
+            None,  # v_transforms (added)
+            None,  # layer_mapping (added)
         )
 
     def fake_stage_density(**_kwargs):
         calls["density_called"] = True
         return {"p0": {0: True}}, {"positive_opportunity_count": 1}
 
-    def fake_stage_permute(**_kwargs):
-        return _kwargs["source_weights"], {"skipped": True, "reason": "test"}
+    # Note: fake_stage_permute removed - stage_permute no longer exists in pipeline
 
     def fake_stage_transplant(*, graft_mask, **_kwargs):
         calls["graft_mask"] = graft_mask
@@ -70,7 +71,7 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "load_tokenizer", fake_load_tokenizer)
     monkeypatch.setattr(pipeline, "stage_probe", fake_stage_probe)
     monkeypatch.setattr(pipeline, "stage_density", fake_stage_density)
-    monkeypatch.setattr(pipeline, "stage_permute", fake_stage_permute)
+    # Note: stage_permute was removed from the pipeline - no longer needed
     monkeypatch.setattr(pipeline, "stage_transplant", fake_stage_transplant)
     monkeypatch.setattr(pipeline, "infer_hidden_dim", fake_infer_hidden_dim)
 

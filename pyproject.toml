@@ -99,6 +99,11 @@ markers = [
     "property: Hypothesis property-based tests",
     "real_model: Tests that load real models from HuggingFace or local paths",
 ]
+# SWIG warnings come from HuggingFace tokenizers (Rust library, external)
+filterwarnings = [
+    "ignore:builtin type Swig.*has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+]
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

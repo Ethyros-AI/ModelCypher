@@ -22,24 +22,11 @@ from typing import Any, Callable
 
 import click
 import typer
-from click.core import UNSET
 
 
 def apply_typer_compat() -> None:
-    _patch_option_flag_value()
+    # _patch_option_flag_value was removed - it added deprecated flag_value param
     _patch_make_metavar()
-
-
-def _patch_option_flag_value() -> None:
-    original_option: Callable[..., Any] = typer.Option
-
-    def patched_option(*args: Any, **kwargs: Any) -> Any:
-        if "flag_value" not in kwargs:
-            # Click 8.3 treats flag_value=None as a boolean flag, so opt out by default.
-            kwargs["flag_value"] = UNSET
-        return original_option(*args, **kwargs)
-
-    typer.Option = patched_option
 
 
 def _patch_make_metavar() -> None:
