@@ -305,7 +305,8 @@ def compute_transplant_delta(
     # This ensures CKA(merged_output @ F, target_output) = 1.0
     aligner = GramAligner(b)
     try:
-        F_correction = aligner.optimize_alignment(merged_output, target_output)
+        result = aligner.find_perfect_alignment(merged_output, target_output)
+        F_correction = b.array(result.feature_transform)
         b.eval(F_correction)
         
         # Apply correction to merged weights

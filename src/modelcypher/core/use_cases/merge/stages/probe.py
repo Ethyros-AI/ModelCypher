@@ -576,301 +576,301 @@ def _probe_precise(
             batch = valid_probes[batch_start:batch_end]
             batch_texts = [probe_text for _, probe_text in batch]
 
-        try:
-            # ===== HIDDEN ACTIVATIONS =====
-            if has_batch_hidden:
-                source_hidden_batch = activation_provider.collect_hidden_activations_batch(
-                    source_model, source_tokenizer, batch_texts
-                )
-                target_hidden_batch = activation_provider.collect_hidden_activations_batch(
-                    target_model, target_tokenizer, batch_texts
-                )
-            else:
-                # Fallback to sequential
-                source_hidden_batch = [
-                    activation_provider.collect_hidden_activations(source_model, source_tokenizer, text)
-                    for text in batch_texts
-                ]
-                target_hidden_batch = [
-                    activation_provider.collect_hidden_activations(target_model, target_tokenizer, text)
-                    for text in batch_texts
-                ]
-
-            # ===== EMBEDDING ACTIVATIONS (2D GramAlign) =====
-            # Same CKA=1.0, same geodesic math - applied at embedding dimension
-            has_embedding = hasattr(activation_provider, "collect_embedding_activations")
-            if has_embedding:
-                for text in batch_texts:
-                    source_emb = activation_provider.collect_embedding_activations(
-                        source_model, source_tokenizer, text
+            try:
+                # ===== HIDDEN ACTIVATIONS =====
+                if has_batch_hidden:
+                    source_hidden_batch = activation_provider.collect_hidden_activations_batch(
+                        source_model, source_tokenizer, batch_texts
                     )
-                    target_emb = activation_provider.collect_embedding_activations(
-                        target_model, target_tokenizer, text
+                    target_hidden_batch = activation_provider.collect_hidden_activations_batch(
+                        target_model, target_tokenizer, batch_texts
                     )
-                    source_embedding_activations.append(source_emb)
-                    target_embedding_activations.append(target_emb)
-
-            # ===== INTERMEDIATE ACTIVATIONS =====
-            if has_batch_intermediate:
-                source_intermediate_batch = activation_provider.collect_intermediate_activations_batch(
-                    source_model, source_tokenizer, batch_texts
-                )
-                target_intermediate_batch = activation_provider.collect_intermediate_activations_batch(
-                    target_model, target_tokenizer, batch_texts
-                )
-            else:
-                source_intermediate_batch = [
-                    activation_provider.collect_intermediate_activations(source_model, source_tokenizer, text)
-                    for text in batch_texts
-                ]
-                target_intermediate_batch = [
-                    activation_provider.collect_intermediate_activations(target_model, target_tokenizer, text)
-                    for text in batch_texts
-                ]
-
-            # ===== ATTENTION ACTIVATIONS (Q, K, V separately) =====
-            if has_batch_attention:
-                source_q_batch, source_k_batch, source_v_batch = activation_provider.collect_attention_activations_batch(
-                    source_model, source_tokenizer, batch_texts
-                )
-                target_q_batch, target_k_batch, target_v_batch = activation_provider.collect_attention_activations_batch(
-                    target_model, target_tokenizer, batch_texts
-                )
-            else:
-                source_q_batch, source_k_batch, source_v_batch = [], [], []
-                target_q_batch, target_k_batch, target_v_batch = [], [], []
-                for text in batch_texts:
-                    src_q, src_k, src_v = activation_provider.collect_attention_activations(
-                        source_model, source_tokenizer, text
+                else:
+                    # Fallback to sequential
+                    source_hidden_batch = [
+                        activation_provider.collect_hidden_activations(source_model, source_tokenizer, text)
+                        for text in batch_texts
+                    ]
+                    target_hidden_batch = [
+                        activation_provider.collect_hidden_activations(target_model, target_tokenizer, text)
+                        for text in batch_texts
+                    ]
+    
+                # ===== EMBEDDING ACTIVATIONS (2D GramAlign) =====
+                # Same CKA=1.0, same geodesic math - applied at embedding dimension
+                has_embedding = hasattr(activation_provider, "collect_embedding_activations")
+                if has_embedding:
+                    for text in batch_texts:
+                        source_emb = activation_provider.collect_embedding_activations(
+                            source_model, source_tokenizer, text
+                        )
+                        target_emb = activation_provider.collect_embedding_activations(
+                            target_model, target_tokenizer, text
+                        )
+                        source_embedding_activations.append(source_emb)
+                        target_embedding_activations.append(target_emb)
+    
+                # ===== INTERMEDIATE ACTIVATIONS =====
+                if has_batch_intermediate:
+                    source_intermediate_batch = activation_provider.collect_intermediate_activations_batch(
+                        source_model, source_tokenizer, batch_texts
                     )
-                    tgt_q, tgt_k, tgt_v = activation_provider.collect_attention_activations(
-                        target_model, target_tokenizer, text
+                    target_intermediate_batch = activation_provider.collect_intermediate_activations_batch(
+                        target_model, target_tokenizer, batch_texts
                     )
-                    source_q_batch.append(src_q)
-                    source_k_batch.append(src_k)
-                    source_v_batch.append(src_v)
-                    target_q_batch.append(tgt_q)
-                    target_k_batch.append(tgt_k)
-                    target_v_batch.append(tgt_v)
-
-            # Process batch results
-            for i, (probe, probe_text) in enumerate(batch):
-                # Skip probes that were already completed (from checkpoint)
-                if probe.probe_id in completed_probe_ids:
-                    continue
-
-                source_acts = source_hidden_batch[i]
-                target_acts = target_hidden_batch[i]
-                source_intermediate_acts = source_intermediate_batch[i]
-                target_intermediate_acts = target_intermediate_batch[i]
-                source_attention_acts = source_q_batch[i] if source_q_batch else {}
-                source_k_acts = source_k_batch[i] if source_k_batch else {}
-                source_v_acts = source_v_batch[i] if source_v_batch else {}
-                target_attention_acts = target_q_batch[i] if target_q_batch else {}
-                target_k_acts = target_k_batch[i] if target_k_batch else {}
-                target_v_acts = target_v_batch[i] if target_v_batch else {}
-
-                source_activated: dict[int, list[ActivatedDimension]] = {}
-                target_activated: dict[int, list[ActivatedDimension]] = {}
-
-                for layer_idx, act in source_acts.items():
-                    source_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
-                    if layer_idx not in source_layer_activations:
-                        source_layer_activations[layer_idx] = []
-                    source_layer_activations[layer_idx].append(act)
-
-                for layer_idx, act in target_acts.items():
-                    target_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
-                    if layer_idx not in target_layer_activations:
-                        target_layer_activations[layer_idx] = []
-                    target_layer_activations[layer_idx].append(act)
-
-                # Store intermediate activations for multi-space stitching
-                for layer_idx, act in source_intermediate_acts.items():
-                    if layer_idx not in source_intermediate_activations:
-                        source_intermediate_activations[layer_idx] = []
-                    source_intermediate_activations[layer_idx].append(act)
-
-                for layer_idx, act in target_intermediate_acts.items():
-                    if layer_idx not in target_intermediate_activations:
-                        target_intermediate_activations[layer_idx] = []
-                    target_intermediate_activations[layer_idx].append(act)
-
-                # Store Q attention activations for q_proj/o_proj stitching
-                for layer_idx, act in source_attention_acts.items():
-                    if layer_idx not in source_attention_activations:
-                        source_attention_activations[layer_idx] = []
-                    source_attention_activations[layer_idx].append(act)
-
-                for layer_idx, act in target_attention_acts.items():
-                    if layer_idx not in target_attention_activations:
-                        target_attention_activations[layer_idx] = []
-                    target_attention_activations[layer_idx].append(act)
-
-                # Store K attention activations for k_proj stitching
-                for layer_idx, act in source_k_acts.items():
-                    if layer_idx not in source_k_activations:
-                        source_k_activations[layer_idx] = []
-                    source_k_activations[layer_idx].append(act)
-
-                for layer_idx, act in target_k_acts.items():
-                    if layer_idx not in target_k_activations:
-                        target_k_activations[layer_idx] = []
-                    target_k_activations[layer_idx].append(act)
-
-                # Store V attention activations for v_proj stitching
-                for layer_idx, act in source_v_acts.items():
-                    if layer_idx not in source_v_activations:
-                        source_v_activations[layer_idx] = []
-                    source_v_activations[layer_idx].append(act)
-
-                for layer_idx, act in target_v_acts.items():
-                    if layer_idx not in target_v_activations:
-                        target_v_activations[layer_idx] = []
-                    target_v_activations[layer_idx].append(act)
-
-                source_fingerprints.append(
-                    ActivationFingerprint(
-                        prime_id=probe.probe_id,
-                        prime_text=probe.name,
-                        activated_dimensions=source_activated,
+                else:
+                    source_intermediate_batch = [
+                        activation_provider.collect_intermediate_activations(source_model, source_tokenizer, text)
+                        for text in batch_texts
+                    ]
+                    target_intermediate_batch = [
+                        activation_provider.collect_intermediate_activations(target_model, target_tokenizer, text)
+                        for text in batch_texts
+                    ]
+    
+                # ===== ATTENTION ACTIVATIONS (Q, K, V separately) =====
+                if has_batch_attention:
+                    source_q_batch, source_k_batch, source_v_batch = activation_provider.collect_attention_activations_batch(
+                        source_model, source_tokenizer, batch_texts
                     )
-                )
-                target_fingerprints.append(
-                    ActivationFingerprint(
-                        prime_id=probe.probe_id,
-                        prime_text=probe.name,
-                        activated_dimensions=target_activated,
+                    target_q_batch, target_k_batch, target_v_batch = activation_provider.collect_attention_activations_batch(
+                        target_model, target_tokenizer, batch_texts
                     )
-                )
-
-                probe_ids.append(probe.probe_id)
-                probe_domains.append(probe.domain.value)
-                probes_processed += 1
-
-            # Log progress at batch boundaries
-            if batch_end % 50 <= PROBE_BATCH_SIZE:
-                logger.info(
-                    "PROBE PRECISE: Processed %d/%d probes...",
-                    probes_processed,
-                    len(valid_probes),
-                )
-
-            # Save checkpoint periodically
-            if checkpoint_path is not None and probes_processed % _CHECKPOINT_INTERVAL < PROBE_BATCH_SIZE:
-                _save_probe_checkpoint(
-                    checkpoint_path=checkpoint_path,
-                    completed_probes=probes_processed,
-                    probe_ids=probe_ids,
-                    probe_domains=probe_domains,
-                    total_probes=len(valid_probes),
-                )
-
-        except Exception as e:
-            # On batch failure, fall back to sequential processing for this batch
-            logger.warning("Batch processing failed, falling back to sequential: %s", e)
-            for probe, probe_text in batch:
-                # Skip probes that were already completed (from checkpoint)
-                if probe.probe_id in completed_probe_ids:
-                    continue
-
-                try:
-                    source_acts = activation_provider.collect_hidden_activations(
-                        source_model, source_tokenizer, probe_text
-                    )
-                    target_acts = activation_provider.collect_hidden_activations(
-                        target_model, target_tokenizer, probe_text
-                    )
-                    source_intermediate_acts = activation_provider.collect_intermediate_activations(
-                        source_model, source_tokenizer, probe_text
-                    )
-                    target_intermediate_acts = activation_provider.collect_intermediate_activations(
-                        target_model, target_tokenizer, probe_text
-                    )
-                    source_attention_acts, source_k_acts, source_v_acts = activation_provider.collect_attention_activations(
-                        source_model, source_tokenizer, probe_text
-                    )
-                    target_attention_acts, target_k_acts, target_v_acts = activation_provider.collect_attention_activations(
-                        target_model, target_tokenizer, probe_text
-                    )
-
-                    source_activated_fallback: dict[int, list[ActivatedDimension]] = {}
-                    target_activated_fallback: dict[int, list[ActivatedDimension]] = {}
-
+                else:
+                    source_q_batch, source_k_batch, source_v_batch = [], [], []
+                    target_q_batch, target_k_batch, target_v_batch = [], [], []
+                    for text in batch_texts:
+                        src_q, src_k, src_v = activation_provider.collect_attention_activations(
+                            source_model, source_tokenizer, text
+                        )
+                        tgt_q, tgt_k, tgt_v = activation_provider.collect_attention_activations(
+                            target_model, target_tokenizer, text
+                        )
+                        source_q_batch.append(src_q)
+                        source_k_batch.append(src_k)
+                        source_v_batch.append(src_v)
+                        target_q_batch.append(tgt_q)
+                        target_k_batch.append(tgt_k)
+                        target_v_batch.append(tgt_v)
+    
+                # Process batch results
+                for i, (probe, probe_text) in enumerate(batch):
+                    # Skip probes that were already completed (from checkpoint)
+                    if probe.probe_id in completed_probe_ids:
+                        continue
+    
+                    source_acts = source_hidden_batch[i]
+                    target_acts = target_hidden_batch[i]
+                    source_intermediate_acts = source_intermediate_batch[i]
+                    target_intermediate_acts = target_intermediate_batch[i]
+                    source_attention_acts = source_q_batch[i] if source_q_batch else {}
+                    source_k_acts = source_k_batch[i] if source_k_batch else {}
+                    source_v_acts = source_v_batch[i] if source_v_batch else {}
+                    target_attention_acts = target_q_batch[i] if target_q_batch else {}
+                    target_k_acts = target_k_batch[i] if target_k_batch else {}
+                    target_v_acts = target_v_batch[i] if target_v_batch else {}
+    
+                    source_activated: dict[int, list[ActivatedDimension]] = {}
+                    target_activated: dict[int, list[ActivatedDimension]] = {}
+    
                     for layer_idx, act in source_acts.items():
-                        source_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
+                        source_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
                         if layer_idx not in source_layer_activations:
                             source_layer_activations[layer_idx] = []
                         source_layer_activations[layer_idx].append(act)
-
+    
                     for layer_idx, act in target_acts.items():
-                        target_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
+                        target_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
                         if layer_idx not in target_layer_activations:
                             target_layer_activations[layer_idx] = []
                         target_layer_activations[layer_idx].append(act)
-
+    
+                    # Store intermediate activations for multi-space stitching
                     for layer_idx, act in source_intermediate_acts.items():
                         if layer_idx not in source_intermediate_activations:
                             source_intermediate_activations[layer_idx] = []
                         source_intermediate_activations[layer_idx].append(act)
-
+    
                     for layer_idx, act in target_intermediate_acts.items():
                         if layer_idx not in target_intermediate_activations:
                             target_intermediate_activations[layer_idx] = []
                         target_intermediate_activations[layer_idx].append(act)
-
+    
+                    # Store Q attention activations for q_proj/o_proj stitching
                     for layer_idx, act in source_attention_acts.items():
                         if layer_idx not in source_attention_activations:
                             source_attention_activations[layer_idx] = []
                         source_attention_activations[layer_idx].append(act)
-
+    
                     for layer_idx, act in target_attention_acts.items():
                         if layer_idx not in target_attention_activations:
                             target_attention_activations[layer_idx] = []
                         target_attention_activations[layer_idx].append(act)
-
+    
+                    # Store K attention activations for k_proj stitching
                     for layer_idx, act in source_k_acts.items():
                         if layer_idx not in source_k_activations:
                             source_k_activations[layer_idx] = []
                         source_k_activations[layer_idx].append(act)
-
+    
                     for layer_idx, act in target_k_acts.items():
                         if layer_idx not in target_k_activations:
                             target_k_activations[layer_idx] = []
                         target_k_activations[layer_idx].append(act)
-
+    
+                    # Store V attention activations for v_proj stitching
                     for layer_idx, act in source_v_acts.items():
                         if layer_idx not in source_v_activations:
                             source_v_activations[layer_idx] = []
                         source_v_activations[layer_idx].append(act)
-
+    
                     for layer_idx, act in target_v_acts.items():
                         if layer_idx not in target_v_activations:
                             target_v_activations[layer_idx] = []
                         target_v_activations[layer_idx].append(act)
-
+    
                     source_fingerprints.append(
                         ActivationFingerprint(
                             prime_id=probe.probe_id,
                             prime_text=probe.name,
-                            activated_dimensions=source_activated_fallback,
+                            activated_dimensions=source_activated,
                         )
                     )
                     target_fingerprints.append(
                         ActivationFingerprint(
                             prime_id=probe.probe_id,
                             prime_text=probe.name,
-                            activated_dimensions=target_activated_fallback,
+                            activated_dimensions=target_activated,
                         )
                     )
-
+    
                     probe_ids.append(probe.probe_id)
                     probe_domains.append(probe.domain.value)
                     probes_processed += 1
-
-                except Exception as inner_e:
-                    logger.warning("Probe '%s' failed: %s", probe.probe_id, inner_e)
-                    probes_failed += 1
+    
+                # Log progress at batch boundaries
+                if batch_end % 50 <= PROBE_BATCH_SIZE:
+                    logger.info(
+                        "PROBE PRECISE: Processed %d/%d probes...",
+                        probes_processed,
+                        len(valid_probes),
+                    )
+    
+                # Save checkpoint periodically
+                if checkpoint_path is not None and probes_processed % _CHECKPOINT_INTERVAL < PROBE_BATCH_SIZE:
+                    _save_probe_checkpoint(
+                        checkpoint_path=checkpoint_path,
+                        completed_probes=probes_processed,
+                        probe_ids=probe_ids,
+                        probe_domains=probe_domains,
+                        total_probes=len(valid_probes),
+                    )
+    
+            except Exception as e:
+                # On batch failure, fall back to sequential processing for this batch
+                logger.warning("Batch processing failed, falling back to sequential: %s", e)
+                for probe, probe_text in batch:
+                    # Skip probes that were already completed (from checkpoint)
+                    if probe.probe_id in completed_probe_ids:
+                        continue
+    
+                    try:
+                        source_acts = activation_provider.collect_hidden_activations(
+                            source_model, source_tokenizer, probe_text
+                        )
+                        target_acts = activation_provider.collect_hidden_activations(
+                            target_model, target_tokenizer, probe_text
+                        )
+                        source_intermediate_acts = activation_provider.collect_intermediate_activations(
+                            source_model, source_tokenizer, probe_text
+                        )
+                        target_intermediate_acts = activation_provider.collect_intermediate_activations(
+                            target_model, target_tokenizer, probe_text
+                        )
+                        source_attention_acts, source_k_acts, source_v_acts = activation_provider.collect_attention_activations(
+                            source_model, source_tokenizer, probe_text
+                        )
+                        target_attention_acts, target_k_acts, target_v_acts = activation_provider.collect_attention_activations(
+                            target_model, target_tokenizer, probe_text
+                        )
+    
+                        source_activated_fallback: dict[int, list[ActivatedDimension]] = {}
+                        target_activated_fallback: dict[int, list[ActivatedDimension]] = {}
+    
+                        for layer_idx, act in source_acts.items():
+                            source_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
+                            if layer_idx not in source_layer_activations:
+                                source_layer_activations[layer_idx] = []
+                            source_layer_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in target_acts.items():
+                            target_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
+                            if layer_idx not in target_layer_activations:
+                                target_layer_activations[layer_idx] = []
+                            target_layer_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in source_intermediate_acts.items():
+                            if layer_idx not in source_intermediate_activations:
+                                source_intermediate_activations[layer_idx] = []
+                            source_intermediate_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in target_intermediate_acts.items():
+                            if layer_idx not in target_intermediate_activations:
+                                target_intermediate_activations[layer_idx] = []
+                            target_intermediate_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in source_attention_acts.items():
+                            if layer_idx not in source_attention_activations:
+                                source_attention_activations[layer_idx] = []
+                            source_attention_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in target_attention_acts.items():
+                            if layer_idx not in target_attention_activations:
+                                target_attention_activations[layer_idx] = []
+                            target_attention_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in source_k_acts.items():
+                            if layer_idx not in source_k_activations:
+                                source_k_activations[layer_idx] = []
+                            source_k_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in target_k_acts.items():
+                            if layer_idx not in target_k_activations:
+                                target_k_activations[layer_idx] = []
+                            target_k_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in source_v_acts.items():
+                            if layer_idx not in source_v_activations:
+                                source_v_activations[layer_idx] = []
+                            source_v_activations[layer_idx].append(act)
+    
+                        for layer_idx, act in target_v_acts.items():
+                            if layer_idx not in target_v_activations:
+                                target_v_activations[layer_idx] = []
+                            target_v_activations[layer_idx].append(act)
+    
+                        source_fingerprints.append(
+                            ActivationFingerprint(
+                                prime_id=probe.probe_id,
+                                prime_text=probe.name,
+                                activated_dimensions=source_activated_fallback,
+                            )
+                        )
+                        target_fingerprints.append(
+                            ActivationFingerprint(
+                                prime_id=probe.probe_id,
+                                prime_text=probe.name,
+                                activated_dimensions=target_activated_fallback,
+                            )
+                        )
+    
+                        probe_ids.append(probe.probe_id)
+                        probe_domains.append(probe.domain.value)
+                        probes_processed += 1
+    
+                    except Exception as inner_e:
+                        logger.warning("Probe '%s' failed: %s", probe.probe_id, inner_e)
+                        probes_failed += 1
 
     logger.info(
         "PROBE PRECISE: Completed %d probes (%d failed), built %d fingerprints",
