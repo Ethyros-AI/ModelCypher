@@ -987,97 +987,135 @@ def _probe_precise(
                         row.append(0.0)
                 cka_matrix.append(row)
 
-            # Use DP to find optimal monotonic layer alignment
-            dp_path, _ = CrossArchitectureLayerMatcher._dynamic_programming_alignment(
-                cka_matrix
-            )
-
             # =========================================================================
-            # PARALLEL LAYER ALIGNMENT - Process layer pairs concurrently
+            # 1:1 BIJECTIVE LAYER ALIGNMENT via Hungarian Algorithm
             # =========================================================================
-            # Each layer alignment is independent, so we can parallelize using a
-            # thread pool. MLX operations submitted from multiple threads will be
-            # efficiently scheduled on the GPU command queue.
+            # CRITICAL: Use 1:1 mapping, NOT many-to-one grouping.
+            # Many-to-one concatenation (e.g., 10 source layers → 1 target) makes
+            # CKA=1.0 geometrically impossible due to extreme dimension compression.
             #
-            # Benefits:
-            # - Overlap CPU preparation with GPU computation
-            # - Better GPU utilization through concurrent kernel submission
-            # - 2-4× speedup for multi-layer alignments
+            # For cross-architecture (n_source != n_target), we find the best 1:1
+            # mapping for min(n_source, n_target) pairs. Unmapped layers use
+            # nearest-neighbor transform propagation.
+            from modelcypher.core.domain.geometry.hungarian import hungarian_assignment_list
+            
+            # Convert CKA matrix to cost matrix (minimize -CKA = maximize CKA)
+            # The matrix is [n_source x n_target], we need square for Hungarian
+            n_max = max(n_source, n_target)
+            cost_matrix: list[list[float]] = []
+            for i in range(n_max):
+                row: list[float] = []
+                for j in range(n_max):
+                    if i < n_source and j < n_target:
+                        # Negate CKA to convert to cost (Hungarian minimizes)
+                        row.append(-cka_matrix[i][j])
+                    else:
+                        # Padding for non-square: high cost to discourage matching
+                        row.append(1000.0)
+                cost_matrix.append(row)
+            
+            # Hungarian returns optimal assignment: assignment[i] = best j for row i
+            assignment = hungarian_assignment_list(cost_matrix)
+            
+            # Build 1:1 alignment tasks (target → source)
+            # Each target layer gets exactly one source layer
+            alignment_tasks: list[tuple[int, list[int]]] = []
+            
+            for tgt_idx in range(n_target):
+                # Find which source was assigned to this target
+                best_src_idx = None
+                best_cka = -1.0
+                for src_idx in range(n_source):
+                    if assignment[src_idx] == tgt_idx:
+                        cka = cka_matrix[src_idx][tgt_idx]
+                        if cka > best_cka:
+                            best_cka = cka
+                            best_src_idx = src_idx
+                
+                if best_src_idx is not None:
+                    # 1:1 mapping: single source layer (NOT a list of multiple)
+                    alignment_tasks.append((tgt_idx, [best_src_idx]))
+                else:
+                    # No source was assigned - use fallback (best CKA source)
+                    best_src = 0
+                    best_cka = -1.0
+                    for src_idx in range(n_source):
+                        if cka_matrix[src_idx][tgt_idx] > best_cka:
+                            best_cka = cka_matrix[src_idx][tgt_idx]
+                            best_src = src_idx
+                    alignment_tasks.append((tgt_idx, [best_src]))
+
+            # Submit 1:1 alignments (now we have n_target tasks, not 7 groups)
+            logger.info(
+                "PROBE: Aligning %d target layers (1:1 bijective mapping)...",
+                len(alignment_tasks),
+            )
+            
+            # Imports for parallel execution
             from concurrent.futures import ThreadPoolExecutor, as_completed
-
-            ALIGNMENT_MAX_WORKERS = 1  # Reduced from 4 - MLX segfaults with concurrent GPU access
-
+            ALIGNMENT_MAX_WORKERS = 1  # MLX segfaults with concurrent GPU access
+            
             def _align_target_group(
                 tgt_idx: int,
                 src_indices: list[int],
             ) -> dict:
-                """Align a group of source layers to a single target layer via concatenation."""
+                """Align source layer(s) to a target layer.
+                
+                With 1:1 mapping, src_indices has exactly 1 element.
+                """
                 tgt_layer = target_layers[tgt_idx]
-                src_layers = [source_layers[i] for i in src_indices]
+                src_layers_list = [source_layers[i] for i in src_indices]
                 
                 result: dict = {
                     "tgt_layer": tgt_layer,
-                    "src_layers": src_layers,
+                    "src_layers": src_layers_list,
                     "raw_cka": 0.0,
                     "achieved_cka": 0.0,
-                    "feature_transform": None,  # Will be a dict {src_layer: transform}
-                    "attention_transform": None, # Dict
-                    "k_transform": None, # Dict
-                    "v_transform": None, # Dict
+                    "feature_transform": None,
+                    "attention_transform": None,
+                    "k_transform": None,
+                    "v_transform": None,
                     "error": None,
                 }
 
-                # -----------------------------------------------------------
-                # 1. Prepare Activations (Concat Source)
-                # -----------------------------------------------------------
-                src_act_lists = [source_layer_activations[s] for s in src_layers]
+                src_act_lists = [source_layer_activations[s] for s in src_layers_list]
                 tgt_list = target_layer_activations[tgt_layer]
                 
-                # Find common sample count
                 n_samples = len(tgt_list)
                 for s_list in src_act_lists:
                     n_samples = min(n_samples, len(s_list))
                 
                 if n_samples < 2:
                     raise RuntimeError(
-                        f"Insufficient activation samples for layer group {src_layers} -> {tgt_layer}. "
-                        f"Got {n_samples} samples, need at least 2. "
-                        "This indicates a bug in activation collection."
+                        f"Insufficient samples for {src_layers_list} -> {tgt_layer}: {n_samples}"
                     )
 
-                # Create thread-local GramAligner
                 local_aligner = GramAligner(backend=b)
 
                 try:
-                    # Stack samples for each source
+                    # Stack source (for 1:1, this is just 1 source)
                     src_stacks = []
                     src_dims = []
-                    for s, s_list in zip(src_layers, src_act_lists):
+                    for s, s_list in zip(src_layers_list, src_act_lists):
                         stack = b.stack(s_list[:n_samples], axis=0)
                         stack = b.astype(stack, "float32")
                         src_stacks.append(stack)
                         src_dims.append(stack.shape[1])
                     
-                    # Stack target
                     tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
                     tgt_stacked = b.astype(tgt_stacked, "float32")
                     
-                    # Concatenate source features: [N, D1] + [N, D2] -> [N, D1+D2]
-                    src_combined = b.concatenate(src_stacks, axis=1)
+                    # For 1:1 mapping, this is just src_stacks[0] (no concat needed)
+                    if len(src_stacks) == 1:
+                        src_combined = src_stacks[0]
+                    else:
+                        src_combined = b.concatenate(src_stacks, axis=1)
                     
                     b.eval(src_combined, tgt_stacked)
                     
-                    # -----------------------------------------------------------
-                    # 2. Compute Match Metrics
-                    # -----------------------------------------------------------
-                    # Calculate raw CKA of the COMBINED representation
-                    # This should be much higher than individual layers
                     from modelcypher.core.domain.geometry.cka import compute_cka_backend
                     result["raw_cka"] = float(compute_cka_backend(src_combined, tgt_stacked, b))
 
-                    # -----------------------------------------------------------
-                    # 3. Align Hidden States
-                    # -----------------------------------------------------------
                     alignment_result = local_aligner.find_perfect_alignment(
                         src_combined,
                         tgt_stacked,
@@ -1085,19 +1123,12 @@ def _probe_precise(
                     
                     result["achieved_cka"] = alignment_result.achieved_cka
                     
-                    # Split the composite transform back to per-source transforms
-                    composite_F = alignment_result.feature_transform
-                    # F is [Sum(Ds), Dt]
-                    # We split Sum(Ds) back into slices
+                    F_arr = b.array(alignment_result.feature_transform)
                     
-                    # Convert list to array for slicing if needed, but it's likely a list/array from GramAligner
-                    # GramAligner returns list (serialization ready). Convert to array for splitting.
-                    F_arr = b.array(composite_F)
-                    
+                    # Split transform for each source layer
                     split_transforms = {}
                     start_idx = 0
-                    for s_layer, s_dim in zip(src_layers, src_dims):
-                        # F_slice: [s_dim, Dt]
+                    for s_layer, s_dim in zip(src_layers_list, src_dims):
                         F_slice = F_arr[start_idx : start_idx + s_dim, :]
                         split_transforms[s_layer] = b.tolist(F_slice)
                         start_idx += s_dim
@@ -1106,94 +1137,17 @@ def _probe_precise(
 
                     if not alignment_result.is_perfect:
                         logger.warning(
-                            "PROBE: Group %s -> %d hidden alignment not exact (CKA=%.4f).",
-                            src_layers, tgt_layer, alignment_result.achieved_cka
+                            "PROBE: Layer %s -> %d alignment not perfect (CKA=%.4f).",
+                            src_layers_list, tgt_layer, alignment_result.achieved_cka
                         )
 
-                    # -----------------------------------------------------------
-                    # 4. Attention Q/K/V (Optional)
-                    # -----------------------------------------------------------
-                    # Only if ALL source layers have attention data? Or ANY?
-                    # Generally corresponding layers should all have attention if one does.
-                    
-                    def align_subcomponent(attr_name, src_dict, tgt_dict):
-                        # Use same n_samples
-                        if tgt_layer not in tgt_dict:
-                            return None
-                        
-                        sub_src_stacks = []
-                        sub_src_dims = []
-                        valid_src_layers = []
-                        
-                        for s in src_layers:
-                            if s in src_dict:
-                                s_list = src_dict[s]
-                                if len(s_list) >= n_samples:
-                                    st = b.stack(s_list[:n_samples], axis=0)
-                                    st = b.astype(st, "float32")
-                                    sub_src_stacks.append(st)
-                                    sub_src_dims.append(st.shape[1])
-                                    valid_src_layers.append(s)
-                        
-                        if not sub_src_stacks:
-                            return None
-                            
-                        # Concatenate
-                        sub_src_comb = b.concatenate(sub_src_stacks, axis=1)
-                        tgt_st = b.stack(tgt_dict[tgt_layer][:n_samples], axis=0)
-                        tgt_st = b.astype(tgt_st, "float32")
-                        b.eval(sub_src_comb, tgt_st)
-                        
-                        res = local_aligner.find_perfect_alignment(sub_src_comb, tgt_st)
-                        
-                        # Split
-                        F_sub = b.array(res.feature_transform)
-                        sub_splits = {}
-                        idx = 0
-                        for s_lay, s_d in zip(valid_src_layers, sub_src_dims):
-                            sli = F_sub[idx : idx + s_d, :]
-                            sub_splits[s_lay] = b.tolist(sli)
-                            idx += s_d
-                            
-                        return sub_splits
-
-                    result["attention_transform"] = align_subcomponent(
-                        "attention_transform", source_attention_activations, target_attention_activations
-                    )
-                    result["k_transform"] = align_subcomponent(
-                        "k_transform", source_k_activations, target_k_activations
-                    )
-                    result["v_transform"] = align_subcomponent(
-                        "v_transform", source_v_activations, target_v_activations
-                    )
-
                 except Exception as e:
-                    # RIGOROUS GEOMETRY: Do not swallow exceptions.
-                    # If GramAligner fails, the geometry is broken - fail loudly.
                     raise RuntimeError(
-                        f"GramAligner failed for group {src_layers} -> {tgt_layer}: {e}"
+                        f"GramAligner failed for {src_layers_list} -> {tgt_layer}: {e}"
                     ) from e
 
                 return result
 
-            # Group source layers by target layer (for many-to-one alignment)
-            target_to_sources: dict[int, list[int]] = {}
-            for src_idx, tgt_idx in dp_path:
-                if tgt_idx not in target_to_sources:
-                    target_to_sources[tgt_idx] = []
-                target_to_sources[tgt_idx].append(src_idx)
-
-            # Define alignment tasks
-            alignment_tasks = []
-            for tgt_idx, src_indices in target_to_sources.items():
-                alignment_tasks.append((tgt_idx, src_indices))
-
-            # Submit grouped alignments
-            logger.info(
-                "PROBE: Aligning %d target layers (from %d total mappings)...",
-                len(alignment_tasks),
-                len(dp_path),
-            )
 
             with ThreadPoolExecutor(max_workers=ALIGNMENT_MAX_WORKERS) as executor:
                 futures = {
@@ -1252,7 +1206,7 @@ def _probe_precise(
             logger.info(
                 "PROBE: Cross-architecture layer alignment found %d mappings "
                 "(source: %d layers, target: %d layers)",
-                len(dp_path),
+                len(alignment_tasks),
                 n_source,
                 n_target,
             )

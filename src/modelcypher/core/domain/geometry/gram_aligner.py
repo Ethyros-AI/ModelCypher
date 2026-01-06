@@ -473,9 +473,14 @@ class GramAligner:
         
         best_loss = 1.0
         best_F = F
-        patience = 100
+        # Patience for learning rate reduction, NOT for early stopping
+        patience = 200
         patience_counter = 0
         current_cka = 0.0
+        current_lr = learning_rate
+        
+        # Near-perfect threshold: CKA >= 0.9999 is success
+        NEAR_PERFECT_CKA = 0.9999
         
         for step in range(max_steps):
             loss, grads = loss_and_grad(F)
@@ -484,39 +489,42 @@ class GramAligner:
             l_val = float(b.to_scalar(loss))
             current_cka = 1.0 - l_val
             
-            # Check convergence
-            if l_val < precision: # CKA > 1.0 - eps
+            # Check convergence - only exit if truly aligned
+            if current_cka >= NEAR_PERFECT_CKA:
                 break
                 
-            if l_val < best_loss - 1e-6: # Tighter improvement threshold
+            if l_val < best_loss - 1e-6:
                 best_loss = l_val
-                best_F = F  # Save best transform
+                best_F = F
                 patience_counter = 0
             else:
                 patience_counter += 1
                 
-            # Only allow early stopping if we've achieved near-perfect alignment
-            if patience_counter > patience and current_cka >= 0.9999:
-                break
+            # Reduce learning rate on plateau (but do NOT early stop)
+            if patience_counter > patience:
+                current_lr *= 0.5
+                patience_counter = 0
+                if current_lr < 1e-6:
+                    # LR too small, use best found (but still iterate)
+                    F = best_F
+                    current_lr = learning_rate * 0.1
 
-            # Adam Update
-            # m = beta1 * m + (1 - beta1) * grads
+            # Adam Update with current learning rate
             m = b.add(b.multiply(beta1, m), b.multiply(1 - beta1, grads))
-            
-            # v = beta2 * v + (1 - beta2) * (grads * grads)
             v = b.add(b.multiply(beta2, v), b.multiply(1 - beta2, b.multiply(grads, grads)))
-            
-            # m_hat = m / (1 - beta1**(step + 1))
             m_hat = b.multiply(m, 1.0 / (1.0 - beta1**(step + 1)))
-            
-            # v_hat = v / (1 - beta2**(step + 1))
             v_hat = b.multiply(v, 1.0 / (1.0 - beta2**(step + 1)))
-            
-            # F = F - learning_rate * m_hat / (sqrt(v_hat) + eps)
             denom = b.add(b.sqrt(v_hat), eps)
-            step_update = b.multiply(learning_rate, b.divide(m_hat, denom))
+            step_update = b.multiply(current_lr, b.divide(m_hat, denom))
             F = b.subtract(F, step_update)
             b.eval(F)
+        
+        # Return best transform found
+        if current_cka < NEAR_PERFECT_CKA:
+            # Did not achieve perfect alignment - return best attempt
+            # The caller (probe.py) will check and warn if CKA is too low
+            F = best_F
+            current_cka = 1.0 - best_loss
 
         return F, current_cka
 
