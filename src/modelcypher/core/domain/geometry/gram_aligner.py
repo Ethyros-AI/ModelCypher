@@ -443,6 +443,22 @@ class GramAligner:
         
         logger.info("HYBRID ALIGNMENT: Starting geodesic gradient refinement...")
         
+        # Compute robust epsilon for numerical stability
+        reg_eps = regularization_epsilon(b, K_t_c)
+        target_norm_sq_base = b.sum(K_t_c * K_t_c)
+        b.eval(target_norm_sq_base)
+        target_norm_sq = float(b.to_scalar(target_norm_sq_base)) + reg_eps
+        
+        # Check for degenerate target (near-zero Gram norm)
+        if target_norm_sq < reg_eps * 10:
+            logger.warning("HYBRID ALIGNMENT: Target Gram norm near-zero, using identity-like transform")
+            # Return identity-like transform for degenerate case
+            if d_s == d_t:
+                F = b.eye(d_s)
+            else:
+                F = b.matmul(b.pinv(source), target)
+            return F, 0.0  # CKA = 0 for degenerate case
+        
         # Step 4: Define loss as geodesic distance to target Gram
         def loss_fn(F_matrix):
             # Project Source
@@ -455,7 +471,7 @@ class GramAligner:
             # Geodesic Gram distance: ||K_proj - K_t||_F^2 / ||K_t||_F^2
             diff = K_proj_c - K_t_c
             diff_norm_sq = b.sum(diff * diff)
-            target_norm_sq = b.sum(K_t_c * K_t_c) + 1e-8
+            # Use precomputed target_norm_sq (float) for stability
             loss = b.divide(diff_norm_sq, target_norm_sq)
             
             # Ensure scalar array
@@ -479,20 +495,44 @@ class GramAligner:
         current_cka = 0.0
         current_lr = learning_rate
         
-        # Near-perfect threshold: CKA >= 0.9999 is success
-        NEAR_PERFECT_CKA = 0.9999
+        # Machine precision threshold for convergence
+        precision = division_epsilon(b, source)
+        NEAR_PERFECT_CKA = 1.0 - precision
+        
+        # How often to compute true CKA (expensive)
+        TRUE_CKA_CHECK_INTERVAL = 100
         
         for step in range(max_steps):
             loss, grads = loss_and_grad(F)
             b.eval(loss, grads)
             
             l_val = float(b.to_scalar(loss))
-            current_cka = 1.0 - l_val
             
-            # Check convergence - only exit if truly aligned
-            if current_cka >= NEAR_PERFECT_CKA:
-                break
+            # NaN detection - return best found if optimization diverged
+            if l_val != l_val:  # NaN check
+                logger.warning("HYBRID ALIGNMENT: NaN detected at step %d, returning best found", step)
+                return best_F, 1.0 - best_loss
+            
+            # Approximate CKA from loss (for fast iteration decisions)
+            approx_cka = 1.0 - l_val
+            
+            # Compute TRUE CKA periodically (expensive but accurate)
+            if step % TRUE_CKA_CHECK_INTERVAL == 0 or approx_cka >= 0.99:
+                projected = b.matmul(source, F)
+                b.eval(projected)
+                current_cka = float(compute_cka_backend(projected, target, b))
                 
+                # NaN in true CKA
+                if current_cka != current_cka:
+                    logger.warning("HYBRID ALIGNMENT: NaN in true CKA at step %d", step)
+                    return best_F, 1.0 - best_loss
+                
+                # Check convergence with TRUE CKA (not approximate)
+                if current_cka >= NEAR_PERFECT_CKA:
+                    break
+            else:
+                current_cka = approx_cka
+            
             if l_val < best_loss - 1e-6:
                 best_loss = l_val
                 best_F = F
@@ -505,7 +545,7 @@ class GramAligner:
                 current_lr *= 0.5
                 patience_counter = 0
                 if current_lr < 1e-6:
-                    # LR too small, use best found (but still iterate)
+                    # LR too small, reset with best found
                     F = best_F
                     current_lr = learning_rate * 0.1
 
@@ -519,14 +559,17 @@ class GramAligner:
             F = b.subtract(F, step_update)
             b.eval(F)
         
-        # Return best transform found
-        if current_cka < NEAR_PERFECT_CKA:
-            # Did not achieve perfect alignment - return best attempt
-            # The caller (probe.py) will check and warn if CKA is too low
-            F = best_F
-            current_cka = 1.0 - best_loss
+        # Final true CKA computation
+        projected = b.matmul(source, best_F)
+        b.eval(projected)
+        final_cka = float(compute_cka_backend(projected, target, b))
+        
+        # Handle NaN in final CKA
+        if final_cka != final_cka:
+            final_cka = 0.0
 
-        return F, current_cka
+        return best_F, final_cka
+
 
 
     def _compute_cka_for_transform(
