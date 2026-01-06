@@ -295,7 +295,6 @@ class MetaphorTrajectoryCollector:
                 source_acts,
                 target_acts,
                 backend=self.backend,
-                use_linear_kernel=True,
             )
 
             # Compute centroids and cosine similarity

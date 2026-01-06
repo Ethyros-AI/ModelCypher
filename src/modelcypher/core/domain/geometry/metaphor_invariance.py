@@ -221,7 +221,7 @@ class MetaphorInvarianceAnalyzer:
         arr_a = self.backend.array([[v] for v in interp_a])
         arr_b = self.backend.array([[v] for v in interp_b])
 
-        result = compute_cka(arr_a, arr_b, backend=self.backend, use_linear_kernel=True)
+        result = compute_cka(arr_a, arr_b, backend=self.backend)
         return result.cka
 
     def _interpolate_trajectory(
