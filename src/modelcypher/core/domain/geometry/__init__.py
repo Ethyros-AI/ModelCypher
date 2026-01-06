@@ -102,7 +102,6 @@ _SUBMODULES = {
     "neuron_sparsity_analyzer",
     "optimal_transport",
     "path_geometry",
-    "permutation_aligner",
     "persona_vector_monitor",
     "prime_geometry",
     "probe_calibration",
@@ -141,12 +140,34 @@ _ATTR_TO_MODULE = {
     "GeneralizedProcrustes": ("generalized_procrustes", "GeneralizedProcrustes"),
     "GramAligner": ("gram_aligner", "GramAligner"),
     "GeodesicNullSpaceFilter": ("geodesic_null_space", "GeodesicNullSpaceFilter"),
+    # Dimensional alignment (Priority 2) 
+    "DimensionalAlignment": ("dimensional_alignment", "DimensionalAlignment"),
+    "measure_dimensional_alignment": ("dimensional_alignment", "measure_dimensional_alignment"),
+    # Anchor invariance analysis (Priority 2)
+    "AnchorInvarianceAnalyzer": ("anchor_invariance_analyzer", "AnchorInvarianceAnalyzer"),
+    # Constraint-based alignment (Priority 2)
+    "ConstraintAligner": ("constraint_alignment", "ConstraintAligner"),
+    # Cross-dimensional projection (Priority 2)
+    "project_cross_dimensional": ("cross_dimensional_projection", "project_cross_dimensional"),
+    # Sparse region analysis
+    "SparseRegionProber": ("sparse_region_prober", "SparseRegionProber"),
+    "SparseRegionValidator": ("sparse_region_validator", "SparseRegionValidator"),
+    "SparseRegionLocator": ("sparse_region_locator", "SparseRegionLocator"),
+    # Spectral analysis
+    "SpectralMetrics": ("spectral_analysis", "SpectralMetrics"),
+    # Geometric LoRA (Priority 5)
+    "GeometricLoRAGenerator": ("geometric_lora", "GeometricLoRAGenerator"),
+    # Tangent space alignment (Riemannian)
+    "TangentSpaceAlignment": ("tangent_space_alignment", "TangentSpaceAlignment"),
+    "compute_alignment_for_layers": ("tangent_space_alignment", "compute_alignment_for_layers"),
+    # Cross-dimension transfer via relative representation (CRITICAL for cross-arch merge)
+    "cross_dimension_transfer": ("relative_representation", "cross_dimension_transfer"),
+    "RelativeRepresentation": ("relative_representation", "RelativeRepresentation"),
     # DoRA analysis
     "ChangeType": ("dora_decomposition", "ChangeType"),
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),
     "PathNode": ("path_geometry", "PathNode"),
     "PathSignature": ("path_geometry", "PathSignature"),
-    "PermutationAligner": ("permutation_aligner", "PermutationAligner"),
     # Backend-aware matrix utilities
     "BackendMatrixUtils": ("backend_matrix_utils", "BackendMatrixUtils"),
     "ProcrustesResult": ("types", "ProcrustesResult"),
@@ -168,7 +189,18 @@ _ATTR_TO_MODULE = {
     "MetaphorInvarianceResult": ("metaphor_invariance", "MetaphorInvarianceResult"),
     "MetaphorInvarianceAnalyzer": ("metaphor_invariance", "MetaphorInvarianceAnalyzer"),
     "PlatonicMetaphorValidator": ("metaphor_invariance", "PlatonicMetaphorValidator"),
+    # Domain signal profiles for domain-aware merging
+    "DomainSignalProfile": ("domain_signal_profile", "DomainSignalProfile"),
+    "LayerSignal": ("domain_signal_profile", "LayerSignal"),
+    # Safety and transfer validation
+    "SafetyPolytope": ("safety_polytope", "SafetyPolytope"),
+    "TransferFidelityPrediction": ("transfer_fidelity", "TransferFidelityPrediction"),
+    # Metaphor invariant probe generation
+    "generate_all_metaphor_probes": ("metaphor_invariants", "generate_all_metaphor_probes"),
+    "MetaphorProbe": ("metaphor_invariants", "MetaphorProbe"),
 }
+# Filter out None values (conditional exports)
+_ATTR_TO_MODULE = {k: v for k, v in _ATTR_TO_MODULE.items() if v is not None}
 
 
 def __getattr__(name: str):
@@ -192,6 +224,5 @@ if TYPE_CHECKING:
     from .backend_matrix_utils import BackendMatrixUtils
     from .dora_decomposition import ChangeType, DoRADecomposition
     from .path_geometry import PathNode, PathSignature
-    from .permutation_aligner import PermutationAligner
     from .signature_base import LabeledSignatureMixin, SignatureMixin
     from .types import PairwiseProcrustesResult, ProcrustesResult
