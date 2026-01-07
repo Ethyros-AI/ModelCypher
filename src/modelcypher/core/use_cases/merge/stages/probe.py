@@ -535,6 +535,9 @@ class ProbeResult:
     # These transforms achieve CKA = 1.0 for each aligned layer pair
     # Hidden-space transforms: for hidden dimension (e.g., 960 -> 896)
     feature_transforms: dict[int, list[list[float]]] | None = None
+    # EXACT SCALE FACTOR per layer: ||target|| / ||source @ F||
+    # Apply to stitched weights for exact magnitude match
+    scale_ratios: dict[int, float] | None = None
     # Embedding-space transform: for embed_tokens alignment (same CKA=1.0, same geodesic math)
     embedding_transform: list[list[float]] | None = None
     # Attention Q-space transforms: for q_proj/o_proj (e.g., 960 -> 896 for Q heads)
@@ -1293,6 +1296,7 @@ def _probe_precise(
     # the correct transformation. If it can't achieve CKA = 1.0, the algorithm is broken.
     layer_mapping: dict[int, int] = {}  # target_layer -> source_layer
     feature_transforms: dict[int, list[list[float]]] = {}  # target_layer -> hidden transform
+    scale_ratios: dict[int, float] = {}  # EXACT scale factor per layer: ||target|| / ||source @ F||
     attention_transforms: dict[int, list[list[float]]] = {}  # target_layer -> Q attention transform
     k_transforms: dict[int, list[list[float]]] = {}  # target_layer -> K attention transform
     v_transforms: dict[int, list[list[float]]] = {}  # target_layer -> V attention transform
@@ -1689,6 +1693,10 @@ def _probe_precise(
                         start_idx += s_dim
                         
                     result["feature_transform"] = split_transforms
+                    
+                    # EXACT SCALE FACTOR: ||target|| / ||source @ F||
+                    # Apply this to stitched weights for exact magnitude match
+                    result["scale_ratio"] = alignment_result.scale_ratio
 
                     if not alignment_result.is_perfect:
                         logger.warning(
@@ -1990,6 +1998,10 @@ def _probe_precise(
                 feature_transforms[tgt_layer] = result["feature_transform"]
                 layer_cka_scores[tgt_layer] = result["achieved_cka"]
                 layer_cka_scores_raw[tgt_layer] = result["raw_cka"]
+                
+                # EXACT SCALE FACTOR per layer
+                if "scale_ratio" in result:
+                    scale_ratios[tgt_layer] = result["scale_ratio"]
 
                 # Store successful alignment data for zipper warm-start of future layers
                 # Store both F and R (R is currently not returned from aligner - future enhancement)
@@ -2290,6 +2302,7 @@ def _probe_precise(
         probe_ids=probe_ids,
         probe_domains=probe_domains,
         feature_transforms=feature_transforms if feature_transforms else None,
+        scale_ratios=scale_ratios if scale_ratios else None,  # EXACT magnitude factors
         embedding_transform=embedding_transform,
         attention_transforms=attention_transforms if attention_transforms else None,
         k_transforms=k_transforms if k_transforms else None,

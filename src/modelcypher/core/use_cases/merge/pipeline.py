@@ -119,6 +119,7 @@ def run_merge(
         source_k_activations,
         target_k_activations,
         feature_transforms,
+        scale_ratios,  # EXACT magnitude factors: ||target|| / ||source @ F||
         embedding_transform,  # 2D GramAlign for embed_tokens
         attention_transforms,
         k_transforms,
@@ -325,6 +326,7 @@ def run_merge(
         backend=backend,
         graft_mask=graft_mask,
         feature_transforms=feature_transforms,
+        scale_ratios=scale_ratios,  # EXACT: ||target|| / ||source @ F|| per layer
         embedding_transform=embedding_transform,  # 2D GramAlign for embed_tokens
         attention_transforms=attention_transforms,
         k_transforms=k_transforms,

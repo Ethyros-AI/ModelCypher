@@ -84,6 +84,7 @@ def stage_probe(
     dict | None,
     dict | None,
     dict[int, list[list[float]]] | None,  # feature_transforms (hidden)
+    dict[int, float] | None,  # scale_ratios (EXACT magnitude factors)
     list[list[float]] | None,  # embedding_transform (2D GramAlign)
     dict[int, list[list[float]]] | None,  # attention_transforms (Q)
     dict[int, list[list[float]]] | None,  # k_transforms (K)
@@ -123,6 +124,7 @@ def stage_probe(
         result.source_k_activations,
         result.target_k_activations,
         result.feature_transforms,
+        result.scale_ratios,  # EXACT: ||target|| / ||source @ F||
         result.embedding_transform,
         result.attention_transforms,
         result.k_transforms,
@@ -175,6 +177,7 @@ def stage_transplant(
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
     feature_transforms: dict[int, list[list[float]]] | None = None,
+    scale_ratios: dict[int, float] | None = None,  # EXACT: ||target|| / ||source @ F||
     embedding_transform: list[list[float]] | None = None,  # 2D GramAlign
     attention_transforms: dict[int, list[list[float]]] | None = None,
     k_transforms: dict[int, list[list[float]]] | None = None,
@@ -204,6 +207,7 @@ def stage_transplant(
         backend=backend,
         graft_mask=graft_mask,
         feature_transforms=feature_transforms,
+        scale_ratios=scale_ratios,  # EXACT magnitude factors
         embedding_transform=embedding_transform,
         attention_transforms=attention_transforms,
         k_transforms=k_transforms,

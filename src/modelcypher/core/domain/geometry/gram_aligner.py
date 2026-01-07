@@ -176,6 +176,11 @@ class AlignmentResult:
 
     # Diagnostic signal describing any residual gap
     diagnostic: "AlignmentSignal | None" = None
+    
+    # EXACT SCALE FACTOR: ||target|| / ||source @ F||
+    # When CKA=1.0, structure is aligned. This ratio preserves magnitude.
+    # Apply to stitched weights: W_merged = scale_ratio * W_stitched
+    scale_ratio: float = 1.0
 
     @property
     def is_perfect(self) -> bool:
@@ -425,8 +430,30 @@ class GramAligner:
         # Compute alignment error (1 - CKA)
         alignment_error = 1.0 - final_cka
         
-        # Diagnostics
+        # =====================================================================
+        # SCALE DIAGNOSTIC: Log scale mismatch for debugging
+        # =====================================================================
+        # CKA is scale-invariant, so ||source @ F|| may differ from ||target||
+        # We don't rescale F here to avoid numerical instability in pinv
+        # Scale correction should be applied at weight application level
+        # =====================================================================
         source_aligned = b.matmul(source_activations, feature_transform)
+        aligned_norm = b.sqrt(b.sum(source_aligned * source_aligned) + regularization_epsilon(b, source_aligned))
+        target_norm = b.sqrt(b.sum(target_activations * target_activations) + regularization_epsilon(b, target_activations))
+        b.eval(aligned_norm, target_norm)
+        
+        scale_ratio = float(b.to_scalar(target_norm)) / float(b.to_scalar(aligned_norm))
+        
+        # Log scale info (for debugging)
+        if abs(scale_ratio - 1.0) > 0.1:
+            logger.info(
+                "SCALE INFO: Aligned/target norm ratio = %.4f (aligned=%.2f, target=%.2f)",
+                scale_ratio,
+                float(b.to_scalar(aligned_norm)),
+                float(b.to_scalar(target_norm))
+            )
+        
+        # Diagnostics
         target_centered = self._center(target_activations)
         diagnostic = self._diagnose(source_aligned, target_centered, final_cka)
 
@@ -437,6 +464,7 @@ class GramAligner:
             alignment_error=alignment_error,
             diagnostic=diagnostic,
             precision_threshold=precision,
+            scale_ratio=scale_ratio,  # EXACT: ||target|| / ||source @ F||
         )
 
         return result
