@@ -131,6 +131,370 @@ def _clear_probe_checkpoint(checkpoint_path: Path) -> None:
         logger.debug("PROBE: Cleared checkpoint file %s", checkpoint_path)
 
 
+# =============================================================================
+# GPU-RESIDENT PROBE CACHE: Precomputed geometric data per layer
+# =============================================================================
+
+
+@dataclass
+class ProbeCache:
+    """GPU-resident cache of precomputed geometric data per layer.
+    
+    After collecting 963 probes, we precompute ONCE on GPU:
+    - Gram matrices [n_probes, n_probes] per layer
+    - Centered Gram matrices for CKA
+    - SVD decomposition (U, S, Vt) - gives shape, rotation info
+    - Effective ranks (entropy-based density measure)
+    - RBF sigma per layer (for consistent Gram computation)
+    
+    This eliminates redundant computation during alignment.
+    """
+    
+    # Per-layer activation matrices [n_probes, hidden_dim]
+    source_activations: dict[int, "Array"]
+    target_activations: dict[int, "Array"]
+    
+    # Per-layer Gram matrices [n_probes, n_probes] 
+    source_grams: dict[int, "Array"]
+    target_grams: dict[int, "Array"]
+    
+    # Per-layer centered Gram matrices for CKA
+    source_centered_grams: dict[int, "Array"]
+    target_centered_grams: dict[int, "Array"]
+    
+    # Per-layer SVD decomposition (shape/rotation info)
+    source_svd: dict[int, tuple["Array", "Array", "Array"]]  # U, S, Vt
+    target_svd: dict[int, tuple["Array", "Array", "Array"]]
+    
+    # Per-layer effective ranks (density measure)
+    source_ranks: dict[int, int]
+    target_ranks: dict[int, int]
+    
+    # Per-layer RBF sigma (bandwidth for Gram computation)
+    source_sigmas: dict[int, float]
+    target_sigmas: dict[int, float]
+    
+    # Layer similarity matrix [n_source, n_target] - geometric compatibility
+    layer_similarity_matrix: "Array | None" = None
+    
+    # Precomputed Procrustes R hints based on geometric similarity
+    procrustes_hints: dict[tuple[int, int], "Array"] | None = None
+    
+    @staticmethod
+    def from_activations(
+        source_acts: dict[int, list["Array"]],
+        target_acts: dict[int, list["Array"]],
+        backend: "Backend",
+    ) -> "ProbeCache":
+        """Build cache from collected probe activations.
+        
+        Args:
+            source_acts: layer -> list of activation arrays [1, hidden_dim] per probe
+            target_acts: layer -> list of activation arrays [1, hidden_dim] per probe
+            backend: MLX backend for GPU computation
+        """
+        b = backend
+        
+        # Initialize empty dicts
+        cache = ProbeCache(
+            source_activations={},
+            target_activations={},
+            source_grams={},
+            target_grams={},
+            source_centered_grams={},
+            target_centered_grams={},
+            source_svd={},
+            target_svd={},
+            source_ranks={},
+            target_ranks={},
+            source_sigmas={},
+            target_sigmas={},
+        )
+        
+        logger.info("PROBE CACHE: Building GPU-resident cache for %d source layers, %d target layers",
+                    len(source_acts), len(target_acts))
+        
+        # Stack and precompute for source layers
+        for layer_idx, acts in source_acts.items():
+            if not acts:
+                continue
+            cache._precompute_layer(
+                layer_idx, acts, b,
+                cache.source_activations,
+                cache.source_grams,
+                cache.source_centered_grams,
+                cache.source_svd,
+                cache.source_ranks,
+                cache.source_sigmas,
+            )
+        
+        # Stack and precompute for target layers
+        for layer_idx, acts in target_acts.items():
+            if not acts:
+                continue
+            cache._precompute_layer(
+                layer_idx, acts, b,
+                cache.target_activations,
+                cache.target_grams,
+                cache.target_centered_grams,
+                cache.target_svd,
+                cache.target_ranks,
+                cache.target_sigmas,
+            )
+        
+        b.eval()  # Force all GPU computation
+        logger.info("PROBE CACHE: Precomputed %d source + %d target Gram matrices on GPU",
+                    len(cache.source_grams), len(cache.target_grams))
+        
+        return cache
+    
+    def _precompute_layer(
+        self,
+        layer_idx: int,
+        acts: list["Array"],
+        backend: "Backend",
+        act_cache: dict,
+        gram_cache: dict,
+        centered_gram_cache: dict,
+        svd_cache: dict,
+        rank_cache: dict,
+        sigma_cache: dict,
+    ) -> None:
+        """Precompute geometric data for a single layer on GPU."""
+        b = backend
+        
+        # Stack activations: list of [1, d] -> [n_probes, d]
+        stacked = b.vstack(acts)
+        b.eval(stacked)
+        act_cache[layer_idx] = stacked
+        
+        n_probes, d_hidden = b.shape(stacked)
+        
+        # Compute RBF sigma using median heuristic
+        # sigma = median(||x_i - x_j||) for all pairs
+        # Approximation: use std of activations * sqrt(d)
+        std_val = b.std(stacked)
+        b.eval(std_val)
+        sigma = float(b.to_scalar(std_val)) * (float(d_hidden) ** 0.5) + 1e-6
+        sigma_cache[layer_idx] = sigma
+        
+        # Compute RBF Gram matrix: K_ij = exp(-||x_i - x_j||^2 / (2 * sigma^2))
+        # Efficient: ||x-y||^2 = ||x||^2 + ||y||^2 - 2<x,y>
+        sq_norms = b.sum(stacked * stacked, axis=1, keepdims=True)  # [n, 1]
+        dot_products = b.matmul(stacked, b.transpose(stacked))      # [n, n]
+        sq_dists = sq_norms + b.transpose(sq_norms) - 2 * dot_products  # [n, n]
+        gram = b.exp(-sq_dists / (2 * sigma * sigma))
+        b.eval(gram)
+        gram_cache[layer_idx] = gram
+        
+        # Center Gram matrix: K_c = HKH where H = I - 1/n * ones
+        n = int(n_probes)
+        row_mean = b.mean(gram, axis=1, keepdims=True)
+        col_mean = b.mean(gram, axis=0, keepdims=True)
+        total_mean = b.mean(gram)
+        centered_gram = gram - row_mean - col_mean + total_mean
+        b.eval(centered_gram)
+        centered_gram_cache[layer_idx] = centered_gram
+        
+        # SVD of centered Gram for shape/rotation info
+        U, S, Vt = geodesic_svd(b, centered_gram)
+        b.eval(U, S, Vt)
+        svd_cache[layer_idx] = (U, S, Vt)
+        
+        # Effective rank from singular values (entropy-based)
+        S_list = b.tolist(S)
+        S_sum = sum(S_list) + 1e-10
+        probs = [s / S_sum for s in S_list if s > 1e-10]
+        if probs:
+            entropy = -sum(p * log_scalar(p) for p in probs if p > 0)
+            eff_rank = int(ceil_scalar(2.718281828 ** entropy))
+        else:
+            eff_rank = 1
+        rank_cache[layer_idx] = eff_rank
+    
+    def compute_layer_similarity_matrix(self, backend: "Backend") -> None:
+        """Compute similarity matrix between all source-target layer pairs.
+        
+        Uses CKA between centered Gram matrices as similarity metric.
+        Result: [n_source_layers, n_target_layers] matrix on GPU.
+        """
+        b = backend
+        
+        source_layers = sorted(self.source_centered_grams.keys())
+        target_layers = sorted(self.target_centered_grams.keys())
+        
+        n_src = len(source_layers)
+        n_tgt = len(target_layers)
+        
+        similarity = b.zeros((n_src, n_tgt))
+        
+        for i, src_layer in enumerate(source_layers):
+            K_s = self.source_centered_grams[src_layer]
+            for j, tgt_layer in enumerate(target_layers):
+                K_t = self.target_centered_grams[tgt_layer]
+                
+                # CKA = <K_s, K_t>_F / (||K_s||_F * ||K_t||_F)
+                dot = b.sum(K_s * K_t)
+                norm_s = b.norm(K_s)
+                norm_t = b.norm(K_t)
+                cka = dot / (norm_s * norm_t + 1e-10)
+                
+                # Set similarity[i, j] = cka
+                # MLX doesn't support item assignment, so we build a list
+                b.eval(cka)
+        
+        # Build matrix from computed values
+        similarity_list = []
+        for i, src_layer in enumerate(source_layers):
+            row = []
+            K_s = self.source_centered_grams[src_layer]
+            for j, tgt_layer in enumerate(target_layers):
+                K_t = self.target_centered_grams[tgt_layer]
+                dot = b.sum(K_s * K_t)
+                norm_s = b.norm(K_s)
+                norm_t = b.norm(K_t)
+                cka = dot / (norm_s * norm_t + 1e-10)
+                b.eval(cka)
+                row.append(float(b.to_scalar(cka)))
+            similarity_list.append(row)
+        
+        self.layer_similarity_matrix = b.array(similarity_list)
+        b.eval(self.layer_similarity_matrix)
+        
+        logger.info("PROBE CACHE: Computed %dx%d layer similarity matrix", n_src, n_tgt)
+    
+    def save_to_profile(self, profile_path: Path, model_key: str, backend: "Backend") -> None:
+        """Save precomputed cache to model profile for reuse.
+        
+        Saves to: profile_path / f"{model_key}_probe_cache.npz"
+        
+        This allows us to skip re-probing for models we've already analyzed.
+        The cache contains heavy GPU data, so we save as numpy arrays.
+        """
+        import numpy as np
+        b = backend
+        
+        save_path = Path(profile_path) / f"{model_key}_probe_cache.npz"
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Convert GPU arrays to numpy for disk storage
+        data = {
+            "version": "1.0",
+        }
+        
+        # Save activations per layer
+        for layer_idx, acts in self.source_activations.items():
+            data[f"src_acts_{layer_idx}"] = np.array(b.tolist(acts))
+        for layer_idx, acts in self.target_activations.items():
+            data[f"tgt_acts_{layer_idx}"] = np.array(b.tolist(acts))
+        
+        # Save Gram matrices
+        for layer_idx, gram in self.source_grams.items():
+            data[f"src_gram_{layer_idx}"] = np.array(b.tolist(gram))
+        for layer_idx, gram in self.target_grams.items():
+            data[f"tgt_gram_{layer_idx}"] = np.array(b.tolist(gram))
+        
+        # Save centered Grams
+        for layer_idx, gram in self.source_centered_grams.items():
+            data[f"src_cgram_{layer_idx}"] = np.array(b.tolist(gram))
+        for layer_idx, gram in self.target_centered_grams.items():
+            data[f"tgt_cgram_{layer_idx}"] = np.array(b.tolist(gram))
+        
+        # Save ranks and sigmas as metadata
+        data["src_ranks"] = np.array(list(self.source_ranks.items()))
+        data["tgt_ranks"] = np.array(list(self.target_ranks.items()))
+        data["src_sigmas"] = np.array(list(self.source_sigmas.items()))
+        data["tgt_sigmas"] = np.array(list(self.target_sigmas.items()))
+        
+        # Save layer similarity if computed
+        if self.layer_similarity_matrix is not None:
+            data["similarity_matrix"] = np.array(b.tolist(self.layer_similarity_matrix))
+        
+        np.savez_compressed(save_path, **data)
+        logger.info("PROBE CACHE: Saved to profile %s (%.1f MB)", 
+                    save_path, save_path.stat().st_size / 1024 / 1024)
+    
+    @staticmethod
+    def load_from_profile(profile_path: Path, model_key: str, backend: "Backend") -> "ProbeCache | None":
+        """Load precomputed cache from model profile.
+        
+        Returns None if profile doesn't exist or is invalid.
+        """
+        import numpy as np
+        b = backend
+        
+        load_path = Path(profile_path) / f"{model_key}_probe_cache.npz"
+        if not load_path.exists():
+            logger.debug("PROBE CACHE: No cached profile at %s", load_path)
+            return None
+        
+        try:
+            data = np.load(load_path, allow_pickle=True)
+            
+            # Reconstruct cache
+            cache = ProbeCache(
+                source_activations={},
+                target_activations={},
+                source_grams={},
+                target_grams={},
+                source_centered_grams={},
+                target_centered_grams={},
+                source_svd={},
+                target_svd={},
+                source_ranks={},
+                target_ranks={},
+                source_sigmas={},
+                target_sigmas={},
+            )
+            
+            # Load activations
+            for key in data.files:
+                if key.startswith("src_acts_"):
+                    layer_idx = int(key.split("_")[2])
+                    cache.source_activations[layer_idx] = b.array(data[key].tolist())
+                elif key.startswith("tgt_acts_"):
+                    layer_idx = int(key.split("_")[2])
+                    cache.target_activations[layer_idx] = b.array(data[key].tolist())
+                elif key.startswith("src_gram_"):
+                    layer_idx = int(key.split("_")[2])
+                    cache.source_grams[layer_idx] = b.array(data[key].tolist())
+                elif key.startswith("tgt_gram_"):
+                    layer_idx = int(key.split("_")[2])
+                    cache.target_grams[layer_idx] = b.array(data[key].tolist())
+                elif key.startswith("src_cgram_"):
+                    layer_idx = int(key.split("_")[2])
+                    cache.source_centered_grams[layer_idx] = b.array(data[key].tolist())
+                elif key.startswith("tgt_cgram_"):
+                    layer_idx = int(key.split("_")[2])
+                    cache.target_centered_grams[layer_idx] = b.array(data[key].tolist())
+            
+            # Load ranks and sigmas
+            if "src_ranks" in data:
+                for layer_idx, rank in data["src_ranks"]:
+                    cache.source_ranks[int(layer_idx)] = int(rank)
+            if "tgt_ranks" in data:
+                for layer_idx, rank in data["tgt_ranks"]:
+                    cache.target_ranks[int(layer_idx)] = int(rank)
+            if "src_sigmas" in data:
+                for layer_idx, sigma in data["src_sigmas"]:
+                    cache.source_sigmas[int(layer_idx)] = float(sigma)
+            if "tgt_sigmas" in data:
+                for layer_idx, sigma in data["tgt_sigmas"]:
+                    cache.target_sigmas[int(layer_idx)] = float(sigma)
+            
+            # Load similarity matrix if present
+            if "similarity_matrix" in data:
+                cache.layer_similarity_matrix = b.array(data["similarity_matrix"].tolist())
+            
+            b.eval()  # Ensure all loaded to GPU
+            logger.info("PROBE CACHE: Loaded from profile %s", load_path)
+            return cache
+            
+        except Exception as e:
+            logger.warning("PROBE CACHE: Failed to load from %s: %s", load_path, e)
+            return None
+
+
 @dataclass
 class ProbeResult:
     """Result of Stage 1 probing."""
@@ -974,6 +1338,22 @@ def _probe_precise(
     intermediate_transforms: dict[int, list[list[float]]] = {}  # target_layer -> MLP intermediate transform
     gram_aligner = GramAligner(backend=b)
 
+    # =========================================================================
+    # BUILD GPU-RESIDENT PROBE CACHE
+    # Precompute Gram matrices, SVDs, effective ranks ONCE on GPU.
+    # This eliminates redundant computation during alignment.
+    # =========================================================================
+    probe_cache: ProbeCache | None = None
+    if source_layer_activations and target_layer_activations:
+        logger.info("PROBE: Building GPU-resident cache from %d probes...", probes_processed)
+        probe_cache = ProbeCache.from_activations(
+            source_acts=source_layer_activations,
+            target_acts=target_layer_activations,
+            backend=b,
+        )
+        # Compute layer similarity matrix for geometric ordering
+        probe_cache.compute_layer_similarity_matrix(b)
+
     if source_layer_activations and target_layer_activations:
         source_layers = sorted(source_layer_activations.keys())
         target_layers = sorted(target_layer_activations.keys())
@@ -1619,6 +1999,8 @@ def _probe_precise(
                     F_init = neighbor_data.get("F")
                     R_hint = neighbor_data.get("R")
                     logger.info(f"ZIPPER: Layer {tgt_layer} warm-starting from layer {closest_layer} (F+R)")
+                else:
+                    logger.debug(f"ZIPPER: Layer {tgt_layer} has no successful neighbors yet")
                 
                 # Align this layer
                 result = _align_target_group(tgt_idx, src_indices, F_init=F_init, R_hint=R_hint)
@@ -1646,6 +2028,7 @@ def _probe_precise(
                         "F": result["F_arr_raw"],
                         "R": result.get("R_raw", None),  # R from procrustes (if available)
                     }
+                    logger.info(f"ZIPPER: Stored layer {tgt_layer} (CKA={result['achieved_cka']:.4f}) for warm-start")
 
                 if result["attention_transform"] is not None:
                     attention_transforms[tgt_layer] = result["attention_transform"]
