@@ -497,3 +497,63 @@ class TestTransplantEndToEnd:
         rank = sum(1 for sv in sv_list if sv > rank_eps)
         expected_null_dim = in_dim - rank
         assert result.null_dim == expected_null_dim
+
+
+def test_merged_weight_is_additive_not_transformed() -> None:
+    """Merged weight should be target + null_space_contribution, NOT F.T @ merged.
+    
+    This tests the critical fix from 2026-01-07: removing the post-merge 
+    re-alignment that was applying F.T @ merged_weight, which destroyed the
+    null-space interlacing and caused gibberish output.
+    
+    The correct formula: W_merged = W_target + project_to_null(W_source)
+    The WRONG formula:   W_merged = F.T @ (W_target + project_to_null(W_source))
+    """
+    backend = get_default_backend()
+    backend.random_seed(42)
+
+    in_dim, out_dim = 64, 32
+    n_core, n_boundary = 10, 20
+
+    weight_target = backend.random_normal((out_dim, in_dim))
+    weight_source = backend.random_normal((out_dim, in_dim))
+    activations_core = backend.random_normal((n_core, in_dim))
+    activations_boundary = backend.random_normal((n_boundary, in_dim))
+    backend.eval(weight_target, weight_source, activations_core, activations_boundary)
+
+    result = compute_transplant_delta(
+        weight_target=weight_target,
+        weight_source_aligned=weight_source,
+        activations_core=activations_core,
+        activations_boundary=activations_boundary,
+        backend=backend,
+    )
+
+    assert result.applied is True
+    
+    # Key test: merged weight should have SAME SHAPE as target
+    # If F.T @ merged was applied, shape might change or values would be 
+    # completely different (not just target + small contribution)
+    merged = backend.array(result.merged_weight)
+    target = backend.array(weight_target)
+    backend.eval(merged, target)
+    
+    assert merged.shape == target.shape, "Merged weight shape should match target"
+    
+    # The merged weight should be "close" to target (target + small null-space addition)
+    # not a completely transformed matrix (which would have very different structure)
+    diff = merged - target
+    diff_norm_arr = geodesic_norms(backend.reshape(diff, (1, -1)), backend)
+    target_norm_arr = geodesic_norms(backend.reshape(target, (1, -1)), backend)
+    backend.eval(diff_norm_arr, target_norm_arr)
+    
+    diff_norm = float(backend.to_scalar(diff_norm_arr[0]))
+    target_norm = float(backend.to_scalar(target_norm_arr[0]))
+    
+    # The difference should be bounded (null-space contribution is spectral-clipped to 1.0)
+    # A full F.T @ merged transform would give much larger relative difference
+    relative_diff = diff_norm / target_norm
+    assert relative_diff < 0.5, (
+        f"Merged weight differs too much from target ({relative_diff:.2f}). "
+        "This suggests post-merge transformation was applied instead of additive merge."
+    )
