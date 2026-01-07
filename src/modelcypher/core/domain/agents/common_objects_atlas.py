@@ -173,6 +173,20 @@ class CommonObjectInventory:
         ObjectConcept("brush", "brush", ObjectCategory.TOOL, "Bristled tool", ("brush", "paintbrush", "scrubber")),
     )
     
+    # Food - added to reach 960+ probes for full-rank alignment
+    FOOD = (
+        ObjectConcept("bread", "bread", ObjectCategory.FOOD, "Baked grain food", ("bread", "loaf", "toast")),
+        ObjectConcept("meat", "meat", ObjectCategory.FOOD, "Animal flesh food", ("meat", "beef", "chicken")),
+        ObjectConcept("fruit", "fruit", ObjectCategory.FOOD, "Plant reproduction food", ("fruit", "apple", "banana")),
+        ObjectConcept("vegetable", "vegetable", ObjectCategory.FOOD, "Plant part food", ("vegetable", "carrot", "broccoli")),
+        ObjectConcept("cheese", "cheese", ObjectCategory.FOOD, "Dairy product", ("cheese", "cheddar", "mozzarella")),
+        ObjectConcept("egg", "egg", ObjectCategory.FOOD, "Bird reproduction food", ("egg", "yolk", "white")),
+        ObjectConcept("rice", "rice", ObjectCategory.FOOD, "Grain food", ("rice", "grain", "cereal")),
+        ObjectConcept("soup", "soup", ObjectCategory.FOOD, "Liquid food", ("soup", "broth", "stew")),
+        ObjectConcept("cake", "cake", ObjectCategory.FOOD, "Sweet baked food", ("cake", "pastry", "dessert")),
+        ObjectConcept("pizza", "pizza", ObjectCategory.FOOD, "Flat bread food", ("pizza", "pie", "slice")),
+    )
+    
     @classmethod
     def all_concepts(cls) -> list[ObjectConcept]:
         """Get all object concepts."""
@@ -185,6 +199,7 @@ class CommonObjectInventory:
         concepts.extend(cls.ANIMALS)
         concepts.extend(cls.VEHICLES)
         concepts.extend(cls.TOOLS)
+        concepts.extend(cls.FOOD)
         return concepts
     
     @classmethod
