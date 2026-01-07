@@ -1253,11 +1253,13 @@ def _probe_precise(
                 tgt_idx: int,
                 src_indices: list[int],
                 F_init: "Array | None" = None,
+                R_hint: "Array | None" = None,
             ) -> dict:
                 """Align source layer(s) to a target layer.
                 
                 With 1:1 mapping, src_indices has exactly 1 element.
-                F_init: Optional warm-start from a successful neighbor (zipper).
+                F_init: Optional warm-start transform from a successful neighbor (zipper).
+                R_hint: Optional Procrustes rotation from a successful neighbor (zipper).
                 """
                 tgt_layer = target_layers[tgt_idx]
                 src_layers_list = [source_layers[i] for i in src_indices]
@@ -1318,6 +1320,7 @@ def _probe_precise(
                         src_combined,
                         tgt_stacked,
                         F_init=F_init,  # Zipper warm-start from neighbor
+                        R_hint=R_hint,  # Zipper rotation hint from neighbor
                     )
                     
                     result["achieved_cka"] = alignment_result.achieved_cka
@@ -1595,27 +1598,30 @@ def _probe_precise(
             # =========================================================================
             # Process in CKA-sorted order. For each layer:
             # 1. Find nearest successfully aligned neighbor (by layer index)
-            # 2. Use its F as warm-start for gradient descent
-            # This is the "zipper" concept: easy layers align first, their F patterns
-            # accelerate convergence for difficult neighbors.
+            # 2. Use its F and R for warm-start and rotation hint
+            # This is the "zipper" concept: easy layers align first, their geometry
+            # accelerates convergence for difficult neighbors.
             
-            successful_F_by_layer: dict[int, "Array"] = {}  # tgt_layer -> F_arr
+            successful_alignments: dict[int, dict] = {}  # tgt_layer -> {F, R}
             
             completed = 0
             for tgt_idx, src_indices in alignment_tasks_sorted:
-                # Find nearest successful neighbor's F for warm-start
+                # Find nearest successful neighbor's F and R for warm-start
                 tgt_layer = target_layers[tgt_idx]
                 F_init = None
+                R_hint = None
                 
-                if successful_F_by_layer:
+                if successful_alignments:
                     # Find the closest aligned layer by layer index
-                    aligned_layers = list(successful_F_by_layer.keys())
+                    aligned_layers = list(successful_alignments.keys())
                     closest_layer = min(aligned_layers, key=lambda l: abs(l - tgt_layer))
-                    F_init = successful_F_by_layer[closest_layer]
-                    logger.info(f"ZIPPER: Layer {tgt_layer} warm-starting from layer {closest_layer}")
+                    neighbor_data = successful_alignments[closest_layer]
+                    F_init = neighbor_data.get("F")
+                    R_hint = neighbor_data.get("R")
+                    logger.info(f"ZIPPER: Layer {tgt_layer} warm-starting from layer {closest_layer} (F+R)")
                 
                 # Align this layer
-                result = _align_target_group(tgt_idx, src_indices, F_init=F_init)
+                result = _align_target_group(tgt_idx, src_indices, F_init=F_init, R_hint=R_hint)
                 
                 tgt_layer = result["tgt_layer"]
                 src_layers = result["src_layers"]
@@ -1633,9 +1639,13 @@ def _probe_precise(
                 layer_cka_scores[tgt_layer] = result["achieved_cka"]
                 layer_cka_scores_raw[tgt_layer] = result["raw_cka"]
 
-                # Store successful F for zipper warm-start of future layers
+                # Store successful alignment data for zipper warm-start of future layers
+                # Store both F and R (R is currently not returned from aligner - future enhancement)
                 if result.get("F_arr_raw") is not None and result["achieved_cka"] > 0.9:
-                    successful_F_by_layer[tgt_layer] = result["F_arr_raw"]
+                    successful_alignments[tgt_layer] = {
+                        "F": result["F_arr_raw"],
+                        "R": result.get("R_raw", None),  # R from procrustes (if available)
+                    }
 
                 if result["attention_transform"] is not None:
                     attention_transforms[tgt_layer] = result["attention_transform"]
@@ -1655,7 +1665,7 @@ def _probe_precise(
                         "PROBE: Aligned %d/%d target layers (zipper: %d warm-started)...",
                         completed,
                         len(alignment_tasks_sorted),
-                        len(successful_F_by_layer),
+                        len(successful_alignments),
                     )
 
             logger.info(

@@ -1555,6 +1555,7 @@ def solve_via_gram_alignment(
     backend: Backend,
     source: Array,
     target: Array,
+    R_hint: "Array | None" = None,  # Zipper: pre-rotation from successful neighbor
 ) -> tuple[Array | None, dict]:
     """Align RELATIONAL CONTENT between source and target representations.
 
@@ -1744,6 +1745,24 @@ def solve_via_gram_alignment(
     # Update S_s for later use (it was also permuted)
     S_s_k = S_s_perm
 
+    # =========================================================================
+    # ZIPPER ROTATION PROPAGATION
+    # =========================================================================
+    # If R_hint is provided from a successful neighbor, pre-rotate U_s_k.
+    # This helps when the current layer has similar geometry to the neighbor -
+    # the pre-rotation gets us closer to the correct alignment before Procrustes.
+    if R_hint is not None:
+        R_hint_shape = b.shape(R_hint)
+        if int(R_hint_shape[0]) == actual_rank and int(R_hint_shape[1]) == actual_rank:
+            U_s_k = b.matmul(U_s_k, R_hint)  # Pre-rotate using neighbor's R
+            b.eval(U_s_k)
+            diagnostics["used_R_hint"] = True
+        else:
+            diagnostics["used_R_hint"] = False
+            # Shape mismatch - can't use R_hint
+    else:
+        diagnostics["used_R_hint"] = False
+
     # Orthogonal Procrustes: find R such that U_s @ R ≈ U_t
     # Solve: min ||U_s @ R - U_t||_F  s.t. R^T @ R = I
     # Solution: R = U @ V^T where M = U_s^T @ U_t = U @ S @ V^T
@@ -1768,6 +1787,7 @@ def solve_via_gram_alignment(
     U_t_norm = _geodesic_norm_scalar(U_t_k, b)
     procrustes_error = diff_norm / (U_t_norm + eps)
     diagnostics["procrustes_error"] = procrustes_error
+    diagnostics["procrustes_R"] = R  # Store for zipper warm-start
 
     # Build the full transform F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T
     # But we need to handle rank truncation carefully

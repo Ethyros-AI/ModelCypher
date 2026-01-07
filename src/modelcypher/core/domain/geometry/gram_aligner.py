@@ -342,6 +342,7 @@ class GramAligner:
         strict: bool = True,
         max_refinement_passes: int = 10,
         F_init: "Array | None" = None,
+        R_hint: "Array | None" = None,
     ) -> AlignmentResult:
         """Find alignment transform by iterating until CKA=1.0.
 
@@ -361,6 +362,10 @@ class GramAligner:
             If provided, skips SVD+Procrustes initialization and starts gradient
             descent from this F. This is the "zipper" concept: easy layers align
             first, their F patterns warm-start difficult neighbors.
+        R_hint : Array | None
+            Optional Procrustes rotation from a successfully aligned neighbor.
+            If provided, pre-rotates U_s before Procrustes to propagate rotational
+            geometry from neighbors - reduces procrustes_error on difficult layers.
         """
         b = self._backend
         n_s, d_s = b.shape(source_activations)
@@ -400,6 +405,7 @@ class GramAligner:
             precision=precision,
             max_steps=convergent_max_steps,
             F_init=F_init,  # Zipper warm-start from neighbor
+            R_hint=R_hint,  # Zipper rotation hint from neighbor
         )
         
         total_iterations = convergent_max_steps  # Approximate
@@ -443,6 +449,7 @@ class GramAligner:
         learning_rate: float = 0.1,
         max_steps: int = 5000,  # Optimized for speed (was 50000)
         F_init: "Array | None" = None,  # Zipper warm-start from neighbor
+        R_hint: "Array | None" = None,  # Zipper rotation hint for Procrustes
     ) -> tuple["Array", float]:
         """
         Find optimal linear transform F via HYBRID approach:
@@ -529,13 +536,17 @@ class GramAligner:
                 # Use SVD + Procrustes to align sample-space structure (U vectors).
                 # CKA=1.0 is ALWAYS achievable - gradient descent will converge.
                 # NO arbitrary thresholds - just use the closed-form solution and refine.
-                F_gram, diag = solve_via_gram_alignment(b, source, target)
+                F_gram, diag = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
+                
+                # Capture procrustes_R for zipper propagation
+                procrustes_R = diag.get('procrustes_R', None)
                 
                 if F_gram is not None:
                     # Use SVD+Procrustes initialization directly - let gradient descent refine
                     F = F_gram
                     proc_err = diag.get('procrustes_error', 0.0)
-                    logger.info(f"CROSS-DIM: Gram alignment init, procrustes_error={proc_err:.4f}")
+                    used_hint = diag.get('used_R_hint', False)
+                    logger.info(f"CROSS-DIM: Gram alignment init, procrustes_error={proc_err:.4f}, used_R_hint={used_hint}")
                 else:
                     # F_gram is None (SVD failed completely) - use pinv fallback
                     F = b.matmul(source_pinv, target)
