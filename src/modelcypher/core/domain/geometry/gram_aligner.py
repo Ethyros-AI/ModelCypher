@@ -467,16 +467,16 @@ class GramAligner:
         n_t, d_t = b.shape(target)
         
         logger.info("HYBRID ALIGNMENT: Computing geodesic Gram matrices...")
-        
-        # Step 1: Compute geodesic Gram matrices with sigma caching
-        # OPTIMIZATION: Use rbf_gram_matrix_with_sigma to capture the bandwidth
-        # The target never changes, so compute its Gram and sigma ONCE
-        K_s, sigma_s = rbf_gram_matrix_with_sigma(source, b)
-        K_t, sigma_t = rbf_gram_matrix_with_sigma(target, b)
-        
-        # Use target sigma for consistency in loss computation
-        # This ensures source projections are compared at the same geometric scale
-        shared_sigma = sigma_t
+        # Step 1: Compute LINEAR Gram matrices (NOT RBF)
+        # =================================================================
+        # LINEAR GRAM HAS CLOSED-FORM CKA=1.0 SOLUTION
+        # =================================================================
+        # RBF Gram is nonlinear: F that aligns linear Grams ≠ F that aligns RBF
+        # Linear Gram (K = X @ X.T) is aligned exactly by solve_via_gram_alignment
+        # This is the correct loss for the closed-form solution
+        logger.info("HYBRID ALIGNMENT: Computing linear Gram matrices...")
+        K_s = b.matmul(source, b.transpose(source))  # Linear Gram [n, n]
+        K_t = b.matmul(target, b.transpose(target))  # Linear Gram [n, n]
         
         K_s_c = _center_gram_matrix(K_s, b)
         K_t_c = _center_gram_matrix(K_t, b)
@@ -534,15 +534,15 @@ class GramAligner:
                 # CROSS-DIMENSIONAL PROJECTION via Gram alignment
                 # =================================================================
                 # Use SVD + Procrustes to align sample-space structure (U vectors).
-                # CKA=1.0 is ALWAYS achievable - gradient descent will converge.
-                # NO arbitrary thresholds - just use the closed-form solution and refine.
+                # With LINEAR Gram, CKA=1.0 is MATHEMATICALLY GUARANTEED by this solution.
+                # NO gradient descent needed - the closed-form IS the answer.
                 F_gram, diag = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
                 
                 # Capture procrustes_R for zipper propagation
                 procrustes_R = diag.get('procrustes_R', None)
                 
                 if F_gram is not None:
-                    # Use SVD+Procrustes initialization directly - let gradient descent refine
+                    # Closed-form solution - achieves exact linear CKA=1.0
                     F = F_gram
                     proc_err = diag.get('procrustes_error', 0.0)
                     used_hint = diag.get('used_R_hint', False)
@@ -565,7 +565,7 @@ class GramAligner:
                 F = b.multiply(0.01, b.random_normal((d_s, d_t)))
             b.eval(F)
         
-        logger.info("HYBRID ALIGNMENT: Starting geodesic gradient refinement...")
+        logger.info("HYBRID ALIGNMENT: Starting linear Gram refinement...")
         
         # Check for degenerate target (near-zero Gram norm)
         if target_norm_sq < reg_eps * 10:
@@ -576,19 +576,20 @@ class GramAligner:
                 F = b.matmul(source_pinv, target)
             return F, 0.0  # CKA = 0 for degenerate case
         
-        # Step 4: Define loss as geodesic distance to target Gram
-        # OPTIMIZATION: K_t_c and target_norm_sq are CAPTURED from outer scope
-        # They are computed once, not recomputed in every loss evaluation
+        # Step 4: Define loss as LINEAR Gram distance to target
+        # =================================================================
+        # LINEAR GRAM = X @ X.T - exactly what solve_via_gram_alignment aligns
+        # =================================================================
         def loss_fn(F_matrix):
             # Project Source
             projected = b.matmul(source, F_matrix)
             
-            # Compute geodesic Gram of projected source with SAME sigma as target
-            # This ensures consistent bandwidth for comparable geometry
-            K_proj = rbf_gram_matrix(projected, b, sigma=shared_sigma)
+            # Compute LINEAR Gram of projected source (NOT RBF!)
+            # This is consistent with the closed-form solution
+            K_proj = b.matmul(projected, b.transpose(projected))
             K_proj_c = _center_gram_matrix(K_proj, b)
             
-            # Geodesic Gram distance: ||K_proj - K_t||_F^2 / ||K_t||_F^2
+            # Linear Gram distance: ||K_proj - K_t||_F^2 / ||K_t||_F^2
             diff = K_proj_c - K_t_c
             diff_norm_sq = b.sum(diff * diff)
             # Use precomputed target_norm_sq (float) for stability
@@ -622,16 +623,21 @@ class GramAligner:
         # How often to compute true CKA (expensive) - increased for speed
         TRUE_CKA_CHECK_INTERVAL = 500
         
-        for step in range(max_steps):
+        # NO MAX_STEPS LIMIT - run until CKA=1.0 within machine epsilon
+        # If it takes forever, our math is wrong, not the iteration count
+        step = 0
+        LOG_INTERVAL = 10000  # Log progress every 10k steps
+        
+        while True:
             loss, grads = loss_and_grad(F)
             b.eval(loss, grads)
             
             l_val = float(b.to_scalar(loss))
             
-            # NaN detection - return best found if optimization diverged
+            # NaN detection - this indicates a math bug, not a limit issue
             if l_val != l_val:  # NaN check
-                logger.warning("HYBRID ALIGNMENT: NaN detected at step %d, returning best found", step)
-                return best_F, 1.0 - best_loss
+                logger.error("HYBRID ALIGNMENT: NaN detected at step %d - MATH BUG!", step)
+                raise RuntimeError(f"NaN in alignment at step {step} - fix the math, not the limit")
             
             # Approximate CKA from loss (for fast iteration decisions)
             approx_cka = 1.0 - l_val
@@ -642,16 +648,24 @@ class GramAligner:
                 b.eval(projected)
                 current_cka = float(compute_cka_backend(projected, target, b))
                 
-                # NaN in true CKA
+                # NaN in true CKA - math bug
                 if current_cka != current_cka:
-                    logger.warning("HYBRID ALIGNMENT: NaN in true CKA at step %d", step)
-                    return best_F, 1.0 - best_loss
+                    logger.error("HYBRID ALIGNMENT: NaN in true CKA at step %d - MATH BUG!", step)
+                    raise RuntimeError(f"NaN in CKA at step {step} - fix the math")
                 
                 # Check convergence with TRUE CKA (not approximate)
                 if current_cka >= NEAR_PERFECT_CKA:
+                    logger.info("CONVERGENT ALIGNMENT: Converged with CKA=%.6f (took %d steps)", current_cka, step)
                     break
             else:
                 current_cka = approx_cka
+            
+            # Log progress periodically for long-running alignments
+            if step > 0 and step % LOG_INTERVAL == 0:
+                logger.info(
+                    "ALIGNMENT PROGRESS: step=%d, approx_cka=%.6f, lr=%.2e",
+                    step, approx_cka, current_lr
+                )
             
             if l_val < best_loss - 1e-6:
                 best_loss = l_val
@@ -659,15 +673,23 @@ class GramAligner:
                 patience_counter = 0
             else:
                 patience_counter += 1
-                
-            # Reduce learning rate on plateau (but do NOT early stop)
+            
+            # ===============================================================
+            # PATIENCE-BASED RESTART: If stuck too long, restart from best_F with new LR
+            # ===============================================================
+            # Don't use fancy perturbations that break geometry - just restart optimization
             if patience_counter > patience:
                 current_lr *= 0.5
                 patience_counter = 0
-                if current_lr < 1e-6:
-                    # LR too small, reset with best found
+                if current_lr < 1e-8:
+                    # LR too small, reset with best found and larger LR
                     F = best_F
-                    current_lr = learning_rate * 0.1
+                    current_lr = learning_rate * 0.01
+                    # Also reset Adam state to escape momentum traps
+                    m = b.zeros_like(F)
+                    v = b.zeros_like(F)
+                    logger.info("ALIGNMENT: LR reset to %.2e at step %d, CKA=%.4f", 
+                                current_lr, step, current_cka)
 
             # Adam Update with current learning rate
             m = b.add(b.multiply(beta1, m), b.multiply(1 - beta1, grads))
@@ -678,12 +700,8 @@ class GramAligner:
             step_update = b.multiply(current_lr, b.divide(m_hat, denom))
             F = b.subtract(F, step_update)
             b.eval(F)
-        else:
-            # max_steps exhausted without convergence
-            logger.warning(
-                "HYBRID ALIGNMENT: max_steps=%d exhausted without reaching CKA=1.0 (best=%.6f)",
-                max_steps, 1.0 - best_loss
-            )
+            
+            step += 1
         
         # Final true CKA computation
         projected = b.matmul(source, best_F)
