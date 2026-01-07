@@ -113,6 +113,34 @@ from modelcypher.core.domain.agents.physical_existence_atlas import (
     PhysicalCategory,
     PhysicalExistenceInventory,
 )
+from modelcypher.core.domain.agents.perceptual_atlas import (
+    PerceptualCategory,
+    PerceptualConceptInventory,
+)
+from modelcypher.core.domain.agents.numeric_atlas import (
+    NumericCategory,
+    NumericConceptInventory,
+)
+from modelcypher.core.domain.agents.common_objects_atlas import (
+    ObjectCategory,
+    CommonObjectInventory,
+)
+from modelcypher.core.domain.agents.action_verbs_atlas import (
+    ActionCategory,
+    ActionVerbInventory,
+)
+from modelcypher.core.domain.agents.domain_specific_atlas import (
+    DomainCategory,
+    DomainSpecificInventory,
+)
+from modelcypher.core.domain.agents.abstract_relations_atlas import (
+    RelationCategory,
+    AbstractRelationInventory,
+)
+from modelcypher.core.domain.agents.pronouns_perspective_atlas import (
+    PronounCategory,
+    PronounPerspectiveInventory,
+)
 
 
 class AtlasSource(str, Enum):
@@ -134,6 +162,14 @@ class AtlasSource(str, Enum):
     SYNTAX_CONCEPT = "syntax_concept"
     SAFETY_ETHICS = "safety_ethics"  # Consent, autonomy, coercion, boundaries, vulnerability
     PHYSICAL_EXISTENCE = "physical_existence"  # 3D embodied grounding: dynamics, constraints, permanence
+    # New domains for full-rank alignment (2026-01-06)
+    PERCEPTUAL = "perceptual"  # Colors, sounds, textures, tastes, smells, temperature
+    NUMERIC = "numeric"  # Cardinal/ordinal numbers, comparatives, operations
+    COMMON_OBJECT = "common_object"  # Household, kitchen, tech, clothing, nature, animals, vehicles
+    ACTION_VERB = "action_verb"  # Movement, manipulation, creation, destruction, transformation
+    DOMAIN_SPECIFIC = "domain_specific"  # Science, medicine, law, technology, business, education
+    ABSTRACT_RELATION = "abstract_relation"  # Causality, similarity, containment, ordering, connection
+    PRONOUN_PERSPECTIVE = "pronoun_perspective"  # Personal, possessive, reflexive, demonstrative, interrogative
 
 
 # Import AtlasDomain from the canonical location
@@ -363,6 +399,14 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.SYNTAX_CONCEPT: 1.0,
     AtlasSource.SAFETY_ETHICS: 1.0,
     AtlasSource.PHYSICAL_EXISTENCE: 1.0,  # 3D embodied grounding
+    # New domains for full-rank alignment
+    AtlasSource.PERCEPTUAL: 1.0,  # Colors, sounds, textures, etc.
+    AtlasSource.NUMERIC: 1.0,  # Numbers, comparatives, operations
+    AtlasSource.COMMON_OBJECT: 1.0,  # Everyday concrete nouns
+    AtlasSource.ACTION_VERB: 1.0,  # Movement, manipulation, creation
+    AtlasSource.DOMAIN_SPECIFIC: 1.0,  # Science, medicine, law, etc.
+    AtlasSource.ABSTRACT_RELATION: 1.0,  # Causality, similarity, containment
+    AtlasSource.PRONOUN_PERSPECTIVE: 1.0,  # Personal, possessive, reflexive
 }
 
 
@@ -387,8 +431,16 @@ class UnifiedAtlasInventory:
     - 24 syntax concepts (parts of speech, morphology, word order)
     - 34 safety ethics concepts (consent, autonomy, coercion, boundaries, vulnerability)
     - 34 physical existence concepts (3D embodied grounding - NOT quantum)
+    # New domains for full-rank alignment (2026-01-06)
+    - 58 perceptual concepts (colors, sounds, textures, tastes, smells, temperature)
+    - 50 numeric concepts (cardinal/ordinal numbers, comparatives, operations)
+    - 86 common object concepts (household, kitchen, tech, clothing, nature, animals)
+    - 70 action verb concepts (movement, manipulation, creation, destruction)
+    - 60 domain-specific concepts (science, medicine, law, technology, business)
+    - 50 abstract relation concepts (causality, similarity, containment, ordering)
+    - 48 pronoun/perspective concepts (personal, possessive, reflexive, demonstrative)
 
-    Total: 541 probes for cross-domain triangulation
+    Total: 963 probes for full-rank cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -416,6 +468,14 @@ class UnifiedAtlasInventory:
         probes.extend(cls._syntax_concept_probes())
         probes.extend(cls._safety_ethics_probes())
         probes.extend(cls._physical_existence_probes())
+        # New domains for full-rank alignment
+        probes.extend(cls._perceptual_probes())
+        probes.extend(cls._numeric_probes())
+        probes.extend(cls._common_object_probes())
+        probes.extend(cls._action_verb_probes())
+        probes.extend(cls._domain_specific_probes())
+        probes.extend(cls._abstract_relation_probes())
+        probes.extend(cls._pronoun_perspective_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -939,6 +999,219 @@ class UnifiedAtlasInventory:
 
         return probes
 
+    # =========================================================================
+    # NEW DOMAINS FOR FULL-RANK ALIGNMENT (2026-01-06)
+    # =========================================================================
+
+    @classmethod
+    def _perceptual_probes(cls) -> list[AtlasProbe]:
+        """Convert perceptual concepts to unified probes.
+        
+        Perceptual probes cover sensory grounding:
+        - Colors, sounds, textures, tastes, smells
+        - Temperature, visual properties, body sensations
+        
+        Total: 58 probes for embodied perception.
+        """
+        concepts = PerceptualConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.PERCEPTUAL]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.PERCEPTUAL,
+                    domain=AtlasDomain.PHYSICAL,  # Perceptual = embodied
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _numeric_probes(cls) -> list[AtlasProbe]:
+        """Convert numeric concepts to unified probes.
+        
+        Numeric probes cover quantitative grounding:
+        - Cardinal and ordinal numbers
+        - Comparatives, mathematical operations
+        
+        Total: 50 probes for numeric understanding.
+        """
+        concepts = NumericConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.NUMERIC]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.NUMERIC,
+                    domain=AtlasDomain.MATHEMATICAL,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _common_object_probes(cls) -> list[AtlasProbe]:
+        """Convert common object concepts to unified probes.
+        
+        Object probes cover concrete noun grounding:
+        - Household, kitchen, technology, clothing
+        - Nature, animals, vehicles, tools
+        
+        Total: 86 probes for object recognition.
+        """
+        concepts = CommonObjectInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.COMMON_OBJECT]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.COMMON_OBJECT,
+                    domain=AtlasDomain.PHYSICAL,  # Objects = physical
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _action_verb_probes(cls) -> list[AtlasProbe]:
+        """Convert action verb concepts to unified probes.
+        
+        Action probes cover verb grounding:
+        - Movement, manipulation, creation, destruction
+        - Transformation, communication, cognition
+        
+        Total: 70 probes for action understanding.
+        """
+        concepts = ActionVerbInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.ACTION_VERB]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.ACTION_VERB,
+                    domain=AtlasDomain.STRUCTURAL,  # Actions = structure
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _domain_specific_probes(cls) -> list[AtlasProbe]:
+        """Convert domain-specific concepts to unified probes.
+        
+        Domain probes cover specialized vocabulary:
+        - Science, medicine, law
+        - Technology, business, education
+        
+        Total: 60 probes for domain expertise.
+        """
+        concepts = DomainSpecificInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.DOMAIN_SPECIFIC]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.DOMAIN_SPECIFIC,
+                    domain=AtlasDomain.COMPUTATIONAL,  # Most domains = technical
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _abstract_relation_probes(cls) -> list[AtlasProbe]:
+        """Convert abstract relation concepts to unified probes.
+        
+        Relation probes cover logical connections:
+        - Causality, similarity, containment
+        - Ordering, connection, dependency
+        
+        Total: 50 probes for relational reasoning.
+        """
+        concepts = AbstractRelationInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.ABSTRACT_RELATION]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.ABSTRACT_RELATION,
+                    domain=AtlasDomain.LOGICAL,  # Relations = logical
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _pronoun_perspective_probes(cls) -> list[AtlasProbe]:
+        """Convert pronoun/perspective concepts to unified probes.
+        
+        Pronoun probes cover reference grounding:
+        - Personal, possessive, reflexive
+        - Demonstrative, interrogative, indefinite, relative
+        
+        Total: 48 probes for perspective understanding.
+        """
+        concepts = PronounPerspectiveInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.PRONOUN_PERSPECTIVE]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.PRONOUN_PERSPECTIVE,
+                    domain=AtlasDomain.LINGUISTIC,  # Pronouns = language
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)
