@@ -263,8 +263,13 @@ class ProbeCache:
         """Precompute geometric data for a single layer on GPU."""
         b = backend
         
-        # Stack activations: list of [1, d] -> [n_probes, d]
-        stacked = b.vstack(acts)
+        # Stack activations: list of [hidden_dim] or [1, hidden_dim] -> [n_probes, d_hidden]
+        # MLX doesn't have vstack, so we manually stack via list concatenation
+        stacked_list = []
+        for act in acts:
+            act_1d = b.reshape(act, (-1,))  # Flatten to 1D
+            stacked_list.append(b.tolist(act_1d))
+        stacked = b.array(stacked_list)
         b.eval(stacked)
         act_cache[layer_idx] = stacked
         
