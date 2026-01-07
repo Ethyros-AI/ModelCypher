@@ -515,6 +515,61 @@ def compute_cka_from_centered_grams(
     return max(0.0, min(1.0, hsic_ab / denom))
 
 
+def compute_linear_cka(
+    activations_x: "Array",
+    activations_y: "Array",
+    backend: "Backend | None" = None,
+) -> float:
+    """
+    Compute CKA using LINEAR Gram matrices: K = X @ X.T.
+    
+    This matches the Gram matrices used in solve_via_gram_alignment.
+    For perfect alignment with linear Gram alignment, use this function
+    (NOT compute_cka which uses RBF Gram).
+    
+    Linear CKA = HSIC(K_x, K_y) / sqrt(HSIC(K_x, K_x) * HSIC(K_y, K_y))
+    where K_x = X @ X.T (linear Gram, NOT RBF)
+    
+    Args:
+        activations_x: [n_samples, features_x]
+        activations_y: [n_samples, features_y]
+        backend: Backend protocol. If None, uses default.
+    
+    Returns:
+        CKA similarity in [0, 1].
+    """
+    if backend is None:
+        backend = get_default_backend()
+    
+    n = int(activations_x.shape[0])
+    if n <= 1:
+        return 0.0
+    if activations_x.shape[0] != activations_y.shape[0]:
+        return 0.0
+    
+    # LINEAR Gram matrices: K = X @ X.T
+    gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
+    gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
+    backend.eval(gram_x, gram_y)
+    
+    # Center the Gram matrices
+    centered_x = _center_gram_matrix(gram_x, backend)
+    centered_y = _center_gram_matrix(gram_y, backend)
+    
+    # HSIC via trace
+    hsic_xy = _hsic_from_centered(centered_x, centered_y, backend)
+    hsic_xx = _hsic_from_centered(centered_x, centered_x, backend)
+    hsic_yy = _hsic_from_centered(centered_y, centered_y, backend)
+    
+    # CKA = HSIC(x,y) / sqrt(HSIC(x,x) * HSIC(y,y))
+    denom = sqrt_scalar(hsic_xx * hsic_yy, backend)
+    eps = division_epsilon(backend, gram_x)
+    if denom < eps:
+        return 0.0
+    
+    return max(0.0, min(1.0, hsic_xy / denom))
+
+
 # =============================================================================
 # FEATURE BIAS CORRECTION
 # =============================================================================
@@ -608,6 +663,7 @@ def compute_cka_from_lists(
 __all__ = [
     # Core
     "compute_cka",
+    "compute_linear_cka",  # For linear Gram alignment validation
     "compute_cka_from_grams",
     "compute_cka_from_centered_grams",
     "rbf_gram_matrix",

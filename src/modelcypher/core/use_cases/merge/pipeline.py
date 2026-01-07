@@ -123,6 +123,7 @@ def run_merge(
         attention_transforms,
         k_transforms,
         v_transforms,
+        intermediate_transforms,  # MLP transforms
         layer_mapping,
     ) = stage_probe(
         source_weights=source_weights,
@@ -328,8 +329,11 @@ def run_merge(
         attention_transforms=attention_transforms,
         k_transforms=k_transforms,
         v_transforms=v_transforms,
+        intermediate_transforms=intermediate_transforms,  # MLP transforms
         layer_mapping=layer_mapping,
         layer_status=probe_metrics.get("layer_status"),  # NEW: Per DIMENSIONAL_COMPRESSION.md
+        source_tokenizer=source_tokenizer,  # For token correspondence
+        target_tokenizer=target_tokenizer,  # For token correspondence
     )
 
     # =================================================================

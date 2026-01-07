@@ -76,7 +76,7 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
 from modelcypher.core.domain.geometry.cka import (
     _center_gram_matrix,
-    compute_cka_backend,
+    compute_linear_cka,  # Use linear Gram CKA for consistent validation
     compute_cka_from_centered_grams,
     rbf_gram_matrix,
     rbf_gram_matrix_with_sigma,
@@ -499,21 +499,38 @@ class GramAligner:
         T_has_nan = float(b.to_scalar(T_sum)) != float(b.to_scalar(T_sum))  # NaN check
         
         # Step 3: Initialize F
-        # ZIPPER: If F_init provided from a successful neighbor, use it directly
-        # This skips the SVD+Procrustes computation and warm-starts gradient descent
+        # ZIPPER: If F_init provided from a successful neighbor, try it first
+        # But VALIDATE that it achieves high CKA for THIS layer - if not, compute fresh F
+        use_fresh_f = False
         if F_init is not None:
-            logger.info("ZIPPER: Using F from successful neighbor alignment")
+            logger.info("ZIPPER: Testing F from successful neighbor alignment")
             F = b.astype(F_init, "float32")
             b.eval(F)
             # Validate shapes match
             F_shape = b.shape(F)
             if int(F_shape[0]) != d_s or int(F_shape[1]) != d_t:
                 logger.warning(
-                    f"ZIPPER: F_init shape {F_shape} doesn't match expected ({d_s}, {d_t}), falling back"
+                    f"ZIPPER: F_init shape {F_shape} doesn't match expected ({d_s}, {d_t}), computing fresh F"
                 )
-                F_init = None  # Fall through to normal initialization
+                use_fresh_f = True
+            else:
+                # VALIDATE: Check if zipper F achieves good CKA for this layer
+                projected = b.matmul(source, F)
+                b.eval(projected)
+                zipper_cka = float(compute_linear_cka(projected, target, b))
+                
+                ZIPPER_CKA_THRESHOLD = 0.95  # Must achieve 95% CKA to use zipper F
+                if zipper_cka < ZIPPER_CKA_THRESHOLD:
+                    logger.info(
+                        f"ZIPPER: F from neighbor achieved CKA={zipper_cka:.4f} < {ZIPPER_CKA_THRESHOLD}, computing fresh F"
+                    )
+                    use_fresh_f = True
+                else:
+                    logger.info(f"ZIPPER: F from neighbor achieved CKA={zipper_cka:.4f} >= {ZIPPER_CKA_THRESHOLD}, using it")
+        else:
+            use_fresh_f = True
         
-        if F_init is None:
+        if use_fresh_f:
             # Normal initialization: closed-form projection
             logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
             
@@ -587,7 +604,7 @@ class GramAligner:
         # Compute final CKA to validate the closed-form solution
         projected = b.matmul(source, F)
         b.eval(projected)
-        final_cka = float(compute_cka_backend(projected, target, b))
+        final_cka = float(compute_linear_cka(projected, target, b))
         
         # Handle NaN in final CKA
         if final_cka != final_cka:

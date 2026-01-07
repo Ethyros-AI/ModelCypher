@@ -309,6 +309,8 @@ def stage_transplant(
     intermediate_transforms: dict[int, list[list[float]]] | None = None,  # MLP intermediate
     layer_mapping: dict[int, int] | None = None,
     layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
+    source_tokenizer: "Any | None" = None,  # For token correspondence
+    target_tokenizer: "Any | None" = None,  # For token correspondence
     checkpoint_dir: Path | None = None,
     progress_callback: Callable[[str, int, int], None] | None = None,
     backend: "Backend | None" = None,
@@ -462,68 +464,135 @@ def stage_transplant(
 
             if tgt_vocab_size <= src_vocab_size:
                 # =================================================================
-                # GRAM-BASED VOCABULARY ALIGNMENT
+                # TOKEN CORRESPONDENCE + GEOMETRIC TRANSFORM
                 # =================================================================
-                # For each target token, find the source token whose aligned 
-                # embedding is geometrically closest (by cosine similarity).
-                # This is Gram-based: cosine = normalized inner product = Gram entry.
+                # Two-stage approach:
+                # 1. Find token correspondence: target_token → source_token
+                #    (via exact string match, then embedding similarity fallback)
+                # 2. Apply geometric transform F to aligned source embeddings
                 #
-                # aligned_embed: [src_vocab, tgt_hidden] - source projected to target space
-                # tgt_embed: [tgt_vocab, tgt_hidden] - target embeddings
-                # 
-                # We compute: similarity[i, j] = cosine(tgt_embed[i], aligned_embed[j])
-                # Then: best_match[i] = argmax_j(similarity[i, j])
+                # This preserves geometric structure while respecting token identity.
                 # =================================================================
+                
                 logger.info(
-                    "EMBEDDING ALIGNMENT: Computing Gram-based token correspondence (%d tgt → %d src)...",
-                    tgt_vocab_size, src_vocab_size
+                    "TOKEN CORRESPONDENCE: Building vocabulary mapping..."
                 )
                 
-                # Normalize embeddings for cosine similarity
-                tgt_norm = b.sqrt(b.sum(tgt_embed * tgt_embed, axis=1, keepdims=True) + 1e-8)
+                # Build token correspondence
+                correspondence = []
+                exact_matches = 0
+                fallback_matches = 0
+                
+                # Try to get vocabulary mappings from tokenizers
+                src_vocab_map = None  # token_string → token_id
+                tgt_vocab_map = None  # token_string → token_id
+                src_id_to_token = None  # token_id → token_string
+                
+                if source_tokenizer is not None and target_tokenizer is not None:
+                    try:
+                        # Get vocabulary from tokenizers (try multiple APIs)
+                        if hasattr(source_tokenizer, 'get_vocab'):
+                            src_vocab_map = source_tokenizer.get_vocab()
+                        elif hasattr(source_tokenizer, 'vocab'):
+                            src_vocab_map = source_tokenizer.vocab
+                        
+                        if hasattr(target_tokenizer, 'get_vocab'):
+                            tgt_vocab_map = target_tokenizer.get_vocab()
+                        elif hasattr(target_tokenizer, 'vocab'):
+                            tgt_vocab_map = target_tokenizer.vocab
+                        
+                        if src_vocab_map:
+                            src_id_to_token = {v: k for k, v in src_vocab_map.items()}
+                        
+                        logger.info(
+                            "TOKEN CORRESPONDENCE: Loaded vocabularies (src: %d, tgt: %d)",
+                            len(src_vocab_map) if src_vocab_map else 0,
+                            len(tgt_vocab_map) if tgt_vocab_map else 0
+                        )
+                    except Exception as e:
+                        logger.warning("TOKEN CORRESPONDENCE: Failed to get vocab: %s", e)
+                
+                # Build token string to ID mappings (outside loop for efficiency)
+                tgt_id_to_token = None
+                if tgt_vocab_map:
+                    tgt_id_to_token = {v: k for k, v in tgt_vocab_map.items()}
+                
+                # For fallback: precompute normalized embeddings for similarity
+                # aligned_embed is [src_vocab, tgt_hidden] - use for similarity
                 src_norm = b.sqrt(b.sum(aligned_embed * aligned_embed, axis=1, keepdims=True) + 1e-8)
-                tgt_normalized = tgt_embed / tgt_norm
                 src_normalized = aligned_embed / src_norm
-                b.eval(tgt_normalized, src_normalized)
+                tgt_norm = b.sqrt(b.sum(tgt_embed * tgt_embed, axis=1, keepdims=True) + 1e-8)
+                tgt_normalized = tgt_embed / tgt_norm
+                b.eval(src_normalized, tgt_normalized)
                 
-                # Compute cosine similarity matrix: [tgt_vocab, src_vocab]
-                # This is the Gram matrix in normalized embedding space
-                # Process in batches to avoid OOM for large vocabs
-                batch_size = 4096
-                best_matches = []
+                # Build correspondence: for each target token, find best source token
+                fallback_indices = []  # Indices needing similarity-based fallback
                 
-                for batch_start in range(0, tgt_vocab_size, batch_size):
-                    batch_end = min(batch_start + batch_size, tgt_vocab_size)
-                    tgt_batch = tgt_normalized[batch_start:batch_end]  # [batch, hidden]
+                for tgt_idx in range(tgt_vocab_size):
+                    if tgt_id_to_token and src_vocab_map:
+                        tgt_token_str = tgt_id_to_token.get(tgt_idx, None)
+                        
+                        if tgt_token_str and tgt_token_str in src_vocab_map:
+                            # Exact match!
+                            correspondence.append(src_vocab_map[tgt_token_str])
+                            exact_matches += 1
+                            continue
                     
-                    # Similarity: [batch, src_vocab] = [batch, hidden] @ [hidden, src_vocab]
-                    similarity = b.matmul(tgt_batch, b.transpose(src_normalized))
-                    b.eval(similarity)
-                    
-                    # Find best match for each target token in this batch
-                    batch_matches = b.argmax(similarity, axis=1)
-                    b.eval(batch_matches)
-                    best_matches.extend([int(x) for x in b.tolist(batch_matches)])
+                    # Mark for fallback processing
+                    correspondence.append(-1)  # Placeholder
+                    fallback_indices.append(tgt_idx)
+                    fallback_matches += 1
                 
-                # Build aligned embedding using best matches
-                # aligned_embed_final[i] = aligned_embed[best_matches[i]]
-                match_indices = b.array(best_matches)
-                aligned_embed_final = b.take(aligned_embed, match_indices, axis=0)
+                # Process fallback tokens in batches using cosine similarity
+                if fallback_indices:
+                    logger.info(
+                        "TOKEN CORRESPONDENCE: Computing similarity for %d fallback tokens...",
+                        len(fallback_indices)
+                    )
+                    batch_size = 4096
+                    for batch_start in range(0, len(fallback_indices), batch_size):
+                        batch_end = min(batch_start + batch_size, len(fallback_indices))
+                        batch_tgt_indices = fallback_indices[batch_start:batch_end]
+                        
+                        # Get target embeddings for this batch
+                        tgt_batch_indices = b.array(batch_tgt_indices)
+                        tgt_batch = b.take(tgt_normalized, tgt_batch_indices, axis=0)
+                        
+                        # Compute cosine similarity: [batch, src_vocab]
+                        similarity = b.matmul(tgt_batch, b.transpose(src_normalized))
+                        best_matches = b.argmax(similarity, axis=1)
+                        b.eval(best_matches)
+                        
+                        # Update correspondence
+                        for i, tgt_idx in enumerate(batch_tgt_indices):
+                            correspondence[tgt_idx] = int(b.tolist(best_matches[i]))
+                
+                logger.info(
+                    "TOKEN CORRESPONDENCE: %d exact matches, %d similarity fallback (%.1f%% exact coverage)",
+                    exact_matches, fallback_matches,
+                    100.0 * exact_matches / tgt_vocab_size
+                )
+                
+                # Gather corresponding source embeddings and apply transform
+                correspondence_array = b.array(correspondence)
+                aligned_embed_final = b.take(aligned_embed, correspondence_array, axis=0)
                 b.eval(aligned_embed_final)
                 
-                # Log match statistics
-                unique_matches = len(set(best_matches))
                 logger.info(
-                    "EMBEDDING ALIGNMENT: %d target tokens matched to %d unique source tokens (%.1f%% coverage)",
-                    tgt_vocab_size, unique_matches, 100.0 * unique_matches / tgt_vocab_size
+                    "TOKEN CORRESPONDENCE: Gathered source embeddings [%d] → [%d,%d]",
+                    src_vocab_size, tgt_vocab_size, int(b.shape(aligned_embed_final)[1])
                 )
+                
+                metrics["exact_token_matches"] = exact_matches
+                metrics["fallback_matches"] = fallback_matches
+                metrics["token_coverage"] = exact_matches / tgt_vocab_size
 
                 # Replace in merged weights
                 merged[target_embed_key] = aligned_embed_final
                 metrics["embedding_aligned"] = True
                 metrics["embedding_src_vocab"] = src_vocab_size
                 metrics["embedding_tgt_vocab"] = tgt_vocab_size
-                metrics["embedding_unique_matches"] = unique_matches
+                metrics["token_correspondence"] = True
                 logger.info(
                     "EMBEDDING ALIGNMENT: embed_tokens aligned %d→%d vocab, %d→%d hidden dim",
                     src_vocab_size, tgt_vocab_size,
@@ -1217,6 +1286,20 @@ def stage_transplant(
                             logger.info(
                                 "Attention stitch (q_proj): %s [%d,%d] → [%d,%d]",
                                 key, dim0, dim1, tgt_attn_dim, tgt_hidden_dim
+                            )
+                            metrics.setdefault("attention_stitched", 0)
+                            metrics["attention_stitched"] += 1
+                            attention_stitch_applied = True
+
+                        elif is_q and dim0 == src_attn_dim and dim1 == src_attn_dim:
+                            # QWEN-style Q: [Q_attn, Q_attn] → attention_stitch @ W @ attention_stitch_input
+                            # Both dimensions are attention dimensions
+                            source_aligned = b.matmul(attention_stitch_output, source_w)
+                            source_aligned = b.matmul(source_aligned, attention_stitch_input)
+                            b.eval(source_aligned)
+                            logger.info(
+                                "Attention stitch (q_proj square): %s [%d,%d] → [%d,%d]",
+                                key, dim0, dim1, tgt_attn_dim, tgt_attn_dim
                             )
                             metrics.setdefault("attention_stitched", 0)
                             metrics["attention_stitched"] += 1

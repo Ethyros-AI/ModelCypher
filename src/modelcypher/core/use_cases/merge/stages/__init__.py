@@ -88,6 +88,7 @@ def stage_probe(
     dict[int, list[list[float]]] | None,  # attention_transforms (Q)
     dict[int, list[list[float]]] | None,  # k_transforms (K)
     dict[int, list[list[float]]] | None,  # v_transforms (V)
+    dict[int, list[list[float]]] | None,  # intermediate_transforms (MLP)
     dict[int, int] | None,  # layer_mapping
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
@@ -126,6 +127,7 @@ def stage_probe(
         result.attention_transforms,
         result.k_transforms,
         result.v_transforms,
+        result.intermediate_transforms,  # MLP transforms
         result.layer_mapping,
     )
 
@@ -177,7 +179,11 @@ def stage_transplant(
     attention_transforms: dict[int, list[list[float]]] | None = None,
     k_transforms: dict[int, list[list[float]]] | None = None,
     v_transforms: dict[int, list[list[float]]] | None = None,
+    intermediate_transforms: dict[int, list[list[float]]] | None = None,  # MLP transforms
     layer_mapping: dict[int, int] | None = None,
+    layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
+    source_tokenizer: Any | None = None,  # For token correspondence
+    target_tokenizer: Any | None = None,  # For token correspondence
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     result = stage_transplant_impl(
@@ -202,7 +208,11 @@ def stage_transplant(
         attention_transforms=attention_transforms,
         k_transforms=k_transforms,
         v_transforms=v_transforms,
+        intermediate_transforms=intermediate_transforms,  # MLP transforms
         layer_mapping=layer_mapping,
+        layer_status=layer_status,  # NEW: Per DIMENSIONAL_COMPRESSION.md
+        source_tokenizer=source_tokenizer,  # For token correspondence
+        target_tokenizer=target_tokenizer,  # For token correspondence
     )
 
     return result.merged_weights, result.metrics
