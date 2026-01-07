@@ -728,6 +728,15 @@ def stage_transplant(
     # ==========================================================================
     # 1. PER-LAYER HIDDEN ALIGNMENT
     # ==========================================================================
+    # Log scale_ratios status for debugging
+    if scale_ratios:
+        logger.info("SCALE RATIOS: %d layers with scale factors", len(scale_ratios))
+        sample_layers = list(sorted(scale_ratios.keys()))[:3]
+        for l in sample_layers:
+            logger.info("  Layer %d scale_ratio=%.4f", l, scale_ratios[l])
+    else:
+        logger.warning("SCALE RATIOS: Empty or None!")
+    
     layer_hidden_stitches = _compute_composite_stitches(
         feature_transforms, "HIDDEN", scale_ratios  # Pass scale_ratios for EXACT magnitude
     )

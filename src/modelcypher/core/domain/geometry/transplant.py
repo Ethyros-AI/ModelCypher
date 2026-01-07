@@ -294,98 +294,18 @@ def compute_transplant_delta(
 
     # ADDITIVE MERGE: target + source_in_null_space (NO replacement!)
     # This adds source knowledge into target's sparse regions
-    merged_weight_prelim = weight_target + source_contribution
-    b.eval(merged_weight_prelim)
+    merged_weight = weight_target + source_contribution
+    b.eval(merged_weight)
 
-    # ==========================================================================
-    # POST-MERGE GEODESIC RE-ALIGNMENT (Critical for CKA=1.0)
-    # ==========================================================================
-    # After adding source to null space, the merged weights produce different
-    # activations. We must RE-ALIGN the merged weights so they have CKA=1.0
-    # with the TARGET activations. This ensures the added neurons "work with"
-    # the existing model - every point in the probability cloud is information.
-    #
-    # Steps:
-    # 1. Compute what the merged weights produce: A_merged = activations_core @ W_merged.T
-    # 2. Use GramAligner to find correction F: CKA(A_merged @ F, A_target) = 1.0
-    # 3. Apply correction: W_final = W_merged @ F
-    # ==========================================================================
+    # NOTE: The previous "POST-MERGE GEODESIC RE-ALIGNMENT" step was removed.
+    # It was applying F.T @ W which destroyed the null-space interlacing.
+    # The null-space addition already preserves target's structure by construction.
+    # No post-merge transform should be applied.
     
-    # Compute merged activations by simulating forward pass through this weight
-    # For weight [out_dim, in_dim], activations [n_samples, in_dim]:
-    # output = activations @ W.T has shape [n_samples, out_dim]
-    merged_output = b.matmul(activations_core, b.transpose(merged_weight_prelim))
-    b.eval(merged_output)
-    
-    # Target output (what we want to preserve)
-    target_output = b.matmul(activations_core, b.transpose(weight_target))
-    b.eval(target_output)
-    
-    # Use GramAligner to find correction that aligns merged → target
-    # This ensures CKA(merged_output @ F, target_output) = 1.0
-    aligner = GramAligner(b)
-    try:
-        result = aligner.find_perfect_alignment(merged_output, target_output)
-        
-        # Only apply correction if alignment achieved high CKA (>= 0.9)
-        # Random/incompatible geometries can't align - applying bad correction
-        # would violate boundary invariance guarantees
-        if result.achieved_cka < 0.9:
-            logger.debug(
-                "Post-merge re-alignment skipped: CKA=%.4f < 0.9 threshold",
-                result.achieved_cka
-            )
-            merged_weight = merged_weight_prelim
-            birkhoff_applied = False
-            birkhoff_converged = False
-            birkhoff_iterations = 0
-            birkhoff_spectral_clipped_extra = False
-        else:
-            F_correction = b.array(result.feature_transform)
-            b.eval(F_correction)
-            
-            # Apply correction to merged weights
-            # For weight W [out_dim, in_dim], we want outputs transformed by F
-            # Math: (A @ W.T) @ F = A @ (W.T @ F) = A @ (F.T @ W).T
-            # Therefore: W_corrected = F.T @ W (not W @ F.T!)
-            
-            # BIRKHOFF PROJECTION: Project F onto doubly stochastic matrices
-            # This ensures compositional stability when chaining layer transforms
-            birkhoff_applied = False
-            birkhoff_converged = False
-            birkhoff_iterations = 0
-            birkhoff_spectral_clipped_extra = False
-            
-            if F_correction.shape[0] == F_correction.shape[1]:  # Only for square transforms
-                try:
-                    birkhoff = BirkhoffProjector(b)
-                    birkhoff_result = birkhoff.project(F_correction, ensure_positive=True)
-                    F_correction = birkhoff_result.projected_matrix
-                    b.eval(F_correction)
-                    birkhoff_applied = True
-                    birkhoff_converged = birkhoff_result.converged
-                    birkhoff_iterations = birkhoff_result.iterations_used
-                    birkhoff_spectral_clipped_extra = birkhoff_result.spectral_clipped
-                    logger.debug(
-                        "Birkhoff projection applied: converged=%s, iters=%d, clipped=%s",
-                        birkhoff_converged, birkhoff_iterations, birkhoff_spectral_clipped_extra
-                    )
-                except Exception as be:
-                    logger.debug("Birkhoff projection skipped: %s", be)
-            
-            F_T = b.transpose(F_correction)
-            merged_weight = b.matmul(F_T, merged_weight_prelim)  # F.T @ W
-            b.eval(merged_weight)
-            
-            logger.debug("Post-merge geodesic re-alignment applied successfully")
-    except Exception as e:
-        # If re-alignment fails, use uncorrected merge
-        logger.warning("Post-merge re-alignment failed: %s. Using uncorrected merge.", e)
-        merged_weight = merged_weight_prelim
-        birkhoff_applied = False
-        birkhoff_converged = False
-        birkhoff_iterations = 0
-        birkhoff_spectral_clipped_extra = False
+    birkhoff_applied = False
+    birkhoff_converged = False
+    birkhoff_iterations = 0
+    birkhoff_spectral_clipped_extra = False
 
     # Compute metrics
     source_norm_arr = geodesic_norms(b.reshape(weight_source_aligned, (1, -1)), b)

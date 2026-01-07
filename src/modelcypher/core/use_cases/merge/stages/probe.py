@@ -1640,6 +1640,14 @@ def _probe_precise(
                     raise RuntimeError(
                         f"Insufficient samples for {src_layers_list} -> {tgt_layer}: {n_samples}"
                     )
+                
+                # Log sample count for rank verification
+                src_dim = src_act_lists[0][0].shape[-1] if src_act_lists else 0
+                tgt_dim = tgt_list[0].shape[-1] if tgt_list else 0
+                logger.info(
+                    "ALIGNMENT: Layer %d <- %s: n_samples=%d (need >=%d for full-rank src, >=%d for full-rank tgt)",
+                    tgt_layer, src_layers_list, n_samples, src_dim, tgt_dim
+                )
 
                 local_aligner = GramAligner(backend=b)
                 # Fast aligner for attention (5000 steps vs 50000) - good enough for trajectory guidance
