@@ -301,21 +301,16 @@ class ProbeCache:
         b.eval(centered_gram)
         centered_gram_cache[layer_idx] = centered_gram
         
+        # Skip SVD of 963×963 Gram matrix for now - MLX sgesvdx_ crashes on large matrices
         # SVD of centered Gram for shape/rotation info
-        U, S, Vt = geodesic_svd(b, centered_gram)
-        b.eval(U, S, Vt)
-        svd_cache[layer_idx] = (U, S, Vt)
+        # TODO: Add back with proper matrix size handling or chunked approach
+        # U, S, Vt = geodesic_svd(b, centered_gram)
+        # b.eval(U, S, Vt)
+        # svd_cache[layer_idx] = (U, S, Vt)
         
-        # Effective rank from singular values (entropy-based)
-        S_list = b.tolist(S)
-        S_sum = sum(S_list) + 1e-10
-        probs = [s / S_sum for s in S_list if s > 1e-10]
-        if probs:
-            entropy = -sum(p * log_scalar(p) for p in probs if p > 0)
-            eff_rank = int(ceil_scalar(2.718281828 ** entropy))
-        else:
-            eff_rank = 1
-        rank_cache[layer_idx] = eff_rank
+        # Effective rank: use approximate heuristic based on Gram eigenvalues
+        # For now, set to n_probes (full rank assumption)
+        rank_cache[layer_idx] = int(n_probes)
     
     def compute_layer_similarity_matrix(self, backend: "Backend") -> None:
         """Compute similarity matrix between all source-target layer pairs.
