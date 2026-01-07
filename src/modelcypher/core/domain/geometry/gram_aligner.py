@@ -506,16 +506,43 @@ class GramAligner:
             # This achieves CKA=1.0 because Gram matrices are dimension-agnostic.
             # F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T transports through sample space.
             F_gram, diag = solve_via_gram_alignment(b, source, target)
-            if F_gram is not None:
+            proc_err = diag.get('procrustes_error', float('inf'))
+            
+            if F_gram is not None and proc_err < 0.3:
+                # Low procrustes error: U vectors are similar, SVD+Procrustes works
                 F = F_gram
-                proc_err = diag.get('procrustes_error', float('inf'))
                 logger.info(f"CROSS-DIM: Gram alignment, procrustes_error={proc_err:.4f}")
+            elif proc_err >= 0.3:
+                # High procrustes error: U vectors have different structure
+                # Fall back to GRAM_TRANSPORT (Gromov-Wasserstein) which finds
+                # optimal coupling directly from Gram matrices - the "translation code"
+                from modelcypher.core.domain.geometry.cross_dimensional_projection import (
+                    project_cross_dimensional,
+                    ProjectionMethod,
+                )
+                logger.info(f"CROSS-DIM: High procrustes_error={proc_err:.4f}, trying GRAM_TRANSPORT")
+                
+                try:
+                    gw_result = project_cross_dimensional(
+                        source, target, b,
+                        method=ProjectionMethod.GRAM_TRANSPORT
+                    )
+                    if gw_result.col_coupling is not None:
+                        F = gw_result.col_coupling
+                        gw_dist = gw_result.metrics.get('column_distance', float('inf'))
+                        logger.info(f"CROSS-DIM: GRAM_TRANSPORT success, GW_distance={gw_dist:.4f}")
+                    else:
+                        # col_coupling is None, fallback to pinv
+                        F = b.matmul(source_pinv, target)
+                        logger.warning("CROSS-DIM: GW returned None col_coupling, using pinv")
+                except Exception as e:
+                    logger.warning(f"CROSS-DIM: GRAM_TRANSPORT failed with {type(e).__name__}: {e}")
+                    F = b.matmul(source_pinv, target)
             else:
-                # Fallback to pinv only if gram alignment fails completely
-                F = b.matmul(source_pinv, target)  # [d_s, d_t]
+                # F_gram is None (SVD failed completely)
+                F = b.matmul(source_pinv, target)
                 logger.warning("CROSS-DIM: Gram alignment failed, using pinv fallback")
             b.eval(F)
-        
         # Check for NaN in F initialization
         F_sum = b.sum(F)
         b.eval(F_sum)
