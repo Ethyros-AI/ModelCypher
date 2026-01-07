@@ -1663,38 +1663,86 @@ def solve_via_gram_alignment(
     b.eval(U_s_k, U_t_k)
 
     # =========================================================================
-    # CRITICAL: Sign disambiguation for SVD columns
+    # CRITICAL: Hungarian permutation alignment for SVD columns
     # =========================================================================
-    # SVD is unique only up to sign on each column. Column j of U_s and U_t
-    # may have arbitrary signs. To reduce procrustes error, we flip the sign
-    # of each U_s column to match the corresponding U_t column direction.
+    # SVD columns have NO guaranteed ordering. Column i in U_s may correspond
+    # to column j in U_t. Procrustes assumes 1:1 column correspondence.
+    # 
+    # Fix: Use Hungarian algorithm to find optimal column permutation P such
+    # that U_s[:, P[i]] is maximally aligned with U_t[:, i].
     #
-    # For each column j: if <U_s[:,j], U_t[:,j]> < 0, flip U_s[:,j]
-    # Also track which columns were flipped to apply to Vt_s (consistency).
-    #
-    # This ensures corresponding columns point in similar directions BEFORE
-    # Procrustes tries to find a rotation, dramatically reducing error.
+    # Cost matrix: C[i,j] = 1 - |<U_s[:,i], U_t[:,j]>| (minimize negative similarity)
+    # Uses absolute value because SVD also has sign ambiguity.
+    from modelcypher.core.domain.geometry.hungarian import hungarian_assignment
+    
+    # Compute absolute similarity matrix: S[i,j] = |<U_s[:,i], U_t[:,j]>|
+    # Cross-correlation: U_s.T @ U_t gives [k, k] with dot products
+    sim_matrix = b.matmul(b.transpose(U_s_k), U_t_k)  # [k, k]
+    b.eval(sim_matrix)
+    abs_sim = b.abs(sim_matrix)  # Absolute because of sign ambiguity
+    b.eval(abs_sim)
+    
+    # Convert to cost (minimize cost = maximize similarity)
+    # Cost = max_sim - sim to ensure non-negative costs
+    max_sim_arr = b.max(abs_sim)
+    b.eval(max_sim_arr)
+    max_sim = float(b.to_scalar(max_sim_arr))
+    cost_matrix = max_sim - abs_sim + eps  # Small offset for numerical stability
+    b.eval(cost_matrix)
+    
+    # Hungarian assignment: perm[i] = j means U_s column i -> U_t column j
+    perm = hungarian_assignment(cost_matrix, b, use_cache=True)
+    perm_list = [int(p) for p in perm] if hasattr(perm, '__iter__') else list(perm)
+    
+    # Reorder U_s columns to match U_t column order
+    # We want U_s_permuted[:, i] to align with U_t[:, i]
+    # perm[i] = j means source col i maps to target col j
+    # So we need inverse permutation: source col inv_perm[j] maps to target col j
+    inv_perm = [0] * actual_rank
+    for i, j in enumerate(perm_list):
+        if j < actual_rank:  # Guard against out-of-bounds
+            inv_perm[j] = i
+    
+    # Apply permutation to U_s_k
+    U_s_perm = b.stack([U_s_k[:, inv_perm[j]] for j in range(actual_rank)], axis=1)
+    b.eval(U_s_perm)
+    
+    # Also permute Vt_s to maintain consistency (A = U @ S @ V^T)
+    Vt_s_k = Vt_s[:actual_rank, :]
+    S_s_k_vec = S_s[:actual_rank]
+    Vt_s_perm = b.stack([Vt_s_k[inv_perm[j], :] for j in range(actual_rank)], axis=0)
+    S_s_perm = b.stack([S_s_k_vec[inv_perm[j]] for j in range(actual_rank)], axis=0)
+    b.eval(Vt_s_perm, S_s_perm)
+
+    # =========================================================================
+    # Sign disambiguation on the permuted columns
+    # =========================================================================
+    # Now column j of U_s_perm should correspond to column j of U_t.
+    # Flip signs where they point in opposite directions.
     sign_flips = []
     for j in range(actual_rank):
-        col_s = U_s_k[:, j]  # [n]
-        col_t = U_t_k[:, j]  # [n]
+        col_s = U_s_perm[:, j]  # [n]
+        col_t = U_t_k[:, j]     # [n]
         dot = b.sum(col_s * col_t)
         b.eval(dot)
         if float(b.to_scalar(dot)) < 0:
             sign_flips.append(j)
     
-    # Apply sign flips to U_s_k in one vectorized operation
+    # Apply sign flips
     if sign_flips:
         sign_vec = b.ones((actual_rank,))
         for j in sign_flips:
             sign_vec = b.where(b.arange(actual_rank) == j, b.full((actual_rank,), -1.0), sign_vec)
-        U_s_k = U_s_k * b.reshape(sign_vec, (1, -1))
-        # Also flip Vt_s to maintain A = U @ S @ V^T consistency
-        Vt_s_flipped = Vt_s[:actual_rank, :] * b.reshape(sign_vec, (-1, 1))
+        U_s_k = U_s_perm * b.reshape(sign_vec, (1, -1))
+        Vt_s_flipped = Vt_s_perm * b.reshape(sign_vec, (-1, 1))
         b.eval(U_s_k, Vt_s_flipped)
     else:
-        Vt_s_flipped = Vt_s[:actual_rank, :]
-        b.eval(Vt_s_flipped)
+        U_s_k = U_s_perm
+        Vt_s_flipped = Vt_s_perm
+        b.eval(U_s_k, Vt_s_flipped)
+    
+    # Update S_s for later use (it was also permuted)
+    S_s_k = S_s_perm
 
     # Orthogonal Procrustes: find R such that U_s @ R ≈ U_t
     # Solve: min ||U_s @ R - U_t||_F  s.t. R^T @ R = I
@@ -1726,8 +1774,8 @@ def solve_via_gram_alignment(
 
     # S_s^{-1} for the k dimensions we're using (use actual_rank, not shared_rank)
     # Use machine epsilon as floor for numerical stability in inversion
+    # NOTE: S_s_k was already set to the permuted version S_s_perm above
     sv_floor = eps * max_s
-    S_s_k = S_s[:actual_rank]
     S_t_k = S_t[:actual_rank]
     S_s_inv = b.where(S_s_k > sv_floor, 1.0 / S_s_k, b.zeros_like(S_s_k))
     b.eval(S_s_inv, S_t_k)

@@ -341,6 +341,7 @@ class GramAligner:
         target_activations: "Array",
         strict: bool = True,
         max_refinement_passes: int = 10,
+        F_init: "Array | None" = None,
     ) -> AlignmentResult:
         """Find alignment transform by iterating until CKA=1.0.
 
@@ -355,6 +356,11 @@ class GramAligner:
         max_refinement_passes : int
             Maximum outer refinement loops. Each pass does max_steps of GD.
             Default 10 is sufficient for most cross-architecture merges.
+        F_init : Array | None
+            Optional warm-start transform from a successfully aligned neighbor.
+            If provided, skips SVD+Procrustes initialization and starts gradient
+            descent from this F. This is the "zipper" concept: easy layers align
+            first, their F patterns warm-start difficult neighbors.
         """
         b = self._backend
         n_s, d_s = b.shape(source_activations)
@@ -393,6 +399,7 @@ class GramAligner:
             target_activations,
             precision=precision,
             max_steps=convergent_max_steps,
+            F_init=F_init,  # Zipper warm-start from neighbor
         )
         
         total_iterations = convergent_max_steps  # Approximate
@@ -435,11 +442,12 @@ class GramAligner:
         precision: float,
         learning_rate: float = 0.1,
         max_steps: int = 5000,  # Optimized for speed (was 50000)
+        F_init: "Array | None" = None,  # Zipper warm-start from neighbor
     ) -> tuple["Array", float]:
         """
         Find optimal linear transform F via HYBRID approach:
-        1. Compute closed-form sample transform T = K_t^{1/2} @ K_s^{-1/2}
-        2. Initialize F from F_init = pinv(source) @ (T @ source)
+        1. If F_init provided (zipper warm-start): use it directly
+        2. Otherwise: Initialize F from closed-form sample transform
         3. Refine F via geodesic gradient descent with geodesic Gram distance loss
         
         OPTIMIZATION: Target Gram matrix is computed ONCE and cached. The same
@@ -483,66 +491,56 @@ class GramAligner:
         b.eval(T_sum)
         T_has_nan = float(b.to_scalar(T_sum)) != float(b.to_scalar(T_sum))  # NaN check
         
-        # Step 3: Initialize F from closed-form projection
-        logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
-        
-        # Cache source pseudoinverse (computed once, used multiple times)
-        source_pinv = b.pinv(source)
-        b.eval(source_pinv)
-        
-        if T_has_nan:
-            # Fallback: T is NaN from degenerate Gram matrix, use direct projection
-            logger.warning("HYBRID ALIGNMENT: Sample transform T contains NaN, using direct projection")
-            F = b.matmul(source_pinv, target)  # [d_s, d_t]
-        elif d_s == d_t:
-            # Same dimension: use closed-form T alignment
-            aligned_source_samples = b.matmul(T, source)  # [n, d_s]
-            F = b.matmul(source_pinv, aligned_source_samples)  # [d_s, d_s]
-        else:
-            # =================================================================
-            # CROSS-DIMENSIONAL PROJECTION via Gram alignment
-            # =================================================================
-            # Use SVD + Procrustes to align sample-space structure (U vectors)
-            # This achieves CKA=1.0 because Gram matrices are dimension-agnostic.
-            # F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T transports through sample space.
-            F_gram, diag = solve_via_gram_alignment(b, source, target)
-            proc_err = diag.get('procrustes_error', float('inf'))
-            
-            if F_gram is not None and proc_err < 0.3:
-                # Low procrustes error: U vectors are similar, SVD+Procrustes works
-                F = F_gram
-                logger.info(f"CROSS-DIM: Gram alignment, procrustes_error={proc_err:.4f}")
-            elif proc_err >= 0.3:
-                # High procrustes error: U vectors have different structure
-                # Fall back to GRAM_TRANSPORT (Gromov-Wasserstein) which finds
-                # optimal coupling directly from Gram matrices - the "translation code"
-                from modelcypher.core.domain.geometry.cross_dimensional_projection import (
-                    project_cross_dimensional,
-                    ProjectionMethod,
-                )
-                logger.info(f"CROSS-DIM: High procrustes_error={proc_err:.4f}, trying GRAM_TRANSPORT")
-                
-                try:
-                    gw_result = project_cross_dimensional(
-                        source, target, b,
-                        method=ProjectionMethod.GRAM_TRANSPORT
-                    )
-                    if gw_result.col_coupling is not None:
-                        F = gw_result.col_coupling
-                        gw_dist = gw_result.metrics.get('column_distance', float('inf'))
-                        logger.info(f"CROSS-DIM: GRAM_TRANSPORT success, GW_distance={gw_dist:.4f}")
-                    else:
-                        # col_coupling is None, fallback to pinv
-                        F = b.matmul(source_pinv, target)
-                        logger.warning("CROSS-DIM: GW returned None col_coupling, using pinv")
-                except Exception as e:
-                    logger.warning(f"CROSS-DIM: GRAM_TRANSPORT failed with {type(e).__name__}: {e}")
-                    F = b.matmul(source_pinv, target)
-            else:
-                # F_gram is None (SVD failed completely)
-                F = b.matmul(source_pinv, target)
-                logger.warning("CROSS-DIM: Gram alignment failed, using pinv fallback")
+        # Step 3: Initialize F
+        # ZIPPER: If F_init provided from a successful neighbor, use it directly
+        # This skips the SVD+Procrustes computation and warm-starts gradient descent
+        if F_init is not None:
+            logger.info("ZIPPER: Using F from successful neighbor alignment")
+            F = b.astype(F_init, "float32")
             b.eval(F)
+            # Validate shapes match
+            F_shape = b.shape(F)
+            if int(F_shape[0]) != d_s or int(F_shape[1]) != d_t:
+                logger.warning(
+                    f"ZIPPER: F_init shape {F_shape} doesn't match expected ({d_s}, {d_t}), falling back"
+                )
+                F_init = None  # Fall through to normal initialization
+        
+        if F_init is None:
+            # Normal initialization: closed-form projection
+            logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
+            
+            # Cache source pseudoinverse (computed once, used multiple times)
+            source_pinv = b.pinv(source)
+            b.eval(source_pinv)
+            
+            if T_has_nan:
+                # Fallback: T is NaN from degenerate Gram matrix, use direct projection
+                logger.warning("HYBRID ALIGNMENT: Sample transform T contains NaN, using direct projection")
+                F = b.matmul(source_pinv, target)  # [d_s, d_t]
+            elif d_s == d_t:
+                # Same dimension: use closed-form T alignment
+                aligned_source_samples = b.matmul(T, source)  # [n, d_s]
+                F = b.matmul(source_pinv, aligned_source_samples)  # [d_s, d_s]
+            else:
+                # =================================================================
+                # CROSS-DIMENSIONAL PROJECTION via Gram alignment
+                # =================================================================
+                # Use SVD + Procrustes to align sample-space structure (U vectors).
+                # CKA=1.0 is ALWAYS achievable - gradient descent will converge.
+                # NO arbitrary thresholds - just use the closed-form solution and refine.
+                F_gram, diag = solve_via_gram_alignment(b, source, target)
+                
+                if F_gram is not None:
+                    # Use SVD+Procrustes initialization directly - let gradient descent refine
+                    F = F_gram
+                    proc_err = diag.get('procrustes_error', 0.0)
+                    logger.info(f"CROSS-DIM: Gram alignment init, procrustes_error={proc_err:.4f}")
+                else:
+                    # F_gram is None (SVD failed completely) - use pinv fallback
+                    F = b.matmul(source_pinv, target)
+                    logger.warning("CROSS-DIM: SVD failed, using pinv fallback")
+                b.eval(F)
         # Check for NaN in F initialization
         F_sum = b.sum(F)
         b.eval(F_sum)

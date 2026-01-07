@@ -1226,10 +1226,23 @@ def _probe_precise(
                     len(skipped_targets), [target_layers[t] for t in skipped_targets]
                 )
 
-            # Submit 1:1 alignments (now we have n_target tasks, not 7 groups)
+            # =========================================================================
+            # CKA-GUIDED "ZIPPER" ORDERING
+            # =========================================================================
+            # Sort tasks by pre-alignment CKA (highest first = easiest to align).
+            # This processes easy layers first, which:
+            # 1. Establishes "anchor points" for difficult layers
+            # 2. Frees memory from easy layers before hard ones consume more
+            # 3. Shows CKA=1.0 results early (psychological feedback)
+            alignment_tasks_sorted = sorted(
+                alignment_tasks,
+                key=lambda t: cka_matrix[t[1][0]][t[0]],  # CKA(source, target)
+                reverse=True  # Highest CKA first (easiest)
+            )
+            
             logger.info(
-                "PROBE: Aligning %d target layers (1:1 bijective mapping)...",
-                len(alignment_tasks),
+                "PROBE: Aligning %d target layers (CKA-sorted, highest-first)...",
+                len(alignment_tasks_sorted),
             )
             
             # Imports for parallel execution
@@ -1239,10 +1252,12 @@ def _probe_precise(
             def _align_target_group(
                 tgt_idx: int,
                 src_indices: list[int],
+                F_init: "Array | None" = None,
             ) -> dict:
                 """Align source layer(s) to a target layer.
                 
                 With 1:1 mapping, src_indices has exactly 1 element.
+                F_init: Optional warm-start from a successful neighbor (zipper).
                 """
                 tgt_layer = target_layers[tgt_idx]
                 src_layers_list = [source_layers[i] for i in src_indices]
@@ -1302,11 +1317,15 @@ def _probe_precise(
                     alignment_result = local_aligner.find_perfect_alignment(
                         src_combined,
                         tgt_stacked,
+                        F_init=F_init,  # Zipper warm-start from neighbor
                     )
                     
                     result["achieved_cka"] = alignment_result.achieved_cka
                     
                     F_arr = b.array(alignment_result.feature_transform)
+                    
+                    # Store raw F_arr for zipper warm-start of neighbors
+                    result["F_arr_raw"] = F_arr
                     
                     # Split transform for each source layer
                     split_transforms = {}
@@ -1554,65 +1573,90 @@ def _probe_precise(
                         f"GramAligner failed for {src_layers_list} -> {tgt_layer}: {e}"
                     ) from e
 
+                # =========================================================================
+                # MEMORY CLEANUP - Critical for preventing 45GB explosion
+                # =========================================================================
+                # Delete large intermediate arrays and sync GPU to free memory
+                del src_combined, tgt_stacked, src_stacks, F_arr
+                try:
+                    del alignment_result
+                except NameError:
+                    pass
+                b.eval()  # Force computation graph evaluation to release memory
+                
+                # Clear Hungarian cache between alignments
+                from modelcypher.core.domain.geometry.hungarian import clear_hungarian_cache
+                clear_hungarian_cache()
+
                 return result
 
+            # =========================================================================
+            # ZIPPER ALIGNMENT: Sequential processing with warm-start from neighbors
+            # =========================================================================
+            # Process in CKA-sorted order. For each layer:
+            # 1. Find nearest successfully aligned neighbor (by layer index)
+            # 2. Use its F as warm-start for gradient descent
+            # This is the "zipper" concept: easy layers align first, their F patterns
+            # accelerate convergence for difficult neighbors.
+            
+            successful_F_by_layer: dict[int, "Array"] = {}  # tgt_layer -> F_arr
+            
+            completed = 0
+            for tgt_idx, src_indices in alignment_tasks_sorted:
+                # Find nearest successful neighbor's F for warm-start
+                tgt_layer = target_layers[tgt_idx]
+                F_init = None
+                
+                if successful_F_by_layer:
+                    # Find the closest aligned layer by layer index
+                    aligned_layers = list(successful_F_by_layer.keys())
+                    closest_layer = min(aligned_layers, key=lambda l: abs(l - tgt_layer))
+                    F_init = successful_F_by_layer[closest_layer]
+                    logger.info(f"ZIPPER: Layer {tgt_layer} warm-starting from layer {closest_layer}")
+                
+                # Align this layer
+                result = _align_target_group(tgt_idx, src_indices, F_init=F_init)
+                
+                tgt_layer = result["tgt_layer"]
+                src_layers = result["src_layers"]
+                
+                # Store mapping
+                layer_mapping[tgt_layer] = src_layers[0]
 
-            with ThreadPoolExecutor(max_workers=ALIGNMENT_MAX_WORKERS) as executor:
-                futures = {
-                    executor.submit(
-                        _align_target_group,
-                        tgt_idx,
-                        src_indices,
-                    ): tgt_idx
-                    for tgt_idx, src_indices in alignment_tasks
-                }
+                # RIGOROUS GEOMETRY: Transform must always exist.
+                if result["feature_transform"] is None:
+                    raise RuntimeError(
+                        f"GramAligner returned no transform for {src_layers} -> {tgt_layer}. "
+                        "This should never happen if the geometry is correct."
+                    )
+                feature_transforms[tgt_layer] = result["feature_transform"]
+                layer_cka_scores[tgt_layer] = result["achieved_cka"]
+                layer_cka_scores_raw[tgt_layer] = result["raw_cka"]
 
-                completed = 0
-                for future in as_completed(futures):
-                    result = future.result()
-                    tgt_layer = result["tgt_layer"]
-                    src_layers = result["src_layers"]
+                # Store successful F for zipper warm-start of future layers
+                if result.get("F_arr_raw") is not None and result["achieved_cka"] > 0.9:
+                    successful_F_by_layer[tgt_layer] = result["F_arr_raw"]
 
-                    # Store mapping (using principal source layer - usually the first or middle)
-                    # For metrics, we just log the primary mapping, but the transforms cover all
-                    # This logic handles the 1:1 assumption in some downstream parts, which might need update
-                    # But feature_transforms will now contain a composite transform or list
-                    
-                    # NOTE: To maintain compatibility with existing pipeline which expects 1:1 mapping in some places,
-                    # we map to the first source layer. But the TRANSFORM handles the combination.
-                    layer_mapping[tgt_layer] = src_layers[0]
+                if result["attention_transform"] is not None:
+                    attention_transforms[tgt_layer] = result["attention_transform"]
 
-                    # RIGOROUS GEOMETRY: Transform must always exist.
-                    # If GramAligner succeeded, it returned a transform.
-                    if result["feature_transform"] is None:
-                        raise RuntimeError(
-                            f"GramAligner returned no transform for {src_layers} -> {tgt_layer}. "
-                            "This should never happen if the geometry is correct."
-                        )
-                    feature_transforms[tgt_layer] = result["feature_transform"]
-                    layer_cka_scores[tgt_layer] = result["achieved_cka"]
+                if result.get("k_transform") is not None:
+                    k_transforms[tgt_layer] = result["k_transform"]
 
-                    layer_cka_scores_raw[tgt_layer] = result["raw_cka"]
+                if result.get("v_transform") is not None:
+                    v_transforms[tgt_layer] = result["v_transform"]
 
-                    if result["attention_transform"] is not None:
-                        attention_transforms[tgt_layer] = result["attention_transform"]
+                if result.get("intermediate_transform") is not None:
+                    intermediate_transforms[tgt_layer] = result["intermediate_transform"]
 
-                    if result.get("k_transform") is not None:
-                        k_transforms[tgt_layer] = result["k_transform"]
-
-                    if result.get("v_transform") is not None:
-                        v_transforms[tgt_layer] = result["v_transform"]
-
-                    if result.get("intermediate_transform") is not None:
-                        intermediate_transforms[tgt_layer] = result["intermediate_transform"]
-
-                    completed += 1
-                    if completed % 5 == 0 or completed == len(alignment_tasks):
-                        logger.info(
-                            "PROBE: Aligned %d/%d target layers...",
-                            completed,
-                            len(alignment_tasks),
-                        )
+                completed += 1
+                if completed % 5 == 0 or completed == len(alignment_tasks_sorted):
+                    logger.info(
+                        "PROBE: Aligned %d/%d target layers (zipper: %d warm-started)...",
+                        completed,
+                        len(alignment_tasks_sorted),
+                        len(successful_F_by_layer),
+                    )
 
             logger.info(
                 "PROBE: Cross-architecture layer alignment found %d mappings "
