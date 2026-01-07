@@ -1662,6 +1662,40 @@ def solve_via_gram_alignment(
     U_t_k = U_t[:, :actual_rank]  # [n, k]
     b.eval(U_s_k, U_t_k)
 
+    # =========================================================================
+    # CRITICAL: Sign disambiguation for SVD columns
+    # =========================================================================
+    # SVD is unique only up to sign on each column. Column j of U_s and U_t
+    # may have arbitrary signs. To reduce procrustes error, we flip the sign
+    # of each U_s column to match the corresponding U_t column direction.
+    #
+    # For each column j: if <U_s[:,j], U_t[:,j]> < 0, flip U_s[:,j]
+    # Also track which columns were flipped to apply to Vt_s (consistency).
+    #
+    # This ensures corresponding columns point in similar directions BEFORE
+    # Procrustes tries to find a rotation, dramatically reducing error.
+    sign_flips = []
+    for j in range(actual_rank):
+        col_s = U_s_k[:, j]  # [n]
+        col_t = U_t_k[:, j]  # [n]
+        dot = b.sum(col_s * col_t)
+        b.eval(dot)
+        if float(b.to_scalar(dot)) < 0:
+            sign_flips.append(j)
+    
+    # Apply sign flips to U_s_k in one vectorized operation
+    if sign_flips:
+        sign_vec = b.ones((actual_rank,))
+        for j in sign_flips:
+            sign_vec = b.where(b.arange(actual_rank) == j, b.full((actual_rank,), -1.0), sign_vec)
+        U_s_k = U_s_k * b.reshape(sign_vec, (1, -1))
+        # Also flip Vt_s to maintain A = U @ S @ V^T consistency
+        Vt_s_flipped = Vt_s[:actual_rank, :] * b.reshape(sign_vec, (-1, 1))
+        b.eval(U_s_k, Vt_s_flipped)
+    else:
+        Vt_s_flipped = Vt_s[:actual_rank, :]
+        b.eval(Vt_s_flipped)
+
     # Orthogonal Procrustes: find R such that U_s @ R ≈ U_t
     # Solve: min ||U_s @ R - U_t||_F  s.t. R^T @ R = I
     # Solution: R = U @ V^T where M = U_s^T @ U_t = U @ S @ V^T
@@ -1698,7 +1732,7 @@ def solve_via_gram_alignment(
     S_s_inv = b.where(S_s_k > sv_floor, 1.0 / S_s_k, b.zeros_like(S_s_k))
     b.eval(S_s_inv, S_t_k)
 
-    V_s_k = b.transpose(Vt_s[:actual_rank, :])  # [d_s, k]
+    V_s_k = b.transpose(Vt_s_flipped)  # [d_s, k] - uses sign-corrected Vt_s
     V_t_k = b.transpose(Vt_t[:actual_rank, :])  # [d_t, k]
     b.eval(V_s_k, V_t_k)
 

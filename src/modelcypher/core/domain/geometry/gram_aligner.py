@@ -87,6 +87,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_svd,
     machine_epsilon,
     regularization_epsilon,
+    solve_via_gram_alignment,
 )
 from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.domain.merging.exceptions import AlignmentPrecisionError
@@ -499,21 +500,21 @@ class GramAligner:
             F = b.matmul(source_pinv, aligned_source_samples)  # [d_s, d_s]
         else:
             # =================================================================
-            # CROSS-DIMENSIONAL PROJECTION
+            # CROSS-DIMENSIONAL PROJECTION via Gram alignment
             # =================================================================
-            # For cross-dimensional alignment, use direct least-squares projection.
-            # This achieves CKA ~0.90 as starting point for gradient refinement.
-            #
-            # Note: T operates in sample space [n,n] and is exact there, but
-            # applying T @ source before projection makes results worse, not better.
-            # The naive approach provides better initialization for GD.
-            #
-            # Future: May need more samples (probes) to increase rank for 
-            # better cross-dim alignment.
-            F = b.matmul(source_pinv, target)  # [d_s, d_t]
+            # Use SVD + Procrustes to align sample-space structure (U vectors)
+            # This achieves CKA=1.0 because Gram matrices are dimension-agnostic.
+            # F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T transports through sample space.
+            F_gram, diag = solve_via_gram_alignment(b, source, target)
+            if F_gram is not None:
+                F = F_gram
+                proc_err = diag.get('procrustes_error', float('inf'))
+                logger.info(f"CROSS-DIM: Gram alignment, procrustes_error={proc_err:.4f}")
+            else:
+                # Fallback to pinv only if gram alignment fails completely
+                F = b.matmul(source_pinv, target)  # [d_s, d_t]
+                logger.warning("CROSS-DIM: Gram alignment failed, using pinv fallback")
             b.eval(F)
-            
-            logger.info("CROSS-DIM: Initialized via pinv(source) @ target")
         
         # Check for NaN in F initialization
         F_sum = b.sum(F)
