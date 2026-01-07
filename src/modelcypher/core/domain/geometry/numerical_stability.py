@@ -1628,200 +1628,62 @@ def solve_via_gram_alignment(
     target_c = target - target_mean
     b.eval(source_c, target_c)
 
-    # SVD of centered matrices (geodesic - GPU-only, iterates until convergence)
-    U_s, S_s, Vt_s = geodesic_svd(b, source_c)
-    U_t, S_t, Vt_t = geodesic_svd(b, target_c)
-    b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
-
-    if int(S_s.shape[0]) == 0 or int(S_t.shape[0]) == 0:
-        return None, diagnostics
-
-    max_s_arr = b.max(S_s)
-    max_t_arr = b.max(S_t)
-    b.eval(max_s_arr, max_t_arr)
-    max_s = float(b.to_scalar(max_s_arr))
-    max_t = float(b.to_scalar(max_t_arr))
-    if max_s == 0 or max_t == 0:
-        return None, diagnostics
-
-    # Use ALL available dimensions - NO truncation based on thresholds.
-    # Information is NEVER lost by dimension change - only compressed.
-    # Small singular values are highly-compressed information, not noise.
-    # CKA = 1.0 is ALWAYS achievable because Gram matrices live in sample
-    # space [n × n] regardless of feature dimension.
-    avail_s = int(S_s.shape[0])
-    avail_t = int(S_t.shape[0])
-    actual_rank = min(avail_s, avail_t)  # Use everything SVD gives us
-    diagnostics["rank_source"] = avail_s
-    diagnostics["rank_target"] = avail_t
-
-    if actual_rank == 0:
-        return None, diagnostics
-
-    # Use actual_rank for Procrustes alignment
-    U_s_k = U_s[:, :actual_rank]  # [n, k]
-    U_t_k = U_t[:, :actual_rank]  # [n, k]
-    b.eval(U_s_k, U_t_k)
-
     # =========================================================================
-    # CRITICAL: Hungarian permutation alignment for SVD columns
+    # LEAST-SQUARES SOLUTION: F = pinv(source_c) @ target_c
     # =========================================================================
-    # SVD columns have NO guaranteed ordering. Column i in U_s may correspond
-    # to column j in U_t. Procrustes assumes 1:1 column correspondence.
-    # 
-    # Fix: Use Hungarian algorithm to find optimal column permutation P such
-    # that U_s[:, P[i]] is maximally aligned with U_t[:, i].
+    # This minimizes ||source_c @ F - target_c||_F in the least squares sense.
+    # Unlike orthogonal Procrustes (which constrains F to be orthogonal), this
+    # finds the general linear transform that best maps source to target.
     #
-    # Cost matrix: C[i,j] = 1 - |<U_s[:,i], U_t[:,j]>| (minimize negative similarity)
-    # Uses absolute value because SVD also has sign ambiguity.
-    from modelcypher.core.domain.geometry.hungarian import hungarian_assignment
-    
-    # Compute absolute similarity matrix: S[i,j] = |<U_s[:,i], U_t[:,j]>|
-    # Cross-correlation: U_s.T @ U_t gives [k, k] with dot products
-    sim_matrix = b.matmul(b.transpose(U_s_k), U_t_k)  # [k, k]
-    b.eval(sim_matrix)
-    abs_sim = b.abs(sim_matrix)  # Absolute because of sign ambiguity
-    b.eval(abs_sim)
-    
-    # Convert to cost (minimize cost = maximize similarity)
-    # Cost = max_sim - sim to ensure non-negative costs
-    max_sim_arr = b.max(abs_sim)
-    b.eval(max_sim_arr)
-    max_sim = float(b.to_scalar(max_sim_arr))
-    cost_matrix = max_sim - abs_sim + eps  # Small offset for numerical stability
-    b.eval(cost_matrix)
-    
-    # Hungarian assignment: perm[i] = j means U_s column i -> U_t column j
-    perm = hungarian_assignment(cost_matrix, b, use_cache=True)
-    perm_list = [int(p) for p in perm] if hasattr(perm, '__iter__') else list(perm)
-    
-    # Reorder U_s columns to match U_t column order
-    # We want U_s_permuted[:, i] to align with U_t[:, i]
-    # perm[i] = j means source col i maps to target col j
-    # So we need inverse permutation: source col inv_perm[j] maps to target col j
-    inv_perm = [0] * actual_rank
-    for i, j in enumerate(perm_list):
-        if j < actual_rank:  # Guard against out-of-bounds
-            inv_perm[j] = i
-    
-    # Apply permutation to U_s_k
-    U_s_perm = b.stack([U_s_k[:, inv_perm[j]] for j in range(actual_rank)], axis=1)
-    b.eval(U_s_perm)
-    
-    # Also permute Vt_s to maintain consistency (A = U @ S @ V^T)
-    Vt_s_k = Vt_s[:actual_rank, :]
-    S_s_k_vec = S_s[:actual_rank]
-    Vt_s_perm = b.stack([Vt_s_k[inv_perm[j], :] for j in range(actual_rank)], axis=0)
-    S_s_perm = b.stack([S_s_k_vec[inv_perm[j]] for j in range(actual_rank)], axis=0)
-    b.eval(Vt_s_perm, S_s_perm)
-
+    # For cross-dimensional alignment (d_s ≠ d_t), this is the correct approach.
+    # Orthogonal Procrustes is only valid when d_s == d_t.
     # =========================================================================
-    # Sign disambiguation on the permuted columns
-    # =========================================================================
-    # Now column j of U_s_perm should correspond to column j of U_t.
-    # Flip signs where they point in opposite directions.
-    sign_flips = []
-    for j in range(actual_rank):
-        col_s = U_s_perm[:, j]  # [n]
-        col_t = U_t_k[:, j]     # [n]
-        dot = b.sum(col_s * col_t)
-        b.eval(dot)
-        if float(b.to_scalar(dot)) < 0:
-            sign_flips.append(j)
     
-    # Apply sign flips
-    if sign_flips:
-        sign_vec = b.ones((actual_rank,))
-        for j in sign_flips:
-            sign_vec = b.where(b.arange(actual_rank) == j, b.full((actual_rank,), -1.0), sign_vec)
-        U_s_k = U_s_perm * b.reshape(sign_vec, (1, -1))
-        Vt_s_flipped = Vt_s_perm * b.reshape(sign_vec, (-1, 1))
-        b.eval(U_s_k, Vt_s_flipped)
-    else:
-        U_s_k = U_s_perm
-        Vt_s_flipped = Vt_s_perm
-        b.eval(U_s_k, Vt_s_flipped)
+    # Compute pseudo-inverse of source: pinv(source_c) = Vt.T @ S^{-1} @ U.T
+    # Using geodesic SVD for numerical stability
+    U_s, S_s, Vt_s = geodesic_svd(b, source_c)
+    b.eval(U_s, S_s, Vt_s)
     
-    # Update S_s for later use (it was also permuted)
-    S_s_k = S_s_perm
-
-    # =========================================================================
-    # ZIPPER ROTATION PROPAGATION
-    # =========================================================================
-    # If R_hint is provided from a successful neighbor, pre-rotate U_s_k.
-    # This helps when the current layer has similar geometry to the neighbor -
-    # the pre-rotation gets us closer to the correct alignment before Procrustes.
-    if R_hint is not None:
-        R_hint_shape = b.shape(R_hint)
-        if int(R_hint_shape[0]) == actual_rank and int(R_hint_shape[1]) == actual_rank:
-            U_s_k = b.matmul(U_s_k, R_hint)  # Pre-rotate using neighbor's R
-            b.eval(U_s_k)
-            diagnostics["used_R_hint"] = True
-        else:
-            diagnostics["used_R_hint"] = False
-            # Shape mismatch - can't use R_hint
-    else:
-        diagnostics["used_R_hint"] = False
-
-    # Orthogonal Procrustes: find R such that U_s @ R ≈ U_t
-    # Solve: min ||U_s @ R - U_t||_F  s.t. R^T @ R = I
-    # Solution: R = U @ V^T where M = U_s^T @ U_t = U @ S @ V^T
-    M = b.matmul(b.transpose(U_s_k), U_t_k)  # [k, k]
-    b.eval(M)
-
-    U_proc, S_proc, Vt_proc = geodesic_svd(b, M)
-    b.eval(U_proc, S_proc, Vt_proc)
-
-    R = b.matmul(U_proc, Vt_proc)  # [k, k]
-    b.eval(R)
-
-    # Note: R may include reflection (det(R) < 0). This is the OPTIMAL
-    # orthogonal transformation for Procrustes alignment - reflection is
-    # allowed and often necessary for correct alignment.
-
-    # Compute Procrustes error: ||U_s @ R - U_t||_F / ||U_t||_F
-    U_s_rotated = b.matmul(U_s_k, R)
-    b.eval(U_s_rotated)
-    diff = U_s_rotated - U_t_k
-    diff_norm = _geodesic_norm_scalar(diff, b)
-    U_t_norm = _geodesic_norm_scalar(U_t_k, b)
-    procrustes_error = diff_norm / (U_t_norm + eps)
-    diagnostics["procrustes_error"] = procrustes_error
-    diagnostics["procrustes_R"] = R  # Store for zipper warm-start
-
-    # Build the full transform F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T
-    # But we need to handle rank truncation carefully
-
-    # S_s^{-1} for the k dimensions we're using (use actual_rank, not shared_rank)
-    # Use machine epsilon as floor for numerical stability in inversion
-    # NOTE: S_s_k was already set to the permuted version S_s_perm above
+    if int(S_s.shape[0]) == 0:
+        return None, diagnostics
+    
+    # Compute S^{-1} with threshold for numerical stability
+    max_s_arr = b.max(S_s)
+    b.eval(max_s_arr)
+    max_s = float(b.to_scalar(max_s_arr))
+    if max_s == 0:
+        return None, diagnostics
+    
     sv_floor = eps * max_s
-    S_t_k = S_t[:actual_rank]
-    S_s_inv = b.where(S_s_k > sv_floor, 1.0 / S_s_k, b.zeros_like(S_s_k))
-    b.eval(S_s_inv, S_t_k)
-
-    V_s_k = b.transpose(Vt_s_flipped)  # [d_s, k] - uses sign-corrected Vt_s
-    V_t_k = b.transpose(Vt_t[:actual_rank, :])  # [d_t, k]
-    b.eval(V_s_k, V_t_k)
-
-    # F = V_s @ diag(S_s^{-1}) @ R @ diag(S_t) @ V_t^T
-    # Step by step to avoid large intermediate matrices
-
-    # Step 1: V_s @ diag(S_s^{-1}) -> [d_s, k]
-    V_s_scaled = V_s_k * b.reshape(S_s_inv, (1, -1))
+    S_inv = b.where(S_s > sv_floor, 1.0 / S_s, b.zeros_like(S_s))
+    b.eval(S_inv)
+    
+    # pinv(source_c) = V @ S^{-1} @ U^T
+    V_s = b.transpose(Vt_s)  # [d_s, k]
+    V_s_scaled = V_s * b.reshape(S_inv, (1, -1))  # [d_s, k]
     b.eval(V_s_scaled)
-
-    # Step 2: (V_s @ S_s^{-1}) @ R -> [d_s, k]
-    V_s_R = b.matmul(V_s_scaled, R)
-    b.eval(V_s_R)
-
-    # Step 3: (V_s @ S_s^{-1} @ R) @ diag(S_t) -> [d_s, k]
-    V_s_R_S = V_s_R * b.reshape(S_t_k, (1, -1))
-    b.eval(V_s_R_S)
-
-    # Step 4: (V_s @ S_s^{-1} @ R @ S_t) @ V_t^T -> [d_s, d_t]
-    F = b.matmul(V_s_R_S, b.transpose(V_t_k))
+    pinv_source = b.matmul(V_s_scaled, b.transpose(U_s))  # [d_s, n]
+    b.eval(pinv_source)
+    
+    # F = pinv(source_c) @ target_c → [d_s, d_t]
+    F = b.matmul(pinv_source, target_c)
     b.eval(F)
+    
+    diagnostics["rank_source"] = int(S_s.shape[0])
+    diagnostics["rank_target"] = d_t
+    
+    # Store diagnostics (no sample-space rotation in this approach)
+    diagnostics["procrustes_R"] = None
+    diagnostics["used_R_hint"] = False
+    
+    # Compute alignment error: ||source_c @ F - target_c||_F / ||target_c||_F
+    projected = b.matmul(source_c, F)
+    b.eval(projected)
+    diff = projected - target_c
+    diff_norm = _geodesic_norm_scalar(diff, b)
+    target_norm = _geodesic_norm_scalar(target_c, b)
+    procrustes_error = diff_norm / (target_norm + eps)
+    diagnostics["procrustes_error"] = procrustes_error
 
     return F, diagnostics
 
