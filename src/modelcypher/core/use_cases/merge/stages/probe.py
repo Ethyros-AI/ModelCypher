@@ -368,6 +368,7 @@ class ProbeCache:
         Result: [n_source_layers, n_target_layers] matrix on GPU.
         """
         b = backend
+        eps = sqrt_scalar(machine_epsilon(b, b.array([1.0], dtype="float32")), b)
         
         source_layers = sorted(self.source_centered_grams.keys())
         target_layers = sorted(self.target_centered_grams.keys())
@@ -386,7 +387,7 @@ class ProbeCache:
                 dot = b.sum(K_s * K_t)
                 norm_s = b.norm(K_s)
                 norm_t = b.norm(K_t)
-                cka = dot / (norm_s * norm_t + 1e-10)
+                cka = dot / (norm_s * norm_t + eps)
                 b.eval(cka)
                 row.append(float(b.to_scalar(cka)))
             similarity_list.append(row)
@@ -402,48 +403,49 @@ class ProbeCache:
         Saves to: profile_path / f"{model_key}_probe_cache.npz"
         
         This allows us to skip re-probing for models we've already analyzed.
-        The cache contains heavy GPU data, so we save as numpy arrays.
+        The cache contains heavy GPU data, so we save as compressed arrays.
         """
-        import numpy as np
+        import mlx.core as mx
         b = backend
         
         save_path = Path(profile_path) / f"{model_key}_probe_cache.npz"
         save_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Convert GPU arrays to numpy for disk storage
-        data = {
-            "version": "1.0",
-        }
+        data: dict[str, Any] = {"version": b.array([1], dtype="int32")}
         
         # Save activations per layer
         for layer_idx, acts in self.source_activations.items():
-            data[f"src_acts_{layer_idx}"] = np.array(b.tolist(acts))
+            data[f"src_acts_{layer_idx}"] = acts
         for layer_idx, acts in self.target_activations.items():
-            data[f"tgt_acts_{layer_idx}"] = np.array(b.tolist(acts))
+            data[f"tgt_acts_{layer_idx}"] = acts
         
         # Save Gram matrices
         for layer_idx, gram in self.source_grams.items():
-            data[f"src_gram_{layer_idx}"] = np.array(b.tolist(gram))
+            data[f"src_gram_{layer_idx}"] = gram
         for layer_idx, gram in self.target_grams.items():
-            data[f"tgt_gram_{layer_idx}"] = np.array(b.tolist(gram))
+            data[f"tgt_gram_{layer_idx}"] = gram
         
         # Save centered Grams
         for layer_idx, gram in self.source_centered_grams.items():
-            data[f"src_cgram_{layer_idx}"] = np.array(b.tolist(gram))
+            data[f"src_cgram_{layer_idx}"] = gram
         for layer_idx, gram in self.target_centered_grams.items():
-            data[f"tgt_cgram_{layer_idx}"] = np.array(b.tolist(gram))
+            data[f"tgt_cgram_{layer_idx}"] = gram
         
         # Save ranks and sigmas as metadata
-        data["src_ranks"] = np.array(list(self.source_ranks.items()))
-        data["tgt_ranks"] = np.array(list(self.target_ranks.items()))
-        data["src_sigmas"] = np.array(list(self.source_sigmas.items()))
-        data["tgt_sigmas"] = np.array(list(self.target_sigmas.items()))
+        if self.source_ranks:
+            data["src_ranks"] = b.array(list(self.source_ranks.items()), dtype="int32")
+        if self.target_ranks:
+            data["tgt_ranks"] = b.array(list(self.target_ranks.items()), dtype="int32")
+        if self.source_sigmas:
+            data["src_sigmas"] = b.array(list(self.source_sigmas.items()), dtype="float32")
+        if self.target_sigmas:
+            data["tgt_sigmas"] = b.array(list(self.target_sigmas.items()), dtype="float32")
         
         # Save layer similarity if computed
         if self.layer_similarity_matrix is not None:
-            data["similarity_matrix"] = np.array(b.tolist(self.layer_similarity_matrix))
+            data["similarity_matrix"] = self.layer_similarity_matrix
         
-        np.savez_compressed(save_path, **data)
+        mx.savez_compressed(save_path, **data)
         logger.info("PROBE CACHE: Saved to profile %s (%.1f MB)", 
                     save_path, save_path.stat().st_size / 1024 / 1024)
     
@@ -453,7 +455,7 @@ class ProbeCache:
         
         Returns None if profile doesn't exist or is invalid.
         """
-        import numpy as np
+        import mlx.core as mx
         b = backend
         
         load_path = Path(profile_path) / f"{model_key}_probe_cache.npz"
@@ -462,7 +464,10 @@ class ProbeCache:
             return None
         
         try:
-            data = np.load(load_path, allow_pickle=True)
+            loaded = mx.load(load_path)
+            if not isinstance(loaded, dict):
+                logger.warning("PROBE CACHE: Invalid cache format at %s", load_path)
+                return None
             
             # Reconstruct cache
             cache = ProbeCache(
@@ -481,45 +486,44 @@ class ProbeCache:
             )
             
             # Load activations
-            for key in data.files:
+            for key, arr in loaded.items():
                 if key.startswith("src_acts_"):
                     layer_idx = int(key.split("_")[2])
-                    cache.source_activations[layer_idx] = b.array(data[key].tolist())
+                    cache.source_activations[layer_idx] = arr
                 elif key.startswith("tgt_acts_"):
                     layer_idx = int(key.split("_")[2])
-                    cache.target_activations[layer_idx] = b.array(data[key].tolist())
+                    cache.target_activations[layer_idx] = arr
                 elif key.startswith("src_gram_"):
                     layer_idx = int(key.split("_")[2])
-                    cache.source_grams[layer_idx] = b.array(data[key].tolist())
+                    cache.source_grams[layer_idx] = arr
                 elif key.startswith("tgt_gram_"):
                     layer_idx = int(key.split("_")[2])
-                    cache.target_grams[layer_idx] = b.array(data[key].tolist())
+                    cache.target_grams[layer_idx] = arr
                 elif key.startswith("src_cgram_"):
                     layer_idx = int(key.split("_")[2])
-                    cache.source_centered_grams[layer_idx] = b.array(data[key].tolist())
+                    cache.source_centered_grams[layer_idx] = arr
                 elif key.startswith("tgt_cgram_"):
                     layer_idx = int(key.split("_")[2])
-                    cache.target_centered_grams[layer_idx] = b.array(data[key].tolist())
+                    cache.target_centered_grams[layer_idx] = arr
             
             # Load ranks and sigmas
-            if "src_ranks" in data:
-                for layer_idx, rank in data["src_ranks"]:
+            if "src_ranks" in loaded:
+                for layer_idx, rank in b.tolist(loaded["src_ranks"]):
                     cache.source_ranks[int(layer_idx)] = int(rank)
-            if "tgt_ranks" in data:
-                for layer_idx, rank in data["tgt_ranks"]:
+            if "tgt_ranks" in loaded:
+                for layer_idx, rank in b.tolist(loaded["tgt_ranks"]):
                     cache.target_ranks[int(layer_idx)] = int(rank)
-            if "src_sigmas" in data:
-                for layer_idx, sigma in data["src_sigmas"]:
+            if "src_sigmas" in loaded:
+                for layer_idx, sigma in b.tolist(loaded["src_sigmas"]):
                     cache.source_sigmas[int(layer_idx)] = float(sigma)
-            if "tgt_sigmas" in data:
-                for layer_idx, sigma in data["tgt_sigmas"]:
+            if "tgt_sigmas" in loaded:
+                for layer_idx, sigma in b.tolist(loaded["tgt_sigmas"]):
                     cache.target_sigmas[int(layer_idx)] = float(sigma)
             
             # Load similarity matrix if present
-            if "similarity_matrix" in data:
-                cache.layer_similarity_matrix = b.array(data["similarity_matrix"].tolist())
+            if "similarity_matrix" in loaded:
+                cache.layer_similarity_matrix = loaded["similarity_matrix"]
             
-            b.eval()  # Ensure all loaded to GPU
             logger.info("PROBE CACHE: Loaded from profile %s", load_path)
             return cache
             
@@ -2275,8 +2279,11 @@ def _probe_precise(
     # =========================================================================
     # Experiments verified: CKA = 1.000000 is always achievable across all model
     # pairs and all layers. Any deviation indicates an alignment algorithm bug.
-    # Use machine epsilon (1e-6 for float32) as the tolerance.
-    precision_threshold = 1e-6  # Machine epsilon level
+    # Use sqrt(machine_epsilon) as the tolerance (matches GramAligner convention).
+    precision_threshold = sqrt_scalar(
+        machine_epsilon(b, b.array([1.0], dtype="float32")),
+        b,
+    )
     perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
 
     # =========================================================================
@@ -2290,7 +2297,7 @@ def _probe_precise(
     boundary_preserved_layers: list[int] = []  # VESTIGIAL: should always be empty
     skipped_layers: list[int] = []  # VESTIGIAL: should always be empty
 
-    CONVERGED_THRESHOLD = 1.0 - precision_threshold  # 0.999999
+    CONVERGED_THRESHOLD = 1.0 - precision_threshold
 
     for layer_idx, cka in layer_cka_scores.items():
         if cka != cka:  # NaN - alignment algorithm bug

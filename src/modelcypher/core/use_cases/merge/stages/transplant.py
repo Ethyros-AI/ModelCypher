@@ -174,6 +174,88 @@ from modelcypher.core.domain.merging.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
 )
+
+
+# =============================================================================
+# CROSS-ARCHITECTURE WEIGHT KEY MAPPING
+# =============================================================================
+# Different architectures use different naming conventions for equivalent weights.
+# This mapping allows transplanting between architectures like Qwen ↔ LFM2.
+# =============================================================================
+
+# Semantic weight name mappings (bidirectional)
+_WEIGHT_NAME_EQUIVALENTS = [
+    # MLP/FFN weights (SwiGLU style)
+    ("feed_forward.w1", "mlp.gate_proj"),  # Gate projection
+    ("feed_forward.w2", "mlp.down_proj"),  # Down projection
+    ("feed_forward.w3", "mlp.up_proj"),    # Up projection
+    # Attention output projection
+    ("self_attn.out_proj", "self_attn.o_proj"),
+    # Norms
+    ("operator_norm", "input_layernorm"),
+    ("ffn_norm", "post_attention_layernorm"),
+]
+
+
+def _map_weight_key_cross_arch(
+    target_key: str,
+    source_keys: set[str],
+    layer_mapping: dict[int, int] | None,
+    extract_layer_fn: "Callable[[str], int | None]",
+) -> str | None:
+    """Map a target weight key to an equivalent source weight key.
+
+    Handles cross-architecture merges where weight naming differs:
+    - LFM2 uses feed_forward.w1/w2/w3, Qwen uses mlp.gate_proj/up_proj/down_proj
+    - LFM2 uses self_attn.out_proj, Qwen uses self_attn.o_proj
+
+    Returns:
+        Mapped source key if found, None otherwise.
+    """
+    # Direct lookup first
+    if target_key in source_keys:
+        return target_key
+
+    # Extract target layer index
+    target_layer = extract_layer_fn(target_key)
+    if target_layer is None:
+        return None
+
+    # Get mapped source layer
+    source_layer = layer_mapping.get(target_layer, target_layer) if layer_mapping else target_layer
+
+    # Try name equivalents
+    for tgt_pattern, src_pattern in _WEIGHT_NAME_EQUIVALENTS:
+        if tgt_pattern in target_key:
+            # Replace layer index and weight name
+            candidate = target_key.replace(
+                f"layers.{target_layer}",
+                f"layers.{source_layer}"
+            ).replace(tgt_pattern, src_pattern)
+
+            if candidate in source_keys:
+                return candidate
+
+        # Try reverse mapping (source pattern in target key)
+        if src_pattern in target_key:
+            candidate = target_key.replace(
+                f"layers.{target_layer}",
+                f"layers.{source_layer}"
+            ).replace(src_pattern, tgt_pattern)
+
+            if candidate in source_keys:
+                return candidate
+
+    # Try just layer mapping (same weight name)
+    if layer_mapping and target_layer != source_layer:
+        candidate = target_key.replace(
+            f"layers.{target_layer}",
+            f"layers.{source_layer}"
+        )
+        if candidate in source_keys:
+            return candidate
+
+    return None
 from modelcypher.core.use_cases.merge.stages.manifest import (
     TransplantManifest,
     WeightStatus,
@@ -1097,8 +1179,23 @@ def stage_transplant(
                 )
 
             target_w = target_weights.get(key)
-            source_w = source_weights.get(key)
+
+            # Cross-architecture weight key mapping
+            # Try direct lookup first, then semantic equivalents
+            source_key = _map_weight_key_cross_arch(
+                target_key=key,
+                source_keys=set(source_weights.keys()),
+                layer_mapping=layer_mapping,
+                extract_layer_fn=extract_layer_index_fn,
+            )
+            source_w = source_weights.get(source_key) if source_key else None
+
             if target_w is None or source_w is None:
+                # Log missing weights for debugging (only first few per layer)
+                if source_w is None and "conv.conv" not in key:  # Skip 3D conv weights
+                    metrics.setdefault("unmapped_weights", [])
+                    if len(metrics["unmapped_weights"]) < 20:
+                        metrics["unmapped_weights"].append(key)
                 continue
 
             metrics["weights_considered"] += 1
@@ -1128,8 +1225,9 @@ def stage_transplant(
                     continue
 
             if 'int' in source_dtype or 'uint' in source_dtype:
-                logger.debug("Dequantizing source weight: %s", key)
-                source_w = dequantize_if_needed(source_w, key, source_weights, b)
+                # Use SOURCE_KEY (not target key) to find scales/biases in source dict
+                logger.debug("Dequantizing source weight: %s (source_key: %s)", key, source_key)
+                source_w = dequantize_if_needed(source_w, source_key, source_weights, b)
                 if source_w is None or not hasattr(source_w, 'shape'):
                     logger.debug("Failed to dequantize source weight: %s", key)
                     continue
@@ -1237,9 +1335,25 @@ def stage_transplant(
 
                 # Use ORIGINAL source shape for dimension matching.
                 original_source_shape = source_w.shape
+                # =================================================================
+                # WEIGHT TYPE DETECTION: Architecture-agnostic patterns
+                # =================================================================
+                # Match ALL architectures, not just specific naming conventions:
+                # - Standard transformer: gate_proj, up_proj, down_proj
+                # - Llama-style: mlp.fc1, mlp.fc2
+                # - LFM2/Mamba-style: feed_forward.w1, w2, w3
+                # - Hybrid conv: conv.in_proj, conv.out_proj
                 is_mlp = any(mlp_name in key for mlp_name in [
-                    "gate_proj", "up_proj", "down_proj", "mlp.fc1", "mlp.fc2"
+                    "gate_proj", "up_proj", "down_proj",  # Standard
+                    "mlp.fc1", "mlp.fc2",                 # Llama
+                    "feed_forward.w1", "feed_forward.w2", "feed_forward.w3",  # LFM2
+                    "mlp.gate", "mlp.up", "mlp.down",     # Alternative naming
                 ])
+                # Conv projections in hybrid architectures (LFM2, Mamba, etc.)
+                is_conv_proj = any(conv_name in key for conv_name in [
+                    "conv.in_proj", "conv.out_proj",      # LFM2
+                    "in_proj", "out_proj",                # General projection names
+                ]) and "self_attn" not in key  # Exclude attention out_proj
 
                 # =================================================================
                 # MIRROR PROBLEM FIX: Correct weight folding transforms
