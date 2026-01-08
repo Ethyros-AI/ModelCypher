@@ -843,7 +843,8 @@ def stage_transplant(
 
         # Get REAL activations from collected probes (required)
         act_list = target_activations.get(layer_idx)
-        if not act_list:
+        # Check for missing activations (handle both list and array formats)
+        if act_list is None or (hasattr(act_list, '__len__') and len(act_list) == 0):
             raise AlignmentFailureError(
                 stage="LAYER_ACTIVATION_VALIDATION",
                 weight_key=None,
@@ -851,14 +852,16 @@ def stage_transplant(
                 context={"layer_idx": layer_idx},
             )
 
-        if len(act_list) != len(probe_ids):
+        # Get number of activations (works for both list and 2D array)
+        n_acts = len(act_list) if hasattr(act_list, '__len__') else int(b.shape(act_list)[0])
+        if n_acts != len(probe_ids):
             raise AlignmentFailureError(
                 stage="LAYER_ACTIVATION_VALIDATION",
                 weight_key=None,
                 message="Probe count mismatch for layer activations",
                 context={
                     "layer_idx": layer_idx,
-                    "activations": len(act_list),
+                    "activations": n_acts,
                     "probes": len(probe_ids),
                 },
             )
@@ -993,7 +996,13 @@ def stage_transplant(
                     layer_idx, stitch_shape
                 )
 
-        stacked = b.stack(act_list, axis=0)
+        # Handle both formats: list of 1D arrays (legacy) or 2D array (memory-optimized)
+        if hasattr(act_list, 'shape') and len(b.shape(act_list)) == 2:
+            # Already a 2D array [n_probes, hidden_dim] - use directly
+            stacked = act_list
+        else:
+            # List of 1D arrays - stack them
+            stacked = b.stack(act_list, axis=0)
         # Convert to float32 for numerical stability in linalg operations.
         stacked = b.astype(stacked, "float32")
         b.eval(stacked)

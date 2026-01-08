@@ -15,5 +15,34 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-# Evaluation Package
-from .engine import EvaluationExecutionEngine, EvaluationScenario, ScenarioResult
+"""Evaluation execution engine for semantic evaluation scenarios.
+
+This package provides:
+- EvaluationExecutionEngine: Orchestrates scenario-based model evaluation
+- EvaluationScenario: Definition of evaluation scenarios with prompts and target concepts
+- EvaluationConfig: Configuration for evaluation runs
+"""
+
+from .engine import (
+    EntropyFn,
+    EvaluationConfig,
+    EvaluationExecutionEngine,
+    EvaluationScenario,
+    InferenceFn,
+    MetricType,
+    PromptResult,
+    ScenarioResult,
+    ScoringFn,
+)
+
+__all__ = [
+    "EntropyFn",
+    "EvaluationConfig",
+    "EvaluationExecutionEngine",
+    "EvaluationScenario",
+    "InferenceFn",
+    "MetricType",
+    "PromptResult",
+    "ScenarioResult",
+    "ScoringFn",
+]

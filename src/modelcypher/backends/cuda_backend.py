@@ -92,6 +92,22 @@ class CUDABackend(Backend):
     def minimum(self, lhs: Array, rhs: Array) -> Array:
         return self.torch.minimum(lhs, rhs)
 
+    def add(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise addition."""
+        return self.torch.add(lhs, rhs)
+
+    def subtract(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise subtraction."""
+        return self.torch.subtract(lhs, rhs)
+
+    def multiply(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise multiplication."""
+        return self.torch.multiply(lhs, rhs)
+
+    def divide(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise division."""
+        return self.torch.divide(lhs, rhs)
+
     def abs(self, array: Array) -> Array:
         return array.abs()
 
@@ -111,7 +127,42 @@ class CUDABackend(Backend):
         bits: int,
         mode: str,
     ) -> tuple[Array, Array, Array | None]:
-        raise NotImplementedError("Quantized weights are not supported on the CUDA backend.")
+        """Quantize weights to lower precision.
+
+        Parameters
+        ----------
+        weight : Array
+            Weight tensor to quantize.
+        group_size : int
+            Number of elements per quantization group.
+        bits : int
+            Bit width for quantization (e.g., 4, 8).
+        mode : str
+            Quantization mode (e.g., 'affine', 'symmetric').
+
+        Returns
+        -------
+        tuple[Array, Array, Array | None]
+            Quantized weights, scales, and optional biases.
+        """
+        shape = weight.shape
+        if len(shape) < 2:
+            weight = weight.reshape(-1, 1)
+
+        num_groups = weight.shape[0] // group_size
+        weight_grouped = weight.reshape(num_groups, group_size, -1)
+
+        # Compute scales per group
+        max_vals = self.torch.amax(self.torch.abs(weight_grouped), dim=1, keepdim=True)
+        scales = max_vals / (2 ** (bits - 1) - 1)
+        scales = self.torch.where(scales == 0, self.torch.ones_like(scales), scales)
+
+        # Quantize
+        weight_q = self.torch.round(weight_grouped / scales)
+        weight_q = self.torch.clamp(weight_q, -(2 ** (bits - 1)), 2 ** (bits - 1) - 1)
+        weight_q = weight_q.to(dtype=self.torch.int8)
+
+        return weight_q.reshape(shape), scales.reshape(-1, weight.shape[-1]), None
 
     def dequantize(
         self,
@@ -122,7 +173,44 @@ class CUDABackend(Backend):
         bits: int,
         mode: str,
     ) -> Array:
-        raise NotImplementedError("Quantized weights are not supported on the CUDA backend.")
+        """Dequantize weights back to full precision.
+
+        Parameters
+        ----------
+        weight : Array
+            Quantized weight tensor.
+        scales : Array
+            Scale factors per group.
+        biases : Array | None
+            Optional bias terms per group.
+        group_size : int
+            Number of elements per quantization group.
+        bits : int
+            Bit width used in quantization.
+        mode : str
+            Quantization mode (e.g., 'affine', 'symmetric').
+
+        Returns
+        -------
+        Array
+            Dequantized weight tensor.
+        """
+        shape = weight.shape
+        weight = weight.to(dtype=self.torch.float32)
+
+        if len(shape) < 2:
+            weight = weight.reshape(-1, 1)
+
+        num_groups = weight.shape[0] // group_size
+        weight_grouped = weight.reshape(num_groups, group_size, -1)
+        scales_grouped = scales.reshape(num_groups, 1, -1)
+
+        dequantized = weight_grouped * scales_grouped
+        if biases is not None:
+            biases_grouped = biases.reshape(num_groups, 1, -1)
+            dequantized = dequantized + biases_grouped
+
+        return dequantized.reshape(shape)
 
     def eval(self, *arrays: Array) -> None:
         self.torch.cuda.synchronize()
@@ -207,6 +295,10 @@ class CUDABackend(Backend):
         resolved = self._map_dtype(dtype) or self.torch.float32
         return self.torch.full(shape, fill_value, dtype=resolved, device="cuda")
 
+    def dtype(self, array: Array) -> Any:
+        """Return the dtype of an array."""
+        return array.dtype
+
     def ones_like(self, array: Array, dtype: Any | None = None) -> Array:
         resolved = self._map_dtype(dtype)
         return self.torch.ones_like(array, dtype=resolved)
@@ -267,6 +359,11 @@ class CUDABackend(Backend):
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array:
         return array.broadcast_to(shape)
 
+    def tile(self, array: Array, reps: tuple[int, ...] | int) -> Array:
+        if isinstance(reps, int):
+            reps = (reps,)
+        return array.repeat(*reps)
+
     # --- Reductions (new) ---
     def mean(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
@@ -299,6 +396,20 @@ class CUDABackend(Backend):
         if axis is None:
             return array.std()
         return array.std(dim=axis, keepdim=keepdims)
+
+    def all(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        if axis is None:
+            return self.torch.all(array)
+        return self.torch.all(array, dim=axis, keepdim=keepdims)
+
+    def any(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        if axis is None:
+            return self.torch.any(array)
+        return self.torch.any(array, dim=axis, keepdim=keepdims)
 
     # --- Element-wise Operations (new) ---
     def sign(self, array: Array) -> Array:
@@ -370,6 +481,10 @@ class CUDABackend(Backend):
     def det(self, array: Array) -> Array:
         return self.torch.linalg.det(array)
 
+    def linalg_det(self, array: Array) -> Array:
+        """Alias for det() for compatibility."""
+        return self.det(array)
+
     def eigh(self, array: Array) -> tuple[Array, Array]:
         return self.torch.linalg.eigh(array)
 
@@ -390,6 +505,57 @@ class CUDABackend(Backend):
 
     def qr(self, array: Array) -> tuple[Array, Array]:
         return self.torch.linalg.qr(array)
+
+    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> Array:
+        """Compute matrix square root via Newton-Schulz iteration.
+
+        Converges to A^{1/2} for positive semi-definite A.
+        Runs entirely on GPU.
+
+        Algorithm:
+            Y₀ = A / norm(A)
+            Z₀ = I
+            for k=0..N:
+                T = (3I - ZₖYₖ)
+                Yₖ₊₁ = ½ Yₖ T
+                Zₖ₊₁ = ½ T Zₖ
+
+            A^{1/2} ≈ Y_final * sqrt(norm(A))
+        """
+        # Ensure float32 for stability
+        A_f32 = A.to(dtype=self.torch.float32)
+
+        # Scaling to ensure convergence (spectral norm <= 1)
+        padding = self.torch.tensor(1e-7, dtype=self.torch.float32, device="cuda")
+        normA_val = self.torch.sqrt(self.torch.sum(A_f32 * A_f32)) + padding
+        Y = A_f32 / normA_val
+
+        shape = A.shape
+        I = self.torch.eye(shape[0], dtype=self.torch.float32, device="cuda")
+        Z = I
+
+        three = self.torch.tensor(3.0, dtype=self.torch.float32, device="cuda")
+        half = self.torch.tensor(0.5, dtype=self.torch.float32, device="cuda")
+
+        # Iteration
+        for _ in range(num_iters):
+            ZY = self.torch.matmul(Z, Y)
+            T = three * I - ZY
+
+            Y_new = half * self.torch.matmul(Y, T)
+            Z_new = half * self.torch.matmul(T, Z)
+
+            Y = Y_new
+            Z = Z_new
+
+        # Rescale
+        sqrtA = Y * self.torch.sqrt(normA_val)
+
+        # Cast back if necessary
+        if A.dtype != self.torch.float32:
+            sqrtA = sqrtA.to(dtype=A.dtype)
+
+        return sqrtA
 
     def floyd_warshall(self, dist: Array) -> Array:
         """Compute all-pairs shortest paths using Floyd-Warshall on device."""
@@ -636,6 +802,51 @@ class CUDABackend(Backend):
             Vectorized function that processes batches efficiently.
         """
         return self.torch.vmap(fun, in_dims=in_axes, out_dims=out_axes)
+
+    def value_and_grad(self, fun: Callable, argnums: int | list[int] = 0) -> Callable:
+        """Return a function that computes both value and gradient of fun.
+
+        Parameters
+        ----------
+        fun : Callable
+            Function to differentiate. Must return a scalar.
+        argnums : int or list[int], optional
+            Which positional argument(s) to differentiate with respect to.
+            Default is 0.
+
+        Returns
+        -------
+        Callable
+            Function that returns (value, gradient) tuple.
+        """
+        def value_and_grad_fn(*args):
+            # Enable gradients for specified arguments
+            if isinstance(argnums, int):
+                argnum_list = [argnums]
+            else:
+                argnum_list = list(argnums)
+
+            # Clone and enable gradients for specified args
+            new_args = list(args)
+            for i in argnum_list:
+                if i < len(new_args) and hasattr(new_args[i], 'requires_grad_'):
+                    new_args[i] = new_args[i].clone().requires_grad_(True)
+
+            # Forward pass
+            value = fun(*new_args)
+
+            # Backward pass
+            value.backward()
+
+            # Collect gradients
+            if isinstance(argnums, int):
+                grad = new_args[argnums].grad
+            else:
+                grad = tuple(new_args[i].grad for i in argnum_list)
+
+            return value.detach(), grad
+
+        return value_and_grad_fn
 
     def async_eval(self, *arrays: Array) -> None:
         """Asynchronously evaluate arrays without blocking.

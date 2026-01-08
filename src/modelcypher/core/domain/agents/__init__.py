@@ -81,6 +81,11 @@ from .agent_trace_value import (
     AgentTraceValueKind,
     ImportOptions,
 )
+from .monocle_trace_importer import (
+    ImportResult,
+    MonocleTraceImporter,
+    TraceImportError,
+)
 from .computational_gate_atlas import ComputationalGateAtlas
 from .conceptual_genealogy_atlas import (
     ConceptDomain,
@@ -94,32 +99,25 @@ from .emotion_concept_atlas import *  # noqa: F401,F403
 from .intrinsic_identity_rules import IntrinsicIdentityRules
 from .lora_expert import (
     AdapterActivator,
-    AdapterBackedLoRAExpert,
     AgentIntent,
     AgentQuery,
     CompositeAdapterActivator,
     LoRAExpert,
-    LoRAExpertInfo,
-    LoRAExpertRegistry,
-    LoRAExpertSelection,
     SkillCategory,
     SkillComplexity,
+)
+from .task_diversion_detector import (
+    LexicalStopWords,
+    LexicalTokenizer,
+    TaskDiversionAssessment,
+    TaskDiversionDetector,
+    TaskDiversionMethod,
 )
 from .metaphor_invariant_atlas import (
     CulturalExpression,
     MetaphorFamily,
     MetaphorInvariant,
     MetaphorInvariantInventory,
-)
-from .monocle_trace_importer import (
-    ImportError as TraceImportError,
-)
-from .monocle_trace_importer import (
-    ImportErrorKind,
-    MonocleTraceImporter,
-)
-from .monocle_trace_importer import (
-    ImportResult as TraceImportResult,
 )
 from .semantic_prime_atlas import SemanticPrimeAtlas
 from .semantic_prime_drift import *  # noqa: F401,F403
@@ -148,7 +146,6 @@ from .syntax_atlas import (
     SyntaxConcept,
     SyntaxConceptInventory,
 )
-from .task_diversion_detector import TaskDiversionDetector
 from .unified_atlas import *  # noqa: F401,F403
 
 # Base atlas infrastructure

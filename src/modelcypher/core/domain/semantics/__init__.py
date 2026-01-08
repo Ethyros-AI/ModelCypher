@@ -15,6 +15,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-# Semantics Package
+"""Semantic concept space and graph operations.
+
+This package provides:
+- ConceptVectorSpace: High-dimensional vector space for semantic concepts
+  using geodesic distance for similarity search
+- ActivationGraphProjector: Graph topology for tracking concept co-occurrences
+"""
+
 from .graph import ActivationGraphProjector
-from .vector_space import ConceptVectorSpace
+from .vector_space import ConceptNode, ConceptVectorSpace
+
+__all__ = [
+    "ActivationGraphProjector",
+    "ConceptNode",
+    "ConceptVectorSpace",
+]

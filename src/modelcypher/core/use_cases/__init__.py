@@ -18,22 +18,9 @@
 """Application use cases."""
 
 from .anchor_extractor import AnchorExtractor, AnchorExtractorError
-from .geometry_engine import (
-    GeometryEngine,
-    LoRAAdapterGeometryMetrics,
-    ProcrustesResult,
-    SinkhornResult,
-    SinkhornSolver,
-)
 
 __all__ = [
     # Anchor extraction - semantic anchors from token embeddings
     "AnchorExtractor",
     "AnchorExtractorError",
-    # Geometry engine - LoRA metrics, Procrustes, and optimal transport
-    "GeometryEngine",
-    "LoRAAdapterGeometryMetrics",
-    "ProcrustesResult",
-    "SinkhornResult",
-    "SinkhornSolver",
 ]

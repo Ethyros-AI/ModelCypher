@@ -123,12 +123,6 @@ class TestDomainPackageExports:
 
         assert training is not None
 
-    def test_dynamics_subpackage_import(self):
-        """Test that dynamics subpackage exports key classes."""
-        from modelcypher.core.domain import dynamics
-
-        assert dynamics is not None
-
     def test_merging_subpackage_import(self):
         """Test that merging subpackage exports key classes."""
         from modelcypher.core.domain import merging

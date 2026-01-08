@@ -699,6 +699,118 @@ def _parse_model_search_library(value: str) -> ModelSearchLibraryFilter:
     raise typer.BadParameter(f"Invalid library filter '{value}'. Valid options: {valid}")
 
 
+@app.command("extract-anchors")
+def model_extract_anchors(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+    output_path: str | None = typer.Option(
+        None, "--output", "-o", help="Path to save anchors (JSON)"
+    ),
+) -> None:
+    """Extract semantic anchors from model token embeddings.
+
+    Uses Fréchet mean (geometric center on curved manifolds) to compute
+    semantic anchor points from the UnifiedAtlas probes (~450 concepts).
+
+    These anchors can be used for:
+    - Model alignment comparison
+    - Semantic drift detection
+    - Cross-model concept mapping
+
+    Examples:
+        mc model extract-anchors ./models/llama-7b
+        mc model extract-anchors ./models/qwen-7b --output anchors.json
+    """
+    import json as json_module
+    from pathlib import Path
+
+    from modelcypher.cli.composition import get_registry
+    from modelcypher.core.use_cases.anchor_extractor import (
+        AnchorExtractor,
+        AnchorExtractorError,
+    )
+
+    context = _context(ctx)
+
+    typer.echo(f"Extracting semantic anchors from: {model_path}", err=True)
+
+    try:
+        # Load model weights
+        registry = get_registry()
+        weights, _ = registry.model_loader.load_weights(model_path)
+
+        # Extract anchors
+        extractor = AnchorExtractor()
+        anchors, confidences = extractor.extract(model_path, weights)
+
+        typer.echo(f"Extracted {len(anchors)} anchors", err=True)
+
+    except AnchorExtractorError as exc:
+        error = ErrorDetail(
+            code="MC-1040",
+            title="Anchor extraction failed",
+            detail=str(exc),
+            hint="Ensure model has tokenizer.json and embed_tokens weights",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-1040",
+            title="Anchor extraction failed",
+            detail=str(exc),
+            hint="Check model path and ensure weights are accessible",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Convert anchors to serializable format
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
+    anchor_data = {
+        anchor_id: backend.tolist(anchor_vec)
+        for anchor_id, anchor_vec in anchors.items()
+    }
+
+    payload = {
+        "modelPath": model_path,
+        "anchorCount": len(anchors),
+        "anchors": anchor_data,
+        "confidences": confidences,
+    }
+
+    # Save to file if requested
+    if output_path:
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w") as f:
+            json_module.dump(payload, f, indent=2)
+        typer.echo(f"Saved anchors to: {output_path}", err=True)
+
+    if context.output_format == "text":
+        lines = [
+            "ANCHOR EXTRACTION",
+            f"Model: {model_path}",
+            f"Anchors: {len(anchors)}",
+            "",
+            "Top anchors by confidence:",
+        ]
+        # Show top 10 by confidence
+        sorted_anchors = sorted(
+            confidences.items(), key=lambda x: x[1], reverse=True
+        )[:10]
+        for anchor_id, conf in sorted_anchors:
+            lines.append(f"  {anchor_id}: {conf:.3f}")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 def _parse_model_search_quant(value: str | None) -> ModelSearchQuantization | None:
     if value is None:
         return None

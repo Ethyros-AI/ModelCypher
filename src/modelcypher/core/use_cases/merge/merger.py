@@ -109,6 +109,11 @@ class UnifiedGeometricMerger:
         dry_run: bool = False,
         target_weights: dict[str, "Array"] | None = None,
         probe_mode: str = "atlas",
+        # Optional pre-loaded models/tokenizers to avoid redundant loading
+        source_model: Any | None = None,
+        target_model: Any | None = None,
+        source_tokenizer: Any | None = None,
+        target_tokenizer: Any | None = None,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides)."""
         return run_merge(
@@ -121,6 +126,10 @@ class UnifiedGeometricMerger:
             dry_run=dry_run,
             target_weights=target_weights,
             probe_mode=probe_mode,
+            source_model=source_model,
+            target_model=target_model,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
         )
 
     def _stage_probe(

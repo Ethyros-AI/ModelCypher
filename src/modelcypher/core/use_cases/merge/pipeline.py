@@ -21,7 +21,7 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -59,6 +59,11 @@ def run_merge(
     dry_run: bool = False,
     target_weights: dict[str, "Array"] | None = None,
     probe_mode: str = "atlas",
+    # Optional pre-loaded models/tokenizers to avoid redundant loading
+    source_model: Any | None = None,
+    target_model: Any | None = None,
+    source_tokenizer: Any | None = None,
+    target_tokenizer: Any | None = None,
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -93,16 +98,29 @@ def run_merge(
     layer_indices = extract_layer_indices(loaded_target_weights)
     logger.info("Found %d layers", len(layer_indices))
 
-    # Load tokenizers for probe execution
-    source_tokenizer = load_tokenizer(source_path)
-    target_tokenizer = load_tokenizer(target_path)
+    # Load tokenizers for probe execution (use pre-loaded if available)
+    if source_tokenizer is None:
+        source_tokenizer = load_tokenizer(source_path)
+    else:
+        logger.info("Using pre-loaded source tokenizer")
+    if target_tokenizer is None:
+        target_tokenizer = load_tokenizer(target_path)
+    else:
+        logger.info("Using pre-loaded target tokenizer")
 
-    # Load models for probe stage
-    source_model = None
-    target_model = None
-    logger.info("Loading models for probe execution...")
-    source_model = load_model_for_probing(source_path)
-    target_model = load_model_for_probing(target_path)
+    # Load models for probe stage (use pre-loaded if available)
+    if source_model is None or target_model is None:
+        logger.info("Loading models for probe execution...")
+        if source_model is None:
+            source_model = load_model_for_probing(source_path)
+        else:
+            logger.info("Using pre-loaded source model")
+        if target_model is None:
+            target_model = load_model_for_probing(target_path)
+        else:
+            logger.info("Using pre-loaded target model")
+    else:
+        logger.info("Using pre-loaded source and target models")
 
     # =================================================================
     # STAGE 1: PROBE (Compute layer correspondences via CKA)

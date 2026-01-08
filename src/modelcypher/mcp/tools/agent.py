@@ -176,33 +176,61 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 raise ValueError(f"Trace import failed: {exc}")
             if not import_result.traces:
                 raise ValueError("No traces found in file")
-            analytics = AgentTraceAnalytics()
-            for trace in import_result.traces:
-                analytics.add_trace(trace)
-            summary = analytics.summary()
+
+            # Use the static factory to compute analytics
+            analytics = AgentTraceAnalytics.from_traces(
+                traces=import_result.traces,
+                requested_count=len(import_result.traces),
+            )
+
+            # Compute total spans across all traces
+            total_spans = sum(len(t.spans) for t in import_result.traces)
+
+            # Compliance info from the ActionCompliance dataclass
+            compliance = analytics.action_compliance
+            compliance_rate = 0.0
+            if compliance.decoded_actions > 0:
+                compliance_rate = compliance.valid_actions / compliance.decoded_actions
+
             return {
                 "_schema": "mc.agent.trace_analyze.v1",
                 "filePath": str(file_path),
                 "traceCount": len(import_result.traces),
-                "totalSpans": summary.total_spans,
-                "messageCounts": {
-                    "user": summary.message_counts.user,
-                    "assistant": summary.message_counts.assistant,
-                    "system": summary.message_counts.system,
-                    "tool": summary.message_counts.tool,
+                "totalSpans": total_spans,
+                "computedAt": analytics.computed_at.isoformat(),
+                "timeRange": {
+                    "oldest": analytics.oldest_started_at.isoformat()
+                    if analytics.oldest_started_at
+                    else None,
+                    "newest": analytics.newest_started_at.isoformat()
+                    if analytics.newest_started_at
+                    else None,
                 },
+                "kinds": {k.value: v for k, v in analytics.kinds.items()},
+                "statuses": {k.value: v for k, v in analytics.statuses.items()},
+                "interventionCount": analytics.intervention_count,
                 "actionCompliance": {
-                    "totalActions": summary.action_compliance.total_actions,
-                    "compliantActions": summary.action_compliance.compliant_actions,
-                    "complianceRate": summary.action_compliance.compliance_rate,
+                    "decodedActions": compliance.decoded_actions,
+                    "validActions": compliance.valid_actions,
+                    "invalidActions": compliance.invalid_actions,
+                    "unvalidatedActions": compliance.unvalidated_actions,
+                    "complianceRate": compliance_rate,
+                    "topErrors": [
+                        {"message": e.message, "count": e.count}
+                        for e in compliance.top_errors
+                    ],
                 },
-                "entropyBuckets": {
-                    "low": summary.entropy_buckets.low,
-                    "medium": summary.entropy_buckets.medium,
-                    "high": summary.entropy_buckets.high,
+                "entropyByCompliance": {
+                    "validAction": {
+                        "count": analytics.entropy_by_compliance.valid_action.count,
+                        "average": analytics.entropy_by_compliance.valid_action.average,
+                    },
+                    "invalidAction": {
+                        "count": analytics.entropy_by_compliance.invalid_action.count,
+                        "average": analytics.entropy_by_compliance.invalid_action.average,
+                    },
                 },
-                "averageSpanDurationMs": summary.average_span_duration_ms,
-                "uniqueModels": list(summary.unique_models),
+                "issues": analytics.issues,
             }
 
     if "mc_agent_validate_action" in tool_set:
@@ -210,10 +238,23 @@ def register_agent_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_agent_validate_action(
             action: str,
-            strict: bool = False,
         ) -> dict:
-            """Validate an agent action for safety and compliance."""
-            from modelcypher.core.domain.agents import AgentActionValidator
+            """Validate an agent action for safety and compliance.
+
+            The action should be a JSON object conforming to the AgentActionEnvelope schema:
+            {
+                "_schema": "tc.agent.action.v1",
+                "_version": 1,
+                "kind": "tool_call" | "respond" | "ask_clarification" | "refuse" | "defer",
+                "tool": {"name": "...", "arguments": {...}},  // for kind=tool_call
+                "response": {"text": "..."},  // for kind=respond
+                ...
+            }
+            """
+            from modelcypher.core.domain.agents import (
+                AgentActionEnvelope,
+                AgentActionValidator,
+            )
 
             try:
                 action_data = json.loads(action)
@@ -221,25 +262,28 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                     raise ValueError("Action must be a JSON object")
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid action format: {exc}")
-            validator = AgentActionValidator()
-            kind_str = action_data.get("kind", "response")
-            content = action_data.get("content", "")
-            tool_name = action_data.get("tool")
-            tool_input = action_data.get("input", {})
-            result = validator.validate(
-                kind=kind_str,
-                content=content,
-                tool_name=tool_name,
-                tool_input=tool_input,
-                strict=strict,
-            )
+
+            # Parse the action envelope
+            envelope = AgentActionEnvelope.from_dict(action_data)
+            if envelope is None:
+                # Missing schema or invalid format
+                return {
+                    "_schema": "mc.agent.validate_action.v1",
+                    "valid": False,
+                    "kind": action_data.get("kind"),
+                    "errors": [
+                        "Action must have _schema='tc.agent.action.v1' and _version=1"
+                    ],
+                    "warnings": [],
+                }
+
+            # Validate the envelope
+            result = AgentActionValidator.validate(envelope)
+
             return {
                 "_schema": "mc.agent.validate_action.v1",
                 "valid": result.is_valid,
-                "kind": kind_str,
+                "kind": envelope.kind.value,
                 "errors": result.errors,
                 "warnings": result.warnings,
-                "sanitizedContent": result.sanitized_content,
-                "riskLevel": result.risk_level.value if result.risk_level else None,
-                "blockedPatterns": result.blocked_patterns,
             }

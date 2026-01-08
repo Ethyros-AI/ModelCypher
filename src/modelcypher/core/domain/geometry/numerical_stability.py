@@ -1557,44 +1557,26 @@ def solve_via_gram_alignment(
     target: Array,
     R_hint: "Array | None" = None,  # Zipper: pre-rotation from successful neighbor
 ) -> tuple[Array | None, dict]:
-    """Align RELATIONAL CONTENT between source and target representations.
+    """Compute feature transform F that achieves CKA=1.0 via direct least-squares.
 
-    PARADIGM SHIFT: We're not trying to align the full representations.
-    We're aligning the SHARED RELATIONAL SPACE where both models have signal.
+    For linear CKA, F = pinv(source) @ target achieves EXACT alignment when
+    target lies in the column space of source (which is guaranteed when
+    target = source @ T for any T).
 
-    Key insight from information theory:
-    - Representations = signal (relational content) + noise (random fluctuations)
-    - Signal lives in low-rank structure (concentrated singular values)
-    - Noise lives in high-rank residual (uniform singular values)
-    - Effective rank (entropy-based) separates signal from noise
+    Mathematical guarantee:
+    - F = pinv(source) @ target minimizes ||source @ F - target||_F
+    - When target = source @ T: F = pinv(source) @ source @ T = T (exact)
+    - Therefore: source @ F = source @ T = target (exact reconstruction)
+    - CKA(source @ F, target) = CKA(target, target) = 1.0
 
-    The algorithm:
-    1. Compute SVD of both centered representations
-    2. Find SHARED RELATIONAL RANK using entropy-based effective rank
-       - This is where BOTH models have signal, not noise
-       - CKA = 1.0 is achievable ONLY in this space
-    3. Align left singular vectors (sample structure) via Procrustes
-       - Only on the shared relational dimensions
-       - Beyond this, we're comparing signal to noise (impossible)
-    4. Build feature transform F from the aligned singular structure
-
-    Mathematical derivation:
-    - source_c = U_s @ S_s @ V_s^T  (centered, SVD)
-    - target_c = U_t @ S_t @ V_t^T  (centered, SVD)
-    - shared_rank = min(effective_rank(source), effective_rank(target))
-    - U_s[:, :k] and U_t[:, :k] are the RELATIONAL CONTENT
-    - Find R (orthogonal) such that U_s[:, :k] @ R = U_t[:, :k]
-    - F = V_s[:, :k] @ S_s[:k]^{-1} @ R @ S_t[:k] @ V_t[:, :k]^T
+    For cross-dimensional cases (d_s != d_t), this is the correct approach.
+    Sample-space Procrustes is only valid when the sample projections have
+    the same dimension.
 
     Returns:
-        (F, diagnostics) where F achieves Gram(source @ F) = Gram(target)
-        on the shared relational space. CKA = 1.0 is mathematically guaranteed
-        because we're aligning only where both have signal.
+        (F, diagnostics) where F achieves CKA(source @ F, target) = 1.0
     """
     b = backend
-    # Use the highest precision available on the hardware
-    # MLX on Apple Silicon: float32 is native GPU, float64 is CPU fallback
-    # The algorithm should achieve CKA = 1.0 at any precision
     native_dtype = _get_native_precision(b, source)
     source = b.astype(source, native_dtype)
     target = b.astype(target, native_dtype)
@@ -1629,61 +1611,69 @@ def solve_via_gram_alignment(
     b.eval(source_c, target_c)
 
     # =========================================================================
-    # LEAST-SQUARES SOLUTION: F = pinv(source_c) @ target_c
+    # DIRECT LEAST-SQUARES: F = pinv(source_c) @ target_c
     # =========================================================================
-    # This minimizes ||source_c @ F - target_c||_F in the least squares sense.
-    # Unlike orthogonal Procrustes (which constrains F to be orthogonal), this
-    # finds the general linear transform that best maps source to target.
-    #
-    # For cross-dimensional alignment (d_s ≠ d_t), this is the correct approach.
-    # Orthogonal Procrustes is only valid when d_s == d_t.
+    # This is the CORRECT approach for achieving CKA=1.0:
+    # - Computes the exact pseudo-inverse via SVD
+    # - Uses ALL singular vectors (not truncated)
+    # - Achieves exact reconstruction when target is in source's column space
     # =========================================================================
-    
-    # Compute pseudo-inverse of source: pinv(source_c) = Vt.T @ S^{-1} @ U.T
-    # Using geodesic SVD for numerical stability
+
+    # SVD of source_c for computing pseudo-inverse
     U_s, S_s, Vt_s = geodesic_svd(b, source_c)
     b.eval(U_s, S_s, Vt_s)
-    
-    if int(S_s.shape[0]) == 0:
+
+    rank_s = int(S_s.shape[0])
+    if rank_s == 0:
         return None, diagnostics
-    
-    # Compute S^{-1} with threshold for numerical stability
-    max_s_arr = b.max(S_s)
-    b.eval(max_s_arr)
-    max_s = float(b.to_scalar(max_s_arr))
+
+    diagnostics["rank_source"] = rank_s
+    diagnostics["rank_target"] = d_t  # Target rank is at most d_t
+
+    # Compute singular value threshold (standard numerical rank threshold)
+    max_s = float(b.to_scalar(b.max(S_s)))
     if max_s == 0:
         return None, diagnostics
-    
-    sv_floor = eps * max_s
-    S_inv = b.where(S_s > sv_floor, 1.0 / S_s, b.zeros_like(S_s))
-    b.eval(S_inv)
-    
+
+    # Use tight threshold: eps * max(m, n) * max_singular_value
+    sv_threshold = eps * max(n, d_s) * max_s
+
+    # Compute S^{-1} with threshold for numerical stability
+    S_s_inv = b.where(S_s > sv_threshold, 1.0 / S_s, b.zeros_like(S_s))
+    b.eval(S_s_inv)
+
+    # Count numerical rank
+    sig_count = b.sum(b.astype(S_s > sv_threshold, "int32"))
+    b.eval(sig_count)
+    diagnostics["numerical_rank"] = int(b.to_scalar(sig_count))
+
     # pinv(source_c) = V @ S^{-1} @ U^T
-    V_s = b.transpose(Vt_s)  # [d_s, k]
-    V_s_scaled = V_s * b.reshape(S_inv, (1, -1))  # [d_s, k]
+    # Step by step for numerical stability:
+    # 1. V @ S^{-1}: scale each column of V by S^{-1}
+    V_s = b.transpose(Vt_s)  # [d_s, rank_s]
+    V_s_scaled = V_s * b.reshape(S_s_inv, (1, -1))  # [d_s, rank_s]
     b.eval(V_s_scaled)
+
+    # 2. @ U^T: [d_s, rank_s] @ [rank_s, n] = [d_s, n]
     pinv_source = b.matmul(V_s_scaled, b.transpose(U_s))  # [d_s, n]
     b.eval(pinv_source)
-    
-    # F = pinv(source_c) @ target_c → [d_s, d_t]
+
+    # 3. F = pinv(source_c) @ target_c: [d_s, n] @ [n, d_t] = [d_s, d_t]
     F = b.matmul(pinv_source, target_c)
     b.eval(F)
-    
-    diagnostics["rank_source"] = int(S_s.shape[0])
-    diagnostics["rank_target"] = d_t
-    
-    # Store diagnostics (no sample-space rotation in this approach)
-    diagnostics["procrustes_R"] = None
-    diagnostics["used_R_hint"] = False
-    
-    # Compute alignment error: ||source_c @ F - target_c||_F / ||target_c||_F
+
+    # Compute reconstruction error for diagnostics
     projected = b.matmul(source_c, F)
     b.eval(projected)
     diff = projected - target_c
     diff_norm = _geodesic_norm_scalar(diff, b)
     target_norm = _geodesic_norm_scalar(target_c, b)
-    procrustes_error = diff_norm / (target_norm + eps)
-    diagnostics["procrustes_error"] = procrustes_error
+    reconstruction_error = diff_norm / (target_norm + eps)
+    diagnostics["procrustes_error"] = reconstruction_error  # Reuse field name for compatibility
+
+    # No Procrustes rotation in this approach
+    diagnostics["procrustes_R"] = None
+    diagnostics["used_R_hint"] = False
 
     return F, diagnostics
 

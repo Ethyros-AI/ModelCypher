@@ -45,10 +45,14 @@ from modelcypher.core.domain.agents.agent_trace_value import (
 )
 
 
-class ImportError(Exception):
+class TraceImportError(Exception):
     """Error during trace import."""
 
     pass
+
+
+# Alias for backwards compatibility
+ImportError = TraceImportError  # noqa: A001
 
 
 class ImportErrorKind(str, Enum):
@@ -120,7 +124,7 @@ class MonocleTraceImporter:
         try:
             json_data = json.loads(data.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
-            raise ImportError(ImportErrorKind.INVALID_JSON.value)
+            raise TraceImportError(ImportErrorKind.INVALID_JSON.value)
 
         # Extract span objects
         span_objects: list[Any]
@@ -130,12 +134,12 @@ class MonocleTraceImporter:
             if "spans" in json_data and isinstance(json_data["spans"], list):
                 span_objects = json_data["spans"]
             else:
-                raise ImportError(ImportErrorKind.UNSUPPORTED_SHAPE.value)
+                raise TraceImportError(ImportErrorKind.UNSUPPORTED_SHAPE.value)
         else:
-            raise ImportError(ImportErrorKind.UNSUPPORTED_SHAPE.value)
+            raise TraceImportError(ImportErrorKind.UNSUPPORTED_SHAPE.value)
 
         if not span_objects:
-            raise ImportError(ImportErrorKind.MISSING_SPANS.value)
+            raise TraceImportError(ImportErrorKind.MISSING_SPANS.value)
 
         # Parse file name for metadata
         metadata = MonocleTraceImporter._parse_file_name(file_name)
@@ -159,7 +163,7 @@ class MonocleTraceImporter:
             spans_by_trace_id[decoded.trace_id].append(decoded.span)
 
         if not spans_by_trace_id:
-            raise ImportError(ImportErrorKind.MISSING_SPANS.value)
+            raise TraceImportError(ImportErrorKind.MISSING_SPANS.value)
 
         # Build traces
         traces: list[AgentTrace] = []

@@ -260,24 +260,25 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
     probe_ids = ["p0", "p1", "p2", "p3"]
     probe_domains = ["math", "math", "other", "other"]
 
+    # Use layer 1 instead of layer 0 because layer 0 is preserved for embedding boundary
     source_weights = {
-        "model.layers.0.mlp.down_proj.weight": backend.random_normal((out_dim, in_dim)),
+        "model.layers.1.mlp.down_proj.weight": backend.random_normal((out_dim, in_dim)),
     }
     target_weights = {
-        "model.layers.0.mlp.down_proj.weight": backend.random_normal((out_dim, in_dim)),
+        "model.layers.1.mlp.down_proj.weight": backend.random_normal((out_dim, in_dim)),
     }
     backend.eval(*source_weights.values(), *target_weights.values())
 
     source_activations = {
-        0: [backend.random_normal((in_dim,)) for _ in probe_ids],
+        1: [backend.random_normal((in_dim,)) for _ in probe_ids],
     }
-    for act in source_activations[0]:
+    for act in source_activations[1]:
         backend.eval(act)
 
     target_activations = {
-        0: [backend.random_normal((in_dim,)) for _ in probe_ids],
+        1: [backend.random_normal((in_dim,)) for _ in probe_ids],
     }
-    for act in target_activations[0]:
+    for act in target_activations[1]:
         backend.eval(act)
 
     def extract_layer_index(key: str) -> int | None:
@@ -286,12 +287,12 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
             return int(match.group(1))
         return None
 
-    graft_mask = {probe_id: {0: True} for probe_id in probe_ids}
+    graft_mask = {probe_id: {1: True} for probe_id in probe_ids}
 
     result = stage_transplant(
         source_weights=source_weights,
         target_weights=target_weights,
-        layer_indices=[0],
+        layer_indices=[1],
         probe_ids=probe_ids,
         probe_domains=probe_domains,
         source_activations=source_activations,

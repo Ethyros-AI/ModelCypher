@@ -159,21 +159,35 @@ class MergePipelineService:
         pipeline_id = f"pipeline-{uuid.uuid4().hex[:8]}"
         logger.info("Starting merge pipeline %s", pipeline_id)
 
-        # Stage 1: Pre-merge analysis
+        # Load models once upfront - reused across pre-merge analysis and merge
+        logger.info("Loading models for pipeline...")
+        source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
+        target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
+        logger.info("Models loaded successfully")
+
+        # Stage 1: Pre-merge analysis (using pre-loaded models)
         pre_start = time.time()
         pre_merge = self._run_pre_merge_analysis(
-            source_path, target_path, []
+            source_path, target_path, [],
+            source_model=source_model,
+            target_model=target_model,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
         )
         pre_duration = time.time() - pre_start
         logger.info("Pre-merge analysis completed in %.2fs", pre_duration)
 
-        # Stage 2: Execute merge
+        # Stage 2: Execute merge (using same pre-loaded models)
         merge_start = time.time()
         merge_result = self._execute_merge(
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
             probe_mode=probe_mode,
+            source_model=source_model,
+            target_model=target_model,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
         )
         merge_duration = time.time() - merge_start
         logger.info("Merge completed in %.2fs", merge_duration)
@@ -202,6 +216,10 @@ class MergePipelineService:
         source_path: str,
         target_path: str,
         domains: list[str],
+        source_model: Any | None = None,
+        target_model: Any | None = None,
+        source_tokenizer: Any | None = None,
+        target_tokenizer: Any | None = None,
     ) -> PreMergeAnalysis:
         """Run pre-merge interference analysis."""
         from modelcypher.core.domain._backend import get_default_backend
@@ -227,13 +245,15 @@ class MergePipelineService:
             # Fall back to all domains
             domain_list = list(AtlasDomain)
 
-        # Collect activations - load models once, not per-domain
+        # Collect activations - use pre-loaded models if provided
         source_activations: dict[str, dict[str, Any]] = {}
         target_activations: dict[str, dict[str, Any]] = {}
 
-        # Use injected model_loader instead of direct adapter import
-        source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
-        target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
+        # Use pre-loaded models if provided, otherwise load
+        if source_model is None or source_tokenizer is None:
+            source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
+        if target_model is None or target_tokenizer is None:
+            target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
 
         for domain in domain_list:
             try:
@@ -409,6 +429,10 @@ class MergePipelineService:
         target_path: str,
         output_dir: str,
         probe_mode: str = "atlas",
+        source_model: Any | None = None,
+        target_model: Any | None = None,
+        source_tokenizer: Any | None = None,
+        target_tokenizer: Any | None = None,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
         # Use injected merger instead of importing from CLI
@@ -417,6 +441,10 @@ class MergePipelineService:
             target_path=target_path,
             output_dir=output_dir,
             probe_mode=probe_mode,
+            source_model=source_model,
+            target_model=target_model,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
         )
 
     def _extract_post_merge_validation(

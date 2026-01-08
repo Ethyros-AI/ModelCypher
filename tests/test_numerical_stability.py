@@ -728,7 +728,7 @@ class TestSolveViaGramAlignment:
         assert "rank_target" in diag
 
     def test_gram_alignment_returns_procrustes_R(self, any_backend: "Backend") -> None:
-        """Diagnostics should include procrustes_R for zipper propagation."""
+        """Diagnostics should include procrustes_R key (may be None for least-squares)."""
         b = any_backend
         b.random_seed(42)
         source = b.random_normal((30, 15))
@@ -737,13 +737,15 @@ class TestSolveViaGramAlignment:
 
         F, diag = solve_via_gram_alignment(b, source, target)
 
-        # procrustes_R should be in diagnostics for successful alignment
+        # procrustes_R should be in diagnostics (may be None for least-squares approach)
         if F is not None:
             assert "procrustes_R" in diag, "procrustes_R should be in diagnostics"
             R = diag["procrustes_R"]
-            # R should be orthogonal (R @ R^T ≈ I)
-            R_shape = b.shape(R)
-            assert R_shape[0] == R_shape[1], "R should be square"
+            # R may be None when using least-squares approach (no rotation needed)
+            if R is not None:
+                # R should be orthogonal (R @ R^T ≈ I)
+                R_shape = b.shape(R)
+                assert R_shape[0] == R_shape[1], "R should be square"
 
     def test_gram_alignment_r_hint_accepted(self, any_backend: "Backend") -> None:
         """R_hint parameter should be accepted without error."""

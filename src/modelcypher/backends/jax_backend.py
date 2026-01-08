@@ -97,6 +97,10 @@ class JAXBackend(Backend):
     def full(self, shape: tuple[int, ...], fill_value: float, dtype: Any | None = None) -> Array:
         return self.jnp.full(shape, fill_value, dtype=self._map_dtype(dtype))
 
+    def dtype(self, array: Array) -> Any:
+        """Return the dtype of an array."""
+        return array.dtype
+
     def ones_like(self, array: Array, dtype: Any | None = None) -> Array:
         return self.jnp.ones_like(array, dtype=self._map_dtype(dtype))
 
@@ -130,6 +134,9 @@ class JAXBackend(Backend):
 
     def broadcast_to(self, array: Array, shape: tuple[int, ...]) -> Array:
         return self.jnp.broadcast_to(array, shape)
+
+    def tile(self, array: Array, reps: tuple[int, ...] | int) -> Array:
+        return self.jnp.tile(array, reps)
 
     def expand_dims(self, array: Array, axis: int | tuple[int, ...]) -> Array:
         return self.jnp.expand_dims(array, axis=axis)
@@ -166,6 +173,16 @@ class JAXBackend(Backend):
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
     ) -> Array:
         return self.jnp.std(array, axis=axis, keepdims=keepdims)
+
+    def all(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        return self.jnp.all(array, axis=axis, keepdims=keepdims)
+
+    def any(
+        self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
+    ) -> Array:
+        return self.jnp.any(array, axis=axis, keepdims=keepdims)
 
     # --- Element-wise Operations ---
     def sqrt(self, array: Array) -> Array:
@@ -212,6 +229,22 @@ class JAXBackend(Backend):
 
     def minimum(self, lhs: Array, rhs: Array) -> Array:
         return self.jnp.minimum(lhs, rhs)
+
+    def add(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise addition."""
+        return self.jnp.add(lhs, rhs)
+
+    def subtract(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise subtraction."""
+        return self.jnp.subtract(lhs, rhs)
+
+    def multiply(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise multiplication."""
+        return self.jnp.multiply(lhs, rhs)
+
+    def divide(self, lhs: Array | float, rhs: Array | float) -> Array:
+        """Element-wise division."""
+        return self.jnp.divide(lhs, rhs)
 
     def clip(
         self, array: Array, min_val: float | Array | None, max_val: float | Array | None
@@ -288,6 +321,57 @@ class JAXBackend(Backend):
     def qr(self, array: Array) -> tuple[Array, Array]:
         q, r = self.jnp.linalg.qr(array)
         return q, r
+
+    def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> Array:
+        """Compute matrix square root via Newton-Schulz iteration.
+
+        Converges to A^{1/2} for positive semi-definite A.
+        Runs entirely on GPU/TPU.
+
+        Algorithm:
+            Y₀ = A / norm(A)
+            Z₀ = I
+            for k=0..N:
+                T = (3I - ZₖYₖ)
+                Yₖ₊₁ = ½ Yₖ T
+                Zₖ₊₁ = ½ T Zₖ
+
+            A^{1/2} ≈ Y_final * sqrt(norm(A))
+        """
+        # Ensure float32 for stability
+        A_f32 = A.astype(self.jnp.float32)
+
+        # Scaling to ensure convergence (spectral norm <= 1)
+        padding = self.jnp.array(1e-7, dtype=self.jnp.float32)
+        normA_val = self.jnp.sqrt(self.jnp.sum(A_f32 * A_f32)) + padding
+        Y = A_f32 / normA_val
+
+        shape = A.shape
+        I = self.jnp.eye(shape[0], dtype=self.jnp.float32)
+        Z = I
+
+        three = self.jnp.array(3.0, dtype=self.jnp.float32)
+        half = self.jnp.array(0.5, dtype=self.jnp.float32)
+
+        # Iteration
+        for _ in range(num_iters):
+            ZY = self.jnp.matmul(Z, Y)
+            T = three * I - ZY
+
+            Y_new = half * self.jnp.matmul(Y, T)
+            Z_new = half * self.jnp.matmul(T, Z)
+
+            Y = Y_new
+            Z = Z_new
+
+        # Rescale
+        sqrtA = Y * self.jnp.sqrt(normA_val)
+
+        # Cast back if necessary
+        if A.dtype != self.jnp.float32:
+            sqrtA = sqrtA.astype(A.dtype)
+
+        return sqrtA
 
     def floyd_warshall(self, dist: Array) -> Array:
         """Compute all-pairs shortest paths using Floyd-Warshall on device."""
@@ -648,6 +732,24 @@ class JAXBackend(Backend):
             Vectorized function that processes batches efficiently.
         """
         return self.jax.vmap(fun, in_axes=in_axes, out_axes=out_axes)
+
+    def value_and_grad(self, fun: Callable, argnums: int | list[int] = 0) -> Callable:
+        """Return a function that computes both value and gradient of fun.
+
+        Parameters
+        ----------
+        fun : Callable
+            Function to differentiate. Must return a scalar.
+        argnums : int or list[int], optional
+            Which positional argument(s) to differentiate with respect to.
+            Default is 0.
+
+        Returns
+        -------
+        Callable
+            Function that returns (value, gradient) tuple.
+        """
+        return self.jax.value_and_grad(fun, argnums=argnums)
 
     def async_eval(self, *arrays: Array) -> None:
         """Asynchronously evaluate arrays without blocking.

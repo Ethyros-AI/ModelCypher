@@ -50,11 +50,13 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
             None,  # source_k_activations
             None,  # target_k_activations
             None,  # feature_transforms
+            None,  # scale_ratios
             None,  # embedding_transform
             None,  # attention_transforms
             None,  # k_transforms
-            None,  # v_transforms (added)
-            None,  # layer_mapping (added)
+            None,  # v_transforms
+            None,  # intermediate_transforms
+            None,  # layer_mapping
         )
 
     def fake_stage_density(**_kwargs):

@@ -268,7 +268,6 @@ class TestCrossModuleIntegration:
         """All domain packages can be imported."""
         from modelcypher.core.domain import (
             agents,
-            dynamics,
             entropy,
             geometry,
             merging,
@@ -281,5 +280,4 @@ class TestCrossModuleIntegration:
         assert safety is not None
         assert agents is not None
         assert training is not None
-        assert dynamics is not None
         assert merging is not None
