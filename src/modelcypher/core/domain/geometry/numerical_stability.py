@@ -930,6 +930,40 @@ def geodesic_svd(
         Vt = b.zeros(batch_shape + (0, n), dtype="float32")
         return U, S, Vt
 
+    # =========================================================================
+    # DEFENSIVE CHECKS: Prevent LAPACK crashes from invalid inputs
+    # =========================================================================
+    # MLX's SVD calls LAPACK routines that abort on invalid inputs (NaN, Inf,
+    # all-zeros). Check and return empty SVD for degenerate matrices.
+    # =========================================================================
+    A_sum = b.sum(A)
+    b.eval(A_sum)
+    A_sum_val = float(b.to_scalar(A_sum))
+
+    # Check for NaN
+    if A_sum_val != A_sum_val:  # NaN check
+        U = b.zeros(batch_shape + (m, 0), dtype="float32")
+        S = b.zeros(batch_shape + (0,), dtype="float32")
+        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
+        return U, S, Vt
+
+    # Check for Inf
+    if abs(A_sum_val) == float("inf"):
+        U = b.zeros(batch_shape + (m, 0), dtype="float32")
+        S = b.zeros(batch_shape + (0,), dtype="float32")
+        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
+        return U, S, Vt
+
+    # Check for near-zero norm (all-zeros matrix)
+    A_norm_sq = b.sum(A * A)
+    b.eval(A_norm_sq)
+    A_norm_sq_val = float(b.to_scalar(A_norm_sq))
+    if A_norm_sq_val < 1e-30:  # Effectively zero
+        U = b.zeros(batch_shape + (m, 0), dtype="float32")
+        S = b.zeros(batch_shape + (0,), dtype="float32")
+        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
+        return U, S, Vt
+
     # EXACT SVD - no approximation
     U_full, S_full, Vt_full = b.svd(A, compute_uv=True)
     b.eval(U_full, S_full, Vt_full)
@@ -1688,19 +1722,18 @@ def solve_via_gram_alignment(
 ) -> tuple[Array | None, dict]:
     """Compute feature transform F that achieves CKA=1.0 via direct least-squares.
 
-    For linear CKA, F = pinv(source) @ target achieves EXACT alignment when
-    target lies in the column space of source (which is guaranteed when
-    target = source @ T for any T).
+    NO TRUNCATION. All models encode the same shape - truncating loses information.
+
+    The least-squares solution F = pinv(source_c) @ target_c achieves CKA=1.0 when:
+    1. Target is in source's column space (guaranteed if models encode same shape)
+    2. Numerical precision is sufficient
+
+    If CKA < 1.0, the issue is numerical precision, NOT model incompatibility.
 
     Mathematical guarantee:
     - F = pinv(source) @ target minimizes ||source @ F - target||_F
-    - When target = source @ T: F = pinv(source) @ source @ T = T (exact)
-    - Therefore: source @ F = source @ T = target (exact reconstruction)
-    - CKA(source @ F, target) = CKA(target, target) = 1.0
-
-    For cross-dimensional cases (d_s != d_t), this is the correct approach.
-    Sample-space Procrustes is only valid when the sample projections have
-    the same dimension.
+    - When target = source @ T (same shape, different coordinates): F = T exactly
+    - Therefore CKA(source @ F, target) = CKA(target, target) = 1.0
 
     Returns:
         (F, diagnostics) where F achieves CKA(source @ F, target) = 1.0
@@ -1718,15 +1751,17 @@ def solve_via_gram_alignment(
     d_t = int(shape_t[1])
 
     eps = machine_epsilon(b, source)
+    div_eps = division_epsilon(b, source)
 
     diagnostics: dict = {
-        "method": "gram_alignment",
+        "method": "least_squares",
         "n_samples": n,
         "d_source": d_s,
         "d_target": d_t,
         "procrustes_error": float("inf"),
         "rank_source": 0,
         "rank_target": 0,
+        "used_R_hint": False,
     }
 
     if n < 2 or d_s == 0 or d_t == 0:
@@ -1740,15 +1775,8 @@ def solve_via_gram_alignment(
     b.eval(source_c, target_c)
 
     # =========================================================================
-    # DIRECT LEAST-SQUARES: F = pinv(source_c) @ target_c
+    # FULL SVD OF SOURCE (NO TRUNCATION)
     # =========================================================================
-    # This is the CORRECT approach for achieving CKA=1.0:
-    # - Computes the exact pseudo-inverse via SVD
-    # - Uses ALL singular vectors (not truncated)
-    # - Achieves exact reconstruction when target is in source's column space
-    # =========================================================================
-
-    # SVD of source_c for computing pseudo-inverse
     U_s, S_s, Vt_s = geodesic_svd(b, source_c)
     b.eval(U_s, S_s, Vt_s)
 
@@ -1759,35 +1787,37 @@ def solve_via_gram_alignment(
     diagnostics["rank_source"] = rank_s
     diagnostics["rank_target"] = d_t  # Target rank is at most d_t
 
-    # Compute singular value threshold (standard numerical rank threshold)
+    # Compute singular value threshold (for numerical stability, NOT truncation)
     max_s = float(b.to_scalar(b.max(S_s)))
     if max_s == 0:
         return None, diagnostics
 
-    # Use tight threshold: eps * max(m, n) * max_singular_value
+    # Standard threshold: eps * max(m, n) * max_singular_value
     sv_threshold = eps * max(n, d_s) * max_s
 
-    # Compute S^{-1} with threshold for numerical stability
+    # Compute S^{-1} with threshold for numerical stability (zeros for small SV)
+    # This still uses ALL singular values - just guards against division by zero
     S_s_inv = b.where(S_s > sv_threshold, 1.0 / S_s, b.zeros_like(S_s))
     b.eval(S_s_inv)
 
-    # Count numerical rank
+    # Count numerical rank for diagnostics
     sig_count = b.sum(b.astype(S_s > sv_threshold, "int32"))
     b.eval(sig_count)
     diagnostics["numerical_rank"] = int(b.to_scalar(sig_count))
 
+    # =========================================================================
+    # COMPUTE FULL PSEUDO-INVERSE (NO TRUNCATION)
     # pinv(source_c) = V @ S^{-1} @ U^T
-    # Step by step for numerical stability:
-    # 1. V @ S^{-1}: scale each column of V by S^{-1}
+    # =========================================================================
     V_s = b.transpose(Vt_s)  # [d_s, rank_s]
     V_s_scaled = V_s * b.reshape(S_s_inv, (1, -1))  # [d_s, rank_s]
     b.eval(V_s_scaled)
 
-    # 2. @ U^T: [d_s, rank_s] @ [rank_s, n] = [d_s, n]
+    # pinv(source_c): [d_s, rank_s] @ [rank_s, n] = [d_s, n]
     pinv_source = b.matmul(V_s_scaled, b.transpose(U_s))  # [d_s, n]
     b.eval(pinv_source)
 
-    # 3. F = pinv(source_c) @ target_c: [d_s, n] @ [n, d_t] = [d_s, d_t]
+    # F = pinv(source_c) @ target_c: [d_s, n] @ [n, d_t] = [d_s, d_t]
     F = b.matmul(pinv_source, target_c)
     b.eval(F)
 
@@ -1797,13 +1827,17 @@ def solve_via_gram_alignment(
     diff = projected - target_c
     diff_norm = _geodesic_norm_scalar(diff, b)
     target_norm = _geodesic_norm_scalar(target_c, b)
-    reconstruction_error = diff_norm / (target_norm + eps)
-    diagnostics["procrustes_error"] = reconstruction_error  # Reuse field name for compatibility
+    reconstruction_error = diff_norm / (target_norm + div_eps)
+    diagnostics["procrustes_error"] = reconstruction_error
 
-    # No Procrustes rotation in this approach
+    # Verify F doesn't contain NaN
+    F_sum = b.sum(F)
+    b.eval(F_sum)
+    if float(b.to_scalar(F_sum)) != float(b.to_scalar(F_sum)):  # NaN check
+        diagnostics["method"] = "least_squares_nan"
+        return None, diagnostics
+
     diagnostics["procrustes_R"] = None
-    diagnostics["used_R_hint"] = False
-
     return F, diagnostics
 
 

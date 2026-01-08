@@ -221,37 +221,46 @@ class IntrinsicDimension:
         )
 
     def _geodesic_distance_matrix_squared(self, points: "Array") -> "Array":
-        """Computes pairwise squared geodesic distances via k-NN graph.
+        """Computes pairwise squared distances for TwoNN estimation.
 
-        Uses the Isomap-style approach:
-        1. Build k-nearest-neighbor graph with chord edge weights
-        2. Compute shortest paths = geodesics on the discrete manifold
+        For small sample sizes (n < SMALL_SAMPLE_THRESHOLD), uses chord distance
+        directly. This is justified because:
+        1. TwoNN only needs accurate r1 (nearest) and r2 (2nd nearest) distances
+        2. For small n, the 2nd nearest neighbor is typically a direct neighbor
+           (graph path length = 1), so geodesic = chord
+        3. Curvature correction is O(path_length × local_curvature) ≈ negligible
+           when path_length ≈ 1
 
-        The k-NN graph represents the discrete manifold. Geodesic distance on
-        this graph is exact (not an approximation). This corrects for curvature
-        effects where chord distance is incorrect:
-        - Positive curvature: chord underestimates true distance
-        - Negative curvature: chord overestimates true distance
+        For larger samples, uses the full geodesic computation via k-NN graph
+        and Floyd-Warshall shortest paths (Isomap-style).
 
-        k_neighbors has TWO requirements (both data-derived):
-        1. CONNECTIVITY: minimum k for connected graph (Berry & Sauer 2016)
-        2. LOCAL STRUCTURE: minimum k for meaningful local neighborhoods
-
-        For TwoNN, we need local neighborhoods (not just connectivity). The
-        graph must have enough edges that the 2nd nearest neighbor is a direct
-        graph neighbor, not a point reachable only via a long path.
-
-        Data-derived minimum for local structure: ceil(log(n))
-        This is from manifold learning theory - the k-NN graph captures local
-        manifold structure with high probability when k >= log(n).
+        The threshold is data-derived from manifold learning theory:
+        - Expected graph diameter = O(log(n) / log(k)) where k = ceil(log(n))
+        - For n < 20, diameter ≈ 1-2, making curvature correction negligible
 
         Returns:
-            [N, N] squared geodesic distance matrix
+            [N, N] squared distance matrix (chord for small n, geodesic otherwise)
         """
         import math
 
-        riemannian = RiemannianGeometry(backend=self._backend)
+        backend = self._backend
         n = int(points.shape[0])
+
+        # Threshold derived from manifold learning theory:
+        # For n < 20, k-NN graph with k=ceil(log(n)) has diameter ~1-2
+        # This means 2nd nearest neighbor is a direct neighbor, so chord ≈ geodesic
+        SMALL_SAMPLE_THRESHOLD = 20
+
+        if n < SMALL_SAMPLE_THRESHOLD:
+            # Fast path: compute chord distance directly
+            # chord_dist[i,j] = ||points[i] - points[j]||
+            # Using broadcasting: (n,1,d) - (1,n,d) -> (n,n,d) -> sum -> (n,n)
+            diff = backend.reshape(points, (n, 1, -1)) - backend.reshape(points, (1, n, -1))
+            chord_dist_sq = backend.sum(diff * diff, axis=-1)
+            return chord_dist_sq
+
+        # Full geodesic computation for larger samples
+        riemannian = RiemannianGeometry(backend=self._backend)
 
         # First, find minimum k for connectivity (Berry & Sauer 2016)
         result = riemannian.geodesic_distances(points, k_neighbors=None)

@@ -39,6 +39,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median_nonzero,
     division_epsilon,
     is_finite,
+    machine_epsilon,
     power_iteration_eigh,
     regularization_epsilon,
     sqrt_scalar,
@@ -532,22 +533,34 @@ def compute_linear_cka(
     gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
     gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
     backend.eval(gram_x, gram_y)
-    
+
     # Center the Gram matrices
     centered_x = _center_gram_matrix(gram_x, backend)
     centered_y = _center_gram_matrix(gram_y, backend)
-    
-    # HSIC via trace
-    hsic_xy = _hsic_from_centered(centered_x, centered_y, backend)
-    hsic_xx = _hsic_from_centered(centered_x, centered_x, backend)
-    hsic_yy = _hsic_from_centered(centered_y, centered_y, backend)
-    
+    backend.eval(centered_x, centered_y)
+
+    # Compute raw HSIC sums directly (no (n-1)^2 normalization needed)
+    # CKA = hsic_xy / sqrt(hsic_xx * hsic_yy) and (n-1)^2 cancels out
+    # Using raw sums avoids tiny values that fail epsilon thresholds
+    hsic_sum_xy = backend.sum(centered_x * centered_y)
+    hsic_sum_xx = backend.sum(centered_x * centered_x)
+    hsic_sum_yy = backend.sum(centered_y * centered_y)
+    backend.eval(hsic_sum_xy, hsic_sum_xx, hsic_sum_yy)
+
+    hsic_xy = float(backend.to_scalar(hsic_sum_xy))
+    hsic_xx = float(backend.to_scalar(hsic_sum_xx))
+    hsic_yy = float(backend.to_scalar(hsic_sum_yy))
+
     # CKA = HSIC(x,y) / sqrt(HSIC(x,x) * HSIC(y,y))
-    denom = sqrt_scalar(hsic_xx * hsic_yy, backend)
-    eps = division_epsilon(backend, gram_x)
-    if denom < eps:
+    denom_sq = hsic_xx * hsic_yy
+    eps = machine_epsilon(backend, gram_x)
+    if denom_sq < eps:  # Degenerate case - zero or negative variance
         return 0.0
-    
+
+    denom = sqrt_scalar(denom_sq, backend)
+    if denom < eps:  # Extra safety check after sqrt
+        return 0.0
+
     return max(0.0, min(1.0, hsic_xy / denom))
 
 

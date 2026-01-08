@@ -493,7 +493,54 @@ class GramAligner:
         b = self._backend
         n_s, d_s = b.shape(source)
         n_t, d_t = b.shape(target)
-        
+
+        # =================================================================
+        # ALWAYS NORMALIZE TO UNIT FROBENIUS NORM
+        # =================================================================
+        # CKA is scale-invariant: CKA(αX, βY) = CKA(X, Y) for α, β > 0
+        # Normalizing ALWAYS improves numerical conditioning. Different model
+        # layers have wildly different scales (100x variation is common), and
+        # this causes SVD/pinv precision loss. By normalizing to unit norm,
+        # all layers are on equal numerical footing.
+        # Track scale factors to adjust F appropriately at the end.
+        reg_eps = regularization_epsilon(b, source)
+
+        source_frob_sq = b.sum(source * source)
+        target_frob_sq = b.sum(target * target)
+        b.eval(source_frob_sq, target_frob_sq)
+
+        source_frob_sq_val = float(b.to_scalar(source_frob_sq))
+        target_frob_sq_val = float(b.to_scalar(target_frob_sq))
+
+        # Check for degenerate cases (NaN, Inf, or near-zero)
+        source_valid = not (source_frob_sq_val != source_frob_sq_val or  # NaN
+                           source_frob_sq_val == float('inf') or
+                           source_frob_sq_val < reg_eps)
+        target_valid = not (target_frob_sq_val != target_frob_sq_val or  # NaN
+                           target_frob_sq_val == float('inf') or
+                           target_frob_sq_val < reg_eps)
+
+        # ALWAYS normalize for numerical stability
+        if source_valid:
+            source_frob = b.sqrt(source_frob_sq + reg_eps)
+            b.eval(source_frob)
+            source_scale = float(b.to_scalar(source_frob))
+            source_for_gram = source / source_frob
+        else:
+            source_for_gram = source
+            source_scale = 1.0
+
+        if target_valid:
+            target_frob = b.sqrt(target_frob_sq + reg_eps)
+            b.eval(target_frob)
+            target_scale = float(b.to_scalar(target_frob))
+            target_for_gram = target / target_frob
+        else:
+            target_for_gram = target
+            target_scale = 1.0
+
+        b.eval(source_for_gram, target_for_gram)
+
         logger.info("HYBRID ALIGNMENT: Computing geodesic Gram matrices...")
         # Step 1: Compute LINEAR Gram matrices (NOT RBF)
         # =================================================================
@@ -503,8 +550,8 @@ class GramAligner:
         # Linear Gram (K = X @ X.T) is aligned exactly by solve_via_gram_alignment
         # This is the correct loss for the closed-form solution
         logger.info("HYBRID ALIGNMENT: Computing linear Gram matrices...")
-        K_s = b.matmul(source, b.transpose(source))  # Linear Gram [n, n]
-        K_t = b.matmul(target, b.transpose(target))  # Linear Gram [n, n]
+        K_s = b.matmul(source_for_gram, b.transpose(source_for_gram))  # Linear Gram [n, n]
+        K_t = b.matmul(target_for_gram, b.transpose(target_for_gram))  # Linear Gram [n, n]
         
         K_s_c = _center_gram_matrix(K_s, b)
         K_t_c = _center_gram_matrix(K_t, b)
@@ -543,9 +590,10 @@ class GramAligner:
                 use_fresh_f = True
             else:
                 # VALIDATE: Check if zipper F achieves good CKA for this layer
-                projected = b.matmul(source, F)
+                # Use same data that will be used for F computation
+                projected = b.matmul(source_for_gram, F)
                 b.eval(projected)
-                zipper_cka = float(compute_linear_cka(projected, target, b))
+                zipper_cka = float(compute_linear_cka(projected, target_for_gram, b))
                 
                 ZIPPER_CKA_THRESHOLD = 0.95  # Must achieve 95% CKA to use zipper F
                 if zipper_cka < ZIPPER_CKA_THRESHOLD:
@@ -563,17 +611,15 @@ class GramAligner:
             logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
 
             if T_has_nan:
-                # Fallback: T is NaN from degenerate Gram matrix, use SVD-Procrustes
+                # Fallback: T is NaN from degenerate Gram matrix, use direct pinv projection
+                # This is simpler and more robust than solve_via_gram_alignment for bad data
                 logger.warning("HYBRID ALIGNMENT: Sample transform T contains NaN, using direct projection")
-                F_gram, _ = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
-                if F_gram is not None:
-                    F = F_gram
-                else:
-                    # Last resort: random initialization
-                    F = b.multiply(0.01, b.random_normal((int(d_s), int(d_t))))
+                source_pinv = b.pinv(source)  # Use original data, not normalized
+                b.eval(source_pinv)
+                F = b.matmul(source_pinv, target)  # [d_s, d_t]
             elif d_s == d_t:
                 # Same dimension: use SVD-Procrustes for exact CKA alignment
-                F_gram, diag = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
+                F_gram, diag = solve_via_gram_alignment(b, source_for_gram, target_for_gram, R_hint=R_hint)
                 if F_gram is not None:
                     F = F_gram
                     proc_err = diag.get('procrustes_error', 0.0)
@@ -587,7 +633,7 @@ class GramAligner:
                 # Use SVD + Procrustes to align sample-space structure (U vectors).
                 # With LINEAR Gram, CKA=1.0 is MATHEMATICALLY GUARANTEED by this solution.
                 # NO gradient descent needed - the closed-form IS the answer.
-                F_gram, diag = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
+                F_gram, diag = solve_via_gram_alignment(b, source_for_gram, target_for_gram, R_hint=R_hint)
 
                 if F_gram is not None:
                     # Closed-form solution - achieves exact linear CKA=1.0
@@ -598,9 +644,9 @@ class GramAligner:
                 else:
                     # F_gram is None (SVD failed) - use pinv fallback
                     logger.warning("CROSS-DIM: SVD failed, using pinv fallback")
-                    source_pinv = b.pinv(source)
-                    b.eval(source_pinv)
-                    F = b.matmul(source_pinv, target)
+                    source_pinv_fallback = b.pinv(source_for_gram)
+                    b.eval(source_pinv_fallback)
+                    F = b.matmul(source_pinv_fallback, target_for_gram)
         # Check for NaN in F initialization
         # OPTIMIZATION: Batch eval F and F_sum together
         F_sum = b.sum(F)
@@ -616,12 +662,21 @@ class GramAligner:
             b.eval(F)
         
         # Check for degenerate target (near-zero Gram norm)
+        # Note: With normalization, this should be rare but can still happen if
+        # the centered Gram matrix is near-zero (e.g., all samples identical)
         if target_norm_sq < reg_eps * 10:
             logger.warning("HYBRID ALIGNMENT: Target Gram norm near-zero, using identity-like transform")
             if d_s == d_t:
                 F = b.eye(d_s)
             else:
-                F = b.matmul(source_pinv, target)
+                source_pinv_degen = b.pinv(source_for_gram)
+                b.eval(source_pinv_degen)
+                F = b.matmul(source_pinv_degen, target_for_gram)
+            # Apply scale correction before returning (always normalized now)
+            if source_valid and target_valid and source_scale > reg_eps:
+                scale_correction = target_scale / source_scale
+                F = b.multiply(scale_correction, F)
+                b.eval(F)
             return F, 0.0  # CKA = 0 for degenerate case
         
         # =================================================================
@@ -633,18 +688,39 @@ class GramAligner:
         #
         # The F computed above via SVD+Procrustes IS the optimal solution.
         # =================================================================
-        
+
         # Compute final CKA to validate the closed-form solution
-        projected = b.matmul(source, F)
+        # F was computed on CENTERED data (solve_via_gram_alignment centers internally)
+        # So apply F to centered source and shift to target coordinates
+        source_mean = b.mean(source_for_gram, axis=0, keepdims=True)
+        target_mean = b.mean(target_for_gram, axis=0, keepdims=True)
+        source_centered = source_for_gram - source_mean
+        projected_centered = b.matmul(source_centered, F)
+        projected = projected_centered + target_mean  # Shift to target coordinates
         b.eval(projected)
-        final_cka = float(compute_linear_cka(projected, target, b))
-        
+        final_cka = float(compute_linear_cka(projected, target_for_gram, b))
+
         # Handle NaN in final CKA
         if final_cka != final_cka:
             final_cka = 0.0
             logger.warning("HYBRID ALIGNMENT: NaN in CKA, returning F with CKA=0")
         else:
             logger.info("CLOSED-FORM ALIGNMENT: Achieved CKA=%.6f (no gradient descent needed)", final_cka)
+
+        # =================================================================
+        # SCALE CORRECTION: Adjust F for unnormalized data
+        # =================================================================
+        # F was computed on normalized data: source_norm @ F ≈ target_norm
+        # For original data: source @ F_scaled ≈ target in scale sense
+        # Scale factor: (target_scale / source_scale)
+        # Since we ALWAYS normalize, we ALWAYS need to apply scale correction.
+        # However, CKA is scale-invariant, so this doesn't affect CKA.
+        # We apply scale correction so that ||source @ F|| ≈ ||target||
+        # =================================================================
+        if source_valid and target_valid and source_scale > reg_eps:
+            scale_correction = target_scale / source_scale
+            F = b.multiply(scale_correction, F)
+            b.eval(F)
 
         return F, final_cka
 
