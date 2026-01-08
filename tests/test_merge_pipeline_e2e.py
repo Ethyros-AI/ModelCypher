@@ -28,6 +28,9 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
     def fake_load_tokenizer(_path):
         return object()
 
+    def fake_load_model_for_probing(_path):
+        return object()
+
     def fake_stage_probe(**_kwargs):
         return (
             {
@@ -69,6 +72,7 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
 
     monkeypatch.setattr(pipeline, "load_weights", fake_load_weights)
     monkeypatch.setattr(pipeline, "load_tokenizer", fake_load_tokenizer)
+    monkeypatch.setattr(pipeline, "load_model_for_probing", fake_load_model_for_probing)
     monkeypatch.setattr(pipeline, "stage_probe", fake_stage_probe)
     monkeypatch.setattr(pipeline, "stage_density", fake_stage_density)
     # Note: stage_permute was removed from the pipeline - no longer needed

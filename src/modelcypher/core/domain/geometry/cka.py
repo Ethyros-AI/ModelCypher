@@ -105,29 +105,29 @@ def geodesic_squared_distances(
 ) -> "Array":
     """
     Compute pairwise squared geodesic distances.
-    
+
     This is the foundation of all geometry. Cached.
-    
+
     Returns:
         [n, n] matrix of squared geodesic distances.
     """
     cache = _cache()
     key = cache.make_array_key(X, backend)
     geodesic_key = f"geo:{key}"
-    
+
     cached = cache.get_geodesic(geodesic_key)
     if cached is not None:
         return cached
-    
+
     # Compute geodesic distances via Riemannian geometry
     rg = RiemannianGeometry(backend)
     geo_result = rg.geodesic_distances(X)
     dist_matrix = geo_result.distances
-    
+
     # Square the distances for RBF kernel
     sq_dist = dist_matrix * dist_matrix
     backend.eval(sq_dist)
-    
+
     cache.set_geodesic(geodesic_key, sq_dist, 0.0)
     return sq_dist
 
@@ -139,57 +139,57 @@ def rbf_gram_matrix(
 ) -> "Array":
     """
     Compute RBF Gram matrix from activations.
-    
+
     K(x, y) = exp(-d_geo²(x, y) / 2σ²)
-    
+
     Caches the result when sigma is auto-computed (None).
     Custom sigma values bypass the cache.
     """
     cache = _cache()
     gram_key = cache.make_gram_key(X, backend, kernel_type="rbf")
-    
+
     # Only use cache when sigma is auto-computed
     if sigma is None:
         cached = cache.get_gram(gram_key)
         if cached is not None:
             return cached
-    
+
     # Get geodesic squared distances (cached)
     sq_dist = geodesic_squared_distances(X, backend)
     n = int(X.shape[0])
-    
+
     # Compute sigma if not provided (median heuristic)
     computed_sigma = sigma
     if computed_sigma is None:
         flat = backend.reshape(sq_dist, (-1,))
         eps = division_epsilon(backend, sq_dist)
-        
+
         # Count near-zeros (diagonal + duplicates)
         zero_mask = flat <= eps
         zero_count = int(backend.to_scalar(backend.sum(zero_mask)))
         total = n * n
         non_zero = max(total - zero_count, 1)
-        
+
         # Median of non-zero distances
         median_idx = min(zero_count + (non_zero // 2), total - 1)
         partitioned = backend.argpartition(flat, median_idx)
         prefix = backend.take(partitioned, backend.arange(median_idx + 1), axis=0)
         median_val = float(backend.to_scalar(backend.max(backend.take(flat, prefix, axis=0))))
-        
+
         if median_val > 0:
             computed_sigma = sqrt_scalar(median_val / 2, backend)
         else:
             computed_sigma = 1.0
         computed_sigma = max(computed_sigma, regularization_epsilon(backend, X))
-    
+
     # RBF kernel: K = exp(-D² / 2σ²)
     gram = backend.exp(-sq_dist / (2 * computed_sigma * computed_sigma))
     backend.eval(gram)
-    
+
     # Only cache when using auto-computed sigma
     if sigma is None:
         cache.set_gram(gram_key, gram, 0.0)
-    
+
     return gram
 
 

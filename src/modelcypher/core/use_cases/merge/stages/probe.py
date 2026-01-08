@@ -142,21 +142,28 @@ def _accumulate_activation(
     backend: "Backend",
 ) -> None:
     """Accumulate activation into a single stacked array per layer.
-    
+
     This is THE memory optimization: instead of storing thousands of small
     arrays (each a Metal buffer), we concatenate into ONE array per layer.
-    
+
+    Activations come in as 1D [hidden_dim] and we stack them to build
+    a 2D matrix [n_probes, hidden_dim].
+
     Result: 32 Metal buffers per model instead of 4096×32 = 131,072
     """
     import mlx.core as mx
-    
+
+    # Ensure activation is 2D [1, hidden_dim] for proper stacking
+    if len(act.shape) == 1:
+        act = mx.reshape(act, (1, -1))
+
     if layer_idx not in storage:
-        # First activation for this layer - just store it
+        # First activation for this layer - store as 2D
         storage[layer_idx] = act
     else:
-        # Concatenate with existing (creates single new buffer, old ones freed)
+        # Concatenate along axis 0 to build [n_probes, hidden_dim]
         storage[layer_idx] = mx.concatenate([storage[layer_idx], act], axis=0)
-    
+
     # Force evaluation to materialize the buffer and allow old ones to be freed
     mx.eval(storage[layer_idx])
 
@@ -1404,16 +1411,16 @@ def _probe_precise(
             # These will be marked with -999 penalty so Hungarian skips them
             degenerate_sources: set[int] = set()
             degenerate_targets: set[int] = set()  # Also check targets
-            
+
             logger.info("PROBE: Pre-detecting degenerate source layers...")
             from modelcypher.core.domain.geometry.cka import rbf_gram_matrix
-            
+
             for src_idx, src_layer in enumerate(source_layers):
                 src_stacked = source_layer_activations.get(src_layer)
                 if src_stacked is None:
                     degenerate_sources.add(src_idx)
                     continue
-                # Activations are now pre-stacked [n_probes, hidden_dim]
+                # Activations are pre-stacked [n_probes, hidden_dim]
                 shape = b.shape(src_stacked)
                 n_probes = int(shape[0]) if len(shape) >= 1 else 0
                 if n_probes < 2:
@@ -1426,30 +1433,35 @@ def _probe_precise(
                         b.eval(src_stacked)
                         shape = b.shape(src_stacked)
                         n_probes = int(shape[0])
-                    
+
+                    # Skip if we don't have enough samples after reshape
+                    if n_probes < 2:
+                        degenerate_sources.add(src_idx)
+                        continue
+
                     # Test RBF Gram matrix for degeneracy (same as GramAligner uses)
                     # Use first 50 probes for quick check
                     test_stacked = src_stacked[:min(n_probes, 50), :]
                     test_stacked = b.astype(test_stacked, "float32")
                     b.eval(test_stacked)
-                    
+
                     # Compute RBF Gram and check for NaN
                     gram = rbf_gram_matrix(test_stacked, b)
                     gram_sum = b.sum(gram)
                     b.eval(gram_sum)
                     sum_val = float(b.to_scalar(gram_sum))
-                    
+
                     if sum_val != sum_val:  # NaN check
                         degenerate_sources.add(src_idx)
-                        logger.warning("PROBE: Source layer %d (idx %d) has degenerate RBF Gram", 
+                        logger.warning("PROBE: Source layer %d (idx %d) has degenerate RBF Gram",
                                      src_layer, src_idx)
                 except Exception as e:
                     degenerate_sources.add(src_idx)
-                    logger.warning("PROBE: Source layer %d (idx %d) failed Gram check: %s", 
+                    logger.warning("PROBE: Source layer %d (idx %d) failed Gram check: %s",
                                  src_layer, src_idx, str(e))
-            
+
             if degenerate_sources:
-                logger.info("PROBE: Found %d degenerate source layers: %s", 
+                logger.info("PROBE: Found %d degenerate source layers: %s",
                           len(degenerate_sources), list(degenerate_sources))
             
             # Also check target layers for degeneracy
