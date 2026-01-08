@@ -132,6 +132,36 @@ def _clear_probe_checkpoint(checkpoint_path: Path) -> None:
 
 
 # =============================================================================
+# MEMORY-EFFICIENT ACTIVATION ACCUMULATION
+# =============================================================================
+
+def _accumulate_activation(
+    storage: dict[int, "Array"],
+    layer_idx: int,
+    act: "Array",
+    backend: "Backend",
+) -> None:
+    """Accumulate activation into a single stacked array per layer.
+    
+    This is THE memory optimization: instead of storing thousands of small
+    arrays (each a Metal buffer), we concatenate into ONE array per layer.
+    
+    Result: 32 Metal buffers per model instead of 4096×32 = 131,072
+    """
+    import mlx.core as mx
+    
+    if layer_idx not in storage:
+        # First activation for this layer - just store it
+        storage[layer_idx] = act
+    else:
+        # Concatenate with existing (creates single new buffer, old ones freed)
+        storage[layer_idx] = mx.concatenate([storage[layer_idx], act], axis=0)
+    
+    # Force evaluation to materialize the buffer and allow old ones to be freed
+    mx.eval(storage[layer_idx])
+
+
+# =============================================================================
 # GPU-RESIDENT PROBE CACHE: Precomputed geometric data per layer
 # =============================================================================
 
@@ -182,15 +212,15 @@ class ProbeCache:
     
     @staticmethod
     def from_activations(
-        source_acts: dict[int, list["Array"]],
-        target_acts: dict[int, list["Array"]],
+        source_acts: dict[int, "Array"],
+        target_acts: dict[int, "Array"],
         backend: "Backend",
     ) -> "ProbeCache":
         """Build cache from collected probe activations.
         
         Args:
-            source_acts: layer -> list of activation arrays [1, hidden_dim] per probe
-            target_acts: layer -> list of activation arrays [1, hidden_dim] per probe
+            source_acts: layer -> stacked activation array [n_probes, hidden_dim]
+            target_acts: layer -> stacked activation array [n_probes, hidden_dim]
             backend: MLX backend for GPU computation
         """
         b = backend
@@ -251,7 +281,7 @@ class ProbeCache:
     def _precompute_layer(
         self,
         layer_idx: int,
-        acts: list["Array"],
+        acts: "Array",  # Already stacked [n_probes, hidden_dim]
         backend: "Backend",
         act_cache: dict,
         gram_cache: dict,
@@ -263,24 +293,22 @@ class ProbeCache:
         """Precompute geometric data for a single layer on GPU."""
         b = backend
         
-        # Stack activations: list of [hidden_dim] or [1, hidden_dim] -> [n_probes, d_hidden]
-        # MLX doesn't have vstack, so we manually stack via list concatenation
-        stacked_list = []
-        for act in acts:
-            act_1d = b.reshape(act, (-1,))  # Flatten to 1D
-            stacked_list.append(b.tolist(act_1d))
-        stacked = b.array(stacked_list)
+        # Activations already stacked as [n_probes, hidden_dim] from _accumulate_activation
+        stacked = acts
         b.eval(stacked)
         act_cache[layer_idx] = stacked
         
-        n_probes, d_hidden = b.shape(stacked)
+        # b.shape() returns a tuple of ints in MLX
+        shape = b.shape(stacked)
+        n_probes = int(shape[0])
+        d_hidden = int(shape[1])
         
         # Compute RBF sigma using median heuristic
         # sigma = median(||x_i - x_j||) for all pairs
         # Approximation: use std of activations * sqrt(d)
         std_val = b.std(stacked)
         b.eval(std_val)
-        sigma = float(b.to_scalar(std_val)) * (float(d_hidden) ** 0.5) + 1e-6
+        sigma = float(b.to_scalar(std_val)) * (d_hidden ** 0.5) + 1e-6
         sigma_cache[layer_idx] = sigma
         
         # Compute RBF Gram matrix: K_ij = exp(-||x_i - x_j||^2 / (2 * sigma^2))
@@ -845,8 +873,10 @@ def _probe_precise(
         len(probes),
     )
 
-    source_layer_activations: dict[int, list["Array"]] = {}
-    target_layer_activations: dict[int, list["Array"]] = {}
+    # MEMORY OPTIMIZATION: Store as single stacked Array per layer, not list of arrays
+    # This reduces Metal buffer count from 4096×32 = 131,072 to just 32 per model
+    source_layer_activations: dict[int, "Array"] = {}
+    target_layer_activations: dict[int, "Array"] = {}
     # Embedding-space activations for 2D GramAlign (post-embed_tokens, pre-layer-0)
     # Same CKA=1.0, same geodesic math - applied at embedding dimension
     # If fingerprints are ALREADY loaded from cache, we don't need to probe.
@@ -886,34 +916,33 @@ def _probe_precise(
             source_fingerprints = []
             target_fingerprints = []
         else:
-            # Reconstruct source_layer_activations
+            # Reconstruct source_layer_activations  
             for fp in source_fingerprints:
                 for layer_idx, dims in fp.activated_dimensions.items():
-                    if layer_idx not in source_layer_activations:
-                        source_layer_activations[layer_idx] = []
-                    source_layer_activations[layer_idx].append(_reconstruct_dense(dims, s_dim))
+                    reconstructed = _reconstruct_dense(dims, s_dim)
+                    _accumulate_activation(source_layer_activations, layer_idx, reconstructed, b)
             
             # Reconstruct target_layer_activations
             for fp in target_fingerprints:
                 for layer_idx, dims in fp.activated_dimensions.items():
-                    if layer_idx not in target_layer_activations:
-                        target_layer_activations[layer_idx] = []
-                    target_layer_activations[layer_idx].append(_reconstruct_dense(dims, t_dim))
+                    reconstructed = _reconstruct_dense(dims, t_dim)
+                    _accumulate_activation(target_layer_activations, layer_idx, reconstructed, b)
 
     source_embedding_activations: list["Array"] = []
     target_embedding_activations: list["Array"] = []
-    # Intermediate-space activations for multi-space stitching (cross-architecture merges)
-    source_intermediate_activations: dict[int, list["Array"]] = {}
-    target_intermediate_activations: dict[int, list["Array"]] = {}
+    # MEMORY OPTIMIZATION: Store as single stacked Array per layer, not list
+    # This reduces Metal buffer count from 131K to just 32 per model
+    source_intermediate_activations: dict[int, "Array"] = {}
+    target_intermediate_activations: dict[int, "Array"] = {}
     # Q Attention-space activations for q_proj/o_proj stitching (cross-architecture merges)
-    source_attention_activations: dict[int, list["Array"]] = {}
-    target_attention_activations: dict[int, list["Array"]] = {}
+    source_attention_activations: dict[int, "Array"] = {}
+    target_attention_activations: dict[int, "Array"] = {}
     # K Attention-space activations for k_proj stitching (separate for granular alignment)
-    source_k_activations: dict[int, list["Array"]] = {}
-    target_k_activations: dict[int, list["Array"]] = {}
+    source_k_activations: dict[int, "Array"] = {}
+    target_k_activations: dict[int, "Array"] = {}
     # V Attention-space activations for v_proj stitching (separate for granular alignment)
-    source_v_activations: dict[int, list["Array"]] = {}
-    target_v_activations: dict[int, list["Array"]] = {}
+    source_v_activations: dict[int, "Array"] = {}
+    target_v_activations: dict[int, "Array"] = {}
     probe_ids: list[str] = []
     probe_domains: list[str] = []
 
@@ -1100,59 +1129,41 @@ def _probe_precise(
     
                     for layer_idx, act in source_acts.items():
                         source_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
-                        if layer_idx not in source_layer_activations:
-                            source_layer_activations[layer_idx] = []
-                        source_layer_activations[layer_idx].append(act)
+                        # MEMORY FIX: accumulate into single buffer per layer
+                        _accumulate_activation(source_layer_activations, layer_idx, act, b)
     
                     for layer_idx, act in target_acts.items():
                         target_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
-                        if layer_idx not in target_layer_activations:
-                            target_layer_activations[layer_idx] = []
-                        target_layer_activations[layer_idx].append(act)
+                        # MEMORY FIX: accumulate into single buffer per layer
+                        _accumulate_activation(target_layer_activations, layer_idx, act, b)
     
                     # Store intermediate activations for multi-space stitching
                     for layer_idx, act in source_intermediate_acts.items():
-                        if layer_idx not in source_intermediate_activations:
-                            source_intermediate_activations[layer_idx] = []
-                        source_intermediate_activations[layer_idx].append(act)
+                        _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
     
                     for layer_idx, act in target_intermediate_acts.items():
-                        if layer_idx not in target_intermediate_activations:
-                            target_intermediate_activations[layer_idx] = []
-                        target_intermediate_activations[layer_idx].append(act)
+                        _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
     
                     # Store Q attention activations for q_proj/o_proj stitching
                     for layer_idx, act in source_attention_acts.items():
-                        if layer_idx not in source_attention_activations:
-                            source_attention_activations[layer_idx] = []
-                        source_attention_activations[layer_idx].append(act)
+                        _accumulate_activation(source_attention_activations, layer_idx, act, b)
     
                     for layer_idx, act in target_attention_acts.items():
-                        if layer_idx not in target_attention_activations:
-                            target_attention_activations[layer_idx] = []
-                        target_attention_activations[layer_idx].append(act)
+                        _accumulate_activation(target_attention_activations, layer_idx, act, b)
     
                     # Store K attention activations for k_proj stitching
                     for layer_idx, act in source_k_acts.items():
-                        if layer_idx not in source_k_activations:
-                            source_k_activations[layer_idx] = []
-                        source_k_activations[layer_idx].append(act)
+                        _accumulate_activation(source_k_activations, layer_idx, act, b)
     
                     for layer_idx, act in target_k_acts.items():
-                        if layer_idx not in target_k_activations:
-                            target_k_activations[layer_idx] = []
-                        target_k_activations[layer_idx].append(act)
+                        _accumulate_activation(target_k_activations, layer_idx, act, b)
     
                     # Store V attention activations for v_proj stitching
                     for layer_idx, act in source_v_acts.items():
-                        if layer_idx not in source_v_activations:
-                            source_v_activations[layer_idx] = []
-                        source_v_activations[layer_idx].append(act)
+                        _accumulate_activation(source_v_activations, layer_idx, act, b)
     
                     for layer_idx, act in target_v_acts.items():
-                        if layer_idx not in target_v_activations:
-                            target_v_activations[layer_idx] = []
-                        target_v_activations[layer_idx].append(act)
+                        _accumulate_activation(target_v_activations, layer_idx, act, b)
     
                     source_fingerprints.append(
                         ActivationFingerprint(
@@ -1235,55 +1246,35 @@ def _probe_precise(
     
                         for layer_idx, act in source_acts.items():
                             source_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
-                            if layer_idx not in source_layer_activations:
-                                source_layer_activations[layer_idx] = []
-                            source_layer_activations[layer_idx].append(act)
+                            _accumulate_activation(source_layer_activations, layer_idx, act, b)
     
                         for layer_idx, act in target_acts.items():
                             target_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
-                            if layer_idx not in target_layer_activations:
-                                target_layer_activations[layer_idx] = []
-                            target_layer_activations[layer_idx].append(act)
+                            _accumulate_activation(target_layer_activations, layer_idx, act, b)
     
                         for layer_idx, act in source_intermediate_acts.items():
-                            if layer_idx not in source_intermediate_activations:
-                                source_intermediate_activations[layer_idx] = []
-                            source_intermediate_activations[layer_idx].append(act)
+                            _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
     
                         for layer_idx, act in target_intermediate_acts.items():
-                            if layer_idx not in target_intermediate_activations:
-                                target_intermediate_activations[layer_idx] = []
-                            target_intermediate_activations[layer_idx].append(act)
+                            _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
     
                         for layer_idx, act in source_attention_acts.items():
-                            if layer_idx not in source_attention_activations:
-                                source_attention_activations[layer_idx] = []
-                            source_attention_activations[layer_idx].append(act)
+                            _accumulate_activation(source_attention_activations, layer_idx, act, b)
     
                         for layer_idx, act in target_attention_acts.items():
-                            if layer_idx not in target_attention_activations:
-                                target_attention_activations[layer_idx] = []
-                            target_attention_activations[layer_idx].append(act)
+                            _accumulate_activation(target_attention_activations, layer_idx, act, b)
     
                         for layer_idx, act in source_k_acts.items():
-                            if layer_idx not in source_k_activations:
-                                source_k_activations[layer_idx] = []
-                            source_k_activations[layer_idx].append(act)
+                            _accumulate_activation(source_k_activations, layer_idx, act, b)
     
                         for layer_idx, act in target_k_acts.items():
-                            if layer_idx not in target_k_activations:
-                                target_k_activations[layer_idx] = []
-                            target_k_activations[layer_idx].append(act)
+                            _accumulate_activation(target_k_activations, layer_idx, act, b)
     
                         for layer_idx, act in source_v_acts.items():
-                            if layer_idx not in source_v_activations:
-                                source_v_activations[layer_idx] = []
-                            source_v_activations[layer_idx].append(act)
+                            _accumulate_activation(source_v_activations, layer_idx, act, b)
     
                         for layer_idx, act in target_v_acts.items():
-                            if layer_idx not in target_v_activations:
-                                target_v_activations[layer_idx] = []
-                            target_v_activations[layer_idx].append(act)
+                            _accumulate_activation(target_v_activations, layer_idx, act, b)
     
                         source_fingerprints.append(
                             ActivationFingerprint(
