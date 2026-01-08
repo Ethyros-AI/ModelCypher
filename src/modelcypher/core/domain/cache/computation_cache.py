@@ -127,7 +127,7 @@ class ComputationCache:
         self,
         max_gram_entries: int = 200,
         max_geodesic_entries: int = 1024,
-        max_svd_entries: int = 32,
+        max_svd_entries: int = 128,
         max_frechet_entries: int = 1024,
         max_basis_entries: int = 256,
         max_kmin_entries: int = 1024,

@@ -143,6 +143,7 @@ class MergePipelineService:
         target_path: str,
         output_dir: str,
         probe_mode: str = "atlas",
+        skip_pre_analysis: bool = False,
     ) -> PipelineResult:
         """Run the complete merge pipeline.
 
@@ -151,6 +152,9 @@ class MergePipelineService:
             target_path: Path to target model
             output_dir: Output directory for merged model
             probe_mode: "atlas" (963 probes) or "token" (49K+ vocab probes)
+            skip_pre_analysis: If True, skip pre-merge interference analysis
+                for faster merges. The analysis is informational only and
+                does not affect merge quality.
         Returns:
             PipelineResult with all stage results
         """
@@ -167,15 +171,33 @@ class MergePipelineService:
 
         # Stage 1: Pre-merge analysis (using pre-loaded models)
         pre_start = time.time()
-        pre_merge = self._run_pre_merge_analysis(
-            source_path, target_path, [],
-            source_model=source_model,
-            target_model=target_model,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-        )
-        pre_duration = time.time() - pre_start
-        logger.info("Pre-merge analysis completed in %.2fs", pre_duration)
+        if skip_pre_analysis:
+            # OPTIMIZATION: Skip pre-merge analysis for faster merges.
+            # The analysis is informational and doesn't affect merge quality.
+            logger.info("Skipping pre-merge analysis (skip_pre_analysis=True)")
+            pre_merge = PreMergeAnalysis(
+                source_model=source_path,
+                target_model=target_path,
+                timestamp=datetime.utcnow().isoformat(),
+                domains_analyzed=[],
+                domain_results={},
+                mean_overlap=0.0,
+                mean_subspace_alignment=1.0,
+                mean_curvature_divergence=0.0,
+                mean_distance=0.0,
+                aligned_pairs=0,
+            )
+            pre_duration = 0.0
+        else:
+            pre_merge = self._run_pre_merge_analysis(
+                source_path, target_path, [],
+                source_model=source_model,
+                target_model=target_model,
+                source_tokenizer=source_tokenizer,
+                target_tokenizer=target_tokenizer,
+            )
+            pre_duration = time.time() - pre_start
+            logger.info("Pre-merge analysis completed in %.2fs", pre_duration)
 
         # Stage 2: Execute merge (using same pre-loaded models)
         merge_start = time.time()
@@ -276,26 +298,10 @@ class MergePipelineService:
             if not source_acts or not target_acts:
                 continue
 
-            source_volumes = {}
-            target_volumes = {}
             common_concepts = set(source_acts.keys()) & set(target_acts.keys())
 
-            for concept_id in common_concepts:
-                src_arr = source_acts[concept_id]
-                tgt_arr = target_acts[concept_id]
-
-                if src_arr.ndim == 1:
-                    src_arr = src_arr.reshape(1, -1)
-                if tgt_arr.ndim == 1:
-                    tgt_arr = tgt_arr.reshape(1, -1)
-
-                source_volumes[concept_id] = density_estimator.estimate_concept_volume(
-                    f"source:{concept_id}", src_arr, store_raw_activations=True
-                )
-                target_volumes[concept_id] = density_estimator.estimate_concept_volume(
-                    f"target:{concept_id}", tgt_arr, store_raw_activations=True
-                )
-
+            # OPTIMIZATION: Single-pass loop - compute volume and analyze in one iteration
+            # instead of storing all volumes then analyzing in a second pass.
             domain_analysis = {
                 "concepts_analyzed": len(common_concepts),
                 "overlap_scores": [],
@@ -306,9 +312,24 @@ class MergePipelineService:
             aligned_pairs = 0
 
             for concept_id in common_concepts:
-                result = predictor.analyze(
-                    source_volumes[concept_id], target_volumes[concept_id]
+                src_arr = source_acts[concept_id]
+                tgt_arr = target_acts[concept_id]
+
+                if src_arr.ndim == 1:
+                    src_arr = src_arr.reshape(1, -1)
+                if tgt_arr.ndim == 1:
+                    tgt_arr = tgt_arr.reshape(1, -1)
+
+                # Compute volumes
+                src_volume = density_estimator.estimate_concept_volume(
+                    f"source:{concept_id}", src_arr, store_raw_activations=True
                 )
+                tgt_volume = density_estimator.estimate_concept_volume(
+                    f"target:{concept_id}", tgt_arr, store_raw_activations=True
+                )
+
+                # Analyze immediately (no intermediate storage)
+                result = predictor.analyze(src_volume, tgt_volume)
                 domain_analysis["overlap_scores"].append(result.overlap_score)
                 domain_analysis["subspace_alignments"].append(result.subspace_alignment)
                 domain_analysis["curvature_scores"].append(result.curvature_divergence)

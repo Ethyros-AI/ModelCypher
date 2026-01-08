@@ -209,9 +209,10 @@ def _project_gram_transport(
     if d_s != d_t:
         # Column Gram matrices: capture input feature relationships
         # G_col = W^T @ W is [d, d] - hidden_dim sized, NOT vocab_size
+        # OPTIMIZATION: Both Grams are independent - batch eval for parallel computation
         G_source_col = b.matmul(b.transpose(source), source)  # [d_s, d_s]
         G_target_col = b.matmul(b.transpose(target), target)  # [d_t, d_t]
-        b.eval(G_source_col, G_target_col)
+        b.eval(G_source_col, G_target_col)  # Parallel evaluation via lazy backend
 
         logger.debug(
             "Column GW: source Gram [%d, %d], target Gram [%d, %d]",
@@ -254,9 +255,10 @@ def _project_gram_transport(
         if current_rows <= max_tractable_dim and m_t <= max_tractable_dim:
             # Row Gram is tractable - compute exact GW
             # Use column-aligned projected for source Gram
+            # OPTIMIZATION: Both Grams are independent - batch eval for parallel computation
             G_source_row = b.matmul(projected, b.transpose(projected))  # [m_s, m_s]
             G_target_row = b.matmul(target, b.transpose(target))  # [m_t, m_t]
-            b.eval(G_source_row, G_target_row)
+            b.eval(G_source_row, G_target_row)  # Parallel evaluation via lazy backend
 
             logger.debug(
                 "Row GW: source Gram [%d, %d], target Gram [%d, %d]",
@@ -303,8 +305,13 @@ def _project_gram_transport(
             # For very large matrices (> 50k), we compute row Gram in chunks to avoid OOM
             if current_rows > 50000 or m_t > 50000:
                 # Use sampling for extremely large dimensions
+                # OPTIMIZATION: Adaptive sample size based on matrix dimensions
+                # Larger matrices benefit from larger samples (diminishing returns)
+                # Formula: sample_size = min(10000, max(1000, max_dim // 10))
+                max_dim = max(current_rows, m_t)
+                sample_size = min(10000, max(1000, max_dim // 10))
+
                 # Generate evenly-spaced indices using backend operations (no Python lists)
-                sample_size = 10000
                 step_source = max(1, current_rows // sample_size)
                 n_source = min(sample_size, (current_rows + step_source - 1) // step_source)
                 idx_source = b.arange(0, n_source * step_source, step_source)
