@@ -1819,18 +1819,30 @@ def _probe_precise(
                         )
                     
                     # =====================================================================
-                    # ATTENTION Q ALIGNMENT (pre-compute for transplant speed)
+                    # ATTENTION Q/K/V ALIGNMENT (pre-compute for transplant speed)
                     # =====================================================================
-                    # Align source Q attention activations to target Q attention activations
-                    # This avoids expensive per-weight compositional stitch in transplant
+                    # OPTIMIZATION: Batch preparation of Q/K/V stacks, then single eval()
+                    # This reduces 3 GPU syncs to 1 per layer while keeping alignments separate
+                    # (separate alignments are mathematically required - see plan file)
+
+                    # Gather activation lists
                     src_q_acts = [source_attention_activations.get(s) for s in src_layers_list]
                     tgt_q_acts = target_attention_activations.get(tgt_layer)
-                    
+                    src_k_acts = [source_k_activations.get(s) for s in src_layers_list]
+                    tgt_k_acts = target_k_activations.get(tgt_layer)
+                    src_v_acts = [source_v_activations.get(s) for s in src_layers_list]
+                    tgt_v_acts = target_v_activations.get(tgt_layer)
+
+                    # Prepare Q/K/V stacks (lazy - no eval yet)
+                    q_prepared = None
+                    k_prepared = None
+                    v_prepared = None
+
+                    # Q preparation
                     if all(acts is not None and len(acts) > 0 for acts in src_q_acts) and tgt_q_acts is not None and len(tgt_q_acts) > 0:
                         n_attn_samples = min(len(tgt_q_acts), min(len(acts) for acts in src_q_acts))
                         if n_attn_samples >= 2:
                             try:
-                                # Stack Q activations
                                 src_q_stacks = []
                                 src_q_dims = []
                                 for s_list in src_q_acts:
@@ -1838,51 +1850,24 @@ def _probe_precise(
                                     stack = b.astype(stack, "float32")
                                     src_q_stacks.append(stack)
                                     src_q_dims.append(stack.shape[1])
-                                
+
                                 tgt_q_stacked = b.stack(tgt_q_acts[:n_attn_samples], axis=0)
                                 tgt_q_stacked = b.astype(tgt_q_stacked, "float32")
-                                
+
                                 if len(src_q_stacks) == 1:
                                     src_q_combined = src_q_stacks[0]
                                 else:
                                     src_q_combined = b.concatenate(src_q_stacks, axis=1)
-                                
-                                b.eval(src_q_combined, tgt_q_stacked)
-                                
-                                # Align Q attention
-                                q_alignment = fast_aligner.find_perfect_alignment(
-                                    src_q_combined,
-                                    tgt_q_stacked,
-                                )
-                                
-                                Q_arr = b.array(q_alignment.feature_transform)
-                                
-                                # Split Q transform for each source layer
-                                split_q_transforms = {}
-                                start_idx = 0
-                                for s_layer, s_dim in zip(src_layers_list, src_q_dims):
-                                    Q_slice = Q_arr[start_idx : start_idx + s_dim, :]
-                                    split_q_transforms[s_layer] = b.tolist(Q_slice)
-                                    start_idx += s_dim
-                                
-                                result["attention_transform"] = split_q_transforms
-                                
+
+                                # Store for batch eval (NO eval here)
+                                q_prepared = (src_q_combined, tgt_q_stacked, src_q_dims)
+                            except Exception as q_prep_err:
                                 logger.debug(
-                                    "PROBE: Q attention aligned for %s -> %d (CKA=%.4f)",
-                                    src_layers_list, tgt_layer, q_alignment.achieved_cka
+                                    "PROBE: Q preparation failed for %s -> %d: %s",
+                                    src_layers_list, tgt_layer, q_prep_err
                                 )
-                            except Exception as q_err:
-                                logger.debug(
-                                    "PROBE: Q attention alignment failed for %s -> %d: %s",
-                                    src_layers_list, tgt_layer, q_err
-                                )
-                    
-                    # =====================================================================
-                    # K ATTENTION ALIGNMENT
-                    # =====================================================================
-                    src_k_acts = [source_k_activations.get(s) for s in src_layers_list]
-                    tgt_k_acts = target_k_activations.get(tgt_layer)
-                    
+
+                    # K preparation
                     if all(acts is not None and len(acts) > 0 for acts in src_k_acts) and tgt_k_acts is not None and len(tgt_k_acts) > 0:
                         n_k_samples = min(len(tgt_k_acts), min(len(acts) for acts in src_k_acts))
                         if n_k_samples >= 2:
@@ -1894,49 +1879,24 @@ def _probe_precise(
                                     stack = b.astype(stack, "float32")
                                     src_k_stacks.append(stack)
                                     src_k_dims.append(stack.shape[1])
-                                
+
                                 tgt_k_stacked = b.stack(tgt_k_acts[:n_k_samples], axis=0)
                                 tgt_k_stacked = b.astype(tgt_k_stacked, "float32")
-                                
+
                                 if len(src_k_stacks) == 1:
                                     src_k_combined = src_k_stacks[0]
                                 else:
                                     src_k_combined = b.concatenate(src_k_stacks, axis=1)
-                                
-                                b.eval(src_k_combined, tgt_k_stacked)
-                                
-                                k_alignment = fast_aligner.find_perfect_alignment(
-                                    src_k_combined,
-                                    tgt_k_stacked,
-                                )
-                                
-                                K_arr = b.array(k_alignment.feature_transform)
-                                
-                                split_k_transforms = {}
-                                start_idx = 0
-                                for s_layer, s_dim in zip(src_layers_list, src_k_dims):
-                                    K_slice = K_arr[start_idx : start_idx + s_dim, :]
-                                    split_k_transforms[s_layer] = b.tolist(K_slice)
-                                    start_idx += s_dim
-                                
-                                result["k_transform"] = split_k_transforms
-                                
+
+                                # Store for batch eval (NO eval here)
+                                k_prepared = (src_k_combined, tgt_k_stacked, src_k_dims)
+                            except Exception as k_prep_err:
                                 logger.debug(
-                                    "PROBE: K attention aligned for %s -> %d (CKA=%.4f)",
-                                    src_layers_list, tgt_layer, k_alignment.achieved_cka
+                                    "PROBE: K preparation failed for %s -> %d: %s",
+                                    src_layers_list, tgt_layer, k_prep_err
                                 )
-                            except Exception as k_err:
-                                logger.debug(
-                                    "PROBE: K attention alignment failed for %s -> %d: %s",
-                                    src_layers_list, tgt_layer, k_err
-                                )
-                    
-                    # =====================================================================
-                    # V ATTENTION ALIGNMENT
-                    # =====================================================================
-                    src_v_acts = [source_v_activations.get(s) for s in src_layers_list]
-                    tgt_v_acts = target_v_activations.get(tgt_layer)
-                    
+
+                    # V preparation
                     if all(acts is not None and len(acts) > 0 for acts in src_v_acts) and tgt_v_acts is not None and len(tgt_v_acts) > 0:
                         n_v_samples = min(len(tgt_v_acts), min(len(acts) for acts in src_v_acts))
                         if n_v_samples >= 2:
@@ -1948,42 +1908,124 @@ def _probe_precise(
                                     stack = b.astype(stack, "float32")
                                     src_v_stacks.append(stack)
                                     src_v_dims.append(stack.shape[1])
-                                
+
                                 tgt_v_stacked = b.stack(tgt_v_acts[:n_v_samples], axis=0)
                                 tgt_v_stacked = b.astype(tgt_v_stacked, "float32")
-                                
+
                                 if len(src_v_stacks) == 1:
                                     src_v_combined = src_v_stacks[0]
                                 else:
                                     src_v_combined = b.concatenate(src_v_stacks, axis=1)
-                                
-                                b.eval(src_v_combined, tgt_v_stacked)
-                                
-                                v_alignment = fast_aligner.find_perfect_alignment(
-                                    src_v_combined,
-                                    tgt_v_stacked,
-                                )
-                                
-                                V_arr = b.array(v_alignment.feature_transform)
-                                
-                                split_v_transforms = {}
-                                start_idx = 0
-                                for s_layer, s_dim in zip(src_layers_list, src_v_dims):
-                                    V_slice = V_arr[start_idx : start_idx + s_dim, :]
-                                    split_v_transforms[s_layer] = b.tolist(V_slice)
-                                    start_idx += s_dim
-                                
-                                result["v_transform"] = split_v_transforms
-                                
+
+                                # Store for batch eval (NO eval here)
+                                v_prepared = (src_v_combined, tgt_v_stacked, src_v_dims)
+                            except Exception as v_prep_err:
                                 logger.debug(
-                                    "PROBE: V attention aligned for %s -> %d (CKA=%.4f)",
-                                    src_layers_list, tgt_layer, v_alignment.achieved_cka
+                                    "PROBE: V preparation failed for %s -> %d: %s",
+                                    src_layers_list, tgt_layer, v_prep_err
                                 )
-                            except Exception as v_err:
-                                logger.debug(
-                                    "PROBE: V attention alignment failed for %s -> %d: %s",
-                                    src_layers_list, tgt_layer, v_err
-                                )
+
+                    # BATCH EVAL: Single GPU sync for all prepared Q/K/V stacks
+                    # This replaces 3 separate evals with 1 batched eval
+                    stacks_to_eval = []
+                    if q_prepared is not None:
+                        stacks_to_eval.extend([q_prepared[0], q_prepared[1]])
+                    if k_prepared is not None:
+                        stacks_to_eval.extend([k_prepared[0], k_prepared[1]])
+                    if v_prepared is not None:
+                        stacks_to_eval.extend([v_prepared[0], v_prepared[1]])
+                    if stacks_to_eval:
+                        b.eval(*stacks_to_eval)
+
+                    # Q ALIGNMENT (must be separate - mathematically required)
+                    if q_prepared is not None:
+                        src_q_combined, tgt_q_stacked, src_q_dims = q_prepared
+                        try:
+                            q_alignment = fast_aligner.find_perfect_alignment(
+                                src_q_combined,
+                                tgt_q_stacked,
+                            )
+
+                            Q_arr = b.array(q_alignment.feature_transform)
+
+                            split_q_transforms = {}
+                            start_idx = 0
+                            for s_layer, s_dim in zip(src_layers_list, src_q_dims):
+                                Q_slice = Q_arr[start_idx : start_idx + s_dim, :]
+                                split_q_transforms[s_layer] = b.tolist(Q_slice)
+                                start_idx += s_dim
+
+                            result["attention_transform"] = split_q_transforms
+
+                            logger.debug(
+                                "PROBE: Q attention aligned for %s -> %d (CKA=%.4f)",
+                                src_layers_list, tgt_layer, q_alignment.achieved_cka
+                            )
+                        except Exception as q_err:
+                            logger.debug(
+                                "PROBE: Q attention alignment failed for %s -> %d: %s",
+                                src_layers_list, tgt_layer, q_err
+                            )
+
+                    # K ALIGNMENT (must be separate - mathematically required)
+                    if k_prepared is not None:
+                        src_k_combined, tgt_k_stacked, src_k_dims = k_prepared
+                        try:
+                            k_alignment = fast_aligner.find_perfect_alignment(
+                                src_k_combined,
+                                tgt_k_stacked,
+                            )
+
+                            K_arr = b.array(k_alignment.feature_transform)
+
+                            split_k_transforms = {}
+                            start_idx = 0
+                            for s_layer, s_dim in zip(src_layers_list, src_k_dims):
+                                K_slice = K_arr[start_idx : start_idx + s_dim, :]
+                                split_k_transforms[s_layer] = b.tolist(K_slice)
+                                start_idx += s_dim
+
+                            result["k_transform"] = split_k_transforms
+
+                            logger.debug(
+                                "PROBE: K attention aligned for %s -> %d (CKA=%.4f)",
+                                src_layers_list, tgt_layer, k_alignment.achieved_cka
+                            )
+                        except Exception as k_err:
+                            logger.debug(
+                                "PROBE: K attention alignment failed for %s -> %d: %s",
+                                src_layers_list, tgt_layer, k_err
+                            )
+
+                    # V ALIGNMENT (must be separate - mathematically required)
+                    if v_prepared is not None:
+                        src_v_combined, tgt_v_stacked, src_v_dims = v_prepared
+                        try:
+                            v_alignment = fast_aligner.find_perfect_alignment(
+                                src_v_combined,
+                                tgt_v_stacked,
+                            )
+
+                            V_arr = b.array(v_alignment.feature_transform)
+
+                            split_v_transforms = {}
+                            start_idx = 0
+                            for s_layer, s_dim in zip(src_layers_list, src_v_dims):
+                                V_slice = V_arr[start_idx : start_idx + s_dim, :]
+                                split_v_transforms[s_layer] = b.tolist(V_slice)
+                                start_idx += s_dim
+
+                            result["v_transform"] = split_v_transforms
+
+                            logger.debug(
+                                "PROBE: V attention aligned for %s -> %d (CKA=%.4f)",
+                                src_layers_list, tgt_layer, v_alignment.achieved_cka
+                            )
+                        except Exception as v_err:
+                            logger.debug(
+                                "PROBE: V attention alignment failed for %s -> %d: %s",
+                                src_layers_list, tgt_layer, v_err
+                            )
 
                     # =====================================================================
                     # INTERMEDIATE MLP ALIGNMENT (pre-compute for transplant speed)

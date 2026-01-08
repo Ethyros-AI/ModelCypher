@@ -519,8 +519,8 @@ class GramAligner:
         # Step 2: Compute closed-form sample transform T
         logger.info("HYBRID ALIGNMENT: Computing closed-form sample transform T...")
         T = self._compute_sample_transform(K_s_c, K_t_c)
-        b.eval(T)
-        
+        # NOTE: T is already eval'd inside _compute_sample_transform
+
         # Check for NaN in T (degenerate Gram matrix from edge layers)
         T_sum = b.sum(T)
         b.eval(T_sum)
@@ -561,19 +561,25 @@ class GramAligner:
         if use_fresh_f:
             # Normal initialization: closed-form projection
             logger.info("HYBRID ALIGNMENT: Initializing F from closed-form projection...")
-            
-            # Cache source pseudoinverse (computed once, used multiple times)
-            source_pinv = b.pinv(source)
-            b.eval(source_pinv)
-            
+
             if T_has_nan:
-                # Fallback: T is NaN from degenerate Gram matrix, use direct projection
+                # Fallback: T is NaN from degenerate Gram matrix, use SVD-Procrustes
                 logger.warning("HYBRID ALIGNMENT: Sample transform T contains NaN, using direct projection")
-                F = b.matmul(source_pinv, target)  # [d_s, d_t]
+                F_gram, _ = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
+                if F_gram is not None:
+                    F = F_gram
+                else:
+                    # Last resort: random initialization
+                    F = b.multiply(0.01, b.random_normal((int(d_s), int(d_t))))
             elif d_s == d_t:
-                # Same dimension: use closed-form T alignment
-                aligned_source_samples = b.matmul(T, source)  # [n, d_s]
-                F = b.matmul(source_pinv, aligned_source_samples)  # [d_s, d_s]
+                # Same dimension: use SVD-Procrustes for exact CKA alignment
+                F_gram, diag = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
+                if F_gram is not None:
+                    F = F_gram
+                    proc_err = diag.get('procrustes_error', 0.0)
+                    logger.info(f"SAME-DIM: SVD-Procrustes alignment, procrustes_error={proc_err:.4f}")
+                else:
+                    F = b.eye(int(d_s))
             else:
                 # =================================================================
                 # CROSS-DIMENSIONAL PROJECTION via Gram alignment
@@ -582,10 +588,7 @@ class GramAligner:
                 # With LINEAR Gram, CKA=1.0 is MATHEMATICALLY GUARANTEED by this solution.
                 # NO gradient descent needed - the closed-form IS the answer.
                 F_gram, diag = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
-                
-                # Capture procrustes_R for zipper propagation
-                procrustes_R = diag.get('procrustes_R', None)
-                
+
                 if F_gram is not None:
                     # Closed-form solution - achieves exact linear CKA=1.0
                     F = F_gram
@@ -593,13 +596,15 @@ class GramAligner:
                     used_hint = diag.get('used_R_hint', False)
                     logger.info(f"CROSS-DIM: Gram alignment init, procrustes_error={proc_err:.4f}, used_R_hint={used_hint}")
                 else:
-                    # F_gram is None (SVD failed completely) - use pinv fallback
-                    F = b.matmul(source_pinv, target)
+                    # F_gram is None (SVD failed) - use pinv fallback
                     logger.warning("CROSS-DIM: SVD failed, using pinv fallback")
-                b.eval(F)
+                    source_pinv = b.pinv(source)
+                    b.eval(source_pinv)
+                    F = b.matmul(source_pinv, target)
         # Check for NaN in F initialization
+        # OPTIMIZATION: Batch eval F and F_sum together
         F_sum = b.sum(F)
-        b.eval(F_sum)
+        b.eval(F, F_sum)
         F_has_nan = float(b.to_scalar(F_sum)) != float(b.to_scalar(F_sum))
         
         if F_has_nan:

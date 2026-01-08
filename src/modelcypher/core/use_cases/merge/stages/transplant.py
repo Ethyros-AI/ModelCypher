@@ -996,6 +996,28 @@ def stage_transplant(
                     layer_idx, stitch_shape
                 )
 
+        # =====================================================================
+        # OPTIMIZATION: Cache stitch dimensions once per layer
+        # =====================================================================
+        # Each .shape on a lazy MLX array forces GPU→CPU sync. By caching dimensions
+        # once after loading stitch outputs, we avoid 50+ redundant syncs per layer.
+        stitch_dims: dict[str, int] = {}
+        if hidden_stitch_output is not None:
+            stitch_dims['src_hidden'] = int(hidden_stitch_output.shape[1])
+            stitch_dims['tgt_hidden'] = int(hidden_stitch_output.shape[0])
+        if intermediate_stitch_output is not None:
+            stitch_dims['src_inter'] = int(intermediate_stitch_output.shape[1])
+            stitch_dims['tgt_inter'] = int(intermediate_stitch_output.shape[0])
+        if attention_stitch_output is not None:
+            stitch_dims['src_attn'] = int(attention_stitch_output.shape[1])
+            stitch_dims['tgt_attn'] = int(attention_stitch_output.shape[0])
+        if k_stitch_output is not None:
+            stitch_dims['src_kv'] = int(k_stitch_output.shape[1])
+            stitch_dims['tgt_kv'] = int(k_stitch_output.shape[0])
+        if v_stitch_output is not None:
+            stitch_dims['src_v'] = int(v_stitch_output.shape[1])
+            stitch_dims['tgt_v'] = int(v_stitch_output.shape[0])
+
         # Handle both formats: list of 1D arrays (legacy) or 2D array (memory-optimized)
         if hasattr(act_list, 'shape') and len(b.shape(act_list)) == 2:
             # Already a 2D array [n_probes, hidden_dim] - use directly
@@ -1236,10 +1258,11 @@ def stage_transplant(
                 if is_mlp and hidden_stitch_output is not None and intermediate_stitch_output is not None:
                     # MLP weight: apply BOTH stitches with correct orientations
                     # stitch_output for OUTPUT side (rows), stitch_input for INPUT side (cols)
-                    src_hidden_dim = int(hidden_stitch_output.shape[1])  # F.T is [tgt, src]
-                    tgt_hidden_dim = int(hidden_stitch_output.shape[0])
-                    src_inter_dim = int(intermediate_stitch_output.shape[1])
-                    tgt_inter_dim = int(intermediate_stitch_output.shape[0])
+                    # OPTIMIZATION: Use cached dimensions instead of repeated .shape calls
+                    src_hidden_dim = stitch_dims['src_hidden']
+                    tgt_hidden_dim = stitch_dims['tgt_hidden']
+                    src_inter_dim = stitch_dims['src_inter']
+                    tgt_inter_dim = stitch_dims['tgt_inter']
 
                     logger.info(
                         "MLP weight %s: applying dual stitch (hidden %d→%d, inter %d→%d)",
@@ -1307,16 +1330,17 @@ def stage_transplant(
 
                     if is_attention and attention_stitch_output is not None:
                         # We have attention stitch - apply it!
-                        src_attn_dim = int(attention_stitch_output.shape[1])
-                        tgt_attn_dim = int(attention_stitch_output.shape[0])
-                        src_hidden_dim = int(hidden_stitch_output.shape[1])
-                        tgt_hidden_dim = int(hidden_stitch_output.shape[0])
+                        # OPTIMIZATION: Use cached dimensions instead of repeated .shape calls
+                        src_attn_dim = stitch_dims['src_attn']
+                        tgt_attn_dim = stitch_dims['tgt_attn']
+                        src_hidden_dim = stitch_dims['src_hidden']
+                        tgt_hidden_dim = stitch_dims['tgt_hidden']
                         dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
-                        # Get KV stitch dimensions for GQA detection
+                        # Get KV stitch dimensions for GQA detection (use cached if available)
                         # GQA models: K/V have fewer heads than Q (e.g., SmolLM: Q=960, KV=320)
-                        src_kv_dim = int(k_stitch_output.shape[1]) if k_stitch_output is not None else src_attn_dim
-                        tgt_kv_dim = int(k_stitch_output.shape[0]) if k_stitch_output is not None else tgt_attn_dim
+                        src_kv_dim = stitch_dims.get('src_kv', src_attn_dim)
+                        tgt_kv_dim = stitch_dims.get('tgt_kv', tgt_attn_dim)
 
                         # Determine attention weight pattern
                         # GQA: q_proj uses Q-attention dim, k_proj/v_proj use KV-attention dim
@@ -1469,7 +1493,8 @@ def stage_transplant(
                             elif dim1 == src_kv_dim and kv_stitch_input is not None:
                                 # o_proj uses KV dimension (unusual but handle it)
                                 # Resize kv_stitch if needed
-                                kv_in_cols = int(kv_stitch_input.shape[1])
+                                # OPTIMIZATION: Use cached dimension
+                                kv_in_cols = stitch_dims.get('tgt_kv', int(kv_stitch_input.shape[1]))
                                 if kv_in_cols >= target_o_dim1:
                                     o_stitch = kv_stitch_input[:, :target_o_dim1]
                                 else:
@@ -1528,8 +1553,9 @@ def stage_transplant(
                         # 1. Hidden alignment achieves CKA=1.0 (verified by barometer)
                         # 2. Attention projections are linear functions of hidden
                         # 3. Compositional stitch derives the correct transform
-                        src_hidden_dim = int(hidden_stitch_output.shape[1])
-                        tgt_hidden_dim = int(hidden_stitch_output.shape[0])
+                        # OPTIMIZATION: Use cached dimensions
+                        src_hidden_dim = stitch_dims['src_hidden']
+                        tgt_hidden_dim = stitch_dims['tgt_hidden']
                         dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
                         
                         logger.info(
@@ -1582,8 +1608,9 @@ def stage_transplant(
                     # Skip hidden stitch if attention stitch was already applied
                     if not attention_stitch_applied:
                         # W_target = hidden_stitch_output @ W @ hidden_stitch_input
-                        src_hidden_dim = int(hidden_stitch_output.shape[1])
-                        tgt_hidden_dim = int(hidden_stitch_output.shape[0])
+                        # OPTIMIZATION: Use cached dimensions
+                        src_hidden_dim = stitch_dims['src_hidden']
+                        tgt_hidden_dim = stitch_dims['tgt_hidden']
                         dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
                         if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
