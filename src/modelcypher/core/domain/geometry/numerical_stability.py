@@ -1754,7 +1754,7 @@ def solve_via_gram_alignment(
     div_eps = division_epsilon(b, source)
 
     diagnostics: dict = {
-        "method": "least_squares",
+        "method": "gram_alignment",
         "n_samples": n,
         "d_source": d_s,
         "d_target": d_t,
