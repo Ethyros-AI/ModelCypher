@@ -31,7 +31,7 @@ from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
 from modelcypher.core.domain._backend import get_default_backend, set_default_backend
 from modelcypher.backends import get_backend
 from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
-from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.domain.geometry.cka import compute_cka, compute_linear_cka
 from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -97,6 +97,9 @@ def collect_word_activations(
 
     # Stack into [n_words, hidden_dim]
     stacked = mx.stack(activations, axis=0)
+    # CRITICAL: Convert to float32 to avoid overflow in Gram matrix computation
+    # float16 activations can have values >1000 which overflow when squared
+    stacked = stacked.astype(mx.float32)
     mx.eval(stacked)
     return stacked
 
@@ -211,15 +214,12 @@ def run_experiment():
             acts_a = activations[name_a][word_set]
             acts_b = activations[name_b][word_set]
 
-            # Convert to backend arrays
-            acts_a_backend = backend.array(acts_a.tolist())
-            acts_b_backend = backend.array(acts_b.tolist())
+            # Use LINEAR CKA for consistency with alignment (already MLX arrays)
+            cka_value = compute_linear_cka(acts_a, acts_b, backend)
+            raw_results[(name_a, name_b, word_set)] = cka_value
 
-            result = compute_cka(acts_a_backend, acts_b_backend, backend)
-            raw_results[(name_a, name_b, word_set)] = result.cka
-
-            status = "PASS" if result.cka > 0.85 else "FAIL"
-            logger.info(f"  {word_set:10s}: CKA = {result.cka:.4f} [{status}]")
+            status = "PASS" if cka_value > 0.85 else "FAIL"
+            logger.info(f"  {word_set:10s}: CKA = {cka_value:.4f} [{status}]")
 
     # Phase 2: Gram-Aligned CKA
     logger.info("\n" + "=" * 60)
@@ -237,13 +237,14 @@ def run_experiment():
             acts_a = activations[name_a][word_set]
             acts_b = activations[name_b][word_set]
 
-            # Convert to backend arrays
-            acts_a_backend = backend.array(acts_a.tolist())
-            acts_b_backend = backend.array(acts_b.tolist())
+            # Ensure float32 for numerical stability
+            acts_a = backend.astype(acts_a, "float32")
+            acts_b = backend.astype(acts_b, "float32")
+            backend.eval(acts_a, acts_b)
 
             try:
-                # Find alignment transformation
-                alignment = find_alignment(acts_a_backend, acts_b_backend, backend)
+                # Find alignment transformation (already MLX arrays)
+                alignment = find_alignment(acts_a, acts_b, backend)
                 aligned_cka = alignment.achieved_cka
 
                 aligned_results[(name_a, name_b, word_set)] = aligned_cka

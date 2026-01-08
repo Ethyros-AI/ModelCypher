@@ -662,10 +662,15 @@ class GramAligner:
             b.eval(F)
         
         # Check for degenerate target (near-zero Gram norm)
-        # Note: With normalization, this should be rare but can still happen if
-        # the centered Gram matrix is near-zero (e.g., all samples identical)
-        if target_norm_sq < reg_eps * 10:
-            logger.warning("HYBRID ALIGNMENT: Target Gram norm near-zero, using identity-like transform")
+        # Note: After normalization + centering, legitimate Gram matrices can have
+        # very small norms (1e-6 to 1e-3) due to high sample correlation.
+        # Only flag truly degenerate cases (all samples nearly identical).
+        # Use machine_epsilon squared as threshold - smaller values indicate
+        # numerical noise rather than meaningful structure.
+        degenerate_threshold = machine_epsilon(b, K_t_c) ** 2  # ~1e-14 for float32
+        if target_norm_sq < degenerate_threshold:
+            logger.warning("HYBRID ALIGNMENT: Target Gram norm near-zero (%.2e < %.2e), using identity-like transform",
+                          target_norm_sq, degenerate_threshold)
             if d_s == d_t:
                 F = b.eye(d_s)
             else:

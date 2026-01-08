@@ -552,13 +552,28 @@ def compute_linear_cka(
     hsic_yy = float(backend.to_scalar(hsic_sum_yy))
 
     # CKA = HSIC(x,y) / sqrt(HSIC(x,x) * HSIC(y,y))
-    denom_sq = hsic_xx * hsic_yy
+    #
+    # IMPORTANT: When both matrices are small (after normalization + centering),
+    # the HSIC values can be very small (e.g., 1e-4), making denom_sq = 1e-8.
+    # This is still valid if the matrices are proportional - CKA should be 1.0.
+    # Only return 0.0 for truly degenerate cases (zero variance).
+    #
+    # Use the sqrt of machine_epsilon as threshold since we're checking denom_sq.
+    # For float32: sqrt(1.19e-7) ≈ 3.5e-4, so denom_sq threshold is ~1e-7.
+    # But if HSIC values are consistently small, we should still compute CKA.
+    # The true degenerate case is when ONE of hsic_xx or hsic_yy is zero.
     eps = machine_epsilon(backend, gram_x)
-    if denom_sq < eps:  # Degenerate case - zero or negative variance
+
+    # Check for truly degenerate cases (zero self-similarity)
+    if hsic_xx <= 0 or hsic_yy <= 0:
         return 0.0
 
+    # Compute denominator - this is safe since hsic_xx, hsic_yy > 0
+    denom_sq = hsic_xx * hsic_yy
     denom = sqrt_scalar(denom_sq, backend)
-    if denom < eps:  # Extra safety check after sqrt
+
+    # Only fail if denominator is actually zero (numerical underflow)
+    if denom <= 0:
         return 0.0
 
     return max(0.0, min(1.0, hsic_xy / denom))
