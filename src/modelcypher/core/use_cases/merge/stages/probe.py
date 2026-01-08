@@ -1746,8 +1746,10 @@ def _probe_precise(
                     )
                 
                 # Log sample count for rank verification
+                # Note: src_act_lists is a Python list, tgt_list is an MLX array
+                # MLX arrays cannot be used in boolean context (causes conversion error)
                 src_dim = src_act_lists[0][0].shape[-1] if src_act_lists else 0
-                tgt_dim = tgt_list[0].shape[-1] if tgt_list else 0
+                tgt_dim = int(tgt_list.shape[-1]) if tgt_list is not None and len(tgt_list.shape) > 0 else 0
                 logger.info(
                     "ALIGNMENT: Layer %d <- %s: n_samples=%d (need >=%d for full-rank src, >=%d for full-rank tgt)",
                     tgt_layer, src_layers_list, n_samples, src_dim, tgt_dim
@@ -1824,7 +1826,7 @@ def _probe_precise(
                     src_q_acts = [source_attention_activations.get(s) for s in src_layers_list]
                     tgt_q_acts = target_attention_activations.get(tgt_layer)
                     
-                    if all(acts is not None and len(acts) > 0 for acts in src_q_acts) and tgt_q_acts and len(tgt_q_acts) > 0:
+                    if all(acts is not None and len(acts) > 0 for acts in src_q_acts) and tgt_q_acts is not None and len(tgt_q_acts) > 0:
                         n_attn_samples = min(len(tgt_q_acts), min(len(acts) for acts in src_q_acts))
                         if n_attn_samples >= 2:
                             try:
@@ -1881,7 +1883,7 @@ def _probe_precise(
                     src_k_acts = [source_k_activations.get(s) for s in src_layers_list]
                     tgt_k_acts = target_k_activations.get(tgt_layer)
                     
-                    if all(acts is not None and len(acts) > 0 for acts in src_k_acts) and tgt_k_acts and len(tgt_k_acts) > 0:
+                    if all(acts is not None and len(acts) > 0 for acts in src_k_acts) and tgt_k_acts is not None and len(tgt_k_acts) > 0:
                         n_k_samples = min(len(tgt_k_acts), min(len(acts) for acts in src_k_acts))
                         if n_k_samples >= 2:
                             try:
@@ -1935,7 +1937,7 @@ def _probe_precise(
                     src_v_acts = [source_v_activations.get(s) for s in src_layers_list]
                     tgt_v_acts = target_v_activations.get(tgt_layer)
                     
-                    if all(acts is not None and len(acts) > 0 for acts in src_v_acts) and tgt_v_acts and len(tgt_v_acts) > 0:
+                    if all(acts is not None and len(acts) > 0 for acts in src_v_acts) and tgt_v_acts is not None and len(tgt_v_acts) > 0:
                         n_v_samples = min(len(tgt_v_acts), min(len(acts) for acts in src_v_acts))
                         if n_v_samples >= 2:
                             try:
@@ -1992,7 +1994,7 @@ def _probe_precise(
                     src_inter_acts = [source_intermediate_activations.get(s) for s in src_layers_list]
                     tgt_inter_acts = target_intermediate_activations.get(tgt_layer)
                     
-                    if all(acts is not None and len(acts) > 0 for acts in src_inter_acts) and tgt_inter_acts and len(tgt_inter_acts) > 0:
+                    if all(acts is not None and len(acts) > 0 for acts in src_inter_acts) and tgt_inter_acts is not None and len(tgt_inter_acts) > 0:
                         n_inter_samples = min(len(tgt_inter_acts), min(len(acts) for acts in src_inter_acts))
                         if n_inter_samples >= 2:
                             try:

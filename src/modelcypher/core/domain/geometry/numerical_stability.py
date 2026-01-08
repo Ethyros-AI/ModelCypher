@@ -499,6 +499,9 @@ def compute_median(
     This is the efficient median computation used across geometry modules.
     Uses argpartition to find the median index without full sorting.
 
+    For even-length arrays, averages the two middle elements (standard median).
+    For odd-length arrays, returns the middle element.
+
     Args:
         array: Input array (any shape, will be flattened).
         backend: Compute backend.
@@ -516,20 +519,34 @@ def compute_median(
     if n == 1:
         return float(backend.to_scalar(flat))
 
-    # Median index (for even n, takes lower-middle)
-    median_idx = (n - 1) // 2
+    mid = n // 2
 
-    # argpartition gives indices such that element at median_idx is in sorted position
-    # Elements before median_idx are <= element at median_idx
-    partitioned = backend.argpartition(flat, median_idx)
-    backend.eval(partitioned)
+    if n % 2 == 1:
+        # Odd n: single middle element
+        partitioned = backend.argpartition(flat, mid)
+        backend.eval(partitioned)
+        # Elements at indices 0..mid are <= element at mid (in sorted order)
+        prefix = backend.take(partitioned, backend.arange(mid + 1), axis=0)
+        median_arr = backend.max(backend.take(flat, prefix, axis=0))
+    else:
+        # Even n: average of two middle elements
+        # Find element at position mid-1 (lower middle)
+        low_part = backend.argpartition(flat, mid - 1)
+        backend.eval(low_part)
+        low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
+        low = backend.max(backend.take(flat, low_prefix, axis=0))
 
-    # Get the element at median position
-    median_pos_idx = backend.take(partitioned, backend.array([median_idx]), axis=0)
-    median_val = backend.take(flat, median_pos_idx, axis=0)
-    backend.eval(median_val)
+        # Find element at position mid (upper middle)
+        high_part = backend.argpartition(flat, mid)
+        backend.eval(high_part)
+        high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
+        high = backend.max(backend.take(flat, high_prefix, axis=0))
 
-    return float(backend.to_scalar(median_val))
+        median_arr = (low + high) * 0.5
+
+    median_arr = backend.squeeze(median_arr)
+    backend.eval(median_arr)
+    return float(backend.to_scalar(median_arr))
 
 
 def compute_median_nonzero(

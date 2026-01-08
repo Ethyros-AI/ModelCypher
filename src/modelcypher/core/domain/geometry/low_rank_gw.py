@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_median,
     division_epsilon,
     machine_epsilon,
     regularization_epsilon,
@@ -233,24 +234,7 @@ class LowRankGromovWasserstein:
         # Derive regularization from cost matrix scale
         # Use median of cost matrix scale * sqrt(machine_epsilon)
         # This balances regularization strength with numerical precision
-        flat_c1 = b.reshape(C1, (-1,))
-        n_flat = int(flat_c1.shape[0])
-        mid = n_flat // 2
-        if n_flat % 2 == 1:
-            partitioned = b.argpartition(flat_c1, mid)
-            prefix = b.take(partitioned, b.arange(mid + 1), axis=0)
-            median_c1 = b.max(b.take(flat_c1, prefix, axis=0))
-        else:
-            low_part = b.argpartition(flat_c1, mid - 1)
-            low_prefix = b.take(low_part, b.arange(mid), axis=0)
-            low = b.max(b.take(flat_c1, low_prefix, axis=0))
-            high_part = b.argpartition(flat_c1, mid)
-            high_prefix = b.take(high_part, b.arange(mid + 1), axis=0)
-            high = b.max(b.take(flat_c1, high_prefix, axis=0))
-            median_c1 = (low + high) * 0.5
-        median_c1 = b.squeeze(median_c1)
-        b.eval(median_c1)
-        median_val = float(b.to_scalar(median_c1))
+        median_val = compute_median(C1, b)
         eps = float(machine_epsilon(b, C1))
         reg = max(median_val * (eps ** 0.5), eps)
 

@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_median,
     machine_epsilon,
     safe_log_epsilon,
 )
@@ -319,25 +320,7 @@ class IntrinsicDimension:
 
         # Data-derived infinity threshold:
         # Use median of r2 as baseline - infinite values are >> typical distances
-        # Compute median via argpartition (avoid full sort)
-        n = r2_sq.shape[0]
-        mid = n // 2
-        if n % 2 == 0:
-            low_part = backend.argpartition(r2_sq, mid - 1)
-            low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
-            low = backend.max(backend.take(r2_sq, low_prefix, axis=0))
-            high_part = backend.argpartition(r2_sq, mid)
-            high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
-            high = backend.max(backend.take(r2_sq, high_prefix, axis=0))
-            backend.eval(low, high)
-            median_val = (float(backend.to_scalar(low)) +
-                         float(backend.to_scalar(high))) / 2.0
-        else:
-            part = backend.argpartition(r2_sq, mid)
-            prefix = backend.take(part, backend.arange(mid + 1), axis=0)
-            mid_val = backend.max(backend.take(r2_sq, prefix, axis=0))
-            backend.eval(mid_val)
-            median_val = float(backend.to_scalar(mid_val))
+        median_val = compute_median(r2_sq, backend)
 
         # Infinity threshold: anything > median / eps is disconnected
         # This follows the geodesic "infinity" construction: inf ≈ scale/eps.

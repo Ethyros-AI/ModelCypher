@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_median,
     division_epsilon,
     regularization_epsilon,
     safe_log_epsilon,
@@ -163,27 +164,9 @@ class SinkhornSolver:
         balance between accuracy and numerical stability.
         """
         backend = self._backend
-        flat = backend.reshape(cost, (-1,))
-        n = int(flat.shape[0])
-        if n == 0:
+        median_val = compute_median(cost, backend)
+        if median_val == 0.0:
             return float(division_epsilon(backend, cost))
-
-        mid = n // 2
-        if n % 2 == 1:
-            partitioned = backend.argpartition(flat, mid)
-            prefix = backend.take(partitioned, backend.arange(mid + 1), axis=0)
-            median_arr = backend.max(backend.take(flat, prefix, axis=0))
-        else:
-            low_part = backend.argpartition(flat, mid - 1)
-            low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
-            low = backend.max(backend.take(flat, low_prefix, axis=0))
-            high_part = backend.argpartition(flat, mid)
-            high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
-            high = backend.max(backend.take(flat, high_prefix, axis=0))
-            median_arr = (low + high) * 0.5
-        median_arr = backend.squeeze(median_arr)
-        backend.eval(median_arr)
-        median_val = float(backend.to_scalar(median_arr))
 
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         eps = float(machine_epsilon(backend, cost))
