@@ -747,78 +747,10 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         return all(seen)
 
-    @staticmethod
-    def _should_use_sparse_shortest_paths(n: int, k_neighbors: int) -> bool:
-        """Decide between sparse Dijkstra and dense Floyd-Warshall.
-
-        Complexity analysis:
-        - Floyd-Warshall: O(n³) with excellent cache locality
-        - Sparse Dijkstra: O(n² * k * log(n)) with poor cache locality
-
-        Crossover when: n² * k * log(n) < n³  →  k * log(n) < n
-
-        Use sparse when graph is truly sparse (k << n) to avoid
-        Floyd-Warshall's cubic cost.
-        """
-        if n <= 2 or k_neighbors >= n - 1:
-            return False
-        log_n = math.log2(max(n, 2))
-        return (k_neighbors * log_n) < n
-
-    def _all_pairs_shortest_paths_sparse(
-        self,
-        knn_idx: "Array",
-        neighbor_dists: "Array",
-        n: int,
-    ) -> "Array":
-        """Exact all-pairs shortest paths using scipy's Dijkstra on a k-NN graph.
-        
-        Uses scipy.sparse.csgraph.dijkstra which is implemented in C and 
-        significantly faster than Python heapq-based implementation.
-        """
-        import numpy as np
-        from scipy.sparse import csr_matrix
-        from scipy.sparse.csgraph import dijkstra
-        
-        backend = self._backend
-        backend.eval(knn_idx, neighbor_dists)
-        neighbors = backend.tolist(knn_idx)
-        weights = backend.tolist(neighbor_dists)
-
-        # Build adjacency dict first to deduplicate edges (take minimum weight)
-        # This matches the original heapq behavior
-        adjacency: dict[tuple[int, int], float] = {}
-        
-        for i, row in enumerate(neighbors):
-            row_weights = weights[i]
-            for j_raw, w_raw in zip(row, row_weights):
-                j = int(j_raw)
-                if j < 0 or j >= n or j == i:
-                    continue
-                w = float(w_raw)
-                # Take minimum weight for duplicate edges (symmetric)
-                for edge in [(i, j), (j, i)]:
-                    if edge not in adjacency or w < adjacency[edge]:
-                        adjacency[edge] = w
-        
-        # Convert to COO format
-        rows = []
-        cols = []
-        data = []
-        for (i, j), w in adjacency.items():
-            rows.append(i)
-            cols.append(j)
-            data.append(w)
-        
-        # Create sparse matrix
-        graph = csr_matrix((data, (rows, cols)), shape=(n, n))
-        
-        # Run scipy's C-optimized Dijkstra (all-pairs)
-        dist_matrix = dijkstra(graph, directed=False, return_predecessors=False)
-        
-        # Convert back to backend array
-        dist_arr = backend.array(dist_matrix.astype(np.float32))
-        return dist_arr
+    # NOTE: _should_use_sparse_shortest_paths() and _all_pairs_shortest_paths_sparse()
+    # were removed as part of the "No NumPy" optimization. The sparse path used scipy
+    # which forced GPU→CPU→GPU roundtrip. Backend Floyd-Warshall is now used exclusively
+    # as it's JIT-compiled on GPU and faster for typical n (100-1000 points).
 
     def _compute_geodesic_for_k(
         self,
@@ -926,13 +858,11 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
                 f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
             )
 
-        if self._should_use_sparse_shortest_paths(n, k_neighbors):
-            geo_dist_arr = self._all_pairs_shortest_paths_sparse(knn_idx, neighbor_dists, n)
-            backend.eval(geo_dist_arr)
-        else:
-            # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])
-            geo_dist_arr = backend.floyd_warshall(adj)
-            backend.eval(geo_dist_arr)
+        # Floyd-Warshall: GPU-native all-pairs shortest paths
+        # Uses backend.floyd_warshall() which is JIT-compiled on all backends (MLX/JAX/CUDA)
+        # For typical n (100-1000), O(n³) on GPU is ~1-2ms - faster than scipy CPU roundtrip
+        geo_dist_arr = backend.floyd_warshall(adj)
+        backend.eval(geo_dist_arr)
 
         # Diagnostic: check geodesic matrix after Floyd-Warshall (single-pass validation)
         if logger.isEnabledFor(logging.DEBUG):

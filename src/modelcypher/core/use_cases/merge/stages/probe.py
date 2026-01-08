@@ -151,8 +151,11 @@ def _accumulate_activation(
 
     Result: 32 Metal buffers per model instead of 4096×32 = 131,072
 
-    Note: eval() is NOT called here - MLX's lazy evaluation optimizes the
-    concatenation chain. Batch boundary evals handle materialization.
+    IMPORTANT: eval() is called after each concatenation to:
+    1. Materialize the new array immediately
+    2. Allow the old array (before concat) to be freed
+    3. Prevent the lazy computation graph from growing unboundedly
+    Without this, Metal resource limits are exceeded (~500K buffer limit).
     """
     import mlx.core as mx
 
@@ -166,7 +169,9 @@ def _accumulate_activation(
     else:
         # Concatenate along axis 0 to build [n_probes, hidden_dim]
         storage[layer_idx] = mx.concatenate([storage[layer_idx], act], axis=0)
-    # Lazy evaluation: batch boundary mx.eval() handles materialization
+
+    # Force evaluation to materialize buffer and allow old one to be freed
+    mx.eval(storage[layer_idx])
 
 
 # =============================================================================
