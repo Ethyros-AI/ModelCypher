@@ -248,12 +248,18 @@ class MLXActivationProvider:
                     h_post = h
 
                 # Extract MLP intermediate activation
+                # Try multiple architectures: standard transformer, LFM2/Mamba hybrid, GPT-style
+                ff_module = None
                 if hasattr(layer, "mlp"):
-                    mlp = layer.mlp
-                    if hasattr(mlp, "up_proj") and hasattr(mlp, "gate_proj"):
+                    ff_module = layer.mlp
+                elif hasattr(layer, "feed_forward"):
+                    ff_module = layer.feed_forward
+
+                if ff_module is not None:
+                    if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
                         # Standard SwiGLU/SiLU architecture (LLaMA, Qwen, Mistral)
-                        up = mlp.up_proj(h_post)
-                        gate = mlp.gate_proj(h_post)
+                        up = ff_module.up_proj(h_post)
+                        gate = ff_module.gate_proj(h_post)
                         # Intermediate = silu(gate) * up (before down_proj)
                         intermediate = nn.silu(gate) * up
                         mx.eval(intermediate)
@@ -261,9 +267,19 @@ class MLXActivationProvider:
                         pooled = mx.mean(intermediate, axis=(0, 1))
                         mx.eval(pooled)
                         activations[layer_idx] = pooled
-                    elif hasattr(mlp, "fc1") and hasattr(mlp, "fc2"):
+                    elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                        # LFM2/Mamba-style SwiGLU (w1=gate, w3=up, w2=down)
+                        gate = ff_module.w1(h_post)
+                        up = ff_module.w3(h_post)
+                        # Intermediate = silu(gate) * up (before w2/down_proj)
+                        intermediate = nn.silu(gate) * up
+                        mx.eval(intermediate)
+                        pooled = mx.mean(intermediate, axis=(0, 1))
+                        mx.eval(pooled)
+                        activations[layer_idx] = pooled
+                    elif hasattr(ff_module, "fc1") and hasattr(ff_module, "fc2"):
                         # GPT-style MLP (fc1 -> activation -> fc2)
-                        intermediate = mlp.fc1(h_post)
+                        intermediate = ff_module.fc1(h_post)
                         mx.eval(intermediate)
                         pooled = mx.mean(intermediate, axis=(0, 1))
                         mx.eval(pooled)
@@ -275,6 +291,9 @@ class MLXActivationProvider:
                 if hasattr(layer, "mlp"):
                     mlp_out = layer.mlp(h_post)
                     h = h + mlp_out
+                elif hasattr(layer, "feed_forward"):
+                    ff_out = layer.feed_forward(h_post)
+                    h = h + ff_out
                 else:
                     result = layer(h)
                     if isinstance(result, tuple):
@@ -572,11 +591,17 @@ class MLXActivationProvider:
                     h_post = h
 
                 # Extract MLP intermediate activation for batch
+                # Try multiple architectures: standard transformer, LFM2/Mamba hybrid, GPT-style
+                ff_module = None
                 if hasattr(layer, "mlp"):
-                    mlp = layer.mlp
-                    if hasattr(mlp, "up_proj") and hasattr(mlp, "gate_proj"):
-                        up = mlp.up_proj(h_post)
-                        gate = mlp.gate_proj(h_post)
+                    ff_module = layer.mlp
+                elif hasattr(layer, "feed_forward"):
+                    ff_module = layer.feed_forward
+
+                if ff_module is not None:
+                    if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
+                        up = ff_module.up_proj(h_post)
+                        gate = ff_module.gate_proj(h_post)
                         intermediate = nn.silu(gate) * up
                         mx.eval(intermediate)
                         for i in range(batch_size):
@@ -584,8 +609,19 @@ class MLXActivationProvider:
                             pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
                             mx.eval(pooled)
                             results[i][layer_idx] = pooled
-                    elif hasattr(mlp, "fc1"):
-                        intermediate = mlp.fc1(h_post)
+                    elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                        # LFM2/Mamba-style SwiGLU (w1=gate, w3=up, w2=down)
+                        gate = ff_module.w1(h_post)
+                        up = ff_module.w3(h_post)
+                        intermediate = nn.silu(gate) * up
+                        mx.eval(intermediate)
+                        for i in range(batch_size):
+                            seq_len = len(all_token_ids[i])
+                            pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
+                            mx.eval(pooled)
+                            results[i][layer_idx] = pooled
+                    elif hasattr(ff_module, "fc1"):
+                        intermediate = ff_module.fc1(h_post)
                         mx.eval(intermediate)
                         for i in range(batch_size):
                             seq_len = len(all_token_ids[i])
@@ -597,6 +633,9 @@ class MLXActivationProvider:
                 if hasattr(layer, "mlp"):
                     mlp_out = layer.mlp(h_post)
                     h = h + mlp_out
+                elif hasattr(layer, "feed_forward"):
+                    ff_out = layer.feed_forward(h_post)
+                    h = h + ff_out
                 else:
                     result = layer(h)
                     h = result[0] if isinstance(result, tuple) else result

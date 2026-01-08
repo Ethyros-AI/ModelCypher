@@ -43,6 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_svd,
     log_scalar,
     machine_epsilon,
+    regularization_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
@@ -329,7 +330,8 @@ class ProbeCache:
         # Approximation: use std of activations * sqrt(d)
         std_val = b.std(stacked)
         b.eval(std_val)
-        sigma = float(b.to_scalar(std_val)) * (d_hidden ** 0.5) + 1e-6
+        sigma = float(b.to_scalar(std_val)) * (d_hidden ** 0.5)
+        sigma = max(sigma, regularization_epsilon(b, stacked))
         sigma_cache[layer_idx] = sigma
         
         # Compute RBF Gram matrix: K_ij = exp(-||x_i - x_j||^2 / (2 * sigma^2))
@@ -1379,6 +1381,8 @@ def _probe_precise(
     v_transforms: dict[int, list[list[float]]] = {}  # target_layer -> V attention transform
     intermediate_transforms: dict[int, list[list[float]]] = {}  # target_layer -> MLP intermediate transform
     gram_aligner = GramAligner(backend=b)
+    rbf_consistency_checked = False
+    rbf_consistency_hidden: dict[str, float] | None = None
 
     # =========================================================================
     # BUILD GPU-RESIDENT PROBE CACHE
@@ -1724,6 +1728,7 @@ def _probe_precise(
                 F_init: Optional warm-start transform from a successful neighbor (zipper).
                 R_hint: Optional Procrustes rotation from a successful neighbor (zipper).
                 """
+                nonlocal rbf_consistency_checked, rbf_consistency_hidden
                 tgt_layer = target_layers[tgt_idx]
                 src_layers_list = [source_layers[i] for i in src_indices]
                 
@@ -1802,6 +1807,47 @@ def _probe_precise(
                     result["numerical_deviation"] = alignment_result.numerical_deviation
                     
                     F_arr = b.array(alignment_result.feature_transform)
+
+                    # One-time geodesic RBF vs linear CKA consistency check (4D+).
+                    if not rbf_consistency_checked:
+                        from modelcypher.core.domain.geometry.cka import compute_cka
+
+                        aligned = b.matmul(src_combined, F_arr)
+                        b.eval(aligned)
+                        rbf_result = compute_cka(aligned, tgt_stacked, backend=b)
+                        rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
+
+                        precision = sqrt_scalar(machine_epsilon(b, aligned), b)
+                        rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
+                        linear_deviation = alignment_result.numerical_deviation
+                        linear_cka = 1.0 - linear_deviation
+                        agreement_deviation = abs(rbf_val - linear_cka) if rbf_val == rbf_val else float("inf")
+
+                        rbf_consistency_hidden = {
+                            "rbf_cka": float(rbf_val) if rbf_val == rbf_val else 0.0,
+                            "rbf_deviation": float(rbf_deviation),
+                            "linear_deviation": float(linear_deviation),
+                            "agreement_deviation": float(agreement_deviation),
+                            "precision_threshold": float(precision),
+                            "layer": float(tgt_layer),
+                        }
+                        if rbf_deviation > precision:
+                            logger.error(
+                                "PROBE: RBF CKA deviation %.2e > precision %.2e for layer %d "
+                                "(linear deviation %.2e) - precision bug.",
+                                rbf_deviation,
+                                precision,
+                                tgt_layer,
+                                linear_deviation,
+                            )
+                        if agreement_deviation > precision:
+                            logger.error(
+                                "PROBE: RBF vs linear CKA mismatch %.2e > precision %.2e for layer %d.",
+                                agreement_deviation,
+                                precision,
+                                tgt_layer,
+                            )
+                        rbf_consistency_checked = True
                     
                     # Store raw F_arr for zipper warm-start of neighbors
                     result["F_arr_raw"] = F_arr
@@ -2361,6 +2407,8 @@ def _probe_precise(
             else 0.0
         ),
     }
+    if rbf_consistency_hidden is not None:
+        metrics["hidden_rbf_consistency"] = rbf_consistency_hidden
 
     # mean_cka = POST-ALIGNMENT quality (should be 1.0 when aligned correctly)
     # raw_cka_mean = PRE-ALIGNMENT CKA from actual activations (geometric invariant)
@@ -2440,9 +2488,52 @@ def _probe_precise(
 
                 # Use same GramAligner as hidden layers - CKA = 1.0 is invariant
                 emb_result = gram_aligner.find_perfect_alignment(src_stacked, tgt_stacked)
-                embedding_transform = b.tolist(b.array(emb_result.feature_transform))
+                emb_F = b.array(emb_result.feature_transform)
+                embedding_transform = b.tolist(emb_F)
                 metrics["embedding_cka"] = emb_result.achieved_cka  # Always 1.0 (invariant)
                 metrics["embedding_numerical_deviation"] = emb_result.numerical_deviation
+
+                # One-time geodesic RBF vs linear CKA consistency check (2D).
+                try:
+                    from modelcypher.core.domain.geometry.cka import compute_cka
+
+                    emb_aligned = b.matmul(src_stacked, emb_F)
+                    b.eval(emb_aligned)
+                    rbf_result = compute_cka(emb_aligned, tgt_stacked, backend=b)
+                    rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
+
+                    precision = sqrt_scalar(machine_epsilon(b, emb_aligned), b)
+                    rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
+                    linear_deviation = emb_result.numerical_deviation
+                    linear_cka = 1.0 - linear_deviation
+                    agreement_deviation = abs(rbf_val - linear_cka) if rbf_val == rbf_val else float("inf")
+
+                    metrics["embedding_rbf_consistency"] = {
+                        "rbf_cka": float(rbf_val) if rbf_val == rbf_val else 0.0,
+                        "rbf_deviation": float(rbf_deviation),
+                        "linear_deviation": float(linear_deviation),
+                        "agreement_deviation": float(agreement_deviation),
+                        "precision_threshold": float(precision),
+                    }
+                    if rbf_deviation > precision:
+                        logger.error(
+                            "EMBEDDING GRAMALIGN: RBF CKA deviation %.2e > precision %.2e "
+                            "(linear deviation %.2e) - precision bug.",
+                            rbf_deviation,
+                            precision,
+                            linear_deviation,
+                        )
+                    if agreement_deviation > precision:
+                        logger.error(
+                            "EMBEDDING GRAMALIGN: RBF vs linear CKA mismatch %.2e > precision %.2e.",
+                            agreement_deviation,
+                            precision,
+                        )
+                except Exception as consistency_err:
+                    logger.warning(
+                        "EMBEDDING GRAMALIGN: RBF/linear consistency check failed: %s",
+                        consistency_err,
+                    )
 
                 # CKA = 1.0 is invariant. Check numerical precision.
                 if emb_result.is_numerically_exact:

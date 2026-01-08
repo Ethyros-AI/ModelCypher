@@ -23,7 +23,8 @@ The computation chain:
     activations → geodesic distances → RBF Gram → centered Gram → CKA
                      ↑ cache            ↑ cache      ↑ cache
 
-Each step caches its result. Everything derives from cached intermediates.
+Geodesic distances are cached. Gram/centering caches are used only when
+per-array sigma is used; shared-sigma paths skip caching to avoid key collisions.
 """
 
 from __future__ import annotations
@@ -173,8 +174,7 @@ def rbf_gram_matrix(
         computed_sigma = max(computed_sigma, regularization_epsilon(backend, X))
 
     # RBF kernel: K = exp(-D² / 2σ²)
-    gram = backend.exp(-sq_dist / (2 * computed_sigma * computed_sigma))
-    backend.eval(gram)
+    gram = _rbf_gram_from_sq_distances(sq_dist, computed_sigma, backend)
 
     # Only cache when using auto-computed sigma
     if sigma is None:
@@ -212,10 +212,43 @@ def rbf_gram_matrix_with_sigma(
         sigma = max(sigma, regularization_epsilon(backend, X))
     
     # RBF kernel
-    gram = backend.exp(-sq_dist / (2 * sigma * sigma))
-    backend.eval(gram)
+    gram = _rbf_gram_from_sq_distances(sq_dist, sigma, backend)
     
     return gram, sigma
+
+
+def _rbf_gram_from_sq_distances(
+    sq_dist: "Array",
+    sigma: float,
+    backend: "Backend",
+) -> "Array":
+    """Compute RBF Gram from precomputed squared distances."""
+    gram = backend.exp(-sq_dist / (2 * sigma * sigma))
+    backend.eval(gram)
+    return gram
+
+
+def _shared_rbf_sigma(
+    sq_dist_x: "Array",
+    sq_dist_y: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute a shared RBF sigma from combined distance statistics."""
+    flat_x = backend.reshape(sq_dist_x, (-1,))
+    flat_y = backend.reshape(sq_dist_y, (-1,))
+    combined = backend.concatenate([flat_x, flat_y], axis=0)
+    median_val = compute_median_nonzero(combined, backend)
+
+    if median_val > 0:
+        sigma = sqrt_scalar(median_val / 2, backend)
+    else:
+        sigma = 1.0
+
+    reg_eps = max(
+        regularization_epsilon(backend, sq_dist_x),
+        regularization_epsilon(backend, sq_dist_y),
+    )
+    return max(sigma, reg_eps)
 
 
 def _center_gram_matrix(
@@ -336,7 +369,7 @@ def compute_cka(
     This is the main entry point. Uses the full computation chain:
     activations → geodesic distances → RBF Gram → centered → CKA
     
-    All intermediate results are cached.
+    Geodesic distances are cached. Grams use a shared sigma for precision.
     
     Args:
         activations_x: [n_samples, features_x]
@@ -366,16 +399,19 @@ def compute_cka(
     if activations_x.shape[0] != activations_y.shape[0]:
         return CKAResult(0.0, 0.0, 0.0, 0.0, n)
     
-    # Get RBF Gram matrices (cached via geodesic distances)
-    gram_x = rbf_gram_matrix(activations_x, backend)
-    gram_y = rbf_gram_matrix(activations_y, backend)
+    # Get geodesic squared distances (cached) and use a shared sigma.
+    # Shared bandwidth removes sigma skew between X/Y and improves precision.
+    sq_dist_x = geodesic_squared_distances(activations_x, backend)
+    sq_dist_y = geodesic_squared_distances(activations_y, backend)
+    sigma = _shared_rbf_sigma(sq_dist_x, sq_dist_y, backend)
+
+    # Build RBF Gram matrices from shared sigma.
+    gram_x = _rbf_gram_from_sq_distances(sq_dist_x, sigma, backend)
+    gram_y = _rbf_gram_from_sq_distances(sq_dist_y, sigma, backend)
     
-    # Get centered Gram matrices (cached)
-    cache = _cache()
-    key_x = cache.make_gram_key(activations_x, backend, kernel_type="rbf")
-    key_y = cache.make_gram_key(activations_y, backend, kernel_type="rbf")
-    centered_x = _center_gram_matrix(gram_x, backend, key_x)
-    centered_y = _center_gram_matrix(gram_y, backend, key_y)
+    # Get centered Gram matrices (do not cache: sigma differs from per-array default).
+    centered_x = _center_gram_matrix(gram_x, backend, cache_key=None)
+    centered_y = _center_gram_matrix(gram_y, backend, cache_key=None)
     
     # Compute HSIC
     use_unbiased = (
