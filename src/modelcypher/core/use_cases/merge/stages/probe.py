@@ -150,6 +150,9 @@ def _accumulate_activation(
     a 2D matrix [n_probes, hidden_dim].
 
     Result: 32 Metal buffers per model instead of 4096×32 = 131,072
+
+    Note: eval() is NOT called here - MLX's lazy evaluation optimizes the
+    concatenation chain. Batch boundary evals handle materialization.
     """
     import mlx.core as mx
 
@@ -163,9 +166,7 @@ def _accumulate_activation(
     else:
         # Concatenate along axis 0 to build [n_probes, hidden_dim]
         storage[layer_idx] = mx.concatenate([storage[layer_idx], act], axis=0)
-
-    # Force evaluation to materialize the buffer and allow old ones to be freed
-    mx.eval(storage[layer_idx])
+    # Lazy evaluation: batch boundary mx.eval() handles materialization
 
 
 # =============================================================================
@@ -369,24 +370,8 @@ class ProbeCache:
         n_src = len(source_layers)
         n_tgt = len(target_layers)
         
-        similarity = b.zeros((n_src, n_tgt))
-        
-        for i, src_layer in enumerate(source_layers):
-            K_s = self.source_centered_grams[src_layer]
-            for j, tgt_layer in enumerate(target_layers):
-                K_t = self.target_centered_grams[tgt_layer]
-                
-                # CKA = <K_s, K_t>_F / (||K_s||_F * ||K_t||_F)
-                dot = b.sum(K_s * K_t)
-                norm_s = b.norm(K_s)
-                norm_t = b.norm(K_t)
-                cka = dot / (norm_s * norm_t + 1e-10)
-                
-                # Set similarity[i, j] = cka
-                # MLX doesn't support item assignment, so we build a list
-                b.eval(cka)
-        
-        # Build matrix from computed values
+        # Build similarity matrix from CKA values
+        # CKA = <K_s, K_t>_F / (||K_s||_F * ||K_t||_F)
         similarity_list = []
         for i, src_layer in enumerate(source_layers):
             row = []

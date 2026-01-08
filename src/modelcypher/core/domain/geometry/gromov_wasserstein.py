@@ -77,6 +77,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_median,
     division_epsilon,
     exp_scalar,
     is_finite,
@@ -482,29 +483,12 @@ class GromovWassersteinDistance:
             Regularization parameter derived from cost matrix statistics.
         """
         backend = self._backend
-        # Flatten and find median of positive values
-        flat = backend.reshape(cost, (-1,))
-        n = int(flat.shape[0])
+        n = int(cost.shape[0]) * int(cost.shape[1]) if len(cost.shape) >= 2 else int(cost.shape[0])
         if n == 0:
             return float(division_epsilon(backend, cost))
 
-        # Take median
-        mid = n // 2
-        if n % 2 == 1:
-            partitioned = backend.argpartition(flat, mid)
-            prefix = backend.take(partitioned, backend.arange(mid + 1), axis=0)
-            median_arr = backend.max(backend.take(flat, prefix, axis=0))
-        else:
-            low_part = backend.argpartition(flat, mid - 1)
-            low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
-            low = backend.max(backend.take(flat, low_prefix, axis=0))
-            high_part = backend.argpartition(flat, mid)
-            high_prefix = backend.take(high_part, backend.arange(mid + 1), axis=0)
-            high = backend.max(backend.take(flat, high_prefix, axis=0))
-            median_arr = (low + high) * 0.5
-        median_arr = backend.squeeze(median_arr)
-        backend.eval(median_arr)
-        median_val = float(backend.to_scalar(median_arr))
+        # Efficient O(n) median via shared utility
+        median_val = compute_median(cost, backend)
 
         # Epsilon = median * sqrt(machine_eps)
         # This scales with cost and provides stable numerical behavior

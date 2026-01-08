@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_median_nonzero,
     division_epsilon,
     is_finite,
     power_iteration_eigh,
@@ -161,20 +162,8 @@ def rbf_gram_matrix(
     # Compute sigma if not provided (median heuristic)
     computed_sigma = sigma
     if computed_sigma is None:
-        flat = backend.reshape(sq_dist, (-1,))
-        eps = division_epsilon(backend, sq_dist)
-
-        # Count near-zeros (diagonal + duplicates)
-        zero_mask = flat <= eps
-        zero_count = int(backend.to_scalar(backend.sum(zero_mask)))
-        total = n * n
-        non_zero = max(total - zero_count, 1)
-
-        # Median of non-zero distances
-        median_idx = min(zero_count + (non_zero // 2), total - 1)
-        partitioned = backend.argpartition(flat, median_idx)
-        prefix = backend.take(partitioned, backend.arange(median_idx + 1), axis=0)
-        median_val = float(backend.to_scalar(backend.max(backend.take(flat, prefix, axis=0))))
+        # Median of non-zero squared distances (shared utility)
+        median_val = compute_median_nonzero(sq_dist, backend)
 
         if median_val > 0:
             computed_sigma = sqrt_scalar(median_val / 2, backend)
@@ -210,19 +199,11 @@ def rbf_gram_matrix_with_sigma(
     sq_dist = geodesic_squared_distances(X, backend)
     n = int(X.shape[0])
     
-    # Compute sigma if not provided
+    # Compute sigma if not provided (median heuristic)
     if sigma is None:
-        flat = backend.reshape(sq_dist, (-1,))
-        eps = division_epsilon(backend, sq_dist)
-        zero_mask = flat <= eps
-        zero_count = int(backend.to_scalar(backend.sum(zero_mask)))
-        total = n * n
-        non_zero = max(total - zero_count, 1)
-        median_idx = min(zero_count + (non_zero // 2), total - 1)
-        partitioned = backend.argpartition(flat, median_idx)
-        prefix = backend.take(partitioned, backend.arange(median_idx + 1), axis=0)
-        median_val = float(backend.to_scalar(backend.max(backend.take(flat, prefix, axis=0))))
-        
+        # Median of non-zero squared distances (shared utility)
+        median_val = compute_median_nonzero(sq_dist, backend)
+
         if median_val > 0:
             sigma = sqrt_scalar(median_val / 2, backend)
         else:

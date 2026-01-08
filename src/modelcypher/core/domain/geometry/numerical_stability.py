@@ -60,6 +60,8 @@ __all__ = [
     # Data-derived thresholds
     "find_magnitude_gap_threshold",
     # Statistical utilities
+    "compute_median",
+    "compute_median_nonzero",
     "compute_pearson_correlation",
     "compute_spearman_correlation",
     # Matrix decomposition
@@ -486,6 +488,116 @@ def find_magnitude_gap_threshold(
 
     gap_index = int(backend.to_scalar(gap_index_arr))
     return sorted_values[gap_index]
+
+
+def compute_median(
+    array: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute median of array values using O(n) argpartition.
+
+    This is the efficient median computation used across geometry modules.
+    Uses argpartition to find the median index without full sorting.
+
+    Args:
+        array: Input array (any shape, will be flattened).
+        backend: Compute backend.
+
+    Returns:
+        Median value as float. Returns 0.0 for empty arrays.
+    """
+    flat = backend.reshape(array, (-1,))
+    backend.eval(flat)
+
+    n = int(flat.shape[0])
+    if n == 0:
+        return 0.0
+
+    if n == 1:
+        return float(backend.to_scalar(flat))
+
+    # Median index (for even n, takes lower-middle)
+    median_idx = (n - 1) // 2
+
+    # argpartition gives indices such that element at median_idx is in sorted position
+    # Elements before median_idx are <= element at median_idx
+    partitioned = backend.argpartition(flat, median_idx)
+    backend.eval(partitioned)
+
+    # Get the element at median position
+    median_pos_idx = backend.take(partitioned, backend.array([median_idx]), axis=0)
+    median_val = backend.take(flat, median_pos_idx, axis=0)
+    backend.eval(median_val)
+
+    return float(backend.to_scalar(median_val))
+
+
+def compute_median_nonzero(
+    array: "Array",
+    backend: "Backend",
+    zero_threshold: float | None = None,
+) -> float:
+    """Compute median of non-zero values using O(n) argpartition.
+
+    This pattern is used in CKA, Gromov-Wasserstein, and intrinsic dimension
+    computations where zero/near-zero values should be excluded from the median.
+
+    Algorithm:
+    1. Count values at or below threshold (treated as zero)
+    2. Find median index among remaining non-zero values
+    3. Use argpartition for O(n) selection
+
+    Args:
+        array: Input array (any shape, will be flattened).
+        backend: Compute backend.
+        zero_threshold: Values <= this are treated as zero.
+                       Defaults to division_epsilon (sqrt(machine_epsilon)).
+
+    Returns:
+        Median of non-zero values. Returns 0.0 if all values are zero/near-zero.
+    """
+    flat = backend.reshape(array, (-1,))
+    backend.eval(flat)
+
+    n = int(flat.shape[0])
+    if n == 0:
+        return 0.0
+
+    # Default threshold from dtype
+    if zero_threshold is None:
+        zero_threshold = division_epsilon(backend, flat)
+
+    # Count near-zero values
+    zero_mask = flat <= zero_threshold
+    zero_count_arr = backend.sum(backend.astype(zero_mask, "int32"))
+    backend.eval(zero_count_arr)
+    zero_count = int(backend.to_scalar(zero_count_arr))
+
+    # Number of non-zero values
+    non_zero_count = n - zero_count
+    if non_zero_count <= 0:
+        return 0.0
+
+    # Median index: skip zero_count values, then find middle of non-zero
+    # argpartition will place zeros at the beginning (they're smallest)
+    median_idx = min(zero_count + (non_zero_count // 2), n - 1)
+
+    # argpartition for O(n) selection
+    partitioned = backend.argpartition(flat, median_idx)
+    backend.eval(partitioned)
+
+    # Get indices up to and including median position
+    prefix_indices = backend.take(
+        partitioned, backend.arange(median_idx + 1), axis=0
+    )
+    prefix_vals = backend.take(flat, prefix_indices, axis=0)
+    backend.eval(prefix_vals)
+
+    # Median is the max of the prefix (the partition point)
+    median_arr = backend.max(prefix_vals)
+    backend.eval(median_arr)
+
+    return float(backend.to_scalar(median_arr))
 
 
 def compute_pearson_correlation(
