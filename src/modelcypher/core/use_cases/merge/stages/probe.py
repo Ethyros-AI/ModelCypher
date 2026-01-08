@@ -744,8 +744,8 @@ def _probe_precise(
         
         min_probes_needed = max(source_hidden or 1024, target_hidden or 960)
         max_probes = min_probes_needed * 2  # 2x for numerical margin
-        max_probes = max(max_probes, 2048)  # At least 2048 for safety
-        max_probes = min(max_probes, 4096)  # Cap at 4096 to avoid OOM
+        max_probes = max(max_probes, 1500)  # At least 1500 for 960-dim full coverage
+        max_probes = min(max_probes, 1500)  # Cap at 1500 to avoid OOM (empirically stable)
         
         logger.info("PROBE TOKEN: Dims source=%s target=%s, using %d probes", 
                     source_hidden, target_hidden, max_probes)
@@ -901,7 +901,7 @@ def _probe_precise(
         #
         # The batch size is tuned for GPU memory vs throughput tradeoff.
         # Too large = OOM, too small = lose batching benefit.
-        PROBE_BATCH_SIZE = 8
+        PROBE_BATCH_SIZE = 4  # Smaller batches for more frequent memory cleanup
 
         # First pass: Validate probes and extract texts
         valid_probes: list[tuple[Any, str]] = []  # (probe, probe_text)
@@ -1152,11 +1152,14 @@ def _probe_precise(
                         len(valid_probes),
                     )
                 
-                # MEMORY OPTIMIZATION: Clear GPU cache after each batch
+                # MEMORY OPTIMIZATION: Aggressive cleanup after each batch
                 # This prevents memory accumulation that causes OOM
                 try:
+                    import gc
                     import mlx.core as mx
-                    mx.metal.clear_cache()
+                    mx.eval()  # Force pending computations to complete
+                    mx.clear_cache()  # Release GPU memory (new API)
+                    gc.collect()  # Release Python objects
                 except Exception:
                     pass  # Non-MLX backends or clearing not supported
     
