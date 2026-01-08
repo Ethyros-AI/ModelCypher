@@ -1,0 +1,167 @@
+{
+    "domain": "deep_reasoning",
+    "description": "Probes requiring genuine multi-step reasoning and domain expertise",
+    "probe_count": 50,
+    "probes": [
+        {
+            "id": "deep:fermi_estimation",
+            "name": "Fermi estimation",
+            "description": "Order-of-magnitude reasoning",
+            "support_texts": [
+                "How many piano tuners are there in Chicago? Walk through the estimation step by step."
+            ]
+        },
+        {
+            "id": "deep:thought_experiment",
+            "name": "Ship of Theseus",
+            "description": "Identity through change",
+            "support_texts": [
+                "If you replace every plank in a ship one by one, is it still the same ship? What if you build a new ship from the old planks?"
+            ]
+        },
+        {
+            "id": "deep:trolley_problem",
+            "name": "Trolley problem analysis",
+            "description": "Ethical reasoning under constraints",
+            "support_texts": [
+                "Analyze the trolley problem. What distinguishes action from inaction? Is there a morally relevant difference?"
+            ]
+        },
+        {
+            "id": "deep:twin_paradox",
+            "name": "Twin paradox explanation",
+            "description": "Relativistic reasoning",
+            "support_texts": [
+                "Explain the twin paradox in special relativity. Why don't both twins age the same amount? What breaks the symmetry?"
+            ]
+        },
+        {
+            "id": "deep:halting_problem",
+            "name": "Halting problem",
+            "description": "Computational impossibility",
+            "support_texts": [
+                "Explain why the halting problem is undecidable. What does this tell us about the limits of computation?"
+            ]
+        },
+        {
+            "id": "deep:arrow_impossibility",
+            "name": "Arrow's impossibility theorem",
+            "description": "Social choice theory",
+            "support_texts": [
+                "Explain Arrow's impossibility theorem. Why can't we have a perfect voting system?"
+            ]
+        },
+        {
+            "id": "deep:prisoners_dilemma",
+            "name": "Prisoner's dilemma analysis",
+            "description": "Game theory and cooperation",
+            "support_texts": [
+                "Analyze the prisoner's dilemma. Why is the Nash equilibrium not Pareto optimal? What does this reveal about cooperation?"
+            ]
+        },
+        {
+            "id": "deep:chinese_room",
+            "name": "Chinese Room argument",
+            "description": "Philosophy of mind",
+            "support_texts": [
+                "Explain Searle's Chinese Room argument. Does syntactic manipulation ever constitute semantic understanding?"
+            ]
+        },
+        {
+            "id": "deep:sorites_paradox",
+            "name": "Sorites paradox",
+            "description": "Vagueness and boundaries",
+            "support_texts": [
+                "Explain the Sorites paradox (heap paradox). How many grains make a heap? What does this reveal about vague predicates?"
+            ]
+        },
+        {
+            "id": "deep:emergence_definition",
+            "name": "Emergence in complex systems",
+            "description": "Levels of description",
+            "support_texts": [
+                "What is emergence in complex systems? Give examples where properties at one level don't exist at lower levels."
+            ]
+        },
+        {
+            "id": "deep:entropy_life",
+            "name": "Entropy and life",
+            "description": "Thermodynamics of living systems",
+            "support_texts": [
+                "How do living systems decrease local entropy while the universe's entropy increases? Explain dissipative structures."
+            ]
+        },
+        {
+            "id": "deep:godel_self_reference",
+            "name": "Gödel's self-reference",
+            "description": "Self-referential statements",
+            "support_texts": [
+                "How did Gödel construct a self-referential statement within arithmetic? Explain the diagonal lemma approach."
+            ]
+        },
+        {
+            "id": "deep:banach_tarski",
+            "name": "Banach-Tarski paradox",
+            "description": "Measure theory and infinity",
+            "support_texts": [
+                "Explain the Banach-Tarski paradox. How can a ball be decomposed into pieces that reassemble into two identical balls?"
+            ]
+        },
+        {
+            "id": "deep:maxwell_demon",
+            "name": "Maxwell's demon",
+            "description": "Information and thermodynamics",
+            "support_texts": [
+                "What is Maxwell's demon? How does information theory resolve the apparent violation of the second law?"
+            ]
+        },
+        {
+            "id": "deep:qualia_problem",
+            "name": "Hard problem of consciousness",
+            "description": "Explanatory gap",
+            "support_texts": [
+                "What is the hard problem of consciousness? Why might explaining qualia be fundamentally different from explaining behavior?"
+            ]
+        },
+        {
+            "id": "deep:incompleteness_implications",
+            "name": "Incompleteness implications",
+            "description": "Limits of formal systems",
+            "support_texts": [
+                "What are the philosophical implications of Gödel's incompleteness theorems for the foundations of mathematics?"
+            ]
+        },
+        {
+            "id": "deep:measurement_problem",
+            "name": "Quantum measurement problem",
+            "description": "Interpretations of QM",
+            "support_texts": [
+                "What is the measurement problem in quantum mechanics? Compare Copenhagen, Many-Worlds, and pilot wave interpretations."
+            ]
+        },
+        {
+            "id": "deep:free_will_determinism",
+            "name": "Free will and determinism",
+            "description": "Compatibilism debate",
+            "support_texts": [
+                "Can free will be compatible with determinism? Explain the compatibilist position and its critics."
+            ]
+        },
+        {
+            "id": "deep:infinite_regress",
+            "name": "Infinite regress problems",
+            "description": "Foundational issues",
+            "support_texts": [
+                "What is an infinite regress argument? How do foundationalists and coherentists respond to the regress problem in epistemology?"
+            ]
+        },
+        {
+            "id": "deep:newcomb_problem",
+            "name": "Newcomb's problem",
+            "description": "Decision theory paradox",
+            "support_texts": [
+                "Explain Newcomb's problem. Should you take one box or two? What does this reveal about causal vs evidential decision theory?"
+            ]
+        }
+    ]
+}

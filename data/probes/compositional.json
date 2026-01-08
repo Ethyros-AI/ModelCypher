@@ -1,0 +1,167 @@
+{
+    "domain": "compositional",
+    "description": "Multi-step reasoning chains that activate higher-dimensional representations",
+    "probe_count": 200,
+    "probes": [
+        {
+            "id": "compositional:chain_causality_1",
+            "name": "Triple causal chain",
+            "description": "If-then-then reasoning across 3 steps",
+            "support_texts": [
+                "If rain causes wet ground, and wet ground causes slippery surfaces, what does rain cause?"
+            ]
+        },
+        {
+            "id": "compositional:chain_causality_2",
+            "name": "Reverse causal inference",
+            "description": "Working backwards from effect to cause",
+            "support_texts": [
+                "The roads are icy. What weather conditions led to this?"
+            ]
+        },
+        {
+            "id": "compositional:chain_logic_1",
+            "name": "Syllogism chain",
+            "description": "Classical logical deduction",
+            "support_texts": [
+                "All mammals are warm-blooded. All dogs are mammals. Are dogs warm-blooded?"
+            ]
+        },
+        {
+            "id": "compositional:chain_logic_2",
+            "name": "Modus tollens chain",
+            "description": "Negation-based reasoning",
+            "support_texts": [
+                "If it's raining, the ground is wet. The ground is not wet. Is it raining?"
+            ]
+        },
+        {
+            "id": "compositional:chain_temporal_1",
+            "name": "Temporal sequence ordering",
+            "description": "Before-during-after reasoning",
+            "support_texts": [
+                "The cake was baked, then frosted, then decorated. What happened before the frosting?"
+            ]
+        },
+        {
+            "id": "compositional:chain_temporal_2",
+            "name": "Temporal interval reasoning",
+            "description": "Duration and overlap inference",
+            "support_texts": [
+                "Event A started at 2pm and lasted 3 hours. Event B started at 4pm. Did they overlap?"
+            ]
+        },
+        {
+            "id": "compositional:chain_spatial_1",
+            "name": "Spatial transitivity",
+            "description": "Location inference through chains",
+            "support_texts": [
+                "A is to the left of B. B is to the left of C. Where is A relative to C?"
+            ]
+        },
+        {
+            "id": "compositional:chain_spatial_2",
+            "name": "Containment hierarchy",
+            "description": "Part-whole spatial reasoning",
+            "support_texts": [
+                "The book is in the box. The box is in the room. Where is the book?"
+            ]
+        },
+        {
+            "id": "compositional:chain_numeric_1",
+            "name": "Transitive comparison",
+            "description": "Greater-than chain inference",
+            "support_texts": [
+                "Alice is taller than Bob. Bob is taller than Charlie. Who is tallest?"
+            ]
+        },
+        {
+            "id": "compositional:chain_numeric_2",
+            "name": "Multi-step arithmetic",
+            "description": "Chained mathematical operations",
+            "support_texts": [
+                "Start with 10, double it, subtract 5, then divide by 3. What's the result?"
+            ]
+        },
+        {
+            "id": "compositional:chain_analogy_1",
+            "name": "Analogical extension",
+            "description": "A:B::C:? reasoning",
+            "support_texts": [
+                "Cat is to kitten as dog is to what?"
+            ]
+        },
+        {
+            "id": "compositional:chain_analogy_2",
+            "name": "Proportional analogy",
+            "description": "Ratio-based analogical reasoning",
+            "support_texts": [
+                "If 2 workers build 1 house in 4 months, how long for 4 workers to build 2 houses?"
+            ]
+        },
+        {
+            "id": "compositional:chain_conditional_1",
+            "name": "Nested conditionals",
+            "description": "If-then-if-then chains",
+            "support_texts": [
+                "If it's Monday, then if it's morning, the store is closed. It's Monday morning. Is the store open?"
+            ]
+        },
+        {
+            "id": "compositional:chain_conditional_2",
+            "name": "Disjunctive reasoning",
+            "description": "Or-based logical chains",
+            "support_texts": [
+                "Either the battery is dead or the switch is off. The switch is on. What's wrong?"
+            ]
+        },
+        {
+            "id": "compositional:chain_planning_1",
+            "name": "Goal decomposition",
+            "description": "Breaking complex goals into steps",
+            "support_texts": [
+                "To bake a cake, you need ingredients, then mix, then bake, then cool. What must happen before mixing?"
+            ]
+        },
+        {
+            "id": "compositional:chain_planning_2",
+            "name": "Prerequisite inference",
+            "description": "What must be true for action to succeed",
+            "support_texts": [
+                "To unlock the door, you need the key. To get the key, you need to find it. What do you need first?"
+            ]
+        },
+        {
+            "id": "compositional:chain_recursion_1",
+            "name": "Self-referential pattern",
+            "description": "Patterns that contain themselves",
+            "support_texts": [
+                "A sentence that describes how many letters it contains"
+            ]
+        },
+        {
+            "id": "compositional:chain_recursion_2",
+            "name": "Fractal structure",
+            "description": "Part resembles whole",
+            "support_texts": [
+                "Each branch of the tree looks like a smaller version of the whole tree"
+            ]
+        },
+        {
+            "id": "compositional:chain_negation_1",
+            "name": "Double negation",
+            "description": "Not-not reasoning",
+            "support_texts": [
+                "It is not the case that the statement is false. Is the statement true?"
+            ]
+        },
+        {
+            "id": "compositional:chain_negation_2",
+            "name": "Exception to exception",
+            "description": "Nested exception handling",
+            "support_texts": [
+                "All birds fly except penguins, but emperor penguins glide. Can emperor penguins move through air?"
+            ]
+        }
+    ]
+}

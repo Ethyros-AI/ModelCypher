@@ -1,0 +1,127 @@
+{
+    "domain": "cross_domain",
+    "description": "Probes that bridge distant conceptual domains to activate high-dimensional synthesis pathways",
+    "probe_count": 50,
+    "probes": [
+        {
+            "id": "cross_domain:physics_information",
+            "name": "Physics-Information bridge",
+            "description": "Thermodynamics and information theory connection",
+            "support_texts": [
+                "How does thermodynamics relate to information theory? Explain Landauer's principle."
+            ]
+        },
+        {
+            "id": "cross_domain:music_math",
+            "name": "Music-Mathematics bridge",
+            "description": "Harmonic ratios and mathematical structures",
+            "support_texts": [
+                "What mathematical principles underlie musical harmony? Explain Pythagorean tuning."
+            ]
+        },
+        {
+            "id": "cross_domain:biology_computing",
+            "name": "Biology-Computing bridge",
+            "description": "DNA as information processing",
+            "support_texts": [
+                "How is DNA similar to computer code? Compare replication to copying."
+            ]
+        },
+        {
+            "id": "cross_domain:economics_ecology",
+            "name": "Economics-Ecology bridge",
+            "description": "Resource competition in both systems",
+            "support_texts": [
+                "How do ecological niches relate to market segments? Compare competitive exclusion."
+            ]
+        },
+        {
+            "id": "cross_domain:language_logic",
+            "name": "Language-Logic bridge",
+            "description": "Grammar and formal systems",
+            "support_texts": [
+                "How does natural language syntax relate to formal logic? Compare parse trees."
+            ]
+        },
+        {
+            "id": "cross_domain:chemistry_architecture",
+            "name": "Chemistry-Architecture bridge",
+            "description": "Molecular and structural stability",
+            "support_texts": [
+                "How do chemical bonds relate to architectural load-bearing? Compare tensegrity."
+            ]
+        },
+        {
+            "id": "cross_domain:psychology_physics",
+            "name": "Psychology-Physics bridge",
+            "description": "Mental momentum and inertia",
+            "support_texts": [
+                "How does habit formation resemble physical inertia? Compare activation energy."
+            ]
+        },
+        {
+            "id": "cross_domain:history_evolution",
+            "name": "History-Evolution bridge",
+            "description": "Cultural and biological selection",
+            "support_texts": [
+                "How do ideas spread like genes? Compare memetics to genetics."
+            ]
+        },
+        {
+            "id": "cross_domain:art_math_symmetry",
+            "name": "Art-Mathematics symmetry",
+            "description": "Aesthetic and mathematical symmetry",
+            "support_texts": [
+                "Why do symmetric patterns appear beautiful? Explain group theory in art."
+            ]
+        },
+        {
+            "id": "cross_domain:philosophy_physics_time",
+            "name": "Philosophy-Physics time",
+            "description": "Temporal ontology across disciplines",
+            "support_texts": [
+                "How does the physics of time relate to the philosophy of time? Compare block universe."
+            ]
+        },
+        {
+            "id": "cross_domain:neuroscience_computer",
+            "name": "Neuroscience-Computer bridge",
+            "description": "Neural and digital computation",
+            "support_texts": [
+                "How do brains compute differently from computers? Compare parallel processing."
+            ]
+        },
+        {
+            "id": "cross_domain:sociology_thermodynamics",
+            "name": "Sociology-Thermodynamics bridge",
+            "description": "Social entropy and order",
+            "support_texts": [
+                "How does social order relate to thermodynamic entropy? Compare dissipative structures."
+            ]
+        },
+        {
+            "id": "cross_domain:quantum_consciousness",
+            "name": "Quantum-Consciousness bridge",
+            "description": "Measurement and observation parallels",
+            "support_texts": [
+                "What role does observation play in quantum mechanics versus consciousness?"
+            ]
+        },
+        {
+            "id": "cross_domain:game_theory_evolution",
+            "name": "Game Theory-Evolution bridge",
+            "description": "Strategic and evolutionary stability",
+            "support_texts": [
+                "How do evolutionary stable strategies relate to Nash equilibria?"
+            ]
+        },
+        {
+            "id": "cross_domain:linguistics_topology",
+            "name": "Linguistics-Topology bridge",
+            "description": "Semantic spaces and continuous mappings",
+            "support_texts": [
+                "How do word meanings form topological spaces? Explain semantic neighborhoods."
+            ]
+        }
+    ]
+}

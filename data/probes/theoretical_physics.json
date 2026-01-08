@@ -1,0 +1,167 @@
+{
+    "domain": "theoretical_physics",
+    "description": "Deep physics concepts requiring high-dimensional abstract reasoning",
+    "probe_count": 50,
+    "probes": [
+        {
+            "id": "physics:quantum_superposition",
+            "name": "Quantum superposition",
+            "description": "State before measurement",
+            "support_texts": [
+                "Explain quantum superposition. Why isn't a particle in a definite position before measurement?"
+            ]
+        },
+        {
+            "id": "physics:wave_particle_duality",
+            "name": "Wave-particle duality",
+            "description": "Dual nature of matter",
+            "support_texts": [
+                "How can light be both a wave and a particle? Explain the double-slit experiment."
+            ]
+        },
+        {
+            "id": "physics:uncertainty_principle",
+            "name": "Heisenberg uncertainty",
+            "description": "Fundamental measurement limits",
+            "support_texts": [
+                "Explain the Heisenberg uncertainty principle. Why can't we know both position and momentum precisely?"
+            ]
+        },
+        {
+            "id": "physics:entanglement",
+            "name": "Quantum entanglement",
+            "description": "Non-local correlations",
+            "support_texts": [
+                "What is quantum entanglement? Why did Einstein call it 'spooky action at a distance'?"
+            ]
+        },
+        {
+            "id": "physics:spacetime_curvature",
+            "name": "Spacetime curvature",
+            "description": "Gravity as geometry",
+            "support_texts": [
+                "How does mass curve spacetime? Explain Einstein's view of gravity."
+            ]
+        },
+        {
+            "id": "physics:time_dilation",
+            "name": "Time dilation",
+            "description": "Relative time passage",
+            "support_texts": [
+                "Why does time pass slower near massive objects? Explain gravitational time dilation."
+            ]
+        },
+        {
+            "id": "physics:black_hole_entropy",
+            "name": "Black hole thermodynamics",
+            "description": "Information paradox",
+            "support_texts": [
+                "What is the black hole information paradox? Why is it important?"
+            ]
+        },
+        {
+            "id": "physics:entropy_arrow",
+            "name": "Entropy and time arrow",
+            "description": "Why time flows one direction",
+            "support_texts": [
+                "Why does entropy increase? How does this relate to the arrow of time?"
+            ]
+        },
+        {
+            "id": "physics:standard_model",
+            "name": "Standard Model",
+            "description": "Particle physics framework",
+            "support_texts": [
+                "What are the fundamental particles in the Standard Model? How are forces mediated?"
+            ]
+        },
+        {
+            "id": "physics:symmetry_breaking",
+            "name": "Symmetry breaking",
+            "description": "Emergence of structure",
+            "support_texts": [
+                "What is spontaneous symmetry breaking? How does it give particles mass?"
+            ]
+        },
+        {
+            "id": "physics:renormalization",
+            "name": "Renormalization",
+            "description": "Handling infinities",
+            "support_texts": [
+                "What is renormalization in quantum field theory? Why is it necessary?"
+            ]
+        },
+        {
+            "id": "physics:dark_matter",
+            "name": "Dark matter",
+            "description": "Missing mass problem",
+            "support_texts": [
+                "What evidence do we have for dark matter? Why can't we see it?"
+            ]
+        },
+        {
+            "id": "physics:cosmological_constant",
+            "name": "Cosmological constant",
+            "description": "Vacuum energy problem",
+            "support_texts": [
+                "What is the cosmological constant problem? Why is it called the worst prediction in physics?"
+            ]
+        },
+        {
+            "id": "physics:holographic_principle",
+            "name": "Holographic principle",
+            "description": "Information on boundaries",
+            "support_texts": [
+                "What is the holographic principle? How might 3D reality emerge from 2D information?"
+            ]
+        },
+        {
+            "id": "physics:string_theory",
+            "name": "String theory basics",
+            "description": "Extended fundamental objects",
+            "support_texts": [
+                "What are the basic ideas of string theory? What problem does it try to solve?"
+            ]
+        },
+        {
+            "id": "physics:quantum_gravity",
+            "name": "Quantum gravity",
+            "description": "Unifying gravity and QM",
+            "support_texts": [
+                "Why is it hard to combine quantum mechanics with general relativity?"
+            ]
+        },
+        {
+            "id": "physics:multiverse",
+            "name": "Multiverse hypothesis",
+            "description": "Multiple universes",
+            "support_texts": [
+                "What is the multiverse hypothesis? What scientific basis might it have?"
+            ]
+        },
+        {
+            "id": "physics:conservation_laws",
+            "name": "Conservation and symmetry",
+            "description": "Noether's theorem",
+            "support_texts": [
+                "How does Noether's theorem connect conservation laws to symmetries?"
+            ]
+        },
+        {
+            "id": "physics:phase_transition",
+            "name": "Phase transitions",
+            "description": "Sudden state changes",
+            "support_texts": [
+                "What happens at a phase transition? Explain critical phenomena."
+            ]
+        },
+        {
+            "id": "physics:emergence",
+            "name": "Emergent phenomena",
+            "description": "More is different",
+            "support_texts": [
+                "What are emergent phenomena? Why is 'more different' as Anderson argued?"
+            ]
+        }
+    ]
+}

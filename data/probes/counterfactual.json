@@ -1,0 +1,127 @@
+{
+    "domain": "counterfactual",
+    "description": "Alternative world reasoning that activates high-dimensional hypothetical pathways",
+    "probe_count": 30,
+    "probes": [
+        {
+            "id": "counterfactual:physics_altered",
+            "name": "Altered physics",
+            "description": "Reasoning in modified physical laws",
+            "support_texts": [
+                "What if gravity were repulsive instead of attractive? How would planets form?"
+            ]
+        },
+        {
+            "id": "counterfactual:history_change",
+            "name": "Historical divergence",
+            "description": "Altered historical paths",
+            "support_texts": [
+                "What if the printing press had been invented in ancient Rome? How would history differ?"
+            ]
+        },
+        {
+            "id": "counterfactual:biology_variation",
+            "name": "Biological variation",
+            "description": "Alternative evolutionary paths",
+            "support_texts": [
+                "What if photosynthesis produced a different byproduct than oxygen?"
+            ]
+        },
+        {
+            "id": "counterfactual:math_axiom",
+            "name": "Axiom change",
+            "description": "Different mathematical foundations",
+            "support_texts": [
+                "What if parallel lines could intersect? Describe non-Euclidean geometry."
+            ]
+        },
+        {
+            "id": "counterfactual:tech_timeline",
+            "name": "Technology timeline shift",
+            "description": "Earlier or later inventions",
+            "support_texts": [
+                "What if the transistor had been invented in 1900 instead of 1947?"
+            ]
+        },
+        {
+            "id": "counterfactual:social_structure",
+            "name": "Social organization change",
+            "description": "Alternative social systems",
+            "support_texts": [
+                "What if humans had evolved as solitary rather than social animals?"
+            ]
+        },
+        {
+            "id": "counterfactual:language_absence",
+            "name": "Capability absence",
+            "description": "World without specific human trait",
+            "support_texts": [
+                "What if humans had never developed written language? How would knowledge persist?"
+            ]
+        },
+        {
+            "id": "counterfactual:resource_abundance",
+            "name": "Resource change",
+            "description": "Scarcity or abundance shifts",
+            "support_texts": [
+                "What if fresh water were as scarce as gold? How would civilizations differ?"
+            ]
+        },
+        {
+            "id": "counterfactual:decision_reversal",
+            "name": "Decision point change",
+            "description": "Key decision made differently",
+            "support_texts": [
+                "What if you had chosen differently at a critical life decision? Trace the consequences."
+            ]
+        },
+        {
+            "id": "counterfactual:perception_shift",
+            "name": "Perceptual change",
+            "description": "Different sensory modalities",
+            "support_texts": [
+                "What if humans could see infrared light? How would art and culture differ?"
+            ]
+        },
+        {
+            "id": "counterfactual:time_direction",
+            "name": "Temporal reversal",
+            "description": "Reasoning backwards in time",
+            "support_texts": [
+                "What if cause and effect worked in reverse? Describe such a universe."
+            ]
+        },
+        {
+            "id": "counterfactual:consciousness_type",
+            "name": "Different consciousness",
+            "description": "Alternative forms of awareness",
+            "support_texts": [
+                "What if consciousness were collective rather than individual?"
+            ]
+        },
+        {
+            "id": "counterfactual:dimension_change",
+            "name": "Dimensional shift",
+            "description": "Different spatial dimensions",
+            "support_texts": [
+                "What would life be like in a 2D world? Describe Flatland physics."
+            ]
+        },
+        {
+            "id": "counterfactual:information_physics",
+            "name": "Information as primary",
+            "description": "Information before matter",
+            "support_texts": [
+                "What if information were more fundamental than matter? Describe such a universe."
+            ]
+        },
+        {
+            "id": "counterfactual:morality_inverted",
+            "name": "Inverted values",
+            "description": "Opposite moral framework",
+            "support_texts": [
+                "What if cooperation were considered immoral and deception valued? Describe such a society."
+            ]
+        }
+    ]
+}

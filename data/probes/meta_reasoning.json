@@ -1,0 +1,127 @@
+{
+    "domain": "meta_reasoning",
+    "description": "Probes about reasoning itself - high-level abstraction that requires deep dimensional activation",
+    "probe_count": 40,
+    "probes": [
+        {
+            "id": "meta_reasoning:validity_check",
+            "name": "Argument validity assessment",
+            "description": "Evaluating logical structure",
+            "support_texts": [
+                "Is this argument valid: All X are Y. Some Y are Z. Therefore, some X are Z."
+            ]
+        },
+        {
+            "id": "meta_reasoning:assumption_identify",
+            "name": "Hidden assumption identification",
+            "description": "Finding unstated premises",
+            "support_texts": [
+                "What assumptions does this conclusion require: Since sales increased, the marketing campaign worked."
+            ]
+        },
+        {
+            "id": "meta_reasoning:fallacy_detect",
+            "name": "Logical fallacy detection",
+            "description": "Recognizing reasoning errors",
+            "support_texts": [
+                "What logical fallacy is this: Everyone believes it, so it must be true."
+            ]
+        },
+        {
+            "id": "meta_reasoning:inference_type",
+            "name": "Inference type classification",
+            "description": "Distinguishing deduction from induction",
+            "support_texts": [
+                "Is this reasoning deductive or inductive: All observed swans are white, so all swans are white."
+            ]
+        },
+        {
+            "id": "meta_reasoning:certainty_degree",
+            "name": "Epistemic certainty assessment",
+            "description": "Quantifying knowledge confidence",
+            "support_texts": [
+                "How certain can we be of this conclusion given the evidence provided?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:bias_identify",
+            "name": "Cognitive bias recognition",
+            "description": "Spotting systematic errors in thinking",
+            "support_texts": [
+                "What cognitive bias might affect this judgment: I've always done it this way, so it must be right."
+            ]
+        },
+        {
+            "id": "meta_reasoning:alternative_explain",
+            "name": "Alternative explanation generation",
+            "description": "Producing competing hypotheses",
+            "support_texts": [
+                "What other explanations could account for this observation besides the given one?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:sufficiency_check",
+            "name": "Evidence sufficiency assessment",
+            "description": "Evaluating if evidence supports conclusion",
+            "support_texts": [
+                "Is this evidence sufficient to draw the conclusion, or do we need more information?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:scope_determine",
+            "name": "Generalization scope",
+            "description": "How far can we generalize",
+            "support_texts": [
+                "To what extent can we generalize from this sample to the population?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:paradox_resolve",
+            "name": "Paradox resolution",
+            "description": "Finding consistency in apparent contradiction",
+            "support_texts": [
+                "How can we resolve the paradox: This statement is false."
+            ]
+        },
+        {
+            "id": "meta_reasoning:abstraction_level",
+            "name": "Appropriate abstraction level",
+            "description": "Choosing right level of detail",
+            "support_texts": [
+                "At what level of abstraction should we analyze this problem: atomic, molecular, or emergent?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:frame_shift",
+            "name": "Frame of reference shifting",
+            "description": "Seeing from different perspectives",
+            "support_texts": [
+                "How does this problem look from a different stakeholder's perspective?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:confidence_calibration",
+            "name": "Confidence calibration",
+            "description": "Matching confidence to evidence",
+            "support_texts": [
+                "How confident should I be in this prediction given my track record?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:decision_criteria",
+            "name": "Decision criteria evaluation",
+            "description": "Assessing how to choose",
+            "support_texts": [
+                "What criteria should I use to make this decision? Are those criteria appropriate?"
+            ]
+        },
+        {
+            "id": "meta_reasoning:learning_from_error",
+            "name": "Error analysis",
+            "description": "Understanding why reasoning failed",
+            "support_texts": [
+                "This prediction was wrong. What went wrong in the reasoning process?"
+            ]
+        }
+    ]
+}

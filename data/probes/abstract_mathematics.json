@@ -1,0 +1,167 @@
+{
+    "domain": "abstract_mathematics",
+    "description": "Deep mathematical concepts that require high-dimensional abstract reasoning",
+    "probe_count": 50,
+    "probes": [
+        {
+            "id": "abstract_math:topology_continuity",
+            "name": "Topological continuity",
+            "description": "Continuous mappings between spaces",
+            "support_texts": [
+                "Explain why a coffee cup and a donut are topologically equivalent."
+            ]
+        },
+        {
+            "id": "abstract_math:group_symmetry",
+            "name": "Group theory symmetry",
+            "description": "Symmetry operations and structure",
+            "support_texts": [
+                "What is the symmetry group of a square? List its elements."
+            ]
+        },
+        {
+            "id": "abstract_math:infinite_cardinality",
+            "name": "Infinite cardinalities",
+            "description": "Comparing infinite sets",
+            "support_texts": [
+                "Prove that there are more real numbers than integers using diagonalization."
+            ]
+        },
+        {
+            "id": "abstract_math:limit_definition",
+            "name": "Epsilon-delta limit",
+            "description": "Formal limit definition",
+            "support_texts": [
+                "Define the limit of f(x) as x approaches a using epsilon-delta notation."
+            ]
+        },
+        {
+            "id": "abstract_math:ring_field",
+            "name": "Algebraic structures",
+            "description": "Rings, fields, and their properties",
+            "support_texts": [
+                "What distinguishes a field from a ring? Give an example of each."
+            ]
+        },
+        {
+            "id": "abstract_math:vector_space",
+            "name": "Vector space axioms",
+            "description": "Abstract linear structure",
+            "support_texts": [
+                "What are the axioms that define a vector space?"
+            ]
+        },
+        {
+            "id": "abstract_math:eigenvalue_meaning",
+            "name": "Eigenvalue interpretation",
+            "description": "What eigenvalues represent",
+            "support_texts": [
+                "What is the geometric meaning of eigenvalues and eigenvectors?"
+            ]
+        },
+        {
+            "id": "abstract_math:manifold_local",
+            "name": "Manifold structure",
+            "description": "Local Euclidean spaces",
+            "support_texts": [
+                "Explain why the surface of a sphere is a 2-dimensional manifold."
+            ]
+        },
+        {
+            "id": "abstract_math:godel_incompleteness",
+            "name": "Gödel's incompleteness",
+            "description": "Limits of formal systems",
+            "support_texts": [
+                "Explain Gödel's first incompleteness theorem and its implications."
+            ]
+        },
+        {
+            "id": "abstract_math:zfc_axioms",
+            "name": "Set theory foundations",
+            "description": "ZFC axiom system",
+            "support_texts": [
+                "What is the axiom of choice and why is it controversial?"
+            ]
+        },
+        {
+            "id": "abstract_math:galois_theory",
+            "name": "Galois theory",
+            "description": "Field extensions and solvability",
+            "support_texts": [
+                "Why can't the general quintic equation be solved by radicals?"
+            ]
+        },
+        {
+            "id": "abstract_math:homology_group",
+            "name": "Homology groups",
+            "description": "Algebraic topology invariants",
+            "support_texts": [
+                "What do homology groups tell us about a topological space?"
+            ]
+        },
+        {
+            "id": "abstract_math:category_functor",
+            "name": "Category theory",
+            "description": "Abstract mathematical structures",
+            "support_texts": [
+                "What is a functor in category theory and why is it useful?"
+            ]
+        },
+        {
+            "id": "abstract_math:p_adic_number",
+            "name": "P-adic numbers",
+            "description": "Alternative number systems",
+            "support_texts": [
+                "What are p-adic numbers and how do they differ from real numbers?"
+            ]
+        },
+        {
+            "id": "abstract_math:hilbert_space",
+            "name": "Hilbert space",
+            "description": "Infinite-dimensional vector spaces",
+            "support_texts": [
+                "What is a Hilbert space and why is it important in quantum mechanics?"
+            ]
+        },
+        {
+            "id": "abstract_math:fourier_transform",
+            "name": "Fourier analysis",
+            "description": "Frequency decomposition",
+            "support_texts": [
+                "Explain the Fourier transform and its relationship to frequency."
+            ]
+        },
+        {
+            "id": "abstract_math:measure_theory",
+            "name": "Measure theory",
+            "description": "Rigorous integration",
+            "support_texts": [
+                "Why is Lebesgue integration more general than Riemann integration?"
+            ]
+        },
+        {
+            "id": "abstract_math:prime_distribution",
+            "name": "Prime number distribution",
+            "description": "Distribution of primes",
+            "support_texts": [
+                "What does the Riemann hypothesis say about prime distribution?"
+            ]
+        },
+        {
+            "id": "abstract_math:dynamical_system",
+            "name": "Dynamical systems",
+            "description": "Evolution of systems over time",
+            "support_texts": [
+                "What is a strange attractor in chaos theory?"
+            ]
+        },
+        {
+            "id": "abstract_math:cryptographic_hardness",
+            "name": "Computational hardness",
+            "description": "One-way functions",
+            "support_texts": [
+                "Why is factoring large numbers believed to be computationally hard?"
+            ]
+        }
+    ]
+}

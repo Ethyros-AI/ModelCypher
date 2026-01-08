@@ -756,9 +756,38 @@ def _probe_precise(
         probes = [tp.to_atlas_probe() for tp in token_probes]
         logger.info("PROBE TOKEN: Generated %d probes (2x max_dim, capped at 4096)", len(probes))
     else:
-        # Default: Atlas probes (963 curated conceptual probes)
-        probes = UnifiedAtlasInventory.all_probes()
-        logger.info("PROBE MODE: Atlas (963 conceptual probes)")
+        # Default: Atlas probes from JSON files (curated conceptual + MMLU probes)
+        from modelcypher.core.domain.agents.probe_loader import load_all_probes
+        all_probes = load_all_probes()
+        logger.info("PROBE MODE: Atlas (loaded %d probes from JSON)", len(all_probes))
+        
+        # MEMORY OPTIMIZATION: Limit probes to 2x max hidden dimension
+        # This ensures full-rank coverage while preventing OOM
+        source_hidden = None
+        target_hidden = None
+        for key in source_weights:
+            if "layers.0.self_attn.q_proj.weight" in key:
+                source_hidden = source_weights[key].shape[0]
+                break
+        for key in target_weights:
+            if "layers.0.self_attn.q_proj.weight" in key:
+                target_hidden = target_weights[key].shape[0]
+                break
+        
+        max_dim = max(source_hidden or 1024, target_hidden or 960)
+        # 2x for full-rank guarantee, capped at 4096 for memory safety
+        max_probes = min(max_dim * 2, 4096)
+        
+        if len(all_probes) > max_probes:
+            logger.info("PROBE LIMIT: Capping %d probes to %d (2x max_dim=%d) for memory safety",
+                       len(all_probes), max_probes, max_dim)
+            # Sample evenly across the probe set to maintain diversity
+            import random
+            random.seed(42)  # Deterministic sampling
+            probes = random.sample(all_probes, max_probes)
+        else:
+            probes = all_probes
+            
     num_probes = len(probes)
 
     # Initialize ProfileRepository

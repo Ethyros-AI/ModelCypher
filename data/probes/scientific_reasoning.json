@@ -1,0 +1,167 @@
+{
+    "domain": "scientific_reasoning",
+    "description": "Scientific concepts requiring deep understanding",
+    "probe_count": 40,
+    "probes": [
+        {
+            "id": "sci:evolution_mechanism",
+            "name": "Natural selection mechanism",
+            "description": "Core evolutionary theory",
+            "support_texts": [
+                "Explain how natural selection leads to adaptation. What are the necessary conditions for evolution to occur?"
+            ]
+        },
+        {
+            "id": "sci:dna_to_protein",
+            "name": "Central dogma",
+            "description": "Molecular biology foundation",
+            "support_texts": [
+                "Explain the central dogma of molecular biology. How does information flow from DNA to protein?"
+            ]
+        },
+        {
+            "id": "sci:cell_energy",
+            "name": "ATP synthesis",
+            "description": "Bioenergetics",
+            "support_texts": [
+                "Explain how ATP is synthesized in mitochondria. What is chemiosmosis and the proton motive force?"
+            ]
+        },
+        {
+            "id": "sci:plate_tectonics",
+            "name": "Plate tectonics",
+            "description": "Earth science",
+            "support_texts": [
+                "Explain plate tectonics. What evidence supports continental drift and how do plates move?"
+            ]
+        },
+        {
+            "id": "sci:climate_feedback",
+            "name": "Climate feedback loops",
+            "description": "Climate science",
+            "support_texts": [
+                "Explain positive and negative feedback loops in the climate system. Give examples of each."
+            ]
+        },
+        {
+            "id": "sci:stellar_evolution",
+            "name": "Stellar evolution",
+            "description": "Astrophysics",
+            "support_texts": [
+                "Explain the life cycle of a star. What determines whether it becomes a white dwarf, neutron star, or black hole?"
+            ]
+        },
+        {
+            "id": "sci:periodic_patterns",
+            "name": "Periodic table patterns",
+            "description": "Chemistry fundamentals",
+            "support_texts": [
+                "Explain the underlying cause of periodic trends in the periodic table. Why do elements in the same group have similar properties?"
+            ]
+        },
+        {
+            "id": "sci:acid_base",
+            "name": "Acid-base chemistry",
+            "description": "Chemical equilibria",
+            "support_texts": [
+                "Explain the Brønsted-Lowry theory of acids and bases. What determines the strength of an acid?"
+            ]
+        },
+        {
+            "id": "sci:neural_signaling",
+            "name": "Action potential",
+            "description": "Neuroscience",
+            "support_texts": [
+                "Explain how an action potential propagates along a neuron. What role do ion channels play?"
+            ]
+        },
+        {
+            "id": "sci:immune_response",
+            "name": "Immune recognition",
+            "description": "Immunology",
+            "support_texts": [
+                "Explain how the adaptive immune system recognizes and remembers pathogens. What are MHC molecules?"
+            ]
+        },
+        {
+            "id": "sci:ecosystem_dynamics",
+            "name": "Ecological succession",
+            "description": "Ecology",
+            "support_texts": [
+                "Explain ecological succession. What causes communities to change over time and what determines the climax community?"
+            ]
+        },
+        {
+            "id": "sci:wave_interference",
+            "name": "Wave interference",
+            "description": "Wave physics",
+            "support_texts": [
+                "Explain constructive and destructive interference. How does this explain the double-slit experiment?"
+            ]
+        },
+        {
+            "id": "sci:electromagnetic_induction",
+            "name": "Faraday's law",
+            "description": "Electromagnetism",
+            "support_texts": [
+                "Explain electromagnetic induction and Faraday's law. How does a changing magnetic field create an electric field?"
+            ]
+        },
+        {
+            "id": "sci:orbital_mechanics",
+            "name": "Kepler's laws",
+            "description": "Classical mechanics",
+            "support_texts": [
+                "Explain Kepler's three laws of planetary motion. How did Newton explain them using gravity?"
+            ]
+        },
+        {
+            "id": "sci:genetic_expression",
+            "name": "Gene regulation",
+            "description": "Molecular genetics",
+            "support_texts": [
+                "Explain how gene expression is regulated. What are transcription factors and how do they control when genes are turned on?"
+            ]
+        },
+        {
+            "id": "sci:enzyme_kinetics",
+            "name": "Enzyme catalysis",
+            "description": "Biochemistry",
+            "support_texts": [
+                "Explain how enzymes catalyze reactions. What is Michaelis-Menten kinetics and what do Km and Vmax represent?"
+            ]
+        },
+        {
+            "id": "sci:carbon_cycle",
+            "name": "Carbon cycle",
+            "description": "Biogeochemistry",
+            "support_texts": [
+                "Explain the global carbon cycle. What are the major reservoirs and fluxes of carbon?"
+            ]
+        },
+        {
+            "id": "sci:radioactive_decay",
+            "name": "Radioactive decay",
+            "description": "Nuclear physics",
+            "support_texts": [
+                "Explain the three types of radioactive decay (alpha, beta, gamma). What determines an isotope's half-life?"
+            ]
+        },
+        {
+            "id": "sci:protein_folding",
+            "name": "Protein folding",
+            "description": "Structural biology",
+            "support_texts": [
+                "Explain what determines a protein's three-dimensional structure. What is the protein folding problem?"
+            ]
+        },
+        {
+            "id": "sci:relativity_mass_energy",
+            "name": "Mass-energy equivalence",
+            "description": "Special relativity",
+            "support_texts": [
+                "Explain E=mc². Why does matter contain such enormous amounts of energy? Give examples of mass-energy conversion."
+            ]
+        }
+    ]
+}
