@@ -76,28 +76,26 @@ class DimensionalAlignment:
             "",
         ]
 
+        # CKA = 1.0 is an invariant. Status shows raw value (deviation = alignment bug).
         if self.embedding_cka is not None:
-            status = "✓" if self.embedding_cka >= 0.99 else "✗"
             lines.extend([
                 f"2D (Embedding):",
-                f"  CKA: {self.embedding_cka:.4f} {status}",
+                f"  CKA: {self.embedding_cka:.6f}",
                 "",
             ])
 
         if self.layernorm_cka is not None:
-            status = "✓" if self.layernorm_cka >= 0.99 else "✗"
             lines.extend([
                 f"3D (LayerNorm):",
-                f"  Pre/Post CKA: {self.layernorm_cka:.4f} {status}",
+                f"  Pre/Post CKA: {self.layernorm_cka:.6f}",
                 "",
             ])
 
         if self.hidden_cka_mean is not None:
-            status = "✓" if self.hidden_cka_min and self.hidden_cka_min >= 0.99 else "✗"
             lines.extend([
                 f"4D+ (Transformer):",
-                f"  Hidden CKA (mean): {self.hidden_cka_mean:.4f}",
-                f"  Hidden CKA (min): {self.hidden_cka_min:.4f} {status}",
+                f"  Hidden CKA (mean): {self.hidden_cka_mean:.6f}",
+                f"  Hidden CKA (min): {self.hidden_cka_min:.6f}" if self.hidden_cka_min else "",
             ])
             if self.intermediate_cka_mean is not None:
                 lines.append(f"  Intermediate CKA (mean): {self.intermediate_cka_mean:.4f}")

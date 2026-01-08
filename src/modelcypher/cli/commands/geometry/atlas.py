@@ -109,12 +109,20 @@ class BackboneActivationProvider:
 
 
 def _apply_layer(layer, hidden, mask):
+    """Apply a transformer layer with graceful mask fallback.
+
+    Some architectures (e.g., LFM2) accept a mask parameter but create their own
+    batch-aware masks internally. Passing our 2D causal mask causes ValueError
+    on broadcast. We catch this and retry without mask.
+    """
     try:
         return layer(hidden, mask=mask)
-    except TypeError:
+    except (TypeError, ValueError):
+        # TypeError: layer doesn't accept mask parameter
+        # ValueError: mask shape incompatible with batched hidden (e.g., LFM2)
         try:
             return layer(hidden, mask)
-        except TypeError:
+        except (TypeError, ValueError):
             return layer(hidden)
 
 

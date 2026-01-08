@@ -69,9 +69,9 @@ class WeightStatus(str, Enum):
     SKIPPED_NON_2D = "skipped_non_2d"  # Not a 2D weight matrix
     SKIPPED_EMBEDDING = "skipped_embedding"  # Embedding layer (handled separately)
 
-    # Failure states
+    # Failure states (CKA = 1.0 is invariant - these indicate bugs, not model issues)
     FAILED_STITCH = "failed_stitch"  # Required stitch not available
-    FAILED_ALIGNMENT = "failed_alignment"  # GramAlign failed (CKA < 0.9999)
+    FAILED_ALIGNMENT = "failed_alignment"  # GramAlign bug (CKA < 1.0 should not happen)
     FAILED_DIMENSION = "failed_dimension"  # Dimension mismatch, no transform possible
     FAILED_NULL_SPACE = "failed_null_space"  # Null-space filtering failed
     FAILED_NUMERICAL = "failed_numerical"  # Numerical instability (NaN, Inf)

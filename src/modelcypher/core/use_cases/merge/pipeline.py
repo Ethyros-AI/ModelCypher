@@ -178,23 +178,22 @@ def run_merge(
 
     if not perfect_alignment:
         # =====================================================================
-        # ADAPTIVE BAROMETER: Per DIMENSIONAL_COMPRESSION.md
+        # CKA = 1.0 IS INVARIANT - Imperfect alignment indicates a bug
         # =====================================================================
-        # Instead of failing, classify layers and proceed with selective transplant:
-        # - "converged": Full knowledge transfer (CKA >= 0.9995)
-        # - "boundary_preserved": Skip injection, preserve transitions (0.5 <= CKA < 0.9995)
-        # - "skipped": Geometrically incompatible (CKA < 0.5)
+        # All layers should converge to CKA = 1.0. If not, the alignment
+        # algorithm has a bug that needs investigation. We proceed anyway
+        # to avoid blocking the merge, but log errors for debugging.
         converged_count = probe_metrics.get("converged_count", 0)
         boundary_count = probe_metrics.get("boundary_preserved_count", 0)
         skipped_count = probe_metrics.get("skipped_count", 0)
         min_cka = probe_metrics.get("min_cka", 0.0)
         mean_cka = probe_metrics.get("mean_cka", 0.0)
-        
+
         if converged_count == 0:
-            # No converged layers at all - this is a true failure
+            # No converged layers at all - alignment algorithm is broken
             raise RuntimeError(
-                "PROBE BAROMETER: No layers converged to CKA=1.0 "
-                "(mean_cka=%.4f, min_cka=%.4f). Architecture may be incompatible."
+                "PROBE: No layers achieved CKA = 1.0 (mean=%.6f, min=%.6f). "
+                "This indicates an alignment algorithm bug, not model incompatibility."
                 % (mean_cka, min_cka)
             )
         

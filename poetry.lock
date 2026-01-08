@@ -3090,15 +3090,15 @@ extra = ["pandas"]
 
 [[package]]
 name = "mlx-lm"
-version = "0.30.0"
+version = "0.30.2"
 description = "LLMs with MLX and the Hugging Face Hub"
 optional = false
 python-versions = ">=3.8"
 groups = ["main"]
 markers = "platform_system == \"Darwin\" or extra == \"embeddings\""
 files = [
-    {file = "mlx_lm-0.30.0-py3-none-any.whl", hash = "sha256:b30389d25a848f07c91a4896de8ea3edda61c38019df6f44e7bd0e2bc9a153eb"},
-    {file = "mlx_lm-0.30.0.tar.gz", hash = "sha256:4485c05067a2fcf6746c2c918df460d0770b3411454730351d000ca1bd38b36f"},
+    {file = "mlx_lm-0.30.2-py3-none-any.whl", hash = "sha256:f0cec69b859698f07c840e06d6462a1ddafaaf4f701fc4d61c707acde1484971"},
+    {file = "mlx_lm-0.30.2.tar.gz", hash = "sha256:af43a0ec416437bd5835a06e0b2654e2668e7b51fdf0e7a4f1ae47bb8be40b0b"},
 ]
 
 [package.dependencies]

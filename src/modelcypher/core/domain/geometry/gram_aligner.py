@@ -589,20 +589,22 @@ class GramAligner:
                 )
                 use_fresh_f = True
             else:
-                # VALIDATE: Check if zipper F achieves good CKA for this layer
+                # VALIDATE: Check if zipper F achieves near-perfect CKA for this layer
                 # Use same data that will be used for F computation
                 projected = b.matmul(source_for_gram, F)
                 b.eval(projected)
                 zipper_cka = float(compute_linear_cka(projected, target_for_gram, b))
-                
-                ZIPPER_CKA_THRESHOLD = 0.95  # Must achieve 95% CKA to use zipper F
+
+                # CKA = 1.0 is invariant. Neighbor's F is only useful if it's very close.
+                # 0.999 means the neighbor's transform almost perfectly preserves geometry.
+                ZIPPER_CKA_THRESHOLD = 0.999
                 if zipper_cka < ZIPPER_CKA_THRESHOLD:
                     logger.info(
-                        f"ZIPPER: F from neighbor achieved CKA={zipper_cka:.4f} < {ZIPPER_CKA_THRESHOLD}, computing fresh F"
+                        f"ZIPPER: F from neighbor achieved CKA={zipper_cka:.6f} < {ZIPPER_CKA_THRESHOLD}, computing fresh F"
                     )
                     use_fresh_f = True
                 else:
-                    logger.info(f"ZIPPER: F from neighbor achieved CKA={zipper_cka:.4f} >= {ZIPPER_CKA_THRESHOLD}, using it")
+                    logger.info(f"ZIPPER: F from neighbor achieved CKA={zipper_cka:.6f} >= {ZIPPER_CKA_THRESHOLD}, using it")
         else:
             use_fresh_f = True
         

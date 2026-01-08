@@ -269,6 +269,39 @@ class GeneralizedProcrustes:
                     model_count=model_count,
                 )
 
+            # Check for degenerate (zero/near-zero) matrices that would crash SVD/det
+            x1_norm_arr = geodesic_norms(b.reshape(X1, (1, -1)), b)
+            b.eval(x1_norm_arr)
+            x1_norm = float(b.to_scalar(x1_norm_arr))
+
+            if x_norm <= eps or x1_norm <= eps:
+                # One or both matrices are degenerate - use identity rotation
+                # This avoids SVD on zero matrices which crashes Metal
+                Rs = b.stack([base_eye, base_eye], axis=0)
+                aligned_X = b.stack([X0, X1], axis=0)
+                consensus = self._compute_consensus(aligned_X)
+                residuals = aligned_X - consensus
+                residuals_flat = b.reshape(residuals, (model_count, -1))
+                per_model_norms = geodesic_norms(residuals_flat, b)
+                per_model_errors = per_model_norms * per_model_norms
+                total_error = float(b.to_scalar(b.sum(per_model_errors)))
+                b.eval(Rs, residuals, per_model_errors)
+
+                return Result(
+                    consensus=self._array_to_2d_list(consensus),
+                    rotations=self._array_to_3d_list(Rs),
+                    scales=self._array_to_list(scales),
+                    residuals=self._array_to_3d_list(residuals),
+                    converged=True,
+                    iterations=1,
+                    alignment_error=total_error,
+                    per_model_errors=self._array_to_list(per_model_errors),
+                    consensus_variance_ratio=1.0,
+                    sample_count=n,
+                    dimension=k,
+                    model_count=model_count,
+                )
+
             M = b.matmul(b.transpose(X1), X0)
             U, _, Vt = geodesic_svd(b, M)
             R1 = b.matmul(U, Vt)

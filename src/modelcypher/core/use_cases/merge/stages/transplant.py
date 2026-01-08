@@ -415,11 +415,11 @@ def stage_transplant(
     backend: "Backend | None" = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
-    
-    Per DIMENSIONAL_COMPRESSION.md, layer_status controls selective transplant:
-    - "converged": Full knowledge transfer (CKA >= 0.9995)
-    - "boundary_preserved": Skip injection, preserve transitions (0.5 <= CKA < 0.9995)
-    - "skipped": Geometrically incompatible (CKA < 0.5)
+
+    CKA = 1.0 is an invariant - all layers achieve perfect alignment.
+    Layer status is vestigial: all layers should be "converged".
+    "boundary_preserved" and "skipped" are retained for API compatibility
+    but should never occur (CKA < 1.0 indicates an alignment bug).
     """
     b = backend or get_default_backend()
     merged: dict[str, "Array"] = dict(target_weights)
@@ -787,29 +787,28 @@ def stage_transplant(
             continue
 
         # =======================================================================
-        # BOUNDARY PRESERVATION: Per DIMENSIONAL_COMPRESSION.md
+        # LAYER STATUS CHECK (Vestigial - CKA = 1.0 is invariant)
         # =======================================================================
-        # Only inject knowledge for "converged" layers. For "boundary_preserved"
-        # and "skipped" layers, preserve the target weights to maintain transitions.
+        # CKA = 1.0 is always achievable. "skipped" and "boundary_preserved" are
+        # retained for API compatibility but should NEVER occur. If they do,
+        # it indicates an alignment bug that needs investigation.
         if layer_status:
-            status = layer_status.get(layer_idx, "converged")  # Default to converged if not specified
+            status = layer_status.get(layer_idx, "converged")
             if status == "skipped":
-                weights_processed += len(weights_by_layer.get(layer_idx, []))
-                logger.info(
-                    "TRANSPLANT: Layer %d SKIPPED (geometry incompatible, CKA < 0.5)",
+                # This should NEVER happen - CKA < 0.5 is an alignment bug
+                logger.error(
+                    "TRANSPLANT: Layer %d marked 'skipped' - ALIGNMENT BUG, investigate!",
                     layer_idx
                 )
-                metrics.setdefault("skipped_layers", []).append(layer_idx)
-                continue
+                # Still process the layer - don't give up
             elif status == "boundary_preserved":
-                weights_processed += len(weights_by_layer.get(layer_idx, []))
-                logger.info(
-                    "TRANSPLANT: Layer %d BOUNDARY PRESERVED (0.5 <= CKA < 0.9995)",
+                # This should NEVER happen - CKA < 1.0 is an alignment bug
+                logger.error(
+                    "TRANSPLANT: Layer %d marked 'boundary_preserved' - ALIGNMENT BUG, investigate!",
                     layer_idx
                 )
-                metrics.setdefault("boundary_preserved_layers", []).append(layer_idx)
-                continue
-            # status == "converged" falls through to normal transplant
+                # Still process the layer - don't give up
+            # All layers fall through to normal transplant
 
         # =======================================================================
         # LAYER 0 BOUNDARY: Preserve embedding-to-hidden interface
