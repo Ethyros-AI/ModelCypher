@@ -807,13 +807,15 @@ def _probe_precise(
                 target_hidden = target_weights[key].shape[0]
                 break
         
-        max_dim = max(source_hidden or 1024, target_hidden or 960)
-        # 2x for full-rank guarantee, capped at 4096 for memory safety
-        max_probes = min(max_dim * 2, 4096)
-        
+        # Use TARGET hidden dim - we project into target's space, so only need
+        # enough probes to span the target manifold. Source can be larger.
+        target_dim = target_hidden or 1024
+        # 2x for numerical stability in Gram matrix rank
+        max_probes = target_dim * 2
+
         if len(all_probes) > max_probes:
-            logger.info("PROBE LIMIT: Capping %d probes to %d (2x max_dim=%d) for memory safety",
-                       len(all_probes), max_probes, max_dim)
+            logger.info("PROBE LIMIT: Capping %d probes to %d (2x target_dim=%d) - target space only",
+                       len(all_probes), max_probes, target_dim)
             # Sample evenly across the probe set to maintain diversity
             import random
             random.seed(42)  # Deterministic sampling
