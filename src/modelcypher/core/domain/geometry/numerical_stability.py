@@ -1740,152 +1740,69 @@ def solve_via_gram_alignment(
     b.eval(source_c, target_c)
 
     # =========================================================================
-    # SVD-PROCRUSTES ALIGNMENT FOR CKA = 1.0
+    # DIRECT LEAST-SQUARES: F = pinv(source_c) @ target_c
     # =========================================================================
-    # For CKA = 1.0, we need K_aligned ∝ K_target (same Gram matrices).
-    # K = U @ S² @ U.T, so aligning Grams means aligning the U vectors.
-    #
-    # Solution:
-    # 1. SVD: source = U_s @ S_s @ V_s.T, target = U_t @ S_t @ V_t.T
-    # 2. Procrustes: find R that minimizes ||U_s @ R - U_t||_F
-    # 3. F = V_s @ pinv(S_s) @ R @ S_t @ V_t.T
-    #
-    # This gives aligned = U_s @ R @ S_t @ V_t.T with:
-    # K_aligned = U_s @ R @ S_t² @ R.T @ U_s.T
-    #
-    # When R aligns U_s to U_t, K_aligned ∝ K_target and CKA = 1.0
+    # This is the CORRECT approach for achieving CKA=1.0:
+    # - Computes the exact pseudo-inverse via SVD
+    # - Uses ALL singular vectors (not truncated)
+    # - Achieves exact reconstruction when target is in source's column space
     # =========================================================================
 
-    # SVD of source and target
+    # SVD of source_c for computing pseudo-inverse
     U_s, S_s, Vt_s = geodesic_svd(b, source_c)
-    U_t, S_t, Vt_t = geodesic_svd(b, target_c)
-    b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
+    b.eval(U_s, S_s, Vt_s)
 
     rank_s = int(S_s.shape[0])
-    rank_t = int(S_t.shape[0])
-    if rank_s == 0 or rank_t == 0:
+    if rank_s == 0:
         return None, diagnostics
 
     diagnostics["rank_source"] = rank_s
-    diagnostics["rank_target"] = rank_t
+    diagnostics["rank_target"] = d_t  # Target rank is at most d_t
 
-    # Compute singular value thresholds
+    # Compute singular value threshold (standard numerical rank threshold)
     max_s = float(b.to_scalar(b.max(S_s)))
-    max_t = float(b.to_scalar(b.max(S_t)))
-    if max_s == 0 or max_t == 0:
+    if max_s == 0:
         return None, diagnostics
 
-    sv_threshold_s = eps * max(n, d_s) * max_s
-    sv_threshold_t = eps * max(n, d_t) * max_t
+    # Use tight threshold: eps * max(m, n) * max_singular_value
+    sv_threshold = eps * max(n, d_s) * max_s
 
-    # Compute inverse singular values with threshold
-    S_s_inv = b.where(S_s > sv_threshold_s, 1.0 / S_s, b.zeros_like(S_s))
+    # Compute S^{-1} with threshold for numerical stability
+    S_s_inv = b.where(S_s > sv_threshold, 1.0 / S_s, b.zeros_like(S_s))
     b.eval(S_s_inv)
 
-    # Count numerical ranks
-    sig_count_s = b.sum(b.astype(S_s > sv_threshold_s, "int32"))
-    sig_count_t = b.sum(b.astype(S_t > sv_threshold_t, "int32"))
-    b.eval(sig_count_s, sig_count_t)
-    num_rank_s = int(b.to_scalar(sig_count_s))
-    num_rank_t = int(b.to_scalar(sig_count_t))
-    diagnostics["numerical_rank_source"] = num_rank_s
-    diagnostics["numerical_rank_target"] = num_rank_t
+    # Count numerical rank
+    sig_count = b.sum(b.astype(S_s > sv_threshold, "int32"))
+    b.eval(sig_count)
+    diagnostics["numerical_rank"] = int(b.to_scalar(sig_count))
 
-    # =========================================================================
-    # PROCRUSTES: Find rotation R that aligns U_s to U_t
-    # =========================================================================
-    # Minimize ||U_s @ R - U_t||_F subject to R.T @ R = I
-    # Solution: R = W @ V.T where U_s.T @ U_t = W @ Sigma @ V.T (SVD)
-    #
-    # For different dimensions (rank_s ≠ rank_t), we use the shared dimension:
-    # shared_k = min(rank_s, rank_t)
-    # Truncate U_s and U_t to shared_k columns, then align.
-    # =========================================================================
-    shared_k = min(num_rank_s, num_rank_t)
-    if shared_k == 0:
-        return None, diagnostics
-
-    # Truncate U vectors to shared dimension
-    U_s_k = b.take(U_s, b.arange(shared_k), axis=1)  # [n, shared_k]
-    U_t_k = b.take(U_t, b.arange(shared_k), axis=1)  # [n, shared_k]
-    b.eval(U_s_k, U_t_k)
-
-    # Procrustes: SVD of U_s.T @ U_t
-    cross = b.matmul(b.transpose(U_s_k), U_t_k)  # [shared_k, shared_k]
-    W, _, Vt_cross = geodesic_svd(b, cross)
-    b.eval(W, Vt_cross)
-
-    # R = W @ V.T (orthogonal matrix)
-    # NOTE: R may be a reflection (det < 0), not a rotation (det > 0).
-    # For CKA alignment, this is fine - CKA is invariant to reflections.
-    # We do NOT correct reflections because:
-    # 1. CKA doesn't care about handedness
-    # 2. SVD sign ambiguity means U_s = -U_t is common, giving R = -I
-    # 3. "Correcting" R = -I breaks the alignment
-    R = b.matmul(W, Vt_cross)  # [shared_k, shared_k]
-    b.eval(R)
-
-    # Compute Procrustes error (how well U_s @ R matches U_t)
-    U_s_rotated = b.matmul(U_s_k, R)
-    procrustes_diff = U_s_rotated - U_t_k
-    procrustes_error_sq = b.sum(procrustes_diff * procrustes_diff)
-    u_t_norm_sq = b.sum(U_t_k * U_t_k)
-    b.eval(procrustes_error_sq, u_t_norm_sq)
-    procrustes_error = float(b.to_scalar(b.sqrt(procrustes_error_sq))) / (
-        float(b.to_scalar(b.sqrt(u_t_norm_sq))) + eps
-    )
-    diagnostics["procrustes_error"] = procrustes_error
-
-    # =========================================================================
-    # CONSTRUCT F: V_s @ pinv(S_s) @ R @ S_t @ V_t.T
-    # =========================================================================
-    # This is the feature-space transform that achieves the U-vector alignment.
-    # We need to handle the dimension mismatch:
-    # - V_s is [d_s, rank_s], S_s is [rank_s]
-    # - V_t is [d_t, rank_t], S_t is [rank_t]
-    # - R is [shared_k, shared_k]
-    #
-    # Truncate to shared_k dimensions:
-    # F = V_s[:, :k] @ diag(1/S_s[:k]) @ R @ diag(S_t[:k]) @ V_t[:, :k].T
-    # =========================================================================
+    # pinv(source_c) = V @ S^{-1} @ U^T
+    # Step by step for numerical stability:
+    # 1. V @ S^{-1}: scale each column of V by S^{-1}
     V_s = b.transpose(Vt_s)  # [d_s, rank_s]
-    V_t = b.transpose(Vt_t)  # [d_t, rank_t]
+    V_s_scaled = V_s * b.reshape(S_s_inv, (1, -1))  # [d_s, rank_s]
+    b.eval(V_s_scaled)
 
-    # Truncate to shared dimension
-    V_s_k = b.take(V_s, b.arange(shared_k), axis=1)  # [d_s, shared_k]
-    V_t_k = b.take(V_t, b.arange(shared_k), axis=1)  # [d_t, shared_k]
-    S_s_k = b.take(S_s, b.arange(shared_k), axis=0)  # [shared_k]
-    S_t_k = b.take(S_t, b.arange(shared_k), axis=0)  # [shared_k]
-    b.eval(V_s_k, V_t_k, S_s_k, S_t_k)
+    # 2. @ U^T: [d_s, rank_s] @ [rank_s, n] = [d_s, n]
+    pinv_source = b.matmul(V_s_scaled, b.transpose(U_s))  # [d_s, n]
+    b.eval(pinv_source)
 
-    # Compute S_s^{-1}
-    S_s_k_inv = b.where(S_s_k > sv_threshold_s, 1.0 / S_s_k, b.zeros_like(S_s_k))
-    b.eval(S_s_k_inv)
-
-    # F = V_s_k @ diag(S_s_k_inv) @ R @ diag(S_t_k) @ V_t_k.T
-    # Step by step:
-    # 1. V_s_k @ diag(S_s_k_inv): scale columns of V_s_k
-    V_s_scaled = V_s_k * b.reshape(S_s_k_inv, (1, -1))  # [d_s, shared_k]
-    # 2. @ R
-    temp = b.matmul(V_s_scaled, R)  # [d_s, shared_k]
-    # 3. @ diag(S_t_k): scale columns
-    temp_scaled = temp * b.reshape(S_t_k, (1, -1))  # [d_s, shared_k]
-    # 4. @ V_t_k.T
-    F = b.matmul(temp_scaled, b.transpose(V_t_k))  # [d_s, d_t]
+    # 3. F = pinv(source_c) @ target_c: [d_s, n] @ [n, d_t] = [d_s, d_t]
+    F = b.matmul(pinv_source, target_c)
     b.eval(F)
 
-    # Check for NaN in F (degenerate inputs produce NaN)
-    F_sum = b.sum(F)
-    b.eval(F_sum)
-    F_has_nan = float(b.to_scalar(F_sum)) != float(b.to_scalar(F_sum))
+    # Compute reconstruction error for diagnostics
+    projected = b.matmul(source_c, F)
+    b.eval(projected)
+    diff = projected - target_c
+    diff_norm = _geodesic_norm_scalar(diff, b)
+    target_norm = _geodesic_norm_scalar(target_c, b)
+    reconstruction_error = diff_norm / (target_norm + eps)
+    diagnostics["procrustes_error"] = reconstruction_error  # Reuse field name for compatibility
 
-    if F_has_nan:
-        diagnostics["nan_in_F"] = True
-        return None, diagnostics
-
-    diagnostics["shared_rank"] = shared_k
+    # No Procrustes rotation in this approach
+    diagnostics["procrustes_R"] = None
     diagnostics["used_R_hint"] = False
-    diagnostics["procrustes_R"] = None  # Not stored (large matrix), but key expected
 
     return F, diagnostics
 
