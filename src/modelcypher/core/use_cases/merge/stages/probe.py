@@ -565,6 +565,7 @@ def stage_probe(
     activation_provider: "ActivationProvider | None" = None,
     backend: "Backend | None" = None,
     checkpoint_dir: Path | str | None = None,
+    probe_mode: str = "atlas",  # "atlas" (963 conceptual) or "token" (49K+ vocab)
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
@@ -672,6 +673,7 @@ def stage_probe(
             extract_layer_index_fn=extract_layer_index_fn,
             activation_provider=activation_provider,
             checkpoint_dir=Path(checkpoint_dir) if checkpoint_dir else None,
+            probe_mode=probe_mode,
         )
     else:
         # INVARIANT GEOMETRY: No fallbacks. Models MUST be loaded.
@@ -697,14 +699,13 @@ def _probe_precise(
     target_path: str = "",
     backend: "Backend | None" = None,
     checkpoint_dir: Path | None = None,
+    probe_mode: str = "atlas",  # "atlas" (963 conceptual) or "token" (vocab-based)
 ) -> ProbeResult:
-    """Precise probe mode: Run ALL probes through BOTH models.
-
-    No configuration - all 403 probes are always run. The probe corpus
-    was designed to cover the concept space. Limiting probes degrades
-    coverage with no benefit.
+    """Precise probe mode: Run probes through BOTH models.
 
     Args:
+        probe_mode: "atlas" uses 963 curated conceptual probes.
+                    "token" uses vocabulary tokens as probes (49K+) for 100% dimension coverage.
         checkpoint_dir: If provided, saves progress periodically and allows
             resume from last checkpoint on restart.
     """
@@ -722,8 +723,42 @@ def _probe_precise(
     )
     from modelcypher.core.domain.geometry.model_profile import ProfileRepository, ModelProfile
 
-    # Always use all probes - no configuration
-    probes = UnifiedAtlasInventory.all_probes()
+    # Select probing mode
+    if probe_mode == "token":
+        # Token-based probing for 100% dimension coverage
+        from modelcypher.core.domain.agents.token_atlas import generate_token_probes, TokenProbe
+        logger.info("PROBE MODE: Token-based (vocab probes for dimension coverage)")
+        
+        # Determine required probe count: need at least max(source_dim, target_dim)
+        # Use 2x to guarantee full-rank with margin for numerical stability
+        source_hidden = None
+        target_hidden = None
+        for key in source_weights:
+            if "layers.0.self_attn.q_proj.weight" in key:
+                source_hidden = source_weights[key].shape[0]
+                break
+        for key in target_weights:
+            if "layers.0.self_attn.q_proj.weight" in key:
+                target_hidden = target_weights[key].shape[0]
+                break
+        
+        min_probes_needed = max(source_hidden or 1024, target_hidden or 960)
+        max_probes = min_probes_needed * 2  # 2x for numerical margin
+        max_probes = max(max_probes, 2048)  # At least 2048 for safety
+        max_probes = min(max_probes, 4096)  # Cap at 4096 to avoid OOM
+        
+        logger.info("PROBE TOKEN: Dims source=%s target=%s, using %d probes", 
+                    source_hidden, target_hidden, max_probes)
+        
+        # Use target tokenizer for probe generation (target architecture defines the space)
+        token_probes = generate_token_probes(target_tokenizer, max_probes=max_probes)
+        # Convert TokenProbes to AtlasProbe format for compatibility
+        probes = [tp.to_atlas_probe() for tp in token_probes]
+        logger.info("PROBE TOKEN: Generated %d probes (2x max_dim, capped at 4096)", len(probes))
+    else:
+        # Default: Atlas probes (963 curated conceptual probes)
+        probes = UnifiedAtlasInventory.all_probes()
+        logger.info("PROBE MODE: Atlas (963 conceptual probes)")
     num_probes = len(probes)
 
     # Initialize ProfileRepository
@@ -1116,6 +1151,14 @@ def _probe_precise(
                         probes_processed,
                         len(valid_probes),
                     )
+                
+                # MEMORY OPTIMIZATION: Clear GPU cache after each batch
+                # This prevents memory accumulation that causes OOM
+                try:
+                    import mlx.core as mx
+                    mx.metal.clear_cache()
+                except Exception:
+                    pass  # Non-MLX backends or clearing not supported
     
                 # Save checkpoint periodically
                 if checkpoint_path is not None and probes_processed % _CHECKPOINT_INTERVAL < PROBE_BATCH_SIZE:

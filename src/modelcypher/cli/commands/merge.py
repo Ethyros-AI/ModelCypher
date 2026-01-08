@@ -159,6 +159,7 @@ def _run_merge(
     output_dir: str,
     output_file: str | None,
     dry_run: bool = False,
+    probe_mode: str = "atlas",
 ) -> None:
     """Core merge logic shared by callback and run command."""
     from modelcypher.cli.composition import get_merge_pipeline_service
@@ -182,6 +183,7 @@ def _run_merge(
                 source_path=source,
                 target_path=target,
                 output_dir=output_dir,
+                probe_mode=probe_mode,
             )
 
         # Build output payload
@@ -304,6 +306,7 @@ def merge_callback(
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="Output directory for merged model"),
     output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
+    probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -312,7 +315,7 @@ def merge_callback(
 
     Examples:
         mc merge -s ./qwen -t ./smol -o ./merged
-        mc merge -s ./qwen -t ./smol -o ./merged --dry-run
+        mc merge -s ./qwen -t ./smol -o ./merged --probe-mode token
     """
     # If a subcommand was invoked (like 'run'), don't do anything here
     if ctx.invoked_subcommand is not None:
@@ -320,7 +323,7 @@ def merge_callback(
 
     # If options were provided directly, run the merge
     if source and target and output_dir:
-        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
+        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
     elif source or target or output_dir:
         # Partial options provided - show error
         missing = []
@@ -348,6 +351,7 @@ def run(
         help="Save full pipeline result to JSON file",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
+    probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -356,6 +360,6 @@ def run(
 
     Examples:
         mc merge run -s ./qwen -t ./smol -o ./merged
-        mc merge run -s ./qwen -t ./smol -o ./merged --dry-run
+        mc merge run -s ./qwen -t ./smol -o ./merged --probe-mode token
     """
-    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
+    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)

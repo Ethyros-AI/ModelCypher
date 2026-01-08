@@ -142,6 +142,7 @@ class MergePipelineService:
         source_path: str,
         target_path: str,
         output_dir: str,
+        probe_mode: str = "atlas",
     ) -> PipelineResult:
         """Run the complete merge pipeline.
 
@@ -149,6 +150,7 @@ class MergePipelineService:
             source_path: Path to source model
             target_path: Path to target model
             output_dir: Output directory for merged model
+            probe_mode: "atlas" (963 probes) or "token" (49K+ vocab probes)
         Returns:
             PipelineResult with all stage results
         """
@@ -171,6 +173,7 @@ class MergePipelineService:
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
+            probe_mode=probe_mode,
         )
         merge_duration = time.time() - merge_start
         logger.info("Merge completed in %.2fs", merge_duration)
@@ -405,6 +408,7 @@ class MergePipelineService:
         source_path: str,
         target_path: str,
         output_dir: str,
+        probe_mode: str = "atlas",
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
         # Use injected merger instead of importing from CLI
@@ -412,6 +416,7 @@ class MergePipelineService:
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
+            probe_mode=probe_mode,
         )
 
     def _extract_post_merge_validation(

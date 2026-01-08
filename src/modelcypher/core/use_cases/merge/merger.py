@@ -108,6 +108,7 @@ class UnifiedGeometricMerger:
         output_path: str | None = None,
         dry_run: bool = False,
         target_weights: dict[str, "Array"] | None = None,
+        probe_mode: str = "atlas",
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides)."""
         return run_merge(
@@ -119,6 +120,7 @@ class UnifiedGeometricMerger:
             output_path=output_path,
             dry_run=dry_run,
             target_weights=target_weights,
+            probe_mode=probe_mode,
         )
 
     def _stage_probe(

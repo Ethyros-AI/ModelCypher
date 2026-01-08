@@ -58,6 +58,7 @@ def run_merge(
     output_path: str | None = None,
     dry_run: bool = False,
     target_weights: dict[str, "Array"] | None = None,
+    probe_mode: str = "atlas",
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -134,7 +135,7 @@ def run_merge(
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
         extract_layer_index_fn=extract_layer_index,
-        # ProbeConfig was REMOVED - always use precise mode with all probes
+        probe_mode=probe_mode,
     )
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
