@@ -1420,6 +1420,13 @@ def _probe_precise(
                     degenerate_sources.add(src_idx)
                     continue
                 try:
+                    # Ensure 2D shape before slicing
+                    if len(shape) == 1:
+                        src_stacked = b.reshape(src_stacked, (1, -1))
+                        b.eval(src_stacked)
+                        shape = b.shape(src_stacked)
+                        n_probes = int(shape[0])
+                    
                     # Test RBF Gram matrix for degeneracy (same as GramAligner uses)
                     # Use first 50 probes for quick check
                     test_stacked = src_stacked[:min(n_probes, 50), :]
@@ -1436,10 +1443,10 @@ def _probe_precise(
                         degenerate_sources.add(src_idx)
                         logger.warning("PROBE: Source layer %d (idx %d) has degenerate RBF Gram", 
                                      src_layer, src_idx)
-                except Exception:
+                except Exception as e:
                     degenerate_sources.add(src_idx)
-                    logger.warning("PROBE: Source layer %d (idx %d) failed Gram check", 
-                                 src_layer, src_idx)
+                    logger.warning("PROBE: Source layer %d (idx %d) failed Gram check: %s", 
+                                 src_layer, src_idx, str(e))
             
             if degenerate_sources:
                 logger.info("PROBE: Found %d degenerate source layers: %s", 
@@ -1459,6 +1466,13 @@ def _probe_precise(
                     degenerate_targets.add(tgt_idx)
                     continue
                 try:
+                    # Ensure 2D shape before slicing
+                    if len(shape) == 1:
+                        tgt_stacked = b.reshape(tgt_stacked, (1, -1))
+                        b.eval(tgt_stacked)
+                        shape = b.shape(tgt_stacked)
+                        n_probes = int(shape[0])
+                    
                     # Use first 50 probes for quick check
                     test_stacked = tgt_stacked[:min(n_probes, 50), :]
                     test_stacked = b.astype(test_stacked, "float32")
@@ -1473,10 +1487,10 @@ def _probe_precise(
                         degenerate_targets.add(tgt_idx)
                         logger.warning("PROBE: Target layer %d (idx %d) has degenerate RBF Gram", 
                                      tgt_layer, tgt_idx)
-                except Exception:
+                except Exception as e:
                     degenerate_targets.add(tgt_idx)
-                    logger.warning("PROBE: Target layer %d (idx %d) failed Gram check", 
-                                 tgt_layer, tgt_idx)
+                    logger.warning("PROBE: Target layer %d (idx %d) failed Gram check: %s", 
+                                 tgt_layer, tgt_idx, str(e))
             
             if degenerate_targets:
                 logger.info("PROBE: Found %d degenerate target layers: %s", 
