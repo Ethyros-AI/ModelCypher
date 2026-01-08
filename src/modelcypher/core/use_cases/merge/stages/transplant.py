@@ -457,20 +457,24 @@ def stage_transplant(
     if not probe_ids or not probe_domains:
         raise RuntimeError("Transplant requires probe metadata (probe_ids, probe_domains)")
 
-    if graft_mask is None:
-        raise RuntimeError("Transplant requires graft_mask from density stage")
-
     if len(probe_ids) != len(probe_domains):
         metrics["transplant_skipped"] = "probe_metadata_mismatch"
         return TransplantStageResult(merged_weights=merged, metrics=metrics)
 
-    # PURE GEOMETRY: All probes are candidates, graft_mask decides
-    # No domain filtering - the geometry determines what gets transplanted
+    # CKA=1.0 INVARIANT: Null-space projection handles selectivity
+    # When graft_mask is None, graft all probes - the projection into null-space
+    # ensures we only add to directions target doesn't use.
     core_probe_ids = set(probe_ids)
-    logger.info(
-        "TRANSPLANT: Geometry-driven mode - %d candidate probes, graft_mask decides",
-        len(core_probe_ids)
-    )
+    if graft_mask is None:
+        logger.info(
+            "TRANSPLANT: CKA=1.0 mode - %d probes, null-space projection handles selectivity",
+            len(core_probe_ids)
+        )
+    else:
+        logger.info(
+            "TRANSPLANT: Selective mode - %d candidate probes, graft_mask decides",
+            len(core_probe_ids)
+        )
 
     metrics["core_probes"] = len(core_probe_ids)
     metrics["density_only_mode"] = True  # Always geometry-driven now

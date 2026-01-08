@@ -162,21 +162,32 @@ def stage_density(
 
     # Build simple concept density profiles from activations
     # This is a streamlined version that works with pre-collected activations
-    source_profile = _build_density_profile_from_activations(
-        activations=source_activations,
-        probe_ids=probe_ids,
-        probe_domains=probe_domains,
-        layers=layers,
-        backend=b,
-    )
+    import traceback
+    try:
+        source_profile = _build_density_profile_from_activations(
+            activations=source_activations,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            layers=layers,
+            backend=b,
+        )
+    except Exception as e:
+        logger.error("DENSITY BUG: source_profile failed: %s", e)
+        logger.error("DENSITY TRACEBACK:\n%s", traceback.format_exc())
+        raise
 
-    target_profile = _build_density_profile_from_activations(
-        activations=target_activations,
-        probe_ids=probe_ids,
-        probe_domains=probe_domains,
-        layers=layers,
-        backend=b,
-    )
+    try:
+        target_profile = _build_density_profile_from_activations(
+            activations=target_activations,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            layers=layers,
+            backend=b,
+        )
+    except Exception as e:
+        logger.error("DENSITY BUG: target_profile failed: %s", e)
+        logger.error("DENSITY TRACEBACK:\n%s", traceback.format_exc())
+        raise
 
     # Compute knowledge diff
     differ = KnowledgeDiffer()
@@ -281,9 +292,25 @@ def _build_density_profile_from_activations(
 
         # Use native tolist() for O(1) extraction instead of O(n) scalar extractions
         concept_densities: list[ConceptDensity] = []
+
+        # Debug: log shapes before tolist conversion
+        logger.debug(
+            "DENSITY DEBUG: layer=%d dims.shape=%s variances.shape=%s tightness.shape=%s",
+            layer_idx,
+            getattr(dims, 'shape', 'no-shape'),
+            getattr(variances_vec, 'shape', 'no-shape'),
+            getattr(cluster_tightness_vec, 'shape', 'no-shape'),
+        )
+
         dims_list = b.tolist(dims)
         variances_list = b.tolist(variances_vec)
         cluster_tightness_list = b.tolist(cluster_tightness_vec)
+
+        # Debug: verify tolist produced flat lists
+        if dims_list and not isinstance(dims_list[0], (int, float)):
+            logger.error("DENSITY BUG: dims_list[0] is not scalar: %s", type(dims_list[0]))
+        if variances_list and not isinstance(variances_list[0], (int, float)):
+            logger.error("DENSITY BUG: variances_list[0] is not scalar: %s", type(variances_list[0]))
 
         for i in range(min(len(act_list), len(probe_ids))):
             probe_id = probe_ids[i]
@@ -363,18 +390,24 @@ def _build_density_profile_from_activations(
 def filter_core_probes_by_graft_mask(
     core_probe_ids: set[str],
     layer_idx: int,
-    graft_mask: dict[str, dict[int, bool]],
+    graft_mask: dict[str, dict[int, bool]] | None,
 ) -> set[str]:
     """Filter core probe IDs to only include those that should be grafted.
 
     Args:
         core_probe_ids: Original set of core probe IDs (from domain selection).
         layer_idx: Current layer being processed.
-        graft_mask: Graft mask from density analysis.
+        graft_mask: Graft mask from density analysis. If None, graft all probes
+            (CKA=1.0 invariant means null-space projection handles selectivity).
 
     Returns:
         Filtered set of probe IDs that should be grafted at this layer.
     """
+    # CKA=1.0 invariant: when graft_mask is None, graft everything
+    # Null-space projection ensures non-interference by construction
+    if graft_mask is None:
+        return core_probe_ids
+
     filtered = set()
     for probe_id in core_probe_ids:
         # Check if this (probe_id, layer) should be grafted

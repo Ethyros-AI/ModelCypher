@@ -297,39 +297,20 @@ def run_merge(
         )
 
     # =================================================================
-    # STAGE 2.5: DENSITY (Selective grafting based on knowledge density)
+    # CKA = 1.0 INVARIANT: Null-space projection handles selectivity
     # =================================================================
-    # Compute which concepts to graft based on source/target density.
-    # Only graft where source is denser than target (fills gaps, no overwrites).
-    logger.info("STAGE 2.5: DENSITY (computing graft mask)")
-    # Density requires per-layer activations from both models. In cross-arch merges,
-    # the layer counts can differ, so only analyze layers present in both.
-    density_layers = sorted(
-        set(source_activations.keys()) & set(target_activations.keys())
-    )
-    if not density_layers:
-        raise RuntimeError("DENSITY: No overlapping layers between source and target")
-    graft_mask, density_metrics = stage_density(
-        source_activations=source_activations,
-        target_activations=target_activations,
-        probe_ids=probe_result.get("probe_ids"),
-        probe_domains=probe_result.get("probe_domains"),
-        layers=density_layers,
-        backend=backend,
-    )
+    # With CKA = 1.0 guaranteed by closed-form F = pinv(source) @ target,
+    # null-space projection automatically ensures we only add knowledge
+    # to directions the target doesn't use. No graft mask needed.
+    #
+    # The math: merged = target + project_null(source - target, target)
+    # This adds source knowledge WHERE target has nothing, by construction.
+    probe_ids_list = probe_result.get("probe_ids", [])
+    logger.info("CKA = 1.0 invariant: null-space projection handles selectivity")
 
-    if graft_mask:
-        graft_count = sum(
-            sum(1 for v in layer_mask.values() if v)
-            for layer_mask in graft_mask.values()
-        )
-        logger.info(
-            "DENSITY: %d concepts marked for grafting, %d skipped (target dense)",
-            density_metrics.get("positive_opportunity_count", graft_count),
-            density_metrics.get("nonpositive_opportunity_count", 0),
-        )
-    else:
-        logger.info("DENSITY: No graft opportunities (mask empty)")
+    # Graft everything - projection into null-space ensures non-interference
+    graft_mask = None  # Transplant will graft all when mask is None
+    density_metrics = {"invariant": "CKA=1.0"}
 
     logger.info("STAGE 3: TRANSPLANT (null-space constrained)")
     merged_weights, transplant_metrics = stage_transplant(

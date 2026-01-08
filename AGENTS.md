@@ -31,21 +31,22 @@ poetry run modelcypher-mcp        # MCP server
 
 ### Model Merging (The Main Operation)
 
-There is exactly ONE command to merge models:
-
+**Single merge (1→1):**
 ```bash
-mc merge -s SOURCE -t TARGET -o OUTPUT
+mc merge run -s SOURCE -t TARGET -o OUTPUT
 ```
 
 **Full example:**
 ```bash
-mc merge \
-  --source /path/to/qwen \
-  --target /path/to/smol \
-  --output-dir /path/to/merged
+mc merge run -s /path/to/qwen -t /path/to/smol -o /path/to/merged
 ```
 
-**What it does:** Takes knowledge from SOURCE and adds it to TARGET via null-space projection. TARGET's capabilities are preserved; SOURCE's knowledge is added. Result is denser than either input.
+**Batch merge (N→1) - merge multiple sources into one target:**
+```bash
+mc merge batch -s MODEL1 -s MODEL2 -s MODEL3 -t TARGET -o OUTPUT
+```
+
+**What it does:** Takes knowledge from SOURCE(s) and adds it to TARGET via null-space projection. TARGET's capabilities are preserved; SOURCE's knowledge is added. Result is denser than either input.
 
 ### Other Common Commands
 
