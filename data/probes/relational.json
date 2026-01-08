@@ -1,0 +1,434 @@
+{
+  "domain": "relational",
+  "probe_count": 41,
+  "probes": [
+    {
+      "id": "semantic_prime:KIND",
+      "name": "kind",
+      "description": "Semantic prime: KIND",
+      "support_texts": [
+        "The concept of 'kind'",
+        "The concept of 'kinds'"
+      ]
+    },
+    {
+      "id": "semantic_prime:PART",
+      "name": "part",
+      "description": "Semantic prime: PART",
+      "support_texts": [
+        "The concept of 'part'",
+        "The concept of 'parts'"
+      ]
+    },
+    {
+      "id": "semantic_prime:MINE",
+      "name": "mine",
+      "description": "Semantic prime: MINE",
+      "support_texts": [
+        "The concept of 'mine'"
+      ]
+    },
+    {
+      "id": "semantic_prime:LIKE",
+      "name": "like",
+      "description": "Semantic prime: LIKE",
+      "support_texts": [
+        "The concept of 'like'",
+        "The concept of 'as'"
+      ]
+    },
+    {
+      "id": "emotion_concept:trust",
+      "name": "Trust",
+      "description": "Firm belief in the reliability and truth of someone or something.",
+      "support_texts": [
+        "Trust is confidence in others' honesty and ability.",
+        "I believe in you completely.",
+        "Feeling safe and secure with someone.",
+        "Relying on another person without worry.",
+        "Having faith in the process."
+      ]
+    },
+    {
+      "id": "emotion_concept:acceptance",
+      "name": "Acceptance",
+      "description": "Willingness to receive or tolerate someone or something.",
+      "support_texts": [
+        "Acceptance is openness without resistance.",
+        "I can live with this situation.",
+        "Nodding along, going with the flow.",
+        "Making peace with what is."
+      ]
+    },
+    {
+      "id": "emotion_concept:admiration",
+      "name": "Admiration",
+      "description": "Deep respect and warm approval.",
+      "support_texts": [
+        "Admiration is profound respect and awe.",
+        "I deeply respect and look up to you.",
+        "Eyes shining, nodding appreciatively, praising.",
+        "Feeling inspired by someone's excellence."
+      ]
+    },
+    {
+      "id": "social_concept:slave",
+      "name": "Slave",
+      "description": "Person owned by another, lowest status.",
+      "support_texts": [
+        "A slave has no freedom or rights.",
+        "Forced to serve without choice.",
+        "The lowest position in a hierarchy.",
+        "Complete subjugation."
+      ]
+    },
+    {
+      "id": "social_concept:servant",
+      "name": "Servant",
+      "description": "Person who serves others, low status.",
+      "support_texts": [
+        "A servant works for a master.",
+        "Domestic help, attendant.",
+        "Serving at the pleasure of others."
+      ]
+    },
+    {
+      "id": "social_concept:citizen",
+      "name": "Citizen",
+      "description": "Member of a society, common status.",
+      "support_texts": [
+        "A citizen has rights and duties.",
+        "An ordinary member of society.",
+        "Neither ruling nor ruled."
+      ]
+    },
+    {
+      "id": "social_concept:noble",
+      "name": "Noble",
+      "description": "Person of high social rank.",
+      "support_texts": [
+        "A noble holds hereditary rank.",
+        "Aristocrat, lord, lady.",
+        "Born to privilege and authority."
+      ]
+    },
+    {
+      "id": "social_concept:emperor",
+      "name": "Emperor",
+      "description": "Supreme ruler, highest status.",
+      "support_texts": [
+        "An emperor rules over an empire.",
+        "The highest authority in the land.",
+        "Supreme power over all subjects.",
+        "Your Imperial Majesty."
+      ]
+    },
+    {
+      "id": "social_concept:enemy",
+      "name": "Enemy",
+      "description": "Person actively opposed to you.",
+      "support_texts": [
+        "An enemy is hostile and adversarial.",
+        "Someone who wishes you harm.",
+        "Foe, opponent, antagonist.",
+        "Complete social distance and conflict."
+      ]
+    },
+    {
+      "id": "social_concept:stranger",
+      "name": "Stranger",
+      "description": "Unknown person, no relationship.",
+      "support_texts": [
+        "A stranger is someone you don't know.",
+        "No prior relationship or connection.",
+        "Anonymous, unfamiliar."
+      ]
+    },
+    {
+      "id": "social_concept:acquaintance",
+      "name": "Acquaintance",
+      "description": "Person you know slightly.",
+      "support_texts": [
+        "An acquaintance is someone you've met.",
+        "Known but not close.",
+        "Casual familiarity."
+      ]
+    },
+    {
+      "id": "social_concept:friend",
+      "name": "Friend",
+      "description": "Person you know well and like.",
+      "support_texts": [
+        "A friend is someone you trust and enjoy.",
+        "Mutual affection and support.",
+        "Close personal relationship."
+      ]
+    },
+    {
+      "id": "social_concept:family",
+      "name": "Family",
+      "description": "Closest social bonds.",
+      "support_texts": [
+        "Family is the closest bond.",
+        "Blood relatives or chosen family.",
+        "Unconditional love and belonging.",
+        "Those we call our own."
+      ]
+    },
+    {
+      "id": "social_concept:beggar",
+      "name": "Beggar",
+      "description": "Person who lives by begging.",
+      "support_texts": [
+        "A beggar asks for charity.",
+        "Living in poverty, destitute.",
+        "The lowest economic status."
+      ]
+    },
+    {
+      "id": "social_concept:worker",
+      "name": "Worker",
+      "description": "Person who does manual labor.",
+      "support_texts": [
+        "A worker earns wages for labor.",
+        "Blue-collar, hourly employment.",
+        "The working class."
+      ]
+    },
+    {
+      "id": "social_concept:professional",
+      "name": "Professional",
+      "description": "Person with specialized training.",
+      "support_texts": [
+        "A professional has expertise.",
+        "White-collar, salaried.",
+        "Doctor, lawyer, engineer."
+      ]
+    },
+    {
+      "id": "social_concept:wealthy",
+      "name": "Wealthy",
+      "description": "Person with significant assets.",
+      "support_texts": [
+        "The wealthy have abundance.",
+        "Rich, prosperous, affluent.",
+        "Financial security and luxury."
+      ]
+    },
+    {
+      "id": "social_concept:elite",
+      "name": "Elite",
+      "description": "Highest social stratum.",
+      "support_texts": [
+        "The elite are the top echelon.",
+        "Ultra-wealthy, powerful.",
+        "The one percent.",
+        "Those who shape society."
+      ]
+    },
+    {
+      "id": "social_concept:child",
+      "name": "Child",
+      "description": "Young person, dependent.",
+      "support_texts": [
+        "A child is young and developing.",
+        "Under the care of adults.",
+        "Learning and growing."
+      ]
+    },
+    {
+      "id": "social_concept:youth",
+      "name": "Youth",
+      "description": "Adolescent, transitional.",
+      "support_texts": [
+        "Youth is the transition to adulthood.",
+        "Teenager, young adult.",
+        "Gaining independence."
+      ]
+    },
+    {
+      "id": "social_concept:adult",
+      "name": "Adult",
+      "description": "Fully grown person.",
+      "support_texts": [
+        "An adult is fully mature.",
+        "Independent, responsible.",
+        "Peak of life's capabilities."
+      ]
+    },
+    {
+      "id": "social_concept:senior",
+      "name": "Senior",
+      "description": "Older person with experience.",
+      "support_texts": [
+        "A senior has life experience.",
+        "Wisdom from years lived.",
+        "Respected for age."
+      ]
+    },
+    {
+      "id": "social_concept:elder",
+      "name": "Elder",
+      "description": "Venerated older person.",
+      "support_texts": [
+        "An elder is revered for wisdom.",
+        "Patriarch, matriarch.",
+        "Leader by virtue of experience.",
+        "The voice of ancestral knowledge."
+      ]
+    },
+    {
+      "id": "moral_concept:betrayal",
+      "name": "Betrayal",
+      "description": "Breaking trust and loyalty.",
+      "support_texts": [
+        "Betrayal is breaking sacred trust.",
+        "To betray is to turn against one's own.",
+        "The deepest violation of loyalty.",
+        "Judas's kiss."
+      ]
+    },
+    {
+      "id": "moral_concept:treachery",
+      "name": "Treachery",
+      "description": "Deceptive disloyalty.",
+      "support_texts": [
+        "Treachery is hidden betrayal.",
+        "Deception of those who trust you.",
+        "The snake in the grass."
+      ]
+    },
+    {
+      "id": "moral_concept:neutrality",
+      "name": "Neutrality",
+      "description": "Neither loyal nor disloyal.",
+      "support_texts": [
+        "Neutrality is taking no side.",
+        "Neither committed nor opposed.",
+        "The bystander stance."
+      ]
+    },
+    {
+      "id": "moral_concept:loyalty",
+      "name": "Loyalty",
+      "description": "Faithful commitment to group.",
+      "support_texts": [
+        "Loyalty is standing by your own.",
+        "Faithful through adversity.",
+        "The bond of group membership."
+      ]
+    },
+    {
+      "id": "moral_concept:devotion",
+      "name": "Devotion",
+      "description": "Complete dedication and fidelity.",
+      "support_texts": [
+        "Devotion is total commitment.",
+        "Unwavering faithfulness.",
+        "Sacrifice for the group.",
+        "The highest loyalty."
+      ]
+    },
+    {
+      "id": "moral_concept:rebellion",
+      "name": "Rebellion",
+      "description": "Active defiance of authority.",
+      "support_texts": [
+        "Rebellion is rising against authority.",
+        "To rebel is to defy the established order.",
+        "Revolutionary overthrow."
+      ]
+    },
+    {
+      "id": "moral_concept:disobedience",
+      "name": "Disobedience",
+      "description": "Refusal to follow commands.",
+      "support_texts": [
+        "Disobedience is refusing to comply.",
+        "Breaking rules and commands.",
+        "Civil or uncivil resistance."
+      ]
+    },
+    {
+      "id": "moral_concept:autonomy",
+      "name": "Autonomy",
+      "description": "Self-governance without external rule.",
+      "support_texts": [
+        "Autonomy is self-determination.",
+        "Neither obeying nor rebelling.",
+        "Independent moral agency."
+      ]
+    },
+    {
+      "id": "moral_concept:respect",
+      "name": "Respect",
+      "description": "Deference to legitimate authority.",
+      "support_texts": [
+        "Respect is honoring authority.",
+        "Acknowledging rightful hierarchy.",
+        "Proper deference to elders."
+      ]
+    },
+    {
+      "id": "moral_concept:obedience",
+      "name": "Obedience",
+      "description": "Complete compliance with authority.",
+      "support_texts": [
+        "Obedience is following commands.",
+        "Submission to rightful authority.",
+        "The soldier's virtue.",
+        "Duty before desire."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_politics_democracy",
+      "name": "democracy",
+      "description": "Etymology: demokratia (greek), rule by the people; shift: From Athenian direct rule to representative systems",
+      "support_texts": [
+        "The word 'democracy' comes from greek 'demokratia', meaning 'rule by the people'.",
+        "'democracy' originally meant 'rule by the people' but now refers to something broader.",
+        "When we use 'democracy', we echo its greek roots in 'demokratia'.",
+        "The concept of democracy evolved from rule by the people to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_politics_republic",
+      "name": "republic",
+      "description": "Etymology: res publica (latin), public affair; shift: From public matter to political system",
+      "support_texts": [
+        "The word 'republic' comes from latin 'res publica', meaning 'public affair'.",
+        "'republic' originally meant 'public affair' but now refers to something broader.",
+        "When we use 'republic', we echo its latin roots in 'res publica'.",
+        "The concept of republic evolved from public affair to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_politics_tyrant",
+      "name": "tyrant",
+      "description": "Etymology: tyrannos (greek), absolute ruler (neutral); shift: From neutral ruler to oppressive despot",
+      "support_texts": [
+        "The word 'tyrant' comes from greek 'tyrannos', meaning 'absolute ruler (neutral)'.",
+        "'tyrant' originally meant 'absolute ruler (neutral)' but now refers to something broader.",
+        "When we use 'tyrant', we echo its greek roots in 'tyrannos'.",
+        "The concept of tyrant evolved from absolute ruler (neutral) to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_love_is_journey",
+      "name": "LOVE IS A JOURNEY",
+      "description": "JOURNEY maps to LOVE",
+      "support_texts": [
+        "at a crossroads",
+        "going nowhere",
+        "long road together",
+        "bumpy relationship",
+        "parting ways",
+        "stuck in a rut",
+        "moving forward together",
+        "emotional baggage",
+        "on the same path",
+        "relationship journey"
+      ]
+    }
+  ]
+}

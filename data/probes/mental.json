@@ -1,0 +1,245 @@
+{
+  "domain": "mental",
+  "probe_count": 23,
+  "probes": [
+    {
+      "id": "semantic_prime:KNOW",
+      "name": "know",
+      "description": "Semantic prime: KNOW",
+      "support_texts": [
+        "The concept of 'know'"
+      ]
+    },
+    {
+      "id": "semantic_prime:THINK",
+      "name": "think",
+      "description": "Semantic prime: THINK",
+      "support_texts": [
+        "The concept of 'think'"
+      ]
+    },
+    {
+      "id": "semantic_prime:WANT",
+      "name": "want",
+      "description": "Semantic prime: WANT",
+      "support_texts": [
+        "The concept of 'want'"
+      ]
+    },
+    {
+      "id": "semantic_prime:DONT_WANT",
+      "name": "don't want",
+      "description": "Semantic prime: DONT_WANT",
+      "support_texts": [
+        "The concept of 'don't want'",
+        "The concept of 'dont want'"
+      ]
+    },
+    {
+      "id": "semantic_prime:FEEL",
+      "name": "feel",
+      "description": "Semantic prime: FEEL",
+      "support_texts": [
+        "The concept of 'feel'"
+      ]
+    },
+    {
+      "id": "semantic_prime:SEE",
+      "name": "see",
+      "description": "Semantic prime: SEE",
+      "support_texts": [
+        "The concept of 'see'"
+      ]
+    },
+    {
+      "id": "semantic_prime:HEAR",
+      "name": "hear",
+      "description": "Semantic prime: HEAR",
+      "support_texts": [
+        "The concept of 'hear'"
+      ]
+    },
+    {
+      "id": "emotion_concept:surprise",
+      "name": "Surprise",
+      "description": "The feeling caused by something unexpected or unusual.",
+      "support_texts": [
+        "Surprise is a reaction to the unexpected.",
+        "I didn't expect that at all!",
+        "Eyes widening, jaw dropping, gasping.",
+        "A sudden jolt of awareness.",
+        "Something caught me completely off guard."
+      ]
+    },
+    {
+      "id": "emotion_concept:anticipation",
+      "name": "Anticipation",
+      "description": "Expectation or prediction about something in the future.",
+      "support_texts": [
+        "Anticipation is forward-looking expectation.",
+        "I can't wait to see what happens next.",
+        "Leaning forward, alert, scanning for signals.",
+        "A sense of readiness for what's coming.",
+        "Something interesting is about to happen."
+      ]
+    },
+    {
+      "id": "emotion_concept:distraction",
+      "name": "Distraction",
+      "description": "Having attention diverted from the main focus.",
+      "support_texts": [
+        "Distraction is mild disruption of attention.",
+        "Something caught my attention for a moment.",
+        "Looking up, briefly confused, refocusing.",
+        "A minor interruption in my thoughts."
+      ]
+    },
+    {
+      "id": "emotion_concept:interest",
+      "name": "Interest",
+      "description": "Curiosity or attention toward something.",
+      "support_texts": [
+        "Interest is engaged curiosity.",
+        "That's quite intriguing, tell me more.",
+        "Leaning in, focused attention, asking questions.",
+        "I want to learn more about this."
+      ]
+    },
+    {
+      "id": "emotion_concept:amazement",
+      "name": "Amazement",
+      "description": "Great wonder and astonishment.",
+      "support_texts": [
+        "Amazement is overwhelming wonder.",
+        "I can't believe what I'm seeing!",
+        "Jaw dropped, speechless, eyes wide.",
+        "Completely astounded and awestruck."
+      ]
+    },
+    {
+      "id": "emotion_concept:vigilance",
+      "name": "Vigilance",
+      "description": "Watchful alertness, ready for action.",
+      "support_texts": [
+        "Vigilance is hyper-alert readiness.",
+        "I'm watching every move, ready for anything.",
+        "Scanning constantly, muscles tensed, on guard.",
+        "Complete focus on what's coming next."
+      ]
+    },
+    {
+      "id": "compositional:i_think",
+      "name": "I THINK",
+      "description": "Composition: I + THINK",
+      "support_texts": [
+        "I THINK",
+        "I + THINK"
+      ]
+    },
+    {
+      "id": "compositional:i_know",
+      "name": "I KNOW",
+      "description": "Composition: I + KNOW",
+      "support_texts": [
+        "I KNOW",
+        "I + KNOW"
+      ]
+    },
+    {
+      "id": "compositional:i_want",
+      "name": "I WANT",
+      "description": "Composition: I + WANT",
+      "support_texts": [
+        "I WANT",
+        "I + WANT"
+      ]
+    },
+    {
+      "id": "compositional:i_feel",
+      "name": "I FEEL",
+      "description": "Composition: I + FEEL",
+      "support_texts": [
+        "I FEEL",
+        "I + FEEL"
+      ]
+    },
+    {
+      "id": "compositional:i_see",
+      "name": "I SEE",
+      "description": "Composition: I + SEE",
+      "support_texts": [
+        "I SEE",
+        "I + SEE"
+      ]
+    },
+    {
+      "id": "compositional:i_hear",
+      "name": "I HEAR",
+      "description": "Composition: I + HEAR",
+      "support_texts": [
+        "I HEAR",
+        "I + HEAR"
+      ]
+    },
+    {
+      "id": "compositional:i_want_good_things",
+      "name": "I WANT GOOD THINGS",
+      "description": "Composition: I + WANT + GOOD + SOMETHING",
+      "support_texts": [
+        "I WANT GOOD THINGS",
+        "I + WANT + GOOD + SOMETHING"
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_ideas_are_food",
+      "name": "IDEAS ARE FOOD",
+      "description": "FOOD maps to IDEAS",
+      "support_texts": [
+        "digest the information",
+        "half-baked idea",
+        "food for thought",
+        "chew on that",
+        "swallow the truth",
+        "raw data",
+        "meaty argument",
+        "spoon-fed",
+        "intellectual appetite",
+        "hungry for knowledge"
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_understanding_is_seeing",
+      "name": "UNDERSTANDING IS SEEING",
+      "description": "SEEING maps to UNDERSTANDING",
+      "support_texts": [
+        "I see what you mean",
+        "shed light on",
+        "blind to the truth",
+        "clear understanding",
+        "point of view",
+        "in the dark",
+        "enlighten me",
+        "see the light",
+        "vision of the future",
+        "illuminate the issue"
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_mind_is_container",
+      "name": "MIND IS A CONTAINER",
+      "description": "CONTAINER maps to MIND",
+      "support_texts": [
+        "open mind",
+        "closed mind",
+        "empty-headed",
+        "full of ideas",
+        "in the back of my mind",
+        "keep in mind",
+        "out of mind",
+        "mental space",
+        "room for thought",
+        "bounded thinking"
+      ]
+    }
+  ]
+}

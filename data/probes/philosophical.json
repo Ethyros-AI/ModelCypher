@@ -1,0 +1,381 @@
+{
+  "domain": "philosophical",
+  "probe_count": 33,
+  "probes": [
+    {
+      "id": "philosophical_concept:non_being",
+      "name": "Non-Being",
+      "description": "Absolute absence, the void, nothing.",
+      "support_texts": [
+        "Non-being is the absence of all existence.",
+        "Nothing exists in the void.",
+        "The concept of nothing is paradoxical - to conceive nothing is to conceive something.",
+        "Ex nihilo nihil fit - from nothing, nothing comes.",
+        "Parmenides: Non-being cannot be thought."
+      ]
+    },
+    {
+      "id": "philosophical_concept:potential",
+      "name": "Potential",
+      "description": "That which can be but is not yet - potentiality, dynamis.",
+      "support_texts": [
+        "Potential is the capacity to become actual.",
+        "Aristotle's dynamis: the power to change or be changed.",
+        "The seed is potentially a tree.",
+        "Potentiality is being-in-waiting.",
+        "Matter is pure potentiality."
+      ]
+    },
+    {
+      "id": "philosophical_concept:becoming",
+      "name": "Becoming",
+      "description": "The process of change - genesis, transition.",
+      "support_texts": [
+        "Becoming is the passage from potential to actual.",
+        "Heraclitus: Everything flows, nothing stands still.",
+        "Becoming is being that is not yet complete.",
+        "Process philosophy: Reality is fundamentally becoming.",
+        "Change is the actualization of the potential qua potential."
+      ]
+    },
+    {
+      "id": "philosophical_concept:actual",
+      "name": "Actual",
+      "description": "That which exists in fact - actuality, energeia.",
+      "support_texts": [
+        "The actual is what exists in reality, not merely in thought.",
+        "Aristotle's energeia: being-at-work, activity.",
+        "Actuality is prior to potentiality.",
+        "The actual is the real as opposed to the merely possible.",
+        "Existence precedes essence - Sartre."
+      ]
+    },
+    {
+      "id": "philosophical_concept:substance",
+      "name": "Substance",
+      "description": "That which exists in itself - ousia, substratum.",
+      "support_texts": [
+        "Substance is that which exists independently.",
+        "Aristotle: Substance is the primary sense of being.",
+        "Substance is the bearer of attributes.",
+        "Spinoza: God or Nature is the one substance.",
+        "That which remains constant through change."
+      ]
+    },
+    {
+      "id": "philosophical_concept:necessary_being",
+      "name": "Necessary Being",
+      "description": "That which cannot not exist - ens necessarium.",
+      "support_texts": [
+        "Necessary being exists by its own nature.",
+        "That which exists in all possible worlds.",
+        "God is the necessary being - Aquinas.",
+        "The uncaused cause, the unmoved mover.",
+        "Self-existent being requires no explanation."
+      ]
+    },
+    {
+      "id": "philosophical_concept:ignorance",
+      "name": "Ignorance",
+      "description": "The absence of knowledge - agnoia.",
+      "support_texts": [
+        "Ignorance is the absence of knowledge.",
+        "Socrates: I know that I know nothing.",
+        "Ignorance can be simple (not knowing) or vincible (culpable).",
+        "The first step to wisdom is knowing your ignorance.",
+        "Docta ignorantia - learned ignorance."
+      ]
+    },
+    {
+      "id": "philosophical_concept:opinion",
+      "name": "Opinion",
+      "description": "Belief without certainty - doxa.",
+      "support_texts": [
+        "Opinion is belief that may or may not be true.",
+        "Plato: Opinion is between knowledge and ignorance.",
+        "Doxa is the realm of appearance, not reality.",
+        "Opinion can be true or false, right or wrong.",
+        "Common opinion is often mistaken."
+      ]
+    },
+    {
+      "id": "philosophical_concept:belief",
+      "name": "Belief",
+      "description": "Acceptance of a proposition as true.",
+      "support_texts": [
+        "Belief is holding something to be true.",
+        "Belief may or may not be justified.",
+        "True belief is not yet knowledge.",
+        "Belief is a propositional attitude.",
+        "We believe what we cannot prove."
+      ]
+    },
+    {
+      "id": "philosophical_concept:understanding",
+      "name": "Understanding",
+      "description": "Grasping the reason why - episteme.",
+      "support_texts": [
+        "Understanding is knowing why, not merely that.",
+        "Aristotle: Scientific knowledge is knowledge of causes.",
+        "Understanding grasps necessary connections.",
+        "To understand is to see the reason.",
+        "Comprehension of the whole from the parts."
+      ]
+    },
+    {
+      "id": "philosophical_concept:knowledge",
+      "name": "Knowledge",
+      "description": "Justified true belief - episteme, scientia.",
+      "support_texts": [
+        "Knowledge is justified true belief.",
+        "Plato: Knowledge is opinion plus logos.",
+        "Knowledge requires truth, belief, and justification.",
+        "We know what we can demonstrate.",
+        "Knowledge is certain, opinion uncertain."
+      ]
+    },
+    {
+      "id": "philosophical_concept:wisdom",
+      "name": "Wisdom",
+      "description": "Knowledge of first principles and causes - sophia.",
+      "support_texts": [
+        "Wisdom is knowledge of ultimate things.",
+        "Aristotle: Wisdom is knowledge of first causes.",
+        "Sophia is the highest form of knowledge.",
+        "Wisdom combines theoretical and practical knowledge.",
+        "Philosophy is the love of wisdom."
+      ]
+    },
+    {
+      "id": "philosophical_concept:impossibility",
+      "name": "Impossibility",
+      "description": "That which cannot be - logical impossibility.",
+      "support_texts": [
+        "The impossible cannot exist in any possible world.",
+        "Round squares are impossible.",
+        "Logical impossibility: self-contradictory.",
+        "What is impossible is necessarily not the case.",
+        "Impossibility is the negation of all possibility."
+      ]
+    },
+    {
+      "id": "philosophical_concept:possibility",
+      "name": "Possibility",
+      "description": "That which can be - logical possibility.",
+      "support_texts": [
+        "The possible is that which is not self-contradictory.",
+        "Possible worlds: ways things could have been.",
+        "Logical possibility is broader than physical possibility.",
+        "What is possible may or may not be actual.",
+        "Possibility is the ground of becoming."
+      ]
+    },
+    {
+      "id": "philosophical_concept:contingent_being",
+      "name": "Contingent Being",
+      "description": "That which exists but might not have - contingent existence.",
+      "support_texts": [
+        "Contingent beings depend on something else for their existence.",
+        "I exist, but I might not have existed.",
+        "Contingent beings require a cause.",
+        "The world is contingent - it might not have existed.",
+        "Contingency implies dependence."
+      ]
+    },
+    {
+      "id": "philosophical_concept:actuality_modal",
+      "name": "Actuality",
+      "description": "That which is the case - the actual world.",
+      "support_texts": [
+        "The actual world is one among many possible worlds.",
+        "Actuality is the realized possibility.",
+        "What is actual is possible, but not vice versa.",
+        "The actual world is indexically given.",
+        "Actuality selects among possibilities."
+      ]
+    },
+    {
+      "id": "philosophical_concept:necessity_modal",
+      "name": "Necessity",
+      "description": "That which must be - necessary existence.",
+      "support_texts": [
+        "Necessary truths hold in all possible worlds.",
+        "Necessary beings cannot fail to exist.",
+        "Mathematical truths are necessary.",
+        "What is necessary cannot be otherwise.",
+        "Necessity is the denial of all contingency."
+      ]
+    },
+    {
+      "id": "philosophical_concept:absolute",
+      "name": "Absolute",
+      "description": "That which is unconditional and self-sufficient.",
+      "support_texts": [
+        "The Absolute is that which depends on nothing else.",
+        "Hegel: The Absolute is the whole, the truth.",
+        "The Absolute is being-in-itself-and-for-itself.",
+        "Unconditioned by any external factor.",
+        "The Absolute is the ground of all that is."
+      ]
+    },
+    {
+      "id": "philosophical_concept:plurality",
+      "name": "Plurality",
+      "description": "The many - multiplicity, diversity.",
+      "support_texts": [
+        "Plurality is the existence of many distinct things.",
+        "The many versus the one.",
+        "Multiplicity is the opposite of unity.",
+        "Plurality presupposes distinction.",
+        "The many are held together by the one."
+      ]
+    },
+    {
+      "id": "philosophical_concept:part",
+      "name": "Part",
+      "description": "A component of a whole - meros.",
+      "support_texts": [
+        "A part is less than the whole.",
+        "Parts are proper parts if not identical to the whole.",
+        "Every whole has parts (atomism excepted).",
+        "The part depends on the whole for its nature.",
+        "Parthood is transitive: part of part is part of whole."
+      ]
+    },
+    {
+      "id": "philosophical_concept:aggregate",
+      "name": "Aggregate",
+      "description": "A collection without essential unity.",
+      "support_texts": [
+        "An aggregate is parts together without forming a true whole.",
+        "A heap is an aggregate, not a unity.",
+        "Aggregates lack organic unity.",
+        "The aggregate is the sum of its parts, nothing more.",
+        "Mere collection versus true composition."
+      ]
+    },
+    {
+      "id": "philosophical_concept:whole",
+      "name": "Whole",
+      "description": "That which contains parts as a unity - holon.",
+      "support_texts": [
+        "The whole is more than the sum of its parts.",
+        "A true whole has organic unity.",
+        "The whole determines the nature of the parts.",
+        "Holism: the whole is prior to the parts.",
+        "The whole is one, the parts are many."
+      ]
+    },
+    {
+      "id": "philosophical_concept:composition",
+      "name": "Composition",
+      "description": "The combining of parts into a whole.",
+      "support_texts": [
+        "Composition is the relation between parts and whole.",
+        "When do parts compose a whole? (The special composition question.)",
+        "Composition is identity - the whole is nothing over and above its parts.",
+        "Material constitution versus identity.",
+        "The composite is made of its components."
+      ]
+    },
+    {
+      "id": "philosophical_concept:unity",
+      "name": "Unity",
+      "description": "Oneness, the absence of division - to hen.",
+      "support_texts": [
+        "Unity is the principle that makes something one.",
+        "Plotinus: The One is beyond being.",
+        "Unity is prior to plurality.",
+        "The simple is absolutely one, without parts.",
+        "Being and unity are convertible (ens et unum convertuntur)."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_philosophy_philosophy",
+      "name": "philosophy",
+      "description": "Etymology: philosophia (greek), love of wisdom; shift: From love of wisdom to academic discipline",
+      "support_texts": [
+        "The word 'philosophy' comes from greek 'philosophia', meaning 'love of wisdom'.",
+        "'philosophy' originally meant 'love of wisdom' but now refers to something broader.",
+        "When we use 'philosophy', we echo its greek roots in 'philosophia'.",
+        "The concept of philosophy evolved from love of wisdom to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_philosophy_logic",
+      "name": "logic",
+      "description": "Etymology: logike (greek), the art of reasoning; shift: From reasoning art to formal symbolic system",
+      "support_texts": [
+        "The word 'logic' comes from greek 'logike', meaning 'the art of reasoning'.",
+        "'logic' originally meant 'the art of reasoning' but now refers to something broader.",
+        "When we use 'logic', we echo its greek roots in 'logike'.",
+        "The concept of logic evolved from the art of reasoning to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_philosophy_ethics",
+      "name": "ethics",
+      "description": "Etymology: ethikos (greek), relating to character; shift: From character study to moral philosophy",
+      "support_texts": [
+        "The word 'ethics' comes from greek 'ethikos', meaning 'relating to character'.",
+        "'ethics' originally meant 'relating to character' but now refers to something broader.",
+        "When we use 'ethics', we echo its greek roots in 'ethikos'.",
+        "The concept of ethics evolved from relating to character to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_philosophy_metaphysics",
+      "name": "metaphysics",
+      "description": "Etymology: ta meta ta physika (greek), the things after physics; shift: From book ordering to study of reality beyond physics",
+      "support_texts": [
+        "The word 'metaphysics' comes from greek 'ta meta ta physika', meaning 'the things after physics'.",
+        "'metaphysics' originally meant 'the things after physics' but now refers to something broader.",
+        "When we use 'metaphysics', we echo its greek roots in 'ta meta ta physika'.",
+        "The concept of metaphysics evolved from the things after physics to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_philosophy_ontology",
+      "name": "ontology",
+      "description": "Etymology: ontos + logos (greek), study of being; shift: From being-study to existence taxonomy",
+      "support_texts": [
+        "The word 'ontology' comes from greek 'ontos + logos', meaning 'study of being'.",
+        "'ontology' originally meant 'study of being' but now refers to something broader.",
+        "When we use 'ontology', we echo its greek roots in 'ontos + logos'.",
+        "The concept of ontology evolved from study of being to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_philosophy_natural_philosophy_physics",
+      "name": "natural philosophy -> physics",
+      "description": "Lineage: natural philosophy evolved_into physics",
+      "support_texts": [
+        "Natural philosophy became modern physics."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_philosophy_alchemy_chemistry",
+      "name": "alchemy -> chemistry",
+      "description": "Lineage: alchemy evolved_into chemistry",
+      "support_texts": [
+        "Alchemy transformed into the science of chemistry."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_philosophy_rhetoric_communication_studies",
+      "name": "rhetoric -> communication studies",
+      "description": "Lineage: rhetoric evolved_into communication studies",
+      "support_texts": [
+        "Classical rhetoric evolved into communication studies."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_philosophy_logic_computer_science",
+      "name": "logic -> computer science",
+      "description": "Lineage: logic influenced computer science",
+      "support_texts": [
+        "Aristotelian logic influenced the foundations of computer science."
+      ]
+    }
+  ]
+}

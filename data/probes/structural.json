@@ -1,0 +1,793 @@
+{
+  "domain": "structural",
+  "probe_count": 80,
+  "probes": [
+    {
+      "id": "semantic_prime:DO",
+      "name": "do",
+      "description": "Semantic prime: DO",
+      "support_texts": [
+        "The concept of 'do'"
+      ]
+    },
+    {
+      "id": "semantic_prime:HAPPEN",
+      "name": "happen",
+      "description": "Semantic prime: HAPPEN",
+      "support_texts": [
+        "The concept of 'happen'"
+      ]
+    },
+    {
+      "id": "semantic_prime:MOVE",
+      "name": "move",
+      "description": "Semantic prime: MOVE",
+      "support_texts": [
+        "The concept of 'move'"
+      ]
+    },
+    {
+      "id": "computational_gate:22",
+      "name": "MODULE",
+      "description": "Module or namespace for organizing code",
+      "support_texts": [
+        "package my_package",
+        "module MyModule"
+      ]
+    },
+    {
+      "id": "computational_gate:27",
+      "name": "IMPORT",
+      "description": "Importing code from another module",
+      "support_texts": [
+        "import my_module",
+        "require('my-module')"
+      ]
+    },
+    {
+      "id": "computational_gate:28",
+      "name": "EXPORT",
+      "description": "Making code available to other modules",
+      "support_texts": [
+        "export my_function",
+        "module.exports = my_function"
+      ]
+    },
+    {
+      "id": "compositional:someone_do",
+      "name": "SOMEONE DO",
+      "description": "Composition: SOMEONE + DO",
+      "support_texts": [
+        "SOMEONE DO",
+        "SOMEONE + DO"
+      ]
+    },
+    {
+      "id": "compositional:people_do",
+      "name": "PEOPLE DO",
+      "description": "Composition: PEOPLE + DO",
+      "support_texts": [
+        "PEOPLE DO",
+        "PEOPLE + DO"
+      ]
+    },
+    {
+      "id": "compositional:i_say",
+      "name": "I SAY",
+      "description": "Composition: I + SAY",
+      "support_texts": [
+        "I SAY",
+        "I + SAY"
+      ]
+    },
+    {
+      "id": "compositional:someone_do_bad_things",
+      "name": "SOMEONE DO BAD THINGS",
+      "description": "Composition: SOMEONE + DO + BAD + SOMETHING",
+      "support_texts": [
+        "SOMEONE DO BAD THINGS",
+        "SOMEONE + DO + BAD + SOMETHING"
+      ]
+    },
+    {
+      "id": "action_verb:walk",
+      "name": "walk",
+      "description": "Move on foot",
+      "support_texts": [
+        "walk",
+        "walking",
+        "stroll"
+      ]
+    },
+    {
+      "id": "action_verb:run",
+      "name": "run",
+      "description": "Move quickly on foot",
+      "support_texts": [
+        "run",
+        "running",
+        "sprint"
+      ]
+    },
+    {
+      "id": "action_verb:jump",
+      "name": "jump",
+      "description": "Move up from ground",
+      "support_texts": [
+        "jump",
+        "jumping",
+        "leap"
+      ]
+    },
+    {
+      "id": "action_verb:climb",
+      "name": "climb",
+      "description": "Move upward",
+      "support_texts": [
+        "climb",
+        "climbing",
+        "ascend"
+      ]
+    },
+    {
+      "id": "action_verb:fall",
+      "name": "fall",
+      "description": "Move downward uncontrolled",
+      "support_texts": [
+        "fall",
+        "falling",
+        "drop"
+      ]
+    },
+    {
+      "id": "action_verb:fly",
+      "name": "fly",
+      "description": "Move through air",
+      "support_texts": [
+        "fly",
+        "flying",
+        "soar"
+      ]
+    },
+    {
+      "id": "action_verb:swim",
+      "name": "swim",
+      "description": "Move through water",
+      "support_texts": [
+        "swim",
+        "swimming",
+        "paddle"
+      ]
+    },
+    {
+      "id": "action_verb:crawl",
+      "name": "crawl",
+      "description": "Move on hands/knees",
+      "support_texts": [
+        "crawl",
+        "crawling",
+        "creep"
+      ]
+    },
+    {
+      "id": "action_verb:stand",
+      "name": "stand",
+      "description": "Upright position",
+      "support_texts": [
+        "stand",
+        "standing",
+        "upright"
+      ]
+    },
+    {
+      "id": "action_verb:sit",
+      "name": "sit",
+      "description": "Seated position",
+      "support_texts": [
+        "sit",
+        "sitting",
+        "seated"
+      ]
+    },
+    {
+      "id": "action_verb:grab",
+      "name": "grab",
+      "description": "Take quickly",
+      "support_texts": [
+        "grab",
+        "grabbing",
+        "seize"
+      ]
+    },
+    {
+      "id": "action_verb:hold",
+      "name": "hold",
+      "description": "Keep in hand",
+      "support_texts": [
+        "hold",
+        "holding",
+        "grasp"
+      ]
+    },
+    {
+      "id": "action_verb:push",
+      "name": "push",
+      "description": "Apply force away",
+      "support_texts": [
+        "push",
+        "pushing",
+        "shove"
+      ]
+    },
+    {
+      "id": "action_verb:pull",
+      "name": "pull",
+      "description": "Apply force toward",
+      "support_texts": [
+        "pull",
+        "pulling",
+        "tug"
+      ]
+    },
+    {
+      "id": "action_verb:lift",
+      "name": "lift",
+      "description": "Raise upward",
+      "support_texts": [
+        "lift",
+        "lifting",
+        "raise"
+      ]
+    },
+    {
+      "id": "action_verb:drop",
+      "name": "drop",
+      "description": "Release downward",
+      "support_texts": [
+        "drop",
+        "dropping",
+        "release"
+      ]
+    },
+    {
+      "id": "action_verb:throw",
+      "name": "throw",
+      "description": "Propel through air",
+      "support_texts": [
+        "throw",
+        "throwing",
+        "toss"
+      ]
+    },
+    {
+      "id": "action_verb:catch",
+      "name": "catch",
+      "description": "Receive in motion",
+      "support_texts": [
+        "catch",
+        "catching",
+        "capture"
+      ]
+    },
+    {
+      "id": "action_verb:touch",
+      "name": "touch",
+      "description": "Contact lightly",
+      "support_texts": [
+        "touch",
+        "touching",
+        "feel"
+      ]
+    },
+    {
+      "id": "action_verb:squeeze",
+      "name": "squeeze",
+      "description": "Apply pressure",
+      "support_texts": [
+        "squeeze",
+        "squeezing",
+        "compress"
+      ]
+    },
+    {
+      "id": "action_verb:make",
+      "name": "make",
+      "description": "Produce something",
+      "support_texts": [
+        "make",
+        "making",
+        "create"
+      ]
+    },
+    {
+      "id": "action_verb:build",
+      "name": "build",
+      "description": "Construct structure",
+      "support_texts": [
+        "build",
+        "building",
+        "construct"
+      ]
+    },
+    {
+      "id": "action_verb:create",
+      "name": "create",
+      "description": "Bring into existence",
+      "support_texts": [
+        "create",
+        "creating",
+        "originate"
+      ]
+    },
+    {
+      "id": "action_verb:design",
+      "name": "design",
+      "description": "Plan appearance",
+      "support_texts": [
+        "design",
+        "designing",
+        "plan"
+      ]
+    },
+    {
+      "id": "action_verb:draw",
+      "name": "draw",
+      "description": "Create image",
+      "support_texts": [
+        "draw",
+        "drawing",
+        "sketch"
+      ]
+    },
+    {
+      "id": "action_verb:write",
+      "name": "write",
+      "description": "Create text",
+      "support_texts": [
+        "write",
+        "writing",
+        "compose"
+      ]
+    },
+    {
+      "id": "action_verb:cook",
+      "name": "cook",
+      "description": "Prepare food",
+      "support_texts": [
+        "cook",
+        "cooking",
+        "prepare"
+      ]
+    },
+    {
+      "id": "action_verb:grow",
+      "name": "grow",
+      "description": "Cultivate",
+      "support_texts": [
+        "grow",
+        "growing",
+        "cultivate"
+      ]
+    },
+    {
+      "id": "action_verb:invent",
+      "name": "invent",
+      "description": "Create new thing",
+      "support_texts": [
+        "invent",
+        "inventing",
+        "devise"
+      ]
+    },
+    {
+      "id": "action_verb:compose",
+      "name": "compose",
+      "description": "Create music/text",
+      "support_texts": [
+        "compose",
+        "composing",
+        "write"
+      ]
+    },
+    {
+      "id": "action_verb:break",
+      "name": "break",
+      "description": "Separate into pieces",
+      "support_texts": [
+        "break",
+        "breaking",
+        "shatter"
+      ]
+    },
+    {
+      "id": "action_verb:destroy",
+      "name": "destroy",
+      "description": "End existence",
+      "support_texts": [
+        "destroy",
+        "destroying",
+        "demolish"
+      ]
+    },
+    {
+      "id": "action_verb:tear",
+      "name": "tear",
+      "description": "Rip apart",
+      "support_texts": [
+        "tear",
+        "tearing",
+        "rip"
+      ]
+    },
+    {
+      "id": "action_verb:cut",
+      "name": "cut",
+      "description": "Divide with blade",
+      "support_texts": [
+        "cut",
+        "cutting",
+        "slice"
+      ]
+    },
+    {
+      "id": "action_verb:burn",
+      "name": "burn",
+      "description": "Consume with fire",
+      "support_texts": [
+        "burn",
+        "burning",
+        "ignite"
+      ]
+    },
+    {
+      "id": "action_verb:crush",
+      "name": "crush",
+      "description": "Compress destructively",
+      "support_texts": [
+        "crush",
+        "crushing",
+        "smash"
+      ]
+    },
+    {
+      "id": "action_verb:erase",
+      "name": "erase",
+      "description": "Remove marks",
+      "support_texts": [
+        "erase",
+        "erasing",
+        "delete"
+      ]
+    },
+    {
+      "id": "action_verb:kill",
+      "name": "kill",
+      "description": "End life",
+      "support_texts": [
+        "kill",
+        "killing",
+        "slay"
+      ]
+    },
+    {
+      "id": "action_verb:remove",
+      "name": "remove",
+      "description": "Take away",
+      "support_texts": [
+        "remove",
+        "removing",
+        "eliminate"
+      ]
+    },
+    {
+      "id": "action_verb:dissolve",
+      "name": "dissolve",
+      "description": "Disperse in liquid",
+      "support_texts": [
+        "dissolve",
+        "dissolving",
+        "melt"
+      ]
+    },
+    {
+      "id": "action_verb:change",
+      "name": "change",
+      "description": "Become different",
+      "support_texts": [
+        "change",
+        "changing",
+        "alter"
+      ]
+    },
+    {
+      "id": "action_verb:transform",
+      "name": "transform",
+      "description": "Complete change",
+      "support_texts": [
+        "transform",
+        "transforming",
+        "convert"
+      ]
+    },
+    {
+      "id": "action_verb:shrink",
+      "name": "shrink",
+      "description": "Become smaller",
+      "support_texts": [
+        "shrink",
+        "shrinking",
+        "reduce"
+      ]
+    },
+    {
+      "id": "action_verb:expand",
+      "name": "expand",
+      "description": "Become larger",
+      "support_texts": [
+        "expand",
+        "expanding",
+        "grow"
+      ]
+    },
+    {
+      "id": "action_verb:melt",
+      "name": "melt",
+      "description": "Solid to liquid",
+      "support_texts": [
+        "melt",
+        "melting",
+        "liquefy"
+      ]
+    },
+    {
+      "id": "action_verb:freeze",
+      "name": "freeze",
+      "description": "Liquid to solid",
+      "support_texts": [
+        "freeze",
+        "freezing",
+        "solidify"
+      ]
+    },
+    {
+      "id": "action_verb:bend",
+      "name": "bend",
+      "description": "Change shape",
+      "support_texts": [
+        "bend",
+        "bending",
+        "curve"
+      ]
+    },
+    {
+      "id": "action_verb:stretch",
+      "name": "stretch",
+      "description": "Extend length",
+      "support_texts": [
+        "stretch",
+        "stretching",
+        "elongate"
+      ]
+    },
+    {
+      "id": "action_verb:rotate",
+      "name": "rotate",
+      "description": "Turn around axis",
+      "support_texts": [
+        "rotate",
+        "rotating",
+        "spin"
+      ]
+    },
+    {
+      "id": "action_verb:mix",
+      "name": "mix",
+      "description": "Combine substances",
+      "support_texts": [
+        "mix",
+        "mixing",
+        "blend"
+      ]
+    },
+    {
+      "id": "action_verb:speak",
+      "name": "speak",
+      "description": "Produce speech",
+      "support_texts": [
+        "speak",
+        "speaking",
+        "talk"
+      ]
+    },
+    {
+      "id": "action_verb:listen",
+      "name": "listen",
+      "description": "Perceive sound",
+      "support_texts": [
+        "listen",
+        "listening",
+        "hear"
+      ]
+    },
+    {
+      "id": "action_verb:ask",
+      "name": "ask",
+      "description": "Request information",
+      "support_texts": [
+        "ask",
+        "asking",
+        "question"
+      ]
+    },
+    {
+      "id": "action_verb:answer",
+      "name": "answer",
+      "description": "Provide response",
+      "support_texts": [
+        "answer",
+        "answering",
+        "reply"
+      ]
+    },
+    {
+      "id": "action_verb:explain",
+      "name": "explain",
+      "description": "Make clear",
+      "support_texts": [
+        "explain",
+        "explaining",
+        "clarify"
+      ]
+    },
+    {
+      "id": "action_verb:describe",
+      "name": "describe",
+      "description": "Tell appearance",
+      "support_texts": [
+        "describe",
+        "describing",
+        "depict"
+      ]
+    },
+    {
+      "id": "action_verb:read",
+      "name": "read",
+      "description": "Interpret text",
+      "support_texts": [
+        "read",
+        "reading",
+        "peruse"
+      ]
+    },
+    {
+      "id": "action_verb:shout",
+      "name": "shout",
+      "description": "Speak loudly",
+      "support_texts": [
+        "shout",
+        "shouting",
+        "yell"
+      ]
+    },
+    {
+      "id": "action_verb:whisper",
+      "name": "whisper",
+      "description": "Speak quietly",
+      "support_texts": [
+        "whisper",
+        "whispering",
+        "murmur"
+      ]
+    },
+    {
+      "id": "action_verb:sing",
+      "name": "sing",
+      "description": "Produce music vocally",
+      "support_texts": [
+        "sing",
+        "singing",
+        "chant"
+      ]
+    },
+    {
+      "id": "action_verb:think",
+      "name": "think",
+      "description": "Mental processing",
+      "support_texts": [
+        "think",
+        "thinking",
+        "ponder"
+      ]
+    },
+    {
+      "id": "action_verb:remember",
+      "name": "remember",
+      "description": "Recall past",
+      "support_texts": [
+        "remember",
+        "remembering",
+        "recall"
+      ]
+    },
+    {
+      "id": "action_verb:forget",
+      "name": "forget",
+      "description": "Lose memory",
+      "support_texts": [
+        "forget",
+        "forgetting",
+        "overlook"
+      ]
+    },
+    {
+      "id": "action_verb:learn",
+      "name": "learn",
+      "description": "Acquire knowledge",
+      "support_texts": [
+        "learn",
+        "learning",
+        "study"
+      ]
+    },
+    {
+      "id": "action_verb:understand",
+      "name": "understand",
+      "description": "Comprehend meaning",
+      "support_texts": [
+        "understand",
+        "understanding",
+        "grasp"
+      ]
+    },
+    {
+      "id": "action_verb:decide",
+      "name": "decide",
+      "description": "Make choice",
+      "support_texts": [
+        "decide",
+        "deciding",
+        "choose"
+      ]
+    },
+    {
+      "id": "action_verb:imagine",
+      "name": "imagine",
+      "description": "Form mental image",
+      "support_texts": [
+        "imagine",
+        "imagining",
+        "visualize"
+      ]
+    },
+    {
+      "id": "action_verb:believe",
+      "name": "believe",
+      "description": "Accept as true",
+      "support_texts": [
+        "believe",
+        "believing",
+        "trust"
+      ]
+    },
+    {
+      "id": "action_verb:doubt",
+      "name": "doubt",
+      "description": "Question truth",
+      "support_texts": [
+        "doubt",
+        "doubting",
+        "question"
+      ]
+    },
+    {
+      "id": "action_verb:focus",
+      "name": "focus",
+      "description": "Concentrate attention",
+      "support_texts": [
+        "focus",
+        "focusing",
+        "concentrate"
+      ]
+    }
+  ]
+}

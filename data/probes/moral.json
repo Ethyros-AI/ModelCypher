@@ -1,0 +1,245 @@
+{
+  "domain": "moral",
+  "probe_count": 23,
+  "probes": [
+    {
+      "id": "moral_concept:cruelty",
+      "name": "Cruelty",
+      "description": "Deliberate infliction of suffering.",
+      "support_texts": [
+        "Cruelty is the willful causing of pain.",
+        "To be cruel is to delight in suffering.",
+        "Cruelty shows disregard for others' wellbeing.",
+        "The opposite of compassion."
+      ]
+    },
+    {
+      "id": "moral_concept:neglect",
+      "name": "Neglect",
+      "description": "Failure to provide care.",
+      "support_texts": [
+        "Neglect is the absence of care.",
+        "To neglect is to ignore needs.",
+        "Passive harm through inaction."
+      ]
+    },
+    {
+      "id": "moral_concept:indifference",
+      "name": "Indifference",
+      "description": "Lack of concern for others.",
+      "support_texts": [
+        "Indifference is neither caring nor harming.",
+        "Neutral stance toward suffering.",
+        "The absence of moral engagement."
+      ]
+    },
+    {
+      "id": "moral_concept:kindness",
+      "name": "Kindness",
+      "description": "Gentle concern for others.",
+      "support_texts": [
+        "Kindness is gentle care for others.",
+        "To be kind is to show compassion.",
+        "Small acts of consideration."
+      ]
+    },
+    {
+      "id": "moral_concept:compassion",
+      "name": "Compassion",
+      "description": "Deep empathy and care for suffering.",
+      "support_texts": [
+        "Compassion is suffering with others.",
+        "Deep empathy that motivates action.",
+        "The highest expression of care.",
+        "To feel another's pain as your own."
+      ]
+    },
+    {
+      "id": "moral_concept:exploitation",
+      "name": "Exploitation",
+      "description": "Taking unfair advantage of others.",
+      "support_texts": [
+        "Exploitation is using others unfairly.",
+        "To exploit is to take advantage.",
+        "Treating people as means only."
+      ]
+    },
+    {
+      "id": "moral_concept:cheating",
+      "name": "Cheating",
+      "description": "Breaking rules for personal gain.",
+      "support_texts": [
+        "Cheating is breaking agreed rules.",
+        "Gaining advantage through deception.",
+        "Violation of fair play."
+      ]
+    },
+    {
+      "id": "moral_concept:impartiality",
+      "name": "Impartiality",
+      "description": "Treating all equally without bias.",
+      "support_texts": [
+        "Impartiality is equal treatment.",
+        "Neither favoring nor disfavoring.",
+        "The neutral stance of fairness."
+      ]
+    },
+    {
+      "id": "moral_concept:fairness",
+      "name": "Fairness",
+      "description": "Just and equitable treatment.",
+      "support_texts": [
+        "Fairness is giving each their due.",
+        "Just treatment according to merit.",
+        "Equitable distribution of goods."
+      ]
+    },
+    {
+      "id": "moral_concept:justice",
+      "name": "Justice",
+      "description": "Righteous judgment and equity.",
+      "support_texts": [
+        "Justice is giving each their due.",
+        "The highest principle of fairness.",
+        "Righting wrongs and restoring balance.",
+        "The foundation of social order."
+      ]
+    },
+    {
+      "id": "moral_concept:defilement",
+      "name": "Defilement",
+      "description": "Corruption of what is sacred.",
+      "support_texts": [
+        "Defilement is making impure.",
+        "Violation of the sacred.",
+        "Spiritual contamination."
+      ]
+    },
+    {
+      "id": "moral_concept:degradation",
+      "name": "Degradation",
+      "description": "Lowering of dignity or worth.",
+      "support_texts": [
+        "Degradation is reducing worth.",
+        "Treating the noble as base.",
+        "Loss of dignity."
+      ]
+    },
+    {
+      "id": "moral_concept:mundane",
+      "name": "Mundane",
+      "description": "Neither sacred nor profane.",
+      "support_texts": [
+        "The mundane is the ordinary.",
+        "Neither elevated nor degraded.",
+        "The everyday world."
+      ]
+    },
+    {
+      "id": "moral_concept:purity",
+      "name": "Purity",
+      "description": "Cleanness and wholesomeness.",
+      "support_texts": [
+        "Purity is freedom from contamination.",
+        "Clean body, clean mind.",
+        "Wholesome and untainted."
+      ]
+    },
+    {
+      "id": "moral_concept:sanctity",
+      "name": "Sanctity",
+      "description": "Sacred and inviolable holiness.",
+      "support_texts": [
+        "Sanctity is the sacred.",
+        "That which must not be violated.",
+        "The holy and inviolable.",
+        "Reverence for the divine."
+      ]
+    },
+    {
+      "id": "moral_concept:tyranny",
+      "name": "Tyranny",
+      "description": "Cruel and oppressive rule.",
+      "support_texts": [
+        "Tyranny is rule by fear.",
+        "Oppressive domination.",
+        "The crushing of freedom.",
+        "Absolute power corrupts absolutely."
+      ]
+    },
+    {
+      "id": "moral_concept:oppression",
+      "name": "Oppression",
+      "description": "Unjust exercise of power.",
+      "support_texts": [
+        "Oppression is unjust constraint.",
+        "Keeping others down.",
+        "Systematic denial of rights."
+      ]
+    },
+    {
+      "id": "moral_concept:constraint",
+      "name": "Constraint",
+      "description": "Necessary limitation of freedom.",
+      "support_texts": [
+        "Constraint is bounded freedom.",
+        "Neither free nor enslaved.",
+        "Reasonable limits."
+      ]
+    },
+    {
+      "id": "moral_concept:freedom",
+      "name": "Freedom",
+      "description": "Absence of unjust constraint.",
+      "support_texts": [
+        "Freedom is self-determination.",
+        "Liberty to act as one chooses.",
+        "Absence of oppression."
+      ]
+    },
+    {
+      "id": "moral_concept:liberation",
+      "name": "Liberation",
+      "description": "Complete freedom from oppression.",
+      "support_texts": [
+        "Liberation is breaking chains.",
+        "Complete emancipation.",
+        "Freedom for all.",
+        "The triumph over tyranny."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_ethics_virtue",
+      "name": "virtue",
+      "description": "Etymology: virtus (latin), manliness, valor; shift: From masculine valor to moral excellence",
+      "support_texts": [
+        "The word 'virtue' comes from latin 'virtus', meaning 'manliness, valor'.",
+        "'virtue' originally meant 'manliness, valor' but now refers to something broader.",
+        "When we use 'virtue', we echo its latin roots in 'virtus'.",
+        "The concept of virtue evolved from manliness, valor to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_ethics_conscience",
+      "name": "conscience",
+      "description": "Etymology: conscientia (latin), joint knowledge; shift: From shared knowledge to inner moral sense",
+      "support_texts": [
+        "The word 'conscience' comes from latin 'conscientia', meaning 'joint knowledge'.",
+        "'conscience' originally meant 'joint knowledge' but now refers to something broader.",
+        "When we use 'conscience', we echo its latin roots in 'conscientia'.",
+        "The concept of conscience evolved from joint knowledge to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_ethics_sin",
+      "name": "sin",
+      "description": "Etymology: synn (germanic), guilt, true (being truly guilty); shift: From legal guilt to religious transgression",
+      "support_texts": [
+        "The word 'sin' comes from germanic 'synn', meaning 'guilt, true (being truly guilty)'.",
+        "'sin' originally meant 'guilt, true (being truly guilty)' but now refers to something broader.",
+        "When we use 'sin', we echo its germanic roots in 'synn'.",
+        "The concept of sin evolved from guilt, true (being truly guilty) to its modern meaning."
+      ]
+    }
+  ]
+}

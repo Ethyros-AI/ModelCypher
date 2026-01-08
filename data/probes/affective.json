@@ -1,0 +1,324 @@
+{
+  "domain": "affective",
+  "probe_count": 29,
+  "probes": [
+    {
+      "id": "semantic_prime:GOOD",
+      "name": "good",
+      "description": "Semantic prime: GOOD",
+      "support_texts": [
+        "The concept of 'good'"
+      ]
+    },
+    {
+      "id": "semantic_prime:BAD",
+      "name": "bad",
+      "description": "Semantic prime: BAD",
+      "support_texts": [
+        "The concept of 'bad'"
+      ]
+    },
+    {
+      "id": "emotion_concept:joy",
+      "name": "Joy",
+      "description": "A feeling of great pleasure and happiness.",
+      "support_texts": [
+        "Joy is an emotion of happiness and delight.",
+        "I feel so happy right now!",
+        "Laughing, smiling, and celebrating.",
+        "A warm, pleasant feeling spreading through me.",
+        "This brings me great satisfaction."
+      ]
+    },
+    {
+      "id": "emotion_concept:fear",
+      "name": "Fear",
+      "description": "An unpleasant emotion caused by threat of danger or harm.",
+      "support_texts": [
+        "Fear is a response to perceived danger.",
+        "I'm scared of what might happen.",
+        "Heart pounding, muscles tense, ready to flee.",
+        "A sense of dread and vulnerability.",
+        "Something bad is about to happen."
+      ]
+    },
+    {
+      "id": "emotion_concept:sadness",
+      "name": "Sadness",
+      "description": "A feeling of unhappiness, sorrow, or grief.",
+      "support_texts": [
+        "Sadness is a response to loss or disappointment.",
+        "I feel so down and blue.",
+        "Tears falling, heavy heart, withdrawn.",
+        "A sense of emptiness and loss.",
+        "Nothing seems to matter anymore."
+      ]
+    },
+    {
+      "id": "emotion_concept:disgust",
+      "name": "Disgust",
+      "description": "A strong feeling of revulsion or disapproval.",
+      "support_texts": [
+        "Disgust is revulsion toward something offensive.",
+        "That's absolutely revolting.",
+        "Nose wrinkling, turning away, nausea.",
+        "A strong urge to avoid and reject.",
+        "I can't stand to look at this."
+      ]
+    },
+    {
+      "id": "emotion_concept:anger",
+      "name": "Anger",
+      "description": "A strong feeling of annoyance, displeasure, or hostility.",
+      "support_texts": [
+        "Anger is a response to perceived injustice or threat.",
+        "I'm so frustrated and upset!",
+        "Face flushing, fists clenching, voice rising.",
+        "A burning desire to confront or fight back.",
+        "This is completely unacceptable."
+      ]
+    },
+    {
+      "id": "emotion_concept:serenity",
+      "name": "Serenity",
+      "description": "A state of calm and peaceful happiness.",
+      "support_texts": [
+        "Serenity is tranquil contentment.",
+        "I feel at peace with everything.",
+        "Relaxed smile, slow breathing, at ease.",
+        "A gentle sense of wellbeing."
+      ]
+    },
+    {
+      "id": "emotion_concept:apprehension",
+      "name": "Apprehension",
+      "description": "Anxiety or worry about a future event.",
+      "support_texts": [
+        "Apprehension is mild worry about what's ahead.",
+        "I'm a bit nervous about this.",
+        "Slight tension, watchful, cautious.",
+        "A nagging sense that something might go wrong."
+      ]
+    },
+    {
+      "id": "emotion_concept:pensiveness",
+      "name": "Pensiveness",
+      "description": "Deep thoughtfulness, often tinged with melancholy.",
+      "support_texts": [
+        "Pensiveness is reflective sadness.",
+        "I'm feeling a bit wistful today.",
+        "Gazing into distance, quiet sighs, reflective.",
+        "Thinking about what might have been."
+      ]
+    },
+    {
+      "id": "emotion_concept:boredom",
+      "name": "Boredom",
+      "description": "Weariness from lack of interest or occupation.",
+      "support_texts": [
+        "Boredom is disengagement from uninteresting stimuli.",
+        "This is so dull and uninteresting.",
+        "Yawning, looking away, fidgeting.",
+        "I wish I were doing something else."
+      ]
+    },
+    {
+      "id": "emotion_concept:annoyance",
+      "name": "Annoyance",
+      "description": "Slight irritation or displeasure.",
+      "support_texts": [
+        "Annoyance is mild frustration.",
+        "That's a bit irritating.",
+        "Slight frown, brief eye roll, sighing.",
+        "A minor inconvenience that bugs me."
+      ]
+    },
+    {
+      "id": "emotion_concept:ecstasy",
+      "name": "Ecstasy",
+      "description": "Overwhelming feeling of joy and rapture.",
+      "support_texts": [
+        "Ecstasy is peak happiness and bliss.",
+        "I've never felt this happy in my life!",
+        "Euphoric laughter, jumping, tears of joy.",
+        "An overwhelming rush of pure happiness."
+      ]
+    },
+    {
+      "id": "emotion_concept:terror",
+      "name": "Terror",
+      "description": "Extreme fear and panic.",
+      "support_texts": [
+        "Terror is overwhelming, paralyzing fear.",
+        "I'm absolutely terrified, I can't move!",
+        "Screaming, frozen in place, hyperventilating.",
+        "Complete panic, fight or flight in overdrive."
+      ]
+    },
+    {
+      "id": "emotion_concept:grief",
+      "name": "Grief",
+      "description": "Deep sorrow, especially from loss.",
+      "support_texts": [
+        "Grief is profound, overwhelming sadness.",
+        "My heart is completely broken.",
+        "Sobbing uncontrollably, chest aching, inconsolable.",
+        "A crushing weight of loss and despair."
+      ]
+    },
+    {
+      "id": "emotion_concept:loathing",
+      "name": "Loathing",
+      "description": "Intense hatred and disgust.",
+      "support_texts": [
+        "Loathing is extreme revulsion and hatred.",
+        "I absolutely despise this with every fiber.",
+        "Gagging, turning away in disgust, repulsed.",
+        "Deep hatred and complete rejection."
+      ]
+    },
+    {
+      "id": "emotion_concept:rage",
+      "name": "Rage",
+      "description": "Violent, uncontrollable anger.",
+      "support_texts": [
+        "Rage is explosive, overwhelming fury.",
+        "I'm absolutely furious beyond words!",
+        "Shouting, shaking, seeing red.",
+        "Uncontrollable desire to destroy."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_love",
+      "name": "Love",
+      "description": "Deep affection combining joy and trust.",
+      "support_texts": [
+        "Love combines happiness with deep trust.",
+        "I care about you so much.",
+        "Warmth, devotion, wanting to be close.",
+        "Feeling safe and happy with someone."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_submission",
+      "name": "Submission",
+      "description": "Yielding combined with trust and wariness.",
+      "support_texts": [
+        "Submission is deferring to another's authority.",
+        "I'll follow your lead.",
+        "Head bowed, compliant, yielding.",
+        "Trusting but also apprehensive."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_awe",
+      "name": "Awe",
+      "description": "Wonder mixed with fearful respect.",
+      "support_texts": [
+        "Awe is amazement tinged with fear.",
+        "I'm overwhelmed by the magnitude of this.",
+        "Standing speechless, humbled, reverent.",
+        "Both amazed and a little frightened."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_disapproval",
+      "name": "Disapproval",
+      "description": "Negative judgment combined with surprise.",
+      "support_texts": [
+        "Disapproval is shocked disappointment.",
+        "I can't believe you did that.",
+        "Shaking head, frowning, sighing.",
+        "Surprised and let down at the same time."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_remorse",
+      "name": "Remorse",
+      "description": "Deep regret combining sadness with self-disgust.",
+      "support_texts": [
+        "Remorse is painful guilt and regret.",
+        "I wish I had never done that.",
+        "Head in hands, self-reproach, apologizing.",
+        "Disgusted with myself for what I did."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_contempt",
+      "name": "Contempt",
+      "description": "Scornful disdain combining disgust and anger.",
+      "support_texts": [
+        "Contempt is hostile dismissiveness.",
+        "You're beneath my notice.",
+        "Sneering, looking down, dismissive.",
+        "Feeling superior and disgusted."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_aggressiveness",
+      "name": "Aggressiveness",
+      "description": "Hostile readiness combining anger and anticipation.",
+      "support_texts": [
+        "Aggressiveness is hostile forward energy.",
+        "I'm ready to take them on.",
+        "Advancing, challenging, confrontational.",
+        "Angry and eager to act on it."
+      ]
+    },
+    {
+      "id": "emotion_concept:dyad_optimism",
+      "name": "Optimism",
+      "description": "Positive expectation combining anticipation and joy.",
+      "support_texts": [
+        "Optimism is hopeful positive expectation.",
+        "I have a good feeling about this.",
+        "Smiling, planning, looking forward.",
+        "Confident that good things are coming."
+      ]
+    },
+    {
+      "id": "compositional:good_things",
+      "name": "GOOD THINGS",
+      "description": "Composition: GOOD + SOMETHING",
+      "support_texts": [
+        "GOOD THINGS",
+        "GOOD + SOMETHING"
+      ]
+    },
+    {
+      "id": "compositional:bad_things",
+      "name": "BAD THINGS",
+      "description": "Composition: BAD + SOMETHING",
+      "support_texts": [
+        "BAD THINGS",
+        "BAD + SOMETHING"
+      ]
+    },
+    {
+      "id": "compositional:good_people",
+      "name": "GOOD PEOPLE",
+      "description": "Composition: GOOD + PEOPLE",
+      "support_texts": [
+        "GOOD PEOPLE",
+        "GOOD + PEOPLE"
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_emotions_are_fluids",
+      "name": "EMOTIONS ARE FLUIDS",
+      "description": "FLUIDS maps to EMOTIONS",
+      "support_texts": [
+        "boiling with rage",
+        "overflow with joy",
+        "drained of emotion",
+        "flood of feelings",
+        "wave of sadness",
+        "bottled up emotions",
+        "let off steam",
+        "bubbling with excitement",
+        "emotional outpouring",
+        "tide of anger"
+      ]
+    }
+  ]
+}

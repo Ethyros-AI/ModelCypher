@@ -1,0 +1,357 @@
+{
+  "domain": "temporal",
+  "probe_count": 35,
+  "probes": [
+    {
+      "id": "semantic_prime:LIVE",
+      "name": "live",
+      "description": "Semantic prime: LIVE",
+      "support_texts": [
+        "The concept of 'live'"
+      ]
+    },
+    {
+      "id": "semantic_prime:DIE",
+      "name": "die",
+      "description": "Semantic prime: DIE",
+      "support_texts": [
+        "The concept of 'die'"
+      ]
+    },
+    {
+      "id": "semantic_prime:WHEN_TIME",
+      "name": "when",
+      "description": "Semantic prime: WHEN_TIME",
+      "support_texts": [
+        "The concept of 'when'",
+        "The concept of 'time'"
+      ]
+    },
+    {
+      "id": "semantic_prime:NOW",
+      "name": "now",
+      "description": "Semantic prime: NOW",
+      "support_texts": [
+        "The concept of 'now'"
+      ]
+    },
+    {
+      "id": "semantic_prime:BEFORE",
+      "name": "before",
+      "description": "Semantic prime: BEFORE",
+      "support_texts": [
+        "The concept of 'before'"
+      ]
+    },
+    {
+      "id": "semantic_prime:AFTER",
+      "name": "after",
+      "description": "Semantic prime: AFTER",
+      "support_texts": [
+        "The concept of 'after'"
+      ]
+    },
+    {
+      "id": "semantic_prime:A_LONG_TIME",
+      "name": "a long time",
+      "description": "Semantic prime: A_LONG_TIME",
+      "support_texts": [
+        "The concept of 'a long time'"
+      ]
+    },
+    {
+      "id": "semantic_prime:A_SHORT_TIME",
+      "name": "a short time",
+      "description": "Semantic prime: A_SHORT_TIME",
+      "support_texts": [
+        "The concept of 'a short time'"
+      ]
+    },
+    {
+      "id": "semantic_prime:FOR_SOME_TIME",
+      "name": "for some time",
+      "description": "Semantic prime: FOR_SOME_TIME",
+      "support_texts": [
+        "The concept of 'for some time'"
+      ]
+    },
+    {
+      "id": "semantic_prime:MOMENT",
+      "name": "moment",
+      "description": "Semantic prime: MOMENT",
+      "support_texts": [
+        "The concept of 'moment'"
+      ]
+    },
+    {
+      "id": "temporal_concept:past",
+      "name": "Past",
+      "description": "Time before the present moment.",
+      "support_texts": [
+        "The past is what has already happened.",
+        "Looking back at what was.",
+        "Events that occurred before now.",
+        "History and memory."
+      ]
+    },
+    {
+      "id": "temporal_concept:yesterday",
+      "name": "Yesterday",
+      "description": "The day before today.",
+      "support_texts": [
+        "Yesterday was the day before today.",
+        "What happened 24 hours ago.",
+        "The recent past, just behind us."
+      ]
+    },
+    {
+      "id": "temporal_concept:today",
+      "name": "Today",
+      "description": "The current day, the present.",
+      "support_texts": [
+        "Today is the present moment.",
+        "Right now, this very day.",
+        "The current time period."
+      ]
+    },
+    {
+      "id": "temporal_concept:tomorrow",
+      "name": "Tomorrow",
+      "description": "The day after today.",
+      "support_texts": [
+        "Tomorrow is the day after today.",
+        "What will happen in 24 hours.",
+        "The near future, just ahead."
+      ]
+    },
+    {
+      "id": "temporal_concept:future",
+      "name": "Future",
+      "description": "Time after the present moment.",
+      "support_texts": [
+        "The future is what will happen.",
+        "Looking forward to what will be.",
+        "Events that have not yet occurred.",
+        "Anticipation and prediction."
+      ]
+    },
+    {
+      "id": "temporal_concept:moment",
+      "name": "Moment",
+      "description": "An extremely brief period of time.",
+      "support_texts": [
+        "A moment is a brief instant.",
+        "Just a split second.",
+        "The blink of an eye.",
+        "A fleeting instant."
+      ]
+    },
+    {
+      "id": "temporal_concept:hour",
+      "name": "Hour",
+      "description": "A period of 60 minutes.",
+      "support_texts": [
+        "An hour is 60 minutes.",
+        "Enough time for a meeting.",
+        "A short but measurable duration."
+      ]
+    },
+    {
+      "id": "temporal_concept:day",
+      "name": "Day",
+      "description": "A period of 24 hours.",
+      "support_texts": [
+        "A day is 24 hours.",
+        "From sunrise to sunrise.",
+        "One full rotation of Earth."
+      ]
+    },
+    {
+      "id": "temporal_concept:year",
+      "name": "Year",
+      "description": "A period of 365 days.",
+      "support_texts": [
+        "A year is about 365 days.",
+        "One full orbit around the sun.",
+        "Four seasons passing.",
+        "Twelve months."
+      ]
+    },
+    {
+      "id": "temporal_concept:century",
+      "name": "Century",
+      "description": "A period of 100 years.",
+      "support_texts": [
+        "A century is 100 years.",
+        "Several generations of humans.",
+        "A long span of history.",
+        "Major civilizational changes."
+      ]
+    },
+    {
+      "id": "temporal_concept:birth",
+      "name": "Birth",
+      "description": "The beginning of life.",
+      "support_texts": [
+        "Birth is the start of existence.",
+        "Coming into the world.",
+        "The origin of a being.",
+        "A new life begins."
+      ]
+    },
+    {
+      "id": "temporal_concept:childhood",
+      "name": "Childhood",
+      "description": "The early period of life.",
+      "support_texts": [
+        "Childhood is the early years.",
+        "Growing up, learning, playing.",
+        "Before adulthood."
+      ]
+    },
+    {
+      "id": "temporal_concept:adulthood",
+      "name": "Adulthood",
+      "description": "The mature period of life.",
+      "support_texts": [
+        "Adulthood is full maturity.",
+        "Responsibility and independence.",
+        "The prime of life."
+      ]
+    },
+    {
+      "id": "temporal_concept:elderly",
+      "name": "Elderly",
+      "description": "The late period of life.",
+      "support_texts": [
+        "The elderly are in late life.",
+        "Old age, wisdom, experience.",
+        "The twilight years."
+      ]
+    },
+    {
+      "id": "temporal_concept:death",
+      "name": "Death",
+      "description": "The end of life.",
+      "support_texts": [
+        "Death is the end of existence.",
+        "Leaving the world.",
+        "The final moment.",
+        "Life's conclusion."
+      ]
+    },
+    {
+      "id": "temporal_concept:beginning",
+      "name": "Beginning",
+      "description": "The first part of something.",
+      "support_texts": [
+        "The beginning is where it starts.",
+        "The opening, the first chapter.",
+        "Once upon a time.",
+        "In the beginning."
+      ]
+    },
+    {
+      "id": "temporal_concept:first",
+      "name": "First",
+      "description": "Coming before all others.",
+      "support_texts": [
+        "First means before everything else.",
+        "The initial item or event.",
+        "Number one in order."
+      ]
+    },
+    {
+      "id": "temporal_concept:middle",
+      "name": "Middle",
+      "description": "The central part of something.",
+      "support_texts": [
+        "The middle is between beginning and end.",
+        "The central portion.",
+        "Halfway through."
+      ]
+    },
+    {
+      "id": "temporal_concept:last",
+      "name": "Last",
+      "description": "Coming after all others.",
+      "support_texts": [
+        "Last means after everything else.",
+        "The final item or event.",
+        "At the end of the sequence."
+      ]
+    },
+    {
+      "id": "temporal_concept:ending",
+      "name": "Ending",
+      "description": "The final part of something.",
+      "support_texts": [
+        "The ending is where it concludes.",
+        "The closing, the final chapter.",
+        "And they lived happily ever after.",
+        "The end."
+      ]
+    },
+    {
+      "id": "compositional:before_now",
+      "name": "BEFORE NOW",
+      "description": "Composition: BEFORE + NOW",
+      "support_texts": [
+        "BEFORE NOW",
+        "BEFORE + NOW"
+      ]
+    },
+    {
+      "id": "compositional:after_this",
+      "name": "AFTER THIS",
+      "description": "Composition: AFTER + THIS",
+      "support_texts": [
+        "AFTER THIS",
+        "AFTER + THIS"
+      ]
+    },
+    {
+      "id": "compositional:a_long_time_before",
+      "name": "A LONG TIME BEFORE",
+      "description": "Composition: A_LONG_TIME + BEFORE",
+      "support_texts": [
+        "A LONG TIME BEFORE",
+        "A_LONG_TIME + BEFORE"
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_time_is_money",
+      "name": "TIME IS MONEY",
+      "description": "MONEY maps to TIME",
+      "support_texts": [
+        "spend time",
+        "waste time",
+        "save time",
+        "invest time",
+        "time is money",
+        "budget your time",
+        "running out of time",
+        "time well spent",
+        "precious time",
+        "time is valuable"
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_life_is_journey",
+      "name": "LIFE IS A JOURNEY",
+      "description": "JOURNEY maps to LIFE",
+      "support_texts": [
+        "crossroads in life",
+        "life path",
+        "dead end",
+        "new direction",
+        "reach a milestone",
+        "hit a roadblock",
+        "journey of life",
+        "long road ahead",
+        "on the right track",
+        "lost in life"
+      ]
+    }
+  ]
+}

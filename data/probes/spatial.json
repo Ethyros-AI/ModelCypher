@@ -1,0 +1,315 @@
+{
+  "domain": "spatial",
+  "probe_count": 38,
+  "probes": [
+    {
+      "id": "semantic_prime:BE_SOMEWHERE",
+      "name": "be somewhere",
+      "description": "Semantic prime: BE_SOMEWHERE",
+      "support_texts": [
+        "The concept of 'be somewhere'"
+      ]
+    },
+    {
+      "id": "semantic_prime:THERE_IS",
+      "name": "there is",
+      "description": "Semantic prime: THERE_IS",
+      "support_texts": [
+        "The concept of 'there is'"
+      ]
+    },
+    {
+      "id": "semantic_prime:BE_SOMEONE_SOMETHING",
+      "name": "be someone",
+      "description": "Semantic prime: BE_SOMEONE_SOMETHING",
+      "support_texts": [
+        "The concept of 'be someone'",
+        "The concept of 'be something'"
+      ]
+    },
+    {
+      "id": "semantic_prime:WHERE_PLACE",
+      "name": "where",
+      "description": "Semantic prime: WHERE_PLACE",
+      "support_texts": [
+        "The concept of 'where'",
+        "The concept of 'place'"
+      ]
+    },
+    {
+      "id": "semantic_prime:HERE",
+      "name": "here",
+      "description": "Semantic prime: HERE",
+      "support_texts": [
+        "The concept of 'here'"
+      ]
+    },
+    {
+      "id": "semantic_prime:ABOVE",
+      "name": "above",
+      "description": "Semantic prime: ABOVE",
+      "support_texts": [
+        "The concept of 'above'"
+      ]
+    },
+    {
+      "id": "semantic_prime:BELOW",
+      "name": "below",
+      "description": "Semantic prime: BELOW",
+      "support_texts": [
+        "The concept of 'below'"
+      ]
+    },
+    {
+      "id": "semantic_prime:FAR",
+      "name": "far",
+      "description": "Semantic prime: FAR",
+      "support_texts": [
+        "The concept of 'far'"
+      ]
+    },
+    {
+      "id": "semantic_prime:NEAR",
+      "name": "near",
+      "description": "Semantic prime: NEAR",
+      "support_texts": [
+        "The concept of 'near'"
+      ]
+    },
+    {
+      "id": "semantic_prime:SIDE",
+      "name": "side",
+      "description": "Semantic prime: SIDE",
+      "support_texts": [
+        "The concept of 'side'"
+      ]
+    },
+    {
+      "id": "semantic_prime:INSIDE",
+      "name": "inside",
+      "description": "Semantic prime: INSIDE",
+      "support_texts": [
+        "The concept of 'inside'"
+      ]
+    },
+    {
+      "id": "semantic_prime:TOUCH",
+      "name": "touch",
+      "description": "Semantic prime: TOUCH",
+      "support_texts": [
+        "The concept of 'touch'"
+      ]
+    },
+    {
+      "id": "spatial_concept:ceiling",
+      "name": "ceiling",
+      "description": "Spatial anchor: ceiling",
+      "support_texts": [
+        "The ceiling is above."
+      ]
+    },
+    {
+      "id": "spatial_concept:floor",
+      "name": "floor",
+      "description": "Spatial anchor: floor",
+      "support_texts": [
+        "The floor is below."
+      ]
+    },
+    {
+      "id": "spatial_concept:sky",
+      "name": "sky",
+      "description": "Spatial anchor: sky",
+      "support_texts": [
+        "The sky stretches overhead."
+      ]
+    },
+    {
+      "id": "spatial_concept:ground",
+      "name": "ground",
+      "description": "Spatial anchor: ground",
+      "support_texts": [
+        "The ground beneath our feet."
+      ]
+    },
+    {
+      "id": "spatial_concept:cloud",
+      "name": "cloud",
+      "description": "Spatial anchor: cloud",
+      "support_texts": [
+        "A cloud floats high above."
+      ]
+    },
+    {
+      "id": "spatial_concept:basement",
+      "name": "basement",
+      "description": "Spatial anchor: basement",
+      "support_texts": [
+        "The basement is underground."
+      ]
+    },
+    {
+      "id": "spatial_concept:left_hand",
+      "name": "left_hand",
+      "description": "Spatial anchor: left_hand",
+      "support_texts": [
+        "My left hand is on my left side."
+      ]
+    },
+    {
+      "id": "spatial_concept:right_hand",
+      "name": "right_hand",
+      "description": "Spatial anchor: right_hand",
+      "support_texts": [
+        "My right hand is on my right side."
+      ]
+    },
+    {
+      "id": "spatial_concept:west",
+      "name": "west",
+      "description": "Spatial anchor: west",
+      "support_texts": [
+        "The sun sets in the west."
+      ]
+    },
+    {
+      "id": "spatial_concept:east",
+      "name": "east",
+      "description": "Spatial anchor: east",
+      "support_texts": [
+        "The sun rises in the east."
+      ]
+    },
+    {
+      "id": "spatial_concept:foreground",
+      "name": "foreground",
+      "description": "Spatial anchor: foreground",
+      "support_texts": [
+        "The object in the foreground is close."
+      ]
+    },
+    {
+      "id": "spatial_concept:background",
+      "name": "background",
+      "description": "Spatial anchor: background",
+      "support_texts": [
+        "The mountains in the background are distant."
+      ]
+    },
+    {
+      "id": "spatial_concept:horizon",
+      "name": "horizon",
+      "description": "Spatial anchor: horizon",
+      "support_texts": [
+        "The horizon line marks the far distance."
+      ]
+    },
+    {
+      "id": "spatial_concept:here",
+      "name": "here",
+      "description": "Spatial anchor: here",
+      "support_texts": [
+        "I am standing right here."
+      ]
+    },
+    {
+      "id": "spatial_concept:there",
+      "name": "there",
+      "description": "Spatial anchor: there",
+      "support_texts": [
+        "The building is over there."
+      ]
+    },
+    {
+      "id": "spatial_concept:balloon",
+      "name": "balloon",
+      "description": "Spatial anchor: balloon",
+      "support_texts": [
+        "A helium balloon floats upward."
+      ]
+    },
+    {
+      "id": "spatial_concept:stone",
+      "name": "stone",
+      "description": "Spatial anchor: stone",
+      "support_texts": [
+        "A heavy stone falls downward."
+      ]
+    },
+    {
+      "id": "spatial_concept:feather",
+      "name": "feather",
+      "description": "Spatial anchor: feather",
+      "support_texts": [
+        "A light feather drifts slowly."
+      ]
+    },
+    {
+      "id": "spatial_concept:anvil",
+      "name": "anvil",
+      "description": "Spatial anchor: anvil",
+      "support_texts": [
+        "The anvil sinks like a rock."
+      ]
+    },
+    {
+      "id": "spatial_concept:chair",
+      "name": "chair",
+      "description": "Spatial anchor: chair",
+      "support_texts": [
+        "A chair sits on the floor."
+      ]
+    },
+    {
+      "id": "spatial_concept:table",
+      "name": "table",
+      "description": "Spatial anchor: table",
+      "support_texts": [
+        "A table stands in the room."
+      ]
+    },
+    {
+      "id": "spatial_concept:lamp",
+      "name": "lamp",
+      "description": "Spatial anchor: lamp",
+      "support_texts": [
+        "A lamp hangs from the ceiling."
+      ]
+    },
+    {
+      "id": "spatial_concept:rug",
+      "name": "rug",
+      "description": "Spatial anchor: rug",
+      "support_texts": [
+        "A rug lies flat on the floor."
+      ]
+    },
+    {
+      "id": "compositional:above_here",
+      "name": "ABOVE HERE",
+      "description": "Composition: ABOVE + HERE",
+      "support_texts": [
+        "ABOVE HERE",
+        "ABOVE + HERE"
+      ]
+    },
+    {
+      "id": "compositional:far_from_here",
+      "name": "FAR FROM HERE",
+      "description": "Composition: FAR + HERE",
+      "support_texts": [
+        "FAR FROM HERE",
+        "FAR + HERE"
+      ]
+    },
+    {
+      "id": "compositional:near_this",
+      "name": "NEAR THIS",
+      "description": "Composition: NEAR + THIS",
+      "support_texts": [
+        "NEAR THIS",
+        "NEAR + THIS"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,995 @@
+{
+  "domain": "linguistic",
+  "probe_count": 108,
+  "probes": [
+    {
+      "id": "semantic_prime:I",
+      "name": "i",
+      "description": "Semantic prime: I",
+      "support_texts": [
+        "The concept of 'i'",
+        "The concept of 'me'"
+      ]
+    },
+    {
+      "id": "semantic_prime:YOU",
+      "name": "you",
+      "description": "Semantic prime: YOU",
+      "support_texts": [
+        "The concept of 'you'"
+      ]
+    },
+    {
+      "id": "semantic_prime:SOMEONE",
+      "name": "someone",
+      "description": "Semantic prime: SOMEONE",
+      "support_texts": [
+        "The concept of 'someone'"
+      ]
+    },
+    {
+      "id": "semantic_prime:SOMETHING",
+      "name": "something",
+      "description": "Semantic prime: SOMETHING",
+      "support_texts": [
+        "The concept of 'something'",
+        "The concept of 'thing'"
+      ]
+    },
+    {
+      "id": "semantic_prime:PEOPLE",
+      "name": "people",
+      "description": "Semantic prime: PEOPLE",
+      "support_texts": [
+        "The concept of 'people'"
+      ]
+    },
+    {
+      "id": "semantic_prime:BODY",
+      "name": "body",
+      "description": "Semantic prime: BODY",
+      "support_texts": [
+        "The concept of 'body'"
+      ]
+    },
+    {
+      "id": "semantic_prime:THIS",
+      "name": "this",
+      "description": "Semantic prime: THIS",
+      "support_texts": [
+        "The concept of 'this'"
+      ]
+    },
+    {
+      "id": "semantic_prime:THE_SAME",
+      "name": "the same",
+      "description": "Semantic prime: THE_SAME",
+      "support_texts": [
+        "The concept of 'the same'"
+      ]
+    },
+    {
+      "id": "semantic_prime:OTHER",
+      "name": "other",
+      "description": "Semantic prime: OTHER",
+      "support_texts": [
+        "The concept of 'other'",
+        "The concept of 'else'"
+      ]
+    },
+    {
+      "id": "semantic_prime:BIG",
+      "name": "big",
+      "description": "Semantic prime: BIG",
+      "support_texts": [
+        "The concept of 'big'"
+      ]
+    },
+    {
+      "id": "semantic_prime:SMALL",
+      "name": "small",
+      "description": "Semantic prime: SMALL",
+      "support_texts": [
+        "The concept of 'small'"
+      ]
+    },
+    {
+      "id": "semantic_prime:SAY",
+      "name": "say",
+      "description": "Semantic prime: SAY",
+      "support_texts": [
+        "The concept of 'say'"
+      ]
+    },
+    {
+      "id": "semantic_prime:WORDS",
+      "name": "words",
+      "description": "Semantic prime: WORDS",
+      "support_texts": [
+        "The concept of 'words'"
+      ]
+    },
+    {
+      "id": "semantic_prime:TRUE",
+      "name": "true",
+      "description": "Semantic prime: TRUE",
+      "support_texts": [
+        "The concept of 'true'"
+      ]
+    },
+    {
+      "id": "semantic_prime:VERY",
+      "name": "very",
+      "description": "Semantic prime: VERY",
+      "support_texts": [
+        "The concept of 'very'"
+      ]
+    },
+    {
+      "id": "semantic_prime:MORE",
+      "name": "more",
+      "description": "Semantic prime: MORE",
+      "support_texts": [
+        "The concept of 'more'"
+      ]
+    },
+    {
+      "id": "social_concept:hey",
+      "name": "Hey",
+      "description": "Very casual greeting.",
+      "support_texts": [
+        "Hey is an informal greeting.",
+        "What's up, hey there.",
+        "Used with friends and peers.",
+        "Casual and relaxed tone."
+      ]
+    },
+    {
+      "id": "social_concept:hi",
+      "name": "Hi",
+      "description": "Casual greeting.",
+      "support_texts": [
+        "Hi is a common greeting.",
+        "Friendly but not too formal.",
+        "Everyday hello."
+      ]
+    },
+    {
+      "id": "social_concept:hello",
+      "name": "Hello",
+      "description": "Neutral greeting.",
+      "support_texts": [
+        "Hello is a standard greeting.",
+        "Neither formal nor informal.",
+        "Polite and neutral."
+      ]
+    },
+    {
+      "id": "social_concept:greetings",
+      "name": "Greetings",
+      "description": "Formal greeting.",
+      "support_texts": [
+        "Greetings is more formal.",
+        "Used in professional contexts.",
+        "A respectful salutation."
+      ]
+    },
+    {
+      "id": "social_concept:salutations",
+      "name": "Salutations",
+      "description": "Very formal greeting.",
+      "support_texts": [
+        "Salutations is highly formal.",
+        "Used in official correspondence.",
+        "Distinguished and ceremonial.",
+        "Warm salutations, dear colleague."
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_futility",
+      "name": "Performing a useless action by supplying something already abundant.",
+      "description": "Performing a useless action by supplying something already abundant.",
+      "support_texts": [
+        "Carrying coals to Newcastle",
+        "Taking owls to Athens",
+        "Going to Tula with your own samovar",
+        "Carrying water to the Rhine",
+        "Selling honey to the beekeeper",
+        "\u591a\u6b64\u4e00\u4e3e",
+        "A + 0 = A"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_futility_thimble",
+      "name": "A futile effort when the task dwarfs the available tools.",
+      "description": "A futile effort when the task dwarfs the available tools.",
+      "support_texts": [
+        "Bailing out the ocean with a thimble",
+        "tiny_tool << infinite_task"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_impossibility",
+      "name": "An event that will never occur.",
+      "description": "An event that will never occur.",
+      "support_texts": [
+        "When pigs fly",
+        "Cuando las ranas cr\u00eden pelo",
+        "When the crayfish whistles on the mountain",
+        "Quand les poules auront des dents",
+        "\u592a\u9633\u4ece\u897f\u8fb9\u51fa\u6765",
+        "0 = 1"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_impossibility_square_circle",
+      "name": "An unsolvable or contradictory task.",
+      "description": "An unsolvable or contradictory task.",
+      "support_texts": [
+        "Squaring the circle",
+        "circle -> square"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_obviousness",
+      "name": "Failing to see the whole situation because of focus on details.",
+      "description": "Failing to see the whole situation because of focus on details.",
+      "support_texts": [
+        "Can't see the forest for the trees",
+        "L'arbre qui cache la for\u00eat",
+        "Ki o mite mori o mizu",
+        "\u5750\u4e95\u89c2\u5929",
+        "detail >> context"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_obviousness_elephant",
+      "name": "Ignoring a glaring issue that everyone can see.",
+      "description": "Ignoring a glaring issue that everyone can see.",
+      "support_texts": [
+        "The elephant in the room",
+        "visible_problem != discussed"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_consequence",
+      "name": "You create your own future conditions through present actions.",
+      "description": "You create your own future conditions through present actions.",
+      "support_texts": [
+        "You reap what you sow",
+        "Chi semina vento raccoglie tempesta",
+        "Jig\u014d jitoku",
+        "\u79cd\u74dc\u5f97\u74dc\uff0c\u79cd\u8c46\u5f97\u8c46",
+        "cause -> effect"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_consequence_roost",
+      "name": "Past actions return as consequences over time.",
+      "description": "Past actions return as consequences over time.",
+      "support_texts": [
+        "Chickens come home to roost",
+        "action -> delayed return"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_fragility_cards",
+      "name": "A fragile structure that collapses from small disturbances.",
+      "description": "A fragile structure that collapses from small disturbances.",
+      "support_texts": [
+        "A house of cards",
+        "small_shock -> collapse"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_fragility_sand",
+      "name": "An unstable foundation that cannot support weight.",
+      "description": "An unstable foundation that cannot support weight.",
+      "support_texts": [
+        "Built on sand",
+        "weak_base -> failure"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_deception_wolf",
+      "name": "A threat disguised as something harmless.",
+      "description": "A threat disguised as something harmless.",
+      "support_texts": [
+        "A wolf in sheep's clothing",
+        "\u62ab\u7740\u7f8a\u76ae\u7684\u72fc",
+        "appearance != intent"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_deception_trojan",
+      "name": "A gift or offer that hides a threat.",
+      "description": "A gift or offer that hides a threat.",
+      "support_texts": [
+        "A Trojan horse",
+        "gift contains threat"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_resilience_bamboo",
+      "name": "Strength through flexibility under pressure.",
+      "description": "Strength through flexibility under pressure.",
+      "support_texts": [
+        "Bamboo bends in the storm",
+        "\u98ce\u4e2d\u7af9\u5b50\u5f2f\u800c\u4e0d\u65ad",
+        "flexibility -> survival"
+      ]
+    },
+    {
+      "id": "metaphor_invariant:meta_resilience_phoenix",
+      "name": "Rebirth or recovery after destruction.",
+      "description": "Rebirth or recovery after destruction.",
+      "support_texts": [
+        "Rise like a phoenix from the ashes",
+        "\u51e4\u51f0\u6d85\u69c3",
+        "loss -> rebirth"
+      ]
+    },
+    {
+      "id": "conceptual_metaphor:cmt_argument_is_war",
+      "name": "ARGUMENT IS WAR",
+      "description": "WAR maps to ARGUMENT",
+      "support_texts": [
+        "defend your position",
+        "attack the argument",
+        "win the debate",
+        "shoot down ideas",
+        "target weak points",
+        "strategic argument",
+        "demolish the claim",
+        "indefensible position",
+        "ammunition for debate",
+        "war of words"
+      ]
+    },
+    {
+      "id": "syntax_concept:noun",
+      "name": "Noun",
+      "description": "A word that names a person, place, or thing.",
+      "support_texts": [
+        "A noun names a person, place, or thing.",
+        "dog, city, idea",
+        "The dog sleeps."
+      ]
+    },
+    {
+      "id": "syntax_concept:verb",
+      "name": "Verb",
+      "description": "A word that expresses an action or state.",
+      "support_texts": [
+        "A verb expresses an action or a state.",
+        "run, think, be",
+        "They run quickly."
+      ]
+    },
+    {
+      "id": "syntax_concept:adjective",
+      "name": "Adjective",
+      "description": "A word that modifies a noun.",
+      "support_texts": [
+        "An adjective modifies a noun.",
+        "red car, quiet room",
+        "The red car moved."
+      ]
+    },
+    {
+      "id": "syntax_concept:adverb",
+      "name": "Adverb",
+      "description": "A word that modifies a verb or adjective.",
+      "support_texts": [
+        "An adverb modifies a verb or adjective.",
+        "quickly, quietly, very",
+        "She speaks softly."
+      ]
+    },
+    {
+      "id": "syntax_concept:pronoun",
+      "name": "Pronoun",
+      "description": "A word that stands in for a noun.",
+      "support_texts": [
+        "A pronoun stands in for a noun.",
+        "he, she, they, it",
+        "She thanked him."
+      ]
+    },
+    {
+      "id": "syntax_concept:preposition",
+      "name": "Preposition",
+      "description": "A word that links a noun to location or time.",
+      "support_texts": [
+        "A preposition links a noun to location or time.",
+        "in, on, under, after",
+        "The book is on the table."
+      ]
+    },
+    {
+      "id": "syntax_concept:plural_noun",
+      "name": "Plural Noun",
+      "description": "Plural nouns mark more than one.",
+      "support_texts": [
+        "Plural nouns mark more than one.",
+        "cat -> cats",
+        "Two cats sleep."
+      ]
+    },
+    {
+      "id": "syntax_concept:past_tense",
+      "name": "Past Tense",
+      "description": "Past tense marks actions that already happened.",
+      "support_texts": [
+        "Past tense marks actions that already happened.",
+        "walked, played, wrote",
+        "She walked home."
+      ]
+    },
+    {
+      "id": "syntax_concept:progressive_aspect",
+      "name": "Progressive Aspect",
+      "description": "Progressive aspect uses -ing with be.",
+      "support_texts": [
+        "Progressive aspect uses -ing with be.",
+        "is running, are working",
+        "They are running."
+      ]
+    },
+    {
+      "id": "syntax_concept:comparative",
+      "name": "Comparative",
+      "description": "Comparatives compare two things.",
+      "support_texts": [
+        "Comparatives compare two things.",
+        "bigger, faster, more quiet",
+        "This road is longer."
+      ]
+    },
+    {
+      "id": "syntax_concept:superlative",
+      "name": "Superlative",
+      "description": "Superlatives compare against all.",
+      "support_texts": [
+        "Superlatives compare against all.",
+        "biggest, fastest, most quiet",
+        "This is the fastest route."
+      ]
+    },
+    {
+      "id": "syntax_concept:article_definite",
+      "name": "Definite Article",
+      "description": "The definite article 'the' points to a specific noun.",
+      "support_texts": [
+        "The definite article 'the' points to a specific noun.",
+        "the book, the idea",
+        "The book is open."
+      ]
+    },
+    {
+      "id": "syntax_concept:article_indefinite",
+      "name": "Indefinite Article",
+      "description": "Indefinite articles 'a' and 'an' introduce new nouns.",
+      "support_texts": [
+        "Indefinite articles 'a' and 'an' introduce new nouns.",
+        "a book, an apple",
+        "She saw a bird."
+      ]
+    },
+    {
+      "id": "syntax_concept:conjunction_and",
+      "name": "Conjunction And",
+      "description": "The conjunction 'and' joins words or clauses.",
+      "support_texts": [
+        "The conjunction 'and' joins words or clauses.",
+        "cats and dogs",
+        "He came and left."
+      ]
+    },
+    {
+      "id": "syntax_concept:negation_not",
+      "name": "Negation Not",
+      "description": "Negation uses 'not' to invert meaning.",
+      "support_texts": [
+        "Negation uses 'not' to invert meaning.",
+        "not happy, do not go",
+        "She is not ready."
+      ]
+    },
+    {
+      "id": "syntax_concept:svo_order",
+      "name": "SVO Order",
+      "description": "English commonly uses subject-verb-object order.",
+      "support_texts": [
+        "English commonly uses subject-verb-object order.",
+        "The dog chased the cat.",
+        "The chef cooked dinner."
+      ]
+    },
+    {
+      "id": "syntax_concept:adjective_before_noun",
+      "name": "Adjective Before Noun",
+      "description": "Adjectives typically come before nouns in English.",
+      "support_texts": [
+        "Adjectives typically come before nouns in English.",
+        "red car, tall tree",
+        "A tall tree fell."
+      ]
+    },
+    {
+      "id": "syntax_concept:question_inversion",
+      "name": "Question Inversion",
+      "description": "Questions often invert auxiliary and subject.",
+      "support_texts": [
+        "Questions often invert auxiliary and subject.",
+        "Does the dog run?",
+        "Are they ready?"
+      ]
+    },
+    {
+      "id": "syntax_concept:relative_clause",
+      "name": "Relative Clause",
+      "description": "Relative clauses add information to a noun.",
+      "support_texts": [
+        "Relative clauses add information to a noun.",
+        "The dog that barked ran.",
+        "The book which I read was new."
+      ]
+    },
+    {
+      "id": "syntax_concept:subordinate_because",
+      "name": "Because Clause",
+      "description": "Subordinate clauses with 'because' give reasons.",
+      "support_texts": [
+        "Subordinate clauses with 'because' give reasons.",
+        "I left because it rained.",
+        "Because it rained, I left."
+      ]
+    },
+    {
+      "id": "syntax_concept:conditional_if",
+      "name": "If Conditional",
+      "description": "Conditional clauses use 'if' to set a condition.",
+      "support_texts": [
+        "Conditional clauses use 'if' to set a condition.",
+        "If it rains, we stay inside.",
+        "We stay inside if it rains."
+      ]
+    },
+    {
+      "id": "syntax_concept:period_end",
+      "name": "Period",
+      "description": "A period marks the end of a sentence.",
+      "support_texts": [
+        "A period marks the end of a sentence.",
+        "This is a sentence.",
+        "He waited."
+      ]
+    },
+    {
+      "id": "syntax_concept:question_mark",
+      "name": "Question Mark",
+      "description": "A question mark ends an interrogative sentence.",
+      "support_texts": [
+        "A question mark ends an interrogative sentence.",
+        "Is this a question?",
+        "Where are you?"
+      ]
+    },
+    {
+      "id": "syntax_concept:capitalization_sentence",
+      "name": "Sentence Capitalization",
+      "description": "Sentences start with a capital letter.",
+      "support_texts": [
+        "Sentences start with a capital letter.",
+        "The dog sleeps.",
+        "She runs."
+      ]
+    },
+    {
+      "id": "pronoun_perspective:i_pron",
+      "name": "I",
+      "description": "First person singular",
+      "support_texts": [
+        "I",
+        "me",
+        "myself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:you_pron",
+      "name": "you",
+      "description": "Second person",
+      "support_texts": [
+        "you",
+        "yourself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:he",
+      "name": "he",
+      "description": "Third person masculine",
+      "support_texts": [
+        "he",
+        "him",
+        "himself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:she",
+      "name": "she",
+      "description": "Third person feminine",
+      "support_texts": [
+        "she",
+        "her",
+        "herself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:it",
+      "name": "it",
+      "description": "Third person neuter",
+      "support_texts": [
+        "it",
+        "itself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:we",
+      "name": "we",
+      "description": "First person plural",
+      "support_texts": [
+        "we",
+        "us",
+        "ourselves"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:they",
+      "name": "they",
+      "description": "Third person plural",
+      "support_texts": [
+        "they",
+        "them",
+        "themselves"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:my",
+      "name": "my",
+      "description": "First person possession",
+      "support_texts": [
+        "my",
+        "mine"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:your",
+      "name": "your",
+      "description": "Second person possession",
+      "support_texts": [
+        "your",
+        "yours"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:his",
+      "name": "his",
+      "description": "Third person masculine possession",
+      "support_texts": [
+        "his"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:her_poss",
+      "name": "her",
+      "description": "Third person feminine possession",
+      "support_texts": [
+        "her",
+        "hers"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:its",
+      "name": "its",
+      "description": "Third person neuter possession",
+      "support_texts": [
+        "its"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:our",
+      "name": "our",
+      "description": "First person plural possession",
+      "support_texts": [
+        "our",
+        "ours"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:their",
+      "name": "their",
+      "description": "Third person plural possession",
+      "support_texts": [
+        "their",
+        "theirs"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:myself",
+      "name": "myself",
+      "description": "First person reflexive",
+      "support_texts": [
+        "myself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:yourself",
+      "name": "yourself",
+      "description": "Second person reflexive",
+      "support_texts": [
+        "yourself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:himself",
+      "name": "himself",
+      "description": "Third person masculine reflexive",
+      "support_texts": [
+        "himself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:herself",
+      "name": "herself",
+      "description": "Third person feminine reflexive",
+      "support_texts": [
+        "herself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:itself",
+      "name": "itself",
+      "description": "Third person neuter reflexive",
+      "support_texts": [
+        "itself"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:ourselves",
+      "name": "ourselves",
+      "description": "First person plural reflexive",
+      "support_texts": [
+        "ourselves"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:themselves",
+      "name": "themselves",
+      "description": "Third person plural reflexive",
+      "support_texts": [
+        "themselves"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:this_dem",
+      "name": "this",
+      "description": "Near singular",
+      "support_texts": [
+        "this"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:that_dem",
+      "name": "that",
+      "description": "Far singular",
+      "support_texts": [
+        "that"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:these",
+      "name": "these",
+      "description": "Near plural",
+      "support_texts": [
+        "these"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:those",
+      "name": "those",
+      "description": "Far plural",
+      "support_texts": [
+        "those"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:here_dem",
+      "name": "here",
+      "description": "Near location",
+      "support_texts": [
+        "here"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:there_dem",
+      "name": "there",
+      "description": "Far location",
+      "support_texts": [
+        "there"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:who_int",
+      "name": "who",
+      "description": "Person question",
+      "support_texts": [
+        "who"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:what",
+      "name": "what",
+      "description": "Thing question",
+      "support_texts": [
+        "what"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:where",
+      "name": "where",
+      "description": "Place question",
+      "support_texts": [
+        "where"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:when",
+      "name": "when",
+      "description": "Time question",
+      "support_texts": [
+        "when"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:why",
+      "name": "why",
+      "description": "Reason question",
+      "support_texts": [
+        "why"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:how",
+      "name": "how",
+      "description": "Manner question",
+      "support_texts": [
+        "how"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:which",
+      "name": "which",
+      "description": "Selection question",
+      "support_texts": [
+        "which"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:someone",
+      "name": "someone",
+      "description": "Unknown person",
+      "support_texts": [
+        "someone",
+        "somebody"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:anyone",
+      "name": "anyone",
+      "description": "Any person",
+      "support_texts": [
+        "anyone",
+        "anybody"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:everyone",
+      "name": "everyone",
+      "description": "All persons",
+      "support_texts": [
+        "everyone",
+        "everybody"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:nobody_indef",
+      "name": "nobody",
+      "description": "No person",
+      "support_texts": [
+        "nobody",
+        "no one"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:something",
+      "name": "something",
+      "description": "Unknown thing",
+      "support_texts": [
+        "something"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:anything",
+      "name": "anything",
+      "description": "Any thing",
+      "support_texts": [
+        "anything"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:everything",
+      "name": "everything",
+      "description": "All things",
+      "support_texts": [
+        "everything"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:nothing",
+      "name": "nothing",
+      "description": "No thing",
+      "support_texts": [
+        "nothing"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:who_rel",
+      "name": "who",
+      "description": "Person relative",
+      "support_texts": [
+        "who"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:whom",
+      "name": "whom",
+      "description": "Object person relative",
+      "support_texts": [
+        "whom"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:whose",
+      "name": "whose",
+      "description": "Possession relative",
+      "support_texts": [
+        "whose"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:which_rel",
+      "name": "which",
+      "description": "Thing relative",
+      "support_texts": [
+        "which"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:that_rel",
+      "name": "that",
+      "description": "General relative",
+      "support_texts": [
+        "that"
+      ]
+    },
+    {
+      "id": "pronoun_perspective:where_rel",
+      "name": "where",
+      "description": "Place relative",
+      "support_texts": [
+        "where"
+      ]
+    }
+  ]
+}

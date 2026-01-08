@@ -1,0 +1,1176 @@
+{
+  "domain": "mathematical",
+  "probe_count": 117,
+  "probes": [
+    {
+      "id": "sequence_invariant:fibonacci_fib_recurrence",
+      "name": "Fibonacci recurrence",
+      "description": "Each term is the sum of the two previous terms.",
+      "support_texts": [
+        "F(n) = F(n-1) + F(n-2) with F(0)=0, F(1)=1",
+        "0, 1, 1, 2, 3, 5, 8, 13, 21, 34",
+        "A pair of rabbits produces a new pair each month after maturity.",
+        "Patterns recur across scales and domains.",
+        "Fibonacci(6) equals 8.",
+        "3 plus 5 equals 8 in the Fibonacci sequence."
+      ]
+    },
+    {
+      "id": "sequence_invariant:fibonacci_fib_code",
+      "name": "Fibonacci code",
+      "description": "Algorithmic implementations of Fibonacci.",
+      "support_texts": [
+        "def fib(n): a,b=0,1; for _ in range(n): a,b=b,a+b; return a",
+        "func fib(_ n: Int) -> Int { var a=0,b=1; for _ in 0..<n { let t=a+b; a=b; b=t }; return a }",
+        "fn fib(n: usize) -> usize { let (mut a, mut b) = (0, 1); for _ in 0..n { let t = a + b; a = b; b = t; } a }",
+        "function fib(n){ let a=0,b=1; for(let i=0;i<n;i++){ [a,b]=[b,a+b]; } return a; }"
+      ]
+    },
+    {
+      "id": "sequence_invariant:fibonacci_fib_ratio",
+      "name": "Fibonacci ratio",
+      "description": "Successive ratios converge to the golden ratio.",
+      "support_texts": [
+        "F(n+1)/F(n) approaches phi as n grows",
+        "phi = (1 + sqrt(5)) / 2 \u2248 1.618033988749895",
+        "Golden ratio proportions appear in art and architecture.",
+        "A golden rectangle has length/width equal to phi.",
+        "The ratio 13/8 is approximately 1.625, approaching phi."
+      ]
+    },
+    {
+      "id": "sequence_invariant:fibonacci_fib_matrix",
+      "name": "Fibonacci matrix",
+      "description": "Matrix powers encode Fibonacci numbers.",
+      "support_texts": [
+        "[[1,1],[1,0]]^n = [[F(n+1), F(n)],[F(n), F(n-1)]]",
+        "Matrix exponentiation computes Fibonacci in O(log n).",
+        "Eigenvalues of the Fibonacci matrix are phi and 1-phi."
+      ]
+    },
+    {
+      "id": "sequence_invariant:fibonacci_fib_binet",
+      "name": "Fibonacci closed form",
+      "description": "Closed-form Fibonacci expression using phi and sqrt(5).",
+      "support_texts": [
+        "F(n) = (phi^n - (1-phi)^n) / sqrt(5)",
+        "Binet's formula uses the golden ratio phi.",
+        "The formula shows Fibonacci grows exponentially like phi^n."
+      ]
+    },
+    {
+      "id": "sequence_invariant:fibonacci_fib_phyllotaxis",
+      "name": "Fibonacci phyllotaxis",
+      "description": "Fibonacci counts appear in plant spirals.",
+      "support_texts": [
+        "Sunflower seed spirals often count 34/55 or 55/89.",
+        "Pinecone and pineapple spirals follow Fibonacci numbers.",
+        "Phyllotaxis uses Fibonacci ratios for optimal packing.",
+        "Leaf arrangements maximize sunlight exposure via golden angle."
+      ]
+    },
+    {
+      "id": "sequence_invariant:fibonacci_fib_spiral",
+      "name": "Fibonacci spiral",
+      "description": "Squares with Fibonacci side lengths form a spiral.",
+      "support_texts": [
+        "Fibonacci spiral built from squares of side lengths 1,1,2,3,5,8.",
+        "A logarithmic spiral approximates the Fibonacci spiral.",
+        "The golden spiral appears in nautilus shells and galaxies."
+      ]
+    },
+    {
+      "id": "sequence_invariant:lucas_lucas_recurrence",
+      "name": "Lucas recurrence",
+      "description": "Same recurrence as Fibonacci but L(0)=2, L(1)=1.",
+      "support_texts": [
+        "L(n) = L(n-1) + L(n-2) with L(0)=2, L(1)=1",
+        "2, 1, 3, 4, 7, 11, 18, 29, 47, 76",
+        "Lucas numbers are Fibonacci with initial conditions shifted.",
+        "Named after French mathematician \u00c9douard Lucas.",
+        "Lucas(5) equals 11."
+      ]
+    },
+    {
+      "id": "sequence_invariant:lucas_lucas_code",
+      "name": "Lucas code",
+      "description": "Algorithmic implementations of Lucas numbers.",
+      "support_texts": [
+        "def lucas(n): a,b=2,1; for _ in range(n): a,b=b,a+b; return a",
+        "func lucas(_ n: Int) -> Int { var a=2,b=1; for _ in 0..<n { let t=a+b; a=b; b=t }; return a }",
+        "fn lucas(n: usize) -> usize { let (mut a, mut b) = (2, 1); for _ in 0..n { let t = a + b; a = b; b = t; } a }"
+      ]
+    },
+    {
+      "id": "sequence_invariant:lucas_lucas_ratio",
+      "name": "Lucas ratio",
+      "description": "Lucas ratios also converge to phi, and L(n)/F(n) \u2192 sqrt(5).",
+      "support_texts": [
+        "L(n+1)/L(n) approaches phi as n grows",
+        "L(n)/F(n) approaches sqrt(5) \u2248 2.236",
+        "L(n) = F(n-1) + F(n+1) - Lucas numbers bracket Fibonacci."
+      ]
+    },
+    {
+      "id": "sequence_invariant:lucas_lucas_closed",
+      "name": "Lucas closed form",
+      "description": "Closed-form Lucas expression using phi.",
+      "support_texts": [
+        "L(n) = phi^n + (1-phi)^n",
+        "Simpler than Binet's formula - no division by sqrt(5).",
+        "L(n)^2 - 5*F(n)^2 = 4*(-1)^n - a beautiful identity."
+      ]
+    },
+    {
+      "id": "sequence_invariant:lucas_lucas_primality",
+      "name": "Lucas primality test",
+      "description": "Lucas sequences used in primality testing.",
+      "support_texts": [
+        "Lucas-Lehmer test verifies Mersenne primes 2^p - 1.",
+        "If p is prime, then L(p) \u2261 1 (mod p).",
+        "Lucas pseudoprimes are rare, making strong tests."
+      ]
+    },
+    {
+      "id": "sequence_invariant:lucas_lucas_nature",
+      "name": "Lucas phyllotaxis",
+      "description": "Lucas numbers appear in some plant structures.",
+      "support_texts": [
+        "Some flower petal counts follow Lucas numbers: 3, 4, 7, 11.",
+        "Lucas spiral packings provide alternative optimal arrangements.",
+        "Bravais lattice structures relate to Lucas sequences."
+      ]
+    },
+    {
+      "id": "sequence_invariant:tribonacci_trib_recurrence",
+      "name": "Tribonacci recurrence",
+      "description": "Each term is the sum of the three previous terms.",
+      "support_texts": [
+        "T(n) = T(n-1) + T(n-2) + T(n-3) with T(0)=T(1)=0, T(2)=1",
+        "0, 0, 1, 1, 2, 4, 7, 13, 24, 44, 81",
+        "Generalizes Fibonacci to three-term recurrence.",
+        "Part of the k-nacci family of sequences."
+      ]
+    },
+    {
+      "id": "sequence_invariant:tribonacci_trib_code",
+      "name": "Tribonacci code",
+      "description": "Algorithmic implementations of Tribonacci.",
+      "support_texts": [
+        "def trib(n): a,b,c=0,0,1; for _ in range(n): a,b,c=b,c,a+b+c; return a",
+        "func trib(_ n: Int) -> Int { var (a,b,c)=(0,0,1); for _ in 0..<n { (a,b,c)=(b,c,a+b+c) }; return a }",
+        "fn trib(n: usize) -> usize { let (mut a,mut b,mut c)=(0,0,1); for _ in 0..n { let t=a+b+c; a=b; b=c; c=t; } a }"
+      ]
+    },
+    {
+      "id": "sequence_invariant:tribonacci_trib_ratio",
+      "name": "Tribonacci ratio",
+      "description": "Ratios converge to the tribonacci constant \u03c4 \u2248 1.839.",
+      "support_texts": [
+        "T(n+1)/T(n) approaches the tribonacci constant \u03c4 \u2248 1.839286755",
+        "\u03c4 is the real root of x\u00b3 = x\u00b2 + x + 1",
+        "The tribonacci constant is an algebraic number of degree 3."
+      ]
+    },
+    {
+      "id": "sequence_invariant:tribonacci_trib_matrix",
+      "name": "Tribonacci matrix",
+      "description": "3x3 matrix powers encode Tribonacci numbers.",
+      "support_texts": [
+        "[[1,1,1],[1,0,0],[0,1,0]]^n encodes Tribonacci terms",
+        "Matrix exponentiation gives O(log n) computation.",
+        "Eigenvalues include the tribonacci constant \u03c4."
+      ]
+    },
+    {
+      "id": "sequence_invariant:tribonacci_trib_nature",
+      "name": "Tribonacci patterns",
+      "description": "Three-way branching patterns in nature.",
+      "support_texts": [
+        "Some coral branching follows three-term recurrence.",
+        "Ternary tree structures in certain plant growth.",
+        "Three-way cellular division patterns."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_definition",
+      "name": "Prime definition",
+      "description": "A prime is divisible only by 1 and itself.",
+      "support_texts": [
+        "p is prime iff p > 1 and has no divisors except 1 and p",
+        "2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47",
+        "The fundamental theorem: every integer > 1 is a unique product of primes.",
+        "Primes are the atoms of arithmetic.",
+        "The 5th prime number is 11."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_code",
+      "name": "Prime code",
+      "description": "Algorithmic primality testing.",
+      "support_texts": [
+        "def is_prime(n): return n>1 and all(n%i!=0 for i in range(2,int(n**0.5)+1))",
+        "func isPrime(_ n: Int) -> Bool { n>1 && !(2...Int(sqrt(Double(n)))).contains { n%$0==0 } }",
+        "Sieve of Eratosthenes: mark composites, keep unmarked as primes.",
+        "Miller-Rabin: probabilistic primality test for large numbers."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_distribution",
+      "name": "Prime distribution",
+      "description": "Prime gaps grow logarithmically; \u03c0(n) ~ n/ln(n).",
+      "support_texts": [
+        "Prime Number Theorem: \u03c0(n) ~ n/ln(n) as n \u2192 \u221e",
+        "Average gap between primes near n is approximately ln(n).",
+        "Riemann Hypothesis: zeros of \u03b6(s) control prime distribution.",
+        "Twin prime conjecture: infinitely many primes p where p+2 is also prime.",
+        "11 and 13 are twin primes, differing by 2."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_spectral_geometry",
+      "name": "Prime spectral geometry",
+      "description": "Gram matrix eigenvalues of prime gap embeddings show concentrated spectra.",
+      "support_texts": [
+        "Time-delay embeddings of prime gaps produce Gram matrices with concentrated spectra.",
+        "Participation ratio and spectral entropy for prime gaps are lower than memoryless baselines.",
+        "Shuffling prime gaps preserves the spectrum, indicating distribution-level structure.",
+        "Spectral concentration remains stable across tested prime-count scales."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_gap_invariance",
+      "name": "Prime gap distribution geometry",
+      "description": "Prime gap distribution is the invariant signal, not gap ordering.",
+      "support_texts": [
+        "Prime and shuffled gap distributions yield near-identical spectral metrics.",
+        "Gap distribution geometry remains stable across scale sweeps.",
+        "Perturbing gaps preserves the distribution-level spectral signature."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_nature",
+      "name": "Primes in nature",
+      "description": "Cicada life cycles and predator avoidance.",
+      "support_texts": [
+        "Cicadas emerge after 13 or 17 years - both prime.",
+        "Prime cycles avoid synchronization with predator cycles.",
+        "Evolutionary advantage of prime-period timing.",
+        "Periodic cicadas are living examples of number theory."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_visual",
+      "name": "Ulam spiral",
+      "description": "Primes form diagonal patterns when plotted spirally.",
+      "support_texts": [
+        "Ulam spiral: integers spiral outward, primes marked.",
+        "Diagonal lines emerge from quadratic residues.",
+        "Prime-generating polynomials create visible patterns.",
+        "n\u00b2 + n + 41 is prime for n = 0 to 39 (Euler's polynomial)."
+      ]
+    },
+    {
+      "id": "sequence_invariant:primes_prime_crypto",
+      "name": "Prime cryptography",
+      "description": "Large primes secure modern encryption.",
+      "support_texts": [
+        "RSA: multiply two large primes; factoring is hard.",
+        "Prime numbers are the foundation of public-key cryptography.",
+        "2048-bit primes provide current security standards.",
+        "Quantum computers threaten prime-based cryptography."
+      ]
+    },
+    {
+      "id": "sequence_invariant:catalan_cat_definition",
+      "name": "Catalan definition",
+      "description": "C(n) counts valid structures with n pairs.",
+      "support_texts": [
+        "C(n) = (2n)! / ((n+1)! * n!) = C(2n,n) / (n+1)",
+        "1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862",
+        "Recurrence: C(n) = \u03a3 C(i)*C(n-1-i) for i=0 to n-1",
+        "Named after Belgian mathematician Eug\u00e8ne Catalan.",
+        "Catalan(4) equals 14."
+      ]
+    },
+    {
+      "id": "sequence_invariant:catalan_cat_code",
+      "name": "Catalan code",
+      "description": "Algorithmic computation of Catalan numbers.",
+      "support_texts": [
+        "def catalan(n): return comb(2*n, n) // (n+1)",
+        "func catalan(_ n: Int) -> Int { binomial(2*n, n) / (n+1) }",
+        "Dynamic programming: C[n] = sum(C[i]*C[n-1-i] for i in 0..<n)",
+        "Generate all valid structures using recursive backtracking."
+      ]
+    },
+    {
+      "id": "sequence_invariant:catalan_cat_ratio",
+      "name": "Catalan ratio",
+      "description": "C(n+1)/C(n) approaches 4 as n grows.",
+      "support_texts": [
+        "C(n+1)/C(n) = 2(2n+1)/(n+2) \u2192 4 as n \u2192 \u221e",
+        "Catalan numbers grow like 4^n / (n^(3/2) * sqrt(\u03c0)).",
+        "Generating function: C(x) = (1 - sqrt(1-4x)) / (2x)."
+      ]
+    },
+    {
+      "id": "sequence_invariant:catalan_cat_parentheses",
+      "name": "Catalan parentheses",
+      "description": "C(n) counts valid parenthesizations.",
+      "support_texts": [
+        "C(3) = 5: ((())), (()()), (())(), ()(()), ()()()",
+        "Balanced parentheses: equal opens and closes, never more closes.",
+        "Dyck words: paths that never go below the x-axis.",
+        "Well-formed expressions in programming languages."
+      ]
+    },
+    {
+      "id": "sequence_invariant:catalan_cat_trees",
+      "name": "Catalan trees",
+      "description": "C(n) counts binary trees with n+1 leaves.",
+      "support_texts": [
+        "Full binary trees with n+1 leaves: C(n) distinct shapes.",
+        "Rooted ordered trees with n edges.",
+        "Non-crossing partitions of n+1 elements.",
+        "Triangulations of a convex polygon with n+2 sides."
+      ]
+    },
+    {
+      "id": "sequence_invariant:catalan_cat_visual",
+      "name": "Catalan mountain ranges",
+      "description": "Dyck paths as mountain ranges.",
+      "support_texts": [
+        "Draw up-right steps that never cross below the diagonal.",
+        "Mountain ranges that start and end at ground level.",
+        "Ballot sequences: candidate A never trails candidate B.",
+        "Non-crossing chord diagrams on a circle."
+      ]
+    },
+    {
+      "id": "sequence_invariant:ramanujan_partition_definition",
+      "name": "Partition count",
+      "description": "p(n) counts integer partitions of n (order ignored).",
+      "support_texts": [
+        "p(4)=5: 4, 3+1, 2+2, 2+1+1, 1+1+1+1",
+        "Order does not matter: 2+1 and 1+2 are the same partition",
+        "p(5)=7, p(6)=11, p(7)=15, p(8)=22"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ramanujan_partition_congruences",
+      "name": "Partition congruences",
+      "description": "Ramanujan congruences for p(n) modulo 5, 7, and 11.",
+      "support_texts": [
+        "p(5k+4) \u2261 0 (mod 5)",
+        "p(7k+5) \u2261 0 (mod 7)",
+        "p(11k+6) \u2261 0 (mod 11)",
+        "Examples: p(4)=5, p(9)=30, p(14)=135"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ramanujan_partition_growth",
+      "name": "Partition growth",
+      "description": "Hardy-Ramanujan asymptotic growth of p(n).",
+      "support_texts": [
+        "p(n) ~ (1/(4*n*sqrt(3))) * exp(pi*sqrt(2*n/3))",
+        "log p(n) ~ pi*sqrt(2*n/3) for large n",
+        "Growth is exponential in sqrt(n), not in n"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ramanujan_partition_generating",
+      "name": "Partition generating function",
+      "description": "Euler generating function for partitions.",
+      "support_texts": [
+        "sum_{n>=0} p(n) x^n = product_{k>=1} 1/(1 - x^k)",
+        "Each factor 1/(1 - x^k) encodes using k any number of times",
+        "The product expands to all partitions of n"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_identity_add",
+      "name": "Additive identity",
+      "description": "Adding zero does not change a value.",
+      "support_texts": [
+        "x + 0 = x",
+        "0 + x = x",
+        "Additive identity element",
+        "Adding zero leaves a value unchanged"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_identity_mul",
+      "name": "Multiplicative identity",
+      "description": "Multiplying by one does not change a value.",
+      "support_texts": [
+        "x * 1 = x",
+        "1 * x = x",
+        "Multiplicative identity element",
+        "Multiplying by one leaves a value unchanged"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_commutative_add",
+      "name": "Commutative addition",
+      "description": "Order of addition does not matter.",
+      "support_texts": [
+        "a + b = b + a",
+        "Addition is commutative",
+        "swap(a, b) keeps sum",
+        "Sum is invariant under permutation"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_commutative_mul",
+      "name": "Commutative multiplication",
+      "description": "Order of multiplication does not matter.",
+      "support_texts": [
+        "a * b = b * a",
+        "Multiplication is commutative",
+        "Product is invariant under swapping factors"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_distributive",
+      "name": "Distributive law",
+      "description": "Multiplication distributes over addition.",
+      "support_texts": [
+        "a * (b + c) = a*b + a*c",
+        "(b + c) * a = b*a + c*a",
+        "Distributivity of multiplication over addition"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_associative_add",
+      "name": "Associative addition",
+      "description": "Grouping of addition does not change the result.",
+      "support_texts": [
+        "a + (b + c) = (a + b) + c",
+        "Addition is associative",
+        "Parentheses do not change sum"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_associative_mul",
+      "name": "Associative multiplication",
+      "description": "Grouping of multiplication does not change the result.",
+      "support_texts": [
+        "a * (b * c) = (a * b) * c",
+        "Multiplication is associative",
+        "Parentheses do not change product"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_additive_inverse",
+      "name": "Additive inverse",
+      "description": "Every value has an additive inverse.",
+      "support_texts": [
+        "x + (-x) = 0",
+        "Additive inverse cancels a value",
+        "Sum with negation yields zero"
+      ]
+    },
+    {
+      "id": "sequence_invariant:arithmetic_arith_zero_product",
+      "name": "Zero product",
+      "description": "Multiplying by zero yields zero.",
+      "support_texts": [
+        "x * 0 = 0",
+        "0 * x = 0",
+        "Zero annihilates multiplication"
+      ]
+    },
+    {
+      "id": "semantic_prime:ONE",
+      "name": "one",
+      "description": "Semantic prime: ONE",
+      "support_texts": [
+        "The concept of 'one'"
+      ]
+    },
+    {
+      "id": "semantic_prime:TWO",
+      "name": "two",
+      "description": "Semantic prime: TWO",
+      "support_texts": [
+        "The concept of 'two'"
+      ]
+    },
+    {
+      "id": "semantic_prime:SOME",
+      "name": "some",
+      "description": "Semantic prime: SOME",
+      "support_texts": [
+        "The concept of 'some'"
+      ]
+    },
+    {
+      "id": "semantic_prime:ALL",
+      "name": "all",
+      "description": "Semantic prime: ALL",
+      "support_texts": [
+        "The concept of 'all'"
+      ]
+    },
+    {
+      "id": "semantic_prime:MUCH_MANY",
+      "name": "much",
+      "description": "Semantic prime: MUCH_MANY",
+      "support_texts": [
+        "The concept of 'much'",
+        "The concept of 'many'"
+      ]
+    },
+    {
+      "id": "semantic_prime:LITTLE_FEW",
+      "name": "little",
+      "description": "Semantic prime: LITTLE_FEW",
+      "support_texts": [
+        "The concept of 'little'",
+        "The concept of 'few'"
+      ]
+    },
+    {
+      "id": "compositional:much_good",
+      "name": "MUCH GOOD",
+      "description": "Composition: MUCH_MANY + GOOD",
+      "support_texts": [
+        "MUCH GOOD",
+        "MUCH_MANY + GOOD"
+      ]
+    },
+    {
+      "id": "compositional:many_people",
+      "name": "MANY PEOPLE",
+      "description": "Composition: MUCH_MANY + PEOPLE",
+      "support_texts": [
+        "MANY PEOPLE",
+        "MUCH_MANY + PEOPLE"
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_science_algorithm",
+      "name": "algorithm",
+      "description": "Etymology: al-Khwarizmi (arabic), name of Persian mathematician; shift: From person's name to computational procedure",
+      "support_texts": [
+        "The word 'algorithm' comes from arabic 'al-Khwarizmi', meaning 'name of Persian mathematician'.",
+        "'algorithm' originally meant 'name of Persian mathematician' but now refers to something broader.",
+        "When we use 'algorithm', we echo its arabic roots in 'al-Khwarizmi'.",
+        "The concept of algorithm evolved from name of Persian mathematician to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_science_algebra",
+      "name": "algebra",
+      "description": "Etymology: al-jabr (arabic), reunion of broken parts; shift: From bone-setting metaphor to mathematical operations",
+      "support_texts": [
+        "The word 'algebra' comes from arabic 'al-jabr', meaning 'reunion of broken parts'.",
+        "'algebra' originally meant 'reunion of broken parts' but now refers to something broader.",
+        "When we use 'algebra', we echo its arabic roots in 'al-jabr'.",
+        "The concept of algebra evolved from reunion of broken parts to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_science_chemistry",
+      "name": "chemistry",
+      "description": "Etymology: al-kimiya (arabic), the Egyptian art; shift: From alchemy to modern science of matter",
+      "support_texts": [
+        "The word 'chemistry' comes from arabic 'al-kimiya', meaning 'the Egyptian art'.",
+        "'chemistry' originally meant 'the Egyptian art' but now refers to something broader.",
+        "When we use 'chemistry', we echo its arabic roots in 'al-kimiya'.",
+        "The concept of chemistry evolved from the Egyptian art to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_science_atom",
+      "name": "atom",
+      "description": "Etymology: atomos (greek), indivisible; shift: From indivisible unit to now-divisible particle",
+      "support_texts": [
+        "The word 'atom' comes from greek 'atomos', meaning 'indivisible'.",
+        "'atom' originally meant 'indivisible' but now refers to something broader.",
+        "When we use 'atom', we echo its greek roots in 'atomos'.",
+        "The concept of atom evolved from indivisible to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_science_energy",
+      "name": "energy",
+      "description": "Etymology: energeia (greek), activity, operation; shift: From activity to quantifiable physical property",
+      "support_texts": [
+        "The word 'energy' comes from greek 'energeia', meaning 'activity, operation'.",
+        "'energy' originally meant 'activity, operation' but now refers to something broader.",
+        "When we use 'energy', we echo its greek roots in 'energeia'.",
+        "The concept of energy evolved from activity, operation to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_mathematics_geometry",
+      "name": "geometry",
+      "description": "Etymology: geometria (greek), earth measurement; shift: From land surveying to abstract spatial study",
+      "support_texts": [
+        "The word 'geometry' comes from greek 'geometria', meaning 'earth measurement'.",
+        "'geometry' originally meant 'earth measurement' but now refers to something broader.",
+        "When we use 'geometry', we echo its greek roots in 'geometria'.",
+        "The concept of geometry evolved from earth measurement to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_mathematics_calculus",
+      "name": "calculus",
+      "description": "Etymology: calculus (latin), small pebble (for counting); shift: From counting stones to infinitesimal analysis",
+      "support_texts": [
+        "The word 'calculus' comes from latin 'calculus', meaning 'small pebble (for counting)'.",
+        "'calculus' originally meant 'small pebble (for counting)' but now refers to something broader.",
+        "When we use 'calculus', we echo its latin roots in 'calculus'.",
+        "The concept of calculus evolved from small pebble (for counting) to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_mathematics_zero",
+      "name": "zero",
+      "description": "Etymology: sunya (sanskrit), void, emptiness; shift: From philosophical void to mathematical number",
+      "support_texts": [
+        "The word 'zero' comes from sanskrit 'sunya', meaning 'void, emptiness'.",
+        "'zero' originally meant 'void, emptiness' but now refers to something broader.",
+        "When we use 'zero', we echo its sanskrit roots in 'sunya'.",
+        "The concept of zero evolved from void, emptiness to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:etymology_mathematics_digit",
+      "name": "digit",
+      "description": "Etymology: digitus (latin), finger; shift: From finger (for counting) to numerical symbol",
+      "support_texts": [
+        "The word 'digit' comes from latin 'digitus', meaning 'finger'.",
+        "'digit' originally meant 'finger' but now refers to something broader.",
+        "When we use 'digit', we echo its latin roots in 'digitus'.",
+        "The concept of digit evolved from finger to its modern meaning."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_science_phlogiston_theory_oxidation_theory",
+      "name": "phlogiston theory -> oxidation theory",
+      "description": "Lineage: phlogiston theory replaced_by oxidation theory",
+      "support_texts": [
+        "Phlogiston theory was replaced by oxidation."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_science_atomism_quantum_mechanics",
+      "name": "atomism -> quantum mechanics",
+      "description": "Lineage: atomism evolved_into quantum mechanics",
+      "support_texts": [
+        "Ancient atomism evolved into quantum mechanics."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_science_vitalism_biochemistry",
+      "name": "vitalism -> biochemistry",
+      "description": "Lineage: vitalism replaced_by biochemistry",
+      "support_texts": [
+        "Vitalism gave way to biochemistry."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_mathematics_euclidean_geometry_non_euclidean_geometry",
+      "name": "Euclidean geometry -> non-Euclidean geometry",
+      "description": "Lineage: Euclidean geometry generalized_by non-Euclidean geometry",
+      "support_texts": [
+        "Euclidean geometry was generalized by non-Euclidean systems."
+      ]
+    },
+    {
+      "id": "conceptual_genealogy:lineage_mathematics_arithmetic_number_theory",
+      "name": "arithmetic -> number theory",
+      "description": "Lineage: arithmetic formalized_into number theory",
+      "support_texts": [
+        "Basic arithmetic was formalized into number theory."
+      ]
+    },
+    {
+      "id": "numeric:one",
+      "name": "one",
+      "description": "The number 1",
+      "support_texts": [
+        "one",
+        "1",
+        "single"
+      ]
+    },
+    {
+      "id": "numeric:two",
+      "name": "two",
+      "description": "The number 2",
+      "support_texts": [
+        "two",
+        "2",
+        "pair"
+      ]
+    },
+    {
+      "id": "numeric:three",
+      "name": "three",
+      "description": "The number 3",
+      "support_texts": [
+        "three",
+        "3",
+        "triple"
+      ]
+    },
+    {
+      "id": "numeric:four",
+      "name": "four",
+      "description": "The number 4",
+      "support_texts": [
+        "four",
+        "4",
+        "quartet"
+      ]
+    },
+    {
+      "id": "numeric:five",
+      "name": "five",
+      "description": "The number 5",
+      "support_texts": [
+        "five",
+        "5",
+        "quintet"
+      ]
+    },
+    {
+      "id": "numeric:six",
+      "name": "six",
+      "description": "The number 6",
+      "support_texts": [
+        "six",
+        "6",
+        "half dozen"
+      ]
+    },
+    {
+      "id": "numeric:seven",
+      "name": "seven",
+      "description": "The number 7",
+      "support_texts": [
+        "seven",
+        "7"
+      ]
+    },
+    {
+      "id": "numeric:eight",
+      "name": "eight",
+      "description": "The number 8",
+      "support_texts": [
+        "eight",
+        "8"
+      ]
+    },
+    {
+      "id": "numeric:nine",
+      "name": "nine",
+      "description": "The number 9",
+      "support_texts": [
+        "nine",
+        "9"
+      ]
+    },
+    {
+      "id": "numeric:ten",
+      "name": "ten",
+      "description": "The number 10",
+      "support_texts": [
+        "ten",
+        "10",
+        "decade"
+      ]
+    },
+    {
+      "id": "numeric:eleven",
+      "name": "eleven",
+      "description": "The number 11",
+      "support_texts": [
+        "eleven",
+        "11"
+      ]
+    },
+    {
+      "id": "numeric:twelve",
+      "name": "twelve",
+      "description": "The number 12",
+      "support_texts": [
+        "twelve",
+        "12",
+        "dozen"
+      ]
+    },
+    {
+      "id": "numeric:thirteen",
+      "name": "thirteen",
+      "description": "The number 13",
+      "support_texts": [
+        "thirteen",
+        "13"
+      ]
+    },
+    {
+      "id": "numeric:fourteen",
+      "name": "fourteen",
+      "description": "The number 14",
+      "support_texts": [
+        "fourteen",
+        "14"
+      ]
+    },
+    {
+      "id": "numeric:fifteen",
+      "name": "fifteen",
+      "description": "The number 15",
+      "support_texts": [
+        "fifteen",
+        "15"
+      ]
+    },
+    {
+      "id": "numeric:sixteen",
+      "name": "sixteen",
+      "description": "The number 16",
+      "support_texts": [
+        "sixteen",
+        "16"
+      ]
+    },
+    {
+      "id": "numeric:seventeen",
+      "name": "seventeen",
+      "description": "The number 17",
+      "support_texts": [
+        "seventeen",
+        "17"
+      ]
+    },
+    {
+      "id": "numeric:eighteen",
+      "name": "eighteen",
+      "description": "The number 18",
+      "support_texts": [
+        "eighteen",
+        "18"
+      ]
+    },
+    {
+      "id": "numeric:nineteen",
+      "name": "nineteen",
+      "description": "The number 19",
+      "support_texts": [
+        "nineteen",
+        "19"
+      ]
+    },
+    {
+      "id": "numeric:twenty",
+      "name": "twenty",
+      "description": "The number 20",
+      "support_texts": [
+        "twenty",
+        "20",
+        "score"
+      ]
+    },
+    {
+      "id": "numeric:hundred",
+      "name": "hundred",
+      "description": "The number 100",
+      "support_texts": [
+        "hundred",
+        "100",
+        "century"
+      ]
+    },
+    {
+      "id": "numeric:thousand",
+      "name": "thousand",
+      "description": "The number 1000",
+      "support_texts": [
+        "thousand",
+        "1000",
+        "grand"
+      ]
+    },
+    {
+      "id": "numeric:million",
+      "name": "million",
+      "description": "The number 1000000",
+      "support_texts": [
+        "million",
+        "1000000"
+      ]
+    },
+    {
+      "id": "numeric:zero",
+      "name": "zero",
+      "description": "The number 0",
+      "support_texts": [
+        "zero",
+        "0",
+        "none"
+      ]
+    },
+    {
+      "id": "numeric:half",
+      "name": "half",
+      "description": "One divided by two",
+      "support_texts": [
+        "half",
+        "1/2",
+        "fifty percent"
+      ]
+    },
+    {
+      "id": "numeric:first",
+      "name": "first",
+      "description": "Position 1",
+      "support_texts": [
+        "first",
+        "1st",
+        "initial"
+      ]
+    },
+    {
+      "id": "numeric:second",
+      "name": "second",
+      "description": "Position 2",
+      "support_texts": [
+        "second",
+        "2nd"
+      ]
+    },
+    {
+      "id": "numeric:third",
+      "name": "third",
+      "description": "Position 3",
+      "support_texts": [
+        "third",
+        "3rd"
+      ]
+    },
+    {
+      "id": "numeric:fourth",
+      "name": "fourth",
+      "description": "Position 4",
+      "support_texts": [
+        "fourth",
+        "4th"
+      ]
+    },
+    {
+      "id": "numeric:fifth",
+      "name": "fifth",
+      "description": "Position 5",
+      "support_texts": [
+        "fifth",
+        "5th"
+      ]
+    },
+    {
+      "id": "numeric:last",
+      "name": "last",
+      "description": "Final position",
+      "support_texts": [
+        "last",
+        "final",
+        "ultimate"
+      ]
+    },
+    {
+      "id": "numeric:next",
+      "name": "next",
+      "description": "Following position",
+      "support_texts": [
+        "next",
+        "following",
+        "subsequent"
+      ]
+    },
+    {
+      "id": "numeric:previous",
+      "name": "previous",
+      "description": "Preceding position",
+      "support_texts": [
+        "previous",
+        "prior",
+        "preceding"
+      ]
+    },
+    {
+      "id": "numeric:middle",
+      "name": "middle",
+      "description": "Center position",
+      "support_texts": [
+        "middle",
+        "center",
+        "median"
+      ]
+    },
+    {
+      "id": "numeric:beginning",
+      "name": "beginning",
+      "description": "Start position",
+      "support_texts": [
+        "beginning",
+        "start",
+        "origin"
+      ]
+    },
+    {
+      "id": "numeric:more",
+      "name": "more",
+      "description": "Greater quantity",
+      "support_texts": [
+        "more",
+        "additional",
+        "extra"
+      ]
+    },
+    {
+      "id": "numeric:less",
+      "name": "less",
+      "description": "Smaller quantity",
+      "support_texts": [
+        "less",
+        "fewer",
+        "reduced"
+      ]
+    },
+    {
+      "id": "numeric:equal",
+      "name": "equal",
+      "description": "Same quantity",
+      "support_texts": [
+        "equal",
+        "same",
+        "equivalent"
+      ]
+    },
+    {
+      "id": "numeric:greater",
+      "name": "greater",
+      "description": "Larger than",
+      "support_texts": [
+        "greater",
+        "larger",
+        "bigger"
+      ]
+    },
+    {
+      "id": "numeric:smaller",
+      "name": "smaller",
+      "description": "Less than",
+      "support_texts": [
+        "smaller",
+        "lesser",
+        "tinier"
+      ]
+    },
+    {
+      "id": "numeric:most",
+      "name": "most",
+      "description": "Maximum quantity",
+      "support_texts": [
+        "most",
+        "maximum",
+        "greatest"
+      ]
+    },
+    {
+      "id": "numeric:least",
+      "name": "least",
+      "description": "Minimum quantity",
+      "support_texts": [
+        "least",
+        "minimum",
+        "smallest"
+      ]
+    },
+    {
+      "id": "numeric:enough",
+      "name": "enough",
+      "description": "Sufficient quantity",
+      "support_texts": [
+        "enough",
+        "sufficient",
+        "adequate"
+      ]
+    },
+    {
+      "id": "numeric:add",
+      "name": "add",
+      "description": "Combine quantities",
+      "support_texts": [
+        "add",
+        "plus",
+        "sum"
+      ]
+    },
+    {
+      "id": "numeric:subtract",
+      "name": "subtract",
+      "description": "Remove quantity",
+      "support_texts": [
+        "subtract",
+        "minus",
+        "difference"
+      ]
+    },
+    {
+      "id": "numeric:multiply",
+      "name": "multiply",
+      "description": "Repeated addition",
+      "support_texts": [
+        "multiply",
+        "times",
+        "product"
+      ]
+    },
+    {
+      "id": "numeric:divide",
+      "name": "divide",
+      "description": "Split quantity",
+      "support_texts": [
+        "divide",
+        "split",
+        "quotient"
+      ]
+    },
+    {
+      "id": "numeric:calculate",
+      "name": "calculate",
+      "description": "Compute result",
+      "support_texts": [
+        "calculate",
+        "compute",
+        "figure"
+      ]
+    },
+    {
+      "id": "numeric:count",
+      "name": "count",
+      "description": "Enumerate items",
+      "support_texts": [
+        "count",
+        "tally",
+        "enumerate"
+      ]
+    },
+    {
+      "id": "numeric:measure",
+      "name": "measure",
+      "description": "Determine size",
+      "support_texts": [
+        "measure",
+        "gauge",
+        "assess"
+      ]
+    }
+  ]
+}

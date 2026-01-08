@@ -1,0 +1,936 @@
+{
+  "domain": "logical",
+  "probe_count": 91,
+  "probes": [
+    {
+      "id": "sequence_invariant:logic_logic_modus_ponens",
+      "name": "Modus ponens",
+      "description": "If A implies B and A is true, then B is true.",
+      "support_texts": [
+        "A -> B, A, therefore B",
+        "If A then B; A; so B",
+        "Implication elimination rule",
+        "Given A implies B and A holds, B follows",
+        "Rule: from A and A=>B infer B"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_double_negation",
+      "name": "Double negation",
+      "description": "Negating twice returns the original truth value.",
+      "support_texts": [
+        "not(not A) == A",
+        "!!a == a",
+        "Double negation cancels out",
+        "Boolean: !( !A ) is equivalent to A",
+        "Negating a statement twice yields the same statement"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_de_morgan",
+      "name": "De Morgan's laws",
+      "description": "Negation distributes over AND/OR with duality.",
+      "support_texts": [
+        "not (A and B) == (not A) or (not B)",
+        "not (A or B) == (not A) and (not B)",
+        "De Morgan's equivalences",
+        "Negation swaps AND/OR across components",
+        "!(A && B) == (!A || !B) and !(A || B) == (!A && !B)"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_contrapositive",
+      "name": "Contrapositive",
+      "description": "If A implies B, then not B implies not A.",
+      "support_texts": [
+        "A -> B is equivalent to (not B) -> (not A)",
+        "If B is false, then A must be false",
+        "Contrapositive preserves truth in implication"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_excluded_middle",
+      "name": "Excluded middle",
+      "description": "A statement is either true or not true.",
+      "support_texts": [
+        "A or not A is always true",
+        "A \u2228 \u00acA",
+        "Boolean: a || !a == true"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_modus_tollens",
+      "name": "Modus tollens",
+      "description": "If A implies B and B is false, then A is false.",
+      "support_texts": [
+        "A -> B, not B, therefore not A",
+        "If B is false then A cannot be true",
+        "Implication with negated consequent",
+        "From A implies B and not B infer not A"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_non_contradiction",
+      "name": "Non-contradiction",
+      "description": "A statement cannot be both true and false.",
+      "support_texts": [
+        "not (A and not A)",
+        "A and not A is always false",
+        "No statement is both true and false",
+        "Law of non-contradiction"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_biconditional",
+      "name": "Biconditional",
+      "description": "A if and only if B means A implies B and B implies A.",
+      "support_texts": [
+        "A <-> B is (A -> B) and (B -> A)",
+        "If and only if",
+        "Equivalence of A and B",
+        "Bidirectional implication"
+      ]
+    },
+    {
+      "id": "sequence_invariant:logic_logic_distributive",
+      "name": "Distributive logic",
+      "description": "AND/OR distribute over each other in boolean algebra.",
+      "support_texts": [
+        "A and (B or C) == (A and B) or (A and C)",
+        "A or (B and C) == (A or B) and (A or C)",
+        "Distributive laws of logic",
+        "Boolean distributivity"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_transitive",
+      "name": "Transitive order",
+      "description": "If A > B and B > C, then A > C.",
+      "support_texts": [
+        "Transitivity of order",
+        "x > y and y > z implies x > z",
+        "If x < y and y < z then x < z",
+        "Order comparisons compose through chains"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_antisymmetry",
+      "name": "Antisymmetry",
+      "description": "If A <= B and B <= A, then A = B.",
+      "support_texts": [
+        "x <= y and y <= x implies x == y",
+        "Antisymmetry of partial order",
+        "No two distinct elements precede each other",
+        "If both directions hold, the elements are equal"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_total",
+      "name": "Total order",
+      "description": "Any two elements are comparable.",
+      "support_texts": [
+        "Exactly one of A < B, A = B, or A > B holds",
+        "Total order comparability",
+        "Elements are always comparable",
+        "Trichotomy holds for every pair"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_reflexive",
+      "name": "Reflexive order",
+      "description": "Every element is comparable to itself.",
+      "support_texts": [
+        "x <= x",
+        "Reflexivity of order",
+        "An element is always equal to itself"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_trichotomy",
+      "name": "Trichotomy",
+      "description": "Exactly one of less-than, equal, or greater-than holds.",
+      "support_texts": [
+        "For any a,b: a < b or a = b or a > b",
+        "Order relations are mutually exclusive",
+        "Comparable values fall into one of three cases"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_monotone_addition",
+      "name": "Order under addition",
+      "description": "Adding the same value preserves order.",
+      "support_texts": [
+        "If a < b then a + c < b + c",
+        "Order is translation-invariant",
+        "Adding the same amount keeps inequalities true"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_monotone_multiplication",
+      "name": "Order under multiplication",
+      "description": "Multiplying by a positive value preserves order.",
+      "support_texts": [
+        "If a < b and c > 0 then a*c < b*c",
+        "Positive scaling preserves inequalities",
+        "Order is preserved under positive multiplication"
+      ]
+    },
+    {
+      "id": "sequence_invariant:ordering_order_bounds",
+      "name": "Bounds by min/max",
+      "description": "Values are bounded by their minimum and maximum.",
+      "support_texts": [
+        "min(a,b) <= a <= max(a,b)",
+        "Every value lies between min and max",
+        "Bounds from pairwise comparison"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_precedes_effect",
+      "name": "Cause precedes effect",
+      "description": "A cause occurs before its effect.",
+      "support_texts": [
+        "Cause -> effect happens after",
+        "Temporal order: cause then effect",
+        "Causal precedence",
+        "An effect cannot happen before its cause"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_dependency",
+      "name": "Effect depends on cause",
+      "description": "If B depends on A, then without A, B does not occur.",
+      "support_texts": [
+        "No A implies no B (when A is required)",
+        "Effect requires its cause",
+        "Dependency: B needs A",
+        "Without the cause, the effect is absent"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_intervention",
+      "name": "Causal intervention",
+      "description": "Intervening on a cause changes the effect.",
+      "support_texts": [
+        "do(A) changes B when A causes B",
+        "Intervene on A -> B changes",
+        "Causal influence via intervention",
+        "Manipulating A should change B if A causes B"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_chain",
+      "name": "Causal chain",
+      "description": "Causal influence can propagate through intermediates.",
+      "support_texts": [
+        "If A causes B and B causes C, then A influences C",
+        "Causal effects can be transitive through chains",
+        "Upstream causes ripple through intermediate steps"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_counterfactual",
+      "name": "Counterfactual dependence",
+      "description": "If the cause did not occur, the effect would not occur.",
+      "support_texts": [
+        "If not A, then not B (for A causing B)",
+        "Counterfactual: remove cause -> remove effect",
+        "Effect depends counterfactually on the cause"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_common_cause",
+      "name": "Common cause",
+      "description": "A shared cause can explain correlation between effects.",
+      "support_texts": [
+        "If C causes A and B, then A and B may correlate",
+        "Common cause explains observed association",
+        "Shared causes produce correlated outcomes"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_confounder",
+      "name": "Confounder control",
+      "description": "Controlling for a confounder can remove spurious association.",
+      "support_texts": [
+        "Adjusting for C removes the A-B correlation",
+        "Confounder explains away association",
+        "Conditional independence after control"
+      ]
+    },
+    {
+      "id": "sequence_invariant:causality_cause_collider",
+      "name": "Collider bias",
+      "description": "Conditioning on a common effect can induce correlation.",
+      "support_texts": [
+        "A -> C <- B; conditioning on C links A and B",
+        "Collider induces association when conditioned",
+        "Selection bias from conditioning on outcomes"
+      ]
+    },
+    {
+      "id": "semantic_prime:NOT",
+      "name": "not",
+      "description": "Semantic prime: NOT",
+      "support_texts": [
+        "The concept of 'not'"
+      ]
+    },
+    {
+      "id": "semantic_prime:MAYBE",
+      "name": "maybe",
+      "description": "Semantic prime: MAYBE",
+      "support_texts": [
+        "The concept of 'maybe'"
+      ]
+    },
+    {
+      "id": "semantic_prime:CAN",
+      "name": "can",
+      "description": "Semantic prime: CAN",
+      "support_texts": [
+        "The concept of 'can'"
+      ]
+    },
+    {
+      "id": "semantic_prime:BECAUSE",
+      "name": "because",
+      "description": "Semantic prime: BECAUSE",
+      "support_texts": [
+        "The concept of 'because'"
+      ]
+    },
+    {
+      "id": "semantic_prime:IF",
+      "name": "if",
+      "description": "Semantic prime: IF",
+      "support_texts": [
+        "The concept of 'if'"
+      ]
+    },
+    {
+      "id": "temporal_concept:because",
+      "name": "Because",
+      "description": "Indicating the cause or reason.",
+      "support_texts": [
+        "Because explains why something happened.",
+        "The reason behind an event.",
+        "Due to, owing to.",
+        "The causal antecedent."
+      ]
+    },
+    {
+      "id": "temporal_concept:causes",
+      "name": "Causes",
+      "description": "The act of bringing about an effect.",
+      "support_texts": [
+        "X causes Y means X brings about Y.",
+        "The mechanism of causation.",
+        "Making something happen."
+      ]
+    },
+    {
+      "id": "temporal_concept:leads_to",
+      "name": "Leads to",
+      "description": "Resulting in or causing eventually.",
+      "support_texts": [
+        "One thing leads to another.",
+        "A chain of events unfolds.",
+        "The path from cause to effect."
+      ]
+    },
+    {
+      "id": "temporal_concept:therefore",
+      "name": "Therefore",
+      "description": "For that reason, consequently.",
+      "support_texts": [
+        "Therefore indicates a conclusion.",
+        "As a result, consequently.",
+        "The logical consequence.",
+        "It follows that."
+      ]
+    },
+    {
+      "id": "temporal_concept:results_in",
+      "name": "Results in",
+      "description": "The outcome or effect produced.",
+      "support_texts": [
+        "The action results in a consequence.",
+        "The end state after causation.",
+        "The effect that follows."
+      ]
+    },
+    {
+      "id": "philosophical_concept:contradiction",
+      "name": "Contradiction",
+      "description": "Simultaneous assertion of P and not-P.",
+      "support_texts": [
+        "A contradiction is asserting both A and not-A.",
+        "The principle of non-contradiction: nothing can be A and not-A.",
+        "From a contradiction, anything follows (ex falso quodlibet).",
+        "Contradictions are necessarily false.",
+        "Aristotle: The most certain principle of all."
+      ]
+    },
+    {
+      "id": "philosophical_concept:negation",
+      "name": "Negation",
+      "description": "The denial of a proposition - not-P.",
+      "support_texts": [
+        "Negation reverses the truth value of a proposition.",
+        "If P is true, not-P is false.",
+        "Negation is the logical complement.",
+        "Double negation: not-not-P equals P.",
+        "Denial is the assertion of the opposite."
+      ]
+    },
+    {
+      "id": "philosophical_concept:contingency",
+      "name": "Contingency",
+      "description": "That which is true but could be false.",
+      "support_texts": [
+        "Contingent truths depend on how the world is.",
+        "A contingent proposition is neither necessarily true nor necessarily false.",
+        "Leibniz: Contingent truths have reasons but not necessitating reasons.",
+        "The world could have been otherwise.",
+        "Empirical truths are contingent."
+      ]
+    },
+    {
+      "id": "philosophical_concept:implication",
+      "name": "Implication",
+      "description": "If P then Q - logical consequence.",
+      "support_texts": [
+        "Implication: if the antecedent is true, the consequent must be true.",
+        "Modus ponens: P, P implies Q, therefore Q.",
+        "Modus tollens: not-Q, P implies Q, therefore not-P.",
+        "Logical consequence preserves truth.",
+        "Necessary connection between premises and conclusion."
+      ]
+    },
+    {
+      "id": "philosophical_concept:identity",
+      "name": "Identity",
+      "description": "A thing is identical to itself - A = A.",
+      "support_texts": [
+        "The principle of identity: A is A.",
+        "Everything is identical with itself.",
+        "Leibniz's law: If x = y, then every property of x is a property of y.",
+        "Identity is the most fundamental relation.",
+        "Self-identity is necessary and a priori."
+      ]
+    },
+    {
+      "id": "philosophical_concept:necessity",
+      "name": "Necessity",
+      "description": "That which must be true - cannot be otherwise.",
+      "support_texts": [
+        "Necessary truths are true in all possible worlds.",
+        "Logical necessity: true by virtue of form alone.",
+        "Mathematical truths are necessary.",
+        "What is necessary cannot be otherwise.",
+        "Analytic truths are necessary."
+      ]
+    },
+    {
+      "id": "abstract_relation:cause",
+      "name": "cause",
+      "description": "Origin of effect",
+      "support_texts": [
+        "cause",
+        "source",
+        "origin"
+      ]
+    },
+    {
+      "id": "abstract_relation:effect",
+      "name": "effect",
+      "description": "Result of cause",
+      "support_texts": [
+        "effect",
+        "outcome",
+        "impact"
+      ]
+    },
+    {
+      "id": "abstract_relation:result",
+      "name": "result",
+      "description": "Consequence",
+      "support_texts": [
+        "result",
+        "consequence",
+        "product"
+      ]
+    },
+    {
+      "id": "abstract_relation:consequence",
+      "name": "consequence",
+      "description": "Following outcome",
+      "support_texts": [
+        "consequence",
+        "aftermath",
+        "outcome"
+      ]
+    },
+    {
+      "id": "abstract_relation:reason",
+      "name": "reason",
+      "description": "Explanatory cause",
+      "support_texts": [
+        "reason",
+        "rationale",
+        "motive"
+      ]
+    },
+    {
+      "id": "abstract_relation:because",
+      "name": "because",
+      "description": "Causal connector",
+      "support_texts": [
+        "because",
+        "since",
+        "as"
+      ]
+    },
+    {
+      "id": "abstract_relation:therefore",
+      "name": "therefore",
+      "description": "Consequence marker",
+      "support_texts": [
+        "therefore",
+        "thus",
+        "hence"
+      ]
+    },
+    {
+      "id": "abstract_relation:influence",
+      "name": "influence",
+      "description": "Partial causation",
+      "support_texts": [
+        "influence",
+        "affect",
+        "impact"
+      ]
+    },
+    {
+      "id": "abstract_relation:like",
+      "name": "like",
+      "description": "Similar to",
+      "support_texts": [
+        "like",
+        "similar",
+        "comparable"
+      ]
+    },
+    {
+      "id": "abstract_relation:same",
+      "name": "same",
+      "description": "Identical",
+      "support_texts": [
+        "same",
+        "identical",
+        "equal"
+      ]
+    },
+    {
+      "id": "abstract_relation:different",
+      "name": "different",
+      "description": "Not alike",
+      "support_texts": [
+        "different",
+        "distinct",
+        "unlike"
+      ]
+    },
+    {
+      "id": "abstract_relation:similar",
+      "name": "similar",
+      "description": "Alike",
+      "support_texts": [
+        "similar",
+        "alike",
+        "resembling"
+      ]
+    },
+    {
+      "id": "abstract_relation:opposite",
+      "name": "opposite",
+      "description": "Contrary",
+      "support_texts": [
+        "opposite",
+        "contrary",
+        "inverse"
+      ]
+    },
+    {
+      "id": "abstract_relation:match",
+      "name": "match",
+      "description": "Corresponding",
+      "support_texts": [
+        "match",
+        "correspond",
+        "fit"
+      ]
+    },
+    {
+      "id": "abstract_relation:differ",
+      "name": "differ",
+      "description": "Be different",
+      "support_texts": [
+        "differ",
+        "vary",
+        "diverge"
+      ]
+    },
+    {
+      "id": "abstract_relation:compare",
+      "name": "compare",
+      "description": "Assess similarity",
+      "support_texts": [
+        "compare",
+        "contrast",
+        "analyze"
+      ]
+    },
+    {
+      "id": "abstract_relation:inside",
+      "name": "inside",
+      "description": "Within bounds",
+      "support_texts": [
+        "inside",
+        "within",
+        "interior"
+      ]
+    },
+    {
+      "id": "abstract_relation:outside",
+      "name": "outside",
+      "description": "Beyond bounds",
+      "support_texts": [
+        "outside",
+        "exterior",
+        "external"
+      ]
+    },
+    {
+      "id": "abstract_relation:contain",
+      "name": "contain",
+      "description": "Hold within",
+      "support_texts": [
+        "contain",
+        "hold",
+        "include"
+      ]
+    },
+    {
+      "id": "abstract_relation:include",
+      "name": "include",
+      "description": "Have as part",
+      "support_texts": [
+        "include",
+        "comprise",
+        "encompass"
+      ]
+    },
+    {
+      "id": "abstract_relation:exclude",
+      "name": "exclude",
+      "description": "Leave out",
+      "support_texts": [
+        "exclude",
+        "omit",
+        "reject"
+      ]
+    },
+    {
+      "id": "abstract_relation:within",
+      "name": "within",
+      "description": "Inside of",
+      "support_texts": [
+        "within",
+        "inside",
+        "in"
+      ]
+    },
+    {
+      "id": "abstract_relation:surround",
+      "name": "surround",
+      "description": "Encircle",
+      "support_texts": [
+        "surround",
+        "encircle",
+        "enclose"
+      ]
+    },
+    {
+      "id": "abstract_relation:boundary",
+      "name": "boundary",
+      "description": "Edge limit",
+      "support_texts": [
+        "boundary",
+        "border",
+        "limit"
+      ]
+    },
+    {
+      "id": "abstract_relation:before_rel",
+      "name": "before",
+      "description": "Earlier position",
+      "support_texts": [
+        "before",
+        "prior",
+        "preceding"
+      ]
+    },
+    {
+      "id": "abstract_relation:after_rel",
+      "name": "after",
+      "description": "Later position",
+      "support_texts": [
+        "after",
+        "following",
+        "subsequent"
+      ]
+    },
+    {
+      "id": "abstract_relation:between",
+      "name": "between",
+      "description": "In the middle",
+      "support_texts": [
+        "between",
+        "amid",
+        "among"
+      ]
+    },
+    {
+      "id": "abstract_relation:among",
+      "name": "among",
+      "description": "In group",
+      "support_texts": [
+        "among",
+        "amongst",
+        "within"
+      ]
+    },
+    {
+      "id": "abstract_relation:order",
+      "name": "order",
+      "description": "Sequence",
+      "support_texts": [
+        "order",
+        "sequence",
+        "arrangement"
+      ]
+    },
+    {
+      "id": "abstract_relation:rank",
+      "name": "rank",
+      "description": "Position level",
+      "support_texts": [
+        "rank",
+        "position",
+        "level"
+      ]
+    },
+    {
+      "id": "abstract_relation:sequence",
+      "name": "sequence",
+      "description": "Ordered series",
+      "support_texts": [
+        "sequence",
+        "series",
+        "chain"
+      ]
+    },
+    {
+      "id": "abstract_relation:priority",
+      "name": "priority",
+      "description": "Importance order",
+      "support_texts": [
+        "priority",
+        "precedence",
+        "importance"
+      ]
+    },
+    {
+      "id": "abstract_relation:connect",
+      "name": "connect",
+      "description": "Join together",
+      "support_texts": [
+        "connect",
+        "link",
+        "join"
+      ]
+    },
+    {
+      "id": "abstract_relation:separate",
+      "name": "separate",
+      "description": "Keep apart",
+      "support_texts": [
+        "separate",
+        "divide",
+        "split"
+      ]
+    },
+    {
+      "id": "abstract_relation:join",
+      "name": "join",
+      "description": "Come together",
+      "support_texts": [
+        "join",
+        "unite",
+        "merge"
+      ]
+    },
+    {
+      "id": "abstract_relation:link",
+      "name": "link",
+      "description": "Create connection",
+      "support_texts": [
+        "link",
+        "connect",
+        "tie"
+      ]
+    },
+    {
+      "id": "abstract_relation:attach",
+      "name": "attach",
+      "description": "Fasten to",
+      "support_texts": [
+        "attach",
+        "fasten",
+        "fix"
+      ]
+    },
+    {
+      "id": "abstract_relation:detach",
+      "name": "detach",
+      "description": "Unfasten from",
+      "support_texts": [
+        "detach",
+        "disconnect",
+        "remove"
+      ]
+    },
+    {
+      "id": "abstract_relation:relate",
+      "name": "relate",
+      "description": "Have connection",
+      "support_texts": [
+        "relate",
+        "associate",
+        "connect"
+      ]
+    },
+    {
+      "id": "abstract_relation:associate",
+      "name": "associate",
+      "description": "Link mentally",
+      "support_texts": [
+        "associate",
+        "connect",
+        "link"
+      ]
+    },
+    {
+      "id": "abstract_relation:depend",
+      "name": "depend",
+      "description": "Rely on",
+      "support_texts": [
+        "depend",
+        "rely",
+        "hinge"
+      ]
+    },
+    {
+      "id": "abstract_relation:independent",
+      "name": "independent",
+      "description": "Not reliant",
+      "support_texts": [
+        "independent",
+        "autonomous",
+        "self-sufficient"
+      ]
+    },
+    {
+      "id": "abstract_relation:require",
+      "name": "require",
+      "description": "Need for function",
+      "support_texts": [
+        "require",
+        "need",
+        "demand"
+      ]
+    },
+    {
+      "id": "abstract_relation:need",
+      "name": "need",
+      "description": "Necessity",
+      "support_texts": [
+        "need",
+        "require",
+        "must have"
+      ]
+    },
+    {
+      "id": "abstract_relation:support",
+      "name": "support",
+      "description": "Hold up",
+      "support_texts": [
+        "support",
+        "sustain",
+        "uphold"
+      ]
+    },
+    {
+      "id": "abstract_relation:enable",
+      "name": "enable",
+      "description": "Make possible",
+      "support_texts": [
+        "enable",
+        "allow",
+        "permit"
+      ]
+    },
+    {
+      "id": "abstract_relation:prevent",
+      "name": "prevent",
+      "description": "Stop happening",
+      "support_texts": [
+        "prevent",
+        "block",
+        "stop"
+      ]
+    },
+    {
+      "id": "abstract_relation:condition",
+      "name": "condition",
+      "description": "Requirement",
+      "support_texts": [
+        "condition",
+        "requirement",
+        "prerequisite"
+      ]
+    },
+    {
+      "id": "abstract_relation:prerequisite",
+      "name": "prerequisite",
+      "description": "Prior requirement",
+      "support_texts": [
+        "prerequisite",
+        "precondition",
+        "requirement"
+      ]
+    },
+    {
+      "id": "abstract_relation:optional",
+      "name": "optional",
+      "description": "Not required",
+      "support_texts": [
+        "optional",
+        "elective",
+        "discretionary"
+      ]
+    }
+  ]
+}

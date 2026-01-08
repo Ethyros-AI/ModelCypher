@@ -1,0 +1,1711 @@
+{
+  "domain": "physical",
+  "probe_count": 178,
+  "probes": [
+    {
+      "id": "physical_existence:ball_window",
+      "name": "ball_window",
+      "description": "When a ball hits a glass window, the window...",
+      "support_texts": [
+        "When a ball hits a glass window, the window..."
+      ]
+    },
+    {
+      "id": "physical_existence:water_heat",
+      "name": "water_heat",
+      "description": "When water is heated to 100\u00b0C, it...",
+      "support_texts": [
+        "When water is heated to 100\u00b0C, it..."
+      ]
+    },
+    {
+      "id": "physical_existence:egg_drop",
+      "name": "egg_drop",
+      "description": "When you drop an egg on a hard floor, the egg...",
+      "support_texts": [
+        "When you drop an egg on a hard floor, the egg..."
+      ]
+    },
+    {
+      "id": "physical_existence:ice_sun",
+      "name": "ice_sun",
+      "description": "When ice is left in the sun, it...",
+      "support_texts": [
+        "When ice is left in the sun, it..."
+      ]
+    },
+    {
+      "id": "physical_existence:fire_paper",
+      "name": "fire_paper",
+      "description": "When paper touches fire, the paper...",
+      "support_texts": [
+        "When paper touches fire, the paper..."
+      ]
+    },
+    {
+      "id": "physical_existence:push_ball",
+      "name": "push_ball",
+      "description": "When you push a ball, the ball...",
+      "support_texts": [
+        "When you push a ball, the ball..."
+      ]
+    },
+    {
+      "id": "physical_existence:release_balloon",
+      "name": "release_balloon",
+      "description": "When you release a helium balloon, it...",
+      "support_texts": [
+        "When you release a helium balloon, it..."
+      ]
+    },
+    {
+      "id": "physical_existence:drop_stone",
+      "name": "drop_stone",
+      "description": "When you drop a stone in water, it...",
+      "support_texts": [
+        "When you drop a stone in water, it..."
+      ]
+    },
+    {
+      "id": "physical_existence:ball_wall",
+      "name": "ball_wall",
+      "description": "Can a solid ball pass through a brick wall without breaking it?",
+      "support_texts": [
+        "Can a solid ball pass through a brick wall without breaking it?"
+      ]
+    },
+    {
+      "id": "physical_existence:two_places",
+      "name": "two_places",
+      "description": "Can a person be in New York and Tokyo at the exact same moment?",
+      "support_texts": [
+        "Can a person be in New York and Tokyo at the exact same moment?"
+      ]
+    },
+    {
+      "id": "physical_existence:reverse_time",
+      "name": "reverse_time",
+      "description": "Can a broken egg unbreak itself?",
+      "support_texts": [
+        "Can a broken egg unbreak itself?"
+      ]
+    },
+    {
+      "id": "physical_existence:object_vanish",
+      "name": "object_vanish",
+      "description": "If I close my eyes, does the table in front of me disappear?",
+      "support_texts": [
+        "If I close my eyes, does the table in front of me disappear?"
+      ]
+    },
+    {
+      "id": "physical_existence:table_cup",
+      "name": "table_cup",
+      "description": "If I remove the table, what happens to the cup that was on it?",
+      "support_texts": [
+        "If I remove the table, what happens to the cup that was on it?"
+      ]
+    },
+    {
+      "id": "physical_existence:walk_water",
+      "name": "walk_water",
+      "description": "Can a person walk on liquid water without sinking?",
+      "support_texts": [
+        "Can a person walk on liquid water without sinking?"
+      ]
+    },
+    {
+      "id": "physical_existence:fly_unaided",
+      "name": "fly_unaided",
+      "description": "Can a person fly by flapping their arms?",
+      "support_texts": [
+        "Can a person fly by flapping their arms?"
+      ]
+    },
+    {
+      "id": "physical_existence:book_drawer",
+      "name": "book_drawer",
+      "description": "I put a book in a drawer and close it. Is the book still in the drawer?",
+      "support_texts": [
+        "I put a book in a drawer and close it. Is the book still in the drawer?"
+      ]
+    },
+    {
+      "id": "physical_existence:moon_cloud",
+      "name": "moon_cloud",
+      "description": "The moon goes behind a cloud. Does the moon still exist?",
+      "support_texts": [
+        "The moon goes behind a cloud. Does the moon still exist?"
+      ]
+    },
+    {
+      "id": "physical_existence:car_garage",
+      "name": "car_garage",
+      "description": "I park my car in the garage and walk away. Is my car still there?",
+      "support_texts": [
+        "I park my car in the garage and walk away. Is my car still there?"
+      ]
+    },
+    {
+      "id": "physical_existence:ball_blanket",
+      "name": "ball_blanket",
+      "description": "A ball rolls under a blanket. Can I find the ball if I lift the blanket?",
+      "support_texts": [
+        "A ball rolls under a blanket. Can I find the ball if I lift the blanket?"
+      ]
+    },
+    {
+      "id": "physical_existence:friend_room",
+      "name": "friend_room",
+      "description": "My friend walks into another room. Does my friend still exist?",
+      "support_texts": [
+        "My friend walks into another room. Does my friend still exist?"
+      ]
+    },
+    {
+      "id": "physical_existence:stub_toe",
+      "name": "stub_toe",
+      "description": "When I stub my toe on a rock, I feel...",
+      "support_texts": [
+        "When I stub my toe on a rock, I feel..."
+      ]
+    },
+    {
+      "id": "physical_existence:hungry_stomach",
+      "name": "hungry_stomach",
+      "description": "When I haven't eaten for hours, my stomach...",
+      "support_texts": [
+        "When I haven't eaten for hours, my stomach..."
+      ]
+    },
+    {
+      "id": "physical_existence:cold_shiver",
+      "name": "cold_shiver",
+      "description": "When I'm very cold, I tend to...",
+      "support_texts": [
+        "When I'm very cold, I tend to..."
+      ]
+    },
+    {
+      "id": "physical_existence:hot_sweat",
+      "name": "hot_sweat",
+      "description": "When I'm very hot, I tend to...",
+      "support_texts": [
+        "When I'm very hot, I tend to..."
+      ]
+    },
+    {
+      "id": "physical_existence:tired_yawn",
+      "name": "tired_yawn",
+      "description": "When I'm tired, I often...",
+      "support_texts": [
+        "When I'm tired, I often..."
+      ]
+    },
+    {
+      "id": "physical_existence:touch_ice",
+      "name": "touch_ice",
+      "description": "When I touch ice, my fingers feel...",
+      "support_texts": [
+        "When I touch ice, my fingers feel..."
+      ]
+    },
+    {
+      "id": "physical_existence:touch_fire",
+      "name": "touch_fire",
+      "description": "When I get too close to fire, I feel...",
+      "support_texts": [
+        "When I get too close to fire, I feel..."
+      ]
+    },
+    {
+      "id": "physical_existence:eyes_closed",
+      "name": "eyes_closed",
+      "description": "When I close my eyes, I can still feel...",
+      "support_texts": [
+        "When I close my eyes, I can still feel..."
+      ]
+    },
+    {
+      "id": "physical_existence:chair_paint",
+      "name": "chair_paint",
+      "description": "If I paint a red chair blue, is it still the same chair?",
+      "support_texts": [
+        "If I paint a red chair blue, is it still the same chair?"
+      ]
+    },
+    {
+      "id": "physical_existence:cup_break",
+      "name": "cup_break",
+      "description": "If I break a cup into many pieces, is it still a cup?",
+      "support_texts": [
+        "If I break a cup into many pieces, is it still a cup?"
+      ]
+    },
+    {
+      "id": "physical_existence:ship_planks",
+      "name": "ship_planks",
+      "description": "If I replace every plank of a wooden ship over time, is it the same ship?",
+      "support_texts": [
+        "If I replace every plank of a wooden ship over time, is it the same ship?"
+      ]
+    },
+    {
+      "id": "physical_existence:caterpillar_butterfly",
+      "name": "caterpillar_butterfly",
+      "description": "A caterpillar becomes a butterfly. Is it the same creature?",
+      "support_texts": [
+        "A caterpillar becomes a butterfly. Is it the same creature?"
+      ]
+    },
+    {
+      "id": "physical_existence:ice_water",
+      "name": "ice_water",
+      "description": "Ice melts into water. Is it the same substance?",
+      "support_texts": [
+        "Ice melts into water. Is it the same substance?"
+      ]
+    },
+    {
+      "id": "physical_existence:person_age",
+      "name": "person_age",
+      "description": "A person at age 5 and age 50 - are they the same person?",
+      "support_texts": [
+        "A person at age 5 and age 50 - are they the same person?"
+      ]
+    },
+    {
+      "id": "perceptual:red",
+      "name": "red",
+      "description": "The color red",
+      "support_texts": [
+        "red",
+        "crimson",
+        "scarlet"
+      ]
+    },
+    {
+      "id": "perceptual:blue",
+      "name": "blue",
+      "description": "The color blue",
+      "support_texts": [
+        "blue",
+        "azure",
+        "navy"
+      ]
+    },
+    {
+      "id": "perceptual:green",
+      "name": "green",
+      "description": "The color green",
+      "support_texts": [
+        "green",
+        "emerald",
+        "lime"
+      ]
+    },
+    {
+      "id": "perceptual:yellow",
+      "name": "yellow",
+      "description": "The color yellow",
+      "support_texts": [
+        "yellow",
+        "gold",
+        "lemon"
+      ]
+    },
+    {
+      "id": "perceptual:orange",
+      "name": "orange",
+      "description": "The color orange",
+      "support_texts": [
+        "orange",
+        "amber",
+        "tangerine"
+      ]
+    },
+    {
+      "id": "perceptual:purple",
+      "name": "purple",
+      "description": "The color purple",
+      "support_texts": [
+        "purple",
+        "violet",
+        "lavender"
+      ]
+    },
+    {
+      "id": "perceptual:white",
+      "name": "white",
+      "description": "The color white",
+      "support_texts": [
+        "white",
+        "ivory",
+        "snow"
+      ]
+    },
+    {
+      "id": "perceptual:black",
+      "name": "black",
+      "description": "The color black",
+      "support_texts": [
+        "black",
+        "ebony",
+        "midnight"
+      ]
+    },
+    {
+      "id": "perceptual:gray",
+      "name": "gray",
+      "description": "The color gray",
+      "support_texts": [
+        "gray",
+        "grey",
+        "silver"
+      ]
+    },
+    {
+      "id": "perceptual:brown",
+      "name": "brown",
+      "description": "The color brown",
+      "support_texts": [
+        "brown",
+        "tan",
+        "chocolate"
+      ]
+    },
+    {
+      "id": "perceptual:pink",
+      "name": "pink",
+      "description": "The color pink",
+      "support_texts": [
+        "pink",
+        "rose",
+        "blush"
+      ]
+    },
+    {
+      "id": "perceptual:loud",
+      "name": "loud",
+      "description": "High volume",
+      "support_texts": [
+        "loud",
+        "noisy",
+        "deafening"
+      ]
+    },
+    {
+      "id": "perceptual:quiet",
+      "name": "quiet",
+      "description": "Low volume",
+      "support_texts": [
+        "quiet",
+        "soft",
+        "gentle"
+      ]
+    },
+    {
+      "id": "perceptual:music",
+      "name": "music",
+      "description": "Organized sound",
+      "support_texts": [
+        "music",
+        "melody",
+        "song"
+      ]
+    },
+    {
+      "id": "perceptual:noise",
+      "name": "noise",
+      "description": "Unwanted sound",
+      "support_texts": [
+        "noise",
+        "din",
+        "racket"
+      ]
+    },
+    {
+      "id": "perceptual:silence",
+      "name": "silence",
+      "description": "Absence of sound",
+      "support_texts": [
+        "silence",
+        "quiet",
+        "hush"
+      ]
+    },
+    {
+      "id": "perceptual:rhythm",
+      "name": "rhythm",
+      "description": "Temporal pattern",
+      "support_texts": [
+        "rhythm",
+        "beat",
+        "tempo"
+      ]
+    },
+    {
+      "id": "perceptual:melody",
+      "name": "melody",
+      "description": "Pitch sequence",
+      "support_texts": [
+        "melody",
+        "tune",
+        "air"
+      ]
+    },
+    {
+      "id": "perceptual:harmony",
+      "name": "harmony",
+      "description": "Simultaneous pitches",
+      "support_texts": [
+        "harmony",
+        "chord",
+        "consonance"
+      ]
+    },
+    {
+      "id": "perceptual:smooth",
+      "name": "smooth",
+      "description": "Even surface",
+      "support_texts": [
+        "smooth",
+        "sleek",
+        "polished"
+      ]
+    },
+    {
+      "id": "perceptual:rough",
+      "name": "rough",
+      "description": "Uneven surface",
+      "support_texts": [
+        "rough",
+        "coarse",
+        "bumpy"
+      ]
+    },
+    {
+      "id": "perceptual:soft",
+      "name": "soft",
+      "description": "Yielding to pressure",
+      "support_texts": [
+        "soft",
+        "plush",
+        "cushioned"
+      ]
+    },
+    {
+      "id": "perceptual:hard",
+      "name": "hard",
+      "description": "Resistant to pressure",
+      "support_texts": [
+        "hard",
+        "firm",
+        "solid"
+      ]
+    },
+    {
+      "id": "perceptual:wet",
+      "name": "wet",
+      "description": "Covered with liquid",
+      "support_texts": [
+        "wet",
+        "moist",
+        "damp"
+      ]
+    },
+    {
+      "id": "perceptual:dry",
+      "name": "dry",
+      "description": "Without moisture",
+      "support_texts": [
+        "dry",
+        "arid",
+        "parched"
+      ]
+    },
+    {
+      "id": "perceptual:sticky",
+      "name": "sticky",
+      "description": "Adhering surface",
+      "support_texts": [
+        "sticky",
+        "tacky",
+        "gummy"
+      ]
+    },
+    {
+      "id": "perceptual:slippery",
+      "name": "slippery",
+      "description": "Low friction",
+      "support_texts": [
+        "slippery",
+        "slick",
+        "greasy"
+      ]
+    },
+    {
+      "id": "perceptual:sweet",
+      "name": "sweet",
+      "description": "Sugar-like taste",
+      "support_texts": [
+        "sweet",
+        "sugary",
+        "honeyed"
+      ]
+    },
+    {
+      "id": "perceptual:sour",
+      "name": "sour",
+      "description": "Acidic taste",
+      "support_texts": [
+        "sour",
+        "tart",
+        "tangy"
+      ]
+    },
+    {
+      "id": "perceptual:bitter",
+      "name": "bitter",
+      "description": "Alkaloid taste",
+      "support_texts": [
+        "bitter",
+        "acrid",
+        "sharp"
+      ]
+    },
+    {
+      "id": "perceptual:salty",
+      "name": "salty",
+      "description": "Sodium taste",
+      "support_texts": [
+        "salty",
+        "briny",
+        "saline"
+      ]
+    },
+    {
+      "id": "perceptual:savory",
+      "name": "savory",
+      "description": "Umami taste",
+      "support_texts": [
+        "savory",
+        "umami",
+        "meaty"
+      ]
+    },
+    {
+      "id": "perceptual:spicy",
+      "name": "spicy",
+      "description": "Capsaicin heat",
+      "support_texts": [
+        "spicy",
+        "hot",
+        "peppery"
+      ]
+    },
+    {
+      "id": "perceptual:bland",
+      "name": "bland",
+      "description": "Without flavor",
+      "support_texts": [
+        "bland",
+        "tasteless",
+        "plain"
+      ]
+    },
+    {
+      "id": "perceptual:fresh",
+      "name": "fresh",
+      "description": "Clean smell",
+      "support_texts": [
+        "fresh",
+        "clean",
+        "crisp"
+      ]
+    },
+    {
+      "id": "perceptual:stale",
+      "name": "stale",
+      "description": "Old smell",
+      "support_texts": [
+        "stale",
+        "musty",
+        "stuffy"
+      ]
+    },
+    {
+      "id": "perceptual:fragrant",
+      "name": "fragrant",
+      "description": "Pleasant smell",
+      "support_texts": [
+        "fragrant",
+        "aromatic",
+        "perfumed"
+      ]
+    },
+    {
+      "id": "perceptual:pungent",
+      "name": "pungent",
+      "description": "Strong sharp smell",
+      "support_texts": [
+        "pungent",
+        "acrid",
+        "sharp"
+      ]
+    },
+    {
+      "id": "perceptual:musky",
+      "name": "musky",
+      "description": "Animal-like smell",
+      "support_texts": [
+        "musky",
+        "earthy",
+        "animalistic"
+      ]
+    },
+    {
+      "id": "perceptual:floral",
+      "name": "floral",
+      "description": "Flower-like smell",
+      "support_texts": [
+        "floral",
+        "flowery",
+        "rose-like"
+      ]
+    },
+    {
+      "id": "perceptual:hot",
+      "name": "hot",
+      "description": "High temperature",
+      "support_texts": [
+        "hot",
+        "burning",
+        "scorching"
+      ]
+    },
+    {
+      "id": "perceptual:cold",
+      "name": "cold",
+      "description": "Low temperature",
+      "support_texts": [
+        "cold",
+        "freezing",
+        "icy"
+      ]
+    },
+    {
+      "id": "perceptual:warm",
+      "name": "warm",
+      "description": "Moderate high temp",
+      "support_texts": [
+        "warm",
+        "cozy",
+        "toasty"
+      ]
+    },
+    {
+      "id": "perceptual:cool",
+      "name": "cool",
+      "description": "Moderate low temp",
+      "support_texts": [
+        "cool",
+        "chilly",
+        "brisk"
+      ]
+    },
+    {
+      "id": "perceptual:freezing",
+      "name": "freezing",
+      "description": "Below zero",
+      "support_texts": [
+        "freezing",
+        "frozen",
+        "frigid"
+      ]
+    },
+    {
+      "id": "perceptual:burning",
+      "name": "burning",
+      "description": "Extreme heat",
+      "support_texts": [
+        "burning",
+        "scalding",
+        "searing"
+      ]
+    },
+    {
+      "id": "perceptual:bright",
+      "name": "bright",
+      "description": "High luminance",
+      "support_texts": [
+        "bright",
+        "brilliant",
+        "radiant"
+      ]
+    },
+    {
+      "id": "perceptual:dark",
+      "name": "dark",
+      "description": "Low luminance",
+      "support_texts": [
+        "dark",
+        "dim",
+        "shadowy"
+      ]
+    },
+    {
+      "id": "perceptual:shiny",
+      "name": "shiny",
+      "description": "Reflective surface",
+      "support_texts": [
+        "shiny",
+        "glossy",
+        "lustrous"
+      ]
+    },
+    {
+      "id": "perceptual:dull",
+      "name": "dull",
+      "description": "Non-reflective",
+      "support_texts": [
+        "dull",
+        "matte",
+        "flat"
+      ]
+    },
+    {
+      "id": "perceptual:transparent",
+      "name": "transparent",
+      "description": "See-through",
+      "support_texts": [
+        "transparent",
+        "clear",
+        "crystal"
+      ]
+    },
+    {
+      "id": "perceptual:opaque",
+      "name": "opaque",
+      "description": "Not see-through",
+      "support_texts": [
+        "opaque",
+        "solid",
+        "dense"
+      ]
+    },
+    {
+      "id": "perceptual:pain",
+      "name": "pain",
+      "description": "Nociception",
+      "support_texts": [
+        "pain",
+        "hurt",
+        "ache"
+      ]
+    },
+    {
+      "id": "perceptual:pleasure",
+      "name": "pleasure",
+      "description": "Positive sensation",
+      "support_texts": [
+        "pleasure",
+        "enjoyment",
+        "delight"
+      ]
+    },
+    {
+      "id": "perceptual:hunger",
+      "name": "hunger",
+      "description": "Need for food",
+      "support_texts": [
+        "hunger",
+        "hungry",
+        "starving"
+      ]
+    },
+    {
+      "id": "perceptual:thirst",
+      "name": "thirst",
+      "description": "Need for water",
+      "support_texts": [
+        "thirst",
+        "thirsty",
+        "parched"
+      ]
+    },
+    {
+      "id": "perceptual:tired",
+      "name": "tired",
+      "description": "Need for rest",
+      "support_texts": [
+        "tired",
+        "exhausted",
+        "weary"
+      ]
+    },
+    {
+      "id": "perceptual:alert",
+      "name": "alert",
+      "description": "State of wakefulness",
+      "support_texts": [
+        "alert",
+        "awake",
+        "vigilant"
+      ]
+    },
+    {
+      "id": "common_object:table",
+      "name": "table",
+      "description": "Flat surface for items",
+      "support_texts": [
+        "table",
+        "desk",
+        "counter"
+      ]
+    },
+    {
+      "id": "common_object:chair",
+      "name": "chair",
+      "description": "Seat with back",
+      "support_texts": [
+        "chair",
+        "seat",
+        "stool"
+      ]
+    },
+    {
+      "id": "common_object:bed",
+      "name": "bed",
+      "description": "Sleeping furniture",
+      "support_texts": [
+        "bed",
+        "mattress",
+        "cot"
+      ]
+    },
+    {
+      "id": "common_object:door",
+      "name": "door",
+      "description": "Entry barrier",
+      "support_texts": [
+        "door",
+        "entrance",
+        "gate"
+      ]
+    },
+    {
+      "id": "common_object:window",
+      "name": "window",
+      "description": "Light opening",
+      "support_texts": [
+        "window",
+        "pane",
+        "glass"
+      ]
+    },
+    {
+      "id": "common_object:floor",
+      "name": "floor",
+      "description": "Walking surface",
+      "support_texts": [
+        "floor",
+        "ground",
+        "deck"
+      ]
+    },
+    {
+      "id": "common_object:wall",
+      "name": "wall",
+      "description": "Vertical barrier",
+      "support_texts": [
+        "wall",
+        "partition",
+        "divider"
+      ]
+    },
+    {
+      "id": "common_object:ceiling",
+      "name": "ceiling",
+      "description": "Upper room surface",
+      "support_texts": [
+        "ceiling",
+        "roof",
+        "overhead"
+      ]
+    },
+    {
+      "id": "common_object:lamp",
+      "name": "lamp",
+      "description": "Light source",
+      "support_texts": [
+        "lamp",
+        "light",
+        "lantern"
+      ]
+    },
+    {
+      "id": "common_object:couch",
+      "name": "couch",
+      "description": "Multi-seat furniture",
+      "support_texts": [
+        "couch",
+        "sofa",
+        "settee"
+      ]
+    },
+    {
+      "id": "common_object:cabinet",
+      "name": "cabinet",
+      "description": "Storage furniture",
+      "support_texts": [
+        "cabinet",
+        "cupboard",
+        "closet"
+      ]
+    },
+    {
+      "id": "common_object:mirror",
+      "name": "mirror",
+      "description": "Reflective surface",
+      "support_texts": [
+        "mirror",
+        "glass",
+        "reflection"
+      ]
+    },
+    {
+      "id": "common_object:cup",
+      "name": "cup",
+      "description": "Drinking vessel",
+      "support_texts": [
+        "cup",
+        "mug",
+        "glass"
+      ]
+    },
+    {
+      "id": "common_object:plate",
+      "name": "plate",
+      "description": "Eating surface",
+      "support_texts": [
+        "plate",
+        "dish",
+        "platter"
+      ]
+    },
+    {
+      "id": "common_object:knife",
+      "name": "knife",
+      "description": "Cutting tool",
+      "support_texts": [
+        "knife",
+        "blade",
+        "cutter"
+      ]
+    },
+    {
+      "id": "common_object:fork",
+      "name": "fork",
+      "description": "Pronged utensil",
+      "support_texts": [
+        "fork",
+        "prongs"
+      ]
+    },
+    {
+      "id": "common_object:spoon",
+      "name": "spoon",
+      "description": "Scooping utensil",
+      "support_texts": [
+        "spoon",
+        "ladle"
+      ]
+    },
+    {
+      "id": "common_object:pot",
+      "name": "pot",
+      "description": "Cooking vessel",
+      "support_texts": [
+        "pot",
+        "pan",
+        "kettle"
+      ]
+    },
+    {
+      "id": "common_object:stove",
+      "name": "stove",
+      "description": "Cooking appliance",
+      "support_texts": [
+        "stove",
+        "range",
+        "burner"
+      ]
+    },
+    {
+      "id": "common_object:refrigerator",
+      "name": "refrigerator",
+      "description": "Cold storage",
+      "support_texts": [
+        "refrigerator",
+        "fridge",
+        "freezer"
+      ]
+    },
+    {
+      "id": "common_object:bottle",
+      "name": "bottle",
+      "description": "Liquid container",
+      "support_texts": [
+        "bottle",
+        "flask",
+        "jar"
+      ]
+    },
+    {
+      "id": "common_object:bowl",
+      "name": "bowl",
+      "description": "Deep dish",
+      "support_texts": [
+        "bowl",
+        "basin",
+        "vessel"
+      ]
+    },
+    {
+      "id": "common_object:phone",
+      "name": "phone",
+      "description": "Communication device",
+      "support_texts": [
+        "phone",
+        "telephone",
+        "mobile"
+      ]
+    },
+    {
+      "id": "common_object:computer",
+      "name": "computer",
+      "description": "Computing device",
+      "support_texts": [
+        "computer",
+        "PC",
+        "laptop"
+      ]
+    },
+    {
+      "id": "common_object:screen",
+      "name": "screen",
+      "description": "Display surface",
+      "support_texts": [
+        "screen",
+        "monitor",
+        "display"
+      ]
+    },
+    {
+      "id": "common_object:keyboard",
+      "name": "keyboard",
+      "description": "Input device",
+      "support_texts": [
+        "keyboard",
+        "keys",
+        "typing"
+      ]
+    },
+    {
+      "id": "common_object:button",
+      "name": "button",
+      "description": "Control element",
+      "support_texts": [
+        "button",
+        "switch",
+        "key"
+      ]
+    },
+    {
+      "id": "common_object:cable",
+      "name": "cable",
+      "description": "Wire connection",
+      "support_texts": [
+        "cable",
+        "wire",
+        "cord"
+      ]
+    },
+    {
+      "id": "common_object:camera",
+      "name": "camera",
+      "description": "Image capture device",
+      "support_texts": [
+        "camera",
+        "lens",
+        "photo"
+      ]
+    },
+    {
+      "id": "common_object:battery",
+      "name": "battery",
+      "description": "Power storage",
+      "support_texts": [
+        "battery",
+        "power",
+        "cell"
+      ]
+    },
+    {
+      "id": "common_object:speaker",
+      "name": "speaker",
+      "description": "Audio output",
+      "support_texts": [
+        "speaker",
+        "sound",
+        "audio"
+      ]
+    },
+    {
+      "id": "common_object:microphone",
+      "name": "microphone",
+      "description": "Audio input",
+      "support_texts": [
+        "microphone",
+        "mic",
+        "recorder"
+      ]
+    },
+    {
+      "id": "common_object:shirt",
+      "name": "shirt",
+      "description": "Upper body garment",
+      "support_texts": [
+        "shirt",
+        "blouse",
+        "top"
+      ]
+    },
+    {
+      "id": "common_object:pants",
+      "name": "pants",
+      "description": "Lower body garment",
+      "support_texts": [
+        "pants",
+        "trousers",
+        "jeans"
+      ]
+    },
+    {
+      "id": "common_object:shoes",
+      "name": "shoes",
+      "description": "Foot covering",
+      "support_texts": [
+        "shoes",
+        "boots",
+        "sneakers"
+      ]
+    },
+    {
+      "id": "common_object:hat",
+      "name": "hat",
+      "description": "Head covering",
+      "support_texts": [
+        "hat",
+        "cap",
+        "headwear"
+      ]
+    },
+    {
+      "id": "common_object:coat",
+      "name": "coat",
+      "description": "Outer garment",
+      "support_texts": [
+        "coat",
+        "jacket",
+        "overcoat"
+      ]
+    },
+    {
+      "id": "common_object:dress",
+      "name": "dress",
+      "description": "Full body garment",
+      "support_texts": [
+        "dress",
+        "gown",
+        "frock"
+      ]
+    },
+    {
+      "id": "common_object:socks",
+      "name": "socks",
+      "description": "Foot garment",
+      "support_texts": [
+        "socks",
+        "stockings",
+        "hosiery"
+      ]
+    },
+    {
+      "id": "common_object:gloves",
+      "name": "gloves",
+      "description": "Hand covering",
+      "support_texts": [
+        "gloves",
+        "mittens"
+      ]
+    },
+    {
+      "id": "common_object:scarf",
+      "name": "scarf",
+      "description": "Neck wrap",
+      "support_texts": [
+        "scarf",
+        "shawl",
+        "wrap"
+      ]
+    },
+    {
+      "id": "common_object:belt",
+      "name": "belt",
+      "description": "Waist strap",
+      "support_texts": [
+        "belt",
+        "strap",
+        "sash"
+      ]
+    },
+    {
+      "id": "common_object:tree",
+      "name": "tree",
+      "description": "Woody plant",
+      "support_texts": [
+        "tree",
+        "oak",
+        "pine"
+      ]
+    },
+    {
+      "id": "common_object:flower",
+      "name": "flower",
+      "description": "Flowering plant",
+      "support_texts": [
+        "flower",
+        "blossom",
+        "bloom"
+      ]
+    },
+    {
+      "id": "common_object:grass",
+      "name": "grass",
+      "description": "Ground cover plant",
+      "support_texts": [
+        "grass",
+        "lawn",
+        "turf"
+      ]
+    },
+    {
+      "id": "common_object:rock",
+      "name": "rock",
+      "description": "Stone formation",
+      "support_texts": [
+        "rock",
+        "stone",
+        "boulder"
+      ]
+    },
+    {
+      "id": "common_object:river",
+      "name": "river",
+      "description": "Flowing water",
+      "support_texts": [
+        "river",
+        "stream",
+        "creek"
+      ]
+    },
+    {
+      "id": "common_object:mountain",
+      "name": "mountain",
+      "description": "Elevated terrain",
+      "support_texts": [
+        "mountain",
+        "peak",
+        "hill"
+      ]
+    },
+    {
+      "id": "common_object:ocean",
+      "name": "ocean",
+      "description": "Large water body",
+      "support_texts": [
+        "ocean",
+        "sea",
+        "water"
+      ]
+    },
+    {
+      "id": "common_object:cloud",
+      "name": "cloud",
+      "description": "Atmospheric vapor",
+      "support_texts": [
+        "cloud",
+        "sky",
+        "cumulus"
+      ]
+    },
+    {
+      "id": "common_object:sun",
+      "name": "sun",
+      "description": "Star light source",
+      "support_texts": [
+        "sun",
+        "sunlight",
+        "solar"
+      ]
+    },
+    {
+      "id": "common_object:moon",
+      "name": "moon",
+      "description": "Natural satellite",
+      "support_texts": [
+        "moon",
+        "lunar",
+        "moonlight"
+      ]
+    },
+    {
+      "id": "common_object:dog",
+      "name": "dog",
+      "description": "Canine companion",
+      "support_texts": [
+        "dog",
+        "puppy",
+        "hound"
+      ]
+    },
+    {
+      "id": "common_object:cat",
+      "name": "cat",
+      "description": "Feline companion",
+      "support_texts": [
+        "cat",
+        "kitten",
+        "feline"
+      ]
+    },
+    {
+      "id": "common_object:bird",
+      "name": "bird",
+      "description": "Flying creature",
+      "support_texts": [
+        "bird",
+        "sparrow",
+        "robin"
+      ]
+    },
+    {
+      "id": "common_object:fish",
+      "name": "fish",
+      "description": "Aquatic creature",
+      "support_texts": [
+        "fish",
+        "salmon",
+        "trout"
+      ]
+    },
+    {
+      "id": "common_object:horse",
+      "name": "horse",
+      "description": "Riding animal",
+      "support_texts": [
+        "horse",
+        "stallion",
+        "mare"
+      ]
+    },
+    {
+      "id": "common_object:cow",
+      "name": "cow",
+      "description": "Bovine animal",
+      "support_texts": [
+        "cow",
+        "cattle",
+        "bull"
+      ]
+    },
+    {
+      "id": "common_object:pig",
+      "name": "pig",
+      "description": "Porcine animal",
+      "support_texts": [
+        "pig",
+        "hog",
+        "swine"
+      ]
+    },
+    {
+      "id": "common_object:bear",
+      "name": "bear",
+      "description": "Large mammal",
+      "support_texts": [
+        "bear",
+        "grizzly",
+        "polar"
+      ]
+    },
+    {
+      "id": "common_object:snake",
+      "name": "snake",
+      "description": "Serpent",
+      "support_texts": [
+        "snake",
+        "serpent",
+        "cobra"
+      ]
+    },
+    {
+      "id": "common_object:insect",
+      "name": "insect",
+      "description": "Six-legged creature",
+      "support_texts": [
+        "insect",
+        "bug",
+        "beetle"
+      ]
+    },
+    {
+      "id": "common_object:car",
+      "name": "car",
+      "description": "Road vehicle",
+      "support_texts": [
+        "car",
+        "automobile",
+        "sedan"
+      ]
+    },
+    {
+      "id": "common_object:bus",
+      "name": "bus",
+      "description": "Large passenger vehicle",
+      "support_texts": [
+        "bus",
+        "coach",
+        "transit"
+      ]
+    },
+    {
+      "id": "common_object:train",
+      "name": "train",
+      "description": "Rail vehicle",
+      "support_texts": [
+        "train",
+        "railway",
+        "locomotive"
+      ]
+    },
+    {
+      "id": "common_object:plane",
+      "name": "plane",
+      "description": "Air vehicle",
+      "support_texts": [
+        "plane",
+        "airplane",
+        "aircraft"
+      ]
+    },
+    {
+      "id": "common_object:bike",
+      "name": "bike",
+      "description": "Two-wheeled vehicle",
+      "support_texts": [
+        "bike",
+        "bicycle",
+        "cycle"
+      ]
+    },
+    {
+      "id": "common_object:boat",
+      "name": "boat",
+      "description": "Water vehicle",
+      "support_texts": [
+        "boat",
+        "ship",
+        "vessel"
+      ]
+    },
+    {
+      "id": "common_object:truck",
+      "name": "truck",
+      "description": "Cargo vehicle",
+      "support_texts": [
+        "truck",
+        "lorry",
+        "hauler"
+      ]
+    },
+    {
+      "id": "common_object:motorcycle",
+      "name": "motorcycle",
+      "description": "Motorized cycle",
+      "support_texts": [
+        "motorcycle",
+        "motorbike",
+        "moped"
+      ]
+    },
+    {
+      "id": "common_object:hammer",
+      "name": "hammer",
+      "description": "Striking tool",
+      "support_texts": [
+        "hammer",
+        "mallet"
+      ]
+    },
+    {
+      "id": "common_object:screwdriver",
+      "name": "screwdriver",
+      "description": "Turning tool",
+      "support_texts": [
+        "screwdriver",
+        "driver"
+      ]
+    },
+    {
+      "id": "common_object:wrench",
+      "name": "wrench",
+      "description": "Gripping tool",
+      "support_texts": [
+        "wrench",
+        "spanner"
+      ]
+    },
+    {
+      "id": "common_object:scissors",
+      "name": "scissors",
+      "description": "Cutting tool",
+      "support_texts": [
+        "scissors",
+        "shears"
+      ]
+    },
+    {
+      "id": "common_object:pen",
+      "name": "pen",
+      "description": "Writing tool",
+      "support_texts": [
+        "pen",
+        "pencil",
+        "marker"
+      ]
+    },
+    {
+      "id": "common_object:brush",
+      "name": "brush",
+      "description": "Bristled tool",
+      "support_texts": [
+        "brush",
+        "paintbrush",
+        "scrubber"
+      ]
+    },
+    {
+      "id": "common_object:bread",
+      "name": "bread",
+      "description": "Baked grain food",
+      "support_texts": [
+        "bread",
+        "loaf",
+        "toast"
+      ]
+    },
+    {
+      "id": "common_object:meat",
+      "name": "meat",
+      "description": "Animal flesh food",
+      "support_texts": [
+        "meat",
+        "beef",
+        "chicken"
+      ]
+    },
+    {
+      "id": "common_object:fruit",
+      "name": "fruit",
+      "description": "Plant reproduction food",
+      "support_texts": [
+        "fruit",
+        "apple",
+        "banana"
+      ]
+    },
+    {
+      "id": "common_object:vegetable",
+      "name": "vegetable",
+      "description": "Plant part food",
+      "support_texts": [
+        "vegetable",
+        "carrot",
+        "broccoli"
+      ]
+    },
+    {
+      "id": "common_object:cheese",
+      "name": "cheese",
+      "description": "Dairy product",
+      "support_texts": [
+        "cheese",
+        "cheddar",
+        "mozzarella"
+      ]
+    },
+    {
+      "id": "common_object:egg",
+      "name": "egg",
+      "description": "Bird reproduction food",
+      "support_texts": [
+        "egg",
+        "yolk",
+        "white"
+      ]
+    },
+    {
+      "id": "common_object:rice",
+      "name": "rice",
+      "description": "Grain food",
+      "support_texts": [
+        "rice",
+        "grain",
+        "cereal"
+      ]
+    },
+    {
+      "id": "common_object:soup",
+      "name": "soup",
+      "description": "Liquid food",
+      "support_texts": [
+        "soup",
+        "broth",
+        "stew"
+      ]
+    },
+    {
+      "id": "common_object:cake",
+      "name": "cake",
+      "description": "Sweet baked food",
+      "support_texts": [
+        "cake",
+        "pastry",
+        "dessert"
+      ]
+    },
+    {
+      "id": "common_object:pizza",
+      "name": "pizza",
+      "description": "Flat bread food",
+      "support_texts": [
+        "pizza",
+        "pie",
+        "slice"
+      ]
+    }
+  ]
+}

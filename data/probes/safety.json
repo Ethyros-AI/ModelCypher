@@ -1,0 +1,374 @@
+{
+  "domain": "safety",
+  "probe_count": 34,
+  "probes": [
+    {
+      "id": "safety_ethics:informed_choice",
+      "name": "Informed Choice",
+      "description": "Making decisions with full understanding of consequences.",
+      "support_texts": [
+        "Informed choice means understanding what you agree to.",
+        "Before consenting, one should know all relevant information.",
+        "Making decisions with full awareness of consequences.",
+        "Understanding the risks, benefits, and alternatives."
+      ]
+    },
+    {
+      "id": "safety_ethics:understanding",
+      "name": "Understanding",
+      "description": "Comprehension of what is being agreed to.",
+      "support_texts": [
+        "Understanding means grasping the full meaning.",
+        "To understand is to comprehend implications.",
+        "Clear mental grasp of the situation."
+      ]
+    },
+    {
+      "id": "safety_ethics:disclosure",
+      "name": "Disclosure",
+      "description": "Revealing relevant information before agreement.",
+      "support_texts": [
+        "Disclosure is sharing all relevant facts.",
+        "Revealing information needed for decision-making.",
+        "Making known what affects the choice."
+      ]
+    },
+    {
+      "id": "safety_ethics:willing_agreement",
+      "name": "Willing Agreement",
+      "description": "Freely choosing without external pressure.",
+      "support_texts": [
+        "Willing agreement comes from genuine desire.",
+        "Freely choosing without coercion or pressure.",
+        "Saying yes because one truly wants to.",
+        "Autonomous decision without manipulation."
+      ]
+    },
+    {
+      "id": "safety_ethics:refusal_right",
+      "name": "Right to Refuse",
+      "description": "The power to say no without consequences.",
+      "support_texts": [
+        "The right to refuse is fundamental to consent.",
+        "Saying no must be a real option without punishment.",
+        "True consent requires the ability to decline.",
+        "No must mean no, with no repercussions."
+      ]
+    },
+    {
+      "id": "safety_ethics:withdrawal",
+      "name": "Consent Withdrawal",
+      "description": "The right to revoke agreement at any time.",
+      "support_texts": [
+        "Consent can be withdrawn at any moment.",
+        "Changing one's mind must always be respected.",
+        "Past consent does not bind future choices.",
+        "The right to stop at any time."
+      ]
+    },
+    {
+      "id": "safety_ethics:capacity",
+      "name": "Capacity to Consent",
+      "description": "Mental ability to make informed decisions.",
+      "support_texts": [
+        "Capacity means being mentally able to decide.",
+        "Children cannot consent like adults.",
+        "Impairment affects ability to agree.",
+        "Sound mind is required for valid consent."
+      ]
+    },
+    {
+      "id": "safety_ethics:self_determination",
+      "name": "Self-Determination",
+      "description": "The right to make one's own choices.",
+      "support_texts": [
+        "Self-determination is choosing one's own path.",
+        "Each person has the right to decide for themselves.",
+        "Autonomy means governing oneself.",
+        "Personal freedom to make life choices."
+      ]
+    },
+    {
+      "id": "safety_ethics:bodily_autonomy",
+      "name": "Bodily Autonomy",
+      "description": "Sovereignty over one's own body.",
+      "support_texts": [
+        "Bodily autonomy means control over one's own body.",
+        "No one else has rights over your physical form.",
+        "Medical decisions belong to the individual.",
+        "My body, my choice."
+      ]
+    },
+    {
+      "id": "safety_ethics:agency",
+      "name": "Personal Agency",
+      "description": "The capacity to act independently.",
+      "support_texts": [
+        "Agency is the power to take action.",
+        "Being an agent means having control.",
+        "Personal agency enables independent action.",
+        "The capacity to make and execute decisions."
+      ]
+    },
+    {
+      "id": "safety_ethics:privacy",
+      "name": "Privacy",
+      "description": "Control over personal information.",
+      "support_texts": [
+        "Privacy is control over who knows what about you.",
+        "Personal information belongs to the individual.",
+        "The right to keep things private.",
+        "Informational self-determination."
+      ]
+    },
+    {
+      "id": "safety_ethics:independence",
+      "name": "Independence",
+      "description": "Freedom from external control.",
+      "support_texts": [
+        "Independence is freedom from outside control.",
+        "Making decisions without requiring approval.",
+        "Standing on one's own judgment."
+      ]
+    },
+    {
+      "id": "safety_ethics:dignity",
+      "name": "Human Dignity",
+      "description": "Inherent worth deserving respect.",
+      "support_texts": [
+        "Every person has inherent worth and dignity.",
+        "Dignity cannot be earned or lost.",
+        "Treating others as ends, never merely means.",
+        "Fundamental respect for personhood."
+      ]
+    },
+    {
+      "id": "safety_ethics:force",
+      "name": "Physical Force",
+      "description": "Using violence or physical power to compel.",
+      "support_texts": [
+        "Force is using physical power to make someone comply.",
+        "Violence to compel action.",
+        "Physical coercion removes choice.",
+        "Overpowering someone's resistance."
+      ]
+    },
+    {
+      "id": "safety_ethics:threat",
+      "name": "Threat",
+      "description": "Promise of harm to compel compliance.",
+      "support_texts": [
+        "A threat promises harm if one doesn't comply.",
+        "Do this or else.",
+        "Coercion through fear of consequences.",
+        "Intimidation to force action."
+      ]
+    },
+    {
+      "id": "safety_ethics:intimidation",
+      "name": "Intimidation",
+      "description": "Using fear to influence behavior.",
+      "support_texts": [
+        "Intimidation uses fear to control.",
+        "Making someone afraid to refuse.",
+        "Frightening into compliance."
+      ]
+    },
+    {
+      "id": "safety_ethics:manipulation",
+      "name": "Manipulation",
+      "description": "Deceptive influence to control behavior.",
+      "support_texts": [
+        "Manipulation is controlling through deception.",
+        "Twisting someone's perception of reality.",
+        "Getting what you want through psychological tricks.",
+        "Exploiting emotions to control behavior."
+      ]
+    },
+    {
+      "id": "safety_ethics:gaslighting",
+      "name": "Gaslighting",
+      "description": "Making someone doubt their own perception.",
+      "support_texts": [
+        "Gaslighting makes you question your own reality.",
+        "That never happened. You're imagining things.",
+        "Psychological abuse that erodes self-trust.",
+        "Making someone feel crazy."
+      ]
+    },
+    {
+      "id": "safety_ethics:guilt_tripping",
+      "name": "Guilt-Tripping",
+      "description": "Using guilt to compel action.",
+      "support_texts": [
+        "Guilt-tripping manipulates through shame.",
+        "After all I've done for you.",
+        "Making someone feel obligated through guilt.",
+        "Emotional manipulation using shame."
+      ]
+    },
+    {
+      "id": "safety_ethics:love_bombing",
+      "name": "Love Bombing",
+      "description": "Overwhelming affection to create dependency.",
+      "support_texts": [
+        "Love bombing overwhelms with attention and affection.",
+        "Excessive flattery to create obligation.",
+        "Building dependency through intense positive attention.",
+        "Too much too fast to create attachment."
+      ]
+    },
+    {
+      "id": "safety_ethics:exploitation",
+      "name": "Exploitation",
+      "description": "Taking unfair advantage of vulnerability.",
+      "support_texts": [
+        "Exploitation takes advantage of those in need.",
+        "Profiting from someone's desperate situation.",
+        "Using power imbalance for personal gain.",
+        "Preying on vulnerability."
+      ]
+    },
+    {
+      "id": "safety_ethics:financial_control",
+      "name": "Financial Control",
+      "description": "Using money to control behavior.",
+      "support_texts": [
+        "Financial control limits autonomy through money.",
+        "Controlling access to resources.",
+        "Economic abuse restricts independence.",
+        "Keeping someone dependent through finances."
+      ]
+    },
+    {
+      "id": "safety_ethics:peer_pressure",
+      "name": "Peer Pressure",
+      "description": "Social influence to conform.",
+      "support_texts": [
+        "Peer pressure pushes conformity.",
+        "Everyone else is doing it.",
+        "Social pressure to fit in.",
+        "Fear of being different."
+      ]
+    },
+    {
+      "id": "safety_ethics:shaming",
+      "name": "Shaming",
+      "description": "Using public humiliation to control.",
+      "support_texts": [
+        "Shaming uses humiliation to control behavior.",
+        "Public embarrassment to enforce conformity.",
+        "Making someone feel worthless.",
+        "Social punishment through ridicule."
+      ]
+    },
+    {
+      "id": "safety_ethics:personal_boundaries",
+      "name": "Personal Boundaries",
+      "description": "Limits on what others may do to you.",
+      "support_texts": [
+        "Personal boundaries define acceptable behavior.",
+        "Limits on how others may treat you.",
+        "Lines that should not be crossed.",
+        "Self-protective limits."
+      ]
+    },
+    {
+      "id": "safety_ethics:boundary_violation",
+      "name": "Boundary Violation",
+      "description": "Crossing established limits.",
+      "support_texts": [
+        "Boundary violation is crossing someone's limits.",
+        "Ignoring when someone says no.",
+        "Disrespecting personal space or limits.",
+        "Overstepping what was agreed."
+      ]
+    },
+    {
+      "id": "safety_ethics:professional_boundaries",
+      "name": "Professional Boundaries",
+      "description": "Appropriate limits in professional relationships.",
+      "support_texts": [
+        "Professional boundaries maintain appropriate distance.",
+        "Keeping work relationships appropriate.",
+        "Not exploiting professional power.",
+        "Ethical limits in helping relationships."
+      ]
+    },
+    {
+      "id": "safety_ethics:respect",
+      "name": "Respect for Limits",
+      "description": "Honoring others' stated boundaries.",
+      "support_texts": [
+        "Respect means honoring others' boundaries.",
+        "Accepting when someone sets limits.",
+        "Not pushing when told no."
+      ]
+    },
+    {
+      "id": "safety_ethics:power_imbalance",
+      "name": "Power Imbalance",
+      "description": "Unequal power in a relationship.",
+      "support_texts": [
+        "Power imbalance creates vulnerability.",
+        "One party has more control than the other.",
+        "Unequal power enables exploitation.",
+        "The stronger party must be extra careful."
+      ]
+    },
+    {
+      "id": "safety_ethics:dependency",
+      "name": "Dependency",
+      "description": "Reliance on another for essential needs.",
+      "support_texts": [
+        "Dependency creates vulnerability.",
+        "Needing someone for survival or wellbeing.",
+        "Reliance that limits options.",
+        "Can't leave because of need."
+      ]
+    },
+    {
+      "id": "safety_ethics:diminished_capacity",
+      "name": "Diminished Capacity",
+      "description": "Reduced ability to protect oneself.",
+      "support_texts": [
+        "Diminished capacity reduces self-protection.",
+        "Age, illness, or impairment affects judgment.",
+        "Less able to recognize or resist harm.",
+        "Requires extra protection."
+      ]
+    },
+    {
+      "id": "safety_ethics:isolation",
+      "name": "Isolation",
+      "description": "Being cut off from support systems.",
+      "support_texts": [
+        "Isolation increases vulnerability.",
+        "Cut off from friends and family.",
+        "No one to turn to for help.",
+        "Abusers isolate their victims."
+      ]
+    },
+    {
+      "id": "safety_ethics:trust",
+      "name": "Misplaced Trust",
+      "description": "Trust given to those who abuse it.",
+      "support_texts": [
+        "Trust can be exploited.",
+        "Trusting someone who means harm.",
+        "Vulnerability through belief in good intentions."
+      ]
+    },
+    {
+      "id": "safety_ethics:protection",
+      "name": "Duty to Protect",
+      "description": "Obligation to safeguard the vulnerable.",
+      "support_texts": [
+        "Those with power have duty to protect.",
+        "Responsibility toward the vulnerable.",
+        "Fiduciary duty in relationships of trust.",
+        "Protecting those who cannot protect themselves."
+      ]
+    }
+  ]
+}

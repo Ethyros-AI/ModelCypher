@@ -1,0 +1,1249 @@
+{
+  "domain": "computational",
+  "probe_count": 133,
+  "probes": [
+    {
+      "id": "computational_gate:1",
+      "name": "LITERAL",
+      "description": "Direct, hardcoded value in source code",
+      "support_texts": [
+        "42",
+        "'hello'",
+        "true"
+      ]
+    },
+    {
+      "id": "computational_gate:4",
+      "name": "ASSIGNMENT",
+      "description": "Binds a value to a named variable or storage location",
+      "support_texts": [
+        "x = 10",
+        "let y = 'hello'"
+      ]
+    },
+    {
+      "id": "computational_gate:18",
+      "name": "COMMENT",
+      "description": "Non-executable comment for human readers",
+      "support_texts": [
+        "# This is a comment",
+        "/* comment */"
+      ]
+    },
+    {
+      "id": "computational_gate:20",
+      "name": "MUTATION",
+      "description": "In-place modification of existing data",
+      "support_texts": [
+        "my_list.append(item)",
+        "x += 1"
+      ]
+    },
+    {
+      "id": "computational_gate:38",
+      "name": "RETRIEVE",
+      "description": "Retrieval of value from data structure",
+      "support_texts": [
+        "my_dict['key']",
+        "db.get(key)"
+      ]
+    },
+    {
+      "id": "computational_gate:55",
+      "name": "NULL",
+      "description": "Absence of a value, null/nil",
+      "support_texts": [
+        "null",
+        "nil"
+      ]
+    },
+    {
+      "id": "computational_gate:2",
+      "name": "CONDITIONAL",
+      "description": "Controls execution flow based on boolean condition",
+      "support_texts": [
+        "if (x > 10)",
+        "switch (value)"
+      ]
+    },
+    {
+      "id": "computational_gate:6",
+      "name": "ITERATION",
+      "description": "Repeated execution of a block of code",
+      "support_texts": [
+        "for item in collection:",
+        "while (i < 10)"
+      ]
+    },
+    {
+      "id": "computational_gate:35",
+      "name": "AWAIT",
+      "description": "Waiting for async operation without blocking",
+      "support_texts": [
+        "await my_async_function()"
+      ]
+    },
+    {
+      "id": "computational_gate:46",
+      "name": "YIELD",
+      "description": "Yielding value from generator, pausing execution",
+      "support_texts": [
+        "yield 42"
+      ]
+    },
+    {
+      "id": "computational_gate:52",
+      "name": "ESCAPE",
+      "description": "Escapes normal control flow (break/continue)",
+      "support_texts": [
+        "break",
+        "continue"
+      ]
+    },
+    {
+      "id": "computational_gate:3",
+      "name": "INVOKE",
+      "description": "Triggers execution of callable unit",
+      "support_texts": [
+        "my_function(arg1, arg2)",
+        "object.method()"
+      ]
+    },
+    {
+      "id": "computational_gate:5",
+      "name": "FUNCTION",
+      "description": "Defines reusable, callable unit of code",
+      "support_texts": [
+        "def my_func():",
+        "function my_func() {}"
+      ]
+    },
+    {
+      "id": "computational_gate:19",
+      "name": "RETURN",
+      "description": "Returns value from function, terminating execution",
+      "support_texts": [
+        "return 42",
+        "return result"
+      ]
+    },
+    {
+      "id": "computational_gate:21",
+      "name": "BLOCK",
+      "description": "Block of code forming single syntactic unit/scope",
+      "support_texts": [
+        "{ ... }",
+        "begin ... end"
+      ]
+    },
+    {
+      "id": "computational_gate:7",
+      "name": "ARRAY",
+      "description": "Ordered collection accessed by index",
+      "support_texts": [
+        "[1, 2, 3]",
+        "new int[10]"
+      ]
+    },
+    {
+      "id": "computational_gate:16",
+      "name": "TYPE",
+      "description": "Definition of custom data type",
+      "support_texts": [
+        "struct Point { x: int, y: int }",
+        "type UserId = number"
+      ]
+    },
+    {
+      "id": "computational_gate:45",
+      "name": "MAP",
+      "description": "Unordered key-value pair collection",
+      "support_texts": [
+        "{'key': 'value'}",
+        "new Map()"
+      ]
+    },
+    {
+      "id": "computational_gate:53",
+      "name": "ENUM",
+      "description": "Definition of enumeration (named constants)",
+      "support_texts": [
+        "enum Color { RED, GREEN, BLUE }"
+      ]
+    },
+    {
+      "id": "computational_gate:56",
+      "name": "GENERIC",
+      "description": "Generic type or function for multiple data types",
+      "support_texts": [
+        "List<T>",
+        "function my_func<T>(arg: T) {}"
+      ]
+    },
+    {
+      "id": "computational_gate:62",
+      "name": "TYPE_CHECK",
+      "description": "Runtime type verification",
+      "support_texts": [
+        "isinstance(my_object, MyClass)"
+      ]
+    },
+    {
+      "id": "computational_gate:63",
+      "name": "CAST",
+      "description": "Type conversion from one type to another",
+      "support_texts": [
+        "(int)my_float",
+        "my_string as number"
+      ]
+    },
+    {
+      "id": "computational_gate:64",
+      "name": "SERIALIZE",
+      "description": "Convert data structure to storable/transmittable format",
+      "support_texts": [
+        "JSON.stringify(my_object)",
+        "pickle.dumps(my_object)"
+      ]
+    },
+    {
+      "id": "computational_gate:8",
+      "name": "QUANTUM",
+      "description": "Quantum computing operation on qubits",
+      "support_texts": [
+        "Hadamard(qbit)",
+        "CNOT(q1, q2)"
+      ]
+    },
+    {
+      "id": "computational_gate:10",
+      "name": "RENDER",
+      "description": "Produces visual output (UI/graphics)",
+      "support_texts": [
+        "render_ui()",
+        "draw_circle(x, y, r)"
+      ]
+    },
+    {
+      "id": "computational_gate:14",
+      "name": "MATCH",
+      "description": "Pattern matching against series of patterns",
+      "support_texts": [
+        "match value:",
+        "case (x, y):"
+      ]
+    },
+    {
+      "id": "computational_gate:17",
+      "name": "REACTIVE",
+      "description": "Reactive programming with automatic propagation",
+      "support_texts": [
+        "Observable.create()",
+        "Signal.of(value)"
+      ]
+    },
+    {
+      "id": "computational_gate:36",
+      "name": "TRANSACTION",
+      "description": "Transactional operation as atomic unit",
+      "support_texts": [
+        "db.begin_transaction()",
+        "db.commit()"
+      ]
+    },
+    {
+      "id": "computational_gate:37",
+      "name": "SYMBOLIC",
+      "description": "Symbolic computation on expressions",
+      "support_texts": [
+        "Symbol('x')",
+        "diff(x**2, x)"
+      ]
+    },
+    {
+      "id": "computational_gate:47",
+      "name": "QUERY",
+      "description": "Query operation on data source",
+      "support_texts": [
+        "SELECT * FROM users WHERE age > 18"
+      ]
+    },
+    {
+      "id": "computational_gate:51",
+      "name": "KNOWLEDGE",
+      "description": "Access to knowledge base or expert system",
+      "support_texts": [
+        "query_knowledge_base('capital of france?')"
+      ]
+    },
+    {
+      "id": "computational_gate:9",
+      "name": "ACTOR",
+      "description": "Actor in actor model, communicates via messages",
+      "support_texts": [
+        "spawn_actor()",
+        "send(actor, message)"
+      ]
+    },
+    {
+      "id": "computational_gate:15",
+      "name": "ASYNC",
+      "description": "Asynchronous operation running in background",
+      "support_texts": [
+        "async def my_func():",
+        "async function my_func() {}"
+      ]
+    },
+    {
+      "id": "computational_gate:31",
+      "name": "SPAWN",
+      "description": "Creation of new concurrent execution unit",
+      "support_texts": [
+        "thread.spawn()",
+        "go my_func()"
+      ]
+    },
+    {
+      "id": "computational_gate:32",
+      "name": "SYNCHRONIZATION",
+      "description": "Synchronization primitive (lock/mutex/semaphore)",
+      "support_texts": [
+        "mutex.lock()",
+        "semaphore.acquire()"
+      ]
+    },
+    {
+      "id": "computational_gate:33",
+      "name": "CHANNEL",
+      "description": "Communication channel for message passing",
+      "support_texts": [
+        "channel.send(message)",
+        "channel.receive()"
+      ]
+    },
+    {
+      "id": "computational_gate:34",
+      "name": "ATOMIC_OP",
+      "description": "Indivisible atomic operation",
+      "support_texts": [
+        "atomic_increment(counter)",
+        "compare_and_swap(ptr, old, new)"
+      ]
+    },
+    {
+      "id": "computational_gate:65",
+      "name": "CONCURRENT",
+      "description": "Concurrent execution in overlapping time",
+      "support_texts": [
+        "go my_func()",
+        "new Thread().start()"
+      ]
+    },
+    {
+      "id": "computational_gate:66",
+      "name": "PARALLEL",
+      "description": "Parallel execution on multiple processors",
+      "support_texts": [
+        "my_array.par_iter()"
+      ]
+    },
+    {
+      "id": "computational_gate:26",
+      "name": "MEMORY",
+      "description": "Direct memory operation (read/write address)",
+      "support_texts": [
+        "peek(0x1000)",
+        "poke(0x1000, 42)"
+      ]
+    },
+    {
+      "id": "computational_gate:39",
+      "name": "ALLOCATION",
+      "description": "Allocation of memory block",
+      "support_texts": [
+        "malloc(size)",
+        "new MyObject()"
+      ]
+    },
+    {
+      "id": "computational_gate:40",
+      "name": "DEALLOCATION",
+      "description": "Deallocation of previously allocated memory",
+      "support_texts": [
+        "free(ptr)",
+        "delete my_object"
+      ]
+    },
+    {
+      "id": "computational_gate:41",
+      "name": "REFERENCE",
+      "description": "Creation of reference/pointer to value",
+      "support_texts": [
+        "&x",
+        "ref(my_object)"
+      ]
+    },
+    {
+      "id": "computational_gate:42",
+      "name": "DEREFERENCE",
+      "description": "Accessing value that pointer points to",
+      "support_texts": [
+        "*ptr",
+        "deref(my_ref)"
+      ]
+    },
+    {
+      "id": "computational_gate:23",
+      "name": "INPUT",
+      "description": "Reads input from external source",
+      "support_texts": [
+        "read_line()",
+        "input()"
+      ]
+    },
+    {
+      "id": "computational_gate:24",
+      "name": "OUTPUT",
+      "description": "Writes output to external destination",
+      "support_texts": [
+        "print('hello')",
+        "console.log('hello')"
+      ]
+    },
+    {
+      "id": "computational_gate:25",
+      "name": "STREAM",
+      "description": "Stream of data over time",
+      "support_texts": [
+        "stream.read()",
+        "for await (const chunk of stream)"
+      ]
+    },
+    {
+      "id": "computational_gate:29",
+      "name": "SYSCALL",
+      "description": "Direct call to operating system kernel",
+      "support_texts": [
+        "syscall(SYS_read, ...)"
+      ]
+    },
+    {
+      "id": "computational_gate:30",
+      "name": "RESOURCE",
+      "description": "Management of system resource (acquire/release)",
+      "support_texts": [
+        "with open('file.txt') as f:",
+        "try-with-resources"
+      ]
+    },
+    {
+      "id": "computational_gate:43",
+      "name": "DEPLOY",
+      "description": "Deployment of code/resources to runtime",
+      "support_texts": [
+        "deploy_to_server()"
+      ]
+    },
+    {
+      "id": "computational_gate:12",
+      "name": "ERROR",
+      "description": "Explicit signaling of error condition",
+      "support_texts": [
+        "throw new Exception()",
+        "raise ValueError()"
+      ]
+    },
+    {
+      "id": "computational_gate:44",
+      "name": "ASSERTION",
+      "description": "Check that condition is true, error if false",
+      "support_texts": [
+        "assert(x > 0)"
+      ]
+    },
+    {
+      "id": "computational_gate:48",
+      "name": "TRY",
+      "description": "Start of exception-handling block",
+      "support_texts": [
+        "try {"
+      ]
+    },
+    {
+      "id": "computational_gate:49",
+      "name": "CATCH",
+      "description": "Block executed when exception caught",
+      "support_texts": [
+        "} catch (e) {"
+      ]
+    },
+    {
+      "id": "computational_gate:50",
+      "name": "FINALLY",
+      "description": "Block always executed after try-catch",
+      "support_texts": [
+        "} finally {"
+      ]
+    },
+    {
+      "id": "computational_gate:13",
+      "name": "CLASS",
+      "description": "Defines class blueprint for objects",
+      "support_texts": [
+        "class MyClass:",
+        "public class MyClass {}"
+      ]
+    },
+    {
+      "id": "computational_gate:57",
+      "name": "ATTRIBUTE",
+      "description": "Attribute/decorator metadata on code",
+      "support_texts": [
+        "@my_decorator",
+        "[MyAttribute]"
+      ]
+    },
+    {
+      "id": "computational_gate:11",
+      "name": "MACRO",
+      "description": "Macro or code generation at compile-time",
+      "support_texts": [
+        "defmacro my_macro ...",
+        "#[derive(Debug)]"
+      ]
+    },
+    {
+      "id": "computational_gate:58",
+      "name": "REFLECT",
+      "description": "Reflection - program examines own structure",
+      "support_texts": [
+        "typeof(my_object)",
+        "my_object.get_class()"
+      ]
+    },
+    {
+      "id": "computational_gate:59",
+      "name": "COMPILE",
+      "description": "Compile-time operation or directive",
+      "support_texts": [
+        "#ifdef DEBUG",
+        "#pragma once"
+      ]
+    },
+    {
+      "id": "computational_gate:60",
+      "name": "HOLD",
+      "description": "Prevents evaluation, treats expression as data",
+      "support_texts": [
+        "quote(my_expression)"
+      ]
+    },
+    {
+      "id": "computational_gate:61",
+      "name": "LAZY",
+      "description": "Lazy evaluation until result needed",
+      "support_texts": [
+        "lazy(my_expression)"
+      ]
+    },
+    {
+      "id": "computational_gate:54",
+      "name": "UNKNOWN",
+      "description": "Unrecognized or unclassifiable pattern",
+      "support_texts": [
+        "/* unknown */",
+        "unrecognized_pattern"
+      ]
+    },
+    {
+      "id": "computational_gate:67",
+      "name": "LOCK_GATE",
+      "description": "Acquire lock / enter critical section",
+      "support_texts": [
+        "lock.acquire()",
+        "mutex.lock()"
+      ]
+    },
+    {
+      "id": "computational_gate:68",
+      "name": "CONTRACT_GATE",
+      "description": "Contract/interface declaration",
+      "support_texts": [
+        "interface Runnable { void run(); }",
+        "protocol Runnable { func run() }"
+      ]
+    },
+    {
+      "id": "computational_gate:69",
+      "name": "INVARIANT_GATE",
+      "description": "Type/value invariants that must always hold",
+      "support_texts": [
+        "assert x > 0",
+        "precondition(count >= 0)"
+      ]
+    },
+    {
+      "id": "computational_gate:70",
+      "name": "ROLLBACK_GATE",
+      "description": "Transactional rollback / state reversal",
+      "support_texts": [
+        "db.rollback()",
+        "transaction.rollback()"
+      ]
+    },
+    {
+      "id": "computational_gate:71",
+      "name": "CACHE_GATE",
+      "description": "Caching/memoization",
+      "support_texts": [
+        "cache.get(key)",
+        "memoize(fn)"
+      ]
+    },
+    {
+      "id": "computational_gate:72",
+      "name": "MEASURE_GATE",
+      "description": "Performance measurement / profiling",
+      "support_texts": [
+        "timer.start()",
+        "metrics.increment(\"requests\")"
+      ]
+    },
+    {
+      "id": "computational_gate:73",
+      "name": "VISIBILITY_GATE",
+      "description": "Symbol visibility and access control",
+      "support_texts": [
+        "private var token",
+        "public class Service"
+      ]
+    },
+    {
+      "id": "computational_gate:74",
+      "name": "UNLOCK_GATE",
+      "description": "Release lock / exit critical section",
+      "support_texts": [
+        "lock.release()",
+        "mutex.unlock()"
+      ]
+    },
+    {
+      "id": "computational_gate:75",
+      "name": "DECISION_GATE",
+      "description": "Binary decision point",
+      "support_texts": [
+        "if approved: grant() else: deny()",
+        "return condition ? a : b"
+      ]
+    },
+    {
+      "id": "computational_gate:76",
+      "name": "CONSENT_GATE",
+      "description": "Explicit user authorization",
+      "support_texts": [
+        "if user_consents(): proceed()",
+        "confirm(\"Allow?\")"
+      ]
+    },
+    {
+      "id": "domain_specific:atom",
+      "name": "atom",
+      "description": "Basic matter unit",
+      "support_texts": [
+        "atom",
+        "atomic",
+        "particle"
+      ]
+    },
+    {
+      "id": "domain_specific:molecule",
+      "name": "molecule",
+      "description": "Bonded atoms",
+      "support_texts": [
+        "molecule",
+        "molecular",
+        "compound"
+      ]
+    },
+    {
+      "id": "domain_specific:cell",
+      "name": "cell",
+      "description": "Life unit",
+      "support_texts": [
+        "cell",
+        "cellular",
+        "organism"
+      ]
+    },
+    {
+      "id": "domain_specific:gene",
+      "name": "gene",
+      "description": "Heredity unit",
+      "support_texts": [
+        "gene",
+        "genetic",
+        "DNA"
+      ]
+    },
+    {
+      "id": "domain_specific:energy",
+      "name": "energy",
+      "description": "Capacity for work",
+      "support_texts": [
+        "energy",
+        "power",
+        "force"
+      ]
+    },
+    {
+      "id": "domain_specific:force",
+      "name": "force",
+      "description": "Push or pull",
+      "support_texts": [
+        "force",
+        "pressure",
+        "thrust"
+      ]
+    },
+    {
+      "id": "domain_specific:mass",
+      "name": "mass",
+      "description": "Amount of matter",
+      "support_texts": [
+        "mass",
+        "weight",
+        "density"
+      ]
+    },
+    {
+      "id": "domain_specific:gravity",
+      "name": "gravity",
+      "description": "Attractive force",
+      "support_texts": [
+        "gravity",
+        "gravitational",
+        "attraction"
+      ]
+    },
+    {
+      "id": "domain_specific:evolution",
+      "name": "evolution",
+      "description": "Species change",
+      "support_texts": [
+        "evolution",
+        "evolutionary",
+        "natural selection"
+      ]
+    },
+    {
+      "id": "domain_specific:experiment",
+      "name": "experiment",
+      "description": "Scientific test",
+      "support_texts": [
+        "experiment",
+        "test",
+        "trial"
+      ]
+    },
+    {
+      "id": "domain_specific:disease",
+      "name": "disease",
+      "description": "Health disorder",
+      "support_texts": [
+        "disease",
+        "illness",
+        "sickness"
+      ]
+    },
+    {
+      "id": "domain_specific:symptom",
+      "name": "symptom",
+      "description": "Disease sign",
+      "support_texts": [
+        "symptom",
+        "sign",
+        "indication"
+      ]
+    },
+    {
+      "id": "domain_specific:treatment",
+      "name": "treatment",
+      "description": "Medical care",
+      "support_texts": [
+        "treatment",
+        "therapy",
+        "cure"
+      ]
+    },
+    {
+      "id": "domain_specific:diagnosis",
+      "name": "diagnosis",
+      "description": "Disease identification",
+      "support_texts": [
+        "diagnosis",
+        "diagnostic",
+        "assessment"
+      ]
+    },
+    {
+      "id": "domain_specific:health",
+      "name": "health",
+      "description": "Body condition",
+      "support_texts": [
+        "health",
+        "healthy",
+        "wellness"
+      ]
+    },
+    {
+      "id": "domain_specific:medicine",
+      "name": "medicine",
+      "description": "Healing substance",
+      "support_texts": [
+        "medicine",
+        "drug",
+        "medication"
+      ]
+    },
+    {
+      "id": "domain_specific:surgery",
+      "name": "surgery",
+      "description": "Medical operation",
+      "support_texts": [
+        "surgery",
+        "operation",
+        "procedure"
+      ]
+    },
+    {
+      "id": "domain_specific:patient",
+      "name": "patient",
+      "description": "Medical recipient",
+      "support_texts": [
+        "patient",
+        "sick person",
+        "case"
+      ]
+    },
+    {
+      "id": "domain_specific:doctor",
+      "name": "doctor",
+      "description": "Medical practitioner",
+      "support_texts": [
+        "doctor",
+        "physician",
+        "practitioner"
+      ]
+    },
+    {
+      "id": "domain_specific:hospital",
+      "name": "hospital",
+      "description": "Medical facility",
+      "support_texts": [
+        "hospital",
+        "clinic",
+        "infirmary"
+      ]
+    },
+    {
+      "id": "domain_specific:law",
+      "name": "law",
+      "description": "Legal rule",
+      "support_texts": [
+        "law",
+        "legal",
+        "statute"
+      ]
+    },
+    {
+      "id": "domain_specific:right",
+      "name": "right",
+      "description": "Legal entitlement",
+      "support_texts": [
+        "right",
+        "entitlement",
+        "privilege"
+      ]
+    },
+    {
+      "id": "domain_specific:contract",
+      "name": "contract",
+      "description": "Legal agreement",
+      "support_texts": [
+        "contract",
+        "agreement",
+        "deal"
+      ]
+    },
+    {
+      "id": "domain_specific:court",
+      "name": "court",
+      "description": "Legal venue",
+      "support_texts": [
+        "court",
+        "tribunal",
+        "bench"
+      ]
+    },
+    {
+      "id": "domain_specific:judge",
+      "name": "judge",
+      "description": "Legal arbiter",
+      "support_texts": [
+        "judge",
+        "justice",
+        "magistrate"
+      ]
+    },
+    {
+      "id": "domain_specific:crime",
+      "name": "crime",
+      "description": "Legal violation",
+      "support_texts": [
+        "crime",
+        "offense",
+        "violation"
+      ]
+    },
+    {
+      "id": "domain_specific:justice",
+      "name": "justice",
+      "description": "Fairness principle",
+      "support_texts": [
+        "justice",
+        "fairness",
+        "equity"
+      ]
+    },
+    {
+      "id": "domain_specific:evidence",
+      "name": "evidence",
+      "description": "Proof material",
+      "support_texts": [
+        "evidence",
+        "proof",
+        "testimony"
+      ]
+    },
+    {
+      "id": "domain_specific:verdict",
+      "name": "verdict",
+      "description": "Legal decision",
+      "support_texts": [
+        "verdict",
+        "judgment",
+        "ruling"
+      ]
+    },
+    {
+      "id": "domain_specific:lawyer",
+      "name": "lawyer",
+      "description": "Legal representative",
+      "support_texts": [
+        "lawyer",
+        "attorney",
+        "counsel"
+      ]
+    },
+    {
+      "id": "domain_specific:software",
+      "name": "software",
+      "description": "Computer programs",
+      "support_texts": [
+        "software",
+        "program",
+        "application"
+      ]
+    },
+    {
+      "id": "domain_specific:hardware",
+      "name": "hardware",
+      "description": "Physical devices",
+      "support_texts": [
+        "hardware",
+        "equipment",
+        "device"
+      ]
+    },
+    {
+      "id": "domain_specific:data",
+      "name": "data",
+      "description": "Information units",
+      "support_texts": [
+        "data",
+        "information",
+        "dataset"
+      ]
+    },
+    {
+      "id": "domain_specific:algorithm",
+      "name": "algorithm",
+      "description": "Computational procedure",
+      "support_texts": [
+        "algorithm",
+        "procedure",
+        "method"
+      ]
+    },
+    {
+      "id": "domain_specific:network",
+      "name": "network",
+      "description": "Connected systems",
+      "support_texts": [
+        "network",
+        "connection",
+        "internet"
+      ]
+    },
+    {
+      "id": "domain_specific:code",
+      "name": "code",
+      "description": "Program instructions",
+      "support_texts": [
+        "code",
+        "programming",
+        "source"
+      ]
+    },
+    {
+      "id": "domain_specific:database",
+      "name": "database",
+      "description": "Data storage",
+      "support_texts": [
+        "database",
+        "storage",
+        "repository"
+      ]
+    },
+    {
+      "id": "domain_specific:interface",
+      "name": "interface",
+      "description": "Interaction point",
+      "support_texts": [
+        "interface",
+        "UI",
+        "interaction"
+      ]
+    },
+    {
+      "id": "domain_specific:security",
+      "name": "security",
+      "description": "Protection system",
+      "support_texts": [
+        "security",
+        "protection",
+        "safety"
+      ]
+    },
+    {
+      "id": "domain_specific:cloud",
+      "name": "cloud",
+      "description": "Remote computing",
+      "support_texts": [
+        "cloud",
+        "remote",
+        "distributed"
+      ]
+    },
+    {
+      "id": "domain_specific:company",
+      "name": "company",
+      "description": "Business entity",
+      "support_texts": [
+        "company",
+        "corporation",
+        "firm"
+      ]
+    },
+    {
+      "id": "domain_specific:product",
+      "name": "product",
+      "description": "Sellable good",
+      "support_texts": [
+        "product",
+        "goods",
+        "merchandise"
+      ]
+    },
+    {
+      "id": "domain_specific:market",
+      "name": "market",
+      "description": "Trading space",
+      "support_texts": [
+        "market",
+        "marketplace",
+        "exchange"
+      ]
+    },
+    {
+      "id": "domain_specific:profit",
+      "name": "profit",
+      "description": "Financial gain",
+      "support_texts": [
+        "profit",
+        "earnings",
+        "revenue"
+      ]
+    },
+    {
+      "id": "domain_specific:investment",
+      "name": "investment",
+      "description": "Capital allocation",
+      "support_texts": [
+        "investment",
+        "capital",
+        "funding"
+      ]
+    },
+    {
+      "id": "domain_specific:trade",
+      "name": "trade",
+      "description": "Exchange activity",
+      "support_texts": [
+        "trade",
+        "commerce",
+        "transaction"
+      ]
+    },
+    {
+      "id": "domain_specific:customer",
+      "name": "customer",
+      "description": "Buyer of goods",
+      "support_texts": [
+        "customer",
+        "client",
+        "consumer"
+      ]
+    },
+    {
+      "id": "domain_specific:employee",
+      "name": "employee",
+      "description": "Company worker",
+      "support_texts": [
+        "employee",
+        "worker",
+        "staff"
+      ]
+    },
+    {
+      "id": "domain_specific:salary",
+      "name": "salary",
+      "description": "Worker payment",
+      "support_texts": [
+        "salary",
+        "wage",
+        "compensation"
+      ]
+    },
+    {
+      "id": "domain_specific:contract_business",
+      "name": "contract",
+      "description": "Business agreement",
+      "support_texts": [
+        "contract",
+        "deal",
+        "agreement"
+      ]
+    },
+    {
+      "id": "domain_specific:school",
+      "name": "school",
+      "description": "Learning institution",
+      "support_texts": [
+        "school",
+        "academy",
+        "institution"
+      ]
+    },
+    {
+      "id": "domain_specific:teacher",
+      "name": "teacher",
+      "description": "Educator",
+      "support_texts": [
+        "teacher",
+        "instructor",
+        "educator"
+      ]
+    },
+    {
+      "id": "domain_specific:student",
+      "name": "student",
+      "description": "Learner",
+      "support_texts": [
+        "student",
+        "pupil",
+        "learner"
+      ]
+    },
+    {
+      "id": "domain_specific:lesson",
+      "name": "lesson",
+      "description": "Teaching unit",
+      "support_texts": [
+        "lesson",
+        "class",
+        "lecture"
+      ]
+    },
+    {
+      "id": "domain_specific:exam",
+      "name": "exam",
+      "description": "Assessment",
+      "support_texts": [
+        "exam",
+        "test",
+        "examination"
+      ]
+    },
+    {
+      "id": "domain_specific:grade",
+      "name": "grade",
+      "description": "Performance measure",
+      "support_texts": [
+        "grade",
+        "score",
+        "mark"
+      ]
+    },
+    {
+      "id": "domain_specific:curriculum",
+      "name": "curriculum",
+      "description": "Study plan",
+      "support_texts": [
+        "curriculum",
+        "syllabus",
+        "program"
+      ]
+    },
+    {
+      "id": "domain_specific:homework",
+      "name": "homework",
+      "description": "Home assignment",
+      "support_texts": [
+        "homework",
+        "assignment",
+        "task"
+      ]
+    },
+    {
+      "id": "domain_specific:degree",
+      "name": "degree",
+      "description": "Academic credential",
+      "support_texts": [
+        "degree",
+        "diploma",
+        "certificate"
+      ]
+    },
+    {
+      "id": "domain_specific:research",
+      "name": "research",
+      "description": "Scholarly inquiry",
+      "support_texts": [
+        "research",
+        "study",
+        "investigation"
+      ]
+    }
+  ]
+}
