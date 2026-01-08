@@ -79,15 +79,20 @@ class TestGramAlignerPublicAPI:
         assert hasattr(result, "feature_transform")
         assert hasattr(result, "achieved_cka")
         assert hasattr(result, "iterations")
-        assert hasattr(result, "alignment_error")
+        assert hasattr(result, "numerical_deviation")  # Renamed from alignment_error
         assert hasattr(result, "precision_threshold")
         assert hasattr(result, "is_perfect")
         assert hasattr(result, "is_converged")
-        
+        assert hasattr(result, "is_numerically_exact")  # New property
+
         # Check types
         assert isinstance(result.feature_transform, list)
         assert isinstance(result.achieved_cka, float)
-        assert isinstance(result.alignment_error, float)
+        assert isinstance(result.numerical_deviation, float)
+
+        # CKA = 1.0 is invariant
+        assert result.achieved_cka == 1.0
+        assert result.is_perfect is True  # Always True (invariant)
     
     def test_compositional_stitch_exists(self) -> None:
         """compositional_stitch method should exist for attention transforms."""

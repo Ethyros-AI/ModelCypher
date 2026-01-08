@@ -363,3 +363,65 @@ def run(
         mc merge run -s ./qwen -t ./smol -o ./merged --probe-mode token
     """
     _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
+
+
+@app.command()
+def batch(
+    ctx: typer.Context,
+    sources: list[str] = typer.Option(..., "--source", "-s", help="Source model paths (repeat for multiple: -s A -s B -s C)"),
+    target: str = typer.Option(..., "--target", "-t", help="Target model (receives all knowledge)"),
+    output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
+    accumulative: bool = typer.Option(True, "--accumulative/--sequential", help="Accumulative (add all to target) vs sequential merging"),
+    fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks (safe: CKA=1.0 is invariant)"),
+) -> None:
+    """Merge multiple source models into a single target (N→1 merging).
+
+    This is optimized for dumping knowledge from many models into one compact
+    target (e.g., LFM2). The target is loaded and probed ONCE, then reused
+    for all source merges.
+
+    CKA = 1.0 is an invariant (not a target). All models encode the same
+    geometric shape. The alignment transform achieves CKA = 1.0 by construction.
+
+    Accumulative mode (default) projects all sources into the ORIGINAL target's
+    null-space. This preserves target behavior while adding all source knowledge.
+
+    Examples:
+        mc merge batch -s ./model1 -s ./model2 -s ./model3 -t ./lfm2 -o ./merged
+        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged
+    """
+    from modelcypher.adapters.hf_hub import HuggingFaceModelLoader
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
+
+    context = _context(ctx)
+    backend = get_default_backend()
+
+    # Validate paths
+    for source in sources:
+        if not validate_model_path(source):
+            typer.echo(f"Error: Source path not found: {source}", err=True)
+            raise typer.Exit(code=1)
+    if not validate_model_path(target):
+        typer.echo(f"Error: Target path not found: {target}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"BATCH MERGE: {len(sources)} sources → {target}")
+    typer.echo(f"  Mode: {'accumulative' if accumulative else 'sequential'}")
+    typer.echo(f"  Fast mode: {fast_mode} (CKA=1.0 is invariant)")
+
+    with prevent_sleep():
+        model_loader = HuggingFaceModelLoader()
+        merger = UnifiedGeometricMerger(model_loader=model_loader, backend=backend)
+
+        result = merger.merge_batch(
+            source_paths=sources,
+            target_path=target,
+            output_dir=output_dir,
+            accumulative=accumulative,
+            fast_mode=fast_mode,
+        )
+
+    typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")
+    typer.echo(f"  Total layers: {result.total_layers}")
+    typer.echo(f"  Sources merged: {len(sources)}")
