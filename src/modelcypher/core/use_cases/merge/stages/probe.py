@@ -246,7 +246,8 @@ class ProbeCache:
         
         # Stack and precompute for source layers
         for layer_idx, acts in source_acts.items():
-            if not acts:
+            # Check if acts is empty - can't use `not acts` on MLX arrays
+            if acts is None or (hasattr(acts, 'shape') and acts.shape[0] == 0):
                 continue
             cache._precompute_layer(
                 layer_idx, acts, b,
@@ -260,7 +261,8 @@ class ProbeCache:
         
         # Stack and precompute for target layers
         for layer_idx, acts in target_acts.items():
-            if not acts:
+            # Check if acts is empty - can't use `not acts` on MLX arrays
+            if acts is None or (hasattr(acts, 'shape') and acts.shape[0] == 0):
                 continue
             cache._precompute_layer(
                 layer_idx, acts, b,
@@ -296,10 +298,16 @@ class ProbeCache:
         # Activations already stacked as [n_probes, hidden_dim] from _accumulate_activation
         stacked = acts
         b.eval(stacked)
-        act_cache[layer_idx] = stacked
         
-        # b.shape() returns a tuple of ints in MLX
+        # Ensure 2D shape: [n_probes, hidden_dim]
         shape = b.shape(stacked)
+        if len(shape) == 1:
+            # Single probe case: [hidden_dim] -> [1, hidden_dim]
+            stacked = b.reshape(stacked, (1, -1))
+            b.eval(stacked)
+            shape = b.shape(stacked)
+        
+        act_cache[layer_idx] = stacked
         n_probes = int(shape[0])
         d_hidden = int(shape[1])
         
@@ -1401,18 +1409,25 @@ def _probe_precise(
             from modelcypher.core.domain.geometry.cka import rbf_gram_matrix
             
             for src_idx, src_layer in enumerate(source_layers):
-                src_list = source_layer_activations[src_layer]
-                if len(src_list) < 2:
+                src_stacked = source_layer_activations.get(src_layer)
+                if src_stacked is None:
+                    degenerate_sources.add(src_idx)
+                    continue
+                # Activations are now pre-stacked [n_probes, hidden_dim]
+                shape = b.shape(src_stacked)
+                n_probes = int(shape[0]) if len(shape) >= 1 else 0
+                if n_probes < 2:
                     degenerate_sources.add(src_idx)
                     continue
                 try:
                     # Test RBF Gram matrix for degeneracy (same as GramAligner uses)
-                    src_stacked = b.stack(src_list[:min(len(src_list), 50)], axis=0)
-                    src_stacked = b.astype(src_stacked, "float32")
-                    b.eval(src_stacked)
+                    # Use first 50 probes for quick check
+                    test_stacked = src_stacked[:min(n_probes, 50), :]
+                    test_stacked = b.astype(test_stacked, "float32")
+                    b.eval(test_stacked)
                     
                     # Compute RBF Gram and check for NaN
-                    gram = rbf_gram_matrix(src_stacked, b)
+                    gram = rbf_gram_matrix(test_stacked, b)
                     gram_sum = b.sum(gram)
                     b.eval(gram_sum)
                     sum_val = float(b.to_scalar(gram_sum))
@@ -1433,16 +1448,23 @@ def _probe_precise(
             # Also check target layers for degeneracy
             logger.info("PROBE: Pre-detecting degenerate target layers...")
             for tgt_idx, tgt_layer in enumerate(target_layers):
-                tgt_list = target_layer_activations[tgt_layer]
-                if len(tgt_list) < 2:
+                tgt_stacked = target_layer_activations.get(tgt_layer)
+                if tgt_stacked is None:
+                    degenerate_targets.add(tgt_idx)
+                    continue
+                # Activations are now pre-stacked [n_probes, hidden_dim]
+                shape = b.shape(tgt_stacked)
+                n_probes = int(shape[0]) if len(shape) >= 1 else 0
+                if n_probes < 2:
                     degenerate_targets.add(tgt_idx)
                     continue
                 try:
-                    tgt_stacked = b.stack(tgt_list[:min(len(tgt_list), 50)], axis=0)
-                    tgt_stacked = b.astype(tgt_stacked, "float32")
-                    b.eval(tgt_stacked)
+                    # Use first 50 probes for quick check
+                    test_stacked = tgt_stacked[:min(n_probes, 50), :]
+                    test_stacked = b.astype(test_stacked, "float32")
+                    b.eval(test_stacked)
                     
-                    gram = rbf_gram_matrix(tgt_stacked, b)
+                    gram = rbf_gram_matrix(test_stacked, b)
                     gram_sum = b.sum(gram)
                     b.eval(gram_sum)
                     sum_val = float(b.to_scalar(gram_sum))
