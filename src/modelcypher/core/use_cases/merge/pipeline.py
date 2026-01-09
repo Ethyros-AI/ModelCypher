@@ -585,6 +585,8 @@ def run_merge(
                 "raw_cka_mean": probe_metrics.get("raw_cka_mean"),
                 "layer_count": probe_metrics.get("layer_count"),
                 "cka_after_alignment": probe_metrics.get("mean_cka"),  # CKA after GramAligner untwists
+                # SPLIT CKA: separates "alignment quality" from "novelty fraction"
+                "split_cka": probe_metrics.get("split_cka"),
             },
         }
         analysis_path = Path(final_output_path) / "merge_analysis.json"

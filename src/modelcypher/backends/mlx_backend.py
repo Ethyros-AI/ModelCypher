@@ -884,6 +884,57 @@ class MLXBackend(Backend):
         # O(n) partition algorithm
         return self.mx.partition(array, kth=kth, axis=axis)
 
+    def nonzero(self, array: Array) -> tuple[Array, ...]:
+        """Find indices of non-zero elements.
+
+        MLX doesn't have native nonzero, so we implement it using argsort.
+
+        Parameters
+        ----------
+        array : Array
+            Input array.
+
+        Returns
+        -------
+        tuple[Array, ...]
+            Tuple of arrays, one for each dimension, containing indices
+            of non-zero elements.
+        """
+        # Flatten array to work with 1D indices
+        flat = self.mx.reshape(array, (-1,))
+        n_total = flat.size
+
+        # Create mask for non-zero elements
+        mask = flat != 0
+
+        # Count non-zero elements
+        n_nonzero = int(self.mx.sum(mask.astype(self.mx.int32)))
+
+        if n_nonzero == 0:
+            # Return empty arrays for each dimension
+            ndim = len(array.shape)
+            return tuple(self.mx.array([], dtype=self.mx.int32) for _ in range(ndim))
+
+        # Use argsort on mask to get non-zero indices at the end
+        # False=0, True=1, so argsort puts True values last
+        sorted_indices = self.mx.argsort(mask.astype(self.mx.int32))
+        nonzero_flat_indices = sorted_indices[-n_nonzero:]
+
+        # Sort to maintain original order
+        nonzero_flat_indices = self.mx.sort(nonzero_flat_indices)
+
+        # Unravel flat indices to multi-dimensional indices
+        shape = array.shape
+        result: list[Array] = []
+        remaining = nonzero_flat_indices
+
+        for dim in reversed(range(len(shape))):
+            dim_size = shape[dim]
+            result.append(remaining % dim_size)
+            remaining = remaining // dim_size
+
+        return tuple(reversed(result))
+
     # --- Random (lazy - no eval) ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.mx.random.normal(shape=shape, dtype=self._map_dtype(dtype) or self.mx.float32)

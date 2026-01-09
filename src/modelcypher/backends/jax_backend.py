@@ -443,6 +443,22 @@ class JAXBackend(Backend):
         """
         return self.jnp.partition(array, kth=kth, axis=axis)
 
+    def nonzero(self, array: Array) -> tuple[Array, ...]:
+        """Find indices of non-zero elements.
+
+        Parameters
+        ----------
+        array : Array
+            Input array.
+
+        Returns
+        -------
+        tuple[Array, ...]
+            Tuple of arrays, one for each dimension, containing indices
+            of non-zero elements.
+        """
+        return self.jnp.nonzero(array)
+
     # --- Random ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         key = self._next_key()

@@ -488,6 +488,23 @@ class Backend(Protocol):
         """
         ...
 
+    def nonzero(self, array: Array) -> tuple[Array, ...]:
+        """Find indices of non-zero elements.
+
+        Returns a tuple of arrays, one for each dimension of the input,
+        containing the indices of the non-zero elements in that dimension.
+
+        For a 1D array, returns a tuple with a single array of indices.
+        For a 2D array, returns (row_indices, col_indices).
+
+        Args:
+            array: Input array.
+
+        Returns:
+            Tuple of index arrays, one per dimension.
+        """
+        ...
+
     # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array: ...
     def argsort(self, array: Array, axis: int = -1) -> Array: ...

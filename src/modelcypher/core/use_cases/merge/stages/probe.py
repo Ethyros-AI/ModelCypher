@@ -3238,6 +3238,42 @@ def _probe_precise(
     perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
 
     # =========================================================================
+    # SPLIT CKA: SHARED VS. NOVEL CONCEPTS
+    # =========================================================================
+    # Compute CKA separately for:
+    # - SHARED: concepts both models have (CKA should be ~1.0)
+    # - NOVEL: concepts only source has (CKA expected to be low)
+    # This separates "alignment quality" from "novelty fraction"
+    split_cka_result = None
+    if source_layer_activations and target_layer_activations:
+        from modelcypher.core.domain.geometry.cka import compute_cka_split
+
+        # Use the layer with highest raw CKA as representative
+        # (it has the most overlap, so split is most meaningful)
+        if layer_cka_scores_raw:
+            best_layer = max(layer_cka_scores_raw.keys(), key=lambda k: layer_cka_scores_raw[k])
+            # Find corresponding source layer from layer_mapping
+            src_layer = layer_mapping.get(best_layer)
+            if src_layer is not None and src_layer in source_layer_activations and best_layer in target_layer_activations:
+                src_acts = source_layer_activations[src_layer]
+                tgt_acts = target_layer_activations[best_layer]
+                try:
+                    split_cka_result = compute_cka_split(src_acts, tgt_acts, backend=b)
+                    logger.info(
+                        "SPLIT CKA (layer %d): shared=%.4f (n=%d, %.1f%%), novel=%.4f (n=%d, %.1f%%), full=%.4f",
+                        best_layer,
+                        split_cka_result.shared_cka,
+                        split_cka_result.n_shared,
+                        split_cka_result.shared_fraction * 100,
+                        split_cka_result.novel_cka,
+                        split_cka_result.n_novel,
+                        split_cka_result.novel_fraction * 100,
+                        split_cka_result.full_cka,
+                    )
+                except Exception as e:
+                    logger.warning("SPLIT CKA failed: %s", e)
+
+    # =========================================================================
     # LAYER CLASSIFICATION: ALL LAYERS CONVERGE
     # =========================================================================
     # CKA=1.0 is the ONLY acceptable outcome. If CKA < 1.0, the alignment
@@ -3311,6 +3347,16 @@ def _probe_precise(
             if layer_cka_scores_raw
             else 0.0
         ),
+        # SPLIT CKA: separates "alignment quality" from "novelty fraction"
+        "split_cka": {
+            "shared_cka": split_cka_result.shared_cka if split_cka_result else None,
+            "novel_cka": split_cka_result.novel_cka if split_cka_result else None,
+            "full_cka": split_cka_result.full_cka if split_cka_result else None,
+            "shared_fraction": split_cka_result.shared_fraction if split_cka_result else None,
+            "novel_fraction": split_cka_result.novel_fraction if split_cka_result else None,
+            "n_shared": split_cka_result.n_shared if split_cka_result else None,
+            "n_novel": split_cka_result.n_novel if split_cka_result else None,
+        } if split_cka_result else None,
     }
     if rbf_consistency_hidden is not None:
         metrics["hidden_rbf_consistency"] = rbf_consistency_hidden

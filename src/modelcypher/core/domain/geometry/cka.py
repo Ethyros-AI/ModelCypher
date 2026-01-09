@@ -702,6 +702,174 @@ def compute_cka_from_lists(
 
 
 # =============================================================================
+# SPLIT CKA: SHARED VS. NOVEL CONCEPTS
+# =============================================================================
+
+
+@dataclass
+class SplitCKAResult:
+    """Result of CKA computation split by shared vs. novel concepts.
+
+    The invariant shape hypothesis says both models encode the same geometry.
+    But they differ in:
+    - Coverage: which concepts they encode (shared vs. novel)
+    - Density: how precisely concepts are locked in
+
+    For SHARED concepts (both models have), CKA should be 1.0 (invariant shape).
+    For NOVEL concepts (source has, target doesn't), CKA is undefined/low.
+    """
+    # CKA on shared concepts only - should be ~1.0 for invariant shape
+    shared_cka: float
+    # CKA on novel concepts - expected to be low (target has no structure)
+    novel_cka: float
+    # Full CKA (on all samples) - blended measure
+    full_cka: float
+    # Fraction of samples that are shared vs. novel
+    shared_fraction: float
+    novel_fraction: float
+    # Sample counts
+    n_shared: int
+    n_novel: int
+    n_total: int
+    # Response magnitudes (for debugging)
+    source_response_mean: float
+    target_response_mean: float
+
+
+def compute_cka_split(
+    source_activations: "Array",
+    target_activations: "Array",
+    backend: "Backend | None" = None,
+    response_threshold: float = 0.5,
+) -> SplitCKAResult:
+    """Compute CKA separately for shared vs. novel concepts.
+
+    Separates samples into:
+    - SHARED: both models respond strongly (both have the concept)
+    - NOVEL: source responds strongly, target doesn't (new to target)
+
+    For shared concepts, CKA should be 1.0 (invariant shape).
+    For novel concepts, CKA is expected to be low (target has no structure).
+
+    The "response magnitude" per sample is the L2 norm of centered activations,
+    normalized to [0, 1] range. Samples where both normalized responses are
+    above threshold are "shared"; samples where source is above but target
+    is below threshold are "novel".
+
+    Args:
+        source_activations: [n_samples, d_source]
+        target_activations: [n_samples, d_target]
+        backend: Backend protocol. If None, uses default.
+        response_threshold: Normalized response threshold (0.5 = median split)
+
+    Returns:
+        SplitCKAResult with separate CKA for shared vs. novel concepts.
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    b = backend
+    n = int(source_activations.shape[0])
+
+    if n < 4:
+        # Not enough samples to split
+        return SplitCKAResult(
+            shared_cka=0.0, novel_cka=0.0, full_cka=0.0,
+            shared_fraction=0.0, novel_fraction=0.0,
+            n_shared=0, n_novel=0, n_total=n,
+            source_response_mean=0.0, target_response_mean=0.0,
+        )
+
+    # Center activations (remove feature means)
+    source_mean = b.mean(source_activations, axis=0, keepdims=True)
+    target_mean = b.mean(target_activations, axis=0, keepdims=True)
+    source_c = source_activations - source_mean
+    target_c = target_activations - target_mean
+    b.eval(source_c, target_c)
+
+    # Response magnitude per sample = L2 norm of centered activations
+    # This measures how much the model "responds" to each sample
+    source_response = b.sqrt(b.sum(source_c * source_c, axis=1))  # [n]
+    target_response = b.sqrt(b.sum(target_c * target_c, axis=1))  # [n]
+    b.eval(source_response, target_response)
+
+    # Normalize to [0, 1] range (relative to max)
+    eps = division_epsilon(b, source_response)
+    source_max = b.max(source_response)
+    target_max = b.max(target_response)
+    b.eval(source_max, target_max)
+    source_max_val = float(b.to_scalar(source_max))
+    target_max_val = float(b.to_scalar(target_max))
+
+    source_norm = source_response / (source_max_val + eps)
+    target_norm = target_response / (target_max_val + eps)
+    b.eval(source_norm, target_norm)
+
+    # Create masks for shared vs. novel concepts
+    thresh = b.array([response_threshold])
+    source_high = source_norm > thresh  # [n] bool
+    target_high = target_norm > thresh  # [n] bool
+    b.eval(source_high, target_high)
+
+    # Shared: both models respond strongly
+    # Novel: source responds, target doesn't
+    shared_mask = source_high & target_high  # Both high
+    novel_mask = source_high & (~target_high)  # Source high, target low
+    b.eval(shared_mask, novel_mask)
+
+    # Count samples in each category
+    shared_count = int(b.to_scalar(b.sum(b.astype(shared_mask, "float32"))))
+    novel_count = int(b.to_scalar(b.sum(b.astype(novel_mask, "float32"))))
+
+    # Response means for debugging
+    source_resp_mean = float(b.to_scalar(b.mean(source_norm)))
+    target_resp_mean = float(b.to_scalar(b.mean(target_norm)))
+
+    # Compute full CKA
+    full_result = compute_cka(source_activations, target_activations, backend)
+    full_cka = full_result.cka if full_result.is_valid else 0.0
+
+    # Compute CKA on shared samples only (if enough)
+    shared_cka = 0.0
+    if shared_count >= 4:
+        # Use mask to select shared samples
+        # Convert bool mask to indices
+        shared_indices = b.nonzero(shared_mask)
+        if len(shared_indices) > 0 and shared_indices[0].shape[0] >= 4:
+            shared_idx = shared_indices[0]
+            source_shared = b.take(source_activations, shared_idx, axis=0)
+            target_shared = b.take(target_activations, shared_idx, axis=0)
+            b.eval(source_shared, target_shared)
+            shared_result = compute_cka(source_shared, target_shared, backend)
+            shared_cka = shared_result.cka if shared_result.is_valid else 0.0
+
+    # Compute CKA on novel samples only (if enough)
+    novel_cka = 0.0
+    if novel_count >= 4:
+        novel_indices = b.nonzero(novel_mask)
+        if len(novel_indices) > 0 and novel_indices[0].shape[0] >= 4:
+            novel_idx = novel_indices[0]
+            source_novel = b.take(source_activations, novel_idx, axis=0)
+            target_novel = b.take(target_activations, novel_idx, axis=0)
+            b.eval(source_novel, target_novel)
+            novel_result = compute_cka(source_novel, target_novel, backend)
+            novel_cka = novel_result.cka if novel_result.is_valid else 0.0
+
+    return SplitCKAResult(
+        shared_cka=shared_cka,
+        novel_cka=novel_cka,
+        full_cka=full_cka,
+        shared_fraction=shared_count / n if n > 0 else 0.0,
+        novel_fraction=novel_count / n if n > 0 else 0.0,
+        n_shared=shared_count,
+        n_novel=novel_count,
+        n_total=n,
+        source_response_mean=source_resp_mean,
+        target_response_mean=target_resp_mean,
+    )
+
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -713,6 +881,9 @@ __all__ = [
     "compute_cka_from_centered_grams",
     "rbf_gram_matrix",
     "rbf_gram_matrix_with_sigma",
+    # Split CKA (shared vs. novel)
+    "compute_cka_split",
+    "SplitCKAResult",
     # Types
     "HSICEstimator",
     "CKAResult",
