@@ -18,7 +18,13 @@
 from modelcypher.core.use_cases.merge import pipeline
 
 
-def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
+def test_pipeline_uses_null_space_selectivity(monkeypatch) -> None:
+    """Test that pipeline uses null-space projection for selectivity (CKA=1.0 invariant).
+
+    With CKA=1.0 guaranteed by closed-form F = pinv(source) @ target,
+    null-space projection automatically ensures we only add knowledge
+    to directions the target doesn't use. No density-based graft mask needed.
+    """
     calls: dict[str, object] = {}
 
     def fake_load_weights(_loader, _path):
@@ -59,14 +65,9 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
             None,  # layer_mapping
         )
 
-    def fake_stage_density(**_kwargs):
-        calls["density_called"] = True
-        return {"p0": {0: True}}, {"positive_opportunity_count": 1}
-
-    # Note: fake_stage_permute removed - stage_permute no longer exists in pipeline
-
     def fake_stage_transplant(*, graft_mask, **_kwargs):
         calls["graft_mask"] = graft_mask
+        calls["transplant_called"] = True
         return {}, {"preserved_fractions": [], "cka_after": []}
 
     def fake_infer_hidden_dim(_weights):
@@ -76,8 +77,6 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "load_tokenizer", fake_load_tokenizer)
     monkeypatch.setattr(pipeline, "load_model_for_probing", fake_load_model_for_probing)
     monkeypatch.setattr(pipeline, "stage_probe", fake_stage_probe)
-    monkeypatch.setattr(pipeline, "stage_density", fake_stage_density)
-    # Note: stage_permute was removed from the pipeline - no longer needed
     monkeypatch.setattr(pipeline, "stage_transplant", fake_stage_transplant)
     monkeypatch.setattr(pipeline, "infer_hidden_dim", fake_infer_hidden_dim)
 
@@ -89,5 +88,6 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
         dry_run=True,
     )
 
-    assert calls.get("density_called") is True
-    assert calls.get("graft_mask") == {"p0": {0: True}}
+    # CKA=1.0 invariant: graft_mask is None, null-space projection handles selectivity
+    assert calls.get("transplant_called") is True
+    assert calls.get("graft_mask") is None, "With CKA=1.0 invariant, graft_mask should be None"

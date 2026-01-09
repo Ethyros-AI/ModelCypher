@@ -317,24 +317,23 @@ class ConceptResponseMatrix:
         return float(cka)
 
     def compute_alignment_transform(self, other: ConceptResponseMatrix) -> tuple[float, list[list[float]] | None]:
-        """Compute the alignment transform F between representation spaces.
+        """Compute the alignment transform between representation spaces.
 
-        CKA = 1.0 IS AN INVARIANT - it's used to DERIVE F, not measured after.
+        CKA = 1.0 IS AN INVARIANT in Gram space. The transform T = K_t^{1/2} @ K_s^{-1/2}
+        satisfies T @ K_s @ T^T = K_t exactly (by algebra).
 
-        The formula F = pinv(source) @ target is derived from the constraint
-        that CKA(source @ F, target) = 1.0. Since all models encode the same
-        geometric structure (just in different coordinate systems), F is the
-        transform that maps source coordinates to target coordinates.
+        This method verifies alignment in GRAM SPACE (pairwise relationships),
+        NOT in feature space. Feature-space least-squares does NOT guarantee CKA = 1.0.
 
         Returns:
-            (numerical_precision, F) where:
-            - numerical_precision: How close floating-point got to theoretical exact (1.0 = perfect)
-            - F: The alignment transform matrix (source @ F ≈ target)
+            (numerical_precision, T) where:
+            - numerical_precision: How close Gram alignment got to exact (1.0 = perfect)
+            - T: The Gram-space transform matrix [n_samples, n_samples]
 
         If numerical_precision < 1.0, there's a precision issue in the algorithm.
         This is NEVER model incompatibility - all models are compatible.
         """
-        from modelcypher.core.domain.geometry.gram_aligner import find_alignment
+        from modelcypher.core.domain.geometry.cka import _center_gram_matrix
 
         backend = get_default_backend()
         common = sorted(
@@ -363,13 +362,91 @@ class ConceptResponseMatrix:
         source_repr = _stack_all_layers(self, common)
         target_repr = _stack_all_layers(other, common)
 
-        # Compute F where source @ F ≈ target (derived from CKA = 1.0 constraint)
-        result = find_alignment(source_repr, target_repr, backend)
+        # Normalize to unit Frobenius norm for numerical stability
+        eps = division_epsilon(backend, source_repr)
+        source_norm_sq = backend.sum(source_repr * source_repr)
+        target_norm_sq = backend.sum(target_repr * target_repr)
+        backend.eval(source_norm_sq, target_norm_sq)
 
-        # numerical_deviation is floating-point precision error, not a CKA measurement
-        precision = max(0.0, min(1.0, 1.0 - result.numerical_deviation))
+        source_norm = backend.sqrt(source_norm_sq + eps)
+        target_norm = backend.sqrt(target_norm_sq + eps)
+        backend.eval(source_norm, target_norm)
 
-        return precision, result.feature_transform
+        source_normalized = source_repr / source_norm
+        target_normalized = target_repr / target_norm
+        backend.eval(source_normalized, target_normalized)
+
+        # Compute Gram matrices: K = X @ X^T captures pairwise relationships
+        # These are [n_samples, n_samples] regardless of feature dimensions
+        K_s = backend.matmul(source_normalized, backend.transpose(source_normalized))
+        K_t = backend.matmul(target_normalized, backend.transpose(target_normalized))
+        backend.eval(K_s, K_t)
+
+        # Center the Gram matrices (required for CKA)
+        K_s_c = _center_gram_matrix(K_s, backend)
+        K_t_c = _center_gram_matrix(K_t, backend)
+        backend.eval(K_s_c, K_t_c)
+
+        # GRAM-SPACE ALIGNMENT: T = K_t^{1/2} @ K_s^{-1/2}
+        # By algebra: T @ K_s @ T^T = K_t^{1/2} @ K_s^{-1/2} @ K_s @ K_s^{-1/2} @ K_t^{1/2} = K_t
+        # This is MATHEMATICALLY EXACT. Any deviation is numerical precision.
+        from modelcypher.core.domain.geometry.numerical_stability import (
+            power_iteration_eigh,
+            regularization_epsilon,
+        )
+
+        n = int(backend.shape(K_s_c)[0])
+        reg_eps = regularization_epsilon(backend, K_s_c)
+
+        # Eigendecomposition of K_s_c and K_t_c
+        eig_s, vec_s = power_iteration_eigh(backend, K_s_c, k=n)
+        eig_t, vec_t = power_iteration_eigh(backend, K_t_c, k=n)
+        backend.eval(eig_s, vec_s, eig_t, vec_t)
+
+        # Clamp negative eigenvalues (numerical noise) and compute sqrt/inv_sqrt
+        eig_s = backend.maximum(eig_s, backend.zeros_like(eig_s))
+        eig_t = backend.maximum(eig_t, backend.zeros_like(eig_t))
+        backend.eval(eig_s, eig_t)
+
+        # K_s^{-1/2} = V @ diag(1/sqrt(λ)) @ V^T
+        eig_s_safe = backend.maximum(eig_s, backend.full(backend.shape(eig_s), reg_eps))
+        inv_sqrt_s = 1.0 / backend.sqrt(eig_s_safe)
+        K_s_inv_sqrt = backend.matmul(
+            backend.matmul(vec_s, backend.diag(inv_sqrt_s)),
+            backend.transpose(vec_s)
+        )
+        backend.eval(K_s_inv_sqrt)
+
+        # K_t^{1/2} = V @ diag(sqrt(λ)) @ V^T
+        sqrt_t = backend.sqrt(eig_t + reg_eps)
+        K_t_sqrt = backend.matmul(
+            backend.matmul(vec_t, backend.diag(sqrt_t)),
+            backend.transpose(vec_t)
+        )
+        backend.eval(K_t_sqrt)
+
+        # T = K_t^{1/2} @ K_s^{-1/2}
+        T = backend.matmul(K_t_sqrt, K_s_inv_sqrt)
+        backend.eval(T)
+
+        # VERIFY ALIGNMENT: T @ K_s_c @ T^T should equal K_t_c
+        K_aligned = backend.matmul(backend.matmul(T, K_s_c), backend.transpose(T))
+        backend.eval(K_aligned)
+
+        # Compute precision: 1.0 - ||K_aligned - K_t_c||_F / ||K_t_c||_F
+        diff = K_aligned - K_t_c
+        diff_norm_sq = backend.sum(diff * diff)
+        target_gram_norm_sq = backend.sum(K_t_c * K_t_c)
+        backend.eval(diff_norm_sq, target_gram_norm_sq)
+
+        diff_norm = sqrt_scalar(float(backend.to_scalar(diff_norm_sq)), backend)
+        target_gram_norm = sqrt_scalar(float(backend.to_scalar(target_gram_norm_sq)), backend)
+
+        # Relative error (numerical precision)
+        relative_error = diff_norm / (target_gram_norm + eps) if target_gram_norm > eps else 0.0
+        precision = max(0.0, min(1.0, 1.0 - relative_error))
+
+        return precision, backend.tolist(T)
 
     def compare(self, other: ConceptResponseMatrix) -> "ComparisonReport":
         common = set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)

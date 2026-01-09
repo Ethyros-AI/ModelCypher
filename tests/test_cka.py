@@ -307,7 +307,15 @@ class TestCKAInvariance:
         assert abs(result_original.cka - result_rotated.cka) <= tol
 
     def test_scale_invariance(self, any_backend: "Backend") -> None:
-        """CKA should be invariant to scaling."""
+        """Linear CKA should be invariant to scaling.
+
+        Note: RBF CKA with median-heuristic sigma is NOT scale-invariant
+        because sigma adapts to data distribution. Linear CKA (K = X @ X.T)
+        IS scale-invariant since scaling X by α scales K by α², which
+        cancels in the normalized HSIC ratio.
+        """
+        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+
         backend = any_backend
         backend.random_seed(42)
         X = backend.random_normal((15, 8))
@@ -316,11 +324,11 @@ class TestCKAInvariance:
         X_scaled = X * 10.0
         backend.eval(X_scaled)
 
-        result_original = compute_cka(X, Y, backend)
-        result_scaled = compute_cka(X_scaled, Y, backend)
+        cka_original = compute_linear_cka(X, Y, backend)
+        cka_scaled = compute_linear_cka(X_scaled, Y, backend)
 
         tol = _scalar_tol(backend)
-        assert abs(result_original.cka - result_scaled.cka) <= tol
+        assert abs(cka_original - cka_scaled) <= tol
 
     def test_symmetry(self, any_backend: "Backend") -> None:
         """CKA should be symmetric: CKA(X, Y) = CKA(Y, X)."""

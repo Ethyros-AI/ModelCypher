@@ -85,8 +85,8 @@ class TestGramAlignerPublicAPI:
         assert hasattr(result, "is_converged")
         assert hasattr(result, "is_numerically_exact")  # New property
 
-        # Check types
-        assert isinstance(result.feature_transform, list)
+        # Check types - feature_transform stays on GPU as Array
+        assert hasattr(result.feature_transform, "shape")  # Array-like
         assert isinstance(result.achieved_cka, float)
         assert isinstance(result.numerical_deviation, float)
 

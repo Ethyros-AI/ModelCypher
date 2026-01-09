@@ -219,13 +219,13 @@ def _load_probe_result_cache(
     dict[int, "Array"],  # target_activations
     dict[str, Any],  # probe_result
     dict[str, Any],  # metrics
-    dict[int, list[list[float]]] | None,  # feature_transforms
+    dict[int, "Array"] | None,  # feature_transforms (GPU arrays)
     dict[int, float] | None,  # scale_ratios
-    list[list[float]] | None,  # embedding_transform
-    dict[int, list[list[float]]] | None,  # attention_transforms
-    dict[int, list[list[float]]] | None,  # k_transforms
-    dict[int, list[list[float]]] | None,  # v_transforms
-    dict[int, list[list[float]]] | None,  # intermediate_transforms
+    "Array | None",  # embedding_transform (GPU array)
+    dict[int, "Array"] | None,  # attention_transforms (GPU arrays)
+    dict[int, "Array"] | None,  # k_transforms (GPU arrays)
+    dict[int, "Array"] | None,  # v_transforms (GPU arrays)
+    dict[int, "Array"] | None,  # intermediate_transforms (GPU arrays)
     dict[int, int] | None,  # layer_mapping
     list[str] | None,  # probe_ids
     list[str] | None,  # probe_domains
@@ -267,6 +267,7 @@ def _load_probe_result_cache(
         logger.warning("PROBE CACHE: Invalid cache format at %s", data_path)
         return None
 
+    # Activations
     source_activations: dict[int, "Array"] = {}
     target_activations: dict[int, "Array"] = {}
     source_intermediate_activations: dict[int, "Array"] = {}
@@ -276,7 +277,16 @@ def _load_probe_result_cache(
     source_k_activations: dict[int, "Array"] = {}
     target_k_activations: dict[int, "Array"] = {}
 
+    # Transforms (loaded from NPZ in v2+, from JSON metadata in v1)
+    feature_transforms: dict[int, "Array"] = {}
+    attention_transforms: dict[int, "Array"] = {}
+    k_transforms: dict[int, "Array"] = {}
+    v_transforms: dict[int, "Array"] = {}
+    intermediate_transforms: dict[int, "Array"] = {}
+    embedding_transform: "Array | None" = None
+
     for key, arr in loaded.items():
+        # Activations
         if key.startswith("src_act_"):
             layer_idx = int(key.split("_")[2])
             source_activations[layer_idx] = arr
@@ -301,23 +311,65 @@ def _load_probe_result_cache(
         elif key.startswith("tgt_k_"):
             layer_idx = int(key.split("_")[2])
             target_k_activations[layer_idx] = arr
+        # Transforms (v2 format - stored in NPZ)
+        elif key.startswith("feat_transform_"):
+            layer_idx = int(key.split("_")[2])
+            feature_transforms[layer_idx] = arr
+        elif key.startswith("attn_transform_"):
+            layer_idx = int(key.split("_")[2])
+            attention_transforms[layer_idx] = arr
+        elif key.startswith("k_transform_"):
+            layer_idx = int(key.split("_")[2])
+            k_transforms[layer_idx] = arr
+        elif key.startswith("v_transform_"):
+            layer_idx = int(key.split("_")[2])
+            v_transforms[layer_idx] = arr
+        elif key.startswith("inter_transform_"):
+            layer_idx = int(key.split("_")[2])
+            intermediate_transforms[layer_idx] = arr
+        elif key == "emb_transform":
+            embedding_transform = arr
 
     probe_result = meta.get("probe_result", {})
     if isinstance(probe_result, dict):
         probe_result["confidences"] = _coerce_int_keys(probe_result.get("confidences"))
+
+    # Handle v1 cache (transforms in JSON as lists) - convert to arrays
+    cache_version = meta.get("version", 1)
+    if cache_version < 2:
+        # v1 format: transforms stored in JSON metadata as nested lists
+        b = backend
+        json_feat = _coerce_int_keys(meta.get("feature_transforms"))
+        if json_feat:
+            feature_transforms = {k: b.array(v) for k, v in json_feat.items()}
+        json_emb = meta.get("embedding_transform")
+        if json_emb is not None:
+            embedding_transform = b.array(json_emb)
+        json_attn = _coerce_int_keys(meta.get("attention_transforms"))
+        if json_attn:
+            attention_transforms = {k: b.array(v) for k, v in json_attn.items()}
+        json_k = _coerce_int_keys(meta.get("k_transforms"))
+        if json_k:
+            k_transforms = {k: b.array(v) for k, v in json_k.items()}
+        json_v = _coerce_int_keys(meta.get("v_transforms"))
+        if json_v:
+            v_transforms = {k: b.array(v) for k, v in json_v.items()}
+        json_inter = _coerce_int_keys(meta.get("intermediate_transforms"))
+        if json_inter:
+            intermediate_transforms = {k: b.array(v) for k, v in json_inter.items()}
 
     return (
         source_activations,
         target_activations,
         probe_result,
         meta.get("metrics", {}),
-        _coerce_int_keys(meta.get("feature_transforms")),
+        feature_transforms if feature_transforms else None,
         _coerce_int_keys(meta.get("scale_ratios")),
-        meta.get("embedding_transform"),
-        _coerce_int_keys(meta.get("attention_transforms")),
-        _coerce_int_keys(meta.get("k_transforms")),
-        _coerce_int_keys(meta.get("v_transforms")),
-        _coerce_int_keys(meta.get("intermediate_transforms")),
+        embedding_transform,
+        attention_transforms if attention_transforms else None,
+        k_transforms if k_transforms else None,
+        v_transforms if v_transforms else None,
+        intermediate_transforms if intermediate_transforms else None,
         _coerce_int_keys(meta.get("layer_mapping")),
         meta.get("probe_ids"),
         meta.get("probe_domains"),
@@ -336,13 +388,13 @@ def _save_probe_result_cache(
     target_activations: dict[int, "Array"],
     probe_result: dict[str, Any],
     metrics: dict[str, Any],
-    feature_transforms: dict[int, list[list[float]]] | None,
+    feature_transforms: dict[int, "Array"] | None,
     scale_ratios: dict[int, float] | None,
-    embedding_transform: list[list[float]] | None,
-    attention_transforms: dict[int, list[list[float]]] | None,
-    k_transforms: dict[int, list[list[float]]] | None,
-    v_transforms: dict[int, list[list[float]]] | None,
-    intermediate_transforms: dict[int, list[list[float]]] | None,
+    embedding_transform: "Array | None",
+    attention_transforms: dict[int, "Array"] | None,
+    k_transforms: dict[int, "Array"] | None,
+    v_transforms: dict[int, "Array"] | None,
+    intermediate_transforms: dict[int, "Array"] | None,
     layer_mapping: dict[int, int] | None,
     probe_ids: list[str],
     probe_domains: list[str],
@@ -388,24 +440,39 @@ def _save_probe_result_cache(
         for layer_idx, acts in target_k_activations.items():
             data[f"tgt_k_{layer_idx}"] = acts
 
+    # Transforms - save to NPZ (binary, GPU-friendly) instead of JSON
+    if feature_transforms:
+        for layer_idx, F in feature_transforms.items():
+            data[f"feat_transform_{layer_idx}"] = F
+    if embedding_transform is not None:
+        data["emb_transform"] = embedding_transform
+    if attention_transforms:
+        for layer_idx, F in attention_transforms.items():
+            data[f"attn_transform_{layer_idx}"] = F
+    if k_transforms:
+        for layer_idx, F in k_transforms.items():
+            data[f"k_transform_{layer_idx}"] = F
+    if v_transforms:
+        for layer_idx, F in v_transforms.items():
+            data[f"v_transform_{layer_idx}"] = F
+    if intermediate_transforms:
+        for layer_idx, F in intermediate_transforms.items():
+            data[f"inter_transform_{layer_idx}"] = F
+
     data_path = cache_dir / f"{cache_key}.npz"
     mx.savez_compressed(data_path, **data)
 
+    # Metadata (no transforms - they're in NPZ now)
     meta = {
-        "version": 1,
+        "version": 2,  # Bumped for new format with transforms in NPZ
         "probe_mode": probe_mode,
         "probe_ids": probe_ids,
         "probe_domains": probe_domains,
         "probe_result": probe_result,
         "metrics": metrics,
-        "feature_transforms": feature_transforms,
         "scale_ratios": scale_ratios,
-        "embedding_transform": embedding_transform,
-        "attention_transforms": attention_transforms,
-        "k_transforms": k_transforms,
-        "v_transforms": v_transforms,
-        "intermediate_transforms": intermediate_transforms,
         "layer_mapping": layer_mapping,
+        "has_transforms": True,  # Transforms stored in NPZ
     }
     meta_path = cache_dir / f"{cache_key}.json"
     meta_path.write_text(json.dumps(meta, indent=2))
@@ -2586,8 +2653,8 @@ def _probe_precise(
                     
                     result["achieved_cka"] = alignment_result.achieved_cka  # Always 1.0 (invariant)
                     result["numerical_deviation"] = alignment_result.numerical_deviation
-                    
-                    F_arr = b.array(alignment_result.feature_transform)
+
+                    F_arr = alignment_result.feature_transform  # Already GPU array
 
                     # One-time geodesic RBF vs linear CKA consistency check (4D+).
                     if not rbf_consistency_checked:
@@ -2783,13 +2850,13 @@ def _probe_precise(
                                 tgt_q_stacked,
                             )
 
-                            Q_arr = b.array(q_alignment.feature_transform)
+                            Q_arr = q_alignment.feature_transform  # Already GPU array
 
                             split_q_transforms = {}
                             start_idx = 0
                             for s_layer, s_dim in zip(src_layers_list, src_q_dims):
                                 Q_slice = Q_arr[start_idx : start_idx + s_dim, :]
-                                split_q_transforms[s_layer] = b.tolist(Q_slice)
+                                split_q_transforms[s_layer] = Q_slice  # Keep as GPU array
                                 start_idx += s_dim
 
                             result["attention_transform"] = split_q_transforms
@@ -2813,13 +2880,13 @@ def _probe_precise(
                                 tgt_k_stacked,
                             )
 
-                            K_arr = b.array(k_alignment.feature_transform)
+                            K_arr = k_alignment.feature_transform  # Already GPU array
 
                             split_k_transforms = {}
                             start_idx = 0
                             for s_layer, s_dim in zip(src_layers_list, src_k_dims):
                                 K_slice = K_arr[start_idx : start_idx + s_dim, :]
-                                split_k_transforms[s_layer] = b.tolist(K_slice)
+                                split_k_transforms[s_layer] = K_slice  # Keep as GPU array
                                 start_idx += s_dim
 
                             result["k_transform"] = split_k_transforms
@@ -2843,13 +2910,13 @@ def _probe_precise(
                                 tgt_v_stacked,
                             )
 
-                            V_arr = b.array(v_alignment.feature_transform)
+                            V_arr = v_alignment.feature_transform  # Already GPU array
 
                             split_v_transforms = {}
                             start_idx = 0
                             for s_layer, s_dim in zip(src_layers_list, src_v_dims):
                                 V_slice = V_arr[start_idx : start_idx + s_dim, :]
-                                split_v_transforms[s_layer] = b.tolist(V_slice)
+                                split_v_transforms[s_layer] = V_slice  # Keep as GPU array
                                 start_idx += s_dim
 
                             result["v_transform"] = split_v_transforms
@@ -2901,13 +2968,13 @@ def _probe_precise(
                                     tgt_inter_stacked,
                                 )
                                 
-                                I_arr = b.array(inter_alignment.feature_transform)
-                                
+                                I_arr = inter_alignment.feature_transform  # Already GPU array
+
                                 split_inter_transforms = {}
                                 start_idx = 0
                                 for s_layer, s_dim in zip(src_layers_list, src_inter_dims):
                                     I_slice = I_arr[start_idx : start_idx + s_dim, :]
-                                    split_inter_transforms[s_layer] = b.tolist(I_slice)
+                                    split_inter_transforms[s_layer] = I_slice  # Keep as GPU array
                                     start_idx += s_dim
                                 
                                 result["intermediate_transform"] = split_inter_transforms
@@ -3284,8 +3351,8 @@ def _probe_precise(
 
                 # Use same GramAligner as hidden layers - CKA = 1.0 is invariant
                 emb_result = gram_aligner.find_perfect_alignment(src_stacked, tgt_stacked)
-                emb_F = b.array(emb_result.feature_transform)
-                embedding_transform = b.tolist(emb_F)
+                emb_F = emb_result.feature_transform  # Already GPU array
+                embedding_transform = emb_F  # Keep as GPU array
                 metrics["embedding_cka"] = emb_result.achieved_cka  # Always 1.0 (invariant)
                 metrics["embedding_numerical_deviation"] = emb_result.numerical_deviation
 

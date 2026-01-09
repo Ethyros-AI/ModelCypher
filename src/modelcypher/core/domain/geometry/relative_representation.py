@@ -193,23 +193,56 @@ def align_relative_representations(
         Tuple of (rotation_matrix [n_anchors, n_anchors], alignment_error)
     """
     backend = get_default_backend()
+
+    # Handle degenerate cases: single sample leads to all-zero centered matrices
+    # after mean subtraction, causing singular matrices in SVD/det
+    n_samples = int(source_rel.shape[0])
+    n_anchors = int(source_rel.shape[1])
+    if n_samples <= 1:
+        # Return identity rotation - no meaningful alignment possible with single sample
+        R = backend.eye(n_anchors)
+        backend.eval(R)
+        return R, 0.0
+
     # Center the representations
     source_mean = backend.mean(source_rel, axis=0, keepdims=True)
     target_mean = backend.mean(target_rel, axis=0, keepdims=True)
     source_centered = source_rel - source_mean
     target_centered = target_rel - target_mean
+    backend.eval(source_centered, target_centered)
+
+    # Check for degenerate input (all zeros or constant values)
+    source_norm = backend.sum(source_centered * source_centered)
+    target_norm = backend.sum(target_centered * target_centered)
+    backend.eval(source_norm, target_norm)
+    eps = 1e-10
+    if float(backend.to_scalar(source_norm)) < eps or float(backend.to_scalar(target_norm)) < eps:
+        # Degenerate case: return identity
+        R = backend.eye(n_anchors)
+        backend.eval(R)
+        return R, 0.0
 
     # Procrustes: find R such that ||R @ source - target||_F is minimized
-    backend.eval(source_centered, target_centered)
     M = backend.matmul(backend.transpose(source_centered), target_centered)  # [n_anchors, n_anchors]
     backend.eval(M)
     # Geodesic SVD (GPU-only)
     U, S, Vt = geodesic_svd(backend, M)
     backend.eval(U, S, Vt)
 
+    # Check for singular SVD result (would cause det to crash)
+    min_sv = backend.min(S)
+    backend.eval(min_sv)
+    if float(backend.to_scalar(min_sv)) < eps:
+        # Singular matrix - return identity
+        R = backend.eye(n_anchors)
+        backend.eval(R)
+        return R, 0.0
+
     # Ensure proper rotation (det = +1)
     R = backend.matmul(U, Vt)
     backend.eval(R)
+
+    # Compute determinant - safe now that we've checked for singularity
     det_val = backend.det(R)
     backend.eval(det_val)
     det_scalar = float(backend.to_scalar(det_val))

@@ -61,7 +61,8 @@ def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
     issues, we fall back to a regularized pseudo-inverse to maintain stability.
     """
     b = backend
-    F = b.astype(b.array(F), "float32")
+    # F is already a GPU array from GramAligner
+    F = b.astype(F, "float32")
     b.eval(F)
 
     try:
@@ -115,9 +116,10 @@ def _orthogonalize_stitch(backend: "Backend", F: "Array") -> "Array":
     This preserves the relational geometry while maintaining orthogonality.
     """
     b = backend
-    F = b.astype(b.array(F), "float32")
+    # F is already a GPU array from GramAligner
+    F = b.astype(F, "float32")
     b.eval(F)
-    
+
     n, m = b.shape(F)
     n, m = int(n), int(m)
     
@@ -481,13 +483,13 @@ def stage_transplant(
     source_kv_activations: dict[int, list["Array"]] | None = None,
     target_kv_activations: dict[int, list["Array"]] | None = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
-    feature_transforms: dict[int, list[list[float]]] | None = None,
+    feature_transforms: dict[int, "Array"] | None = None,  # GPU arrays from GramAligner
     scale_ratios: dict[int, float] | None = None,  # EXACT: ||target|| / ||source @ F||
-    embedding_transform: list[list[float]] | None = None,  # 2D GramAlign transform
-    attention_transforms: dict[int, list[list[float]]] | None = None,
-    k_transforms: dict[int, list[list[float]]] | None = None,
-    v_transforms: dict[int, list[list[float]]] | None = None,
-    intermediate_transforms: dict[int, list[list[float]]] | None = None,  # MLP intermediate
+    embedding_transform: "Array | None" = None,  # 2D GramAlign transform (GPU array)
+    attention_transforms: dict[int, "Array"] | None = None,  # GPU arrays
+    k_transforms: dict[int, "Array"] | None = None,  # GPU arrays
+    v_transforms: dict[int, "Array"] | None = None,  # GPU arrays
+    intermediate_transforms: dict[int, "Array"] | None = None,  # MLP intermediate (GPU arrays)
     layer_mapping: dict[int, int] | None = None,
     layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
     source_tokenizer: "Any | None" = None,  # For token correspondence
@@ -657,8 +659,8 @@ def stage_transplant(
             "SAME-VOCAB MERGE: Applying GramAlign to embed_tokens (same CKA=1.0)"
         )
         
-        F = b.array(embedding_transform)
-        F = b.astype(F, "float32")
+        # embedding_transform is already a GPU array from GramAligner
+        F = b.astype(embedding_transform, "float32")
         b.eval(F)
         
         src_embed = source_weights[source_embed_key]
@@ -738,11 +740,11 @@ def stage_transplant(
                 sorted_srcs = sorted(src_map.keys())
 
                 # Stack source transforms to reconstruct composite F
+                # Transforms are already GPU arrays from GramAligner
                 parts = []
                 dims = []
                 for s in sorted_srcs:
-                    arr = b.array(src_map[s])
-                    arr = b.astype(arr, "float32")
+                    arr = b.astype(src_map[s], "float32")  # Already GPU array
                     parts.append(arr)
                     dims.append(arr.shape[0])  # Source feature dim
                 

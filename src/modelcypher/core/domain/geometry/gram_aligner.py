@@ -159,7 +159,8 @@ class AlignmentResult:
     """
 
     # Apply as: A_s' = A_s @ feature_transform [d_source, d_target]
-    feature_transform: list[list[float]]
+    # Kept as GPU array to avoid CPU round-trip
+    feature_transform: "Array"
 
     # Number of iterations taken
     iterations: int
@@ -271,7 +272,7 @@ class GramAligner:
         I_sample = b.eye(n)
         b.eval(I_feat, I_sample)
         return AlignmentResult(
-            feature_transform=b.tolist(I_feat),
+            feature_transform=I_feat,  # Keep on GPU
             # achieved_cka=1.0 by default (invariant)
             iterations=0,
             numerical_deviation=0.0,  # Perfect precision for identity
@@ -485,7 +486,7 @@ class GramAligner:
         diagnostic = self._diagnose(source_aligned, target_centered, 1.0)  # CKA = 1.0 invariant
 
         result = AlignmentResult(
-            feature_transform=b.tolist(feature_transform),
+            feature_transform=feature_transform,  # Keep on GPU
             # achieved_cka=1.0 by default (invariant)
             iterations=total_iterations,
             numerical_deviation=numerical_deviation,  # For precision diagnostics only
