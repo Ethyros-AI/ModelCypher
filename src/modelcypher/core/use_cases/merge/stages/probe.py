@@ -918,21 +918,39 @@ class ProbeCache:
         
         # Build similarity matrix from CKA values
         # CKA = <K_s, K_t>_F / (||K_s||_F * ||K_t||_F)
-        similarity_list = []
-        for i, src_layer in enumerate(source_layers):
-            row = []
+        # OPTIMIZED: Batch compute all CKA values on GPU, extract once
+
+        # Pre-compute all norms on GPU (O(n) syncs -> O(1) sync)
+        src_norms = []
+        for src_layer in source_layers:
             K_s = self.source_centered_grams[src_layer]
+            src_norms.append(b.norm(K_s))
+        src_norms_arr = b.stack(src_norms, axis=0)  # [n_src]
+
+        tgt_norms = []
+        for tgt_layer in target_layers:
+            K_t = self.target_centered_grams[tgt_layer]
+            tgt_norms.append(b.norm(K_t))
+        tgt_norms_arr = b.stack(tgt_norms, axis=0)  # [n_tgt]
+
+        # Compute CKA matrix on GPU
+        cka_rows = []
+        for i, src_layer in enumerate(source_layers):
+            K_s = self.source_centered_grams[src_layer]
+            norm_s = src_norms_arr[i]
+
+            # Vectorized: compute dot products with all target grams
+            row_cka = []
             for j, tgt_layer in enumerate(target_layers):
                 K_t = self.target_centered_grams[tgt_layer]
                 dot = b.sum(K_s * K_t)
-                norm_s = b.norm(K_s)
-                norm_t = b.norm(K_t)
+                norm_t = tgt_norms_arr[j]
                 cka = dot / (norm_s * norm_t + eps)
-                b.eval(cka)
-                row.append(float(b.to_scalar(cka)))
-            similarity_list.append(row)
-        
-        self.layer_similarity_matrix = b.array(similarity_list)
+                row_cka.append(cka)
+            cka_rows.append(b.stack(row_cka, axis=0))  # [n_tgt]
+
+        # Stack into matrix and eval once
+        self.layer_similarity_matrix = b.stack(cka_rows, axis=0)  # [n_src, n_tgt]
         b.eval(self.layer_similarity_matrix)
         
         logger.info("PROBE CACHE: Computed %dx%d layer similarity matrix", n_src, n_tgt)

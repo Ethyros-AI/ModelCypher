@@ -186,7 +186,7 @@ Facco, E., d'Errico, M., Rodriguez, A., & Laio, A. (2017). Estimating the intrin
 
 [Huh et al. (2024)](../docs/references/arxiv/Huh_2024_Platonic_Representation.pdf). The Platonic Representation Hypothesis. *ICML 2024*. [arXiv:2405.07987](https://arxiv.org/abs/2405.07987).
 
-Jawahar, G., Sagot, B., & Seddah, D. (2019). What does BERT learn about the structure of language? *ACL*. [arXiv:1905.05950](https://arxiv.org/abs/1905.05950).
+Jawahar, G., Sagot, B., & Seddah, D. (2019). What does BERT learn about the structure of language? *ACL 2019*. [ACL Anthology](https://aclanthology.org/P19-1356/) · [PDF](https://aclanthology.org/P19-1356.pdf).
 
 Tishby, N., & Zaslavsky, N. (2015). Deep learning and the information bottleneck principle. *IEEE ITW*. [arXiv:1503.02406](https://arxiv.org/abs/1503.02406).
 

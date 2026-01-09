@@ -202,7 +202,7 @@ aligned = result.relative_representation
 3. **Jian, Z., et al.** (2023). "Policy Stitching: Learning Transferable Robot Policies." *CoRL 2023*. [OpenReview](https://openreview.net/forum?id=fOqaLJNORCv)
    - *Relative representations for robotics*
 
-4. **Ricciardi, A.P., et al.** (2025). "Zero-Shot Stitching in Reinforcement Learning using Relative Representations." *EWRL 2023*. [arXiv:2404.12917](https://arxiv.org/abs/2404.12917)
+4. **Ricciardi, A.P., et al.** (2024). "R3L: Relative Representations for Reinforcement Learning." [arXiv:2404.12917](https://arxiv.org/abs/2404.12917)
    - *RL with relative representations*
 
 5. **Model Stitching Survey** (2025). "Model Stitching in Neural Networks." *Emergent Mind Topic*.
@@ -215,7 +215,7 @@ aligned = result.relative_representation
 
 ### Theoretical Connections
 
-7. **Fumero, M., et al.** (2024). "Connecting Neural Models Latent Geometries with Relative Geodesic Representations." [arXiv:2411.13768](https://arxiv.org/abs/2411.13768)
+7. **Yu, H., et al.** (2025). "Connecting Neural Models Latent Geometries with Relative Geodesic Representations." [arXiv:2506.01599](https://arxiv.org/abs/2506.01599)
    - *Geodesic extension of relative representations*
 
 8. **Moschella, L.** (2023). *Latent Communication in Artificial Neural Networks*. PhD Thesis, Sapienza University of Rome.

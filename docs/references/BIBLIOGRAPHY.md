@@ -159,7 +159,7 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 | [Huh_2024_Platonic_Representation.pdf](arxiv/Huh_2024_Platonic_Representation.pdf) | Huh et al. - The Platonic Representation Hypothesis (ICML 2024) | 2405.07987 |
 | [Deletang_2024_Language_Compression.pdf](arxiv/Deletang_2024_Language_Compression.pdf) | Delétang et al. - Language Modeling Is Compression (ICLR 2024) | 2310.10631 |
 | [Li_2025_TokAlign.pdf](arxiv/Li_2025_TokAlign.pdf) | Li et al. - TokAlign: Efficient Vocabulary Adaptation (ACL 2025) | 2506.03523 |
-| [Lobashev_2025_PRH_Information_Geometry.pdf](arxiv/Lobashev_2025_PRH_Information_Geometry.pdf) | Lobashev - Information-Geometric View of PRH (NeurIPS Workshop 2025) | openreview.net |
+| [Lobashev_2025_PRH_Information_Geometry.pdf](arxiv/Lobashev_2025_PRH_Information_Geometry.pdf) | Lobashev - Information-Geometric View of PRH (NeurIPS Workshop 2025) | [OpenReview](https://openreview.net/forum?id=w9P4xFBQK7) |
 | [tHooft_1993_Dimensional_Reduction.pdf](arxiv/tHooft_1993_Dimensional_Reduction.pdf) | 't Hooft - Dimensional Reduction in Quantum Gravity | gr-qc/9310026 |
 
 ---

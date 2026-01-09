@@ -172,6 +172,7 @@ def stage_validate(
     instability_samples: list[float] = []
     complexity_samples: list[float] = []
     magnitude_samples: list[float] = []
+    magnitude_vectors: list["Array"] = []  # Collect on GPU for batch norm
     layer_raw_measurements: dict[int, tuple[float, float, float, int]] = {}
 
     for layer_idx in layer_indices:
@@ -219,15 +220,16 @@ def stage_validate(
             continue  # Cannot compute complexity without hidden_dim
         complexity_samples.append(complexity)
 
-        # Compute magnitude for this layer
-        magnitude_vec = b.reshape(
-            b.array([interference, importance, instability, complexity], dtype="float32"),
-            (1, -1),
-        )
-        magnitude_arr = geodesic_norms(magnitude_vec, b)
-        b.eval(magnitude_arr)
-        magnitude = float(b.to_scalar(magnitude_arr[0]))
-        magnitude_samples.append(magnitude)
+        # Collect magnitude vector for batch computation (avoid per-layer GPU sync)
+        magnitude_vec = b.array([interference, importance, instability, complexity], dtype="float32")
+        magnitude_vectors.append(magnitude_vec)
+
+    # Batch compute all magnitudes on GPU, extract once
+    if magnitude_vectors:
+        magnitude_matrix = b.stack(magnitude_vectors, axis=0)  # [n_layers, 4]
+        magnitude_norms = geodesic_norms(magnitude_matrix, b)  # [n_layers]
+        b.eval(magnitude_norms)
+        magnitude_samples = [float(x) for x in b.tolist(magnitude_norms)]
 
     # Derive bounds from measurements (or skip if no measurements)
     if not interference_samples:
@@ -439,26 +441,36 @@ def _compute_layer_importance(
     b = backend
     layer_pattern = f"layers.{layer_idx}."
 
-    source_norm = 0.0
-    target_norm = 0.0
-    count = 0
+    # Collect norms on GPU to avoid per-weight sync
+    source_norms_list: list["Array"] = []
+    target_norms_list: list["Array"] = []
 
     for key in merged_weights:
         if layer_pattern not in key:
             continue
         if key in source_weights and key in target_weights:
-            # Use backend for norm computation
+            # Use backend for norm computation - stay on GPU
             source_arr = b.astype(b.array(source_weights[key]), "float32")
             target_arr = b.astype(b.array(target_weights[key]), "float32")
             source_norm_arr = geodesic_norms(b.reshape(source_arr, (1, -1)), b)
             target_norm_arr = geodesic_norms(b.reshape(target_arr, (1, -1)), b)
-            b.eval(source_norm_arr, target_norm_arr)
-            source_norm += float(b.to_scalar(source_norm_arr))
-            target_norm += float(b.to_scalar(target_norm_arr))
-            count += 1
+            source_norms_list.append(source_norm_arr)
+            target_norms_list.append(target_norm_arr)
 
+    count = len(source_norms_list)
     if count == 0:
         return None  # No data - cannot compute importance
+
+    # Sum on GPU, extract once
+    source_norms_stacked = b.stack(source_norms_list, axis=0)
+    target_norms_stacked = b.stack(target_norms_list, axis=0)
+    source_norm_total = b.sum(source_norms_stacked)
+    target_norm_total = b.sum(target_norms_stacked)
+    b.eval(source_norm_total, target_norm_total)
+
+    source_norm = float(b.to_scalar(source_norm_total))
+    target_norm = float(b.to_scalar(target_norm_total))
+
     if target_norm == 0.0:
         return None  # Zero norm - cannot compute ratio
 

@@ -210,7 +210,7 @@ Guo, C., Pleiss, G., Sun, Y., & Weinberger, K.Q. (2017). On Calibration of Moder
 
 [Kossen et al. (2024)](../docs/references/arxiv/Kossen_2024_Semantic_Entropy_Probes.pdf). Semantic Entropy Probes: Robust and Cheap Hallucination Detection in LLMs. [arXiv:2406.15927](https://arxiv.org/abs/2406.15927).
 
-Peeperkorn, M., et al. (2024). Temperature and Creativity in Language Model Decoding. [arXiv:2407.00253](https://arxiv.org/abs/2407.00253).
+Peeperkorn, M., et al. (2024). Is Temperature the Creativity Parameter of Large Language Models? [arXiv:2405.00492](https://arxiv.org/abs/2405.00492).
 
 [Zou et al. (2024)](../docs/references/arxiv/Zou_2024_Circuit_Breakers.pdf). Improving Alignment and Robustness with Circuit Breakers. *NeurIPS 2024*. [arXiv:2406.04313](https://arxiv.org/abs/2406.04313).
 

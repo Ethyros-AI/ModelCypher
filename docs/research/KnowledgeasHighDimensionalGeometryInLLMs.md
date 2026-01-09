@@ -543,7 +543,7 @@ Uses Diffusion Kernels and Pairwise Information Bottleneck to align layers as lo
 
 ### Geometric Safety Constraints (Safety Polytope)
 
-**Chen, X., As, Y., & Krause, A. (2024). Learning Safety Constraints for Large Language Models. arXiv:2405.12104. [ICML 2025 Spotlight].**
+**Chen, X., As, Y., & Krause, A. (2025). Learning Safety Constraints for Large Language Models. arXiv:2505.24445. [ICML 2025 Spotlight].**
 Defines a "Safety Polytope" (SaP) in representation space. Identifies safe regions via polytope facets and enables geometric steering to correct unsafe outputs post-hoc. *Framework relevance*: Directly implements the "Safety as Geometry" thesis, providing a rigorous way to bound model behavior without weight tuning.
 
 ### Information Geometry in Training

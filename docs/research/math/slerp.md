@@ -181,8 +181,8 @@ Do not use SLERP as a merge step; use null-space addition for knowledge merging.
 
 ### Neural Network Applications
 
-3. **Kao, W.-C., Gur, I., Polymenakos, E., Bansal, K., & Ravi, S.** (2023). "SLERP: Spherical Linear Interpolation between Neural Networks." [arXiv:2305.17493](https://arxiv.org/abs/2305.17493)
-   - *SLERP for LLM merging*
+3. **Goddard, C., et al.** (2024). "Arcee's MergeKit: A Toolkit for Merging Large Language Models." [arXiv:2403.13257](https://arxiv.org/abs/2403.13257)
+   - *Tooling reference: SLERP-style weight interpolation used in practice*
 
 4. **ACL 2025 Industry Track** (2025). "Model Merging for Knowledge Editing." [ACL Anthology](https://aclanthology.org/)
    - *Comparative analysis of SLERP vs other methods*
