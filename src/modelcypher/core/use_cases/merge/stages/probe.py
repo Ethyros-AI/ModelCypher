@@ -1576,11 +1576,12 @@ def _probe_precise(
 
     probes_processed = 0
     probes_failed = invalid_probe_count
+    checkpoint_path: Path | None = None  # Defined early so it's available for cleanup
 
     # =========================================================================
     # BATCHED PROBE COLLECTION - Process probes in batches for efficiency
     # =========================================================================
-    
+
     if not run_inference:
         probe_ids = list(expected_probe_ids)
         probe_domains = list(expected_probe_domains)
@@ -1604,7 +1605,6 @@ def _probe_precise(
         # =========================================================================
         # CHECKPOINT: Check for existing checkpoint to resume from
         # =========================================================================
-        checkpoint_path: Path | None = None
         start_probe_idx = 0
         completed_probe_ids: set[str] = set()
 
@@ -2390,7 +2390,11 @@ def _probe_precise(
                 probe_cache = None
                 import gc
                 gc.collect()
-                mx.clear_cache()
+                try:
+                    import mlx.core as mx
+                    mx.clear_cache()
+                except Exception:
+                    pass  # Non-MLX backend
                 logger.info("PROBE: Cleared ProbeCache to free memory")
 
             cka_matrix: list[list[float]] = []

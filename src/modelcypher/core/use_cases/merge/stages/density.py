@@ -36,6 +36,9 @@ from modelcypher.core.domain.geometry.knowledge_density import (
     ConceptDensity,
     LayerDensityProfile,
     ModelDensityProfile,
+    PointCloudDensityResult,
+    compute_knn_point_cloud_density,
+    compute_density_weights,
 )
 from modelcypher.core.domain.geometry.knowledge_diff import (
     KnowledgeDiff,
@@ -64,6 +67,12 @@ class DensityStageResult:
 
     # The graft mask: probe_id -> layer -> should_graft
     graft_mask: dict[str, dict[int, bool]]
+
+    # Point cloud density per layer (k-NN based)
+    point_cloud_densities: dict[int, PointCloudDensityResult]
+
+    # Density-derived transfer weights per layer
+    density_weights: dict[int, "Array"]
 
     # Metrics
     metrics: dict[str, float | int]
@@ -196,6 +205,60 @@ def stage_density(
     # Compute graft mask
     graft_mask = compute_graft_mask(knowledge_diff)
 
+    # =========================================================================
+    # POINT CLOUD DENSITY: k-NN based density comparison per layer
+    # =========================================================================
+    # For each layer, compute local density at each activation point.
+    # The density difference tells us where source has denser representation.
+    point_cloud_densities: dict[int, PointCloudDensityResult] = {}
+    density_weights: dict[int, "Array"] = {}
+
+    total_positive_points = 0
+    total_negative_points = 0
+
+    for layer_idx in layers:
+        src_acts = source_activations.get(layer_idx, [])
+        tgt_acts = target_activations.get(layer_idx, [])
+
+        if not src_acts or not tgt_acts:
+            continue
+
+        try:
+            # Stack activations into matrices [n_probes, dim]
+            src_matrix = b.stack([b.array(a) for a in src_acts], axis=0)
+            tgt_matrix = b.stack([b.array(a) for a in tgt_acts], axis=0)
+            b.eval(src_matrix, tgt_matrix)
+
+            # Compute point cloud density comparison
+            pc_result = compute_knn_point_cloud_density(
+                source_activations=src_matrix,
+                target_activations=tgt_matrix,
+                backend=b,
+            )
+            point_cloud_densities[layer_idx] = pc_result
+
+            # Compute transfer weights from density difference
+            weights = compute_density_weights(pc_result.density_diff, backend=b)
+            density_weights[layer_idx] = weights
+
+            total_positive_points += pc_result.positive_diff_count
+            total_negative_points += pc_result.negative_diff_count
+
+            logger.debug(
+                "DENSITY: Layer %d - %d points source denser, %d points target denser",
+                layer_idx,
+                pc_result.positive_diff_count,
+                pc_result.negative_diff_count,
+            )
+        except Exception as e:
+            logger.warning("DENSITY: Point cloud analysis failed for layer %d: %s", layer_idx, e)
+
+    logger.info(
+        "DENSITY: Point cloud analysis - %d points where source denser, %d where target denser",
+        total_positive_points,
+        total_negative_points,
+    )
+
     # Update metrics
     metrics["layers_analyzed"] = len(layers)
     metrics["concepts_analyzed"] = knowledge_diff.total_concepts
@@ -204,6 +267,8 @@ def stage_density(
     metrics["overall_source_density"] = knowledge_diff.overall_source_density
     metrics["overall_target_density"] = knowledge_diff.overall_target_density
     metrics["overall_opportunity"] = knowledge_diff.overall_opportunity
+    metrics["point_cloud_positive_points"] = total_positive_points
+    metrics["point_cloud_negative_points"] = total_negative_points
 
     logger.info(
         "DENSITY: %d concepts analyzed, %d high opportunity (will graft), %d no graft (target dense)",
@@ -217,6 +282,8 @@ def stage_density(
         target_profile=target_profile,
         knowledge_diff=knowledge_diff,
         graft_mask=graft_mask,
+        point_cloud_densities=point_cloud_densities,
+        density_weights=density_weights,
         metrics=metrics,
     )
 

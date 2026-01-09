@@ -324,9 +324,207 @@ class KnowledgeDensityAnalyzer:
         return []
 
 
+@dataclass(frozen=True)
+class PointCloudDensityResult:
+    """Result of k-NN point cloud density comparison.
+
+    Contains per-point density values for source and target, and the
+    density difference that drives knowledge transfer.
+    """
+
+    # Per-point densities (one value per activation point)
+    source_densities: "Array"  # [n_points] - density at each source point
+    target_densities: "Array"  # [n_points] - density at each target point
+
+    # Density difference: source - target (positive = source denser = transfer opportunity)
+    density_diff: "Array"  # [n_points]
+
+    # Aggregate statistics
+    mean_source_density: float
+    mean_target_density: float
+    mean_density_diff: float
+    positive_diff_count: int  # Points where source is denser
+    negative_diff_count: int  # Points where target is denser
+
+
+def compute_knn_point_cloud_density(
+    source_activations: "Array",
+    target_activations: "Array",
+    k: int | None = None,
+    backend: "Backend | None" = None,
+) -> PointCloudDensityResult:
+    """Compute k-NN based local density for point cloud comparison.
+
+    For each point in the activation manifold:
+    1. Find k nearest neighbors
+    2. Compute local density = 1 / (mean distance to k neighbors)
+    3. Compare densities between source and target
+
+    The density difference tells us where source has denser representation
+    (more knowledge) and where target has gaps to fill.
+
+    Args:
+        source_activations: [n_points, dim] activations from source model
+        target_activations: [n_points, dim] activations from target model
+        k: Number of neighbors. If None, derived from data (sqrt(n)).
+        backend: Compute backend.
+
+    Returns:
+        PointCloudDensityResult with per-point densities and comparison.
+    """
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+    from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+    b = backend or get_default_backend()
+
+    source = b.array(source_activations)
+    target = b.array(target_activations)
+    b.eval(source, target)
+
+    n_source = int(source.shape[0])
+    n_target = int(target.shape[0])
+
+    if n_source < 2 or n_target < 2:
+        # Degenerate case - return uniform densities
+        zeros_src = b.zeros((n_source,))
+        zeros_tgt = b.zeros((n_target,))
+        b.eval(zeros_src, zeros_tgt)
+        return PointCloudDensityResult(
+            source_densities=zeros_src,
+            target_densities=zeros_tgt,
+            density_diff=zeros_src,
+            mean_source_density=0.0,
+            mean_target_density=0.0,
+            mean_density_diff=0.0,
+            positive_diff_count=0,
+            negative_diff_count=0,
+        )
+
+    # Derive k from data if not specified: sqrt(n) is standard for k-NN density
+    # Bounded to ensure robustness
+    if k is None:
+        k = max(3, min(int(min(n_source, n_target) ** 0.5), 50))
+
+    # Ensure k doesn't exceed available points
+    k = min(k, n_source - 1, n_target - 1)
+
+    # Use geodesic distances (Riemannian geometry)
+    rg = RiemannianGeometry(b)
+    eps = float(division_epsilon(b, source))
+
+    # Compute k-NN density for source points
+    # Distance matrix: [n_source, n_source]
+    source_dist_matrix = rg.geodesic_distances(source, k_neighbors=k)
+    b.eval(source_dist_matrix)
+
+    # Sort each row to get k nearest distances (exclude self = distance 0)
+    # Take mean of k nearest (excluding first which is self)
+    source_sorted = b.sort(source_dist_matrix, axis=1)
+    # Skip first column (self-distance = 0), take next k columns
+    source_k_dists = source_sorted[:, 1:k+1]
+    source_mean_k_dist = b.mean(source_k_dists, axis=1)
+    source_densities = 1.0 / (source_mean_k_dist + eps)
+    b.eval(source_densities)
+
+    # Compute k-NN density for target points
+    target_dist_matrix = rg.geodesic_distances(target, k_neighbors=k)
+    b.eval(target_dist_matrix)
+
+    target_sorted = b.sort(target_dist_matrix, axis=1)
+    target_k_dists = target_sorted[:, 1:k+1]
+    target_mean_k_dist = b.mean(target_k_dists, axis=1)
+    target_densities = 1.0 / (target_mean_k_dist + eps)
+    b.eval(target_densities)
+
+    # Normalize densities to [0, 1] range for comparison
+    # Use global max to ensure same scale
+    max_src = b.max(source_densities)
+    max_tgt = b.max(target_densities)
+    b.eval(max_src, max_tgt)
+    global_max = max(float(b.to_scalar(max_src)), float(b.to_scalar(max_tgt)), eps)
+
+    source_densities_norm = source_densities / global_max
+    target_densities_norm = target_densities / global_max
+    b.eval(source_densities_norm, target_densities_norm)
+
+    # Density difference: positive where source is denser (transfer opportunity)
+    # We need to match points between source and target
+    # Since they're aligned via CKA=1.0, corresponding indices should match
+    n_compare = min(n_source, n_target)
+    src_compare = source_densities_norm[:n_compare]
+    tgt_compare = target_densities_norm[:n_compare]
+    density_diff = src_compare - tgt_compare
+    b.eval(density_diff)
+
+    # Compute statistics
+    mean_src = float(b.to_scalar(b.mean(source_densities_norm)))
+    mean_tgt = float(b.to_scalar(b.mean(target_densities_norm)))
+    mean_diff = float(b.to_scalar(b.mean(density_diff)))
+
+    # Count positive/negative differences
+    positive_mask = density_diff > eps
+    negative_mask = density_diff < -eps
+    b.eval(positive_mask, negative_mask)
+
+    positive_count = int(b.to_scalar(b.sum(b.astype(positive_mask, "float32"))))
+    negative_count = int(b.to_scalar(b.sum(b.astype(negative_mask, "float32"))))
+
+    return PointCloudDensityResult(
+        source_densities=source_densities_norm,
+        target_densities=target_densities_norm,
+        density_diff=density_diff,
+        mean_source_density=mean_src,
+        mean_target_density=mean_tgt,
+        mean_density_diff=mean_diff,
+        positive_diff_count=positive_count,
+        negative_diff_count=negative_count,
+    )
+
+
+def compute_density_weights(
+    density_diff: "Array",
+    backend: "Backend | None" = None,
+) -> "Array":
+    """Convert density difference to transfer weights.
+
+    Positive density diff (source denser) → higher weight (transfer more)
+    Negative density diff (target denser) → lower weight (transfer less)
+
+    Uses softmax-like normalization to ensure weights are in [0, 1].
+
+    Args:
+        density_diff: Per-point density difference (source - target)
+        backend: Compute backend.
+
+    Returns:
+        Per-point transfer weights in [0, 1].
+    """
+    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+    b = backend or get_default_backend()
+    diff = b.array(density_diff)
+    b.eval(diff)
+
+    eps = float(machine_epsilon(b, diff))
+
+    # Sigmoid transformation: map (-inf, inf) → (0, 1)
+    # Higher density diff → higher weight
+    # Scale factor controls sharpness (derived from data range)
+    diff_range = float(b.to_scalar(b.max(diff) - b.min(diff)))
+    scale = 4.0 / (diff_range + eps)  # Maps ~95% of range to (0.02, 0.98)
+
+    weights = 1.0 / (1.0 + b.exp(-scale * diff))
+    b.eval(weights)
+
+    return weights
+
+
 __all__ = [
     "ConceptDensity",
     "LayerDensityProfile",
     "ModelDensityProfile",
     "KnowledgeDensityAnalyzer",
+    "PointCloudDensityResult",
+    "compute_knn_point_cloud_density",
+    "compute_density_weights",
 ]

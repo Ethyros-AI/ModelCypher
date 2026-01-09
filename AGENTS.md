@@ -18,6 +18,8 @@ Geometric diagnostics for LLM representations. Measures intrinsic dimension, cur
 
 ## Commands
 
+Always use `poetry` to run or install anything in this repo.
+
 ```bash
 poetry install                    # Install
 poetry run pytest                 # Test

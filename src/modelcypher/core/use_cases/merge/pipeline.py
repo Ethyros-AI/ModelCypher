@@ -277,11 +277,62 @@ def run_merge(
     default_backend.clear_cache()
     logger.info("Cleared GPU cache after probe stage")
 
+    # =================================================================
+    # STAGE 2: DENSITY (Knowledge density profiling)
+    # =================================================================
+    # Compare density between source and target to identify graft opportunities.
+    # High density in source + Low density in target = GRAFT (fill the gap)
+    # This MUST run before memory cleanup since we need source_activations.
+    logger.info("STAGE 2: DENSITY (knowledge density profiling)")
+
+    probe_ids_list = probe_result.get("probe_ids", [])
+    probe_domains_list = probe_result.get("probe_domains", [])
+
+    density_result = None
+    graft_mask = None
+    density_metrics: dict[str, Any] = {}
+
+    density_weights: dict[int, Any] | None = None
+
+    if source_activations and target_activations and probe_ids_list:
+        try:
+            density_result = stage_density(
+                source_activations=source_activations,
+                target_activations=target_activations,
+                probe_ids=probe_ids_list,
+                probe_domains=probe_domains_list,
+                layers=layer_indices,
+                backend=backend,
+            )
+            graft_mask = density_result.graft_mask
+            density_weights = density_result.density_weights
+            density_metrics = density_result.metrics
+
+            logger.info(
+                "DENSITY: %d concepts analyzed, %d graft opportunities (source denser), %d skip (target dense)",
+                density_metrics.get("concepts_analyzed", 0),
+                density_metrics.get("positive_opportunity_count", 0),
+                density_metrics.get("nonpositive_opportunity_count", 0),
+            )
+            logger.info(
+                "DENSITY: Point cloud - %d points source denser, %d target denser (k-NN based)",
+                density_metrics.get("point_cloud_positive_points", 0),
+                density_metrics.get("point_cloud_negative_points", 0),
+            )
+        except Exception as e:
+            logger.warning("DENSITY: Stage failed, falling back to graft-all mode: %s", e)
+            graft_mask = None
+            density_weights = None
+            density_metrics = {"error": str(e), "fallback": "graft_all"}
+    else:
+        logger.warning("DENSITY: Missing activations, falling back to graft-all mode")
+        density_metrics = {"skipped": True, "reason": "missing_activations"}
+
     # =========================================================================
     # MEMORY CLEANUP: Delete activations not needed for transplant
     # =========================================================================
     # Transplant only uses target_activations for null-space projection.
-    # Source activations were used to compute transforms (now stored separately).
+    # Source activations were used for density comparison (now complete).
     # Intermediate/attention activations are unused after probe alignment.
     import gc
 
@@ -332,12 +383,9 @@ def run_merge(
     # =================================================================
     # STAGE 3: TRANSPLANT (Null-space constrained knowledge transfer)
     # =================================================================
-    # ROTATE/PROPAGATE was removed - no boundary preservation guarantee.
-    # Only null-space constrained transplant preserves boundary relationships.
-    #
-    # Geometry-only mode: ALL probes are candidates and graft_mask decides
-    # what to transplant based on density.
-    logger.info("TRANSPLANT: Geometry-only mode - density decides grafts")
+    # Density-guided mode: graft_mask from Stage 2 decides what to transplant.
+    # Null-space projection ensures we only add to directions target doesn't use.
+    # Combined: graft WHERE source is denser AND into target's null space.
 
     if not target_activations:
         raise RuntimeError(
@@ -345,23 +393,16 @@ def run_merge(
             "Use `mc merge` to collect activations before merging."
         )
 
-    # =================================================================
-    # CKA = 1.0 INVARIANT: Null-space projection handles selectivity
-    # =================================================================
-    # With CKA = 1.0 guaranteed by closed-form F = pinv(source) @ target,
-    # null-space projection automatically ensures we only add knowledge
-    # to directions the target doesn't use. No graft mask needed.
-    #
-    # The math: merged = target + project_null(source - target, target)
-    # This adds source knowledge WHERE target has nothing, by construction.
-    probe_ids_list = probe_result.get("probe_ids", [])
-    logger.info("CKA = 1.0 invariant: null-space projection handles selectivity")
-
-    # Graft everything - projection into null-space ensures non-interference
-    graft_mask = None  # Transplant will graft all when mask is None
-    density_metrics = {"invariant": "CKA=1.0"}
-
-    logger.info("STAGE 3: TRANSPLANT (null-space constrained)")
+    if graft_mask is not None:
+        graft_count = sum(
+            1 for probes in graft_mask.values() for should_graft in probes.values() if should_graft
+        )
+        logger.info(
+            "STAGE 3: TRANSPLANT (density-guided, %d graft opportunities)",
+            graft_count,
+        )
+    else:
+        logger.info("STAGE 3: TRANSPLANT (graft-all mode, density unavailable)")
     merged_weights, transplant_metrics = stage_transplant(
         source_weights=loaded_source_weights,
         target_weights=loaded_target_weights,
@@ -379,6 +420,7 @@ def run_merge(
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
         graft_mask=graft_mask,
+        density_weights=density_weights,  # Per-probe transfer weights from k-NN density
         feature_transforms=feature_transforms,
         scale_ratios=scale_ratios,  # EXACT: ||target|| / ||source @ F|| per layer
         embedding_transform=embedding_transform,  # 2D GramAlign for embed_tokens
