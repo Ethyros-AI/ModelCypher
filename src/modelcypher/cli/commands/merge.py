@@ -469,7 +469,7 @@ def multi_channel(
         mc merge multi-channel -c spatial:/path/to/world -c text:/path/to/llm -t ./lfm2 -o ./merged
         mc merge multi-channel -c spatial:./world -c temporal:./video -c text:./llm -t ./target -o ./out
     """
-    from modelcypher.adapters.hf_hub import HuggingFaceModelLoader
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
 
@@ -510,7 +510,7 @@ def multi_channel(
     typer.echo(f"  Fast mode: {fast_mode}")
 
     with prevent_sleep():
-        model_loader = HuggingFaceModelLoader()
+        model_loader = MLXModelLoader()
         merger = UnifiedGeometricMerger(model_loader=model_loader, backend=backend)
 
         result = merger.merge_multi_channel(

@@ -480,27 +480,9 @@ class UnifiedGeometricMerger:
             source_tokenizer = self._load_tokenizer(source_path)
 
             # Run probe stage to get activations and transforms
+            # stage_probe returns an 18-element tuple (see stages/__init__.py)
             from .stages import stage_probe
-            (
-                probe_result,
-                probe_metrics,
-                source_acts,
-                target_acts,
-                _,  # source_intermediate
-                _,  # target_intermediate
-                _,  # source_attention
-                _,  # target_attention
-                _,  # source_k
-                _,  # target_k
-                feature_transforms,
-                scale_ratios,
-                _,  # embedding_transform
-                _,  # attention_transforms
-                _,  # k_transforms
-                _,  # v_transforms
-                _,  # intermediate_transforms
-                layer_mapping,
-            ) = stage_probe(
+            probe_tuple = stage_probe(
                 source_weights=source_weights,
                 target_weights=target_weights,
                 source_model=source_model,
@@ -512,6 +494,14 @@ class UnifiedGeometricMerger:
                 extract_layer_index_fn=merge_helpers.extract_layer_index,
                 probe_mode="atlas",
             )
+
+            # Extract from tuple: indices per stages/__init__.py
+            # [0] = probe_result dict, [1] = metrics, [2] = source_acts, [3] = target_acts
+            # [10] = feature_transforms, [17] = layer_mapping
+            source_acts = probe_tuple[2]
+            target_acts = probe_tuple[3]
+            feature_transforms = probe_tuple[10]
+            layer_mapping = probe_tuple[17]
 
             channel_activations[channel_id] = source_acts or {}
             channel_transforms[channel_id] = feature_transforms or {}
@@ -561,7 +551,43 @@ class UnifiedGeometricMerger:
                     for key, val in channel_weights[channel_id].items():
                         key_layer_idx = self._extract_layer_index(key)
                         if key_layer_idx == layer_idx and "self_attn.q_proj" in key:
-                            layer_source_weights[channel_id] = val
+                            # Get feature transform for this layer if available
+                            # This transforms hidden dimension: [d_source, d_target]
+                            F_raw = channel_transforms[channel_id].get(layer_idx)
+                            if F_raw is not None:
+                                # Debug: log the actual type
+                                logger.debug(
+                                    "MULTI-CHANNEL: F_raw type=%s for layer %d",
+                                    type(F_raw).__name__, layer_idx
+                                )
+                                # Handle dict case (multi-source mapping)
+                                if isinstance(F_raw, dict):
+                                    # Take first source's transform if multiple sources
+                                    first_key = next(iter(F_raw.keys()))
+                                    F_raw = F_raw[first_key]
+                                    logger.debug(
+                                        "MULTI-CHANNEL: Extracted F_raw from dict, key=%s",
+                                        first_key
+                                    )
+                                # Convert from nested list to array if needed
+                                F = self._backend.array(F_raw) if not hasattr(F_raw, 'shape') else F_raw
+                                self._backend.eval(F)
+                                # Source weight: [out_dim, d_source]
+                                # F: [d_source, d_target]
+                                # Need to transform input dimension (columns)
+                                # aligned_W = W @ F gives [out_dim, d_target]
+                                source_w = self._backend.array(val)
+                                self._backend.eval(source_w)
+                                stitched_w = self._backend.matmul(source_w, F)
+                                self._backend.eval(stitched_w)
+                                layer_source_weights[channel_id] = stitched_w
+                                logger.debug(
+                                    "MULTI-CHANNEL: Stitched %s layer %d: [%s] @ F[%s] → [%s]",
+                                    channel_id, layer_idx,
+                                    list(source_w.shape), list(F.shape), list(stitched_w.shape)
+                                )
+                            else:
+                                layer_source_weights[channel_id] = val
                             break
 
             # Skip if insufficient channel data
@@ -579,6 +605,25 @@ class UnifiedGeometricMerger:
                     break
 
             if target_weight is None:
+                continue
+
+            # Verify shapes are compatible after stitching
+            # After input stitch, source should have: [out_dim_source, d_target]
+            # Target has: [out_dim_target, d_target]
+            # If out dimensions don't match, we can't subtract - skip this layer
+            target_shape = list(self._backend.array(target_weight).shape)
+            compatible = True
+            for channel_id in list(layer_source_weights.keys()):
+                source_shape = list(self._backend.array(layer_source_weights[channel_id]).shape)
+                if source_shape != target_shape:
+                    logger.warning(
+                        "MULTI-CHANNEL MERGE: Layer %d channel '%s' shape mismatch: %s vs target %s, skipping",
+                        layer_idx, channel_id, source_shape, target_shape
+                    )
+                    compatible = False
+                    break
+
+            if not compatible:
                 continue
 
             # Project all channels into target's null space

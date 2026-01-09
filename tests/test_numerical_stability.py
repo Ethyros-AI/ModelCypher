@@ -664,7 +664,7 @@ class TestSolveViaGramAlignment:
         F, diag = solve_via_gram_alignment(b, source, target)
 
         assert F is not None
-        assert diag["method"] == "gram_alignment"
+        assert diag["method"] == "gram_procrustes"
         from modelcypher.core.domain.geometry.cka import compute_cka
 
         aligned = b.matmul(source, F)
