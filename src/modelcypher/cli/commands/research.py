@@ -372,6 +372,142 @@ def research_sparse_region(
     write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("multimodal-merge")
+def research_multimodal_merge(
+    ctx: typer.Context,
+    target_model: str = typer.Argument(..., help="Path to target LLM model"),
+    concepts_file: str | None = typer.Option(
+        None, "--concepts", "-c", help="JSON file with concept list"
+    ),
+    include_clip: bool = typer.Option(True, "--clip/--no-clip", help="Include CLIP vision knowledge"),
+    include_whisper: bool = typer.Option(True, "--whisper/--no-whisper", help="Include Whisper audio knowledge"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Output JSON file for results"),
+) -> None:
+    """Merge multi-modal knowledge (CLIP, Whisper) into an LLM.
+
+    Takes knowledge from vision (CLIP) and audio (Whisper) models and
+    projects it into the target LLM's null space. The LLM gains multi-modal
+    understanding without losing existing capabilities.
+
+    Examples:
+        mc research multimodal-merge /path/to/llm
+        mc research multimodal-merge /path/to/llm --concepts ./concepts.json
+        mc research multimodal-merge /path/to/llm --no-whisper -o results.json
+    """
+    context = _context(ctx)
+    from modelcypher.cli.output import write_error
+    from modelcypher.core.use_cases.multimodal_merge_service import MultiModalMergeService
+
+    # Default concepts if not provided
+    default_concepts = [
+        "a red ball",
+        "a blue sky",
+        "a green tree",
+        "running fast",
+        "walking slowly",
+        "loud noise",
+        "quiet whisper",
+        "music playing",
+        "happiness",
+        "sadness",
+    ]
+
+    concepts = default_concepts
+    if concepts_file:
+        try:
+            with open(concepts_file) as f:
+                concepts = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            error = ErrorDetail(
+                code="MC-3001",
+                title="Failed to load concepts file",
+                detail=str(exc),
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    service = MultiModalMergeService()
+
+    try:
+        result = service.merge(
+            target_model=target_model,
+            concepts=concepts,
+            include_clip=include_clip,
+            include_whisper=include_whisper,
+        )
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3002",
+            title="Multi-modal merge failed",
+            detail=str(exc),
+            hint="Ensure target model path is valid and dependencies are installed",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "_schema": "mc.research.multimodal_merge.v1",
+        "targetModel": result.target_model,
+        "sourceModels": list(result.source_models),
+        "conceptCount": len(result.concepts),
+        "ckaPreservation": result.cka_preservation,
+        "alignmentResults": [
+            {
+                "modality": r.source_modality.value,
+                "ckaBefore": r.cka_before,
+                "ckaAfter": r.cka_after,
+                "transformShape": list(r.transform_shape),
+            }
+            for r in result.alignment_results
+        ],
+        "mergeResults": [
+            {
+                "modality": r.source_modality.value,
+                "preservedFraction": r.preserved_fraction,
+                "projectionLoss": r.projection_loss,
+            }
+            for r in result.merge_results
+        ],
+    }
+
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+
+    if context.output_format == "text":
+        lines = [
+            "MULTI-MODAL MERGE RESULTS",
+            "",
+            f"Target: {result.target_model}",
+            f"Concepts: {len(result.concepts)}",
+            "",
+            "Alignment Results:",
+        ]
+        for r in result.alignment_results:
+            lines.append(f"  {r.source_modality.value}: CKA {r.cka_before:.4f} → {r.cka_after:.4f}")
+
+        lines.append("")
+        lines.append("Merge Results:")
+        for r in result.merge_results:
+            lines.append(f"  {r.source_modality.value}: preserved {r.preserved_fraction:.4f}")
+
+        lines.append("")
+        lines.append(f"Geometry Preservation: CKA = {result.cka_preservation:.4f}")
+
+        if result.cka_preservation >= 0.95:
+            lines.append("  ✓ Original geometry fully preserved!")
+        elif result.cka_preservation >= 0.90:
+            lines.append("  ✓ Original geometry mostly preserved")
+        else:
+            lines.append("  ⚠ Some geometry drift detected")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 @app.command("afm")
 def research_afm(
     ctx: typer.Context,
