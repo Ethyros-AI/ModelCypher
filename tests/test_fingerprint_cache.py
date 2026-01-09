@@ -542,21 +542,21 @@ class TestCacheKeyGeneration:
         cache = ModelFingerprintCache(cache_directory=tmp_path)
         model_path = Path("/some/model/path")
         config_hash = "abc12345"
-        mtime = 1234567890.0
+        signature = "sig123"
 
-        key = cache._make_cache_key(model_path, config_hash, mtime)
+        key = cache._make_cache_key(model_path, config_hash, signature)
 
-        # Key format: {path_hash}_{config_hash}_{mtime}
+        # Key format: {path_hash}_{config_hash}_{signature}
         parts = key.split("_")
         assert len(parts) == 3
         assert parts[1] == config_hash
-        assert parts[2] == "1234567890"
+        assert parts[2] == signature
 
     def test_different_paths_different_keys(self, tmp_path):
         cache = ModelFingerprintCache(cache_directory=tmp_path)
 
-        key1 = cache._make_cache_key(Path("/path/model1"), "hash", 1000.0)
-        key2 = cache._make_cache_key(Path("/path/model2"), "hash", 1000.0)
+        key1 = cache._make_cache_key(Path("/path/model1"), "hash", "sig")
+        key2 = cache._make_cache_key(Path("/path/model2"), "hash", "sig")
 
         assert key1 != key2
 
@@ -564,16 +564,16 @@ class TestCacheKeyGeneration:
         cache = ModelFingerprintCache(cache_directory=tmp_path)
         path = Path("/model")
 
-        key1 = cache._make_cache_key(path, "hash1", 1000.0)
-        key2 = cache._make_cache_key(path, "hash2", 1000.0)
+        key1 = cache._make_cache_key(path, "hash1", "sig")
+        key2 = cache._make_cache_key(path, "hash2", "sig")
 
         assert key1 != key2
 
-    def test_different_mtimes_different_keys(self, tmp_path):
+    def test_different_signatures_different_keys(self, tmp_path):
         cache = ModelFingerprintCache(cache_directory=tmp_path)
         path = Path("/model")
 
-        key1 = cache._make_cache_key(path, "hash", 1000.0)
-        key2 = cache._make_cache_key(path, "hash", 2000.0)
+        key1 = cache._make_cache_key(path, "hash", "sig1")
+        key2 = cache._make_cache_key(path, "hash", "sig2")
 
         assert key1 != key2

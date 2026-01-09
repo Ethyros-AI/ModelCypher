@@ -106,13 +106,12 @@ class ModelFingerprintCache:
         """
         path = Path(model_path).expanduser().resolve()
 
-        # Check if model has been modified since cache
-        mtime = self._get_model_mtime(path)
-        if mtime is None:
+        signature = self._get_model_signature(path)
+        if signature is None:
             logger.debug("Model path does not exist: %s", path)
             return None
 
-        cache_key = self._make_cache_key(path, config_hash, mtime)
+        cache_key = self._make_cache_key(path, config_hash, signature)
         cached = self._cache.get(cache_key)
 
         if cached is None:
@@ -136,13 +135,12 @@ class ModelFingerprintCache:
             fingerprints: Fingerprints to cache
         """
         path = Path(model_path).expanduser().resolve()
-        mtime = self._get_model_mtime(path)
-
-        if mtime is None:
+        signature = self._get_model_signature(path)
+        if signature is None:
             logger.warning("Cannot cache fingerprints - model path does not exist: %s", path)
             return
 
-        cache_key = self._make_cache_key(path, config_hash, mtime)
+        cache_key = self._make_cache_key(path, config_hash, signature)
         cached = self._from_model_fingerprints(fingerprints)
         self._cache.set(cache_key, cached)
         logger.info(
@@ -174,22 +172,44 @@ class ModelFingerprintCache:
         self._cache.clear_all()
         logger.info("Cleared all fingerprint caches")
 
-    def _get_model_mtime(self, path: Path) -> float | None:
-        """Get model modification time from config.json."""
+    def _get_model_signature(self, path: Path) -> str | None:
+        """Hash model metadata to invalidate caches when weights change."""
+        entries: list[tuple[str, int, int]] = []
         config_path = path / "config.json"
         if config_path.exists():
-            return config_path.stat().st_mtime
-        # Fall back to model path if config.json doesn't exist
-        if path.exists():
-            return path.stat().st_mtime
-        return None
+            try:
+                stat = config_path.stat()
+                entries.append(
+                    (config_path.name, int(stat.st_size), int(stat.st_mtime))
+                )
+            except OSError:
+                pass
 
-    def _make_cache_key(self, path: Path, config_hash: str, mtime: float) -> str:
-        """Create cache key from model path, config hash, and mtime."""
-        # Include model path hash, config hash, and mtime
+        patterns = ("*.safetensors", "*.bin", "*.pt", "*.npz", "*.gguf", "*.ckpt")
+        for pattern in patterns:
+            for file_path in sorted(path.glob(pattern)):
+                try:
+                    stat = file_path.stat()
+                except OSError:
+                    continue
+                entries.append((file_path.name, int(stat.st_size), int(stat.st_mtime)))
+
+        if not entries:
+            if path.exists():
+                try:
+                    stat = path.stat()
+                except OSError:
+                    return None
+                entries.append((path.name, int(stat.st_size), int(stat.st_mtime)))
+            else:
+                return None
+
+        return content_hash(entries)
+
+    def _make_cache_key(self, path: Path, config_hash: str, signature: str) -> str:
+        """Create cache key from model path, config hash, and signature."""
         path_hash = hashlib.sha256(str(path).encode()).hexdigest()[:8]
-        mtime_str = f"{mtime:.0f}"
-        return f"{path_hash}_{config_hash}_{mtime_str}"
+        return f"{path_hash}_{config_hash}_{signature}"
 
     def _from_model_fingerprints(self, fingerprints: ModelFingerprints) -> CachedFingerprints:
         """Convert ModelFingerprints to cacheable format."""
@@ -281,6 +301,7 @@ def make_config_hash(
     families: list[str] | None = None,
     atlas_sources: list[str] | None = None,
     atlas_domains: list[str] | None = None,
+    probe_texts: dict[str, str] | None = None,
 ) -> str:
     """
     Create a hash of fingerprinting config for cache key.
@@ -299,5 +320,6 @@ def make_config_hash(
         "families": sorted(families) if families else None,
         "sources": sorted(atlas_sources) if atlas_sources else None,
         "domains": sorted(atlas_domains) if atlas_domains else None,
+        "probe_texts_hash": content_hash(probe_texts) if probe_texts else None,
     }
     return content_hash(data)[:8]

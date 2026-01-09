@@ -1243,20 +1243,47 @@ class ModelProfileExtractor:
 
         activations_by_layer: dict[int, list["Array"]] = {l: [] for l in layers}
 
-        for probe in probes:
-            try:
-                # Collect all layer activations in one forward pass
-                all_acts = self._activation_provider.collect_hidden_activations(
-                    model, tokenizer, probe
-                )
+        has_batch_hidden = hasattr(
+            self._activation_provider, "collect_hidden_activations_batch"
+        )
+        batch_size = 4
 
-                # Filter to requested layers
-                for layer_idx in layers:
-                    if layer_idx in all_acts:
-                        activations_by_layer[layer_idx].append(all_acts[layer_idx])
+        for batch_start in range(0, len(probes), batch_size):
+            batch = probes[batch_start : batch_start + batch_size]
+            try:
+                if has_batch_hidden:
+                    batch_acts = self._activation_provider.collect_hidden_activations_batch(
+                        model, tokenizer, batch
+                    )
+                else:
+                    batch_acts = [
+                        self._activation_provider.collect_hidden_activations(
+                            model, tokenizer, probe
+                        )
+                        for probe in batch
+                    ]
             except Exception as e:
-                logger.debug("Failed to get activation for probe: %s", e)
-                continue
+                logger.debug(
+                    "Batch activation collection failed, falling back: %s", e
+                )
+                batch_acts = []
+                for probe in batch:
+                    try:
+                        batch_acts.append(
+                            self._activation_provider.collect_hidden_activations(
+                                model, tokenizer, probe
+                            )
+                        )
+                    except Exception as inner:
+                        logger.debug("Failed to get activation for probe: %s", inner)
+                        batch_acts.append({})
+
+            for acts in batch_acts:
+                if not acts:
+                    continue
+                for layer_idx in layers:
+                    if layer_idx in acts:
+                        activations_by_layer[layer_idx].append(acts[layer_idx])
 
         # Stack activations per layer
         result = {}

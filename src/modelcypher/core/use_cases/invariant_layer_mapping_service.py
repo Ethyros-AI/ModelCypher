@@ -46,7 +46,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from typing import TYPE_CHECKING
 
@@ -234,9 +234,9 @@ class InvariantLayerMappingService:
         """
         path = Path(model_path).expanduser().resolve()
 
-        config_hash = make_config_hash(invariant_scope="all")
-
         # Check cache first
+        probe_texts = self._get_probe_texts()
+        config_hash = make_config_hash(invariant_scope="all", probe_texts=probe_texts)
         cached = self._cache.load(str(path), config_hash)
         if cached is not None:
             logger.info(
@@ -256,7 +256,6 @@ class InvariantLayerMappingService:
                 pass
 
         # Get probe texts based on config
-        probe_texts = self._get_probe_texts()
         if not probe_texts:
             logger.warning("No probe texts found, returning empty fingerprints")
             return ModelFingerprints(
@@ -344,80 +343,119 @@ class InvariantLayerMappingService:
 
         fingerprints = []
         total_probes = len(probe_texts)
+        def _fingerprint_from_hidden(
+            probe_id: str, probe_text: str, hidden_acts: dict[int, Any]
+        ) -> ActivationFingerprint | None:
+            if not hidden_acts:
+                return None
 
-        for idx, (probe_id, probe_text) in enumerate(probe_texts.items()):
-            if progress_callback:
-                progress_callback(idx + 1, total_probes)
+            layer_activations: dict[int, list[ActivatedDimension]] = {}
+
+            for layer_idx, hidden_arr in hidden_acts.items():
+                # hidden_arr is shape [hidden_dim] - mean-pooled over sequence
+                abs_vals = backend.abs(hidden_arr)
+                backend.eval(abs_vals)
+
+                # Derive top-k from dimensionality (no fixed cap)
+                dim = int(abs_vals.shape[0])
+                log2_dim = log2_scalar(float(dim + 1), backend)
+                top_k = max(1, int(ceil_scalar(log2_dim, backend)))
+                if top_k > dim:
+                    top_k = dim
+
+                # Get top-k indices without full sort
+                neg_abs = -abs_vals
+                kth = max(0, top_k - 1)
+                partitioned = backend.argpartition(neg_abs, kth)
+                top_idx = backend.take(partitioned, backend.arange(top_k), axis=0)
+                top_vals = backend.take(abs_vals, top_idx, axis=0)
+                order = backend.argsort(-top_vals)
+                top_idx = backend.take(top_idx, order, axis=0)
+                top_vals = backend.take(top_vals, order, axis=0)
+                backend.eval(top_idx, top_vals)
+
+                top_idx_list = [int(x) for x in backend.tolist(top_idx)]
+                top_val_list = [float(x) for x in backend.tolist(top_vals)]
+                top_dims = list(zip(top_idx_list, top_val_list))
+
+                # Derive activation threshold from data
+                eps = division_epsilon(backend, abs_vals)
+                max_val_arr = backend.max(abs_vals)
+                backend.eval(max_val_arr)
+                max_val = float(backend.to_scalar(max_val_arr)) if top_k > 0 else 1.0
+                activation_threshold = eps * max_val
+
+                # Create ActivatedDimension objects
+                activated = [
+                    ActivatedDimension(index=dim_idx, activation=float(val))
+                    for dim_idx, val in top_dims
+                    if val > activation_threshold
+                ]
+
+                if activated:
+                    layer_activations[layer_idx] = activated
+
+            if not layer_activations:
+                return None
+
+            return ActivationFingerprint(
+                prime_id=probe_id,
+                prime_text=probe_text,
+                activated_dimensions=layer_activations,
+            )
+
+        probe_items = list(probe_texts.items())
+        has_batch_hidden = hasattr(
+            activation_provider, "collect_hidden_activations_batch"
+        )
+        batch_size = 4
+
+        for batch_start in range(0, total_probes, batch_size):
+            batch_end = min(batch_start + batch_size, total_probes)
+            batch = probe_items[batch_start:batch_end]
+            batch_texts = [text for _, text in batch]
 
             try:
-                # Use ActivationProvider to collect hidden activations per layer
-                hidden_acts = activation_provider.collect_hidden_activations(
-                    model, tokenizer, probe_text
-                )
-
-                if not hidden_acts:
-                    continue
-
-                # Convert activations to fingerprint format
-                layer_activations: dict[int, list[ActivatedDimension]] = {}
-
-                for layer_idx, hidden_arr in hidden_acts.items():
-                    # hidden_arr is shape [hidden_dim] - mean-pooled over sequence
-                    abs_vals = backend.abs(hidden_arr)
-                    backend.eval(abs_vals)
-
-                    # Derive top-k from dimensionality (no fixed cap)
-                    dim = int(abs_vals.shape[0])
-                    log2_dim = log2_scalar(float(dim + 1), backend)
-                    top_k = max(1, int(ceil_scalar(log2_dim, backend)))
-                    if top_k > dim:
-                        top_k = dim
-
-                    # Get top-k indices without full sort
-                    neg_abs = -abs_vals
-                    kth = max(0, top_k - 1)
-                    partitioned = backend.argpartition(neg_abs, kth)
-                    top_idx = backend.take(partitioned, backend.arange(top_k), axis=0)
-                    top_vals = backend.take(abs_vals, top_idx, axis=0)
-                    order = backend.argsort(-top_vals)
-                    top_idx = backend.take(top_idx, order, axis=0)
-                    top_vals = backend.take(top_vals, order, axis=0)
-                    backend.eval(top_idx, top_vals)
-
-                    top_idx_list = [int(x) for x in backend.tolist(top_idx)]
-                    top_val_list = [float(x) for x in backend.tolist(top_vals)]
-                    top_dims = list(zip(top_idx_list, top_val_list))
-
-                    # Derive activation threshold from data
-                    eps = division_epsilon(backend, abs_vals)
-                    max_val_arr = backend.max(abs_vals)
-                    backend.eval(max_val_arr)
-                    max_val = float(backend.to_scalar(max_val_arr)) if top_k > 0 else 1.0
-                    activation_threshold = eps * max_val
-
-                    # Create ActivatedDimension objects
-                    activated = [
-                        ActivatedDimension(index=dim_idx, activation=float(val))
-                        for dim_idx, val in top_dims
-                        if val > activation_threshold
-                    ]
-
-                    if activated:
-                        layer_activations[layer_idx] = activated
-
-                # Create fingerprint for this probe
-                if layer_activations:
-                    fingerprints.append(
-                        ActivationFingerprint(
-                            prime_id=probe_id,
-                            prime_text=probe_text,
-                            activated_dimensions=layer_activations,
-                        )
+                if has_batch_hidden:
+                    hidden_batch = activation_provider.collect_hidden_activations_batch(
+                        model, tokenizer, batch_texts
                     )
-
+                else:
+                    hidden_batch = [
+                        activation_provider.collect_hidden_activations(
+                            model, tokenizer, text
+                        )
+                        for text in batch_texts
+                    ]
             except Exception as e:
-                logger.warning("Failed to process probe %s: %s", probe_id, e)
-                continue
+                logger.warning("Batch probe collection failed, falling back: %s", e)
+                hidden_batch = []
+                for _probe_id, probe_text in batch:
+                    try:
+                        hidden_batch.append(
+                            activation_provider.collect_hidden_activations(
+                                model, tokenizer, probe_text
+                            )
+                        )
+                    except Exception as inner:
+                        logger.warning("Probe '%s' failed: %s", _probe_id, inner)
+                        hidden_batch.append({})
+
+            for offset, (probe_id, probe_text) in enumerate(batch):
+                idx = batch_start + offset
+                if progress_callback:
+                    progress_callback(idx + 1, total_probes)
+                if offset >= len(hidden_batch):
+                    continue
+                try:
+                    fp = _fingerprint_from_hidden(
+                        probe_id, probe_text, hidden_batch[offset]
+                    )
+                    if fp:
+                        fingerprints.append(fp)
+                except Exception as e:
+                    logger.warning("Failed to process probe %s: %s", probe_id, e)
+                    continue
 
         logger.info("Extracted %d fingerprints from %d probes", len(fingerprints), total_probes)
         return fingerprints

@@ -359,9 +359,11 @@ class TestConceptVolumeRelation:
 
         # Similar distributions should be at least as aligned as orthogonal ones
         # (geometry determines the actual values; we just check ordering)
-        assert relation_similar.subspace_alignment >= relation_orthogonal.subspace_alignment
+        # Use tolerance for floating point comparison
+        eps = 1e-6
+        assert relation_similar.subspace_alignment >= relation_orthogonal.subspace_alignment - eps
         # And self-alignment should be the maximum
-        assert relation_self.subspace_alignment >= relation_similar.subspace_alignment
+        assert relation_self.subspace_alignment >= relation_similar.subspace_alignment - eps
 
 
 # ============================================================================
