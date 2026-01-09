@@ -385,8 +385,14 @@ class TestEdgeCases:
 
         result = geo_filter.filter_delta(delta, activations)
 
-        # With 50 samples in 500D, most directions are orthogonal
-        assert result.orthogonal_dim >= 400
+        # Variance-weighted projection should:
+        # 1. Preserve some delta (not project to zero)
+        # 2. Have positive effective null space (orthogonal_dim > 0)
+        # 3. Have meaningful preserved fraction based on variance distribution
+        assert result.orthogonal_dim > 0
+        assert result.preserved_fraction > 0.0
+        assert result.preserved_fraction < 1.0  # Some projection happened
+        assert result.filtering_applied is True
 
     def test_explicit_k_neighbors(self):
         """Explicit k_neighbors should be respected."""

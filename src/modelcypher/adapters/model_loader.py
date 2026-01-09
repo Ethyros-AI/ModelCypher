@@ -110,7 +110,7 @@ def load_model_for_training(
         except ImportError as e:
             raise ImportError(
                 f"mlx_vlm is required to load {model_type} models. "
-                f"Install with: pip install mlx-vlm"
+                f"Install with: poetry add mlx-vlm"
             ) from e
         except Exception as e:
             # Do NOT silently fallback to stripping vision tower

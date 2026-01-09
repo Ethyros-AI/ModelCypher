@@ -713,8 +713,8 @@ def compute_spearman_correlation(
 
     lhs_rank = backend.argsort(backend.argsort(lhs_arr, axis=0), axis=0)
     rhs_rank = backend.argsort(backend.argsort(rhs_arr, axis=0), axis=0)
-    lhs_rank = backend.astype(lhs_rank, backend.float32)
-    rhs_rank = backend.astype(rhs_rank, backend.float32)
+    lhs_rank = backend.astype(lhs_rank, "float32")
+    rhs_rank = backend.astype(rhs_rank, "float32")
 
     mean_l = backend.mean(lhs_rank)
     mean_r = backend.mean(rhs_rank)

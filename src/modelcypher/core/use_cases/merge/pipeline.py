@@ -584,7 +584,7 @@ def run_merge(
             "probe": {
                 "raw_cka_mean": probe_metrics.get("raw_cka_mean"),
                 "layer_count": probe_metrics.get("layer_count"),
-                "cka_after_alignment": probe_metrics.get("cka_after_alignment"),
+                "cka_after_alignment": probe_metrics.get("mean_cka"),  # CKA after GramAligner untwists
             },
         }
         analysis_path = Path(final_output_path) / "merge_analysis.json"

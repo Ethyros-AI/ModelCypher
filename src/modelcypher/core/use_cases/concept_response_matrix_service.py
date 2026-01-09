@@ -336,23 +336,28 @@ class ConceptResponseMatrixService:
 
         backend = get_default_backend()
 
-        shared_dims = backend.array([res.shared_dimension for res in results], dtype=backend.float32)
+        shared_dims = backend.array([res.shared_dimension for res in results])
+        shared_dims = backend.astype(shared_dims, "float32")
         shared_dim = int(backend.mean(shared_dims)) if results else 0
 
-        alignment_errors = backend.array([res.alignment_error for res in results], dtype=backend.float32)
+        alignment_errors = backend.array([res.alignment_error for res in results])
+        alignment_errors = backend.astype(alignment_errors, "float32")
         alignment_error = float(backend.mean(alignment_errors)) if results else 0.0
 
-        variance_ratios = backend.array([res.shared_variance_ratio for res in results], dtype=backend.float32)
+        variance_ratios = backend.array([res.shared_variance_ratio for res in results])
+        variance_ratios = backend.astype(variance_ratios, "float32")
         shared_variance_ratio = float(backend.mean(variance_ratios)) if results else 0.0
 
         top_correlations = [res.alignment_strengths[0] for res in results if res.alignment_strengths]
         if top_correlations:
-            top_corr_arr = backend.array(top_correlations, dtype=backend.float32)
+            top_corr_arr = backend.array(top_correlations)
+            top_corr_arr = backend.astype(top_corr_arr, "float32")
             top_correlation = float(backend.mean(top_corr_arr))
         else:
             top_correlation = 0.0
 
-        sample_counts = backend.array([res.sample_count for res in results], dtype=backend.float32)
+        sample_counts = backend.array([res.sample_count for res in results])
+        sample_counts = backend.astype(sample_counts, "float32")
         sample_count = int(backend.mean(sample_counts)) if results else 0
 
         method = results[0].method.value if results else "cca"
