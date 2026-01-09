@@ -16,6 +16,11 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+EXCLUDED_MARKDOWN_FILES = {
+    Path("docs/DOCS-FIX-LIST.md"),
+    Path("docs/DOCS-REVIEW-TRACKER.md"),
+}
+
 
 @dataclass(frozen=True)
 class Issue:
@@ -55,12 +60,15 @@ def _git_tracked_markdown_files(*, repo_root: Path) -> list[Path]:
     proc = _run(["git", "ls-files", "*.md"], cwd=repo_root)
     if proc.returncode != 0:
         raise RuntimeError(f"git ls-files failed: {proc.stderr.strip()}")
-    files = []
+    files: list[Path] = []
     for line in proc.stdout.splitlines():
         line = line.strip()
         if not line:
             continue
-        files.append(repo_root / line)
+        rel = Path(line)
+        if rel in EXCLUDED_MARKDOWN_FILES:
+            continue
+        files.append(repo_root / rel)
     return sorted(files)
 
 
@@ -69,6 +77,12 @@ def _all_markdown_files_on_disk(*, repo_root: Path) -> list[Path]:
     files: list[Path] = []
     for path in repo_root.rglob("*.md"):
         if any(part in ignored_parts for part in path.parts):
+            continue
+        try:
+            rel = path.relative_to(repo_root)
+        except Exception:
+            continue
+        if rel in EXCLUDED_MARKDOWN_FILES:
             continue
         files.append(path)
     return sorted(files)

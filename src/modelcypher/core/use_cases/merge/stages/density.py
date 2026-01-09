@@ -217,16 +217,35 @@ def stage_density(
     total_negative_points = 0
 
     for layer_idx in layers:
-        src_acts = source_activations.get(layer_idx, [])
-        tgt_acts = target_activations.get(layer_idx, [])
+        src_acts = source_activations.get(layer_idx)
+        tgt_acts = target_activations.get(layer_idx)
 
-        if not src_acts or not tgt_acts:
+        # Handle both list and stacked-array formats
+        def _is_empty(acts: Any) -> bool:
+            if acts is None:
+                return True
+            if isinstance(acts, list):
+                return len(acts) == 0
+            # Array - check shape
+            return len(acts.shape) == 0 or int(acts.shape[0]) == 0
+
+        if _is_empty(src_acts) or _is_empty(tgt_acts):
             continue
 
         try:
-            # Stack activations into matrices [n_probes, dim]
-            src_matrix = b.stack([b.array(a) for a in src_acts], axis=0)
-            tgt_matrix = b.stack([b.array(a) for a in tgt_acts], axis=0)
+            # Handle both list of 1D vectors and pre-stacked 2D arrays
+            def _to_matrix(acts: Any) -> Any:
+                if isinstance(acts, list):
+                    return b.stack([b.array(a) for a in acts], axis=0)
+                # Already a 2D array
+                arr = b.array(acts)
+                if len(arr.shape) == 1:
+                    # Single activation - reshape to [1, dim]
+                    return b.reshape(arr, (1, -1))
+                return arr
+
+            src_matrix = _to_matrix(src_acts)
+            tgt_matrix = _to_matrix(tgt_acts)
             b.eval(src_matrix, tgt_matrix)
 
             # Compute point cloud density comparison
@@ -310,26 +329,44 @@ def _build_density_profile_from_activations(
     all_concepts: list[ConceptDensity] = []
 
     for layer_idx in layers:
-        act_list = activations.get(layer_idx, [])
-        # Check if empty - handle both lists and arrays
-        if act_list is None or (hasattr(act_list, '__len__') and len(act_list) == 0):
+        act_list = activations.get(layer_idx)
+
+        # Handle both list and stacked-array formats
+        if act_list is None:
             raise RuntimeError(f"DENSITY: Missing activations for layer {layer_idx}")
-        if len(act_list) < 4:
-            raise RuntimeError(
-                f"DENSITY: Need at least 4 probes for local dimension at layer {layer_idx}"
-            )
 
-        act_vectors = []
-        for act in act_list:
-            act_arr = b.array(act)
-            b.eval(act_arr)
-            if len(act_arr.shape) != 1:
+        # Convert to matrix, handling both list and array formats
+        if isinstance(act_list, list):
+            if len(act_list) == 0:
+                raise RuntimeError(f"DENSITY: Missing activations for layer {layer_idx}")
+            if len(act_list) < 4:
                 raise RuntimeError(
-                    f"DENSITY: Expected 1D activation vector, got shape {act_arr.shape}"
+                    f"DENSITY: Need at least 4 probes for local dimension at layer {layer_idx}"
                 )
-            act_vectors.append(act_arr)
+            act_vectors = []
+            for act in act_list:
+                act_arr = b.array(act)
+                b.eval(act_arr)
+                if len(act_arr.shape) != 1:
+                    raise RuntimeError(
+                        f"DENSITY: Expected 1D activation vector, got shape {act_arr.shape}"
+                    )
+                act_vectors.append(act_arr)
+            act_matrix = b.stack(act_vectors, axis=0)
+        else:
+            # Already a stacked 2D array [n_probes, dim]
+            act_matrix = b.array(act_list)
+            if len(act_matrix.shape) == 1:
+                # Single probe - reshape
+                act_matrix = b.reshape(act_matrix, (1, -1))
+            n_probes = int(act_matrix.shape[0])
+            if n_probes == 0:
+                raise RuntimeError(f"DENSITY: Missing activations for layer {layer_idx}")
+            if n_probes < 4:
+                raise RuntimeError(
+                    f"DENSITY: Need at least 4 probes for local dimension at layer {layer_idx}"
+                )
 
-        act_matrix = b.stack(act_vectors, axis=0)
         b.eval(act_matrix)
 
         # All k_neighbors and threshold parameters are derived from data

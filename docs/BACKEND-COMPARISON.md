@@ -181,15 +181,14 @@ For memory-constrained environments:
 Install PyTorch with CUDA support:
 ```bash
 poetry install -E cuda
-# or
-pip install torch --index-url https://download.pytorch.org/whl/cu121
 ```
+If you need a specific CUDA wheel, follow the official PyTorch install instructions for your platform/CUDA version.
 
 ### "mlx is required for the MLX backend"
 Ensure you're on macOS with Apple Silicon:
 ```bash
 poetry install
-python -c "import mlx; print(mlx.__version__)"
+poetry run python -c "import mlx; print(mlx.__version__)"
 ```
 
 ### "jax is required for the JAX backend"

@@ -7,27 +7,18 @@ Notes:
 
 ## Summary
 
-- Files scanned: 92
-- Issues found: 114
+- Files scanned: 94
+- Issues found: 45
 
 ### Issues by kind
 
-- `arxiv_missing_source`: 52
-- `absolute_path`: 20
-- `broken_anchor`: 18
-- `broken_internal_link`: 6
-- `todo_tbd`: 6
-- `unknown_cli_subcommand`: 5
-- `hf_cli_usage`: 3
-- `non_poetry_install`: 2
-- `http_url`: 1
-- `stale_count`: 1
+- `arxiv_missing_source`: 45
 
 ## ArXiv coverage
 
 - Referenced arXiv IDs in markdown: 87
-- IDs in `docs/references/download_arxiv.sh`: 50
-- PDFs in `docs/references/arxiv/`: 51
+- IDs in `docs/references/download_arxiv.sh`: 57
+- PDFs in `docs/references/arxiv/`: 58
 
 ### Referenced but not in download script
 
@@ -60,18 +51,14 @@ Notes:
 - `2407.00253`
 - `2407.21092`
 - `2411.13768`
-- `2412.10416`
 - `2501.08145`
-- `2502.02421`
 - `2502.15104`
-- `2503.09774`
 - `2507.01966`
 - `2507.12380`
 - `2508.21815`
 - `2510.13406`
 - `2510.17072`
 - `2510.24342`
-- `2512.16245`
 - `2512.24880`
 
 ## CLI audit
@@ -79,39 +66,6 @@ Notes:
 - CLI help indexing succeeded.
 
 ## Per-file issues
-
-### `docs/BACKEND-COMPARISON.md`
-
-- `non_poetry_install` at `docs/BACKEND-COMPARISON.md:185`: Mentions pip/conda install; prefer Poetry commands in this repo
-  - `pip install torch --index-url https://download.pytorch.org/whl/cu121`
-
-### `docs/CLI-DEEPDIVE.md`
-
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:9`: Machine-specific path: /Users/jasonkempf/ModelCypher
-  - `- Repo: /Users/jasonkempf/ModelCypher`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:11`: Machine-specific path: /Volumes/CodeCypher
-  - `- /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:11`: Machine-specific path: /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B
-  - `- /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:11`: Machine-specific path: /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B
-  - `- /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:11`: Machine-specific path: /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B
-  - `- /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:11`: Machine-specific path: /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B
-  - `- /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:12`: Machine-specific path: /Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-MLX-8bit
-  - `- /Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-MLX-8bit`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:13`: Machine-specific path: /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit
-  - `- /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit`
-- `absolute_path` at `docs/CLI-DEEPDIVE.md:53`: Machine-specific path: /Volumes/CodeCypher/models/hf-cache/hub/models--mlx-community--Qwen2-0.5B/...`.
-  - `- `mc model list` returns a model path that no longer exists: `/Volumes/CodeCypher/models/hf-cache/hub/models--mlx-community--Qwen2-0.5B/...`.`
-
-### `docs/ELIF.md`
-
-- `arxiv_missing_source` at `docs/ELIF.md:290`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2502.02421
-  - `just weight vectors. https://arxiv.org/abs/2502.02421`
-- `arxiv_missing_source` at `docs/ELIF.md:295`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2503.09774
-  - `https://arxiv.org/abs/2503.09774`
 
 ### `docs/GLOSSARY.md`
 
@@ -125,59 +79,6 @@ Notes:
 - `arxiv_missing_source` at `docs/INTEGRATION_ARCHITECTURE.md:327`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2209.15430
   - `- [Moschella et al. (2023)](https://arxiv.org/abs/2209.15430) - Relative Representations`
 
-### `docs/MCP-TOOLS-CATALOG.md`
-
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:11`: Anchor not found in target: #system--inventory -> #system--inventory
-  - `1. [System & Inventory](#system--inventory)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:13`: Anchor not found in target: #training--jobs -> #training--jobs
-  - `3. [Training & Jobs](#training--jobs)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:17`: Anchor not found in target: #geometry---core -> #geometry---core
-  - `7. [Geometry - Core](#geometry---core)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:18`: Anchor not found in target: #geometry---spatial -> #geometry---spatial
-  - `8. [Geometry - Spatial](#geometry---spatial)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:19`: Anchor not found in target: #geometry---crm--baseline -> #geometry---crm--baseline
-  - `9. [Geometry - CRM & Baseline](#geometry---crm--baseline)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:20`: Anchor not found in target: #geometry---density -> #geometry---density
-  - `10. [Geometry - Density](#geometry---density)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:21`: Anchor not found in target: #geometry---interference -> #geometry---interference
-  - `11. [Geometry - Interference](#geometry---interference)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:22`: Anchor not found in target: #geometry---safety -> #geometry---safety
-  - `12. [Geometry - Safety](#geometry---safety)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:23`: Anchor not found in target: #geometry---metaphor -> #geometry---metaphor
-  - `13. [Geometry - Metaphor](#geometry---metaphor)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:24`: Anchor not found in target: #geometry---primes -> #geometry---primes
-  - `14. [Geometry - Primes](#geometry---primes)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:25`: Anchor not found in target: #geometry---invariant -> #geometry---invariant
-  - `15. [Geometry - Invariant](#geometry---invariant)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:26`: Anchor not found in target: #geometry---visualize -> #geometry---visualize
-  - `16. [Geometry - Visualize](#geometry---visualize)`
-- `broken_anchor` at `docs/MCP-TOOLS-CATALOG.md:27`: Anchor not found in target: #safety--entropy -> #safety--entropy
-  - `17. [Safety & Entropy](#safety--entropy)`
-
-### `docs/MODEL-PROFILE.md`
-
-- `absolute_path` at `docs/MODEL-PROFILE.md:267`: Machine-specific path: /Volumes/CodeCypher/experiments/curvature-profiles-2025-12-31/baselines/qwen-baseline.json`
-  - `- `/Volumes/CodeCypher/experiments/curvature-profiles-2025-12-31/baselines/qwen-baseline.json``
-- `absolute_path` at `docs/MODEL-PROFILE.md:278`: Machine-specific path: /Volumes/CodeCypher/experiments/curvature-profiles-2025-12-31/SmolLM-360M.json
-  - `mc profile import /Volumes/CodeCypher/experiments/curvature-profiles-2025-12-31/SmolLM-360M.json \`
-- `absolute_path` at `docs/MODEL-PROFILE.md:308`: Machine-specific path: ~/.modelcypher/profiles/models/<model_id>/probe_cache/
-  - `~/.modelcypher/profiles/models/<model_id>/probe_cache/`
-- `absolute_path` at `docs/MODEL-PROFILE.md:343`: Machine-specific path: /Volumes/CodeCypher/experiments/SmolLM.json
-  - `mc profile import /Volumes/CodeCypher/experiments/SmolLM.json \`
-- `absolute_path` at `docs/MODEL-PROFILE.md:345`: Machine-specific path: /Volumes/CodeCypher/experiments/Qwen2.json
-  - `mc profile import /Volumes/CodeCypher/experiments/Qwen2.json \`
-
-### `docs/PROFILING.md`
-
-- `absolute_path` at `docs/PROFILING.md:47`: Machine-specific path: ~/Library/Caches/ModelCypher/fingerprints/
-  - `| Location | `~/Library/Caches/ModelCypher/fingerprints/` |`
-- `absolute_path` at `docs/PROFILING.md:47`: Machine-specific path: ~/Library/Caches/ModelCypher/fingerprints/`
-  - `| Location | `~/Library/Caches/ModelCypher/fingerprints/` |`
-- `absolute_path` at `docs/PROFILING.md:64`: Machine-specific path: ~/Library/Caches/ModelCypher/geometry_metrics/`
-  - `| Location | `~/Library/Caches/ModelCypher/geometry_metrics/` |`
-- `absolute_path` at `docs/PROFILING.md:193`: Machine-specific path: ~/Library/Caches/ModelCypher/fingerprints/*model_name*
-  - `rm ~/Library/Caches/ModelCypher/fingerprints/*model_name*`
-
 ### `docs/REPO-AUDIT-2025-01-04.md`
 
 - `arxiv_missing_source` at `docs/REPO-AUDIT-2025-01-04.md:3223`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2512.24880
@@ -190,70 +91,10 @@ Notes:
 - `arxiv_missing_source` at `docs/RESEARCH-CONNECTIONS.md:90`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2507.01966
   - `**Paper**: Shen, G., et al. (2025). *Alignment between Brains and AI: Evidence for Convergent Evolution across Modalities, Scales and Training Trajectories*. arXiv:2507.01966.`
 
-### `docs/SKEPTICS-GUIDE.md`
-
-- `broken_anchor` at `docs/SKEPTICS-GUIDE.md:32`: Anchor not found in target: #L494-L497 -> ../src/modelcypher/core/domain/geometry/shared_subspace_projector.py#L494-L497
-  - `**Code Reference**: [shared_subspace_projector.py:494-497](../src/modelcypher/core/domain/geometry/shared_subspace_projector.py#L494-L497)`
-- `broken_anchor` at `docs/SKEPTICS-GUIDE.md:78`: Anchor not found in target: #L784-L790 -> ../src/modelcypher/core/domain/geometry/riemannian_utils.py#L784-L790
-  - `**Code Reference**: [riemannian_utils.py:784-790](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L784-L790)`
-- `broken_anchor` at `docs/SKEPTICS-GUIDE.md:90`: Anchor not found in target: #L1409 -> ../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409
-  - `**Code Reference**: [riemannian_utils.py:1409](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409)`
-- `broken_anchor` at `docs/SKEPTICS-GUIDE.md:90`: Anchor not found in target: #L1409 -> ../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409
-  - `**Code Reference**: [riemannian_utils.py:1409](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409)`
-- `broken_anchor` at `docs/SKEPTICS-GUIDE.md:254`: Anchor not found in target: #L181-L230 -> ../src/modelcypher/core/domain/thermo/phase_transition_theory.py#L181-L230
-  - `**Code Reference**: [phase_transition_theory.py:181-230](../src/modelcypher/core/domain/thermo/phase_transition_theory.py#L181-L230)`
-
-### `docs/START-HERE.md`
-
-- `hf_cli_usage` at `docs/START-HERE.md:19`: Uses huggingface-cli; consider mc model fetch for repo-native workflow
-  - `huggingface-cli download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --local-dir ./models/qwen-0.5b`
-
-### `docs/TRAINING-GUIDE.md`
-
-- `absolute_path` at `docs/TRAINING-GUIDE.md:386`: Machine-specific path: /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit
-  - `--model /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit \`
-
-### `docs/WHY-GEOMETRY-MATTERS.md`
-
-- `arxiv_missing_source` at `docs/WHY-GEOMETRY-MATTERS.md:124`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2502.02421
-  - `https://arxiv.org/abs/2502.02421`
-- `arxiv_missing_source` at `docs/WHY-GEOMETRY-MATTERS.md:128`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2412.10416
-  - `https://arxiv.org/abs/2412.10416`
-- `arxiv_missing_source` at `docs/WHY-GEOMETRY-MATTERS.md:130`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2503.09774
-  - `https://arxiv.org/abs/2503.09774`
-
-### `docs/references/BIBLIOGRAPHY.md`
-
-- `broken_internal_link` at `docs/references/BIBLIOGRAPHY.md:66`: Broken internal link target: arxiv/Bertolotti_2024_Tying_Embeddings.pdf
-  - `| [Bertolotti_2024_Tying_Embeddings.pdf](arxiv/Bertolotti_2024_Tying_Embeddings.pdf) | Bertolotti & Cazzola - By Tying Embeddings You Are Assuming the Distributional Hypothesis | ICML 2024, PMLR 235:3584-3610 |`
-- `broken_internal_link` at `docs/references/BIBLIOGRAPHY.md:95`: Broken internal link target: arxiv/Ali_2025_Entropy_Lens.pdf
-  - `| [Ali_2025_Entropy_Lens.pdf](arxiv/Ali_2025_Entropy_Lens.pdf) | Ali, Caso, Irwin, Liò - Entropy-Lens: The Information Signature of Transformer Computations | 2502.16570 |`
-- `broken_internal_link` at `docs/references/BIBLIOGRAPHY.md:121`: Broken internal link target: arxiv/Fang_2025_AlphaEdit.pdf
-  - `| [Fang_2025_AlphaEdit.pdf](arxiv/Fang_2025_AlphaEdit.pdf) | AlphaEdit: Null-Space Constrained Knowledge Editing (ICLR 2025 Outstanding Paper) | 2410.02355 |`
-- `todo_tbd` at `docs/references/BIBLIOGRAPHY.md:49`: Contains TODO/TBD/FIXME marker
-  - `## Pending Additions (Not Yet Downloaded / Metadata TBD)`
-- `todo_tbd` at `docs/references/BIBLIOGRAPHY.md:57`: Contains TODO/TBD/FIXME marker
-  - `| (pending) | Merging with Directional Alignment (MDA) (2026) | TBD |`
-- `todo_tbd` at `docs/references/BIBLIOGRAPHY.md:58`: Contains TODO/TBD/FIXME marker
-  - `| (pending) | KnOTS: SVD-Based Adapter Alignment (2025) | TBD |`
-
 ### `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md`
 
-- `arxiv_missing_source` at `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md:201`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2512.16245
-  - `**AlignMerge (2025). arXiv:2512.16245.**`
-- `arxiv_missing_source` at `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md:204`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2502.02421
-  - `**Activation-Informed Merging (AIM) (2025). arXiv:2502.02421.**`
 - `arxiv_missing_source` at `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md:546`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2405.12104
   - `**Chen, X., As, Y., & Krause, A. (2024). Learning Safety Constraints for Large Language Models. arXiv:2405.12104. [ICML 2025 Spotlight].**`
-- `todo_tbd` at `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md:207`: Contains TODO/TBD/FIXME marker
-  - `**Merging with Directional Alignment (MDA) (2026). ICLR 2026 (arXiv TBD).**`
-- `todo_tbd` at `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md:210`: Contains TODO/TBD/FIXME marker
-  - `**KnOTS (2025). ICLR 2025 (arXiv TBD).**`
-
-### `docs/research/cross-architecture-transplant-2025-12-28.md`
-
-- `absolute_path` at `docs/research/cross-architecture-transplant-2025-12-28.md:17`: Machine-specific path: /Volumes/CodeCypher/experiments/cross-arch-transplant-2025-12-28/qwen2-to-smolm/transplant_result.json`
-  - ``/Volumes/CodeCypher/experiments/cross-arch-transplant-2025-12-28/qwen2-to-smolm/transplant_result.json``
 
 ### `docs/research/linguistic_thermodynamics.md`
 
@@ -261,11 +102,6 @@ Notes:
   - `5. **arXiv:2407.21092** — "Entropy, Thermodynamics and the Geometrization of the Language Model" — Theoretical framework for LLM thermodynamics.`
 - `arxiv_missing_source` at `docs/research/linguistic_thermodynamics.md:158`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2501.08145
   - `6. **arXiv:2501.08145** — "Refusal Behavior in Large Language Models: A Nonlinear Perspective" — Empirical analysis of refusal dynamics.`
-
-### `docs/research/math/MATH_REFERENCE_INDEX.md`
-
-- `broken_internal_link` at `docs/research/math/MATH_REFERENCE_INDEX.md:47`: Broken internal link target: permutation_alignment.md
-  - `| [permutation_alignment.md](permutation_alignment.md) | Git Re-Basin / Permutation Alignment | Linear mode connectivity |`
 
 ### `docs/research/math/centered_kernel_alignment.md`
 
@@ -299,10 +135,6 @@ Notes:
   - `4. **Lou, A., Katsman, I., Jiang, Q., Belongie, S., Lim, S.-N., & De Sa, C.** (2020). "Differentiating through the Fréchet Mean." *ICML 2020*. [arXiv:2003.00335](https://arxiv.org/abs/2003.00335)`
 - `arxiv_missing_source` at `docs/research/math/frechet_mean.md:133`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2510.17072
   - `7. **Iao, Y., et al.** (2025). "DFNN: A Deep Fréchet Neural Network Framework." [arXiv:2510.17072](https://arxiv.org/abs/2510.17072)`
-- `broken_internal_link` at `docs/research/math/frechet_mean.md:145`: Broken internal link target: ../riemannian_density.md
-  - `- [riemannian_density.md](../riemannian_density.md) - Density estimation using Fréchet mean`
-- `http_url` at `docs/research/math/frechet_mean.md:111`: Non-HTTPS URL: http://www.numdam.org/item/AIHP_1948__10_4_215_0/
-  - `1. **Fréchet, M.** (1948). "Les éléments aléatoires de nature quelconque dans un espace distancié." *Annales de l'Institut Henri Poincaré*, 10(4), 215-310. [Numdam](http://www.numdam.org/item/AIHP_1948__10_4_215_0/)`
 
 ### `docs/research/math/geodesic_distance.md`
 
@@ -334,11 +166,6 @@ Notes:
 - `arxiv_missing_source` at `docs/research/math/intrinsic_dimension.md:185`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2406.15812
   - `8. **Valeriani, L., et al.** (2024). "Intrinsic dimension correlation in neural networks." [arXiv:2406.15812](https://arxiv.org/abs/2406.15812)`
 
-### `docs/research/math/persistent_homology.md`
-
-- `broken_internal_link` at `docs/research/math/persistent_homology.md:75`: Broken internal link target: ../topological_fingerprints.md
-  - `- [topological_fingerprints.md](../topological_fingerprints.md) - Implementation guide`
-
 ### `docs/research/math/procrustes_analysis.md`
 
 - `arxiv_missing_source` at `docs/research/math/procrustes_analysis.md:188`: arXiv id referenced but not in docs/references/download_arxiv.sh: 1605.09096
@@ -364,40 +191,10 @@ Notes:
 - `arxiv_missing_source` at `docs/research/math/slerp.md:184`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2305.17493
   - `3. **Kao, W.-C., Gur, I., Polymenakos, E., Bansal, K., & Ravi, S.** (2023). "SLERP: Spherical Linear Interpolation between Neural Networks." [arXiv:2305.17493](https://arxiv.org/abs/2305.17493)`
 
-### `docs/security.md`
-
-- `non_poetry_install` at `docs/security.md:45`: Mentions pip/conda install; prefer Poetry commands in this repo
-  - `- Install PyJWT: `pip install PyJWT[crypto]``
-
-### `examples/README.md`
-
-- `hf_cli_usage` at `examples/README.md:87`: Uses huggingface-cli; consider mc model fetch for repo-native workflow
-  - `# Using huggingface-cli`
-- `hf_cli_usage` at `examples/README.md:88`: Uses huggingface-cli; consider mc model fetch for repo-native workflow
-  - `huggingface-cli download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --local-dir ./models/qwen2.5-0.5b`
-
-### `papers/README.md`
-
-- `todo_tbd` at `papers/README.md:60`: Contains TODO/TBD/FIXME marker
-  - `| Null distribution generation | Paper 1 | Control samples (size TBD) |`
-
-### `papers/RELEASE_NOTES.md`
-
-- `unknown_cli_subcommand` at `papers/RELEASE_NOTES.md:49`: Unknown subcommand at mc geometry primes: probe
-  - `poetry run mc geometry primes probe --model /path/to/model`
-- `unknown_cli_subcommand` at `papers/RELEASE_NOTES.md:52`: Unknown subcommand at mc geometry: cka
-  - `poetry run mc geometry cka compare --model-a /path/to/model-a --model-b /path/to/model-b`
-
 ### `papers/paper-0-the-shape-of-knowledge.md`
 
 - `arxiv_missing_source` at `papers/paper-0-the-shape-of-knowledge.md:428`: arXiv id referenced but not in docs/references/download_arxiv.sh: 1503.02406
   - `Tishby, N., & Zaslavsky, N. (2015). Deep Learning and the Information Bottleneck Principle. *IEEE Information Theory Workshop (ITW)*. [arXiv:1503.02406](https://arxiv.org/abs/1503.02406).`
-- `unknown_cli_subcommand` at `papers/paper-0-the-shape-of-knowledge.md:481`: Unknown subcommand at mc geometry primes: probe
-  - `mc geometry primes probe --model /path/to/model_a --output model_a_primes.json`
-- `unknown_cli_subcommand` at `papers/paper-0-the-shape-of-knowledge.md:482`: Unknown subcommand at mc geometry primes: probe
-  - `mc geometry primes probe --model /path/to/model_b --output model_b_primes.json`
-- `unknown_cli_subcommand` at `papers/paper-0-the-shape-of-knowledge.md:492`: Unknown subcommand at mc model: eval
-  - `mc model eval /path/to/merged_model --benchmark perplexity --output json`
 
 ### `papers/paper-2-entropy-safety-signal.md`
 
@@ -417,8 +214,6 @@ Notes:
 
 - `arxiv_missing_source` at `papers/paper-4-modelcypher-toolkit.md:223`: arXiv id referenced but not in docs/references/download_arxiv.sh: 2311.03099
   - `Yu, L., et al. (2024). DARE. *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099).`
-- `stale_count` at `papers/paper-4-modelcypher-toolkit.md:242`: Stale arXiv PDF count claim: 46 (actual: 51)
-  - `├── docs/references/     # 46 downloaded arXiv PDFs`
 
 ### `papers/paper-5-semantic-highway.md`
 

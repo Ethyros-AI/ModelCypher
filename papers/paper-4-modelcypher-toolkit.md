@@ -239,7 +239,7 @@ poetry run pytest tests/ -q  # Expected: 3,060 passed
 ModelCypher/
 ├── src/modelcypher/     # Core library (274+ modules)
 ├── papers/              # Research papers (this series)
-├── docs/references/     # 54 reference PDFs (mostly arXiv)
+├── docs/references/     # 58 reference PDFs (mostly arXiv)
 ├── docs/research/       # Master bibliography
 ├── tests/               # 100+ test files, 3,060 tests
 └── CLAUDE.md            # AI agent instructions

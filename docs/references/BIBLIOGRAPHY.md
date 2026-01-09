@@ -2,7 +2,7 @@
 
 Complete index of research citations from `KnowledgeasHighDimensionalGeometryInLLMs.md`.
 
-## Downloaded PDFs (54)
+## Downloaded PDFs (58)
 
 Most arXiv/OpenReview papers referenced in this repo are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` naming. Some non-arXiv sources are also stored there for convenience.
 
@@ -52,8 +52,6 @@ Recent merge-alignment papers referenced in ModelCypher planning. Metadata and P
 
 | File | Citation | arXiv |
 |------|----------|-------|
-| (pending) | AlignMerge: Alignment-Driven Model Merging (2025) | 2512.16245 |
-| (pending) | Activation-Informed Merging (AIM) (2025) | 2502.02421 |
 | (pending) | Merging with Directional Alignment (MDA) (2026) | pending |
 | (pending) | KnOTS: SVD-Based Adapter Alignment (2025) | pending |
 
@@ -100,7 +98,7 @@ Recent papers on layer-wise entropy measurement and transformer interpretability
 - Replaces fabricated entropy in `entropy_merge_validator.py` (see commit history for details)
 - When using tied embeddings (embed_tokens as unembedding), see Bertolotti & Cazzola (2024) for theoretical justification
 
-### 2025 Model Merging Research
+### 2024-2025 Model Merging Research
 
 Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_algorithm_synthesis.md):
 
@@ -108,9 +106,13 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 |------|----------|-------|
 | [WUDI_2025_Task_Vector_Subspaces.pdf](arxiv/WUDI_2025_Task_Vector_Subspaces.pdf) | WUDI-Merging: Task Vector Subspaces | 2503.08099 |
 | [TSV_2025_Task_Singular_Vectors.pdf](arxiv/TSV_2025_Task_Singular_Vectors.pdf) | TSV-Merge: Task Singular Vectors (CVPR 2025) | 2412.00081 |
+| [SuperMerge_2024_Gradient_Based_Model_Merging.pdf](arxiv/SuperMerge_2024_Gradient_Based_Model_Merging.pdf) | SuperMerge: An Approach For Gradient-Based Model Merging | 2412.10416 |
 | [TokenSpace_2024_Structure.pdf](arxiv/TokenSpace_2024_Structure.pdf) | The Structure of the Token Space for LLMs | 2410.08993 |
+| [AIM_2025_Activation_Informed_Merging.pdf](arxiv/AIM_2025_Activation_Informed_Merging.pdf) | Activation-Informed Merging of Large Language Models | 2502.02421 |
 | [CAMEx_2025_Fisher_Information.pdf](arxiv/CAMEx_2025_Fisher_Information.pdf) | CAMEx: Fisher Information Geometry (ICLR 2025) | 2502.18821 |
+| [GW_Feature_Alignment_2025_Model_Merging.pdf](arxiv/GW_Feature_Alignment_2025_Model_Merging.pdf) | Efficient Multi-Task Inferencing: Model Merging with Gromov-Wasserstein Feature Alignment | 2503.09774 |
 | [NUFILT_2025_Null_Space_Projection.pdf](arxiv/NUFILT_2025_Null_Space_Projection.pdf) | NUFILT: Null-Space Projection for Merging | 2509.21413 |
+| [AlignMerge_2025_Alignment_Preserving_Merging.pdf](arxiv/AlignMerge_2025_Alignment_Preserving_Merging.pdf) | AlignMerge: Alignment-Preserving Large Language Model Merging via Fisher-Guided Geometric Constraints | 2512.16245 |
 
 ### 2025 Knowledge Editing (Null-Space Methods)
 

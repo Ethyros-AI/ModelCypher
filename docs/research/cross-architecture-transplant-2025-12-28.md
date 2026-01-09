@@ -14,7 +14,7 @@ null-space constrained functional replacement.
 ## Evidence
 
 Results file:
-`/Volumes/CodeCypher/experiments/cross-arch-transplant-2025-12-28/qwen2-to-smolm/transplant_result.json`
+`/path/to/experiments/cross-arch-transplant-2025-12-28/qwen2-to-smolm/transplant_result.json`
 
 This confirms transplant viability for cross-architecture pairs without
 changing the pipeline code, and validates the shift from weight blending to

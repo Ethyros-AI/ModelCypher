@@ -42,7 +42,7 @@ export MC_MCP_AUTH_JWKS_URI=https://auth.example.com/.well-known/jwks.json
 - Automatic JWKS key rotation
 
 **Requirements:**
-- Install PyJWT: `pip install PyJWT[crypto]`
+- Install PyJWT: `poetry add "PyJWT[crypto]"`
 
 ### 4.2 Destructive Operation Confirmation
 

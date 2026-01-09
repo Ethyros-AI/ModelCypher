@@ -478,8 +478,8 @@ See [CLI-REFERENCE.md](../docs/CLI-REFERENCE.md) for complete command documentat
 mc model vocab-compare --model-a /path/to/model_a --model-b /path/to/model_b --output json
 
 # Probe and compare semantic primes (CKA on shared anchor set)
-mc geometry primes probe --model /path/to/model_a --output model_a_primes.json
-mc geometry primes probe --model /path/to/model_b --output model_b_primes.json
+mc geometry primes probe-model /path/to/model_a --output-file model_a_primes.json
+mc geometry primes probe-model /path/to/model_b --output-file model_b_primes.json
 mc geometry primes compare model_a_primes.json model_b_primes.json
 
 # Measure dimensionality profile across layers
@@ -489,5 +489,5 @@ mc geometry atlas dimensionality-study /path/to/model --summary-only --output js
 mc merge -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
 
 # Validate merge quality
-mc model eval /path/to/merged_model --benchmark perplexity --output json
+mc eval run --model /path/to/merged_model --dataset /path/to/eval.jsonl --output json
 ```

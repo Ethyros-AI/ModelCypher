@@ -264,7 +264,7 @@ The comparison result includes:
 ### Existing Baselines
 
 Pre-computed baselines are stored in experiment directories:
-- `/Volumes/CodeCypher/experiments/curvature-profiles-2025-12-31/baselines/qwen-baseline.json`
+- `/path/to/experiments/curvature-profiles-YYYY-MM-DD/baselines/qwen-baseline.json`
 
 ## Importing Existing Profiles
 
@@ -275,7 +275,7 @@ The unified ModelProfile can import from existing profile formats in the codebas
 Files from `mc geometry curvature profile` or stored in experiments directories:
 
 ```bash
-mc profile import /Volumes/CodeCypher/experiments/curvature-profiles-2025-12-31/SmolLM-360M.json \
+mc profile import /path/to/experiments/curvature-profiles-YYYY-MM-DD/SmolLM-360M.json \
     --type curvature -o smolm-unified.json
 ```
 
@@ -305,7 +305,7 @@ mc profile merge partial.json topology.json -o complete.json
 When probes run, dense activation caches are stored under:
 
 ```
-~/.modelcypher/profiles/models/<model_id>/probe_cache/
+$HOME/.modelcypher/profiles/models/<model_id>/probe_cache/
 ```
 
 The `probe_cache` field indexes available caches by
@@ -340,9 +340,9 @@ Profiles use JSON with schema versioning:
 
 ```bash
 # 1. Import existing curvature profiles
-mc profile import /Volumes/CodeCypher/experiments/SmolLM.json \
+mc profile import /path/to/experiments/SmolLM.json \
     --type curvature -o smolm.json
-mc profile import /Volumes/CodeCypher/experiments/Qwen2.json \
+mc profile import /path/to/experiments/Qwen2.json \
     --type curvature -o qwen2.json
 
 # 2. Compare for geometric diffs

@@ -6,12 +6,12 @@ Purpose: track CLI command coverage, help quality, and documentation alignment.
 
 ## Environment
 - Host: macOS 26.2 (Apple Silicon)
-- Repo: /Users/jasonkempf/ModelCypher
+- Repo: /path/to/ModelCypher
 - Models (CodeCypher drive):
-  - /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B
-  - /Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-MLX-8bit
-  - /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit
-- Drive: /Volumes/CodeCypher
+  - /path/to/models/mlx-community/Qwen2-0.5B
+  - /path/to/models/mlx-community/LFM2-1.2B-MLX-8bit
+  - /path/to/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit
+- Drive: /path/to/storage
 - Dependency baseline (latest):
   - mlx 0.30.1
   - mlx-lm 0.30.0
@@ -38,8 +38,8 @@ Status: pass | fail | blocked | needs-doc-update
 | mc eval list --output json | pass | Returns existing eval history entries. |
 | mc compare list --output json | pass | Returns comparison sessions. |
 | mc model list --output json | pass | Registry contains stale path (see Runtime Findings). |
-| mc model probe /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | blocked | MLX probe fails; now returns structured error. |
-| mc model validate-merge --source /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B | blocked | MLX probe fails; now returns structured error. |
+| mc model probe /path/to/models/mlx-community/Qwen2-0.5B | blocked | MLX probe fails; now returns structured error. |
+| mc model validate-merge --source /path/to/models/mlx-community/Qwen2-0.5B --target /path/to/models/mlx-community/Qwen2-0.5B | blocked | MLX probe fails; now returns structured error. |
 | mc geometry validate | blocked | Backend auto-detection fails; now returns structured error. |
 
 ## Known Issues
@@ -50,7 +50,7 @@ Status: pass | fail | blocked | needs-doc-update
 - MLX runtime crash on macOS 26.2 with M-series GPU (see MLX issue #2691).
 
 ## Runtime Findings
-- `mc model list` returns a model path that no longer exists: `/Volumes/CodeCypher/models/hf-cache/hub/models--mlx-community--Qwen2-0.5B/...`.
+- `mc model list` returns a model path that no longer exists: `/path/to/hf-cache/hub/models--mlx-community--Qwen2-0.5B/...`.
 - `mc model probe` and `mc model validate-merge` blocked by MLX probe failure (now handled with structured errors).
 - `mc geometry validate` blocked by MLX probe failure (now handled with structured errors).
 

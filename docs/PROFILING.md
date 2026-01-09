@@ -44,14 +44,14 @@ Stores precomputed geometry fingerprints.
 
 | Property | Value |
 |----------|-------|
-| Location | `~/Library/Caches/ModelCypher/fingerprints/` |
+| Location | `$HOME/Library/Caches/ModelCypher/fingerprints/` |
 | Key | Model path hash + config hash + model mtime |
 | TTL | 30 days |
 | Size | Varies by probe count |
 
 **Invalidation:**
 ```bash
-rm -rf ~/Library/Caches/ModelCypher/fingerprints/
+rm -rf "$HOME/Library/Caches/ModelCypher/fingerprints/"
 ```
 
 ### Geometry Metrics Cache
@@ -61,7 +61,7 @@ spectral signature).
 
 | Property | Value |
 |----------|-------|
-| Location | `~/Library/Caches/ModelCypher/geometry_metrics/` |
+| Location | `$HOME/Library/Caches/ModelCypher/geometry_metrics/` |
 | TTL | 7 days |
 
 ### Computation Cache (Memory-Only)
@@ -190,7 +190,7 @@ print(f"Memory used: {(after - before) / 1e9:.2f} GB")
 
 **Solution:** Clear fingerprint cache:
 ```bash
-rm ~/Library/Caches/ModelCypher/fingerprints/*model_name*
+rm "$HOME/Library/Caches/ModelCypher/fingerprints/"*model_name*
 ```
 
 ## Performance Benchmarks

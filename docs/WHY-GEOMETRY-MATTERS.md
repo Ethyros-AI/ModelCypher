@@ -118,18 +118,13 @@ See [papers/](../papers/) for the full research foundation.
 
 ---
 
-## Recent SOTA (2025) that informs this framing
+## Recent model merging literature (2024–2025)
 
-- **Activation-Informed Merging (AIM)**: activation-space constraints for merging.
-  https://arxiv.org/abs/2502.02421
-- **FW-Merging (ICCV 2025)**: Frank-Wolfe optimization for scalable model merging.
-  https://openaccess.thecvf.com/content/ICCV2025/papers/Chen_FW-Merging_Scaling_Model_Merging_with_Frank-Wolfe_Optimization_ICCV_2025_paper.pdf
-- **SuperMerge (2025)**: gradient-based merging with learned layer contributions.
-  https://arxiv.org/abs/2412.10416
-- **GW-SMM (2025)**: Gromov-Wasserstein feature alignment for merge selection.
-  https://arxiv.org/abs/2503.09774
-- **NEig-OWM (2025)**: null-space orthogonal weight modification to preserve prior tasks.
-  https://doi.org/10.1016/j.eswa.2025.127468
+- [Nobari et al. (2025)](references/arxiv/AIM_2025_Activation_Informed_Merging.pdf). Activation-Informed Merging of Large Language Models. [arXiv:2502.02421](https://arxiv.org/abs/2502.02421)
+- FW-Merging (ICCV 2025). Scaling Model Merging with Frank-Wolfe Optimization. https://openaccess.thecvf.com/content/ICCV2025/papers/Chen_FW-Merging_Scaling_Model_Merging_with_Frank-Wolfe_Optimization_ICCV_2025_paper.pdf
+- [Yang et al. (2024)](references/arxiv/SuperMerge_2024_Gradient_Based_Model_Merging.pdf). SuperMerge: An Approach For Gradient-Based Model Merging. [arXiv:2412.10416](https://arxiv.org/abs/2412.10416)
+- [Fang et al. (2025)](references/arxiv/GW_Feature_Alignment_2025_Model_Merging.pdf). Efficient Multi-Task Inferencing: Model Merging with Gromov-Wasserstein Feature Alignment. [arXiv:2503.09774](https://arxiv.org/abs/2503.09774)
+- NEig-OWM (2025). Null-space orthogonal weight modification to preserve prior tasks. https://doi.org/10.1016/j.eswa.2025.127468
 
 ---
 

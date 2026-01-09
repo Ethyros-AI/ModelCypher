@@ -383,7 +383,7 @@ mc train start \
 
 ```bash
 mc train start \
-  --model /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --model /path/to/model \
   --dataset ./finetune-data.jsonl \
   --learning-rate 2e-5 \
   --batch-size 2 \

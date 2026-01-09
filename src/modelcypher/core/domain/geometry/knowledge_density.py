@@ -414,7 +414,8 @@ def compute_knn_point_cloud_density(
 
     # Compute k-NN density for source points
     # Distance matrix: [n_source, n_source]
-    source_dist_matrix = rg.geodesic_distances(source, k_neighbors=k)
+    source_geo_result = rg.geodesic_distances(source, k_neighbors=k)
+    source_dist_matrix = source_geo_result.distances  # Extract the distance array
     b.eval(source_dist_matrix)
 
     # Sort each row to get k nearest distances (exclude self = distance 0)
@@ -427,7 +428,8 @@ def compute_knn_point_cloud_density(
     b.eval(source_densities)
 
     # Compute k-NN density for target points
-    target_dist_matrix = rg.geodesic_distances(target, k_neighbors=k)
+    target_geo_result = rg.geodesic_distances(target, k_neighbors=k)
+    target_dist_matrix = target_geo_result.distances  # Extract the distance array
     b.eval(target_dist_matrix)
 
     target_sorted = b.sort(target_dist_matrix, axis=1)
