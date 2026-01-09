@@ -1,6 +1,11 @@
 # CLI Reference
 
-ModelCypher CLI. Output is JSON to stdout; diagnostics go to stderr.
+ModelCypher CLI reference.
+
+Notes:
+- Structured output goes to stdout (JSON by default). Logs and diagnostics go to stderr.
+- In this repo, run the CLI as `poetry run mc …`. Examples below use `mc …` for brevity.
+- Global options must come before the command name (e.g. `mc --pretty model probe …`).
 
 ## Global Options
 
@@ -22,19 +27,22 @@ All commands support these options:
 
 ## Model Merging
 
-The primary operation. Takes knowledge from source and adds it to target via null-space projection.
+The primary operation. Takes knowledge from SOURCE and adds it to TARGET via null-space projection.
+
+### mc merge run (1→1)
 
 ```bash
-mc merge -s SOURCE -t TARGET -o OUTPUT
+mc merge run -s SOURCE -t TARGET -o OUTPUT_DIR
 
 # Full example
-mc merge \
-  --source /path/to/qwen \
-  --target /path/to/smol \
-  --output-dir /path/to/merged
+mc merge run \
+  -s /path/to/source \
+  -t /path/to/target \
+  -o /path/to/output_dir
 ```
 
 **Options:**
+
 | Option | Type | Description |
 |--------|------|-------------|
 | `-s, --source` | path | Path to source model (knowledge donor) |
@@ -42,6 +50,23 @@ mc merge \
 | `-o, --output-dir` | path | Output directory for merged model |
 | `-f, --output-file` | path | Save full result to JSON file |
 | `-n, --dry-run` | flag | Show what would happen without merging |
+| `-p, --probe-mode` | string | Probe mode: `atlas` (default) or `token` |
+
+### mc merge batch (N→1)
+
+```bash
+mc merge batch -s MODEL1 -s MODEL2 -s MODEL3 -t TARGET -o OUTPUT_DIR
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `-s, --source` | path | Source model paths (repeatable) |
+| `-t, --target` | path | Target model (receives all knowledge) |
+| `-o, --output-dir` | path | Output directory for merged model |
+| `--accumulative/--sequential` | flag | Accumulative (default) vs sequential merging |
+| `--fast/--precise` | flag | Fast mode (default) vs precision checks |
 
 ---
 
@@ -556,7 +581,7 @@ mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]'
 ```
 
 ### mc entropy calibrate
-Calibrate entropy thresholds by measuring actual model distributions.
+Calibrate entropy baselines (derived thresholds) by measuring actual model distributions.
 ```bash
 mc entropy calibrate --model /path/to/model --prompts ./prompts.json
 mc entropy calibrate --model /path/to/model --prompts ./prompts.json --output-file ./calibration.json

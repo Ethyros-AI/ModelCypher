@@ -16,7 +16,7 @@ Download a small model and probe its geometry:
 
 ```bash
 # Fetch a small model (or use any local model path you already have)
-poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16 --output json
+poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
 
 # Probe it (use the `localPath` from the previous command)
 poetry run mc geometry spatial probe-model /path/from/localPath
@@ -42,7 +42,7 @@ Key Metrics:
 
 **What you just measured:**
 - This output reports spatial geometry measurements for the probed model.
-- We call this the "Blind Physicist" — it knows the math of 3D space without seeing it
+- This probe tests whether internal representations encode consistent 3D spatial relations from text-only prompts.
 - Axis Orthogonality (mean) shows how close the axes are to orthogonal; higher is more orthogonal.
 
 If you got different numbers, that's real data about your model. If the command failed, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues).
@@ -58,9 +58,9 @@ A toolkit for measuring the geometric structure of LLM representations.
 | "The merge feels off" | "Curvature deltas show where geometry shifted" |
 | "It refuses too much" | "Refusal boundary movement quantified" |
 | "The models are similar-ish" | "Structural alignment measured via Procrustes/CKA" |
-| "Training seems stable" | "Entropy gradients tracked per step (raw values)" |
+| "Training seems stable" | "Entropy signals tracked per step (raw values)" |
 
-**The insight:** Inside every language model is a high-dimensional space where concepts live as points. That space has *shape*—curves, boundaries, distances. That shape *is* the model's knowledge. ModelCypher gives you a ruler and a map.
+**The idea:** ModelCypher treats internal activations and weights as representation spaces and measures their geometry (distances, curvature, alignment). The outputs are raw measurements you can compare across models or track over time.
 
 ---
 
@@ -71,10 +71,10 @@ A toolkit for measuring the geometric structure of LLM representations.
 
 ```bash
 # Predict interference before merging
-mc geometry interference predict ./model-A ./model-B
+poetry run mc geometry interference predict ./source-model ./target-model
 
-# Merge with geometric alignment
-mc merge --source ./model-A --target ./model-B --output-dir ./merged
+# Merge with null-space knowledge addition
+poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 ```
 
 → [CLI Reference](CLI-REFERENCE.md) · [Why Geometry Matters](WHY-GEOMETRY-MATTERS.md) · [Verification](VERIFICATION.md)
@@ -107,6 +107,7 @@ mc merge --source ./model-A --target ./model-B --output-dir ./merged
 - [**Why Geometry Matters**](WHY-GEOMETRY-MATTERS.md) — Before/after comparisons
 - [**Spatial Grounding**](research/spatial_grounding.md) — 3D world models in text-only LLMs
 - [**Moral Geometry**](research/moral_geometry.md) — Ethical reasoning structure
+- [**Bibliography**](references/BIBLIOGRAPHY.md) — Research citations + local PDFs
 
 ### Practice
 - [**CLI Reference**](CLI-REFERENCE.md) — All commands

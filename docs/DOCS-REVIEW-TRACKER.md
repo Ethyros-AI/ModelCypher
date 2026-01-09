@@ -21,13 +21,13 @@ Automated baseline:
 | `CODE_OF_CONDUCT.md` | policy | P1 | todo | todo | todo | todo | |
 | `CONTRIBUTING.md` | developer | P1 | todo | todo | todo | todo | |
 | `DISCLAIMER.md` | policy | P1 | todo | todo | todo | todo | |
-| `README.md` | public | P0 | todo | todo | todo | todo | |
+| `README.md` | public | P0 | done | ok | n/a | ok | Public pass: repo install + corrected quickstart commands |
 | `docs/AI-ASSISTANT-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/ARCHITECTURE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/BACKEND-COMPARISON.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/BACKEND-PARITY.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/CLI-DEEPDIVE.md` | internal | A | todo | todo | todo | todo | |
-| `docs/CLI-REFERENCE.md` | public | P0 | todo | todo | todo | todo | |
+| `docs/CLI-REFERENCE.md` | public | P0 | done | ok | n/a | ok | Public pass: clarified global options + updated merge run/batch |
 | `docs/DIMENSIONAL_COMPRESSION.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/ELIF.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/FAQ.md` | public | P1 | todo | todo | todo | todo | |
@@ -46,7 +46,7 @@ Automated baseline:
 | `docs/REPO-FILE-LIST.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/RESEARCH-CONNECTIONS.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/SKEPTICS-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/START-HERE.md` | public | P0 | todo | todo | todo | todo | |
+| `docs/START-HERE.md` | public | P0 | done | ok | ok | ok | Public pass: corrected CLI examples + added bibliography link |
 | `docs/TRAINING-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/VERIFICATION.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/WHY-GEOMETRY-MATTERS.md` | public | P1 | todo | todo | todo | todo | |
@@ -56,7 +56,7 @@ Automated baseline:
 | `docs/geometry/mental_model.md` | research | P1 | todo | todo | todo | todo | |
 | `docs/geometry/parameter_geometry.md` | research | P1 | todo | todo | todo | todo | |
 | `docs/geometry/topological_fingerprints.md` | research | P1 | todo | todo | todo | todo | |
-| `docs/getting_started.md` | public | P0 | todo | todo | todo | todo | |
+| `docs/getting_started.md` | public | P0 | done | ok | n/a | ok | Public pass: simplified onboarding + corrected command usage |
 | `docs/references/BIBLIOGRAPHY.md` | internal | P1 | todo | todo | todo | todo | |
 | `docs/research/KnowledgeasHighDimensionalGeometryInLLMs.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/research/cross-architecture-transplant-2025-12-28.md` | research | P2 | todo | todo | todo | todo | |

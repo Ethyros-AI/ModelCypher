@@ -1,6 +1,8 @@
 # Getting Started with ModelCypher
 
-ModelCypher is a high-dimensional geometry engine for Large Language Models. It supports multiple compute backends:
+ModelCypher is a CLI-first toolkit for measuring the geometry of LLM representations (intrinsic dimension, curvature, entropy, and similarity).
+
+It supports multiple compute backends:
 
 | Platform | Backend | Notes |
 | :--- | :--- | :--- |
@@ -47,91 +49,54 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
 
 3. **Verify installation**:
    ```bash
-   mc --help
+   poetry run mc --help
    ```
 
 ## Key Commands
 
-ModelCypher exposes its functionality through a single CLI: `mc` (or `modelcypher`).
-See `CLI-REFERENCE.md` for the full command map and global flags (`--output json`, `--ai`, etc).
+All examples below assume you are in the repo root and run `mc` via `poetry run mc …`.
+See [CLI-REFERENCE.md](CLI-REFERENCE.md) for the full command map and global flags (`--ai`, `--pretty`, `--log-level`, etc).
 
 ### 1. Model management (`mc model …`)
 Use this to fetch/register models and probe local model directories.
 
 ```bash
 # Fetch a model (downloads to ModelCypher storage; prints the local path)
-mc model fetch mlx-community/Llama-2-7b-chat-mlx --auto-register
+poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16 --auto-register --alias qwen
 
-# Probe a local model directory (architecture + layer/tensor summary)
-mc model probe ./models/Llama-2-7b-chat-mlx --output json
+# Probe a local model directory (architecture + summary)
+poetry run mc model probe /path/to/model
 ```
 
-### 2. Training (`mc train …`)
-Train LoRA adapters (including "sidecar"-style adapters) and manage training jobs.
-
-```bash
-# Preflight a training configuration (fit checks + validation)
-mc train preflight \
-    --model ./models/Mistral-7B-v0.1-mlx \
-    --dataset data/safety.jsonl \
-    --learning-rate 1e-5 \
-    --batch-size 2 \
-    --epochs 1 \
-    --sequence-length 512 \
-    --grad-accum 4 \
-    --warmup-steps 100 \
-    --weight-decay 0.01 \
-    --gradient-checkpointing \
-    --mixed-precision \
-    --compute-precision bfloat16 \
-    --optimizer-type adamw \
-    --seed 42 \
-    --deterministic \
-    --lora-rank 8 \
-    --lora-alpha 16 \
-    --lora-dropout 0.05 \
-    --lora-targets q_proj --lora-targets v_proj \
-    --out ./output
-
-# Start training
-mc train start \
-    --model ./models/Mistral-7B-v0.1-mlx \
-    --dataset data/safety.jsonl \
-    --learning-rate 1e-5 \
-    --batch-size 2 \
-    --epochs 1 \
-    --sequence-length 512 \
-    --grad-accum 4 \
-    --warmup-steps 100 \
-    --weight-decay 0.01 \
-    --gradient-checkpointing \
-    --mixed-precision \
-    --compute-precision bfloat16 \
-    --optimizer-type adamw \
-    --seed 42 \
-    --deterministic \
-    --lora-rank 8 \
-    --lora-alpha 16 \
-    --lora-dropout 0.05 \
-    --lora-targets q_proj --lora-targets v_proj \
-    --out adapters/safety_sidecar
-```
-
-### 3. Geometry + safety diagnostics (`mc geometry …`, `mc thermo …`)
+### 2. Geometry + safety diagnostics (`mc geometry …`, `mc thermo …`)
 Use these to interpret training stability, safety signals, and probe-based geometry.
 
 ```bash
-# Training stability + “flatness”/SNR summaries
-mc geometry training status --job <job_id>
-
-# Probe semantic prime anchors (list/probe/compare)
-mc geometry primes list
+# Probe a model for 3D spatial geometry
+poetry run mc geometry spatial probe-model /path/to/model
 
 # Measure thermodynamic/entropy signals (see CLI reference for details)
-mc thermo measure --help
+poetry run mc thermo measure --model /path/to/model "Your prompt here"
+```
+
+### 3. Model merging (`mc merge …`)
+Merge takes knowledge from SOURCE and adds it to TARGET via null-space projection.
+
+```bash
+poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output_dir
+```
+
+## Training
+
+Training commands require a dataset path and explicit hyperparameters. For full workflows and guidance, see [TRAINING-GUIDE.md](TRAINING-GUIDE.md).
+
+```bash
+poetry run mc train preflight --help
+poetry run mc train start --help
 ```
 
 ## Next Steps
 
+- Start with [START-HERE.md](START-HERE.md) for reading paths.
 - Read about [High Dimensional Geometry](geometry/manifold_stitching.md).
 - Explore the [Architecture](ARCHITECTURE.md).

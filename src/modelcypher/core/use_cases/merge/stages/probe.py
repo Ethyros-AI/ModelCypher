@@ -1381,10 +1381,45 @@ def _probe_precise(
         if len(all_probes) > max_probes:
             logger.info("PROBE LIMIT: Capping %d probes to %d (2x target_dim=%d) - target space only",
                        len(all_probes), max_probes, target_dim)
-            # Sample evenly across the probe set to maintain diversity
+            # Domain-stratified sampling to ensure coverage across all knowledge domains
+            # Group probes by domain
             import random
+            from collections import defaultdict
             random.seed(42)  # Deterministic sampling
-            probes = random.sample(all_probes, max_probes)
+
+            probes_by_domain: dict[str, list[Any]] = defaultdict(list)
+            for probe in all_probes:
+                domain_key = getattr(probe.domain, 'value', str(probe.domain))
+                probes_by_domain[domain_key].append(probe)
+
+            # Allocate probes proportionally by domain, ensuring minimum 1 per domain
+            n_domains = len(probes_by_domain)
+            min_per_domain = max(1, max_probes // (n_domains * 2))  # At least 1, up to half
+            remaining = max_probes - (min_per_domain * n_domains)
+
+            probes = []
+            for domain_key, domain_probes in sorted(probes_by_domain.items()):
+                # Calculate proportional allocation for this domain
+                proportion = len(domain_probes) / len(all_probes)
+                extra_allocation = int(remaining * proportion)
+                n_sample = min(len(domain_probes), min_per_domain + extra_allocation)
+
+                # Sample from domain
+                if n_sample >= len(domain_probes):
+                    probes.extend(domain_probes)
+                else:
+                    probes.extend(random.sample(domain_probes, n_sample))
+
+            # If still under max_probes, fill with random remaining probes
+            if len(probes) < max_probes:
+                used_ids = {p.probe_id for p in probes}
+                remaining_probes = [p for p in all_probes if p.probe_id not in used_ids]
+                fill_count = min(max_probes - len(probes), len(remaining_probes))
+                if fill_count > 0:
+                    probes.extend(random.sample(remaining_probes, fill_count))
+
+            logger.info("PROBE STRATIFIED: %d domains, %d-%d probes per domain",
+                       n_domains, min_per_domain, max(len(v) for v in probes_by_domain.values()))
         else:
             probes = all_probes
             
