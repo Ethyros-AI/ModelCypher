@@ -924,7 +924,9 @@ class ProbeCache:
     target_centered_grams: dict[int, "Array"]
     
     # Per-layer SVD decomposition (shape/rotation info)
-    source_svd: dict[int, tuple["Array", "Array", "Array"]]  # U, S, Vt
+    # NOTE: SVD computation disabled (MLX crashes on large Gram matrices).
+    # Keeping empty dicts for interface stability. Remove if causing issues.
+    source_svd: dict[int, tuple["Array", "Array", "Array"]]
     target_svd: dict[int, tuple["Array", "Array", "Array"]]
     
     # Per-layer effective ranks (density measure)
@@ -936,9 +938,10 @@ class ProbeCache:
     target_sigmas: dict[int, float]
     
     # Layer similarity matrix [n_source, n_target] - geometric compatibility
+    # Computed for cache diagnostics; not currently used in alignment algorithm.
     layer_similarity_matrix: "Array | None" = None
-    
-    # Precomputed Procrustes R hints based on geometric similarity
+
+    # NOTE: Procrustes hints removed (R_hint parameter was never implemented).
     procrustes_hints: dict[tuple[int, int], "Array"] | None = None
     
     @staticmethod
