@@ -156,30 +156,32 @@ class ProfileComparison:
 
 ## CLI Commands
 
+In this repo, run commands as `poetry run mc ...` (instead of `mc ...`).
+
 ### Inspect a profile
 
 ```bash
 # View summary
-mc profile inspect profile.json
+poetry run mc profile inspect profile.json
 
 # View specific section
-mc profile inspect profile.json --section geometry
+poetry run mc profile inspect profile.json --section geometry
 
 # View specific layer
-mc profile inspect profile.json --layer 5
+poetry run mc profile inspect profile.json --layer 5
 ```
 
 ### Compare two profiles
 
 ```bash
 # Compare and show geometric diffs
-mc profile compare source.json target.json
+poetry run mc profile compare source.json target.json
 
 # Save comparison result
-mc profile compare source.json target.json --save comparison.json
+poetry run mc profile compare source.json target.json --save comparison.json
 
 # Compare with baseline for z-score computation
-mc profile compare source.json target.json --baseline qwen-baseline.json
+poetry run mc profile compare source.json target.json --baseline qwen-baseline.json
 ```
 
 When a baseline is provided, the comparison includes z-scores that show how many
@@ -196,10 +198,10 @@ in the context of your own family distributions.
 
 ```bash
 # Import from CurvatureProfile
-mc profile import curvature.json --type curvature -o unified.json
+poetry run mc profile import curvature.json --type curvature -o unified.json
 
 # Import and merge into existing profile
-mc profile import curvature.json --type curvature --base unified.json -o updated.json
+poetry run mc profile import curvature.json --type curvature --base unified.json -o updated.json
 ```
 
 Currently supported types: `curvature`.
@@ -208,21 +210,21 @@ Currently supported types: `curvature`.
 
 ```bash
 # Combine multiple partial profiles
-mc profile merge geometry.json topology.json semantic.json -o complete.json
+poetry run mc profile merge geometry.json topology.json semantic.json -o complete.json
 ```
 
 ### Generate a profile
 
 ```bash
 # Identity-only profile (fast, no model loading)
-mc profile generate /path/to/model -o profile.json --identity-only
+poetry run mc profile generate /path/to/model -o profile.json --identity-only
 ```
 
 ### Update an existing profile
 
 ```bash
 # Add identity data from a model directory
-mc profile update profile.json --model /path/to/model -o updated.json
+poetry run mc profile update profile.json --model /path/to/model -o updated.json
 ```
 
 ## Alignment Flags
@@ -241,19 +243,19 @@ differences relative to family variation, not arbitrary thresholds.
 
 ```bash
 # Generate curvature profiles for multiple models in the family
-mc geometry research curvature-profile /path/to/Qwen2-0.5B --save qwen-0.5b.json
-mc geometry research curvature-profile /path/to/Qwen2.5-3B --save qwen-3b.json
-mc geometry research curvature-profile /path/to/Qwen3-0.6B --save qwen-0.6b.json
+poetry run mc geometry research curvature-profile /path/to/Qwen2-0.5B --save qwen-0.5b.json
+poetry run mc geometry research curvature-profile /path/to/Qwen2.5-3B --save qwen-3b.json
+poetry run mc geometry research curvature-profile /path/to/Qwen3-0.6B --save qwen-0.6b.json
 
 # Build family baseline from all profiles
-mc geometry research curvature-baseline ./profiles --family qwen --save qwen-baseline.json
+poetry run mc geometry research curvature-baseline ./profiles --family qwen --save qwen-baseline.json
 ```
 
 ### Using a Baseline
 
 ```bash
 # Compare with baseline for z-score computation
-mc profile compare model_a.json model_b.json --baseline qwen-baseline.json
+poetry run mc profile compare model_a.json model_b.json --baseline qwen-baseline.json
 ```
 
 The comparison result includes:
@@ -272,10 +274,10 @@ The unified ModelProfile can import from existing profile formats in the codebas
 
 ### CurvatureProfile
 
-Files from `mc geometry curvature profile` or stored in experiments directories:
+Files from `mc geometry research curvature-profile` or stored in experiments directories:
 
 ```bash
-mc profile import /path/to/experiments/curvature-profiles-YYYY-MM-DD/SmolLM-360M.json \
+poetry run mc profile import /path/to/experiments/curvature-profiles-YYYY-MM-DD/SmolLM-360M.json \
     --type curvature -o smolm-unified.json
 ```
 
@@ -291,13 +293,13 @@ Profiles can be built incrementally as sections are computed:
 
 ```bash
 # Start with curvature
-mc profile import curvature.json --type curvature -o partial.json
+poetry run mc profile import curvature.json --type curvature -o partial.json
 
 # Add density later
-mc profile import density.json --type density --base partial.json -o updated.json
+poetry run mc profile import density.json --type density --base partial.json -o updated.json
 
 # Merge multiple profiles
-mc profile merge partial.json topology.json -o complete.json
+poetry run mc profile merge partial.json topology.json -o complete.json
 ```
 
 ## Probe Cache (Per-Model)
@@ -319,7 +321,7 @@ Profiles use JSON with schema versioning:
 
 ```json
 {
-  "$schema": "mc.model_profile.v1",
+  "_schema": "mc.model_profile.v1",
   "profile_version": "mc.model_profile.v1",
   "model_path": "/path/to/model",
   "model_family": "qwen",
@@ -340,16 +342,16 @@ Profiles use JSON with schema versioning:
 
 ```bash
 # 1. Import existing curvature profiles
-mc profile import /path/to/experiments/SmolLM.json \
+poetry run mc profile import /path/to/experiments/SmolLM.json \
     --type curvature -o smolm.json
-mc profile import /path/to/experiments/Qwen2.json \
+poetry run mc profile import /path/to/experiments/Qwen2.json \
     --type curvature -o qwen2.json
 
 # 2. Compare for geometric diffs
-mc profile compare smolm.json qwen2.json --save comparison.json
+poetry run mc profile compare smolm.json qwen2.json --save comparison.json
 
 # 3. Check the results
-mc --output json profile compare smolm.json qwen2.json | jq '{
+poetry run mc --output json profile compare smolm.json qwen2.json | jq '{
   aligned: .aligned,
   mean_sectional_diff: .mean_sectional_curvature_diff,
   mean_ricci_diff: .mean_ollivier_ricci_diff,

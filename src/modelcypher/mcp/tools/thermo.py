@@ -45,6 +45,7 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_analyze(jobId: str) -> dict:
+            """Analyze thermodynamic measurements for a training job."""
             result = ctx.thermo_service.analyze(jobId)
             return {
                 "_schema": "mc.thermo.analyze.v1",
@@ -58,6 +59,7 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_path(checkpoints: list[str]) -> dict:
+            """Analyze thermodynamic path geometry across checkpoints."""
             resolved = [require_existing_path(path) for path in checkpoints]
             result = ctx.thermo_service.path(resolved)
             return {
@@ -128,6 +130,7 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_thermo_entropy(jobId: str) -> dict:
+            """Compute entropy history and deltas for a training job."""
             result = ctx.thermo_service.entropy(jobId)
             return {
                 "_schema": "mc.thermo.entropy.v1",

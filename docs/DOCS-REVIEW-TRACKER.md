@@ -17,38 +17,38 @@ Automated baseline:
 |------|----------|------|--------|-------|-----------|-----|-------|
 | `AGENTS.md` | developer | P1 | todo | todo | todo | todo | |
 | `AUDIT_TRACKING.md` | internal | A | todo | todo | todo | todo | |
-| `CHANGELOG.md` | public | P1 | todo | todo | todo | todo | |
+| `CHANGELOG.md` | public | P1 | done | ok | n/a | n/a | Public pass: removed stale backend/CLI claims and pointed to canonical CLI/MCP catalogs |
 | `CODE_OF_CONDUCT.md` | policy | P1 | todo | todo | todo | todo | |
 | `CONTRIBUTING.md` | developer | P1 | todo | todo | todo | todo | |
 | `DISCLAIMER.md` | policy | P1 | todo | todo | todo | todo | |
 | `README.md` | public | P0 | done | ok | n/a | ok | Public pass: repo install + corrected quickstart commands |
 | `docs/AI-ASSISTANT-GUIDE.md` | public | P1 | done | ok | n/a | ok | Public pass: added `poetry run mc`/`--ai` guidance and clarified global option ordering |
-| `docs/ARCHITECTURE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/BACKEND-COMPARISON.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/BACKEND-PARITY.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/ARCHITECTURE.md` | public | P1 | done | ok | n/a | n/a | Public pass: updated merge diagram (no blending), corrected probe inventory refs, refreshed MCP module layout |
+| `docs/BACKEND-COMPARISON.md` | public | P1 | done | ok | n/a | n/a | Public pass: removed unsupported CPU backend claims, fixed `to_numpy` references, aligned runtime selection helpers |
+| `docs/BACKEND-PARITY.md` | public | P1 | done | ok | n/a | n/a | Public pass: clarified scope as engineering checklist and linked backend comparison guide |
 | `docs/CLI-DEEPDIVE.md` | internal | A | todo | todo | todo | todo | |
 | `docs/CLI-REFERENCE.md` | public | P0 | done | ok | n/a | ok | Public pass: clarified global options + updated merge run/batch |
-| `docs/DIMENSIONAL_COMPRESSION.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/DIMENSIONAL_COMPRESSION.md` | public | P1 | done | ok | ok | n/a | Public pass: restored core “lossless density compression / CKA=1.0” framing and added verification (code pointers + primary citations) |
 | `docs/ELIF.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/FAQ.md` | public | P1 | done | ok | ok | ok | Public pass: removed “expected ranges”, fixed CLI option ordering, linked bibliography + local PDFs |
 | `docs/GEOMETRY-GUIDE.md` | public | P1 | done | ok | n/a | n/a | Public pass: tightened “No Vibes”, clarified distance vs similarity semantics, added `poetry run mc` note |
 | `docs/GLOSSARY.md` | public | P1 | done | ok | ok | ok | Public pass: aligned geodesic wording, removed over-claimy results, linked local PDFs for cited arXiv refs |
-| `docs/INFERENCE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/INTEGRATION_ARCHITECTURE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/MATH-PRIMER.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/MCP-TOOLS-CATALOG.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/INFERENCE.md` | public | P1 | done | ok | n/a | ok | Public pass: clarified dual-path semantics, updated paths, and aligned CLI guidance (`poetry run`, `--ai`) |
+| `docs/INTEGRATION_ARCHITECTURE.md` | public | P1 | archive | ok | n/a | n/a | Archived: historical atlas-integration gap analysis; references may drift from current code |
+| `docs/MATH-PRIMER.md` | public | P1 | done | ok | ok | n/a | Public pass: aligned geodesic/flatness language with measured framing and added selected references |
+| `docs/MCP-TOOLS-CATALOG.md` | public | P1 | done | ok | n/a | n/a | Public pass: synced tool names/params to `build_server().list_tools()`, removed nonexistent `MC_MCP_TOOL_SET`, documented `MC_MCP_PROFILE`, and added missing geometry tools |
 | `docs/MCP.md` | public | P1 | done | ok | n/a | ok | Public pass: verified run command; points to tools catalog |
-| `docs/MERGE-ARCHITECTURE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/MODEL-PROFILE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/PROFILING.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/MERGE-ARCHITECTURE.md` | public | P1 | done | ok | ok | ok | Public pass: removed permute stage, added local PDF refs (AlphaEdit/Git Re-Basin), clarified validate + permute_metrics |
+| `docs/MODEL-PROFILE.md` | public | P1 | done | ok | n/a | ok | Public pass: aligned CLI examples to `poetry run mc`, fixed curvature command naming, and corrected JSON `_schema` example |
+| `docs/PROFILING.md` | public | P1 | done | ok | n/a | ok | Public pass: aligned CLI examples to `poetry run`, fixed CRM compare flags, and corrected MLX memory snippet (`mx.eval`) |
 | `docs/README.md` | public | P0 | done | ok | n/a | n/a | Public pass: minimal entrypoint; defers to START-HERE |
 | `docs/REPO-AUDIT-2025-01-04.md` | internal | A | todo | todo | todo | todo | |
 | `docs/REPO-FILE-LIST.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/RESEARCH-CONNECTIONS.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/SKEPTICS-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/SKEPTICS-GUIDE.md` | public | P1 | done | ok | ok | ok | Public pass: reframed “proof” language to verification, linked local PDFs/DOIs, and aligned geodesic + compatibility wording |
 | `docs/START-HERE.md` | public | P0 | done | ok | ok | ok | Public pass: corrected CLI examples + added bibliography link |
-| `docs/TRAINING-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/VERIFICATION.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/TRAINING-GUIDE.md` | public | P1 | done | ok | n/a | ok | Public pass: aligned CLI examples to `poetry run`, fixed export formats, corrected geometry-training status fields, and fixed global option ordering (`--output`) |
+| `docs/VERIFICATION.md` | public | P1 | done | ok | n/a | ok | Public pass: fixed CLI examples (`poetry run` + waypoint validate args) and reframed “proof” as reproducible checks |
 | `docs/WHY-GEOMETRY-MATTERS.md` | public | P1 | done | ok | ok | ok | Public pass: reframed “proof” as reproducible checks, fixed CLI examples, added/linked citations |
 | `docs/geometry/gromov_wasserstein.md` | research | P1 | todo | todo | todo | todo | |
 | `docs/geometry/intersection_maps.md` | research | P1 | todo | todo | todo | todo | |

@@ -728,6 +728,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_training_status(jobId: str, format: str = "full") -> dict:
+            """Return geometry training status metrics for a given job."""
             format_key = format.lower()
             if format_key not in {"full", "summary"}:
                 raise ValueError("format must be 'full' or 'summary'")
@@ -739,4 +740,5 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_training_history(jobId: str) -> dict:
+            """Return geometry training history metrics for a given job."""
             return ctx.geometry_training_service.training_history_payload(jobId)

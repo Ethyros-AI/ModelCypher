@@ -6,8 +6,7 @@ ModelCypher implements geometric analysis tools that directly support several ac
 
 ## The Platonic Representation Hypothesis
 
-**Paper**: Huh, M., Cheung, B., Wang, T., & Isola, P. (2024). *The Platonic Representation Hypothesis*. ICML 2024.
-**arXiv**: [2405.07987](https://arxiv.org/abs/2405.07987)
+**Paper**: Huh, M., Cheung, B., Wang, T., & Isola, P. (2024). *The Platonic Representation Hypothesis*. ICML 2024. ([PDF](references/arxiv/Huh_2024_Platonic_Representation.pdf), [arXiv:2405.07987](https://arxiv.org/abs/2405.07987))
 
 ### Core Claim
 
@@ -15,7 +14,7 @@ Neural networks trained with different objectives on different data and modaliti
 
 ### ModelCypher Implementation
 
-Our CKA implementation (`core/domain/geometry/cka.py`) with Gram-based cross-dimensional comparison directly enables testing this hypothesis:
+Our CKA implementation (`src/modelcypher/core/domain/geometry/cka.py`) with Gram-based cross-dimensional comparison directly enables testing this hypothesis:
 
 ```python
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
@@ -42,7 +41,7 @@ The brain contains multi-dimensional geometrical structures operating in as many
 
 ### ModelCypher Implementation
 
-Our persistent homology implementation (`core/domain/geometry/topological_fingerprint.py`) computes the same Betti numbers used to characterize these structures:
+Our persistent homology implementation (`src/modelcypher/core/domain/geometry/topological_fingerprint.py`) computes the same Betti numbers used to characterize these structures:
 
 ```python
 from modelcypher.core.domain.geometry.topological_fingerprint import TopologicalFingerprint
@@ -62,7 +61,7 @@ betti = result.diagram.betti_numbers(persistence_threshold=0.1)
 
 ## Brain-like Space: Unified Geometric Framework
 
-**Paper**: Chen, S., et al. (2025). *A Unified Geometric Space Bridging AI Models and the Human Brain*. arXiv:2510.24342.
+**Paper**: Chen, S., et al. (2025). *A Unified Geometric Space Bridging AI Models and the Human Brain*. ([PDF](references/arxiv/Chen_2025_Unified_Geometric_Space_Bridging_AI_Models.pdf), [arXiv:2510.24342](https://arxiv.org/abs/2510.24342))
 
 ### Core Finding
 
@@ -70,7 +69,7 @@ betti = result.diagram.betti_numbers(persistence_threshold=0.1)
 
 ### ModelCypher Implementation
 
-Our multi-model alignment (`core/domain/geometry/generalized_procrustes.py`) and curvature analysis (`core/domain/geometry/manifold_curvature.py`) enable positioning models in unified geometric spaces:
+Our multi-model alignment (`src/modelcypher/core/domain/geometry/generalized_procrustes.py`) and curvature analysis (`src/modelcypher/core/domain/geometry/manifold_curvature.py`) enable positioning models in unified geometric spaces:
 
 ```python
 from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes
@@ -87,7 +86,7 @@ result = procrustes.align([model_a_activations, model_b_activations, model_c_act
 
 ## Brain-AI Convergent Evolution
 
-**Paper**: Shen, G., et al. (2025). *Alignment between Brains and AI: Evidence for Convergent Evolution across Modalities, Scales and Training Trajectories*. arXiv:2507.01966.
+**Paper**: Shen, G., et al. (2025). *Alignment between Brains and AI: Evidence for Convergent Evolution across Modalities, Scales and Training Trajectories*. ([PDF](references/arxiv/Shen_2025_Alignment_Brains_AI_Evidence_Convergent_Evolution.pdf), [arXiv:2507.01966](https://arxiv.org/abs/2507.01966))
 
 ### Core Finding
 
@@ -122,7 +121,7 @@ Topological Representational Similarity Analysis (tRSA) provides a robust way to
 
 ### ModelCypher Implementation
 
-Our Gromov-Wasserstein distance (`core/domain/geometry/gromov_wasserstein.py`) measures geometric similarity independent of coordinate systems:
+Our Gromov-Wasserstein distance (`src/modelcypher/core/domain/geometry/gromov_wasserstein.py`) measures geometric similarity independent of coordinate systems:
 
 ```python
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
@@ -151,12 +150,10 @@ The same functional geometry appears across primates despite differences in brai
 Our cross-model comparison tools enable testing whether this cross-species invariance extends to artificial systems:
 
 ```python
-from modelcypher.core.domain.geometry.cka import CKAComputer
+from modelcypher.core.domain.geometry.cka import compute_linear_cka
 
-cka = CKAComputer(backend)
-# Compare models of radically different architectures
-result = cka.compute(llama_activations, qwen_activations)
-# High CKA despite architectural differences → shared geometry
+# Compare models of radically different architectures (same probe set)
+similarity = compute_linear_cka(llama_activations, qwen_activations, backend)
 ```
 
 ---
@@ -173,7 +170,7 @@ Brain connectivity follows an exponential distance rule (short connections stron
 
 ### ModelCypher Implementation
 
-Our spatial 3D analysis (`core/domain/geometry/spatial_3d.py`) measures how models project concepts onto human-perceptual axes:
+Our spatial 3D analysis (`src/modelcypher/core/domain/geometry/spatial_3d.py`) measures how models project concepts onto human-perceptual axes:
 
 ```python
 from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
@@ -210,7 +207,9 @@ ModelCypher provides the geometric infrastructure to test and extend this hypoth
 
 ---
 
-## Experimental Evidence
+## Preliminary Measurements (internal runs)
+
+The numeric summaries below are from local runs (2025-12-31) and are included as working notes. Raw outputs are not yet checked into the repo; reproduce with the commands shown to validate on your setup.
 
 ### Dimensionality Collapse in SmolLM-360M (2025-12-31)
 

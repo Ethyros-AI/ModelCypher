@@ -2,10 +2,14 @@
 
 ModelCypher's inference subsystem provides entropy-aware token generation (dual-path), adapter pooling primitives, and cross-platform support.
 
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- For machine-readable output when scripting the CLI, prefer `mc --ai ...` (forces JSON output and suppresses prompts/logs).
+
 ## Architecture Overview
 
 ```
-modelcypher/core/domain/inference/
+src/modelcypher/core/domain/inference/
 ├── __init__.py            # Public API and exports
 ├── types.py               # Shared dataclasses and enums
 ├── activation_stream.py   # Activation capture stream
@@ -15,7 +19,7 @@ modelcypher/core/domain/inference/
 ├── dual_path_cuda.py      # CUDA/PyTorch implementation
 └── dual_path_jax.py       # JAX/TPU implementation
 
-modelcypher/core/use_cases/inference/
+src/modelcypher/core/use_cases/inference/
 └── comparison.py          # Checkpoint comparison coordinator
 ```
 
@@ -45,7 +49,7 @@ MC_DISABLE_MLX=1 poetry run mc infer ...
 
 ## DualPathGenerator
 
-The core inference engine runs two models (base + adapter) in parallel, tracking entropy disagreement to detect security anomalies.
+The core inference engine can run two paths (base + adapter) in parallel and track entropy disagreement. CUDA/JAX generators can emit anomaly samples when caller-provided thresholds are set.
 
 ### Configuration
 
@@ -120,7 +124,7 @@ class EntropyDeltaSample:
     adapter_top_token: int
     latency_ms: float
 
-    # Optional approval metrics
+    # Optional rank/logit metrics
     base_logit_margin: float | None = None
     base_token_logit: float | None = None
     base_rank_fraction: float | None = None
@@ -217,7 +221,7 @@ class SecurityScanMetrics:
     tokens_per_second: float
 ```
 
-CLI inference (`mc infer run --security-scan`) returns a `SecurityScanSummary`
+CLI inference (`poetry run mc infer run --security-scan`) returns a `SecurityScanSummary`
 with `anomaly_count`, `max_anomaly_score`, `avg_delta`, and `disagreement_rate`.
 Local inference currently returns zeroed values (no geometry-derived scan).
 

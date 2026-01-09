@@ -1,6 +1,6 @@
-# ModelCypher Integration Architecture
+# ModelCypher Integration Architecture (Archived)
 
-> Status: Historical gap analysis. Several items are now integrated; see current code and `docs/REPO-AUDIT-2025-01-04.md`.
+> Archived engineering note: this is a historical gap analysis, and the atlas inventory (sources/counts) and merge pipeline have evolved since it was written. For current user-facing architecture, see `docs/ARCHITECTURE.md` and `docs/MERGE-ARCHITECTURE.md`. For current atlas inventory counts, use `mc_geometry_atlas_inventory` (see `docs/MCP-TOOLS-CATALOG.md`).
 
 ## The Problem
 

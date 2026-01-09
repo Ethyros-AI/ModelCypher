@@ -134,6 +134,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
             evalMaxSamples: int | None = None,
             evalWait: bool | None = None,
         ) -> dict:
+            """Start a training job (optionally with auto-evaluation)."""
             dataset_path = require_existing_path(dataset)
             hyper = _parse_hyperparameters(hyperparameters)
             batch_size = hyper.batch_size
@@ -218,6 +219,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_job_status(jobId: str) -> dict:
+            """Return training job status and progress."""
             status = ctx.training_service.status(jobId)
             mapped_status = map_job_status(status["status"])
             return {
@@ -239,6 +241,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_job_list(status: str | None = None, activeOnly: bool = False) -> dict:
+            """List training jobs (optionally filtered)."""
             status_filter = status
             if status_filter == "queued":
                 status_filter = "pending"
@@ -268,6 +271,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_job_detail(jobId: str) -> dict:
+            """Return detailed training job information."""
             payload = ctx.job_service.show_job(jobId, include_loss_history=True)
             hyper = payload.get("hyperparameters")
             if not isinstance(hyper, dict):
@@ -311,6 +315,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
         def mc_job_cancel(jobId: str) -> dict:
+            """Cancel a training job."""
             ctx.training_service.cancel(jobId)
             return {
                 "_schema": "mc.job.cancel.v1",
@@ -322,6 +327,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_job_pause(jobId: str) -> dict:
+            """Pause a training job."""
             ctx.training_service.pause(jobId)
             return {
                 "_schema": "mc.job.pause.v1",
@@ -333,6 +339,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
         def mc_job_resume(jobId: str) -> dict:
+            """Resume a paused training job."""
             ctx.training_service.resume(jobId)
             return {
                 "_schema": "mc.job.resume.v1",
@@ -375,6 +382,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
             outputPath: str,
             hyperparameters: dict,
         ) -> dict:
+            """Validate that training can proceed on this machine."""
             dataset_path = require_existing_path(dataset)
             hyper = _parse_hyperparameters(hyperparameters)
             config = TrainingSpec(
@@ -402,6 +410,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
             outputPath: str,
             hyperparameters: dict,
         ) -> dict:
+            """Estimate whether training will fit and peak memory usage."""
             dataset_path = require_existing_path(dataset)
             hyper = _parse_hyperparameters(hyperparameters)
             config = TrainingSpec(

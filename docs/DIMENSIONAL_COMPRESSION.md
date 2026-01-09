@@ -34,7 +34,7 @@ Neural network representations are **high-dimensional probability clouds**—not
   - red apple 🍎
   - green apple 🍏
   - pomme (French)
-  - Apple Inc. 
+  - Apple Inc.
   - the associated embeddings for all related concepts
 ```
 
@@ -98,6 +98,16 @@ If the merged model shows repetition but correct knowledge (e.g., correctly expl
 3. Tokenizer/vocabulary alignment issues
 
 The **knowledge** is there (CKA=1.0 proves it). The **generation dynamics** may need tuning.
+
+## Verification (code + citations)
+
+- Exact Gram-space alignment (CKA=1.0 target): `../src/modelcypher/core/domain/geometry/gram_aligner.py#L18` (core principle + closed-form T = K_t^{1/2} @ K_s^{-1/2})
+- Gram-space alignment in CRM: `../src/modelcypher/core/domain/geometry/concept_response_matrix.py#L322` (same T derivation and invariance statement)
+- CKA reference implementation: `../src/modelcypher/core/domain/geometry/cka.py`
+
+References:
+- Kornblith et al. (2019), CKA similarity ([PDF](references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf), [arXiv:1905.00414](https://arxiv.org/abs/1905.00414))
+- Murphy et al. (2024), corrected/bias-aware CKA/HSIC ([PDF](references/arxiv/Murphy_2024_Correcting_Biased_Centered_Kernel_Alignment_Measures.pdf), [arXiv:2405.01012](https://arxiv.org/abs/2405.01012))
 
 ---
 

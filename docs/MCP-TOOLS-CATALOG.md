@@ -2,7 +2,7 @@
 
 Complete reference for ModelCypher MCP tools. These tools enable AI assistants to work with LLM geometric analysis, training, and model operations.
 
-**Tool Count:** Varies by `MC_MCP_TOOL_SET`; verify against the running server's registry.
+**Tool Count:** Varies by `MC_MCP_PROFILE`; verify against the running server's `tools/list` registry.
 
 ---
 
@@ -96,15 +96,17 @@ Delete a model. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1.
 
 ### mc_model_search
 
-Search HuggingFace for models.
+Search for models on HuggingFace.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | Yes | Search query |
-| `limit` | int | No | Max results (default 20) |
-| `library` | string | No | Filter by library (mlx, transformers) |
-| `quantization` | string | No | Filter by quantization |
-| `sort` | string | No | Sort option |
+| `query` | string | No | Search query |
+| `author` | string | No | Filter by author/user/org |
+| `library` | string | No | Filter by library (mlx, safetensors, pytorch, any) |
+| `quant` | string | No | Filter by quantization (4bit, 8bit, any) |
+| `sort` | string | No | Sort option (downloads, likes, lastModified, trending) |
+| `limit` | int | No | Max results (default 20; max 100) |
+| `cursor` | string | No | Pagination cursor (from prior `nextCursor`) |
 
 **Returns:** Array of matching models with metadata.
 
@@ -124,39 +126,39 @@ Probe model architecture and configuration.
 
 ### mc_model_validate_merge
 
-Validate merge compatibility between two models.
+Validate merge effort between two models.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `source` | string | Yes | Source model path |
 | `target` | string | Yes | Target model path |
 
-**Returns:** Compatibility assessment, dimension alignment, potential issues.
+**Returns:** Merge-effort flags (`lowEffort`, match booleans) and warnings.
 
 ---
 
 ### mc_model_analyze_alignment
 
-Analyze geometric alignment between two models.
+Analyze alignment drift between two models.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `modelA` | string | Yes | First model path |
 | `modelB` | string | Yes | Second model path |
 
-**Returns:** CKA similarity, alignment metrics, layer correspondence.
+**Returns:** Drift magnitude stats and per-layer drift summaries.
 
 ---
 
 ### mc_model_fetch
 
-Fetch model from HuggingFace.
+Fetch a model from HuggingFace.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `repoId` | string | Yes | HuggingFace repo ID |
-| `outputDir` | string | No | Local output directory |
-| `revision` | string | No | Branch/tag/commit |
+| `modelId` | string | Yes | HuggingFace repo ID |
+| `revision` | string | No | Branch/tag/commit (default: main) |
+| `idempotencyKey` | string | No | Prevent duplicate downloads |
 
 **Returns:** Download status, local path.
 
@@ -179,6 +181,9 @@ Start a training job.
 | `idempotencyKey` | string | No | Prevent duplicate jobs |
 | `evalDataset` | string | No | Evaluation dataset |
 | `evalMetrics` | array | No | Metrics to compute |
+| `evalBatchSize` | int | No | Evaluation batch size (required if `autoEval=true`) |
+| `evalMaxSamples` | int | No | Max evaluation samples |
+| `evalWait` | bool | No | Wait for evaluation completion (required if `autoEval=true`) |
 
 **Hyperparameters object:**
 - `batchSize`, `learningRate`, `epochs`, `sequenceLength`
@@ -270,29 +275,31 @@ Delete a job and its artifacts.
 
 ### mc_validate_train
 
-Validate training configuration without starting.
+Validate that training can proceed (preflight only).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `model` | string | Yes | Model path |
 | `dataset` | string | Yes | Dataset path |
+| `outputPath` | string | Yes | Output directory |
 | `hyperparameters` | object | Yes | Hyperparameters |
 
-**Returns:** Validation result, warnings, estimated memory.
+**Returns:** `valid`, `metalAvailable`, and `recommendedBatchSize`.
 
 ---
 
 ### mc_estimate_train
 
-Estimate training resource requirements.
+Estimate whether training will fit and peak usage.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `model` | string | Yes | Model path |
 | `dataset` | string | Yes | Dataset path |
+| `outputPath` | string | Yes | Output directory |
 | `hyperparameters` | object | Yes | Hyperparameters |
 
-**Returns:** Memory estimate, steps, estimated tokens.
+**Returns:** `willFit`, `recommendedBatchSize`, and peak/available GB.
 
 ---
 
@@ -304,8 +311,9 @@ Run comprehensive preflight checks.
 |-----------|------|----------|-------------|
 | `model` | string | Yes | Model path |
 | `dataset` | string | Yes | Dataset path |
+| `outputPath` | string | Yes | Output directory |
 | `hyperparameters` | object | Yes | Hyperparameters |
-| `outputPath` | string | No | Output directory |
+| `lora` | object | No | LoRA configuration |
 
 **Returns:** All checks passed/failed, detailed diagnostics.
 
@@ -482,9 +490,8 @@ Validate agent action for safety.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | JSON action object |
-| `strict` | bool | No | Strict validation mode |
 
-**Returns:** Valid flag, errors, warnings, risk level.
+**Returns:** Valid flag, kind, errors, warnings.
 
 ---
 
@@ -714,8 +721,9 @@ Probe model spatial capabilities.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `modelPath` | string | Yes | Model path |
+| `saveActivations` | string | No | Optional path to save activations JSON |
 
-**Returns:** Spatial scores by dimension.
+**Returns:** 3D world-model analysis and optional activation export.
 
 ---
 
@@ -817,10 +825,10 @@ Predict merge interference between models.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `source` | string | Yes | Source model |
-| `target` | string | Yes | Target model |
+| `sourceModel` | string | Yes | Source model path |
+| `targetModel` | string | Yes | Target model path |
 
-**Returns:** Interference scores by layer, risk assessment.
+**Returns:** Per-domain analysis status; use CLI for full activation extraction.
 
 ---
 
@@ -861,11 +869,50 @@ Analyze DoRA magnitude/direction decomposition.
 
 ---
 
+### mc_geometry_safety_polytope_check
+
+Check whether model representations stay within safety polytope constraints.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `modelPath` | string | Yes | Model path |
+| `testPrompts` | array | No | Optional prompts to test (defaults used if omitted) |
+
+**Returns:** Polytope membership results per prompt.
+
+---
+
+### mc_geometry_transfer_fidelity
+
+Predict knowledge transfer fidelity between models.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sourceModelPath` | string | Yes | Source model path |
+| `targetModelPath` | string | Yes | Target model path |
+
+**Returns:** Fidelity score and related transfer metrics.
+
+---
+
 ## Geometry - Metaphor
 
 ### mc_geometry_metaphor_list
 
 List metaphor invariant atlases.
+
+---
+
+### mc_geometry_metaphor_generate_probes
+
+Generate conceptual metaphor probes for invariance testing.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `domains` | array | No | Optional domain filter (e.g., ["time", "emotion"]) |
+| `includeCrossCultural` | bool | No | Also generate cross-cultural probe pairs |
+
+**Returns:** Generated probes and domain coverage.
 
 ---
 
@@ -927,6 +974,21 @@ List atlas inventory entries.
 
 ---
 
+### mc_geometry_anchor_invariance
+
+Analyze semantic anchor stability across a model pair.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sourceModelPath` | string | Yes | Source model path |
+| `targetModelPath` | string | Yes | Target model path |
+| `anchorPrefix` | string | No | Anchor prefix (default: "invariant:") |
+| `alignMode` | string | No | Alignment mode (layer, normalized) |
+
+**Returns:** Anchor invariance summary and per-anchor metrics.
+
+---
+
 ## Geometry - Visualize
 
 ### mc_geometry_visualize_create
@@ -944,6 +1006,20 @@ Visualize from activation files.
 ### mc_geometry_visualize_info
 
 Get visualization capabilities.
+
+---
+
+### mc_geometry_visualize_fingerprints_2d
+
+Project model fingerprints to 2D for visualization.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `modelPath` | string | Yes | Model path |
+| `output` | string | No | Output JSON path (default: fingerprints_2d.json) |
+| `maxFeatures` | int | No | Max features to use (default: 1200) |
+
+**Returns:** 2D projection metadata and output path.
 
 ---
 
@@ -1122,6 +1198,7 @@ List background tasks.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `status` | string | No | Filter by status |
+| `taskType` | string | No | Filter by task type |
 | `limit` | int | No | Max results |
 
 ---
@@ -1201,18 +1278,7 @@ All tools return JSON with a `_schema` field for versioning:
 
 ## Error Handling
 
-Errors are returned as JSON with standardized structure:
-
-```json
-{
-  "error": {
-    "code": "MC-1001",
-    "title": "Short description",
-    "detail": "Full explanation",
-    "hint": "Suggested fix"
-  }
-}
-```
+Errors are surfaced via MCP tool errors (not as a `_schema` JSON payload). Clients should treat these as failed tool calls and read the error message.
 
 ---
 
@@ -1222,14 +1288,19 @@ Errors are returned as JSON with standardized structure:
 
 | Variable | Description |
 |----------|-------------|
+| `MC_MCP_PROFILE` | Tool profile (default: `full`) |
 | `MC_MCP_REQUIRE_CONFIRMATION` | Require confirmation for destructive ops |
-| `MC_MODELS_DIR` | Default models directory |
-| `MC_LOG_LEVEL` | Logging verbosity |
+| `MC_MCP_CONFIRMATION_TIMEOUT` | Confirmation timeout seconds (default: 300) |
+| `MC_MCP_AUTH_ENABLED` | Enable OAuth resource server validation |
+| `MC_MCP_AUTH_ISSUER` | OAuth issuer (required if auth enabled) |
+| `MC_MCP_AUTH_AUDIENCE` | OAuth audience (required if auth enabled) |
+| `MC_MCP_AUTH_JWKS_URI` | JWKS URI (required if auth enabled) |
+| `MC_MCP_SECRET_KEY` | Secret for confirmation token signing |
 
-### Tool Filtering
+### Tool Profiles
 
-Use `MC_MCP_TOOL_SET` to limit exposed tools:
+Select the tool profile with `MC_MCP_PROFILE`:
 
 ```bash
-MC_MCP_TOOL_SET="mc_model_list,mc_infer,mc_geometry_*" poetry run modelcypher-mcp
+MC_MCP_PROFILE=full poetry run modelcypher-mcp
 ```

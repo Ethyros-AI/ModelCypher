@@ -2,6 +2,8 @@
 
 This guide covers profiling techniques, caching strategies, and optimization tips for ModelCypher operations.
 
+In this repo, run CLI commands as `poetry run mc ...` (instead of `mc ...`).
+
 ## Quick Profiling
 
 ### CLI Timing
@@ -10,10 +12,10 @@ Use the shell's `time` command for simple timing:
 
 ```bash
 # Time a geometry operation
-time mc geometry crm build --model ./model --output-path ./crm.json
+time poetry run mc geometry crm build --model ./model --output-path ./crm.json
 
 # Time with verbose output
-mc --log-level debug geometry validate
+poetry run mc --log-level debug geometry validate
 ```
 
 ### Memory Monitoring
@@ -22,13 +24,13 @@ Monitor memory during operations:
 
 ```bash
 # Watch system status (if `watch` is available)
-watch -n 2 mc system status
+watch -n 2 poetry run mc system status
 
 # Portable loop
-while true; do mc system status; sleep 2; done
+while true; do poetry run mc system status; sleep 2; done
 
 # MLX-specific memory info
-python -c "import mlx.core as mx; print(mx.metal.get_active_memory() / 1e9, 'GB')"
+poetry run python -c "import mlx.core as mx; print(mx.metal.get_active_memory() / 1e9, 'GB')"
 
 # macOS Activity Monitor equivalent
 top -pid $(pgrep -f modelcypher)
@@ -75,7 +77,7 @@ Concept Response Matrices are stored at the specified output path.
 
 ```bash
 # Reuse existing CRM
-mc geometry crm compare --crm-a ./crm1.json --crm-b ./crm2.json
+poetry run mc geometry crm compare --source ./crm1.json --target ./crm2.json
 ```
 
 ## Optimizing Geometry Operations
@@ -85,7 +87,7 @@ mc geometry crm compare --crm-a ./crm1.json --crm-b ./crm2.json
 The atlas dimensionality command exposes batch size and pooling controls:
 
 ```bash
-mc geometry atlas dimensionality /path/to/model --batch-size 4 --pooling frechet
+poetry run mc geometry atlas dimensionality /path/to/model --batch-size 4 --pooling frechet
 ```
 
 ## Python Profiling
@@ -118,11 +120,13 @@ stats.print_stats(20)
 
 For line-by-line analysis (requires `line_profiler`):
 
-```python
-# Add @profile decorator to functions of interest
-# Then run with kernprof
+Add `@profile` decorator to functions of interest, then run:
+
+```bash
 kernprof -l -v script.py
 ```
+
+Note: `kernprof` comes from `line_profiler` and is not installed by default in this repo's Poetry environment.
 
 ## MLX-Specific Profiling
 
@@ -149,7 +153,7 @@ import mlx.core as mx
 before = mx.metal.get_active_memory()
 
 # ... geometry operation ...
-backend.eval(result)
+mx.eval(result)
 
 # After operation
 after = mx.metal.get_active_memory()
@@ -198,7 +202,7 @@ rm "$HOME/Library/Caches/ModelCypher/fingerprints/"*model_name*
 Use local measurements for accuracy:
 
 ```bash
-mc system benchmark cache
+poetry run mc system benchmark cache
 ```
 
 End-to-end timings vary widely by model size, backend, and probe set.

@@ -4,7 +4,11 @@ ModelCypher uses “high-dimensional geometry” to turn training artifacts (wei
 
 This is not a full math textbook. It’s a translation layer: the smallest set of ideas you need to explain what the tools measure and why it’s useful.
 
-If you want the academic citations behind the “knowledge as geometry” framing, see `research/KnowledgeasHighDimensionalGeometryInLLMs.md`.
+If you want the academic citations behind the “knowledge as geometry” framing, see [research/KnowledgeasHighDimensionalGeometryInLLMs.md](research/KnowledgeasHighDimensionalGeometryInLLMs.md).
+
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
 
 ## The core idea: everything is a vector
 
@@ -23,14 +27,14 @@ Once you accept “it’s a vector”, the rest is distance + direction + shape.
 
 Distance answers: **"How much changed?"**
 
-- ModelCypher uses **geodesic distance** (distance along the data manifold), not Euclidean distance.
-- Geodesic distance captures the true structure of high-dimensional representation spaces.
+- Many ModelCypher geometry commands report **geodesic distance** on a k-NN graph (shortest path distance), rather than raw Euclidean distance.
+- Euclidean distance is still used for the bootstrap step (building k-NN edges) and can be useful for sanity checks.
 - Bigger distance usually means bigger updates or bigger drift.
 
 How to explain to a human:
 "Distance is the size of the change, measured along the shape of the data—like road distance between cities, not straight-line distance through the earth."
 
-> **Why geodesic?** Euclidean distance becomes meaningless in high dimensions (1000D+). All points appear roughly equidistant. Geodesic distance follows the actual manifold structure and remains meaningful at any dimension.
+> **Why geodesic?** Euclidean distance can become less informative in high dimensions (distances concentrate). Graph-geodesic distances track neighborhood structure implied by the point cloud and are often more informative under curved/nonlinear geometry.
 
 ### Direction (angle)
 
@@ -91,7 +95,7 @@ Training is often described as optimizing a landscape:
 ModelCypher uses proxies (not full Hessians) to estimate whether the current region looks flat or sharp.
 
 How to explain to a human:
-“Flatness is a stability hint. Sharpness can mean the model is sensitive and might generalize worse or become unstable.”
+“Flatness is a stability hint under the measured setup. Treat it as a diagnostic signal, not a guarantee about generalization or safety.”
 
 ## Adapter math (LoRA/DARE/DoRA)
 
@@ -128,3 +132,10 @@ How to explain to a human:
 - They do not remove the need for policy review, red teaming, or human judgment.
 
 Use them to report: “something changed — here’s where, how much, and the confidence of that change.”
+
+## Selected references
+
+- CKA similarity: Kornblith et al. (2019) ([PDF](references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf), [arXiv:1905.00414](https://arxiv.org/abs/1905.00414))
+- k-NN graph geodesics (Isomap): Tenenbaum et al. (2000) ([DOI:10.1126/science.290.5500.2319](https://doi.org/10.1126/science.290.5500.2319))
+- Procrustes alignment: Gower (1975) ([DOI:10.1007/BF02291478](https://doi.org/10.1007/BF02291478))
+- Optimal transport background (incl. GW): Peyré & Cuturi (2018) ([PDF](references/arxiv/Peyre_2018_Computational_Optimal_Transport.pdf), [arXiv:1803.00567](https://arxiv.org/abs/1803.00567))

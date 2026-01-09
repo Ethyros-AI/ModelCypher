@@ -71,10 +71,12 @@ def register_evaluation_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_eval_list(limit: int = 50) -> dict:
+            """List recent evaluation runs."""
             return ctx.evaluation_service.list_evaluations(limit)
 
     if "mc_eval_show" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_eval_show(evalId: str) -> dict:
+            """Show evaluation results for a given eval id."""
             return ctx.evaluation_service.results(evalId)

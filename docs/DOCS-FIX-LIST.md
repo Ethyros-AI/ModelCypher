@@ -15,7 +15,7 @@ Notes:
 
 ## ArXiv coverage
 
-- Referenced arXiv IDs in markdown: 86
+- Referenced arXiv IDs in markdown: 87
 - IDs in `docs/references/download_arxiv.sh`: 96
 - PDFs in `docs/references/arxiv/`: 96
 

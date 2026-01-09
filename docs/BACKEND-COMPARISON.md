@@ -2,6 +2,10 @@
 
 ModelCypher supports multiple compute backends for different platforms. This guide helps you select the right backend for your environment.
 
+Notes:
+- In this repo, run CLI commands as `poetry run mc ...`.
+- ModelCypher does not auto-fallback to CPU. If no GPU backend is available, it fails fast with an install hint.
+
 ## Quick Selection
 
 | Platform | Default Backend | Install Command |
@@ -10,17 +14,6 @@ ModelCypher supports multiple compute backends for different platforms. This gui
 | Linux + NVIDIA GPU | CUDABackend | `poetry install -E cuda` |
 | Linux + TPU | JAXBackend | `poetry install -E jax` |
 
-## Capability Matrix
-
-| Feature | MLX | JAX | CUDA |
-|---------|-----|-----|------|
-| Unified Memory | Yes | No | No |
-| GPU Acceleration | Metal | TPU/GPU | CUDA |
-| Quantization (4/8-bit) | Full | Partial | No |
-| Training | Yes | Yes | Yes |
-| Inference | Yes | Yes | Yes |
-| SOTA Performance APIs | Yes | Yes | Yes |
-
 ## Performance Characteristics
 
 ### MLX (Apple Silicon)
@@ -28,8 +21,7 @@ ModelCypher supports multiple compute backends for different platforms. This gui
 **Strengths:**
 - Unified memory architecture (no CPU↔GPU copies)
 - Lazy evaluation with automatic fusion
-- Native quantization support (4-bit, 8-bit)
-- Zero-copy operations
+- Quantization support via the Backend protocol (`quantize` / `dequantize`)
 
 **Weaknesses:**
 - macOS only
@@ -60,14 +52,6 @@ backend.eval(result)  # Forces computation
 
 **Typical use cases:** TPU training, research, large-scale experiments
 
-**Key Pattern:**
-```python
-# JAX benefits from JIT compilation
-@jax.jit
-def compute(a, b):
-    return backend.matmul(a, b)
-```
-
 ### CUDA (NVIDIA)
 
 **Strengths:**
@@ -79,7 +63,6 @@ def compute(a, b):
 **Weaknesses:**
 - Explicit memory management
 - Linux-focused ecosystem
-- No native quantization in this backend
 
 **Typical use cases:** Production inference, large-scale training on NVIDIA hardware
 
@@ -89,21 +72,6 @@ def compute(a, b):
 result = backend.matmul(a, b)
 backend.eval()  # torch.cuda.synchronize()
 ```
-
-### NumPy (Testing)
-
-**Strengths:**
-- Universal availability
-- Deterministic behavior
-- Easy debugging
-- No GPU dependencies
-
-**Weaknesses:**
-- No GPU acceleration
-- Too slow for real models
-- Not suitable for production
-
-**Typical use cases:** Unit tests, CI/CD, algorithm development
 
 ## Backend-Specific Notes
 
@@ -120,8 +88,7 @@ backend.eval(c)            # Now it runs
 
 Always call `backend.eval()` before:
 - Timing operations
-- Converting to numpy
-- Checking values
+- Extracting values (use `backend.tolist()` / `backend.to_scalar()`)
 
 ### JAX Random Keys
 
@@ -139,26 +106,17 @@ All CUDA tensors are created on the GPU:
 ```python
 # Automatically on CUDA device
 tensor = backend.zeros((100, 100))  # device="cuda"
-numpy_array = backend.to_numpy(tensor)  # Moves to CPU
+tensor_list = backend.tolist(tensor)  # Extracts to Python values
 ```
 
 ## Selecting a Backend at Runtime
 
-The backend is typically selected based on environment (`MC_BACKEND`, alias: `MODELCYPHER_BACKEND`):
+The backend is selected based on platform detection, with an environment override (`MC_BACKEND`, alias: `MODELCYPHER_BACKEND`):
 
 ```python
-import os
+from modelcypher.backends import detect_default_backend_type, get_backend
 
-if os.environ.get("MC_BACKEND") == "cuda":
-    from modelcypher.backends.cuda_backend import CUDABackend
-    backend = CUDABackend()
-elif os.environ.get("MC_BACKEND") == "jax":
-    from modelcypher.backends.jax_backend import JAXBackend
-    backend = JAXBackend()
-else:
-    # Default to MLX on macOS
-    from modelcypher.backends.mlx_backend import MLXBackend
-    backend = MLXBackend()
+backend = get_backend(detect_default_backend_type())
 ```
 
 ## Memory Considerations
@@ -168,12 +126,6 @@ else:
 | MLX | Lower | Unified memory, lazy evaluation |
 | JAX | Higher | JIT compilation caches |
 | CUDA | Medium | Explicit allocation |
-| NumPy | Highest | Full precision, no optimization |
-
-For memory-constrained environments:
-1. Use smaller batch sizes (`--batch-size 4`)
-2. Select specific layers (`--layers 0,6,12,18,24`)
-3. Enable streaming mode where available
 
 ## Troubleshooting
 

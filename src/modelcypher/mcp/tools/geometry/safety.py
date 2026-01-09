@@ -141,6 +141,7 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
+            """Analyze DARE adapter sparsity and per-layer importance."""
             analysis = ctx.geometry_adapter_service.analyze_dare(checkpointPath, basePath)
             per_layer = []
             for name, metrics in analysis.per_layer_sparsity.items():
@@ -171,6 +172,7 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
         def mc_geometry_dora_decomposition(
             checkpointPath: str, basePath: str | None = None
         ) -> dict:
+            """Analyze DoRA adapter decomposition and stability signals."""
             result = ctx.geometry_adapter_service.analyze_dora(checkpointPath, basePath)
             stability_score = ctx.geometry_adapter_service.dora_stability_score(result)
             per_layer = []

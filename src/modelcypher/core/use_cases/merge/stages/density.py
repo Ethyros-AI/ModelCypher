@@ -130,6 +130,7 @@ def stage_density(
     probe_ids: list[str],
     probe_domains: list[str],
     layers: list[int],
+    feature_transforms: dict[int, "Array"] | None = None,
     backend: "Backend | None" = None,
 ) -> DensityStageResult:
     """Stage 2: Compute knowledge density profiles and graft mask.
@@ -140,7 +141,9 @@ def stage_density(
         probe_ids: List of probe IDs corresponding to activations.
         probe_domains: List of domains for each probe.
         layers: Layer indices to analyze.
-        config: Stage configuration.
+        feature_transforms: CKA alignment transforms per layer (source→target space).
+            When provided, source activations are projected into target space before
+            density comparison. This enables fair comparison across different dimensions.
         backend: Backend for tensor operations.
 
     Returns:
@@ -248,9 +251,32 @@ def stage_density(
             tgt_matrix = _to_matrix(tgt_acts)
             b.eval(src_matrix, tgt_matrix)
 
-            # Compute point cloud density comparison
+            # =====================================================================
+            # ALIGNED DENSITY COMPARISON: Project source into target space first
+            # =====================================================================
+            # When feature_transforms is available, project source activations into
+            # target's coordinate system before comparing density. This ensures:
+            # 1. Both point clouds are in the same dimensional space
+            # 2. Density comparison is meaningful (apples to apples)
+            # 3. We find where target is TRULY sparse, not just "smaller"
+            src_for_density = src_matrix
+            if feature_transforms and layer_idx in feature_transforms:
+                F = feature_transforms[layer_idx]
+                # F has shape [target_dim, source_dim]
+                # src_matrix has shape [n_points, source_dim]
+                # aligned = src_matrix @ F.T gives [n_points, target_dim]
+                src_for_density = b.matmul(src_matrix, b.transpose(F))
+                b.eval(src_for_density)
+                logger.debug(
+                    "DENSITY: Layer %d - Projected source %s → target space %s",
+                    layer_idx,
+                    src_matrix.shape,
+                    src_for_density.shape,
+                )
+
+            # Compute point cloud density comparison (both in target space now)
             pc_result = compute_knn_point_cloud_density(
-                source_activations=src_matrix,
+                source_activations=src_for_density,
                 target_activations=tgt_matrix,
                 backend=b,
             )

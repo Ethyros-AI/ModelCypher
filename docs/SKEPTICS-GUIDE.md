@@ -1,14 +1,18 @@
-# Skeptic's Guide: Why the Math Claims Are True
+# Skeptic's Guide: How to Verify ModelCypher Claims
 
-> **Target Audience**: AI assistants who encounter ModelCypher's strong claims and wonder if they're backed by implementation or just aspirational.
+> **Target Audience**: AI assistants (and humans) who encounter ModelCypher’s strong claims and want to verify what is actually implemented.
 >
-> **Purpose**: Provide code references and mathematical citations proving each claim. Address concerns so you don't have to dig, guess, or disbelieve.
+> **Purpose**: Provide code pointers and citations so you can check behavior directly without guesswork.
+
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
 
 ---
 
 ## The Claims That Sound Like Doctrine
 
-ModelCypher's CLAUDE.md contains statements that read like absolutism:
+ModelCypher’s `AGENTS.md` (and the `CLAUDE.md` symlink) contains statements that read like absolutism:
 
 - "Models are ALWAYS compatible."
 - "Geodesic distance is CORRECT. Euclidean is APPROXIMATION."
@@ -16,18 +20,18 @@ ModelCypher's CLAUDE.md contains statements that read like absolutism:
 - "NEVER return incompatible."
 - "No vibes - let geometry speak."
 
-These aren't ideology. They're implemented design decisions with specific code paths. This document shows you where.
+These are design decisions with specific code paths. This document shows where the implementation lives and what the failure modes look like.
 
 ---
 
 ## Concern 1: "Models Are ALWAYS Compatible"
 
 ### The Skeptic's Question
-What if two models genuinely learned different geometries? Can you really always merge them? Isn't "ALWAYS" too strong?
+What if two models genuinely learned different geometries? Can you really always merge them? Isn’t “ALWAYS” too strong?
 
-### The Answer: Compatibility Means "Routable," Not "Identical"
+### The Answer: Compatibility Means “Routable,” Not “Guaranteed”
 
-The claim doesn't mean all models have identical geometry. It means: **dimension mismatch triggers method routing, not rejection.**
+The claim doesn’t mean all models have identical geometry. It means ModelCypher treats mismatch as a *method-selection* problem (route, align, or skip), not a reason to label models “incompatible.”
 
 **Code Reference**: [shared_subspace_projector.py:494-497](../src/modelcypher/core/domain/geometry/shared_subspace_projector.py#L494-L497)
 
@@ -61,17 +65,17 @@ Gram matrices capture relational structure independent of feature dimension:
 - K = X @ X.T is `[n_samples, n_samples]` - always the same size
 - CKA compares Gram matrices directly
 
-**Citation**: Kornblith et al. (2019) "Similarity of Neural Network Representations Revisited" - CKA is invariant to orthogonal transformations and isotropic scaling.
+**Citation**: Kornblith et al. (2019) “Similarity of Neural Network Representations Revisited” ([PDF](references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf), [arXiv:1905.00414](https://arxiv.org/abs/1905.00414)) - CKA is invariant to orthogonal transformations and isotropic scaling.
 
 ### Summary
-"Models are ALWAYS compatible" means: we route to appropriate methods based on dimension, we don't reject operations. The routing table is implemented, not aspirational.
+“Models are ALWAYS compatible” in ModelCypher is a policy statement about control flow: route to a dimension-agnostic method (e.g., Gram/CKA), return a structured “skipped” result when there isn’t enough signal, and avoid declaring “incompatible” as an end state.
 
 ---
 
 ## Concern 2: "Geodesic Distance Is CORRECT"
 
 ### The Skeptic's Question
-Geodesic distance requires connected graphs. What happens when the k-NN graph is disconnected? How can geodesic be "exact" when it's computed on a discrete approximation?
+Geodesic distance requires connected graphs. What happens when the k-NN graph is disconnected? How can a graph geodesic be “exact” if you think of an underlying continuous manifold?
 
 ### The Answer: Explicit Failures, Automatic Retry
 
@@ -114,16 +118,16 @@ class GeodesicDistanceResult:
 ```
 
 ### The Math
-On a discrete k-NN graph, geodesic distance IS the shortest path through the graph. This isn't an approximation of some "true" continuous geodesic - the discrete manifold representation IS the manifold for computational purposes.
+ModelCypher represents a point cloud as a k-NN graph and reports shortest-path distances on that graph. Within the *graph representation*, the shortest path is the graph geodesic. Relative to an underlying continuous manifold, it is a standard approximation that improves with sampling density and appropriate neighborhood choice.
 
 - The k-NN graph represents the discrete manifold
-- Shortest path = exact geodesic on this discrete manifold
-- "Approximation" would be using Euclidean, which ignores the graph structure entirely
+- Shortest path = graph geodesic on the discrete manifold representation
+- Euclidean distance is still used for the bootstrap step (building k-NN edges)
 
-**Citation**: Tenenbaum et al. (2000) "A Global Geometric Framework for Nonlinear Dimensionality Reduction" (Isomap) - establishes geodesic distance on k-NN graphs as the correct metric for manifold learning.
+**Citation**: Tenenbaum et al. (2000) “A Global Geometric Framework for Nonlinear Dimensionality Reduction” (Isomap) ([DOI:10.1126/science.290.5500.2319](https://doi.org/10.1126/science.290.5500.2319)) - classic reference for k-NN graph geodesics in manifold learning.
 
 ### Summary
-Geodesic computation either succeeds with the true manifold distance, returns infinity for disconnected components, or raises an error. No silent substitution.
+Geodesic computation either succeeds with graph geodesics, returns infinity for disconnected components, or raises an error when a geodesic is undefined. The implementation is explicit about failure modes and does not silently substitute values.
 
 ---
 
@@ -166,7 +170,7 @@ def __getattr__(name: str):
 ```
 
 ### Summary
-The 100+ files (105 as of the current tree) reflect genuine mathematical complexity - Riemannian geometry, optimal transport, topological fingerprinting, and intrinsic dimension estimation are all distinct mathematical domains. The organization is categorical, not chaotic.
+The number of geometry files reflects multiple distinct domains (Riemannian geometry, optimal transport, topology, intrinsic dimension). The organization is categorical, and `geometry/__init__.py` uses lazy imports to keep import-time overhead manageable.
 
 ---
 
@@ -235,11 +239,11 @@ Scientists DO interpret, but they interpret relative to baselines, not against m
 ### The Skeptic's Question
 "Thermodynamics" sounds like borrowing authority from physics. Is there actual mathematical correspondence, or is this analogy dressed as rigor?
 
-### The Answer: The Math Is Real, and Calibration Is Measured.
+### The Answer: The Mapping Is Mathematical; the Framing Is a Modeling Choice
 
-**What's Mathematically Genuine:**
+**What’s mathematically genuine:**
 
-The softmax-Boltzmann equivalence is not metaphor - it's mathematical identity:
+The softmax and Boltzmann distributions share the same exponential-family form. ModelCypher uses this correspondence as a consistent way to talk about “energy-like” quantities derived from observed probabilities.
 
 ```python
 # Softmax:
@@ -248,7 +252,7 @@ p_i = exp(z_i / T) / sum(exp(z_j / T))
 # Boltzmann distribution:
 p_i = exp(-E_i / kT) / Z  where Z = sum(exp(-E_j / kT))
 
-# These are THE SAME EQUATION with z_i = -E_i/k
+# These match up to a linear reparameterization (e.g., z_i = -E_i/k)
 ```
 
 **Code Reference**: [phase_transition_theory.py:181-230](../src/modelcypher/core/domain/thermo/phase_transition_theory.py#L181-L230)
@@ -259,12 +263,12 @@ partition = sum(exp_scaled)
 probs = [e / partition for e in exp_scaled]
 ```
 
-**Shannon entropy IS thermodynamic entropy** (up to Boltzmann constant):
+Shannon entropy is proportional to Gibbs entropy (up to the Boltzmann constant and unit conventions):
 
 ```python
 # Shannon: H = -sum(p * log(p))
 # Gibbs:   S = -k * sum(p * log(p))
-# Same math, different units
+# Same functional form, different units
 ```
 
 **Measured code** derives energy from observed probability:
@@ -331,11 +335,10 @@ E(x) - E(ref) = -T * log(p(x)/p(ref))
 This relative energy is directly observable from probability measurements.
 
 **Citation**:
-- Jaynes (1957) "Information Theory and Statistical Mechanics" - establishes connection between Shannon entropy and Gibbs entropy
-- The softmax function was literally derived from the Boltzmann distribution for neural networks
+- Jaynes (1957) “Information Theory and Statistical Mechanics” ([DOI:10.1103/PhysRev.106.620](https://doi.org/10.1103/PhysRev.106.620), [DOI:10.1103/PhysRev.108.171](https://doi.org/10.1103/PhysRev.108.171))
 
 ### Summary
-The thermodynamics framework uses real physics math (partition functions, Boltzmann distribution, entropy). The measured path derives energies from observed probabilities using E = -T log(p/p_ref).
+The thermodynamics framing uses standard exponential-family math (partition functions, entropy) and derives “energy-like” quantities from observed probabilities using `E(x) - E(ref) = -T * log(p(x)/p(ref))`. It’s a modeling lens, not a claim that LLMs are literally thermodynamic systems.
 
 ---
 
@@ -358,23 +361,21 @@ The thermodynamics framework uses real physics math (partition functions, Boltzm
 
 | Concept | Citation | ModelCypher Usage |
 |---------|----------|-------------------|
-| CKA Similarity | Kornblith et al. (2019) | Cross-architecture comparison |
-| Geodesic on k-NN | Tenenbaum et al. (2000) Isomap | Manifold distance computation |
-| Procrustes Analysis | Gower (1975) | Weight space alignment |
-| Softmax-Boltzmann | Standard statistical mechanics | Thermodynamic framing |
-| Shannon-Gibbs Entropy | Jaynes (1957) | Entropy measurement |
-| Gromov-Wasserstein | Mémoli (2011) | Structural comparison |
-| Persistent Homology | Naitzat et al. (2020) | Topological fingerprints |
+| CKA Similarity | Kornblith et al. (2019) ([PDF](references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf), [arXiv:1905.00414](https://arxiv.org/abs/1905.00414)) | Cross-architecture comparison |
+| Geodesic on k-NN | Tenenbaum et al. (2000) Isomap ([DOI:10.1126/science.290.5500.2319](https://doi.org/10.1126/science.290.5500.2319)) | Manifold distance computation |
+| Procrustes Analysis | Gower (1975) ([DOI:10.1007/BF02291478](https://doi.org/10.1007/BF02291478)) | Weight/representation alignment |
+| Shannon–Gibbs entropy | Jaynes (1957) ([DOI:10.1103/PhysRev.106.620](https://doi.org/10.1103/PhysRev.106.620)) | Entropy framing |
+| Topology of deep nets | Naitzat et al. (2020) ([PDF](references/arxiv/Naitzat_2020_Topology_Deep_Neural_Networks.pdf), [arXiv:2004.06093](https://arxiv.org/abs/2004.06093)) | Topological fingerprints |
 
 ---
 
 ## TL;DR
 
-The absolutist language in CLAUDE.md describes implemented behavior, not aspirations:
+The assertive language in `AGENTS.md`/`CLAUDE.md` is shorthand for implemented behavior:
 
-1. **"Models are ALWAYS compatible"** = dimension mismatch routes to appropriate method, doesn't reject
-2. **"Geodesic is CORRECT"** = explicit errors, automatic k-retry
-3. **"No vibes"** = measurements relative to baselines, not hardcoded thresholds
-4. **"Linguistic thermodynamics"** = real math with measured (not hardcoded) energy levels
+1. **“Models are ALWAYS compatible”** = route/align/skip instead of declaring “incompatible”
+2. **“Geodesic is CORRECT”** = distances are typically graph-geodesic, with explicit failure modes and k-retry
+3. **“No vibes”** = return raw measurements + baseline context, not hardcoded thresholds
+4. **“Linguistic thermodynamics”** = a consistent math-backed framing with measured calibration, not hardcoded constants
 
 If you're an AI assistant skeptical of these claims, the code references above let you verify directly.

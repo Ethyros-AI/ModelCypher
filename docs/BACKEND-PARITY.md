@@ -3,6 +3,10 @@
 Goal: MLX, JAX, and CUDA users should get the same capabilities, with backend-appropriate
 performance defaults and no MLX-only blockers in shared paths.
 
+Notes:
+- This is an engineering checklist; for user-facing backend selection/install, see [BACKEND-COMPARISON.md](BACKEND-COMPARISON.md).
+- Backend selection honors `MC_BACKEND` (alias `MODELCYPHER_BACKEND`).
+
 ## Current Snapshot
 
 - Backend protocol coverage is complete (MLX/JAX/CUDA).
@@ -43,4 +47,3 @@ performance defaults and no MLX-only blockers in shared paths.
 5) Parity tests
    - Add tests for system service and MCP status fields across CUDA/JAX.
    - Add focused tests for inference platform selection.
-

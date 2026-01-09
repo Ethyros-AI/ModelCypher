@@ -30,7 +30,7 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 - MLX-based weight loading implementation
 
 #### Safety & Monitoring
-- Circuit breaker for detecting refusal basins and unstable trajectories
+- Circuit breaker signals for refusal/instability monitoring
 - Behavioral probes for safety auditing
 - Entropy differential safety analysis
 - Regime state monitoring and intervention triggers
@@ -44,28 +44,29 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 #### Research Domains
 - Moral geometry based on Haidt's Moral Foundations Theory
 - Temporal topology for time-related representations
-- Social geometry with validated research results
+- Social geometry experiments and probes
 - Semantic primes inventory for cross-linguistic anchoring
 - UnifiedAtlas concept inventory with multi-domain support
 
 #### Backends
 - MLX backend for Apple Silicon (macOS)
 - JAX backend for Linux/TPU/GPU environments
-- NumPy backend for testing and portability
 - Dynamic backend selection based on platform
+ - No automatic CPU fallback (GPU backends are required)
 
 #### CLI (`mc` / `modelcypher`)
-- `mc model probe` - Probe local models for geometric analysis
-- `mc geometry training status` - Monitor training geometry
-- `mc geometry safety circuit-breaker` - Safety checking
-- `mc geometry spatial` - Spatial geometry analysis
-- `mc thermo measure/ridge-detect/phase/sweep` - Thermodynamics commands
-- `mc adapter blend/ensemble` - Adapter management
+Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
+- `mc merge run` - Merge two models via null-space knowledge transplant
+- `mc model probe` - Probe local models for architecture/geometry metadata
+- `mc geometry ...` - Geometry analysis commands (training, safety, spatial, interference, etc.)
+- `mc infer run` / `mc infer suite` - Inference runs with optional security scanning
+- `mc thermo ...` - Thermodynamics metrics and calibration
+- `mc adapter inspect` / `mc adapter project` / `mc adapter wrap-mlx` - Adapter tooling
 - `mc research taxonomy` - Research taxonomy tools
 
 #### MCP Server
 - Full Model Context Protocol server (`modelcypher-mcp`)
-- 148 tools for model analysis and manipulation
+- Tool catalog for model analysis and manipulation (see `docs/MCP-TOOLS-CATALOG.md`)
 - IDE integration support (VS Code, Cursor, etc.)
 
 ### Technical Highlights
@@ -73,7 +74,7 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 - Hexagonal architecture (Ports and Adapters pattern)
 - Strict separation: domain logic has no adapter imports
 - Property-based testing with Hypothesis
-- 3,060 passing tests
+- Thousands of passing tests
 - Type hints throughout (PEP 561 compliant)
 
 ---
@@ -82,7 +83,7 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 
 ### Changed
 - Migrated weight loading to MLX-based implementation
-- Updated probe count assertions from 321 to 343 probes
+- Updated probe count assertions to match the current UnifiedAtlas inventory
 - Removed deprecated integration and unit tests
 - Replaced vocabulary alignment with comparison-based approach
 - Consolidated activation fingerprint definitions

@@ -1,13 +1,17 @@
-# ModelCypher Verification: Data-Driven Proof of Work
+# ModelCypher Verification: Reproducible Checks
 
 ModelCypher is built on the principle of **Falsifiability**. This document outlines what to measure and which fields to compare when validating geometry-based merging and safety detection. Replace any example values with outputs from your own runs; this repo does not ship canonical baselines.
+
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
 
 ## 1. Merging Stability: Geometry Metrics
 
 Command:
 
 ```bash
-mc geometry interference predict <source_model> <target_model>
+poetry run mc geometry interference predict <source_model> <target_model>
 ```
 
 Inspect these fields in the output:
@@ -23,7 +27,7 @@ Compare these raw measurements across merge strategies you test.
 Command:
 
 ```bash
-mc geometry spatial probe-model <model_path>
+poetry run mc geometry spatial probe-model <model_path>
 ```
 
 Inspect these fields in the output:
@@ -37,7 +41,7 @@ Inspect these fields in the output:
 Command:
 
 ```bash
-mc geometry safety jailbreak-test --model <model_path> --prompts <prompts.json>
+poetry run mc geometry safety jailbreak-test --model <model_path> --prompts <prompts.json>
 ```
 
 Inspect these fields in the output:
@@ -53,19 +57,19 @@ Inspect these fields in the output:
 
 ```bash
 # Verify domain geometry waypoints
-mc geometry waypoint validate
+poetry run mc geometry waypoint validate <source_model> <merged_model>
 
 # Merge analysis metrics
-mc geometry interference predict ./model-A ./model-B
+poetry run mc geometry interference predict ./model-A ./model-B
 
 # Spatial grounding probe
-mc geometry spatial probe-model ./model
+poetry run mc geometry spatial probe-model ./model
 
 # Safety jailbreak testing
-mc geometry safety jailbreak-test --model ./model --prompts ./prompts.json
+poetry run mc geometry safety jailbreak-test --model ./model --prompts ./prompts.json
 ```
 
-For the formal mathematical proofs, see [**Research Papers**](../papers/README.md).
+For formal derivations and extended writeups, see [**Research Papers**](../papers/README.md).
 
 ---
 
@@ -76,7 +80,7 @@ Use this format to record your own runs:
 ```
 ### YYYY-MM-DD: <Model> (<Hardware>)
 
-Command: `mc geometry spatial probe-model <model_path>`
+Command: `poetry run mc geometry spatial probe-model <model_path>`
 
 Results:
 - world_model_score: <value>

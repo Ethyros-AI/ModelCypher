@@ -294,6 +294,10 @@ def run_merge(
 
     density_weights: dict[int, Any] | None = None
 
+    # Run density stage with alignment transforms for cross-dimensional comparison
+    # The transforms project source activations into target space BEFORE comparing,
+    # so density comparison is always apples-to-apples in target's coordinate system.
+    # This finds where target is TRULY sparse in specific concepts, not just smaller.
     if source_activations and target_activations and probe_ids_list:
         try:
             density_result = stage_density(
@@ -302,6 +306,7 @@ def run_merge(
                 probe_ids=probe_ids_list,
                 probe_domains=probe_domains_list,
                 layers=layer_indices,
+                feature_transforms=feature_transforms,  # Project source→target space
                 backend=backend,
             )
             graft_mask = density_result.graft_mask

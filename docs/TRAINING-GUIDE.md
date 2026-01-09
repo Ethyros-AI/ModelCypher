@@ -2,6 +2,8 @@
 
 Complete guide to fine-tuning LLMs with ModelCypher.
 
+In this repo, run CLI commands as `poetry run mc ...` (instead of `mc ...`).
+
 ---
 
 ## Table of Contents
@@ -25,7 +27,7 @@ Complete guide to fine-tuning LLMs with ModelCypher.
 
 ```bash
 # 1. Preflight check
-mc train preflight \
+poetry run mc train preflight \
   --model /path/to/base-model \
   --dataset ./train.jsonl \
   --learning-rate 1e-5 \
@@ -44,7 +46,7 @@ mc train preflight \
   --out ./output
 
 # 2. Start training
-mc train start \
+poetry run mc train start \
   --model /path/to/base-model \
   --dataset ./train.jsonl \
   --learning-rate 1e-5 \
@@ -63,10 +65,10 @@ mc train start \
   --out ./output
 
 # 3. Monitor progress
-mc train status <job_id> --follow
+poetry run mc train status <job_id> --follow
 
 # 4. Export result
-mc train export --job <job_id> --format safetensors --output-path ./final-model
+poetry run mc train export --job <job_id> --format safetensors --output-path ./final-model
 ```
 
 ### Dataset Format
@@ -91,7 +93,7 @@ Or chat format with messages:
 Run preflight to validate configuration and estimate resources before training:
 
 ```bash
-mc train preflight \
+poetry run mc train preflight \
   --model /path/to/model \
   --dataset ./data.jsonl \
   [hyperparameter options] \
@@ -122,7 +124,7 @@ mc train preflight \
 Start a training job.
 
 ```bash
-mc train start \
+poetry run mc train start \
   --model <model_path> \
   --dataset <dataset_path> \
   --learning-rate <float> \
@@ -176,9 +178,9 @@ mc train start \
 Get training job status.
 
 ```bash
-mc train status <job_id>
-mc train status <job_id> --follow    # Poll until complete
-mc train status <job_id> --stream    # Attach to event stream
+poetry run mc train status <job_id>
+poetry run mc train status <job_id> --follow    # Poll until complete
+poetry run mc train status <job_id> --stream    # Attach to event stream
 ```
 
 ### mc train pause / resume
@@ -186,8 +188,8 @@ mc train status <job_id> --stream    # Attach to event stream
 Pause and resume training jobs.
 
 ```bash
-mc train pause <job_id>
-mc train resume <job_id>
+poetry run mc train pause <job_id>
+poetry run mc train resume <job_id>
 ```
 
 ### mc train cancel
@@ -195,7 +197,7 @@ mc train resume <job_id>
 Cancel a running job.
 
 ```bash
-mc train cancel <job_id>
+poetry run mc train cancel <job_id>
 ```
 
 ### mc train export
@@ -204,25 +206,26 @@ Export trained model or job output.
 
 ```bash
 # Export from job
-mc train export --job <job_id> --format safetensors --output-path ./model
+poetry run mc train export --job <job_id> --format safetensors --output-path ./model
 
 # Export from model directory
-mc train export --model ./fine-tuned --format safetensors --output-path ./model.safetensors
+poetry run mc train export --model ./fine-tuned --format safetensors --output-path ./model.safetensors
 ```
 
 **Export formats:**
 - `safetensors` (supported)
+- `gguf` (supported)
 
-Other formats currently raise NotImplemented in the built-in exporter.
+For the authoritative list of formats, run `mc train export --help`.
 
 ### mc train logs
 
 View training logs.
 
 ```bash
-mc train logs <job_id>
-mc train logs <job_id> --tail 50
-mc train logs <job_id> --follow
+poetry run mc train logs <job_id>
+poetry run mc train logs <job_id> --tail 50
+poetry run mc train logs <job_id> --follow
 ```
 
 ---
@@ -234,10 +237,10 @@ mc train logs <job_id> --follow
 List all training jobs.
 
 ```bash
-mc job list
-mc job list --status running
-mc job list --active-only
-mc job list --model my-model
+poetry run mc job list
+poetry run mc job list --status running
+poetry run mc job list --active-only
+poetry run mc job list --model my-model
 ```
 
 **Status values:** `pending`, `running`, `paused`, `completed`, `failed`, `cancelled`
@@ -247,8 +250,8 @@ mc job list --model my-model
 Show detailed job information.
 
 ```bash
-mc job show <job_id>
-mc job show <job_id> --loss-history
+poetry run mc job show <job_id>
+poetry run mc job show <job_id> --loss-history
 ```
 
 **Output includes:**
@@ -263,8 +266,8 @@ mc job show <job_id> --loss-history
 Attach to job output stream.
 
 ```bash
-mc job attach <job_id>
-mc job attach <job_id> --replay --since 2024-01-01T00:00:00
+poetry run mc job attach <job_id>
+poetry run mc job attach <job_id> --replay --since 2024-01-01T00:00:00
 ```
 
 ### mc job delete
@@ -272,7 +275,7 @@ mc job attach <job_id> --replay --since 2024-01-01T00:00:00
 Delete a job and its artifacts.
 
 ```bash
-mc job delete <job_id>
+poetry run mc job delete <job_id>
 ```
 
 ---
@@ -284,8 +287,8 @@ mc job delete <job_id>
 List available checkpoints.
 
 ```bash
-mc checkpoint list
-mc checkpoint list --job <job_id>
+poetry run mc checkpoint list
+poetry run mc checkpoint list --job <job_id>
 ```
 
 ### mc checkpoint delete
@@ -293,8 +296,8 @@ mc checkpoint list --job <job_id>
 Delete a checkpoint.
 
 ```bash
-mc checkpoint delete ./checkpoints/step-1000
-mc checkpoint delete ./checkpoints/step-1000 --force
+poetry run mc checkpoint delete ./checkpoints/step-1000
+poetry run mc checkpoint delete ./checkpoints/step-1000 --force
 ```
 
 ### mc checkpoint export
@@ -302,7 +305,7 @@ mc checkpoint delete ./checkpoints/step-1000 --force
 Export a checkpoint to final model format.
 
 ```bash
-mc checkpoint export ./checkpoints/step-1000 \
+poetry run mc checkpoint export ./checkpoints/step-1000 \
   --format safetensors \
   --output-path ./model
 ```
@@ -311,9 +314,11 @@ mc checkpoint export ./checkpoints/step-1000 \
 
 ## Hyperparameter Reference
 
+ModelCypher does not enforce “standard” hyperparameter heuristics. The ranges below are example starting points; validate with `mc train preflight` and your own task metrics.
+
 ### Core Parameters
 
-| Parameter | CLI Flag | Typical Range | Description |
+| Parameter | CLI Flag | Example Values | Description |
 |-----------|----------|---------------|-------------|
 | Batch Size | `--batch-size` | 1-8 | Per-device batch size |
 | Learning Rate | `--learning-rate` | 1e-6 to 1e-4 | Step size for updates |
@@ -323,7 +328,7 @@ mc checkpoint export ./checkpoints/step-1000 \
 
 ### Optimization Parameters
 
-| Parameter | CLI Flag | Typical Range | Description |
+| Parameter | CLI Flag | Example Values | Description |
 |-----------|----------|---------------|-------------|
 | Warmup Steps | `--warmup-steps` | 50-500 | LR warmup period |
 | Weight Decay | `--weight-decay` | 0.0-0.1 | L2 regularization |
@@ -351,7 +356,7 @@ mc checkpoint export ./checkpoints/step-1000 \
 LoRA (Low-Rank Adaptation) enables efficient fine-tuning by training only small adapter weights.
 
 ```bash
-mc train start \
+poetry run mc train start \
   --model /path/to/model \
   --dataset ./data.jsonl \
   --lora-rank 8 \
@@ -364,7 +369,7 @@ mc train start \
 
 ### LoRA Parameters
 
-| Parameter | CLI Flag | Typical Range | Description |
+| Parameter | CLI Flag | Example Values | Description |
 |-----------|----------|---------------|-------------|
 | Rank | `--lora-rank` | 4-64 | Low-rank dimension |
 | Alpha | `--lora-alpha` | 8-32 | Scaling factor (often 2× rank) |
@@ -382,7 +387,7 @@ mc train start \
 **Full example:**
 
 ```bash
-mc train start \
+poetry run mc train start \
   --model /path/to/model \
   --dataset ./finetune-data.jsonl \
   --learning-rate 2e-5 \
@@ -415,17 +420,18 @@ ModelCypher provides unique geometric monitoring of training dynamics.
 
 ```bash
 # Get current geometric metrics
-mc geometry training status --job <job_id>
+poetry run mc geometry training status --job <job_id>
 
 # Get full history
-mc geometry training history --job <job_id>
+poetry run mc geometry training history --job <job_id>
 ```
 
 ### Available Metrics
 
 `mc geometry training status` returns flatness, gradient SNR, circuit-breaker severity, and active layers.
-Use `--format full` to include hessian trace, top eigenvalue, hessian condition proxy, gradient variance,
-effective step ratio, per-layer gradient norms, and refusal distance when available.
+Use `--format full` to include `perLayerGradientNorms` when available.
+
+To see the instrumentation levels and which metrics each level can collect, run `mc geometry training levels`.
 
 ### Thermodynamic Analysis
 
@@ -433,13 +439,13 @@ For deeper insight into training dynamics:
 
 ```bash
 # Analyze training thermodynamics
-mc thermo analyze <job_id>
+poetry run mc thermo analyze <job_id>
 
 # Get entropy measurements
-mc thermo entropy <job_id>
+poetry run mc thermo entropy <job_id>
 
 # Compute path integral over checkpoints
-mc thermo path --checkpoint <checkpoint1> --checkpoint <checkpoint2> --checkpoint <checkpoint3>
+poetry run mc thermo path --checkpoint <checkpoint1> --checkpoint <checkpoint2> --checkpoint <checkpoint3>
 ```
 
 ---
@@ -450,7 +456,7 @@ mc thermo path --checkpoint <checkpoint1> --checkpoint <checkpoint2> --checkpoin
 
 ```bash
 # 1. Preflight
-mc train preflight --model ./base --dataset ./data.jsonl \
+poetry run mc train preflight --model ./base --dataset ./data.jsonl \
   --learning-rate 1e-4 --batch-size 4 --epochs 1 \
   --sequence-length 512 --grad-accum 4 --warmup-steps 50 \
   --weight-decay 0.01 --gradient-checkpointing --mixed-precision \
@@ -460,50 +466,50 @@ mc train preflight --model ./base --dataset ./data.jsonl \
   --lora-targets q_proj --lora-targets v_proj
 
 # 2. Train
-mc train start [same options as preflight]
+poetry run mc train start [same options as preflight]
 
 # 3. Monitor
-mc train status <job_id> --follow
+poetry run mc train status <job_id> --follow
 
 # 4. Export adapter
-mc train export --job <job_id> --format safetensors --output-path ./adapter
+poetry run mc train export --job <job_id> --format safetensors --output-path ./adapter
 ```
 
 ### Workflow 2: Long Training with Checkpoints
 
 ```bash
 # Start training
-mc train start ... --out ./output
+poetry run mc train start ... --out ./output
 
 # If interrupted, resume from checkpoint
-mc train start ... --resume-from ./output
+poetry run mc train start ... --resume-from ./output
 ```
 
 ### Workflow 3: Evaluate After Export
 
 ```bash
 # Start training in background
-mc train start ... --detach
+poetry run mc train start ... --detach
 
 # Export latest checkpoint to safetensors
-mc train export --job <job_id> --format safetensors --output-path ./exports/model.safetensors
+poetry run mc train export --job <job_id> --format safetensors --output-path ./exports/model.safetensors
 
 # Evaluate a model directory that includes config.json + model.safetensors
-mc eval run --model ./exported-model --dataset ./eval.jsonl
+poetry run mc eval run --model ./exported-model --dataset ./eval.jsonl
 ```
 
 ### Workflow 4: Geometry-Aware Training
 
 ```bash
 # Start training
-mc train start ... --out ./output
+poetry run mc train start ... --out ./output
 
 # Monitor geometry evolution
-watch -n 30 "mc geometry training status --job <job_id> --output json | jq"
+watch -n 30 "poetry run mc --output json geometry training status --job <job_id> | jq"
 
 # Analyze final model geometry
-mc geometry spatial probe-model ./output/final
-mc geometry density profile ./output/final
+poetry run mc geometry spatial probe-model ./output/final
+poetry run mc geometry density profile ./output/final
 ```
 
 ---

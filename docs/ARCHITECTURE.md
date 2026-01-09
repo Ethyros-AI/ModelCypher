@@ -1,6 +1,10 @@
 # Architectural Overview
 
-ModelCypher follows a strict **Hexagonal Architecture** (also known as Ports and Adapters). This ensures that the core mathematical domain remains pure, testable, and independent of external frameworks (like CLI tools or HTTP APIs).
+ModelCypher follows a **Hexagonal Architecture** (Ports and Adapters). The goal is to keep core algorithms testable and reusable while pushing I/O (model loading, filesystem, hub clients, inference runtimes) to well-defined boundaries.
+
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
 
 ## Visual Overview
 
@@ -57,7 +61,7 @@ This is the heart of the application. It contains the "business logic" and mathe
 -   **Examples**: `ManifoldStitcher`, `CircuitBreakerIntegration`, `IntersectionMap`.
 
 ### 2. Ports (`src/modelcypher/ports/`)
-These define the *interfaces* (Abstract Base Classes) that the Domain needs to interact with the outside world.
+These define the *interfaces* (Python `Protocol`s) that the Domain needs to interact with the outside world.
 -   **Interfaces only**.
 -   **Examples**: `training`, `storage`, `inference`, `geometry` ports.
 
@@ -72,35 +76,38 @@ The entry points that drive the application.
 
 ## Dependency Rule
 **Dependencies point INWARD.**
--   The **CLI** depends on the **Domain**.
--   The **Adapters** depend on the **Ports**.
--   The **Domain** depends on **NOTHING** (except shared types).
+-   **Interfaces** (CLI/MCP) depend on **use cases** and orchestrators.
+-   **Use cases** depend on **domain** and **ports**.
+-   **Adapters** implement **ports** and depend on external systems.
+-   **Domain** depends only on **ports** and the standard library (not adapters or infrastructure).
 
 ## Key Components
 
 ### Manifold Stitcher (`domain/geometry/manifold_stitcher.py`)
 Responsible for aligning two disparate model manifolds using Procrustes analysis.
 
-### Probe Corpus (`domain/geometry/probe_corpus.py`)
-A standardized set of prompts used to elicit comparable activations from different models.
+### Probe inventories (`core/domain/agents/unified_atlas.py`, `data/probes/*.json`)
+Built-in probe inventories used to elicit comparable activations from different models.
 
 Semantic primes are a separate anchor inventory (see `research/semantic_primes.md` and `src/modelcypher/data/semantic_primes.json`).
 
 ### Circuit Breaker (`domain/safety/circuit_breaker_integration.py`)
-Monitors the "Regime State" of a model and interrupts generation if it enters a "Refusal Basin" or "Unstable Trajectory".
+Aggregates safety-relevant signals (entropy/refusal/persona drift, etc.) and exposes a circuit-breaker decision for integrations (jobs, inference, dashboards).
 
 ### MCP Server (`mcp/server.py`, `mcp/tools/`)
-The MCP server exposes domain functionality via the Model Context Protocol. Tools are organized into modular registration functions:
+The MCP server exposes domain and use-case functionality via the Model Context Protocol. Tools are organized into focused modules:
 
 ```
 src/modelcypher/mcp/
-├── server.py              # Core server, tool profiles, base tools
+├── server.py              # Core server + tool registration
 ├── security.py            # Security config and confirmation manager
 └── tools/
     ├── common.py          # ServiceContext (lazy-loaded services), helpers
-    ├── geometry.py        # Geometry analysis tools (path, CRM, stitch, etc.)
-    ├── safety_entropy.py  # Safety probes, entropy tracking
-    └── agent.py           # Agent trace import/analysis
+    ├── model.py           # Model registry + validation tools
+    ├── training.py        # Training lifecycle tools
+    ├── inference.py       # Inference tools
+    ├── safety_entropy.py  # Safety probes + entropy tools
+    └── geometry/          # Geometry tools (core, baseline, crm, density, ...)
 ```
 
 The `ServiceContext` class provides lazy-loaded access to all domain services, avoiding circular imports and reducing startup time.
@@ -114,6 +121,7 @@ The core domain is organized by concern:
 | `geometry/` | Path detection, manifold analysis, CRM, topological fingerprints |
 | `entropy/` | Entropy tracking, divergence calculation, model state classification |
 | `safety/` | Adapter safety, circuit breaker, capability guard |
+| `merging/` | Null-space transplant primitives and merge math |
 | `agents/` | Trace analytics, action validation, LoRA expert routing |
 | `training/` | Checkpoint management, preflight checks, resource guards |
 | `validation/` | Auto-fix engine for training data |
@@ -123,7 +131,7 @@ The core domain is organized by concern:
 
 ## Backend Protocol
 
-The Backend protocol enables platform-agnostic geometry code. All tensor operations go through this abstraction, allowing the same algorithms to run on MLX, JAX, CUDA, or NumPy.
+The Backend protocol enables platform-agnostic geometry/merge code. Operations in geometry-heavy modules go through this abstraction so the same algorithms can run on MLX (macOS), CUDA (NVIDIA), or JAX (TPU/GPU).
 
 ```mermaid
 flowchart LR
@@ -154,20 +162,6 @@ flowchart LR
 ```
 
 See [BACKEND-COMPARISON.md](BACKEND-COMPARISON.md) for platform selection guidance.
-
-### MLX Infrastructure Exceptions
-
-The Backend protocol abstracts mathematical operations, but certain files require direct MLX access for infrastructure that cannot be abstracted. These are intentional exceptions tracked in `tests/test_no_mlx_in_domain.py`:
-
-| File | Reason |
-|------|--------|
-| `training/lora.py` | `mlx.nn.Module` for neural network layers |
-| `training/checkpoints.py` | `mx.save_safetensors`, `mx.load` for I/O |
-| `training/engine.py` | Training loop orchestration |
-| `inference/dual_path.py` | `mlx_lm` for model loading |
-| `merging/lora_adapter_merger.py` | SafeTensors file I/O |
-
-These represent infrastructure boundaries, not architecture violations. Run `pytest tests/test_no_mlx_in_domain.py -v` to verify current migration status.
 
 ## Data Flow: Model Probing
 
@@ -202,50 +196,49 @@ sequenceDiagram
     SVC-->>CLI: ProbeResult
 ```
 
-## Data Flow: Adapter Merge Pipeline
+## Data Flow: Model Merge Pipeline
 
-The geometric merge pipeline aligns adapter weights through multiple stages:
+The `mc merge run` command orchestrates a four-stage merge pipeline implemented in `src/modelcypher/core/use_cases/merge/`:
+- `PROBE → DENSITY → TRANSPLANT → VALIDATE`
+
+See [MERGE-ARCHITECTURE.md](MERGE-ARCHITECTURE.md) for the stage-by-stage wiring.
 
 ```mermaid
 flowchart LR
     subgraph INPUT["Inputs"]
-        BASE["Base Model"]
-        ADP1["Adapter A"]
-        ADP2["Adapter B"]
+        SRC["Source Model<br/>(knowledge donor)"]
+        TGT["Target Model<br/>(receives knowledge)"]
+        PROBES["Probe inventory<br/>(atlas/token)"]
     end
 
     subgraph STAGE1["Stage 1: Probe"]
-        FP["Fingerprint<br/>via atlas probes"]
-        IM["Intersection<br/>Map"]
+        IM["Intersection Map<br/>(overlap + diagnostics)"]
+        XFORM["Alignment transforms<br/>(Gram/CKA-derived)"]
     end
 
-    subgraph STAGE2["Stage 2: Permute"]
-        PERM["Weight<br/>Permutation"]
+    subgraph STAGE2["Stage 2: Density"]
+        MASK["Graft mask<br/>(knowledge density)"]
     end
 
-    subgraph STAGE3["Stage 3: Align"]
-        ROT["Procrustes<br/>Rotation"]
-        BLEND["Weighted<br/>Blend"]
+    subgraph STAGE3["Stage 3: Transplant"]
+        TX["Null-space constrained<br/>knowledge transplant"]
     end
 
     subgraph STAGE4["Stage 4: Validate"]
-        PPL["Perplexity<br/>Check"]
-        DIAG["Geometric<br/>Diagnosis"]
+        CHECKS["Boundary + stability checks"]
     end
 
     subgraph OUTPUT["Output"]
-        MERGED["Merged<br/>Adapter"]
+        MERGED["Merged Model<br/>(target + added knowledge)"]
     end
 
-    BASE --> FP
-    ADP1 --> FP
-    ADP2 --> FP
+    SRC --> IM
+    TGT --> IM
+    PROBES --> IM
 
-    FP --> IM
-    IM --> PERM
-    PERM --> ROT
-    ROT --> BLEND
-    BLEND --> PPL
-    PPL --> DIAG
-    DIAG --> MERGED
+    IM --> XFORM
+    XFORM --> MASK
+    MASK --> TX
+    TX --> CHECKS
+    CHECKS --> MERGED
 ```

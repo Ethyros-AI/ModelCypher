@@ -46,6 +46,7 @@ def register_inference_tools(ctx: ServiceContext) -> None:
             model: str,
             prompt: str,
         ) -> dict:
+            """Run basic inference with a model and prompt."""
             model_path = require_existing_directory(model)
             result = ctx.inference_engine.infer(model_path, prompt)
             return {
