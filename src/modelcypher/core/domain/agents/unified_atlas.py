@@ -121,6 +121,10 @@ from modelcypher.core.domain.agents.numeric_atlas import (
     NumericCategory,
     NumericConceptInventory,
 )
+from modelcypher.core.domain.agents.prime_number_atlas import (
+    PrimeCategory,
+    PrimeConceptInventory,
+)
 from modelcypher.core.domain.agents.common_objects_atlas import (
     ObjectCategory,
     CommonObjectInventory,
@@ -170,6 +174,7 @@ class AtlasSource(str, Enum):
     DOMAIN_SPECIFIC = "domain_specific"  # Science, medicine, law, technology, business, education
     ABSTRACT_RELATION = "abstract_relation"  # Causality, similarity, containment, ordering, connection
     PRONOUN_PERSPECTIVE = "pronoun_perspective"  # Personal, possessive, reflexive, demonstrative, interrogative
+    PRIME_NUMBER = "prime_number"  # Primes, composites, primality concepts, number theory
 
 
 # Import AtlasDomain from the canonical location
@@ -407,6 +412,7 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.DOMAIN_SPECIFIC: 1.0,  # Science, medicine, law, etc.
     AtlasSource.ABSTRACT_RELATION: 1.0,  # Causality, similarity, containment
     AtlasSource.PRONOUN_PERSPECTIVE: 1.0,  # Personal, possessive, reflexive
+    AtlasSource.PRIME_NUMBER: 1.0,  # Primes, composites, primality, number theory
 }
 
 
@@ -476,6 +482,7 @@ class UnifiedAtlasInventory:
         probes.extend(cls._domain_specific_probes())
         probes.extend(cls._abstract_relation_probes())
         probes.extend(cls._pronoun_perspective_probes())
+        probes.extend(cls._prime_number_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -1212,6 +1219,43 @@ class UnifiedAtlasInventory:
             )
 
         return probes
+
+    @classmethod
+    def _prime_number_probes(cls) -> list[AtlasProbe]:
+        """Convert prime number concepts to unified probes.
+
+        Prime probes cover the full prime knowledge space:
+        - Prime numerals (2, 3, 5, 7, 11, 13, ...)
+        - Prime words (two, three, five, seven, ...)
+        - Composite numerals (4, 6, 8, 9, 10, ...)
+        - Composite words (four, six, eight, ...)
+        - Primality concepts (prime, composite, indivisible)
+        - Number theory (divisor, factor, coprime, gcd)
+        - Operations (factorize, sieve, primality test)
+        - Famous primes (Mersenne, twin primes, Sophie Germain)
+
+        Total: ~120 probes for prime number geometry analysis.
+        """
+        concepts = PrimeConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.PRIME_NUMBER]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=f"prime_{concept.id}",
+                    source=AtlasSource.PRIME_NUMBER,
+                    domain=AtlasDomain.MATHEMATICAL,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)

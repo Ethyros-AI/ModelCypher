@@ -31,6 +31,7 @@ Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Tr
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -131,6 +132,283 @@ def _clear_probe_checkpoint(checkpoint_path: Path) -> None:
         checkpoint_path.unlink()
         logger.debug("PROBE: Cleared checkpoint file %s", checkpoint_path)
 
+
+def _select_probe_text(probe: Any) -> str | None:
+    """Pick a usable probe text from the probe definition."""
+    probe_text = None
+    for candidate in probe.support_texts or []:
+        if not candidate or len(candidate.strip()) < 2:
+            continue
+        probe_text = candidate
+        break
+
+    if probe_text is None:
+        fallback = None
+        if probe.name and probe.description:
+            fallback = f"{probe.name}: {probe.description}"
+        elif probe.name:
+            fallback = probe.name
+        elif probe.description:
+            fallback = probe.description
+        if fallback and len(fallback.strip()) >= 2:
+            probe_text = fallback
+    return probe_text
+
+
+# =============================================================================
+# PROBE RESULT CACHING (DISK)
+# =============================================================================
+
+def _probe_cache_dir() -> Path:
+    """Directory for disk-backed probe caches."""
+    from modelcypher.utils.paths import get_modelcypher_home
+
+    return (get_modelcypher_home() / "probe_cache")
+
+
+def _infer_model_id(path_hint: str, model: Any) -> str:
+    """Best-effort model identifier for cache keys."""
+    if path_hint:
+        return path_hint
+    for attr in ("name_or_path", "model_name", "model_id"):
+        val = getattr(model, attr, None)
+        if isinstance(val, str) and val:
+            return val
+    config = getattr(model, "config", None)
+    if config is not None:
+        for attr in ("name_or_path", "model_type"):
+            val = getattr(config, attr, None)
+            if isinstance(val, str) and val:
+                return val
+    inner = getattr(model, "model", None)
+    if inner is not None:
+        for attr in ("name_or_path", "model_name", "model_id"):
+            val = getattr(inner, attr, None)
+            if isinstance(val, str) and val:
+                return val
+    return ""
+
+
+def _probe_cache_key(
+    source_id: str,
+    target_id: str,
+    probe_mode: str,
+    probe_ids: list[str],
+) -> str:
+    """Stable cache key for a source/target/probe set."""
+    joined = "|".join([source_id, target_id, probe_mode, ",".join(probe_ids)])
+    digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+    return f"probe_{digest}"
+
+
+def _coerce_int_keys(mapping: dict | None) -> dict[int, Any] | None:
+    """Normalize JSON-loaded dict keys to int."""
+    if mapping is None:
+        return None
+    return {int(k): v for k, v in mapping.items()}
+
+
+def _load_probe_result_cache(
+    cache_key: str,
+    probe_ids: list[str],
+    probe_mode: str,
+    backend: "Backend",
+) -> tuple[
+    dict[int, "Array"],  # source_activations
+    dict[int, "Array"],  # target_activations
+    dict[str, Any],  # probe_result
+    dict[str, Any],  # metrics
+    dict[int, list[list[float]]] | None,  # feature_transforms
+    dict[int, float] | None,  # scale_ratios
+    list[list[float]] | None,  # embedding_transform
+    dict[int, list[list[float]]] | None,  # attention_transforms
+    dict[int, list[list[float]]] | None,  # k_transforms
+    dict[int, list[list[float]]] | None,  # v_transforms
+    dict[int, list[list[float]]] | None,  # intermediate_transforms
+    dict[int, int] | None,  # layer_mapping
+    list[str] | None,  # probe_ids
+    list[str] | None,  # probe_domains
+    dict[int, "Array"] | None,  # source_intermediate_activations
+    dict[int, "Array"] | None,  # target_intermediate_activations
+    dict[int, "Array"] | None,  # source_attention_activations
+    dict[int, "Array"] | None,  # target_attention_activations
+    dict[int, "Array"] | None,  # source_k_activations
+    dict[int, "Array"] | None,  # target_k_activations
+] | None:
+    """Load cached probe results if compatible with current probe set."""
+    import mlx.core as mx
+
+    cache_dir = _probe_cache_dir()
+    meta_path = cache_dir / f"{cache_key}.json"
+    data_path = cache_dir / f"{cache_key}.npz"
+    if not meta_path.exists() or not data_path.exists():
+        return None
+
+    try:
+        meta = json.loads(meta_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("PROBE CACHE: Failed to read metadata %s: %s", meta_path, e)
+        return None
+
+    if meta.get("probe_mode") != probe_mode:
+        return None
+    cached_probe_ids = meta.get("probe_ids", [])
+    if cached_probe_ids != probe_ids:
+        return None
+
+    try:
+        loaded = mx.load(data_path)
+    except Exception as e:
+        logger.warning("PROBE CACHE: Failed to load %s: %s", data_path, e)
+        return None
+
+    if not isinstance(loaded, dict):
+        logger.warning("PROBE CACHE: Invalid cache format at %s", data_path)
+        return None
+
+    source_activations: dict[int, "Array"] = {}
+    target_activations: dict[int, "Array"] = {}
+    source_intermediate_activations: dict[int, "Array"] = {}
+    target_intermediate_activations: dict[int, "Array"] = {}
+    source_attention_activations: dict[int, "Array"] = {}
+    target_attention_activations: dict[int, "Array"] = {}
+    source_k_activations: dict[int, "Array"] = {}
+    target_k_activations: dict[int, "Array"] = {}
+
+    for key, arr in loaded.items():
+        if key.startswith("src_act_"):
+            layer_idx = int(key.split("_")[2])
+            source_activations[layer_idx] = arr
+        elif key.startswith("tgt_act_"):
+            layer_idx = int(key.split("_")[2])
+            target_activations[layer_idx] = arr
+        elif key.startswith("src_inter_"):
+            layer_idx = int(key.split("_")[2])
+            source_intermediate_activations[layer_idx] = arr
+        elif key.startswith("tgt_inter_"):
+            layer_idx = int(key.split("_")[2])
+            target_intermediate_activations[layer_idx] = arr
+        elif key.startswith("src_attn_"):
+            layer_idx = int(key.split("_")[2])
+            source_attention_activations[layer_idx] = arr
+        elif key.startswith("tgt_attn_"):
+            layer_idx = int(key.split("_")[2])
+            target_attention_activations[layer_idx] = arr
+        elif key.startswith("src_k_"):
+            layer_idx = int(key.split("_")[2])
+            source_k_activations[layer_idx] = arr
+        elif key.startswith("tgt_k_"):
+            layer_idx = int(key.split("_")[2])
+            target_k_activations[layer_idx] = arr
+
+    probe_result = meta.get("probe_result", {})
+    if isinstance(probe_result, dict):
+        probe_result["confidences"] = _coerce_int_keys(probe_result.get("confidences"))
+
+    return (
+        source_activations,
+        target_activations,
+        probe_result,
+        meta.get("metrics", {}),
+        _coerce_int_keys(meta.get("feature_transforms")),
+        _coerce_int_keys(meta.get("scale_ratios")),
+        meta.get("embedding_transform"),
+        _coerce_int_keys(meta.get("attention_transforms")),
+        _coerce_int_keys(meta.get("k_transforms")),
+        _coerce_int_keys(meta.get("v_transforms")),
+        _coerce_int_keys(meta.get("intermediate_transforms")),
+        _coerce_int_keys(meta.get("layer_mapping")),
+        meta.get("probe_ids"),
+        meta.get("probe_domains"),
+        source_intermediate_activations if source_intermediate_activations else None,
+        target_intermediate_activations if target_intermediate_activations else None,
+        source_attention_activations if source_attention_activations else None,
+        target_attention_activations if target_attention_activations else None,
+        source_k_activations if source_k_activations else None,
+        target_k_activations if target_k_activations else None,
+    )
+
+
+def _save_probe_result_cache(
+    cache_key: str,
+    source_activations: dict[int, "Array"],
+    target_activations: dict[int, "Array"],
+    probe_result: dict[str, Any],
+    metrics: dict[str, Any],
+    feature_transforms: dict[int, list[list[float]]] | None,
+    scale_ratios: dict[int, float] | None,
+    embedding_transform: list[list[float]] | None,
+    attention_transforms: dict[int, list[list[float]]] | None,
+    k_transforms: dict[int, list[list[float]]] | None,
+    v_transforms: dict[int, list[list[float]]] | None,
+    intermediate_transforms: dict[int, list[list[float]]] | None,
+    layer_mapping: dict[int, int] | None,
+    probe_ids: list[str],
+    probe_domains: list[str],
+    probe_mode: str,
+    source_intermediate_activations: dict[int, "Array"] | None = None,
+    target_intermediate_activations: dict[int, "Array"] | None = None,
+    source_attention_activations: dict[int, "Array"] | None = None,
+    target_attention_activations: dict[int, "Array"] | None = None,
+    source_k_activations: dict[int, "Array"] | None = None,
+    target_k_activations: dict[int, "Array"] | None = None,
+) -> None:
+    """Persist probe results to disk for reuse."""
+    import mlx.core as mx
+
+    cache_dir = _probe_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    data: dict[str, "Array"] = {}
+    # Hidden activations
+    for layer_idx, acts in source_activations.items():
+        data[f"src_act_{layer_idx}"] = acts
+    for layer_idx, acts in target_activations.items():
+        data[f"tgt_act_{layer_idx}"] = acts
+    # Intermediate activations (MLP)
+    if source_intermediate_activations:
+        for layer_idx, acts in source_intermediate_activations.items():
+            data[f"src_inter_{layer_idx}"] = acts
+    if target_intermediate_activations:
+        for layer_idx, acts in target_intermediate_activations.items():
+            data[f"tgt_inter_{layer_idx}"] = acts
+    # Attention Q activations
+    if source_attention_activations:
+        for layer_idx, acts in source_attention_activations.items():
+            data[f"src_attn_{layer_idx}"] = acts
+    if target_attention_activations:
+        for layer_idx, acts in target_attention_activations.items():
+            data[f"tgt_attn_{layer_idx}"] = acts
+    # K activations
+    if source_k_activations:
+        for layer_idx, acts in source_k_activations.items():
+            data[f"src_k_{layer_idx}"] = acts
+    if target_k_activations:
+        for layer_idx, acts in target_k_activations.items():
+            data[f"tgt_k_{layer_idx}"] = acts
+
+    data_path = cache_dir / f"{cache_key}.npz"
+    mx.savez_compressed(data_path, **data)
+
+    meta = {
+        "version": 1,
+        "probe_mode": probe_mode,
+        "probe_ids": probe_ids,
+        "probe_domains": probe_domains,
+        "probe_result": probe_result,
+        "metrics": metrics,
+        "feature_transforms": feature_transforms,
+        "scale_ratios": scale_ratios,
+        "embedding_transform": embedding_transform,
+        "attention_transforms": attention_transforms,
+        "k_transforms": k_transforms,
+        "v_transforms": v_transforms,
+        "intermediate_transforms": intermediate_transforms,
+        "layer_mapping": layer_mapping,
+    }
+    meta_path = cache_dir / f"{cache_key}.json"
+    meta_path.write_text(json.dumps(meta, indent=2))
+    logger.info("PROBE CACHE: Saved probe results to %s", cache_dir)
 
 # =============================================================================
 # MEMORY-EFFICIENT ACTIVATION ACCUMULATION
@@ -831,6 +1109,102 @@ def _probe_precise(
             
     num_probes = len(probes)
 
+    # Pre-validate probes for usable text (used for caching + inference).
+    valid_probes: list[tuple[Any, str]] = []
+    invalid_probe_count = 0
+    for probe in probes:
+        probe_text = _select_probe_text(probe)
+        if probe_text is None:
+            logger.warning(
+                "Probe '%s' skipped: no valid support texts or fallback",
+                probe.probe_id,
+            )
+            invalid_probe_count += 1
+            continue
+        valid_probes.append((probe, probe_text))
+
+    expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
+    expected_probe_domains = [probe.domain.value for probe, _ in valid_probes]
+
+    # Disk cache lookup for full probe results (activations + transforms).
+    probe_cache_key: str | None = None
+    source_id = _infer_model_id(source_path, source_model)
+    target_id = _infer_model_id(target_path, target_model)
+    if source_id and target_id and expected_probe_ids:
+        probe_cache_key = _probe_cache_key(
+            source_id,
+            target_id,
+            probe_mode,
+            expected_probe_ids,
+        )
+        cached = _load_probe_result_cache(
+            cache_key=probe_cache_key,
+            probe_ids=expected_probe_ids,
+            probe_mode=probe_mode,
+            backend=b,
+        )
+        if cached is not None:
+            (
+                source_layer_activations,
+                target_layer_activations,
+                cached_probe_result,
+                cached_metrics,
+                feature_transforms,
+                scale_ratios,
+                embedding_transform,
+                attention_transforms,
+                k_transforms,
+                v_transforms,
+                intermediate_transforms,
+                layer_mapping,
+                probe_ids,
+                probe_domains,
+                cached_source_intermediate,
+                cached_target_intermediate,
+                cached_source_attention,
+                cached_target_attention,
+                cached_source_k,
+                cached_target_k,
+            ) = cached
+
+            logger.info(
+                "PROBE CACHE: Loaded cached probe results for %s -> %s",
+                source_id,
+                target_id,
+            )
+
+            return ProbeResult(
+                correlations=cached_probe_result.get("correlations", {}),
+                confidences=cached_probe_result.get("confidences", {}),
+                intersection_map=None,
+                dimension_correlations=cached_probe_result.get("dimension_correlations", {}),
+                metrics=cached_metrics,
+                source_activations=source_layer_activations,
+                target_activations=target_layer_activations,
+                source_intermediate_activations=cached_source_intermediate,
+                target_intermediate_activations=cached_target_intermediate,
+                source_attention_activations=cached_source_attention,
+                target_attention_activations=cached_target_attention,
+                source_k_activations=cached_source_k,
+                target_k_activations=cached_target_k,
+                source_v_activations=None,
+                target_v_activations=None,
+                source_embedding_activations=None,
+                target_embedding_activations=None,
+                probe_ids=probe_ids,
+                probe_domains=probe_domains,
+                feature_transforms=feature_transforms,
+                scale_ratios=scale_ratios,
+                embedding_transform=embedding_transform,
+                attention_transforms=attention_transforms,
+                k_transforms=k_transforms,
+                v_transforms=v_transforms,
+                intermediate_transforms=intermediate_transforms,
+                layer_mapping=layer_mapping,
+            )
+    else:
+        logger.info("PROBE CACHE: Skipping disk cache (missing model id or probes)")
+
     # Initialize ProfileRepository
     profile_repo = ProfileRepository()
     
@@ -960,12 +1334,17 @@ def _probe_precise(
     probe_domains: list[str] = []
 
     probes_processed = 0
-    probes_failed = 0
+    probes_failed = invalid_probe_count
 
     # =========================================================================
     # BATCHED PROBE COLLECTION - Process probes in batches for efficiency
     # =========================================================================
     
+    if not run_inference:
+        probe_ids = list(expected_probe_ids)
+        probe_domains = list(expected_probe_domains)
+        probes_processed = len(probe_ids)
+
     if run_inference:
         # Instead of 806 individual forward passes (403 probes × 2 models),
         # we batch probes into groups and use batch methods for ~5-10× speedup.
@@ -974,37 +1353,7 @@ def _probe_precise(
         # Too large = OOM, too small = lose batching benefit.
         PROBE_BATCH_SIZE = 4  # Smaller batches for more frequent memory cleanup
 
-        # First pass: Validate probes and extract texts
-        valid_probes: list[tuple[Any, str]] = []  # (probe, probe_text)
-        for probe in probes:
-            probe_text = None
-            for candidate in probe.support_texts or []:
-                if not candidate or len(candidate.strip()) < 2:
-                    continue
-                probe_text = candidate
-                break
-
-            if probe_text is None:
-                fallback = None
-                if probe.name and probe.description:
-                    fallback = f"{probe.name}: {probe.description}"
-                elif probe.name:
-                    fallback = probe.name
-                elif probe.description:
-                    fallback = probe.description
-                if fallback and len(fallback.strip()) >= 2:
-                    probe_text = fallback
-
-            if probe_text is None:
-                logger.warning(
-                    "Probe '%s' skipped: no valid support texts or fallback",
-                    probe.probe_id,
-                )
-                probes_failed += 1
-                continue
-
-            valid_probes.append((probe, probe_text))
-
+        # valid_probes already computed for caching and reuse
         logger.info(
             "PROBE PRECISE: %d valid probes, processing in batches of %d...",
             len(valid_probes),
@@ -2550,6 +2899,44 @@ def _probe_precise(
                     )
             except Exception as e:
                 logger.warning("EMBEDDING GRAMALIGN failed: %s", e)
+
+    if (
+        probe_cache_key
+        and run_inference
+        and probe_ids == expected_probe_ids
+        and probe_domains == expected_probe_domains
+        and source_layer_activations
+        and target_layer_activations
+    ):
+        probe_result_payload = {
+            "correlations": weight_correlations,
+            "confidences": layer_confidences,
+            "dimension_correlations": dimension_correlations,
+        }
+        _save_probe_result_cache(
+            cache_key=probe_cache_key,
+            source_activations=source_layer_activations,
+            target_activations=target_layer_activations,
+            probe_result=probe_result_payload,
+            metrics=metrics,
+            feature_transforms=feature_transforms if feature_transforms else None,
+            scale_ratios=scale_ratios if scale_ratios else None,
+            embedding_transform=embedding_transform,
+            attention_transforms=attention_transforms if attention_transforms else None,
+            k_transforms=k_transforms if k_transforms else None,
+            v_transforms=v_transforms if v_transforms else None,
+            intermediate_transforms=intermediate_transforms if intermediate_transforms else None,
+            layer_mapping=layer_mapping if layer_mapping else None,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            probe_mode=probe_mode,
+            source_intermediate_activations=source_intermediate_activations,
+            target_intermediate_activations=target_intermediate_activations,
+            source_attention_activations=source_attention_activations,
+            target_attention_activations=target_attention_activations,
+            source_k_activations=source_k_activations,
+            target_k_activations=target_k_activations,
+        )
 
     return ProbeResult(
         correlations=weight_correlations,

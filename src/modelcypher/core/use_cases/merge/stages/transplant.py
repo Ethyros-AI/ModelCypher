@@ -1463,7 +1463,7 @@ def stage_transplant(
                         # GQA: q_proj uses Q-attention dim, k_proj/v_proj use KV-attention dim
                         is_q = any(n in key for n in ["q_proj", "query"])
                         is_kv = any(n in key for n in ["k_proj", "v_proj", "key", "value"])
-                        is_o = any(n in key for n in ["o_proj"])
+                        is_o = any(n in key for n in ["o_proj", "out_proj"])
 
                         if is_q and dim0 == src_attn_dim and dim1 == src_hidden_dim:
                             # q_proj: [Q_attn, hidden] → attention_stitch @ W @ hidden_stitch

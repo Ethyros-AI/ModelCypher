@@ -23,13 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
-from modelcypher.core.domain.agents.emotion_concept_atlas import EmotionConceptInventory
-from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames
-from modelcypher.core.domain.agents.semantic_prime_multilingual import (
-    SemanticPrimeMultilingualInventoryLoader,
+from modelcypher.core.domain.agents.unified_atlas import (
+    AtlasSource,
+    UnifiedAtlasInventory,
 )
-from modelcypher.core.domain.agents.sequence_invariant_atlas import SequenceInvariantInventory
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
@@ -59,10 +56,11 @@ class CRMBuildSummary:
     layer_count: int
     hidden_dim: int
     anchor_count: int
-    prime_count: int
-    gate_count: int
+    prime_count: int  # semantic primes (NSM)
+    gate_count: int  # computational gates
     sequence_invariant_count: int = 0
     emotion_count: int = 0
+    prime_number_count: int = 0  # actual prime numbers (2, 3, 5, 7...)
 
 
 @dataclass(frozen=True)
@@ -149,10 +147,12 @@ class ConceptResponseMatrixService:
         anchor_entries = self._build_anchor_prompts()
 
         anchor_ids = [anchor_id for anchor_id, _ in anchor_entries]
-        prime_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("prime:"))
-        gate_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("gate:"))
-        seq_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("seq:"))
-        emotion_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("emotion:"))
+        # Count by unified atlas source types
+        prime_count = sum(1 for aid in anchor_ids if aid.startswith("semantic_prime:"))
+        gate_count = sum(1 for aid in anchor_ids if aid.startswith("computational_gate:"))
+        seq_count = sum(1 for aid in anchor_ids if aid.startswith("sequence_invariant:"))
+        emotion_count = sum(1 for aid in anchor_ids if aid.startswith("emotion_concept:"))
+        prime_number_count = sum(1 for aid in anchor_ids if aid.startswith("prime_number:"))
 
         crm = ConceptResponseMatrix(
             model_identifier=str(resolved_model),
@@ -221,12 +221,11 @@ class ConceptResponseMatrixService:
             self._anchor_activation_cache[anchor_key] = averaged
 
         if used_anchor_ids:
-            prime_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("prime:"))
-            gate_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("gate:"))
-            seq_count = sum(1 for anchor_id in used_anchor_ids if anchor_id.startswith("seq:"))
-            emotion_count = sum(
-                1 for anchor_id in used_anchor_ids if anchor_id.startswith("emotion:")
-            )
+            prime_count = sum(1 for aid in used_anchor_ids if aid.startswith("semantic_prime:"))
+            gate_count = sum(1 for aid in used_anchor_ids if aid.startswith("computational_gate:"))
+            seq_count = sum(1 for aid in used_anchor_ids if aid.startswith("sequence_invariant:"))
+            emotion_count = sum(1 for aid in used_anchor_ids if aid.startswith("emotion_concept:"))
+            prime_number_count = sum(1 for aid in used_anchor_ids if aid.startswith("prime_number:"))
             crm.anchor_metadata = AnchorMetadata(
                 total_count=len(used_anchor_ids),
                 semantic_prime_count=prime_count,
@@ -248,6 +247,7 @@ class ConceptResponseMatrixService:
             gate_count=crm.anchor_metadata.computational_gate_count,
             sequence_invariant_count=seq_count,
             emotion_count=emotion_count,
+            prime_number_count=prime_number_count,
         )
 
     def compare(
@@ -535,79 +535,29 @@ class ConceptResponseMatrixService:
         return int(layer_count), int(hidden_dim)
 
     def _build_anchor_prompts(self) -> list[tuple[str, list[str]]]:
+        """Build anchor prompts from the unified atlas.
+
+        Uses ALL probes from the unified atlas system (1000+ probes across
+        all domains including prime numbers, emotions, sequences, etc.)
+        """
         if self._anchor_prompt_cache is not None:
             return self._anchor_prompt_cache
-        entries: list[tuple[str, list[str]]] = []
-        entries.extend(self._prime_prompts())
-        entries.extend(self._gate_prompts())
-        entries.extend(self._sequence_invariant_prompts())
-        entries.extend(self._emotion_prompts())
-        self._anchor_prompt_cache = entries
-        return entries
-
-    def _prime_prompts(self) -> list[tuple[str, list[str]]]:
-        primes = SemanticPrimeFrames.enriched()
-        polyglot_by_id = _load_polyglot_prompts([prime.id for prime in primes])
 
         entries: list[tuple[str, list[str]]] = []
-        for prime in primes:
-            texts: list[str] = [prime.word]
-            texts.extend(prime.frames)
-            texts.extend(prime.exemplars)
-            if prime.contrast:
-                texts.append(prime.contrast)
-            texts.extend(polyglot_by_id.get(prime.id, []))
-            prompts = _dedupe_texts(texts)
-            entries.append((f"prime:{prime.id}", prompts))
-        return entries
+        probes = UnifiedAtlasInventory.all_probes()
 
-    def _gate_prompts(self) -> list[tuple[str, list[str]]]:
-        entries: list[tuple[str, list[str]]] = []
-        for gate in ComputationalGateInventory.probe_gates():
-            texts: list[str] = []
-            gate_name = gate.name.lower().replace("_", " ")
-            if gate.description:
-                texts.append(f"{gate_name}: {gate.description}")
-            texts.append(gate_name)
-            texts.extend(gate.examples)
-            texts.extend(gate.polyglot_examples)
-            prompts = _dedupe_texts(texts)
-            entries.append((f"gate:{gate.id}", prompts))
-        return entries
-
-    def _sequence_invariant_prompts(self) -> list[tuple[str, list[str]]]:
-        entries: list[tuple[str, list[str]]] = []
-        probes = SequenceInvariantInventory.probes_for_families(None)
         for probe in probes:
+            # Build prompts from name, description, and support texts
             texts: list[str] = [probe.name]
             if probe.description:
                 texts.append(probe.description)
             texts.extend(probe.support_texts)
             prompts = _dedupe_texts(texts)
-            entries.append((f"seq:{probe.id}", prompts))
-        return entries
 
-    def _emotion_prompts(self) -> list[tuple[str, list[str]]]:
-        entries: list[tuple[str, list[str]]] = []
-        emotions = EmotionConceptInventory.all_emotions()
+            # Use probe_id which includes source prefix (e.g., "prime_number:prime_2")
+            entries.append((probe.probe_id, prompts))
 
-        for emotion in emotions:
-            texts: list[str] = [emotion.name]
-            if emotion.description:
-                texts.append(f"{emotion.name}: {emotion.description}")
-            texts.extend(emotion.support_texts)
-            prompts = _dedupe_texts(texts)
-            entries.append((f"emotion:{emotion.id}", prompts))
-
-        # Also include dyads
-        for dyad in EmotionConceptInventory.primary_dyads():
-            texts: list[str] = [dyad.name]
-            if dyad.description:
-                texts.append(f"{dyad.name}: {dyad.description}")
-            texts.extend(dyad.support_texts)
-            prompts = _dedupe_texts(texts)
-            entries.append((f"emotion:{dyad.id}", prompts))
-
+        self._anchor_prompt_cache = entries
         return entries
 
 
@@ -629,25 +579,6 @@ def _mean_std(values: list[float]) -> tuple[float, float]:
     mean = sum(values) / float(len(values))
     variance = sum((value - mean) ** 2 for value in values) / float(len(values))
     return float(mean), sqrt_scalar(max(0.0, variance), get_default_backend())
-
-
-def _load_polyglot_prompts(prime_ids: list[str]) -> dict[str, list[str]]:
-    try:
-        inventory = SemanticPrimeMultilingualInventoryLoader.global_diverse()
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        logger.warning("Failed to load multilingual primes: %s", exc)
-        return {}
-
-    prompts: dict[str, list[str]] = {}
-    prime_set = set(prime_ids)
-    for prime in inventory.primes:
-        if prime.id not in prime_set:
-            continue
-        texts: list[str] = []
-        for bucket in prime.languages:
-            texts.extend(bucket.texts)
-        prompts[prime.id] = _dedupe_texts(texts)
-    return prompts
 
 
 def _first_int(payload: dict, keys: list[str]) -> int | None:

@@ -189,7 +189,15 @@ def measure_3d_alignment(
         Dict with layernorm_cka
     """
     import mlx.core as mx
-    from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
+    from modelcypher.core.domain.geometry.cka import (
+        compute_cka,
+        compute_linear_cka,
+        HSICEstimator,
+    )
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        machine_epsilon,
+        sqrt_scalar,
+    )
 
     pre_ln_acts: list["Array"] = []
     post_ln_acts: list["Array"] = []
@@ -252,8 +260,45 @@ def measure_3d_alignment(
         )
 
         layernorm_cka = cka_result.cka if cka_result.is_valid else None
+        linear_cka = float(compute_linear_cka(pre_stacked, post_stacked, backend=backend))
+        precision = sqrt_scalar(machine_epsilon(backend, pre_stacked), backend)
 
-        return {"layernorm_cka": layernorm_cka}
+        if layernorm_cka is not None:
+            rbf_deviation = abs(1.0 - layernorm_cka)
+            agreement_deviation = abs(layernorm_cka - linear_cka)
+            if rbf_deviation > precision:
+                logger.error(
+                    "3D ALIGNMENT: RBF CKA deviation %.2e > precision %.2e - precision bug.",
+                    rbf_deviation,
+                    precision,
+                )
+            if agreement_deviation > precision:
+                logger.error(
+                    "3D ALIGNMENT: RBF vs linear CKA mismatch %.2e > precision %.2e.",
+                    agreement_deviation,
+                    precision,
+                )
+        else:
+            rbf_deviation = None
+            agreement_deviation = None
+
+        linear_deviation = abs(1.0 - linear_cka)
+        if linear_deviation > precision:
+            logger.error(
+                "3D ALIGNMENT: Linear CKA deviation %.2e > precision %.2e - precision bug.",
+                linear_deviation,
+                precision,
+            )
+
+        return {
+            "layernorm_cka": layernorm_cka,
+            "layernorm_rbf_cka": layernorm_cka,
+            "layernorm_linear_cka": linear_cka,
+            "layernorm_rbf_deviation": rbf_deviation,
+            "layernorm_linear_deviation": linear_deviation,
+            "layernorm_agreement_deviation": agreement_deviation,
+            "layernorm_precision_threshold": precision,
+        }
 
     except Exception as e:
         logger.warning("3D alignment measurement failed: %s", e)

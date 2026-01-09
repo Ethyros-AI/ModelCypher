@@ -95,6 +95,8 @@ def geometry_crm_build(
         "primeCount": summary.prime_count,
         "gateCount": summary.gate_count,
         "sequenceInvariantCount": summary.sequence_invariant_count,
+        "emotionCount": summary.emotion_count,
+        "primeNumberCount": summary.prime_number_count,
     }
 
     if context.output_format == "text":
@@ -104,7 +106,12 @@ def geometry_crm_build(
             f"Output: {summary.output_path}",
             f"Layers: {summary.layer_count}",
             f"Hidden Dim: {summary.hidden_dim}",
-            f"Anchors: {summary.anchor_count} (primes {summary.prime_count}, gates {summary.gate_count}, seq {summary.sequence_invariant_count})",
+            f"Probes: {summary.anchor_count}",
+            f"  semantic_prime: {summary.prime_count}",
+            f"  computational_gate: {summary.gate_count}",
+            f"  sequence_invariant: {summary.sequence_invariant_count}",
+            f"  emotion_concept: {summary.emotion_count}",
+            f"  prime_number: {summary.prime_number_count}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
