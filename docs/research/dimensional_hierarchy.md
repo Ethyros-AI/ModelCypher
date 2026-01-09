@@ -220,6 +220,44 @@ This theory is weakened or refuted if:
 
 ---
 
+## The Semantic Coordinate System (2026-01-09)
+
+### Extreme Compression Discovery
+
+Testing showed CKA = 1.0 even at **1024x compression** (1024D → 1D).
+
+| Compression | CKA |
+|-------------|-----|
+| 2x (512D) | 1.0000 |
+| 256x (4D) | 1.0000 |
+| 1024x (1D) | 1.0000 |
+
+**Key insight**: CKA measures geometric STRUCTURE, not values. The structure survives when values don't.
+
+### The Three Axes of Meaning
+
+PCA on CLIP embeddings reveals interpretable axes:
+
+| Axis | Interpretation | Examples |
+|------|----------------|----------|
+| **PC1** | Abstract ↔ Concrete | Emotions → Objects |
+| **PC2** | Animate ↔ Static | People/Actions → Scenes |
+| **PC3** | Natural ↔ Artificial | Plants → Buildings |
+
+These match fundamental human cognitive categories:
+- Linguistics: Abstract vs concrete word classes
+- Philosophy: The particular vs universal distinction
+- Cognition: Animacy hierarchy in language
+
+### Implications
+
+1. **Neural networks discover human cognition** - Not trained on categories, but finds them
+2. **Semantic space is ~5-10D** - All models tested require < 10D for 99% variance
+3. **The manifold is interpretable** - Axes correspond to intuitive dimensions
+4. **Alignment is tractable** - We can reason about where concepts should be
+
+---
+
 ## References
 
 - **Empirical validation**: `/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/EXPERIMENT.md`

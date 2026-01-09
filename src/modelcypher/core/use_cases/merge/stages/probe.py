@@ -2860,13 +2860,11 @@ def _probe_precise(
                 tgt_idx: int,
                 src_indices: list[int],
                 F_init: "Array | None" = None,
-                R_hint: "Array | None" = None,
             ) -> dict:
                 """Align source layer(s) to a target layer.
-                
+
                 With 1:1 mapping, src_indices has exactly 1 element.
                 F_init: Optional warm-start transform from a successful neighbor (zipper).
-                R_hint: Optional Procrustes rotation from a successful neighbor (zipper).
                 """
                 nonlocal rbf_consistency_checked, rbf_consistency_hidden
                 tgt_layer = target_layers[tgt_idx]
@@ -2939,7 +2937,6 @@ def _probe_precise(
                         src_combined,
                         tgt_stacked,
                         F_init=F_init,  # Zipper warm-start from neighbor
-                        R_hint=R_hint,  # Zipper rotation hint from neighbor
                     )
                     # Alignment runs until CKA=1.0 within machine epsilon - no retry needed
                     
@@ -3313,28 +3310,26 @@ def _probe_precise(
             # This is the "zipper" concept: easy layers align first, their geometry
             # accelerates convergence for difficult neighbors.
             
-            successful_alignments: dict[int, dict] = {}  # tgt_layer -> {F, R}
+            successful_alignments: dict[int, dict] = {}  # tgt_layer -> {F}
             
             completed = 0
             for tgt_idx, src_indices in alignment_tasks_sorted:
-                # Find nearest successful neighbor's F and R for warm-start
+                # Find nearest successful neighbor's F for warm-start
                 tgt_layer = target_layers[tgt_idx]
                 F_init = None
-                R_hint = None
-                
+
                 if successful_alignments:
                     # Find the closest aligned layer by layer index
                     aligned_layers = list(successful_alignments.keys())
                     closest_layer = min(aligned_layers, key=lambda l: abs(l - tgt_layer))
                     neighbor_data = successful_alignments[closest_layer]
                     F_init = neighbor_data.get("F")
-                    R_hint = neighbor_data.get("R")
-                    logger.info(f"ZIPPER: Layer {tgt_layer} warm-starting from layer {closest_layer} (F+R)")
+                    logger.info(f"ZIPPER: Layer {tgt_layer} warm-starting from layer {closest_layer}")
                 else:
                     logger.debug(f"ZIPPER: Layer {tgt_layer} has no successful neighbors yet")
-                
+
                 # Align this layer
-                result = _align_target_group(tgt_idx, src_indices, F_init=F_init, R_hint=R_hint)
+                result = _align_target_group(tgt_idx, src_indices, F_init=F_init)
                 
                 tgt_layer = result["tgt_layer"]
                 src_layers = result["src_layers"]
