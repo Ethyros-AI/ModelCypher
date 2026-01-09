@@ -81,19 +81,16 @@ python examples/05_model_merge.py source_model target_model -o merged_output
 
 ## Getting Models
 
-Download MLX-compatible models from Hugging Face:
+Fetch MLX-compatible models from Hugging Face:
 
 ```bash
-# Using huggingface-cli
-huggingface-cli download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --local-dir ./models/qwen2.5-0.5b
-
-# Or use the ModelCypher CLI to fetch a model
-mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
+# ModelCypher CLI (prints JSON including `localPath`)
+poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16 --output json
 ```
 
 ## Tips
 
 1. **Start small**: Use smaller models (0.5B-3B) for faster iteration
-2. **Check memory**: Run `mc system memory` before large operations
+2. **Check memory**: Run `poetry run mc system status --output json` before large operations
 3. **Use the CLI**: Many examples have CLI equivalents (`mc geometry spatial probe-model`)
 4. **Read the output**: Raw measurements are returned; you decide meaning based on context

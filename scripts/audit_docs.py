@@ -147,8 +147,7 @@ def _slug_candidates(heading_text: str) -> list[str]:
     for c in candidates:
         c = c.strip()
         c = re.sub(r"[^\w\s\-]", "", c, flags=re.UNICODE)
-        c = re.sub(r"\s+", "-", c)
-        c = re.sub(r"-+", "-", c)
+        c = re.sub(r"\s", "-", c)
         c = c.strip("-")
         if c and c not in slugs:
             slugs.append(c)
@@ -357,6 +356,8 @@ def _audit_markdown_file(
         if frag:
             target_file = resolved if resolved.is_file() else None
             if target_file is None:
+                continue
+            if target_file.suffix.lower() != ".md":
                 continue
             if target_file not in anchor_cache:
                 anchor_cache[target_file] = _extract_heading_anchors(_read_text(target_file))

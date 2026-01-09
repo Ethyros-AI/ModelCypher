@@ -2,9 +2,9 @@
 
 Complete index of research citations from `KnowledgeasHighDimensionalGeometryInLLMs.md`.
 
-## Downloaded PDFs (51)
+## Downloaded PDFs (54)
 
-All arXiv and OpenReview papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` naming.
+Most arXiv/OpenReview papers referenced in this repo are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` naming. Some non-arXiv sources are also stored there for convenience.
 
 | File | Citation | arXiv |
 |------|----------|-------|
@@ -46,7 +46,7 @@ All arXiv and OpenReview papers are downloaded to `arxiv/` with `Author_Year_Sho
 | [Zou_2023_Representation_Engineering.pdf](arxiv/Zou_2023_Representation_Engineering.pdf) | Zou et al. - Representation Engineering | 2310.01405 |
 | [Zou_2024_Circuit_Breakers.pdf](arxiv/Zou_2024_Circuit_Breakers.pdf) | Zou et al. - Circuit Breakers (NeurIPS 2024) | 2406.04313 |
 
-## Pending Additions (Not Yet Downloaded / Metadata TBD)
+## Pending Additions (Not Yet Downloaded / Metadata Pending)
 
 Recent merge-alignment papers referenced in ModelCypher planning. Metadata and PDFs pending verification.
 
@@ -54,8 +54,8 @@ Recent merge-alignment papers referenced in ModelCypher planning. Metadata and P
 |------|----------|-------|
 | (pending) | AlignMerge: Alignment-Driven Model Merging (2025) | 2512.16245 |
 | (pending) | Activation-Informed Merging (AIM) (2025) | 2502.02421 |
-| (pending) | Merging with Directional Alignment (MDA) (2026) | TBD |
-| (pending) | KnOTS: SVD-Based Adapter Alignment (2025) | TBD |
+| (pending) | Merging with Directional Alignment (MDA) (2026) | pending |
+| (pending) | KnOTS: SVD-Based Adapter Alignment (2025) | pending |
 
 ### 2024 Embedding Theory & Foundations
 

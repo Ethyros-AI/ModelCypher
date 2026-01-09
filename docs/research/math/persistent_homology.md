@@ -72,7 +72,7 @@ The implementation is optimized for n < 5000 points and does not compute H2+.
 ## Related Concepts
 
 - [geodesic_distance.md](geodesic_distance.md) - Geodesic distance inputs
-- [topological_fingerprints.md](../topological_fingerprints.md) - Implementation guide
+- [topological_fingerprints.md](../../geometry/topological_fingerprints.md) - Implementation guide
 
 ---
 

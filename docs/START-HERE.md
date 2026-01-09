@@ -15,11 +15,11 @@ poetry install
 Download a small model and probe its geometry:
 
 ```bash
-# Download (or use any local model you have)
-huggingface-cli download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --local-dir ./models/qwen-0.5b
+# Fetch a small model (or use any local model path you already have)
+poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16 --output json
 
-# Probe it
-mc geometry spatial probe-model ./models/qwen-0.5b
+# Probe it (use the `localPath` from the previous command)
+poetry run mc geometry spatial probe-model /path/from/localPath
 ```
 
 **Output:**

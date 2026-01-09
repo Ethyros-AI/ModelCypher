@@ -311,7 +311,8 @@ def _build_density_profile_from_activations(
 
     for layer_idx in layers:
         act_list = activations.get(layer_idx, [])
-        if not act_list:
+        # Check if empty - handle both lists and arrays
+        if act_list is None or (hasattr(act_list, '__len__') and len(act_list) == 0):
             raise RuntimeError(f"DENSITY: Missing activations for layer {layer_idx}")
         if len(act_list) < 4:
             raise RuntimeError(

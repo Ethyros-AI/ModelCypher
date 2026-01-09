@@ -148,9 +148,15 @@ def stage_density(
     probe_domains: list[str] | None,
     layers: list[int],
     backend: "Backend",
-) -> tuple[dict[str, dict[int, bool]], dict[str, Any]]:
-    """Stage 2: Density analysis for selective grafting."""
-    result = stage_density_impl(
+) -> "DensityStageResult":
+    """Stage 2: Density analysis for selective grafting.
+
+    Returns DensityStageResult with:
+    - graft_mask: Dict mapping domains/layers to bool
+    - density_weights: Dict[int, Array] with per-layer density-based transfer weights
+    - metrics: Performance metrics
+    """
+    return stage_density_impl(
         source_activations=source_activations or {},
         target_activations=target_activations or {},
         probe_ids=probe_ids or [],
@@ -158,8 +164,6 @@ def stage_density(
         layers=layers,
         backend=backend,
     )
-
-    return result.graft_mask, result.metrics
 
 
 
@@ -182,6 +186,7 @@ def stage_transplant(
     extract_layer_index_fn: Callable[[str], int | None] = lambda x: None,
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
+    density_weights: dict[int, "Array"] | None = None,  # Per-probe transfer weights from k-NN density
     feature_transforms: dict[int, list[list[float]]] | None = None,
     scale_ratios: dict[int, float] | None = None,  # EXACT: ||target|| / ||source @ F||
     embedding_transform: list[list[float]] | None = None,  # 2D GramAlign
@@ -212,6 +217,7 @@ def stage_transplant(
         extract_layer_index_fn=extract_layer_index_fn,
         backend=backend,
         graft_mask=graft_mask,
+        density_weights=density_weights,  # Per-probe transfer weights from k-NN density
         feature_transforms=feature_transforms,
         scale_ratios=scale_ratios,  # EXACT magnitude factors
         embedding_transform=embedding_transform,

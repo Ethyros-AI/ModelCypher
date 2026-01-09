@@ -108,7 +108,7 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 ### Foundational
 
-1. **Fréchet, M.** (1948). "Les éléments aléatoires de nature quelconque dans un espace distancié." *Annales de l'Institut Henri Poincaré*, 10(4), 215-310. [Numdam](http://www.numdam.org/item/AIHP_1948__10_4_215_0/)
+1. **Fréchet, M.** (1948). "Les éléments aléatoires de nature quelconque dans un espace distancié." *Annales de l'Institut Henri Poincaré*, 10(4), 215-310. [Numdam](https://www.numdam.org/item/AIHP_1948__10_4_215_0/)
    - *Original definition of metric space mean*
 
 2. **Karcher, H.** (1977). "Riemannian center of mass and mollifier smoothing." *Communications on Pure and Applied Mathematics*, 30(5), 509-541. [DOI:10.1002/cpa.3160300502](https://doi.org/10.1002/cpa.3160300502)
@@ -142,7 +142,7 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 - [geodesic_distance.md](geodesic_distance.md) - How we measure distances on the manifold
 - [manifold_curvature.md](manifold_curvature.md) - Curvature affects mean computation
-- [riemannian_density.md](../riemannian_density.md) - Density estimation using Fréchet mean
+- [riemannian_density.md](riemannian_density.md) - Density estimation using Fréchet mean
 
 ---
 

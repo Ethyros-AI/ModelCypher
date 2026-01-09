@@ -56,9 +56,9 @@ Foundational geometry hypotheses were previously reported as tested. Rerun to co
 
 | Experiment | Paper | Status |
 |------------|-------|--------|
-| Semantic prime CKA comparisons | Paper 1 | Run `mc geometry primes probe` |
-| Null distribution generation | Paper 1 | Control samples (size TBD) |
-| Modifier entropy matrix | Paper 2 | Run `mc entropy measure` |
+| Semantic prime CKA comparisons | Paper 1 | Run `mc geometry primes probe-model` |
+| Null distribution generation | Paper 1 | Control samples (size: pending) |
+| Modifier entropy matrix | Paper 2 | Run `mc thermo measure` |
 | Temperature sweep | Paper 2 | Define range from calibration |
 | Safety signal AUROC | Paper 2 | Curated prompt suite |
 | Intersection maps | Paper 3 | Run `mc model analyze-alignment` |

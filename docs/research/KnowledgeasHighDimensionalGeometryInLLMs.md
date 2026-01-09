@@ -204,10 +204,10 @@ Alignment-driven merge method with explicit geometric constraints (metadata to v
 **Activation-Informed Merging (AIM) (2025). arXiv:2502.02421.**
 Uses activation space to guide merge decisions (metadata to verify). *Framework relevance*: Supports activation-level alignment as the primary signal, consistent with CKA-first merging.
 
-**Merging with Directional Alignment (MDA) (2026). ICLR 2026 (arXiv TBD).**
+**Merging with Directional Alignment (MDA) (2026). ICLR 2026 (arXiv: pending).**
 Directional alignment in parameter and feature space (metadata to verify). *Framework relevance*: Reinforces that direction preservation is the invariant quantity, not raw parameter values.
 
-**KnOTS (2025). ICLR 2025 (arXiv TBD).**
+**KnOTS (2025). ICLR 2025 (arXiv: pending).**
 SVD-based alignment for adapter merging (metadata to verify). *Framework relevance*: Reinforces singular-vector alignment as a geometry-preserving merge primitive.
 
 ### Manifold stitching

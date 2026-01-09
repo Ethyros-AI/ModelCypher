@@ -20,6 +20,7 @@ This directory contains rigorous mathematical documentation for every geometric 
 | [intrinsic_dimension.md](intrinsic_dimension.md) | Intrinsic Dimension Estimation | Manifold complexity measurement |
 | [tangent_space.md](tangent_space.md) | Tangent Space & Exp/Log Maps | Local linearization for Riemannian operations |
 | [persistent_homology.md](persistent_homology.md) | Persistent Homology (TDA) | Multi-scale topological fingerprints |
+| [riemannian_density.md](riemannian_density.md) | Riemannian Density / Concept Volumes | Density profiling and interference prediction |
 
 ---
 

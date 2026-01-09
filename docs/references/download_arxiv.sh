@@ -1,11 +1,11 @@
 #!/bin/bash
-# Script to download arXiv papers with clear naming
+# Script to download reference PDFs with clear naming (mostly arXiv)
 # Usage: ./download_arxiv.sh
 
 cd "$(dirname "$0")/arxiv"
 
-# Array of papers: arXiv_ID|Filename
-# Non-arXiv references (manual download): Lobashev_2025_PRH_Information_Geometry
+# Array of papers: SOURCE|Filename
+# SOURCE is either an arXiv ID (e.g. 2209.04836, gr-qc/9310026) or a direct PDF URL.
 papers=(
     "1706.03741|Christiano_2017_Deep_RL_Human_Preferences"
     "1905.00414|Kornblith_2019_CKA_Neural_Similarity"
@@ -43,8 +43,10 @@ papers=(
     "2406.15927|Kossen_2024_Semantic_Entropy_Probes"
     "2406.16323|Liu_2024_MKA_Pruning_Merging"
     "2410.02106|Shape_Happens_2024"
+    "2410.02355|Fang_2025_AlphaEdit"
     "2410.08993|TokenSpace_2024_Structure"
     "2412.00081|TSV_2025_Task_Singular_Vectors"
+    "2502.16570|Ali_2025_Entropy_Lens"
     "2502.18821|CAMEx_2025_Fisher_Information"
     "2503.00555|Huang_2025_Safety_Tax"
     "2503.08099|WUDI_2025_Task_Vector_Subspaces"
@@ -57,20 +59,26 @@ papers=(
     "2510.11278|ENIGMA_2025_Geometry_Reasoning"
     "2512.11391|Niu_2025_NSPO_Null_Space"
     "gr-qc/9310026|tHooft_1993_Dimensional_Reduction"
+    "https://raw.githubusercontent.com/mlresearch/v235/main/assets/bertolotti24a/bertolotti24a.pdf|Bertolotti_2024_Tying_Embeddings"
 )
 
 total=${#papers[@]}
 count=0
 
-echo "Downloading $total arXiv papers..."
+echo "Downloading $total reference PDFs..."
 
 for paper in "${papers[@]}"; do
-    IFS='|' read -r arxiv_id filename <<< "$paper"
+    IFS='|' read -r source filename <<< "$paper"
     count=$((count + 1))
     
     if [ ! -f "${filename}.pdf" ]; then
         echo "[$count/$total] Downloading: $filename"
-        curl -sL -o "${filename}.pdf" "https://arxiv.org/pdf/${arxiv_id}.pdf"
+        if [[ "$source" == http* ]]; then
+            url="$source"
+        else
+            url="https://arxiv.org/pdf/${source}.pdf"
+        fi
+        curl -sL -o "${filename}.pdf" "$url"
         sleep 0.5  # Be nice to arXiv servers
     else
         echo "[$count/$total] Skipping (exists): $filename"
