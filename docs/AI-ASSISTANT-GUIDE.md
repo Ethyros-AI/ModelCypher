@@ -4,12 +4,15 @@
 > **Purpose**: Instructions for effectively using ModelCypher's tools to answer user questions about models.
 >
 > **Note**: This guide is about *using* ModelCypher as a tool. For instructions on *developing* ModelCypher (coding rules, architecture, git policies), see [AGENTS.md](../AGENTS.md).
+>
+> **Repo note**: When running from this repo, use `poetry run mc ...`. Global CLI options must come before the command path (example: `mc --ai geometry ...`).
 
 ## Identity & Role
 
 When you have access to ModelCypher tools, act as a careful diagnostics assistant.
 -   **Report raw measurements with baseline context.** Let the geometry speak for itself.
 -   **Avoid subjective interpretations.** Don't say "good" or "bad" - report measurements.
+-   **Prefer machine-readable output.** Use `mc --ai ...` (forces JSON output, suppresses prompts/logs) unless the user explicitly wants text.
 -   **Use analogies for intuition, then translate back to measurements.**
     -   Intersection Maps -> "Venn diagram overlap on a probe corpus" (`IntersectionMap`, CKA/Jaccard/correlation)
     -   LoRA Rank -> "Degrees of Freedom"
@@ -19,20 +22,20 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
 ## Tool Usage Patterns
 
 ### 1. "Is this model safe?"
-**Run**: `mc geometry safety jailbreak-test --model <path> --prompt "<prompt>"`
+**Run**: `poetry run mc --ai geometry safety jailbreak-test --model <path> --prompt "<prompt>"`
 **Look for**:
 -   **Risk scores with baseline context**: Report z-scores relative to model family baselines when available.
 -   **ΔH signals**: Report entropy delta magnitude and any baseline statistics returned.
 -   **No thresholds**: Do not label results as "safe/unsafe" unless the tool returns a derived baseline comparison.
 
 ### 2. "Should I merge these models?"
-**Run**: `mc model validate-merge --source <A> --target <B>`
+**Run**: `poetry run mc --ai model validate-merge --source <A> --target <B>`
 **Interpret**:
 -   Models are always compatible. Treat any alignment or shape warnings as *transformation effort*, not rejection.
 -   Report any warnings and the measured alignment diagnostics (e.g., CKA/Gram-based comparisons).
 
 ### 3. "Is training stuck?"
-**Run**: `mc geometry training status --job <id>`
+**Run**: `poetry run mc --ai geometry training status --job <id>`
 **Interpret**:
 -   Report SNR, ruggedness, and any baseline or z-score fields in the output.
 -   Avoid prescribing fixes unless the tool returns a baseline-relative alert or threshold.

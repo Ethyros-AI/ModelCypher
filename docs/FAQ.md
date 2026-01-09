@@ -1,74 +1,67 @@
 # Frequently Asked Questions
 
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
+
 ## Skepticism
 
 ### "This is just PCA with marketing."
 
-No. PCA assumes Euclidean geometry. LLM activations live on curved manifolds.
+ModelCypher uses a lot of linear algebra, and PCA is a useful baseline. The difference is that many of the tools here assume the data is not globally linear, and measure quantities (e.g., curvature, geodesic distances on a k-NN graph) that PCA does not model directly.
 
-**The math:** PCA finds linear projections that maximize variance. But in high-dimensional curved space, the shortest path between two points isn't a straight line—it's a geodesic. Euclidean distance *underestimates* true distance in positively curved regions and *overestimates* in negatively curved regions.
+**The math:** PCA finds linear projections that maximize variance under an Euclidean inner product. If your representation geometry is locally curved or varies by layer/dataset slice, linear projections can miss structure that shows up under manifold-aware measurements.
 
-**The proof:** Run `mc geometry research curvature-profile` on any model. If sectional curvature ≈ 0 everywhere, it's flat (PCA works). If curvature varies by layer (it does), you need Riemannian tools.
+**Quick check:** Run a curvature profile. If the reported curvature is near 0 across layers (and stable under resampling), a linear/Euclidean approximation may be reasonable for that dataset. If curvature varies by layer or slice, manifold-aware tools can be a better fit.
 
 ```bash
-mc geometry research curvature-profile ./your-model --output text
-# Typical output:
-#   L12: sectional= 0.2300 (positive), ricci=-0.1500, dim= 52.0
-#   L18: sectional=-0.1500 (negative), ricci=-0.2100, dim= 49.5
+poetry run mc --output text geometry research curvature-profile ./your-model
 ```
 
 ### "Where's the peer review?"
 
-Honest answer: these are preprints. Publication is pending data insertion.
+Many parts of this repo are preprints, research notes, and reproducible experiments. Not everything is peer-reviewed yet.
 
-**What we have instead:**
-- 3060 passing tests with deterministic seeds
-- Falsification-first experimental design (hypotheses stated before results)
-- Reproducible CLI commands for every claim
-- 46 cited papers from NeurIPS, ICML, ICLR, Nature
+**What we do have:**
+- A large test suite (run `poetry run pytest`)
+- Reproducible CLI commands for analyses
+- A living bibliography: [docs/references/BIBLIOGRAPHY.md](references/BIBLIOGRAPHY.md)
 
-**The code is the proof.** Run the commands. Check the numbers. If they don't match, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues).
+If a doc claim doesn’t match the output you see, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues) with the command you ran and the output.
 
 ### "Why geometry instead of benchmarks?"
 
-Benchmarks measure *what the model says*. Geometry measures *how knowledge is organized*.
+Benchmarks measure outputs on labeled tasks. Geometry measures representation structure (similarity, curvature, intrinsic dimension, drift). They answer different questions and work best together.
 
-| Approach | Measures | Can Be Gamed? |
-|----------|----------|---------------|
-| Benchmarks (MMLU, etc.) | Output accuracy | Yes (train on test set) |
-| Geometry (CKA, curvature) | Internal structure | No (topology is invariant) |
+| Approach | What it helps with | What it misses |
+|----------|---------------------|---------------|
+| Benchmarks (MMLU, etc.) | Task performance tracking | Structural drift/alignment issues that don’t show up in accuracy |
+| Geometry (CKA, curvature, etc.) | Structural comparison and change detection | Doesn’t replace task evals or safety review |
 
-**Example:** Two models can score identically on MMLU but have completely different internal organization. One might be robust to adversarial prompts; the other might collapse. Geometry tells you which is which.
+**Example:** Two models can score similarly on a benchmark while differing in representation geometry. Geometry tools can surface those differences so you know where to dig deeper.
 
-You can't fake topology. Betti numbers don't lie.
+### "How do I try it on my model?"
 
-### "Prove it works on my model."
-
-Run this:
+Start with small, fast checks:
 
 ```bash
-mc geometry spatial probe-model /path/to/your/model --output text
+poetry run mc --output text model probe /path/to/your/model
+poetry run mc --output text geometry research curvature-profile /path/to/your/model
 ```
 
-**Expected output:**
-```
-World Model Score: 0.30-0.60
-Gravity Correlation: -1.00 to 1.00
-Axis Orthogonality: 85-95%
-```
+Then branch into the sub-area you care about (merge readiness, safety drift, domain transfer, etc.).
 
-If you get wildly different numbers, that's real data about your model's geometry. If the command crashes, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues) with your model path and error message.
+If a command crashes, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues) with your model path and the error message.
 
 ### "Isn't 'knowledge as geometry' just a metaphor?"
 
-No. It's a measurable hypothesis.
+It’s an operational framing: define probe sets, measure representation structure, and report the numbers. If you prefer, call it “representation structure analysis.”
 
-**Metaphor:** "The model understands math."
-**Measurement:** "CKA similarity between 'addition' and 'subtraction' probes = 0.73."
+Examples of measurable quantities used across the repo include:
+- CKA similarity (see [Kornblith et al., 2019](references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf))
+- Topology/geometry analyses of deep nets (see [Naitzat et al., 2020](references/arxiv/Naitzat_2020_Topology_Deep_Neural_Networks.pdf))
 
-We define concepts operationally: a "concept" is a direction in activation space that responds consistently to a probe set. We measure distances between these directions. We compute curvature of the manifold they span.
-
-If you prefer, call it "representation structure analysis." The math is the same.
+We define concepts operationally (probe sets, response directions), then measure similarities/distances and geometric properties of the resulting point clouds.
 
 ---
 
@@ -78,21 +71,15 @@ If you prefer, call it "representation structure analysis." The math is the same
 
 | Backend | Platform | Install |
 |---------|----------|---------|
-| MLX | macOS (Apple Silicon) | Default, no extra install |
+| MLX | macOS (Apple Silicon) | Default (`poetry install`) |
 | CUDA | Linux (NVIDIA GPU) | `poetry install -E cuda` |
 | JAX | Linux/TPU/GPU | `poetry install -E jax` |
 
-Set explicitly: `MC_BACKEND=cuda mc geometry ...` or `MC_BACKEND=jax mc geometry ...`
+Set explicitly: `MC_BACKEND=cuda poetry run mc ...` or `MC_BACKEND=jax poetry run mc ...`
 
 ### "How long do probes take?"
 
-| Model Size | Geometry Probe | Full Analysis |
-|------------|----------------|---------------|
-| 0.5B | ~30 seconds | ~2 minutes |
-| 3B | ~2 minutes | ~10 minutes |
-| 7B | ~5 minutes | ~30 minutes |
-
-Times on M2 Max. Your mileage may vary.
+It depends on model size, backend, and probe corpus size. If you’re unsure, start with a single command (like `model probe` or a small `geometry` subcommand) and scale up.
 
 ### "Can I use this with vLLM / Ollama / llama.cpp?"
 

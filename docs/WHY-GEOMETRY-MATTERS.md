@@ -1,12 +1,16 @@
-# Why Geometry Matters: The Proof
+# Why Geometry Matters (Reproducible Checks)
 
-This document shows empirical procedures and output fields that demonstrate why geometric methods outperform naive approaches. Replace example values with your own runs.
+This document shows reproducible procedures and example output fields for comparing geometric methods to naive baselines. Replace example values with your own runs.
+
+Notes:
+- In this repo, run the CLI as `poetry run mc …` (examples below use `mc …` for brevity).
+- ModelCypher returns raw measurements; avoid fixed thresholds and interpret results relative to your own baselines.
 
 ---
 
 ## The Problem with Naive Model Merging
 
-When you merge two models by averaging their weights, you're assuming knowledge is stored in the same "locations" in both models. It isn't.
+When you merge two models by averaging their weights, you're assuming knowledge is stored in the same coordinates in both models. Often it isn’t: even when models learn similar features, they can be stored in rotated/permuted bases.
 
 ```mermaid
 graph LR
@@ -27,7 +31,7 @@ graph LR
     style Y fill:#9f9,stroke:#393
 ```
 
-**Procrustes alignment** rotates one model's weight space to match the other before merging. This preserves the geometric relationships between concepts.
+**Procrustes alignment** estimates an orthogonal transform that best aligns one representation space to another (in the least-squares sense). This preserves geometric relationships while putting both models in a comparable coordinate system before merging.
 
 ---
 
@@ -35,7 +39,7 @@ graph LR
 
 ### Experiment: Merge Analysis Metrics (example fields; replace with your run)
 
-`mc geometry interference predict` emits `globalMetrics`. Example comparison:
+`mc geometry interference predict` reports aggregate metrics (example field names shown below). Example comparison:
 
 | Pair | meanOverlap | meanCka | meanCurvatureDivergence | meanDistance |
 |------|-------------|---------|-------------------------|--------------|
@@ -71,10 +75,10 @@ Averaging these gives `[0.5, 0.5, 0.1]` — which is neither cat. Procrustes fin
 When concepts overlap in merged weight space, they interfere. ModelCypher predicts this *before* you merge:
 
 ```bash
-mc geometry interference predict model-A model-B
+mc --output text geometry interference predict /path/to/source_model /path/to/target_model
 ```
 
-Output (excerpt):
+Example excerpt:
 ```
 SPATIAL:
   Mean Overlap: 0.23
@@ -108,43 +112,40 @@ ModelCypher isn't inventing new math. It applies established theory:
 
 | Concept | Source | Application |
 |---------|--------|-------------|
-| Riemannian Geometry | Amari (2000) | Measuring curvature of activation manifolds |
-| Procrustes Analysis | Gower (1975) | Aligning weight spaces before merging |
-| CKA Similarity | Kornblith (2019) | Comparing representations across architectures |
-| Persistent Homology | Naitzat (2020) | Topological fingerprints of models |
-| Information Geometry | Fefferman (2016) | Manifold hypothesis for neural networks |
+| Procrustes analysis | Gower (1975) · [DOI:10.1007/BF02291478](https://doi.org/10.1007/BF02291478) | Aligning representation spaces before merging |
+| CKA similarity | [Kornblith et al. (2019)](references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf) · [arXiv:1905.00414](https://arxiv.org/abs/1905.00414) | Comparing representations across models |
+| Persistent homology | [Naitzat et al. (2020)](references/arxiv/Naitzat_2020_Topology_Deep_Neural_Networks.pdf) · [arXiv:2004.06093](https://arxiv.org/abs/2004.06093) | Topological fingerprints of representations |
+| Information geometry | Amari & Nagaoka (2000) | Curvature / Fisher geometry in learning dynamics |
+| Manifold hypothesis (tests) | [Fefferman et al. (2013)](references/arxiv/Fefferman_2013_Testing_Manifold_Hypothesis.pdf) · [arXiv:1310.0425](https://arxiv.org/abs/1310.0425) | Formalizing when manifold assumptions hold |
 
-See [papers/](../papers/) for the full research foundation.
+See [docs/references/BIBLIOGRAPHY.md](references/BIBLIOGRAPHY.md) for citations and local PDFs, and [papers/](../papers/) for the research narrative.
 
 ---
 
 ## Recent model merging literature (2024–2025)
 
 - [Nobari et al. (2025)](references/arxiv/AIM_2025_Activation_Informed_Merging.pdf). Activation-Informed Merging of Large Language Models. [arXiv:2502.02421](https://arxiv.org/abs/2502.02421)
-- FW-Merging (ICCV 2025). Scaling Model Merging with Frank-Wolfe Optimization. https://openaccess.thecvf.com/content/ICCV2025/papers/Chen_FW-Merging_Scaling_Model_Merging_with_Frank-Wolfe_Optimization_ICCV_2025_paper.pdf
+- FW-Merging (ICCV 2025). Scaling Model Merging with Frank-Wolfe Optimization. [PDF](https://openaccess.thecvf.com/content/ICCV2025/papers/Chen_FW-Merging_Scaling_Model_Merging_with_Frank-Wolfe_Optimization_ICCV_2025_paper.pdf)
 - [Yang et al. (2024)](references/arxiv/SuperMerge_2024_Gradient_Based_Model_Merging.pdf). SuperMerge: An Approach For Gradient-Based Model Merging. [arXiv:2412.10416](https://arxiv.org/abs/2412.10416)
 - [Fang et al. (2025)](references/arxiv/GW_Feature_Alignment_2025_Model_Merging.pdf). Efficient Multi-Task Inferencing: Model Merging with Gromov-Wasserstein Feature Alignment. [arXiv:2503.09774](https://arxiv.org/abs/2503.09774)
-- NEig-OWM (2025). Null-space orthogonal weight modification to preserve prior tasks. https://doi.org/10.1016/j.eswa.2025.127468
+- NEig-OWM (2025). Null-space orthogonal weight modification to preserve prior tasks. [DOI:10.1016/j.eswa.2025.127468](https://doi.org/10.1016/j.eswa.2025.127468)
 
 ---
 
 ## Reproduce These Results
 
 ```bash
-# Verify geometric invariants
-mc geometry waypoint validate
+# Post-merge geometry validation
+mc geometry waypoint validate /path/to/source_model /path/to/merged_model
 
-# Run merge comparison
-mc merge \
-    --source ./model-A \
-    --target ./model-B \
-    --output-dir ./merged-geometric
+# Merge (geometric)
+mc merge run -s ./model-A -t ./model-B -o ./merged-geometric
 
 # For a naive baseline, run your preferred linear merge tool and save to ./merged-naive.
 
 # Compare results
-mc model probe ./merged-geometric --output text
-mc model probe ./merged-naive --output text
+mc --output text model probe ./merged-geometric
+mc --output text model probe ./merged-naive
 ```
 
 ---

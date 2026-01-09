@@ -22,7 +22,7 @@ Automated baseline:
 | `CONTRIBUTING.md` | developer | P1 | todo | todo | todo | todo | |
 | `DISCLAIMER.md` | policy | P1 | todo | todo | todo | todo | |
 | `README.md` | public | P0 | done | ok | n/a | ok | Public pass: repo install + corrected quickstart commands |
-| `docs/AI-ASSISTANT-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/AI-ASSISTANT-GUIDE.md` | public | P1 | done | ok | n/a | ok | Public pass: added `poetry run mc`/`--ai` guidance and clarified global option ordering |
 | `docs/ARCHITECTURE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/BACKEND-COMPARISON.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/BACKEND-PARITY.md` | public | P1 | todo | todo | todo | todo | |
@@ -30,18 +30,18 @@ Automated baseline:
 | `docs/CLI-REFERENCE.md` | public | P0 | done | ok | n/a | ok | Public pass: clarified global options + updated merge run/batch |
 | `docs/DIMENSIONAL_COMPRESSION.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/ELIF.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/FAQ.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/GEOMETRY-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/GLOSSARY.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/FAQ.md` | public | P1 | done | ok | ok | ok | Public pass: removed “expected ranges”, fixed CLI option ordering, linked bibliography + local PDFs |
+| `docs/GEOMETRY-GUIDE.md` | public | P1 | done | ok | n/a | n/a | Public pass: tightened “No Vibes”, clarified distance vs similarity semantics, added `poetry run mc` note |
+| `docs/GLOSSARY.md` | public | P1 | done | ok | ok | ok | Public pass: aligned geodesic wording, removed over-claimy results, linked local PDFs for cited arXiv refs |
 | `docs/INFERENCE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/INTEGRATION_ARCHITECTURE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/MATH-PRIMER.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/MCP-TOOLS-CATALOG.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/MCP.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/MCP.md` | public | P1 | done | ok | n/a | ok | Public pass: verified run command; points to tools catalog |
 | `docs/MERGE-ARCHITECTURE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/MODEL-PROFILE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/PROFILING.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/README.md` | public | P0 | todo | todo | todo | todo | |
+| `docs/README.md` | public | P0 | done | ok | n/a | n/a | Public pass: minimal entrypoint; defers to START-HERE |
 | `docs/REPO-AUDIT-2025-01-04.md` | internal | A | todo | todo | todo | todo | |
 | `docs/REPO-FILE-LIST.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/RESEARCH-CONNECTIONS.md` | public | P1 | todo | todo | todo | todo | |
@@ -49,7 +49,7 @@ Automated baseline:
 | `docs/START-HERE.md` | public | P0 | done | ok | ok | ok | Public pass: corrected CLI examples + added bibliography link |
 | `docs/TRAINING-GUIDE.md` | public | P1 | todo | todo | todo | todo | |
 | `docs/VERIFICATION.md` | public | P1 | todo | todo | todo | todo | |
-| `docs/WHY-GEOMETRY-MATTERS.md` | public | P1 | todo | todo | todo | todo | |
+| `docs/WHY-GEOMETRY-MATTERS.md` | public | P1 | done | ok | ok | ok | Public pass: reframed “proof” as reproducible checks, fixed CLI examples, added/linked citations |
 | `docs/geometry/gromov_wasserstein.md` | research | P1 | todo | todo | todo | todo | |
 | `docs/geometry/intersection_maps.md` | research | P1 | todo | todo | todo | todo | |
 | `docs/geometry/manifold_stitching.md` | research | P1 | todo | todo | todo | todo | |
@@ -96,7 +96,7 @@ Automated baseline:
 | `docs/research/spatial_grounding.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/research/temporal_topology.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/security.md` | policy | P1 | todo | todo | todo | todo | |
-| `examples/README.md` | public | P0 | todo | todo | todo | todo | |
+| `examples/README.md` | public | P0 | done | ok | n/a | ok | Public pass: corrected commands to use `poetry run` and updated CLI usage |
 | `papers/NEGATIVE-RESULTS.md` | research | P2 | todo | todo | todo | todo | |
 | `papers/README.md` | research | P0 | todo | todo | todo | todo | |
 | `papers/RELEASE_NOTES.md` | research | P2 | todo | todo | todo | todo | |

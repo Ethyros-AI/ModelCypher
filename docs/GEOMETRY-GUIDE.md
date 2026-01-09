@@ -3,6 +3,10 @@
 This guide explains what the geometry tooling measures and how to report the outputs accurately.
 It is written for AI agents that call the CLI/MCP tools and then summarize results for humans.
 
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
+
 Related docs:
 - [MATH-PRIMER.md](MATH-PRIMER.md) - Intuition for the underlying geometry (distance/angle/alignment)
 - [AI-ASSISTANT-GUIDE.md](AI-ASSISTANT-GUIDE.md) - Safe summarization patterns across CLI + MCP
@@ -22,8 +26,8 @@ Deep dives:
 - We treat weights, activations, and response trajectories as points in a very high-dimensional space.
 - Geometry metrics summarize shape: curvature (flat vs sharp), distance (similar vs different),
   and direction (is training moving toward a known risk direction).
-- Most outputs are already normalized or scored. Smaller usually means closer/more similar.
-  Larger usually means farther/more different.
+- Distances: smaller means closer. Similarities: larger means more similar.
+- Many outputs are normalized (often, but not always, to 0–1). Treat them as measurements, not grades.
 
 ## The "No Vibes" Principle
 
@@ -43,16 +47,16 @@ Instead, we provide:
 
 ## Geodesic Distance (Core Principle)
 
-**All distances in ModelCypher are geodesic, not Euclidean.**
+**When ModelCypher reports a distance in representation space, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.**
 
-LLM representations live in high-dimensional spaces (768D to 8192D+). Euclidean distance—the straight-line "as the crow flies" distance—becomes increasingly meaningless in high dimensions due to the [curse of dimensionality](https://en.wikipedia.org/wiki/Curse_of_dimensionality). In 1000D space, all points appear roughly equidistant under Euclidean measure.
+LLM representations live in high-dimensional spaces (768D to 8192D+). Euclidean distance—the straight-line "as the crow flies" distance—can become less informative in high dimensions due to the [curse of dimensionality](https://en.wikipedia.org/wiki/Curse_of_dimensionality). In extreme regimes, many points appear similarly distant under Euclidean measure.
 
 **Geodesic distance** measures distance along the data manifold itself—like measuring road distance between cities rather than straight-line distance through the earth. This captures the true structure of the representation space.
 
 ### How it works
 
 1. **Build a k-NN graph**: Connect each point to its k nearest neighbors (using Euclidean for initial edges—the one unavoidable bootstrap step)
-2. **Compute shortest paths**: Use Floyd-Warshall or Dijkstra to find shortest path distances through the graph
+2. **Compute shortest paths**: Use a shortest-path algorithm (e.g., Dijkstra) to find distances through the graph
 3. **Report geodesic distances**: All subsequent distance computations use these manifold-aware distances
 
 ### What this means for you
@@ -63,7 +67,7 @@ LLM representations live in high-dimensional spaces (768D to 8192D+). Euclidean 
 
 ### Why not Euclidean?
 
-Euclidean geometry is a special case that only works well in low dimensions (≤3D). Geodesic geometry works correctly in ALL dimensions—1D, 3D, 1000D, 8000D. Rather than maintain two code paths (Euclidean for simple cases, geodesic for complex), ModelCypher uses geodesic everywhere. The math is correct for all cases.
+Euclidean distance is a special-case approximation that can work well in low-dimensional or near-linear settings. Geodesic distances better match curved manifold structure. Rather than maintain multiple mental models (“this command is Euclidean, that one is geodesic”), ModelCypher aims to report manifold-aware distances consistently, unless a subcommand explicitly says otherwise.
 
 ## Quick translation rules
 
@@ -128,7 +132,7 @@ How to report:
 ### mc geometry safety circuit-breaker
 
 Key fields:
-- `severity`: 0 to 1 aggregate safety score.
+- `severity`: 0 to 1 aggregate safety signal.
 - `dominantSource`: The strongest contributing signal (when available).
 
 How to report:
@@ -152,7 +156,7 @@ Key fields:
 - `checkpointPath`, `baseModelPath`: Paths for the analyzed adapter and base model.
 
 How to report:
-- "Effective sparsity is 91%. Delta magnitude distribution is heavily left-skewed."
+- "Effective sparsity is 0.91 (91%)."
 
 ### mc geometry adapter decomposition (DoRA)
 
@@ -162,7 +166,7 @@ Key fields:
 - `magnitudeToDirectionRatio`: Ratio of magnitude vs direction contribution.
 
 How to report:
-- "Magnitude change ratio is 0.18, directional drift is 0.04. Adapter primarily modifies scale."
+- "Magnitude change ratio is 0.18, directional drift is 0.04."
 
 ### mc geometry path detect
 
@@ -239,7 +243,7 @@ Circuit breaker severity is 0.82. Dominant source: persona drift.
 ```
 
 **Human summary:**
-Effective sparsity is 91%.
+Effective sparsity is 0.91 (91%).
 
 ### Example: mc geometry adapter decomposition (DoRA)
 

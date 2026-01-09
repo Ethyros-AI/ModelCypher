@@ -2,6 +2,10 @@
 
 > **Purpose**: This document defines the precise meaning of terms used in ModelCypher. It serves as a "Handshake Protocol" between Human Users and AI Agents to ensure we are talking about the same concepts.
 
+Notes:
+- In this repo, run commands as `poetry run mc ...`.
+- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
+
 ## Core Concepts
 
 ### Manifold
@@ -33,14 +37,14 @@ When two models (a Base Model and a Sidecar Adapter) process the same input in p
 
 ### Geodesic Distance
 Distance measured along the data manifold via shortest paths on a k-NN graph.
--   **Key principle**: All distances in ModelCypher are geodesic, not Euclidean.
--   **Why it matters**: Euclidean distance becomes meaningless in high dimensions (1000D+) due to the curse of dimensionality. Geodesic distance follows the actual manifold structure.
+-   **Key principle**: When ModelCypher reports a distance between points/representations, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.
+-   **Why it matters**: Euclidean distance can become less informative in high dimensions. Geodesic distance follows the local manifold structure implied by the point cloud/probe setup.
 -   **How it works**: Build a k-NN graph (edges weighted by Euclidean distance—the one bootstrap step), then compute shortest paths through the graph.
 -   **Human explanation**: "Distance measured by roads, not as the crow flies. In curved high-dimensional space, the straight line isn't the true path."
 
 ### CKA (Centered Kernel Alignment)
 A measure of similarity between two neural network layers that is robust to rotation.
--   **Range**: 0.0 (Different) to 1.0 (Identical).
+-   **Range**: 0.0 (low similarity on the probe set) to 1.0 (identical centered Gram structure on the probe set).
 -   **Operational meaning**: CKA = 1.0 means identical centered Gram structure on the probe set.
 -   **Bias note**: Finite sampling can bias CKA (inflate or deflate). Use debiased HSIC and
     feature-sampling correction when possible.
@@ -51,7 +55,7 @@ A measure of similarity between two neural network layers that is robust to rota
 Raw spectral measurements of a geodesic k-NN graph: Laplacian eigenvalues, algebraic connectivity (λ₂), component count (zero-eigenvalue multiplicity), and heat trace $H(t)=\sum_i e^{-t\lambda_i}$.
 -   **Operational meaning**: Encodes diffusion geometry of the discrete manifold without requiring shared coordinates.
 -   **Used in**: `mc geometry metrics spectral-signature`, `mc_geometry_spectral_signature`
--   **References**: von Luxburg, *A Tutorial on Spectral Clustering* ([arXiv:0711.0189](https://arxiv.org/abs/0711.0189)); *Heat Kernel Goes Topological* ([arXiv:2507.12380](https://arxiv.org/abs/2507.12380))
+-   **References**: von Luxburg, *A Tutorial on Spectral Clustering* ([PDF](references/arxiv/Luxburg_2007_Tutorial_Spectral_Clustering.pdf), [arXiv:0711.0189](https://arxiv.org/abs/0711.0189)); *Heat Kernel Goes Topological* ([PDF](references/arxiv/Krahn_2025_Heat_Kernel_Goes_Topological.pdf), [arXiv:2507.12380](https://arxiv.org/abs/2507.12380))
 
 ### Jaccard Similarity (Intersection)
 A measure of overlap between the *active* dimensions of two models.
@@ -75,7 +79,7 @@ A data structure (JSON) recording overlap diagnostics between two models under a
 
 ### Safety Polytope
 A geometric safety framing in which “safe” behavior is defined as staying within a bounded region of representation space (often modeled as a convex polytope).
--   **Note**: This is an active research direction (e.g., SaP: arXiv:2505.24445); ModelCypher treats it as a conceptual target rather than a universal guarantee.
+-   **Note**: This is an active research direction (e.g., SaP: [PDF](references/arxiv/Safety_Polytope_2025.pdf), [arXiv:2505.24445](https://arxiv.org/abs/2505.24445)); ModelCypher treats it as a conceptual target rather than a universal guarantee.
 
 ### Sidecar
 A specialized, lightweight adapter (LoRA) trained to enforce specific geometric constraints (e.g., Safety, Persona) without altering the base model's general capabilities.
@@ -121,7 +125,7 @@ A measure of how different one probability distribution is from another.
 ### Hessian Eigenspectrum
 The second-derivative matrix of the loss function, revealing the "curvature" of the optimization landscape.
 -   **Analogy**: Standing on a hillside, the Hessian tells you not just the slope (gradient) but how the slope changes in each direction. Positive eigenvalues = bowl-shaped (stable). Negative = saddle point (unstable). Zero = flat direction.
--   **Human explanation**: "The model is in a stable region" (positive eigenvalues) or "The model is at a critical transition point" (mixed eigenvalues).
+-   **Human explanation**: "More positive eigenvalues means more locally bowl-shaped; mixed signs indicate saddle-like behavior."
 
 ### Intrinsic Dimension (Two-NN)
 The "true" number of independent directions in a dataset, estimated by looking at nearest-neighbor ratios.
@@ -135,7 +139,7 @@ The "true" number of independent directions in a dataset, estimated by looking a
 ### Sectional Curvature ($K$)
 A measure of the "ruggedness" of the activation manifold.
 -   **Analogy**: If the latent space is a golf course, $K$ tells you if you are on a flat green (stable) or a steep bunker (chaotic).
--   **ML Equivalent**: A measure of how much a model’s logical trajectory "warps" when you change a single variable. High $K$ often correlates with hallucination boundaries.
+-   **ML Equivalent**: A local measure of curvature/sensitivity under a specific probe setup. Interpret relative to baselines; avoid hard thresholds.
 
 ### Ghost Anchor (Synthesis)
 A relational coordinate in a Target Model synthesized from a Source Model's relational footprint.
@@ -145,7 +149,7 @@ A relational coordinate in a Target Model synthesized from a Source Model's rela
 ### Relational Stress
 The error metric for Manifold Transfer. It measures how much the relative distances between anchors drifted during projection.
 -   **Analogy**: Stretching a rubber map over a globe. "Stress" is where the rubber starts to tear because the shapes don't fit exactly.
--   **Human explanation**: "The transfer failed because the Target Model's cognitive terrain is too different from the Source's."
+-   **Human explanation**: "Higher stress means more distortion of relative distances during transfer; lower stress means distances were preserved more closely."
 
 ### Concept Volume (Influence)
 Modeling a concept as a probability distribution (volume) rather than a single point (centroid).
@@ -182,9 +186,9 @@ Whether the model represents objects in depth order where "near" objects can blo
 
 ### World Model Score (Visual-Spatial Grounding Density)
 A raw measurement (0.0 to 1.0) of how concentrated a model's probability mass is along human-perceptual 3D axes.
--   **Key Insight**: All models encode physics geometrically—the formulas, relationships, and structure are geometric representations. The difference is in the **probability distribution** over that geometric space.
--   **VL Models**: Visual grounding concentrates probability mass along specific 3D axes matching human visual experience.
--   **Text Models**: Same geometric knowledge, but probability distributed differently—shaped by linguistic/formula patterns rather than visual patterns.
+-   **Working hypothesis**: Models encode physical invariants as structure in representation space; this metric estimates concentration along human-perceptual 3D axes under a fixed probe setup.
+-   **VL Models**: Often show more concentration along human-perceptual 3D axes.
+-   **Text Models**: May encode similar relations, but with probability distributed differently (e.g., along linguistic/formula patterns rather than visual patterns).
 -   **What it measures**: The score indicates concentration on human-perceptual 3D axes. Higher values = more concentrated; lower values = more diffuse or aligned with alternative axes (linguistic, formula-based).
 -   **Analogy**: A blind physicist understands gravity geometrically through equations and tactile experience. A sighted physicist has the same geometric knowledge but with probability concentrated on visual axes. Neither is "abstract"—both are geometric, just with different probability densities.
 -   **Human explanation**: "This score measures how much the model's spatial concepts align with human visual experience, not whether it understands physics."
@@ -201,14 +205,12 @@ A collection of 23 anchor prompts designed to probe a model's encoding of social
 
 ### Social Manifold
 The geometric structure in representation space encoding social relationships.
--   **Hypothesis**: Models trained on human text encode three orthogonal social axes: Power, Kinship, and Formality.
--   **Validation**: Mean orthogonality of 94.8% across tested models confirms geometric independence of social dimensions.
--   **Human explanation**: "The model separately encodes 'who has power over whom', 'who is socially close', and 'what register to use'."
+-   **Working hypothesis**: Models trained on human text encode multiple social axes (e.g., power, kinship, formality) that can be probed and tested for orthogonality/consistency.
+-   **Human explanation**: "We probe whether the model separately encodes 'who has power over whom', 'who is socially close', and 'what register to use'."
 
 ### Power Axis
 A geometric dimension encoding status hierarchy from low to high.
 -   **Anchors**: slave → servant → citizen → noble → emperor
--   **Monotonic Gradient**: Some models (e.g., Qwen2.5-3B) show exact monotonic ordering (r = 1.0) along this axis.
 -   **Human explanation**: "The model learned that 'slave' is below 'servant' is below 'citizen' without explicit labels."
 
 ### Kinship Axis
@@ -225,15 +227,13 @@ A geometric dimension encoding linguistic register from casual to formal.
 
 ### Social Manifold Score (SMS)
 A raw measurement (0.0 to 1.0) of how well a model encodes social structure.
--   **Formula**: SMS = 0.30 × orthogonality + 0.40 × gradient_consistency + 0.30 × power_detection
+-   **Components**: Computed from orthogonality, gradient consistency, and power detection (see the tool’s JSON output for fields and weights).
 -   **What it measures**: Higher values indicate stronger encoding of orthogonal power/kinship/formality axes. Lower values indicate weaker or more diffuse social geometry.
 -   **Human explanation**: "This score measures how strongly the model encodes implicit social relationships."
 
 ### Latent Sociologist Hypothesis
 The hypothesis that language models encode social relationships through geometric structure in their representation space.
--   **Evidence**: Mean SMS of 0.53 across tested models (Cohen's d = 2.39 vs baseline).
--   **Key Finding**: Social geometry shows stronger signal than spatial grounding (0.53 vs 0.48).
--   **Interpretation**: LLMs may encode social relationships more robustly than physical spatial relationships, consistent with training primarily on human social discourse.
+-   **Status**: Research hypothesis. Treat as falsifiable and dataset-dependent; prefer reporting the measured SMS components and baseline context rather than qualitative conclusions.
 
 ---
 

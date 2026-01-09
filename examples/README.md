@@ -7,7 +7,7 @@ This directory contains example scripts demonstrating common ModelCypher workflo
 - Python 3.11+
 - ModelCypher installed (`poetry install`)
 - macOS with Apple Silicon for MLX backend (most examples)
-- Local model weights (download from Hugging Face mlx-community)
+- Local model weights (fetch with `poetry run mc model fetch …`)
 
 ## Examples
 
@@ -16,7 +16,7 @@ This directory contains example scripts demonstrating common ModelCypher workflo
 Probe a model to inspect its geometric properties and layer structure.
 
 ```bash
-python examples/01_basic_geometry_probe.py /path/to/model
+poetry run python examples/01_basic_geometry_probe.py /path/to/model
 ```
 
 **What it does:**
@@ -30,8 +30,8 @@ python examples/01_basic_geometry_probe.py /path/to/model
 Run safety probes and entropy diagnostics against adapter metadata and baselines.
 
 ```bash
-python examples/02_safety_audit.py --name "adapter-name"
-python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/baseline.json \
+poetry run python examples/02_safety_audit.py --name "adapter-name"
+poetry run python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/baseline.json \
   --observed "[0.1, 0.12, 0.09]" --samples /path/to/samples.json
 ```
 
@@ -46,7 +46,7 @@ python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/bas
 Inspect LoRA adapters without blending or interpolation.
 
 ```bash
-python examples/03_adapter_inspection.py /path/to/adapter_dir
+poetry run python examples/03_adapter_inspection.py /path/to/adapter_dir
 ```
 
 **What it does:**
@@ -58,7 +58,7 @@ python examples/03_adapter_inspection.py /path/to/adapter_dir
 Analyze entropy patterns in model outputs using thermodynamic metrics.
 
 ```bash
-python examples/04_entropy_analysis.py /path/to/model --prompt "Your prompt here"
+poetry run python examples/04_entropy_analysis.py /path/to/model --prompt "Your prompt here"
 ```
 
 **What it does:**
@@ -71,7 +71,7 @@ python examples/04_entropy_analysis.py /path/to/model --prompt "Your prompt here
 Merge two models using geometric alignment.
 
 ```bash
-python examples/05_model_merge.py source_model target_model -o merged_output
+poetry run python examples/05_model_merge.py source_model target_model -o merged_output
 ```
 
 **What it does:**
@@ -81,11 +81,11 @@ python examples/05_model_merge.py source_model target_model -o merged_output
 
 ## Getting Models
 
-Fetch MLX-compatible models from Hugging Face:
+Fetch an MLX-compatible model from Hugging Face:
 
 ```bash
-# ModelCypher CLI (prints JSON including `localPath`)
-poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16 --output json
+# ModelCypher CLI prints JSON by default
+poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
 ```
 
 ## Tips

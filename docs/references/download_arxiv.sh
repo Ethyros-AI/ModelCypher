@@ -8,6 +8,7 @@ cd "$(dirname "$0")/arxiv"
 # SOURCE is either an arXiv ID (e.g. 2209.04836, gr-qc/9310026) or a direct PDF URL.
 papers=(
     "0711.0189|Luxburg_2007_Tutorial_Spectral_Clustering"
+    "1310.0425|Fefferman_2013_Testing_Manifold_Hypothesis"
     "1503.02406|Tishby_2015_Deep_Learning_Information_Bottleneck_Principle"
     "1503.05671|Martens_2015_Optimizing_Neural_Networks_Kroneckerfactored_Approximate_Curvature"
     "1602.07868|Salimans_2016_Weight_Normalization_Simple_Reparameterization_Accelerate_Training"
