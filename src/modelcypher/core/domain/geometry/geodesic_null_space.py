@@ -252,14 +252,19 @@ class GeodesicNullSpaceFilter:
         #
         # Uses native b.pinv() for EXACT pseudo-inverse computation on GPU.
 
-        # EXACT null space projection using QR (GPU)
-        # P_T = Q @ Q^T  (projection onto column space of A)
-        # P_null = I - P_T   (projection onto null space)
-        # delta_safe = P_null @ delta = delta - Q @ Q^T @ delta
+        # =====================================================================
+        # VARIANCE-WEIGHTED PROJECTION (replaces binary Q @ Q^T)
+        # =====================================================================
+        # Q now contains variance_weights [d, 1] where:
+        #   weight[i] = normalized variance of dimension i
+        #   High weight = dense direction = project out more
+        #   Low weight = sparse direction = keep more delta
         #
-        # CKA=1.0 requires exact projection. No regularization or approximation.
+        # Formula: delta_safe = delta * (1 - variance_weights)
+        # This keeps delta in sparse directions, removes in dense directions.
+        # =====================================================================
         reg = basis.regularization
-        Q = basis.Q
+        Q = basis.Q  # Contains variance_weights [d, 1]
 
         delta_dtype = backend.dtype(delta_matrix)
         proj_dtype = delta_dtype
@@ -273,14 +278,18 @@ class GeodesicNullSpaceFilter:
             Q = backend.astype(Q, proj_dtype)
             backend.eval(Q)
 
-        # Project delta onto tangent space: (delta @ Q) @ Q^T
-        coeff = backend.matmul(delta_proj, Q)  # [rows, k]
-        delta_tangent = backend.matmul(coeff, backend.transpose(Q))  # [rows, d]
-        backend.eval(delta_tangent)
+        # Extract variance weights and compute keep weights
+        variance_weights = backend.squeeze(Q)  # [d]
+        keep_weights = 1.0 - variance_weights  # [d] - high in sparse, low in dense
+        backend.eval(keep_weights)
 
-        # Geodesic null space component: delta - projection onto tangent space
-        delta_safe = delta_proj - delta_tangent
+        # Apply variance-weighted projection
+        # delta_safe = delta * keep_weights (per-dimension scaling)
+        n_rows = int(delta_proj.shape[0])
+        keep_weights_row = backend.reshape(keep_weights, (1, d))
+        delta_safe = delta_proj * keep_weights_row
         backend.eval(delta_safe)
+
         if str(proj_dtype) != str(delta_dtype):
             delta_safe = backend.astype(delta_safe, delta_dtype)
             backend.eval(delta_safe)
@@ -390,15 +399,74 @@ class GeodesicNullSpaceFilter:
         )
         backend.eval(tangent_vectors)
 
-        # Project onto the row-space of T (span of tangent vectors in R^d).
+        # =====================================================================
+        # VARIANCE-WEIGHTED NULL SPACE PROJECTION
+        # =====================================================================
+        # The shape is invariant. All models encode the same manifold.
+        # What differs is DENSITY - how many concepts are locked into precise
+        # positions on this manifold.
+        #
+        # Binary null-space projection (Q @ Q^T) is WRONG because:
+        # - With many samples, Q spans all dimensions
+        # - orthogonal_dim = 0, so delta_safe = delta - delta = 0
+        #
+        # Variance-weighted projection is CORRECT because:
+        # - High variance directions are DENSELY populated (many concepts)
+        # - Low variance directions are SPARSE (room for new concepts)
+        # - We project out proportionally: remove delta where dense, keep where sparse
+        #
+        # Formula:
+        #   variance[i] = var(activations[:, i])
+        #   weight[i] = variance[i] / max(variance)  in [0, 1]
+        #   projection_strength = diag(weight)
+        #   delta_safe = delta - delta @ diag(weight)
+        #
+        # This preserves precision (no truncation) while respecting density.
+        # =====================================================================
+
+        # Compute per-dimension variance of activations directly
+        # (tangent vectors have similar variance structure, but activations are cleaner)
         A = backend.transpose(tangent_vectors)  # [d, n_samples]
         if str(backend.dtype(A)) in ("float16", "bfloat16"):
             A = backend.astype(A, "float32")
         reg = regularization_epsilon(backend, A)
-        Q, _ = backend.qr(A)  # [d, k] orthonormal basis for column space
+
+        # Variance per dimension: how "occupied" each direction is
+        # High variance = many concepts spread along this direction = dense
+        # Low variance = concepts clustered or sparse = room for more
+        acts_f32 = backend.astype(prior_activations, "float32")
+        mean_per_dim = backend.mean(acts_f32, axis=0)  # [d]
+        centered = acts_f32 - backend.reshape(mean_per_dim, (1, d))
+        variance_per_dim = backend.mean(centered * centered, axis=0)  # [d]
+        backend.eval(variance_per_dim)
+
+        # Normalize variance to [0, 1] range
+        max_var = backend.max(variance_per_dim)
+        backend.eval(max_var)
+        max_var_val = float(backend.to_scalar(max_var))
+
+        if max_var_val > reg:
+            # variance_weights[i] = how strongly to project out direction i
+            # High weight = dense = project out strongly
+            # Low weight = sparse = keep more delta
+            variance_weights = variance_per_dim / max_var_val
+        else:
+            # All directions have ~0 variance, nothing to project
+            variance_weights = backend.zeros((d,))
+        backend.eval(variance_weights)
+
+        # Store the variance weights as our "weighted basis"
+        # The projection will use: delta_safe = delta * (1 - variance_weights)
+        # This is equivalent to: delta - delta * variance_weights
+        # where variance_weights acts as the projection strength per dimension
+        Q = backend.reshape(variance_weights, (d, 1))  # [d, 1] for compatibility
         backend.eval(Q)
 
-        orthogonal_dim = max(0, d - int(Q.shape[1]))
+        # Orthogonal dimension is now the sum of (1 - weights), normalized
+        # This represents "effective null space size" based on sparse directions
+        effective_null = backend.sum(1.0 - variance_weights)
+        backend.eval(effective_null)
+        orthogonal_dim = int(float(backend.to_scalar(effective_null)))
 
         basis = GeodesicNullSpaceBasis(
             Q=Q,

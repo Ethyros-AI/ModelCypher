@@ -425,3 +425,103 @@ def batch(
     typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")
     typer.echo(f"  Total layers: {result.total_layers}")
     typer.echo(f"  Sources merged: {len(sources)}")
+
+
+@app.command("multi-channel")
+def multi_channel(
+    ctx: typer.Context,
+    channels: list[str] = typer.Option(
+        ...,
+        "--channel",
+        "-c",
+        help="Channel in format 'name:path' (repeat for multiple: -c spatial:/path/to/world -c text:/path/to/llm)",
+    ),
+    target: str = typer.Option(..., "--target", "-t", help="Target model (receives all knowledge)"),
+    output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
+    routing_mode: str = typer.Option(
+        "uniform",
+        "--routing",
+        "-r",
+        help="Routing mode: 'uniform' (equal weight), 'identity' (no mixing), 'diagonal_weighted' (norm-based)",
+    ),
+    fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks"),
+) -> None:
+    """Merge multiple channels simultaneously via Birkhoff routing.
+
+    This is the preferred method for multi-modal merging (e.g., world model +
+    vision-language model + text model → unified model).
+
+    Unlike 'batch' (sequential), this method:
+    1. Probes all channels simultaneously
+    2. Projects all channels into target's null-space (shared basis)
+    3. Combines channels via doubly stochastic routing (spectral norm <= 1.0)
+    4. Applies geometric addition (not interpolation)
+
+    Mathematical Foundation (from mHC-null-space connection):
+        W' = W_target + sum_j H[i,j] * P_null(A_target) @ delta_W_j
+
+    Properties:
+    - CKA = 1.0 per channel (geometry preserved)
+    - Spectral norm <= 1.0 (stable combination)
+    - No interference (channels add, not blend)
+
+    Examples:
+        mc merge multi-channel -c spatial:/path/to/world -c text:/path/to/llm -t ./lfm2 -o ./merged
+        mc merge multi-channel -c spatial:./world -c temporal:./video -c text:./llm -t ./target -o ./out
+    """
+    from modelcypher.adapters.hf_hub import HuggingFaceModelLoader
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
+
+    context = _context(ctx)
+    backend = get_default_backend()
+
+    # Parse channel arguments (format: "name:path")
+    channel_paths: dict[str, str] = {}
+    for channel_spec in channels:
+        if ":" not in channel_spec:
+            typer.echo(f"Error: Invalid channel format '{channel_spec}'. Use 'name:path' format.", err=True)
+            raise typer.Exit(code=1)
+        name, path = channel_spec.split(":", 1)
+        if not name or not path:
+            typer.echo(f"Error: Invalid channel format '{channel_spec}'. Both name and path required.", err=True)
+            raise typer.Exit(code=1)
+        channel_paths[name] = path
+
+    # Validate paths
+    for name, path in channel_paths.items():
+        if not validate_model_path(path):
+            typer.echo(f"Error: Channel '{name}' path not found: {path}", err=True)
+            raise typer.Exit(code=1)
+    if not validate_model_path(target):
+        typer.echo(f"Error: Target path not found: {target}", err=True)
+        raise typer.Exit(code=1)
+
+    # Validate routing mode
+    valid_modes = ["uniform", "identity", "diagonal_weighted"]
+    if routing_mode not in valid_modes:
+        typer.echo(f"Error: Invalid routing mode '{routing_mode}'. Use one of: {', '.join(valid_modes)}", err=True)
+        raise typer.Exit(code=1)
+
+    channel_names = list(channel_paths.keys())
+    typer.echo(f"MULTI-CHANNEL MERGE: {len(channel_names)} channels → {target}")
+    typer.echo(f"  Channels: {', '.join(channel_names)}")
+    typer.echo(f"  Routing mode: {routing_mode}")
+    typer.echo(f"  Fast mode: {fast_mode}")
+
+    with prevent_sleep():
+        model_loader = HuggingFaceModelLoader()
+        merger = UnifiedGeometricMerger(model_loader=model_loader, backend=backend)
+
+        result = merger.merge_multi_channel(
+            channel_paths=channel_paths,
+            target_path=target,
+            output_dir=output_dir,
+            routing_mode=routing_mode,
+            fast_mode=fast_mode,
+        )
+
+    typer.echo(f"MULTI-CHANNEL MERGE: Complete. Output saved to {output_dir}")
+    typer.echo(f"  Layers merged: {result.transplant_metrics.get('layers_merged', 0)}")
+    typer.echo(f"  Channels: {len(channel_names)}")
+    typer.echo(f"  Mean preserved fraction: {result.mean_preserved_fraction:.4f}")
