@@ -42,8 +42,10 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.cache import content_hash
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import is_inf, is_nan
+from modelcypher.utils.paths import ensure_dir, get_modelcypher_home
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
@@ -71,6 +73,74 @@ class ProfileSection(Enum):
     SEMANTIC = "semantic"  # Semantic primes (requires inference)
     DENSITY = "density"  # Knowledge density (expensive)
     ENTROPY = "entropy"  # Entropy measurements
+
+
+@dataclass(frozen=True)
+class ModelIdentity:
+    """Stable identity for a model based on config and weight metadata."""
+
+    model_id: str
+    config_hash: str
+    weights_hash: str
+    model_path: str
+
+
+def compute_model_identity(model_path: str) -> ModelIdentity:
+    """Compute a stable model identity from config + weight metadata."""
+    path = Path(model_path).expanduser().resolve()
+
+    config_payload: dict[str, Any] = {}
+    config_hash = ""
+    config_path = path / "config.json"
+    if config_path.exists():
+        try:
+            config_payload = json.loads(config_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            config_payload = {}
+
+    if config_payload:
+        config_hash = content_hash(config_payload)
+
+    weight_entries: list[tuple[str, int, int]] = []
+    patterns = ("*.safetensors", "*.bin", "*.pt", "*.npz", "*.gguf", "*.ckpt")
+    for pattern in patterns:
+        for file_path in sorted(path.glob(pattern)):
+            try:
+                stat = file_path.stat()
+            except OSError:
+                continue
+            weight_entries.append(
+                (file_path.name, int(stat.st_size), int(stat.st_mtime))
+            )
+
+    weights_hash = content_hash(weight_entries) if weight_entries else ""
+
+    model_id = content_hash(
+        {
+            "config": config_hash,
+            "weights": weights_hash,
+        }
+    )
+
+    return ModelIdentity(
+        model_id=model_id,
+        config_hash=config_hash,
+        weights_hash=weights_hash,
+        model_path=str(path),
+    )
+
+
+def compute_probe_corpus_hash(
+    probe_mode: str, probe_ids: list[str], probe_texts: list[str]
+) -> str:
+    """Hash a probe corpus deterministically for cache reuse."""
+    return content_hash(
+        {
+            "probe_mode": probe_mode,
+            "probe_ids": probe_ids,
+            "probe_texts": probe_texts,
+        }
+    )
 
 
 @dataclass
@@ -322,6 +392,7 @@ class ModelProfile:
 
     # === IDENTITY (always required) ===
     model_path: str
+    model_id: str = ""
     profile_version: str = SCHEMA_VERSION
     computed_at: str = ""
 
@@ -365,6 +436,7 @@ class ModelProfile:
 
     # === METADATA ===
     probe_corpus_hash: str = ""  # Which probes generated this profile
+    probe_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
     backend_used: str = ""  # "mlx", "jax", etc.
     extraction_config: dict[str, Any] = field(default_factory=dict)
 
@@ -395,6 +467,7 @@ class ModelProfile:
             "_schema": self.profile_version,
             # Identity
             "model_path": self.model_path,
+            "model_id": self.model_id,
             "profile_version": self.profile_version,
             "computed_at": self.computed_at,
             # Architecture
@@ -439,6 +512,7 @@ class ModelProfile:
             "computed_sections": self.computed_sections,
             # Metadata
             "probe_corpus_hash": self.probe_corpus_hash,
+            "probe_cache": self.probe_cache,
             "backend_used": self.backend_used,
             "extraction_config": self.extraction_config,
         }
@@ -481,6 +555,7 @@ class ModelProfile:
 
         return cls(
             model_path=d["model_path"],
+            model_id=d.get("model_id", ""),
             profile_version=d.get("profile_version", SCHEMA_VERSION),
             computed_at=d.get("computed_at", ""),
             model_family=d.get("model_family", "unknown"),
@@ -505,6 +580,7 @@ class ModelProfile:
             domain_metrics=d.get("domain_metrics", {}),
             computed_sections=d.get("computed_sections", []),
             probe_corpus_hash=d.get("probe_corpus_hash", ""),
+            probe_cache=d.get("probe_cache", {}),
             backend_used=d.get("backend_used", ""),
             extraction_config=d.get("extraction_config", {}),
         )
@@ -688,6 +764,11 @@ class ModelProfile:
             if domain not in result.domain_metrics:
                 result.domain_metrics[domain] = metrics.copy()
 
+        # Merge probe cache metadata
+        for key, entry in other.probe_cache.items():
+            if key not in result.probe_cache:
+                result.probe_cache[key] = entry.copy() if isinstance(entry, dict) else entry
+
         # Merge computed sections
         for section in other.computed_sections:
             if section not in result.computed_sections:
@@ -698,6 +779,8 @@ class ModelProfile:
             result.architecture = other.architecture
         if result.model_family == "unknown" and other.model_family != "unknown":
             result.model_family = other.model_family
+        if result.model_id == "" and other.model_id:
+            result.model_id = other.model_id
         if result.parameter_count == 0:
             result.parameter_count = other.parameter_count
         if result.hidden_dim == 0:
@@ -708,8 +791,60 @@ class ModelProfile:
             result.num_attention_heads = other.num_attention_heads
         if result.vocab_size == 0:
             result.vocab_size = other.vocab_size
+        if result.probe_corpus_hash == "" and other.probe_corpus_hash:
+            result.probe_corpus_hash = other.probe_corpus_hash
 
         return result
+
+
+class ModelProfileStore:
+    """Per-model profile store keyed by model identity."""
+
+    def __init__(self, base_dir: str | Path | None = None) -> None:
+        if base_dir is None:
+            base_dir = get_modelcypher_home() / "profiles" / "models"
+        self._base_dir = ensure_dir(base_dir)
+        self._cache: dict[str, ModelProfile] = {}
+
+    def identity_for_path(self, model_path: str) -> ModelIdentity:
+        return compute_model_identity(model_path)
+
+    def profile_path(self, model_id: str) -> Path:
+        return self._base_dir / model_id / "profile.json"
+
+    def probe_cache_dir(self, model_id: str) -> Path:
+        return ensure_dir(self._base_dir / model_id / "probe_cache")
+
+    def load(self, model_path: str) -> tuple[ModelProfile | None, ModelIdentity]:
+        identity = compute_model_identity(model_path)
+        if identity.model_id in self._cache:
+            return self._cache[identity.model_id], identity
+        path = self.profile_path(identity.model_id)
+        if path.exists():
+            profile = ModelProfile.load(path)
+            if not profile.model_id:
+                profile.model_id = identity.model_id
+            self._cache[identity.model_id] = profile
+            return profile, identity
+        return None, identity
+
+    def ensure(self, model_path: str) -> tuple[ModelProfile, ModelIdentity]:
+        profile, identity = self.load(model_path)
+        if profile is None:
+            profile = ModelProfile(model_path=str(Path(model_path).expanduser().resolve()))
+            profile.model_id = identity.model_id
+            self._cache[identity.model_id] = profile
+        return profile, identity
+
+    def save(self, profile: ModelProfile, identity: ModelIdentity | None = None) -> Path:
+        if identity is None:
+            identity = compute_model_identity(profile.model_path)
+        profile.model_id = identity.model_id
+        path = self.profile_path(identity.model_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        profile.save(path)
+        self._cache[identity.model_id] = profile
+        return path
 
 
 class ProfileRepository:
@@ -1153,13 +1288,17 @@ class ModelProfileExtractor:
 
 __all__ = [
     "ProfileSection",
+    "ModelIdentity",
     "ManifoldRegion",
     "LayerProfile",
     "TopologySummary",
     "SemanticSignature",
     "DensitySummary",
     "ModelProfile",
+    "ModelProfileStore",
     "ProfileRepository",
     "ModelProfileExtractor",
+    "compute_model_identity",
+    "compute_probe_corpus_hash",
     "SCHEMA_VERSION",
 ]

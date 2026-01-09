@@ -69,6 +69,7 @@ class CRMCompareSummary:
     target_path: str
     common_anchor_count: int
     mean_cka: float
+    alignment_precision: float  # Numerical precision (1.0 = exact, CKA=1.0 is invariant)
     aligned: bool
     layer_correspondence: list[dict[str, float | int]]
     cka_matrix: list[list[float]] | None
@@ -274,6 +275,7 @@ class ConceptResponseMatrixService:
             target_path=str(expand_path(target_path)),
             common_anchor_count=report.common_anchor_count,
             mean_cka=report.mean_cka,
+            alignment_precision=report.alignment_precision,
             aligned=report.is_perfect,
             layer_correspondence=correspondence,
             cka_matrix=report.cka_matrix if include_matrix else None,

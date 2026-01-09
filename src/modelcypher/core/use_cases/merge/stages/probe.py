@@ -35,6 +35,7 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -409,6 +410,198 @@ def _save_probe_result_cache(
     meta_path = cache_dir / f"{cache_key}.json"
     meta_path.write_text(json.dumps(meta, indent=2))
     logger.info("PROBE CACHE: Saved probe results to %s", cache_dir)
+
+
+# =============================================================================
+# PER-MODEL PROBE ACTIVATION CACHE (DISK)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class ModelProbeCache:
+    probe_ids: list[str]
+    probe_domains: list[str]
+    probe_mode: str
+    probe_corpus_hash: str
+    hidden_activations: dict[int, "Array"]
+    intermediate_activations: dict[int, "Array"]
+    attention_activations: dict[int, "Array"]
+    k_activations: dict[int, "Array"]
+    v_activations: dict[int, "Array"]
+    embedding_activations: "Array | None"
+
+
+def _model_probe_cache_paths(
+    model_id: str,
+    probe_mode: str,
+    probe_corpus_hash: str,
+) -> tuple[Path, Path]:
+    """Resolve per-model probe cache paths."""
+    from modelcypher.core.domain.geometry.model_profile import ModelProfileStore
+
+    store = ModelProfileStore()
+    cache_dir = store.probe_cache_dir(model_id)
+    stem = f"{probe_mode}_{probe_corpus_hash}"
+    return cache_dir / f"{stem}.npz", cache_dir / f"{stem}.json"
+
+
+def _load_model_probe_cache(
+    model_id: str,
+    probe_mode: str,
+    probe_corpus_hash: str,
+    backend: "Backend",
+) -> ModelProbeCache | None:
+    """Load per-model probe activations from disk."""
+    import mlx.core as mx
+
+    data_path, meta_path = _model_probe_cache_paths(
+        model_id=model_id,
+        probe_mode=probe_mode,
+        probe_corpus_hash=probe_corpus_hash,
+    )
+    if not data_path.exists() or not meta_path.exists():
+        return None
+
+    try:
+        meta = json.loads(meta_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("PROBE CACHE: Failed to read %s: %s", meta_path, e)
+        return None
+
+    if meta.get("version") != 1:
+        return None
+    if meta.get("probe_mode") != probe_mode:
+        return None
+    if meta.get("probe_corpus_hash") != probe_corpus_hash:
+        return None
+
+    try:
+        loaded = mx.load(data_path)
+    except Exception as e:
+        logger.warning("PROBE CACHE: Failed to load %s: %s", data_path, e)
+        return None
+
+    if not isinstance(loaded, dict):
+        logger.warning("PROBE CACHE: Invalid cache format at %s", data_path)
+        return None
+
+    hidden: dict[int, "Array"] = {}
+    intermediate: dict[int, "Array"] = {}
+    attn: dict[int, "Array"] = {}
+    k_acts: dict[int, "Array"] = {}
+    v_acts: dict[int, "Array"] = {}
+    embedding: "Array | None" = None
+
+    for key, arr in loaded.items():
+        if key.startswith("hidden_"):
+            layer_idx = int(key.split("_")[1])
+            hidden[layer_idx] = arr
+        elif key.startswith("intermediate_"):
+            layer_idx = int(key.split("_")[1])
+            intermediate[layer_idx] = arr
+        elif key.startswith("attn_q_"):
+            layer_idx = int(key.split("_")[2])
+            attn[layer_idx] = arr
+        elif key.startswith("attn_k_"):
+            layer_idx = int(key.split("_")[2])
+            k_acts[layer_idx] = arr
+        elif key.startswith("attn_v_"):
+            layer_idx = int(key.split("_")[2])
+            v_acts[layer_idx] = arr
+        elif key == "embedding":
+            embedding = arr
+
+    probe_ids = meta.get("probe_ids", [])
+    probe_domains = meta.get("probe_domains", [])
+
+    if not hidden:
+        logger.warning("PROBE CACHE: Missing hidden activations in %s", data_path)
+        return None
+
+    return ModelProbeCache(
+        probe_ids=probe_ids,
+        probe_domains=probe_domains,
+        probe_mode=probe_mode,
+        probe_corpus_hash=probe_corpus_hash,
+        hidden_activations=hidden,
+        intermediate_activations=intermediate,
+        attention_activations=attn,
+        k_activations=k_acts,
+        v_activations=v_acts,
+        embedding_activations=embedding,
+    )
+
+
+def _save_model_probe_cache(
+    model_id: str,
+    probe_mode: str,
+    probe_corpus_hash: str,
+    probe_ids: list[str],
+    probe_domains: list[str],
+    hidden_activations: dict[int, "Array"],
+    intermediate_activations: dict[int, "Array"] | None,
+    attention_activations: dict[int, "Array"] | None,
+    k_activations: dict[int, "Array"] | None,
+    v_activations: dict[int, "Array"] | None,
+    embedding_activations: "Array | list[Array] | None",
+) -> None:
+    """Persist per-model probe activations to disk for reuse."""
+    import mlx.core as mx
+
+    data: dict[str, "Array"] = {}
+    for layer_idx, acts in hidden_activations.items():
+        data[f"hidden_{layer_idx}"] = acts
+    if intermediate_activations:
+        for layer_idx, acts in intermediate_activations.items():
+            data[f"intermediate_{layer_idx}"] = acts
+    if attention_activations:
+        for layer_idx, acts in attention_activations.items():
+            data[f"attn_q_{layer_idx}"] = acts
+    if k_activations:
+        for layer_idx, acts in k_activations.items():
+            data[f"attn_k_{layer_idx}"] = acts
+    if v_activations:
+        for layer_idx, acts in v_activations.items():
+            data[f"attn_v_{layer_idx}"] = acts
+
+    if embedding_activations is not None:
+        if isinstance(embedding_activations, list):
+            if embedding_activations:
+                data["embedding"] = mx.stack(embedding_activations, axis=0)
+        else:
+            data["embedding"] = embedding_activations
+
+    data_path, meta_path = _model_probe_cache_paths(
+        model_id=model_id,
+        probe_mode=probe_mode,
+        probe_corpus_hash=probe_corpus_hash,
+    )
+    data_path.parent.mkdir(parents=True, exist_ok=True)
+    mx.savez_compressed(data_path, **data)
+
+    spaces = ["hidden"]
+    if intermediate_activations:
+        spaces.append("intermediate")
+    if attention_activations:
+        spaces.append("attention_q")
+    if k_activations:
+        spaces.append("attention_k")
+    if v_activations:
+        spaces.append("attention_v")
+    if embedding_activations is not None:
+        spaces.append("embedding")
+
+    meta = {
+        "version": 1,
+        "probe_mode": probe_mode,
+        "probe_corpus_hash": probe_corpus_hash,
+        "probe_ids": probe_ids,
+        "probe_domains": probe_domains,
+        "spaces": spaces,
+        "created_at": datetime.now().isoformat(),
+    }
+    meta_path.write_text(json.dumps(meta, indent=2))
+    logger.info("PROBE CACHE: Saved per-model activations to %s", data_path)
 
 # =============================================================================
 # MEMORY-EFFICIENT ACTIVATION ACCUMULATION
@@ -875,6 +1068,8 @@ def stage_probe(
     extract_layer_index_fn: Callable[[str], int | None],
     source_model: Any | None = None,
     target_model: Any | None = None,
+    source_path: str = "",
+    target_path: str = "",
     source_tokenizer: Any | None = None,
     target_tokenizer: Any | None = None,
     tokenizer: Any | None = None,
@@ -989,6 +1184,8 @@ def stage_probe(
             target_weights=target_weights,
             extract_layer_index_fn=extract_layer_index_fn,
             activation_provider=activation_provider,
+            source_path=source_path,
+            target_path=target_path,
             checkpoint_dir=Path(checkpoint_dir) if checkpoint_dir else None,
             probe_mode=probe_mode,
         )
@@ -1038,7 +1235,6 @@ def _probe_precise(
         ActivationFingerprint,
         IntersectionMap,
     )
-    from modelcypher.core.domain.geometry.model_profile import ProfileRepository, ModelProfile
 
     # Select probing mode
     if probe_mode == "token":
@@ -1125,211 +1321,189 @@ def _probe_precise(
 
     expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
     expected_probe_domains = [probe.domain.value for probe, _ in valid_probes]
+    expected_probe_texts = [probe_text for _, probe_text in valid_probes]
 
-    # Disk cache lookup for full probe results (activations + transforms).
-    probe_cache_key: str | None = None
-    source_id = _infer_model_id(source_path, source_model)
-    target_id = _infer_model_id(target_path, target_model)
-    if source_id and target_id and expected_probe_ids:
-        probe_cache_key = _probe_cache_key(
-            source_id,
-            target_id,
-            probe_mode,
-            expected_probe_ids,
-        )
-        cached = _load_probe_result_cache(
-            cache_key=probe_cache_key,
-            probe_ids=expected_probe_ids,
+    from modelcypher.core.domain.geometry.model_profile import (
+        ModelProfileStore,
+        compute_probe_corpus_hash,
+    )
+
+    probe_corpus_hash = compute_probe_corpus_hash(
+        probe_mode=probe_mode,
+        probe_ids=expected_probe_ids,
+        probe_texts=expected_probe_texts,
+    )
+    profile_store = ModelProfileStore()
+    source_profile: ModelProfile | None = None
+    target_profile: ModelProfile | None = None
+    source_identity = None
+    target_identity = None
+
+    if source_path:
+        source_profile, source_identity = profile_store.ensure(source_path)
+    if target_path:
+        target_profile, target_identity = profile_store.ensure(target_path)
+
+    cache_key = f"{probe_mode}:{probe_corpus_hash}"
+
+    source_cache: ModelProbeCache | None = None
+    target_cache: ModelProbeCache | None = None
+
+    if source_identity and expected_probe_ids:
+        source_cache = _load_model_probe_cache(
+            model_id=source_identity.model_id,
             probe_mode=probe_mode,
+            probe_corpus_hash=probe_corpus_hash,
             backend=b,
         )
-        if cached is not None:
-            (
-                source_layer_activations,
-                target_layer_activations,
-                cached_probe_result,
-                cached_metrics,
-                feature_transforms,
-                scale_ratios,
-                embedding_transform,
-                attention_transforms,
-                k_transforms,
-                v_transforms,
-                intermediate_transforms,
-                layer_mapping,
-                probe_ids,
-                probe_domains,
-                cached_source_intermediate,
-                cached_target_intermediate,
-                cached_source_attention,
-                cached_target_attention,
-                cached_source_k,
-                cached_target_k,
-            ) = cached
-
+        if source_cache:
             logger.info(
-                "PROBE CACHE: Loaded cached probe results for %s -> %s",
-                source_id,
-                target_id,
+                "PROBE CACHE: Loaded per-model activations for source %s",
+                source_identity.model_id,
             )
 
-            return ProbeResult(
-                correlations=cached_probe_result.get("correlations", {}),
-                confidences=cached_probe_result.get("confidences", {}),
-                intersection_map=None,
-                dimension_correlations=cached_probe_result.get("dimension_correlations", {}),
-                metrics=cached_metrics,
-                source_activations=source_layer_activations,
-                target_activations=target_layer_activations,
-                source_intermediate_activations=cached_source_intermediate,
-                target_intermediate_activations=cached_target_intermediate,
-                source_attention_activations=cached_source_attention,
-                target_attention_activations=cached_target_attention,
-                source_k_activations=cached_source_k,
-                target_k_activations=cached_target_k,
-                source_v_activations=None,
-                target_v_activations=None,
-                source_embedding_activations=None,
-                target_embedding_activations=None,
-                probe_ids=probe_ids,
-                probe_domains=probe_domains,
-                feature_transforms=feature_transforms,
-                scale_ratios=scale_ratios,
-                embedding_transform=embedding_transform,
-                attention_transforms=attention_transforms,
-                k_transforms=k_transforms,
-                v_transforms=v_transforms,
-                intermediate_transforms=intermediate_transforms,
-                layer_mapping=layer_mapping,
+    if target_identity and expected_probe_ids:
+        target_cache = _load_model_probe_cache(
+            model_id=target_identity.model_id,
+            probe_mode=probe_mode,
+            probe_corpus_hash=probe_corpus_hash,
+            backend=b,
+        )
+        if target_cache:
+            logger.info(
+                "PROBE CACHE: Loaded per-model activations for target %s",
+                target_identity.model_id,
             )
-    else:
-        logger.info("PROBE CACHE: Skipping disk cache (missing model id or probes)")
 
-    # Initialize ProfileRepository
-    profile_repo = ProfileRepository()
-    
-    # Try to load cached fingerprints from profiles
-    source_profile = None
-    target_profile = None
-    
-    # Helper to infer family/size for profile lookup (simple heuristic)
-    def _get_model_key(path: str, model: Any) -> tuple[str, str]:
-        path_lower = path.lower()
-        family = "unknown"
-        if "qwen" in path_lower: family = "qwen"
-        elif "smol" in path_lower: family = "smollm"
-        elif "llama" in path_lower: family = "llama"
-        elif "mistral" in path_lower: family = "mistral"
-        
-        # Extract basic size from path or config if possible (very rough)
-        size = "unknown"
-        if "8b" in path_lower: size = "8B"
-        elif "360m" in path_lower: size = "360M"
-        elif "7b" in path_lower: size = "7B"
-        
-        return family, size
-
-    source_family, source_size = _get_model_key(source_path, source_model)
-    target_family, target_size = _get_model_key(target_path, target_model)
-    
-    source_profile = profile_repo.get_profile(source_family, source_size)
-    target_profile = profile_repo.get_profile(target_family, target_size)
-    
     source_fingerprints: list[ActivationFingerprint] = []
     target_fingerprints: list[ActivationFingerprint] = []
-    
-    # Check cache hit for source
-    if source_profile and source_profile.probe_fingerprints:
-        logger.info("PROBE: Found CACHED fingerprints for source model (%s)", source_path)
+
+    if (
+        source_profile
+        and source_profile.probe_corpus_hash == probe_corpus_hash
+        and source_profile.probe_fingerprints
+    ):
         source_fingerprints = source_profile.probe_fingerprints
-        
-    # Check cache hit for target
-    if target_profile and target_profile.probe_fingerprints:
-        logger.info("PROBE: Found CACHED fingerprints for target model (%s)", target_path)
+    if (
+        target_profile
+        and target_profile.probe_corpus_hash == probe_corpus_hash
+        and target_profile.probe_fingerprints
+    ):
         target_fingerprints = target_profile.probe_fingerprints
 
-    # If both cached, skip inference and use cached fingerprints
-    if source_fingerprints and target_fingerprints:
-        logger.info("PROBE: ALL fingerprints cached. Skipping inference loop.")
-        # NOTE: Fingerprints contain sparse top-k data. For full CKA we need dense vectors.
-        # We reconstruct dense vectors (filling zeros) as an approximation.
-        pass
+    run_source_inference = source_cache is None
+    run_target_inference = target_cache is None
+    run_inference = run_source_inference or run_target_inference
 
-    logger.info(
-        "PROBE PRECISE: Running %d probes through source and target models...",
-        len(probes),
-    )
+    if run_source_inference:
+        source_fingerprints = []
+    if run_target_inference:
+        target_fingerprints = []
+
+    if run_inference:
+        logger.info(
+            "PROBE PRECISE: Running %d probes through %s%s models...",
+            len(valid_probes),
+            "source" if run_source_inference else "",
+            " + target" if run_target_inference else "",
+        )
+    else:
+        logger.info(
+            "PROBE PRECISE: Using cached activations for %d probes",
+            len(valid_probes),
+        )
 
     # MEMORY OPTIMIZATION: Store as single stacked Array per layer, not list of arrays
     # This reduces Metal buffer count from 4096×32 = 131,072 to just 32 per model
-    source_layer_activations: dict[int, "Array"] = {}
-    target_layer_activations: dict[int, "Array"] = {}
-    # Embedding-space activations for 2D GramAlign (post-embed_tokens, pre-layer-0)
-    # Same CKA=1.0, same geodesic math - applied at embedding dimension
-    # If fingerprints are ALREADY loaded from cache, we don't need to probe.
-    # However, we DO need to populate xxx_layer_activations for GramAligner.
-    # We will reconstruct them from sparse fingerprints if cached.
-    
-    run_inference = True
-    if source_fingerprints and target_fingerprints:
-        run_inference = False
-        logger.info("PROBE: Reconstructing activation arrays from cached sparse fingerprints (approximate)...")
-        # NOTE: This approximation (filling zeros) is the trade-off for caching.
-        # Real storage of dense activations is too large (GBs).
-        
-        # Helper to reconstruct dense array from sparse ActivatedDimension list
-        def _reconstruct_dense(dims: list[ActivatedDimension], dim_size: int) -> "Array":
-            arr = b.zeros((dim_size,), dtype="float32")
-            # This is slow per-item, but faster than inference
-            # To vectorize: create indices and values lists
-            indices = [d.index for d in dims]
-            values = [d.activation for d in dims]
-            if indices:
-                # MLX index update
-                arr[b.array(indices)] = b.array(values)
-            return arr
+    source_layer_activations: dict[int, "Array"] = (
+        source_cache.hidden_activations if source_cache else {}
+    )
+    target_layer_activations: dict[int, "Array"] = (
+        target_cache.hidden_activations if target_cache else {}
+    )
 
-        # We need to know hidden_dim. From fingerprints? No, they don't store it.
-        # Retrieve from model config/weights roughly
-        # Or from profile if available
-        s_dim = source_profile.hidden_dim if source_profile else 0
-        t_dim = target_profile.hidden_dim if target_profile else 0
-        
-        # If 0, we can't reconstruct safely without knowing dimension. 
-        # Fallback to inference if dimensions unknown.
-        if s_dim == 0 or t_dim == 0:
-            logger.warning("PROBE: Cached profile missing hidden_dim. Forcing re-inference.")
-            run_inference = True
-            source_fingerprints = []
-            target_fingerprints = []
-        else:
-            # Reconstruct source_layer_activations  
-            for fp in source_fingerprints:
-                for layer_idx, dims in fp.activated_dimensions.items():
-                    reconstructed = _reconstruct_dense(dims, s_dim)
-                    _accumulate_activation(source_layer_activations, layer_idx, reconstructed, b)
-            
-            # Reconstruct target_layer_activations
-            for fp in target_fingerprints:
-                for layer_idx, dims in fp.activated_dimensions.items():
-                    reconstructed = _reconstruct_dense(dims, t_dim)
-                    _accumulate_activation(target_layer_activations, layer_idx, reconstructed, b)
+    def _fingerprints_from_cache(
+        probes: list[tuple[Any, str]],
+        layer_activations: dict[int, "Array"],
+    ) -> list[ActivationFingerprint]:
+        fingerprints: list[ActivationFingerprint] = []
+        if not layer_activations:
+            return fingerprints
 
-    source_embedding_activations: list["Array"] = []
-    target_embedding_activations: list["Array"] = []
+        # Assume all layers share the same probe count
+        sample_layer = next(iter(layer_activations.values()))
+        probe_count = int(b.shape(sample_layer)[0])
+
+        for probe_idx, (probe, _probe_text) in enumerate(probes):
+            if probe_idx >= probe_count:
+                break
+            activated: dict[int, list[ActivatedDimension]] = {}
+            for layer_idx, stacked in layer_activations.items():
+                row = b.take(stacked, b.array([probe_idx]), axis=0)
+                row = b.squeeze(row, axis=0)
+                dims = _extract_top_k_dims(row, backend=b)
+                if dims:
+                    activated[layer_idx] = dims
+            if activated:
+                fingerprints.append(
+                    ActivationFingerprint(
+                        prime_id=probe.probe_id,
+                        prime_text=probe.name,
+                        activated_dimensions=activated,
+                    )
+                )
+        return fingerprints
+
+    if source_cache and not source_fingerprints:
+        logger.info("PROBE CACHE: Rebuilding source fingerprints from cached activations")
+        source_fingerprints = _fingerprints_from_cache(
+            valid_probes, source_layer_activations
+        )
+    if target_cache and not target_fingerprints:
+        logger.info("PROBE CACHE: Rebuilding target fingerprints from cached activations")
+        target_fingerprints = _fingerprints_from_cache(
+            valid_probes, target_layer_activations
+        )
+
+    source_embedding_activations: list["Array"] | "Array" = (
+        source_cache.embedding_activations
+        if source_cache and source_cache.embedding_activations is not None
+        else []
+    )
+    target_embedding_activations: list["Array"] | "Array" = (
+        target_cache.embedding_activations
+        if target_cache and target_cache.embedding_activations is not None
+        else []
+    )
     # MEMORY OPTIMIZATION: Store as single stacked Array per layer, not list
     # This reduces Metal buffer count from 131K to just 32 per model
-    source_intermediate_activations: dict[int, "Array"] = {}
-    target_intermediate_activations: dict[int, "Array"] = {}
+    source_intermediate_activations: dict[int, "Array"] = (
+        source_cache.intermediate_activations if source_cache else {}
+    )
+    target_intermediate_activations: dict[int, "Array"] = (
+        target_cache.intermediate_activations if target_cache else {}
+    )
     # Q Attention-space activations for q_proj/o_proj stitching (cross-architecture merges)
-    source_attention_activations: dict[int, "Array"] = {}
-    target_attention_activations: dict[int, "Array"] = {}
+    source_attention_activations: dict[int, "Array"] = (
+        source_cache.attention_activations if source_cache else {}
+    )
+    target_attention_activations: dict[int, "Array"] = (
+        target_cache.attention_activations if target_cache else {}
+    )
     # K Attention-space activations for k_proj stitching (separate for granular alignment)
-    source_k_activations: dict[int, "Array"] = {}
-    target_k_activations: dict[int, "Array"] = {}
+    source_k_activations: dict[int, "Array"] = (
+        source_cache.k_activations if source_cache else {}
+    )
+    target_k_activations: dict[int, "Array"] = (
+        target_cache.k_activations if target_cache else {}
+    )
     # V Attention-space activations for v_proj stitching (separate for granular alignment)
-    source_v_activations: dict[int, "Array"] = {}
-    target_v_activations: dict[int, "Array"] = {}
+    source_v_activations: dict[int, "Array"] = (
+        source_cache.v_activations if source_cache else {}
+    )
+    target_v_activations: dict[int, "Array"] = (
+        target_cache.v_activations if target_cache else {}
+    )
     probe_ids: list[str] = []
     probe_domains: list[str] = []
 
@@ -1391,77 +1565,147 @@ def _probe_precise(
             batch_end = min(batch_start + PROBE_BATCH_SIZE, len(valid_probes))
             batch = valid_probes[batch_start:batch_end]
             batch_texts = [probe_text for _, probe_text in batch]
+            batch_size = len(batch_texts)
+            empty_batch = [{} for _ in range(batch_size)]
 
             try:
                 # ===== HIDDEN ACTIVATIONS =====
                 if has_batch_hidden:
-                    source_hidden_batch = activation_provider.collect_hidden_activations_batch(
-                        source_model, source_tokenizer, batch_texts
+                    source_hidden_batch = (
+                        activation_provider.collect_hidden_activations_batch(
+                            source_model, source_tokenizer, batch_texts
+                        )
+                        if run_source_inference
+                        else empty_batch
                     )
-                    target_hidden_batch = activation_provider.collect_hidden_activations_batch(
-                        target_model, target_tokenizer, batch_texts
+                    target_hidden_batch = (
+                        activation_provider.collect_hidden_activations_batch(
+                            target_model, target_tokenizer, batch_texts
+                        )
+                        if run_target_inference
+                        else empty_batch
                     )
                 else:
                     # Fallback to sequential
-                    source_hidden_batch = [
-                        activation_provider.collect_hidden_activations(source_model, source_tokenizer, text)
-                        for text in batch_texts
-                    ]
-                    target_hidden_batch = [
-                        activation_provider.collect_hidden_activations(target_model, target_tokenizer, text)
-                        for text in batch_texts
-                    ]
+                    source_hidden_batch = (
+                        [
+                            activation_provider.collect_hidden_activations(
+                                source_model, source_tokenizer, text
+                            )
+                            for text in batch_texts
+                        ]
+                        if run_source_inference
+                        else empty_batch
+                    )
+                    target_hidden_batch = (
+                        [
+                            activation_provider.collect_hidden_activations(
+                                target_model, target_tokenizer, text
+                            )
+                            for text in batch_texts
+                        ]
+                        if run_target_inference
+                        else empty_batch
+                    )
     
                 # ===== EMBEDDING ACTIVATIONS (2D GramAlign) =====
                 # Same CKA=1.0, same geodesic math - applied at embedding dimension
                 has_embedding = hasattr(activation_provider, "collect_embedding_activations")
                 if has_embedding:
                     for text in batch_texts:
-                        source_emb = activation_provider.collect_embedding_activations(
-                            source_model, source_tokenizer, text
-                        )
-                        target_emb = activation_provider.collect_embedding_activations(
-                            target_model, target_tokenizer, text
-                        )
-                        source_embedding_activations.append(source_emb)
-                        target_embedding_activations.append(target_emb)
+                        if run_source_inference:
+                            source_emb = activation_provider.collect_embedding_activations(
+                                source_model, source_tokenizer, text
+                            )
+                            if isinstance(source_embedding_activations, list):
+                                source_embedding_activations.append(source_emb)
+                        if run_target_inference:
+                            target_emb = activation_provider.collect_embedding_activations(
+                                target_model, target_tokenizer, text
+                            )
+                            if isinstance(target_embedding_activations, list):
+                                target_embedding_activations.append(target_emb)
     
                 # ===== INTERMEDIATE ACTIVATIONS =====
                 if has_batch_intermediate:
-                    source_intermediate_batch = activation_provider.collect_intermediate_activations_batch(
-                        source_model, source_tokenizer, batch_texts
+                    source_intermediate_batch = (
+                        activation_provider.collect_intermediate_activations_batch(
+                            source_model, source_tokenizer, batch_texts
+                        )
+                        if run_source_inference
+                        else empty_batch
                     )
-                    target_intermediate_batch = activation_provider.collect_intermediate_activations_batch(
-                        target_model, target_tokenizer, batch_texts
+                    target_intermediate_batch = (
+                        activation_provider.collect_intermediate_activations_batch(
+                            target_model, target_tokenizer, batch_texts
+                        )
+                        if run_target_inference
+                        else empty_batch
                     )
                 else:
-                    source_intermediate_batch = [
-                        activation_provider.collect_intermediate_activations(source_model, source_tokenizer, text)
-                        for text in batch_texts
-                    ]
-                    target_intermediate_batch = [
-                        activation_provider.collect_intermediate_activations(target_model, target_tokenizer, text)
-                        for text in batch_texts
-                    ]
+                    source_intermediate_batch = (
+                        [
+                            activation_provider.collect_intermediate_activations(
+                                source_model, source_tokenizer, text
+                            )
+                            for text in batch_texts
+                        ]
+                        if run_source_inference
+                        else empty_batch
+                    )
+                    target_intermediate_batch = (
+                        [
+                            activation_provider.collect_intermediate_activations(
+                                target_model, target_tokenizer, text
+                            )
+                            for text in batch_texts
+                        ]
+                        if run_target_inference
+                        else empty_batch
+                    )
     
                 # ===== ATTENTION ACTIVATIONS (Q, K, V separately) =====
                 if has_batch_attention:
-                    source_q_batch, source_k_batch, source_v_batch = activation_provider.collect_attention_activations_batch(
-                        source_model, source_tokenizer, batch_texts
-                    )
-                    target_q_batch, target_k_batch, target_v_batch = activation_provider.collect_attention_activations_batch(
-                        target_model, target_tokenizer, batch_texts
-                    )
+                    if run_source_inference:
+                        source_q_batch, source_k_batch, source_v_batch = (
+                            activation_provider.collect_attention_activations_batch(
+                                source_model, source_tokenizer, batch_texts
+                            )
+                        )
+                    else:
+                        source_q_batch, source_k_batch, source_v_batch = (
+                            empty_batch,
+                            empty_batch,
+                            empty_batch,
+                        )
+                    if run_target_inference:
+                        target_q_batch, target_k_batch, target_v_batch = (
+                            activation_provider.collect_attention_activations_batch(
+                                target_model, target_tokenizer, batch_texts
+                            )
+                        )
+                    else:
+                        target_q_batch, target_k_batch, target_v_batch = (
+                            empty_batch,
+                            empty_batch,
+                            empty_batch,
+                        )
                 else:
                     source_q_batch, source_k_batch, source_v_batch = [], [], []
                     target_q_batch, target_k_batch, target_v_batch = [], [], []
                     for text in batch_texts:
-                        src_q, src_k, src_v = activation_provider.collect_attention_activations(
-                            source_model, source_tokenizer, text
-                        )
-                        tgt_q, tgt_k, tgt_v = activation_provider.collect_attention_activations(
-                            target_model, target_tokenizer, text
-                        )
+                        if run_source_inference:
+                            src_q, src_k, src_v = activation_provider.collect_attention_activations(
+                                source_model, source_tokenizer, text
+                            )
+                        else:
+                            src_q, src_k, src_v = {}, {}, {}
+                        if run_target_inference:
+                            tgt_q, tgt_k, tgt_v = activation_provider.collect_attention_activations(
+                                target_model, target_tokenizer, text
+                            )
+                        else:
+                            tgt_q, tgt_k, tgt_v = {}, {}, {}
                         source_q_batch.append(src_q)
                         source_k_batch.append(src_k)
                         source_v_batch.append(src_v)
@@ -1488,59 +1732,75 @@ def _probe_precise(
     
                     source_activated: dict[int, list[ActivatedDimension]] = {}
                     target_activated: dict[int, list[ActivatedDimension]] = {}
-    
-                    for layer_idx, act in source_acts.items():
-                        source_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
-                        # MEMORY FIX: accumulate into single buffer per layer
-                        _accumulate_activation(source_layer_activations, layer_idx, act, b)
-    
-                    for layer_idx, act in target_acts.items():
-                        target_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
-                        # MEMORY FIX: accumulate into single buffer per layer
-                        _accumulate_activation(target_layer_activations, layer_idx, act, b)
-    
+
+                    if run_source_inference:
+                        for layer_idx, act in source_acts.items():
+                            source_activated[layer_idx] = _extract_top_k_dims(
+                                act, backend=b
+                            )
+                            # MEMORY FIX: accumulate into single buffer per layer
+                            _accumulate_activation(source_layer_activations, layer_idx, act, b)
+
+                    if run_target_inference:
+                        for layer_idx, act in target_acts.items():
+                            target_activated[layer_idx] = _extract_top_k_dims(
+                                act, backend=b
+                            )
+                            # MEMORY FIX: accumulate into single buffer per layer
+                            _accumulate_activation(target_layer_activations, layer_idx, act, b)
+
                     # Store intermediate activations for multi-space stitching
-                    for layer_idx, act in source_intermediate_acts.items():
-                        _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
-    
-                    for layer_idx, act in target_intermediate_acts.items():
-                        _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
-    
+                    if run_source_inference:
+                        for layer_idx, act in source_intermediate_acts.items():
+                            _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
+
+                    if run_target_inference:
+                        for layer_idx, act in target_intermediate_acts.items():
+                            _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
+
                     # Store Q attention activations for q_proj/o_proj stitching
-                    for layer_idx, act in source_attention_acts.items():
-                        _accumulate_activation(source_attention_activations, layer_idx, act, b)
-    
-                    for layer_idx, act in target_attention_acts.items():
-                        _accumulate_activation(target_attention_activations, layer_idx, act, b)
-    
+                    if run_source_inference:
+                        for layer_idx, act in source_attention_acts.items():
+                            _accumulate_activation(source_attention_activations, layer_idx, act, b)
+
+                    if run_target_inference:
+                        for layer_idx, act in target_attention_acts.items():
+                            _accumulate_activation(target_attention_activations, layer_idx, act, b)
+
                     # Store K attention activations for k_proj stitching
-                    for layer_idx, act in source_k_acts.items():
-                        _accumulate_activation(source_k_activations, layer_idx, act, b)
-    
-                    for layer_idx, act in target_k_acts.items():
-                        _accumulate_activation(target_k_activations, layer_idx, act, b)
-    
+                    if run_source_inference:
+                        for layer_idx, act in source_k_acts.items():
+                            _accumulate_activation(source_k_activations, layer_idx, act, b)
+
+                    if run_target_inference:
+                        for layer_idx, act in target_k_acts.items():
+                            _accumulate_activation(target_k_activations, layer_idx, act, b)
+
                     # Store V attention activations for v_proj stitching
-                    for layer_idx, act in source_v_acts.items():
-                        _accumulate_activation(source_v_activations, layer_idx, act, b)
-    
-                    for layer_idx, act in target_v_acts.items():
-                        _accumulate_activation(target_v_activations, layer_idx, act, b)
-    
-                    source_fingerprints.append(
-                        ActivationFingerprint(
-                            prime_id=probe.probe_id,
-                            prime_text=probe.name,
-                            activated_dimensions=source_activated,
+                    if run_source_inference:
+                        for layer_idx, act in source_v_acts.items():
+                            _accumulate_activation(source_v_activations, layer_idx, act, b)
+
+                    if run_target_inference:
+                        for layer_idx, act in target_v_acts.items():
+                            _accumulate_activation(target_v_activations, layer_idx, act, b)
+
+                    if run_source_inference and source_activated:
+                        source_fingerprints.append(
+                            ActivationFingerprint(
+                                prime_id=probe.probe_id,
+                                prime_text=probe.name,
+                                activated_dimensions=source_activated,
+                            )
                         )
-                    )
-                    target_fingerprints.append(
-                        ActivationFingerprint(
-                            prime_id=probe.probe_id,
-                            prime_text=probe.name,
-                            activated_dimensions=target_activated,
+                    if run_target_inference and target_activated:
+                        target_fingerprints.append(
+                            ActivationFingerprint(
+                                prime_id=probe.probe_id,
+                                prime_text=probe.name,
+                                activated_dimensions=target_activated,
+                            )
                         )
-                    )
     
                     probe_ids.append(probe.probe_id)
                     probe_domains.append(probe.domain.value)
@@ -1584,74 +1844,120 @@ def _probe_precise(
                         continue
     
                     try:
-                        source_acts = activation_provider.collect_hidden_activations(
-                            source_model, source_tokenizer, probe_text
+                        source_acts = (
+                            activation_provider.collect_hidden_activations(
+                                source_model, source_tokenizer, probe_text
+                            )
+                            if run_source_inference
+                            else {}
                         )
-                        target_acts = activation_provider.collect_hidden_activations(
-                            target_model, target_tokenizer, probe_text
+                        target_acts = (
+                            activation_provider.collect_hidden_activations(
+                                target_model, target_tokenizer, probe_text
+                            )
+                            if run_target_inference
+                            else {}
                         )
-                        source_intermediate_acts = activation_provider.collect_intermediate_activations(
-                            source_model, source_tokenizer, probe_text
+                        source_intermediate_acts = (
+                            activation_provider.collect_intermediate_activations(
+                                source_model, source_tokenizer, probe_text
+                            )
+                            if run_source_inference
+                            else {}
                         )
-                        target_intermediate_acts = activation_provider.collect_intermediate_activations(
-                            target_model, target_tokenizer, probe_text
+                        target_intermediate_acts = (
+                            activation_provider.collect_intermediate_activations(
+                                target_model, target_tokenizer, probe_text
+                            )
+                            if run_target_inference
+                            else {}
                         )
-                        source_attention_acts, source_k_acts, source_v_acts = activation_provider.collect_attention_activations(
-                            source_model, source_tokenizer, probe_text
-                        )
-                        target_attention_acts, target_k_acts, target_v_acts = activation_provider.collect_attention_activations(
-                            target_model, target_tokenizer, probe_text
-                        )
+                        if run_source_inference:
+                            (
+                                source_attention_acts,
+                                source_k_acts,
+                                source_v_acts,
+                            ) = activation_provider.collect_attention_activations(
+                                source_model, source_tokenizer, probe_text
+                            )
+                        else:
+                            source_attention_acts, source_k_acts, source_v_acts = {}, {}, {}
+                        if run_target_inference:
+                            (
+                                target_attention_acts,
+                                target_k_acts,
+                                target_v_acts,
+                            ) = activation_provider.collect_attention_activations(
+                                target_model, target_tokenizer, probe_text
+                            )
+                        else:
+                            target_attention_acts, target_k_acts, target_v_acts = {}, {}, {}
     
                         source_activated_fallback: dict[int, list[ActivatedDimension]] = {}
                         target_activated_fallback: dict[int, list[ActivatedDimension]] = {}
     
-                        for layer_idx, act in source_acts.items():
-                            source_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
-                            _accumulate_activation(source_layer_activations, layer_idx, act, b)
+                        if run_source_inference:
+                            for layer_idx, act in source_acts.items():
+                                source_activated_fallback[layer_idx] = _extract_top_k_dims(
+                                    act, backend=b
+                                )
+                                _accumulate_activation(source_layer_activations, layer_idx, act, b)
     
-                        for layer_idx, act in target_acts.items():
-                            target_activated_fallback[layer_idx] = _extract_top_k_dims(act, backend=b)
-                            _accumulate_activation(target_layer_activations, layer_idx, act, b)
+                        if run_target_inference:
+                            for layer_idx, act in target_acts.items():
+                                target_activated_fallback[layer_idx] = _extract_top_k_dims(
+                                    act, backend=b
+                                )
+                                _accumulate_activation(target_layer_activations, layer_idx, act, b)
     
-                        for layer_idx, act in source_intermediate_acts.items():
-                            _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
+                        if run_source_inference:
+                            for layer_idx, act in source_intermediate_acts.items():
+                                _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
     
-                        for layer_idx, act in target_intermediate_acts.items():
-                            _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
+                        if run_target_inference:
+                            for layer_idx, act in target_intermediate_acts.items():
+                                _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
     
-                        for layer_idx, act in source_attention_acts.items():
-                            _accumulate_activation(source_attention_activations, layer_idx, act, b)
+                        if run_source_inference:
+                            for layer_idx, act in source_attention_acts.items():
+                                _accumulate_activation(source_attention_activations, layer_idx, act, b)
     
-                        for layer_idx, act in target_attention_acts.items():
-                            _accumulate_activation(target_attention_activations, layer_idx, act, b)
+                        if run_target_inference:
+                            for layer_idx, act in target_attention_acts.items():
+                                _accumulate_activation(target_attention_activations, layer_idx, act, b)
     
-                        for layer_idx, act in source_k_acts.items():
-                            _accumulate_activation(source_k_activations, layer_idx, act, b)
+                        if run_source_inference:
+                            for layer_idx, act in source_k_acts.items():
+                                _accumulate_activation(source_k_activations, layer_idx, act, b)
     
-                        for layer_idx, act in target_k_acts.items():
-                            _accumulate_activation(target_k_activations, layer_idx, act, b)
+                        if run_target_inference:
+                            for layer_idx, act in target_k_acts.items():
+                                _accumulate_activation(target_k_activations, layer_idx, act, b)
     
-                        for layer_idx, act in source_v_acts.items():
-                            _accumulate_activation(source_v_activations, layer_idx, act, b)
+                        if run_source_inference:
+                            for layer_idx, act in source_v_acts.items():
+                                _accumulate_activation(source_v_activations, layer_idx, act, b)
     
-                        for layer_idx, act in target_v_acts.items():
-                            _accumulate_activation(target_v_activations, layer_idx, act, b)
+                        if run_target_inference:
+                            for layer_idx, act in target_v_acts.items():
+                                _accumulate_activation(target_v_activations, layer_idx, act, b)
     
-                        source_fingerprints.append(
-                            ActivationFingerprint(
-                                prime_id=probe.probe_id,
-                                prime_text=probe.name,
-                                activated_dimensions=source_activated_fallback,
+                        if run_source_inference and source_activated_fallback:
+                            source_fingerprints.append(
+                                ActivationFingerprint(
+                                    prime_id=probe.probe_id,
+                                    prime_text=probe.name,
+                                    activated_dimensions=source_activated_fallback,
+                                )
                             )
-                        )
-                        target_fingerprints.append(
-                            ActivationFingerprint(
-                                prime_id=probe.probe_id,
-                                prime_text=probe.name,
-                                activated_dimensions=target_activated_fallback,
+                        if run_target_inference and target_activated_fallback:
+                            target_fingerprints.append(
+                                ActivationFingerprint(
+                                    prime_id=probe.probe_id,
+                                    prime_text=probe.name,
+                                    activated_dimensions=target_activated_fallback,
+                                )
                             )
-                        )
     
                         probe_ids.append(probe.probe_id)
                         probe_domains.append(probe.domain.value)
@@ -1672,23 +1978,128 @@ def _probe_precise(
     if checkpoint_path is not None:
         _clear_probe_checkpoint(checkpoint_path)
 
-    # Save fingerprints to profile cache
-    if run_inference:
-        if source_fingerprints and source_profile:
-            source_profile.probe_fingerprints = source_fingerprints
-            try:
-                profile_repo.save_profile(source_profile)
-                logger.info("PROBE: Saved source fingerprints to profile cache")
-            except Exception as e:
-                logger.warning("PROBE: Failed to save source profile cache: %s", e)
+    cache_ready = (
+        probe_ids == expected_probe_ids and probe_domains == expected_probe_domains
+    )
 
-        if target_fingerprints and target_profile:
-            target_profile.probe_fingerprints = target_fingerprints
+    def _cache_spaces(
+        hidden: dict[int, "Array"],
+        intermediate: dict[int, "Array"],
+        attention: dict[int, "Array"],
+        k_act: dict[int, "Array"],
+        v_act: dict[int, "Array"],
+        embedding: "Array | list[Array] | None",
+    ) -> list[str]:
+        spaces = ["hidden"] if hidden else []
+        if intermediate:
+            spaces.append("intermediate")
+        if attention:
+            spaces.append("attention_q")
+        if k_act:
+            spaces.append("attention_k")
+        if v_act:
+            spaces.append("attention_v")
+        if embedding is not None:
+            spaces.append("embedding")
+        return spaces
+
+    def _update_profile_cache(
+        profile: ModelProfile | None,
+        identity: Any | None,
+        fingerprints: list[ActivationFingerprint],
+        cache_present: bool,
+        spaces: list[str],
+    ) -> None:
+        if profile is None or identity is None:
+            return
+        updated = False
+        if cache_ready and fingerprints:
+            profile.probe_fingerprints = fingerprints
+            profile.probe_corpus_hash = probe_corpus_hash
+            updated = True
+        if cache_present and spaces:
+            profile.probe_corpus_hash = probe_corpus_hash
+            profile.probe_cache[cache_key] = {
+                "probe_mode": probe_mode,
+                "probe_corpus_hash": probe_corpus_hash,
+                "probe_count": len(expected_probe_ids),
+                "spaces": spaces,
+                "updated_at": datetime.now().isoformat(),
+            }
+            updated = True
+        if updated:
             try:
-                profile_repo.save_profile(target_profile)
-                logger.info("PROBE: Saved target fingerprints to profile cache")
+                profile_store.save(profile, identity)
+                logger.info("PROBE: Updated profile cache for %s", profile.model_id)
             except Exception as e:
-                logger.warning("PROBE: Failed to save target profile cache: %s", e)
+                logger.warning("PROBE: Failed to save profile cache: %s", e)
+
+    # Save per-model caches and fingerprints
+    if run_source_inference and cache_ready and source_identity and source_layer_activations:
+        _save_model_probe_cache(
+            model_id=source_identity.model_id,
+            probe_mode=probe_mode,
+            probe_corpus_hash=probe_corpus_hash,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            hidden_activations=source_layer_activations,
+            intermediate_activations=source_intermediate_activations,
+            attention_activations=source_attention_activations,
+            k_activations=source_k_activations,
+            v_activations=source_v_activations,
+            embedding_activations=source_embedding_activations,
+        )
+
+    if run_target_inference and cache_ready and target_identity and target_layer_activations:
+        _save_model_probe_cache(
+            model_id=target_identity.model_id,
+            probe_mode=probe_mode,
+            probe_corpus_hash=probe_corpus_hash,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            hidden_activations=target_layer_activations,
+            intermediate_activations=target_intermediate_activations,
+            attention_activations=target_attention_activations,
+            k_activations=target_k_activations,
+            v_activations=target_v_activations,
+            embedding_activations=target_embedding_activations,
+        )
+
+    source_cache_present = source_cache is not None or (
+        run_source_inference and cache_ready
+    )
+    target_cache_present = target_cache is not None or (
+        run_target_inference and cache_ready
+    )
+
+    _update_profile_cache(
+        source_profile,
+        source_identity,
+        source_fingerprints,
+        source_cache_present,
+        _cache_spaces(
+            source_layer_activations,
+            source_intermediate_activations,
+            source_attention_activations,
+            source_k_activations,
+            source_v_activations,
+            source_embedding_activations,
+        ),
+    )
+    _update_profile_cache(
+        target_profile,
+        target_identity,
+        target_fingerprints,
+        target_cache_present,
+        _cache_spaces(
+            target_layer_activations,
+            target_intermediate_activations,
+            target_attention_activations,
+            target_k_activations,
+            target_v_activations,
+            target_embedding_activations,
+        ),
+    )
 
     # Build IntersectionMap
     intersection_map_obj: IntersectionMap | None = None
@@ -1893,7 +2304,28 @@ def _probe_precise(
                         pass  # Skip degenerate targets
             
             logger.info("PROBE: Using %d target Gram matrices", len(target_grams))
-            
+
+            # =========================================================================
+            # MEMORY CLEANUP: Delete ProbeCache (no longer needed)
+            # =========================================================================
+            # target_grams extracted above. ProbeCache held duplicate activations,
+            # Gram matrices, SVDs - all massive. Delete to free ~10-20GB.
+            if probe_cache is not None:
+                probe_cache.source_activations.clear()
+                probe_cache.target_activations.clear()
+                probe_cache.source_grams.clear()
+                probe_cache.target_grams.clear()
+                probe_cache.source_centered_grams.clear()
+                probe_cache.target_centered_grams.clear()
+                probe_cache.source_svd.clear()
+                probe_cache.target_svd.clear()
+                del probe_cache
+                probe_cache = None
+                import gc
+                gc.collect()
+                mx.clear_cache()
+                logger.info("PROBE: Cleared ProbeCache to free memory")
+
             cka_matrix: list[list[float]] = []
             for src_idx, src_layer in enumerate(source_layers):
                 row: list[float] = []
@@ -2821,16 +3253,31 @@ def _probe_precise(
     # Same CKA=1.0, same geodesic math - applied at embedding dimension
     # =========================================================================
     embedding_transform: list[list[float]] | None = None
-    if source_embedding_activations and target_embedding_activations:
-        n_samples = min(len(source_embedding_activations), len(target_embedding_activations))
+    if source_embedding_activations is not None and target_embedding_activations is not None:
+        def _embedding_count(acts: list["Array"] | "Array") -> int:
+            if isinstance(acts, list):
+                return len(acts)
+            return int(b.shape(acts)[0])
+
+        def _stack_embeddings(
+            acts: list["Array"] | "Array", count: int
+        ) -> "Array":
+            if isinstance(acts, list):
+                return b.stack(acts[:count], axis=0)
+            return acts[:count, :]
+
+        n_samples = min(
+            _embedding_count(source_embedding_activations),
+            _embedding_count(target_embedding_activations),
+        )
         if n_samples >= 2:
             logger.info(
                 "EMBEDDING GRAMALIGN: Computing 2D alignment with %d samples (same CKA=1.0, same geodesic math)",
                 n_samples,
             )
             try:
-                src_stacked = b.stack(source_embedding_activations[:n_samples], axis=0)
-                tgt_stacked = b.stack(target_embedding_activations[:n_samples], axis=0)
+                src_stacked = _stack_embeddings(source_embedding_activations, n_samples)
+                tgt_stacked = _stack_embeddings(target_embedding_activations, n_samples)
                 src_stacked = b.astype(src_stacked, "float32")
                 tgt_stacked = b.astype(tgt_stacked, "float32")
                 b.eval(src_stacked, tgt_stacked)
@@ -2899,44 +3346,6 @@ def _probe_precise(
                     )
             except Exception as e:
                 logger.warning("EMBEDDING GRAMALIGN failed: %s", e)
-
-    if (
-        probe_cache_key
-        and run_inference
-        and probe_ids == expected_probe_ids
-        and probe_domains == expected_probe_domains
-        and source_layer_activations
-        and target_layer_activations
-    ):
-        probe_result_payload = {
-            "correlations": weight_correlations,
-            "confidences": layer_confidences,
-            "dimension_correlations": dimension_correlations,
-        }
-        _save_probe_result_cache(
-            cache_key=probe_cache_key,
-            source_activations=source_layer_activations,
-            target_activations=target_layer_activations,
-            probe_result=probe_result_payload,
-            metrics=metrics,
-            feature_transforms=feature_transforms if feature_transforms else None,
-            scale_ratios=scale_ratios if scale_ratios else None,
-            embedding_transform=embedding_transform,
-            attention_transforms=attention_transforms if attention_transforms else None,
-            k_transforms=k_transforms if k_transforms else None,
-            v_transforms=v_transforms if v_transforms else None,
-            intermediate_transforms=intermediate_transforms if intermediate_transforms else None,
-            layer_mapping=layer_mapping if layer_mapping else None,
-            probe_ids=probe_ids,
-            probe_domains=probe_domains,
-            probe_mode=probe_mode,
-            source_intermediate_activations=source_intermediate_activations,
-            target_intermediate_activations=target_intermediate_activations,
-            source_attention_activations=source_attention_activations,
-            target_attention_activations=target_attention_activations,
-            source_k_activations=source_k_activations,
-            target_k_activations=target_k_activations,
-        )
 
     return ProbeResult(
         correlations=weight_correlations,

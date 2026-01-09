@@ -140,6 +140,8 @@ class UnifiedGeometricMerger:
         target_model: Any | None,
         source_tokenizer: Any | None,
         target_tokenizer: Any | None,
+        source_path: str = "",
+        target_path: str = "",
     ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
         return merge_stages.stage_probe(
             source_weights=source_weights,
@@ -148,6 +150,8 @@ class UnifiedGeometricMerger:
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            source_path=source_path,
+            target_path=target_path,
             extract_layer_index_fn=merge_helpers.extract_layer_index,
         )
 

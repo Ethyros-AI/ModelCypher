@@ -71,6 +71,8 @@ def stage_probe(
     target_model: Any | None,
     source_tokenizer: Any | None,
     target_tokenizer: Any | None,
+    source_path: str = "",
+    target_path: str = "",
     extract_layer_index_fn: Callable[[str], int | None],
     probe_mode: str = "atlas",
 ) -> tuple[
@@ -103,6 +105,8 @@ def stage_probe(
         target_model=target_model,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
+        source_path=source_path,
+        target_path=target_path,
         collect_activations_fn=None,
         probe_mode=probe_mode,
     )

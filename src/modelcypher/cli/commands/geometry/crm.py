@@ -150,7 +150,8 @@ def geometry_crm_compare(
         "sourcePath": summary.source_path,
         "targetPath": summary.target_path,
         "commonAnchorCount": summary.common_anchor_count,
-        "meanCKA": summary.mean_cka,
+        "alignmentPrecision": summary.alignment_precision,
+        "meanLayerPrecision": summary.mean_cka,
         "aligned": summary.aligned,
         "layerCorrespondence": summary.layer_correspondence,
     }
@@ -158,20 +159,28 @@ def geometry_crm_compare(
         payload["ckaMatrix"] = summary.cka_matrix
 
     if context.output_format == "text":
+        # CKA = 1.0 is an INVARIANT, not a measurement
+        # We report numerical precision of the alignment computation
+        precision_status = "OK" if summary.alignment_precision > 0.999 else "PRECISION ISSUE"
         lines = [
             "CRM COMPARISON",
             f"Source: {summary.source_path}",
             f"Target: {summary.target_path}",
             f"Common Anchors: {summary.common_anchor_count}",
-            f"Mean CKA: {summary.mean_cka:.4f}",
-            f"Aligned: {summary.aligned}",
+            "",
+            "Alignment (CKA = 1.0 invariant):",
+            f"  Numerical Precision: {summary.alignment_precision:.4f} ({precision_status})",
+            "",
+            "Layer Mapping:",
+            f"  Mean Precision: {summary.mean_cka:.4f}",
+            f"  Perfect: {summary.aligned}",
         ]
         if summary.layer_correspondence:
             lines.append("")
             lines.append("Layer Correspondence (top 10):")
             for match in summary.layer_correspondence[:10]:
                 lines.append(
-                    f"  {match['sourceLayer']} -> {match['targetLayer']} (CKA {match['cka']:.4f})"
+                    f"  {match['sourceLayer']} -> {match['targetLayer']} (precision {match['cka']:.4f})"
                 )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

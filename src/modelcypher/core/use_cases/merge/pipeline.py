@@ -158,6 +158,8 @@ def run_merge(
         target_model=target_model,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
+        source_path=source_path,
+        target_path=target_path,
         extract_layer_index_fn=extract_layer_index,
         probe_mode=probe_mode,
     )
@@ -274,6 +276,53 @@ def run_merge(
     default_backend = get_default_backend()
     default_backend.clear_cache()
     logger.info("Cleared GPU cache after probe stage")
+
+    # =========================================================================
+    # MEMORY CLEANUP: Delete activations not needed for transplant
+    # =========================================================================
+    # Transplant only uses target_activations for null-space projection.
+    # Source activations were used to compute transforms (now stored separately).
+    # Intermediate/attention activations are unused after probe alignment.
+    import gc
+
+    # Clear source activations (~20GB for 36 layers × [2048, 2048])
+    if source_activations:
+        source_activations.clear()
+        del source_activations
+        source_activations = None
+
+    # Clear unused source activation types
+    if source_intermediate_activations:
+        source_intermediate_activations.clear()
+        del source_intermediate_activations
+        source_intermediate_activations = None
+    if source_attention_activations:
+        source_attention_activations.clear()
+        del source_attention_activations
+        source_attention_activations = None
+    if source_k_activations:
+        source_k_activations.clear()
+        del source_k_activations
+        source_k_activations = None
+
+    # Clear target intermediate/attention (not used by transplant)
+    if target_intermediate_activations:
+        target_intermediate_activations.clear()
+        del target_intermediate_activations
+        target_intermediate_activations = None
+    if target_attention_activations:
+        target_attention_activations.clear()
+        del target_attention_activations
+        target_attention_activations = None
+    if target_k_activations:
+        target_k_activations.clear()
+        del target_k_activations
+        target_k_activations = None
+
+    # Force garbage collection and clear MLX cache again
+    gc.collect()
+    default_backend.clear_cache()
+    logger.info("Cleared unused activations - keeping only target_activations for transplant")
 
     # PERMUTE STAGE REMOVED: GramAligner's CKA=1.0 alignment in geodesic RKHS
     # subsumes discrete permutation alignment. Permutation matrices are a special

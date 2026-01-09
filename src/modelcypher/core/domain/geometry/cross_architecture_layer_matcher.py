@@ -483,7 +483,16 @@ class CrossArchitectureLayerMatcher:
         target_crm: ConceptResponseMatrix,
         anchors: list[str],
     ) -> list[list[float]]:
-        """Compute CKA matrix restricted to a shared anchor list."""
+        """Compute CKA matrix using Gram alignment.
+
+        For each (source_layer, target_layer) pair, finds the alignment transform
+        and uses (1 - numerical_deviation) as the correspondence score.
+
+        CKA = 1.0 for corresponding layers (same geometric structure).
+        CKA < 1.0 for non-corresponding layers (different information).
+        """
+        from modelcypher.core.domain.geometry.gram_aligner import find_alignment
+
         rows = source_crm.layer_count
         cols = target_crm.layer_count
         matrix = [[0.0 for _ in range(cols)] for _ in range(rows)]
@@ -493,113 +502,38 @@ class CrossArchitectureLayerMatcher:
 
         sorted_anchors = sorted(anchors)
         backend = get_default_backend()
-        feature_bias_correction = True
 
-        def _stack_layer_activations(
-            crm: ConceptResponseMatrix,
-        ) -> "Array | None":
-            layers: list[list[list[float]]] = []
-            for layer in range(crm.layer_count):
-                layer_acts = crm.activations.get(layer)
-                if layer_acts is None:
-                    return None
-                row: list[list[float]] = []
-                for anchor_id in sorted_anchors:
-                    activation = layer_acts.get(anchor_id)
-                    if activation is None:
-                        return None
-                    row.append(activation.activation)
-                layers.append(row)
-            return backend.array(layers)
+        # Pre-cache layer activations for efficiency
+        source_cache: dict[int, "Array"] = {}
+        target_cache: dict[int, "Array"] = {}
 
-        source_stack = _stack_layer_activations(source_crm)
-        target_stack = _stack_layer_activations(target_crm)
-        if source_stack is not None and target_stack is not None:
-            backend.eval(source_stack, target_stack)
+        for layer in range(rows):
+            acts = source_crm._extract_activations(layer, sorted_anchors)
+            if acts is not None:
+                arr = backend.array(acts)
+                backend.eval(arr)
+                source_cache[layer] = arr
 
-            source_centered = source_stack - backend.mean(source_stack, axis=1, keepdims=True)
-            target_centered = target_stack - backend.mean(target_stack, axis=1, keepdims=True)
-            source_grams_arr = backend.matmul(
-                source_centered, backend.transpose(source_centered, axes=(0, 2, 1))
-            )
-            target_grams_arr = backend.matmul(
-                target_centered, backend.transpose(target_centered, axes=(0, 2, 1))
-            )
-            source_frob_arr = backend.sum(source_grams_arr * source_grams_arr, axis=(1, 2))
-            target_frob_arr = backend.sum(target_grams_arr * target_grams_arr, axis=(1, 2))
-            backend.eval(source_grams_arr, target_grams_arr, source_frob_arr, target_frob_arr)
+        for layer in range(cols):
+            acts = target_crm._extract_activations(layer, sorted_anchors)
+            if acts is not None:
+                arr = backend.array(acts)
+                backend.eval(arr)
+                target_cache[layer] = arr
 
-            source_layers = int(source_grams_arr.shape[0])
-            target_layers = int(target_grams_arr.shape[0])
-            anchor_count = int(source_grams_arr.shape[1])
-            source_exp = backend.reshape(
-                source_grams_arr, (source_layers, 1, anchor_count, anchor_count)
-            )
-            target_exp = backend.reshape(
-                target_grams_arr, (1, target_layers, anchor_count, anchor_count)
-            )
-            hsic_xy = backend.sum(source_exp * target_exp, axis=(2, 3))
-
-            eps = division_epsilon(backend, source_grams_arr)
-            source_valid = source_frob_arr > eps
-            target_valid = target_frob_arr > eps
-            denom = backend.sqrt(
-                backend.reshape(source_frob_arr, (-1, 1))
-                * backend.reshape(target_frob_arr, (1, -1))
-            )
-            valid = backend.reshape(source_valid, (-1, 1)) & backend.reshape(
-                target_valid, (1, -1)
-            )
-            safe_denom = backend.where(valid, denom, backend.ones_like(denom))
-            cka = backend.where(valid, hsic_xy / safe_denom, backend.zeros_like(denom))
-            cka = backend.clip(cka, 0.0, 1.0)
-            cka = backend.where(cka >= 1.0 - eps, backend.ones_like(cka), cka)
-
-            if feature_bias_correction:
-                from modelcypher.core.domain.geometry.cka import _feature_sampling_correction
-
-                source_corr: list[float] = []
-                target_corr: list[float] = []
-                source_dim = int(source_stack.shape[2]) if len(source_stack.shape) > 2 else 1
-                target_dim = int(target_stack.shape[2]) if len(target_stack.shape) > 2 else 1
-                for layer in range(source_crm.layer_count):
-                    correction, _ = _feature_sampling_correction(
-                        source_grams_arr[layer], source_dim, backend
-                    )
-                    source_corr.append(correction)
-                for layer in range(target_crm.layer_count):
-                    correction, _ = _feature_sampling_correction(
-                        target_grams_arr[layer], target_dim, backend
-                    )
-                    target_corr.append(correction)
-                source_corr_arr = backend.array(source_corr)
-                target_corr_arr = backend.array(target_corr)
-                correction = backend.reshape(source_corr_arr, (-1, 1)) * backend.reshape(
-                    target_corr_arr, (1, -1)
-                )
-                corr_mask = (correction > 0) & backend.isfinite(correction)
-                cka = backend.where(corr_mask, cka * correction, cka)
-                cka = backend.clip(cka, 0.0, 1.0)
-                cka = backend.where(cka >= 1.0 - eps, backend.ones_like(cka), cka)
-
-            backend.eval(cka)
-            return backend.tolist(cka)
-
-        eps = division_epsilon(backend, backend.array([1.0]))
-
+        # Compute alignment for each layer pair
         for source_layer in range(rows):
-            source_acts = source_crm._extract_activations(source_layer, sorted_anchors)
-            if source_acts is None:
+            source_arr = source_cache.get(source_layer)
+            if source_arr is None:
                 continue
+
             for target_layer in range(cols):
-                target_acts = target_crm._extract_activations(target_layer, sorted_anchors)
-                if target_acts is None:
+                target_arr = target_cache.get(target_layer)
+                if target_arr is None:
                     continue
-                cka = float(source_crm.compute_linear_cka(source_acts, target_acts))
-                if cka < 0.0:
-                    cka = 0.0
-                if cka >= 1.0 - eps:
-                    cka = 1.0
+
+                result = find_alignment(source_arr, target_arr, backend)
+                cka = max(0.0, min(1.0, 1.0 - result.numerical_deviation))
                 matrix[source_layer][target_layer] = cka
 
         return matrix

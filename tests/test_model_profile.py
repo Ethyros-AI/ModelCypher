@@ -333,14 +333,17 @@ class TestModelProfile:
         """Should serialize ModelProfile to dict."""
         mp = ModelProfile(
             model_path="/path/to/model",
+            model_id="model_123",
             model_family="qwen",
             hidden_dim=2048,
             layer_profiles=[LayerProfile(layer_idx=0)],
+            probe_cache={"atlas:hash": {"probe_mode": "atlas"}},
         )
         d = mp.to_dict()
 
         assert d["_schema"] == SCHEMA_VERSION
         assert d["model_path"] == "/path/to/model"
+        assert d["model_id"] == "model_123"
         assert d["model_family"] == "qwen"
         assert d["hidden_dim"] == 2048
         assert len(d["layer_profiles"]) == 1
@@ -349,6 +352,7 @@ class TestModelProfile:
         """Should deserialize ModelProfile from dict."""
         d = {
             "model_path": "/path/to/model",
+            "model_id": "model_abc",
             "model_family": "llama",
             "architecture": "llama",
             "hidden_dim": 4096,
@@ -358,10 +362,12 @@ class TestModelProfile:
                 {"layer_idx": 1, "sectional_curvature_mean": -0.15},
             ],
             "topology_summary": {"component_count": 1, "cycle_count": 2},
+            "probe_cache": {"atlas:hash": {"probe_mode": "atlas"}},
         }
         mp = ModelProfile.from_dict(d)
 
         assert mp.model_path == "/path/to/model"
+        assert mp.model_id == "model_abc"
         assert mp.model_family == "llama"
         assert mp.hidden_dim == 4096
         assert len(mp.layer_profiles) == 2

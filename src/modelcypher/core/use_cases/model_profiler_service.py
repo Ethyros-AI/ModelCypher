@@ -153,10 +153,12 @@ class ModelProfilerService:
         Returns:
             Updated ModelProfile with identity section
         """
+        from modelcypher.core.domain.geometry.model_profile import compute_model_identity
         from modelcypher.core.use_cases.model_probe_service import get_model_probe
 
         probe = get_model_probe()
         result = probe.probe(model_path)
+        identity = compute_model_identity(model_path)
 
         # Infer model family from architecture
         model_family = _infer_model_family(result.architecture) or profile.model_family
@@ -164,6 +166,7 @@ class ModelProfilerService:
         # Create updated profile with identity info
         updated = ModelProfile(
             model_path=model_path,
+            model_id=profile.model_id or identity.model_id,
             profile_version=profile.profile_version,
             model_family=model_family,
             architecture=result.architecture or profile.architecture,
@@ -183,6 +186,7 @@ class ModelProfilerService:
             density_summary=profile.density_summary,
             computed_sections=profile.computed_sections,
             probe_corpus_hash=profile.probe_corpus_hash,
+            probe_cache=profile.probe_cache,
             backend_used=profile.backend_used,
             extraction_config=profile.extraction_config,
             computed_at=profile.computed_at,

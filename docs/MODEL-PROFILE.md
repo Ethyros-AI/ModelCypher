@@ -41,6 +41,7 @@ The top-level profile contains:
 class ModelProfile:
     # Identity
     model_path: str
+    model_id: str            # Stable identity hash (config + weight metadata)
     model_family: str          # "llama", "qwen", "mistral", "smollm"
     architecture: str          # "llama", "qwen2", etc.
     parameter_count: int
@@ -72,6 +73,7 @@ class ModelProfile:
     computed_sections: list[str]
     computed_at: str           # ISO timestamp
     probe_corpus_hash: str
+    probe_cache: dict[str, dict[str, Any]]  # Per-model probe cache index
     backend_used: str
     extraction_config: dict[str, Any]
 ```
@@ -297,6 +299,19 @@ mc profile import density.json --type density --base partial.json -o updated.jso
 # Merge multiple profiles
 mc profile merge partial.json topology.json -o complete.json
 ```
+
+## Probe Cache (Per-Model)
+
+When probes run, dense activation caches are stored under:
+
+```
+~/.modelcypher/profiles/models/<model_id>/probe_cache/
+```
+
+The `probe_cache` field indexes available caches by
+`<probe_mode>:<probe_corpus_hash>` and records raw metadata like probe counts,
+stored spaces (hidden/intermediate/attention/embedding), and update time.
+`probe_corpus_hash` is set to the corpus used for the current profile.
 
 ## JSON Schema
 
