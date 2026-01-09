@@ -307,6 +307,7 @@ def run_merge(
                 probe_domains=probe_domains_list,
                 layers=layer_indices,
                 feature_transforms=feature_transforms,  # Project source→target space
+                layer_mapping=layer_mapping,  # Use DP correspondence (target_layer -> source_layer)
                 backend=backend,
             )
             graft_mask = density_result.graft_mask

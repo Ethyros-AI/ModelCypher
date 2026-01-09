@@ -45,6 +45,8 @@ _SUBMODULES = {
     "atlas_protocols",
     "atlas_registry",
     "birkhoff_projector",
+    "birkhoff_router",
+    "channel_projector",
     "cka",
     "compositional_probes",
     "concept_detector",
@@ -137,6 +139,9 @@ _SUBMODULES = {
 _ATTR_TO_MODULE = {
     # Core merge infrastructure
     "BirkhoffProjector": ("birkhoff_projector", "BirkhoffProjector"),
+    "BirkhoffRouter": ("birkhoff_router", "BirkhoffRouter"),
+    "RoutingMode": ("birkhoff_router", "RoutingMode"),
+    "ChannelProjector": ("channel_projector", "ChannelProjector"),
     "GeneralizedProcrustes": ("generalized_procrustes", "GeneralizedProcrustes"),
     "GramAligner": ("gram_aligner", "GramAligner"),
     "GeodesicNullSpaceFilter": ("geodesic_null_space", "GeodesicNullSpaceFilter"),

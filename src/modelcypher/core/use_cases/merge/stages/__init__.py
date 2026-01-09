@@ -147,6 +147,8 @@ def stage_density(
     probe_ids: list[str] | None,
     probe_domains: list[str] | None,
     layers: list[int],
+    feature_transforms: dict[int, Any] | None = None,
+    layer_mapping: dict[int, int] | None = None,
     backend: "Backend",
 ) -> "DensityStageResult":
     """Stage 2: Density analysis for selective grafting.
@@ -162,6 +164,8 @@ def stage_density(
         probe_ids=probe_ids or [],
         probe_domains=probe_domains or [],
         layers=layers,
+        feature_transforms=feature_transforms,
+        layer_mapping=layer_mapping,
         backend=backend,
     )
 

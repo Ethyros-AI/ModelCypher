@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.knowledge_density import (
@@ -125,13 +125,14 @@ class ActivationProviderFromDict:
 
 
 def stage_density(
-    source_activations: dict[int, list["Array"]],
-    target_activations: dict[int, list["Array"]],
+    source_activations: dict[int, Any],
+    target_activations: dict[int, Any],
     probe_ids: list[str],
     probe_domains: list[str],
     layers: list[int],
-    feature_transforms: dict[int, "Array"] | None = None,
+    feature_transforms: dict[int, Any] | None = None,
     backend: "Backend | None" = None,
+    layer_mapping: dict[int, int] | None = None,
 ) -> DensityStageResult:
     """Stage 2: Compute knowledge density profiles and graft mask.
 
@@ -141,10 +142,16 @@ def stage_density(
         probe_ids: List of probe IDs corresponding to activations.
         probe_domains: List of domains for each probe.
         layers: Layer indices to analyze.
-        feature_transforms: CKA alignment transforms per layer (source→target space).
-            When provided, source activations are projected into target space before
-            density comparison. This enables fair comparison across different dimensions.
+        feature_transforms: CKA alignment transforms per target layer (source→target space).
+            Values may be either:
+            - a single transform matrix `F` (applied as `source @ F`), or
+            - a dict `{source_layer: F}` for composite alignments (use the mapped source layer).
+
+            When provided, source activations are projected into target space before density
+            comparison to ensure cross-dimensional comparisons are apples-to-apples.
         backend: Backend for tensor operations.
+        layer_mapping: Optional mapping `target_layer -> source_layer` from probe stage.
+            Used to select the correct source activations and per-layer transform.
 
     Returns:
         DensityStageResult with profiles, diff, and graft mask.
@@ -220,7 +227,8 @@ def stage_density(
     total_negative_points = 0
 
     for layer_idx in layers:
-        src_acts = source_activations.get(layer_idx)
+        source_layer_idx = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
+        src_acts = source_activations.get(source_layer_idx)
         tgt_acts = target_activations.get(layer_idx)
 
         # Handle both list and stacked-array formats
@@ -261,18 +269,50 @@ def stage_density(
             # 3. We find where target is TRULY sparse, not just "smaller"
             src_for_density = src_matrix
             if feature_transforms and layer_idx in feature_transforms:
-                F = feature_transforms[layer_idx]
-                # F has shape [target_dim, source_dim]
-                # src_matrix has shape [n_points, source_dim]
-                # aligned = src_matrix @ F.T gives [n_points, target_dim]
-                src_for_density = b.matmul(src_matrix, b.transpose(F))
-                b.eval(src_for_density)
-                logger.debug(
-                    "DENSITY: Layer %d - Projected source %s → target space %s",
-                    layer_idx,
-                    src_matrix.shape,
-                    src_for_density.shape,
-                )
+                F_data = feature_transforms[layer_idx]
+
+                F: Any | None
+                if isinstance(F_data, dict):
+                    # Composite alignment: pick the mapped source layer's transform.
+                    if source_layer_idx in F_data:
+                        F = F_data[source_layer_idx]
+                    elif len(F_data) == 1:
+                        F = next(iter(F_data.values()))
+                    else:
+                        F = None
+                else:
+                    F = F_data
+
+                if F is not None:
+                    F_arr = b.astype(F, "float32")
+                    src_dim = int(src_matrix.shape[1])
+                    tgt_dim = int(tgt_matrix.shape[1])
+                    f_rows = int(F_arr.shape[0])
+                    f_cols = int(F_arr.shape[1])
+
+                    if src_dim == f_rows and tgt_dim == f_cols:
+                        src_for_density = b.matmul(src_matrix, F_arr)
+                    elif src_dim == f_cols and tgt_dim == f_rows:
+                        # Defensive: allow pre-transposed transforms.
+                        src_for_density = b.matmul(src_matrix, b.transpose(F_arr))
+                    else:
+                        logger.warning(
+                            "DENSITY: Layer %d - Transform shape %s incompatible with src_dim=%d tgt_dim=%d; skipping projection",
+                            layer_idx,
+                            tuple(F_arr.shape),
+                            src_dim,
+                            tgt_dim,
+                        )
+                        src_for_density = src_matrix
+
+                    b.eval(src_for_density)
+                    logger.debug(
+                        "DENSITY: Layer %d (src_layer=%d) - Projected source %s → target space %s",
+                        layer_idx,
+                        source_layer_idx,
+                        src_matrix.shape,
+                        src_for_density.shape,
+                    )
 
             # Compute point cloud density comparison (both in target space now)
             pc_result = compute_knn_point_cloud_density(

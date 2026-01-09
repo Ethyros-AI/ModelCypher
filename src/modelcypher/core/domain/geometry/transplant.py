@@ -173,69 +173,69 @@ def compute_transplant_delta(
 
 
     # ==========================================================================
-    # ADDITIVE NULL-SPACE MERGING (GPU-only, no SVD/pinv/eigendecomp)
+    # NULL-SPACE DELTA MERGING (GPU-only, no SVD/pinv/eigendecomp)
     # ==========================================================================
-    # THEORY (from DIMENSIONAL_COMPRESSION.md):
-    # - Concept probability clouds overlay - some overlap perfectly, some don't
-    # - Source has denser knowledge in some regions (larger model)
-    # - We ADD source knowledge into target's NULL SPACE (where target is sparse)
-    # - This ACTIVATES MORE NEURONS without altering existing target neurons
+    # THEORY: Project the DELTA (source - target) into null space, not the source.
     #
-    # OLD WRONG FORMULA: delta = source - target  ⟹  W' = target + delta = source
-    # NEW CORRECT FORMULA: W' = target + project_to_null(source, target)
+    # Why delta, not source?
+    # - Source is CKA-aligned with target (by construction of the merge)
+    # - Therefore source weights mostly lie in target's RANGE space
+    # - Projecting source into null space yields ~0 (wrong!)
+    # - Projecting DELTA finds what's DIFFERENT and projects that
     #
-    # We project the SOURCE WEIGHTS (not the difference!) into the null space
-    # of the target's activation patterns. This adds knowledge where target
-    # is sparse, without disturbing where target is already dense.
+    # FORMULA:
+    #   delta = source - target  (what source has that target doesn't)
+    #   safe_delta = project_to_null(delta, target_activations)
+    #   merged = target + safe_delta  (add safe parts of difference)
+    #
+    # This adds source knowledge where target is sparse (null space),
+    # without disturbing where target is already active (range space).
     # ==========================================================================
 
     geo_filter = GeodesicNullSpaceFilter(b)
 
-    # For weight matrices [out_dim, in_dim], we filter the SOURCE weights
-    # to project them into target's null space (where target is sparse)
-    # - activations_boundary: [n_samples, in_dim] = target activation patterns
-    # - weight_source_aligned: [out_dim, in_dim] = source knowledge to add
-    #
-    # The filter finds directions ORTHOGONAL to target's activation manifold.
-    # Source knowledge in those directions can be added without disturbing target.
     out_dim = int(weight_source_aligned.shape[0])
     in_dim = int(weight_source_aligned.shape[1])
     n_boundary = int(activations_boundary.shape[0])
 
+    # Compute DELTA = source - target (what's different)
+    weight_delta = weight_source_aligned - weight_target
+    b.eval(weight_delta)
+
     if n_boundary < 2:
         # Not enough boundary points for geodesic filtering
-        # Use simpler approach: add scaled source (avoid blowing up activations)
-        source_norm_arr = geodesic_norms(b.reshape(weight_source_aligned, (1, -1)), b)
-        b.eval(source_norm_arr)
-        source_norm = float(b.to_scalar(source_norm_arr[0]))
+        # Use simpler approach: add scaled delta (avoid blowing up activations)
+        delta_norm_arr = geodesic_norms(b.reshape(weight_delta, (1, -1)), b)
+        b.eval(delta_norm_arr)
+        delta_norm = float(b.to_scalar(delta_norm_arr[0]))
         target_norm_arr = geodesic_norms(b.reshape(weight_target, (1, -1)), b)
         b.eval(target_norm_arr)
         target_norm = float(b.to_scalar(target_norm_arr[0]))
-        
-        # Scale source to not dominate: add at 10% of relative magnitude
-        scale = 0.1 * target_norm / (source_norm + 1e-8)
-        source_contribution = weight_source_aligned * scale
-        b.eval(source_contribution)
-        
+
+        # Scale delta to not dominate: add at 10% of relative magnitude
+        scale = 0.1 * target_norm / (delta_norm + 1e-8)
+        delta_contribution = weight_delta * scale
+        b.eval(delta_contribution)
+
         return TransplantDeltaResult(
-            merged_weight=weight_target + source_contribution,
+            merged_weight=weight_target + delta_contribution,
             applied=True,
             null_dim=in_dim,  # All directions available
-            delta_norm=source_norm,
-            filtered_norm=source_norm * scale,
+            delta_norm=delta_norm,
+            filtered_norm=delta_norm * scale,
             projection_loss=0.0,
             preserved_fraction=1.0,
         )
 
-    # Project SOURCE weights into target's NULL SPACE
-    # This finds what parts of source are orthogonal to target's active directions
+    # Project DELTA into target's NULL SPACE
+    # This finds what parts of the difference are orthogonal to target's active directions
     result = geo_filter.filter_delta(
-        weight_delta=weight_source_aligned,  # NOTE: project SOURCE, not (source - target)
+        weight_delta=weight_delta,  # Project DELTA (source - target)
         prior_activations=activations_boundary,  # Target's activation patterns define null space
     )
-    source_in_null_space = result.filtered_delta  # Source knowledge that's orthogonal to target
+    delta_in_null_space = result.filtered_delta  # Safe difference to add
     geodesic_null_dim = result.orthogonal_dim
-    b.eval(source_in_null_space)
+    b.eval(delta_in_null_space)
 
     # =========================================================================
     # SPECTRAL NORM BOUND (GPU-friendly power iteration, no SVD)
@@ -244,12 +244,12 @@ def compute_transplant_delta(
     # σ_max ≈ ||A @ v|| / ||v|| where v converges to top right singular vector
 
     # Frobenius norm provides upper bound: σ_max ≤ ||A||_F
-    frob_norm_arr = geodesic_norms(b.reshape(source_in_null_space, (1, -1)), b)
+    frob_norm_arr = geodesic_norms(b.reshape(delta_in_null_space, (1, -1)), b)
     b.eval(frob_norm_arr)
     frob_norm = float(b.to_scalar(frob_norm_arr[0]))
 
     # Power iteration for tighter bound (3 iterations usually sufficient)
-    reg = regularization_epsilon(b, source_in_null_space)
+    reg = regularization_epsilon(b, delta_in_null_space)
     v = b.ones((in_dim,), dtype="float32")
     v_norms = geodesic_norms(b.reshape(v, (1, -1)), b)
     b.eval(v_norms)
@@ -258,11 +258,11 @@ def compute_transplant_delta(
 
     for _ in range(3):
         # w = A @ v
-        w = b.matmul(source_in_null_space, b.reshape(v, (in_dim, 1)))
+        w = b.matmul(delta_in_null_space, b.reshape(v, (in_dim, 1)))
         w = b.squeeze(w)
         b.eval(w)
         # u = A.T @ w
-        u = b.matmul(b.transpose(source_in_null_space), b.reshape(w, (out_dim, 1)))
+        u = b.matmul(b.transpose(delta_in_null_space), b.reshape(w, (out_dim, 1)))
         u = b.squeeze(u)
         b.eval(u)
         # Normalize
@@ -274,49 +274,51 @@ def compute_transplant_delta(
         b.eval(v)
 
     # Spectral norm estimate
-    w_final = b.matmul(source_in_null_space, b.reshape(v, (in_dim, 1)))
+    w_final = b.matmul(delta_in_null_space, b.reshape(v, (in_dim, 1)))
     w_final = b.squeeze(w_final)
     spectral_norm_arr = geodesic_norms(b.reshape(w_final, (1, -1)), b)
     b.eval(spectral_norm_arr)
     spectral_norm = float(b.to_scalar(spectral_norm_arr[0]))
 
     # Scale if needed (preserves geodesic null-space exactly)
-    # For additive merging, we want to add a controlled amount of source knowledge
+    # For additive merging, we want to add a controlled amount of delta
     max_norm = 1.0
     spectral_clipped = False
     if spectral_norm > max_norm:
         scale = max_norm / spectral_norm
-        source_contribution = source_in_null_space * scale
+        delta_contribution = delta_in_null_space * scale
         spectral_clipped = True
     else:
-        source_contribution = source_in_null_space
-    b.eval(source_contribution)
+        delta_contribution = delta_in_null_space
+    b.eval(delta_contribution)
 
-    # ADDITIVE MERGE: target + source_in_null_space (NO replacement!)
-    # This adds source knowledge into target's sparse regions
-    merged_weight = weight_target + source_contribution
+    # ADDITIVE MERGE: target + delta_in_null_space (NO replacement!)
+    # This adds the safe part of (source - target) into target's sparse regions
+    merged_weight = weight_target + delta_contribution
     b.eval(merged_weight)
 
     # NOTE: The previous "POST-MERGE GEODESIC RE-ALIGNMENT" step was removed.
     # It was applying F.T @ W which destroyed the null-space interlacing.
     # The null-space addition already preserves target's structure by construction.
     # No post-merge transform should be applied.
-    
+
     birkhoff_applied = False
     birkhoff_converged = False
     birkhoff_iterations = 0
     birkhoff_spectral_clipped_extra = False
 
     # Compute metrics
-    source_norm_arr = geodesic_norms(b.reshape(weight_source_aligned, (1, -1)), b)
-    contribution_norm_arr = geodesic_norms(b.reshape(source_contribution, (1, -1)), b)
-    b.eval(source_norm_arr, contribution_norm_arr)
-    source_norm = float(b.to_scalar(source_norm_arr[0]))
+    # delta_norm: how much difference between source and target
+    # contribution_norm: how much of that difference made it through null-space projection
+    original_delta_norm_arr = geodesic_norms(b.reshape(weight_delta, (1, -1)), b)
+    contribution_norm_arr = geodesic_norms(b.reshape(delta_contribution, (1, -1)), b)
+    b.eval(original_delta_norm_arr, contribution_norm_arr)
+    original_delta_norm = float(b.to_scalar(original_delta_norm_arr[0]))
     contribution_norm = float(b.to_scalar(contribution_norm_arr[0]))
 
-    if source_norm > 0.0:
-        # How much of source knowledge made it through null-space projection
-        preserved_fraction = contribution_norm / source_norm
+    if original_delta_norm > 0.0:
+        # How much of the delta made it through null-space projection
+        preserved_fraction = contribution_norm / original_delta_norm
         projection_loss = max(0.0, 1.0 - preserved_fraction)
     else:
         preserved_fraction = 1.0
@@ -326,8 +328,8 @@ def compute_transplant_delta(
         merged_weight=merged_weight,
         applied=True,
         null_dim=geodesic_null_dim,
-        delta_norm=source_norm,  # Now means: source knowledge to add
-        filtered_norm=contribution_norm,  # Now means: source after null-space projection
+        delta_norm=original_delta_norm,  # Difference between source and target
+        filtered_norm=contribution_norm,  # Delta after null-space projection
         projection_loss=projection_loss,
         preserved_fraction=preserved_fraction,
         birkhoff_applied=birkhoff_applied,
