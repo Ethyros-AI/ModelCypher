@@ -1718,7 +1718,6 @@ def solve_via_gram_alignment(
     backend: Backend,
     source: Array,
     target: Array,
-    R_hint: "Array | None" = None,  # Zipper: pre-rotation from successful neighbor
 ) -> tuple[Array | None, dict]:
     """Compute feature transform F that achieves CKA=1.0 via Gram-space Procrustes.
 
@@ -1766,7 +1765,6 @@ def solve_via_gram_alignment(
         "procrustes_error": float("inf"),
         "rank_source": 0,
         "rank_target": 0,
-        "used_R_hint": False,
     }
 
     if n < 2 or d_s == 0 or d_t == 0:

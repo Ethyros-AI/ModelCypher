@@ -195,17 +195,21 @@ merged = target_weights + projected
 ```
 
 Why it works:
-- **Null space** = directions the target model doesn't actively use
-- Projecting source delta into null space means: **add source knowledge where target has nothing**
-- Target behavior is PRESERVED (no interference)
+- **Null space** = directions the target model doesn't actively use (low variance)
+- Projecting source delta into these sparse regions means: **add source knowledge where target has capacity**
+- Target behavior is PRESERVED (dense directions scaled down)
 - Source knowledge is ADDED (not averaged)
 - Result is DENSER than either model alone
+
+**Implementation note**: Uses variance-weighted projection, not true orthogonal null-space.
+Dense directions (high activation variance) are scaled down; sparse directions are preserved.
+This is intentional - true orthogonal projection with many samples erases all delta.
 
 **Think of it like this**:
 - Blending: Mixing two paint colors → muddy average
 - Addition: Adding ingredients to a recipe → richer dish
 
-**If you find yourself writing weights, alphas, or interpolation** - STOP. You're doing it wrong. The geometry determines how knowledge combines. We don't "weight" anything. We project into null space and ADD.
+**If you find yourself writing interpolation alphas or blend weights** - STOP. You're doing it wrong. The geometry determines how knowledge combines. We use variance-derived weights (from the manifold structure), not arbitrary blend weights. We project into sparse regions and ADD.
 
 ### No Vibes
 

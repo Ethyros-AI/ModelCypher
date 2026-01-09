@@ -170,17 +170,22 @@ class GeodesicNullSpaceFilter:
         basis: GeodesicNullSpaceBasis | None = None,
     ) -> GeodesicNullSpaceResult:
         """
-        Filter weight delta to geodesic-orthogonal directions.
+        Filter weight delta using variance-weighted projection.
 
-        The projection preserves components of delta that are orthogonal to
-        the manifold structure defined by prior_activations, as measured by
-        geodesic distance preservation.
+        NOT true orthogonal null-space projection. Uses variance weighting
+        to respect manifold density:
+        - Dense directions (high activation variance) → project out more delta
+        - Sparse directions (low activation variance) → keep more delta
+
+        This approach is intentional: true null-space with many samples leads to
+        P_null ≈ 0, erasing all delta. Variance weighting preserves delta where
+        the manifold has capacity (sparse regions).
 
         Algorithm:
             1. Build k-NN graph from activations (GPU: matmul + argsort)
             2. Compute geodesic distances (GPU: Floyd-Warshall)
-            3. Compute tangent space basis at Fréchet mean (GPU: Gram ops)
-            4. Project delta onto orthogonal complement (GPU: matmul)
+            3. Compute per-dimension variance weights
+            4. Scale delta by (1 - variance_weight) per dimension
 
         Args:
             weight_delta: Weight update to filter. Shape: [out, in] or [d].
@@ -345,7 +350,9 @@ class GeodesicNullSpaceFilter:
     ) -> GeodesicNullSpaceBasis:
         """Compute a reusable geodesic null-space basis for projections."""
         backend = self._backend
-        prior_activations = backend.array(prior_activations)
+        # Only wrap if not already a backend array - avoid breaking id()-based cache
+        if not hasattr(prior_activations, 'shape'):
+            prior_activations = backend.array(prior_activations)
         backend.eval(prior_activations)
 
         cache_key = _cache.make_basis_key(prior_activations, backend, k_neighbors)

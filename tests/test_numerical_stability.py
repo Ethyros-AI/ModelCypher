@@ -747,69 +747,6 @@ class TestSolveViaGramAlignment:
                 R_shape = b.shape(R)
                 assert R_shape[0] == R_shape[1], "R should be square"
 
-    def test_gram_alignment_r_hint_accepted(self, any_backend: "Backend") -> None:
-        """R_hint parameter should be accepted without error."""
-        b = any_backend
-        b.random_seed(42)
-        source = b.random_normal((30, 15))
-        target = b.random_normal((30, 10))
-        b.eval(source, target)
-
-        # First alignment to get R
-        F1, diag1 = solve_via_gram_alignment(b, source, target)
-        
-        if F1 is not None and "procrustes_R" in diag1:
-            R_hint = diag1["procrustes_R"]
-            
-            # Second alignment with R_hint should work
-            F2, diag2 = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
-            
-            assert F2 is not None, "Alignment with R_hint should succeed"
-            assert "used_R_hint" in diag2, "used_R_hint should be in diagnostics"
-
-    def test_gram_alignment_r_hint_used_when_shape_matches(self, any_backend: "Backend") -> None:
-        """R_hint should be used when shape matches actual_rank."""
-        b = any_backend
-        b.random_seed(42)
-        source = b.random_normal((30, 15))
-        target = b.random_normal((30, 10))
-        b.eval(source, target)
-
-        # First alignment to get R
-        F1, diag1 = solve_via_gram_alignment(b, source, target)
-        
-        if F1 is not None and "procrustes_R" in diag1:
-            R_hint = diag1["procrustes_R"]
-            
-            # Re-align with matching R_hint
-            F2, diag2 = solve_via_gram_alignment(b, source, target, R_hint=R_hint)
-            
-            # If R_hint shape matched, it should have been used
-            if diag2.get("used_R_hint", False):
-                # Just verify alignment still works
-                assert F2 is not None
-
-    def test_gram_alignment_r_hint_fallback_on_shape_mismatch(self, any_backend: "Backend") -> None:
-        """R_hint should be ignored when shape doesn't match."""
-        b = any_backend
-        b.random_seed(42)
-        source = b.random_normal((30, 15))
-        target = b.random_normal((30, 10))
-        b.eval(source, target)
-
-        # Create mismatched R_hint (wrong size)
-        wrong_size_R = b.eye(5)  # Wrong dimensions
-        b.eval(wrong_size_R)
-
-        # Should fall back gracefully
-        F, diag = solve_via_gram_alignment(b, source, target, R_hint=wrong_size_R)
-
-        # Should still produce a valid result
-        assert F is not None or diag["procrustes_error"] == float("inf")
-        # Should NOT have used the mismatched R_hint
-        if F is not None:
-            assert diag.get("used_R_hint", False) is False
-
 
 # =============================================================================
 # CCA-Procrustes Solver

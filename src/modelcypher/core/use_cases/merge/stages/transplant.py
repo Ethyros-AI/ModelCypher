@@ -976,6 +976,7 @@ def stage_transplant(
         k_stitch_input = None   # pinv(F).T for K attention input [src_k, tgt_k]
         v_stitch_output = None  # F.T for V attention output [tgt_v, src_v]
         v_stitch_input = None   # pinv(F).T for V attention input [src_v, tgt_v]
+        kv_stitch_input = None  # Derived from k_stitch_input for o_proj KV-dim cases
 
         # Get intermediate activations for this layer (MLP internal states)
         # CRITICAL: For cross-architecture merge, source layer index may differ from target.
@@ -1083,6 +1084,11 @@ def stage_transplant(
                     "Layer %d: Using per-layer V stitch (shape=%s)",
                     layer_idx, stitch_shape
                 )
+
+        # Derive kv_stitch_input from k_stitch_input for o_proj KV-dimension cases
+        # K and V share head structure, so K stitch dimensions work for combined KV
+        if k_stitch_input is not None:
+            kv_stitch_input = k_stitch_input
 
         # =====================================================================
         # OPTIMIZATION: Cache stitch dimensions once per layer

@@ -87,8 +87,8 @@ def _save_probe_checkpoint(
 ) -> None:
     """Save probe progress to checkpoint file.
 
-    We save probe IDs and metadata, not activation data (too large).
-    The activation dicts are rebuilt on resume by re-running probes.
+    Saves probe IDs and metadata. Activation data is saved separately
+    via _save_probe_activations() for correct checkpoint resume.
     """
     checkpoint = {
         "version": 1,
@@ -132,6 +132,185 @@ def _clear_probe_checkpoint(checkpoint_path: Path) -> None:
     if checkpoint_path.exists():
         checkpoint_path.unlink()
         logger.debug("PROBE: Cleared checkpoint file %s", checkpoint_path)
+    # Also clear activation NPZ file
+    activation_path = checkpoint_path.with_suffix(".activations.npz")
+    if activation_path.exists():
+        activation_path.unlink()
+        logger.debug("PROBE: Cleared activation checkpoint %s", activation_path)
+
+
+def _save_probe_activations(
+    checkpoint_path: Path,
+    source_layer_activations: dict[int, "Array"],
+    target_layer_activations: dict[int, "Array"],
+    source_intermediate_activations: dict[int, "Array"],
+    target_intermediate_activations: dict[int, "Array"],
+    source_attention_activations: dict[int, "Array"],
+    target_attention_activations: dict[int, "Array"],
+    source_k_activations: dict[int, "Array"],
+    target_k_activations: dict[int, "Array"],
+    source_v_activations: dict[int, "Array"],
+    target_v_activations: dict[int, "Array"],
+) -> None:
+    """Save all activation dicts to NPZ file for checkpoint resume.
+
+    This is CRITICAL for correct checkpoint resume. Without saving activations,
+    the resume logic skips completed probes but their activations are lost,
+    leading to incomplete activation matrices and incorrect alignment.
+    """
+    activation_path = checkpoint_path.with_suffix(".activations.npz")
+
+    # Build flat dict with prefixed keys for NPZ storage
+    arrays_to_save: dict[str, Any] = {}
+
+    # Helper to flatten activation dict
+    def flatten_dict(d: dict[int, "Array"], prefix: str) -> None:
+        for layer_idx, arr in d.items():
+            arrays_to_save[f"{prefix}_{layer_idx}"] = arr
+
+    flatten_dict(source_layer_activations, "src_hidden")
+    flatten_dict(target_layer_activations, "tgt_hidden")
+    flatten_dict(source_intermediate_activations, "src_inter")
+    flatten_dict(target_intermediate_activations, "tgt_inter")
+    flatten_dict(source_attention_activations, "src_attn_q")
+    flatten_dict(target_attention_activations, "tgt_attn_q")
+    flatten_dict(source_k_activations, "src_attn_k")
+    flatten_dict(target_k_activations, "tgt_attn_k")
+    flatten_dict(source_v_activations, "src_attn_v")
+    flatten_dict(target_v_activations, "tgt_attn_v")
+
+    if not arrays_to_save:
+        return  # Nothing to save
+
+    # Use mlx.core.savez for GPU arrays (avoid CPU transfer)
+    try:
+        import mlx.core as mx
+        # Write atomically using temp file
+        temp_path = activation_path.with_suffix(".tmp.npz")
+        mx.savez(str(temp_path), **arrays_to_save)
+        temp_path.rename(activation_path)
+        logger.debug(
+            "PROBE: Saved %d activation arrays to %s",
+            len(arrays_to_save),
+            activation_path,
+        )
+    except ImportError:
+        # Fallback for non-MLX backends
+        import numpy as np
+        from modelcypher.core.domain._backend import get_default_backend
+        b = get_default_backend()
+        np_arrays = {k: b.to_numpy(v) for k, v in arrays_to_save.items()}
+        temp_path = activation_path.with_suffix(".tmp.npz")
+        np.savez_compressed(str(temp_path), **np_arrays)
+        temp_path.rename(activation_path)
+
+
+def _load_probe_activations(
+    checkpoint_path: Path,
+    backend: "Backend",
+) -> tuple[
+    dict[int, "Array"],  # source_layer_activations
+    dict[int, "Array"],  # target_layer_activations
+    dict[int, "Array"],  # source_intermediate_activations
+    dict[int, "Array"],  # target_intermediate_activations
+    dict[int, "Array"],  # source_attention_activations
+    dict[int, "Array"],  # target_attention_activations
+    dict[int, "Array"],  # source_k_activations
+    dict[int, "Array"],  # target_k_activations
+    dict[int, "Array"],  # source_v_activations
+    dict[int, "Array"],  # target_v_activations
+] | None:
+    """Load activation dicts from NPZ checkpoint file.
+
+    Returns None if no activation checkpoint exists.
+    Otherwise returns tuple of 10 activation dicts.
+    """
+    activation_path = checkpoint_path.with_suffix(".activations.npz")
+    if not activation_path.exists():
+        return None
+
+    try:
+        # Use mlx.core.load for GPU arrays
+        try:
+            import mlx.core as mx
+            loaded = mx.load(str(activation_path))
+        except ImportError:
+            import numpy as np
+            loaded = dict(np.load(str(activation_path)))
+            # Convert to backend arrays
+            loaded = {k: backend.array(v) for k, v in loaded.items()}
+
+        # Reconstruct activation dicts from flat keys
+        source_layer_activations: dict[int, Any] = {}
+        target_layer_activations: dict[int, Any] = {}
+        source_intermediate_activations: dict[int, Any] = {}
+        target_intermediate_activations: dict[int, Any] = {}
+        source_attention_activations: dict[int, Any] = {}
+        target_attention_activations: dict[int, Any] = {}
+        source_k_activations: dict[int, Any] = {}
+        target_k_activations: dict[int, Any] = {}
+        source_v_activations: dict[int, Any] = {}
+        target_v_activations: dict[int, Any] = {}
+
+        for key, arr in loaded.items():
+            if key.startswith("src_hidden_"):
+                layer_idx = int(key.split("_")[2])
+                source_layer_activations[layer_idx] = arr
+            elif key.startswith("tgt_hidden_"):
+                layer_idx = int(key.split("_")[2])
+                target_layer_activations[layer_idx] = arr
+            elif key.startswith("src_inter_"):
+                layer_idx = int(key.split("_")[2])
+                source_intermediate_activations[layer_idx] = arr
+            elif key.startswith("tgt_inter_"):
+                layer_idx = int(key.split("_")[2])
+                target_intermediate_activations[layer_idx] = arr
+            elif key.startswith("src_attn_q_"):
+                layer_idx = int(key.split("_")[3])
+                source_attention_activations[layer_idx] = arr
+            elif key.startswith("tgt_attn_q_"):
+                layer_idx = int(key.split("_")[3])
+                target_attention_activations[layer_idx] = arr
+            elif key.startswith("src_attn_k_"):
+                layer_idx = int(key.split("_")[3])
+                source_k_activations[layer_idx] = arr
+            elif key.startswith("tgt_attn_k_"):
+                layer_idx = int(key.split("_")[3])
+                target_k_activations[layer_idx] = arr
+            elif key.startswith("src_attn_v_"):
+                layer_idx = int(key.split("_")[3])
+                source_v_activations[layer_idx] = arr
+            elif key.startswith("tgt_attn_v_"):
+                layer_idx = int(key.split("_")[3])
+                target_v_activations[layer_idx] = arr
+
+        total_arrays = sum(len(d) for d in [
+            source_layer_activations, target_layer_activations,
+            source_intermediate_activations, target_intermediate_activations,
+            source_attention_activations, target_attention_activations,
+            source_k_activations, target_k_activations,
+            source_v_activations, target_v_activations,
+        ])
+        logger.info(
+            "PROBE: Loaded %d activation arrays from checkpoint",
+            total_arrays,
+        )
+
+        return (
+            source_layer_activations,
+            target_layer_activations,
+            source_intermediate_activations,
+            target_intermediate_activations,
+            source_attention_activations,
+            target_attention_activations,
+            source_k_activations,
+            target_k_activations,
+            source_v_activations,
+            target_v_activations,
+        )
+    except Exception as e:
+        logger.warning("PROBE: Failed to load activation checkpoint: %s", e)
+        return None
 
 
 def _select_probe_text(probe: Any) -> str | None:
@@ -1340,19 +1519,24 @@ def _probe_precise(
                 target_hidden = target_weights[key].shape[0]
                 break
         
+        # Cap probes for memory stability. 2048 provides full-rank coverage for
+        # typical hidden dims (1024, 2048) while avoiding GPU OOM.
+        TOKEN_PROBE_CAP = 2048
+
         min_probes_needed = max(source_hidden or 1024, target_hidden or 960)
         max_probes = min_probes_needed * 2  # 2x for numerical margin
         max_probes = max(max_probes, 1500)  # At least 1500 for 960-dim full coverage
-        max_probes = min(max_probes, 1500)  # Cap at 1500 to avoid OOM (empirically stable)
-        
-        logger.info("PROBE TOKEN: Dims source=%s target=%s, using %d probes", 
+        max_probes = min(max_probes, TOKEN_PROBE_CAP)  # Cap to avoid OOM
+
+        logger.info("PROBE TOKEN: Dims source=%s target=%s, using %d probes",
                     source_hidden, target_hidden, max_probes)
-        
+
         # Use target tokenizer for probe generation (target architecture defines the space)
         token_probes = generate_token_probes(target_tokenizer, max_probes=max_probes)
         # Convert TokenProbes to AtlasProbe format for compatibility
         probes = [tp.to_atlas_probe() for tp in token_probes]
-        logger.info("PROBE TOKEN: Generated %d probes (2x max_dim, capped at 4096)", len(probes))
+        logger.info("PROBE TOKEN: Generated %d probes (2x max_dim, capped at %d)",
+                    len(probes), TOKEN_PROBE_CAP)
     else:
         # Default: Atlas probes from JSON files (curated conceptual + MMLU probes)
         from modelcypher.core.domain.agents.probe_loader import load_all_probes
@@ -1675,6 +1859,40 @@ def _probe_precise(
                     len(completed_probe_ids),
                 )
 
+                # CRITICAL: Load saved activations for correct resume
+                # Without this, completed probes are skipped but their activations lost!
+                loaded_activations = _load_probe_activations(checkpoint_path, b)
+                if loaded_activations is not None:
+                    (
+                        loaded_src_hidden,
+                        loaded_tgt_hidden,
+                        loaded_src_inter,
+                        loaded_tgt_inter,
+                        loaded_src_attn_q,
+                        loaded_tgt_attn_q,
+                        loaded_src_attn_k,
+                        loaded_tgt_attn_k,
+                        loaded_src_attn_v,
+                        loaded_tgt_attn_v,
+                    ) = loaded_activations
+                    # Merge loaded activations with any from cache
+                    source_layer_activations.update(loaded_src_hidden)
+                    target_layer_activations.update(loaded_tgt_hidden)
+                    source_intermediate_activations.update(loaded_src_inter)
+                    target_intermediate_activations.update(loaded_tgt_inter)
+                    source_attention_activations.update(loaded_src_attn_q)
+                    target_attention_activations.update(loaded_tgt_attn_q)
+                    source_k_activations.update(loaded_src_attn_k)
+                    target_k_activations.update(loaded_tgt_attn_k)
+                    source_v_activations.update(loaded_src_attn_v)
+                    target_v_activations.update(loaded_tgt_attn_v)
+                else:
+                    # Activation file missing - need to re-run all probes
+                    logger.warning(
+                        "PROBE: Activation checkpoint missing, re-running all probes"
+                    )
+                    completed_probe_ids = set()
+
         # Check if activation provider supports batch methods
         has_batch_hidden = hasattr(activation_provider, "collect_hidden_activations_batch")
         has_batch_intermediate = hasattr(activation_provider, "collect_intermediate_activations_batch")
@@ -1954,7 +2172,21 @@ def _probe_precise(
                         probe_domains=probe_domains,
                         total_probes=len(valid_probes),
                     )
-    
+                    # CRITICAL: Save activations alongside checkpoint for correct resume
+                    _save_probe_activations(
+                        checkpoint_path=checkpoint_path,
+                        source_layer_activations=source_layer_activations,
+                        target_layer_activations=target_layer_activations,
+                        source_intermediate_activations=source_intermediate_activations,
+                        target_intermediate_activations=target_intermediate_activations,
+                        source_attention_activations=source_attention_activations,
+                        target_attention_activations=target_attention_activations,
+                        source_k_activations=source_k_activations,
+                        target_k_activations=target_k_activations,
+                        source_v_activations=source_v_activations,
+                        target_v_activations=target_v_activations,
+                    )
+
             except Exception as e:
                 # On batch failure, fall back to sequential processing for this batch
                 logger.warning("Batch processing failed, falling back to sequential: %s", e)
@@ -2254,12 +2486,12 @@ def _probe_precise(
     # Raw CKA will be < 1.0 because coordinate systems differ. GramAligner FINDS
     # the correct transformation. If it can't achieve CKA = 1.0, the algorithm is broken.
     layer_mapping: dict[int, int] = {}  # target_layer -> source_layer
-    feature_transforms: dict[int, list[list[float]]] = {}  # target_layer -> hidden transform
+    feature_transforms: dict[int, Any] = {}  # target_layer -> {src_layer: GPU array}
     scale_ratios: dict[int, float] = {}  # EXACT scale factor per layer: ||target|| / ||source @ F||
-    attention_transforms: dict[int, list[list[float]]] = {}  # target_layer -> Q attention transform
-    k_transforms: dict[int, list[list[float]]] = {}  # target_layer -> K attention transform
-    v_transforms: dict[int, list[list[float]]] = {}  # target_layer -> V attention transform
-    intermediate_transforms: dict[int, list[list[float]]] = {}  # target_layer -> MLP intermediate transform
+    attention_transforms: dict[int, Any] = {}  # target_layer -> Q attention transform (GPU array)
+    k_transforms: dict[int, Any] = {}  # target_layer -> K attention transform (GPU array)
+    v_transforms: dict[int, Any] = {}  # target_layer -> V attention transform (GPU array)
+    intermediate_transforms: dict[int, Any] = {}  # target_layer -> MLP intermediate transform (GPU array)
     gram_aligner = GramAligner(backend=b)
     rbf_consistency_checked = False
     rbf_consistency_hidden: dict[str, float] | None = None
@@ -2756,13 +2988,14 @@ def _probe_precise(
                     
                     # Store raw F_arr for zipper warm-start of neighbors
                     result["F_arr_raw"] = F_arr
-                    
+
                     # Split transform for each source layer
-                    split_transforms = {}
+                    # KEEP AS GPU ARRAYS - avoid CPU→GPU reconversion in downstream code
+                    split_transforms: dict[int, Any] = {}
                     start_idx = 0
                     for s_layer, s_dim in zip(src_layers_list, src_dims):
                         F_slice = F_arr[start_idx : start_idx + s_dim, :]
-                        split_transforms[s_layer] = b.tolist(F_slice)
+                        split_transforms[s_layer] = F_slice  # GPU array, not tolist()
                         start_idx += s_dim
                         
                     result["feature_transform"] = split_transforms
@@ -3238,29 +3471,51 @@ def _probe_precise(
     perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
 
     # =========================================================================
-    # SPLIT CKA: SHARED VS. NOVEL CONCEPTS
+    # SPLIT CKA: SHARED VS. NOVEL CONCEPTS (POST-ALIGNMENT)
     # =========================================================================
+    # CKA is meaningless BEFORE alignment - high-d representations get twisted
+    # during pre-training. We must FIRST align, THEN measure shared vs novel.
+    #
     # Compute CKA separately for:
-    # - SHARED: concepts both models have (CKA should be ~1.0)
-    # - NOVEL: concepts only source has (CKA expected to be low)
-    # This separates "alignment quality" from "novelty fraction"
+    # - SHARED: concepts both models respond to (CKA should be ~1.0 after alignment)
+    # - NOVEL: concepts only source responds to (new knowledge being added)
     split_cka_result = None
-    if source_layer_activations and target_layer_activations:
+    if source_layer_activations and target_layer_activations and feature_transforms:
         from modelcypher.core.domain.geometry.cka import compute_cka_split
 
-        # Use the layer with highest raw CKA as representative
-        # (it has the most overlap, so split is most meaningful)
-        if layer_cka_scores_raw:
-            best_layer = max(layer_cka_scores_raw.keys(), key=lambda k: layer_cka_scores_raw[k])
+        # Use the layer with highest post-alignment CKA as representative
+        if layer_cka_scores:
+            best_layer = max(layer_cka_scores.keys(), key=lambda k: layer_cka_scores[k])
             # Find corresponding source layer from layer_mapping
             src_layer = layer_mapping.get(best_layer)
-            if src_layer is not None and src_layer in source_layer_activations and best_layer in target_layer_activations:
+            # feature_transforms[tgt_layer] is a dict: {src_layer_idx: [[...], [...]]}
+            F_transform_dict = feature_transforms.get(best_layer)
+
+            if (src_layer is not None and
+                src_layer in source_layer_activations and
+                best_layer in target_layer_activations and
+                F_transform_dict is not None and
+                src_layer in F_transform_dict):
+
                 src_acts = source_layer_activations[src_layer]
                 tgt_acts = target_layer_activations[best_layer]
+
+                # APPLY ALIGNMENT: source @ F -> aligned source in target's coordinate system
+                # F_transform_dict[src_layer] is a GPU array (kept as array for efficiency)
+                F_arr = F_transform_dict[src_layer]
+                # Handle both GPU arrays (new) and lists (legacy cache)
+                if not hasattr(F_arr, 'shape'):
+                    F_arr = b.array(F_arr, dtype="float32")
+                F_arr = b.astype(F_arr, "float32")
+                src_acts_f32 = b.astype(src_acts, "float32")
+                aligned_src = b.matmul(src_acts_f32, F_arr)
+                b.eval(aligned_src)
+
                 try:
-                    split_cka_result = compute_cka_split(src_acts, tgt_acts, backend=b)
+                    # Compute split CKA on ALIGNED source vs target
+                    split_cka_result = compute_cka_split(aligned_src, tgt_acts, backend=b)
                     logger.info(
-                        "SPLIT CKA (layer %d): shared=%.4f (n=%d, %.1f%%), novel=%.4f (n=%d, %.1f%%), full=%.4f",
+                        "SPLIT CKA POST-ALIGN (layer %d): shared=%.4f (n=%d, %.1f%%), novel=%.4f (n=%d, %.1f%%), full=%.4f",
                         best_layer,
                         split_cka_result.shared_cka,
                         split_cka_result.n_shared,
