@@ -1,0 +1,8 @@
+{"name": "general_knowledge", "prompt": "What causes the northern lights?"}
+{"name": "code_generation", "prompt": "Write a Python class for a binary search tree with insert and search methods"}
+{"name": "math_word_problem", "prompt": "A train travels 120 miles in 2 hours. How fast is it going in miles per hour?"}
+{"name": "reasoning", "prompt": "If all roses are flowers and some flowers fade quickly, can we conclude that some roses fade quickly?"}
+{"name": "long_generation", "prompt": "Write a detailed explanation of how transformers work in machine learning, including attention mechanisms"}
+{"name": "factual_recall", "prompt": "Who invented the telephone and in what year?"}
+{"name": "edge_case_math", "prompt": "What is the derivative of x^3 + 2x^2 - 5x + 7?"}
+{"name": "multi_step", "prompt": "Explain step by step how to bake chocolate chip cookies from scratch"}
