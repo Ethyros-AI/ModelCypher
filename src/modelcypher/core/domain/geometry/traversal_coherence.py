@@ -23,10 +23,10 @@ from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     is_finite,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -166,11 +166,21 @@ class TraversalCoherence:
         mean_b = _b.mean(vec_b_arr)
         centered_a = vec_a_arr - mean_a
         centered_b = vec_b_arr - mean_b
-        centered_a_mat = _b.reshape(centered_a, (1, -1))
-        centered_b_mat = _b.reshape(centered_b, (1, -1))
-        cos_arr, _ = geodesic_pairwise_metrics(centered_a_mat, centered_b_mat, _b)
-        _b.eval(cos_arr)
-        correlation = float(_b.to_scalar(cos_arr[0])) if cos_arr.size else 0.0
+
+        # Pearson correlation: dot(centered_a, centered_b) / (norm_a * norm_b)
+        # This is a 1D scalar correlation - Euclidean is correct here
+        eps = division_epsilon(_b, vec_a_arr)
+        norm_a = _b.sqrt(_b.sum(centered_a * centered_a))
+        norm_b = _b.sqrt(_b.sum(centered_b * centered_b))
+        dot = _b.sum(centered_a * centered_b)
+        _b.eval(norm_a, norm_b, dot)
+
+        norm_a_val = float(_b.to_scalar(norm_a))
+        norm_b_val = float(_b.to_scalar(norm_b))
+        if norm_a_val < eps or norm_b_val < eps:
+            correlation = 0.0
+        else:
+            correlation = float(_b.to_scalar(dot)) / (norm_a_val * norm_b_val)
         if not is_finite(correlation, _b):
             return None
         return Result(
