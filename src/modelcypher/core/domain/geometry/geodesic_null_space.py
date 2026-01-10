@@ -170,22 +170,24 @@ class GeodesicNullSpaceFilter:
         basis: GeodesicNullSpaceBasis | None = None,
     ) -> GeodesicNullSpaceResult:
         """
-        Filter weight delta using variance-weighted projection.
+        Filter weight delta using unified saliency projection.
 
-        NOT true orthogonal null-space projection. Uses variance weighting
-        to respect manifold density:
-        - Dense directions (high activation variance) → project out more delta
-        - Sparse directions (low activation variance) → keep more delta
+        Combines two complementary signals to determine where delta is safe:
 
-        This approach is intentional: true null-space with many samples leads to
-        P_null ≈ 0, erasing all delta. Variance weighting preserves delta where
-        the manifold has capacity (sparse regions).
+        1. VARIANCE (occupancy): High variance = many concepts = protect
+        2. MAGNITUDE (sensitivity, AIM arXiv:2502.02421): High magnitude = protect
+
+        Formula: keep = (1 - variance_norm) * (1 - magnitude_norm)
+
+        Delta is preserved only where BOTH signals are low (sparse AND insensitive).
+        Either high variance OR high magnitude triggers protection.
+        No hyperparameters - pure geometry.
 
         Algorithm:
             1. Build k-NN graph from activations (GPU: matmul + argsort)
             2. Compute geodesic distances (GPU: Floyd-Warshall)
-            3. Compute per-dimension variance weights
-            4. Scale delta by (1 - variance_weight) per dimension
+            3. Compute per-dimension variance AND magnitude weights
+            4. Scale delta by keep = (1-var)(1-mag) per dimension
 
         Args:
             weight_delta: Weight update to filter. Shape: [out, in] or [d].
@@ -407,71 +409,119 @@ class GeodesicNullSpaceFilter:
         backend.eval(tangent_vectors)
 
         # =====================================================================
-        # VARIANCE-WEIGHTED NULL SPACE PROJECTION
+        # UNIFIED SALIENCY PROJECTION (Variance + Magnitude)
         # =====================================================================
         # The shape is invariant. All models encode the same manifold.
-        # What differs is DENSITY - how many concepts are locked into precise
-        # positions on this manifold.
+        # What differs is DENSITY and SENSITIVITY across dimensions.
         #
         # Binary null-space projection (Q @ Q^T) is WRONG because:
         # - With many samples, Q spans all dimensions
         # - orthogonal_dim = 0, so delta_safe = delta - delta = 0
         #
-        # Variance-weighted projection is CORRECT because:
-        # - High variance directions are DENSELY populated (many concepts)
-        # - Low variance directions are SPARSE (room for new concepts)
-        # - We project out proportionally: remove delta where dense, keep where sparse
+        # Unified saliency projection is CORRECT because it combines:
         #
-        # Formula:
-        #   variance[i] = var(activations[:, i])
-        #   weight[i] = variance[i] / max(variance)  in [0, 1]
-        #   projection_strength = diag(weight)
-        #   delta_safe = delta - delta @ diag(weight)
+        # 1. VARIANCE (occupancy): How spread are concepts in this direction?
+        #    High variance = densely populated = protect
+        #    Low variance = sparse = room for new concepts
         #
-        # This preserves precision (no truncation) while respecting density.
+        # 2. MAGNITUDE (sensitivity, from AIM arXiv:2502.02421):
+        #    High activation magnitude = perturbations cause large errors = protect
+        #    Low magnitude = insensitive to changes = safe to modify
+        #
+        # Combined formula (probabilistic AND for "safe to modify"):
+        #   keep[i] = (1 - variance_norm[i]) * (1 - magnitude_norm[i])
+        #   delta_safe = delta * keep
+        #
+        # This means: keep delta only where BOTH variance AND magnitude are low.
+        # Either high variance OR high magnitude triggers protection.
+        # No hyperparameters - pure geometry.
         # =====================================================================
 
-        # Compute per-dimension variance of activations directly
-        # (tangent vectors have similar variance structure, but activations are cleaner)
+        # Compute per-dimension statistics from activations
+        # (tangent vectors have similar structure, but activations are cleaner)
         A = backend.transpose(tangent_vectors)  # [d, n_samples]
         if str(backend.dtype(A)) in ("float16", "bfloat16"):
             A = backend.astype(A, "float32")
         reg = regularization_epsilon(backend, A)
 
-        # Variance per dimension: how "occupied" each direction is
-        # High variance = many concepts spread along this direction = dense
-        # Low variance = concepts clustered or sparse = room for more
+        # =================================================================
+        # UNIFIED SALIENCY: VARIANCE + MAGNITUDE (AIM-inspired)
+        # =================================================================
+        # Two complementary signals tell us where we can safely add delta:
+        #
+        # 1. VARIANCE (our insight): How occupied is this direction?
+        #    High variance = many concepts spread here = dense = protect
+        #    Low variance = sparse region = room for new knowledge
+        #
+        # 2. MAGNITUDE (AIM paper, arXiv:2502.02421): How sensitive is output?
+        #    High magnitude = perturbations cause large errors = protect
+        #    Low magnitude = insensitive to changes = safe to modify
+        #
+        # Combined: Keep delta only where BOTH signals are low.
+        # Formula: keep = (1 - variance_norm) * (1 - magnitude_norm)
+        #
+        # This is probabilistic AND: "neither occupied NOR sensitive"
+        # - If variance=1 (full): keep≈0 regardless of magnitude
+        # - If magnitude=1 (sensitive): keep≈0 regardless of variance
+        # - If both=0: keep=1 (safe to add)
+        # - Gradual falloff in between, no hyperparameters
+        # =================================================================
+
         acts_f32 = backend.astype(prior_activations, "float32")
         mean_per_dim = backend.mean(acts_f32, axis=0)  # [d]
         centered = acts_f32 - backend.reshape(mean_per_dim, (1, d))
+
+        # Signal 1: Variance per dimension (occupancy)
         variance_per_dim = backend.mean(centered * centered, axis=0)  # [d]
         backend.eval(variance_per_dim)
 
-        # Normalize variance to [0, 1] range
+        # Signal 2: Magnitude per dimension (sensitivity)
+        # Mean absolute activation - how strong is the signal here?
+        magnitude_per_dim = backend.mean(backend.abs(acts_f32), axis=0)  # [d]
+        backend.eval(magnitude_per_dim)
+
+        # Normalize both to [0, 1] range
         max_var = backend.max(variance_per_dim)
-        backend.eval(max_var)
+        max_mag = backend.max(magnitude_per_dim)
+        backend.eval(max_var, max_mag)
         max_var_val = float(backend.to_scalar(max_var))
+        max_mag_val = float(backend.to_scalar(max_mag))
 
         if max_var_val > reg:
-            # variance_weights[i] = how strongly to project out direction i
-            # High weight = dense = project out strongly
-            # Low weight = sparse = keep more delta
             variance_weights = variance_per_dim / max_var_val
         else:
-            # All directions have ~0 variance, nothing to project
             variance_weights = backend.zeros((d,))
         backend.eval(variance_weights)
 
-        # Store the variance weights as our "weighted basis"
-        # The projection will use: delta_safe = delta * (1 - variance_weights)
-        # This is equivalent to: delta - delta * variance_weights
-        # where variance_weights acts as the projection strength per dimension
-        Q = backend.reshape(variance_weights, (d, 1))  # [d, 1] for compatibility
+        if max_mag_val > reg:
+            magnitude_weights = magnitude_per_dim / max_mag_val
+        else:
+            magnitude_weights = backend.zeros((d,))
+        backend.eval(magnitude_weights)
+
+        # =================================================================
+        # COMBINED SALIENCY: Unified projection weights
+        # =================================================================
+        # keep_weights = (1 - variance) * (1 - magnitude)
+        # This is "probabilistic AND": keep only if BOTH are low
+        #
+        # Equivalently, the projection strength is:
+        # combined_weights = 1 - keep_weights
+        #                  = 1 - (1-v)(1-m)
+        #                  = v + m - v*m  (probabilistic OR)
+        #
+        # We store combined_weights in Q for the filter_delta method.
+        # =================================================================
+        keep_weights = (1.0 - variance_weights) * (1.0 - magnitude_weights)
+        combined_weights = 1.0 - keep_weights  # = v + m - v*m
+        backend.eval(combined_weights)
+
+        Q = backend.reshape(combined_weights, (d, 1))  # [d, 1] for compatibility
         backend.eval(Q)
 
-        # Orthogonal dimension is now the sum of (1 - weights), normalized
-        # This represents "effective null space size" based on sparse directions
-        effective_null = backend.sum(1.0 - variance_weights)
+        # Orthogonal dimension: sum of keep_weights (effective null space size)
+        # Higher = more room for delta, lower = more protected
+        effective_null = backend.sum(keep_weights)
         backend.eval(effective_null)
         orthogonal_dim = int(float(backend.to_scalar(effective_null)))
 
