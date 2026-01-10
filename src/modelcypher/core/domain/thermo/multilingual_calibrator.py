@@ -319,14 +319,14 @@ class MultilingualCalibrator:
             "",
             "## Measured Scaling Factors",
             "",
-            "| Language | Resource Level | Scaling Factor |",
-            "|----------|---------------|----------------|",
+            "| Language | Resource Score | Scaling Factor |",
+            "|----------|----------------|----------------|",
         ]
 
         for language in PromptLanguage:
             calibrated = self.calibrate_intensity(language, 1.0)
             lines.append(
-                f"| {language.display_name} | {language.resource_level.value} | "
+                f"| {language.display_name} | {language.resource_score:.1f} | "
                 f"{calibrated.scaling_factor:.2f} |"
             )
 

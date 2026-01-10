@@ -227,7 +227,6 @@ class PilotResult:
                     "prime_value": v.prime_value,
                     "composite_value": v.composite_value,
                     "effect_size": v.effect_size.d,
-                    "effect_interpretation": v.effect_size.interpretation,
                     "p_value": v.p_value,
                     "passed": v.passed,
                     "layer": v.layer,
@@ -643,7 +642,7 @@ class LLMPrimeAnalyzer:
                 description=description,
                 prime_value=prime_value,
                 composite_value=composite_value,
-                effect_size=EffectSize(d=0.0, interpretation="negligible"),
+                effect_size=EffectSize(d=0.0),
                 p_value=None,
                 passed=None,
                 layer=layer,
@@ -651,10 +650,7 @@ class LLMPrimeAnalyzer:
 
         # Compute effect size (using single values as means with unit variance)
         diff = prime_value - composite_value
-        effect = EffectSize(
-            d=diff,  # Simple difference for single values
-            interpretation="large" if abs(diff) > 0.5 else "medium" if abs(diff) > 0.2 else "small" if abs(diff) > 0.1 else "negligible"
-        )
+        effect = EffectSize(d=diff)
 
         # Determine pass/fail
         if threshold is not None:
@@ -762,7 +758,7 @@ def format_pilot_result(result: PilotResult) -> str:
             f"{h.hypothesis_id}: {status}",
             f"  {h.description}",
             f"  Prime: {h.prime_value:.4f}, Composite: {h.composite_value:.4f}",
-            f"  Effect: {h.effect_size.d:.3f} ({h.effect_size.interpretation})",
+            f"  Effect size (d): {h.effect_size.d:.3f}",
             "",
         ])
 

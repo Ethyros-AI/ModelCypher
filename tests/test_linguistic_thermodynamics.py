@@ -29,7 +29,6 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     AttractorBasin,
     BehavioralOutcome,
     EntropyDirection,
-    LanguageResourceLevel,
     LinguisticModifier,
     LocalizedModifiers,
     ModifierMechanism,
@@ -116,18 +115,18 @@ class TestPromptLanguage:
             assert len(lang.iso_code) == 2
             assert lang.iso_code.islower()
 
-    def test_resource_levels_assigned(self):
-        """All languages should have resource level classification."""
+    def test_resource_scores_assigned(self):
+        """All languages should have resource scores in [0, 1]."""
         for lang in PromptLanguage:
-            assert lang.resource_level in LanguageResourceLevel
+            assert 0.0 <= lang.resource_score <= 1.0
 
     def test_english_is_high_resource(self):
-        """English should be high resource."""
-        assert PromptLanguage.ENGLISH.resource_level == LanguageResourceLevel.HIGH
+        """English should have high resource score."""
+        assert PromptLanguage.ENGLISH.resource_score == 1.0
 
     def test_swahili_is_low_resource(self):
-        """Swahili should be low resource."""
-        assert PromptLanguage.SWAHILI.resource_level == LanguageResourceLevel.LOW
+        """Swahili should have low resource score."""
+        assert PromptLanguage.SWAHILI.resource_score == 0.0
 
 
 class TestPerturbedPrompt:

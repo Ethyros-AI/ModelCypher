@@ -298,24 +298,6 @@ class ThermoGeometryMetrics:
     mean_ricci_std: float | None
 
 
-class LanguageResourceLevel(str, Enum):
-    """Language resource level classification.
-
-    Attributes
-    ----------
-    HIGH : str
-        High-resource language.
-    MEDIUM : str
-        Medium-resource language.
-    LOW : str
-        Low-resource language.
-    """
-
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-
 class PromptLanguage(str, Enum):
     """Languages for multilingual entropy validation.
 
@@ -332,10 +314,10 @@ class PromptLanguage(str, Enum):
 
     Notes
     -----
-    Resource level classification:
-    - High-resource: English, Chinese
-    - Medium-resource: Arabic
-    - Low-resource: Swahili
+    Resource score (0.0 to 1.0) reflects relative training data availability:
+    - 1.0: English, Chinese (largest corpora)
+    - 0.5: Arabic (moderate corpora)
+    - 0.0: Swahili (smallest corpora)
     """
 
     ENGLISH = "en"
@@ -360,15 +342,19 @@ class PromptLanguage(str, Enum):
         return self.value
 
     @property
-    def resource_level(self) -> LanguageResourceLevel:
-        """Resource level classification."""
-        levels = {
-            PromptLanguage.ENGLISH: LanguageResourceLevel.HIGH,
-            PromptLanguage.CHINESE: LanguageResourceLevel.HIGH,
-            PromptLanguage.ARABIC: LanguageResourceLevel.MEDIUM,
-            PromptLanguage.SWAHILI: LanguageResourceLevel.LOW,
+    def resource_score(self) -> float:
+        """Relative resource ordinal (0.0 = lowest, 1.0 = highest).
+
+        NO VIBES: Returns raw ordinal, caller interprets thresholds.
+        Based on relative training data availability estimates.
+        """
+        scores = {
+            PromptLanguage.ENGLISH: 1.0,
+            PromptLanguage.CHINESE: 1.0,
+            PromptLanguage.ARABIC: 0.5,
+            PromptLanguage.SWAHILI: 0.0,
         }
-        return levels[self]
+        return scores[self]
 
 
 @dataclass(frozen=True)

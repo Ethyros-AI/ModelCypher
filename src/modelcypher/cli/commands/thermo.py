@@ -837,7 +837,7 @@ def thermo_parity(
                 "results": [
                     {
                         "language": r.language.value,
-                        "resourceLevel": r.language.resource_level.value,
+                        "resourceScore": r.language.resource_score,
                         "baselineEntropy": r.baseline_entropy,
                         "modifiedEntropy": r.modified_entropy,
                         "deltaH": r.delta_h,

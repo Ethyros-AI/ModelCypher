@@ -46,28 +46,20 @@ class SecurityEventType(str, Enum):
     CANARY_TRIPPED = "canaryTripped"
 
 
-class SecuritySeverity(str, Enum):
-    """Severity level for security events."""
-
-    INFO = "INFO"
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    CRITICAL = "CRITICAL"
-
-
 @dataclass(frozen=True)
 class SecurityEvent:
     """Structured security event for auditability.
 
     Events can be emitted to a logger in JSON format for audit trails.
     Supports both adapter-focused events (via class methods) and generic
-    security events (via direct construction with event_id/severity/source/message).
+    security events (via direct construction with event_id/severity_score/source/message).
+
+    NO VIBES: severity_score is a raw numeric (0.0-1.0), caller interprets thresholds.
     """
 
     # Generic event fields (for direct construction)
     event_id: str | None = None
-    severity: SecuritySeverity | None = None
+    severity_score: float | None = None  # 0.0 (info) to 1.0 (critical), caller interprets
     source: str | None = None
     message: str | None = None
     metadata: dict | None = None
@@ -85,10 +77,10 @@ class SecurityEvent:
 
     @property
     def is_actionable(self) -> bool:
-        """Return True if severity is HIGH or CRITICAL."""
-        if self.severity is None:
+        """Return True if severity_score > 0.5 (caller's threshold may differ)."""
+        if self.severity_score is None:
             return False
-        return self.severity in (SecuritySeverity.HIGH, SecuritySeverity.CRITICAL)
+        return self.severity_score > 0.5
 
     @classmethod
     def adapter_evaluated(

@@ -24,7 +24,7 @@ from modelcypher.core.domain.safety.regex_content_filter import (
     RuleAction,
     SafetyCategory,
 )
-from modelcypher.core.domain.safety.security_event import SecurityEvent, SecuritySeverity
+from modelcypher.core.domain.safety.security_event import SecurityEvent
 
 # --- RegexContentFilter Tests ---
 
@@ -83,20 +83,20 @@ def test_regex_filter_empty_text():
 def test_security_event_creation():
     event = SecurityEvent(
         event_id="ev1",
-        severity=SecuritySeverity.HIGH,
+        severity_score=0.8,  # High severity (NO VIBES: raw numeric)
         source="unit_test",
         message="Test alert",
         metadata={"key": "val"},
     )
-    assert event.severity == SecuritySeverity.HIGH
-    assert event.is_actionable is True
+    assert event.severity_score == 0.8
+    assert event.is_actionable is True  # >0.5 threshold
 
 
 def test_security_event_low_severity():
     event = SecurityEvent(
-        event_id="ev2", severity=SecuritySeverity.LOW, source="unit_test", message="Ignore this"
+        event_id="ev2", severity_score=0.2, source="unit_test", message="Ignore this"
     )
-    assert event.is_actionable is False
+    assert event.is_actionable is False  # <0.5 threshold
 
 
 # --- Additional Safety Logic Tests ---
