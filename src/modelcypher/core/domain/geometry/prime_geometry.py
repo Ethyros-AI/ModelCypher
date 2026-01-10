@@ -930,9 +930,76 @@ def generate_baseline(
         raise ValueError(f"Unknown baseline type: {baseline_type}")
 
 
+def _derive_embedding_dim(sequence: "Array", delay: int, backend: "Backend") -> int:
+    """Derive embedding dimension from sequence using Takens' theorem.
+
+    Takens' embedding theorem states that for a d-dimensional attractor,
+    an embedding dimension of 2*d + 1 is sufficient to reconstruct the
+    attractor topology.
+
+    Algorithm:
+    1. Create minimal embedding (dim=2) to get preliminary Gram matrix
+    2. Compute effective dimensionality: d_eff = (Σλ)² / Σλ²
+    3. Apply Takens: embedding_dim = ceil(2*d_eff + 1)
+
+    Returns:
+        Derived embedding dimension, minimum 3, maximum limited by sequence length.
+    """
+    import math
+
+    n = int(backend.shape(sequence)[0])
+
+    # Preliminary embedding with minimal dimension
+    prelim_dim = 2
+    n_windows = n - (prelim_dim - 1) * delay
+    if n_windows < 3:
+        return 3  # Minimum meaningful embedding
+
+    # Create preliminary embedding
+    prelim_embedded = time_delay_embedding(sequence, prelim_dim, delay, backend)
+    prelim_gram = compute_gram_matrix(prelim_embedded, backend)
+
+    # Compute eigenvalues for effective dimensionality
+    n_gram = int(prelim_gram.shape[0])
+    eigenvalues, _ = power_iteration_eigh(backend, prelim_gram, k=n_gram)
+
+    # Filter positive eigenvalues
+    eps = machine_epsilon(backend, eigenvalues)
+    pos_mask = eigenvalues > eps
+    pos_count_arr = backend.sum(backend.astype(pos_mask, "int32"))
+    backend.eval(pos_count_arr)
+    pos_count = int(backend.to_scalar(pos_count_arr))
+
+    if pos_count < 1:
+        return 3
+
+    pos_ev = eigenvalues[:pos_count]
+
+    # Effective dimensionality: d_eff = (Σλ)² / Σλ²
+    sum_ev_arr = backend.sum(pos_ev)
+    sum_ev_sq_arr = backend.sum(pos_ev * pos_ev)
+    backend.eval(sum_ev_arr, sum_ev_sq_arr)
+    sum_ev = float(backend.to_scalar(sum_ev_arr))
+    sum_ev_sq = float(backend.to_scalar(sum_ev_sq_arr))
+
+    if sum_ev_sq < eps:
+        d_eff = 1.0
+    else:
+        d_eff = (sum_ev * sum_ev) / sum_ev_sq
+
+    # Takens' theorem: embedding_dim = ceil(2*d_eff + 1)
+    embedding_dim = int(math.ceil(2.0 * d_eff + 1.0))
+
+    # Clamp to reasonable range based on sequence length
+    max_dim = max(3, n // 10)  # At most 10% of sequence length
+    embedding_dim = max(3, min(embedding_dim, max_dim))
+
+    return embedding_dim
+
+
 def analyze_prime_geometry(
     n_primes: int = 1000,
-    embedding_dim: int = 20,
+    embedding_dim: int | None = None,
     delay: int = 1,
     backend: "Backend | None" = None,
     seed: int = 42,
@@ -943,7 +1010,9 @@ def analyze_prime_geometry(
 
     Args:
         n_primes: Number of primes to analyze.
-        embedding_dim: Dimension of time-delay embedding.
+        embedding_dim: Dimension of time-delay embedding. If None, auto-derived
+            using Takens' theorem: dim = ceil(2*d_eff + 1) where d_eff is the
+            effective dimensionality from a preliminary analysis.
         delay: Time delay for embedding.
         backend: Compute backend.
         seed: Random seed for baseline comparison.
@@ -957,6 +1026,11 @@ def analyze_prime_geometry(
     primes = generate_primes(n_primes, backend)
 
     logger.info(f"Prime gaps: {primes.gap_count}, max prime: {primes.max_prime}")
+
+    # Auto-derive embedding dimension if not specified
+    if embedding_dim is None:
+        embedding_dim = _derive_embedding_dim(primes.gaps, delay, backend)
+        logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
     # Compute mean gap for random baseline
     mean_gap_arr = backend.mean(primes.gaps)
@@ -1113,9 +1187,30 @@ def format_result(result: PrimeGeometryResult) -> str:
 # =============================================================================
 
 
+def _derive_bootstrap_count(n_samples: int, backend: "Backend") -> int:
+    """Derive number of bootstrap samples from data size.
+
+    Formula: n_bootstrap = ceil(sqrt(n_samples))
+
+    This is mathematically derived from:
+    - Bootstrap standard error ~ 1/sqrt(n_bootstrap)
+    - We want bootstrap error comparable to sampling error ~ 1/sqrt(n_samples)
+    - Therefore n_bootstrap ~ sqrt(n_samples) is the data-derived minimum
+
+    Returns:
+        Number of bootstrap samples, minimum 10.
+    """
+    import math
+
+    if n_samples < 1:
+        return 10
+    n_boot = int(math.ceil(sqrt_scalar(float(n_samples), backend)))
+    return max(10, n_boot)
+
+
 def bootstrap_confidence_interval(
     values: list[float],
-    n_bootstrap: int = 200,
+    n_bootstrap: int | None = None,
     confidence: float = 0.95,
     backend: "Backend | None" = None,
 ) -> ConfidenceInterval:
@@ -1123,7 +1218,8 @@ def bootstrap_confidence_interval(
 
     Args:
         values: List of observed values.
-        n_bootstrap: Number of bootstrap samples.
+        n_bootstrap: Number of bootstrap samples. If None, auto-derived from
+            ceil(sqrt(n_samples)) based on bootstrap standard error formula.
         confidence: Confidence level (default 0.95 for 95% CI).
         backend: Compute backend.
 
@@ -1133,6 +1229,8 @@ def bootstrap_confidence_interval(
     backend = backend or get_default_backend()
 
     n = len(values)
+    if n_bootstrap is None:
+        n_bootstrap = _derive_bootstrap_count(n, backend)
     if n < 2:
         mean_val = values[0] if values else 0.0
         return ConfidenceInterval(
@@ -1338,10 +1436,10 @@ def run_hypothesis_test(
 
 def run_comprehensive_analysis(
     n_primes: int = 1000,
-    embedding_dim: int = 20,
+    embedding_dim: int | None = None,
     delay: int = 1,
     baselines: list[BaselineType] | None = None,
-    n_bootstrap: int = 50,
+    n_bootstrap: int | None = None,
     backend: "Backend | None" = None,
     seed: int = 42,
 ) -> ComprehensiveResult:
@@ -1349,10 +1447,12 @@ def run_comprehensive_analysis(
 
     Args:
         n_primes: Number of primes to analyze.
-        embedding_dim: Dimension of time-delay embedding.
+        embedding_dim: Dimension of time-delay embedding. If None, auto-derived
+            using Takens' theorem: dim = ceil(2*d_eff + 1).
         delay: Time delay for embedding.
         baselines: List of baseline types to test against.
-        n_bootstrap: Number of bootstrap samples for CIs.
+        n_bootstrap: Number of bootstrap samples for CIs. If None, auto-derived
+            from ceil(sqrt(n_samples)).
         backend: Compute backend.
         seed: Random seed.
 
@@ -1368,14 +1468,25 @@ def run_comprehensive_analysis(
             BaselineType.SHUFFLED,
         ]
 
+    # Generate primes
+    logger.info(f"Generating {n_primes} primes for comprehensive analysis...")
+    primes = generate_primes(n_primes, backend)
+
+    # Auto-derive embedding dimension if not specified
+    if embedding_dim is None:
+        embedding_dim = _derive_embedding_dim(primes.gaps, delay, backend)
+        logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
+
+    # Auto-derive bootstrap count if not specified
+    if n_bootstrap is None:
+        n_bootstrap = _derive_bootstrap_count(primes.gap_count, backend)
+        logger.info(f"Auto-derived bootstrap count: {n_bootstrap} (sqrt formula)")
+
     result = ComprehensiveResult(
         n_primes=n_primes,
         embedding_dim=embedding_dim,
     )
 
-    # Generate primes
-    logger.info(f"Generating {n_primes} primes for comprehensive analysis...")
-    primes = generate_primes(n_primes, backend)
     result.max_prime = primes.max_prime
     mean_gap_arr = backend.mean(primes.gaps)
     backend.eval(mean_gap_arr)
@@ -1473,7 +1584,7 @@ def run_comprehensive_analysis(
 
 def run_scale_sweep(
     scales: list[int] | None = None,
-    embedding_dim: int = 20,
+    embedding_dim: int | None = None,
     delay: int = 1,
     backend: "Backend | None" = None,
     seed: int = 42,
@@ -1482,7 +1593,8 @@ def run_scale_sweep(
 
     Args:
         scales: List of n_primes values to test.
-        embedding_dim: Dimension of time-delay embedding.
+        embedding_dim: Dimension of time-delay embedding. If None, auto-derived
+            per-scale using Takens' theorem.
         delay: Time delay for embedding.
         backend: Compute backend.
         seed: Random seed.
@@ -1500,18 +1612,14 @@ def run_scale_sweep(
     for n_primes in scales:
         logger.info(f"Scale sweep: n_primes = {n_primes}")
 
-        # Adjust embedding dim for small scales
-        effective_dim = min(embedding_dim, n_primes // 10)
-        if effective_dim < 5:
-            effective_dim = 5
-
         try:
+            # Pass None for embedding_dim and n_bootstrap to auto-derive per-scale
             analysis = run_comprehensive_analysis(
                 n_primes=n_primes,
-                embedding_dim=effective_dim,
+                embedding_dim=embedding_dim,  # Auto-derived if None
                 delay=delay,
                 baselines=[BaselineType.EXPONENTIAL],  # Just one for speed
-                n_bootstrap=20,  # Fewer for speed
+                n_bootstrap=None,  # Auto-derived from sqrt(n_samples)
                 backend=backend,
                 seed=seed,
             )
@@ -1541,7 +1649,7 @@ def run_scale_sweep(
 def run_perturbation_study(
     n_primes: int = 1000,
     noise_levels: list[float] | None = None,
-    embedding_dim: int = 20,
+    embedding_dim: int | None = None,
     backend: "Backend | None" = None,
     seed: int = 42,
 ) -> list[PerturbationResult]:
@@ -1550,7 +1658,8 @@ def run_perturbation_study(
     Args:
         n_primes: Number of primes to analyze.
         noise_levels: List of noise levels (as fraction of mean gap).
-        embedding_dim: Dimension of time-delay embedding.
+        embedding_dim: Dimension of time-delay embedding. If None, auto-derived
+            using Takens' theorem.
         backend: Compute backend.
         seed: Random seed.
 
@@ -1566,6 +1675,11 @@ def run_perturbation_study(
 
     # Generate primes and compute baseline
     primes = generate_primes(n_primes, backend)
+
+    # Auto-derive embedding dimension if not specified
+    if embedding_dim is None:
+        embedding_dim = _derive_embedding_dim(primes.gaps, 1, backend)
+        logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
     mean_gap_arr = backend.mean(primes.gaps)
     backend.eval(mean_gap_arr)
     mean_gap = float(backend.to_scalar(mean_gap_arr))

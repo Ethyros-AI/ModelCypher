@@ -535,6 +535,50 @@ def atlas_dimensionality(
     write_output(payload, context.output_format, context.pretty)
 
 
+def _derive_layer_chunk_size(
+    num_layers: int,
+    num_texts: int,
+    hidden_dim: int,
+) -> int:
+    """Derive layer chunk size from available memory.
+
+    Formula: chunk = floor(available_memory_gb * safety_factor / memory_per_layer_gb)
+
+    where memory_per_layer_gb ≈ num_texts × hidden_dim × bytes_per_float × overhead
+
+    The safety_factor (0.8) leaves headroom for other allocations.
+    The overhead (2.0) accounts for intermediate computations.
+
+    Returns:
+        Number of layers to process per chunk, minimum 1.
+    """
+    try:
+        from modelcypher.infrastructure.services.memory import MLXMemoryService
+
+        memory_service = MLXMemoryService()
+        stats = memory_service.get_memory_stats()
+        available_gb = stats.available_gb
+    except Exception:
+        # Fallback to conservative estimate if memory service unavailable
+        available_gb = 8.0  # Assume 8GB available
+
+    bytes_per_float = 4  # float32
+    overhead_factor = 2.0  # Buffer for intermediate computations
+    safety_factor = 0.8  # Leave 20% headroom
+
+    memory_per_layer_gb = (
+        num_texts * hidden_dim * bytes_per_float * overhead_factor
+    ) / (1024**3)
+
+    if memory_per_layer_gb < 1e-9:
+        return num_layers  # Process all at once
+
+    usable_memory_gb = available_gb * safety_factor
+    chunk_size = int(usable_memory_gb / memory_per_layer_gb)
+
+    return max(1, min(chunk_size, num_layers))
+
+
 @app.command("dimensionality-study")
 def atlas_dimensionality_study(
     ctx: typer.Context,
@@ -551,9 +595,9 @@ def atlas_dimensionality_study(
         "frechet", "--pooling", help="Token pooling: frechet or mean"
     ),
     layer_chunk_size: int = typer.Option(
-        4,
+        None,
         "--layer-chunk-size",
-        help="Layers per activation pass (higher = faster, more memory)",
+        help="Layers per activation pass (auto-derived from memory if not specified)",
     ),
 ) -> None:
     """Run atlas dimensionality across all layers and summarize structure."""
@@ -584,15 +628,33 @@ def atlas_dimensionality_study(
     if batch_size < 1:
         raise typer.BadParameter("Batch size must be >= 1.")
 
-    chunk_size = layer_chunk_size
-    if chunk_size <= 0:
-        chunk_size = len(resolved_layers)
-    chunk_size = min(chunk_size, len(resolved_layers))
-
     progress = AtlasProgress(logger)
     unique_texts = {
         text for text in (_normalize_probe_text(t) for t in probe_texts) if text is not None
     }
+
+    # Derive chunk_size from memory if not specified
+    if layer_chunk_size is None:
+        # Get hidden dimension from model config
+        hidden_dim = getattr(model, "hidden_size", None)
+        if hidden_dim is None:
+            hidden_dim = getattr(getattr(model, "config", None), "hidden_size", 2048)
+        chunk_size = _derive_layer_chunk_size(
+            num_layers=num_layers,
+            num_texts=len(unique_texts),
+            hidden_dim=hidden_dim,
+        )
+        logger.info(
+            "ATLAS: Auto-derived layer_chunk_size=%d from memory (hidden_dim=%d)",
+            chunk_size,
+            hidden_dim,
+        )
+    elif layer_chunk_size <= 0:
+        chunk_size = len(resolved_layers)
+    else:
+        chunk_size = layer_chunk_size
+    chunk_size = min(chunk_size, len(resolved_layers))
+
     logger.info(
         "ATLAS: %d probes, %d texts (%d unique), %d layers, chunk=%d",
         len(probes),

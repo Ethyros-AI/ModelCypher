@@ -64,7 +64,7 @@ def _context(ctx: typer.Context) -> CLIContext:
 def spectral_analysis(
     ctx: typer.Context,
     n_primes: int = typer.Option(1000, help="Number of primes to analyze"),
-    embedding_dim: int = typer.Option(20, help="Time-delay embedding dimension"),
+    embedding_dim: int = typer.Option(None, help="Time-delay embedding dimension (auto-derived via Takens' theorem if not specified)"),
     delay: int = typer.Option(1, help="Time delay for embedding"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="Save raw data to JSON"),
     seed: int = typer.Option(42, help="Random seed for baseline"),
@@ -90,7 +90,8 @@ def spectral_analysis(
     )
 
     typer.echo(f"Analyzing spectral geometry of {n_primes} primes...")
-    typer.echo(f"Embedding: dim={embedding_dim}, delay={delay}")
+    dim_str = str(embedding_dim) if embedding_dim is not None else "auto (Takens' theorem)"
+    typer.echo(f"Embedding: dim={dim_str}, delay={delay}")
 
     backend = get_default_backend()
     result = analyze_prime_geometry(
@@ -156,7 +157,7 @@ def spectral_analysis(
 def topology_analysis(
     ctx: typer.Context,
     n_primes: int = typer.Option(500, help="Number of primes (keep small for topology)"),
-    embedding_dim: int = typer.Option(10, help="Time-delay embedding dimension"),
+    embedding_dim: int = typer.Option(None, help="Time-delay embedding dimension (auto-derived via Takens' theorem if not specified)"),
 ) -> None:
     """Compute topological fingerprint of prime gap distribution.
 
@@ -173,6 +174,7 @@ def topology_analysis(
     context = _context(ctx)
 
     from modelcypher.core.domain.geometry.prime_geometry import (
+        _derive_embedding_dim,
         generate_primes,
         generate_random_gaps,
         time_delay_embedding,
@@ -187,6 +189,12 @@ def topology_analysis(
 
     # Generate primes and embed
     primes = generate_primes(n_primes, backend)
+
+    # Auto-derive embedding dimension if not specified
+    if embedding_dim is None:
+        embedding_dim = _derive_embedding_dim(primes.gaps, 1, backend)
+        typer.echo(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
+
     prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, backend=backend)
 
     # Random baseline
@@ -263,7 +271,7 @@ def topology_analysis(
 def curvature_analysis(
     ctx: typer.Context,
     n_primes: int = typer.Option(500, help="Number of primes"),
-    embedding_dim: int = typer.Option(10, help="Time-delay embedding dimension"),
+    embedding_dim: int = typer.Option(None, help="Time-delay embedding dimension (auto-derived via Takens' theorem if not specified)"),
 ) -> None:
     """Measure manifold curvature of prime gap distribution.
 
@@ -281,6 +289,7 @@ def curvature_analysis(
 
     from modelcypher.core.domain.geometry.manifold_curvature import OllivierRicci
     from modelcypher.core.domain.geometry.prime_geometry import (
+        _derive_embedding_dim,
         generate_primes,
         generate_random_gaps,
         time_delay_embedding,
@@ -292,6 +301,12 @@ def curvature_analysis(
 
     # Generate and embed
     primes = generate_primes(n_primes, backend)
+
+    # Auto-derive embedding dimension if not specified
+    if embedding_dim is None:
+        embedding_dim = _derive_embedding_dim(primes.gaps, 1, backend)
+        typer.echo(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
+
     prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, backend=backend)
 
     mean_gap = float(backend.mean(primes.gaps))
@@ -443,8 +458,8 @@ def parameter_sweep(
 def full_analysis(
     ctx: typer.Context,
     n_primes: int = typer.Option(1000, help="Number of primes to analyze"),
-    embedding_dim: int = typer.Option(20, help="Time-delay embedding dimension"),
-    n_bootstrap: int = typer.Option(50, help="Bootstrap samples for confidence intervals"),
+    embedding_dim: int = typer.Option(None, help="Time-delay embedding dimension (auto-derived via Takens' theorem if not specified)"),
+    n_bootstrap: int = typer.Option(None, help="Bootstrap samples for confidence intervals (auto-derived from sqrt(n_samples) if not specified)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="Save results to JSON"),
     seed: int = typer.Option(42, help="Random seed"),
 ) -> None:
@@ -470,8 +485,10 @@ def full_analysis(
     )
 
     typer.echo(f"Running comprehensive analysis on {n_primes} primes...")
-    typer.echo(f"Embedding dimension: {embedding_dim}")
-    typer.echo(f"Bootstrap samples: {n_bootstrap}")
+    dim_str = str(embedding_dim) if embedding_dim is not None else "auto (Takens' theorem)"
+    boot_str = str(n_bootstrap) if n_bootstrap is not None else "auto (sqrt formula)"
+    typer.echo(f"Embedding dimension: {dim_str}")
+    typer.echo(f"Bootstrap samples: {boot_str}")
     typer.echo("")
 
     backend = get_default_backend()
@@ -575,7 +592,7 @@ def scale_study(
 
     result = run_scale_sweep(
         scales=scales,
-        embedding_dim=20,
+        embedding_dim=None,  # Auto-derived per-scale via Takens' theorem
         delay=1,
         backend=backend,
         seed=seed,
@@ -691,7 +708,7 @@ def perturbation_study(
     results = run_perturbation_study(
         n_primes=n_primes,
         noise_levels=levels,
-        embedding_dim=20,
+        embedding_dim=None,  # Auto-derived via Takens' theorem
         backend=backend,
         seed=seed,
     )
