@@ -129,7 +129,11 @@ class TestMoralGeometryAnalyzer:
 
     def test_init(self):
         """MoralGeometryAnalyzer initializes."""
+        # Ensure moral concepts are registered
+        from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
+        register_default_atlas_inventories()
+
         backend = get_default_backend()
         analyzer = MoralGeometryAnalyzer(backend)
-        
+
         assert analyzer is not None

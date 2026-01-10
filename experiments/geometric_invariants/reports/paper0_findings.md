@@ -60,19 +60,23 @@ Critical for validating the thesis:
 |----------|-------|------------|--------|------------|
 | Small | LFM2-350M-MLX-bf16 | 1024 | 16 | 350M |
 | Small | Qwen2.5-Coder-0.5B-Instruct-bf16 | 896 | 24 | 500M |
+| Medium | Qwen2.5-Math-1.5B-bf16 | 1536 | 28 | 1.5B |
 | Medium | Qwen3-1.7B-MLX-bf16 | 2048 | 28 | 1.7B |
+| Medium | Qwen2.5-3B-Instruct-bf16 | 2048 | 36 | 3B |
 | Medium | granite-3b-code-instruct-128k-mlx | 2560 | 32 | 3B |
 
-### 3.2 Per-Model Geometry
+### 3.2 Per-Model Geometry (6-Model Battery)
 
-| Model | Intrinsic Dimension | ID/dim ratio | Curvature |
-|-------|---------------------|--------------|-----------|
-| LFM2-350M | 6.57 | 0.0064 | flat |
-| Qwen2.5-Coder-0.5B | 2.99 | 0.0033 | flat |
-| granite-3b | 4.21 | 0.0016 | flat |
-| Qwen3-1.7B | 4.71 | 0.0023 | flat |
+| Model | Hidden Dim | Intrinsic Dimension | ID/dim ratio | Curvature |
+|-------|------------|---------------------|--------------|-----------|
+| LFM2-350M | 1024 | 6.6 | 0.0064 | flat |
+| Qwen2.5-Coder-0.5B | 896 | 5.4 | 0.0060 | flat |
+| Qwen2.5-Math-1.5B | 1536 | 4.4 | 0.0029 | flat |
+| Qwen3-1.7B | 2048 | 5.9 | 0.0029 | flat |
+| Qwen2.5-3B | 2048 | 6.7 | 0.0033 | flat |
+| granite-3b | 2560 | 6.5 | 0.0025 | flat |
 
-**Observation**: Intrinsic dimension scales sub-linearly with model capacity. Smaller models have higher ID/dim ratios.
+**Observation**: Intrinsic dimension is ~5-7 across all models regardless of size. ID/dim ratio decreases with model capacity.
 
 ### 3.3 Layer-wise Intrinsic Dimension Profile
 
@@ -103,18 +107,39 @@ We measured ID at multiple network depths (0%, 25%, 50%, 75%, 100%) to understan
 
 The peak location varies: LFM2 peaks at 50%, Qwen at 75%. Deeper networks may have later peaks.
 
-### 3.4 Pairwise CKA (Cross-Family Comparison)
+### 3.4 Pairwise CKA (6-Model Cross-Family Comparison)
 
-| Model A | Model B | Geodesic CKA | Rank Status |
-|---------|---------|--------------|-------------|
-| LFM2-350M | Qwen2.5-Coder-0.5B | **0.9997** | rank-deficient |
-| LFM2-350M | granite-3b | **0.9999** | rank-deficient |
-| LFM2-350M | Qwen3-1.7B | **1.0000** | rank-deficient |
-| Qwen2.5-Coder-0.5B | Qwen3-1.7B | 0.9781 | rank-deficient |
-| Qwen2.5-Coder-0.5B | granite-3b | 0.7197 | rank-deficient |
-| granite-3b | Qwen3-1.7B | 0.7270 | rank-deficient |
+**LFM2 pairs (smallest model, n < d guarantees CKA ≈ 1.0):**
 
-**Key finding**: LFM2 (smallest model) achieves perfect alignment with ALL other models. The lower CKA values for larger model pairs reflect rank deficiency (n < d), not structural incompatibility.
+| Model A | Model B | Geodesic CKA |
+|---------|---------|--------------|
+| LFM2-350M | Qwen2.5-Coder-0.5B | 0.9990 |
+| LFM2-350M | Qwen2.5-Math-1.5B | 0.9995 |
+| LFM2-350M | Qwen3-1.7B | 0.9998 |
+| LFM2-350M | granite-3b | 0.9998 |
+| LFM2-350M | Qwen2.5-3B | 0.9998 |
+
+**Intra-family pairs (Qwen variants):**
+
+| Model A | Model B | Geodesic CKA |
+|---------|---------|--------------|
+| Qwen2.5-Coder-0.5B | Qwen2.5-Math-1.5B | 0.9774 |
+| Qwen2.5-Coder-0.5B | Qwen3-1.7B | 0.9801 |
+| Qwen2.5-Coder-0.5B | Qwen2.5-3B | 0.9843 |
+| Qwen2.5-Math-1.5B | Qwen3-1.7B | 0.9975 |
+| Qwen2.5-Math-1.5B | Qwen2.5-3B | 0.9988 |
+| Qwen3-1.7B | Qwen2.5-3B | 0.9938 |
+
+**Cross-family pairs (Qwen vs Granite):**
+
+| Model A | Model B | Geodesic CKA |
+|---------|---------|--------------|
+| Qwen2.5-Coder-0.5B | granite-3b | 0.7924 |
+| Qwen2.5-Math-1.5B | granite-3b | 0.8388 |
+| Qwen3-1.7B | granite-3b | 0.7711 |
+| Qwen2.5-3B | granite-3b | 0.7894 |
+
+**Observation**: LFM2 achieves CKA > 0.999 with all models (n < d regime). Qwen variants show CKA > 0.97 within family. Granite pairs show CKA ~0.77-0.84 (different training distribution).
 
 ---
 
@@ -130,27 +155,31 @@ The peak location varies: LFM2 peaks at 50%, Qwen at 75%. Deeper networks may ha
 **Results:**
 | Metric | Value |
 |--------|-------|
-| Train CKA (geodesic) | 0.8833 |
-| **Test CKA (geodesic)** | **0.8899** |
-| Random baseline test CKA | 0.1436 |
+| train_cka_linear | 0.9584 |
+| train_cka_geodesic | 0.8858 |
+| **test_cka_linear** | **0.7793** |
+| **test_cka_geodesic** | **0.8497** |
+| random_train_cka | 0.0205 |
+| random_test_cka | 0.0666 |
 
-**Observation**: test_cka_geodesic (0.8899) > train_cka_geodesic (0.8833). random_baseline_test_cka = 0.1436.
+**Observation**: |test_cka - train_cka| = 0.036 (geodesic). random_test_cka = 0.067.
 
 ### 4.2 granite-3b ↔ Qwen3-1.7B
 
 **Configuration:**
 - d_source = 2560, d_target = 2048
-- n_train = 3907 (full rank: rank(F) = 2048)
-- n_test = 689 (held-out)
+- n_train = 4187 (full rank: rank(F) = 2048)
+- n_test = 409 (held-out)
 
 **Results:**
 | Metric | Value |
 |--------|-------|
-| Train CKA (geodesic) | 0.7578 |
-| **Test CKA (geodesic)** | **0.7554** |
-| Random baseline test CKA | 0.0000 |
+| train_cka_geodesic | 0.7513 |
+| **test_cka_geodesic** | **0.7954** |
+| random_train_cka | 0.0000 |
+| random_test_cka | 0.0000 |
 
-**Observation**: |test_cka - train_cka| = 0.0024. random_baseline_test_cka = 0.0000.
+**Observation**: test_cka > train_cka by 0.044. random_test_cka = 0.000.
 
 ---
 
@@ -218,11 +247,13 @@ poetry run python experiments/geometric_invariants/generalization_test.py \
 
 ## Data Files
 
-- [cross_family_4models.json](../results/cross_family_4models.json)
-- [generalization_test_final.json](../results/generalization_test_final.json)
-- [generalization_test_granite_qwen.json](../results/generalization_test_granite_qwen.json)
+- [cross_family_6models_v2.json](../results/cross_family_6models_v2.json) - 6-model geometry + pairwise CKA
+- [generalization_lfm2_qwen_v2.json](../results/generalization_lfm2_qwen_v2.json) - LFM2 ↔ Qwen generalization
+- [generalization_granite_qwen3_v2.json](../results/generalization_granite_qwen3_v2.json) - granite ↔ Qwen3 generalization
+- [layerwise_id_lfm2.json](../results/layerwise_id_lfm2.json) - Layer-wise ID profile (LFM2)
+- [layerwise_id_qwen.json](../results/layerwise_id_qwen.json) - Layer-wise ID profile (Qwen)
 
 ---
 
-*Generated: 2026-01-10*
-*ModelCypher Geometric Invariants Research*
+*Generated: 2026-01-10 15:38 UTC*
+*ModelCypher Geometric Invariants Research v2*

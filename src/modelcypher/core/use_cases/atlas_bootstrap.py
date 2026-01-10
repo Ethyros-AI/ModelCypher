@@ -22,6 +22,7 @@ register them into the geometry registry at
 modelcypher.core.domain.geometry.atlas_registry.
 
 All probes are now loaded from JSON files in data/probes/.
+Moral concepts are loaded from the moral_concepts module.
 """
 
 from __future__ import annotations
@@ -33,7 +34,12 @@ def register_default_atlas_inventories() -> None:
     """Register default inventories from the agents domain.
 
     All probes are loaded from the unified JSON-based probe system.
+    Specialized inventories (moral, gates) are registered separately.
     """
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+    from modelcypher.core.domain.agents.moral_concepts import MoralConceptInventory
+    from modelcypher.core.domain.agents.gate_inventory import ComputationalGateInventory
 
     atlas_registry.register_atlas_probes(UnifiedAtlasInventory.all_probes())
+    atlas_registry.register_moral_concepts(MoralConceptInventory.all_concepts())
+    atlas_registry.register_gate_inventory(ComputationalGateInventory.all_gates())

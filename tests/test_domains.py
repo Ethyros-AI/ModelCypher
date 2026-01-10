@@ -191,17 +191,17 @@ class TestUnifiedAtlasIntegration:
 
         assert UnifiedDomain is AtlasDomain
 
-    def test_unified_atlas_domain_mappings(self):
-        """Unified atlas domain mappings should use canonical AtlasDomain."""
+    def test_unified_atlas_probes_have_valid_domains(self):
+        """Unified atlas probes should have valid AtlasDomain values."""
         from modelcypher.core.domain.agents.unified_atlas import (
-            _SEQUENCE_DOMAIN_MAP,
+            UnifiedAtlasInventory,
             AtlasDomain as UnifiedDomain,
         )
 
-        # All values in the mapping should be AtlasDomain instances
-        for value in _SEQUENCE_DOMAIN_MAP.values():
-            assert isinstance(value, UnifiedDomain)
-            assert isinstance(value, AtlasDomain)
+        # All probes should have valid AtlasDomain instances
+        for probe in UnifiedAtlasInventory.all_probes()[:100]:  # Check first 100
+            assert isinstance(probe.domain, UnifiedDomain)
+            assert isinstance(probe.domain, AtlasDomain)
 
 
 class TestListFunctions:

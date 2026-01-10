@@ -1,0 +1,60 @@
+{
+  "experiment_id": "geom_20260110_152653",
+  "timestamp": "2026-01-10T15:26:53.554642",
+  "hypothesis": "All LLMs encode the same invariant geometric shape",
+  "model_geometries": [
+    {
+      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "model_name": "Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "hidden_dim": 896,
+      "num_layers": 24,
+      "layer_measured": 12,
+      "intrinsic_dimension": 5.417290657423367,
+      "intrinsic_dimension_ci_lower": 4.717522291344866,
+      "intrinsic_dimension_ci_upper": 6.552852958358577,
+      "mean_sectional_curvature": 0.0,
+      "std_sectional_curvature": 0.0,
+      "curvature_sign": "flat",
+      "n_probes": 300,
+      "probe_source": "UnifiedAtlasInventory",
+      "measurement_time_seconds": 59.47187229199335
+    },
+    {
+      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-3B-Instruct-bf16",
+      "model_name": "Qwen2.5-Coder-3B-Instruct-bf16",
+      "hidden_dim": 2048,
+      "num_layers": 36,
+      "layer_measured": 18,
+      "intrinsic_dimension": 9.286203316253399,
+      "intrinsic_dimension_ci_lower": 7.670185129633502,
+      "intrinsic_dimension_ci_upper": 11.528418760521095,
+      "mean_sectional_curvature": 0.0,
+      "std_sectional_curvature": 0.0,
+      "curvature_sign": "flat",
+      "n_probes": 300,
+      "probe_source": "UnifiedAtlasInventory",
+      "measurement_time_seconds": 248.91063158301404
+    }
+  ],
+  "pairwise_alignments": [
+    {
+      "model_a": "Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "model_b": "Qwen2.5-Coder-3B-Instruct-bf16",
+      "linear_cka_raw": 0.7389919320417073,
+      "linear_cka_aligned": 0.9229017756904423,
+      "geodesic_cka_raw": 0.7694511629061224,
+      "geodesic_cka_aligned": 0.810903243795135,
+      "n_samples": 500,
+      "rank_bound": 500,
+      "is_full_rank": false,
+      "alignment_time_seconds": 14.067337957996642
+    }
+  ],
+  "summary": {
+    "n_models": 2,
+    "intrinsic_dimension_mean": 7.351746986838383,
+    "intrinsic_dimension_std": 1.934456329415016,
+    "curvature_mean": 0.0,
+    "mean_geodesic_cka": 0.810903243795135
+  }
+}
