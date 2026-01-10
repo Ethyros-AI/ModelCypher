@@ -181,6 +181,6 @@ These are raw measurements; interpret relative to baselines from similar model p
 
 ## Related Work
 
-- Pennec (2006): Intrinsic Statistics on Riemannian Manifolds
-- Belkin & Niyogi (2003): Laplacian Eigenmaps
-- Ainsworth et al. (2022): Git Re-Basin
+- Pennec (2006): Intrinsic Statistics on Riemannian Manifolds. [DOI:10.1007/s10851-006-6228-4](https://doi.org/10.1007/s10851-006-6228-4)
+- Belkin & Niyogi (2003): Laplacian Eigenmaps. *NIPS 2003*. [Proceedings](https://proceedings.neurips.cc/paper/2003/file/7b24b50ad12be8d3bef7e3eda2b5a5f3-Paper.pdf)
+- [Ainsworth et al. (2023)](../references/arxiv/Ainsworth_2023_Git_ReBasin.pdf): Git Re-Basin. *ICLR 2023*. [arXiv:2209.04836](https://arxiv.org/abs/2209.04836)

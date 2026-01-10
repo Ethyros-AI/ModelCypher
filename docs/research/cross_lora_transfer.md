@@ -38,4 +38,4 @@ Interpret roughness relative to baseline observations for similar model pairs.
 
 ## References
 
--   **Transferring Linear Features Across Language Models With Model Stitching. arXiv:2506.06609. (2025).**
+-   **[Transferring Linear Features Across Language Models With Model Stitching](../references/arxiv/Model_Stitching_2025.pdf)**. arXiv:2506.06609. (2025).

@@ -153,9 +153,9 @@ if topology is not None:
 
 4. **Bridle, J. S.** (1990). "Training Stochastic Model Recognition Algorithms as Networks can Lead to Maximum Mutual Information Estimation of Parameters." — Softmax as probability distribution.
 
-5. **arXiv:2407.21092** — "Entropy, Thermodynamics and the Geometrization of the Language Model" — Theoretical framework for LLM thermodynamics.
+5. **[Yang, G. (2024)](../references/arxiv/Yang_2024_Entropy_Thermodynamics_Geometrization_Language_Model.pdf)**. "Entropy, Thermodynamics and the Geometrization of the Language Model." [arXiv:2407.21092](https://arxiv.org/abs/2407.21092) — Theoretical framework for LLM thermodynamics.
 
-6. **arXiv:2501.08145** — "Refusal Behavior in Large Language Models: A Nonlinear Perspective" — Empirical analysis of refusal dynamics.
+6. **[Hildebrandt et al. (2025)](../references/arxiv/Hildebrandt_2025_Refusal_Behavior_Large_Language_Models_Nonlinear.pdf)**. "Refusal Behavior in Large Language Models: A Nonlinear Perspective." [arXiv:2501.08145](https://arxiv.org/abs/2501.08145) — Empirical analysis of refusal dynamics.
 
 ## 9. What We Don't Do
 

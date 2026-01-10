@@ -1,10 +1,15 @@
 # Geometric Zipper: MLP Block Consistency in Model Merging
 
+> **Status**: ARCHIVED - Historical Reference
+> The permute stage and permutation_aligner.py have been removed from the codebase
+> as of 2026-01. This document is retained for research context only.
+> Current merge uses GRAM_TRANSPORT projection (see `merge/stages/transplant.py`).
+
 ## Overview
 
-The "geometric zipper" is the rule that each MLP block applies a consistent permutation across its up/gate/down projections, preserving functional equivalence while re-basing neuron orderings.
+The "geometric zipper" was a rule that each MLP block applies a consistent permutation across its up/gate/down projections, preserving functional equivalence while re-basing neuron orderings.
 
-This document describes the implementation in `src/modelcypher/core/use_cases/merge/stages/permute.py` and `src/modelcypher/core/domain/geometry/permutation_aligner.py`, based on the Git Re-Basin algorithm.
+This document described a former implementation based on the Git Re-Basin algorithm. The permutation alignment stage was removed in favor of GRAM_TRANSPORT projection in the transplant stage.
 
 ---
 
@@ -142,13 +147,13 @@ See:
 
 ## References
 
-1. **Ainsworth, S.K., Hayase, J., & Srinivasa, S.S. (2023)**. Git Re-Basin: Merging Models modulo Permutation Symmetries. *ICLR 2023*. [arXiv:2209.04836](https://arxiv.org/abs/2209.04836)
+1. **[Ainsworth, S.K., Hayase, J., & Srinivasa, S.S. (2023)](../references/arxiv/Ainsworth_2023_Git_ReBasin.pdf)**. Git Re-Basin: Merging Models modulo Permutation Symmetries. *ICLR 2023*. [arXiv:2209.04836](https://arxiv.org/abs/2209.04836)
 
-2. **Singh, S.P., & Jaggi, M. (2020)**. Model Fusion via Optimal Transport. *NeurIPS 2020*. (Related: soft neuron alignment via OT)
+2. **[Singh, S.P., & Jaggi, M. (2020)](../references/arxiv/Singh_2019_Model_Fusion_Optimal_Transport.pdf)**. Model Fusion via Optimal Transport. *NeurIPS 2020*. (Related: soft neuron alignment via OT)
 
-3. **Ilharco, G., et al. (2023)**. Editing Models with Task Arithmetic. *ICLR 2023*. (Task vectors as separable geometric structures)
+3. **[Ilharco, G., et al. (2023)](../references/arxiv/Ilharco_2023_Task_Arithmetic.pdf)**. Editing Models with Task Arithmetic. *ICLR 2023*. (Task vectors as separable geometric structures)
 
-4. **Yadav, P., et al. (2023)**. TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. (Sign consensus for merge stability)
+4. **[Yadav, P., et al. (2023)](../references/arxiv/Yadav_2023_TIES_Merging.pdf)**. TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. (Sign consensus for merge stability)
 
 ---
 

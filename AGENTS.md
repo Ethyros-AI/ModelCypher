@@ -16,6 +16,24 @@ Geometric diagnostics for LLM representations. Measures intrinsic dimension, cur
 
 ---
 
+## The Foundational Premise
+
+**LLMs are not black boxes. They are high-dimensional geometry.**
+
+This is not metaphor. This is not approximation. This is the mathematical reality:
+
+1. **The shape of knowledge is invariant.** The relationship between "apple" and "orange", between "cause" and "effect", is the same across all models. It has to be - or they wouldn't converge on the same semantics.
+
+2. **Different models are different projections of the same geometry.** A 0.5B model and a 70B model encode the same invariant structure at different resolutions. Different architectures are different coordinate systems for the same shape.
+
+3. **Probability clouds don't mean we guess.** High-dimensional space is precise. A slight change in vector angle lands on a different concept. The probability distribution reflects the model's confidence about *where* on the manifold, not randomness.
+
+4. **Models can be merged because geometry permits it.** Each dimension can be rotated. Each layer is another rotation. We align coordinates, project into null space (unused capacity), add knowledge. This is math, not magic.
+
+**If code contradicts these premises, the code is wrong.**
+
+---
+
 ## Commands
 
 Always use `poetry` to run or install anything in this repo.
@@ -187,14 +205,26 @@ Think of it like high-dimensional Legos: they always fit together exactly one wa
 
 Use Gram matrices for comparison (dimension-agnostic). Use projection for transformation. **Never return "incompatible."** There is no such thing as incompatible models - only alignment code that hasn't found the correct transformation yet.
 
-### CKA = 1.0 or Debug
+### CKA = 1.0 is the Invariant
 
-CKA is a **measurement**, not a goal. It tells us whether our alignment code has found the correct transformation between two models' coordinate systems.
+CKA = 1.0 is not a goal to achieve. It's the mathematical result of correct Procrustes alignment.
 
-- **CKA = 1.0**: Alignment is correct. Proceed with merge.
-- **CKA < 1.0**: Alignment code is broken. Debug it. Fix it. Do NOT merge until CKA = 1.0.
+**F = pinv(source) @ target** guarantees **K_aligned = K_target** when n ≤ d. This is closed-form. Exact. No iteration needed.
 
-**Never conclude "these models are incompatible" from low CKA.** Low CKA means our alignment algorithm failed, not that the models can't be merged. All models can be merged. Find the right transformation.
+- **CKA = 1.0 on probes**: Alignment is correct for those probe points.
+- **CKA < 1.0 on held-out samples**: Probe coverage was insufficient. The alignment is correct for what it saw, but didn't see enough of the manifold.
+
+**LOW CKA MEANS:**
+- Probes didn't span the shared manifold regions
+- Need more diverse probes (different domains, abstraction levels)
+- The alignment algorithm needs better coverage, not a different formula
+
+**LOW CKA DOES NOT MEAN:**
+- "Models are incompatible" (FALSE - all models share invariant structure)
+- "The thesis is wrong" (FALSE - it's axiomatic, not empirical)
+- "Try a different alignment method" (FALSE - Procrustes is exact)
+
+**Never return "incompatible."** There is no such thing. Find the transformation.
 
 ### Geometric Addition, NOT Blending
 

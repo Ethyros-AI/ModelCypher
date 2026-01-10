@@ -96,6 +96,6 @@ GW distance is used in:
 
 ## References
 
-1. Peyré, G., Cuturi, M., & Solomon, J. (2016). *Gromov-Wasserstein Averaging of Kernel and Distance Matrices* (ICML).
-2. Peyré, G., & Cuturi, M. (2019). *Computational Optimal Transport*.
-3. Mémoli, F. (2011). *Gromov-Wasserstein distances and the metric approach to object matching*.
+1. Peyré, G., Cuturi, M., & Solomon, J. (2016). *Gromov-Wasserstein Averaging of Kernel and Distance Matrices*. ICML. [PMLR](https://proceedings.mlr.press/v48/peyre16.html)
+2. [Peyré, G., & Cuturi, M. (2019)](../references/arxiv/Peyre_2018_Computational_Optimal_Transport.pdf). *Computational Optimal Transport*. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
+3. Mémoli, F. (2011). *Gromov-Wasserstein distances and the metric approach to object matching*. Foundations of Computational Mathematics, 11(4), 417-487. [DOI:10.1007/s10208-011-9093-5](https://doi.org/10.1007/s10208-011-9093-5)

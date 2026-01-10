@@ -24,7 +24,7 @@ One-sentence thesis, scope, and verification command for each paper. Results are
 
 **Verify:**
 ```bash
-mc geometry primes compare ./model-A ./model-B --output text
+poetry run mc geometry primes compare ./model-A ./model-B --output text
 ```
 
 → [Full Paper](paper-1-invariant-semantic-structure.md)
@@ -39,7 +39,7 @@ mc geometry primes compare ./model-A ./model-B --output text
 
 **Verify:**
 ```bash
-mc entropy dual-path --model ./tuned --base ./base --prompt "your prompt" --output text
+poetry run mc entropy dual-path --model ./tuned --base ./base --prompt "your prompt" --output text
 ```
 
 → [Full Paper](paper-2-entropy-safety-signal.md)
@@ -54,7 +54,7 @@ mc entropy dual-path --model ./tuned --base ./base --prompt "your prompt" --outp
 
 **Verify:**
 ```bash
-mc geometry interference predict --source ./qwen --target ./llama --output text
+poetry run mc geometry interference predict --source ./qwen --target ./llama --output text
 ```
 
 → [Full Paper](paper-3-cross-architecture-transfer.md)
@@ -70,7 +70,7 @@ mc geometry interference predict --source ./qwen --target ./llama --output text
 **Verify:**
 ```bash
 poetry run pytest
-mc --help
+poetry run mc --help
 ```
 
 → [Full Paper](paper-4-modelcypher-toolkit.md)
@@ -85,7 +85,7 @@ mc --help
 
 **Verify:**
 ```bash
-mc geometry atlas dimensionality-study /path/to/model --layer 0 --layer 1 --layer 2 --output json
+poetry run mc geometry atlas dimensionality-study /path/to/model --layer 0 --layer 1 --layer 2 --output json
 ```
 
 → [Full Paper](paper-5-semantic-highway.md)
