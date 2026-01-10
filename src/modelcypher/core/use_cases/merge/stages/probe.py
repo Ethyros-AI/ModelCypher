@@ -1444,8 +1444,10 @@ def stage_probe(
             target_weights=target_weights,
             extract_layer_index_fn=extract_layer_index_fn,
             activation_provider=activation_provider,
+            activation_store=activation_store,
             source_path=source_path,
             target_path=target_path,
+            backend=backend,
             checkpoint_dir=Path(checkpoint_dir) if checkpoint_dir else None,
             probe_mode=probe_mode,
         )
@@ -1469,6 +1471,7 @@ def _probe_precise(
     target_weights: dict[str, Any],
     extract_layer_index_fn: Callable[[str], int | None],
     activation_provider: "ActivationProvider",
+    activation_store: "ActivationStore | None" = None,
     source_path: str = "",
     target_path: str = "",
     backend: "Backend | None" = None,
@@ -1482,6 +1485,7 @@ def _probe_precise(
                     "token" uses vocabulary tokens as probes (49K+) for 100% dimension coverage.
         checkpoint_dir: If provided, saves progress periodically and allows
             resume from last checkpoint on restart.
+        activation_store: Required if checkpoint_dir is provided.
     """
     b = backend or get_default_backend()
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory

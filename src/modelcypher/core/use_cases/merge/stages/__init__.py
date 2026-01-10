@@ -39,6 +39,7 @@ References:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from .probe import (
@@ -61,6 +62,8 @@ from .validate import (
 )
 
 if TYPE_CHECKING:
+    from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 def stage_probe(
@@ -75,6 +78,11 @@ def stage_probe(
     target_path: str = "",
     extract_layer_index_fn: Callable[[str], int | None],
     probe_mode: str = "atlas",
+    activation_provider: "ActivationProvider | None" = None,
+    activation_store: "ActivationStore | None" = None,
+    collect_activations_fn: Callable | None = None,
+    backend: "Backend | None" = None,
+    checkpoint_dir: Path | str | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -96,7 +104,6 @@ def stage_probe(
     dict[int, int] | None,  # layer_mapping
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
-    # collect_activations_fn=None lets probe.py auto-detect ActivationProvider
     result = stage_probe_impl(
         source_weights=source_weights,
         target_weights=target_weights,
@@ -107,7 +114,11 @@ def stage_probe(
         target_tokenizer=target_tokenizer,
         source_path=source_path,
         target_path=target_path,
-        collect_activations_fn=None,
+        collect_activations_fn=collect_activations_fn,
+        activation_provider=activation_provider,
+        activation_store=activation_store,
+        backend=backend,
+        checkpoint_dir=checkpoint_dir,
         probe_mode=probe_mode,
     )
 
