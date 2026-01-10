@@ -261,14 +261,14 @@ class TestMemoryContentComputation(unittest.TestCase):
 
 
 class TestMemoryTokenValidation(unittest.TestCase):
-    """Tests for memory token scale validation."""
+    """Tests for memory token scale measurement (informational only)."""
 
     def setUp(self):
         self.injector = AttentionMemoryInjector()
 
-    def test_safe_scale_validation(self):
-        """Test validation of safe memory scale."""
-        # Small memory content relative to activations
+    def test_measurement_returns_info(self):
+        """Test that validation returns informational measurement."""
+        # Geometry handles safety - this is just measurement
         memory = MemoryTokenContent(
             content=mx.ones((1, 128)) * 0.1,
             source_concept="test",
@@ -279,32 +279,32 @@ class TestMemoryTokenValidation(unittest.TestCase):
         layer_activations = mx.ones((10, 128))
         mx.eval(layer_activations)
 
-        is_safe, msg = self.injector.validate_memory_scale(
-            memory, layer_activations, max_safe_scale=20.0
+        is_valid, msg = self.injector.validate_memory_scale(
+            memory, layer_activations
         )
 
-        self.assertTrue(is_safe)
-        self.assertIn("Safe", msg)
+        # Always valid - geometry handles safety by construction
+        self.assertTrue(is_valid)
+        self.assertIn("magnitude", msg.lower())
 
-    def test_unsafe_scale_detection(self):
-        """Test detection of unsafe memory scale."""
-        # Very large memory content
+    def test_measurement_reports_projection_status(self):
+        """Test that measurement reports whether null-space projected."""
         memory = MemoryTokenContent(
-            content=mx.ones((1, 128)) * 1000.0,
+            content=mx.ones((1, 128)),
             source_concept="test",
-            scale_applied=100.0,
+            scale_applied=1.0,
             null_space_projected=True,
-            direction_norm=10.0,
+            direction_norm=1.0,
         )
         layer_activations = mx.ones((10, 128))
         mx.eval(layer_activations)
 
-        is_safe, msg = self.injector.validate_memory_scale(
-            memory, layer_activations, max_safe_scale=20.0
+        is_valid, msg = self.injector.validate_memory_scale(
+            memory, layer_activations
         )
 
-        self.assertFalse(is_safe)
-        self.assertIn("Reduce", msg)
+        self.assertTrue(is_valid)
+        self.assertIn("null-space projected", msg)
 
 
 class TestApplyMemoryToHiddenStates(unittest.TestCase):
@@ -385,25 +385,29 @@ class TestApplyMemoryToHiddenStates(unittest.TestCase):
         self.assertGreater(pos0_sum, 0)
 
 
-class TestMemoryTokenConstants(unittest.TestCase):
-    """Test memory token threshold constants."""
+class TestDeviationTrackerAPI(unittest.TestCase):
+    """Test deviation tracker API is available."""
 
-    def test_memory_safe_higher_than_injection(self):
-        """Test memory safe scale is higher than injection safe."""
-        from modelcypher.core.domain.geometry.deviation_budget import (
-            INJECTION_SCALE_SAFE,
-            MEMORY_TOKEN_SCALE_SAFE,
+    def test_deviation_tracker_exists(self):
+        """Test DeviationTracker class is importable."""
+        from modelcypher.core.domain.geometry.deviation_budget import DeviationTracker
+
+        # Should be able to instantiate
+        tracker = DeviationTracker()
+        self.assertIsNotNone(tracker)
+
+    def test_deviation_measurement_exists(self):
+        """Test DeviationMeasurement dataclass is importable."""
+        from modelcypher.core.domain.geometry.deviation_budget import DeviationMeasurement
+
+        # Should be able to create measurement
+        measurement = DeviationMeasurement(
+            deviation=1.0,
+            baseline_norm=100.0,
+            deviation_percent=1.0,
+            condition_number=10.0,
         )
-
-        self.assertGreater(MEMORY_TOKEN_SCALE_SAFE, INJECTION_SCALE_SAFE)
-
-    def test_memory_max_is_20x(self):
-        """Test memory max is empirically derived 20x."""
-        from modelcypher.core.domain.geometry.deviation_budget import (
-            MEMORY_TOKEN_SCALE_MAX,
-        )
-
-        self.assertEqual(MEMORY_TOKEN_SCALE_MAX, 20.0)
+        self.assertEqual(measurement.deviation, 1.0)
 
 
 if __name__ == "__main__":

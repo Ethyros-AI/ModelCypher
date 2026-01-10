@@ -187,10 +187,11 @@ _ATTR_TO_MODULE = {
     # Density estimation for visualization
     "DensityEstimator": ("density_estimator", "DensityEstimator"),
     "DensityResult": ("density_estimator", "DensityResult"),
-    # Deviation budget tracking (unified for merge + multi-modal injection)
+    # Deviation tracking (unified for merge + multi-modal injection)
+    # Note: DeviationBudget is an alias for DeviationTracker (backward compat)
     "DeviationBudget": ("deviation_budget", "DeviationBudget"),
-    "BudgetStatus": ("deviation_budget", "BudgetStatus"),
-    "ScaleRecommendation": ("deviation_budget", "ScaleRecommendation"),
+    "DeviationTracker": ("deviation_budget", "DeviationTracker"),
+    "DeviationMeasurement": ("deviation_budget", "DeviationMeasurement"),
     # Metaphor geometry
     "MetaphorTrajectory": ("metaphor_trajectory", "MetaphorTrajectory"),
     "MetaphorTrajectoryPoint": ("metaphor_trajectory", "MetaphorTrajectoryPoint"),

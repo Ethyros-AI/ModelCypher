@@ -44,6 +44,7 @@ def _ensure_mlx() -> tuple[Any, Any]:
 def load_model_for_training(
     model_path: str,
     lora_settings: "LoRASettings | None" = None,
+    adapter_path: str | None = None,
 ) -> tuple["nn.Module", Any]:
     """Load model and tokenizer for training.
 
@@ -53,6 +54,8 @@ def load_model_for_training(
         Path to model directory.
     lora_settings : LoRASettings or None
         Optional LoRA settings for adapter training.
+    adapter_path : str or None
+        Optional adapter directory to load (e.g., LoRA weights).
 
     Returns
     -------
@@ -61,6 +64,9 @@ def load_model_for_training(
         Base weights are frozen if LoRA is used.
     """
     logger.info("Loading model from %s", model_path)
+    adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
+    if lora_settings is not None and adapter_dir is not None:
+        raise ValueError("Cannot combine lora_settings with adapter_path")
     _ensure_mlx()
 
     # Check model type from config
@@ -83,7 +89,18 @@ def load_model_for_training(
         try:
             from mlx_vlm import load as mlx_vlm_load
 
-            model, tokenizer = mlx_vlm_load(model_path)
+            if adapter_dir is not None:
+                try:
+                    model, tokenizer = mlx_vlm_load(
+                        model_path,
+                        adapter_path=str(adapter_dir),
+                    )
+                except TypeError as exc:
+                    raise RuntimeError(
+                        "mlx_vlm.load does not support adapter_path for multimodal models."
+                    ) from exc
+            else:
+                model, tokenizer = mlx_vlm_load(model_path)
 
             # Count parameters for logging
             from mlx.utils import tree_flatten
@@ -127,7 +144,18 @@ def load_model_for_training(
                 "mlx_lm is required to load text models for training. "
                 "Install with: pip install mlx-lm"
             ) from exc
-        model, tokenizer = _mlx_lm_load(model_path)
+        if adapter_dir is not None:
+            try:
+                model, tokenizer = _mlx_lm_load(
+                    model_path,
+                    adapter_path=str(adapter_dir),
+                )
+            except TypeError as exc:
+                raise RuntimeError(
+                    "mlx_lm.load does not support adapter_path for this model."
+                ) from exc
+        else:
+            model, tokenizer = _mlx_lm_load(model_path)
 
     if lora_settings is not None:
         # Freeze base weights first
@@ -158,6 +186,5 @@ def load_model_for_training(
         )
 
     return model, tokenizer
-
 
 

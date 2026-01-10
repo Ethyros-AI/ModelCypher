@@ -75,12 +75,14 @@ class JAXModelLoader(ModelLoaderPort):
         self,
         model_path: str,
         lora_config: "LoRASettings | None" = None,
+        adapter_path: str | None = None,
     ) -> tuple[Any, Any]:
         """Load model and tokenizer for training or inference.
 
         Args:
             model_path: Path to model directory
             lora_config: Optional LoRA settings to apply
+            adapter_path: Optional adapter directory to load
 
         Returns:
             Tuple of (model, tokenizer)
@@ -97,6 +99,9 @@ class JAXModelLoader(ModelLoaderPort):
             ) from exc
 
         logger.info("Loading model from %s with JAX backend...", model_path)
+        adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
+        if lora_config is not None and adapter_dir is not None:
+            raise ValueError("Cannot combine lora_config with adapter_path")
 
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -115,7 +120,29 @@ class JAXModelLoader(ModelLoaderPort):
                 trust_remote_code=True,
             )
 
-        if lora_config is not None:
+        if adapter_dir is not None:
+            try:
+                import peft
+            except ImportError as exc:
+                raise RuntimeError(
+                    "peft with Flax support is required to load adapters on JAX. "
+                    "Install: pip install peft"
+                ) from exc
+
+            flax_loader = getattr(peft, "FlaxPeftModelForCausalLM", None) or getattr(
+                peft, "FlaxPeftModel", None
+            )
+            if flax_loader is None:
+                raise RuntimeError(
+                    "peft does not expose a Flax adapter loader. "
+                    "Install a peft version with Flax support."
+                )
+            try:
+                model = flax_loader.from_pretrained(model, str(adapter_dir))
+            except TypeError:
+                model = flax_loader.from_pretrained(str(adapter_dir))
+            logger.info("Loaded adapter from %s", adapter_dir)
+        elif lora_config is not None:
             logger.warning("LoRA config provided but not yet implemented for JAX loader")
 
         return model, tokenizer

@@ -82,12 +82,14 @@ class CUDAModelLoader(ModelLoaderPort):
         self,
         model_path: str,
         lora_config: "LoRASettings | None" = None,
+        adapter_path: str | None = None,
     ) -> tuple[Any, Any]:
         """Load model and tokenizer for training or inference.
 
         Args:
             model_path: Path to model directory
             lora_config: Optional LoRA settings to apply
+            adapter_path: Optional adapter directory to load
 
         Returns:
             Tuple of (model, tokenizer)
@@ -103,6 +105,9 @@ class CUDAModelLoader(ModelLoaderPort):
             ) from exc
 
         logger.info("Loading model from %s with CUDA backend...", model_path)
+        adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
+        if lora_config is not None and adapter_dir is not None:
+            raise ValueError("Cannot combine lora_config with adapter_path")
 
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         model = AutoModelForCausalLM.from_pretrained(
@@ -112,7 +117,16 @@ class CUDAModelLoader(ModelLoaderPort):
             trust_remote_code=True,
         )
 
-        if lora_config is not None:
+        if adapter_dir is not None:
+            try:
+                from peft import PeftModel
+            except ImportError as exc:
+                raise RuntimeError(
+                    "peft is required to load adapters on CUDA. Install: pip install peft"
+                ) from exc
+            model = PeftModel.from_pretrained(model, str(adapter_dir))
+            logger.info("Loaded adapter from %s", adapter_dir)
+        elif lora_config is not None:
             logger.warning("LoRA config provided but not yet implemented for CUDA loader")
 
         return model, tokenizer

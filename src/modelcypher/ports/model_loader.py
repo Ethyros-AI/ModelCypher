@@ -43,16 +43,18 @@ class ModelLoaderPort(Protocol):
         self,
         model_path: str,
         lora_config: "LoRASettings | None" = None,
+        adapter_path: str | None = None,
     ) -> tuple[Any, Any]:
         """Load model and tokenizer for training or inference.
 
         Args:
             model_path: Path to model directory
             lora_config: Optional LoRA settings to apply
+            adapter_path: Optional adapter directory to load (e.g., LoRA)
 
         Returns:
             Tuple of (model, tokenizer) where:
-            - model: nn.Module with optional LoRA adapters applied
+            - model: nn.Module with optional adapter applied
             - tokenizer: Tokenizer compatible with the model
 
         Raises:

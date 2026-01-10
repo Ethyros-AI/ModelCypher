@@ -388,6 +388,23 @@ def _coerce_int_keys(mapping: dict | None) -> dict[int, Any] | None:
     return {int(k): v for k, v in mapping.items()}
 
 
+def _proportional_layer_index(
+    target_idx: int,
+    target_count: int,
+    source_count: int,
+) -> int:
+    """Map a target layer index to a source index by normalized depth."""
+    if target_count <= 1 or source_count <= 1:
+        return 0
+    ratio = target_idx / (target_count - 1)
+    mapped = int(round(ratio * (source_count - 1)))
+    if mapped < 0:
+        return 0
+    if mapped >= source_count:
+        return source_count - 1
+    return mapped
+
+
 def _load_probe_result_cache(
     cache_key: str,
     probe_ids: list[str],
@@ -1325,7 +1342,7 @@ class ProbeResult:
     v_transforms: dict[int, list[list[float]]] | None = None
     # Intermediate-space transforms: for MLP gate/up/down projections (pre-computed)
     intermediate_transforms: dict[int, list[list[float]]] | None = None
-    # Layer mapping: target_layer -> source_layer (from DP alignment)
+    # Layer mapping: target_layer -> source_layer (from proportional depth mapping)
     layer_mapping: dict[int, int] | None = None
 
 
@@ -2481,13 +2498,8 @@ def _probe_precise(
             logger.warning("Failed to build IntersectionMap: %s", e)
             intersection_map_obj = None
 
-    # Compute CKA matrix for ALL source-target layer pairs, then use DP alignment
-    # to find the correct layer correspondence. Layer indices don't match across
-    # architectures - we must find the geometric correspondence.
-    #
-    # CRITICAL: Use GramAligner to find the transformation that achieves CKA = 1.0.
-    # Raw CKA will be < 1.0 because coordinate systems differ. GramAligner FINDS
-    # the correct transformation. If it can't achieve CKA = 1.0, the algorithm is broken.
+    # Align layers by proportional depth, then solve closed-form alignment per pair.
+    # CKA = 1.0 is invariant; we do not use CKA as a selector.
     layer_mapping: dict[int, int] = {}  # target_layer -> source_layer
     feature_transforms: dict[int, Any] = {}  # target_layer -> {src_layer: GPU array}
     scale_ratios: dict[int, float] = {}  # EXACT scale factor per layer: ||target|| / ||source @ F||
@@ -2499,22 +2511,6 @@ def _probe_precise(
     rbf_consistency_checked = False
     rbf_consistency_hidden: dict[str, float] | None = None
 
-    # =========================================================================
-    # BUILD GPU-RESIDENT PROBE CACHE
-    # Precompute Gram matrices, SVDs, effective ranks ONCE on GPU.
-    # This eliminates redundant computation during alignment.
-    # =========================================================================
-    probe_cache: ProbeCache | None = None
-    if source_layer_activations and target_layer_activations:
-        logger.info("PROBE: Building GPU-resident cache from %d probes...", probes_processed)
-        probe_cache = ProbeCache.from_activations(
-            source_acts=source_layer_activations,
-            target_acts=target_layer_activations,
-            backend=b,
-        )
-        # Compute layer similarity matrix for geometric ordering
-        probe_cache.compute_layer_similarity_matrix(b)
-
     if source_layer_activations and target_layer_activations:
         source_layers = sorted(source_layer_activations.keys())
         target_layers = sorted(target_layer_activations.keys())
@@ -2522,339 +2518,21 @@ def _probe_precise(
         n_target = len(target_layers)
 
         if n_source > 0 and n_target > 0:
-            # Pre-detect degenerate source layers (RBF Gram produces NaN)
-            # These will be marked with -999 penalty so Hungarian skips them
-            degenerate_sources: set[int] = set()
-            degenerate_targets: set[int] = set()  # Also check targets
-
-            logger.info("PROBE: Pre-detecting degenerate source layers...")
-            from modelcypher.core.domain.geometry.cka import rbf_gram_matrix
-
-            for src_idx, src_layer in enumerate(source_layers):
-                src_stacked = source_layer_activations.get(src_layer)
-                if src_stacked is None:
-                    degenerate_sources.add(src_idx)
-                    continue
-                # Activations are pre-stacked [n_probes, hidden_dim]
-                shape = b.shape(src_stacked)
-                n_probes = int(shape[0]) if len(shape) >= 1 else 0
-                if n_probes < 2:
-                    degenerate_sources.add(src_idx)
-                    continue
-                try:
-                    # Ensure 2D shape before slicing
-                    if len(shape) == 1:
-                        src_stacked = b.reshape(src_stacked, (1, -1))
-                        b.eval(src_stacked)
-                        shape = b.shape(src_stacked)
-                        n_probes = int(shape[0])
-
-                    # Skip if we don't have enough samples after reshape
-                    if n_probes < 2:
-                        degenerate_sources.add(src_idx)
-                        continue
-
-                    # Test RBF Gram matrix for degeneracy (same as GramAligner uses)
-                    # Use first 50 probes for quick check
-                    test_stacked = src_stacked[:min(n_probes, 50), :]
-                    test_stacked = b.astype(test_stacked, "float32")
-                    b.eval(test_stacked)
-
-                    # Compute RBF Gram and check for NaN
-                    gram = rbf_gram_matrix(test_stacked, b)
-                    gram_sum = b.sum(gram)
-                    b.eval(gram_sum)
-                    sum_val = float(b.to_scalar(gram_sum))
-
-                    if sum_val != sum_val:  # NaN check
-                        degenerate_sources.add(src_idx)
-                        logger.warning("PROBE: Source layer %d (idx %d) has degenerate RBF Gram",
-                                     src_layer, src_idx)
-                except Exception as e:
-                    degenerate_sources.add(src_idx)
-                    logger.warning("PROBE: Source layer %d (idx %d) failed Gram check: %s",
-                                 src_layer, src_idx, str(e))
-
-            if degenerate_sources:
-                logger.info("PROBE: Found %d degenerate source layers: %s",
-                          len(degenerate_sources), list(degenerate_sources))
-            
-            # Also check target layers for degeneracy
-            logger.info("PROBE: Pre-detecting degenerate target layers...")
-            for tgt_idx, tgt_layer in enumerate(target_layers):
-                tgt_stacked = target_layer_activations.get(tgt_layer)
-                if tgt_stacked is None:
-                    degenerate_targets.add(tgt_idx)
-                    continue
-                # Activations are now pre-stacked [n_probes, hidden_dim]
-                shape = b.shape(tgt_stacked)
-                n_probes = int(shape[0]) if len(shape) >= 1 else 0
-                if n_probes < 2:
-                    degenerate_targets.add(tgt_idx)
-                    continue
-                try:
-                    # Ensure 2D shape before slicing
-                    if len(shape) == 1:
-                        tgt_stacked = b.reshape(tgt_stacked, (1, -1))
-                        b.eval(tgt_stacked)
-                        shape = b.shape(tgt_stacked)
-                        n_probes = int(shape[0])
-                    
-                    # Use first 50 probes for quick check
-                    test_stacked = tgt_stacked[:min(n_probes, 50), :]
-                    test_stacked = b.astype(test_stacked, "float32")
-                    b.eval(test_stacked)
-                    
-                    gram = rbf_gram_matrix(test_stacked, b)
-                    gram_sum = b.sum(gram)
-                    b.eval(gram_sum)
-                    sum_val = float(b.to_scalar(gram_sum))
-                    
-                    if sum_val != sum_val:  # NaN check
-                        degenerate_targets.add(tgt_idx)
-                        logger.warning("PROBE: Target layer %d (idx %d) has degenerate RBF Gram", 
-                                     tgt_layer, tgt_idx)
-                except Exception as e:
-                    degenerate_targets.add(tgt_idx)
-                    logger.warning("PROBE: Target layer %d (idx %d) failed Gram check: %s", 
-                                 tgt_layer, tgt_idx, str(e))
-            
-            if degenerate_targets:
-                logger.info("PROBE: Found %d degenerate target layers: %s", 
-                          len(degenerate_targets), 
-                          [target_layers[t] for t in degenerate_targets])
-            
-            # OPTIMIZATION: Use pre-computed Gram matrices from ProbeCache
-            # instead of recomputing them. ProbeCache already computed all target Grams.
-            from modelcypher.core.domain.geometry.cka import rbf_gram_matrix, compute_cka_from_grams
-            
-            target_grams: dict[int, tuple["Array", int]] = {}  # layer -> (gram, n_samples)
-            
-            if probe_cache is not None:
-                # Use cached Grams from ProbeCache (FAST PATH)
-                logger.info("PROBE: Using %d cached target Gram matrices from ProbeCache", 
-                            len(probe_cache.target_grams))
-                for tgt_layer, cached_gram in probe_cache.target_grams.items():
-                    if tgt_layer in [target_layers[t] for t in degenerate_targets]:
-                        continue
-                    n_samples = int(b.shape(cached_gram)[0])
-                    target_grams[tgt_layer] = (cached_gram, n_samples)
-            else:
-                # Fallback: Compute Gram matrices (SLOW PATH - only if cache unavailable)
-                logger.info("PROBE: Pre-computing target Gram matrices for CKA matrix...")
-                for tgt_idx, tgt_layer in enumerate(target_layers):
-                    if tgt_idx in degenerate_targets:
-                        continue
-                    tgt_list = target_layer_activations[tgt_layer]
-                    if len(tgt_list) < 2:
-                        continue
-                    try:
-                        tgt_stacked = b.stack(tgt_list, axis=0)
-                        tgt_stacked = b.astype(tgt_stacked, "float32")
-                        b.eval(tgt_stacked)
-                        tgt_gram = rbf_gram_matrix(tgt_stacked, b)
-                        b.eval(tgt_gram)
-                        target_grams[tgt_layer] = (tgt_gram, len(tgt_list))
-                    except Exception:
-                        pass  # Skip degenerate targets
-            
-            logger.info("PROBE: Using %d target Gram matrices", len(target_grams))
-
             # =========================================================================
-            # MEMORY CLEANUP: Delete ProbeCache (no longer needed)
+            # PROPORTIONAL DEPTH MAPPING (CKA is invariant, not a selector)
             # =========================================================================
-            # target_grams extracted above. ProbeCache held duplicate activations,
-            # Gram matrices, SVDs - all massive. Delete to free ~10-20GB.
-            if probe_cache is not None:
-                probe_cache.source_activations.clear()
-                probe_cache.target_activations.clear()
-                probe_cache.source_grams.clear()
-                probe_cache.target_grams.clear()
-                probe_cache.source_centered_grams.clear()
-                probe_cache.target_centered_grams.clear()
-                probe_cache.source_svd.clear()
-                probe_cache.target_svd.clear()
-                del probe_cache
-                probe_cache = None
-                import gc
-                gc.collect()
-                try:
-                    import mlx.core as mx
-                    mx.clear_cache()
-                except Exception:
-                    pass  # Non-MLX backend
-                logger.info("PROBE: Cleared ProbeCache to free memory")
-
-            cka_matrix: list[list[float]] = []
-            for src_idx, src_layer in enumerate(source_layers):
-                row: list[float] = []
-                
-                # Skip degenerate source layers (apply penalty for all targets)
-                if src_idx in degenerate_sources:
-                    row = [-999.0] * n_target
-                    cka_matrix.append(row)
-                    continue
-                    
-                src_list = source_layer_activations[src_layer]
-                
-                # Pre-compute source Gram once per source layer (reused across targets)
-                src_gram_cache: dict[int, "Array"] = {}  # n_samples -> gram
-                
-                for tgt_idx, tgt_layer in enumerate(target_layers):
-                    # Check if target is degenerate or has no pre-computed Gram
-                    if tgt_layer not in target_grams:
-                        row.append(-999.0)
-                        continue
-                    
-                    tgt_gram, tgt_n_samples = target_grams[tgt_layer]
-                    n_samples = min(len(src_list), tgt_n_samples)
-                    if n_samples < 2:
-                        row.append(-999.0)  # Penalty: strongly discourage in Hungarian
-                        continue
-                    
-                    try:
-                        # Get or compute source Gram for this sample count
-                        if n_samples not in src_gram_cache:
-                            src_stacked = b.stack(src_list[:n_samples], axis=0)
-                            src_stacked = b.astype(src_stacked, "float32")
-                            b.eval(src_stacked)
-                            src_gram = rbf_gram_matrix(src_stacked, b)
-                            b.eval(src_gram)
-                            src_gram_cache[n_samples] = src_gram
-                        else:
-                            src_gram = src_gram_cache[n_samples]
-                        
-                        # Use pre-computed target Gram (slice if needed for sample count)
-                        if n_samples < tgt_n_samples:
-                            tgt_gram_slice = tgt_gram[:n_samples, :n_samples]
-                        else:
-                            tgt_gram_slice = tgt_gram
-                        
-                        # Compute CKA from pre-computed Gram matrices
-                        cka_val = compute_cka_from_grams(src_gram, tgt_gram_slice, backend=b)
-                        
-                        # Check for NaN CKA (degenerate Gram matrix)
-                        if cka_val != cka_val:  # NaN check
-                            row.append(-999.0)  # Penalty for degenerate
-                        else:
-                            row.append(cka_val)
-                    except Exception:
-                        row.append(-999.0)  # Penalty on exception
-                cka_matrix.append(row)
-
-            # =========================================================================
-            # 1:1 BIJECTIVE LAYER ALIGNMENT via Hungarian Algorithm
-            # =========================================================================
-            # CRITICAL: Use 1:1 mapping, NOT many-to-one grouping.
-            # Many-to-one concatenation (e.g., 10 source layers → 1 target) makes
-            # CKA=1.0 geometrically impossible due to extreme dimension compression.
-            #
-            # For cross-architecture (n_source != n_target), we find the best 1:1
-            # mapping for min(n_source, n_target) pairs. Unmapped layers use
-            # nearest-neighbor transform propagation.
-            from modelcypher.core.domain.geometry.hungarian import hungarian_assignment_list
-            
-            # Convert CKA matrix to cost matrix (minimize -CKA = maximize CKA)
-            # The matrix is [n_source x n_target], we need square for Hungarian
-            n_max = max(n_source, n_target)
-            cost_matrix: list[list[float]] = []
-            for i in range(n_max):
-                row: list[float] = []
-                for j in range(n_max):
-                    if i < n_source and j < n_target:
-                        # Negate CKA to convert to cost (Hungarian minimizes)
-                        row.append(-cka_matrix[i][j])
-                    else:
-                        # Padding for non-square: high cost to discourage matching
-                        row.append(1000.0)
-                cost_matrix.append(row)
-            
-            # Hungarian returns optimal assignment: assignment[i] = best j for row i
-            assignment = hungarian_assignment_list(cost_matrix)
-            
-            # Build 1:1 alignment tasks (target → source)
-            # Each target layer gets exactly one source layer
+            # Map layers by normalized depth and solve alignment per pair.
+            # No CKA matrix, no Hungarian, no selection heuristics.
             alignment_tasks: list[tuple[int, list[int]]] = []
-            skipped_targets: list[int] = []  # Targets with degenerate sources (no transfer)
-            
             for tgt_idx in range(n_target):
-                # Skip degenerate target layers (no geometry to match against)
-                if tgt_idx in degenerate_targets:
-                    logger.info(
-                        "PROBE: Skipping target layer %d (degenerate geometry)",
-                        target_layers[tgt_idx]
-                    )
-                    skipped_targets.append(tgt_idx)
-                    continue
-                    
-                # Find which source was assigned to this target
-                best_src_idx = None
-                best_cka = -1.0
-                for src_idx in range(n_source):
-                    if assignment[src_idx] == tgt_idx:
-                        cka = cka_matrix[src_idx][tgt_idx]
-                        if cka > best_cka:
-                            best_cka = cka
-                            best_src_idx = src_idx
-                
-                if best_src_idx is not None:
-                    # Check if source is degenerate (no denser representation to transfer)
-                    if best_src_idx in degenerate_sources:
-                        logger.info(
-                            "PROBE: Skipping target layer %d (source %d is degenerate, no transfer)",
-                            target_layers[tgt_idx], source_layers[best_src_idx]
-                        )
-                        skipped_targets.append(tgt_idx)
-                        continue
-                    # 1:1 mapping: single source layer (NOT a list of multiple)
-                    alignment_tasks.append((tgt_idx, [best_src_idx]))
-                else:
-                    # No source was assigned - use fallback (best CKA source that's not degenerate)
-                    best_src = None
-                    best_cka = -1.0
-                    for src_idx in range(n_source):
-                        if src_idx in degenerate_sources:
-                            continue
-                        if cka_matrix[src_idx][tgt_idx] > best_cka:
-                            best_cka = cka_matrix[src_idx][tgt_idx]
-                            best_src = src_idx
-                    if best_src is not None:
-                        alignment_tasks.append((tgt_idx, [best_src]))
-                    else:
-                        logger.warning(
-                            "PROBE: Target layer %d has no valid source (all degenerate)",
-                            target_layers[tgt_idx]
-                        )
-                        skipped_targets.append(tgt_idx)
-            
-            if skipped_targets:
-                logger.info(
-                    "PROBE: Skipped %d target layers (degenerate source geometry): %s",
-                    len(skipped_targets), [target_layers[t] for t in skipped_targets]
-                )
+                src_idx = _proportional_layer_index(tgt_idx, n_target, n_source)
+                alignment_tasks.append((tgt_idx, [src_idx]))
 
-            # =========================================================================
-            # CKA-GUIDED "ZIPPER" ORDERING
-            # =========================================================================
-            # Sort tasks by pre-alignment CKA (highest first = easiest to align).
-            # This processes easy layers first, which:
-            # 1. Establishes "anchor points" for difficult layers
-            # 2. Frees memory from easy layers before hard ones consume more
-            # 3. Shows CKA=1.0 results early (psychological feedback)
-            alignment_tasks_sorted = sorted(
-                alignment_tasks,
-                key=lambda t: cka_matrix[t[1][0]][t[0]],  # CKA(source, target)
-                reverse=True  # Highest CKA first (easiest)
-            )
-            
+            alignment_tasks_sorted = alignment_tasks
             logger.info(
-                "PROBE: Aligning %d target layers (CKA-sorted, highest-first)...",
+                "PROBE: Aligning %d target layers (proportional depth mapping)...",
                 len(alignment_tasks_sorted),
             )
-            
-            # Imports for parallel execution
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            ALIGNMENT_MAX_WORKERS = 1  # MLX segfaults with concurrent GPU access
             
             def _align_target_group(
                 tgt_idx: int,
@@ -3295,16 +2973,12 @@ def _probe_precise(
                     pass
                 b.eval()  # Force computation graph evaluation to release memory
                 
-                # Clear Hungarian cache between alignments
-                from modelcypher.core.domain.geometry.hungarian import clear_hungarian_cache
-                clear_hungarian_cache()
-
                 return result
 
             # =========================================================================
             # ZIPPER ALIGNMENT: Sequential processing with warm-start from neighbors
             # =========================================================================
-            # Process in CKA-sorted order. For each layer:
+            # Process in proportional-depth order. For each layer:
             # 1. Find nearest successfully aligned neighbor (by layer index)
             # 2. Use its F and R for warm-start and rotation hint
             # This is the "zipper" concept: easy layers align first, their geometry
@@ -3453,7 +3127,7 @@ def _probe_precise(
     min_cka_raw = min(raw_cka_vals) if raw_cka_vals else 0.0
     # layers_with_data: layers that have activations in both models (for reporting)
     layers_with_data = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
-    # For cross-architecture, DP alignment only matches a subset of layers.
+    # Proportional mapping defines a correspondence for every target layer.
     # missing_cka_layers is for reporting - it doesn't block exact alignment
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
     # =========================================================================
@@ -3626,15 +3300,16 @@ def _probe_precise(
     # =========================================================================
     # PROPAGATE TRANSFORMS TO ALL TARGET LAYERS
     # =========================================================================
-    # Cross-architecture DP alignment may map multiple source layers to few
-    # target layers (e.g., 24 Qwen layers → 3 SmolLM layers). But we need
-    # transforms for ALL target layers to perform weight transplant.
-    #
-    # Strategy: For target layers without a transform, use nearest neighbor.
-    # This is geometrically sound because adjacent layers encode similar
-    # manifold regions - their transforms should be similar.
+    # Proportional mapping defines transforms for all target layers.
+    # If any transforms are missing, it indicates missing activations or
+    # an alignment bug and should be investigated.
     all_target_layers = sorted(set(target_layer_activations.keys()))
     if feature_transforms and len(feature_transforms) < len(all_target_layers):
+        missing_count = len(all_target_layers) - len(feature_transforms)
+        logger.error(
+            "PROBE: Missing %d feature transforms; propagating nearest neighbor as fallback.",
+            missing_count,
+        )
         mapped_layers = sorted(feature_transforms.keys())
         logger.info(
             "PROBE: Propagating transforms from %d mapped layers to %d total layers",

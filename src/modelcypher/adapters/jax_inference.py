@@ -155,10 +155,27 @@ class JAXInferenceEngine(HiddenStateEngine):
             )
 
         if adapter_path:
-            logger.warning(
-                "Adapter loading not yet implemented for JAX. Ignoring adapter: %s",
-                adapter_path,
+            try:
+                import peft
+            except ImportError as exc:
+                raise RuntimeError(
+                    "peft with Flax support is required to load adapters on JAX. "
+                    "Install: pip install peft"
+                ) from exc
+
+            flax_loader = getattr(peft, "FlaxPeftModelForCausalLM", None) or getattr(
+                peft, "FlaxPeftModel", None
             )
+            if flax_loader is None:
+                raise RuntimeError(
+                    "peft does not expose a Flax adapter loader. "
+                    "Install a peft version with Flax support."
+                )
+            try:
+                model = flax_loader.from_pretrained(model, str(adapter_path))
+            except TypeError:
+                model = flax_loader.from_pretrained(str(adapter_path))
+            logger.info("Loaded adapter from %s", adapter_path)
 
         entry = _ModelCacheEntry(
             model=model,

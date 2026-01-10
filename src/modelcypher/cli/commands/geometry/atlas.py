@@ -540,43 +540,14 @@ def _derive_layer_chunk_size(
     num_texts: int,
     hidden_dim: int,
 ) -> int:
-    """Derive layer chunk size from available memory.
+    """Derive layer chunk size.
 
-    Formula: chunk = floor(available_memory_gb * safety_factor / memory_per_layer_gb)
-
-    where memory_per_layer_gb ≈ num_texts × hidden_dim × bytes_per_float × overhead
-
-    The safety_factor (0.8) leaves headroom for other allocations.
-    The overhead (2.0) accounts for intermediate computations.
+    The backend handles memory management. Process all layers at once.
 
     Returns:
-        Number of layers to process per chunk, minimum 1.
+        Number of layers to process per chunk (all layers).
     """
-    try:
-        from modelcypher.infrastructure.services.memory import MLXMemoryService
-
-        memory_service = MLXMemoryService()
-        stats = memory_service.get_memory_stats()
-        available_gb = stats.available_gb
-    except Exception:
-        # Fallback to conservative estimate if memory service unavailable
-        available_gb = 8.0  # Assume 8GB available
-
-    bytes_per_float = 4  # float32
-    overhead_factor = 2.0  # Buffer for intermediate computations
-    safety_factor = 0.8  # Leave 20% headroom
-
-    memory_per_layer_gb = (
-        num_texts * hidden_dim * bytes_per_float * overhead_factor
-    ) / (1024**3)
-
-    if memory_per_layer_gb < 1e-9:
-        return num_layers  # Process all at once
-
-    usable_memory_gb = available_gb * safety_factor
-    chunk_size = int(usable_memory_gb / memory_per_layer_gb)
-
-    return max(1, min(chunk_size, num_layers))
+    return num_layers
 
 
 @app.command("dimensionality-study")

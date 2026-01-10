@@ -447,22 +447,23 @@ def batch(
 
 
 @app.command()
-def budget(
+def deviation(
     ctx: typer.Context,
     baseline: str = typer.Option(..., "--baseline", "-b", help="Path to original baseline model"),
     current: str = typer.Option(..., "--current", "-c", help="Path to current (merged) model"),
 ) -> None:
-    """Check deviation budget status before merging.
+    """Measure deviation from baseline (informational only).
 
-    Compares current model weights against baseline to show how much
-    deviation budget remains (threshold = 1% of baseline weight norm).
+    The geometry handles safety by construction via null-space projection.
+    This command measures and reports deviation for transparency - it does
+    NOT gate operations or recommend actions.
 
     Examples:
-        mc merge budget --baseline ./original --current ./merged2
+        mc merge deviation --baseline ./original --current ./merged2
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
-    from modelcypher.core.domain.geometry.deviation_budget import DeviationBudget
+    from modelcypher.core.domain.geometry.deviation_budget import DeviationTracker
 
     context = _context(ctx)
     backend = get_default_backend()
@@ -475,7 +476,7 @@ def budget(
         typer.echo(f"Error: Current path not found: {current}", err=True)
         raise typer.Exit(code=1)
 
-    typer.echo(f"BUDGET CHECK: {current} vs baseline {baseline}")
+    typer.echo(f"DEVIATION MEASUREMENT: {current} vs baseline {baseline}")
 
     # Load weights
     model_loader = MLXModelLoader()
@@ -486,42 +487,23 @@ def budget(
     typer.echo("  Loading current weights...")
     current_weights, _ = model_loader.load_weights(current)
 
-    # Check budget
-    budget_tracker = DeviationBudget(backend=backend)
-    budget_tracker.record_baseline(baseline_weights)
-    status = budget_tracker.check_merge_budget(current_weights)
+    # Measure deviation
+    tracker = DeviationTracker(backend=backend)
+    tracker.record_baseline(baseline_weights)
+    measurement = tracker.measure(current_weights)
 
     # Output results
     typer.echo("")
     typer.echo("=" * 60)
-    typer.echo("DEVIATION BUDGET STATUS")
+    typer.echo("DEVIATION MEASUREMENT (informational only)")
     typer.echo("=" * 60)
-    typer.echo(f"  Current deviation: {status.current_deviation:.1f} L2")
-    typer.echo(f"  Threshold: {status.threshold:.1f} L2")
-    typer.echo(f"  Budget used: {status.budget_used_percent:.1f}%")
-    typer.echo(f"  Remaining budget: {status.threshold - status.current_deviation:.1f} L2")
+    typer.echo(f"  Deviation from baseline: {measurement.deviation:.1f} L2")
+    typer.echo(f"  Baseline weight norm: {measurement.baseline_norm:.1f} L2")
+    typer.echo(f"  Deviation percent: {measurement.deviation_percent:.2f}%")
+    typer.echo(f"  Condition number: {measurement.condition_number:.1f}")
     typer.echo("")
-
-    if status.is_safe:
-        if status.budget_used_percent > 70:
-            typer.echo("  Status: WARNING - Approaching threshold")
-        else:
-            typer.echo("  Status: SAFE")
-    else:
-        typer.echo("  Status: DANGER - Budget exceeded!")
-
-    typer.echo(f"  Recommendation: {status.recommendation}")
-    typer.echo("")
-
-    # Report remaining budget (actual scale depends on next source model)
-    remaining = status.threshold - status.current_deviation
-    if remaining > 0:
-        typer.echo(f"  Remaining budget: {remaining:.1f} L2")
-        typer.echo("  Note: Use --auto-scale with 'mc merge batch' to automatically")
-        typer.echo("        compute delta_scale based on actual source model delta.")
-    else:
-        typer.echo("  Cannot recommend delta_scale - budget already exceeded")
-
+    typer.echo("  Note: The geometry handles safety by construction via null-space")
+    typer.echo("        projection. This measurement is for transparency only.")
     typer.echo("=" * 60)
 
 

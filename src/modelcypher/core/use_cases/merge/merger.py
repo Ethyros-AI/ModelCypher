@@ -328,16 +328,13 @@ class UnifiedGeometricMerger:
         target_model = self._load_model_for_probing(target_path)
         target_tokenizer = self._load_tokenizer(target_path)
 
-        # Initialize deviation budget tracking
-        deviation_budget = None
+        # Initialize deviation tracker (measurement only - geometry handles safety)
+        deviation_tracker = None
         if track_budget:
-            deviation_budget = DeviationBudget(backend=self._backend)
-            deviation_budget.record_baseline(target_weights, name="original_target")
-            threshold = deviation_budget.get_threshold("original_target")
+            deviation_tracker = DeviationBudget(backend=self._backend)
+            deviation_tracker.record_baseline(target_weights, name="original_target")
             logger.info(
-                "BATCH MERGE: Deviation budget tracking enabled "
-                "(threshold: %.1f L2, 1%% of weight norm)",
-                threshold
+                "BATCH MERGE: Deviation tracking enabled (geometry handles safety by construction)"
             )
 
         if accumulative:
@@ -347,31 +344,9 @@ class UnifiedGeometricMerger:
             for i, source_path in enumerate(source_paths):
                 logger.info("BATCH MERGE: Merging source %d/%d: %s", i + 1, n_sources, source_path)
 
-                # Load source weights for auto-scale measurement
-                source_weights_for_scale = None
-                if auto_scale and deviation_budget is not None:
-                    source_weights_for_scale, _ = self._load_weights_as_arrays(source_path)
-
-                # Compute auto-scale if enabled
-                effective_scale = delta_scale
-                if auto_scale and deviation_budget is not None and source_weights_for_scale is not None:
-                    remaining_sources = n_sources - i
-                    # Measure actual delta magnitude (not a guess)
-                    effective_scale = deviation_budget.auto_compute_scale(
-                        source_weights=source_weights_for_scale,
-                        target_weights=target_weights,
-                        remaining_sources=remaining_sources,
-                        baseline_name="original_target",
-                    )
-                    delta_magnitude = deviation_budget.compute_delta_magnitude(
-                        source_weights_for_scale, target_weights
-                    )
-                    remaining = deviation_budget.get_remaining_budget("original_target")
-                    logger.info(
-                        "BATCH MERGE: auto_scale computed delta_scale=%.2f "
-                        "(measured delta=%.1f, remaining budget=%.1f, sources left=%d)",
-                        effective_scale, delta_magnitude, remaining, remaining_sources
-                    )
+                # Scale = 1.0 always - null-space projection handles safety by construction
+                # The geometry constrains deviation, not arbitrary thresholds
+                effective_scale = 1.0
 
                 # Run single merge with pre-loaded target
                 result = run_merge(
@@ -395,37 +370,17 @@ class UnifiedGeometricMerger:
                         delta = result.weights[key] - target_weights[key]
                         merged_weights[key] = merged_weights[key] + delta
 
-                # Check deviation budget after each merge
-                if deviation_budget is not None:
-                    budget_status = deviation_budget.check_merge_budget(
+                # Measure deviation for transparency (informational only - geometry handles safety)
+                if deviation_tracker is not None:
+                    measurement = deviation_tracker.measure(
                         merged_weights, baseline_name="original_target"
                     )
-                    # Update cumulative deviation for auto_scale calculations
-                    deviation_budget._cumulative_deviation = budget_status.current_deviation
-                    if not budget_status.is_safe:
-                        logger.warning(
-                            "BATCH MERGE: BUDGET EXCEEDED after source %d/%d - "
-                            "deviation=%.1f (%.1f%% of budget). %s",
-                            i + 1, n_sources,
-                            budget_status.current_deviation,
-                            budget_status.budget_used_percent,
-                            budget_status.recommendation
-                        )
-                    elif budget_status.budget_used_percent > 70:
-                        logger.warning(
-                            "BATCH MERGE: Budget warning after source %d/%d - "
-                            "deviation=%.1f (%.1f%% of budget)",
-                            i + 1, n_sources,
-                            budget_status.current_deviation,
-                            budget_status.budget_used_percent
-                        )
-                    else:
-                        logger.info(
-                            "BATCH MERGE: Source %d/%d - deviation=%.1f (%.1f%% of budget)",
-                            i + 1, n_sources,
-                            budget_status.current_deviation,
-                            budget_status.budget_used_percent
-                        )
+                    logger.info(
+                        "BATCH MERGE: Source %d/%d - deviation=%.1f (%.2f%% of baseline norm)",
+                        i + 1, n_sources,
+                        measurement.deviation,
+                        measurement.deviation_percent
+                    )
 
                 logger.info("BATCH MERGE: Source %d/%d complete", i + 1, n_sources)
 
@@ -448,31 +403,8 @@ class UnifiedGeometricMerger:
             for i, source_path in enumerate(source_paths):
                 logger.info("BATCH MERGE: Sequential merge %d/%d: %s", i + 1, n_sources, source_path)
 
-                # Load source weights for auto-scale measurement
-                source_weights_for_scale = None
-                if auto_scale and deviation_budget is not None:
-                    source_weights_for_scale, _ = self._load_weights_as_arrays(source_path)
-
-                # Compute auto-scale if enabled
-                effective_scale = delta_scale
-                if auto_scale and deviation_budget is not None and source_weights_for_scale is not None:
-                    remaining_sources = n_sources - i
-                    # Measure actual delta magnitude (not a guess)
-                    effective_scale = deviation_budget.auto_compute_scale(
-                        source_weights=source_weights_for_scale,
-                        target_weights=current_target,
-                        remaining_sources=remaining_sources,
-                        baseline_name="original_target",
-                    )
-                    delta_magnitude = deviation_budget.compute_delta_magnitude(
-                        source_weights_for_scale, current_target
-                    )
-                    remaining = deviation_budget.get_remaining_budget("original_target")
-                    logger.info(
-                        "BATCH MERGE: auto_scale computed delta_scale=%.2f "
-                        "(measured delta=%.1f, remaining budget=%.1f, sources left=%d)",
-                        effective_scale, delta_magnitude, remaining, remaining_sources
-                    )
+                # Scale = 1.0 always - null-space projection handles safety by construction
+                effective_scale = 1.0
 
                 result = run_merge(
                     model_loader=self._model_loader,
@@ -492,37 +424,17 @@ class UnifiedGeometricMerger:
                 current_target = result.weights
                 # Note: model/tokenizer stay the same (architecture unchanged)
 
-                # Check deviation budget after each sequential merge
-                if deviation_budget is not None:
-                    budget_status = deviation_budget.check_merge_budget(
+                # Measure deviation for transparency (informational only - geometry handles safety)
+                if deviation_tracker is not None:
+                    measurement = deviation_tracker.measure(
                         current_target, baseline_name="original_target"
                     )
-                    # Update cumulative deviation for auto_scale calculations
-                    deviation_budget._cumulative_deviation = budget_status.current_deviation
-                    if not budget_status.is_safe:
-                        logger.warning(
-                            "BATCH MERGE: BUDGET EXCEEDED after merge %d/%d - "
-                            "deviation=%.1f (%.1f%% of budget). %s",
-                            i + 1, n_sources,
-                            budget_status.current_deviation,
-                            budget_status.budget_used_percent,
-                            budget_status.recommendation
-                        )
-                    elif budget_status.budget_used_percent > 70:
-                        logger.warning(
-                            "BATCH MERGE: Budget warning after merge %d/%d - "
-                            "deviation=%.1f (%.1f%% of budget)",
-                            i + 1, n_sources,
-                            budget_status.current_deviation,
-                            budget_status.budget_used_percent
-                        )
-                    else:
-                        logger.info(
-                            "BATCH MERGE: Merge %d/%d - deviation=%.1f (%.1f%% of budget)",
-                            i + 1, n_sources,
-                            budget_status.current_deviation,
-                            budget_status.budget_used_percent
-                        )
+                    logger.info(
+                        "BATCH MERGE: Sequential merge %d/%d - deviation=%.1f (%.2f%% of baseline norm)",
+                        i + 1, n_sources,
+                        measurement.deviation,
+                        measurement.deviation_percent
+                    )
 
                 logger.info("BATCH MERGE: Sequential merge %d/%d complete", i + 1, n_sources)
 

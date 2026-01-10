@@ -168,10 +168,10 @@ class CUDAInferenceEngine(HiddenStateEngine):
 
                 model = PeftModel.from_pretrained(model, str(adapter_path))
                 logger.info("Loaded adapter from %s", adapter_path)
-            except ImportError:
-                logger.warning(
-                    "peft not installed. Adapter loading requires: pip install peft"
-                )
+            except ImportError as exc:
+                raise RuntimeError(
+                    "peft is required to load adapters on CUDA. Install: pip install peft"
+                ) from exc
 
         entry = _ModelCacheEntry(
             model=model,

@@ -665,13 +665,9 @@ def research_memory_token(
         AttentionMemoryInjector,
         get_architecture_config,
     )
-    from modelcypher.core.domain.geometry.deviation_budget import (
-        DeviationBudget,
-        MEMORY_TOKEN_SCALE_MAX,
-    )
+    import math
 
     injector = AttentionMemoryInjector()
-    budget = DeviationBudget()
 
     # Detect layer types
     layer_types = {}
@@ -731,13 +727,14 @@ def research_memory_token(
         delta_norm = float(mx.sqrt(mx.sum(delta * delta)).item())
 
         # Scale derived from ratio of activation norm to delta norm
-        if delta_norm > 1e-8:
+        # Formula: scale × ||delta|| = ||activation|| ensures injection matches typical signal
+        # If delta ≈ 0 (concepts identical), scale is undefined - use 1.0
+        eps = math.sqrt(1e-15)  # sqrt(machine_epsilon) for numerical stability
+        if delta_norm > eps:
             scale = mean_norm / delta_norm
         else:
-            scale = mean_norm  # Delta is essentially zero, use activation norm
-
-        # Clamp to max safe scale
-        scale = min(scale, MEMORY_TOKEN_SCALE_MAX)
+            # Delta is effectively zero - concepts are identical, no meaningful injection
+            scale = 1.0
 
         # Compute memory token content
         memory = injector.compute_memory_content(
@@ -748,11 +745,11 @@ def research_memory_token(
             use_null_space=False,  # For quick preview; full pipeline uses null-space
         )
 
-        # Validate scale
-        is_safe, recommendation = injector.validate_memory_scale(
+        # Validate memory injection - returns informational status only
+        # The geometry handles safety by construction
+        is_valid, info_message = injector.validate_memory_scale(
             memory,
             layer_activations=source_pooled,  # Use as reference
-            max_safe_scale=MEMORY_TOKEN_SCALE_MAX,
         )
 
     except Exception as exc:

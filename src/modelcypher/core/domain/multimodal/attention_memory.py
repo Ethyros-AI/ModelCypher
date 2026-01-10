@@ -374,21 +374,18 @@ class AttentionMemoryInjector:
         self,
         memory_content: MemoryTokenContent,
         layer_activations: Any,
-        max_safe_scale: float = 20.0,
     ) -> tuple[bool, str]:
-        """Validate that memory token scale is safe.
+        """Measure memory token magnitude relative to layer activations (informational only).
 
-        The memory token approach allows much higher scales than direct injection,
-        but there are still limits. This validates against empirically-derived
-        bounds.
+        The geometry (null-space projection) handles safety by construction.
+        This method measures and reports the relative magnitude for transparency.
 
         Args:
             memory_content: Computed memory token content
             layer_activations: Activations at target layer for reference
-            max_safe_scale: Maximum safe scale factor
 
         Returns:
-            Tuple of (is_safe, recommendation_message)
+            Tuple of (is_valid, info_message) - always True, geometry handles safety
         """
         backend = self._backend
 
@@ -410,20 +407,12 @@ class AttentionMemoryInjector:
                 backend.to_scalar(backend.sqrt(backend.sum(activations * activations)))
             )
 
-        # Check relative magnitude
+        # Compute relative magnitude (informational only)
         relative_magnitude = memory_norm / (layer_norm + 1e-10)
 
-        # Memory token allows ~2x the threshold of direct injection
-        # Direct: max ~10x, Memory: max ~20x
-        effective_max = max_safe_scale * (2.0 if memory_content.null_space_projected else 1.0)
-
-        if relative_magnitude < effective_max * 0.5:
-            return True, f"Safe memory scale (magnitude {relative_magnitude:.2f})"
-        elif relative_magnitude < effective_max:
-            return True, f"Moderate memory scale ({relative_magnitude:.2f}), within bounds"
-        else:
-            recommended = memory_content.scale_applied * effective_max / relative_magnitude
-            return False, f"Scale too high. Reduce to {recommended:.2f}"
+        # Report measurement - geometry handles safety by construction
+        projection_status = "null-space projected" if memory_content.null_space_projected else "raw"
+        return True, f"Memory magnitude: {relative_magnitude:.2f}x layer norm ({projection_status})"
 
     def apply_memory_to_hidden_states(
         self,

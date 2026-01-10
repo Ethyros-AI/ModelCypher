@@ -127,8 +127,10 @@ class EvaluationService:
 
         # Load model via port (hexagonal architecture)
         logger.info(f"Loading model from {model} (adapter={adapter})")
-        # Note: adapter_path not yet supported via ModelLoaderPort
-        llm_model, tokenizer = self._model_loader.load_model_for_training(model)
+        llm_model, tokenizer = self._model_loader.load_model_for_training(
+            model,
+            adapter_path=str(adapter) if adapter else None,
+        )
 
         # Load and process dataset
         samples = []

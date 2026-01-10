@@ -235,10 +235,9 @@ class LinguisticCalorimeter:
 
         # Load model via port (hexagonal architecture)
         logger.info(f"Loading model from {self.model_path}")
-        # Note: adapter_path not yet supported via ModelLoaderPort - load without adapter
-        # TODO: Extend ModelLoaderPort to support adapter_path parameter
         self._model, self._tokenizer = self._model_loader.load_model_for_training(
-            str(self.model_path)
+            str(self.model_path),
+            adapter_path=str(self.adapter_path) if self.adapter_path else None,
         )
 
         # Load entropy calculator

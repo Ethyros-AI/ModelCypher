@@ -188,7 +188,6 @@ def measure_3d_alignment(
     Returns:
         Dict with layernorm_cka
     """
-    import mlx.core as mx
     from modelcypher.core.domain.geometry.cka import (
         compute_cka,
         compute_linear_cka,
@@ -215,7 +214,7 @@ def measure_3d_alignment(
                 token_ids = tokens
             else:
                 token_ids = list(tokens.ids)
-            input_ids = mx.array([token_ids])
+            input_ids = backend.array([token_ids], dtype="int32")
 
             # Get embedding
             if hasattr(inner, "embed_tokens"):
@@ -226,8 +225,8 @@ def measure_3d_alignment(
                 continue
 
             # Pre-LayerNorm: raw hidden state (after embedding or previous layer)
-            pre_ln = mx.mean(h, axis=(0, 1))
-            mx.eval(pre_ln)
+            pre_ln = backend.mean(h, axis=(0, 1))
+            backend.eval(pre_ln)
             pre_ln_acts.append(pre_ln)
 
             # Post-LayerNorm
@@ -238,8 +237,8 @@ def measure_3d_alignment(
             else:
                 h_post_ln = h
 
-            post_ln = mx.mean(h_post_ln, axis=(0, 1))
-            mx.eval(post_ln)
+            post_ln = backend.mean(h_post_ln, axis=(0, 1))
+            backend.eval(post_ln)
             post_ln_acts.append(post_ln)
 
         if len(pre_ln_acts) < 2:

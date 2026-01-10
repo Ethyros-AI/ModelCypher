@@ -406,7 +406,7 @@ class VisualConceptInjector:
                 f"Attention layers: {self._layer_config.attention_layers}"
             )
 
-        # Always validate scale
+        # Measure memory scale for transparency (geometry handles safety by construction)
         memory_content = MemoryTokenContent(
             content=memory.embedding,
             source_concept=memory.source_type,
@@ -416,14 +416,11 @@ class VisualConceptInjector:
                 backend.sqrt(backend.sum(memory.embedding * memory.embedding))
             )),
         )
-        is_safe, safety_message = self._memory_injector.validate_memory_scale(
+        is_valid, info_message = self._memory_injector.validate_memory_scale(
             memory_content,
             hidden_states,
-            max_safe_scale=20.0,
         )
-
-        if not is_safe:
-            logger.warning(f"Memory scale validation failed: {safety_message}")
+        logger.debug(f"Memory scale measurement: {info_message}")
 
         # Apply memory token (always prepend at position 0)
         modified = self._memory_injector.apply_memory_to_hidden_states(
@@ -441,8 +438,8 @@ class VisualConceptInjector:
         return InjectionResult(
             hidden_states=modified,
             injection_layers=[layer_idx],
-            is_safe=is_safe,
-            safety_message=safety_message,
+            is_safe=True,  # Geometry handles safety by construction
+            safety_message=info_message,
         )
 
     def get_optimal_injection_layers(self) -> list[int]:

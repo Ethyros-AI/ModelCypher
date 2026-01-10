@@ -42,12 +42,14 @@ class MLXModelLoader(ModelLoaderPort):
         self,
         model_path: str,
         lora_settings: "LoRASettings | None" = None,
+        adapter_path: str | None = None,
     ) -> tuple[Any, Any]:
         """Load model and tokenizer for training or inference.
 
         Args:
             model_path: Path to model directory
             lora_settings: Optional LoRA settings to apply
+            adapter_path: Optional adapter directory to load
 
         Returns:
             Tuple of (model, tokenizer)
@@ -57,7 +59,11 @@ class MLXModelLoader(ModelLoaderPort):
             load_model_for_training as _load_model_for_training,
         )
 
-        return _load_model_for_training(model_path, lora_settings)
+        return _load_model_for_training(
+            model_path,
+            lora_settings,
+            adapter_path=adapter_path,
+        )
 
 
 
