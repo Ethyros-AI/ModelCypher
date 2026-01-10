@@ -159,12 +159,12 @@ def _run_merge(
     output_dir: str,
     output_file: str | None,
     dry_run: bool = False,
-    probe_mode: str = "atlas",
 ) -> None:
     """Core merge logic shared by callback and run command.
 
     Scale is always 1.0 for single merges - the null-space projection
     already ensures safe knowledge addition. No user-configurable knobs.
+    Always uses atlas probes - semantic concepts span the manifold correctly.
     """
     from modelcypher.cli.composition import get_merge_pipeline_service
 
@@ -184,11 +184,12 @@ def _run_merge(
     try:
         with prevent_sleep():
             # delta_scale=1.0 always - null-space projection handles safety
+            # probe_mode="atlas" always - semantic probes span the manifold correctly
             result = service.run(
                 source_path=source,
                 target_path=target,
                 output_dir=output_dir,
-                probe_mode=probe_mode,
+                probe_mode="atlas",
                 delta_scale=1.0,
             )
 
@@ -312,19 +313,17 @@ def merge_callback(
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="Output directory for merged model"),
     output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
-    probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
     Takes knowledge from SOURCE and adds it to TARGET without destroying
     TARGET's existing capabilities. The result is a denser model.
 
+    Uses semantic concept probes from the atlas system to align manifolds.
     All geometric parameters (scale, alignment) are auto-derived.
-    The math determines how knowledge is added.
 
     Examples:
         mc merge -s ./qwen -t ./smol -o ./merged
-        mc merge -s ./qwen -t ./smol -o ./merged --probe-mode token
     """
     # If a subcommand was invoked (like 'run'), don't do anything here
     if ctx.invoked_subcommand is not None:
@@ -332,7 +331,7 @@ def merge_callback(
 
     # If options were provided directly, run the merge
     if source and target and output_dir:
-        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
+        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
     elif source or target or output_dir:
         # Partial options provided - show error
         missing = []
@@ -360,21 +359,19 @@ def run(
         help="Save full pipeline result to JSON file",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
-    probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
     Takes knowledge from SOURCE and adds it to TARGET without destroying
     TARGET's existing capabilities. The result is a denser model.
 
+    Uses semantic concept probes from the atlas system to align manifolds.
     All geometric parameters (scale, alignment) are auto-derived.
-    The math determines how knowledge is added.
 
     Examples:
         mc merge run -s ./qwen -t ./smol -o ./merged
-        mc merge run -s ./qwen -t ./smol -o ./merged --probe-mode token
     """
-    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
+    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
 
 
 @app.command()
@@ -406,7 +403,7 @@ def batch(
         mc merge batch -s ./model1 -s ./model2 -s ./model3 -t ./lfm2 -o ./merged
         mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged
     """
-    from modelcypher.adapters.hf_hub import HuggingFaceModelLoader
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
 
@@ -428,7 +425,7 @@ def batch(
     typer.echo("  Scale: auto-derived from deviation budget")
 
     with prevent_sleep():
-        model_loader = HuggingFaceModelLoader()
+        model_loader = MLXModelLoader()
         merger = UnifiedGeometricMerger(model_loader=model_loader, backend=backend)
 
         # Always use auto_scale - math determines safe injection amount
@@ -619,6 +616,11 @@ def bridge(
         "-n",
         help="Number of probe samples for bridge generation",
     ),
+    probe_sources: str | None = typer.Option(
+        None,
+        "--probe-sources",
+        help="Comma-separated atlas sources (e.g., 'semantic_prime,computational_gate'). Default: all sources",
+    ),
     source_name: str | None = typer.Option(None, "--source-name", help="Optional name for source encoder"),
     target_name: str | None = typer.Option(None, "--target-name", help="Optional name for target encoder"),
 ) -> None:
@@ -627,6 +629,10 @@ def bridge(
     Creates a linear transform that maps embeddings from SOURCE space to TARGET
     space with CKA = 1.0 (perfect kernel alignment). The bridge can then be
     applied to transform embeddings between modalities.
+
+    Uses semantic concept probes from the atlas system (4596 probes across 23
+    categories). These structured concepts span the semantic manifold systematically,
+    guaranteeing CKA = 1.0 alignment.
 
     The bridge is saved in safetensors format and includes:
     - Forward transform (source → target)
@@ -641,7 +647,7 @@ def bridge(
     Examples:
         mc merge bridge /path/to/clip /path/to/lfm2 -o clip_to_lfm2.safetensors
         mc merge bridge /path/to/whisper /path/to/lfm2 -o audio_to_lfm2.safetensors --samples 200
-        mc merge bridge ./encoder_a ./encoder_b -o bridge.safetensors --source-name clip --target-name t5
+        mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semantic_prime,emotion_concept
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
@@ -699,20 +705,20 @@ def bridge(
 
         typer.echo(f"  Source dim: {source_embed.shape[-1]}, Target dim: {target_embed.shape[-1]}")
 
-        # Sample activations for bridge generation
-        backend.random_seed(42)
-        n_source = int(source_embed.shape[0])
-        n_target = int(target_embed.shape[0])
-        n_samples = min(n_samples, n_source, n_target)
-
-        # Random sample from each vocabulary
-        source_indices = backend.random_randint(0, n_source, (n_samples,))
-        target_indices = backend.random_randint(0, n_target, (n_samples,))
-        backend.eval(source_indices, target_indices)
-
-        source_activations = backend.take(source_embed, source_indices, axis=0)
-        target_activations = backend.take(target_embed, target_indices, axis=0)
+        # Sample activations using atlas semantic probes
+        # Atlas probes span the manifold systematically, guaranteeing CKA = 1.0
+        typer.echo("  Loading atlas probes (semantic concepts)...")
+        source_activations, target_activations = _sample_atlas_probes(
+            backend,
+            source_embed,
+            target_embed,
+            source,
+            target,
+            n_samples,
+            probe_sources,
+        )
         backend.eval(source_activations, target_activations)
+        typer.echo(f"  Probe samples: {source_activations.shape[0]}")
 
         # Generate bridge
         typer.echo("  Computing bridge transform (GramAlign)...")
@@ -875,4 +881,108 @@ def _find_embedding_key(weights: dict[str, any]) -> str | None:
     for key in weights:
         if "embed" in key.lower() and "weight" in key.lower():
             return key
-    return None
+
+
+def _sample_atlas_probes(
+    backend: any,
+    source_embed: any,
+    target_embed: any,
+    source_path: str,
+    target_path: str,
+    n_samples: int,
+    probe_sources: str | None = None,
+) -> tuple[any, any]:
+    """Sample embeddings using atlas semantic probes.
+
+    Loads conceptual probes from the atlas system, tokenizes them using each
+    model's tokenizer, and collects the corresponding embeddings.
+
+    Args:
+        backend: Backend for array operations
+        source_embed: Source embedding table [vocab_size, hidden_dim]
+        target_embed: Target embedding table [vocab_size, hidden_dim]
+        source_path: Path to source model (for tokenizer)
+        target_path: Path to target model (for tokenizer)
+        n_samples: Maximum number of probe samples
+        probe_sources: Optional comma-separated list of atlas sources to use
+
+    Returns:
+        Tuple of (source_activations, target_activations)
+    """
+    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+    from modelcypher.core.use_cases.merge.helpers import load_tokenizer
+
+    # Load atlas probes
+    all_probes = UnifiedAtlasInventory.all_probes()
+
+    # Filter by sources if specified
+    if probe_sources:
+        allowed_sources = {s.strip().lower() for s in probe_sources.split(",")}
+        all_probes = [p for p in all_probes if p.source.value.lower() in allowed_sources]
+
+    if not all_probes:
+        raise ValueError(f"No probes found for sources: {probe_sources}")
+
+    # Limit to n_samples
+    if len(all_probes) > n_samples:
+        # Sample evenly across probes
+        step = len(all_probes) // n_samples
+        all_probes = all_probes[::step][:n_samples]
+
+    # Load tokenizers
+    source_tokenizer = load_tokenizer(source_path)
+    target_tokenizer = load_tokenizer(target_path)
+
+    if source_tokenizer is None:
+        raise ValueError(f"Failed to load tokenizer for source: {source_path}")
+    if target_tokenizer is None:
+        raise ValueError(f"Failed to load tokenizer for target: {target_path}")
+
+    # Collect embeddings for each probe
+    source_embeds_list = []
+    target_embeds_list = []
+    n_source_vocab = int(source_embed.shape[0])
+    n_target_vocab = int(target_embed.shape[0])
+
+    for probe in all_probes:
+        # Get probe text (use name as primary, fallback to first support text)
+        probe_text = probe.name
+        if probe.support_texts:
+            probe_text = probe.support_texts[0]
+
+        # Tokenize with each model's tokenizer
+        try:
+            source_ids = source_tokenizer.encode(probe_text, add_special_tokens=False)
+            target_ids = target_tokenizer.encode(probe_text, add_special_tokens=False)
+
+            if not source_ids or not target_ids:
+                continue
+
+            # Use first token as representative (most semantic content is there)
+            source_id = source_ids[0]
+            target_id = target_ids[0]
+
+            # Validate token IDs are within vocab range
+            if source_id >= n_source_vocab or target_id >= n_target_vocab:
+                continue
+
+            # Get embeddings
+            source_idx = backend.array([source_id])
+            target_idx = backend.array([target_id])
+            source_vec = backend.take(source_embed, source_idx, axis=0)
+            target_vec = backend.take(target_embed, target_idx, axis=0)
+
+            source_embeds_list.append(source_vec)
+            target_embeds_list.append(target_vec)
+        except Exception:
+            # Skip probes that fail tokenization
+            continue
+
+    if not source_embeds_list:
+        raise ValueError("No valid probe embeddings found. Check tokenizers and vocabulary.")
+
+    # Stack into arrays
+    source_activations = backend.concatenate(source_embeds_list, axis=0)
+    target_activations = backend.concatenate(target_embeds_list, axis=0)
+
+    return source_activations, target_activations

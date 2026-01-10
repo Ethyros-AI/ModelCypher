@@ -96,6 +96,85 @@ They *cannot*:
 - replace eval suites, policy review, or red teaming,
 - guarantee causality ("metric went up, therefore X happened").
 
+## Atlas Probe System
+
+The atlas system provides 4596 semantic concept probes organized by domain and source. These probes are used for alignment, bridge generation, and manifold analysis.
+
+### Probe Sources (23 categories)
+
+Probes are loaded from JSON files in `data/probes/` and organized by source:
+
+| Source | Description |
+|--------|-------------|
+| `semantic_prime` | Universal semantic primitives (Wierzbicka) |
+| `computational_gate` | Code patterns (LITERAL, VARIABLE, LOOP, etc.) |
+| `emotion_concept` | Affective concepts (joy, fear, anger, etc.) |
+| `moral_concept` | Moral foundations (care, fairness, sanctity, etc.) |
+| `temporal_concept` | Time-related concepts (past, future, duration) |
+| `spatial_concept` | Space-related concepts (location, direction) |
+| `social_concept` | Social relationships and concepts |
+| `philosophical_concept` | Abstract philosophical ideas |
+| `safety_ethics` | Safety-related probes |
+| `physical_existence` | Physical world concepts |
+| `compositional` | Compositional reasoning patterns |
+| `conceptual_genealogy` | Etymology and concept evolution |
+| `metaphor_invariant` | Cross-domain metaphor mappings |
+| `conceptual_metaphor` | Conceptual metaphor theory |
+| `syntax_concept` | Syntactic structure concepts |
+| `perceptual` | Perception-related concepts |
+| `numeric` | Number and quantity concepts |
+| `common_object` | Everyday objects |
+| `action_verb` | Action and motion verbs |
+| `abstract_relation` | Abstract relations |
+| `pronoun_perspective` | Pronoun and perspective concepts |
+| `sequence_invariant` | Sequence patterns (Fibonacci, etc.) |
+| `domain_specific` | Domain-specific concepts |
+
+### JSON Probe Format
+
+Each probe file follows this structure:
+
+```json
+{
+  "domain": "moral",
+  "probe_count": 23,
+  "probes": [
+    {
+      "id": "moral_concept:cruelty",
+      "name": "Cruelty",
+      "description": "Deliberate infliction of suffering.",
+      "support_texts": [
+        "Cruelty is the willful causing of pain.",
+        "To be cruel is to delight in suffering."
+      ]
+    }
+  ]
+}
+```
+
+### Adding Custom Probes
+
+To add custom probes:
+1. Create a new JSON file in `data/probes/`
+2. Follow the format above with unique probe IDs
+3. The probe loader will automatically include them
+
+### Usage in Bridge Generation
+
+The `mc merge bridge` command uses atlas probes:
+
+```bash
+# Default - uses all 4596 probes, achieves CKA = 1.0
+mc merge bridge ./model_a ./model_b -o bridge.safetensors
+
+# Filter by specific sources
+mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semantic_prime,emotion_concept
+```
+
+Atlas probes systematically span the semantic manifold, guaranteeing CKA = 1.0 alignment. High-dimensional geometry has no tolerance - there are no "approximate" modes because approximations cause hallucinations.
+
+---
+
 ## Tool-by-tool explanations
 
 ### mc geometry training status

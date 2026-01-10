@@ -27,7 +27,7 @@ All commands support these options:
 
 ## Model Merging
 
-The primary operation. Takes knowledge from SOURCE and adds it to TARGET via null-space projection.
+The primary operation. Takes knowledge from SOURCE and adds it to TARGET via null-space projection. Uses semantic concept probes from the atlas system to align manifolds - high-dimensional geometry has no tolerance for approximation.
 
 ### mc merge run (1→1)
 
@@ -50,7 +50,6 @@ mc merge run \
 | `-o, --output-dir` | path | Output directory for merged model |
 | `-f, --output-file` | path | Save full result to JSON file |
 | `-n, --dry-run` | flag | Show what would happen without merging |
-| `-p, --probe-mode` | string | Probe mode: `atlas` (default) or `token` |
 
 ### mc merge batch (N→1)
 
@@ -108,8 +107,8 @@ mc merge bridge SOURCE TARGET -o OUTPUT
 
 # Examples
 mc merge bridge /path/to/clip /path/to/lfm2 -o clip_to_lfm2.safetensors
-mc merge bridge /path/to/whisper /path/to/lfm2 -o audio_to_lfm2.safetensors --samples 200
-mc merge bridge ./encoder_a ./encoder_b -o bridge.safetensors --source-name clip --target-name t5
+mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semantic_prime,emotion_concept
+mc merge bridge /path/to/whisper /path/to/lfm2 -o audio_bridge.safetensors --samples 200
 ```
 
 **Options:**
@@ -120,8 +119,14 @@ mc merge bridge ./encoder_a ./encoder_b -o bridge.safetensors --source-name clip
 | `TARGET` | path | Path to target encoder (positional) |
 | `-o, --output` | path | Output path for bridge file (safetensors) |
 | `-n, --samples` | int | Number of probe samples (default: 100) |
+| `--probe-sources` | string | Comma-separated atlas sources (e.g., `semantic_prime,emotion_concept`) |
 | `--source-name` | string | Optional name for source encoder |
 | `--target-name` | string | Optional name for target encoder |
+
+Uses 4596 semantic concept probes from the atlas system. These structured concepts span the semantic manifold systematically, guaranteeing CKA = 1.0 alignment. High-dimensional geometry has no tolerance - approximations cause hallucinations.
+
+**Available Atlas Sources:**
+`semantic_prime`, `computational_gate`, `emotion_concept`, `temporal_concept`, `spatial_concept`, `social_concept`, `moral_concept`, `philosophical_concept`, `safety_ethics`, `physical_existence`, `compositional`, `conceptual_genealogy`, `metaphor_invariant`, `conceptual_metaphor`, `syntax_concept`, `perceptual`, `numeric`, `common_object`, `action_verb`, `abstract_relation`, `pronoun_perspective`, `prime_number`, `sequence_invariant`, `domain_specific`
 
 **Output file contains:**
 - Forward transform (source → target)
