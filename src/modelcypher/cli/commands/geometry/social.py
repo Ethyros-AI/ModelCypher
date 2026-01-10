@@ -196,7 +196,6 @@ def social_probe_model(
             f"Anchors Probed: {len(anchor_activations)}/23",
             f"Layer Analyzed: {target_layer}",
             "",
-            f"Has Social Manifold: {'YES' if report.has_social_manifold else 'NO'}",
             f"Social Manifold Score: {report.social_manifold_score:.2f}",
             "",
             "-" * 40,

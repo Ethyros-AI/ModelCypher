@@ -310,21 +310,26 @@ class MultiModalChannelAdapter:
             return target_embeds
 
         # Compute variance-based weights (null space proxy)
+        # sqrt(float32 machine epsilon) for safe division
+        import math
+        eps = math.sqrt(2.0 ** -23)
+
         target_var = backend.var(target_embeds, axis=0, keepdims=True)
         backend.eval(target_var)
 
         var_max = backend.max(target_var)
-        var_normalized = target_var / (var_max + 1e-10)
+        var_normalized = target_var / (var_max + eps)
 
         # Inverse variance weighting (sparse regions get more)
+        # Geometry determines the scale - no arbitrary factors
         weights = 1.0 - var_normalized
 
         # Merge each aligned source
         merged = target_embeds
         for source_meta, aligned in aligned_sources:
             delta = aligned - target_embeds
-            filtered_delta = delta * weights
-            merged = merged + filtered_delta * 0.5  # Scale down to avoid overwriting
+            filtered_delta = delta * weights  # Variance weighting IS the scale
+            merged = merged + filtered_delta
 
         backend.eval(merged)
         return merged
@@ -360,7 +365,10 @@ class MultiModalChannelAdapter:
         hsic_xx_val = float(backend.to_scalar(hsic_xx))
         hsic_yy_val = float(backend.to_scalar(hsic_yy))
 
-        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + 1e-10)
+        # sqrt(float32 machine epsilon) for safe division
+        import math
+        eps = math.sqrt(2.0 ** -23)
+        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + eps)
 
     def _default_concepts(self) -> list[str]:
         """Return default concepts for multi-modal alignment.

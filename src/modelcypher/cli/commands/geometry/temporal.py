@@ -198,16 +198,12 @@ def temporal_probe_model(
         components.gradient_score * 0.3 +
         components.arrow_score * 0.3
     )
-    # Consider manifold present if score > 0.5
-    has_temporal_manifold = temporal_manifold_score > 0.5
-
     payload = {
         "_schema": "mc.geometry.temporal.probe_model.v1",
         "model_path": model_path,
         "anchors_probed": report.anchors_probed,
         "layer": target_layer,
         "temporal_manifold_score": temporal_manifold_score,
-        "has_temporal_manifold": has_temporal_manifold,
         "temporal_manifold_components": {
             "orthogonality_score": components.orthogonality_score,
             "gradient_score": components.gradient_score,
@@ -251,7 +247,6 @@ def temporal_probe_model(
             f"Anchors Probed: {report.anchors_probed}/23",
             f"Layer Analyzed: {target_layer}",
             "",
-            f"Has Temporal Manifold: {'YES' if report.has_temporal_manifold else 'NO'}",
             f"Temporal Manifold Score: {report.temporal_manifold_score:.4f}",
             "",
             "-" * 40,
@@ -308,7 +303,6 @@ def temporal_analyze(
         "source_file": activations_file,
         "anchors_analyzed": report.anchors_probed,
         "temporal_manifold_score": report.temporal_manifold_score,
-        "has_temporal_manifold": report.has_temporal_manifold,
         "axis_orthogonality": {
             "direction_duration": report.axis_orthogonality.direction_duration,
             "direction_causality": report.axis_orthogonality.direction_causality,

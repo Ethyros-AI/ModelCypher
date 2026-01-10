@@ -158,8 +158,9 @@ class TestMergeEntropyValidationProperties:
             layer_validations=layer_validations,
         )
 
-        eps = _div_eps()
-        assert validation.max_entropy_ratio + eps >= validation.mean_entropy_ratio
+        # Use relative epsilon for large values - absolute eps fails for values like 5068
+        rel_eps = _div_eps() * max(1.0, abs(validation.mean_entropy_ratio))
+        assert validation.max_entropy_ratio + rel_eps >= validation.mean_entropy_ratio
 
     @given(
         layer_data=st.lists(

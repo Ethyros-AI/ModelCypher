@@ -491,7 +491,11 @@ class CrossArchitectureLayerMatcher:
         CKA = 1.0 for corresponding layers (same geometric structure).
         CKA < 1.0 for non-corresponding layers (different information).
         """
-        from modelcypher.core.domain.geometry.gram_aligner import find_alignment
+        # Use compute_linear_cka to MEASURE similarity between layers.
+        # NOTE: We DO NOT use find_alignment here because:
+        # - find_alignment TRANSFORMS source to match target, achieving CKA=1.0 by construction
+        # - Here we want to MEASURE native similarity WITHOUT transformation
+        from modelcypher.core.domain.geometry.cka import compute_linear_cka
 
         rows = source_crm.layer_count
         cols = target_crm.layer_count
@@ -521,7 +525,7 @@ class CrossArchitectureLayerMatcher:
                 backend.eval(arr)
                 target_cache[layer] = arr
 
-        # Compute alignment for each layer pair
+        # Compute native CKA (WITHOUT transformation) for each layer pair
         for source_layer in range(rows):
             source_arr = source_cache.get(source_layer)
             if source_arr is None:
@@ -532,8 +536,8 @@ class CrossArchitectureLayerMatcher:
                 if target_arr is None:
                     continue
 
-                result = find_alignment(source_arr, target_arr, backend)
-                cka = max(0.0, min(1.0, 1.0 - result.numerical_deviation))
-                matrix[source_layer][target_layer] = cka
+                # Measure native CKA similarity between layers
+                cka = compute_linear_cka(source_arr, target_arr, backend)
+                matrix[source_layer][target_layer] = max(0.0, min(1.0, cka))
 
         return matrix

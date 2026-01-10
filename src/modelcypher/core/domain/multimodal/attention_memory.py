@@ -408,7 +408,10 @@ class AttentionMemoryInjector:
             )
 
         # Compute relative magnitude (informational only)
-        relative_magnitude = memory_norm / (layer_norm + 1e-10)
+        # Use sqrt(float32 machine epsilon) for safe division
+        import math
+        eps = math.sqrt(2.0 ** -23)
+        relative_magnitude = memory_norm / (layer_norm + eps)
 
         # Report measurement - geometry handles safety by construction
         projection_status = "null-space projected" if memory_content.null_space_projected else "raw"

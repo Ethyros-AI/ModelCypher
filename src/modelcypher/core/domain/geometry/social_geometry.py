@@ -252,7 +252,7 @@ class SocialGeometryAnalyzer:
         sum_sq_val = float(backend.to_scalar(sum_sq_eigenvals))
 
         # Use √(machine_epsilon) for numerical stability
-        eps = sqrt_scalar(regularization_epsilon(backend, eigenvalues))
+        eps = sqrt_scalar(regularization_epsilon(backend, eigenvalues), backend)
 
         if sum_sq_val < eps:
             return 1

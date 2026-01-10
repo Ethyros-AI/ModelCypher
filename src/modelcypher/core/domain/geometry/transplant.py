@@ -217,28 +217,26 @@ def compute_transplant_delta(
     b.eval(weight_delta)
 
     if n_boundary < 2:
-        # Not enough boundary points for geodesic filtering
-        # Use simpler approach: add scaled delta (avoid blowing up activations)
+        # Not enough boundary points for null-space projection.
+        # Without geometry, we cannot determine what's safe to modify.
+        # Return unchanged - the math requires sufficient samples.
+        logger.warning(
+            "Insufficient boundary samples (%d < 2) for null-space projection. "
+            "Cannot transplant without geometry.",
+            n_boundary,
+        )
         delta_norm_arr = geodesic_norms(b.reshape(weight_delta, (1, -1)), b)
         b.eval(delta_norm_arr)
         delta_norm = float(b.to_scalar(delta_norm_arr[0]))
-        target_norm_arr = geodesic_norms(b.reshape(weight_target, (1, -1)), b)
-        b.eval(target_norm_arr)
-        target_norm = float(b.to_scalar(target_norm_arr[0]))
-
-        # Scale delta to not dominate: add at 10% of relative magnitude
-        scale = 0.1 * target_norm / (delta_norm + 1e-8)
-        delta_contribution = weight_delta * scale
-        b.eval(delta_contribution)
 
         return TransplantDeltaResult(
-            merged_weight=weight_target + delta_contribution,
-            applied=True,
-            null_dim=in_dim,  # All directions available
+            merged_weight=weight_target,  # Unchanged - no geometry available
+            applied=False,
+            null_dim=0,
             delta_norm=delta_norm,
-            filtered_norm=delta_norm * scale,
-            projection_loss=0.0,
-            preserved_fraction=1.0,
+            filtered_norm=0.0,
+            projection_loss=1.0,  # 100% loss - nothing could be applied
+            preserved_fraction=0.0,
         )
 
     # Project DELTA into target's NULL SPACE
