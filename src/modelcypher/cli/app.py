@@ -48,6 +48,7 @@ from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import merge as merge_commands
 from modelcypher.cli.commands import model as model_commands
+from modelcypher.cli.commands import multimodal as multimodal_commands
 from modelcypher.cli.commands import profile as profile_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
@@ -219,6 +220,7 @@ app.add_typer(stability_commands.app, name="stability", help="Stability suites")
 app.add_typer(dashboard_commands.app, name="dashboard", help="Metrics export")
 app.add_typer(storage_commands.app, name="storage", help="Storage status and cleanup")
 app.add_typer(infer_commands.app, name="infer", help="Inference commands")
+app.add_typer(multimodal_commands.app, name="multimodal", help="Multimodal injection commands")
 app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
 app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
 

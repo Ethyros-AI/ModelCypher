@@ -152,13 +152,10 @@ def reset_default_backend() -> None:
 def _is_sandboxed_environment() -> bool:
     """Check if running in a sandboxed environment (VSCode extension, etc.)."""
     # VSCode/Claude Code extension indicators
-    sandbox_indicators = [
-        "VSCODE_PID",
-        "VSCODE_CWD",
-        "TERM_PROGRAM_VERSION",  # Often set by VSCode terminal
-    ]
-    # Check if parent process is codex (Claude Code)
-    if any(os.environ.get(var) for var in sandbox_indicators):
+    if os.environ.get("VSCODE_PID") or os.environ.get("VSCODE_CWD"):
+        return True
+    term_program = (os.environ.get("TERM_PROGRAM") or "").strip().lower()
+    if term_program in {"vscode", "visual studio code"}:
         return True
     return False
 
@@ -168,6 +165,15 @@ def _probe_mlx_runtime() -> tuple[bool, str | None]:
 
     Uses environment variables to suppress crash dialogs on macOS.
     """
+    if _is_sandboxed_environment():
+        allow_probe = (os.environ.get("MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX") or "").lower()
+        if allow_probe not in ("1", "true", "yes"):
+            return (
+                False,
+                "MLX runtime probe disabled in VSCode/Claude Code sandbox to avoid crash reports. "
+                "Run from Terminal.app to use MLX, or set MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 to force the probe.",
+            )
+
     code = "import mlx.core as mx; mx.random.key(0); mx.zeros((1,))"
 
     # Environment variables to suppress crash reporting/dialogs

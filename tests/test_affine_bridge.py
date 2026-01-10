@@ -279,12 +279,12 @@ class TestVocabConstrainedProjection:
 
         # Query point close to token 0
         X = backend.array([[0.9, 0.1]])
-        result = proj.project(X, temperature=0.1)  # Low temp = hard assignment
+        result = proj.project(X)  # Temperature auto-derived
 
         assert result.nearest_token_ids[0] == 0
 
-    def test_project_soft_mixture(self, backend, proj) -> None:
-        """High temperature should produce soft mixture."""
+    def test_project_auto_derives_temperature(self, backend, proj) -> None:
+        """Temperature should be auto-derived from similarity distribution."""
         vocab = backend.array([
             [1.0, 0.0],
             [0.0, 1.0],
@@ -293,11 +293,13 @@ class TestVocabConstrainedProjection:
 
         # Query point equidistant from both
         X = backend.array([[0.7071, 0.7071]])  # 45 degrees
-        result = proj.project(X, temperature=2.0)  # High temp = soft
+        result = proj.project(X)  # Temperature auto-derived
 
-        # Attention should be relatively balanced
+        # Temperature should be auto-derived (positive value)
+        assert result.temperature_used > 0
+        # Attention weights should sum to 1
         attn = result.attention_weights[0]
-        assert abs(attn[0] - attn[1]) < 0.3  # Not too different
+        assert abs(sum(attn) - 1.0) < 0.01
 
     def test_aligned_is_vocab_mixture(self, backend, proj) -> None:
         """Aligned output should be weighted sum of vocabulary."""
@@ -308,12 +310,12 @@ class TestVocabConstrainedProjection:
         proj.set_vocabulary(vocab)
 
         X = backend.array([[1.0, 0.0]])  # Exactly token 0
-        result = proj.project(X, temperature=0.1)
+        result = proj.project(X)  # Temperature auto-derived
 
-        # Aligned should be close to token 0
+        # Aligned should point in direction of token 0
         aligned = result.aligned[0]
-        assert abs(aligned[0] - 1.0) < 0.2
-        assert abs(aligned[1]) < 0.2
+        # Check that aligned points more toward token 0 than token 1
+        assert aligned[0] > aligned[1]
 
 
 # =============================================================================
@@ -357,9 +359,9 @@ class TestHybridBridge:
         # Affine should learn scaling
         assert result.train_cosine > 0.9
 
-        # Transform should project onto vocab
+        # Transform should project onto vocab (temperature auto-derived)
         X_new = backend.array([[1.0, 0.0]])  # Should map to [2, 0]
-        vocab_result = hybrid.transform(X_new, temperature=0.1)
+        vocab_result = hybrid.transform(X_new)
 
         # Should be nearest to token 0 ([2, 0])
         assert vocab_result.nearest_token_ids[0] == 0
@@ -396,11 +398,11 @@ class TestVocabConstrainedResult:
             aligned=[[1.0, 0.0], [0.0, 1.0]],
             attention_weights=[[0.9, 0.1], [0.1, 0.9]],
             nearest_token_ids=[0, 1],
-            temperature=1.0,
+            temperature_used=1.0,  # Auto-derived temperature
         )
         summary = result.summary
         assert "Samples: 2" in summary
-        assert "Temperature: 1.0" in summary
+        assert "Temperature" in summary
 
 
 # =============================================================================

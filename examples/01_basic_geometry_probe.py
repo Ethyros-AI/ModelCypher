@@ -39,8 +39,9 @@ from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 def main():
     if len(sys.argv) < 2:
         print("Usage: python 01_basic_geometry_probe.py /path/to/model")
-        print("\nExample models:")
-        print("  /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16")
+        print("\nTip:")
+        print("  Fetch a model: poetry run mc model fetch <repo_id>")
+        print("  Then probe the returned localPath.")
         sys.exit(1)
 
     model_path = Path(sys.argv[1])

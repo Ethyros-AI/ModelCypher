@@ -135,8 +135,8 @@ class VocabConstrainedResult:
     # Nearest tokens for each sample
     nearest_token_ids: list[int]
 
-    # Temperature used
-    temperature: float
+    # Auto-derived temperature (exposed for diagnostics)
+    temperature_used: float
 
     @property
     def summary(self) -> str:
@@ -145,7 +145,7 @@ class VocabConstrainedResult:
             "Vocabulary-Constrained Projection Result\n"
             "========================================\n"
             f"Samples: {len(self.aligned)}\n"
-            f"Temperature: {self.temperature}\n"
+            f"Temperature (auto-derived): {self.temperature_used:.4f}\n"
             f"First 5 nearest tokens: {self.nearest_token_ids[:5]}"
         )
 
@@ -357,6 +357,8 @@ class VocabConstrainedProjection:
     """
     Vocabulary-constrained projection for token-space alignment.
 
+    All parameters are auto-derived from the data. No user-configurable knobs.
+
     Standard affine transformation outputs can land anywhere in embedding space.
     This doesn't guarantee the output is in a region that maps to meaningful tokens.
 
@@ -372,10 +374,8 @@ class VocabConstrainedProjection:
     - But token retrieval fails because high cosine != same vocabulary neighborhood
     - Vocabulary-constrained projection forces output to BE a vocabulary embedding
 
-    Temperature controls the sharpness of attention:
-    - Low temp (0.1-0.5): Hard assignment to nearest token(s)
-    - Med temp (1.0): Balanced mixture
-    - High temp (2.0+): Soft average over many tokens
+    Temperature is AUTO-DERIVED from similarity distribution:
+        temperature = max(0.1, 2.0 * std(similarities))
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -401,17 +401,15 @@ class VocabConstrainedProjection:
         )
         backend.eval(self._vocab_embeddings, self._vocab_norms)
 
-    def project(
-        self,
-        X: "Array",
-        temperature: float | None = None,
-    ) -> VocabConstrainedResult:
+    def project(self, X: "Array") -> VocabConstrainedResult:
         """
         Project embeddings onto vocabulary manifold.
 
+        Temperature is auto-derived from similarity distribution.
+        No user-configurable parameters.
+
         Args:
             X: Source embeddings [n_samples, embed_dim]
-            temperature: Softmax temperature. If None, derived from embedding statistics.
 
         Returns:
             VocabConstrainedResult with aligned embeddings and attention weights
@@ -429,15 +427,14 @@ class VocabConstrainedProjection:
         X_normed = X_f / (backend.reshape(x_norms, (-1, 1)) + eps)
         backend.eval(X_normed)
 
-        # Derive temperature from similarity distribution if not provided
-        if temperature is None:
-            # Sample a few similarities to estimate spread
-            sample_sims = backend.matmul(X_normed[:1], backend.transpose(self._vocab_norms))
-            sample_std = backend.std(sample_sims)
-            backend.eval(sample_std)
-            std_val = float(backend.to_scalar(sample_std))
-            # Temperature ~ 2 * std for reasonable spread
-            temperature = max(0.1, 2.0 * std_val)
+        # ALWAYS derive temperature from similarity distribution
+        # Sample similarities to estimate spread
+        sample_sims = backend.matmul(X_normed[:1], backend.transpose(self._vocab_norms))
+        sample_std = backend.std(sample_sims)
+        backend.eval(sample_std)
+        std_val = float(backend.to_scalar(sample_std))
+        # Temperature ~ 2 * std for reasonable spread
+        temperature = max(0.1, 2.0 * std_val)
 
         # Compute cosine similarities: X @ vocab^T
         similarities = backend.matmul(X_normed, backend.transpose(self._vocab_norms))
@@ -465,7 +462,7 @@ class VocabConstrainedProjection:
             aligned=self._array_to_2d_list(aligned),
             attention_weights=self._array_to_2d_list(attention),
             nearest_token_ids=nearest_ids,
-            temperature=temperature,
+            temperature_used=temperature,
         )
 
     def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
@@ -477,13 +474,16 @@ class HybridBridge:
     """
     Combined affine + vocabulary-constrained bridge.
 
+    All parameters are auto-derived from the data. No user-configurable knobs.
+
     Applies affine transformation first (for direction alignment),
     then vocabulary-constrained projection (for token neighborhood).
 
     Pipeline:
         1. X_affine = X @ W + b  (affine alignment)
-        2. attention = softmax(X_affine @ vocab^T / temp)  (soft token lookup)
-        3. aligned = attention @ vocab  (vocabulary-constrained output)
+        2. temperature = auto-derive from similarity distribution
+        3. attention = softmax(X_affine @ vocab^T / temp)  (soft token lookup)
+        4. aligned = attention @ vocab  (vocabulary-constrained output)
 
     This gets the best of both:
     - Affine: Learns global rotation/scaling between spaces
@@ -524,17 +524,15 @@ class HybridBridge:
 
         return result
 
-    def transform(
-        self,
-        X: "Array",
-        temperature: float | None = None,
-    ) -> VocabConstrainedResult:
+    def transform(self, X: "Array") -> VocabConstrainedResult:
         """
         Apply hybrid transformation.
 
+        Temperature is auto-derived from similarity distribution.
+        No user-configurable parameters.
+
         Args:
             X: Source embeddings [n_samples, source_dim]
-            temperature: Softmax temperature for vocabulary projection
 
         Returns:
             VocabConstrainedResult with vocabulary-constrained output
@@ -542,8 +540,8 @@ class HybridBridge:
         # Apply affine transformation
         X_affine = self._affine.transform(X)
 
-        # Project onto vocabulary manifold
-        return self._vocab_proj.project(X_affine, temperature)
+        # Project onto vocabulary manifold (temperature auto-derived)
+        return self._vocab_proj.project(X_affine)
 
     def load_affine_weights(self, W: "Array", b: "Array") -> None:
         """Load pre-trained affine weights."""
