@@ -29,7 +29,7 @@ from modelcypher.core.domain.geometry.path_geometry import (
     PathGeometry,
     PathSignature,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
 
 
 @dataclass(frozen=True)

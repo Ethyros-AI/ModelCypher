@@ -66,7 +66,7 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     output_layer_marker,
 )
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_sparse
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_sparse
 
 # =============================================================================
 # Helper: Dimension Alignment Builder (Simplified)

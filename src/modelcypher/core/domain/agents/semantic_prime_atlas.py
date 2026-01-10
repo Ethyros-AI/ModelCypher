@@ -36,7 +36,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.embedding_cache import get_or_compute_embeddings
 from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 from modelcypher.ports.embedding import EmbeddingProvider
 
 

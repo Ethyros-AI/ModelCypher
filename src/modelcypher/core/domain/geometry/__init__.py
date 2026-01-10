@@ -35,7 +35,6 @@ _SUBMODULES = {
     # Core infrastructure
     "types",
     "exceptions",
-    "vector_math",
     "backend_matrix_utils",
     "signature_base",
     "numerical_stability",

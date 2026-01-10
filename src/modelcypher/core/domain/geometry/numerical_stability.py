@@ -85,12 +85,22 @@ __all__ = [
 
 
 def _geodesic_norm_scalar(array: "Array", backend: "Backend") -> float:
-    """Compute a geodesic norm scalar for any array shape."""
-    from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+    """Compute a geodesic norm scalar for any array shape.
 
-    norm_arr = geodesic_norms(backend.reshape(array, (1, -1)), backend)
-    backend.eval(norm_arr)
-    return float(backend.to_scalar(norm_arr))
+    Uses k-NN graph geodesic distance from origin. For a single vector,
+    this reduces to chord distance (k=1 on 2-point graph), but the API
+    is correct for extension to manifold context.
+    """
+    from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
+
+    vec = backend.reshape(array, (1, -1))
+    zero = backend.zeros_like(vec)
+    points = backend.concatenate([zero, vec], axis=0)
+    rg = RiemannianGeometry(backend)
+    point_count = int(backend.shape(points)[0])
+    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+    backend.eval(geo_result.distances)
+    return max(0.0, float(backend.to_scalar(geo_result.distances[0, 1])))
 
 
 def sqrt_scalar(value: float, backend: "Backend") -> float:
@@ -660,21 +670,28 @@ def compute_pearson_correlation(
     backend.eval(diff_l, diff_r)
 
     eps = division_epsilon(backend, lhs_arr)
-    if _geodesic_norm_scalar(diff_l, backend) <= eps:
-        return error_value
-    if _geodesic_norm_scalar(diff_r, backend) <= eps:
-        return error_value
-
-    from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
-
-    diff_l_mat = backend.reshape(diff_l, (1, -1))
-    diff_r_mat = backend.reshape(diff_r, (1, -1))
-    cos_arr, _ = geodesic_pairwise_metrics(diff_l_mat, diff_r_mat, backend)
-    backend.eval(cos_arr)
-    if cos_arr.size == 0:
+    d0a = _geodesic_norm_scalar(diff_l, backend)
+    d0b = _geodesic_norm_scalar(diff_r, backend)
+    if d0a <= eps or d0b <= eps:
         return error_value
 
-    corr = float(backend.to_scalar(cos_arr[0]))
+    # Compute geodesic distance between the two vectors
+    from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
+
+    diff_l_vec = backend.reshape(diff_l, (1, -1))
+    diff_r_vec = backend.reshape(diff_r, (1, -1))
+    points = backend.concatenate([diff_l_vec, diff_r_vec], axis=0)
+    rg = RiemannianGeometry(backend)
+    geo_result = rg.geodesic_distances(points, k_neighbors=1)
+    backend.eval(geo_result.distances)
+    dab = float(backend.to_scalar(geo_result.distances[0, 1]))
+
+    # Law of cosines: cos(θ) = (d0a² + d0b² - dab²) / (2 * d0a * d0b)
+    denom = 2.0 * d0a * d0b
+    if denom <= eps:
+        return error_value
+    cos_val = (d0a * d0a + d0b * d0b - dab * dab) / denom
+    corr = max(-1.0, min(1.0, cos_val))
     return corr if is_finite(corr, backend) else error_value
 
 
@@ -725,21 +742,28 @@ def compute_spearman_correlation(
     backend.eval(diff_l, diff_r)
 
     eps = division_epsilon(backend, lhs_rank)
-    if _geodesic_norm_scalar(diff_l, backend) <= eps:
-        return error_value
-    if _geodesic_norm_scalar(diff_r, backend) <= eps:
-        return error_value
-
-    from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
-
-    diff_l_mat = backend.reshape(diff_l, (1, -1))
-    diff_r_mat = backend.reshape(diff_r, (1, -1))
-    cos_arr, _ = geodesic_pairwise_metrics(diff_l_mat, diff_r_mat, backend)
-    backend.eval(cos_arr)
-    if cos_arr.size == 0:
+    d0a = _geodesic_norm_scalar(diff_l, backend)
+    d0b = _geodesic_norm_scalar(diff_r, backend)
+    if d0a <= eps or d0b <= eps:
         return error_value
 
-    corr = float(backend.to_scalar(cos_arr[0]))
+    # Compute geodesic distance between the two rank vectors
+    from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
+
+    diff_l_vec = backend.reshape(diff_l, (1, -1))
+    diff_r_vec = backend.reshape(diff_r, (1, -1))
+    points = backend.concatenate([diff_l_vec, diff_r_vec], axis=0)
+    rg = RiemannianGeometry(backend)
+    geo_result = rg.geodesic_distances(points, k_neighbors=1)
+    backend.eval(geo_result.distances)
+    dab = float(backend.to_scalar(geo_result.distances[0, 1]))
+
+    # Law of cosines: cos(θ) = (d0a² + d0b² - dab²) / (2 * d0a * d0b)
+    denom = 2.0 * d0a * d0b
+    if denom <= eps:
+        return error_value
+    cos_val = (d0a * d0a + d0b * d0b - dab * dab) / denom
+    corr = max(-1.0, min(1.0, cos_val))
     return corr if is_finite(corr, backend) else error_value
 
 

@@ -50,7 +50,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:

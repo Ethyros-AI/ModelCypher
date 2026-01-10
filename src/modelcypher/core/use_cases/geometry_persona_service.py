@@ -38,7 +38,7 @@ from modelcypher.core.domain.geometry.manifold_dimensionality import (
     ManifoldDimensionality,
 )
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,

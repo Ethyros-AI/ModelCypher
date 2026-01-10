@@ -28,7 +28,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_sparse
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_sparse
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.manifold_stitcher import (

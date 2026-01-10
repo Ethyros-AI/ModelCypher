@@ -42,7 +42,7 @@ class TestGeometryIntegration:
 
     def test_vector_math_cosine_similarity_chain(self):
         """VectorMath can be used in a processing chain."""
-        from modelcypher.core.domain.geometry.vector_math import VectorMath
+        from modelcypher.core.domain.geometry.riemannian_utils import VectorMath
 
         # Create test vectors
         v1 = [1.0, 0.0, 0.0]
@@ -223,7 +223,7 @@ class TestCrossModuleIntegration:
 
     def test_vector_math_operations(self):
         """Vector math operations work correctly."""
-        from modelcypher.core.domain.geometry.vector_math import VectorMath
+        from modelcypher.core.domain.geometry.riemannian_utils import VectorMath
 
         # Create activation vectors and compute similarities
         activations = [

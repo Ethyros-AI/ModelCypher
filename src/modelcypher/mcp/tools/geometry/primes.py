@@ -178,7 +178,7 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
 
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
-            from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+            from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 
             backend = get_default_backend()
             path_a = require_existing_path(activationsA)

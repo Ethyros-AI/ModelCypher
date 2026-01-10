@@ -316,7 +316,7 @@ class JAXModelProbe(BaseModelProbe):
         b_f32 = self.jnp.asarray(tensor_b, dtype=self.jnp.float32)
 
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
         backend = get_default_backend()
         diff = a_f32 - b_f32

@@ -31,7 +31,7 @@ from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 
 
 class SkillCategory(str, Enum):

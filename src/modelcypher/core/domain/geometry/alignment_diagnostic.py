@@ -36,7 +36,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     power_iteration_eigh,
 )
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
 )

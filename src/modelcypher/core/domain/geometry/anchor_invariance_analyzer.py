@@ -66,7 +66,7 @@ from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
     MetaphorConvergenceAnalyzer,
 )
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_sparse
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_sparse
 
 
 class AnchorInvarianceError(Exception):

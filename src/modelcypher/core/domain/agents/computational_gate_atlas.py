@@ -39,7 +39,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     regularization_epsilon,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.data import load_json
 from modelcypher.ports.embedding import EmbeddingProvider

@@ -55,7 +55,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 # Infrastructure dependencies (MLX-specific neural network layers and file I/O)
 # These cannot be abstracted via Backend protocol

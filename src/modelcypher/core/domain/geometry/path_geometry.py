@@ -27,10 +27,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.vector_math import (
-    BackendVectorMath,
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
     geodesic_cosine_between_sets,
+    geodesic_cosine_matrix,
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
@@ -168,7 +168,7 @@ class PathGeometry:
     @staticmethod
     def _prepare_embedding_cache(
         gate_embeddings: dict[str, list[float]],
-    ) -> tuple["Backend", BackendVectorMath, dict[str, "Array"]]:
+    ) -> tuple["Backend", dict[str, "Array"]]:
         backend = get_default_backend()
         cache: dict[str, "Array"] = {}
         arrays = []
@@ -180,21 +180,25 @@ class PathGeometry:
             arrays.append(arr)
         if arrays:
             backend.eval(*arrays)
-        return backend, BackendVectorMath(backend), cache
+        return backend, cache
 
     @staticmethod
     def _cached_cosine(
         gate_a: str,
         gate_b: str,
         cache: dict[str, "Array"],
-        vmath: BackendVectorMath,
+        backend: "Backend",
     ) -> float | None:
         vec_a = cache.get(gate_a)
         vec_b = cache.get(gate_b)
         if vec_a is None or vec_b is None:
             return None
         try:
-            return vmath.cosine_similarity(vec_a, vec_b)
+            # Stack vectors and compute geodesic cosine
+            vectors = backend.stack([vec_a, vec_b], axis=0)
+            cos_matrix = geodesic_cosine_matrix(vectors, backend)
+            backend.eval(cos_matrix)
+            return float(backend.to_scalar(cos_matrix[0, 1]))
         except ValueError:
             return None
 
@@ -287,7 +291,7 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> PathComparison:
-        backend, _, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
+        backend, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
         gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix = (
             PathGeometry._prepare_gate_similarity(path_a, path_b, embed_cache, backend)
         )
@@ -376,7 +380,7 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> FrechetResult:
-        backend, _, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
+        backend, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
         gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix = (
             PathGeometry._prepare_gate_similarity(path_a, path_b, embed_cache, backend)
         )
@@ -432,7 +436,7 @@ class PathGeometry:
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
     ) -> DTWResult:
-        backend, _, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
+        backend, embed_cache = PathGeometry._prepare_embedding_cache(gate_embeddings)
         gate_ids_a, gate_ids_b, node_map_a, node_map_b, sim_matrix = (
             PathGeometry._prepare_gate_similarity(path_a, path_b, embed_cache, backend)
         )

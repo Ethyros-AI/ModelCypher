@@ -72,7 +72,7 @@ from modelcypher.core.domain.geometry.types import (
     DetectedConcept,
     DetectionResult,
 )
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_batch,
     geodesic_cosine_between_sets,
     geodesic_cosine_matrix,

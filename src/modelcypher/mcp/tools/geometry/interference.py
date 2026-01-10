@@ -144,7 +144,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.domain.geometry.geodesic_null_space import (
                 GeodesicNullSpaceFilter,
             )
-            from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+            from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
             backend = get_default_backend()
             # Use geodesic null-space filter - accurate for high-D manifolds (8kD+)

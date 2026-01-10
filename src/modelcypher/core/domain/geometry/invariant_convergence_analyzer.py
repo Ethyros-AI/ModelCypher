@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from .manifold_stitcher import ContinuousModelFingerprints
-from .vector_math import geodesic_cosine_sparse
+from .riemannian_utils import geodesic_cosine_sparse
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend

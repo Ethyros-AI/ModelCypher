@@ -35,7 +35,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon

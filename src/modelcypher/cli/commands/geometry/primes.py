@@ -318,7 +318,7 @@ def primes_compare(
     prime_similarities = []
     if dim_a == dim_b:
         # Same dimensions - use geodesic cosine similarity
-        from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 
         for prime in common_primes:
             vec_a = backend.array(acts_a[prime])
@@ -333,7 +333,7 @@ def primes_compare(
         # Different dimensions - use per-prime CKA via row correlation
         # Project to common space by computing normalized correlation
         # between the prime's position relative to other primes
-        from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 
         for i, prime in enumerate(common_primes):
             # Each prime's similarity is how correlated its relationships are

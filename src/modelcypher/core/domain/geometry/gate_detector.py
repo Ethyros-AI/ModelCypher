@@ -61,7 +61,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature

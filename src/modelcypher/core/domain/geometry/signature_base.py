@@ -39,7 +39,7 @@ from typing import TypeVar
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
 
 # Type variable for self-referential return types
 T = TypeVar("T", bound="SignatureMixin")

@@ -54,7 +54,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_nan,
     machine_epsilon,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
 
 logger = logging.getLogger(__name__)
 

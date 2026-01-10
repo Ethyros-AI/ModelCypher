@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_finite
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )

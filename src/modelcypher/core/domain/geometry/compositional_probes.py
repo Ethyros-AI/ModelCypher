@@ -54,7 +54,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     BackendVectorMath,
     geodesic_cosine_batch,
     geodesic_norms,

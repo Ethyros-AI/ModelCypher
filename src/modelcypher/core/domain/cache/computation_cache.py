@@ -487,7 +487,7 @@ class ComputationCache:
         if kernel_type == "linear":
             gram = backend.matmul(activations, backend.transpose(activations))
         elif kernel_type == "geodesic_cosine":
-            from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_matrix
+            from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
 
             gram = geodesic_cosine_matrix(activations, backend)
         else:

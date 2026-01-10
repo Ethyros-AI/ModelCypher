@@ -57,7 +57,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     geodesic_distance_matrix,
 )
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )

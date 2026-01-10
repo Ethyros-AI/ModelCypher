@@ -313,7 +313,7 @@ class CUDAModelProbe(BaseModelProbe):
         b_f32 = tensor_b.float()
 
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
         backend = get_default_backend()
         diff = a_f32 - b_f32

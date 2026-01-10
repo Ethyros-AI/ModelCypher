@@ -60,7 +60,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     tiny_value,
 )
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )

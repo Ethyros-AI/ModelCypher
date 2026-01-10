@@ -85,10 +85,50 @@ class FarthestPointSamplingResult:
     coverage_radius: float  # Maximum min-distance (radius of coverage)
 
 
+@dataclass(frozen=True)
+class ManifoldContext:
+    """Context for geodesic operations on a discrete manifold.
+
+    All geodesic operations require this context - no silent chord fallbacks.
+    The k-NN graph structure captures manifold curvature that Euclidean/chord
+    distance systematically ignores in high dimensions (4D+).
+
+    Attributes:
+        geo_result: Pre-computed geodesic distance result with k-NN graph
+        points: The point cloud defining this manifold [n, d]
+        sigma: RBF kernel bandwidth (derived from median distance if None)
+    """
+
+    geo_result: GeodesicDistanceResult
+    points: "Array"
+    sigma: float | None = None
+
+    @property
+    def n_points(self) -> int:
+        """Number of points in the manifold."""
+        return int(self.points.shape[0])
+
+    @property
+    def k_neighbors(self) -> int:
+        """Number of neighbors used in k-NN graph."""
+        return self.geo_result.k_neighbors
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the k-NN graph is fully connected."""
+        return self.geo_result.connected
+
+    @property
+    def distances(self) -> "Array":
+        """Pairwise geodesic distance matrix [n, n]."""
+        return self.geo_result.distances
+
+
 __all__ = [
     "FrechetMeanResult",
     "GeodesicDistanceResult",
     "CurvatureEstimate",
     "DirectionalCoverage",
     "FarthestPointSamplingResult",
+    "ManifoldContext",
 ]

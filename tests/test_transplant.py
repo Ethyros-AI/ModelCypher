@@ -32,7 +32,7 @@ from modelcypher.core.domain.geometry.constrained_transplant import (
     verify_boundary_invariance,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
 )

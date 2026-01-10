@@ -50,7 +50,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.vector_math import (
+from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_batch,
     geodesic_cosine_between_sets,
 )

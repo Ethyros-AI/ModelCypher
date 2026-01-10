@@ -54,7 +54,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     power_iteration_eigh,
     safe_log_epsilon,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_matrix
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
 
 if TYPE_CHECKING:

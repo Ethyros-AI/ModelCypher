@@ -26,7 +26,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon

@@ -35,7 +35,7 @@ from modelcypher.core.domain.geometry.birkhoff_projector import BirkhoffProjecto
 from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
