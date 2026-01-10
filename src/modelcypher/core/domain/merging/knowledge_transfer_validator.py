@@ -503,8 +503,8 @@ class KnowledgeRetentionResult:
     @property
     def retention_score(self) -> float:
         """Retention = merged / source (capped at 1.0)."""
-        # Use machine epsilon for robustness with very small rates
-        eps = 1e-15
+        # sqrt(float64 machine epsilon) for division safety: 2^-52 → sqrt → 2^-26
+        eps = 2.0 ** -26
         if self.source_pass_rate <= eps:
             return 1.0  # Avoid division by zero/near-zero
         return min(1.0, self.merged_pass_rate / self.source_pass_rate)

@@ -202,6 +202,7 @@ def stage_transplant(
     layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
     source_tokenizer: Any | None = None,  # For token correspondence
     target_tokenizer: Any | None = None,  # For token correspondence
+    delta_scale: float = 1.0,  # Delta budget control for sequential stacking
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     result = stage_transplant_impl(
@@ -233,6 +234,7 @@ def stage_transplant(
         layer_status=layer_status,  # NEW: Per DIMENSIONAL_COMPRESSION.md
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
+        delta_scale=delta_scale,
     )
 
     return result.merged_weights, result.metrics

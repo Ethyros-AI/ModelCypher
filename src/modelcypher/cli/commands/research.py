@@ -722,7 +722,8 @@ def research_memory_token(
         # Scale derived from ratio of activation norm to delta norm
         # Formula: scale × ||delta|| = ||activation|| ensures injection matches typical signal
         # If delta ≈ 0 (concepts identical), scale is undefined - use 1.0
-        eps = math.sqrt(1e-15)  # sqrt(machine_epsilon) for numerical stability
+        # sqrt(float32 machine epsilon): 2^-23 → sqrt → 2^-11.5 ≈ 3.45e-4
+        eps = 2.0 ** -11.5
         if delta_norm > eps:
             scale = mean_norm / delta_norm
         else:
@@ -771,8 +772,8 @@ def research_memory_token(
             "nullSpaceProjected": memory.null_space_projected,
         },
         "validation": {
-            "isSafe": is_safe,
-            "recommendation": recommendation,
+            "isValid": is_valid,
+            "infoMessage": info_message,
         },
         "layerTypes": {str(k): v.value for k, v in layer_types.items()} if layer_types else {},
     }
@@ -796,8 +797,8 @@ def research_memory_token(
             f"  Scale Applied: {memory.scale_applied}",
             f"  Null-Space Projected: {memory.null_space_projected}",
             "",
-            f"Validation: {'SAFE' if is_safe else 'WARNING'}",
-            f"  {recommendation}",
+            f"Validation: {'VALID' if is_valid else 'WARNING'}",
+            f"  {info_message}",
         ]
 
         if layer_types:

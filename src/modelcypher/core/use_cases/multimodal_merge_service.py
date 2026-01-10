@@ -282,7 +282,8 @@ class MultiModalMergeService:
         hsic_xx_val = float(backend.to_scalar(hsic_xx))
         hsic_yy_val = float(backend.to_scalar(hsic_yy))
 
-        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + 1e-10)
+        # sqrt(float32 machine epsilon) for division safety: 2^-23 → sqrt → 2^-11.5
+        return hsic_xy_val / (hsic_xx_val**0.5 * hsic_yy_val**0.5 + 2.0 ** -11.5)
 
     def _merge_into_null_space(
         self,
@@ -316,7 +317,8 @@ class MultiModalMergeService:
 
         # Normalize variance to [0, 1]
         var_max = backend.max(prior_var)
-        var_normalized = prior_var / (var_max + 1e-10)
+        # sqrt(float32 machine epsilon) for division safety
+        var_normalized = prior_var / (var_max + 2.0 ** -11.5)
 
         # Inverse variance weighting (sparse regions get more)
         weights = 1.0 - var_normalized
@@ -332,7 +334,8 @@ class MultiModalMergeService:
             backend.to_scalar(backend.sqrt(backend.sum(filtered_delta * filtered_delta)))
         )
 
-        preserved_fraction = delta_norm_after / (delta_norm_before + 1e-10)
+        # sqrt(float32 machine epsilon) for division safety
+        preserved_fraction = delta_norm_after / (delta_norm_before + 2.0 ** -11.5)
         projection_loss = 1.0 - preserved_fraction
 
         # Merge

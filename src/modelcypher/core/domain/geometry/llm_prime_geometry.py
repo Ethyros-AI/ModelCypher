@@ -118,38 +118,30 @@ class CurvatureMetrics:
 
 @dataclass(frozen=True)
 class EffectSize:
-    """Cohen's d effect size."""
+    """Cohen's d effect size - raw measurement only.
+
+    NO VIBES: Callers decide what constitutes "small", "medium", "large".
+    The d value is the raw measurement; interpretation is not our job.
+    """
 
     d: float
-    interpretation: str  # "small", "medium", "large", "negligible"
 
     @staticmethod
     def compute(mean1: float, mean2: float, std1: float, std2: float, n1: int, n2: int) -> "EffectSize":
         """Compute Cohen's d with pooled standard deviation."""
         if n1 < 2 or n2 < 2:
-            return EffectSize(d=0.0, interpretation="negligible")
+            return EffectSize(d=0.0)
 
         # Pooled standard deviation
         pooled_var = ((n1 - 1) * std1**2 + (n2 - 1) * std2**2) / (n1 + n2 - 2)
         pooled_std = pooled_var**0.5
 
-        if pooled_std < 1e-10:
-            return EffectSize(d=0.0, interpretation="negligible")
+        # sqrt(float64 machine epsilon) for division safety: 2^-52 → sqrt → 2^-26
+        if pooled_std < 2.0 ** -26:
+            return EffectSize(d=0.0)
 
         d = (mean1 - mean2) / pooled_std
-
-        # Interpretation
-        abs_d = abs(d)
-        if abs_d < 0.2:
-            interp = "negligible"
-        elif abs_d < 0.5:
-            interp = "small"
-        elif abs_d < 0.8:
-            interp = "medium"
-        else:
-            interp = "large"
-
-        return EffectSize(d=d, interpretation=interp)
+        return EffectSize(d=d)
 
 
 @dataclass(frozen=True)

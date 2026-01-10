@@ -155,7 +155,8 @@ def _orthogonalize_stitch(backend: "Backend", F: "Array") -> "Array":
             # Q @ R = F, where Q is [n, n], R is [n, m]
             # We want orthogonal [n, m], so just use F normalized column-wise
             # (This is a simplification - full solution needs more care)
-            col_norms = b.sqrt(b.sum(F * F, axis=0, keepdims=True) + 1e-10)
+            # sqrt(float32 machine epsilon) for numerical stability: 2^-23 → sqrt → 2^-11.5
+            col_norms = b.sqrt(b.sum(F * F, axis=0, keepdims=True) + 2.0 ** -11.5)
             F_normalized = F / col_norms
             b.eval(F_normalized)
             return F_normalized
