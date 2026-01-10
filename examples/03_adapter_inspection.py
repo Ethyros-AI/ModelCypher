@@ -36,6 +36,7 @@ import argparse
 import json
 from pathlib import Path
 
+from modelcypher.backends import initialize_default_backend
 from modelcypher.core.use_cases.adapter_service import AdapterService
 
 
@@ -54,6 +55,13 @@ def main() -> int:
         help="Print JSON output",
     )
     args = parser.parse_args()
+
+    try:
+        initialize_default_backend()
+    except RuntimeError as exc:
+        print(f"Backend initialization failed: {exc}")
+        print("Tip: set MC_BACKEND=numpy for CPU fallback when MLX is unavailable.")
+        return 1
 
     service = AdapterService()
     results = []

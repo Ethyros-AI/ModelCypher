@@ -33,6 +33,7 @@ Requirements:
 import argparse
 from pathlib import Path
 
+from modelcypher.backends import initialize_default_backend
 from modelcypher.core.use_cases.thermo_service import ThermoService
 
 
@@ -42,6 +43,7 @@ def main() -> int:
     )
     parser.add_argument(
         "model",
+        nargs="?",
         help="Path to local model directory",
     )
     parser.add_argument(
@@ -49,16 +51,43 @@ def main() -> int:
         default="Explain the concept of entropy in information theory.",
         help="Prompt to analyze",
     )
+    parser.add_argument(
+        "--simulated",
+        action="store_true",
+        help="Run in simulated mode (no model inference)",
+    )
     args = parser.parse_args()
 
-    model_path = Path(args.model)
-    if not model_path.exists():
-        print(f"Error: Model not found: {model_path}")
+    try:
+        initialize_default_backend()
+    except RuntimeError as exc:
+        print(f"Backend initialization failed: {exc}")
+        print("Tip: set MC_BACKEND=numpy for CPU fallback when MLX is unavailable.")
         return 1
+
+    if args.model is None and not args.simulated:
+        parser.error("MODEL is required unless --simulated is set")
+
+    model_path_str: str
+    mode: str
+    if args.simulated:
+        model_path_str = ""
+        mode = "simulated"
+    else:
+        model_path = Path(args.model).expanduser().resolve()
+        if not model_path.exists():
+            print(f"Error: Model not found: {model_path}")
+            return 1
+        model_path_str = str(model_path)
+        mode = "real"
 
     print("Entropy Analysis (Raw Metrics)")
     print("=" * 60)
-    print(f"Model: {model_path}")
+    print(f"Mode: {mode}")
+    if mode == "real":
+        print(f"Model: {model_path_str}")
+    else:
+        print("Model: (simulated)")
     print(f"Prompt: {args.prompt[:50]}...")
     print()
 
@@ -69,7 +98,7 @@ def main() -> int:
     print("Running entropy measurements...")
     result = service.measure(
         prompt=args.prompt,
-        model_path=str(model_path),
+        model_path=model_path_str,
     )
 
     print("\nMeasurements:")
@@ -94,7 +123,7 @@ def main() -> int:
     # Differential measurement (baseline vs intensity)
     detect_result = service.detect(
         prompt=args.prompt,
-        model_path=str(model_path),
+        model_path=model_path_str,
     )
     print("\nDifferential measurement:")
     print("-" * 40)

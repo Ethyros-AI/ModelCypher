@@ -38,15 +38,22 @@ def get_model_probe() -> "ModelProbePort":
         ModelProbePort implementation for the current backend.
 
     Platform selection:
-        - macOS (Darwin): MLXModelProbe
+        - macOS (Darwin): MLXModelProbe (when MLX runtime available)
+        - macOS (Darwin) fallback: SafeTensorsModelProbe (reads safetensors headers)
         - Linux + CUDA available: CUDAModelProbe
         - Linux + JAX available: JAXModelProbe
-        - Fallback: CUDAModelProbe (requires PyTorch)
+        - Fallback: SafeTensorsModelProbe (reads safetensors headers)
 
     Raises:
-        RuntimeError: If no suitable backend is available.
+        RuntimeError: If required dependencies are missing for the chosen probe.
     """
     if sys.platform == "darwin":
+        from modelcypher.core.domain._backend import probe_mlx_available
+
+        if not probe_mlx_available():
+            from modelcypher.backends.safetensors_model_probe import SafeTensorsModelProbe
+
+            return SafeTensorsModelProbe()
         try:
             from modelcypher.backends.mlx_model_probe import MLXModelProbe
 
@@ -75,12 +82,9 @@ def get_model_probe() -> "ModelProbePort":
     except ImportError:
         pass
 
-    raise RuntimeError(
-        "No suitable backend available. Install one of:\n"
-        "  - macOS: pip install mlx\n"
-        "  - Linux/CUDA: pip install torch\n"
-        "  - Linux/TPU: pip install jax jaxlib"
-    )
+    from modelcypher.backends.safetensors_model_probe import SafeTensorsModelProbe
+
+    return SafeTensorsModelProbe()
 
 
 __all__ = ["get_model_probe"]

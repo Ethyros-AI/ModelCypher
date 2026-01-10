@@ -47,6 +47,7 @@ import argparse
 import json
 from pathlib import Path
 
+from modelcypher.backends import initialize_default_backend
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
@@ -156,6 +157,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    try:
+        initialize_default_backend()
+    except RuntimeError as exc:
+        print(f"Backend initialization failed: {exc}")
+        print("Tip: set MC_BACKEND=numpy for CPU fallback when MLX is unavailable.")
+        return 1
+
     adapter_name = _resolve_adapter_name(args.adapter, args.name)
 
     try:
@@ -168,15 +176,19 @@ def main() -> int:
     print("Safety Audit (Raw Metrics)")
     print("=" * 60)
 
+    embedder = EmbeddingDefaults.make_default_embedder()
+
     # 1. Static metadata scan
     print("\n[1/4] Static Metadata Scan")
     print("-" * 40)
     if adapter_name is None:
         print("  Skipped: provide --name or adapter argument")
     else:
-        embedder = EmbeddingDefaults.make_default_embedder()
         if embedder is None:
-            print("  Skipped: embedder unavailable")
+            print(
+                "  Skipped: embedder unavailable "
+                "(set MC_ALLOW_STUB_EMBEDDINGS=1 for stub embeddings)"
+            )
         else:
             safety_service = SafetyProbeService(embedder=embedder)
             indicators = safety_service.scan_adapter_metadata(
@@ -203,27 +215,33 @@ def main() -> int:
     if adapter_name is None:
         print("  Skipped: provide --name or adapter argument")
     else:
-        safety_service = SafetyProbeService(embedder=EmbeddingDefaults.make_default_embedder())
-        result = safety_service.run_behavioral_probes(
-            adapter_name=adapter_name,
-            adapter_description=args.description,
-            skill_tags=args.tags,
-            creator=args.creator,
-            base_model_id=args.base_model,
-        )
-        payload = SafetyProbeService.composite_result_payload(result)
-        print(f"  Adapter: {adapter_name}")
-        print(f"  Probes run: {payload['probeCount']}")
-        print(f"  Any findings: {payload['anyFindings']}")
-        if payload["aggregateFindingCounts"]:
-            counts = ", ".join(
-                f"{key}: {value}" for key, value in payload["aggregateFindingCounts"].items()
+        if embedder is None:
+            print(
+                "  Skipped: embedder unavailable "
+                "(set MC_ALLOW_STUB_EMBEDDINGS=1 for stub embeddings)"
             )
-            print(f"  Aggregate finding counts: {counts}")
-        if payload["allFindings"]:
-            print("  Findings:")
-            for finding in payload["allFindings"][:5]:
-                print(f"    - {finding}")
+        else:
+            safety_service = SafetyProbeService(embedder=embedder)
+            result = safety_service.run_behavioral_probes(
+                adapter_name=adapter_name,
+                adapter_description=args.description,
+                skill_tags=args.tags,
+                creator=args.creator,
+                base_model_id=args.base_model,
+            )
+            payload = SafetyProbeService.composite_result_payload(result)
+            print(f"  Adapter: {adapter_name}")
+            print(f"  Probes run: {payload['probeCount']}")
+            print(f"  Any findings: {payload['anyFindings']}")
+            if payload["aggregateFindingCounts"]:
+                counts = ", ".join(
+                    f"{key}: {value}" for key, value in payload["aggregateFindingCounts"].items()
+                )
+                print(f"  Aggregate finding counts: {counts}")
+            if payload["allFindings"]:
+                print("  Findings:")
+                for finding in payload["allFindings"][:5]:
+                    print(f"    - {finding}")
 
     # 3. Entropy baseline verification
     print("\n[3/4] Entropy Baseline Verification")

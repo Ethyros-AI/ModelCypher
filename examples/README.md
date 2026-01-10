@@ -9,6 +9,17 @@ This directory contains example scripts demonstrating common ModelCypher workflo
 - macOS with Apple Silicon for MLX backend (most examples)
 - Local model weights (fetch with `poetry run mc model fetch …`)
 
+## Backend Notes
+
+Most examples assume MLX is available. In sandboxed environments (e.g. VSCode/Claude Code),
+MLX may fail to initialize; use explicit CPU fallback for smoke tests:
+
+```bash
+MC_BACKEND=numpy poetry run mc system status --output json
+```
+
+CPU fallback is slower and intended for validating workflows, not performance runs.
+
 ## Examples
 
 ### 01. Basic Geometry Probe
@@ -31,6 +42,7 @@ Run safety probes and entropy diagnostics against adapter metadata and baselines
 
 ```bash
 poetry run python examples/02_safety_audit.py --name "adapter-name"
+MC_ALLOW_STUB_EMBEDDINGS=1 poetry run python examples/02_safety_audit.py --name "adapter-name"
 poetry run python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/baseline.json \
   --observed "[0.1, 0.12, 0.09]" --samples /path/to/samples.json
 ```
@@ -59,6 +71,7 @@ Analyze entropy patterns in model outputs using thermodynamic metrics.
 
 ```bash
 poetry run python examples/04_entropy_analysis.py /path/to/model --prompt "Your prompt here"
+poetry run python examples/04_entropy_analysis.py --simulated --prompt "Your prompt here"
 ```
 
 **What it does:**
@@ -72,6 +85,7 @@ Merge two models using geometric alignment.
 
 ```bash
 poetry run python examples/05_model_merge.py source_model target_model -o merged_output
+poetry run python examples/05_model_merge.py source_model target_model -o merged_output --dry-run
 ```
 
 **What it does:**
@@ -88,9 +102,15 @@ Fetch an MLX-compatible model from Hugging Face:
 poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
 ```
 
+If you already have local weights, register them instead of downloading:
+
+```bash
+poetry run mc model register my-model --path /path/to/model --architecture qwen2
+```
+
 ## Tips
 
 1. **Start small**: Use smaller models (0.5B-3B) for faster iteration
 2. **Check memory**: Run `poetry run mc system status --output json` before large operations
-3. **Use the CLI**: Many examples have CLI equivalents (`mc geometry spatial probe-model`)
+3. **Use the CLI**: Many examples have CLI equivalents (`poetry run mc geometry spatial probe-model`)
 4. **Read the output**: Raw measurements are returned; you decide meaning based on context

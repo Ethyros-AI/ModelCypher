@@ -24,10 +24,11 @@ This example demonstrates how to merge two models using geometric alignment.
 The merge uses Gram alignment and null-space constrained transplant to preserve
 target boundaries while grafting dense source regions.
 
-Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
+Pipeline: PROBE → DENSITY → TRANSPLANT
 
 Usage:
     python examples/05_model_merge.py source_model target_model -o merged_output
+    python examples/05_model_merge.py source_model target_model -o merged_output --dry-run
 
 Requirements:
     - Two model directories with weights
@@ -38,6 +39,7 @@ import argparse
 from pathlib import Path
 
 from modelcypher.cli.composition import get_merge_pipeline_service
+from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 
 
 def main() -> int:
@@ -56,6 +58,11 @@ def main() -> int:
         "-o", "--output",
         required=True,
         help="Output directory for merged model",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate paths and merge compatibility without running the merge pipeline",
     )
     args = parser.parse_args()
 
@@ -77,8 +84,40 @@ def main() -> int:
     print(f"Target model: {target_path}")
     print(f"Output: {args.output}")
     print()
-    print("Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT")
+    print("Pipeline: PROBE → DENSITY → TRANSPLANT")
     print()
+
+    if args.dry_run:
+        print("Dry run: validating model compatibility (no model loading/inference).")
+        print()
+        probe = ModelProbeService()
+        try:
+            source_probe = probe.probe(str(source_path))
+            target_probe = probe.probe(str(target_path))
+            validation = probe.validate_merge(str(source_path), str(target_path))
+        except Exception as exc:
+            print(f"Validation failed: {exc}")
+            return 1
+
+        print("Model details:")
+        print(f"  Source architecture: {source_probe.architecture}")
+        print(f"  Target architecture: {target_probe.architecture}")
+        print(f"  Source hidden size: {source_probe.hidden_size}")
+        print(f"  Target hidden size: {target_probe.hidden_size}")
+        print(f"  Source vocab size: {source_probe.vocab_size}")
+        print(f"  Target vocab size: {target_probe.vocab_size}")
+        print()
+        print("Merge compatibility:")
+        print(f"  Low-effort: {validation.low_effort}")
+        print(f"  Architecture match: {validation.architecture_match}")
+        print(f"  Vocab match: {validation.vocab_match}")
+        print(f"  Dimension match: {validation.dimension_match}")
+        if validation.warnings:
+            print("  Warnings:")
+            for warning in validation.warnings:
+                print(f"    - {warning}")
+        print("\nDry run complete.")
+        return 0
 
     service = get_merge_pipeline_service()
 
@@ -126,8 +165,8 @@ def main() -> int:
     output_path = merge_result.get("output_path") or result.output_dir
     print(f"\nOutput path: {output_path}")
     print("\nNext steps:")
-    print(f"  1. Test the merged model: mc model probe {output_path}")
-    print(f"  2. Run inference: mc infer run {output_path} --prompt 'Hello'")
+    print(f"  1. Test the merged model: poetry run mc model probe {output_path}")
+    print(f"  2. Run inference: poetry run mc infer run --model {output_path} --prompt 'Hello'")
 
     return 0
 
