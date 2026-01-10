@@ -522,10 +522,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.domain.entropy.hidden_state_extractor import (
                 HiddenStateExtractor,
             )
-            from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 
             # Get model info for layer count
-            probe_service = ModelProbeService()
+            probe_service = ctx.model_probe_service
             model_info = probe_service.probe(str(model_path))
             total_layers = len([l for l in model_info.layers if "layers." in l.name])
 
@@ -541,9 +540,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             extractor.enable_neuron_collection()
 
             # Collect activations via inference
-            from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
-
-            engine = get_inference_engine()
+            engine = ctx.inference_engine
             extractor.start_neuron_collection()
 
             for prompt in prompts:

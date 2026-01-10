@@ -59,10 +59,10 @@ def _run_dry_run(
     output_dir: str,
 ) -> None:
     """Show what a merge would do without actually running it."""
-    from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+    from modelcypher.cli.composition import get_model_probe_service
 
     context = _context(ctx)
-    service = ModelProbeService()
+    service = get_model_probe_service()
 
     # Probe both models
     source_info = service.probe(source)
@@ -731,7 +731,10 @@ def bridge(
 
         # Save bridge
         typer.echo(f"  Saving bridge to {output}...")
-        generator.save_bridge(result, output_path)
+        from modelcypher.cli.composition import get_bridge_service
+
+        bridge_service = get_bridge_service()
+        bridge_service.save(result, output_path)
 
     typer.echo("")
     typer.echo("=" * 60)
@@ -774,7 +777,7 @@ def apply_bridge(
     from safetensors.numpy import save_file as save_safetensors
 
     from modelcypher.core.domain._backend import get_default_backend
-    from modelcypher.core.domain.bridge.generator import CrossModalBridge
+    from modelcypher.cli.composition import get_bridge_service
 
     context = _context(ctx)
     backend = get_default_backend()
@@ -800,7 +803,8 @@ def apply_bridge(
 
     # Load bridge
     typer.echo("  Loading bridge...")
-    bridge = CrossModalBridge.load(bridge_file, backend=backend)
+    bridge_service = get_bridge_service()
+    bridge = bridge_service.load(bridge_file)
     typer.echo(f"  Bridge: {bridge.source_name} ({bridge.source_dim}D) → {bridge.target_name} ({bridge.target_dim}D)")
 
     # Load input embeddings
@@ -909,6 +913,7 @@ def _sample_atlas_probes(
     Returns:
         Tuple of (source_activations, target_activations)
     """
+    from modelcypher.cli.composition import get_model_loader
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
     from modelcypher.core.use_cases.merge.helpers import load_tokenizer
 
@@ -930,8 +935,9 @@ def _sample_atlas_probes(
         all_probes = all_probes[::step][:n_samples]
 
     # Load tokenizers
-    source_tokenizer = load_tokenizer(source_path)
-    target_tokenizer = load_tokenizer(target_path)
+    model_loader = get_model_loader()
+    source_tokenizer = load_tokenizer(source_path, model_loader)
+    target_tokenizer = load_tokenizer(target_path, model_loader)
 
     if source_tokenizer is None:
         raise ValueError(f"Failed to load tokenizer for source: {source_path}")

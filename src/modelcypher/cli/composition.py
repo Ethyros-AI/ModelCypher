@@ -35,12 +35,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from modelcypher.core.use_cases.bridge_service import BridgeService
     from modelcypher.core.use_cases.checkpoint_service import CheckpointService
     from modelcypher.core.use_cases.compare_service import CompareService
+    from modelcypher.core.use_cases.entropy_calibration_service import (
+        EntropyCalibrationService,
+    )
     from modelcypher.core.use_cases.evaluation_service import EvaluationService
     from modelcypher.core.use_cases.export_service import ExportService
+    from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+        InvariantLayerMappingService,
+    )
     from modelcypher.core.use_cases.inventory_service import InventoryService
     from modelcypher.core.use_cases.job_service import JobService
+    from modelcypher.core.use_cases.model_probe_service import ModelProbeService
     from modelcypher.core.use_cases.model_search_service import ModelSearchService
     from modelcypher.core.use_cases.model_service import ModelService
     from modelcypher.core.use_cases.storage_service import StorageService
@@ -48,6 +56,8 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
+    from modelcypher.ports.inference import InferenceEngine
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 
 @lru_cache(maxsize=1)
@@ -78,6 +88,30 @@ def get_model_search_service() -> "ModelSearchService":
     """Get ModelSearchService with proper dependency injection."""
     return _get_factory().model_search_service()
 
+def get_model_probe_service() -> "ModelProbeService":
+    """Get ModelProbeService with proper dependency injection."""
+    return _get_factory().model_probe_service()
+
+def get_entropy_calibration_service() -> "EntropyCalibrationService":
+    """Get EntropyCalibrationService with proper dependency injection."""
+    return _get_factory().entropy_calibration_service()
+
+def get_bridge_service() -> "BridgeService":
+    """Get BridgeService with proper dependency injection."""
+    return _get_factory().bridge_service()
+
+def get_invariant_mapping_service() -> "InvariantLayerMappingService":
+    """Get InvariantLayerMappingService with proper dependency injection."""
+    return _get_factory().invariant_mapping_service()
+
+def get_model_loader() -> "ModelLoaderPort":
+    """Get ModelLoaderPort from the registry."""
+    return _get_registry().model_loader
+
+def get_inference_engine() -> "InferenceEngine":
+    """Get InferenceEngine from the registry."""
+    return _get_registry().inference_engine
+
 
 def get_geometric_merger() -> "UnifiedGeometricMerger":
     """Get UnifiedGeometricMerger with proper dependency injection."""
@@ -86,6 +120,7 @@ def get_geometric_merger() -> "UnifiedGeometricMerger":
     registry = _get_registry()
     return UnifiedGeometricMerger(
         model_loader=registry.model_loader,
+        activation_store=registry.activation_store,
     )
 
 

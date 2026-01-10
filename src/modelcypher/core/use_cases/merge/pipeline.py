@@ -44,6 +44,7 @@ from .stages import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ def run_merge(
     target_tokenizer: Any | None = None,
     # Optional pre-loaded weights to avoid redundant disk I/O
     source_weights: dict[str, "Array"] | None = None,
+    activation_store: "ActivationStore | None" = None,
     # Delta budget control for sequential stacking
     delta_scale: float = 1.0,
 ) -> UnifiedMergeResult:
@@ -108,11 +110,11 @@ def run_merge(
 
     # Load tokenizers for probe execution (use pre-loaded if available)
     if source_tokenizer is None:
-        source_tokenizer = load_tokenizer(source_path)
+        source_tokenizer = load_tokenizer(source_path, model_loader)
     else:
         logger.info("Using pre-loaded source tokenizer")
     if target_tokenizer is None:
-        target_tokenizer = load_tokenizer(target_path)
+        target_tokenizer = load_tokenizer(target_path, model_loader)
     else:
         logger.info("Using pre-loaded target tokenizer")
 
@@ -120,11 +122,11 @@ def run_merge(
     if source_model is None or target_model is None:
         logger.info("Loading models for probe execution...")
         if source_model is None:
-            source_model = load_model_for_probing(source_path)
+            source_model = load_model_for_probing(source_path, model_loader)
         else:
             logger.info("Using pre-loaded source model")
         if target_model is None:
-            target_model = load_model_for_probing(target_path)
+            target_model = load_model_for_probing(target_path, model_loader)
         else:
             logger.info("Using pre-loaded target model")
     else:
@@ -164,6 +166,7 @@ def run_merge(
         target_path=target_path,
         extract_layer_index_fn=extract_layer_index,
         probe_mode=probe_mode,
+        activation_store=activation_store,
     )
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})

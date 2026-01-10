@@ -59,6 +59,7 @@ from .pipeline import run_merge
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 __all__ = [
@@ -87,6 +88,7 @@ class UnifiedGeometricMerger:
     def __init__(
         self,
         model_loader: "ModelLoaderPort",
+        activation_store: "ActivationStore | None" = None,
         backend: "Backend | None" = None,
     ) -> None:
         """Initialize with required dependencies.
@@ -97,6 +99,7 @@ class UnifiedGeometricMerger:
                      All geometric operations run on GPU when using MLXBackend.
         """
         self._model_loader = model_loader
+        self._activation_store = activation_store
 
         # Default to configured backend (respects MC_BACKEND/MODELCYPHER_BACKEND)
         self._backend = backend or get_default_backend()
@@ -140,6 +143,7 @@ class UnifiedGeometricMerger:
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            activation_store=self._activation_store,
             delta_scale=delta_scale,
         )
 
@@ -164,6 +168,7 @@ class UnifiedGeometricMerger:
             source_path=source_path,
             target_path=target_path,
             extract_layer_index_fn=merge_helpers.extract_layer_index,
+            activation_store=self._activation_store,
         )
 
 
@@ -192,10 +197,10 @@ class UnifiedGeometricMerger:
         )
 
     def _load_tokenizer(self, model_path: str) -> Any | None:
-        return merge_helpers.load_tokenizer(model_path)
+        return merge_helpers.load_tokenizer(model_path, self._model_loader)
 
     def _load_model_for_probing(self, model_path: str) -> Any | None:
-        return merge_helpers.load_model_for_probing(model_path)
+        return merge_helpers.load_model_for_probing(model_path, self._model_loader)
 
     def _load_weights(self, model_path: str) -> tuple[dict[str, Any], str]:
         return merge_helpers.load_weights(self._model_loader, model_path)
@@ -360,6 +365,7 @@ class UnifiedGeometricMerger:
                     target_model=target_model,  # Reuse loaded model
                     target_tokenizer=target_tokenizer,  # Reuse tokenizer
                     probe_mode="atlas",
+                    activation_store=self._activation_store,
                     delta_scale=effective_scale,
                 )
 
@@ -417,6 +423,7 @@ class UnifiedGeometricMerger:
                     target_model=current_model,
                     target_tokenizer=current_tokenizer,
                     probe_mode="atlas",
+                    activation_store=self._activation_store,
                     delta_scale=effective_scale,
                 )
 
@@ -570,6 +577,7 @@ class UnifiedGeometricMerger:
                 target_path=target_path,
                 extract_layer_index_fn=merge_helpers.extract_layer_index,
                 probe_mode="atlas",
+                activation_store=self._activation_store,
             )
 
             # Extract from tuple: indices per stages/__init__.py

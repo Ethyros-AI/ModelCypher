@@ -60,7 +60,7 @@ def profile_extract(
     """
     context = _context(ctx)
 
-    from modelcypher.infrastructure.model_loader_factory import get_model_loader
+    from modelcypher.cli.composition import get_model_loader
     from modelcypher.core.domain.geometry.model_profile import (
         ModelProfileExtractor,
         ProfileRepository,
@@ -138,7 +138,7 @@ def profile_compare(
     """
     context = _context(ctx)
 
-    from modelcypher.infrastructure.model_loader_factory import get_model_loader
+    from modelcypher.cli.composition import get_model_loader
     from modelcypher.core.domain.geometry.model_profile import ModelProfileExtractor
 
     typer.echo("Comparing model geometry...")

@@ -842,11 +842,9 @@ def entropy_calibrate(
     validate_model_path(model, context=context)
     validate_file_exists(prompts, description="Prompts file", context=context)
 
-    from modelcypher.core.use_cases.entropy_calibration_service import (
-        EntropyCalibrationService,
-    )
+    from modelcypher.cli.composition import get_entropy_calibration_service
 
-    service = EntropyCalibrationService()
+    service = get_entropy_calibration_service()
 
     try:
         prompt_path = Path(prompts)

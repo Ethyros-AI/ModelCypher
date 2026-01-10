@@ -46,7 +46,7 @@ Event Types:
     CHECKPOINT_FAILED: Error during inference (e.g., generation failure).
 
 Usage:
-    coordinator = CheckpointComparisonCoordinator()
+    coordinator = CheckpointComparisonCoordinator(generator_cls=DualPathGenerator)
 
     async for event in coordinator.compare(
         checkpoints=["/path/to/base", "/path/to/merged"],
@@ -77,8 +77,6 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, AsyncGenerator, Protocol
-
-from modelcypher.infrastructure.dual_path_factory import get_dual_path_generator_class
 
 logger = logging.getLogger("modelcypher.comparison")
 
@@ -126,10 +124,15 @@ class CheckpointComparisonCoordinator:
     Ported from CheckpointComparisonCoordinator.swift.
     """
 
-    def __init__(self, inference_service: InferenceServiceProtocol | None = None):
-        # We can inject a service, or use DualPathGenerator directly if that's the standard
-        # For now, let's assume we create generators on fly or use a provided service.
-        self.inference_service = inference_service
+    def __init__(
+        self,
+        generator_cls: type | None = None,
+        inference_service: InferenceServiceProtocol | None = None,
+    ):
+        if generator_cls is None and inference_service is None:
+            raise ValueError("generator_cls or inference_service is required")
+        self._generator_cls = generator_cls
+        self._inference_service = inference_service
         self._lock = asyncio.Lock()
 
     async def compare(
@@ -161,29 +164,45 @@ class CheckpointComparisonCoordinator:
                     # For strict 1:1, we should rely on injected service.
                     # But verifying imports is easier if we just use our existing DualPathGenerator class for now as a "Service".
 
-                    # Instantiate generator (which loads model)
-                    # In a real app, this load happens in the service layer with caching.
-                    generator_class = get_dual_path_generator_class()
-                    generator = generator_class(
-                        base_model_path=ckpt,
-                        adapter_path=None,
-                        max_tokens=max_tokens,
-                        temperature=temperature,
-                        top_p=top_p,
-                        repetition_penalty=repetition_penalty,
-                        stop_sequences=stop_sequences,
-                    )
-
                     response_text = ""
                     metrics = None
 
-                    async for chunk in generator.generate(prompt):
-                        if chunk["type"] == "token":
-                            txt = chunk["text"]
-                            response_text += txt
-                            yield ComparisonEvent(EventType.TOKEN, i, text=txt)
-                        elif chunk["type"] == "metrics":
-                            metrics = chunk["metrics"]
+                    if self._inference_service is not None:
+                        await self._inference_service.load_model(ckpt)
+                        async for chunk in self._inference_service.generate(
+                            prompt,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                            top_p=top_p,
+                            repetition_penalty=repetition_penalty,
+                            stop_sequences=stop_sequences,
+                        ):
+                            if chunk["type"] == "token":
+                                txt = chunk["text"]
+                                response_text += txt
+                                yield ComparisonEvent(EventType.TOKEN, i, text=txt)
+                            elif chunk["type"] == "metrics":
+                                metrics = chunk["metrics"]
+                    else:
+                        if self._generator_cls is None:
+                            raise ComparisonError("No generator class configured")
+                        generator = self._generator_cls(
+                            base_model_path=ckpt,
+                            adapter_path=None,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                            top_p=top_p,
+                            repetition_penalty=repetition_penalty,
+                            stop_sequences=stop_sequences,
+                        )
+
+                        async for chunk in generator.generate(prompt):
+                            if chunk["type"] == "token":
+                                txt = chunk["text"]
+                                response_text += txt
+                                yield ComparisonEvent(EventType.TOKEN, i, text=txt)
+                            elif chunk["type"] == "metrics":
+                                metrics = chunk["metrics"]
 
                     result = ComparisonResult(ckpt, response_text, metrics)
                     yield ComparisonEvent(EventType.CHECKPOINT_FINISHED, i, result=result)

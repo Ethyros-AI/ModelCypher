@@ -50,7 +50,7 @@ class EvaluationService:
     def __init__(
         self,
         store: "EvaluationStore",
-        model_loader: "ModelLoaderPort | None" = None,
+        model_loader: "ModelLoaderPort",
     ) -> None:
         self.store = store
         self._model_loader = model_loader
@@ -118,12 +118,6 @@ class EvaluationService:
         # Check dataset exists
         if not Path(dataset).exists():
             raise ValueError(f"Dataset not found: {dataset}")
-
-        # Get model loader (use injected or default)
-        if self._model_loader is None:
-            from modelcypher.infrastructure.model_loader_factory import get_model_loader
-
-            self._model_loader = get_model_loader()
 
         # Load model via port (hexagonal architecture)
         logger.info(f"Loading model from {model} (adapter={adapter})")

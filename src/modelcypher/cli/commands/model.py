@@ -74,6 +74,7 @@ def prevent_sleep() -> Generator[None, None, None]:
 
 # Late imports to keep prevent_sleep() context manager lightweight
 from modelcypher.cli.composition import (  # noqa: E402
+    get_model_probe_service,
     get_model_search_service,
     get_model_service,
 )
@@ -88,7 +89,6 @@ from modelcypher.core.domain.model_search import (  # noqa: E402
     ModelSearchQuantization,
     ModelSearchSortOption,
 )
-from modelcypher.core.use_cases.model_probe_service import ModelProbeService  # noqa: E402
 from modelcypher.utils.errors import ErrorDetail  # noqa: E402
 
 app = typer.Typer(no_args_is_help=True)
@@ -140,7 +140,7 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
     """
     import logging
 
-    from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
+    from modelcypher.cli.composition import get_inference_engine
 
     logger = logging.getLogger(__name__)
     smoke_prompts = [
@@ -297,7 +297,7 @@ def model_probe(
         mc model probe ./models/llama-7b
     """
     context = _context(ctx)
-    service = ModelProbeService()
+    service = get_model_probe_service()
     try:
         result = service.probe(model_path)
     except ValueError as exc:
@@ -370,7 +370,7 @@ def model_validate_merge(
         mc model validate-merge --source ./model-a --target ./model-b
     """
     context = _context(ctx)
-    service = ModelProbeService()
+    service = get_model_probe_service()
     try:
         result = service.validate_merge(source, target)
     except ValueError as exc:
@@ -517,7 +517,7 @@ def model_analyze_alignment(
         mc model analyze-alignment --model-a ./base-model --model-b ./fine-tuned
     """
     context = _context(ctx)
-    service = ModelProbeService()
+    service = get_model_probe_service()
     try:
         result = service.analyze_alignment(model_a, model_b)
     except ValueError as exc:

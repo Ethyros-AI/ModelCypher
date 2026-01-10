@@ -34,13 +34,15 @@ Validated Experimentally (January 2026):
 
 Usage:
     from modelcypher.core.domain.bridge import BridgeGenerator
+    from modelcypher.core.use_cases.bridge_service import BridgeService
 
     generator = BridgeGenerator(backend)
     result = generator.generate(source_acts, target_acts)
-    generator.save_bridge(result, Path("bridge.safetensors"))
+    bridge_service = BridgeService(store=bridge_store, backend=backend)
+    bridge_service.save(result, "bridge.safetensors")
 
     # Later, apply the bridge
-    bridge = generator.load_bridge(Path("bridge.safetensors"))
+    bridge = bridge_service.load("bridge.safetensors")
     transformed = bridge.apply(source_embeddings)
 
 References:
@@ -53,7 +55,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -116,7 +117,7 @@ class CrossModalBridge:
     for applying the bridge to embeddings.
 
     Usage:
-        bridge = CrossModalBridge.load(Path("bridge.safetensors"), backend)
+        bridge = bridge_service.load("bridge.safetensors")
         transformed = bridge.apply(source_embeddings)  # source → target
         reversed = bridge.apply_inverse(target_embeddings)  # target → source
     """
@@ -197,59 +198,6 @@ class CrossModalBridge:
 
         backend.eval(result)
         return result
-
-    @classmethod
-    def load(
-        cls,
-        path: Path,
-        backend: "Backend | None" = None,
-    ) -> "CrossModalBridge":
-        """Load a bridge from safetensors file.
-
-        Args:
-            path: Path to the bridge file
-            backend: Backend for tensor operations
-
-        Returns:
-            CrossModalBridge instance
-        """
-        backend = backend or get_default_backend()
-
-        try:
-            from safetensors import safe_open
-        except ImportError:
-            raise ImportError(
-                "safetensors required for bridge loading. "
-                "Install with: pip install safetensors"
-            )
-
-        with safe_open(str(path), framework="numpy") as f:
-            transform_np = f.get_tensor("transform")
-            transform_inv_np = f.get_tensor("transform_inv")
-
-            # Load metadata
-            metadata = f.metadata() or {}
-            scale_ratio = float(metadata.get("scale_ratio", "1.0"))
-            source_dim = int(metadata.get("source_dim", transform_np.shape[0]))
-            target_dim = int(metadata.get("target_dim", transform_np.shape[1]))
-            source_name = metadata.get("source_name", "source")
-            target_name = metadata.get("target_name", "target")
-
-        transform = backend.array(transform_np)
-        transform_inv = backend.array(transform_inv_np)
-        backend.eval(transform, transform_inv)
-
-        return cls(
-            transform=transform,
-            transform_inv=transform_inv,
-            scale_ratio=scale_ratio,
-            source_dim=source_dim,
-            target_dim=target_dim,
-            backend=backend,
-            source_name=source_name,
-            target_name=target_name,
-        )
-
 
 class BridgeGenerator:
     """Generates affine bridges between encoder spaces.
@@ -356,70 +304,6 @@ class BridgeGenerator:
             target_name=target_name,
         )
 
-    def save_bridge(
-        self,
-        result: BridgeGeneratorResult,
-        path: Path,
-    ) -> None:
-        """Save a bridge to safetensors format.
-
-        Args:
-            result: The bridge generation result
-            path: Output path for the safetensors file
-        """
-        backend = self._backend
-
-        try:
-            from safetensors.numpy import save_file
-            import numpy as np
-        except ImportError:
-            raise ImportError(
-                "safetensors and numpy required for bridge saving. "
-                "Install with: pip install safetensors numpy"
-            )
-
-        # Convert tensors to numpy
-        transform_np = np.array(backend.tolist(result.transform))
-        transform_inv_np = np.array(backend.tolist(result.transform_inv))
-
-        # Prepare tensors dict
-        tensors = {
-            "transform": transform_np.astype(np.float32),
-            "transform_inv": transform_inv_np.astype(np.float32),
-        }
-
-        # Prepare metadata
-        metadata = {
-            "scale_ratio": str(result.scale_ratio),
-            "source_dim": str(result.source_dim),
-            "target_dim": str(result.target_dim),
-            "cka_achieved": str(result.cka_achieved),
-            "raw_cka": str(result.raw_cka),
-            "n_samples": str(result.n_samples),
-            "source_name": result.source_name,
-            "target_name": result.target_name,
-            "created_at": result.created_at.isoformat(),
-        }
-
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        save_file(tensors, str(path), metadata=metadata)
-        logger.info("Bridge saved to: %s", path)
-
-    def load_bridge(
-        self,
-        path: Path,
-    ) -> CrossModalBridge:
-        """Load a bridge from safetensors file.
-
-        Args:
-            path: Path to the safetensors file
-
-        Returns:
-            CrossModalBridge instance
-        """
-        return CrossModalBridge.load(path, self._backend)
 
     def to_bridge(self, result: BridgeGeneratorResult) -> CrossModalBridge:
         """Convert a BridgeGeneratorResult to a CrossModalBridge.

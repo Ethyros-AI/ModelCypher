@@ -72,7 +72,10 @@ class ServiceFactory:
         """Create EvaluationService with injected EvaluationStore."""
         from modelcypher.core.use_cases.evaluation_service import EvaluationService
 
-        return EvaluationService(store=self._registry.evaluation_store)
+        return EvaluationService(
+            store=self._registry.evaluation_store,
+            model_loader=self._registry.model_loader,
+        )
 
     def compare_service(self):
         """Create CompareService with injected dependencies."""
@@ -110,6 +113,26 @@ class ServiceFactory:
             model_store=self._registry.model_store,
         )
 
+    def model_probe_service(self):
+        """Create ModelProbeService with injected probe port."""
+        from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+
+        return ModelProbeService(probe=self._registry.model_probe)
+
+    def entropy_calibration_service(self):
+        """Create EntropyCalibrationService with injected model loader."""
+        from modelcypher.core.use_cases.entropy_calibration_service import (
+            EntropyCalibrationService,
+        )
+
+        return EntropyCalibrationService(model_loader=self._registry.model_loader)
+
+    def bridge_service(self):
+        """Create BridgeService with injected bridge store."""
+        from modelcypher.core.use_cases.bridge_service import BridgeService
+
+        return BridgeService(store=self._registry.bridge_store)
+
     # --- Model Services ---
 
     def model_service(self):
@@ -143,6 +166,18 @@ class ServiceFactory:
         )
 
         return GeometryTrainingService(store=self._registry.job_store)
+
+    def invariant_mapping_service(self):
+        """Create InvariantLayerMappingService with injected dependencies."""
+        from modelcypher.core.use_cases.invariant_layer_mapping_service import (
+            InvariantLayerMappingService,
+        )
+
+        return InvariantLayerMappingService(
+            model_loader=self._registry.model_loader,
+            activation_provider=self._registry.activation_provider,
+            backend=self._registry.backend,
+        )
 
     # --- Export Services ---
 
@@ -199,6 +234,7 @@ class ServiceFactory:
         )
         geometric_merger = UnifiedGeometricMerger(
             model_loader=self._registry.model_loader,
+            activation_store=self._registry.activation_store,
         )
         return MergePipelineService(
             waypoint_service=waypoint_service,

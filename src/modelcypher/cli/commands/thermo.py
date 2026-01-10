@@ -47,6 +47,16 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _get_thermo_service(embedder=None):
+    from modelcypher.cli.composition import get_model_loader
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+
+    return ThermoService(
+        embedder=embedder,
+        model_loader=get_model_loader(),
+    )
+
+
 @app.command("analyze")
 def thermo_analyze(
     ctx: typer.Context,
@@ -54,9 +64,7 @@ def thermo_analyze(
 ) -> None:
     """Thermodynamic analysis of training."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.thermo_service import ThermoService
-
-    service = ThermoService()
+    service = _get_thermo_service()
     result = service.analyze(job_id)
 
     payload = {
@@ -93,9 +101,7 @@ def thermo_path(
     for checkpoint in checkpoints:
         validate_file_exists(checkpoint, description="Checkpoint", context=context)
 
-    from modelcypher.core.use_cases.thermo_service import ThermoService
-
-    service = ThermoService()
+    service = _get_thermo_service()
     try:
         result = service.path(checkpoints)
     except ValueError as exc:
@@ -134,9 +140,8 @@ def thermo_path_integration(
     validate_model_path(model, context=context)
 
     from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-    from modelcypher.core.use_cases.thermo_service import ThermoService
 
-    service = ThermoService(embedder=EmbeddingDefaults.make_default_embedder())
+    service = _get_thermo_service(embedder=EmbeddingDefaults.make_default_embedder())
     result = service.path_integration(
         prompt=prompt,
         model_path=model,
@@ -209,9 +214,7 @@ def thermo_entropy(
 ) -> None:
     """Entropy metrics over training."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.thermo_service import ThermoService
-
-    service = ThermoService()
+    service = _get_thermo_service()
     result = service.entropy(job_id)
 
     payload = {
@@ -237,9 +240,7 @@ def thermo_measure(
     # Validate model path early for clear error messages
     validate_model_path(model, context=context)
 
-    from modelcypher.core.use_cases.thermo_service import ThermoService
-
-    service = ThermoService()
+    service = _get_thermo_service()
     result = service.measure(prompt, model)
 
     payload = {
@@ -295,9 +296,7 @@ def thermo_detect(
     # Validate model path early for clear error messages
     validate_model_path(model, context=context)
 
-    from modelcypher.core.use_cases.thermo_service import ThermoService
-
-    service = ThermoService()
+    service = _get_thermo_service()
     result = service.detect(prompt, model)
 
     payload = {
@@ -340,9 +339,7 @@ def thermo_detect_batch(
     validate_file_exists(prompts_file, description="Prompts file", context=context)
     validate_model_path(model, context=context)
 
-    from modelcypher.core.use_cases.thermo_service import ThermoService
-
-    service = ThermoService()
+    service = _get_thermo_service()
 
     try:
         results = service.detect_batch(prompts_file, model)
@@ -714,10 +711,13 @@ def thermo_benchmark(
         raise typer.Exit(code=1)
 
     # Create calorimeter
+    from modelcypher.cli.composition import get_model_loader
+
     simulated = model is None
     calorimeter = LinguisticCalorimeter(
         model_path=model,
         simulated=simulated,
+        model_loader=get_model_loader(),
     )
 
     # Run benchmark
@@ -806,10 +806,13 @@ def thermo_parity(
     from modelcypher.core.domain.thermo.multilingual_calibrator import MultilingualCalibrator
 
     # Create calorimeter and calibrator
+    from modelcypher.cli.composition import get_model_loader
+
     simulated = model is None
     calorimeter = LinguisticCalorimeter(
         model_path=model,
         simulated=simulated,
+        model_loader=get_model_loader(),
     )
     calibrator = MultilingualCalibrator()
 
@@ -961,7 +964,12 @@ def thermo_calibrate(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    calibrator = ThermoCalibrator(model_path=model)
+    from modelcypher.cli.composition import get_model_loader
+
+    calibrator = ThermoCalibrator(
+        model_path=model,
+        model_loader=get_model_loader(),
+    )
 
     # Progress callback for text output
     def progress_callback(current: int, total: int, progress) -> None:

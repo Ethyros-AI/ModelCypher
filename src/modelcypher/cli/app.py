@@ -36,7 +36,6 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_in
 
 register_default_atlas_inventories()
 
-from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands

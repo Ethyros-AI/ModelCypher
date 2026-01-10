@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def load_tokenizer(model_path: str) -> Any | None:
+def load_tokenizer(model_path: str, model_loader: "ModelLoaderPort | None" = None) -> Any | None:
     """Load tokenizer for probe execution."""
     try:
         # Try transformers tokenizer first (avoids loading model)
@@ -43,11 +43,11 @@ def load_tokenizer(model_path: str) -> Any | None:
     except Exception:
         pass
 
+    if model_loader is None:
+        return None
+
     try:
         # Fall back to ModelLoaderPort (hexagonal architecture)
-        from modelcypher.infrastructure.model_loader_factory import get_model_loader
-
-        model_loader = get_model_loader()
         _, tokenizer = model_loader.load_model_for_training(model_path)
         return tokenizer
     except Exception as exc:
@@ -55,12 +55,15 @@ def load_tokenizer(model_path: str) -> Any | None:
         return None
 
 
-def load_model_for_probing(model_path: str) -> Any | None:
+def load_model_for_probing(
+    model_path: str, model_loader: "ModelLoaderPort | None" = None
+) -> Any | None:
     """Load model for precise probe execution."""
-    try:
-        from modelcypher.infrastructure.model_loader_factory import get_model_loader
+    if model_loader is None:
+        logger.warning("Model loader required for probe execution")
+        return None
 
-        model_loader = get_model_loader()
+    try:
         logger.info("Loading model from %s for activation probing...", model_path)
         model, _ = model_loader.load_model_for_training(model_path)
         logger.info("Model loaded successfully: %s", type(model).__name__)

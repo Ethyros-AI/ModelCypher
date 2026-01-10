@@ -149,6 +149,7 @@ class ServiceContext:
     _doc_service: object = None
     _safety_probe_service: object = None
     _entropy_probe_service: object = None
+    _bridge_service: object = None
 
     @property
     def inference_engine(self):
@@ -188,10 +189,19 @@ class ServiceContext:
     @property
     def model_probe_service(self):
         if self._model_probe_service is None:
-            from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-
-            self._model_probe_service = ModelProbeService()
+            self._model_probe_service = self.factory.model_probe_service()
         return self._model_probe_service
+
+    @property
+    def model_loader(self):
+        """Get model loader port from registry."""
+        return self.registry.model_loader
+
+    @property
+    def bridge_service(self):
+        if self._bridge_service is None:
+            self._bridge_service = self.factory.bridge_service()
+        return self._bridge_service
 
     @property
     def system_service(self):
@@ -265,9 +275,8 @@ class ServiceContext:
         if self._geometry_adapter_service is None:
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
-            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
-            model_loader = get_model_loader()
+            model_loader = self.model_loader
             self._geometry_adapter_service = GeometryAdapterService(
                 model_loader=model_loader,
                 backend=get_default_backend(),
@@ -311,11 +320,7 @@ class ServiceContext:
     @property
     def invariant_mapping_service(self):
         if self._invariant_mapping_service is None:
-            from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-                InvariantLayerMappingService,
-            )
-
-            self._invariant_mapping_service = InvariantLayerMappingService()
+            self._invariant_mapping_service = self.factory.invariant_mapping_service()
         return self._invariant_mapping_service
 
     @property

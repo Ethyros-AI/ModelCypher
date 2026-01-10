@@ -34,12 +34,10 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.composition import get_invariant_mapping_service
 from modelcypher.core.domain.agents.unified_atlas import (
     AtlasSource,
     UnifiedAtlasInventory,
-)
-from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-    InvariantLayerMappingService,
 )
 from modelcypher.utils.errors import ErrorDetail
 
@@ -65,11 +63,11 @@ def geometry_invariant_map_layers(
         mc geometry invariant map-layers --source ./model-a --target ./model-b
     """
     context = _context(ctx)
-    service = InvariantLayerMappingService()
+    service = get_invariant_mapping_service()
 
     try:
         result = service.map_layers(source, target)
-        payload = InvariantLayerMappingService.result_payload(result)
+        payload = service.result_payload(result)
 
         if context.output_format == "text":
             summary = result.report.summary
@@ -142,11 +140,11 @@ def geometry_invariant_collapse_risk(
         mc geometry invariant collapse-risk --model ./qwen2.5-7b
     """
     context = _context(ctx)
-    service = InvariantLayerMappingService()
+    service = get_invariant_mapping_service()
 
     try:
         result = service.analyze_collapse_risk(model)
-        payload = InvariantLayerMappingService.collapse_risk_payload(result)
+        payload = service.collapse_risk_payload(result)
 
         if context.output_format == "text":
             lines = [

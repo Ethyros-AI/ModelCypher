@@ -39,7 +39,9 @@ from modelcypher.ports.async_inference import InferenceEnginePort
 class MLXInferenceAdapter(InferenceEnginePort):
     def __init__(self, memory_manager: MemoryManaging | None = None):
         self.adapter_pool = MLXAdapterPool(memory_manager=memory_manager)
-        self.comparison_coordinator = CheckpointComparisonCoordinator()
+        self.comparison_coordinator = CheckpointComparisonCoordinator(
+            generator_cls=DualPathGenerator,
+        )
 
     async def generate_dual_path(
         self,

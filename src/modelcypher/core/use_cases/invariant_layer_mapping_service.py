@@ -74,6 +74,7 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
 )
 
 if TYPE_CHECKING:
+    from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.model_loader import ModelLoaderPort
     from modelcypher.ports.backend import Backend
 
@@ -126,6 +127,7 @@ class InvariantLayerMappingService:
         self,
         cache: ModelFingerprintCache | None = None,
         model_loader: "ModelLoaderPort | None" = None,
+        activation_provider: "ActivationProvider | None" = None,
         backend: "Backend | None" = None,
     ):
         """Initialize the service.
@@ -138,14 +140,13 @@ class InvariantLayerMappingService:
         register_default_atlas_inventories()
         self._cache = cache or ModelFingerprintCache.shared()
         self._model_loader = model_loader
+        self._activation_provider = activation_provider
         self._backend = backend
 
     def _ensure_dependencies(self) -> tuple["ModelLoaderPort", "Backend"]:
         """Ensure model loader and backend are available."""
         if self._model_loader is None:
-            from modelcypher.infrastructure.model_loader_factory import get_model_loader
-
-            self._model_loader = get_model_loader()
+            raise RuntimeError("Model loader required for invariant layer mapping")
 
         if self._backend is None:
             from modelcypher.core.domain._backend import get_default_backend
@@ -318,8 +319,6 @@ class InvariantLayerMappingService:
             division_epsilon,
             log2_scalar,
         )
-        from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
-
         model_loader, backend = self._ensure_dependencies()
 
         # Load model via ModelLoaderPort (hexagonal architecture)
@@ -330,7 +329,10 @@ class InvariantLayerMappingService:
             return []
 
         # Get activation provider for this platform
-        activation_provider = get_activation_provider()
+        if self._activation_provider is None:
+            raise RuntimeError("Activation provider required for invariant layer mapping")
+
+        activation_provider = self._activation_provider
 
         # Get actual layer count from model if available
         inner_model = getattr(model, "model", None)

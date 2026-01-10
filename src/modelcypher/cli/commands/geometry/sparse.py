@@ -174,9 +174,9 @@ def geometry_sparse_neurons(
 
     try:
         # Get model layer count
-        from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+        from modelcypher.cli.composition import get_model_probe_service
 
-        probe_service = ModelProbeService()
+        probe_service = get_model_probe_service()
         model_info = probe_service.probe(model)
         total_layers = len([layer for layer in model_info.layers if "layers." in layer.name])
 
@@ -198,7 +198,7 @@ def geometry_sparse_neurons(
         extractor.enable_neuron_collection()
 
         # Collect activations via inference
-        from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
+        from modelcypher.cli.composition import get_inference_engine
 
         engine = get_inference_engine()
         extractor.start_neuron_collection()

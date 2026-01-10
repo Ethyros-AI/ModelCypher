@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
@@ -116,10 +117,12 @@ class ThermoCalibrator:
         model_path: str | Path,
         adapter_path: str | Path | None = None,
         backend: "Backend | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
     ):
         self.model_path = Path(model_path).expanduser().resolve()
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
         self._backend = backend
+        self._model_loader = model_loader
 
         # Model identifier derived from path
         self.model_id = self.model_path.name
@@ -135,6 +138,7 @@ class ThermoCalibrator:
                 adapter_path=str(self.adapter_path) if self.adapter_path else None,
                 simulated=False,
                 backend=self._backend,
+                model_loader=self._model_loader,
             )
         return self._calorimeter
 

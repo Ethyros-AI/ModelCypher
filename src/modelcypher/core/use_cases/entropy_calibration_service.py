@@ -22,7 +22,7 @@ Measures actual entropy distributions from model inference to derive
 empirically-grounded thresholds. No magic numbers - only measured data.
 
 Usage:
-    service = EntropyCalibrationService()
+    service = EntropyCalibrationService(model_loader)
     result = service.calibrate(model_path="/path/to/model")
     # Use result.entropy_values and percentiles to derive thresholds explicitly
 """
@@ -215,7 +215,7 @@ class EntropyCalibrationService:
     and computes actual entropy statistics. No guessing, no magic numbers.
 
     Usage:
-        service = EntropyCalibrationService()
+        service = EntropyCalibrationService(model_loader)
         result = service.calibrate(model_path="/path/to/model")
 
         # Save calibration for later use
@@ -226,11 +226,11 @@ class EntropyCalibrationService:
         z = loaded.z_score(measured_entropy)
     """
 
-    def __init__(self, model_loader: Any = None) -> None:
+    def __init__(self, model_loader: Any) -> None:
         """Initialize entropy calibration service.
 
         Args:
-            model_loader: Optional model loader (uses default if None).
+            model_loader: Model loader (required).
         """
         self._model_loader = model_loader
         self._backend = None
@@ -244,13 +244,6 @@ class EntropyCalibrationService:
 
         self._backend = get_default_backend()
 
-    def _ensure_model_loader(self) -> Any:
-        """Ensure model loader is available."""
-        if self._model_loader is None:
-            from modelcypher.infrastructure.model_loader_factory import get_model_loader
-
-            self._model_loader = get_model_loader()
-        return self._model_loader
 
     def calibrate(
         self,
@@ -275,7 +268,9 @@ class EntropyCalibrationService:
             RuntimeError: If model loader is not available.
         """
         self._ensure_backend()
-        model_loader = self._ensure_model_loader()
+        model_loader = self._model_loader
+        if model_loader is None:
+            raise RuntimeError("Model loader required for entropy calibration")
 
         model_dir = Path(model_path).expanduser().resolve()
         if not model_dir.exists():

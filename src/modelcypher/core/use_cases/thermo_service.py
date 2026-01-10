@@ -39,6 +39,7 @@ from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -185,8 +186,13 @@ DEFAULT_MODIFIERS: list[LinguisticModifier] = [
 class ThermoService:
     """Service for thermodynamic analysis of training."""
 
-    def __init__(self, embedder: EmbeddingProvider | None = None) -> None:
+    def __init__(
+        self,
+        embedder: EmbeddingProvider | None = None,
+        model_loader: "ModelLoaderPort | None" = None,
+    ) -> None:
         self._embedder = embedder
+        self._model_loader = model_loader
         self._integration = ThermoPathIntegration()
         self._calorimeter: "LinguisticCalorimeter" | None = None
         self._calorimeter_model_path: str | None = None
@@ -206,6 +212,7 @@ class ThermoService:
             self._calorimeter = LinguisticCalorimeter(
                 model_path=model_path if model_exists else None,
                 simulated=not model_exists,
+                model_loader=self._model_loader,
             )
             self._calorimeter_model_path = model_path
 

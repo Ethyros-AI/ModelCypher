@@ -34,7 +34,10 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.ports import (
+        ActivationStore,
+        ActivationProvider,
         Backend,
+        BridgeStore,
         CompareStore,
         EvaluationStore,
         Exporter,
@@ -44,6 +47,7 @@ if TYPE_CHECKING:
         JobStore,
         ManifoldProfileStore,
         ModelLoaderPort,
+        ModelProbePort,
         ModelSearchService,
         ModelStore,
         TrainingEngine,
@@ -72,11 +76,15 @@ class PortRegistry:
     hidden_state_engine: "HiddenStateEngine"
     training_engine: "TrainingEngine"
     exporter: "Exporter"
+    activation_provider: "ActivationProvider"
 
     # Specialized ports
     model_search: "ModelSearchService"
     model_loader: "ModelLoaderPort"
+    model_probe: "ModelProbePort"
     hub_adapter: "HubAdapterPort"
+    activation_store: "ActivationStore"
+    bridge_store: "BridgeStore"
 
     # Backend
     backend: "Backend"
@@ -92,6 +100,8 @@ class PortRegistry:
         This method imports and instantiates all concrete adapters.
         It's the single point where adapter dependencies are resolved.
         """
+        from modelcypher.adapters.activation_store import NPZActivationStore
+        from modelcypher.adapters.bridge_store import SafetensorsBridgeStore
         from modelcypher.adapters.filesystem_storage import FileSystemStore
         from modelcypher.adapters.hf_hub import HfHubAdapter
         from modelcypher.adapters.hf_model_search import HfModelSearchAdapter
@@ -103,8 +113,10 @@ class PortRegistry:
         from modelcypher.backends import default_backend, initialize_default_backend
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
+        from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
         from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
         from modelcypher.infrastructure.model_loader_factory import get_model_loader
+        from modelcypher.infrastructure.model_probe_factory import get_model_probe
 
         # Initialize the global backend for domain code that calls get_default_backend()
         initialize_default_backend()
@@ -129,10 +141,14 @@ class PortRegistry:
             hidden_state_engine=inference_engine,
             training_engine=LocalTrainingEngine(store=fs_store),
             exporter=LocalExporter(),
+            activation_provider=get_activation_provider(),
             # Specialized
             model_search=HfModelSearchAdapter(),
             model_loader=get_model_loader(),
+            model_probe=get_model_probe(),
             hub_adapter=HfHubAdapter(),
+            activation_store=NPZActivationStore(),
+            bridge_store=SafetensorsBridgeStore(),
             # Backend
             backend=LazyBackend(default_backend),
             # Paths

@@ -34,7 +34,7 @@ from pathlib import Path
 import typer
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
+from modelcypher.cli.composition import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.use_cases.geometry_service import GeometryService

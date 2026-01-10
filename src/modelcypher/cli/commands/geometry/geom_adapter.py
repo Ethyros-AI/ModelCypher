@@ -53,7 +53,7 @@ def geometry_adapter_sparsity(
         mc geometry adapter sparsity --checkpoint ./checkpoint
         mc geometry adapter sparsity --checkpoint ./checkpoint --base ./base-model
     """
-    from modelcypher.infrastructure.model_loader_factory import get_model_loader
+    from modelcypher.cli.composition import get_model_loader
     from modelcypher.core.domain._backend import get_default_backend
 
     context = _context(ctx)
@@ -93,7 +93,7 @@ def geometry_adapter_decomposition(
         mc geometry adapter decomposition --checkpoint ./checkpoint
         mc geometry adapter decomposition --checkpoint ./checkpoint --base ./base-model
     """
-    from modelcypher.infrastructure.model_loader_factory import get_model_loader
+    from modelcypher.cli.composition import get_model_loader
     from modelcypher.core.domain._backend import get_default_backend
 
     context = _context(ctx)

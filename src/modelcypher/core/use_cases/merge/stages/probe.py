@@ -56,6 +56,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,7 @@ def _clear_probe_checkpoint(checkpoint_path: Path) -> None:
 
 
 def _save_probe_activations(
+    activation_store: "ActivationStore",
     checkpoint_path: Path,
     source_layer_activations: dict[int, "Array"],
     target_layer_activations: dict[int, "Array"],
@@ -151,6 +153,7 @@ def _save_probe_activations(
     target_k_activations: dict[int, "Array"],
     source_v_activations: dict[int, "Array"],
     target_v_activations: dict[int, "Array"],
+    backend: "Backend",
 ) -> None:
     """Save all activation dicts to NPZ file for checkpoint resume.
 
@@ -182,30 +185,20 @@ def _save_probe_activations(
     if not arrays_to_save:
         return  # Nothing to save
 
-    # Use mlx.core.savez for GPU arrays (avoid CPU transfer)
-    try:
-        import mlx.core as mx
-        # Write atomically using temp file
-        temp_path = activation_path.with_suffix(".tmp.npz")
-        mx.savez(str(temp_path), **arrays_to_save)
-        temp_path.rename(activation_path)
-        logger.debug(
-            "PROBE: Saved %d activation arrays to %s",
-            len(arrays_to_save),
-            activation_path,
-        )
-    except ImportError:
-        # Fallback for non-MLX backends
-        import numpy as np
-        from modelcypher.core.domain._backend import get_default_backend
-        b = get_default_backend()
-        np_arrays = {k: b.to_numpy(v) for k, v in arrays_to_save.items()}
-        temp_path = activation_path.with_suffix(".tmp.npz")
-        np.savez_compressed(str(temp_path), **np_arrays)
-        temp_path.rename(activation_path)
+    activation_store.save_probe_activations(
+        activation_path,
+        arrays_to_save,
+        backend,
+    )
+    logger.debug(
+        "PROBE: Saved %d activation arrays to %s",
+        len(arrays_to_save),
+        activation_path,
+    )
 
 
 def _load_probe_activations(
+    activation_store: "ActivationStore",
     checkpoint_path: Path,
     backend: "Backend",
 ) -> tuple[
@@ -229,74 +222,57 @@ def _load_probe_activations(
     if not activation_path.exists():
         return None
 
-    try:
-        # Use mlx.core.load for GPU arrays
-        try:
-            import mlx.core as mx
-            loaded = mx.load(str(activation_path))
-        except ImportError:
-            import numpy as np
-            loaded = dict(np.load(str(activation_path)))
-            # Convert to backend arrays
-            loaded = {k: backend.array(v) for k, v in loaded.items()}
+    loaded = activation_store.load_probe_activations(activation_path, backend)
+    if loaded is None:
+        return None
 
-        # Reconstruct activation dicts from flat keys
-        source_layer_activations: dict[int, Any] = {}
-        target_layer_activations: dict[int, Any] = {}
-        source_intermediate_activations: dict[int, Any] = {}
-        target_intermediate_activations: dict[int, Any] = {}
-        source_attention_activations: dict[int, Any] = {}
-        target_attention_activations: dict[int, Any] = {}
-        source_k_activations: dict[int, Any] = {}
-        target_k_activations: dict[int, Any] = {}
-        source_v_activations: dict[int, Any] = {}
-        target_v_activations: dict[int, Any] = {}
+    # Reconstruct activation dicts from flat keys
+    source_layer_activations: dict[int, Any] = {}
+    target_layer_activations: dict[int, Any] = {}
+    source_intermediate_activations: dict[int, Any] = {}
+    target_intermediate_activations: dict[int, Any] = {}
+    source_attention_activations: dict[int, Any] = {}
+    target_attention_activations: dict[int, Any] = {}
+    source_k_activations: dict[int, Any] = {}
+    target_k_activations: dict[int, Any] = {}
+    source_v_activations: dict[int, Any] = {}
+    target_v_activations: dict[int, Any] = {}
 
-        for key, arr in loaded.items():
-            if key.startswith("src_hidden_"):
-                layer_idx = int(key.split("_")[2])
-                source_layer_activations[layer_idx] = arr
-            elif key.startswith("tgt_hidden_"):
-                layer_idx = int(key.split("_")[2])
-                target_layer_activations[layer_idx] = arr
-            elif key.startswith("src_inter_"):
-                layer_idx = int(key.split("_")[2])
-                source_intermediate_activations[layer_idx] = arr
-            elif key.startswith("tgt_inter_"):
-                layer_idx = int(key.split("_")[2])
-                target_intermediate_activations[layer_idx] = arr
-            elif key.startswith("src_attn_q_"):
-                layer_idx = int(key.split("_")[3])
-                source_attention_activations[layer_idx] = arr
-            elif key.startswith("tgt_attn_q_"):
-                layer_idx = int(key.split("_")[3])
-                target_attention_activations[layer_idx] = arr
-            elif key.startswith("src_attn_k_"):
-                layer_idx = int(key.split("_")[3])
-                source_k_activations[layer_idx] = arr
-            elif key.startswith("tgt_attn_k_"):
-                layer_idx = int(key.split("_")[3])
-                target_k_activations[layer_idx] = arr
-            elif key.startswith("src_attn_v_"):
-                layer_idx = int(key.split("_")[3])
-                source_v_activations[layer_idx] = arr
-            elif key.startswith("tgt_attn_v_"):
-                layer_idx = int(key.split("_")[3])
-                target_v_activations[layer_idx] = arr
+    for key, arr in loaded.items():
+        if key.startswith("src_hidden_"):
+            layer_idx = int(key.split("_")[2])
+            source_layer_activations[layer_idx] = arr
+        elif key.startswith("tgt_hidden_"):
+            layer_idx = int(key.split("_")[2])
+            target_layer_activations[layer_idx] = arr
+        elif key.startswith("src_inter_"):
+            layer_idx = int(key.split("_")[2])
+            source_intermediate_activations[layer_idx] = arr
+        elif key.startswith("tgt_inter_"):
+            layer_idx = int(key.split("_")[2])
+            target_intermediate_activations[layer_idx] = arr
+        elif key.startswith("src_attn_q_"):
+            layer_idx = int(key.split("_")[3])
+            source_attention_activations[layer_idx] = arr
+        elif key.startswith("tgt_attn_q_"):
+            layer_idx = int(key.split("_")[3])
+            target_attention_activations[layer_idx] = arr
+        elif key.startswith("src_attn_k_"):
+            layer_idx = int(key.split("_")[3])
+            source_k_activations[layer_idx] = arr
+        elif key.startswith("tgt_attn_k_"):
+            layer_idx = int(key.split("_")[3])
+            target_k_activations[layer_idx] = arr
+        elif key.startswith("src_attn_v_"):
+            layer_idx = int(key.split("_")[3])
+            source_v_activations[layer_idx] = arr
+        elif key.startswith("tgt_attn_v_"):
+            layer_idx = int(key.split("_")[3])
+            target_v_activations[layer_idx] = arr
 
-        total_arrays = sum(len(d) for d in [
-            source_layer_activations, target_layer_activations,
-            source_intermediate_activations, target_intermediate_activations,
-            source_attention_activations, target_attention_activations,
-            source_k_activations, target_k_activations,
-            source_v_activations, target_v_activations,
-        ])
-        logger.info(
-            "PROBE: Loaded %d activation arrays from checkpoint",
-            total_arrays,
-        )
-
-        return (
+    total_arrays = sum(
+        len(d)
+        for d in [
             source_layer_activations,
             target_layer_activations,
             source_intermediate_activations,
@@ -307,10 +283,25 @@ def _load_probe_activations(
             target_k_activations,
             source_v_activations,
             target_v_activations,
-        )
-    except Exception as e:
-        logger.warning("PROBE: Failed to load activation checkpoint: %s", e)
-        return None
+        ]
+    )
+    logger.info(
+        "PROBE: Loaded %d activation arrays from checkpoint",
+        total_arrays,
+    )
+
+    return (
+        source_layer_activations,
+        target_layer_activations,
+        source_intermediate_activations,
+        target_intermediate_activations,
+        source_attention_activations,
+        target_attention_activations,
+        source_k_activations,
+        target_k_activations,
+        source_v_activations,
+        target_v_activations,
+    )
 
 
 def _select_probe_text(probe: Any) -> str | None:
@@ -1359,6 +1350,7 @@ def stage_probe(
     tokenizer: Any | None = None,
     collect_activations_fn: Callable | None = None,
     activation_provider: "ActivationProvider | None" = None,
+    activation_store: "ActivationStore | None" = None,
     backend: "Backend | None" = None,
     checkpoint_dir: Path | str | None = None,
     probe_mode: str = "atlas",  # "atlas" (963 conceptual) or "token" (49K+ vocab)
@@ -1852,6 +1844,9 @@ def _probe_precise(
         start_probe_idx = 0
         completed_probe_ids: set[str] = set()
 
+        if checkpoint_dir is not None and activation_store is None:
+            raise ValueError("Activation store required for probe checkpointing")
+
         if checkpoint_dir is not None:
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
             checkpoint_path = checkpoint_dir / ".probe_checkpoint.json"
@@ -1868,7 +1863,11 @@ def _probe_precise(
 
                 # CRITICAL: Load saved activations for correct resume
                 # Without this, completed probes are skipped but their activations lost!
-                loaded_activations = _load_probe_activations(checkpoint_path, b)
+                loaded_activations = _load_probe_activations(
+                    activation_store,
+                    checkpoint_path,
+                    b,
+                )
                 if loaded_activations is not None:
                     (
                         loaded_src_hidden,
@@ -2181,6 +2180,7 @@ def _probe_precise(
                     )
                     # CRITICAL: Save activations alongside checkpoint for correct resume
                     _save_probe_activations(
+                        activation_store=activation_store,
                         checkpoint_path=checkpoint_path,
                         source_layer_activations=source_layer_activations,
                         target_layer_activations=target_layer_activations,
@@ -2192,6 +2192,7 @@ def _probe_precise(
                         target_k_activations=target_k_activations,
                         source_v_activations=source_v_activations,
                         target_v_activations=target_v_activations,
+                        backend=b,
                     )
 
             except Exception as e:

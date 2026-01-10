@@ -17,13 +17,8 @@
 
 """Model probe service - orchestrates backend-specific probe implementations.
 
-This service automatically selects the appropriate backend for the current platform:
-- macOS (Darwin): MLXModelProbe - uses mx.load() for bfloat16 support
-- Linux with CUDA: CUDAModelProbe - uses PyTorch/safetensors
-- Linux with TPU/JAX: JAXModelProbe - uses JAX/Flax
-
-Weight loading is inherently backend-specific and cannot be abstracted,
-so each backend provides its own implementation.
+This service delegates to an injected ModelProbePort. Platform selection
+is handled by the composition root.
 """
 
 from __future__ import annotations
@@ -31,7 +26,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from modelcypher.infrastructure.model_probe_factory import get_model_probe
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,
     LayerDrift,
@@ -54,7 +48,6 @@ __all__ = [
     "MergeValidationResult",
     "ModelProbeResult",
     "ModelProbeService",
-    "get_model_probe",
 ]
 
 
@@ -66,14 +59,14 @@ class ModelProbeService:
     Use get_model_probe() directly for more control over backend selection.
     """
 
-    def __init__(self, probe: ModelProbePort | None = None) -> None:
+    def __init__(self, probe: ModelProbePort) -> None:
         """
         Initialize the service.
 
         Args:
-            probe: Optional probe implementation. If None, auto-selects based on platform.
+            probe: Probe implementation (required).
         """
-        self._probe = probe or get_model_probe()
+        self._probe = probe
 
     def probe(self, model_path: str) -> ModelProbeResult:
         """Probe model for architecture details.

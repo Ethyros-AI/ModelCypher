@@ -81,7 +81,7 @@ def geometry_refinement_analyze(
         from modelcypher.core.domain.geometry.dora_decomposition import (
             DoRADecomposition,
         )
-        from modelcypher.infrastructure.model_loader_factory import get_model_loader
+        from modelcypher.cli.composition import get_model_loader
 
         # Load models using platform-agnostic loader
         model_loader = get_model_loader()

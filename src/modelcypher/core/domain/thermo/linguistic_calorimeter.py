@@ -196,8 +196,8 @@ class LinguisticCalorimeter:
                 calibrated measurements instead of hardcoded values.
             refusal_direction: Optional precomputed refusal direction for geometry-first
                 assessment. If omitted, a cached direction will be used when available.
-            model_loader: Optional model loader for loading models. If not provided,
-                uses the default platform-appropriate loader.
+            model_loader: Optional model loader for loading models. Required for
+                real inference when no pre-loaded model is provided.
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
@@ -227,11 +227,9 @@ class LinguisticCalorimeter:
         if self.model_path is None:
             raise ValueError("model_path required for real inference")
 
-        # Get model loader (use injected or default)
+        # Get model loader (must be injected for real inference)
         if self._model_loader is None:
-            from modelcypher.infrastructure.model_loader_factory import get_model_loader
-
-            self._model_loader = get_model_loader()
+            raise RuntimeError("Model loader required for real inference")
 
         # Load model via port (hexagonal architecture)
         logger.info(f"Loading model from {self.model_path}")

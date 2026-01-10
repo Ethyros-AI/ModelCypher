@@ -58,7 +58,7 @@ def entropy_profile(
     Example:
         mc geometry merge-entropy profile ./my-model
     """
-    from modelcypher.infrastructure.model_loader_factory import get_model_loader
+    from modelcypher.cli.composition import get_model_loader
 
     context = _context(ctx)
 

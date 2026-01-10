@@ -91,12 +91,10 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 ModelProfileExtractor,
                 ProfileRepository,
             )
-            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
             model_path = require_existing_directory(modelPath)
 
-            model_loader = get_model_loader()
-            extractor = ModelProfileExtractor(model_loader=model_loader)
+            extractor = ModelProfileExtractor(model_loader=ctx.model_loader)
             profile = extractor.extract_profile(
                 model_path=model_path,
                 layers=None,
@@ -140,13 +138,11 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.domain.geometry.model_profile import (
                 ModelProfileExtractor,
             )
-            from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
             model1_path = require_existing_directory(model1Path)
             model2_path = require_existing_directory(model2Path)
 
-            model_loader = get_model_loader()
-            extractor = ModelProfileExtractor(model_loader=model_loader)
+            extractor = ModelProfileExtractor(model_loader=ctx.model_loader)
 
             profile1 = extractor.extract_profile(
                 model_path=model1_path,
