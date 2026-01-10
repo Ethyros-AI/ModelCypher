@@ -508,6 +508,126 @@ def research_multimodal_merge(
     write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("multimodal-offramp")
+def research_multimodal_offramp(
+    ctx: typer.Context,
+    target_model: str = typer.Argument(..., help="Path to target LLM model"),
+    output_dir: str = typer.Option(None, "--output", "-o", help="Output directory for offramp weights"),
+    include_clip: bool = typer.Option(True, "--clip/--no-clip", help="Include CLIP vision offramp"),
+    include_whisper: bool = typer.Option(True, "--whisper/--no-whisper", help="Include Whisper audio offramp"),
+) -> None:
+    """Create multi-modal offramp projections for inference-time knowledge access.
+
+    This command creates bidirectional projection matrices ("offramps") that allow
+    the LLM to access multi-modal knowledge (vision, audio) during inference.
+
+    Offramps enable:
+    - Forward projection: LLM hidden states → modality-aligned space
+    - Inverse projection: Modality embeddings → LLM token space
+
+    Based on DeepSeek mHC (arXiv:2512.24880) and null-space projection theory.
+    See docs/research/mhc_null_space_connection.md for theoretical foundation.
+
+    Examples:
+        mc research multimodal-offramp /path/to/llm
+        mc research multimodal-offramp /path/to/llm -o ./offramps
+        mc research multimodal-offramp /path/to/llm --no-whisper
+    """
+    context = _context(ctx)
+    from modelcypher.cli.output import write_error
+    from modelcypher.core.domain.multimodal import MultiModalChannelAdapter
+
+    adapter = MultiModalChannelAdapter()
+
+    try:
+        result = adapter.create_offramps(
+            target_model=target_model,
+            include_clip=include_clip,
+            include_whisper=include_whisper,
+        )
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3003",
+            title="Offramp creation failed",
+            detail=str(exc),
+            hint="Ensure target model path is valid and CLIP/Whisper dependencies installed",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Save offramp weights if output directory specified
+    if output_dir:
+        import mlx.core as mx
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Save each offramp as a .safetensors file
+        for offramp in result.offramps:
+            modality_name = offramp.modality.value
+            weights = {
+                "projection_matrix": offramp.projection_matrix,
+                "inverse_projection": offramp.inverse_projection,
+            }
+            # Save using MLX's native format
+            mx.save_safetensors(str(output_path / f"{modality_name}_offramp.safetensors"), weights)
+
+        # Save metadata
+        metadata = {
+            "target_model": result.target_model,
+            "cka_preservation": result.cka_preservation,
+            "concepts_used": list(result.concepts_used),
+            "offramps": [
+                {
+                    "modality": o.modality.value,
+                    "source_model": o.source_model,
+                    "cka_alignment": o.cka_alignment,
+                }
+                for o in result.offramps
+            ],
+        }
+        (output_path / "metadata.json").write_text(json.dumps(metadata, indent=2))
+
+    payload = {
+        "_schema": "mc.research.multimodal_offramp.v1",
+        "targetModel": result.target_model,
+        "ckaPreservation": result.cka_preservation,
+        "conceptCount": len(result.concepts_used),
+        "offramps": [
+            {
+                "modality": o.modality.value,
+                "sourceModel": o.source_model,
+                "ckaAlignment": o.cka_alignment,
+            }
+            for o in result.offramps
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "MULTI-MODAL OFFRAMP CREATION",
+            "",
+            f"Target: {result.target_model}",
+            f"CKA Preservation: {result.cka_preservation:.4f}",
+            f"Concepts: {len(result.concepts_used)}",
+            "",
+            "Offramps Created:",
+        ]
+        for o in result.offramps:
+            lines.append(f"  {o.modality.value}:")
+            lines.append(f"    Source: {o.source_model}")
+            lines.append(f"    CKA: {o.cka_alignment:.4f}")
+
+        if output_dir:
+            lines.append("")
+            lines.append(f"Weights saved to: {output_dir}")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 @app.command("afm")
 def research_afm(
     ctx: typer.Context,

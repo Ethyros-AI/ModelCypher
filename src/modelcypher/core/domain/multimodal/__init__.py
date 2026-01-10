@@ -22,6 +22,11 @@ Provides embedding extraction and alignment for cross-modal knowledge transfer.
 Key insight: All modalities encode the same conceptual shapes. CLIP, Whisper,
 and LLMs all discover the same high-dimensional geometry because they all
 represent knowledge itself. The difference is coordinate system, not content.
+
+Components:
+    - MultiModalEmbeddingExtractor: Extract embeddings from LLM, CLIP, Whisper
+    - MultiModalChannelAdapter: Bridge encoders with multi-channel merge pipeline
+    - OfframpProjection: Bidirectional projection for modality access
 """
 
 from modelcypher.core.domain.multimodal.embedding_extractor import (
@@ -29,9 +34,17 @@ from modelcypher.core.domain.multimodal.embedding_extractor import (
     MultiModalEmbeddingExtractor,
     ModalityEmbeddings,
 )
+from modelcypher.core.domain.multimodal.channel_adapter import (
+    MultiModalChannelAdapter,
+    MultiModalOfframpResult,
+    OfframpProjection,
+)
 
 __all__ = [
     "ModalityType",
     "MultiModalEmbeddingExtractor",
     "ModalityEmbeddings",
+    "MultiModalChannelAdapter",
+    "MultiModalOfframpResult",
+    "OfframpProjection",
 ]
