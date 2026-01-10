@@ -34,6 +34,7 @@ from modelcypher.core.use_cases.model_probe_service import (
     ModelProbeResult,
     ModelProbeService,
 )
+from modelcypher.infrastructure.model_probe_factory import get_model_probe
 
 
 def _create_mock_model(
@@ -113,7 +114,7 @@ def test_model_probe_returns_required_fields(
         num_layers=1,  # Use minimal layers for faster tests
     )
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     result = service.probe(str(model_dir))
 
     assert isinstance(result, ModelProbeResult)
@@ -136,14 +137,14 @@ def test_probe_missing_config_raises_error(tmp_path):
     model_dir = tmp_path / "model"
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     with pytest.raises(ValueError, match="config.json not found"):
         service.probe(str(model_dir))
 
 
 def test_probe_nonexistent_path_raises_error(tmp_path):
     """Test that probe raises ValueError for nonexistent path."""
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     with pytest.raises(ValueError, match="does not exist"):
         service.probe(str(tmp_path / "nonexistent"))
 
@@ -153,7 +154,7 @@ def test_probe_file_instead_of_directory_raises_error(tmp_path):
     file_path = tmp_path / "model.txt"
     file_path.write_text("not a model", encoding="utf-8")
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     with pytest.raises(ValueError, match="not a directory"):
         service.probe(str(file_path))
 
@@ -175,7 +176,7 @@ def test_validate_merge_compatible_models(tmp_path):
         num_attention_heads=8,
     )
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     result = service.validate_merge(str(model_a), str(model_b))
 
     assert result.low_effort is True
@@ -200,7 +201,7 @@ def test_validate_merge_needs_alignment(tmp_path):
         hidden_size=256,
     )
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     result = service.validate_merge(str(model_a), str(model_b))
 
     # low_effort=False means more transformation work needed, NOT incompatible
@@ -247,7 +248,7 @@ def test_merge_validation_symmetry(
         num_layers=1,
     )
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     result_ab = service.validate_merge(str(model_a), str(model_b))
     result_ba = service.validate_merge(str(model_b), str(model_a))
 
@@ -268,7 +269,7 @@ def test_analyze_alignment_identical_models(tmp_path):
         num_layers=1,
     )
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     result = service.analyze_alignment(str(model_a), str(model_a))
 
     assert result.drift_magnitude == 0.0
@@ -295,7 +296,7 @@ def test_analyze_alignment_different_models(tmp_path):
         num_layers=1,
     )
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     result = service.analyze_alignment(str(model_a), str(model_b))
 
     # Drift should be bounded in [0.0, 1.0]
@@ -336,7 +337,7 @@ def test_alignment_analysis_bounded_drift(
         num_layers=1,
     )
 
-    service = ModelProbeService()
+    service = ModelProbeService(probe=get_model_probe())
     result = service.analyze_alignment(str(model_a), str(model_b))
 
     # Property: drift_magnitude must be bounded in [0.0, 1.0]

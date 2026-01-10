@@ -743,7 +743,86 @@ def safe_inverse(
 # =============================================================================
 
 
-def gpu_lstsq(backend: "Backend", A: "Array", B: "Array") -> "Array":
+def _array_is_mlx(array: "Array") -> bool:
+    """Best-effort MLX array detection via module name."""
+    return type(array).__module__.startswith("mlx")
+
+
+def _cgls_single(
+    backend: "Backend",
+    A: "Array",
+    b_vec: "Array",
+    tol: float,
+    max_iter: int,
+) -> "Array":
+    """CGLS for single right-hand side vector."""
+    bk = backend
+
+    # Initialize x = 0
+    d = int(bk.shape(A)[1])
+    x = bk.zeros((d,), dtype="float32")
+
+    # r = b - Ax = b
+    r = b_vec
+
+    # s = A.T @ r
+    s = bk.matmul(bk.transpose(A), bk.reshape(r, (-1, 1)))
+    s = bk.reshape(s, (-1,))
+    bk.eval(s)
+
+    p = s
+    gamma = bk.sum(s * s)
+    bk.eval(gamma)
+    gamma_val = float(bk.to_scalar(gamma))
+    gamma_init = gamma_val
+
+    for _ in range(max_iter):
+        # q = A @ p
+        q = bk.matmul(A, bk.reshape(p, (-1, 1)))
+        q = bk.reshape(q, (-1,))
+        bk.eval(q)
+
+        q_norm_sq = bk.sum(q * q)
+        bk.eval(q_norm_sq)
+        q_norm_sq_val = float(bk.to_scalar(q_norm_sq))
+
+        if q_norm_sq_val < 1e-30:
+            break
+
+        alpha = gamma_val / q_norm_sq_val
+        x = x + alpha * p
+        r = r - alpha * q
+        bk.eval(x, r)
+
+        s_new = bk.matmul(bk.transpose(A), bk.reshape(r, (-1, 1)))
+        s_new = bk.reshape(s_new, (-1,))
+        bk.eval(s_new)
+
+        gamma_new = bk.sum(s_new * s_new)
+        bk.eval(gamma_new)
+        gamma_new_val = float(bk.to_scalar(gamma_new))
+
+        if gamma_new_val < tol * tol * gamma_init:
+            break
+
+        beta = gamma_new_val / gamma_val
+        p = s_new + beta * p
+        bk.eval(p)
+
+        gamma_val = gamma_new_val
+
+    bk.eval(x)
+    return x
+
+
+def gpu_lstsq(
+    backend: "Backend",
+    A: "Array",
+    B: "Array",
+    *,
+    tol: float | None = None,
+    max_iter: int | None = None,
+) -> "Array":
     """GPU-accelerated least squares via normal equations.
 
     Solves: minimize ||A @ X - B||² for X
@@ -767,6 +846,29 @@ def gpu_lstsq(backend: "Backend", A: "Array", B: "Array") -> "Array":
     A = b.astype(A, "float32")
     B = b.astype(B, "float32")
     b.eval(A, B)
+
+    if _array_is_mlx(A):
+        # Avoid MLX solve instability by using CGLS (matmul-only).
+        eps = machine_epsilon(b, A)
+        if tol is None:
+            tol = eps
+        if max_iter is None:
+            max_iter = 3 * min(n, d)
+
+        m = int(b.shape(B)[1])
+        columns = []
+        for j in range(m):
+            b_col = b.take(B, b.array(j), axis=1)
+            b.eval(b_col)
+            x_col = _cgls_single(b, A, b_col, tol, max_iter)
+            columns.append(b.reshape(x_col, (-1, 1)))
+
+        X = b.concatenate(columns, axis=1)
+        b.eval(X)
+
+        if squeeze_output:
+            X = b.reshape(X, (-1,))
+        return X
 
     # GPU: Compute A^T @ A [d, d] and A^T @ B [d, m]
     A_T = b.transpose(A)

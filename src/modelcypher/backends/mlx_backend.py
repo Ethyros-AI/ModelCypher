@@ -30,7 +30,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable
 
-from modelcypher.backends.safe_gpu import SafeGPU
 from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 if TYPE_CHECKING:
@@ -50,7 +49,6 @@ class MLXBackend(Backend):
 
         self.mx = mx
         self.fast = mx.fast  # Expose mx.fast for fused kernels
-        self.safe = SafeGPU(mx)
         self._compiled_cache: dict[str, Callable] = {}
 
     # --- Array Creation (lazy - no eval) ---
@@ -217,9 +215,9 @@ class MLXBackend(Backend):
             result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
         if compute_uv:
             u, s, vt = result
-            self.safe.eval(u, s, vt)
+            self.mx.eval(u, s, vt)
             return u, s, vt
-        self.safe.eval(result)
+        self.mx.eval(result)
         return result
 
     def floyd_warshall(self, dist: Array) -> Array:
@@ -282,7 +280,7 @@ class MLXBackend(Backend):
     # --- Explicit Evaluation ---
     def eval(self, *arrays: Array) -> None:
         """Evaluate arrays - triggers kernel fusion and GPU execution."""
-        self.safe.eval(*arrays)
+        self.mx.eval(*arrays)
 
     def clear_cache(self) -> None:
         """Clear Metal GPU memory cache to release lazy computations."""
@@ -332,7 +330,7 @@ class MLXBackend(Backend):
             ValueError: If array has more than one element.
         """
         if hasattr(array, "shape"):
-            self.safe.eval(array)
+            self.mx.eval(array)
         if hasattr(array, "item"):
             return array.item()
         return float(array)
@@ -342,7 +340,7 @@ class MLXBackend(Backend):
 
         Uses MLX's native tolist() - MUCH faster than element-by-element to_scalar().
         """
-        self.safe.eval(array)
+        self.mx.eval(array)
         return array.tolist()
 
     @lru_cache(maxsize=8)
@@ -621,7 +619,7 @@ class MLXBackend(Backend):
             for i in range(batch_size):
                 dets.append(self._det_single(array[i]))
             result = self.mx.stack(dets)
-            self.safe.eval(result)
+            self.mx.eval(result)
             return result
 
         return self._det_single(array)
@@ -634,11 +632,11 @@ class MLXBackend(Backend):
             if "not yet supported on the GPU" not in str(exc):
                 raise
             p, L, U = self.mx.linalg.lu(array, stream=self.mx.cpu)
-        self.safe.eval(p, L, U)
+        self.mx.eval(p, L, U)
 
         diag_U = self.mx.diag(U)
         det_U = self.mx.prod(diag_U)
-        self.safe.eval(det_U)
+        self.mx.eval(det_U)
 
         p_list = [int(x) for x in self.tolist(p)]
         n = len(p_list)
@@ -725,21 +723,21 @@ class MLXBackend(Backend):
         if A.dtype != self.mx.float32:
             sqrtA = self.astype(sqrtA, A.dtype)
             
-        self.safe.eval(sqrtA)
+        self.mx.eval(sqrtA)
         return sqrtA
 
     def eigh(self, array: Array) -> tuple[Array, Array]:
         # MLX eigh only supports float32, float64, complex64 - convert others to float32
         if array.dtype in (self.mx.bfloat16, self.mx.float16):
             array = array.astype(self.mx.float32)
-            self.safe.eval(array)
+            self.mx.eval(array)
         try:
             eigenvalues, eigenvectors = self.mx.linalg.eigh(array)
         except Exception as exc:
             if "not yet supported on the GPU" not in str(exc):
                 raise
             eigenvalues, eigenvectors = self.mx.linalg.eigh(array, stream=self.mx.cpu)
-        self.safe.eval(eigenvalues, eigenvectors)
+        self.mx.eval(eigenvalues, eigenvectors)
         return eigenvalues, eigenvectors
 
     def eigvalsh(self, array: Array) -> Array:
@@ -747,14 +745,14 @@ class MLXBackend(Backend):
         # MLX 0.30+ has native eigvalsh - more efficient than eigh
         if array.dtype in (self.mx.bfloat16, self.mx.float16):
             array = array.astype(self.mx.float32)
-            self.safe.eval(array)
+            self.mx.eval(array)
         try:
             eigenvalues = self.mx.linalg.eigvalsh(array)
         except Exception as exc:
             if "not yet supported on the GPU" not in str(exc):
                 raise
             eigenvalues = self.mx.linalg.eigvalsh(array, stream=self.mx.cpu)
-        self.safe.eval(eigenvalues)
+        self.mx.eval(eigenvalues)
         return eigenvalues
 
     def solve(self, a: Array, b: Array) -> Array:
@@ -764,7 +762,7 @@ class MLXBackend(Backend):
             if "not yet supported on the GPU" not in str(exc):
                 raise
             arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
-        self.safe.eval(arr)
+        self.mx.eval(arr)
         return arr
 
     def inv(self, array: Array) -> Array:
@@ -774,7 +772,7 @@ class MLXBackend(Backend):
             if "not yet supported on the GPU" not in str(exc):
                 raise
             arr = self.mx.linalg.inv(array, stream=self.mx.cpu)
-        self.safe.eval(arr)
+        self.mx.eval(arr)
         return arr
 
     def pinv(self, array: Array) -> Array:
@@ -788,17 +786,17 @@ class MLXBackend(Backend):
             if "not yet supported on the GPU" not in str(exc):
                 raise
             arr = self.mx.linalg.pinv(array_f32, stream=self.mx.cpu)
-        self.safe.eval(arr)
+        self.mx.eval(arr)
         # Cast back to original dtype if needed
         if "bfloat" in str(original_dtype):
             arr = arr.astype(original_dtype)
-            self.safe.eval(arr)
+            self.mx.eval(arr)
         return arr
 
     def cholesky(self, array: Array) -> Array:
         # MLX cholesky requires CPU stream - must eval
         arr = self.mx.linalg.cholesky(array, stream=self.mx.cpu)
-        self.safe.eval(arr)
+        self.mx.eval(arr)
         return arr
 
     def trace(self, array: Array) -> Array:
@@ -812,7 +810,7 @@ class MLXBackend(Backend):
             if "not yet supported on the GPU" not in str(exc):
                 raise
             q, r = self.mx.linalg.qr(array, stream=self.mx.cpu)
-        self.safe.eval(q, r)
+        self.mx.eval(q, r)
         return q, r
 
     # --- Indexing (lazy - no eval) ---
@@ -1025,7 +1023,7 @@ class MLXBackend(Backend):
         while True:
             half = eps / two
             test = one + half
-            self.safe.eval(test)
+            self.mx.eval(test)
             if test.item() == 1.0:
                 break
             eps = half
@@ -1034,7 +1032,7 @@ class MLXBackend(Backend):
         tiny = self.mx.array(1.0, dtype=dtype)
         while True:
             half = tiny / two
-            self.safe.eval(half)
+            self.mx.eval(half)
             if half.item() == 0.0:
                 break
             tiny = half
@@ -1043,7 +1041,7 @@ class MLXBackend(Backend):
         max_val = self.mx.array(1.0, dtype=dtype)
         while True:
             doubled = max_val * two
-            self.safe.eval(doubled)
+            self.mx.eval(doubled)
             if not bool(self.mx.isfinite(doubled).item()):
                 break
             max_val = doubled

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from modelcypher.backends.safe_gpu import SafeGPU
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
