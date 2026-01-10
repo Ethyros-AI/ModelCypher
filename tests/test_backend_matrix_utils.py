@@ -350,20 +350,6 @@ class TestEffectiveRank:
         rank = utils.effective_rank(eigenvalues)
         assert rank == 1
 
-    def test_entropy_effective_rank(self, utils: BackendMatrixUtils, mlx_backend: Backend):
-        """Test entropy-based effective rank."""
-        # Equal eigenvalues: entropy-based rank should equal dimension
-        eigenvalues = mlx_backend.array([1.0, 1.0, 1.0, 1.0])
-
-        erank = utils.entropy_effective_rank(eigenvalues)
-        tol = division_epsilon(mlx_backend, eigenvalues)
-        assert abs(erank - 4.0) <= tol
-
-        # Single eigenvalue: entropy rank should be 1
-        eigenvalues_single = mlx_backend.array([1.0, 0.0, 0.0, 0.0])
-        erank_single = utils.entropy_effective_rank(eigenvalues_single)
-        assert abs(erank_single - 1.0) <= tol
-
 
 class TestEigendecomposition:
     """Tests for eigendecomposition."""

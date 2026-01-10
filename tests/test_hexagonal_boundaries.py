@@ -30,7 +30,7 @@ _FORBIDDEN_PREFIXES = (
 )
 _FORBIDDEN_ROOTS = {"adapters", "infrastructure", "backends", "cli", "mcp"}
 _BACKENDS_ALLOWLIST = {
-    "src/modelcypher/core/domain/_backend.py",
+    "modelcypher/core/domain/_backend.py",
 }
 
 

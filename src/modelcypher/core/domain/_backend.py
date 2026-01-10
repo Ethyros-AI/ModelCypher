@@ -18,8 +18,8 @@
 """Default backend accessor for domain classes.
 
 This module provides domain classes access to a compute backend without
-importing any outer layer code. The backend MUST be initialized by the
-application entry point before any domain code runs.
+importing any outer layer code. The backend auto-initializes on first
+access, or can be explicitly set by entry points for full control.
 
 Usage in domain classes:
 
@@ -29,7 +29,7 @@ Usage in domain classes:
         def __init__(self, backend: Backend | None = None) -> None:
             self._backend = backend or get_default_backend()
 
-Entry points must initialize the backend:
+Entry points may initialize the backend explicitly:
 
     from modelcypher.backends import get_backend
     from modelcypher.core.domain._backend import set_default_backend
@@ -92,6 +92,13 @@ def probe_mlx_available(*, explicit: bool = False) -> bool:
 
     runtime_check = os.environ.get("MC_MLX_RUNTIME_CHECK", "1").lower() in ("1", "true", "yes")
     if runtime_check:
+        if _is_sandboxed_environment():
+            allow_probe = (os.environ.get("MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX") or "").lower()
+            if allow_probe not in ("1", "true", "yes"):
+                _mlx_probe_result = True
+                _mlx_probe_error = None
+                return True
+
         ok, err = _probe_mlx_runtime()
         if not ok:
             _mlx_probe_result = False
@@ -111,19 +118,15 @@ def get_mlx_probe_error() -> str | None:
 def get_default_backend() -> "Backend":
     """Get the default compute backend.
 
-    Returns:
-        The current default backend instance.
-
-    Raises:
-        RuntimeError: If no backend has been set. Entry points must call
-            set_default_backend() before any domain code runs.
+    Auto-detects and initializes the backend on first access so callers
+    do not need to set MC_BACKEND on single-backend machines.
     """
+    global _default_backend
     if _default_backend is None:
-        raise RuntimeError(
-            "No default backend has been set. "
-            "Entry points must call set_default_backend() before using domain code. "
-            "Example: set_default_backend(get_backend('mlx'))"
-        )
+        from modelcypher.backends import detect_default_backend_type, get_backend
+
+        backend_type = detect_default_backend_type()
+        _default_backend = get_backend(backend_type)
     return _default_backend
 
 

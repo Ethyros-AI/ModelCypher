@@ -49,10 +49,8 @@ from typing import TYPE_CHECKING, TypeVar
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    exp_scalar,
     geodesic_svd,
     power_iteration_eigh,
-    safe_log_epsilon,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
@@ -475,54 +473,6 @@ class BackendMatrixUtils:
         b.eval(first_exceed_idx_arr)
         first_exceed_idx = int(b.to_scalar(first_exceed_idx_arr))
         return first_exceed_idx + 1
-
-    def entropy_effective_rank(self, eigenvalues: Array) -> float:
-        """Compute entropy-based effective rank.
-
-        Uses the exponential of Shannon entropy of normalized eigenvalues:
-        erank = exp(-sum(p * log(p)))
-        """
-        b = self.backend
-        eig_flat = b.reshape(eigenvalues, (-1,))
-        n = int(eig_flat.shape[0])
-
-        if n == 0:
-            return 0.0
-
-        # Replace non-positive with 0
-        zeros = b.zeros_like(eig_flat)
-        eig_positive = b.where(eig_flat > 0, eig_flat, zeros)
-        b.eval(eig_positive)
-
-        # Compute total
-        total_arr = b.sum(eig_positive)
-        b.eval(total_arr)
-        total = float(b.to_scalar(total_arr))
-
-        if total <= 0:
-            return 0.0
-
-        # Normalize to get probabilities
-        p = eig_positive / total
-
-        # For entropy, we only want non-zero p values
-        # Use safe_log_epsilon to clamp before log
-        log_eps = safe_log_epsilon(b, p)
-
-        # Correct approach: use where to compute log only where p > eps
-        # For p <= eps, log contribution is 0 (since lim p*log(p) as p->0 = 0)
-        is_positive = eig_flat > 0
-        log_p = b.where(p > log_eps, b.log(p), zeros)
-
-        # p * log(p), masked to 0 where eigenvalue was non-positive
-        p_log_p = p * log_p
-        p_log_p_masked = b.where(is_positive, p_log_p, zeros)
-
-        entropy_arr = -b.sum(p_log_p_masked)
-        b.eval(entropy_arr)
-        entropy = float(b.to_scalar(entropy_arr))
-
-        return exp_scalar(entropy, b)
 
     def cosine_similarity_matrix(self, X: Array) -> Array:
         """Compute pairwise geodesic cosine similarity matrix.
