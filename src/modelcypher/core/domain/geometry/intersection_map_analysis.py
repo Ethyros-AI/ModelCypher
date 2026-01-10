@@ -75,12 +75,62 @@ class DimensionPair:
 class MarkdownReportOptions:
     input_label: str | None = None
     top_pairs: int = 25
-    histogram_bins: int = 30
+    histogram_bins: int | None = None  # None = auto-derive via Freedman-Diaconis
 
 
 class IntersectionMapAnalysis:
     @staticmethod
-    def analyze(map_data: IntersectionMap, histogram_bins: int = 30) -> Analysis:
+    def _freedman_diaconis_bins(values: list[float]) -> int:
+        """Compute optimal number of histogram bins using Freedman-Diaconis rule.
+
+        Formula: bin_width = 2 × IQR × n^(-1/3)
+                 bins = ceil((max - min) / bin_width)
+
+        This is mathematically derived from minimizing integrated mean squared error
+        for density estimation, not an arbitrary choice.
+
+        Returns:
+            Optimal number of bins, minimum 1.
+        """
+        import math
+
+        if len(values) < 2:
+            return 1
+
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+
+        # Use √(machine_epsilon) for numerical stability checks
+        # This is mathematically derived, not arbitrary
+        eps = math.sqrt(sys.float_info.epsilon)
+
+        # Compute IQR (interquartile range)
+        q1_idx = int(n * 0.25)
+        q3_idx = int(n * 0.75)
+        q1 = sorted_vals[q1_idx]
+        q3 = sorted_vals[q3_idx]
+        iqr = q3 - q1
+
+        # Handle zero IQR (all values identical or nearly so)
+        if iqr < eps:
+            return 1
+
+        # Freedman-Diaconis bin width
+        bin_width = 2.0 * iqr * (n ** (-1.0 / 3.0))
+
+        if bin_width < eps:
+            return 1
+
+        # Compute number of bins
+        data_range = sorted_vals[-1] - sorted_vals[0]
+        if data_range < eps:
+            return 1
+
+        bins = int(math.ceil(data_range / bin_width))
+        return max(1, bins)
+
+    @staticmethod
+    def analyze(map_data: IntersectionMap, histogram_bins: int | None = None) -> Analysis:
         confidence_by_layer = {item.layer: item for item in map_data.layer_confidences}
         layers = sorted(
             set(map_data.dimension_correlations.keys()).union(confidence_by_layer.keys())
@@ -137,11 +187,17 @@ class IntersectionMapAnalysis:
             hist_lower = 0.0
             hist_upper = 1.0
 
+        # Auto-derive bins via Freedman-Diaconis if not specified
+        if histogram_bins is None:
+            bins_to_use = IntersectionMapAnalysis._freedman_diaconis_bins(all_correlations)
+        else:
+            bins_to_use = histogram_bins
+
         histogram = IntersectionMapAnalysis._histogram(
             values=all_correlations,
             lower=hist_lower,
             upper=hist_upper,
-            bins=histogram_bins,
+            bins=bins_to_use,
         )
 
         if map_data.layer_confidences:

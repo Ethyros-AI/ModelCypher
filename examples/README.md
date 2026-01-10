@@ -12,8 +12,16 @@ This directory contains example scripts demonstrating common ModelCypher workflo
 
 ModelCypher requires a GPU backend (MLX on macOS/Apple Silicon, CUDA on Linux/NVIDIA,
 or JAX on supported platforms). If MLX fails to initialize inside a sandboxed host
-(e.g. VSCode/Claude Code), run ModelCypher from Terminal.app (outside the host) so
-Metal/MLX can initialize normally.
+(e.g. VSCode/Claude Code), MLX runtime probing is disabled by default to avoid crash
+dialogs. To force the runtime probe (and surface the underlying MLX error), prefix
+commands with:
+
+```bash
+MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 poetry run mc system status --output json
+```
+
+If MLX still fails to initialize, run ModelCypher from Terminal.app (outside the host)
+so Metal/MLX can initialize normally.
 
 For commands that write registry/cache data, set locations inside the repo (useful in
 sandboxes and CI):

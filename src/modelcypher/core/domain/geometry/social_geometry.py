@@ -178,8 +178,18 @@ class SocialGeometryAnalyzer:
         self.backend.eval(stacked)
         return names, stacked
 
-    def _compute_pca(self, X: "Array", n_components: int = 5) -> tuple["Array", "Array"]:
-        """Compute PCA using backend operations."""
+    def _compute_pca(self, X: "Array", n_components: int | None = None) -> tuple["Array", "Array"]:
+        """Compute PCA using backend operations.
+
+        Args:
+            X: Data matrix [n_samples, n_features]
+            n_components: Number of components to retain. If None, auto-derives
+                         using effective dimensionality: ceil(d_eff) where
+                         d_eff = (Σλ)²/Σλ² (Rényi entropy-based effective rank).
+
+        Returns:
+            Tuple of (X_pca, variance_explained)
+        """
         backend = self.backend
 
         # Center the data
@@ -198,6 +208,11 @@ class SocialGeometryAnalyzer:
         backend.eval(eigenvalues, eigenvectors)
 
         # power_iteration_eigh returns eigenvalues in descending order.
+        # Auto-derive n_components using effective dimensionality if not specified
+        # Formula: n_components = ceil(d_eff) where d_eff = (Σλ)²/Σλ²
+        if n_components is None:
+            n_components = self._effective_dim_components(eigenvalues)
+
         idx_top = slice(0, n_components)
 
         # Project data onto top components
@@ -211,6 +226,46 @@ class SocialGeometryAnalyzer:
 
         backend.eval(X_pca, variance_explained)
         return X_pca, variance_explained
+
+    def _effective_dim_components(self, eigenvalues: "Array") -> int:
+        """Determine number of components using effective dimensionality.
+
+        Formula: n_components = ceil(d_eff) where d_eff = (Σλ)² / Σλ²
+
+        This is the Rényi entropy-based effective rank - a mathematically
+        derived measure of intrinsic dimensionality, not an arbitrary threshold.
+
+        Args:
+            eigenvalues: Sorted eigenvalues (descending order)
+
+        Returns:
+            Number of components to retain, minimum 1.
+        """
+        backend = self.backend
+
+        # Compute effective dimensionality: d_eff = (Σλ)² / Σλ²
+        sum_eigenvals = backend.sum(eigenvalues)
+        sum_sq_eigenvals = backend.sum(eigenvalues * eigenvalues)
+        backend.eval(sum_eigenvals, sum_sq_eigenvals)
+
+        sum_val = float(backend.to_scalar(sum_eigenvals))
+        sum_sq_val = float(backend.to_scalar(sum_sq_eigenvals))
+
+        # Use √(machine_epsilon) for numerical stability
+        eps = sqrt_scalar(regularization_epsilon(backend, eigenvalues))
+
+        if sum_sq_val < eps:
+            return 1
+
+        d_eff = (sum_val * sum_val) / (sum_sq_val + eps)
+
+        # n_components = ceil(d_eff)
+        import math
+        n_components = int(math.ceil(d_eff))
+
+        # Clamp to valid range
+        n_eigs = int(eigenvalues.shape[0])
+        return max(1, min(n_components, n_eigs))
 
     def _compute_axis_orthogonality(
         self,
@@ -417,7 +472,8 @@ class SocialGeometryAnalyzer:
             SocialGeometryReport with all metrics
         """
         names, X = self._to_array(activations)
-        X_pca, variance = self._compute_pca(X, n_components=5)
+        # n_components auto-derived via scree test (95% variance threshold)
+        X_pca, variance = self._compute_pca(X)
 
         # Compute all metrics
         axis_ortho = self._compute_axis_orthogonality(activations)

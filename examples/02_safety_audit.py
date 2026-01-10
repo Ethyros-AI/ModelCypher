@@ -164,6 +164,7 @@ def main() -> int:
     args = parser.parse_args()
 
     backend_error: str | None = None
+    exit_code = 0
 
     def _ensure_backend() -> bool:
         nonlocal backend_error
@@ -260,7 +261,8 @@ def main() -> int:
     print("-" * 40)
     if args.baseline and observed_deltas is not None:
         if not _ensure_backend():
-            print(f"  Skipped: backend unavailable ({backend_error})")
+            print(f"  Error: backend unavailable ({backend_error})")
+            exit_code = 1
         else:
             entropy_service = EntropyProbeService()
             try:
@@ -297,37 +299,44 @@ def main() -> int:
         print("  Skipped: provide --samples")
     else:
         if not _ensure_backend():
-            print(f"  Skipped: backend unavailable ({backend_error})")
-            print("\n" + "=" * 60)
-            print("Audit complete.")
-            return 0
-        entropy_service = EntropyProbeService()
-        pattern = entropy_service.analyze_pattern(samples)
-        distress = entropy_service.detect_distress(samples)
-        print(f"  Sample count: {pattern.sample_count}")
-        print(f"  Trend slope: {pattern.trend_slope:.6f}")
-        print(f"  Volatility: {pattern.volatility:.6f}")
-        print(f"  Entropy mean/std: {pattern.entropy_mean:.6f} / {pattern.entropy_std_dev:.6f}")
-        print(f"  Variance mean/std: {pattern.variance_mean:.6f} / {pattern.variance_std_dev:.6f}")
-        print(f"  Entropy-variance correlation: {pattern.entropy_variance_correlation:.6f}")
-        print(f"  Sustained high count: {pattern.sustained_high_count}")
-        print(f"  Sustained significance: {pattern.sustained_significance:.6f}")
-        print(f"  Peak entropy: {pattern.peak_entropy:.6f}")
-        print(f"  Min entropy: {pattern.min_entropy:.6f}")
-        if pattern.anomaly_indices:
-            indices = ", ".join(str(idx) for idx in pattern.anomaly_indices)
-            print(f"  Anomaly indices: {indices}")
-        if distress is not None:
-            print("  Distress metrics:")
-            print(f"    Sustained high count: {distress.sustained_high_count}")
-            print(f"    Sustained significance: {distress.sustained_significance:.6f}")
-            print(f"    Entropy mean: {distress.entropy_mean:.6f}")
-            print(f"    Variance mean: {distress.variance_mean:.6f}")
-            print(f"    Entropy-variance correlation: {distress.entropy_variance_correlation:.6f}")
+            print(f"  Error: backend unavailable ({backend_error})")
+            exit_code = 1
+        else:
+            entropy_service = EntropyProbeService()
+            pattern = entropy_service.analyze_pattern(samples)
+            distress = entropy_service.detect_distress(samples)
+            print(f"  Sample count: {pattern.sample_count}")
+            print(f"  Trend slope: {pattern.trend_slope:.6f}")
+            print(f"  Volatility: {pattern.volatility:.6f}")
+            print(
+                f"  Entropy mean/std: {pattern.entropy_mean:.6f} / {pattern.entropy_std_dev:.6f}"
+            )
+            print(
+                f"  Variance mean/std: {pattern.variance_mean:.6f} / {pattern.variance_std_dev:.6f}"
+            )
+            print(
+                f"  Entropy-variance correlation: {pattern.entropy_variance_correlation:.6f}"
+            )
+            print(f"  Sustained high count: {pattern.sustained_high_count}")
+            print(f"  Sustained significance: {pattern.sustained_significance:.6f}")
+            print(f"  Peak entropy: {pattern.peak_entropy:.6f}")
+            print(f"  Min entropy: {pattern.min_entropy:.6f}")
+            if pattern.anomaly_indices:
+                indices = ", ".join(str(idx) for idx in pattern.anomaly_indices)
+                print(f"  Anomaly indices: {indices}")
+            if distress is not None:
+                print("  Distress metrics:")
+                print(f"    Sustained high count: {distress.sustained_high_count}")
+                print(f"    Sustained significance: {distress.sustained_significance:.6f}")
+                print(f"    Entropy mean: {distress.entropy_mean:.6f}")
+                print(f"    Variance mean: {distress.variance_mean:.6f}")
+                print(
+                    f"    Entropy-variance correlation: {distress.entropy_variance_correlation:.6f}"
+                )
 
     print("\n" + "=" * 60)
     print("Audit complete.")
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
