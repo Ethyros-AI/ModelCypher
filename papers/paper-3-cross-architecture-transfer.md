@@ -198,4 +198,4 @@ Bansal, Y., et al. (2021). Stitching Neural Networks with Minimal Shift. *NeurIP
 
 [Yadav et al. (2023)](../docs/references/arxiv/Yadav_2023_TIES_Merging.pdf). TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708).
 
-Yu, L., et al. (2024). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099).
+[Yu et al. (2024)](../docs/references/arxiv/Yu_2023_Language_Models_are_Super_Mario_Absorbing.pdf). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099).
