@@ -1397,24 +1397,11 @@ def stage_probe(
             )
             alignment_1d = measure_1d_alignment(source_tokenizer, target_tokenizer)
             
-            # Warn if tokenizer alignment is poor
-            if alignment_1d.vocab_jaccard < 0.5:
-                logger.warning(
-                    "PRE-FLIGHT: Low tokenizer overlap detected (Jaccard=%.2f). "
-                    "Cross-tokenizer merges may produce degraded outputs.",
-                    alignment_1d.vocab_jaccard,
-                )
-            elif alignment_1d.vocab_jaccard < 0.8:
-                logger.info(
-                    "PRE-FLIGHT: Moderate tokenizer overlap (Jaccard=%.2f). "
-                    "Some token-level misalignment expected.",
-                    alignment_1d.vocab_jaccard,
-                )
-            else:
-                logger.debug(
-                    "PRE-FLIGHT: Good tokenizer alignment (Jaccard=%.2f)",
-                    alignment_1d.vocab_jaccard,
-                )
+            # Report tokenizer alignment measurement (no interpretation)
+            logger.info(
+                "PRE-FLIGHT: Tokenizer vocabulary overlap Jaccard=%.2f",
+                alignment_1d.vocab_jaccard,
+            )
         except Exception as e:
             logger.debug("PRE-FLIGHT: Skipped tokenizer check: %s", e)
 

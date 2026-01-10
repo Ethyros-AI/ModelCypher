@@ -238,13 +238,6 @@ class MultiModalMergeService:
         cka_preservation = self._compute_cka(target_embeds.embeddings, current_target)
         logger.info(f"CKA(original, merged) = {cka_preservation:.4f}")
 
-        if cka_preservation >= 0.95:
-            logger.info("  EXCELLENT - Original geometry fully preserved!")
-        elif cka_preservation >= 0.90:
-            logger.info("  GOOD - Original geometry mostly preserved")
-        else:
-            logger.info("  WARNING - Some geometry drift detected")
-
         return MultiModalMergeResult(
             concepts=tuple(concepts),
             alignment_results=tuple(alignment_results),

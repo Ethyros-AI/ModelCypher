@@ -495,13 +495,6 @@ def research_multimodal_merge(
         lines.append("")
         lines.append(f"Geometry Preservation: CKA = {result.cka_preservation:.4f}")
 
-        if result.cka_preservation >= 0.95:
-            lines.append("  ✓ Original geometry fully preserved!")
-        elif result.cka_preservation >= 0.90:
-            lines.append("  ✓ Original geometry mostly preserved")
-        else:
-            lines.append("  ⚠ Some geometry drift detected")
-
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

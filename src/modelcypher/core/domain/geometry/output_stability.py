@@ -277,7 +277,10 @@ def compare_stability(
     Returns:
         StabilityComparison with ratios and deltas
     """
-    eps = 1e-10  # Avoid division by zero
+    # Use sqrt(machine_epsilon) for safe division
+    # float32 machine epsilon = 2^-23, sqrt = 2^-11.5 ≈ 3.45e-4
+    import math
+    eps = math.sqrt(2.0 ** -23)  # sqrt of float32 machine epsilon
 
     return StabilityComparison(
         condition_number_ratio=after.condition_number / max(before.condition_number, eps),

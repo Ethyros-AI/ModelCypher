@@ -239,7 +239,10 @@ class TemporalTopologyAnalyzer:
         ]
         gradient_score = sum(abs(s) for s in gradient_scores) / len(gradient_scores)
 
-        arrow_score = 1.0 if arrow.arrow_detected else 0.5 * abs(arrow.direction_correlation)
+        # Arrow score = correlation magnitude. No arbitrary multipliers.
+        # The direction_correlation already encodes the strength of temporal ordering.
+        # arrow.arrow_detected is a binary threshold - we use the raw correlation instead.
+        arrow_score = abs(arrow.direction_correlation)
 
         components = TemporalManifoldComponents(
             orthogonality_score=ortho_score,

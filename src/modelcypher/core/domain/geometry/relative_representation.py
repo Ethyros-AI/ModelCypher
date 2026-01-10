@@ -215,7 +215,8 @@ def align_relative_representations(
     source_norm = backend.sum(source_centered * source_centered)
     target_norm = backend.sum(target_centered * target_centered)
     backend.eval(source_norm, target_norm)
-    eps = 1e-10
+    # Use dtype-derived epsilon, not arbitrary 1e-10
+    eps = float(division_epsilon(backend, source_norm))
     if float(backend.to_scalar(source_norm)) < eps or float(backend.to_scalar(target_norm)) < eps:
         # Degenerate case: return identity
         R = backend.eye(n_anchors)
