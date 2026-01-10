@@ -160,6 +160,7 @@ def _run_merge(
     output_file: str | None,
     dry_run: bool = False,
     probe_mode: str = "atlas",
+    delta_scale: float = 1.0,
 ) -> None:
     """Core merge logic shared by callback and run command."""
     from modelcypher.cli.composition import get_merge_pipeline_service
@@ -184,6 +185,7 @@ def _run_merge(
                 target_path=target,
                 output_dir=output_dir,
                 probe_mode=probe_mode,
+                delta_scale=delta_scale,
             )
 
         # Build output payload
@@ -307,6 +309,7 @@ def merge_callback(
     output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
     probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
+    delta_scale: float = typer.Option(1.0, "--delta-scale", "-d", help="Scale factor for knowledge injection (0.0-1.0). Use <1.0 for sequential stacking."),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -323,7 +326,7 @@ def merge_callback(
 
     # If options were provided directly, run the merge
     if source and target and output_dir:
-        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
+        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode, delta_scale=delta_scale)
     elif source or target or output_dir:
         # Partial options provided - show error
         missing = []
@@ -352,6 +355,7 @@ def run(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
     probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
+    delta_scale: float = typer.Option(1.0, "--delta-scale", "-d", help="Scale factor for knowledge injection (0.0-1.0). Use <1.0 for sequential stacking."),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
@@ -361,8 +365,9 @@ def run(
     Examples:
         mc merge run -s ./qwen -t ./smol -o ./merged
         mc merge run -s ./qwen -t ./smol -o ./merged --probe-mode token
+        mc merge run -s ./coder -t ./merged1 -o ./merged2 --delta-scale 0.5
     """
-    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
+    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode, delta_scale=delta_scale)
 
 
 @app.command()
@@ -373,6 +378,7 @@ def batch(
     output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
     accumulative: bool = typer.Option(True, "--accumulative/--sequential", help="Accumulative (add all to target) vs sequential merging"),
     fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks (safe: CKA=1.0 is invariant)"),
+    delta_scale: float = typer.Option(1.0, "--delta-scale", "-d", help="Scale factor for knowledge injection (0.0-1.0). Use <1.0 for sequential stacking."),
 ) -> None:
     """Merge multiple source models into a single target (N→1 merging).
 
@@ -420,6 +426,7 @@ def batch(
             output_dir=output_dir,
             accumulative=accumulative,
             fast_mode=fast_mode,
+            delta_scale=delta_scale,
         )
 
     typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")

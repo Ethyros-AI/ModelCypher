@@ -46,6 +46,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.deviation_budget import DeviationBudget
 
 from . import helpers as merge_helpers
 from . import stages as merge_stages
@@ -238,6 +239,8 @@ class UnifiedGeometricMerger:
         output_dir: str | None = None,
         accumulative: bool = True,
         fast_mode: bool = True,
+        delta_scale: float = 1.0,
+        track_budget: bool = True,
     ) -> UnifiedMergeResult:
         """Merge multiple source models into a single target (N→1 merging).
 
@@ -267,6 +270,14 @@ class UnifiedGeometricMerger:
         2. All source knowledge is added (not averaged)
         3. Sources can be processed in parallel
 
+        Deviation Budget:
+        ----------------
+        When track_budget=True (default), cumulative deviation from baseline is
+        tracked. Empirical findings show:
+        - L2 deviation < 35: Safe, full generation quality
+        - L2 deviation 35-50: Warning, approaching degradation threshold
+        - L2 deviation > 50: Danger, generation degradation likely
+
         Parameters
         ----------
         source_paths : list[str]
@@ -281,6 +292,11 @@ class UnifiedGeometricMerger:
         fast_mode : bool
             If True (default), skip CKA precision checks in GramAligner.
             Safe because CKA = 1.0 is guaranteed by construction.
+        delta_scale : float
+            Scale factor for knowledge injection (0.0-1.0). Use <1.0 for
+            sequential stacking to stay within deviation budget (~50 L2 threshold).
+        track_budget : bool
+            If True (default), track cumulative deviation and log budget status.
 
         Returns
         -------
@@ -303,6 +319,13 @@ class UnifiedGeometricMerger:
         target_model = self._load_model_for_probing(target_path)
         target_tokenizer = self._load_tokenizer(target_path)
 
+        # Initialize deviation budget tracking
+        deviation_budget = None
+        if track_budget:
+            deviation_budget = DeviationBudget(backend=self._backend)
+            deviation_budget.record_baseline(target_weights, name="original_target")
+            logger.info("BATCH MERGE: Deviation budget tracking enabled (threshold: 50.0 L2)")
+
         if accumulative:
             # Accumulative mode: merge all sources into original target's null-space
             merged_weights = {k: self._backend.array(v) for k, v in target_weights.items()}
@@ -322,6 +345,7 @@ class UnifiedGeometricMerger:
                     target_model=target_model,  # Reuse loaded model
                     target_tokenizer=target_tokenizer,  # Reuse tokenizer
                     probe_mode="atlas",
+                    delta_scale=delta_scale,
                 )
 
                 # Accumulate: add delta to merged weights
@@ -330,6 +354,36 @@ class UnifiedGeometricMerger:
                         # delta = result - original_target
                         delta = result.weights[key] - target_weights[key]
                         merged_weights[key] = merged_weights[key] + delta
+
+                # Check deviation budget after each merge
+                if deviation_budget is not None:
+                    budget_status = deviation_budget.check_merge_budget(
+                        merged_weights, baseline_name="original_target"
+                    )
+                    if not budget_status.is_safe:
+                        logger.warning(
+                            "BATCH MERGE: BUDGET EXCEEDED after source %d/%d - "
+                            "deviation=%.1f (%.1f%% of budget). %s",
+                            i + 1, n_sources,
+                            budget_status.current_deviation,
+                            budget_status.budget_used_percent,
+                            budget_status.recommendation
+                        )
+                    elif budget_status.budget_used_percent > 70:
+                        logger.warning(
+                            "BATCH MERGE: Budget warning after source %d/%d - "
+                            "deviation=%.1f (%.1f%% of budget)",
+                            i + 1, n_sources,
+                            budget_status.current_deviation,
+                            budget_status.budget_used_percent
+                        )
+                    else:
+                        logger.info(
+                            "BATCH MERGE: Source %d/%d - deviation=%.1f (%.1f%% of budget)",
+                            i + 1, n_sources,
+                            budget_status.current_deviation,
+                            budget_status.budget_used_percent
+                        )
 
                 logger.info("BATCH MERGE: Source %d/%d complete", i + 1, n_sources)
 
@@ -363,11 +417,42 @@ class UnifiedGeometricMerger:
                     target_model=current_model,
                     target_tokenizer=current_tokenizer,
                     probe_mode="atlas",
+                    delta_scale=delta_scale,
                 )
 
                 # Update target for next iteration
                 current_target = result.weights
                 # Note: model/tokenizer stay the same (architecture unchanged)
+
+                # Check deviation budget after each sequential merge
+                if deviation_budget is not None:
+                    budget_status = deviation_budget.check_merge_budget(
+                        current_target, baseline_name="original_target"
+                    )
+                    if not budget_status.is_safe:
+                        logger.warning(
+                            "BATCH MERGE: BUDGET EXCEEDED after merge %d/%d - "
+                            "deviation=%.1f (%.1f%% of budget). %s",
+                            i + 1, n_sources,
+                            budget_status.current_deviation,
+                            budget_status.budget_used_percent,
+                            budget_status.recommendation
+                        )
+                    elif budget_status.budget_used_percent > 70:
+                        logger.warning(
+                            "BATCH MERGE: Budget warning after merge %d/%d - "
+                            "deviation=%.1f (%.1f%% of budget)",
+                            i + 1, n_sources,
+                            budget_status.current_deviation,
+                            budget_status.budget_used_percent
+                        )
+                    else:
+                        logger.info(
+                            "BATCH MERGE: Merge %d/%d - deviation=%.1f (%.1f%% of budget)",
+                            i + 1, n_sources,
+                            budget_status.current_deviation,
+                            budget_status.budget_used_percent
+                        )
 
                 logger.info("BATCH MERGE: Sequential merge %d/%d complete", i + 1, n_sources)
 

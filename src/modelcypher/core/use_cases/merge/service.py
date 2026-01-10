@@ -144,6 +144,7 @@ class MergePipelineService:
         output_dir: str,
         probe_mode: str = "atlas",
         skip_pre_analysis: bool = False,
+        delta_scale: float = 1.0,
     ) -> PipelineResult:
         """Run the complete merge pipeline.
 
@@ -155,6 +156,9 @@ class MergePipelineService:
             skip_pre_analysis: If True, skip pre-merge interference analysis
                 for faster merges. The analysis is informational only and
                 does not affect merge quality.
+            delta_scale: Scale factor for knowledge injection (0.0-1.0).
+                Use <1.0 for sequential stacking to stay within deviation budget.
+                Default 1.0 (full strength). Threshold ~50-60 L2 from baseline.
         Returns:
             PipelineResult with all stage results
         """
@@ -210,6 +214,7 @@ class MergePipelineService:
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            delta_scale=delta_scale,
         )
         merge_duration = time.time() - merge_start
         logger.info("Merge completed in %.2fs", merge_duration)
@@ -454,6 +459,7 @@ class MergePipelineService:
         target_model: Any | None = None,
         source_tokenizer: Any | None = None,
         target_tokenizer: Any | None = None,
+        delta_scale: float = 1.0,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
         # Use injected merger instead of importing from CLI
@@ -466,6 +472,7 @@ class MergePipelineService:
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            delta_scale=delta_scale,
         )
 
     def _extract_post_merge_validation(
