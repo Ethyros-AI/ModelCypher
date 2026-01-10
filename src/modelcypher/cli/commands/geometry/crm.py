@@ -38,8 +38,9 @@ import typer
 from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    SequenceInvariantInventory,
+from modelcypher.core.domain.agents import (
+    AtlasSource,
+    UnifiedAtlasInventory,
 )
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
@@ -276,24 +277,47 @@ def geometry_crm_delta_mask(
     write_output(payload, context.output_format, context.pretty)
 
 
-@app.command("sequence-inventory")
-def geometry_crm_sequence_inventory(
+@app.command("probe-inventory")
+def geometry_crm_probe_inventory(
     ctx: typer.Context,
+    source: str | None = typer.Option(
+        None, "--source", help="Filter by source (e.g., sequence_invariant, semantic_prime)"
+    ),
 ) -> None:
-    """List available sequence invariant probes for CRM anchoring.
+    """List available probes for CRM anchoring.
 
     Examples:
-        mc geometry crm sequence-inventory
+        mc geometry crm probe-inventory
+        mc geometry crm probe-inventory --source sequence_invariant
     """
     context = _context(ctx)
 
-    probes = SequenceInvariantInventory.probes_for_families(None)
-    counts = SequenceInvariantInventory.probe_count_by_family()
+    # Get all probes or filter by source
+    if source:
+        try:
+            atlas_source = AtlasSource(source)
+            probes = UnifiedAtlasInventory.probes_by_source({atlas_source})
+        except ValueError:
+            from modelcypher.utils.errors import ErrorDetail
+            error = ErrorDetail(
+                code="MC-1053",
+                title="Invalid source",
+                detail=f"Unknown source: {source}",
+                hint=f"Valid sources: {', '.join(s.value for s in AtlasSource)}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+    else:
+        probes = UnifiedAtlasInventory.all_probes()
+
+    # Count by source
+    counts = UnifiedAtlasInventory.probe_count()
 
     probe_list = [
         {
             "id": probe.id,
-            "family": probe.family.value,
+            "source": probe.source.value,
             "domain": probe.domain.value,
             "name": probe.name,
             "description": probe.description,
@@ -304,23 +328,23 @@ def geometry_crm_sequence_inventory(
 
     payload = {
         "totalProbes": len(probes),
-        "familyCounts": {fam.value: count for fam, count in counts.items()},
+        "sourceCounts": {src.value: count for src, count in counts.items()},
         "probes": probe_list,
     }
 
     if context.output_format == "text":
         lines = [
-            "SEQUENCE INVARIANT INVENTORY",
+            "PROBE INVENTORY",
             f"Total Probes: {len(probes)}",
             "",
-            "Probes by Family:",
+            "Probes by Source:",
         ]
-        for fam, count in sorted(counts.items(), key=lambda x: x[0].value):
-            lines.append(f"  {fam.value}: {count}")
+        for src, count in sorted(counts.items(), key=lambda x: x[0].value):
+            lines.append(f"  {src.value}: {count}")
         lines.append("")
         lines.append("Probes (first 20):")
         for probe in probes[:20]:
-            lines.append(f"  [{probe.family.value}] {probe.id}: {probe.name}")
+            lines.append(f"  [{probe.source.value}] {probe.id}: {probe.name}")
         if len(probes) > 20:
             lines.append(f"  ... and {len(probes) - 20} more")
         write_output("\n".join(lines), context.output_format, context.pretty)

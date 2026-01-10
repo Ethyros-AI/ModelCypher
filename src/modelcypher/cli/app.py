@@ -63,24 +63,17 @@ from modelcypher.cli.commands.geometry import concept as geometry_concept_comman
 from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
 from modelcypher.cli.commands.geometry import cross_cultural as geometry_cross_cultural_commands
 from modelcypher.cli.commands.geometry import density as geometry_density_commands
-from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
 from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
 from modelcypher.cli.commands.geometry import invariant as geometry_invariant_commands
 from modelcypher.cli.commands.geometry import manifold as geometry_manifold_commands
-from modelcypher.cli.commands.geometry import metaphor as geometry_metaphor_commands
 from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
-from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
 from modelcypher.cli.commands.geometry import number_theory as geometry_number_theory_commands
 from modelcypher.cli.commands.geometry import path as geometry_path_commands
 from modelcypher.cli.commands.geometry import persona as geometry_persona_commands
-from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
 from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
 from modelcypher.cli.commands.geometry import research as geometry_research_commands
 from modelcypher.cli.commands.geometry import safety as geometry_safety_commands
-from modelcypher.cli.commands.geometry import social as geometry_social_commands
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
-from modelcypher.cli.commands.geometry import spatial as geometry_spatial_commands
-from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
 from modelcypher.cli.commands.geometry import training as geometry_training_commands
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
 from modelcypher.cli.commands.geometry import visualize as geometry_visualize_commands
@@ -185,7 +178,6 @@ geometry_app.add_typer(geometry_safety_commands.app, name="safety", help="Safety
 geometry_app.add_typer(geometry_adapter_commands.app, name="adapter", help="Adapter geometry analysis")
 geometry_app.add_typer(geometry_atlas_commands.app, name="atlas", help="Atlas dimensionality studies")
 geometry_app.add_typer(geometry_baseline_commands.app, name="baseline", help="Geometry baseline profiles")
-geometry_app.add_typer(geometry_primes_commands.app, name="primes", help="Semantic primes analysis")
 geometry_app.add_typer(geometry_crm_commands.app, name="crm", help="Concept Response Matrix")
 geometry_app.add_typer(geometry_metrics_commands.app, name="metrics", help="Point-cloud geometry metrics")
 geometry_app.add_typer(geometry_concept_commands.app, name="concept", help="Concept detection and comparison")
@@ -195,14 +187,8 @@ geometry_app.add_typer(geometry_sparse_commands.app, name="sparse", help="Sparse
 geometry_app.add_typer(geometry_refusal_commands.app, name="refusal", help="Refusal pair analysis")
 geometry_app.add_typer(geometry_persona_commands.app, name="persona", help="Persona extraction")
 geometry_app.add_typer(geometry_manifold_commands.app, name="manifold", help="Manifold operations")
-geometry_app.add_typer(geometry_metaphor_commands.app, name="metaphor", help="Metaphor detection")
 geometry_app.add_typer(geometry_invariant_commands.app, name="invariant", help="Invariant analysis")
-geometry_app.add_typer(geometry_emotion_commands.app, name="emotion", help="Emotion geometry")
 geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer", help="Transfer geometry")
-geometry_app.add_typer(geometry_spatial_commands.app, name="spatial", help="Spatial geometry")
-geometry_app.add_typer(geometry_social_commands.app, name="social", help="Social geometry")
-geometry_app.add_typer(geometry_temporal_commands.app, name="temporal", help="Temporal geometry")
-geometry_app.add_typer(geometry_moral_commands.app, name="moral", help="Moral geometry")
 geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory", help="Number theory geometry")
 geometry_app.add_typer(geometry_research_commands.app, name="research", help="Research-only geometry commands")
 geometry_app.add_typer(geometry_visualize_commands.app, name="visualize", help="Geometry visualization")

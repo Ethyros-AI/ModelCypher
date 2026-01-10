@@ -93,25 +93,42 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                 payload["ckaMatrix"] = summary.cka_matrix
             return payload
 
-    if "mc_geometry_crm_sequence_inventory" in tool_set:
+    if "mc_geometry_crm_probe_inventory" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_crm_sequence_inventory() -> dict:
-            """List available sequence invariant probes for CRM anchoring."""
-            from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-                SequenceInvariantInventory,
+        def mc_geometry_crm_probe_inventory(source: str | None = None) -> dict:
+            """List available probes for CRM anchoring.
+
+            Args:
+                source: Optional filter by source (e.g., sequence_invariant, semantic_prime)
+            """
+            from modelcypher.core.domain.agents import (
+                AtlasSource,
+                UnifiedAtlasInventory,
             )
 
-            probes = SequenceInvariantInventory.probes_for_families(None)
-            counts = SequenceInvariantInventory.probe_count_by_family()
+            if source:
+                try:
+                    atlas_source = AtlasSource(source)
+                    probes = UnifiedAtlasInventory.probes_by_source({atlas_source})
+                except ValueError:
+                    return {
+                        "_schema": "mc.error.v1",
+                        "error": f"Unknown source: {source}",
+                        "validSources": [s.value for s in AtlasSource],
+                    }
+            else:
+                probes = UnifiedAtlasInventory.all_probes()
+
+            counts = UnifiedAtlasInventory.probe_count()
             return {
-                "_schema": "mc.geometry.crm.sequence_inventory.v1",
+                "_schema": "mc.geometry.crm.probe_inventory.v1",
                 "totalProbes": len(probes),
-                "familyCounts": {fam.value: count for fam, count in counts.items()},
+                "sourceCounts": {src.value: count for src, count in counts.items()},
                 "probes": [
                     {
                         "id": p.id,
-                        "family": p.family.value,
+                        "source": p.source.value,
                         "domain": p.domain.value,
                         "name": p.name,
                         "description": p.description,
