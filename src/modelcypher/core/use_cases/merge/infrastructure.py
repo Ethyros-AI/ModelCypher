@@ -65,7 +65,7 @@ def select_anchor_indices_by_coverage(
 
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
-    k_neighbors = min(10, n - 1)
+    # k_neighbors=None triggers connectivity-based selection (geometry determines the value)
     norms = geodesic_norms(points, backend)
     backend.eval(norms)
     seed_idx_arr = backend.argmax(norms)
@@ -77,7 +77,7 @@ def select_anchor_indices_by_coverage(
         points,
         n_samples=n_anchors,
         seed_idx=seed_idx,
-        k_neighbors=k_neighbors,
+        # k_neighbors=None: connectivity-based selection (geometry determines k)
     )
     return fps_result.selected_indices
 

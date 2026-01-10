@@ -94,9 +94,17 @@ class GeometricFingerprint:
         return mean, std, gram_hash
 
     @staticmethod
-    def estimate_spectral_radius(gram: list[float], n: int, iterations: int = 50) -> float:
+    def estimate_spectral_radius(gram: list[float], n: int) -> float:
+        """Estimate spectral radius via power iteration with convergence-based stopping.
+
+        Uses sqrt(machine_epsilon) as convergence tolerance, derived from dtype precision.
+        Minimum iterations = ceil(log2(n)) + 1 (geometric convergence theory).
+        Maximum iterations = 10 * n (conservative upper bound).
+        """
         if len(gram) != n * n or n <= 0:
             return 0.0
+
+        import math
 
         backend = get_default_backend()
         backend.random_seed(42)
@@ -112,8 +120,15 @@ class GeometricFingerprint:
         if norm > 0:
             v = v / norm
 
+        # Convergence parameters derived from theory
+        # sqrt(float32 machine epsilon) for convergence tolerance
+        tol = 2.0 ** -11.5
+        min_iter = int(math.ceil(math.log2(max(2, n)))) + 1
+        max_iter = 10 * n
+
         lam = 0.0
-        for _ in range(iterations):
+        lam_prev = 0.0
+        for i in range(max_iter):
             # Vectorized matrix-vector multiply instead of O(n²) Python loops
             w = backend.matmul(gram_arr, v)
             backend.eval(w)
@@ -132,13 +147,23 @@ class GeometricFingerprint:
             eps = division_epsilon(backend, w)
             if norm <= eps:
                 break
+
+            # Convergence check: relative change in eigenvalue estimate
+            if i >= min_iter and abs(lam - lam_prev) < tol * max(abs(lam), tol):
+                break
+
+            lam_prev = lam
             v = w / norm
 
         return float(abs(lam))
 
     @staticmethod
-    def estimate_condition_number(gram: list[float], n: int, iterations: int = 50) -> float:
-        eigenvalues = GeometricFingerprint.symmetric_eigenvalues(gram, n, max_iterations=iterations)
+    def estimate_condition_number(gram: list[float], n: int) -> float:
+        """Estimate condition number from eigenvalues.
+
+        Convergence is handled internally by power_iteration_eigh.
+        """
+        eigenvalues = GeometricFingerprint.symmetric_eigenvalues(gram, n)
         if eigenvalues is None or not eigenvalues:
             return float("inf")
         backend = get_default_backend()
@@ -173,19 +198,18 @@ class GeometricFingerprint:
         return float((sum_vals * sum_vals) / sum_sq)
 
     @staticmethod
-    def symmetric_eigenvalues(
-        gram: list[float],
-        n: int,
-        max_iterations: int = 64,
-        tolerance: float = 0.0,
-    ) -> list[float] | None:
+    def symmetric_eigenvalues(gram: list[float], n: int) -> list[float] | None:
+        """Compute eigenvalues of symmetric Gram matrix.
+
+        Convergence is dtype-derived inside power_iteration_eigh -
+        no arbitrary iteration count needed.
+        """
         if len(gram) != n * n or n <= 0:
             return None
         if n == 1:
             return [float(gram[0])]
 
         backend = get_default_backend()
-        # Convergence is dtype-derived inside power_iteration_eigh.
         matrix = backend.reshape(backend.array(gram, dtype="float32"), (n, n))
         eigenvalues, _ = power_iteration_eigh(backend, matrix, k=n)
         backend.eval(eigenvalues)

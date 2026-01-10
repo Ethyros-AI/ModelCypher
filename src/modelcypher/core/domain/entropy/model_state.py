@@ -39,6 +39,31 @@ from datetime import datetime
 _MACHINE_EPS = sys.float_info.epsilon
 
 
+# Z-score to confidence level mapping (one-sided, derived from normal CDF)
+# These are the standard statistical thresholds, not arbitrary values.
+# Formula: confidence = 1 - (1 - erf(z / sqrt(2))) / 2  (one-sided)
+#
+# | z-score | One-sided confidence | Two-sided confidence |
+# |---------|---------------------|---------------------|
+# | 1.0     | 84.13%              | 68.27%              |
+# | 1.5     | 93.32%              | 86.64%              |
+# | 1.645   | 95.00%              | 90.00%              |
+# | 1.96    | 97.50%              | 95.00%              |
+# | 2.0     | 97.72%              | 95.45%              |
+# | 2.576   | 99.50%              | 99.00%              |
+#
+# Defaults used in this module:
+# - is_low: z=-1.5 (93.3% confidence that entropy is below baseline)
+# - is_high: z=2.0 (97.7% confidence that entropy is above baseline)
+# - is_escalation/recovery: z=1.0 (84.1% confidence for transitions)
+Z_CONFIDENCE_84 = 1.0  # 84.13% one-sided confidence
+Z_CONFIDENCE_93 = 1.5  # 93.32% one-sided confidence
+Z_CONFIDENCE_95 = 1.645  # 95.00% one-sided confidence
+Z_CONFIDENCE_97 = 1.96  # 97.50% one-sided confidence
+Z_CONFIDENCE_98 = 2.0  # 97.72% one-sided confidence
+Z_CONFIDENCE_99 = 2.576  # 99.50% one-sided confidence
+
+
 @dataclass(frozen=True)
 class EntropyBaseline:
     """Calibrated entropy baseline for a specific model.
@@ -58,12 +83,18 @@ class EntropyBaseline:
             return 0.0
         return (entropy - self.mean) / self.std
 
-    def is_low(self, entropy: float, z_threshold: float = -1.5) -> bool:
-        """Check if entropy is significantly below baseline (confident)."""
+    def is_low(self, entropy: float, z_threshold: float = -Z_CONFIDENCE_93) -> bool:
+        """Check if entropy is significantly below baseline (confident).
+
+        Default threshold -1.5 corresponds to 93.3% one-sided confidence.
+        """
         return self.z_score(entropy) < z_threshold
 
-    def is_high(self, entropy: float, z_threshold: float = 2.0) -> bool:
-        """Check if entropy is significantly above baseline (uncertain)."""
+    def is_high(self, entropy: float, z_threshold: float = Z_CONFIDENCE_98) -> bool:
+        """Check if entropy is significantly above baseline (uncertain).
+
+        Default threshold 2.0 corresponds to 97.7% one-sided confidence.
+        """
         return self.z_score(entropy) > z_threshold
 
     def normalized(self, entropy: float) -> float:
@@ -121,21 +152,21 @@ class EntropyTransition:
             return 0.0
         return self.entropy_delta / baseline.std
 
-    def is_escalation(self, baseline: EntropyBaseline, z_threshold: float = 1.0) -> bool:
+    def is_escalation(self, baseline: EntropyBaseline, z_threshold: float = Z_CONFIDENCE_84) -> bool:
         """Entropy increased significantly (getting more uncertain).
 
         Args:
             baseline: Uses z-score based significance.
-            z_threshold: Z-score threshold for significance (default: 1.0 std dev).
+            z_threshold: Z-score threshold for significance (default: 1.0 = 84.1% confidence).
         """
         return self.z_score_delta(baseline) > z_threshold
 
-    def is_recovery(self, baseline: EntropyBaseline, z_threshold: float = 1.0) -> bool:
+    def is_recovery(self, baseline: EntropyBaseline, z_threshold: float = Z_CONFIDENCE_84) -> bool:
         """Entropy decreased significantly (getting more confident).
 
         Args:
             baseline: Uses z-score based significance.
-            z_threshold: Z-score threshold for significance (default: 1.0 std dev).
+            z_threshold: Z-score threshold for significance (default: 1.0 = 84.1% confidence).
         """
         return self.z_score_delta(baseline) < -z_threshold
 
@@ -180,7 +211,7 @@ def is_distressed(
     variance: float,
     baseline: EntropyBaseline,
     *,
-    z_threshold: float = 2.0,
+    z_threshold: float = Z_CONFIDENCE_98,
 ) -> bool:
     """Check if entropy indicates distress (high entropy + low variance).
 
@@ -191,7 +222,7 @@ def is_distressed(
         entropy: Current entropy value.
         variance: Current variance.
         baseline: Model entropy baseline.
-        z_threshold: Z-score threshold for "high entropy" (default: 2σ from baseline).
+        z_threshold: Z-score threshold for "high entropy" (default: 2.0 = 97.7% confidence).
     """
     # High entropy relative to baseline
     is_high_entropy = baseline.z_score(entropy) > z_threshold
@@ -200,6 +231,9 @@ def is_distressed(
     return is_high_entropy and is_low_variance
 
 
-def requires_caution(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
-    """Check if current state warrants caution."""
-    return is_uncertain(entropy, variance, baseline) or is_distressed(entropy, variance, baseline)
+def requires_caution(entropy: float, variance: float, baseline: EntropyBaseline) -> bool:
+    """Check if current state warrants caution.
+
+    Returns True if entropy is uncertain OR distressed (high entropy + low variance).
+    """
+    return is_uncertain(entropy, baseline) or is_distressed(entropy, variance, baseline)

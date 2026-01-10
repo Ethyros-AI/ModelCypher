@@ -206,11 +206,11 @@ We present a protocol for measuring entropy dynamics under prompt perturbation a
 
 Farquhar, S., Kossen, J., Kuhn, L., & Gal, Y. (2024). Detecting Hallucinations in Large Language Models Using Semantic Entropy. *Nature* 630: 625-630. [DOI:10.1038/s41586-024-07421-0](https://doi.org/10.1038/s41586-024-07421-0).
 
-Guo, C., Pleiss, G., Sun, Y., & Weinberger, K.Q. (2017). On Calibration of Modern Neural Networks. *ICML 2017*. [arXiv:1706.04599](https://arxiv.org/abs/1706.04599).
+[Guo et al. (2017)](../docs/references/arxiv/Guo_2017_Calibration_Modern_Neural_Networks.pdf). On Calibration of Modern Neural Networks. *ICML 2017*. [arXiv:1706.04599](https://arxiv.org/abs/1706.04599).
 
 [Kossen et al. (2024)](../docs/references/arxiv/Kossen_2024_Semantic_Entropy_Probes.pdf). Semantic Entropy Probes: Robust and Cheap Hallucination Detection in LLMs. [arXiv:2406.15927](https://arxiv.org/abs/2406.15927).
 
-Peeperkorn, M., et al. (2024). Is Temperature the Creativity Parameter of Large Language Models? [arXiv:2405.00492](https://arxiv.org/abs/2405.00492).
+[Peeperkorn et al. (2024)](../docs/references/arxiv/Peeperkorn_2024_Is_Temperature_Creativity_Parameter_Large_Language.pdf). Is Temperature the Creativity Parameter of Large Language Models? [arXiv:2405.00492](https://arxiv.org/abs/2405.00492).
 
 [Zou et al. (2024)](../docs/references/arxiv/Zou_2024_Circuit_Breakers.pdf). Improving Alignment and Robustness with Circuit Breakers. *NeurIPS 2024*. [arXiv:2406.04313](https://arxiv.org/abs/2406.04313).
 
@@ -238,14 +238,14 @@ Peeperkorn, M., et al. (2024). Is Temperature the Creativity Parameter of Large 
 
 ```bash
 # Measure entropy across modifiers for a prompt
-mc thermo measure "<text>" --model /path/to/model
+poetry run mc thermo measure "<text>" --model /path/to/model
 
 # Measure baseline vs intensity delta for a prompt
-mc thermo detect "<text>" --model /path/to/model
+poetry run mc thermo detect "<text>" --model /path/to/model
 
 # Compare base/adapter entropy samples (requires precomputed samples)
-mc entropy dual-path '[{"base": [e, v], "adapter": [e, v]}]'
+poetry run mc entropy dual-path '[{"base": [e, v], "adapter": [e, v]}]'
 
 # Baseline calibration for ΔH comparisons
-mc entropy calibrate --model /path/to/model --prompts prompts.json
+poetry run mc entropy calibrate --model /path/to/model --prompts prompts.json
 ```

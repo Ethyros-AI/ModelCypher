@@ -870,7 +870,7 @@ class SharedSubspaceProjector:
         cov: list[float],
         dim: int,
     ) -> tuple[list[float], list[float]] | None:
-        eigenvalues = GeometricFingerprint.symmetric_eigenvalues(cov, dim, max_iterations=100)
+        eigenvalues = GeometricFingerprint.symmetric_eigenvalues(cov, dim)
         if eigenvalues is None:
             return None
         eigen_float = [float(val) for val in eigenvalues]

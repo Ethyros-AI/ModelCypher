@@ -91,6 +91,7 @@ See Also:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -778,13 +779,10 @@ class ManifoldStitcher:
 
             # Compute cluster centroids using Fréchet mean (Riemannian center of mass)
             # Use regularization_epsilon (sqrt(machine_eps)) for convergence tolerance
+            # max_iterations derived from problem size inside frechet_mean
             tol = regularization_epsilon(b, s_members)
-            s_result = riemannian.frechet_mean(
-                s_members, max_iterations=20, tolerance=tol
-            )
-            t_result = riemannian.frechet_mean(
-                t_members, max_iterations=20, tolerance=tol
-            )
+            s_result = riemannian.frechet_mean(s_members, tolerance=tol)
+            t_result = riemannian.frechet_mean(t_members, tolerance=tol)
             s_mean = s_result.mean
             t_mean = t_result.mean
 
@@ -829,7 +827,7 @@ class ManifoldStitcher:
     def k_means(
         points: list[list[float]],
         k: int,
-        max_iterations: int = 50,
+        max_iterations: int | None = None,
         backend: "Backend | None" = None,
         geodesic_k_neighbors: int | None = None,
         seed: int | None = 42,
@@ -848,7 +846,7 @@ class ManifoldStitcher:
         Args:
             points: [N, D] list of points to cluster
             k: Number of clusters
-            max_iterations: Maximum iterations
+            max_iterations: Maximum iterations (derived from n and k if None)
             backend: Compute backend
             geodesic_k_neighbors: k for k-NN graph (None = derive from geometry)
 
@@ -859,6 +857,11 @@ class ManifoldStitcher:
         n = len(points)
         if n == 0 or k <= 0:
             return ([], [])
+
+        # Derive max iterations from problem size if not specified
+        # Uses logarithmic scaling: max_iter = max(20, 10 * ceil(log2(max(n, k) + 1)))
+        if max_iterations is None:
+            max_iterations = max(20, 10 * int(math.ceil(math.log2(max(2, n, k) + 1))))
 
         if seed is not None:
             b.random_seed(seed)
@@ -991,7 +994,6 @@ class ManifoldStitcher:
                     )
                     result = riemannian.frechet_mean(
                         cluster_pts,
-                        max_iterations=20,
                         tolerance=regularization_epsilon(b, cluster_pts),
                         geo_result=cluster_geo,
                     )

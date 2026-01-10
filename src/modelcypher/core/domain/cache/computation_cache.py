@@ -139,17 +139,33 @@ class ComputationCache:
         """
         Initialize the computation cache.
 
+        Default sizes are tuned for typical analysis sessions on systems with
+        16-64 GB RAM. The sizing rationale:
+
+        - Gram/centered_gram (200 each): O(n²) memory per entry where n=samples.
+          For 1024 samples: ~8MB per entry × 200 = ~1.6GB max.
+        - SVD (128): Stores U, S, Vt. For 1024×4096: ~150MB per entry × 128 = ~19GB max.
+        - Geodesic/frechet/kmin (1024): Sparse or scalar results, ~1KB-1MB each.
+        - Basis (256): Orthonormal bases, ~10MB per entry × 256 = ~2.5GB max.
+        - Chord/stitch (256/128): Distance matrices and transforms, moderate size.
+        - Pinv (64): Pseudoinverses can be large, limited count.
+
+        To auto-derive from available memory:
+            available_mb = 8000  # or detect at runtime
+            entry_size_kb = 8000  # estimate for your use case
+            max_entries = available_mb * 1024 // entry_size_kb
+
         Args:
-            max_gram_entries: Maximum number of Gram matrix entries.
-            max_geodesic_entries: Maximum number of geodesic distance entries.
-            max_svd_entries: Maximum number of SVD entries.
-            max_frechet_entries: Maximum number of Fréchet mean entries.
-            max_basis_entries: Maximum number of geodesic basis entries.
-            max_kmin_entries: Maximum number of cached k-min entries.
-            max_centered_gram_entries: Maximum number of centered Gram entries.
-            max_chord_entries: Maximum number of chord distance matrix entries.
-            max_stitch_entries: Maximum number of stitch transform entries.
-            max_pinv_entries: Maximum number of pseudoinverse entries.
+            max_gram_entries: Maximum Gram matrix entries. Large n² matrices.
+            max_geodesic_entries: Maximum geodesic distance entries. Sparse results.
+            max_svd_entries: Maximum SVD entries. Stores (U, S, Vt) tuples.
+            max_frechet_entries: Maximum Fréchet mean entries. Single vectors.
+            max_basis_entries: Maximum geodesic basis entries. Orthonormal matrices.
+            max_kmin_entries: Maximum k-min lookup entries. Scalar integers.
+            max_centered_gram_entries: Maximum centered Gram entries. Like Gram.
+            max_chord_entries: Maximum chord distance entries. n² dense matrices.
+            max_stitch_entries: Maximum stitch transform entries. Transform matrices.
+            max_pinv_entries: Maximum pseudoinverse entries. Can be very large.
         """
         self._max_gram_entries = max_gram_entries
         self._max_geodesic_entries = max_geodesic_entries

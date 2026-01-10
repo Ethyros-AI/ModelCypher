@@ -119,12 +119,34 @@ class Result:
         return abs(self.distance) <= eps
 
 
-# Algorithm constants - derived from numerical analysis, not configurable
-# Frank-Wolfe: 30 iterations with early stopping (triggers at 10-20 typically)
-_MAX_OUTER_ITERATIONS = 30
-_MIN_OUTER_ITERATIONS = 5
-# Sinkhorn iterations - small epsilon approximates exact EMD
-_SINKHORN_ITERATIONS = 50
+# Algorithm constants - derived from numerical analysis and problem size
+
+
+def _derive_outer_iterations(n: int, m: int) -> int:
+    """Derive max Frank-Wolfe iterations from problem size.
+
+    Frank-Wolfe converges at O(1/k) rate. Upper bound scales logarithmically
+    with problem size: max_iter = max(20, 10 * ceil(log2(max(n, m) + 1)))
+    Early convergence typically triggers well before this bound (10-20 iterations).
+    """
+    return max(20, 10 * int(math.ceil(math.log2(max(n, m) + 1))))
+
+
+def _derive_min_outer_iterations(n: int, m: int) -> int:
+    """Derive minimum iterations before checking convergence.
+
+    Uses ceil(log2(max(n, m))) + 1 as the geometric convergence minimum.
+    """
+    return int(math.ceil(math.log2(max(2, n, m)))) + 1
+
+
+# Nominal values retained for cache key compatibility and external imports.
+# Actual computation uses _derive_outer_iterations() based on problem size.
+_MAX_OUTER_ITERATIONS = 30  # Typical upper bound; actual value derived from n, m
+_MIN_OUTER_ITERATIONS = 5  # Typical minimum; actual value derived from n, m
+# Sinkhorn iterations - now derived from problem size inside solve_linear_ot
+# This nominal value is retained for cache key compatibility only
+_SINKHORN_ITERATIONS = 50  # Typical value; actual derived from n, m
 # Sinkhorn epsilon is now derived from cost matrix scale (see _derive_sinkhorn_epsilon)
 # This nominal value is retained for cache key compatibility only
 _SINKHORN_EPSILON = "data_derived"  # Not used in computation; epsilon is computed per-call
@@ -592,6 +614,12 @@ class GromovWassersteinDistance:
         """
         backend = self._backend
 
+        # Derive iteration bounds from problem size
+        n = int(C1.shape[0])
+        m = int(C2.shape[0])
+        max_outer_iterations = _derive_outer_iterations(n, m)
+        min_outer_iterations = _derive_min_outer_iterations(n, m)
+
         # Initialize loss decomposition matrices (reuse across restarts when provided)
         if constC is None or hC1 is None or hC2 is None:
             constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
@@ -609,7 +637,7 @@ class GromovWassersteinDistance:
         converged = False
         iterations = 0
 
-        for outer in range(_MAX_OUTER_ITERATIONS):
+        for outer in range(max_outer_iterations):
             iterations = outer + 1
 
             # Current loss
@@ -619,7 +647,7 @@ class GromovWassersteinDistance:
             loss = float(backend.to_scalar(loss_arr))
 
             # Check convergence
-            if iterations >= _MIN_OUTER_ITERATIONS:
+            if iterations >= min_outer_iterations:
                 abs_change = abs(loss - prev_loss)
                 # Use precision-aware epsilon for relative change
                 eps = division_epsilon(backend, T)
@@ -643,7 +671,7 @@ class GromovWassersteinDistance:
                 p,
                 q,
                 epsilon=sinkhorn_epsilon,
-                max_iterations=_SINKHORN_ITERATIONS,
+                # max_iterations derived from problem size inside solve_linear_ot
                 threshold=sink_threshold,
             )
 

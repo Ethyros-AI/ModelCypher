@@ -50,6 +50,7 @@ References:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -452,8 +453,10 @@ class CrossManifoldProjector:
         # Learning rate derived from anchor count (adaptive scaling)
         learning_rate = 1.0 / max(1, n_anchors)
 
-        # Max iterations derived from anchor count
-        max_iterations = max(100, 5 * n_anchors)
+        # Max iterations derived from anchor count and logarithmic scaling
+        # Base is 10 * ceil(log2(n_anchors + 1)), scaled with problem size
+        log_base = 10 * int(math.ceil(math.log2(max(2, n_anchors) + 1)))
+        max_iterations = max(log_base, 5 * n_anchors)
 
         for iteration in range(max_iterations):
             # Build point matrix: [position, anchor_0, anchor_1, ...]

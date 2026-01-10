@@ -219,7 +219,7 @@ class GramAligner:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        max_iterations: int = 1000,  # Kept for backward compat
+        max_iterations: int | None = None,  # IGNORED - kept for backward compat
         tolerance: float | None = None,  # IGNORED
         regularization: float | None = None,  # IGNORED
         max_steps: int = 5000,  # Optimized: 5000 steps is sufficient for CKA>0.99
@@ -232,7 +232,8 @@ class GramAligner:
         backend : Backend, optional
             Backend for tensor operations.
         max_iterations : int
-            Kept for backward compatibility.
+            IGNORED. Kept for backward compatibility only. The closed-form
+            solution F = pinv(source) @ target needs no iteration.
         tolerance : float
             IGNORED. Derived from dtype.
         regularization : float

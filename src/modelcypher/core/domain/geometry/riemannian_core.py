@@ -144,7 +144,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         self,
         points: "Array",
         weights: "Array | None" = None,
-        max_iterations: int = 100,
+        max_iterations: int | None = None,
         tolerance: float | None = None,
         k_neighbors: int | None = None,
         max_k_neighbors: int | None = None,
@@ -168,7 +168,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         Args:
             points: Point cloud [n, d]
             weights: Optional weights [n] (uniform if None)
-            max_iterations: Maximum gradient descent iterations
+            max_iterations: Maximum gradient descent iterations (derived from n if None)
             tolerance: Convergence threshold for mean position change
             k_neighbors: Optional fixed k for geodesic graph connectivity
             max_k_neighbors: Optional upper bound for adaptive k retries
@@ -191,6 +191,11 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         n = int(points.shape[0])
         d = int(points.shape[1])
+
+        # Derive max iterations from problem size if not specified
+        # Uses logarithmic scaling: max_iter = max(50, 10 * ceil(log2(n + 1)))
+        if max_iterations is None:
+            max_iterations = max(50, 10 * int(math.ceil(math.log2(max(2, n) + 1))))
 
         if n == 0:
             return FrechetMeanResult(
@@ -442,7 +447,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         self,
         points_batch: "Array",
         weights_batch: "Array | None" = None,
-        max_iterations: int = 100,
+        max_iterations: int | None = None,
         tolerance: float | None = None,
         k_neighbors: int | None = None,
         max_k_neighbors: int | None = None,
@@ -452,6 +457,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         Args:
             points_batch: [B, n, d] batch of point clouds
             weights_batch: Optional [B, n] weights per batch
+            max_iterations: Maximum iterations per mean (derived from n if None)
         Returns:
             [B, d] array of Fréchet means
         """

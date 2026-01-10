@@ -72,8 +72,19 @@ class SinkhornResult:
     cost: float
 
 
-# Algorithm constants - not configurable, derived from numerical analysis
-_MAX_ITERATIONS = 100  # Convergence typically triggers before this
+def _derive_max_iterations(n: int, m: int) -> int:
+    """Derive max Sinkhorn iterations from problem size.
+
+    Uses logarithmic scaling: max_iter = max(50, 10 * ceil(log2(max(n, m) + 1)))
+    This gives reasonable upper bounds that scale with problem size:
+    - n=m=10: 50 iterations
+    - n=m=100: 70 iterations
+    - n=m=1000: 100 iterations
+
+    Convergence-based stopping typically triggers well before this bound.
+    """
+    import math
+    return max(50, 10 * int(math.ceil(math.log2(max(n, m) + 1))))
 
 
 class SinkhornSolver:
@@ -146,6 +157,7 @@ class SinkhornSolver:
         backend.eval(mu, nu)
 
         # Always use log-domain for numerical stability
+        max_iterations = _derive_max_iterations(n, m)
         return self._solve_log_domain(
             cost_matrix,
             mu,
@@ -153,7 +165,7 @@ class SinkhornSolver:
             epsilon,
             convergence_threshold,
             stability_epsilon,
-            _MAX_ITERATIONS,
+            max_iterations,
         )
 
     def _derive_epsilon(self, cost: "Array") -> float:
@@ -178,7 +190,7 @@ class SinkhornSolver:
         p: "Array",
         q: "Array",
         epsilon: float,
-        max_iterations: int = 50,
+        max_iterations: int | None = None,
         threshold: float = 0.0,
     ) -> "Array":
         """Solve linear optimal transport - fast version for inner loops.
@@ -192,7 +204,7 @@ class SinkhornSolver:
             p: Source marginal [n]
             q: Target marginal [m]
             epsilon: Entropy regularization strength
-            max_iterations: Maximum Sinkhorn iterations
+            max_iterations: Maximum Sinkhorn iterations (derived from problem size if None)
             threshold: Convergence threshold (0 = run all iterations)
 
         Returns:
@@ -201,6 +213,10 @@ class SinkhornSolver:
         backend = self._backend
         n = int(cost.shape[0])
         m = int(cost.shape[1])
+
+        # Derive max iterations from problem size if not specified
+        if max_iterations is None:
+            max_iterations = _derive_max_iterations(n, m)
 
         if n == 0 or m == 0:
             return backend.zeros((n, m))

@@ -218,10 +218,10 @@ Historical data files are not stored in this repo. If you rerun these experiment
 
 ```bash
 # Extract prime embeddings
-mc geometry primes probe-model /path/to/model --output-file primes.json
+poetry run mc geometry primes probe-model /path/to/model --output-file primes.json
 
 # Compare Gram matrices
-mc geometry primes compare model_a_primes.json model_b_primes.json
+poetry run mc geometry primes compare model_a_primes.json model_b_primes.json
 
 # Null distribution generation is not yet exposed as a CLI command (tracked as future work).
 ```

@@ -101,9 +101,9 @@ Automated baseline:
 | `papers/README.md` | research | P0 | todo | todo | todo | todo | |
 | `papers/RELEASE_NOTES.md` | research | P2 | todo | todo | todo | todo | |
 | `papers/SUMMARIES.md` | research | P2 | todo | todo | todo | todo | |
-| `papers/paper-0-the-shape-of-knowledge.md` | research | P2 | todo | todo | todo | todo | |
-| `papers/paper-1-invariant-semantic-structure.md` | research | P2 | todo | todo | todo | todo | |
-| `papers/paper-2-entropy-safety-signal.md` | research | P2 | todo | todo | todo | todo | |
+| `papers/paper-0-the-shape-of-knowledge.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: All 9 PDFs verified, all internal links work, CLI commands verified. 9 "reproduction pending" notes are honest status markers. |
+| `papers/paper-1-invariant-semantic-structure.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: All 3 citations verified (2 PDFs + 1 book link), CLI commands verified and updated with `poetry run`. "Reproduction pending" notes are honest status markers. |
+| `papers/paper-2-entropy-safety-signal.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: All 5 citations verified (4 PDFs + 1 Nature DOI), CLI commands verified and updated with `poetry run`. "Reproduction pending" is honest status. |
 | `papers/paper-3-cross-architecture-transfer.md` | research | P2 | todo | todo | todo | todo | |
 | `papers/paper-4-modelcypher-toolkit.md` | research | P2 | todo | todo | todo | todo | |
 | `papers/paper-5-semantic-highway.md` | research | P2 | todo | todo | todo | todo | |

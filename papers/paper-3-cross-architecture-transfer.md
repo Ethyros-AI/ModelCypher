@@ -194,7 +194,7 @@ Bansal, Y., et al. (2021). Stitching Neural Networks with Minimal Shift. *NeurIP
 
 [Ilharco et al. (2023)](../docs/references/arxiv/Ilharco_2023_Task_Arithmetic.pdf). Editing Models with Task Arithmetic. *ICLR 2023*. [arXiv:2212.04089](https://arxiv.org/abs/2212.04089).
 
-Singh, S.P., & Jaggi, M. (2020). Model Fusion via Optimal Transport. *NeurIPS 2020*. [arXiv:1910.05653](https://arxiv.org/abs/1910.05653).
+[Singh & Jaggi (2020)](../docs/references/arxiv/Singh_2019_Model_Fusion_Optimal_Transport.pdf). Model Fusion via Optimal Transport. *NeurIPS 2020*. [arXiv:1910.05653](https://arxiv.org/abs/1910.05653).
 
 [Yadav et al. (2023)](../docs/references/arxiv/Yadav_2023_TIES_Merging.pdf). TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708).
 
