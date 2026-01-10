@@ -36,8 +36,8 @@ from modelcypher.core.domain.geometry.deviation_budget import (
     DeviationBudget,
     BudgetStatus,
     ScaleRecommendation,
-    MERGE_BUDGET_THRESHOLD,
-    MERGE_BUDGET_WARNING,
+    MERGE_BUDGET_TOLERANCE,
+    MERGE_WARNING_TOLERANCE,
     INJECTION_SCALE_SAFE,
     INJECTION_SCALE_MAX,
 )
@@ -79,9 +79,12 @@ class TestDeviationBudgetMerge(unittest.TestCase):
 
     def test_safe_merge_budget(self):
         """Test budget check for safe merge."""
-        # Small deviation - should be safe
+        # weight_norm = sqrt(100 * 1^2) = 10.0
+        # threshold = 10.0 * 0.01 = 0.1
+        # warning = 10.0 * 0.007 = 0.07
+        # Small deviation - should be safe (< warning)
         modified_weights = {
-            "layer1.weight": mx.ones((10, 10)) + 0.1,
+            "layer1.weight": mx.ones((10, 10)) + 0.005,  # sqrt(100) * 0.005 = 0.05 < 0.07
             "layer2.weight": mx.zeros((10, 10)),
         }
         status = self.budget.check_merge_budget(modified_weights)
@@ -92,10 +95,13 @@ class TestDeviationBudgetMerge(unittest.TestCase):
 
     def test_warning_threshold(self):
         """Test that warning threshold is detected."""
-        # Create deviation close to warning threshold
-        # Need sqrt(n) * delta = 35, so for 100 elements, delta = 3.5
+        # Thresholds are now derived from weight norm:
+        # weight_norm = sqrt(100 * 1^2 + 100 * 0^2) = 10.0
+        # threshold = 10.0 * 0.01 = 0.1
+        # warning = 10.0 * 0.007 = 0.07
+        # Create deviation > warning but < threshold
         modified_weights = {
-            "layer1.weight": mx.ones((10, 10)) + 3.6,
+            "layer1.weight": mx.ones((10, 10)) + 0.008,  # sqrt(100) * 0.008 = 0.08
             "layer2.weight": mx.zeros((10, 10)),
         }
         status = self.budget.check_merge_budget(modified_weights)
@@ -105,9 +111,12 @@ class TestDeviationBudgetMerge(unittest.TestCase):
 
     def test_exceeded_budget(self):
         """Test budget exceeded detection."""
-        # Create large deviation > 50
+        # Thresholds are derived from weight norm:
+        # weight_norm = sqrt(100 * 1^2) = 10.0
+        # threshold = 10.0 * 0.01 = 0.1
+        # Create deviation > 0.1
         modified_weights = {
-            "layer1.weight": mx.ones((10, 10)) + 6.0,  # sqrt(100) * 6 = 60
+            "layer1.weight": mx.ones((10, 10)) + 0.02,  # sqrt(100) * 0.02 = 0.2 > 0.1
             "layer2.weight": mx.zeros((10, 10)),
         }
         status = self.budget.check_merge_budget(modified_weights)
@@ -194,16 +203,16 @@ class TestDeviationBudgetInjection(unittest.TestCase):
 
 
 class TestDeviationBudgetConstants(unittest.TestCase):
-    """Test that constants are set to empirically derived values."""
+    """Test that constants define geometric tolerance fractions."""
 
-    def test_merge_threshold(self):
-        """Test merge threshold matches empirical findings."""
-        self.assertEqual(MERGE_BUDGET_THRESHOLD, 50.0)
+    def test_merge_tolerance_fraction(self):
+        """Test merge tolerance is 1% of weight norm."""
+        self.assertEqual(MERGE_BUDGET_TOLERANCE, 0.01)
 
-    def test_warning_threshold(self):
-        """Test warning threshold is below merge threshold."""
-        self.assertLess(MERGE_BUDGET_WARNING, MERGE_BUDGET_THRESHOLD)
-        self.assertEqual(MERGE_BUDGET_WARNING, 35.0)
+    def test_warning_tolerance_fraction(self):
+        """Test warning tolerance is below merge tolerance."""
+        self.assertLess(MERGE_WARNING_TOLERANCE, MERGE_BUDGET_TOLERANCE)
+        self.assertEqual(MERGE_WARNING_TOLERANCE, 0.007)
 
     def test_injection_safe_scale(self):
         """Test injection safe scale matches findings."""
@@ -213,6 +222,80 @@ class TestDeviationBudgetConstants(unittest.TestCase):
         """Test max injection scale before degeneration."""
         self.assertGreater(INJECTION_SCALE_MAX, INJECTION_SCALE_SAFE)
         self.assertEqual(INJECTION_SCALE_MAX, 10.0)
+
+
+class TestGeometricThresholdDerivation(unittest.TestCase):
+    """Test that thresholds are geometrically derived from weight norm."""
+
+    def test_threshold_scales_with_weight_norm(self):
+        """Test that threshold scales with model size."""
+        # Small model
+        small_weights = {"weight": mx.ones((10, 10))}  # norm = 10
+        budget_small = DeviationBudget()
+        budget_small.record_baseline(small_weights)
+
+        # Large model (10x more weights)
+        large_weights = {"weight": mx.ones((100, 100))}  # norm = 100
+        budget_large = DeviationBudget()
+        budget_large.record_baseline(large_weights)
+
+        # Threshold should scale proportionally
+        threshold_small = budget_small.get_threshold()
+        threshold_large = budget_large.get_threshold()
+
+        # Large model threshold should be ~10x small model threshold
+        ratio = threshold_large / threshold_small
+        self.assertAlmostEqual(ratio, 10.0, places=1)
+
+    def test_threshold_is_percentage_of_norm(self):
+        """Test that threshold is 1% of weight norm."""
+        weights = {"weight": mx.ones((100, 100))}  # norm = 100
+        budget = DeviationBudget()
+        budget.record_baseline(weights)
+
+        threshold = budget.get_threshold()
+        expected = 100.0 * MERGE_BUDGET_TOLERANCE  # 100 * 0.01 = 1.0
+
+        self.assertAlmostEqual(threshold, expected, places=4)
+
+    def test_weight_norm_computed_correctly(self):
+        """Test that weight norm is Frobenius norm."""
+        # sqrt(100 * 2^2) = sqrt(400) = 20
+        weights = {"weight": mx.ones((10, 10)) * 2.0}
+        budget = DeviationBudget()
+
+        norm = budget._compute_weight_norm(weights)
+        self.assertAlmostEqual(norm, 20.0, places=4)
+
+    def test_auto_compute_scale(self):
+        """Test that auto_compute_scale uses measured delta."""
+        budget = DeviationBudget()
+        target_weights = {"weight": mx.ones((10, 10))}  # norm = 10
+        budget.record_baseline(target_weights)
+
+        # Source is different by 0.5 per element
+        source_weights = {"weight": mx.ones((10, 10)) + 0.5}  # delta norm = 5
+
+        scale = budget.auto_compute_scale(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            remaining_sources=1,
+        )
+
+        # Scale should be based on measured delta (5.0) and threshold (0.1)
+        # Expected: 0.1 * 0.7 / 5.0 = 0.014, but clamped to min 0.1
+        self.assertGreaterEqual(scale, 0.1)
+        self.assertLessEqual(scale, 1.0)
+
+    def test_compute_delta_magnitude(self):
+        """Test that delta magnitude is computed correctly."""
+        budget = DeviationBudget()
+        target_weights = {"weight": mx.zeros((10, 10))}
+        source_weights = {"weight": mx.ones((10, 10))}  # delta = 1 per element
+
+        delta = budget.compute_delta_magnitude(source_weights, target_weights)
+        # sqrt(100 * 1^2) = 10.0
+        self.assertAlmostEqual(delta, 10.0, places=4)
 
 
 class TestDeviationBudgetNamedBaselines(unittest.TestCase):
@@ -243,6 +326,102 @@ class TestDeviationBudgetNamedBaselines(unittest.TestCase):
         """Test warning when baseline doesn't exist."""
         deviation = self.budget.compute_deviation({}, baseline_name="nonexistent")
         self.assertEqual(deviation, 0.0)
+
+
+class TestMemoryTokenScaleTracking(unittest.TestCase):
+    """Test memory token scale tracking methods."""
+
+    def setUp(self):
+        self.budget = DeviationBudget()
+
+    def test_memory_token_safe_scale(self):
+        """Test that safe memory token scale is accepted."""
+        # Small memory content relative to activations
+        memory_content = mx.ones((1, 128)) * 0.5
+        layer_activations = mx.ones((10, 128))
+
+        status = self.budget.check_memory_token_scale(
+            memory_content, layer_activations, scale=5.0, use_null_space=True
+        )
+
+        self.assertTrue(status.is_safe)
+        self.assertIn("Safe", status.recommendation)
+
+    def test_memory_token_allows_higher_scale(self):
+        """Test that memory tokens allow higher scale than direct injection."""
+        memory_content = mx.ones((1, 128)) * 10.0
+        layer_activations = mx.ones((10, 128))
+
+        # With null-space, memory token threshold is 20.0
+        # Relative magnitude = 10 * sqrt(128) / sqrt(128) = 10.0
+        status_memory = self.budget.check_memory_token_scale(
+            memory_content, layer_activations, scale=10.0, use_null_space=True
+        )
+
+        # Direct injection would fail at same scale
+        status_direct = self.budget.check_injection_scale(
+            memory_content, layer_activations, scale=10.0, use_null_space=True
+        )
+
+        # Memory token should be safer at same scale
+        self.assertLessEqual(
+            status_memory.budget_used_percent,
+            status_direct.budget_used_percent,
+        )
+
+    def test_memory_token_unsafe_detection(self):
+        """Test detection of unsafe memory token scale."""
+        # Very large memory content (30x layer norm)
+        memory_content = mx.ones((1, 128)) * 30.0
+        layer_activations = mx.ones((10, 128))
+
+        status = self.budget.check_memory_token_scale(
+            memory_content, layer_activations, scale=30.0, use_null_space=True
+        )
+
+        self.assertFalse(status.is_safe)
+        self.assertIn("Reduce", status.recommendation)
+
+    def test_recommend_memory_scale(self):
+        """Test memory scale recommendation."""
+        direction = mx.ones((1, 128))
+        layer_activations = mx.ones((10, 128))
+
+        recommendation = self.budget.recommend_memory_scale(
+            direction, layer_activations, target_budget_percent=50.0
+        )
+
+        self.assertIsInstance(recommendation, ScaleRecommendation)
+        self.assertGreater(recommendation.scale, 0.0)
+        # Memory tokens always recommend null-space
+        self.assertTrue(recommendation.use_null_space)
+
+
+class TestMemoryTokenConstants(unittest.TestCase):
+    """Test memory token threshold constants."""
+
+    def test_memory_token_safe_scale_constant(self):
+        """Test memory token safe scale is 10.0."""
+        from modelcypher.core.domain.geometry.deviation_budget import (
+            MEMORY_TOKEN_SCALE_SAFE,
+        )
+        self.assertEqual(MEMORY_TOKEN_SCALE_SAFE, 10.0)
+
+    def test_memory_token_max_scale_constant(self):
+        """Test memory token max scale is 20.0."""
+        from modelcypher.core.domain.geometry.deviation_budget import (
+            MEMORY_TOKEN_SCALE_MAX,
+        )
+        self.assertEqual(MEMORY_TOKEN_SCALE_MAX, 20.0)
+
+    def test_memory_token_is_4x_injection(self):
+        """Test memory token max is 4x direct injection safe."""
+        from modelcypher.core.domain.geometry.deviation_budget import (
+            INJECTION_SCALE_SAFE,
+            MEMORY_TOKEN_SCALE_MAX,
+        )
+        # Memory: 20.0, Direct: 5.0 -> 4x
+        self.assertEqual(MEMORY_TOKEN_SCALE_MAX / INJECTION_SCALE_SAFE, 4.0)
 
 
 if __name__ == "__main__":

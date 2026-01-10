@@ -628,6 +628,193 @@ def research_multimodal_offramp(
     write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("memory-token")
+def research_memory_token(
+    ctx: typer.Context,
+    target_model: str = typer.Argument(..., help="Path to target LLM model"),
+    source_concept: str = typer.Option(..., "--concept", "-c", help="Source concept to inject"),
+    neutral_concept: str = typer.Option("thing", "--neutral", "-n", help="Neutral reference concept"),
+    scale: float = typer.Option(10.0, "--scale", "-s", help="Memory token scale (10-20 safe)"),
+    architecture: str = typer.Option(None, "--arch", help="Architecture name (e.g., LFM2)"),
+    output_file: str | None = typer.Option(None, "--output", "-o", help="Output JSON file"),
+) -> None:
+    """Create memory token for attention-based multimodal injection.
+
+    Memory tokens allow much higher scale factors (20x+) than direct injection
+    because the model's attention mechanism controls information flow.
+
+    Key advantages:
+    - 10x higher scale tolerance vs direct injection
+    - No forced overwriting of activations
+    - Respects model's learned attention patterns
+
+    For hybrid architectures (e.g., LFM2), only full attention layers can
+    query the memory token. The command auto-detects optimal injection layers.
+
+    Examples:
+        mc research memory-token /path/to/llm --concept "bright red apple"
+        mc research memory-token /path/to/llm -c "blue ocean" -s 15.0 --arch LFM2
+        mc research memory-token /path/to/llm -c "golden sunset" -o memory.json
+    """
+    context = _context(ctx)
+    from modelcypher.cli.output import write_error
+    from modelcypher.core.domain.multimodal import (
+        AttentionMemoryInjector,
+        get_architecture_config,
+    )
+    from modelcypher.core.domain.geometry.deviation_budget import (
+        DeviationBudget,
+        MEMORY_TOKEN_SCALE_MAX,
+    )
+
+    injector = AttentionMemoryInjector()
+    budget = DeviationBudget()
+
+    # Detect layer types
+    layer_types = {}
+    arch_config = None
+    if architecture:
+        arch_config = get_architecture_config(architecture)
+        if arch_config:
+            layer_types = injector.detect_layer_types(architecture_name=architecture)
+        else:
+            error = ErrorDetail(
+                code="MC-3004",
+                title="Unknown architecture",
+                detail=f"Architecture '{architecture}' not recognized",
+                hint="Known architectures: LFM2. Or omit --arch for standard transformer.",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+    # Get optimal memory layers
+    if layer_types:
+        optimal_layers = injector.get_optimal_memory_layers(layer_types)
+        semantic_highway = arch_config.semantic_highway if arch_config else (7, 8, 9)
+    else:
+        optimal_layers = [7, 8, 9]  # Default semantic highway
+        semantic_highway = (7, 8, 9)
+
+    # Validate scale
+    if scale > MEMORY_TOKEN_SCALE_MAX:
+        error = ErrorDetail(
+            code="MC-3005",
+            title="Scale too high",
+            detail=f"Scale {scale} exceeds max safe scale {MEMORY_TOKEN_SCALE_MAX}",
+            hint=f"Use scale <= {MEMORY_TOKEN_SCALE_MAX} for memory token injection",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    try:
+        # Load model to get embeddings
+        from mlx_lm import load
+        model, tokenizer = load(target_model)
+
+        # Get embeddings for concepts
+        import mlx.core as mx
+        source_tokens = mx.array([tokenizer.encode(source_concept)])
+        neutral_tokens = mx.array([tokenizer.encode(neutral_concept)])
+
+        source_embed = model.model.embed_tokens(source_tokens)
+        neutral_embed = model.model.embed_tokens(neutral_tokens)
+        mx.eval(source_embed, neutral_embed)
+
+        # Pool embeddings
+        source_pooled = mx.mean(source_embed, axis=1)
+        neutral_pooled = mx.mean(neutral_embed, axis=1)
+        mx.eval(source_pooled, neutral_pooled)
+
+        # Compute memory token content
+        memory = injector.compute_memory_content(
+            source_embed=source_pooled,
+            neutral_embed=neutral_pooled,
+            null_basis=None,  # Will compute if needed
+            scale=scale,
+            use_null_space=False,  # For quick preview; full pipeline uses null-space
+        )
+
+        # Validate scale
+        is_safe, recommendation = injector.validate_memory_scale(
+            memory,
+            layer_activations=source_pooled,  # Use as reference
+            max_safe_scale=MEMORY_TOKEN_SCALE_MAX,
+        )
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3006",
+            title="Memory token creation failed",
+            detail=str(exc),
+            hint="Ensure model path is valid and mlx-lm is installed",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "_schema": "mc.research.memory_token.v1",
+        "targetModel": target_model,
+        "sourceConcept": source_concept,
+        "neutralConcept": neutral_concept,
+        "scale": scale,
+        "architecture": architecture,
+        "optimalLayers": optimal_layers,
+        "semanticHighway": list(semantic_highway),
+        "memoryToken": {
+            "directionNorm": memory.direction_norm,
+            "scaleApplied": memory.scale_applied,
+            "nullSpaceProjected": memory.null_space_projected,
+        },
+        "validation": {
+            "isSafe": is_safe,
+            "recommendation": recommendation,
+        },
+        "layerTypes": {str(k): v.value for k, v in layer_types.items()} if layer_types else {},
+    }
+
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+
+    if context.output_format == "text":
+        lines = [
+            "MEMORY TOKEN CREATION",
+            "",
+            f"Target: {target_model}",
+            f"Concept: '{source_concept}' vs '{neutral_concept}'",
+            f"Scale: {scale}",
+            "",
+            f"Optimal Injection Layers: {optimal_layers}",
+            f"Semantic Highway: {list(semantic_highway)}",
+            "",
+            "Memory Token Properties:",
+            f"  Direction Norm: {memory.direction_norm:.4f}",
+            f"  Scale Applied: {memory.scale_applied}",
+            f"  Null-Space Projected: {memory.null_space_projected}",
+            "",
+            f"Validation: {'SAFE' if is_safe else 'WARNING'}",
+            f"  {recommendation}",
+        ]
+
+        if layer_types:
+            lines.append("")
+            lines.append("Layer Types:")
+            attention_count = sum(1 for v in layer_types.values() if v.value == "attention")
+            conv_count = sum(1 for v in layer_types.values() if v.value == "conv")
+            lines.append(f"  Attention: {attention_count}, Conv: {conv_count}")
+
+        if output_file:
+            lines.append("")
+            lines.append(f"Saved to: {output_file}")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 @app.command("afm")
 def research_afm(
     ctx: typer.Context,

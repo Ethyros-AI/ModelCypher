@@ -118,8 +118,8 @@ def compute_transplant_delta(
         backend: Optional Backend for GPU operations.
         delta_scale: Scale factor for the projected delta (0.0-1.0).
             Use < 1.0 to reduce knowledge injection per merge for sequential
-            stacking. Default 1.0 = full projection. Derived from experiment:
-            cumulative delta > ~50 L2 norm from baseline causes generation
+            stacking. Default 1.0 = full projection. Threshold is geometrically
+            derived (1% of baseline weight norm) - exceeding causes generation
             degradation in sequential merges.
 
     Returns:

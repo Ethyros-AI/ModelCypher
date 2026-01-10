@@ -158,7 +158,7 @@ class MergePipelineService:
                 does not affect merge quality.
             delta_scale: Scale factor for knowledge injection (0.0-1.0).
                 Use <1.0 for sequential stacking to stay within deviation budget.
-                Default 1.0 (full strength). Threshold ~50-60 L2 from baseline.
+                Default 1.0 (full strength). Threshold = 1% of baseline weight norm.
         Returns:
             PipelineResult with all stage results
         """

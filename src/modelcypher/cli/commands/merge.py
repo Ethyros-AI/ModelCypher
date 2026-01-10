@@ -379,6 +379,7 @@ def batch(
     accumulative: bool = typer.Option(True, "--accumulative/--sequential", help="Accumulative (add all to target) vs sequential merging"),
     fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks (safe: CKA=1.0 is invariant)"),
     delta_scale: float = typer.Option(1.0, "--delta-scale", "-d", help="Scale factor for knowledge injection (0.0-1.0). Use <1.0 for sequential stacking."),
+    auto_scale: bool = typer.Option(False, "--auto-scale", "-a", help="Auto-compute delta_scale to stay within deviation budget (1%% of weight norm)."),
 ) -> None:
     """Merge multiple source models into a single target (N→1 merging).
 
@@ -392,9 +393,12 @@ def batch(
     Accumulative mode (default) projects all sources into the ORIGINAL target's
     null-space. This preserves target behavior while adding all source knowledge.
 
+    With --auto-scale, delta_scale is automatically computed for each merge
+    based on measured delta magnitude and remaining budget (1% of weight norm).
+
     Examples:
         mc merge batch -s ./model1 -s ./model2 -s ./model3 -t ./lfm2 -o ./merged
-        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged
+        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged --auto-scale
     """
     from modelcypher.adapters.hf_hub import HuggingFaceModelLoader
     from modelcypher.core.domain._backend import get_default_backend
@@ -415,6 +419,10 @@ def batch(
     typer.echo(f"BATCH MERGE: {len(sources)} sources → {target}")
     typer.echo(f"  Mode: {'accumulative' if accumulative else 'sequential'}")
     typer.echo(f"  Fast mode: {fast_mode} (CKA=1.0 is invariant)")
+    if auto_scale:
+        typer.echo(f"  Auto-scale: ENABLED (budget-aware scaling)")
+    else:
+        typer.echo(f"  Delta scale: {delta_scale}")
 
     with prevent_sleep():
         model_loader = HuggingFaceModelLoader()
@@ -427,11 +435,91 @@ def batch(
             accumulative=accumulative,
             fast_mode=fast_mode,
             delta_scale=delta_scale,
+            auto_scale=auto_scale,
         )
 
     typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")
     typer.echo(f"  Total layers: {result.total_layers}")
     typer.echo(f"  Sources merged: {len(sources)}")
+
+
+@app.command()
+def budget(
+    ctx: typer.Context,
+    baseline: str = typer.Option(..., "--baseline", "-b", help="Path to original baseline model"),
+    current: str = typer.Option(..., "--current", "-c", help="Path to current (merged) model"),
+) -> None:
+    """Check deviation budget status before merging.
+
+    Compares current model weights against baseline to show how much
+    deviation budget remains (threshold = 1% of baseline weight norm).
+
+    Examples:
+        mc merge budget --baseline ./original --current ./merged2
+    """
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.deviation_budget import DeviationBudget
+
+    context = _context(ctx)
+    backend = get_default_backend()
+
+    # Validate paths
+    if not validate_model_path(baseline):
+        typer.echo(f"Error: Baseline path not found: {baseline}", err=True)
+        raise typer.Exit(code=1)
+    if not validate_model_path(current):
+        typer.echo(f"Error: Current path not found: {current}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"BUDGET CHECK: {current} vs baseline {baseline}")
+
+    # Load weights
+    model_loader = MLXModelLoader()
+
+    typer.echo("  Loading baseline weights...")
+    baseline_weights, _ = model_loader.load_weights(baseline)
+
+    typer.echo("  Loading current weights...")
+    current_weights, _ = model_loader.load_weights(current)
+
+    # Check budget
+    budget_tracker = DeviationBudget(backend=backend)
+    budget_tracker.record_baseline(baseline_weights)
+    status = budget_tracker.check_merge_budget(current_weights)
+
+    # Output results
+    typer.echo("")
+    typer.echo("=" * 60)
+    typer.echo("DEVIATION BUDGET STATUS")
+    typer.echo("=" * 60)
+    typer.echo(f"  Current deviation: {status.current_deviation:.1f} L2")
+    typer.echo(f"  Threshold: {status.threshold:.1f} L2")
+    typer.echo(f"  Budget used: {status.budget_used_percent:.1f}%")
+    typer.echo(f"  Remaining budget: {status.threshold - status.current_deviation:.1f} L2")
+    typer.echo("")
+
+    if status.is_safe:
+        if status.budget_used_percent > 70:
+            typer.echo("  Status: WARNING - Approaching threshold")
+        else:
+            typer.echo("  Status: SAFE")
+    else:
+        typer.echo("  Status: DANGER - Budget exceeded!")
+
+    typer.echo(f"  Recommendation: {status.recommendation}")
+    typer.echo("")
+
+    # Report remaining budget (actual scale depends on next source model)
+    remaining = status.threshold - status.current_deviation
+    if remaining > 0:
+        typer.echo(f"  Remaining budget: {remaining:.1f} L2")
+        typer.echo("  Note: Use --auto-scale with 'mc merge batch' to automatically")
+        typer.echo("        compute delta_scale based on actual source model delta.")
+    else:
+        typer.echo("  Cannot recommend delta_scale - budget already exceeded")
+
+    typer.echo("=" * 60)
 
 
 @app.command("multi-channel")

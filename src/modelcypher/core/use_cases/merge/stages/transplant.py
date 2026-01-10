@@ -510,8 +510,8 @@ def stage_transplant(
     Args:
         delta_scale: Scale factor for projected deltas (0.0-1.0). Use < 1.0 for
             sequential stacking to stay within cumulative delta budget. Default
-            1.0 = full projection. Derived from experiments: cumulative L2 delta
-            > ~50 from baseline causes generation degradation.
+            1.0 = full projection. Threshold is 1% of baseline weight norm -
+            exceeding causes generation degradation.
     """
     b = backend or get_default_backend()
     merged: dict[str, "Array"] = dict(target_weights)

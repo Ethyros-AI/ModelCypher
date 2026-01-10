@@ -39,6 +39,14 @@ from modelcypher.core.domain.multimodal.channel_adapter import (
     MultiModalOfframpResult,
     OfframpProjection,
 )
+from modelcypher.core.domain.multimodal.attention_memory import (
+    AttentionMemoryInjector,
+    LayerType,
+    LayerTypeConfig,
+    MemoryTokenContent,
+    get_architecture_config,
+    register_architecture,
+)
 
 __all__ = [
     "ModalityType",
@@ -47,4 +55,11 @@ __all__ = [
     "MultiModalChannelAdapter",
     "MultiModalOfframpResult",
     "OfframpProjection",
+    # Attention memory injection
+    "AttentionMemoryInjector",
+    "LayerType",
+    "LayerTypeConfig",
+    "MemoryTokenContent",
+    "get_architecture_config",
+    "register_architecture",
 ]
