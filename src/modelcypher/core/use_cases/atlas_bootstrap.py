@@ -28,29 +28,69 @@ from modelcypher.core.domain.geometry import atlas_registry
 
 
 def register_default_atlas_inventories() -> None:
-    """Register default inventories from the agents domain."""
-    from modelcypher.core.domain.agents.computational_gate_atlas import (
-        ComputationalGateInventory,
-    )
-    from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
-        MetaphorInvariantInventory,
-    )
-    from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
-    from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-        SequenceInvariantInventory,
-        TriangulationScorer,
-    )
-    from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
-    from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
-    from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
+    """Register default inventories from the agents domain.
+
+    Optional atlas modules are loaded gracefully - missing modules are skipped.
+    """
+    # Core unified atlas (required)
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
     atlas_registry.register_atlas_probes(UnifiedAtlasInventory.all_probes())
-    atlas_registry.register_sequence_invariants(SequenceInvariantInventory.all_probes())
-    atlas_registry.register_sequence_triangulation_scorer(TriangulationScorer.compute_score)
-    atlas_registry.register_gate_inventory(ComputationalGateInventory.all_gates())
-    atlas_registry.register_spatial_concepts(SpatialConceptInventory.all_concepts())
-    atlas_registry.register_social_concepts(SocialConceptInventory.all_concepts())
-    atlas_registry.register_temporal_concepts(TemporalConceptInventory.all_concepts())
-    atlas_registry.register_moral_concepts(MoralConceptInventory.all_concepts())
-    atlas_registry.register_metaphor_invariants(MetaphorInvariantInventory.ALL_PROBES)
+
+    # Optional specialized atlases - load if available
+    try:
+        from modelcypher.core.domain.agents.computational_gate_atlas import (
+            ComputationalGateInventory,
+        )
+
+        atlas_registry.register_gate_inventory(ComputationalGateInventory.all_gates())
+    except ImportError:
+        pass
+
+    try:
+        from modelcypher.core.domain.agents.sequence_invariant_atlas import (
+            SequenceInvariantInventory,
+            TriangulationScorer,
+        )
+
+        atlas_registry.register_sequence_invariants(SequenceInvariantInventory.all_probes())
+        atlas_registry.register_sequence_triangulation_scorer(TriangulationScorer.compute_score)
+    except ImportError:
+        pass
+
+    try:
+        from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
+
+        atlas_registry.register_spatial_concepts(SpatialConceptInventory.all_concepts())
+    except ImportError:
+        pass
+
+    try:
+        from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
+
+        atlas_registry.register_social_concepts(SocialConceptInventory.all_concepts())
+    except ImportError:
+        pass
+
+    try:
+        from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
+
+        atlas_registry.register_temporal_concepts(TemporalConceptInventory.all_concepts())
+    except ImportError:
+        pass
+
+    try:
+        from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
+
+        atlas_registry.register_moral_concepts(MoralConceptInventory.all_concepts())
+    except ImportError:
+        pass
+
+    try:
+        from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
+            MetaphorInvariantInventory,
+        )
+
+        atlas_registry.register_metaphor_invariants(MetaphorInvariantInventory.ALL_PROBES)
+    except ImportError:
+        pass

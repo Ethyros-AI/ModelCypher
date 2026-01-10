@@ -15,7 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-# Agents Package
+"""
+Agents Package.
+
+Agent infrastructure for tracing, evaluation, and action handling.
+
+Atlas probes are now loaded from JSON files in data/probes/.
+Use UnifiedAtlasInventory.all_probes() to get all probes.
+"""
+
+# Agent action handling
 from .agent_action import (
     ActionClarification,
     ActionDeferral,
@@ -31,6 +40,8 @@ from .agent_action_validator import (
     AgentActionValidationResult,
     AgentActionValidator,
 )
+
+# Agent evaluation
 from .agent_eval_suite_engine import (
     AgentAction,
     AgentActionKind,
@@ -48,6 +59,8 @@ from .agent_eval_suite_engine import (
     ScoredOutput,
     ToolCall,
 )
+
+# Agent utilities
 from .agent_json_extractor import AgentJSONSnippetExtractor
 from .agent_prompt_sanitizer import (
     AgentMessage,
@@ -56,6 +69,8 @@ from .agent_prompt_sanitizer import (
     AgentRole,
     AgentSystemPromptPolicy,
 )
+
+# Agent tracing
 from .agent_trace import (
     AgentTrace,
     InferenceMetrics,
@@ -86,16 +101,8 @@ from .monocle_trace_importer import (
     MonocleTraceImporter,
     TraceImportError,
 )
-from .computational_gate_atlas import ComputationalGateAtlas
-from .conceptual_genealogy_atlas import (
-    ConceptDomain,
-    ConceptualGenealogyInventory,
-    GenealogyConcept,
-    LineageAnchor,
-)
 
-# Additional atlas modules (previously not exported)
-from .emotion_concept_atlas import *  # noqa: F401,F403
+# Identity and LoRA experts
 from .intrinsic_identity_rules import IntrinsicIdentityRules
 from .lora_expert import (
     AdapterActivator,
@@ -113,40 +120,6 @@ from .task_diversion_detector import (
     TaskDiversionDetector,
     TaskDiversionMethod,
 )
-from .metaphor_invariant_atlas import (
-    CulturalExpression,
-    MetaphorFamily,
-    MetaphorInvariant,
-    MetaphorInvariantInventory,
-)
-from .semantic_prime_atlas import SemanticPrimeAtlas
-from .semantic_prime_drift import *  # noqa: F401,F403
-from .semantic_prime_frames import *  # noqa: F401,F403
-from .semantic_prime_multilingual import *  # noqa: F401,F403
-from .semantic_primes import *  # noqa: F401,F403
-from .sequence_invariant_atlas import (
-    ALL_PROBES,
-    DEFAULT_FAMILIES,
-    ExpressionDomain,
-    SequenceFamily,
-    SequenceInvariant,
-    SequenceInvariantInventory,
-    TriangulatedScore,
-    TriangulationScorer,
-)
-from .spatial_atlas import (
-    SpatialAxis,
-    SpatialCategory,
-    SpatialConcept,
-    SpatialConceptInventory,
-)
-from .syntax_atlas import (
-    ALL_SYNTAX_PROBES,
-    SyntaxCategory,
-    SyntaxConcept,
-    SyntaxConceptInventory,
-)
-from .unified_atlas import *  # noqa: F401,F403
 
 # Base atlas infrastructure
 from .atlas_base import (
@@ -155,40 +128,30 @@ from .atlas_base import (
     BaseAtlasSignature,
 )
 
-# Additional atlas inventories (previously not exported)
-from .conceptual_metaphor_atlas import (
-    CMTFamily,
-    CMTMapping,
-    ConceptualMetaphorInventory,
+# Unified atlas system (JSON-based probes)
+from .unified_atlas import (
+    ALL_ATLAS_SOURCES,
+    AFFECTIVE_DOMAINS,
+    AtlasDomain,
+    AtlasProbe,
+    AtlasSource,
+    COMPUTATIONAL_DOMAINS,
+    DEFAULT_ATLAS_SOURCES,
+    LINGUISTIC_DOMAINS,
+    MATHEMATICAL_DOMAINS,
+    MORAL_DOMAINS,
+    MultiAtlasTriangulationScore,
+    MultiAtlasTriangulationScorer,
+    PHILOSOPHICAL_DOMAINS,
+    SAFETY_DOMAINS,
+    SPATIOTEMPORAL_DOMAINS,
+    UnifiedAtlasInventory,
+    get_probe_ids,
 )
-from .moral_atlas import (
-    MoralAxis,
-    MoralConcept,
-    MoralConceptInventory,
-    MoralFoundation,
-)
-from .philosophical_atlas import (
-    PhilosophicalAxis,
-    PhilosophicalCategory,
-    PhilosophicalConcept,
-    PhilosophicalConceptInventory,
-)
-from .safety_ethics_atlas import (
-    CoercionType,
-    ConsentType,
-    SafetyCategory,
-    SafetyConcept,
-    SafetyEthicsInventory,
-)
-from .social_atlas import (
-    SocialAxis,
-    SocialCategory,
-    SocialConcept,
-    SocialConceptInventory,
-)
-from .temporal_atlas import (
-    TemporalAxis,
-    TemporalCategory,
-    TemporalConcept,
-    TemporalConceptInventory,
+
+# Probe loader for JSON-based probes
+from .probe_loader import (
+    get_probe_count_by_domain,
+    load_all_probes,
+    load_probes_from_file,
 )

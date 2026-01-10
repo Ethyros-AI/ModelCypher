@@ -259,6 +259,11 @@ def register(app: typer.Typer) -> None:
             "--force-rank-deficient",
             help="Allow insufficient samples (for debugging only)",
         ),
+        random_baseline: bool = typer.Option(
+            False,
+            "--random-baseline",
+            help="Also test alignment against random Gaussian activations (sanity check)",
+        ),
     ) -> None:
         """Measure coordinate alignment quality between two models.
 
@@ -533,6 +538,43 @@ def register(app: typer.Typer) -> None:
             # In invariant mode, CKA=1.0 should be approximately 1.0 (within numerical tolerance)
             cka_invariant_holds = train_cka_aligned > 0.999 if is_underdetermined else None
 
+            # Random baseline comparison (sanity check)
+            random_baseline_result = None
+            if random_baseline:
+                import math
+                rng = random.Random(seed + 42)  # Different seed for random baseline
+
+                # Generate random Gaussian activations with same shape as target
+                random_train_data = [[rng.gauss(0, 1) for _ in range(actual_target_dim)]
+                                     for _ in range(n_train_final)]
+                random_test_data = [[rng.gauss(0, 1) for _ in range(actual_target_dim)]
+                                    for _ in range(n_test)]
+
+                random_train = backend.array(random_train_data)
+                random_test = backend.array(random_test_data)
+                random_train = backend.astype(random_train, "float32")
+                random_test = backend.astype(random_test, "float32")
+                backend.eval(random_train, random_test)
+
+                # Align source to random (should NOT achieve high test CKA if test is valid)
+                random_alignment = find_alignment(source_train, random_train, backend)
+                aligned_train_random = backend.matmul(source_train, random_alignment.feature_transform)
+                aligned_test_random = backend.matmul(source_test, random_alignment.feature_transform)
+                backend.eval(aligned_train_random, aligned_test_random)
+
+                random_train_cka = compute_linear_cka(aligned_train_random, random_train, backend)
+                random_test_cka = compute_linear_cka(aligned_test_random, random_test, backend)
+
+                random_baseline_result = {
+                    "trainCkaAligned": random_train_cka,
+                    "testCkaAligned": random_test_cka,
+                    "interpretation": (
+                        "VALID: Random baseline test CKA is low"
+                        if random_test_cka < 0.3
+                        else "INVALID: Random also achieves high CKA - test is misconfigured (n too small)"
+                    ),
+                }
+
             result = {
                 "_schema": "mc.geometry.research.strong_test.v3",
                 "models": {
@@ -585,6 +627,9 @@ def register(app: typer.Typer) -> None:
                     },
                 },
             }
+
+            if random_baseline_result is not None:
+                result["randomBaseline"] = random_baseline_result
 
             if include_words:
                 result["words"] = {
@@ -669,6 +714,13 @@ def register(app: typer.Typer) -> None:
                 lines.append("")
                 lines.append("NOTE: Low CKA = alignment/coverage issue, NOT 'models incompatible'.")
                 lines.append("      All models share invariant structure. Find it.")
+
+                if random_baseline_result is not None:
+                    lines.append("")
+                    lines.append("RANDOM BASELINE (sanity check):")
+                    lines.append(f"  Train CKA (source → random): {random_baseline_result['trainCkaAligned']:.6f}")
+                    lines.append(f"  Test CKA (source → random):  {random_baseline_result['testCkaAligned']:.6f}")
+                    lines.append(f"  {random_baseline_result['interpretation']}")
 
                 lines.append("")
                 lines.append("=" * 60)
