@@ -55,8 +55,8 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.riemannian_utils import (
-    BackendVectorMath,
     geodesic_cosine_batch,
+    geodesic_cosine_matrix,
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
@@ -192,11 +192,16 @@ class CompositionalProbes:
 
     @staticmethod
     def _cosine_similarity(a: "Array", b_vec: "Array", backend: "Backend") -> "Array":
-        try:
-            similarity = BackendVectorMath(backend).cosine_similarity(a, b_vec)
-        except ValueError:
-            similarity = 0.0
-        return backend.array(similarity)
+        """Compute geodesic cosine similarity between two vectors."""
+        # Stack vectors and use geodesic cosine matrix
+        a_flat = backend.reshape(a, (1, -1)) if a.ndim == 1 else a
+        b_flat = backend.reshape(b_vec, (1, -1)) if b_vec.ndim == 1 else b_vec
+        vectors = backend.concatenate([a_flat, b_flat], axis=0)
+        backend.eval(vectors)
+
+        cos_matrix = geodesic_cosine_matrix(vectors, backend)
+        backend.eval(cos_matrix)
+        return cos_matrix[0, 1]
 
     @staticmethod
     def check_consistency(

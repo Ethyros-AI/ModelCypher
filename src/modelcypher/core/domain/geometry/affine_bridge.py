@@ -71,7 +71,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     geodesic_svd,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -302,14 +305,9 @@ class AffineBridge:
         backend.eval(mse_arr)
         mse = float(backend.to_scalar(mse_arr))
 
-        # Cosine similarity (per sample, then mean)
-        # cosine = (pred · Y) / (||pred|| ||Y||)
-        dot_products = backend.sum(pred * Y, axis=1)  # [n_samples]
-        pred_norms = geodesic_norms(pred, backend)  # [n_samples]
-        y_norms = geodesic_norms(Y, backend)  # [n_samples]
-
-        eps = division_epsilon(backend, pred)
-        cosines = dot_products / (pred_norms * y_norms + eps)
+        # Geodesic cosine similarity (per sample, then mean)
+        # Uses law of cosines with geodesic distances for manifold-correct similarity
+        cosines, _ = geodesic_pairwise_metrics(pred, Y, backend)
         mean_cosine_arr = backend.mean(cosines)
         backend.eval(mean_cosine_arr)
         mean_cosine = float(backend.to_scalar(mean_cosine_arr))

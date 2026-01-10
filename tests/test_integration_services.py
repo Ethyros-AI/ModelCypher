@@ -40,27 +40,35 @@ def _eps(*values: float) -> float:
 class TestGeometryIntegration:
     """Integration tests for geometry module interoperability."""
 
-    def test_vector_math_cosine_similarity_chain(self):
-        """VectorMath can be used in a processing chain."""
-        from modelcypher.core.domain.geometry.riemannian_utils import VectorMath
+    def test_geodesic_cosine_similarity_chain(self):
+        """Geodesic cosine similarity can be used in a processing chain."""
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
+
+        backend = get_default_backend()
 
         # Create test vectors
-        v1 = [1.0, 0.0, 0.0]
-        v2 = [0.0, 1.0, 0.0]
-        v3 = [1.0, 1.0, 0.0]
+        v1 = backend.array([[1.0, 0.0, 0.0]])
+        v2 = backend.array([[0.0, 1.0, 0.0]])
+        v3 = backend.array([[1.0, 1.0, 0.0]])
 
         # Normalize v3
-        v3_norm = VectorMath.l2_normalized(v3)
+        v3_norm = v3 / backend.sqrt(backend.sum(v3 * v3))
 
-        # Compute similarities
-        sim_v1_v2 = VectorMath.cosine_similarity(v1, v2)
-        sim_v1_v3 = VectorMath.cosine_similarity(v1, v3_norm)
+        # Stack all vectors for geodesic computation
+        all_vectors = backend.concatenate([v1, v2, v3_norm], axis=0)
+        backend.eval(all_vectors)
+
+        # Compute geodesic cosine matrix
+        cos_matrix = geodesic_cosine_matrix(all_vectors, backend)
+        backend.eval(cos_matrix)
+
+        sim_v1_v2 = float(backend.to_scalar(cos_matrix[0, 1]))
+        sim_v1_v3 = float(backend.to_scalar(cos_matrix[0, 2]))
 
         # Orthogonal vectors have cosine similarity 0.0, but floating-point
-        # error from the multi-operation chain (dot, norms, division) causes
-        # small deviations. Use machine epsilon as tolerance.
+        # error from the multi-operation chain causes small deviations.
+        # Use machine epsilon as tolerance.
         assert abs(sim_v1_v2) <= _eps(1.0)
-        backend = get_default_backend()
         denom = backend.to_scalar(backend.sqrt(backend.array(2.0)))
         assert sim_v1_v3 == pytest.approx(1.0 / denom)
 
@@ -221,22 +229,30 @@ class TestAgentsIntegration:
 class TestCrossModuleIntegration:
     """Tests that verify modules work together correctly."""
 
-    def test_vector_math_operations(self):
-        """Vector math operations work correctly."""
-        from modelcypher.core.domain.geometry.riemannian_utils import VectorMath
+    def test_geodesic_operations(self):
+        """Geodesic math operations work correctly."""
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
+
+        backend = get_default_backend()
 
         # Create activation vectors and compute similarities
-        activations = [
+        activations = backend.array([
             [1.0, 0.0, 0.0],
             [0.9, 0.1, 0.0],
             [0.8, 0.2, 0.0],
             [0.7, 0.3, 0.0],
-        ]
+        ])
+        backend.eval(activations)
 
-        similarities = []
-        for i in range(1, len(activations)):
-            sim = VectorMath.cosine_similarity(activations[0], activations[i])
-            similarities.append(sim)
+        # Compute geodesic cosine matrix
+        cos_matrix = geodesic_cosine_matrix(activations, backend)
+        backend.eval(cos_matrix)
+
+        # Extract similarities of first vector with others
+        similarities = [
+            float(backend.to_scalar(cos_matrix[0, i]))
+            for i in range(1, activations.shape[0])
+        ]
 
         assert len(similarities) == 3
         # Similarity should decrease as vectors diverge
