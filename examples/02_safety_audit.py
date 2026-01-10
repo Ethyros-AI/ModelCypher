@@ -24,13 +24,19 @@ This example demonstrates how to run safety probes and entropy diagnostics
 against adapter metadata and entropy baselines.
 
 Usage:
-    python examples/02_safety_audit.py --name "adapter-name"
-    python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/baseline.json \
+    poetry run python examples/02_safety_audit.py --name "adapter-name"
+    MC_ALLOW_STUB_EMBEDDINGS=1 poetry run python examples/02_safety_audit.py --name "adapter-name"
+    poetry run python examples/02_safety_audit.py --name "adapter-name" --baseline /path/to/baseline.json \
         --observed "[0.1, 0.12, 0.09]"
-    python examples/02_safety_audit.py --name "adapter-name" --samples /path/to/samples.json
+    poetry run python examples/02_safety_audit.py --name "adapter-name" --samples /path/to/samples.json
 
 You can also pass an adapter path as the first argument; its filename will be
 used as the adapter name.
+
+Notes:
+    - This example requires a working GPU backend (MLX on macOS/Apple Silicon).
+      If MLX fails to initialize inside VSCode/Claude Code, run from Terminal.app.
+    - To run embedding-backed metadata probes without MLX, set `MC_ALLOW_STUB_EMBEDDINGS=1`.
 
 Observed deltas format:
     [0.12, 0.08, 0.15]
@@ -157,12 +163,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    try:
-        initialize_default_backend()
-    except RuntimeError as exc:
-        print(f"Backend initialization failed: {exc}")
-        print("Tip: set MC_BACKEND=numpy for CPU fallback when MLX is unavailable.")
-        return 1
+    backend_error: str | None = None
+
+    def _ensure_backend() -> bool:
+        nonlocal backend_error
+        if backend_error is not None:
+            return False
+        try:
+            initialize_default_backend()
+        except RuntimeError as exc:
+            backend_error = str(exc)
+            return False
+        return True
 
     adapter_name = _resolve_adapter_name(args.adapter, args.name)
 
@@ -247,27 +259,34 @@ def main() -> int:
     print("\n[3/4] Entropy Baseline Verification")
     print("-" * 40)
     if args.baseline and observed_deltas is not None:
-        entropy_service = EntropyProbeService()
-        try:
-            result = entropy_service.verify_baseline(
-                baseline_path=args.baseline,
-                observed_deltas=observed_deltas,
-                adapter_path=adapter_name or "unknown",
-            )
-        except ValueError as exc:
-            print(f"  Baseline verification failed: {exc}")
+        if not _ensure_backend():
+            print(f"  Skipped: backend unavailable ({backend_error})")
         else:
-            declared = result.declared_baseline
-            observed = result.observed_baseline
-            comparison = result.comparison
-            print(f"  Declared mean/std: {declared.delta_mean:.4f} / {declared.delta_std_dev:.4f}")
-            print(f"  Observed mean/std: {observed.delta_mean:.4f} / {observed.delta_std_dev:.4f}")
-            print(f"  Mean Z-score: {comparison.mean_z_score:.4f}")
-            print(f"  StdDev ratio: {comparison.std_dev_ratio:.4f}")
-            print(f"  Max deviation: {comparison.max_deviation:.4f}")
-            print(f"  Min deviation: {comparison.min_deviation:.4f}")
-            print(f"  Declared range: {comparison.declared_range:.4f}")
-            print(f"  Observed range: {comparison.observed_range:.4f}")
+            entropy_service = EntropyProbeService()
+            try:
+                result = entropy_service.verify_baseline(
+                    baseline_path=args.baseline,
+                    observed_deltas=observed_deltas,
+                    adapter_path=adapter_name or "unknown",
+                )
+            except ValueError as exc:
+                print(f"  Baseline verification failed: {exc}")
+            else:
+                declared = result.declared_baseline
+                observed = result.observed_baseline
+                comparison = result.comparison
+                print(
+                    f"  Declared mean/std: {declared.delta_mean:.4f} / {declared.delta_std_dev:.4f}"
+                )
+                print(
+                    f"  Observed mean/std: {observed.delta_mean:.4f} / {observed.delta_std_dev:.4f}"
+                )
+                print(f"  Mean Z-score: {comparison.mean_z_score:.4f}")
+                print(f"  StdDev ratio: {comparison.std_dev_ratio:.4f}")
+                print(f"  Max deviation: {comparison.max_deviation:.4f}")
+                print(f"  Min deviation: {comparison.min_deviation:.4f}")
+                print(f"  Declared range: {comparison.declared_range:.4f}")
+                print(f"  Observed range: {comparison.observed_range:.4f}")
     else:
         print("  Skipped: provide --baseline and --observed")
 
@@ -277,6 +296,11 @@ def main() -> int:
     if samples is None:
         print("  Skipped: provide --samples")
     else:
+        if not _ensure_backend():
+            print(f"  Skipped: backend unavailable ({backend_error})")
+            print("\n" + "=" * 60)
+            print("Audit complete.")
+            return 0
         entropy_service = EntropyProbeService()
         pattern = entropy_service.analyze_pattern(samples)
         distress = entropy_service.detect_distress(samples)

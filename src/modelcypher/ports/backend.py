@@ -150,13 +150,12 @@ Steps to add a new operation:
         arr = backend.array([1.0, 2.0, 3.0])
         result = backend.my_operation(arr, 0.5)
         expected = ...
-        assert_allclose(backend.to_numpy(result), expected)
+        assert backend.tolist(result) == expected
 
 Available Implementations
 -------------------------
 - MLXBackend: Primary backend for macOS (Metal GPU acceleration)
 - JAXBackend: Secondary backend for Linux/TPU
-- NumPyBackend: Testing only - never use in production
 
 Usage:
 

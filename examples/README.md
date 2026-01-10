@@ -6,19 +6,22 @@ This directory contains example scripts demonstrating common ModelCypher workflo
 
 - Python 3.11+
 - ModelCypher installed (`poetry install`)
-- macOS with Apple Silicon for MLX backend (most examples)
 - Local model weights (fetch with `poetry run mc model fetch …`)
 
-## Backend Notes
+## Sandbox / Backend Notes
 
-Most examples assume MLX is available. In sandboxed environments (e.g. VSCode/Claude Code),
-MLX may fail to initialize; use explicit CPU fallback for smoke tests:
+ModelCypher requires a GPU backend (MLX on macOS/Apple Silicon, CUDA on Linux/NVIDIA,
+or JAX on supported platforms). If MLX fails to initialize inside a sandboxed host
+(e.g. VSCode/Claude Code), run ModelCypher from Terminal.app (outside the host) so
+Metal/MLX can initialize normally.
+
+For commands that write registry/cache data, set locations inside the repo (useful in
+sandboxes and CI):
 
 ```bash
-MC_BACKEND=numpy poetry run mc system status --output json
+MODELCYPHER_HOME=.claude/.modelcypher
+HF_HOME=.claude/hf_home
 ```
-
-CPU fallback is slower and intended for validating workflows, not performance runs.
 
 ## Examples
 
@@ -71,7 +74,6 @@ Analyze entropy patterns in model outputs using thermodynamic metrics.
 
 ```bash
 poetry run python examples/04_entropy_analysis.py /path/to/model --prompt "Your prompt here"
-poetry run python examples/04_entropy_analysis.py --simulated --prompt "Your prompt here"
 ```
 
 **What it does:**
@@ -79,12 +81,13 @@ poetry run python examples/04_entropy_analysis.py --simulated --prompt "Your pro
 - Reports raw statistics (mean/std/min/max)
 - Computes baseline vs intensity delta_h
 
+This example requires a working GPU backend for real inference.
+
 ### 05. Model Merge
 
 Merge two models using geometric alignment.
 
 ```bash
-poetry run python examples/05_model_merge.py source_model target_model -o merged_output
 poetry run python examples/05_model_merge.py source_model target_model -o merged_output --dry-run
 ```
 
@@ -93,24 +96,32 @@ poetry run python examples/05_model_merge.py source_model target_model -o merged
 - Uses null-space transplant (no blending)
 - Outputs raw geometry measurements
 
+To run an actual merge, omit `--dry-run` (requires a working GPU backend + real model
+weights).
+
 ## Getting Models
 
-Fetch an MLX-compatible model from Hugging Face:
+Fetch a tiny model from Hugging Face (network required):
 
 ```bash
-# ModelCypher CLI prints JSON by default
-poetry run mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
+MODELCYPHER_HOME=.claude/.modelcypher HF_HOME=.claude/hf_home poetry run mc model fetch hf-internal-testing/tiny-random-gpt2
+```
+
+Then probe using the returned `localPath`:
+
+```bash
+poetry run mc --output json model probe <localPath>
 ```
 
 If you already have local weights, register them instead of downloading:
 
 ```bash
-poetry run mc model register my-model --path /path/to/model --architecture qwen2
+MODELCYPHER_HOME=.claude/.modelcypher poetry run mc model register my-model --path /path/to/model --architecture <architecture>
 ```
 
 ## Tips
 
 1. **Start small**: Use smaller models (0.5B-3B) for faster iteration
 2. **Check memory**: Run `poetry run mc system status --output json` before large operations
-3. **Use the CLI**: Many examples have CLI equivalents (`poetry run mc geometry spatial probe-model`)
+3. **Structured output**: Use `--output json` for machine-readable output (`poetry run mc --help`)
 4. **Read the output**: Raw measurements are returned; you decide meaning based on context

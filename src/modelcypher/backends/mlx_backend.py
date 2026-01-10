@@ -742,6 +742,21 @@ class MLXBackend(Backend):
         self.safe.eval(eigenvalues, eigenvectors)
         return eigenvalues, eigenvectors
 
+    def eigvalsh(self, array: Array) -> Array:
+        """Compute eigenvalues of symmetric/Hermitian matrix (values only, more efficient)."""
+        # MLX 0.30+ has native eigvalsh - more efficient than eigh
+        if array.dtype in (self.mx.bfloat16, self.mx.float16):
+            array = array.astype(self.mx.float32)
+            self.safe.eval(array)
+        try:
+            eigenvalues = self.mx.linalg.eigvalsh(array)
+        except Exception as exc:
+            if "not yet supported on the GPU" not in str(exc):
+                raise
+            eigenvalues = self.mx.linalg.eigvalsh(array, stream=self.mx.cpu)
+        self.safe.eval(eigenvalues)
+        return eigenvalues
+
     def solve(self, a: Array, b: Array) -> Array:
         try:
             arr = self.mx.linalg.solve(a, b)

@@ -634,7 +634,6 @@ def research_memory_token(
     target_model: str = typer.Argument(..., help="Path to target LLM model"),
     source_concept: str = typer.Option(..., "--concept", "-c", help="Source concept to inject"),
     neutral_concept: str = typer.Option("thing", "--neutral", "-n", help="Neutral reference concept"),
-    scale: float = typer.Option(10.0, "--scale", "-s", help="Memory token scale (10-20 safe)"),
     architecture: str = typer.Option(None, "--arch", help="Architecture name (e.g., LFM2)"),
     output_file: str | None = typer.Option(None, "--output", "-o", help="Output JSON file"),
 ) -> None:
@@ -642,6 +641,10 @@ def research_memory_token(
 
     Memory tokens allow much higher scale factors (20x+) than direct injection
     because the model's attention mechanism controls information flow.
+
+    Scale is automatically derived: scale = activation_norm / delta_norm.
+    This ensures injection magnitude matches typical activations.
+    The math determines the safe injection amount - no user-configurable knobs.
 
     Key advantages:
     - 10x higher scale tolerance vs direct injection
@@ -653,7 +656,7 @@ def research_memory_token(
 
     Examples:
         mc research memory-token /path/to/llm --concept "bright red apple"
-        mc research memory-token /path/to/llm -c "blue ocean" -s 15.0 --arch LFM2
+        mc research memory-token /path/to/llm -c "blue ocean" --arch LFM2
         mc research memory-token /path/to/llm -c "golden sunset" -o memory.json
     """
     context = _context(ctx)
@@ -696,18 +699,6 @@ def research_memory_token(
         optimal_layers = [7, 8, 9]  # Default semantic highway
         semantic_highway = (7, 8, 9)
 
-    # Validate scale
-    if scale > MEMORY_TOKEN_SCALE_MAX:
-        error = ErrorDetail(
-            code="MC-3005",
-            title="Scale too high",
-            detail=f"Scale {scale} exceeds max safe scale {MEMORY_TOKEN_SCALE_MAX}",
-            hint=f"Use scale <= {MEMORY_TOKEN_SCALE_MAX} for memory token injection",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
     try:
         # Load model to get embeddings
         from mlx_lm import load
@@ -726,6 +717,27 @@ def research_memory_token(
         source_pooled = mx.mean(source_embed, axis=1)
         neutral_pooled = mx.mean(neutral_embed, axis=1)
         mx.eval(source_pooled, neutral_pooled)
+
+        # AUTO-DERIVE scale from activation geometry
+        # Formula: scale = activation_norm / delta_norm
+        # This ensures the injection magnitude matches typical activations
+        # Mathematical basis: scale × ||delta|| = ||activation||
+        source_norm = float(mx.sqrt(mx.sum(source_pooled * source_pooled)).item())
+        neutral_norm = float(mx.sqrt(mx.sum(neutral_pooled * neutral_pooled)).item())
+        mean_norm = (source_norm + neutral_norm) / 2.0
+
+        # Delta (injection direction)
+        delta = source_pooled - neutral_pooled
+        delta_norm = float(mx.sqrt(mx.sum(delta * delta)).item())
+
+        # Scale derived from ratio of activation norm to delta norm
+        if delta_norm > 1e-8:
+            scale = mean_norm / delta_norm
+        else:
+            scale = mean_norm  # Delta is essentially zero, use activation norm
+
+        # Clamp to max safe scale
+        scale = min(scale, MEMORY_TOKEN_SCALE_MAX)
 
         # Compute memory token content
         memory = injector.compute_memory_content(
@@ -759,7 +771,7 @@ def research_memory_token(
         "targetModel": target_model,
         "sourceConcept": source_concept,
         "neutralConcept": neutral_concept,
-        "scale": scale,
+        "derivedScale": scale,  # Auto-derived from activation norms
         "architecture": architecture,
         "optimalLayers": optimal_layers,
         "semanticHighway": list(semantic_highway),
@@ -784,7 +796,7 @@ def research_memory_token(
             "",
             f"Target: {target_model}",
             f"Concept: '{source_concept}' vs '{neutral_concept}'",
-            f"Scale: {scale}",
+            f"Scale: {scale:.3f} (auto-derived from activation norms)",
             "",
             f"Optimal Injection Layers: {optimal_layers}",
             f"Semantic Highway: {list(semantic_highway)}",

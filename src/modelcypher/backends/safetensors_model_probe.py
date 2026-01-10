@@ -68,8 +68,23 @@ class SafeTensorsModelProbe:
 
         architecture = str(config.get("model_type", "unknown"))
         vocab_size = int(config.get("vocab_size", 0) or 0)
-        hidden_size = int(config.get("hidden_size", 0) or 0)
-        num_attention_heads = int(config.get("num_attention_heads", 0) or 0)
+
+        # Normalize common architecture config fields.
+        # HuggingFace configs use different names depending on architecture
+        # (e.g., GPT-2 uses n_embd/n_head rather than hidden_size/num_attention_heads).
+        hidden_size = int(
+            config.get("hidden_size", 0)
+            or config.get("n_embd", 0)
+            or config.get("d_model", 0)
+            or 0
+        )
+        num_attention_heads = int(
+            config.get("num_attention_heads", 0)
+            or config.get("n_head", 0)
+            or config.get("num_heads", 0)
+            or config.get("n_heads", 0)
+            or 0
+        )
         quantization = None
         quant_cfg = config.get("quantization_config")
         if isinstance(quant_cfg, dict):
@@ -255,4 +270,3 @@ class SafeTensorsModelProbe:
         if not isinstance(header, dict):
             raise ValueError("Invalid safetensors file: header must be a JSON object")
         return header
-

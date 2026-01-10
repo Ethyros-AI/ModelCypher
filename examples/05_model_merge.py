@@ -27,13 +27,15 @@ target boundaries while grafting dense source regions.
 Pipeline: PROBE → DENSITY → TRANSPLANT
 
 Usage:
-    python examples/05_model_merge.py source_model target_model -o merged_output
-    python examples/05_model_merge.py source_model target_model -o merged_output --dry-run
+    poetry run python examples/05_model_merge.py source_model target_model -o merged_output --dry-run
+
+To run an actual merge, omit `--dry-run` (requires a working GPU backend + real
+model weights).
 
 Requirements:
     - Two model directories with weights
     - Sufficient disk space for output
-    - macOS with Apple Silicon for MLX backend
+    - A working GPU backend for the full merge pipeline
 """
 import argparse
 from pathlib import Path

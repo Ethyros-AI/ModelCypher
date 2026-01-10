@@ -160,9 +160,12 @@ def _run_merge(
     output_file: str | None,
     dry_run: bool = False,
     probe_mode: str = "atlas",
-    delta_scale: float = 1.0,
 ) -> None:
-    """Core merge logic shared by callback and run command."""
+    """Core merge logic shared by callback and run command.
+
+    Scale is always 1.0 for single merges - the null-space projection
+    already ensures safe knowledge addition. No user-configurable knobs.
+    """
     from modelcypher.cli.composition import get_merge_pipeline_service
 
     context = _context(ctx)
@@ -180,12 +183,13 @@ def _run_merge(
 
     try:
         with prevent_sleep():
+            # delta_scale=1.0 always - null-space projection handles safety
             result = service.run(
                 source_path=source,
                 target_path=target,
                 output_dir=output_dir,
                 probe_mode=probe_mode,
-                delta_scale=delta_scale,
+                delta_scale=1.0,
             )
 
         # Build output payload
@@ -309,12 +313,14 @@ def merge_callback(
     output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
     probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
-    delta_scale: float = typer.Option(1.0, "--delta-scale", "-d", help="Scale factor for knowledge injection (0.0-1.0). Use <1.0 for sequential stacking."),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
     Takes knowledge from SOURCE and adds it to TARGET without destroying
     TARGET's existing capabilities. The result is a denser model.
+
+    All geometric parameters (scale, alignment) are auto-derived.
+    The math determines how knowledge is added.
 
     Examples:
         mc merge -s ./qwen -t ./smol -o ./merged
@@ -326,7 +332,7 @@ def merge_callback(
 
     # If options were provided directly, run the merge
     if source and target and output_dir:
-        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode, delta_scale=delta_scale)
+        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
     elif source or target or output_dir:
         # Partial options provided - show error
         missing = []
@@ -355,19 +361,20 @@ def run(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
     probe_mode: str = typer.Option("atlas", "--probe-mode", "-p", help="Probe mode: 'atlas' (963 conceptual) or 'token' (49K+ vocab for 100%% dim coverage)"),
-    delta_scale: float = typer.Option(1.0, "--delta-scale", "-d", help="Scale factor for knowledge injection (0.0-1.0). Use <1.0 for sequential stacking."),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
     Takes knowledge from SOURCE and adds it to TARGET without destroying
     TARGET's existing capabilities. The result is a denser model.
 
+    All geometric parameters (scale, alignment) are auto-derived.
+    The math determines how knowledge is added.
+
     Examples:
         mc merge run -s ./qwen -t ./smol -o ./merged
         mc merge run -s ./qwen -t ./smol -o ./merged --probe-mode token
-        mc merge run -s ./coder -t ./merged1 -o ./merged2 --delta-scale 0.5
     """
-    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode, delta_scale=delta_scale)
+    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run, probe_mode=probe_mode)
 
 
 @app.command()
@@ -378,8 +385,6 @@ def batch(
     output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
     accumulative: bool = typer.Option(True, "--accumulative/--sequential", help="Accumulative (add all to target) vs sequential merging"),
     fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks (safe: CKA=1.0 is invariant)"),
-    delta_scale: float = typer.Option(1.0, "--delta-scale", "-d", help="Scale factor for knowledge injection (0.0-1.0). Use <1.0 for sequential stacking."),
-    auto_scale: bool = typer.Option(False, "--auto-scale", "-a", help="Auto-compute delta_scale to stay within deviation budget (1%% of weight norm)."),
 ) -> None:
     """Merge multiple source models into a single target (N→1 merging).
 
@@ -393,12 +398,13 @@ def batch(
     Accumulative mode (default) projects all sources into the ORIGINAL target's
     null-space. This preserves target behavior while adding all source knowledge.
 
-    With --auto-scale, delta_scale is automatically computed for each merge
-    based on measured delta magnitude and remaining budget (1% of weight norm).
+    Scale is automatically computed for each merge based on measured delta
+    magnitude and remaining budget (1% of weight norm). The math determines
+    the safe injection amount - no user-configurable knobs.
 
     Examples:
         mc merge batch -s ./model1 -s ./model2 -s ./model3 -t ./lfm2 -o ./merged
-        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged --auto-scale
+        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged
     """
     from modelcypher.adapters.hf_hub import HuggingFaceModelLoader
     from modelcypher.core.domain._backend import get_default_backend
@@ -419,23 +425,20 @@ def batch(
     typer.echo(f"BATCH MERGE: {len(sources)} sources → {target}")
     typer.echo(f"  Mode: {'accumulative' if accumulative else 'sequential'}")
     typer.echo(f"  Fast mode: {fast_mode} (CKA=1.0 is invariant)")
-    if auto_scale:
-        typer.echo(f"  Auto-scale: ENABLED (budget-aware scaling)")
-    else:
-        typer.echo(f"  Delta scale: {delta_scale}")
+    typer.echo("  Scale: auto-derived from deviation budget")
 
     with prevent_sleep():
         model_loader = HuggingFaceModelLoader()
         merger = UnifiedGeometricMerger(model_loader=model_loader, backend=backend)
 
+        # Always use auto_scale - math determines safe injection amount
         result = merger.merge_batch(
             source_paths=sources,
             target_path=target,
             output_dir=output_dir,
             accumulative=accumulative,
             fast_mode=fast_mode,
-            delta_scale=delta_scale,
-            auto_scale=auto_scale,
+            auto_scale=True,  # Always enabled - no user knob
         )
 
     typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")

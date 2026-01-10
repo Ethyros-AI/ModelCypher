@@ -488,6 +488,10 @@ class CUDABackend(Backend):
     def eigh(self, array: Array) -> tuple[Array, Array]:
         return self.torch.linalg.eigh(array)
 
+    def eigvalsh(self, array: Array) -> Array:
+        """Compute eigenvalues of symmetric/Hermitian matrix (values only, more efficient)."""
+        return self.torch.linalg.eigvalsh(array)
+
     def solve(self, a: Array, b: Array) -> Array:
         return self.torch.linalg.solve(a, b)
 

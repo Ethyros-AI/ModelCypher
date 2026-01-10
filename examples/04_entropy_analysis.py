@@ -24,11 +24,11 @@ This example demonstrates how to measure entropy across linguistic modifiers
 and compute raw thermodynamic metrics for a prompt.
 
 Usage:
-    python examples/04_entropy_analysis.py /path/to/model --prompt "Explain quantum computing"
+    poetry run python examples/04_entropy_analysis.py /path/to/model --prompt "Explain quantum computing"
+    poetry run python examples/04_entropy_analysis.py --simulated --prompt "Explain quantum computing"
 
 Requirements:
-    - A local MLX-compatible model
-    - macOS with Apple Silicon
+    - A working GPU backend for real inference
 """
 import argparse
 from pathlib import Path
@@ -62,7 +62,7 @@ def main() -> int:
         initialize_default_backend()
     except RuntimeError as exc:
         print(f"Backend initialization failed: {exc}")
-        print("Tip: set MC_BACKEND=numpy for CPU fallback when MLX is unavailable.")
+        print("Tip: run from Terminal.app if MLX fails to initialize inside VSCode/Claude Code.")
         return 1
 
     if args.model is None and not args.simulated:

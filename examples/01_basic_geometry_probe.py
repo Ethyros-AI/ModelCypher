@@ -20,15 +20,15 @@
 """
 Basic Geometry Probe Example
 
-This example demonstrates how to probe a model and inspect its geometric properties.
-Geometric probing reveals how a model represents concepts internally.
+This example demonstrates how to probe a model directory and inspect basic
+architecture + weight metadata.
 
 Usage:
-    python examples/01_basic_geometry_probe.py /path/to/model
+    poetry run python examples/01_basic_geometry_probe.py /path/to/model
 
 Requirements:
-    - A local MLX-compatible model (e.g., from mlx-community on Hugging Face)
-    - macOS with Apple Silicon for MLX backend
+    - A local model directory containing `config.json` and one or more
+      `*.safetensors` files.
 """
 import sys
 from pathlib import Path
@@ -38,7 +38,7 @@ from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python 01_basic_geometry_probe.py /path/to/model")
+        print("Usage: poetry run python examples/01_basic_geometry_probe.py /path/to/model")
         print("\nTip:")
         print("  Fetch a model: poetry run mc model fetch <repo_id>")
         print("  Then probe the returned localPath.")

@@ -192,7 +192,6 @@ src/modelcypher/backends/jax_model_probe.py
 src/modelcypher/backends/lazy_backend.py
 src/modelcypher/backends/mlx_backend.py
 src/modelcypher/backends/mlx_model_probe.py
-src/modelcypher/backends/numpy_backend.py
 src/modelcypher/backends/safe_gpu.py
 src/modelcypher/cli/__init__.py
 src/modelcypher/cli/app.py

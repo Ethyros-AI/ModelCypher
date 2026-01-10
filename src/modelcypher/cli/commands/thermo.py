@@ -512,9 +512,19 @@ def thermo_phase(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    # AUTO-DERIVE temperature using critical temperature formula
+    # Formula: T_c = σ_z / √(2 × ln(V_eff))
+    # This is derived from statistical mechanics (Boltzmann-softmax equivalence)
+    stats = PhaseTransitionTheory.compute_logit_statistics(logits)
+    v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, temperature=1.0)
+    derived_temperature = PhaseTransitionTheory.estimate_critical_temperature(
+        logit_std_dev=stats.std_dev,
+        effective_vocab_size=v_eff,
+    )
+
     analysis = PhaseTransitionTheory.analyze(
         logits=logits,
-        temperature=1.0,
+        temperature=derived_temperature,
     )
 
     payload = {

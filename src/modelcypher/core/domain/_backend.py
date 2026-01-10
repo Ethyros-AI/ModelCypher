@@ -218,15 +218,14 @@ def _probe_mlx_runtime() -> tuple[bool, str | None]:
                 "This can occur due to GPU access restrictions or code signing enforcement. "
                 "Workarounds:\n"
                 "  1. Run ModelCypher from Terminal.app directly\n"
-                "  2. Set MC_BACKEND=numpy for CPU fallback\n"
-                "  3. If using dev MLX, try a signed release version"
+                "  2. If using dev MLX, try a signed release version"
             )
         else:
             detail = (
                 f"MLX crashed during initialization (exit code {result.returncode}). "
                 "This may indicate a Metal driver issue, GPU access restriction, or "
                 "code signing problem. "
-                "Set MC_DISABLE_MLX=1 to skip MLX, or MC_BACKEND=numpy for CPU fallback."
+                "Set MC_DISABLE_MLX=1 to skip MLX."
             )
 
     if not detail:

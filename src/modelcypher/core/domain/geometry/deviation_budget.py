@@ -639,8 +639,11 @@ class DeviationBudget:
         if delta_magnitude <= 0:
             return 1.0
 
-        # Scale to use 70% of remaining budget
-        safe_scale = (remaining * 0.7) / delta_magnitude
+        # Safety margin derived from diminishing returns formula: margin = 1 - 1/√(n+1)
+        # Without source count context, use n=1 (conservative): 1 - 1/√2 ≈ 0.293
+        import math
+        safety_margin = 1.0 - 1.0 / math.sqrt(2.0)  # ≈ 0.293 for single source
+        safe_scale = (remaining * safety_margin) / delta_magnitude
 
         return min(1.0, max(0.1, safe_scale))
 
@@ -675,8 +678,13 @@ class DeviationBudget:
         # Get remaining budget
         remaining_budget = self.get_remaining_budget(baseline_name)
 
-        # Allocate budget across remaining sources with 70% safety margin
-        per_source_budget = (remaining_budget * 0.7) / max(1, remaining_sources)
+        # Safety margin from diminishing returns formula: margin = 1 - 1/√(n+1)
+        # This provides mathematically derived allocation:
+        #   n=1: margin=0.29, n=4: margin=0.55, n=9: margin=0.68
+        import math
+        n = max(1, remaining_sources)
+        safety_margin = 1.0 - 1.0 / math.sqrt(n + 1)
+        per_source_budget = (remaining_budget * safety_margin) / n
 
         # Compute scale needed to keep delta within per-source budget
         scale = per_source_budget / delta_magnitude

@@ -24,8 +24,8 @@ This example demonstrates how to inspect one or more LoRA adapters to
 report geometric properties (rank, sparsity) without blending.
 
 Usage:
-    python examples/03_adapter_inspection.py /path/to/adapter_dir
-    python examples/03_adapter_inspection.py /path/to/a /path/to/b --json
+    poetry run python examples/03_adapter_inspection.py /path/to/adapter_dir
+    poetry run python examples/03_adapter_inspection.py /path/to/a /path/to/b --json
 
 Requirements:
     - One or more adapter directories containing safetensors weights
@@ -60,7 +60,7 @@ def main() -> int:
         initialize_default_backend()
     except RuntimeError as exc:
         print(f"Backend initialization failed: {exc}")
-        print("Tip: set MC_BACKEND=numpy for CPU fallback when MLX is unavailable.")
+        print("Tip: run from Terminal.app if MLX fails to initialize inside VSCode/Claude Code.")
         return 1
 
     service = AdapterService()

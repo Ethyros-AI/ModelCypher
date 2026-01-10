@@ -303,6 +303,10 @@ class JAXBackend(Backend):
         eigenvalues, eigenvectors = self.jnp.linalg.eigh(array)
         return eigenvalues, eigenvectors
 
+    def eigvalsh(self, array: Array) -> Array:
+        """Compute eigenvalues of symmetric/Hermitian matrix (values only, more efficient)."""
+        return self.jnp.linalg.eigvalsh(array)
+
     def solve(self, a: Array, b: Array) -> Array:
         return self.jnp.linalg.solve(a, b)
 
