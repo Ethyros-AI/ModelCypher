@@ -679,7 +679,7 @@ def bridge(
 
         # Load embeddings from models
         typer.echo("  Loading source embeddings...")
-        source_weights, source_config = model_loader.load_weights(source)
+        source_weights = model_loader.load_weights(source)
         source_embed_key = _find_embedding_key(source_weights)
         if source_embed_key is None:
             typer.echo("Error: Could not find embedding layer in source model", err=True)
@@ -688,7 +688,7 @@ def bridge(
         source_embed = backend.array(source_embed)
 
         typer.echo("  Loading target embeddings...")
-        target_weights, target_config = model_loader.load_weights(target)
+        target_weights = model_loader.load_weights(target)
         target_embed_key = _find_embedding_key(target_weights)
         if target_embed_key is None:
             typer.echo("Error: Could not find embedding layer in target model", err=True)
@@ -705,8 +705,9 @@ def bridge(
         n_target = int(target_embed.shape[0])
         n_samples = min(n_samples, n_source, n_target)
 
-        source_indices = backend.randint(0, n_source, (n_samples,))
-        target_indices = backend.randint(0, n_target, (n_samples,))
+        # Random sample from each vocabulary
+        source_indices = backend.random_randint(0, n_source, (n_samples,))
+        target_indices = backend.random_randint(0, n_target, (n_samples,))
         backend.eval(source_indices, target_indices)
 
         source_activations = backend.take(source_embed, source_indices, axis=0)

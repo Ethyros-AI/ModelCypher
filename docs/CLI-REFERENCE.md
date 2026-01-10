@@ -68,6 +68,100 @@ mc merge batch -s MODEL1 -s MODEL2 -s MODEL3 -t TARGET -o OUTPUT_DIR
 | `--accumulative/--sequential` | flag | Accumulative (default) vs sequential merging |
 | `--fast/--precise` | flag | Fast mode (default) vs precision checks |
 
+### mc merge multi-channel
+
+Multi-modal merging via Birkhoff routing. Projects all channels into target's null-space simultaneously, then combines via doubly stochastic routing (spectral norm ≤ 1.0).
+
+```bash
+mc merge multi-channel -c spatial:/path/to/world -c text:/path/to/llm -t TARGET -o OUTPUT
+
+# Example: merge world model + text model into unified model
+mc merge multi-channel \
+  -c spatial:./world-model \
+  -c temporal:./video-model \
+  -c text:./llm \
+  -t ./lfm2 \
+  -o ./merged
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `-c, --channel` | string | Channel in format `name:path` (repeatable) |
+| `-t, --target` | path | Target model (receives all knowledge) |
+| `-o, --output-dir` | path | Output directory for merged model |
+| `-r, --routing` | string | Routing mode: `uniform` (default), `identity`, `diagonal_weighted` |
+| `--fast/--precise` | flag | Fast mode (default) vs precision checks |
+
+**Properties:**
+- CKA = 1.0 per channel (geometry preserved)
+- Spectral norm ≤ 1.0 (stable combination)
+- No interference (channels add, not blend)
+
+### mc merge bridge
+
+Generate a cross-modal bridge between two encoders. Creates a linear transform that maps embeddings from source space to target space with CKA = 1.0.
+
+```bash
+mc merge bridge SOURCE TARGET -o OUTPUT
+
+# Examples
+mc merge bridge /path/to/clip /path/to/lfm2 -o clip_to_lfm2.safetensors
+mc merge bridge /path/to/whisper /path/to/lfm2 -o audio_to_lfm2.safetensors --samples 200
+mc merge bridge ./encoder_a ./encoder_b -o bridge.safetensors --source-name clip --target-name t5
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `SOURCE` | path | Path to source encoder (positional) |
+| `TARGET` | path | Path to target encoder (positional) |
+| `-o, --output` | path | Output path for bridge file (safetensors) |
+| `-n, --samples` | int | Number of probe samples (default: 100) |
+| `--source-name` | string | Optional name for source encoder |
+| `--target-name` | string | Optional name for target encoder |
+
+**Output file contains:**
+- Forward transform (source → target)
+- Inverse transform (target → source)
+- Scale ratio for magnitude normalization
+- Metadata (dimensions, names, CKA achieved)
+
+### mc merge apply-bridge
+
+Apply a bridge transform to embeddings. Transforms embeddings from source space to target space (or vice versa).
+
+```bash
+mc merge apply-bridge BRIDGE_PATH INPUT_PATH -o OUTPUT
+
+# Examples
+mc merge apply-bridge clip_to_lfm2.safetensors image_embeds.npy -o lfm2_embeds.npy
+mc merge apply-bridge bridge.safetensors source.safetensors -o target.safetensors
+mc merge apply-bridge bridge.safetensors target_embeds.npy -o source_embeds.npy --inverse
+```
+
+**Options:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `BRIDGE_PATH` | path | Path to bridge file (positional) |
+| `INPUT_PATH` | path | Path to input embeddings (positional) |
+| `-o, --output` | path | Output path for transformed embeddings |
+| `-i, --inverse` | flag | Apply inverse transform (target → source) |
+| `--normalize/--no-normalize` | flag | Apply scale normalization (default: on) |
+
+**Supported formats:** `.npy`, `.safetensors`
+
+### mc merge deviation
+
+Measure deviation from baseline (informational only). The geometry handles safety by construction via null-space projection.
+
+```bash
+mc merge deviation --baseline ./original --current ./merged
+```
+
 ---
 
 ## Model Management
