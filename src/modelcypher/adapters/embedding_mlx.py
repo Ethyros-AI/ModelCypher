@@ -50,7 +50,6 @@ class MLXEmbeddingProvider(EmbeddingProvider):
             raise MLXEmbeddingError("mlx-embeddings is required for MLXEmbeddingProvider") from exc
 
         self._mx = mx
-        self._safe = SafeGPU(mx)
         self._model_name = model_name
         self._max_length = max_length
         self._model, self._tokenizer = load(model_name)
@@ -91,7 +90,7 @@ class MLXEmbeddingProvider(EmbeddingProvider):
         inputs = {k: self._mx.array(v) for k, v in np_inputs.items()}
         outputs = self._model(**inputs)
         embeddings = self._extract_embeddings(outputs, inputs)
-        self._safe.eval(embeddings)
+        self._mx.eval(embeddings)
         if embeddings.ndim != 2:
             raise MLXEmbeddingError(f"Unexpected embedding shape: {embeddings.shape}")
         if self._dimension is None:

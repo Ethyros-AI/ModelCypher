@@ -29,6 +29,7 @@ All generators use the Backend protocol for GPU acceleration.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 

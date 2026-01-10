@@ -407,5 +407,57 @@ def accelerated_backend(request) -> Backend:
         raise ValueError(f"Unknown backend: {backend_name}")
 
 
+# =============================================================================
+# Real Model Fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def smol_model_path():
+    """Provide path to SmolLM-135M model.
+
+    Downloads the model on first use and caches it in tests/fixtures/.models/
+    This fixture is session-scoped so the model is only downloaded once.
+    """
+    from tests.fixtures.models import ensure_model, SMOL_LM_135M
+
+    return ensure_model(SMOL_LM_135M)
+
+
+@pytest.fixture(scope="session")
+def smol_model_weights(smol_model_path):
+    """Load SmolLM-135M weights using production loader.
+
+    Returns dict of weight name -> Array.
+    """
+    from modelcypher.core.domain._backend import get_default_backend
+    from tests.fixtures.models import load_model_weights
+
+    backend = get_default_backend()
+    return load_model_weights(smol_model_path, backend)
+
+
+@pytest.fixture(scope="session")
+def smol_model_and_tokenizer(smol_model_path):
+    """Load SmolLM-135M model and tokenizer.
+
+    Returns tuple of (model, tokenizer).
+    """
+    from tests.fixtures.models import load_model_and_tokenizer
+
+    return load_model_and_tokenizer(smol_model_path)
+
+
+@pytest.fixture
+def atlas_probes():
+    """Provide atlas probe prompts for activation testing.
+
+    Returns list of 100 probe prompt strings from the atlas system.
+    """
+    from tests.fixtures.models import get_atlas_probes
+
+    return get_atlas_probes(n_samples=100)
+
+
 # Export availability flags for use in skipif decorators
 __all__ = ["HAS_MLX", "HAS_JAX", "HAS_JAX_GPU", "HAS_CUDA"]

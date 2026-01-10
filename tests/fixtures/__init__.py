@@ -17,8 +17,9 @@
 
 """Test fixtures package.
 
-Contains reusable fixtures for testing geometry algorithms:
+Contains reusable fixtures for testing:
 - synthetic_manifolds: Manifolds with known ground truth properties
+- models: Real model fixtures for integration testing
 """
 
 from .synthetic_manifolds import (
@@ -30,8 +31,18 @@ from .synthetic_manifolds import (
     sample_sphere,
     sample_swiss_roll,
 )
+from .models import (
+    MODELS_CACHE_DIR,
+    SMOL_LM_135M,
+    collect_real_activations,
+    ensure_model,
+    get_atlas_probes,
+    load_model_and_tokenizer,
+    load_model_weights,
+)
 
 __all__ = [
+    # Synthetic manifolds
     "ManifoldSample",
     "random_orthogonal_matrix",
     "sample_flat_torus",
@@ -39,4 +50,12 @@ __all__ = [
     "sample_linear_subspace",
     "sample_sphere",
     "sample_swiss_roll",
+    # Real model fixtures
+    "MODELS_CACHE_DIR",
+    "SMOL_LM_135M",
+    "collect_real_activations",
+    "ensure_model",
+    "get_atlas_probes",
+    "load_model_and_tokenizer",
+    "load_model_weights",
 ]

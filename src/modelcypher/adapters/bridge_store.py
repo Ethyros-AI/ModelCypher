@@ -40,23 +40,10 @@ class SafetensorsBridgeStore(BridgeStore):
     ) -> None:
         backend = backend or get_default_backend()
 
-        try:
-            from safetensors.numpy import save_file
-            import numpy as np
-        except ImportError as exc:
-            raise ImportError(
-                "safetensors and numpy required for bridge saving. "
-                "Install with: pip install safetensors numpy"
-            ) from exc
-
         backend.eval(result.transform, result.transform_inv)
-
-        transform_np = backend.to_numpy(result.transform)
-        transform_inv_np = backend.to_numpy(result.transform_inv)
-
         tensors = {
-            "transform": transform_np.astype(np.float32),
-            "transform_inv": transform_inv_np.astype(np.float32),
+            "transform": result.transform,
+            "transform_inv": result.transform_inv,
         }
         metadata = {
             "scale_ratio": str(result.scale_ratio),
@@ -72,7 +59,7 @@ class SafetensorsBridgeStore(BridgeStore):
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        save_file(tensors, str(path), metadata=metadata)
+        backend.save_safetensors(str(path), tensors, metadata=metadata)
 
     def load(
         self,
@@ -90,18 +77,16 @@ class SafetensorsBridgeStore(BridgeStore):
             ) from exc
 
         with safe_open(str(path), framework="numpy") as f:
-            transform_np = f.get_tensor("transform")
-            transform_inv_np = f.get_tensor("transform_inv")
-
             metadata = f.metadata() or {}
             scale_ratio = float(metadata.get("scale_ratio", "1.0"))
-            source_dim = int(metadata.get("source_dim", transform_np.shape[0]))
-            target_dim = int(metadata.get("target_dim", transform_np.shape[1]))
+            source_dim = int(metadata.get("source_dim", "0"))
+            target_dim = int(metadata.get("target_dim", "0"))
             source_name = metadata.get("source_name", "source")
             target_name = metadata.get("target_name", "target")
 
-        transform = backend.array(transform_np)
-        transform_inv = backend.array(transform_inv_np)
+        tensors = backend.load_safetensors(str(path))
+        transform = tensors["transform"]
+        transform_inv = tensors["transform_inv"]
         backend.eval(transform, transform_inv)
 
         return CrossModalBridge(

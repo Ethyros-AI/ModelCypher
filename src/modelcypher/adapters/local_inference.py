@@ -229,10 +229,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         except ImportError as exc:
             raise RuntimeError("mlx-lm is required for local inference") from exc
 
-        from modelcypher.backends.safe_gpu import SafeGPU
-
         self._mx = mx
-        self._safe = SafeGPU(mx)
         self._mlx_load = load
         self._mlx_stream_generate = stream_generate
         self._mlx_make_sampler = make_sampler
@@ -542,13 +539,13 @@ class LocalInferenceEngine(HiddenStateEngine):
 
             with _LayerCapture(layers, _capture, target_layers=target_layers):
                 _ = base_model(tokens[None, :])
-                self._safe.eval(_)
+                self._mx.eval(_)
 
             extractor.end_session()
             states = extractor.extracted_states()
             if not states:
                 return {}
-            self._safe.eval(*states.values())
+            self._mx.eval(*states.values())
             return {
                 int(layer): state.astype(mx.float32).reshape(-1).tolist()
                 for layer, state in states.items()

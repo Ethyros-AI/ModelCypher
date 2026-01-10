@@ -26,11 +26,13 @@ from pathlib import Path
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.adapters.bridge_store import SafetensorsBridgeStore
 from modelcypher.core.domain.bridge.generator import (
     BridgeGenerator,
     BridgeGeneratorResult,
     CrossModalBridge,
 )
+from modelcypher.core.use_cases.bridge_service import BridgeService
 
 
 class TestBridgeGeneration:
@@ -125,11 +127,12 @@ class TestBridgeSaveLoad:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "bridge.safetensors"
-            generator.save_bridge(result, path)
+            service = BridgeService(store=SafetensorsBridgeStore(), backend=backend)
+            service.save(result, path)
 
             assert path.exists()
 
-            loaded = generator.load_bridge(path)
+            loaded = service.load(path)
 
             assert loaded.source_dim == 32
             assert loaded.target_dim == 64
@@ -251,8 +254,9 @@ class TestEdgeCases:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "bridge.safetensors"
-            generator.save_bridge(result, path)
-            loaded = generator.load_bridge(path)
+            service = BridgeService(store=SafetensorsBridgeStore(), backend=backend)
+            service.save(result, path)
+            loaded = service.load(path)
 
             assert loaded.source_name == "whisper"
             assert loaded.target_name == "t5"

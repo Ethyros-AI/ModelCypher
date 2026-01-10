@@ -756,12 +756,8 @@ class MLXBackend(Backend):
         return eigenvalues
 
     def solve(self, a: Array, b: Array) -> Array:
-        try:
-            arr = self.mx.linalg.solve(a, b)
-        except Exception as exc:
-            if "not yet supported on the GPU" not in str(exc):
-                raise
-            arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
+        # Force CPU for linalg.solve - GPU has stability issues with some matrices
+        arr = self.mx.linalg.solve(a, b, stream=self.mx.cpu)
         self.mx.eval(arr)
         return arr
 

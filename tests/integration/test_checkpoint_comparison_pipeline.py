@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, AsyncGenerator
-from unittest.mock import patch
-
 import pytest
 
 from modelcypher.core.use_cases.inference.comparison import (
@@ -199,24 +197,21 @@ class TestCheckpointComparisonCoordinatorFlow:
     @pytest.mark.asyncio
     async def test_compare_single_checkpoint(self) -> None:
         """Single checkpoint comparison should yield expected events."""
-        coordinator = CheckpointComparisonCoordinator()
+        coordinator = CheckpointComparisonCoordinator(
+            generator_cls=MockDualPathGenerator
+        )
 
-        with patch(
-            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
-        ) as mock_gen_cls:
-            mock_gen_cls.return_value = MockDualPathGenerator
-
-            events = []
-            async for event in coordinator.compare(
-                checkpoints=["/test/model"],
-                prompt="Hello",
-                max_tokens=100,
-                temperature=0.7,
-                top_p=1.0,
-                repetition_penalty=1.0,
-                stop_sequences=[],
-            ):
-                events.append(event)
+        events = []
+        async for event in coordinator.compare(
+            checkpoints=["/test/model"],
+            prompt="Hello",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+        ):
+            events.append(event)
 
         # Should have: prefetch_started, prefetch_finished, checkpoint_started, tokens..., checkpoint_finished
         event_types = [e.type for e in events]
@@ -230,26 +225,23 @@ class TestCheckpointComparisonCoordinatorFlow:
     @pytest.mark.asyncio
     async def test_compare_multiple_checkpoints(self) -> None:
         """Multiple checkpoint comparison should process all checkpoints."""
-        coordinator = CheckpointComparisonCoordinator()
+        coordinator = CheckpointComparisonCoordinator(
+            generator_cls=MockDualPathGenerator
+        )
 
         checkpoints = ["/test/model1", "/test/model2"]
 
-        with patch(
-            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
-        ) as mock_gen_cls:
-            mock_gen_cls.return_value = MockDualPathGenerator
-
-            events = []
-            async for event in coordinator.compare(
-                checkpoints=checkpoints,
-                prompt="Hello",
-                max_tokens=100,
-                temperature=0.7,
-                top_p=1.0,
-                repetition_penalty=1.0,
-                stop_sequences=[],
-            ):
-                events.append(event)
+        events = []
+        async for event in coordinator.compare(
+            checkpoints=checkpoints,
+            prompt="Hello",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+        ):
+            events.append(event)
 
         # Count finished events - should have 2 (one per checkpoint)
         finished_events = [e for e in events if e.type == EventType.CHECKPOINT_FINISHED]
@@ -263,24 +255,21 @@ class TestCheckpointComparisonCoordinatorFlow:
     @pytest.mark.asyncio
     async def test_compare_collects_tokens(self) -> None:
         """Comparison should collect tokens into response."""
-        coordinator = CheckpointComparisonCoordinator()
+        coordinator = CheckpointComparisonCoordinator(
+            generator_cls=MockDualPathGenerator
+        )
 
-        with patch(
-            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
-        ) as mock_gen_cls:
-            mock_gen_cls.return_value = MockDualPathGenerator
-
-            events = []
-            async for event in coordinator.compare(
-                checkpoints=["/test/model"],
-                prompt="Hello",
-                max_tokens=100,
-                temperature=0.7,
-                top_p=1.0,
-                repetition_penalty=1.0,
-                stop_sequences=[],
-            ):
-                events.append(event)
+        events = []
+        async for event in coordinator.compare(
+            checkpoints=["/test/model"],
+            prompt="Hello",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+        ):
+            events.append(event)
 
         # Find finished event
         finished = next(e for e in events if e.type == EventType.CHECKPOINT_FINISHED)
@@ -292,24 +281,21 @@ class TestCheckpointComparisonCoordinatorFlow:
     @pytest.mark.asyncio
     async def test_compare_collects_metrics(self) -> None:
         """Comparison should collect metrics from generator."""
-        coordinator = CheckpointComparisonCoordinator()
+        coordinator = CheckpointComparisonCoordinator(
+            generator_cls=MockDualPathGenerator
+        )
 
-        with patch(
-            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
-        ) as mock_gen_cls:
-            mock_gen_cls.return_value = MockDualPathGenerator
-
-            events = []
-            async for event in coordinator.compare(
-                checkpoints=["/test/model"],
-                prompt="Hello",
-                max_tokens=100,
-                temperature=0.7,
-                top_p=1.0,
-                repetition_penalty=1.0,
-                stop_sequences=[],
-            ):
-                events.append(event)
+        events = []
+        async for event in coordinator.compare(
+            checkpoints=["/test/model"],
+            prompt="Hello",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+        ):
+            events.append(event)
 
         # Find finished event
         finished = next(e for e in events if e.type == EventType.CHECKPOINT_FINISHED)
@@ -322,24 +308,21 @@ class TestCheckpointComparisonCoordinatorFlow:
     @pytest.mark.asyncio
     async def test_compare_handles_failures(self) -> None:
         """Comparison should yield failure events on errors."""
-        coordinator = CheckpointComparisonCoordinator()
+        coordinator = CheckpointComparisonCoordinator(
+            generator_cls=MockFailingGenerator
+        )
 
-        with patch(
-            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
-        ) as mock_gen_cls:
-            mock_gen_cls.return_value = MockFailingGenerator
-
-            events = []
-            async for event in coordinator.compare(
-                checkpoints=["/test/model"],
-                prompt="Hello",
-                max_tokens=100,
-                temperature=0.7,
-                top_p=1.0,
-                repetition_penalty=1.0,
-                stop_sequences=[],
-            ):
-                events.append(event)
+        events = []
+        async for event in coordinator.compare(
+            checkpoints=["/test/model"],
+            prompt="Hello",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+        ):
+            events.append(event)
 
         # Should have a failure event
         failed_events = [e for e in events if e.type == EventType.CHECKPOINT_FAILED]
@@ -354,24 +337,21 @@ class TestCheckpointComparisonEventOrder:
     @pytest.mark.asyncio
     async def test_prefetch_before_generation(self) -> None:
         """Prefetch events should come before generation events."""
-        coordinator = CheckpointComparisonCoordinator()
+        coordinator = CheckpointComparisonCoordinator(
+            generator_cls=MockDualPathGenerator
+        )
 
-        with patch(
-            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
-        ) as mock_gen_cls:
-            mock_gen_cls.return_value = MockDualPathGenerator
-
-            events = []
-            async for event in coordinator.compare(
-                checkpoints=["/test/model"],
-                prompt="Hello",
-                max_tokens=100,
-                temperature=0.7,
-                top_p=1.0,
-                repetition_penalty=1.0,
-                stop_sequences=[],
-            ):
-                events.append(event)
+        events = []
+        async for event in coordinator.compare(
+            checkpoints=["/test/model"],
+            prompt="Hello",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+        ):
+            events.append(event)
 
         # Find indices
         prefetch_finished_idx = next(
@@ -386,24 +366,21 @@ class TestCheckpointComparisonEventOrder:
     @pytest.mark.asyncio
     async def test_tokens_between_start_and_finish(self) -> None:
         """Token events should come between checkpoint start and finish."""
-        coordinator = CheckpointComparisonCoordinator()
+        coordinator = CheckpointComparisonCoordinator(
+            generator_cls=MockDualPathGenerator
+        )
 
-        with patch(
-            "modelcypher.core.use_cases.inference.comparison.get_dual_path_generator_class"
-        ) as mock_gen_cls:
-            mock_gen_cls.return_value = MockDualPathGenerator
-
-            events = []
-            async for event in coordinator.compare(
-                checkpoints=["/test/model"],
-                prompt="Hello",
-                max_tokens=100,
-                temperature=0.7,
-                top_p=1.0,
-                repetition_penalty=1.0,
-                stop_sequences=[],
-            ):
-                events.append(event)
+        events = []
+        async for event in coordinator.compare(
+            checkpoints=["/test/model"],
+            prompt="Hello",
+            max_tokens=100,
+            temperature=0.7,
+            top_p=1.0,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+        ):
+            events.append(event)
 
         # Find indices
         started_idx = next(
