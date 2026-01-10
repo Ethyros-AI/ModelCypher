@@ -498,6 +498,7 @@ def stage_transplant(
     checkpoint_dir: Path | None = None,
     progress_callback: Callable[[str, int, int], None] | None = None,
     backend: "Backend | None" = None,
+    delta_scale: float = 1.0,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -505,6 +506,12 @@ def stage_transplant(
     Layer status is vestigial: all layers should be "converged".
     "boundary_preserved" and "skipped" are retained for API compatibility
     but should never occur (CKA < 1.0 indicates an alignment bug).
+
+    Args:
+        delta_scale: Scale factor for projected deltas (0.0-1.0). Use < 1.0 for
+            sequential stacking to stay within cumulative delta budget. Default
+            1.0 = full projection. Derived from experiments: cumulative L2 delta
+            > ~50 from baseline causes generation degradation.
     """
     b = backend or get_default_backend()
     merged: dict[str, "Array"] = dict(target_weights)
@@ -1813,6 +1820,7 @@ def stage_transplant(
                     activations_core=core_acts,
                     activations_boundary=boundary_acts,
                     backend=b,
+                    delta_scale=delta_scale,
                 )
                 logger.debug("Transplant delta computed for %s: applied=%s", key, result.applied)
             except Exception as e:

@@ -114,8 +114,17 @@ class UnifiedGeometricMerger:
         target_model: Any | None = None,
         source_tokenizer: Any | None = None,
         target_tokenizer: Any | None = None,
+        # Delta budget control for sequential stacking
+        delta_scale: float = 1.0,
     ) -> UnifiedMergeResult:
-        """Execute the unified geometric merge pipeline (geometry-only, no domain overrides)."""
+        """Execute the unified geometric merge pipeline (geometry-only, no domain overrides).
+
+        Args:
+            delta_scale: Scale factor for projected deltas (0.0-1.0). Use < 1.0 for
+                sequential stacking to stay within cumulative delta budget.
+                Experiment shows: cumulative L2 delta > ~50 from baseline causes
+                generation degradation. Default 1.0 = full projection.
+        """
         return run_merge(
             model_loader=self._model_loader,
             backend=self._backend,
@@ -130,6 +139,7 @@ class UnifiedGeometricMerger:
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            delta_scale=delta_scale,
         )
 
     def _stage_probe(

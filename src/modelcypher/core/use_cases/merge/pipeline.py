@@ -66,6 +66,8 @@ def run_merge(
     target_tokenizer: Any | None = None,
     # Optional pre-loaded weights to avoid redundant disk I/O
     source_weights: dict[str, "Array"] | None = None,
+    # Delta budget control for sequential stacking
+    delta_scale: float = 1.0,
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -438,6 +440,7 @@ def run_merge(
         layer_status=probe_metrics.get("layer_status"),  # NEW: Per DIMENSIONAL_COMPRESSION.md
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
+        delta_scale=delta_scale,  # Delta budget control for sequential stacking
     )
 
     # =================================================================

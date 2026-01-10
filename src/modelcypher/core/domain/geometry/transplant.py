@@ -102,6 +102,7 @@ def compute_transplant_delta(
     activations_core: "Array",
     activations_boundary: "Array",
     backend: "Backend | None" = None,
+    delta_scale: float = 1.0,
 ) -> TransplantDeltaResult:
     """Compute boundary-preserving transplant update for a single weight matrix.
 
@@ -109,7 +110,20 @@ def compute_transplant_delta(
     No SVD, no pinv, no eigendecomposition. Geodesic math is accurate for
     high-dimensional manifolds (8kD+). Chord distance is only reliable up to 3D.
 
-    The geometry determines everything - no configuration needed.
+    Args:
+        weight_target: Target model weights to merge into.
+        weight_source_aligned: Source model weights (CKA-aligned).
+        activations_core: Core activation patterns (concepts to preserve).
+        activations_boundary: Boundary activation patterns (define null space).
+        backend: Optional Backend for GPU operations.
+        delta_scale: Scale factor for the projected delta (0.0-1.0).
+            Use < 1.0 to reduce knowledge injection per merge for sequential
+            stacking. Default 1.0 = full projection. Derived from experiment:
+            cumulative delta > ~50 L2 norm from baseline causes generation
+            degradation in sequential merges.
+
+    Returns:
+        TransplantDeltaResult with merged weight and diagnostics.
     """
     b = backend or get_default_backend()
     # Convert all inputs to float32 for numerical stability
@@ -291,6 +305,12 @@ def compute_transplant_delta(
     else:
         delta_contribution = delta_in_null_space
     b.eval(delta_contribution)
+
+    # Apply delta_scale for sequential stacking budget control
+    # delta_scale < 1.0 reduces knowledge injection to stay within budget
+    if delta_scale < 1.0:
+        delta_contribution = delta_contribution * delta_scale
+        b.eval(delta_contribution)
 
     # ADDITIVE MERGE: target + delta_in_null_space (NO replacement!)
     # This adds the safe part of (source - target) into target's sparse regions
