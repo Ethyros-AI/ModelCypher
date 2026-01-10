@@ -100,6 +100,18 @@ def load_probes_from_file(filepath: Path) -> Iterator[AtlasProbe]:
                 "philosophical_concept": AtlasSource.PHILOSOPHICAL_CONCEPT,
                 "safety_ethics": AtlasSource.SAFETY_ETHICS,
                 "physical_existence": AtlasSource.PHYSICAL_EXISTENCE,
+                "compositional": AtlasSource.COMPOSITIONAL,
+                "conceptual_genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
+                "metaphor_invariant": AtlasSource.METAPHOR_INVARIANT,
+                "conceptual_metaphor": AtlasSource.CONCEPTUAL_METAPHOR,
+                "syntax_concept": AtlasSource.SYNTAX_CONCEPT,
+                "perceptual": AtlasSource.PERCEPTUAL,
+                "numeric": AtlasSource.NUMERIC,
+                "common_object": AtlasSource.COMMON_OBJECT,
+                "action_verb": AtlasSource.ACTION_VERB,
+                "abstract_relation": AtlasSource.ABSTRACT_RELATION,
+                "pronoun_perspective": AtlasSource.PRONOUN_PERSPECTIVE,
+                "prime_number": AtlasSource.PRIME_NUMBER,
             }
             source = source_map.get(source_str, AtlasSource.DOMAIN_SPECIFIC)
             

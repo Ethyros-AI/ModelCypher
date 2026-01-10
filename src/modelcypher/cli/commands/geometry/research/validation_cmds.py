@@ -536,13 +536,18 @@ def register(app: typer.Typer) -> None:
             is_full_rank = rank_bound >= actual_d_min
 
             # In invariant mode, CKA=1.0 should be approximately 1.0 (within numerical tolerance)
-            cka_invariant_holds = train_cka_aligned > 0.999 if is_underdetermined else None
+            # Tolerance derived from float32 machine epsilon (2^-23 ≈ 1.19e-7), with sqrt for accumulated error
+            # sqrt(eps) ≈ 3.45e-4 accounts for O(sqrt(n)) error accumulation in matrix operations
+            float32_machine_eps = 2.0 ** -23  # Exact float32 machine epsilon
+            cka_invariant_tolerance = 1.0 - (float32_machine_eps ** 0.5)
+            cka_invariant_holds = train_cka_aligned > cka_invariant_tolerance if is_underdetermined else None
 
             # Random baseline comparison (sanity check)
             random_baseline_result = None
             if random_baseline:
-                import math
-                rng = random.Random(seed + 42)  # Different seed for random baseline
+                # Use data-derived seed offset to ensure independence from main experiment
+                # n_train_final ensures different random sequence without arbitrary constants
+                rng = random.Random(seed + n_train_final)
 
                 # Generate random Gaussian activations with same shape as target
                 random_train_data = [[rng.gauss(0, 1) for _ in range(actual_target_dim)]
@@ -565,14 +570,10 @@ def register(app: typer.Typer) -> None:
                 random_train_cka = compute_linear_cka(aligned_train_random, random_train, backend)
                 random_test_cka = compute_linear_cka(aligned_test_random, random_test, backend)
 
+                # Raw measurements only - no interpretation
                 random_baseline_result = {
                     "trainCkaAligned": random_train_cka,
                     "testCkaAligned": random_test_cka,
-                    "interpretation": (
-                        "VALID: Random baseline test CKA is low"
-                        if random_test_cka < 0.3
-                        else "INVALID: Random also achieves high CKA - test is misconfigured (n too small)"
-                    ),
                 }
 
             result = {
@@ -682,45 +683,21 @@ def register(app: typer.Typer) -> None:
                     "",
                 ]
 
-                # Interpretation - geometry is invariant, CKA measures alignment quality
-                lines.append("ALIGNMENT QUALITY:")
-                if is_underdetermined:
-                    # INVARIANT MODE: CKA=1.0 guaranteed on probes
-                    if cka_invariant_holds:
-                        lines.append(f"  Train CKA = {train_cka_aligned:.6f} (expected: 1.0 by Procrustes)")
-                    else:
-                        lines.append(f"  Train CKA = {train_cka_aligned:.6f} (UNEXPECTED: should be ~1.0)")
-                        lines.append("    Check: is n_train < d_min?")
-                else:
-                    # OVERLAP MODE: CKA measures probe coverage
-                    lines.append(f"  Train CKA = {train_cka_aligned:.6f}")
-                    lines.append("    (Measures how much shared structure the probes capture)")
+                lines.append("TRAIN SET:")
+                lines.append(f"  train_cka_linear = {train_cka_aligned:.6f}")
+                lines.append(f"  train_cka_geodesic = {train_geo_aligned.cka:.6f}")
+                lines.append(f"  cka_invariant_holds = {cka_invariant_holds}")
 
                 lines.append("")
-                lines.append("PROBE COVERAGE (test set):")
-                lines.append(f"  Test CKA = {test_cka_aligned:.6f}")
-                if test_cka_aligned > 0.8:
-                    lines.append("  → Excellent coverage: alignment transfers to held-out concepts")
-                elif test_cka_aligned > 0.5:
-                    lines.append("  → Partial coverage: probes capture some shared structure")
-                    lines.append("  → Use more diverse probes to capture full manifold")
-                elif test_cka_aligned > 0.2:
-                    lines.append("  → Limited coverage: probes miss significant shared regions")
-                    lines.append("  → Need probes spanning different semantic domains")
-                else:
-                    lines.append("  → Insufficient coverage: alignment doesn't transfer")
-                    lines.append("  → Probes likely cluster in narrow region of manifold")
-                    lines.append("  → Expand probe diversity (domains, abstraction levels)")
-                lines.append("")
-                lines.append("NOTE: Low CKA = alignment/coverage issue, NOT 'models incompatible'.")
-                lines.append("      All models share invariant structure. Find it.")
+                lines.append("TEST SET:")
+                lines.append(f"  test_cka_linear = {test_cka_aligned:.6f}")
+                lines.append(f"  test_cka_geodesic = {test_geo_aligned.cka:.6f}")
 
                 if random_baseline_result is not None:
                     lines.append("")
-                    lines.append("RANDOM BASELINE (sanity check):")
-                    lines.append(f"  Train CKA (source → random): {random_baseline_result['trainCkaAligned']:.6f}")
-                    lines.append(f"  Test CKA (source → random):  {random_baseline_result['testCkaAligned']:.6f}")
-                    lines.append(f"  {random_baseline_result['interpretation']}")
+                    lines.append("RANDOM BASELINE:")
+                    lines.append(f"  random_train_cka = {random_baseline_result['trainCkaAligned']:.6f}")
+                    lines.append(f"  random_test_cka = {random_baseline_result['testCkaAligned']:.6f}")
 
                 lines.append("")
                 lines.append("=" * 60)

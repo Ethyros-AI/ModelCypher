@@ -40,10 +40,7 @@ from .crm import register_geometry_crm_tools
 from .density import register_geometry_density_tools
 from .interference import register_geometry_interference_tools
 from .invariant import register_geometry_invariant_tools
-from .metaphor import register_geometry_metaphor_tools
-from .primes import register_geometry_primes_tools
 from .safety import register_geometry_safety_tools
-from .spatial import register_geometry_spatial_tools
 from .visualize import register_geometry_visualize_tools
 
 if TYPE_CHECKING:
@@ -52,12 +49,9 @@ if TYPE_CHECKING:
 __all__ = [
     "register_geometry_tools",
     "register_geometry_invariant_tools",
-    "register_geometry_metaphor_tools",
     "register_geometry_safety_tools",
-    "register_geometry_primes_tools",
     "register_geometry_crm_tools",
     "register_geometry_density_tools",
-    "register_geometry_spatial_tools",
     "register_geometry_interference_tools",
     "register_geometry_baseline_tools",
     "register_geometry_visualize_tools",
@@ -72,12 +66,9 @@ def register_all_geometry_tools(ctx: "ServiceContext") -> None:
     """
     register_geometry_tools(ctx)
     register_geometry_invariant_tools(ctx)
-    register_geometry_metaphor_tools(ctx)
     register_geometry_safety_tools(ctx)
-    register_geometry_primes_tools(ctx)
     register_geometry_crm_tools(ctx)
     register_geometry_density_tools(ctx)
-    register_geometry_spatial_tools(ctx)
     register_geometry_interference_tools(ctx)
     register_geometry_baseline_tools(ctx)
     register_geometry_visualize_tools(ctx)

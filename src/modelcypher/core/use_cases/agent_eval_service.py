@@ -42,8 +42,7 @@ from modelcypher.core.domain.agents.agent_eval_suite_engine import (
     ExpectedOption,
     ExpectedToolSpec,
 )
-from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
-from modelcypher.core.domain.agents.semantic_prime_drift import SemanticPrimeDriftDetector
+# Semantic drift detection removed - probes now loaded from JSON
 
 logger = logging.getLogger(__name__)
 
@@ -360,8 +359,8 @@ class AgentEvalService:
     ) -> dict[str, Any]:
         """Assess semantic drift between baseline and observed text.
 
-        Uses semantic prime signatures to measure how much an agent's
-        response has drifted from expected baseline behavior.
+        Note: Semantic prime drift detection has been removed.
+        Probes are now loaded from JSON. Use probe-based comparison instead.
 
         Args:
             baseline_text: The expected/baseline text
@@ -369,26 +368,10 @@ class AgentEvalService:
             threshold: Similarity threshold for comparison (returned as reference)
 
         Returns:
-            Dict with raw similarity measurement and threshold for reference
+            Dict indicating feature is deprecated
         """
-        atlas = SemanticPrimeAtlas()
-        detector = SemanticPrimeDriftDetector(atlas=atlas)
-
-        # Get baseline signature
-        baseline_signature = atlas.signature(baseline_text)
-        if baseline_signature is None:
-            return {
-                "cosine_similarity": None,
-                "threshold": threshold,
-                "note": "baseline_signature_failed",
-            }
-
-        # Assess drift using the detector
-        result = detector.assess(baseline_signature, observed_text)
-
         return {
-            "cosine_similarity": result.cosine_similarity,
+            "cosine_similarity": None,
             "threshold": threshold,
-            "method": result.method.value if result.method else None,
-            "note": result.note,
+            "note": "semantic_drift_deprecated",
         }

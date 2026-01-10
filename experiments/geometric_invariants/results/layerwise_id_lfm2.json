@@ -1,0 +1,53 @@
+{
+  "experiment": "layerwise_intrinsic_dimension",
+  "timestamp": "2026-01-10T15:10:42.095505",
+  "profile": {
+    "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+    "model_name": "LFM2-350M-MLX-bf16",
+    "hidden_dim": 1024,
+    "num_layers": 16,
+    "n_probes": 300,
+    "layer_results": [
+      {
+        "layer_idx": 0,
+        "layer_pct": 0,
+        "intrinsic_dimension": 2.009198699672344,
+        "ci_lower": 1.0996474471322453,
+        "ci_upper": 13.131397567276242
+      },
+      {
+        "layer_idx": 3,
+        "layer_pct": 25,
+        "intrinsic_dimension": 1.9969754853694408,
+        "ci_lower": 1.0112749369944611,
+        "ci_upper": 14.699077447697317
+      },
+      {
+        "layer_idx": 7,
+        "layer_pct": 50,
+        "intrinsic_dimension": 11.717983774829442,
+        "ci_lower": 9.995003285897251,
+        "ci_upper": 14.58982894716624
+      },
+      {
+        "layer_idx": 11,
+        "layer_pct": 75,
+        "intrinsic_dimension": 10.432585028505956,
+        "ci_lower": 8.949596267566816,
+        "ci_upper": 12.483299750477565
+      },
+      {
+        "layer_idx": 15,
+        "layer_pct": 100,
+        "intrinsic_dimension": 1.8739697920642258,
+        "ci_lower": 1.0202372725561037,
+        "ci_upper": 14.790189737506225
+      }
+    ],
+    "min_id": 1.8739697920642258,
+    "max_id": 11.717983774829442,
+    "mean_id": 5.606142556088281,
+    "peak_layer_pct": 50,
+    "elapsed_seconds": 13.397587124985876
+  }
+}

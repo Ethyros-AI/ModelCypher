@@ -99,8 +99,9 @@ class TestDomainPackageExports:
         """Test that agents subpackage exports key classes."""
         from modelcypher.core.domain import agents
 
-        assert hasattr(agents, "SemanticPrimeAtlas")
         assert hasattr(agents, "UnifiedAtlasInventory")
+        assert hasattr(agents, "AtlasSource")
+        assert hasattr(agents, "AtlasProbe")
 
     def test_entropy_subpackage_import(self):
         """Test that entropy subpackage exports key classes."""

@@ -173,8 +173,10 @@ def measure_model_geometry(
 
     # Stack activations
     valid_words = [w for w in probe_words if w in activations_map][:n_probes]
-    if len(valid_words) < 50:
-        raise ValueError(f"Only {len(valid_words)} valid probes, need at least 50")
+    # TwoNN ID estimation requires at least k+1=3 samples for k=2 nearest neighbors
+    min_samples_for_twonn = 3
+    if len(valid_words) < min_samples_for_twonn:
+        raise ValueError(f"Only {len(valid_words)} valid probes, need at least {min_samples_for_twonn}")
 
     activations = backend.stack([activations_map[w] for w in valid_words], axis=0)
     activations = backend.astype(activations, "float32")
@@ -430,24 +432,26 @@ def main():
 
     logger.info(f"Results saved to {output_path}")
 
-    # Print summary
-    print("\n" + "=" * 60)
-    print("EXPERIMENT SUMMARY")
-    print("=" * 60)
+    # Log summary (raw measurements only)
+    logger.info("=" * 60)
+    logger.info("EXPERIMENT SUMMARY")
+    logger.info("=" * 60)
     for g in geometries:
-        print(f"\n{g['model_name']}:")
-        print(f"  Hidden dim: {g['hidden_dim']}, Layers: {g['num_layers']}")
-        print(f"  Intrinsic dimension: {g['intrinsic_dimension']:.2f}")
-        print(f"  Curvature: {g['mean_sectional_curvature']:.4f} ({g['curvature_sign']})")
+        logger.info(f"model: {g['model_name']}")
+        logger.info(f"  hidden_dim: {g['hidden_dim']}")
+        logger.info(f"  num_layers: {g['num_layers']}")
+        logger.info(f"  intrinsic_dimension: {g['intrinsic_dimension']:.4f}")
+        logger.info(f"  mean_sectional_curvature: {g['mean_sectional_curvature']:.6f}")
+        logger.info(f"  curvature_sign: {g['curvature_sign']}")
 
     if alignments:
-        print("\nPairwise Alignments:")
+        logger.info("PAIRWISE ALIGNMENTS:")
         for a in alignments:
-            print(f"  {a['model_a']} <-> {a['model_b']}:")
-            print(f"    Linear CKA (aligned): {a['linear_cka_aligned']:.4f}")
-            print(f"    Geodesic CKA (aligned): {a['geodesic_cka_aligned']:.4f}")
+            logger.info(f"  {a['model_a']} <-> {a['model_b']}:")
+            logger.info(f"    linear_cka_aligned: {a['linear_cka_aligned']:.6f}")
+            logger.info(f"    geodesic_cka_aligned: {a['geodesic_cka_aligned']:.6f}")
 
-    print("\n" + "=" * 60)
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":

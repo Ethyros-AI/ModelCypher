@@ -212,19 +212,6 @@ class TestAgentsIntegration:
         assert analytics.requested_trace_count == 10
         assert analytics.loaded_trace_count == 0
 
-    def test_semantic_prime_atlas_import(self):
-        """SemanticPrimeAtlas can be imported."""
-        from modelcypher.core.domain.agents.semantic_prime_atlas import (
-            SemanticPrimeAtlas,
-        )
-
-        # Configuration class was removed; atlas uses direct parameters
-        atlas = SemanticPrimeAtlas()
-
-        # Get inventory
-        primes = atlas.inventory
-        assert len(primes) > 0
-
 
 class TestCrossModuleIntegration:
     """Tests that verify modules work together correctly."""

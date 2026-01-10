@@ -1,0 +1,23 @@
+{
+  "experiment": "generalization_test",
+  "timestamp": "2026-01-10T15:08:00.262611",
+  "hypothesis": "Alignment learned on training probes generalizes to held-out concepts",
+  "result": {
+    "model_a": "granite-3b-code-instruct-128k-mlx",
+    "model_b": "Qwen3-1.7B-MLX-bf16",
+    "d_source": 2560,
+    "d_target": 2048,
+    "n_train": 3907,
+    "n_test": 689,
+    "rank_bound": 2048,
+    "is_full_rank": true,
+    "train_cka_linear": 0.0,
+    "train_cka_geodesic": 0.7578299694728354,
+    "test_cka_linear": 0.0,
+    "test_cka_geodesic": 0.7554498224003943,
+    "random_train_cka": 0.0,
+    "random_test_cka": 0.0,
+    "random_baseline_valid": true,
+    "elapsed_seconds": 238.45031933300197
+  }
+}

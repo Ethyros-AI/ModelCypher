@@ -1,0 +1,53 @@
+{
+  "experiment": "layerwise_intrinsic_dimension",
+  "timestamp": "2026-01-10T15:10:58.464681",
+  "profile": {
+    "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+    "model_name": "Qwen2.5-Coder-0.5B-Instruct-bf16",
+    "hidden_dim": 896,
+    "num_layers": 24,
+    "n_probes": 300,
+    "layer_results": [
+      {
+        "layer_idx": 0,
+        "layer_pct": 0,
+        "intrinsic_dimension": 1.7594369765286362,
+        "ci_lower": 0.9800441859288667,
+        "ci_upper": 15.330281748760525
+      },
+      {
+        "layer_idx": 5,
+        "layer_pct": 25,
+        "intrinsic_dimension": 5.082534644298866,
+        "ci_lower": 4.275218304741777,
+        "ci_upper": 6.075060646741562
+      },
+      {
+        "layer_idx": 11,
+        "layer_pct": 50,
+        "intrinsic_dimension": 5.270794239673316,
+        "ci_lower": 4.4292222380145825,
+        "ci_upper": 6.219937259749265
+      },
+      {
+        "layer_idx": 17,
+        "layer_pct": 75,
+        "intrinsic_dimension": 6.984277287814548,
+        "ci_lower": 5.705450123715764,
+        "ci_upper": 8.736460442411783
+      },
+      {
+        "layer_idx": 23,
+        "layer_pct": 100,
+        "intrinsic_dimension": 3.526656028406845,
+        "ci_lower": 1.8492138698146678,
+        "ci_upper": 11.06279701489775
+      }
+    ],
+    "min_id": 1.7594369765286362,
+    "max_id": 6.984277287814548,
+    "mean_id": 4.524739835344442,
+    "peak_layer_pct": 75,
+    "elapsed_seconds": 5.938064791989746
+  }
+}
