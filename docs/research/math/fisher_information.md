@@ -165,7 +165,7 @@ This penalizes changes to important parameters, preventing catastrophic forgetti
 
 ### Neural Network Merging
 
-3. **Matena, M.S., & Raffel, C.** (2022). "Merging Models with Fisher-Weighted Averaging." *NeurIPS 2022*. [arXiv:2111.09832](https://arxiv.org/abs/2111.09832)
+3. **[Matena & Raffel (2022)](../../references/arxiv/Matena_2021_Merging_Models_FisherWeighted_Averaging.pdf)**. "Merging Models with Fisher-Weighted Averaging." *NeurIPS 2022*. [arXiv:2111.09832](https://arxiv.org/abs/2111.09832)
    - *Fisher merging for neural networks*
 
 4. **Tam, D., et al.** (2024). "Dynamic Fisher-weighted Model Merging via Bayesian Optimization." *NAACL 2025*. [ACL Anthology](https://aclanthology.org/)
@@ -186,7 +186,7 @@ This penalizes changes to important parameters, preventing catastrophic forgetti
 
 ### Approximations
 
-8. **Martens, J., & Grosse, R.** (2015). "Optimizing Neural Networks with Kronecker-Factored Approximate Curvature." *ICML 2015*. [arXiv:1503.05671](https://arxiv.org/abs/1503.05671)
+8. **[Martens & Grosse (2015)](../../references/arxiv/Martens_2015_Optimizing_Neural_Networks_Kroneckerfactored_Approximate_Curvature.pdf)**. "Optimizing Neural Networks with Kronecker-Factored Approximate Curvature." *ICML 2015*. [arXiv:1503.05671](https://arxiv.org/abs/1503.05671)
    - *K-FAC approximation*
 
 ---

@@ -263,8 +263,8 @@ These match fundamental human cognitive categories:
 - **Empirical validation**: `/Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/EXPERIMENT.md`
 - **T5 ↔ LFM2 alignment**: `t5xl_alignment_results.json` (CKA = 1.0)
 - **LFM2 → FLUX bridge**: `lfm2_flux_bridge.py` (multimodal generation)
-- **Vopson (2022)**: Mass-energy-information equivalence
-- **Huh et al. (2024)**: The Platonic Representation Hypothesis
+- **Vopson, M.M.** (2022). "The mass-energy-information equivalence principle." *AIP Advances*, 9(9), 095206. [DOI:10.1063/1.5123794](https://doi.org/10.1063/1.5123794)
+- **[Huh et al. (2024)](../references/arxiv/Huh_2024_Platonic_Representation.pdf)**. "The Platonic Representation Hypothesis." *ICML 2024*. [arXiv:2405.07987](https://arxiv.org/abs/2405.07987)
 
 ---
 

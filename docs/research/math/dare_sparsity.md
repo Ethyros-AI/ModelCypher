@@ -91,4 +91,4 @@ analysis = DARESparsityAnalyzer.analyze_with_backend(delta_weights)
 
 ## Citations
 
-1. **Yu, L., Yu, B., Yu, H., Huang, F., & Li, Y.** (2024). "Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch." *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099)
+1. **[Yu et al. (2024)](../../references/arxiv/Yu_2023_Language_Models_are_Super_Mario_Absorbing.pdf)**. "Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE)." *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099)

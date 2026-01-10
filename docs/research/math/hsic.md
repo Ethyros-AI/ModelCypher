@@ -270,11 +270,11 @@ See [centered_kernel_alignment.md](centered_kernel_alignment.md) for details.
 
 ### 2024-2025 Advances
 
-6. **Murphy, D., et al.** (2024). "Debiased Similarity Measures for Neural Network Representations." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
+6. **[Murphy et al. (2024)](../../references/arxiv/Murphy_2024_Correcting_Biased_Centered_Kernel_Alignment_Measures.pdf)**. "Correcting Biased Centered Kernel Alignment Measures." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
    - *Bias correction for HSIC/CKA*
 
-7. **Podsiadly, M., et al.** (2025). "HSIC-based objectives for self-supervised learning." [arXiv](https://arxiv.org/search/?query=HSIC+self-supervised+learning&searchtype=all)
-   - *Modern SSL applications*
+7. **Zbontar, J., et al.** (2021). "Barlow Twins: Self-Supervised Learning via Redundancy Reduction." *ICML 2021*. [arXiv:2103.03230](https://arxiv.org/abs/2103.03230)
+   - *HSIC-inspired SSL objectives*
 
 8. **Nature Scientific Reports** (2022). "A fast kernel independence test for cluster-correlated data." [DOI:10.1038/s41598-022-26278-9](https://doi.org/10.1038/s41598-022-26278-9)
    - *HSIC for correlated data*

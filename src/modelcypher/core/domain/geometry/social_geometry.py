@@ -423,7 +423,7 @@ class SocialGeometryAnalyzer:
             low_arr = backend.astype(low_activations, "float32")
             low_tol = regularization_epsilon(backend, low_arr)
             low_result = rg.frechet_mean(
-                low_arr, max_iterations=50, tolerance=low_tol
+                low_arr, tolerance=low_tol  # max_iterations auto-derived from n
             )
             backend.eval(low_result.mean)
             low_centroid = low_result.mean
@@ -434,7 +434,7 @@ class SocialGeometryAnalyzer:
             high_arr = backend.astype(high_activations, "float32")
             high_tol = regularization_epsilon(backend, high_arr)
             high_result = rg.frechet_mean(
-                high_arr, max_iterations=50, tolerance=high_tol
+                high_arr, tolerance=high_tol  # max_iterations auto-derived from n
             )
             backend.eval(high_result.mean)
             high_centroid = high_result.mean

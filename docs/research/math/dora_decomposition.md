@@ -78,5 +78,5 @@ print(analysis.dominant_change_type)
 
 ## Citations
 
-1. **Liu, S.-Y., et al.** (2024). "DoRA: Weight-Decomposed Low-Rank Adaptation." *ICML 2024*. [arXiv:2402.09353](https://arxiv.org/abs/2402.09353)
-2. **Salimans, T., & Kingma, D.P.** (2016). "Weight Normalization." *NeurIPS 2016*. [arXiv:1602.07868](https://arxiv.org/abs/1602.07868)
+1. **[Liu et al. (2024)](../../references/arxiv/Liu_2024_DoRA_WeightDecomposed_LowRank_Adaptation.pdf)**. "DoRA: Weight-Decomposed Low-Rank Adaptation." *ICML 2024*. [arXiv:2402.09353](https://arxiv.org/abs/2402.09353)
+2. **[Salimans & Kingma (2016)](../../references/arxiv/Salimans_2016_Weight_Normalization_Simple_Reparameterization_Accelerate_Training.pdf)**. "Weight Normalization: A Simple Reparameterization to Accelerate Training." *NeurIPS 2016*. [arXiv:1602.07868](https://arxiv.org/abs/1602.07868)

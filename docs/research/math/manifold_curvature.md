@@ -87,7 +87,7 @@ optimal transport. All parameters are data-derived (no manual tuning).
 
 1. **do Carmo, M.P.** (1992). *Riemannian Geometry*. Birkhauser. [DOI:10.1007/978-1-4757-2201-7](https://doi.org/10.1007/978-1-4757-2201-7)
 2. **Ollivier, Y.** (2009). "Ricci curvature of Markov chains on metric spaces." *JFA*, 256(3), 810-864. [DOI:10.1016/j.jfa.2008.11.001](https://doi.org/10.1016/j.jfa.2008.11.001)
-3. **Pennec, X.** (2006). "Intrinsic Statistics on Riemannian Manifolds." *J. Math. Imaging Vis.*
+3. **Pennec, X.** (2006). "Intrinsic Statistics on Riemannian Manifolds: Basic Tools for Geometric Measurements." *J. Math. Imaging Vis.*, 25, 127-154. [DOI:10.1007/s10851-006-6228-4](https://doi.org/10.1007/s10851-006-6228-4)
 
 ---
 

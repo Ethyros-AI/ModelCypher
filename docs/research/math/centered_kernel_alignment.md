@@ -141,7 +141,6 @@ This unifies several representation comparison methods under one framework.
 
 **Also used in**:
 - `src/modelcypher/core/use_cases/merge/stages/probe.py`
-- `src/modelcypher/core/use_cases/merge/stages/permute.py`
 - `src/modelcypher/core/domain/geometry/probe_calibration.py`
 - `src/modelcypher/core/domain/geometry/concept_response_matrix.py`
 
@@ -172,10 +171,10 @@ This unifies several representation comparison methods under one framework.
 4. **Song, L., et al.** (2012). "Feature Selection via Dependence Maximization." *JMLR*, 13. [JMLR](https://jmlr.org/papers/v13/song12a.html)
    - *Unbiased HSIC estimator used in debiased CKA*
 
-5. **Murphy, E., et al.** (2024). "Correcting Biased Centered Kernel Alignment Measures in Biological and Artificial Neural Networks." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
+5. **[Murphy et al. (2024)](../../references/arxiv/Murphy_2024_Correcting_Biased_Centered_Kernel_Alignment_Measures.pdf)**. "Correcting Biased Centered Kernel Alignment Measures in Biological and Artificial Neural Networks." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
    - *Identifies severe bias in high-P/low-N settings; proposes corrections*
 
-6. **Chun, S., et al.** (2025). "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features." [arXiv:2502.15104](https://arxiv.org/abs/2502.15104)
+6. **[Chun et al. (2025)](../../references/arxiv/Chun_2025_Estimating_Neural_Representation_Alignment_Sparsely_Sampled.pdf)**. "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features." [arXiv:2502.15104](https://arxiv.org/abs/2502.15104)
    - *Joint input-and-feature-corrected estimator for CKA*
 
 ### Theoretical Connections

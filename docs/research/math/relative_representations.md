@@ -191,7 +191,7 @@ aligned = result.relative_representation
 
 ### Primary Reference
 
-1. **Moschella, L., Maiorca, V., Fumero, M., Norelli, A., Locatello, F., & Rodolà, E.** (2023). "Relative representations enable zero-shot latent space communication." *ICLR 2023* (Notable Top 5%). [arXiv:2209.15430](https://arxiv.org/abs/2209.15430) · [OpenReview](https://openreview.net/forum?id=SrC-nwieGJ)
+1. **[Moschella et al. (2023)](../../references/arxiv/Moschella_2022_Relative_representations_enable_zeroshot_latent_space.pdf)**. "Relative representations enable zero-shot latent space communication." *ICLR 2023* (Notable Top 5%). [arXiv:2209.15430](https://arxiv.org/abs/2209.15430) · [OpenReview](https://openreview.net/forum?id=SrC-nwieGJ)
    - *The foundational paper*
 
 ### Extensions and Applications
@@ -202,23 +202,20 @@ aligned = result.relative_representation
 3. **Jian, Z., et al.** (2023). "Policy Stitching: Learning Transferable Robot Policies." *CoRL 2023*. [OpenReview](https://openreview.net/forum?id=fOqaLJNORCv)
    - *Relative representations for robotics*
 
-4. **Ricciardi, A.P., et al.** (2024). "R3L: Relative Representations for Reinforcement Learning." [arXiv:2404.12917](https://arxiv.org/abs/2404.12917)
+4. **[Ricciardi et al. (2024)](../../references/arxiv/Ricciardi_2024_R3L_Relative_Representations_Reinforcement_Learning.pdf)**. "R3L: Relative Representations for Reinforcement Learning." [arXiv:2404.12917](https://arxiv.org/abs/2404.12917)
    - *RL with relative representations*
-
-5. **Model Stitching Survey** (2025). "Model Stitching in Neural Networks." *Emergent Mind Topic*.
-   - *Overview of stitching methods*
 
 ### Cross-Lingual
 
-6. **Norelli, A., et al.** (2024). "Model Stitching with Static Word Embeddings for Crosslingual Zero-Shot Transfer." *Insights Workshop 2024*. [ACL Anthology](https://aclanthology.org/events/insights-2024/)
+5. **Norelli, A., et al.** (2024). "Model Stitching with Static Word Embeddings for Crosslingual Zero-Shot Transfer." *Insights Workshop 2024*. [ACL Anthology](https://aclanthology.org/events/insights-2024/)
    - *Cross-lingual stitching*
 
 ### Theoretical Connections
 
-7. **Yu, H., et al.** (2025). "Connecting Neural Models Latent Geometries with Relative Geodesic Representations." [arXiv:2506.01599](https://arxiv.org/abs/2506.01599)
+6. **Yu, H., et al.** (2025). "Connecting Neural Models Latent Geometries with Relative Geodesic Representations." [arXiv:2506.01599](https://arxiv.org/abs/2506.01599)
    - *Geodesic extension of relative representations*
 
-8. **Moschella, L.** (2023). *Latent Communication in Artificial Neural Networks*. PhD Thesis, Sapienza University of Rome.
+7. **Moschella, L.** (2023). *Latent Communication in Artificial Neural Networks*. PhD Thesis, Sapienza University of Rome.
    - *Comprehensive theoretical treatment*
 
 ---

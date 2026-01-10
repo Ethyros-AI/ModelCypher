@@ -197,7 +197,7 @@ if you want a fixed neighborhood size.
 
 ### Modern Treatment
 
-4. **Peyre, G., & Cuturi, M.** (2019). "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
+4. **[Peyre & Cuturi (2019)](../../references/arxiv/Peyre_2018_Computational_Optimal_Transport.pdf)**. "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
    - *Chapter on geodesic computation*
 
 5. **Lee, J.A., & Verleysen, M.** (2007). *Nonlinear Dimensionality Reduction*. Springer. [DOI:10.1007/978-0-387-39351-3](https://doi.org/10.1007/978-0-387-39351-3)

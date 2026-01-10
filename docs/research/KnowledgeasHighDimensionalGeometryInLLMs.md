@@ -15,7 +15,7 @@ Nothing in this document should be read as a proof of any hypothesis; it is a ma
 
 ### Manifold hypothesis and information geometry
 
-**Fefferman, C., Mitter, S., & Narayanan, H. (2016). Testing the Manifold Hypothesis. *Journal of the American Mathematical Society*, 29(4), 983-1049.**
+**[Fefferman, C., Mitter, S., & Narayanan, H. (2016)](../references/arxiv/Fefferman_2013_Testing_Manifold_Hypothesis.pdf). Testing the Manifold Hypothesis. *Journal of the American Mathematical Society*, 29(4), 983-1049.**
 Provides rigorous mathematical foundations for testing whether high-dimensional data lies near low-dimensional manifolds, with complexity guarantees for fitting manifolds to probability distributions. *Framework relevance*: Provides tools for treating “manifold-like structure” as a testable property of data (including representations). In ModelCypher, the “navigation” framing refers to trajectories through activation space under a probe protocol; it is not a claim about a literal manifold in weight space.
 
 **Amari, S. (1998). Natural Gradient Works Efficiently in Learning. *Neural Computation*, 10(2), 251-276.**
@@ -41,7 +41,7 @@ Comprehensive treatment of optimization on Riemannian manifolds, developing grad
 
 ### Platonic Representation Hypothesis
 
-**Huh, M., Cheung, B., Wang, T., & Isola, P. (2024). Position: The Platonic Representation Hypothesis. *ICML 2024*, PMLR 235:20617-20642.**
+**[Huh, M., Cheung, B., Wang, T., & Isola, P. (2024)](../references/arxiv/Huh_2024_Platonic_Representation.pdf). Position: The Platonic Representation Hypothesis. *ICML 2024*, PMLR 235:20617-20642.**
 Argues that some representation distances become more consistent across models as scale increases, suggesting convergent relational structure in certain settings. *Framework relevance*: Motivates measuring representational convergence with scale using similarity metrics (CKA/RSA/OT-style diagnostics). It does not establish universal convergence across architectures, tasks, or training mixtures.
 
 ### Linear representation hypothesis
@@ -62,10 +62,10 @@ Analyzes polysemanticity through "feature capacity"—fractional dimensions feat
 
 ### Concept geometry and probing
 
-**Kornblith, S., Norouzi, M., Lee, H., & Hinton, G. (2019). Similarity of Neural Network Representations Revisited. *ICML 2019*. arXiv:1905.00414.**
+**[Kornblith, S., Norouzi, M., Lee, H., & Hinton, G. (2019)](../references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf). Similarity of Neural Network Representations Revisited. *ICML 2019*. arXiv:1905.00414.**
 Introduces Centered Kernel Alignment (CKA) as a robust standard for comparing representations across different networks. It provides evidence that many models share similar *relational structure* across initializations (and sometimes architectures), without requiring shared coordinates. *Framework relevance*: **Foundational tool.** CKA provides a practical “ruler” for measuring representational similarity under a chosen probe corpus and layer selection; it does not establish universal invariance across all settings.
 
-**Naitzat, G., Zhitnikov, A., & Lim, L.-H. (2020). Topology of Deep Neural Networks. *Journal of Machine Learning Research*, 21(184), 1-85. arXiv:2004.06093.**
+**[Naitzat, G., Zhitnikov, A., & Lim, L.-H. (2020)](../references/arxiv/Naitzat_2020_Topology_Deep_Neural_Networks.pdf). Topology of Deep Neural Networks. *Journal of Machine Learning Research*, 21(184), 1-85. arXiv:2004.06093.**
 Computes Betti numbers of activation manifolds, proving that deep neural networks systematically simplify the topology of data (reducing holes/complexity) layer by layer. *Framework relevance*: Direct support for **Topological Fingerprinting**. Verification that layers have measurable, consistent topological signatures that can be compared across architectures.
 
 **Kim, B., et al. (2018). Interpretability Beyond Feature Attribution: Quantitative Testing with Concept Activation Vectors (TCAV). *ICML*.**
@@ -143,7 +143,7 @@ Definitive reference establishing rigorous foundation for compositional semantic
 
 ### Foundational PEFT methods
 
-**Hu, E.J., et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models. *ICLR 2022*. arXiv:2106.09685.**
+**[Hu, E.J., et al. (2022)](../references/arxiv/Hu_2022_LoRA_Low_Rank_Adaptation.pdf). LoRA: Low-Rank Adaptation of Large Language Models. *ICLR 2022*. arXiv:2106.09685.**
 Introduces Low-Rank Adaptation, freezing pretrained weights and injecting trainable rank decomposition matrices. Reduces trainable parameters by **10,000×** while achieving comparable performance. *Framework relevance*: LoRA's low-rank decomposition directly supports geometric safety claims. The low-rank structure constrains adaptation to specific weight space subspaces, enabling geometric interpretation of fine-tuning.
 
 **Houlsby, N., et al. (2019). Parameter-Efficient Transfer Learning for NLP. *ICML 2019*, PMLR 97:2790-2799.**
@@ -175,19 +175,19 @@ Unified framework showing different PEFT methods are modifications to specific h
 **ModelCypher merge thesis (working hypothesis).**
 We treat each model as a partial sampling of a shared, invariant relational geometry. Merging is sparse-region completion: find the exact geometry-preserving alignment (CKA = 1.0 in the probe space), then transplant into the target's null-space to preserve boundary behavior. If exact alignment fails, the solver/probe is wrong, not the geometry.
 
-**Ilharco, G., et al. (2023). Editing Models with Task Arithmetic. *ICLR 2023*. arXiv:2212.04089.**
+**[Ilharco, G., et al. (2023)](../references/arxiv/Ilharco_2023_Task_Arithmetic.pdf). Editing Models with Task Arithmetic. *ICLR 2023*. arXiv:2212.04089.**
 **Foundational paper** introducing "task vectors" (difference between fine-tuned and pretrained weights) that can be manipulated through arithmetic: negation removes capabilities, addition combines them. Task vectors are approximately orthogonal across tasks. *Framework relevance*: Directly demonstrates capabilities exist as separable geometric structures. Safety and persona can be represented as distinct task vectors that can be added, subtracted, or composed.
 
-**Ainsworth, S.K., Hayase, J., & Srinivasa, S.S. (2023). Git Re-Basin: Merging Models modulo Permutation Symmetries. *ICLR 2023*. arXiv:2209.04836.**
+**[Ainsworth, S.K., Hayase, J., & Srinivasa, S.S. (2023)](../references/arxiv/Ainsworth_2023_Git_ReBasin.pdf). Git Re-Basin: Merging Models modulo Permutation Symmetries. *ICLR 2023*. arXiv:2209.04836.**
 Argues neural network loss landscapes contain nearly a single basin after accounting for permutation symmetries. Introduces algorithms to permute one model's units to align with a reference, enabling zero-barrier linear interpolation. *Framework relevance*: Permutation alignment reveals that apparently different models may occupy equivalent geometric positions in canonical coordinates, enabling meaningful cross-model geometric operations.
 
 **Wortsman, M., et al. (2022). Model Soups: Averaging Weights of Multiple Fine-tuned Models Improves Accuracy Without Increasing Inference Time. *ICML 2022*, PMLR 162:23965-23998.**
 Averaging weights of models fine-tuned with different hyperparameters improves accuracy and robustness; fine-tuned models from same initialization lie in single low-error basin. *Framework relevance*: Demonstrates fine-tuned solution manifold has favorable geometric properties—convex combinations remain performant.
 
-**Yadav, P., et al. (2023). TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. arXiv:2306.01708.**
+**[Yadav, P., et al. (2023)](../references/arxiv/Yadav_2023_TIES_Merging.pdf). TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. arXiv:2306.01708.**
 Addresses interference from redundant parameters and sign disagreement through Trim, Elect sign, Merge procedure. *Framework relevance*: Sign disagreement corresponds to conflicting directions in weight space. TIES resolves this by identifying consensus geometric direction—critical for maintaining coherent safety properties when combining adapters.
 
-**Yu, L., et al. (2024). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*, PMLR 235:57755-57775.**
+**[Yu, L., et al. (2024)](../references/arxiv/Yu_2023_Language_Models_are_Super_Mario_Absorbing.pdf). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*, PMLR 235:57755-57775.**
 Reveals extreme redundancy in SFT delta parameters; randomly dropping **90-99%** of delta parameters and rescaling maintains performance. *Framework relevance*: DARE demonstrates task-relevant information occupies extremely sparse subsets of weight space—most parameter changes during fine-tuning are noise. Supports geometric sparsity constraints for safety.
 
 **Singh, S.P., & Jaggi, M. (2020). Model Fusion via Optimal Transport. *NeurIPS 2020*.**
@@ -329,13 +329,13 @@ Provides theoretical foundations avoiding DPO's assumption about pointwise rewar
 
 ### Representation-based safety
 
-**Zou, A., et al. (2023). Representation Engineering: A Top-Down Approach to AI Transparency. arXiv:2310.01405.**
+**[Zou, A., et al. (2023)](../references/arxiv/Zou_2023_Representation_Engineering.pdf). Representation Engineering: A Top-Down Approach to AI Transparency. arXiv:2310.01405.**
 **Key paper** introducing representation engineering (RepE) analyzing population-level representations. Demonstrates "representation reading" and "representation steering" for honesty, harmlessness, and power-seeking. *Framework relevance*: **Directly supports geometric safety thesis.** Shows high-level safety concepts are encoded as linear directions in activation space that can be read and manipulated without weight modification.
 
 **Turner, A.M., et al. (2023). Activation Addition: Steering Language Models Without Optimization. arXiv:2308.10248.**
 Introduces ActAdd steering behavior by adding computed vectors to forward passes without weight modification, achieving control over sentiment, topic, and high-level properties. *Framework relevance*: Establishes activation-space interventions can control behaviors—directly supporting geometric safety through constrained activations.
 
-**Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. arXiv:2406.11717.**
+**[Arditi, A., et al. (2024)](../references/arxiv/Arditi_2024_Refusal_Single_Direction.pdf). Refusal in Language Models Is Mediated by a Single Direction. arXiv:2406.11717.**
 Discovers refusal behavior is mediated by single direction in activation space; ablating this removes ability to refuse harmful requests. *Framework relevance*: **Critical for geometric safety.** Shows behavioral safety training creates geometrically simple (single-direction) mechanisms that are easy to remove. Geometric constraints could create more robust, multi-directional safety.
 
 ### Adversarial robustness
@@ -396,7 +396,7 @@ Documents multiple incidents including teenager suicides after emotional relatio
 
 ### Circuit breakers
 
-**Zou, A., et al. (2024). Improving Alignment and Robustness with Circuit Breakers. *NeurIPS 2024*. arXiv:2406.04313.**
+**[Zou, A., et al. (2024)](../references/arxiv/Zou_2024_Circuit_Breakers.pdf). Improving Alignment and Robustness with Circuit Breakers. *NeurIPS 2024*. arXiv:2406.04313.**
 Introduces circuit breakers interrupting models when responding with harmful outputs by controlling representations responsible for harm. Achieves **87-90% rejection** of harmful requests while preserving utility across text, multimodal, and agent settings. *Framework relevance*: Concrete implementation of ΔH detection principle—identifying internal representations linked to harmful outputs and intervening before generation. Directly supports pre-emission violation detection.
 
 ### Inference-time intervention

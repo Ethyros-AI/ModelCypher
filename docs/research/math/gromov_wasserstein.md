@@ -83,9 +83,9 @@ This preserves relational structure while respecting dimension mismatches.
 
 1. **Memoli, F.** (2011). "Gromov-Wasserstein Distances and the Metric Approach to Object Matching." *Foundations of Computational Mathematics*, 11(4), 417-487. [DOI:10.1007/s10208-011-9093-5](https://doi.org/10.1007/s10208-011-9093-5)
 2. **Peyre, G., Cuturi, M., & Solomon, J.** (2016). "Gromov-Wasserstein Averaging of Kernel and Distance Matrices." *ICML 2016*. [Paper](https://proceedings.mlr.press/v48/peyre16.html)
-3. **Vayer, T., et al.** (2019). "Fused Gromov-Wasserstein Distance for Structured Objects." *ICML 2019*. [arXiv:1811.02834](https://arxiv.org/abs/1811.02834)
-4. **Alvarez-Melis, D., & Jaakkola, T.S.** (2018). "Gromov-Wasserstein Alignment of Word Embedding Spaces." *EMNLP 2018*. [arXiv:1809.00013](https://arxiv.org/abs/1809.00013)
-5. **Peyre, G., & Cuturi, M.** (2019). "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
+3. **[Vayer et al. (2019)](../../references/arxiv/Vayer_2018_Fused_GromovWasserstein_distance_structured_objects_theoretical.pdf)**. "Fused Gromov-Wasserstein Distance for Structured Objects." *ICML 2019*. [arXiv:1811.02834](https://arxiv.org/abs/1811.02834)
+4. **[Alvarez-Melis & Jaakkola (2018)](../../references/arxiv/AlvarezMelis_2018_GromovWasserstein_Alignment_Word_Embedding_Spaces.pdf)**. "Gromov-Wasserstein Alignment of Word Embedding Spaces." *EMNLP 2018*. [arXiv:1809.00013](https://arxiv.org/abs/1809.00013)
+5. **[Peyre & Cuturi (2019)](../../references/arxiv/Peyre_2018_Computational_Optimal_Transport.pdf)**. "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
 
 ---
 

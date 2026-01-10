@@ -145,7 +145,7 @@ class CompositionalProbes:
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
         rg = RiemannianGeometry(b)
-        centroid_result = rg.frechet_mean(comps, max_iterations=50, tolerance=b.finfo().eps)
+        centroid_result = rg.frechet_mean(comps, tolerance=b.finfo().eps)  # max_iterations auto-derived
         centroid = centroid_result.mean
         b.eval(centroid)
 

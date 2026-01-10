@@ -68,26 +68,26 @@ Automated baseline:
 | `docs/research/interference_prediction.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/research/linguistic_thermodynamics.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/research/manifold_swapping.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/MATH_REFERENCE_INDEX.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/centered_kernel_alignment.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/dare_sparsity.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/dora_decomposition.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/fisher_information.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/frechet_mean.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/geodesic_distance.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/gromov_wasserstein.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/hsic.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/intrinsic_dimension.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/manifold_curvature.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/persistent_homology.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/prime_spectral_geometry.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/procrustes_analysis.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/relative_representations.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/slerp.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/spectral_analysis.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/tangent_space.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/task_singular_vectors.md` | research | P2 | todo | todo | todo | todo | |
-| `docs/research/math/ties_merge.md` | research | P2 | todo | todo | todo | todo | |
+| `docs/research/math/MATH_REFERENCE_INDEX.md` | research | P2 | done | ok | n/a | n/a | Academic audit Jan 2026: Index file, no external citations. Updated last-modified date. Note: riemannian_density.md and permutation_alignment.md exist but not in tracker. |
+| `docs/research/math/centered_kernel_alignment.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 8 citations (3 PDFs linked, 5 journal/DOI links). Code refs verified, removed stale permute.py. |
+| `docs/research/math/dare_sparsity.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 1 citation (PDF linked). Code ref verified. |
+| `docs/research/math/dora_decomposition.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 2 citations (both PDFs linked). Code ref verified. |
+| `docs/research/math/fisher_information.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 8 citations (2 PDFs linked, 6 DOI/arXiv links). No code refs (Fisher not implemented - documented honestly). |
+| `docs/research/math/frechet_mean.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 8 citations (2 PDFs linked, fixed author name Kim). All code refs verified. |
+| `docs/research/math/geodesic_distance.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 5 citations (1 PDF linked, 4 DOI/journal links). All code refs verified. |
+| `docs/research/math/gromov_wasserstein.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 5 citations (3 PDFs linked, 2 DOI/PMLR links). All code refs verified. |
+| `docs/research/math/hsic.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 9 citations (2 PDFs linked, 7 DOI/arXiv links). Replaced invalid placeholder citation with Barlow Twins. |
+| `docs/research/math/intrinsic_dimension.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 10 citations (2 PDFs linked, rest DOI/arXiv). Removed stale async_geometry.py ref. |
+| `docs/research/math/manifold_curvature.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 3 citations (all DOI links, completed Pennec citation). All code refs verified. |
+| `docs/research/math/persistent_homology.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 3 citations (all DOI links - classic papers). Code ref verified. |
+| `docs/research/math/prime_spectral_geometry.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 5 citations (classic math papers - Takens, MP, Montgomery, Connes, Cramér). Code ref verified. |
+| `docs/research/math/procrustes_analysis.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 9 citations (3 PDFs linked, 6 DOI/journal links). Removed stale geometry_engine.py ref, fixed embedding_projector path. |
+| `docs/research/math/relative_representations.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 7 citations (2 PDFs linked, removed vague survey ref). All code refs verified. |
+| `docs/research/math/slerp.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 6 citations (1 PDF linked, removed invalid ACL placeholder). Code ref verified. |
+| `docs/research/math/spectral_analysis.md` | research | P2 | done | ok | n/a | n/a | Academic audit Jan 2026: Implementation doc, no external citations (appropriate). Code ref verified. |
+| `docs/research/math/tangent_space.md` | research | P2 | done | ok | n/a | n/a | Academic audit Jan 2026: Implementation doc, no external citations (appropriate). Code ref verified. |
+| `docs/research/math/task_singular_vectors.md` | research | P2 | done | ok | n/a | n/a | Academic audit Jan 2026: Reference doc (TSV not implemented - documented honestly). Related code refs verified. |
+| `docs/research/math/ties_merge.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: Reference doc (TIES not implemented). Removed stale permutation_aligner.py ref, added Yadav citation with PDF. |
 | `docs/research/merge_algorithm_synthesis.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/research/moral_geometry.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/research/number_theory_geometry.md` | research | P2 | todo | todo | todo | todo | |
@@ -97,13 +97,13 @@ Automated baseline:
 | `docs/research/temporal_topology.md` | research | P2 | todo | todo | todo | todo | |
 | `docs/security.md` | policy | P1 | todo | todo | todo | todo | |
 | `examples/README.md` | public | P0 | done | ok | n/a | ok | Public pass: corrected commands to use `poetry run` and updated CLI usage |
-| `papers/NEGATIVE-RESULTS.md` | research | P2 | todo | todo | todo | todo | |
+| `papers/NEGATIVE-RESULTS.md` | research | P2 | done | ok | n/a | n/a | Academic audit Jan 2026: Scientific transparency document for negative results. References Paper 1 for context. No external citations or CLI commands. Provisional status noted. |
 | `papers/README.md` | research | P0 | todo | todo | todo | todo | |
 | `papers/RELEASE_NOTES.md` | research | P2 | todo | todo | todo | todo | |
 | `papers/SUMMARIES.md` | research | P2 | todo | todo | todo | todo | |
 | `papers/paper-0-the-shape-of-knowledge.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: All 9 PDFs verified, all internal links work, CLI commands verified. 9 "reproduction pending" notes are honest status markers. |
 | `papers/paper-1-invariant-semantic-structure.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: All 3 citations verified (2 PDFs + 1 book link), CLI commands verified and updated with `poetry run`. "Reproduction pending" notes are honest status markers. |
 | `papers/paper-2-entropy-safety-signal.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: All 5 citations verified (4 PDFs + 1 Nature DOI), CLI commands verified and updated with `poetry run`. "Reproduction pending" is honest status. |
-| `papers/paper-3-cross-architecture-transfer.md` | research | P2 | todo | todo | todo | todo | |
-| `papers/paper-4-modelcypher-toolkit.md` | research | P2 | todo | todo | todo | todo | |
-| `papers/paper-5-semantic-highway.md` | research | P2 | todo | todo | todo | todo | |
+| `papers/paper-3-cross-architecture-transfer.md` | research | P2 | done | ok | ok | n/a | Academic audit Jan 2026: 7 citations verified (6 PDFs + 1 NeurIPS link for Bansal). No CLI commands in paper. "Reproduction pending" is honest status. |
+| `papers/paper-4-modelcypher-toolkit.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: 5 citations verified (all PDFs). CLI commands fixed (added `poetry run`, fixed `merge run` syntax). Code references verified. Removed stale statistics. |
+| `papers/paper-5-semantic-highway.md` | research | P2 | done | ok | ok | ok | Academic audit Jan 2026: 6 citations verified (5 PDFs + 1 DOI for Facco). CLI command verified and fixed (global option order). Internal paper links verified. "Reproduction pending" is honest status. |

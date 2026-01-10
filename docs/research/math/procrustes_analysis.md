@@ -8,7 +8,7 @@
 
 Before comparing or merging representations from different models, we need to align them. Procrustes analysis finds the optimal orthogonal transformation (rotation/reflection) that minimizes the difference between two sets of representations.
 
-**In ModelCypher**: `generalized_procrustes.py` handles multi-model alignment. Pairwise alignment uses `backend_matrix_utils.py` (core rotation) and `geometry_engine.py` (use-case wrapper). Cross-dimensional cases go through `_project_procrustes` in `cross_dimensional_projection.py`, and vocabulary alignment uses `embedding_projector.py`.
+**In ModelCypher**: `generalized_procrustes.py` handles multi-model alignment. Pairwise alignment uses `backend_matrix_utils.py` (core rotation). Cross-dimensional cases go through `_project_procrustes` in `cross_dimensional_projection.py`, and vocabulary alignment uses `vocabulary/embedding_projector.py`.
 
 ---
 
@@ -124,9 +124,8 @@ for centered matrices with specific normalization.
 **Key entry points**:
 - `GeneralizedProcrustes.align()` - multi-model alignment with Fréchet consensus
 - `BackendMatrixUtils.procrustes_rotation()` / `procrustes_align()` - pairwise alignment
-- `GeometryEngine.orthogonal_procrustes()` - use-case wrapper
 - `cross_dimensional_projection._project_procrustes()` - one-dimension mismatch
-- `EmbeddingProjector.project()` - vocabulary alignment
+- `EmbeddingProjector.project()` - vocabulary alignment (in `vocabulary/`)
 
 **Design decisions**:
 1. **Fréchet mean**: Used for $M > 2$; arithmetic mean only when $M \le 2$.
@@ -185,10 +184,10 @@ transformations = result.rotations
 
 ### Neural Network Applications
 
-4. **Hamilton, W.L., Leskovec, J., & Jurafsky, D.** (2016). "Diachronic Word Embeddings Reveal Statistical Laws of Semantic Change." *ACL 2016*. [arXiv:1605.09096](https://arxiv.org/abs/1605.09096)
+4. **[Hamilton et al. (2016)](../../references/arxiv/Hamilton_2016_Diachronic_Word_Embeddings_Reveal_Statistical_Laws.pdf)**. "Diachronic Word Embeddings Reveal Statistical Laws of Semantic Change." *ACL 2016*. [arXiv:1605.09096](https://arxiv.org/abs/1605.09096)
    - *Procrustes for word embedding alignment*
 
-5. **Ding, F., et al.** (2021). "Grounding Representation Similarity with Statistical Testing." *NeurIPS 2021*. [arXiv:2108.01661](https://arxiv.org/abs/2108.01661)
+5. **[Ding et al. (2021)](../../references/arxiv/Ding_2021_Grounding_Representation_Similarity_Statistical_Testing.pdf)**. "Grounding Representation Similarity with Statistical Testing." *NeurIPS 2021*. [arXiv:2108.01661](https://arxiv.org/abs/2108.01661)
    - *Statistical framework for Procrustes*
 
 ### 2024-2025 Advances
@@ -202,7 +201,7 @@ transformations = result.rotations
 8. **Chen, Y., et al.** (2025). "ProcrustesGPT: Compressing LLMs with Structured Matrices and Orthogonal Procrustes." *ACL Findings 2025*. [ACL Anthology](https://aclanthology.org/)
    - *Procrustes for LLM compression*
 
-9. **Klabunde, M., et al.** (2023). "Similarity of Neural Networks: A Survey of Functional and Representational Measures." [arXiv:2305.06329](https://arxiv.org/abs/2305.06329)
+9. **[Klabunde et al. (2023)](../../references/arxiv/Klabunde_2023_Similarity_Neural_Network_Models_Survey_Functional.pdf)**. "Similarity of Neural Networks: A Survey of Functional and Representational Measures." [arXiv:2305.06329](https://arxiv.org/abs/2305.06329)
    - *Comprehensive comparison including Procrustes*
 
 ---

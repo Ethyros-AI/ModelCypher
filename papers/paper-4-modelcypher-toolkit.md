@@ -156,9 +156,9 @@ def test_module_imports(module_path):
 
 **Protocol**:
 ```bash
-mc geometry primes probe-model /path/to/qwen --output-file qwen_primes.json
-mc geometry primes probe-model /path/to/llama --output-file llama_primes.json
-mc geometry primes compare qwen_primes.json llama_primes.json
+poetry run mc geometry primes probe-model /path/to/qwen --output-file qwen_primes.json
+poetry run mc geometry primes probe-model /path/to/llama --output-file llama_primes.json
+poetry run mc geometry primes compare qwen_primes.json llama_primes.json
 ```
 
 ### 5.2 Entropy-Based Safety Signal
@@ -167,7 +167,7 @@ mc geometry primes compare qwen_primes.json llama_primes.json
 
 **Protocol**:
 ```bash
-mc thermo detect "<harmful>" --model /path/to/tuned
+poetry run mc thermo detect "<harmful>" --model /path/to/tuned
 # Compare base vs tuned samples with mc entropy dual-path (requires precomputed samples)
 ```
 
@@ -177,9 +177,9 @@ mc thermo detect "<harmful>" --model /path/to/tuned
 
 **Protocol**:
 ```bash
-mc merge -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
-mc merge -s /path/to/source -t /path/to/target -o /path/to/output
-mc model probe /path/to/output --output json
+poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output --dry-run
+poetry run mc merge run -s /path/to/source -t /path/to/target -o /path/to/output
+poetry run mc model probe /path/to/output --output json
 ```
 
 ---
@@ -220,7 +220,7 @@ ModelCypher makes the Geometric Knowledge Thesis operational. The results from P
 
 [Yadav et al. (2023)](../docs/references/arxiv/Yadav_2023_TIES_Merging.pdf). TIES-Merging. *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708).
 
-Yu, L., et al. (2024). DARE. *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099).
+[Yu et al. (2024)](../docs/references/arxiv/Yu_2023_Language_Models_are_Super_Mario_Absorbing.pdf). DARE. *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099).
 
 ---
 
@@ -230,17 +230,17 @@ Yu, L., et al. (2024). DARE. *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/a
 git clone https://github.com/Ethyros-AI/ModelCypher.git
 cd ModelCypher
 poetry install
-poetry run pytest tests/ -q  # Expected: 3,060 passed
+poetry run pytest tests/ -q  # Run test suite to verify coverage
 ```
 
 ## Appendix B: Repository Structure
 
 ```
 ModelCypher/
-├── src/modelcypher/     # Core library (274+ modules)
+├── src/modelcypher/     # Core library
 ├── papers/              # Research papers (this series)
-├── docs/references/     # 58 reference PDFs (mostly arXiv)
+├── docs/references/     # Reference PDFs (arXiv + conferences)
 ├── docs/research/       # Master bibliography
-├── tests/               # 100+ test files, 3,060 tests
+├── tests/               # Test suite
 └── CLAUDE.md            # AI agent instructions
 ```

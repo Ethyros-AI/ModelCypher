@@ -41,4 +41,9 @@ Any implementation should respect ModelCypher constraints:
 
 - [procrustes_analysis.md](procrustes_analysis.md) - Alignment before comparison
 - [spectral_analysis.md](spectral_analysis.md) - Scale/conditioning diagnostics
-- [`src/modelcypher/core/domain/geometry/permutation_aligner.py`](../../../../src/modelcypher/core/domain/geometry/permutation_aligner.py) - Alignment for permutation symmetries
+
+---
+
+## Citations
+
+1. **[Yadav et al. (2023)](../../references/arxiv/Yadav_2023_TIES_Merging.pdf)**. "TIES-Merging: Resolving Interference When Merging Models." *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708)

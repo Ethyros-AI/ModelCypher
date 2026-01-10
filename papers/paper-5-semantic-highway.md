@@ -154,7 +154,7 @@ All experiments can be reproduced with ModelCypher:
 
 ```bash
 # Full dimensionality study (per-layer results)
-mc geometry atlas dimensionality-study /path/to/model --include-results --output json
+poetry run mc --output json geometry atlas dimensionality-study /path/to/model --include-results
 ```
 
 **Reproducibility**: Run the command above on any compatible model. Determinism depends on the same model weights, probe corpus, and backend configuration.
@@ -180,14 +180,14 @@ This working hypothesis would be weakened or refuted if broader tests show that:
 
 ## References
 
-Ansuini, A., Laio, A., Macke, J. H., & Zoccolan, D. (2019). Intrinsic dimension of data representations in deep neural networks. *NeurIPS*. [arXiv:1905.12784](https://arxiv.org/abs/1905.12784).
+[Ansuini et al. (2019)](../docs/references/arxiv/Ansuini_2019_Intrinsic_dimension_data_representations_deep_neural.pdf). Intrinsic dimension of data representations in deep neural networks. *NeurIPS*. [arXiv:1905.12784](https://arxiv.org/abs/1905.12784).
 
 Facco, E., d'Errico, M., Rodriguez, A., & Laio, A. (2017). Estimating the intrinsic dimension of datasets by a minimal neighborhood information. *Scientific Reports* 7, 12140. [DOI:10.1038/s41598-017-11873-y](https://doi.org/10.1038/s41598-017-11873-y).
 
 [Huh et al. (2024)](../docs/references/arxiv/Huh_2024_Platonic_Representation.pdf). The Platonic Representation Hypothesis. *ICML 2024*. [arXiv:2405.07987](https://arxiv.org/abs/2405.07987).
 
-Jawahar, G., Sagot, B., & Seddah, D. (2019). What does BERT learn about the structure of language? *ACL 2019*. [ACL Anthology](https://aclanthology.org/P19-1356/) · [PDF](https://aclanthology.org/P19-1356.pdf).
+[Jawahar et al. (2019)](../docs/references/arxiv/Jawahar_2019_BERT_Structure.pdf). What does BERT learn about the structure of language? *ACL 2019*. [ACL Anthology](https://aclanthology.org/P19-1356/).
 
-Tishby, N., & Zaslavsky, N. (2015). Deep learning and the information bottleneck principle. *IEEE ITW*. [arXiv:1503.02406](https://arxiv.org/abs/1503.02406).
+[Tishby & Zaslavsky (2015)](../docs/references/arxiv/Tishby_2015_Deep_Learning_Information_Bottleneck_Principle.pdf). Deep learning and the information bottleneck principle. *IEEE ITW*. [arXiv:1503.02406](https://arxiv.org/abs/1503.02406).
 
-Voita, E., Talbot, D., Moiseev, F., Sennrich, R., & Titov, I. (2019). Analyzing multi-head self-attention: Specialized heads do the heavy lifting. *ACL*. [arXiv:1905.09418](https://arxiv.org/abs/1905.09418).
+[Voita et al. (2019)](../docs/references/arxiv/Voita_2019_Analyzing_MultiHead_SelfAttention_Specialized_Heads_Do.pdf). Analyzing multi-head self-attention: Specialized heads do the heavy lifting. *ACL*. [arXiv:1905.09418](https://arxiv.org/abs/1905.09418).

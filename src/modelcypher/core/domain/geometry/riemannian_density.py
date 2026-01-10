@@ -771,10 +771,10 @@ class RiemannianDensityEstimator:
         # No fallback to arithmetic mean - if this fails, it's a bug we need to fix
         result = rg.frechet_mean(
             activations,
-            max_iterations=50,
             tolerance=regularization_epsilon(backend, activations),
             k_neighbors=k_neighbors,
             geo_result=geodesic_context,
+            # max_iterations auto-derived from n
         )
         centroid = result.mean
         backend.eval(centroid)

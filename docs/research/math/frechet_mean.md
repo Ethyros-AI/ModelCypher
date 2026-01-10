@@ -119,7 +119,7 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 ### Neural Network Applications
 
-4. **Lou, A., Katsman, I., Jiang, Q., Belongie, S., Lim, S.-N., & De Sa, C.** (2020). "Differentiating through the Fréchet Mean." *ICML 2020*. [arXiv:2003.00335](https://arxiv.org/abs/2003.00335)
+4. **[Lou et al. (2020)](../../references/arxiv/Lou_2020_Differentiating_through_Frechet_Mean.pdf)**. "Differentiating through the Fréchet Mean." *ICML 2020*. [arXiv:2003.00335](https://arxiv.org/abs/2003.00335)
    - *Enables backprop through Fréchet mean; hyperbolic neural networks*
 
 5. **Chakraborty, R., & Vemuri, B.C.** (2015). "Recursive Fréchet mean computation on the Grassmannian and its applications to computer vision." *ICCV 2015*. [DOI:10.1109/ICCV.2015.483](https://doi.org/10.1109/ICCV.2015.483)
@@ -130,7 +130,7 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 ### 2024-2025 Advances
 
-7. **Iao, Y., et al.** (2025). "DFNN: A Deep Fréchet Neural Network Framework." [arXiv:2510.17072](https://arxiv.org/abs/2510.17072)
+7. **[Kim et al. (2025)](../../references/arxiv/Kim_2025_DFNN_Deep_Frechet_Neural_Network_Framework.pdf)**. "DFNN: A Deep Fréchet Neural Network Framework." [arXiv:2510.17072](https://arxiv.org/abs/2510.17072)
    - *Deep learning for Fréchet regression on metric spaces*
 
 8. **Yang, Z., et al.** (2023). "Poincaré Fréchet mean." *Pattern Recognition*, 136, 109232. [DOI:10.1016/j.patcog.2023.109232](https://doi.org/10.1016/j.patcog.2023.109232)

@@ -143,7 +143,6 @@ Output Layer:  ID ≈ number of classes
 
 **Also used in**:
 - `src/modelcypher/core/use_cases/geometry_metrics_service.py`
-- `src/modelcypher/ports/async_geometry.py`
 
 **Design decisions**:
 1. **TwoNN regression**: Single estimator (no MLE path)
@@ -165,10 +164,10 @@ Output Layer:  ID ≈ number of classes
 
 ### Neural Network Applications
 
-3. **Ansuini, A., Laio, A., Macke, J.H., & Zoccolan, D.** (2019). "Intrinsic dimension of data representations in deep neural networks." *NeurIPS 2019*. [arXiv:1905.12784](https://arxiv.org/abs/1905.12784)
+3. **[Ansuini et al. (2019)](../../references/arxiv/Ansuini_2019_Intrinsic_dimension_data_representations_deep_neural.pdf)**. "Intrinsic dimension of data representations in deep neural networks." *NeurIPS 2019*. [arXiv:1905.12784](https://arxiv.org/abs/1905.12784)
    - *ID analysis of deep networks*
 
-4. **Pope, P., et al.** (2021). "The Intrinsic Dimension of Images and Its Impact on Learning." *ICLR 2021*. [arXiv:2104.08894](https://arxiv.org/abs/2104.08894)
+4. **[Pope et al. (2021)](../../references/arxiv/Pope_2021_Intrinsic_Dimension_Images_Impact_Learning.pdf)**. "The Intrinsic Dimension of Images and Its Impact on Learning." *ICLR 2021*. [arXiv:2104.08894](https://arxiv.org/abs/2104.08894)
    - *ID of image datasets*
 
 ### 2024-2025 Advances

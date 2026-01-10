@@ -219,11 +219,6 @@ def register(app: typer.Typer) -> None:
             "--model-b",
             help="Path to target model",
         ),
-        train_size: int = typer.Option(
-            50,
-            "--train-size",
-            help="Number of semantic primes for alignment training",
-        ),
         test_size: int = typer.Option(
             500,
             "--test-size",
@@ -249,10 +244,50 @@ def register(app: typer.Typer) -> None:
             "--output-file",
             help="Path to save results JSON",
         ),
+        invariant_mode: bool = typer.Option(
+            False,
+            "--invariant-mode",
+            help="Test CKA=1.0 invariant (n < d). This is the thesis mode.",
+        ),
+        n_train: int = typer.Option(
+            0,
+            "--n-train",
+            help="Override n_train (0=auto). In invariant mode: 0.5*min(d). Otherwise: 2*max(d).",
+        ),
+        force_rank_deficient: bool = typer.Option(
+            False,
+            "--force-rank-deficient",
+            help="Allow insufficient samples (for debugging only)",
+        ),
     ) -> None:
-        """Run the strong geometric generalization test (train primes, test random words).
+        """Run the strong geometric generalization test.
 
-        Example:
+        TWO MODES:
+
+        1. INVARIANT MODE (--invariant-mode): Tests the geometric thesis.
+           - Uses n_train < d (underdetermined)
+           - CKA = 1.0 on probes is GUARANTEED by construction (Procrustes solution)
+           - The thesis claims: this alignment GENERALIZES to held-out samples
+           - If test CKA is high: models share structure
+           - If test CKA is low: probe coverage was insufficient
+
+        2. OVERLAP MODE (default): Measures actual representational overlap.
+           - Uses n_train > d (overdetermined)
+           - CKA < 1.0 on probes (actual overlap)
+           - Tests whether the measured overlap generalizes
+
+        The geometric thesis uses CKA = 1.0 as an invariant because:
+        - F = pinv(source) @ target guarantees K_aligned = K_target when n <= d
+        - This is the closed-form Procrustes solution, mathematically exact
+        - The question is whether this alignment generalizes, not whether CKA = 1.0
+
+        Example (thesis test):
+            mc geometry research strong-test \\
+                --model-a /path/to/model-a \\
+                --model-b /path/to/model-b \\
+                --invariant-mode
+
+        Example (overlap measurement):
             mc geometry research strong-test \\
                 --model-a /path/to/model-a \\
                 --model-b /path/to/model-b
@@ -269,14 +304,9 @@ def register(app: typer.Typer) -> None:
                 resolve_model_backbone,
             )
             from modelcypher.core.domain._backend import get_default_backend
-            from modelcypher.core.domain.agents.semantic_primes import (
-                SemanticPrimeInventory,
-            )
             from modelcypher.core.domain.geometry.cka import compute_linear_cka
             from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 
-            if train_size < 4:
-                raise ValueError("train-size must be at least 4 for CKA")
             if test_size < 4:
                 raise ValueError("test-size must be at least 4 for CKA")
             if not wordlist.exists():
@@ -309,30 +339,42 @@ def register(app: typer.Typer) -> None:
             layer_a = len(layers_a) // 2
             layer_b = len(layers_b) // 2
 
-            primes = SemanticPrimeInventory.english2014()
-            prime_words = [p.canonical_english for p in primes]
-            prime_words = [
-                word
-                for word in prime_words
-                if is_single_token(word, tokenizer_a) and is_single_token(word, tokenizer_b)
-            ]
+            # Get hidden dimensions from embeddings
+            d_source = int(embed_a.weight.shape[-1])
+            d_target = int(embed_b.weight.shape[-1])
+            d_max = max(d_source, d_target)
+            d_min = min(d_source, d_target)
 
-            if not prime_words:
-                raise ValueError("No shared single-token semantic primes found")
+            # Derive n_train based on mode
+            if n_train > 0:
+                # User override
+                n_train_required = n_train
+                mode_str = "user-specified"
+            elif invariant_mode:
+                # INVARIANT MODE: n < d guarantees CKA = 1.0 (underdetermined Procrustes)
+                # Use 0.5 * min(d) to ensure we're well below the rank limit
+                n_train_required = d_min // 2
+                mode_str = "invariant (n < d, CKA=1.0 guaranteed)"
+            else:
+                # OVERLAP MODE: n > d measures actual overlap (overdetermined)
+                n_train_required = 2 * d_max
+                mode_str = "overlap (n > d, CKA measured)"
 
-            train_words = prime_words[:train_size]
+            typer.echo(f"Geometry: d_source={d_source}, d_target={d_target}, d_min={d_min}")
+            typer.echo(f"Mode: {mode_str}")
+            typer.echo(f"n_train (target): {n_train_required}")
 
-            def sample_random_words() -> tuple[list[str], int]:
+            def sample_words_from_wordlist(n_needed: int) -> tuple[list[str], int]:
+                """Sample n_needed single-token words from wordlist using reservoir sampling."""
                 rng = random.Random(seed)
                 reservoir: list[str] = []
                 eligible_count = 0
                 seen: set[str] = set()
-                exclude = set(train_words)
 
                 with wordlist.open("r", encoding="utf-8") as handle:
                     for line in handle:
                         word = line.strip().lower()
-                        if not word or word in seen or word in exclude:
+                        if not word or word in seen:
                             continue
                         if not word.isascii() or not word.isalpha():
                             continue
@@ -342,19 +384,71 @@ def register(app: typer.Typer) -> None:
                             continue
                         seen.add(word)
                         eligible_count += 1
-                        if len(reservoir) < test_size:
+                        if len(reservoir) < n_needed:
                             reservoir.append(word)
                         else:
                             j = rng.randint(0, eligible_count - 1)
-                            if j < test_size:
+                            if j < n_needed:
                                 reservoir[j] = word
 
                 return reservoir, eligible_count
 
-            test_words, eligible_count = sample_random_words()
+            # Sample words for both train and test (disjoint sets)
+            total_needed = n_train_required + test_size
+            all_words, eligible_count = sample_words_from_wordlist(total_needed)
+
+            typer.echo(f"Eligible single-token words: {eligible_count}")
+
+            # Check if we have enough words based on mode
+            if invariant_mode:
+                # INVARIANT MODE: We want n < d, so fewer words is fine
+                # Just need enough for a meaningful test (at least 50 or n_train_required)
+                min_required = min(50, n_train_required)
+                if eligible_count < min_required + test_size:
+                    raise ValueError(
+                        f"Insufficient eligible words: {eligible_count} < {min_required + test_size} minimum.\n"
+                        f"Need at least {min_required} train + {test_size} test words."
+                    )
+                # Cap at n_train_required to maintain n < d
+                n_train_actual = min(n_train_required, eligible_count - test_size)
+                if n_train_actual >= d_min:
+                    typer.secho(
+                        f"WARNING: n_train_actual={n_train_actual} >= d_min={d_min}.\n"
+                        f"CKA=1.0 is NOT guaranteed in this configuration.\n"
+                        f"Reduce --n-train or use fewer test samples.",
+                        fg=typer.colors.YELLOW,
+                    )
+            else:
+                # OVERLAP MODE: We need n > d for full-rank alignment
+                if eligible_count < n_train_required:
+                    if force_rank_deficient:
+                        typer.secho(
+                            f"WARNING: Only {eligible_count} eligible words < {n_train_required} required.\n"
+                            f"rank(F) = {eligible_count} << {d_target}. Results may not be valid.\n"
+                            f"Proceeding due to --force-rank-deficient flag.",
+                            fg=typer.colors.YELLOW,
+                        )
+                        n_train_actual = eligible_count - test_size if eligible_count > test_size else eligible_count // 2
+                    else:
+                        raise ValueError(
+                            f"Insufficient eligible words: {eligible_count} < {n_train_required} required.\n"
+                            f"rank(F) would be {eligible_count}, causing rank-deficient alignment.\n"
+                            f"Use a larger wordlist or --force-rank-deficient to proceed anyway."
+                        )
+                else:
+                    n_train_actual = n_train_required
+
+            # Split into disjoint train and test sets
+            train_words = all_words[:n_train_actual]
+            test_words = all_words[n_train_actual : n_train_actual + test_size]
+
+            if len(train_words) < 4:
+                raise ValueError(
+                    f"Only {len(train_words)} training words available (need >= 4)."
+                )
             if len(test_words) < 4:
                 raise ValueError(
-                    f"Only {len(test_words)} eligible random words found (need >= 4)."
+                    f"Only {len(test_words)} test words available (need >= 4)."
                 )
 
             def collect_activations(words, tokenizer, embed_tokens, layers, norm, target_layer):
@@ -412,12 +506,15 @@ def register(app: typer.Typer) -> None:
 
             n_train = int(source_train.shape[0])
             n_test = int(source_test.shape[0])
-            source_dim = int(source_train.shape[1])
-            target_dim = int(target_train.shape[1])
-            rank_bound = min(n_train, source_dim, target_dim)
+            actual_source_dim = int(source_train.shape[1])
+            actual_target_dim = int(target_train.shape[1])
+            rank_bound = min(n_train, actual_source_dim, actual_target_dim)
+            # Full rank when rank >= min(d_source, d_target) - the smaller dimension limits alignment
+            d_min = min(actual_source_dim, actual_target_dim)
+            is_full_rank = rank_bound >= d_min
 
             result = {
-                "_schema": "mc.geometry.research.strong_test.v1",
+                "_schema": "mc.geometry.research.strong_test.v2",
                 "models": {
                     "source": str(model_a),
                     "target": str(model_b),
@@ -428,20 +525,24 @@ def register(app: typer.Typer) -> None:
                     "sourceLayerCount": len(layers_a),
                     "targetLayerCount": len(layers_b),
                 },
+                "geometry": {
+                    "sourceDim": actual_source_dim,
+                    "targetDim": actual_target_dim,
+                    "dMin": d_min,
+                    "nTrainRequired": n_train_required,
+                    "nTrainActual": n_train,
+                    "rankBound": rank_bound,
+                    "isFullRank": is_full_rank,
+                },
                 "train": {
-                    "requested": train_size,
+                    "autoDerived": n_train_required,
                     "used": len(train_shared),
-                    "eligiblePrimes": len(prime_words),
+                    "eligibleWords": eligible_count,
                 },
                 "test": {
                     "requested": test_size,
                     "used": len(test_shared),
-                    "eligibleRandomWords": eligible_count,
-                },
-                "dims": {
-                    "sourceDim": source_dim,
-                    "targetDim": target_dim,
-                    "rankBound": rank_bound,
+                    "eligibleWords": eligible_count,
                 },
                 "cka": {
                     "trainRaw": train_cka_raw,
@@ -453,8 +554,8 @@ def register(app: typer.Typer) -> None:
 
             if include_words:
                 result["words"] = {
-                    "trainPrimes": train_shared,
-                    "testRandom": test_shared,
+                    "train": train_shared,
+                    "test": test_shared,
                 }
 
             if output:
@@ -462,24 +563,45 @@ def register(app: typer.Typer) -> None:
                 output.write_text(json_module.dumps(result, indent=2), encoding="utf-8")
 
             if context.output_format == "text":
+                full_rank_str = "YES" if is_full_rank else "NO (INVALID TEST)"
                 lines = [
-                    "STRONG GEOMETRIC TEST",
-                    f"Model A: {model_a}",
-                    f"Model B: {model_b}",
+                    "=" * 60,
+                    "STRONG GEOMETRIC GENERALIZATION TEST",
+                    "=" * 60,
+                    f"Model A (source): {model_a}",
+                    f"Model B (target): {model_b}",
                     "",
-                    f"Layer A: {layer_a} / {len(layers_a)}",
-                    f"Layer B: {layer_b} / {len(layers_b)}",
+                    "GEOMETRY:",
+                    f"  d_source = {actual_source_dim}",
+                    f"  d_target = {actual_target_dim}",
+                    f"  d_min = {d_min} (rank limited by smaller dimension)",
+                    f"  n_train (auto-derived) = {n_train_required} (= 2 × max(d))",
+                    f"  n_train (actual) = {n_train}",
+                    f"  rank(F) bound = {rank_bound}",
+                    f"  Full rank (rank >= d_min): {full_rank_str}",
                     "",
-                    f"Train primes: {len(train_shared)} (requested {train_size}, eligible {len(prime_words)})",
-                    f"Test random: {len(test_shared)} (requested {test_size}, eligible {eligible_count})",
+                    "SAMPLES:",
+                    f"  Eligible single-token words: {eligible_count}",
+                    f"  Train words used: {len(train_shared)}",
+                    f"  Test words used: {len(test_shared)}",
                     "",
-                    f"Train CKA (raw): {train_cka_raw:.6f}",
-                    f"Train CKA (aligned): {train_cka_aligned:.6f}",
-                    f"Test CKA (raw): {test_cka_raw:.6f}",
-                    f"Test CKA (aligned): {test_cka_aligned:.6f}",
+                    "CKA RESULTS:",
+                    f"  Train CKA (raw):     {train_cka_raw:.6f}",
+                    f"  Train CKA (aligned): {train_cka_aligned:.6f}",
+                    f"  Test CKA (raw):      {test_cka_raw:.6f}",
+                    f"  Test CKA (aligned):  {test_cka_aligned:.6f}",
                     "",
-                    f"Rank bound: {rank_bound} (n_train={n_train}, d_src={source_dim}, d_tgt={target_dim})",
                 ]
+                if is_full_rank:
+                    if test_cka_aligned > 0.8:
+                        lines.append("THESIS: VALIDATED (test CKA > 0.8 with full rank)")
+                    elif test_cka_aligned > 0.5:
+                        lines.append("THESIS: PARTIAL (test CKA > 0.5 but < 0.8)")
+                    else:
+                        lines.append("THESIS: NOT SUPPORTED for this model pair")
+                else:
+                    lines.append("THESIS: CANNOT EVALUATE (rank-deficient alignment)")
+                lines.append("=" * 60)
                 write_output("\n".join(lines), context.output_format, context.pretty)
                 return
 
