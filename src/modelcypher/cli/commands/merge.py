@@ -605,3 +605,273 @@ def multi_channel(
     typer.echo(f"  Layers merged: {result.transplant_metrics.get('layers_merged', 0)}")
     typer.echo(f"  Channels: {len(channel_names)}")
     typer.echo(f"  Mean preserved fraction: {result.mean_preserved_fraction:.4f}")
+
+
+@app.command("bridge")
+def bridge(
+    ctx: typer.Context,
+    source: str = typer.Argument(..., help="Path to source encoder (or model with embedding layer)"),
+    target: str = typer.Argument(..., help="Path to target encoder (or model with embedding layer)"),
+    output: str = typer.Option(..., "--output", "-o", help="Output path for bridge file (safetensors format)"),
+    n_samples: int = typer.Option(
+        100,
+        "--samples",
+        "-n",
+        help="Number of probe samples for bridge generation",
+    ),
+    source_name: str | None = typer.Option(None, "--source-name", help="Optional name for source encoder"),
+    target_name: str | None = typer.Option(None, "--target-name", help="Optional name for target encoder"),
+) -> None:
+    """Generate a cross-modal bridge between two encoders.
+
+    Creates a linear transform that maps embeddings from SOURCE space to TARGET
+    space with CKA = 1.0 (perfect kernel alignment). The bridge can then be
+    applied to transform embeddings between modalities.
+
+    The bridge is saved in safetensors format and includes:
+    - Forward transform (source → target)
+    - Inverse transform (target → source)
+    - Scale ratio for magnitude normalization
+    - Metadata (dimensions, names, CKA achieved)
+
+    Mathematical Foundation:
+        F = pinv(K_source) @ K_target  (via GramAlign)
+        Guarantees CKA(source @ F, target) = 1.0 when n ≤ min(d_source, d_target)
+
+    Examples:
+        mc merge bridge /path/to/clip /path/to/lfm2 -o clip_to_lfm2.safetensors
+        mc merge bridge /path/to/whisper /path/to/lfm2 -o audio_to_lfm2.safetensors --samples 200
+        mc merge bridge ./encoder_a ./encoder_b -o bridge.safetensors --source-name clip --target-name t5
+    """
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.bridge.generator import BridgeGenerator
+
+    context = _context(ctx)
+    backend = get_default_backend()
+
+    # Validate paths
+    if not validate_model_path(source):
+        typer.echo(f"Error: Source path not found: {source}", err=True)
+        raise typer.Exit(code=1)
+    if not validate_model_path(target):
+        typer.echo(f"Error: Target path not found: {target}", err=True)
+        raise typer.Exit(code=1)
+
+    output_path = Path(output)
+    if output_path.exists():
+        typer.echo(f"Warning: Output file exists and will be overwritten: {output}")
+
+    # Infer names if not provided
+    if source_name is None:
+        source_name = Path(source).name
+    if target_name is None:
+        target_name = Path(target).name
+
+    typer.echo(f"BRIDGE GENERATION: {source_name} → {target_name}")
+    typer.echo(f"  Source: {source}")
+    typer.echo(f"  Target: {target}")
+    typer.echo(f"  Samples: {n_samples}")
+
+    with prevent_sleep():
+        model_loader = MLXModelLoader()
+        generator = BridgeGenerator(backend)
+
+        # Load embeddings from models
+        typer.echo("  Loading source embeddings...")
+        source_weights, source_config = model_loader.load_weights(source)
+        source_embed_key = _find_embedding_key(source_weights)
+        if source_embed_key is None:
+            typer.echo("Error: Could not find embedding layer in source model", err=True)
+            raise typer.Exit(code=1)
+        source_embed = source_weights[source_embed_key]
+        source_embed = backend.array(source_embed)
+
+        typer.echo("  Loading target embeddings...")
+        target_weights, target_config = model_loader.load_weights(target)
+        target_embed_key = _find_embedding_key(target_weights)
+        if target_embed_key is None:
+            typer.echo("Error: Could not find embedding layer in target model", err=True)
+            raise typer.Exit(code=1)
+        target_embed = target_weights[target_embed_key]
+        target_embed = backend.array(target_embed)
+        backend.eval(source_embed, target_embed)
+
+        typer.echo(f"  Source dim: {source_embed.shape[-1]}, Target dim: {target_embed.shape[-1]}")
+
+        # Sample activations for bridge generation
+        backend.random_seed(42)
+        n_source = int(source_embed.shape[0])
+        n_target = int(target_embed.shape[0])
+        n_samples = min(n_samples, n_source, n_target)
+
+        source_indices = backend.randint(0, n_source, (n_samples,))
+        target_indices = backend.randint(0, n_target, (n_samples,))
+        backend.eval(source_indices, target_indices)
+
+        source_activations = backend.take(source_embed, source_indices, axis=0)
+        target_activations = backend.take(target_embed, target_indices, axis=0)
+        backend.eval(source_activations, target_activations)
+
+        # Generate bridge
+        typer.echo("  Computing bridge transform (GramAlign)...")
+        result = generator.generate(
+            source_activations,
+            target_activations,
+            source_name=source_name,
+            target_name=target_name,
+        )
+
+        # Save bridge
+        typer.echo(f"  Saving bridge to {output}...")
+        generator.save_bridge(result, output_path)
+
+    typer.echo("")
+    typer.echo("=" * 60)
+    typer.echo("BRIDGE GENERATION COMPLETE")
+    typer.echo("=" * 60)
+    typer.echo(f"  Output: {output}")
+    typer.echo(f"  Source dim: {result.source_dim}")
+    typer.echo(f"  Target dim: {result.target_dim}")
+    typer.echo(f"  CKA achieved: {result.cka_achieved:.6f}")
+    typer.echo(f"  Raw CKA: {result.raw_cka:.6f}")
+    typer.echo(f"  Scale ratio: {result.scale_ratio:.4f}")
+    typer.echo("=" * 60)
+
+
+@app.command("apply-bridge")
+def apply_bridge(
+    ctx: typer.Context,
+    bridge_path: str = typer.Argument(..., help="Path to bridge file (safetensors)"),
+    input_path: str = typer.Argument(..., help="Path to input embeddings (npy or safetensors)"),
+    output: str = typer.Option(..., "--output", "-o", help="Output path for transformed embeddings"),
+    inverse: bool = typer.Option(False, "--inverse", "-i", help="Apply inverse transform (target → source)"),
+    normalize: bool = typer.Option(True, "--normalize/--no-normalize", help="Apply scale normalization"),
+) -> None:
+    """Apply a bridge transform to embeddings.
+
+    Transforms embeddings from source space to target space (or vice versa with
+    --inverse) using a previously generated bridge.
+
+    Supports input/output in:
+    - NumPy (.npy) format
+    - Safetensors (.safetensors) format
+
+    Examples:
+        mc merge apply-bridge clip_to_lfm2.safetensors image_embeds.npy -o lfm2_embeds.npy
+        mc merge apply-bridge bridge.safetensors source.safetensors -o target.safetensors
+        mc merge apply-bridge bridge.safetensors target_embeds.npy -o source_embeds.npy --inverse
+    """
+    import numpy as np
+    from safetensors.numpy import load_file as load_safetensors
+    from safetensors.numpy import save_file as save_safetensors
+
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.bridge.generator import CrossModalBridge
+
+    context = _context(ctx)
+    backend = get_default_backend()
+
+    # Validate bridge path
+    bridge_file = Path(bridge_path)
+    if not bridge_file.exists():
+        typer.echo(f"Error: Bridge file not found: {bridge_path}", err=True)
+        raise typer.Exit(code=1)
+
+    # Validate input path
+    input_file = Path(input_path)
+    if not input_file.exists():
+        typer.echo(f"Error: Input file not found: {input_path}", err=True)
+        raise typer.Exit(code=1)
+
+    output_path = Path(output)
+
+    typer.echo(f"APPLY BRIDGE: {'inverse' if inverse else 'forward'} transform")
+    typer.echo(f"  Bridge: {bridge_path}")
+    typer.echo(f"  Input: {input_path}")
+    typer.echo(f"  Output: {output}")
+
+    # Load bridge
+    typer.echo("  Loading bridge...")
+    bridge = CrossModalBridge.load(bridge_file, backend=backend)
+    typer.echo(f"  Bridge: {bridge.source_name} ({bridge.source_dim}D) → {bridge.target_name} ({bridge.target_dim}D)")
+
+    # Load input embeddings
+    typer.echo("  Loading input embeddings...")
+    if input_file.suffix == ".npy":
+        embeddings_np = np.load(input_file)
+        embeddings = backend.array(embeddings_np)
+    elif input_file.suffix == ".safetensors":
+        data = load_safetensors(input_file)
+        # Try common keys
+        for key in ["embeddings", "embed", "hidden_states", "data"]:
+            if key in data:
+                embeddings = backend.array(data[key])
+                break
+        else:
+            # Use first tensor
+            first_key = list(data.keys())[0]
+            embeddings = backend.array(data[first_key])
+            typer.echo(f"  Using tensor key: {first_key}")
+    else:
+        typer.echo(f"Error: Unsupported input format: {input_file.suffix}", err=True)
+        typer.echo("  Supported formats: .npy, .safetensors", err=True)
+        raise typer.Exit(code=1)
+
+    backend.eval(embeddings)
+    typer.echo(f"  Input shape: {embeddings.shape}")
+
+    # Apply transform
+    typer.echo(f"  Applying {'inverse' if inverse else 'forward'} transform...")
+    if inverse:
+        transformed = bridge.apply_inverse(embeddings, normalize_scale=normalize)
+    else:
+        transformed = bridge.apply(embeddings, normalize_scale=normalize)
+    backend.eval(transformed)
+
+    typer.echo(f"  Output shape: {transformed.shape}")
+
+    # Save output
+    typer.echo(f"  Saving to {output}...")
+    # Convert to numpy for saving
+    transformed_np = np.array(backend.tolist(transformed))
+
+    if output_path.suffix == ".npy":
+        np.save(output_path, transformed_np)
+    elif output_path.suffix == ".safetensors":
+        save_safetensors({"embeddings": transformed_np}, str(output_path))
+    else:
+        # Default to npy
+        np.save(output_path, transformed_np)
+        typer.echo(f"  Note: Saved as NumPy format (unknown extension: {output_path.suffix})")
+
+    typer.echo("")
+    typer.echo("=" * 60)
+    typer.echo("APPLY BRIDGE COMPLETE")
+    typer.echo("=" * 60)
+    typer.echo(f"  Input shape: {embeddings.shape}")
+    typer.echo(f"  Output shape: {transformed.shape}")
+    typer.echo(f"  Direction: {'inverse' if inverse else 'forward'}")
+    typer.echo(f"  Scale normalized: {normalize}")
+    typer.echo("=" * 60)
+
+
+def _find_embedding_key(weights: dict[str, any]) -> str | None:
+    """Find the embedding layer key in a model's weight dict."""
+    # Common embedding layer names across architectures
+    candidates = [
+        "model.embed_tokens.weight",
+        "transformer.wte.weight",
+        "embeddings.word_embeddings.weight",
+        "embed_tokens.weight",
+        "wte.weight",
+        "word_embeddings.weight",
+    ]
+    for key in candidates:
+        if key in weights:
+            return key
+    # Fallback: look for any key with "embed" in it
+    for key in weights:
+        if "embed" in key.lower() and "weight" in key.lower():
+            return key
+    return None

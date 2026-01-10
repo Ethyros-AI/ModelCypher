@@ -1,0 +1,60 @@
+{
+  "experiment_id": "geom_20260110_144323",
+  "timestamp": "2026-01-10T14:43:23.998815",
+  "hypothesis": "All LLMs encode the same invariant geometric shape",
+  "model_geometries": [
+    {
+      "model_path": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+      "model_name": "LFM2-350M-MLX-bf16",
+      "hidden_dim": 1024,
+      "num_layers": 16,
+      "layer_measured": 8,
+      "intrinsic_dimension": 5.645292178051861,
+      "intrinsic_dimension_ci_lower": 4.632818840924697,
+      "intrinsic_dimension_ci_upper": 7.820181122503794,
+      "mean_sectional_curvature": 0.0,
+      "std_sectional_curvature": 0.0,
+      "curvature_sign": "flat",
+      "n_probes": 200,
+      "probe_source": "UnifiedAtlasInventory",
+      "measurement_time_seconds": 21.983717583003454
+    },
+    {
+      "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "model_name": "Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "hidden_dim": 896,
+      "num_layers": 24,
+      "layer_measured": 12,
+      "intrinsic_dimension": 3.0153682681017395,
+      "intrinsic_dimension_ci_lower": 2.6138647890664295,
+      "intrinsic_dimension_ci_upper": 3.6580783534195462,
+      "mean_sectional_curvature": 0.0,
+      "std_sectional_curvature": 0.0,
+      "curvature_sign": "flat",
+      "n_probes": 200,
+      "probe_source": "UnifiedAtlasInventory",
+      "measurement_time_seconds": 10.632459083019057
+    }
+  ],
+  "pairwise_alignments": [
+    {
+      "model_a": "LFM2-350M-MLX-bf16",
+      "model_b": "Qwen2.5-Coder-0.5B-Instruct-bf16",
+      "linear_cka_raw": 0.567215822821346,
+      "linear_cka_aligned": 0.9999836707326955,
+      "geodesic_cka_raw": 0.060529806797224896,
+      "geodesic_cka_aligned": 0.9996597728973514,
+      "n_samples": 500,
+      "rank_bound": 500,
+      "is_full_rank": false,
+      "alignment_time_seconds": 4.034010000003036
+    }
+  ],
+  "summary": {
+    "n_models": 2,
+    "intrinsic_dimension_mean": 4.3303302230768,
+    "intrinsic_dimension_std": 1.3149619549750606,
+    "curvature_mean": 0.0,
+    "mean_geodesic_cka": 0.9996597728973514
+  }
+}

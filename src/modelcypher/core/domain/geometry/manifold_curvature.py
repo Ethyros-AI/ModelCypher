@@ -395,8 +395,10 @@ class SectionalCurvatureEstimator:
         d = int(point.shape[0])
         n = int(neighbors.shape[0])
 
-        if n < d + 1:
-            logger.warning(f"Insufficient neighbors ({n}) for dimension {d}")
+        # Need at least 2 neighbors for covariance estimation
+        # When n < d, we use regularized pseudoinverse for metric tensor
+        if n < 2:
+            logger.warning(f"Insufficient neighbors ({n}) for curvature estimation")
             return self._flat_curvature(point)
 
         # Center neighbors around point
@@ -410,7 +412,21 @@ class SectionalCurvatureEstimator:
             metric = self._estimate_metric_tensor(centered, backend)
 
         # Estimate Christoffel symbols via finite differences
-        christoffel = self._estimate_christoffel_symbols(point, neighbors, metric_fn, backend)
+        christoffel_result = self._estimate_christoffel_symbols(point, neighbors, metric_fn, backend)
+
+        # Handle reduced representation for high dimensions
+        is_reduced = isinstance(christoffel_result, tuple)
+        if is_reduced:
+            christoffel, V_reduced = christoffel_result
+            d_reduced = int(christoffel.shape[0])
+            # Metric needs to be in reduced space too
+            centered_reduced = backend.matmul(centered, backend.transpose(V_reduced))
+            metric_reduced = self._estimate_metric_tensor(centered_reduced, backend)
+        else:
+            christoffel = christoffel_result
+            d_reduced = d
+            V_reduced = None
+            metric_reduced = metric
 
         # Compute sectional curvatures for sampled direction pairs
         sectional_curvatures = []
@@ -418,15 +434,17 @@ class SectionalCurvatureEstimator:
         # Derive num_directions from dimension (data-derived)
         # For d dimensions, there are d(d-1)/2 possible 2-planes
         # Sample at least d directions for coverage, capped at full coverage
-        max_planes = d * (d - 1) // 2 if d > 1 else 1
-        num_directions = min(max(d, 5), max_planes)
+        # Use reduced dimension for high-d cases
+        max_planes = d_reduced * (d_reduced - 1) // 2 if d_reduced > 1 else 1
+        num_directions = min(max(d_reduced, 5), max_planes)
 
         backend.random_seed(42)  # Reproducible random directions
         eps = division_epsilon(backend, centered)
 
         # Batch-generate all random direction vectors at once
-        U = backend.random_normal((num_directions, d))
-        V = backend.random_normal((num_directions, d))
+        # For high-d, generate in reduced space directly
+        U = backend.random_normal((num_directions, d_reduced))
+        V = backend.random_normal((num_directions, d_reduced))
         backend.eval(U, V)
 
         # Batch normalize U: U / ||U||
@@ -450,7 +468,7 @@ class SectionalCurvatureEstimator:
         backend.eval(V_unit)
 
         curvature_arr = self._sectional_curvature_batch(
-            U, V_unit, metric, christoffel, backend
+            U, V_unit, metric_reduced, christoffel, backend
         )
         valid_mask = V_norms > eps
         backend.eval(curvature_arr, valid_mask)
@@ -558,11 +576,18 @@ class SectionalCurvatureEstimator:
         # Derive k_neighbors from data:
         # 1. Minimum k for connectivity (Berry & Sauer 2016)
         # 2. At least ceil(log(n)) for local structure
+        # 3. Cap at n-1 (can't have more neighbors than other points exist)
+        #
+        # Note: The d+1 requirement was mathematically incorrect.
+        # Sectional curvature estimation needs enough neighbors for local
+        # covariance estimation, not d+1 neighbors. With k < d, we use
+        # regularized pseudoinverse for metric tensor estimation.
         riemannian = RiemannianGeometry(backend=backend)
         result = riemannian.geodesic_distances(points, k_neighbors=None)
         k_connectivity = result.k_neighbors
         k_local = max(2, int(math.ceil(math.log(max(n, 2)))))
-        k_neighbors = max(k_connectivity, k_local, d + 1)  # Also need d+1 for curvature
+        k_neighbors = max(k_connectivity, k_local)
+        k_neighbors = min(k_neighbors, n - 1)  # Can't exceed available points
 
         # Compute full geodesic distance matrix once
         pts_arr = backend.astype(points, "float32")
@@ -592,8 +617,8 @@ class SectionalCurvatureEstimator:
         for i in range(n):
             point = points[i]
 
-            # Check if we have enough neighbors
-            if k_neighbors < d:
+            # Check if we have enough neighbors (need at least 2)
+            if k_neighbors < 2:
                 local_curvatures.append(self._flat_curvature(point))
                 continue
 
@@ -744,10 +769,63 @@ class SectionalCurvatureEstimator:
         Γ^k_ij = (1/2) g^kl (∂_i g_jl + ∂_j g_il - ∂_l g_ij)
 
         Uses adaptive epsilon derived from neighbor distances.
+
+        For high dimensions (d > 256), uses a reduced representation
+        to avoid O(d³) memory. The full Christoffel tensor would be
+        1024³ * 4 bytes = 4GB for d=1024, which is prohibitive.
+        Instead, we use local PCA to work in a reduced tangent space.
         """
         backend.eval(point)
         d = int(point.shape[0])
 
+        # For high dimensions, use reduced tangent space approach
+        # This avoids O(d³) memory which would be 4GB+ for d=1024
+        max_dim_for_full_tensor = 256
+        if d > max_dim_for_full_tensor:
+            # Use local PCA to reduce dimension
+            # Work in a reduced tangent space (max 256 dims)
+            centered = neighbors - point
+            n_neighbors = int(centered.shape[0])
+
+            # Compute SVD of centered neighbors to find principal directions
+            U, S, Vt = geodesic_svd(backend, centered)
+            backend.eval(S, Vt)
+
+            # Use up to max_dim_for_full_tensor principal directions
+            k_dim = min(max_dim_for_full_tensor, n_neighbors, d)
+            V_reduced = Vt[:k_dim]  # [k_dim, d]
+
+            # Project point and neighbors to reduced space
+            point_reduced = backend.matmul(V_reduced, backend.reshape(point, (d, 1)))
+            point_reduced = backend.reshape(point_reduced, (k_dim,))
+
+            # Recursively compute Christoffel in reduced space
+            neighbors_reduced = backend.matmul(centered, backend.transpose(V_reduced))  # [n, k_dim]
+            neighbors_reduced = neighbors_reduced + point_reduced
+
+            # Compute reduced Christoffel tensor (k_dim³ instead of d³)
+            christoffel_reduced = self._estimate_christoffel_symbols_direct(
+                point_reduced, neighbors_reduced, None, backend, k_dim
+            )
+
+            # Embed back to full dimension using projection
+            # For curvature estimation, we only need the effect in sampled directions
+            # so we store the reduced tensor and projection matrix
+            return (christoffel_reduced, V_reduced)
+
+        return self._estimate_christoffel_symbols_direct(
+            point, neighbors, metric_fn, backend, d
+        )
+
+    def _estimate_christoffel_symbols_direct(
+        self,
+        point: "Array",
+        neighbors: "Array",
+        metric_fn: Callable[["Array"], "Array"] | None,
+        backend: "Backend",
+        d: int,
+    ) -> "Array":
+        """Direct Christoffel computation for dimensions <= 256."""
         # Epsilon is always derived from data (no configuration)
         eps = self._compute_adaptive_epsilon(neighbors, backend)
 

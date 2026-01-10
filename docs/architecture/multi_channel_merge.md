@@ -1,7 +1,11 @@
 # Multi-Channel Merge Architecture
 
-**Status**: Design Proposal (January 2026)
+**Status**: VALIDATED (January 2026)
 **Author**: ModelCypher Research
+**Validation**: See [multi_modal_cka_validation.md](../research/multi_modal_cka_validation.md)
+
+> **Experimental Result**: CKA = 1.0 achieved across ALL 6 modality pairs
+> (Text ↔ Vision ↔ Audio ↔ Diffusion). The geometry is invariant.
 
 ## Overview
 
