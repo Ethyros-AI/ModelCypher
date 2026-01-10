@@ -120,6 +120,7 @@ def get_geometric_merger() -> "UnifiedGeometricMerger":
     registry = _get_registry()
     return UnifiedGeometricMerger(
         model_loader=registry.model_loader,
+        activation_provider=registry.activation_provider,
         activation_store=registry.activation_store,
     )
 

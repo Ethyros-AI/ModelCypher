@@ -49,17 +49,13 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             Collapse threshold is derived from the activation variance distribution.
             No user parameters for thresholds.
             """
-            from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-                InvariantLayerMappingService,
-            )
-
             source_path = require_existing_directory(sourcePath)
             target_path = require_existing_directory(targetPath)
             result = ctx.invariant_mapping_service.map_layers(
                 str(source_path),
                 str(target_path),
             )
-            payload = InvariantLayerMappingService.result_payload(result)
+            payload = ctx.invariant_mapping_service.result_payload(result)
             return payload
 
     if "mc_geometry_invariant_collapse_risk" in tool_set:
@@ -73,13 +69,9 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             Collapse threshold is derived from the activation variance distribution.
             No user parameters for thresholds.
             """
-            from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-                InvariantLayerMappingService,
-            )
-
             model_path = require_existing_directory(modelPath)
             result = ctx.invariant_mapping_service.analyze_collapse_risk(str(model_path))
-            payload = InvariantLayerMappingService.collapse_risk_payload(result)
+            payload = ctx.invariant_mapping_service.collapse_risk_payload(result)
             return payload
 
     if "mc_geometry_atlas_inventory" in tool_set:

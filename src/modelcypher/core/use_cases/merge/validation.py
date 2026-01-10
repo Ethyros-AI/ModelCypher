@@ -145,14 +145,14 @@ class MergeValidationService:
         self,
         inference_engine: "InferenceEngine",
         evaluation_service: "EvaluationService",
-        model_loader: "ModelLoaderPort | None" = None,
+        model_loader: "ModelLoaderPort",
     ) -> None:
         """Initialize MergeValidationService with required dependencies.
 
         Args:
             inference_engine: Inference engine port implementation (REQUIRED).
             evaluation_service: Evaluation service (REQUIRED).
-            model_loader: Optional model loader (uses default if None).
+            model_loader: Model loader port (required).
         """
         self._inference_engine = inference_engine
         self._evaluation_service = evaluation_service
@@ -360,11 +360,8 @@ class MergeValidationService:
         from modelcypher.core.domain._backend import get_default_backend
 
         try:
-            # Get model loader (use injected or default)
             if self._model_loader is None:
-                from modelcypher.infrastructure.model_loader_factory import get_model_loader
-
-                self._model_loader = get_model_loader()
+                raise RuntimeError("Model loader required for merge validation")
 
             b = get_default_backend()
 

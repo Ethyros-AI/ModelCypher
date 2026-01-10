@@ -36,7 +36,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -53,6 +53,8 @@ _LOG_SAFE_MIN = sys.float_info.min
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 @dataclass(frozen=True)
 class EntropyCalibrationResult:
@@ -226,7 +228,7 @@ class EntropyCalibrationService:
         z = loaded.z_score(measured_entropy)
     """
 
-    def __init__(self, model_loader: Any) -> None:
+    def __init__(self, model_loader: "ModelLoaderPort") -> None:
         """Initialize entropy calibration service.
 
         Args:

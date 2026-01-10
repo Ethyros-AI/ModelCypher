@@ -43,6 +43,7 @@ from .stages import (
 )
 
 if TYPE_CHECKING:
+    from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.model_loader import ModelLoaderPort
@@ -67,6 +68,7 @@ def run_merge(
     target_tokenizer: Any | None = None,
     # Optional pre-loaded weights to avoid redundant disk I/O
     source_weights: dict[str, "Array"] | None = None,
+    activation_provider: "ActivationProvider | None" = None,
     activation_store: "ActivationStore | None" = None,
     # Delta budget control for sequential stacking
     delta_scale: float = 1.0,
@@ -166,6 +168,7 @@ def run_merge(
         target_path=target_path,
         extract_layer_index_fn=extract_layer_index,
         probe_mode=probe_mode,
+        activation_provider=activation_provider,
         activation_store=activation_store,
     )
 

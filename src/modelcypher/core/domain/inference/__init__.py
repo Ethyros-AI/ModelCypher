@@ -23,8 +23,7 @@ Platform-Specific Implementations:
 - CUDA (Linux): *_cuda.py files
 - JAX (TPU/GPU): *_jax.py files
 
-For platform-specific generators, use infrastructure factories:
-    from modelcypher.infrastructure.dual_path_factory import get_dual_path_generator_class
+For platform-specific generators, use composition to inject the correct class.
 
 For orchestration (CheckpointComparisonCoordinator), use:
     from modelcypher.core.use_cases.inference import CheckpointComparisonCoordinator

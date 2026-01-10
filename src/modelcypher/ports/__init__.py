@@ -38,6 +38,8 @@ Synchronous Ports (sync-first design):
 Storage Ports:
 - ModelStore, JobStore, EvaluationStore, CompareStore: Data persistence
 - ManifoldProfileStore: Manifold analysis caching
+- ActivationStore: Probe activation checkpoint persistence
+- BridgeStore: Cross-modal bridge artifact persistence
 
 Asynchronous Ports (async-first design for streaming/complex ops):
 - InferenceEnginePort: Async dual-path generation with entropy monitoring

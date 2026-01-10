@@ -1428,10 +1428,7 @@ def stage_probe(
 
             activation_provider = LegacyActivationProvider(collect_activations_fn)
         else:
-            # Auto-detect activation provider from platform
-            from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
-
-            activation_provider = get_activation_provider()
+            raise ValueError("Activation provider required for probe stage")
 
     if (
         source_model is not None

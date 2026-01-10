@@ -20,6 +20,8 @@ flowchart TB
         FS["filesystem_storage.py"]
         LT["local_training.py"]
         LI["local_inference.py"]
+        AS["activation_store.py"]
+        BR["bridge_store.py"]
     end
 
     subgraph PORTS["Ports Layer"]
@@ -27,6 +29,8 @@ flowchart TB
         TR["Training Port"]
         ST["Storage Port"]
         INF["Inference Port"]
+        ACT["Activation Store"]
+        BRS["Bridge Store"]
     end
 
     subgraph DOMAIN["Core Domain"]
@@ -63,7 +67,7 @@ This is the heart of the application. It contains the "business logic" and mathe
 ### 2. Ports (`src/modelcypher/ports/`)
 These define the *interfaces* (Python `Protocol`s) that the Domain needs to interact with the outside world.
 -   **Interfaces only**.
--   **Examples**: `training`, `storage`, `inference`, `geometry` ports.
+-   **Examples**: `training`, `storage`, `inference`, `activation_store`, `bridge_store` ports.
 
 ### 3. Adapters (`src/modelcypher/adapters/`)
 Concrete implementations of the Ports. This is where we talk to the filesystem, Hugging Face Hub, or hardware.

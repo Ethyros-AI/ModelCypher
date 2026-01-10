@@ -56,7 +56,7 @@ class ModelProbeService:
     Service for probing and analyzing model architecture and compatibility.
 
     This is a facade that delegates to the appropriate backend-specific probe.
-    Use get_model_probe() directly for more control over backend selection.
+    Use the composition root to select the appropriate probe implementation.
     """
 
     def __init__(self, probe: ModelProbePort) -> None:

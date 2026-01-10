@@ -208,6 +208,7 @@ class ServiceFactory:
         return MergeValidationService(
             inference_engine=self._registry.inference_engine,
             evaluation_service=self.evaluation_service(),
+            model_loader=self._registry.model_loader,
         )
 
     def knowledge_transfer_service(self):
@@ -234,6 +235,7 @@ class ServiceFactory:
         )
         geometric_merger = UnifiedGeometricMerger(
             model_loader=self._registry.model_loader,
+            activation_provider=self._registry.activation_provider,
             activation_store=self._registry.activation_store,
         )
         return MergePipelineService(

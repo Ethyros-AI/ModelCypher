@@ -134,7 +134,8 @@ class InvariantLayerMappingService:
 
         Args:
             cache: Optional fingerprint cache (uses shared singleton if None)
-            model_loader: Optional model loader (uses default if None)
+            model_loader: Model loader port (required for fingerprint extraction)
+            activation_provider: Activation provider port (required for probes)
             backend: Optional backend for tensor ops (uses default if None)
         """
         register_default_atlas_inventories()
