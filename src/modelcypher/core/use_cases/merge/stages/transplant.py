@@ -36,6 +36,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     regularization_epsilon,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.anchor_grafting import (
     compute_anchor_grafting_delta,
@@ -1924,29 +1925,85 @@ def stage_transplant(
                         grafting_result.transfer_fraction,
                     )
                 else:
-                    # Direct delta computation when anchors unavailable
-                    # Compute delta in OUTPUT activation space:
-                    # delta_A = (source_aligned @ input_acts.T).T - (target @ input_acts.T).T
-                    #         = input_acts @ (source_aligned - target).T
-                    # But we need the change in layer output, which is:
-                    # output_source = input_acts @ source_aligned.T
-                    # output_target = input_acts @ target.T
-                    # delta_A = output_source - output_target
+                    # Anchors not explicitly provided - derive from activations
+                    # The probe activations themselves serve as semantic anchors
+                    # spanning the manifold. Use a subset for relative representation.
+                    if (
+                        source_activations is not None
+                        and target_activations is not None
+                        and layer_idx in source_activations
+                        and layer_idx in target_activations
+                    ):
+                        src_acts_list = source_activations[layer_idx]
+                        tgt_acts_list = target_activations[layer_idx]
 
-                    # Compute outputs for each probe
-                    output_source = b.matmul(core_acts, b.transpose(source_aligned))
-                    output_target = b.matmul(core_acts, b.transpose(target_w))
-                    b.eval(output_source, output_target)
+                        if src_acts_list and tgt_acts_list:
+                            # Stack all activations
+                            src_acts_stacked = b.concat(
+                                [b.array(a) for a in src_acts_list], axis=0
+                            )
+                            tgt_acts_stacked = b.concat(
+                                [b.array(a) for a in tgt_acts_list], axis=0
+                            )
+                            b.eval(src_acts_stacked, tgt_acts_stacked)
 
-                    # Delta is the difference in outputs
-                    delta_A = output_source - output_target
-                    b.eval(delta_A)
+                            # Use a subset of activations as anchors for relative representation
+                            # Too many anchors creates memory/performance issues
+                            # Atlas probes are designed to span the manifold
+                            n_src = int(b.shape(src_acts_stacked)[0])
+                            n_tgt = int(b.shape(tgt_acts_stacked)[0])
+                            # Limit anchors to sqrt(min_samples) for efficiency
+                            # At least 10, at most 100 anchors
+                            max_anchors = min(100, max(10, int(sqrt_scalar(min(n_src, n_tgt), b))))
+                            n_anchors = min(n_src, n_tgt, max_anchors)
 
-                    logger.debug(
-                        "DIRECT DELTA: Layer %d delta shape=%s",
-                        layer_idx,
-                        list(delta_A.shape),
-                    )
+                            # Select first n_anchors as anchor set (deterministic)
+                            src_anch_derived = b.take(
+                                src_acts_stacked,
+                                b.arange(n_anchors),
+                                axis=0,
+                            )
+                            tgt_anch_derived = b.take(
+                                tgt_acts_stacked,
+                                b.arange(n_anchors),
+                                axis=0,
+                            )
+                            b.eval(src_anch_derived, tgt_anch_derived)
+
+                            logger.info(
+                                "ANCHOR-DERIVED: Using %d probe activations as anchors for layer %d",
+                                n_anchors, layer_idx,
+                            )
+
+                            # Run anchor-relative grafting with derived anchors
+                            grafting_result = compute_anchor_grafting_with_ghost_anchors(
+                                source_activations=src_acts_stacked,
+                                target_activations=tgt_acts_stacked,
+                                source_anchors=src_anch_derived,
+                                target_anchors=tgt_anch_derived,
+                                backend=b,
+                            )
+                            delta_A = grafting_result.delta_activations
+                            logger.info(
+                                "ANCHOR-DERIVED: Layer %d delta_A computed, "
+                                "transfer_fraction=%.3f",
+                                layer_idx,
+                                grafting_result.transfer_fraction,
+                            )
+                        else:
+                            # No activations available - skip
+                            logger.warning(
+                                "TRANSPLANT: Skipping %s - no activations for layer %d",
+                                key, layer_idx
+                            )
+                            continue
+                    else:
+                        # No activations at all - skip
+                        logger.warning(
+                            "TRANSPLANT: Skipping %s - no activations for layer %d",
+                            key, layer_idx
+                        )
+                        continue
 
                 # Constrained least-squares transplant
                 result = compute_transplant_delta(

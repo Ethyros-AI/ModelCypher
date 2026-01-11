@@ -1944,9 +1944,12 @@ def _probe_precise(
         ),
     )
 
+    # Paging disabled by default - causes MLX SIGSEGV crashes in compile_replace
+    # due to interaction between lazy evaluation and memory management.
+    # Can be re-enabled with MC_PROBE_PAGE_ACTIVATIONS=1 if memory is tight.
     page_activations = (
         activation_store is not None
-        and os.environ.get("MC_PROBE_PAGE_ACTIVATIONS", "1") != "0"
+        and os.environ.get("MC_PROBE_PAGE_ACTIVATIONS", "0") == "1"
     )
     if page_activations:
         def _paged_dir(identity: Any | None, label: str) -> Path | None:

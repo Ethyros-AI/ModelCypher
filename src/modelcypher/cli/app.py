@@ -44,6 +44,7 @@ from modelcypher.cli.commands import entropy as entropy_commands
 from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
+from modelcypher.cli.commands import interp as interp_commands
 from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import merge as merge_commands
 from modelcypher.cli.commands import model as model_commands
@@ -219,6 +220,7 @@ app.add_typer(storage_commands.app, name="storage", help="Storage status and cle
 app.add_typer(infer_commands.app, name="infer", help="Inference commands")
 app.add_typer(multimodal_commands.app, name="multimodal", help="Multimodal injection commands")
 app.add_typer(help_commands.app, name="help", help="Contextual help and schemas")
+app.add_typer(interp_commands.app, name="interp", help="Mechanistic interpretability tools")
 app.add_typer(profile_commands.app, name="profile", help="Unified model profile operations")
 
 
