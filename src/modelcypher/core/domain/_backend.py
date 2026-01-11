@@ -90,15 +90,9 @@ def probe_mlx_available(*, explicit: bool = False) -> bool:
         _mlx_probe_error = "MLX not installed"
         return False
 
+    # Runtime probe - verify MLX actually works
     runtime_check = os.environ.get("MC_MLX_RUNTIME_CHECK", "1").lower() in ("1", "true", "yes")
     if runtime_check:
-        if _is_sandboxed_environment():
-            allow_probe = (os.environ.get("MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX") or "").lower()
-            if allow_probe not in ("1", "true", "yes"):
-                _mlx_probe_result = True
-                _mlx_probe_error = None
-                return True
-
         ok, err = _probe_mlx_runtime()
         if not ok:
             _mlx_probe_result = False
@@ -168,15 +162,6 @@ def _probe_mlx_runtime() -> tuple[bool, str | None]:
 
     Uses environment variables to suppress crash dialogs on macOS.
     """
-    if _is_sandboxed_environment():
-        allow_probe = (os.environ.get("MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX") or "").lower()
-        if allow_probe not in ("1", "true", "yes"):
-            return (
-                False,
-                "MLX runtime probe disabled in VSCode/Claude Code sandbox to avoid crash reports. "
-                "Run from Terminal.app to use MLX, or set MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 to force the probe.",
-            )
-
     code = "import mlx.core as mx; mx.random.key(0); mx.zeros((1,))"
 
     # Environment variables to suppress crash reporting/dialogs

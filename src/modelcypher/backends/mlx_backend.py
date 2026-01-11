@@ -667,12 +667,6 @@ class MLXBackend(Backend):
         """
         return self.mx.linalg.inv(array)
 
-    def solve(self, a: Array, b: Array) -> Array:
-        """Solve linear system ax = b."""
-        return self.mx.linalg.solve(a, b)
-
-
-
     def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> Array:
         """Compute matrix square root AND inverse square root via Newton-Schulz.
         

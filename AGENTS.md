@@ -47,34 +47,6 @@ poetry run modelcypher-mcp        # MCP server
 
 ---
 
-## Running in Sandboxed Environments (IMPORTANT)
-
-**If you're running in VSCode, Cursor, Claude Code, or any IDE extension**, MLX will fail by default. The code detects sandboxed environments and disables MLX to avoid crash dialogs.
-
-**To enable MLX in sandboxed environments**, prefix ALL commands with:
-
-```bash
-MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 poetry run pytest ...
-MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1 poetry run mc ...
-```
-
-**Why this happens**: `src/modelcypher/core/domain/_backend.py` checks for `VSCODE_PID`, `VSCODE_CWD`, and `TERM_PROGRAM` to detect sandboxed environments. When detected, it skips the MLX runtime probe to avoid Apple crash reporter dialogs that can hang automated tools.
-
-**Alternatives**:
-- `MC_DISABLE_MLX=1` — Skip MLX entirely, use JAX backend (Linux/TPU only)
-- Run from Terminal.app directly (not through IDE)
-- `MC_MLX_RUNTIME_CHECK=0` — Skip runtime probe but still try to use MLX (risky)
-
-**Environment variables reference**:
-
-| Variable | Effect |
-|----------|--------|
-| `MC_ALLOW_MLX_RUNTIME_PROBE_IN_SANDBOX=1` | Force MLX probe even in VSCode/Cursor |
-| `MC_DISABLE_MLX=1` | Disable MLX entirely |
-| `MC_MLX_RUNTIME_CHECK=0` | Skip subprocess probe (assumes MLX works) |
-
----
-
 ## CLI Quick Reference
 
 ### Model Merging (The Main Operation)
