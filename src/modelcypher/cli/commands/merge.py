@@ -164,7 +164,7 @@ def _run_merge(
 
     Scale is always 1.0 for single merges - the null-space projection
     already ensures safe knowledge addition. No user-configurable knobs.
-    Always uses atlas probes - semantic concepts span the manifold correctly.
+    Always uses atlas probes with geometry-derived count.
     """
     from modelcypher.cli.composition import get_merge_pipeline_service
 
@@ -184,7 +184,7 @@ def _run_merge(
     try:
         with prevent_sleep():
             # delta_scale=1.0 always - null-space projection handles safety
-            # probe_mode="atlas" always - semantic probes span the manifold correctly
+            # probe_mode="atlas" always - geometry-derived probe count
             result = service.run(
                 source_path=source,
                 target_path=target,

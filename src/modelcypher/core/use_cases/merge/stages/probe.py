@@ -20,8 +20,8 @@ Stage 1: PROBE - Build intersection map from probe responses.
 
 The intersection map is the PRIMARY CONTROL SIGNAL for all downstream operations.
 
-We always run the full atlas probe corpus from JSON (thousands of probes),
-compute activation-level CKA, and avoid any downsampling. Token probing and
+We always run the atlas probe corpus from JSON, with the probe count derived
+from geometry (hidden dimensions of source/target). Token probing and
 weight-level shortcuts are intentionally disabled.
 
 Reference: Kornblith et al. (2019) "Similarity of Neural Network Representations"
@@ -68,7 +68,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Probe mode is ALWAYS activation-level CKA with full atlas probes.
+# Probe mode is ALWAYS activation-level CKA with atlas JSON probes.
 # No token probing, no weight-level shortcuts.
 
 # Checkpoint interval: save progress every N probes
@@ -95,6 +95,76 @@ def _select_probe_text(probe: Any) -> str | None:
         if fallback and len(fallback.strip()) >= 2:
             probe_text = fallback
     return probe_text
+
+
+def _infer_required_probe_count(
+    source_weights: dict[str, Any],
+    target_weights: dict[str, Any],
+) -> tuple[int, int, int]:
+    """Infer geometry-derived probe count from hidden dimensions."""
+    from modelcypher.core.use_cases.merge.helpers import infer_hidden_dim
+
+    source_dim = infer_hidden_dim(source_weights)
+    target_dim = infer_hidden_dim(target_weights)
+    required = max(source_dim, target_dim)
+    return required, source_dim, target_dim
+
+
+def _select_geometry_probes(
+    probes: list[tuple[Any, str]],
+    required_count: int,
+) -> list[tuple[Any, str]]:
+    """Select a geometry-sized probe set with broad domain coverage."""
+    if required_count <= 0 or required_count >= len(probes):
+        return list(probes)
+
+    # De-duplicate by probe_id while preserving deterministic order.
+    seen: set[str] = set()
+    unique: list[tuple[Any, str]] = []
+    for probe, text in probes:
+        probe_id = probe.probe_id
+        if probe_id in seen:
+            continue
+        seen.add(probe_id)
+        unique.append((probe, text))
+
+    if required_count >= len(unique):
+        return unique
+
+    # Round-robin by domain for broad coverage.
+    buckets: dict[str, list[tuple[Any, str]]] = {}
+    for probe, text in unique:
+        domain = probe.domain.value if hasattr(probe.domain, "value") else str(probe.domain)
+        buckets.setdefault(domain, []).append((probe, text))
+
+    for domain, items in buckets.items():
+        buckets[domain] = sorted(items, key=lambda item: item[0].probe_id)
+
+    domains = sorted(buckets.keys())
+    selected: list[tuple[Any, str]] = []
+    index = 0
+    while len(selected) < required_count:
+        added = False
+        for domain in domains:
+            items = buckets[domain]
+            if index < len(items):
+                selected.append(items[index])
+                added = True
+                if len(selected) >= required_count:
+                    break
+        if not added:
+            break
+        index += 1
+
+    if len(selected) < required_count:
+        selected_ids = {probe.probe_id for probe, _ in selected}
+        remaining = [item for item in unique if item[0].probe_id not in selected_ids]
+        for probe, text in sorted(remaining, key=lambda item: item[0].probe_id):
+            selected.append((probe, text))
+            if len(selected) >= required_count:
+                break
+
+    return selected
 
 
 def _proportional_layer_index(
@@ -451,13 +521,13 @@ def stage_probe(
     activation_store: "ActivationStore | None" = None,
     backend: "Backend | None" = None,
     checkpoint_dir: Path | str | None = None,
-    probe_mode: str = "atlas",  # Only "atlas" supported - 4300+ curated probes
+    probe_mode: str = "atlas",  # Only "atlas" supported - atlas JSON probes
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
 
-    ALWAYS uses precise mode (activation-level CKA) with all 403 probes.
-    No configuration - the geometry determines everything.
+    ALWAYS uses precise mode (activation-level CKA) with atlas JSON probes.
+    Probe count is derived from geometry (hidden dimensions), not user input.
 
     Args:
         source_weights: Source model weights
@@ -473,6 +543,10 @@ def stage_probe(
     Returns:
         ProbeResult with correlations, confidences, and intersection map
     """
+    if probe_mode != "atlas":
+        logger.warning("PROBE MODE: %s unsupported; forcing atlas", probe_mode)
+        probe_mode = "atlas"
+
     if tokenizer is not None:
         source_tokenizer = source_tokenizer or tokenizer
         target_tokenizer = target_tokenizer or tokenizer
@@ -574,13 +648,12 @@ def _probe_precise(
     target_path: str = "",
     backend: "Backend | None" = None,
     checkpoint_dir: Path | None = None,
-    probe_mode: str = "atlas",  # Only "atlas" is supported - 4300+ curated probes
+    probe_mode: str = "atlas",  # Only "atlas" is supported - atlas JSON probes
 ) -> ProbeResult:
     """Precise probe mode: Run probes through BOTH models.
 
-    Uses Atlas JSON probes (4300+ curated conceptual + MMLU probes) for proper
-    geometric coverage of the manifold. More probes = better coverage of the
-    invariant shape that all models encode.
+    Uses Atlas JSON probes with a geometry-derived count (hidden dimensions)
+    for broad manifold coverage without user configuration.
 
     Args:
         probe_mode: Must be "atlas" (kept for cache key compatibility).
@@ -602,15 +675,10 @@ def _probe_precise(
     )
 
     # Load Atlas probes for manifold coverage.
-    # More probes = better coverage of the invariant shape.
-    # The alignment will self-constrain to effective rank via spectral gap detection
-    # (see invariant_alignment in numerical_stability.py), so probe count doesn't
-    # cause overfitting - the geometry determines the true dimensionality.
+    # Probe count is derived from geometry (hidden dimensions).
     from modelcypher.core.domain.agents.probe_loader import load_all_probes
     probes = load_all_probes()
-    logger.info("PROBE MODE: Atlas (%d probes, alignment rank derived from geometry)", len(probes))
-            
-    num_probes = len(probes)
+    logger.info("PROBE MODE: Atlas (%d probes total)", len(probes))
 
     # Pre-validate probes for usable text (used for caching + inference).
     valid_probes: list[tuple[Any, str]] = []
@@ -626,6 +694,40 @@ def _probe_precise(
             continue
         valid_probes.append((probe, probe_text))
 
+    required_count, source_dim, target_dim = _infer_required_probe_count(
+        source_weights, target_weights
+    )
+
+    if required_count <= 0:
+        logger.warning(
+            "PROBE MODE: Hidden dims unavailable; using all %d valid probes",
+            len(valid_probes),
+        )
+        selected_probes = list(valid_probes)
+    elif required_count > len(valid_probes):
+        logger.warning(
+            "PROBE MODE: Geometry requires %d probes (src_dim=%d, tgt_dim=%d) "
+            "but only %d valid probes available; using all probes",
+            required_count,
+            source_dim,
+            target_dim,
+            len(valid_probes),
+        )
+        selected_probes = list(valid_probes)
+    else:
+        selected_probes = _select_geometry_probes(valid_probes, required_count)
+        logger.info(
+            "PROBE MODE: Geometry-selected %d/%d probes (src_dim=%d, tgt_dim=%d)",
+            len(selected_probes),
+            len(valid_probes),
+            source_dim,
+            target_dim,
+        )
+
+    if invalid_probe_count:
+        logger.info("PROBE MODE: Skipped %d probes with no usable text", invalid_probe_count)
+
+    valid_probes = selected_probes
     expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
     expected_probe_domains = [probe.domain.value for probe, _ in valid_probes]
     expected_probe_texts = [probe_text for _, probe_text in valid_probes]
@@ -828,7 +930,7 @@ def _probe_precise(
         probes_processed = len(probe_ids)
 
     if run_inference:
-        # Instead of 806 individual forward passes (403 probes × 2 models),
+        # Instead of individual forward passes (probes × 2 models),
         # we batch probes into groups and use batch methods for ~5-10× speedup.
         #
         # The batch size is tuned for GPU memory vs throughput tradeoff.

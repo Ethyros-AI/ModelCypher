@@ -1264,7 +1264,7 @@ def invariant_alignment(
     # When n < d, the least squares solution has infinitely many solutions.
     # The minimum-norm solution (from gpu_lstsq) is mathematically valid but
     # may overfit to the specific probes used. Ensure sufficient probe coverage
-    # by using the full Atlas probe set (4300+ probes).
+    # by using a geometry-derived probe count (n >= d_source).
     #
     # We DON'T truncate F because:
     # 1. Truncation might discard source-unique knowledge that appears as small
