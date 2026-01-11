@@ -103,7 +103,7 @@ The MLE estimator is consistent: $\hat{d} \xrightarrow{p} d$ as $n \to \infty$ f
 
 The TwoNN estimator has bias $O(1/d)$ for finite samples, which decreases as intrinsic dimension increases.
 
-### Theorem 3: Scale Dependence (Noia et al., 2024)
+### Theorem 3: Scale Dependence (Denti et al., 2022; Noia et al., 2024)
 
 ID estimation is inherently scale-dependent. Different scales may reveal different intrinsic dimensions (multiscale structure).
 
@@ -162,34 +162,43 @@ Output Layer:  ID ≈ number of classes
 2. **Facco, E., d'Errico, M., Rodriguez, A., & Laio, A.** (2017). "Estimating the intrinsic dimension of datasets by a minimal neighborhood information." *Scientific Reports*, 7, 12140. [DOI:10.1038/s41598-017-11873-y](https://doi.org/10.1038/s41598-017-11873-y)
    - *The TwoNN estimator*
 
+3. **[Denti et al. (2022)](../../references/arxiv/Denti_2022_GRIDE_Generalized_Ratios_Intrinsic_Dimension.pdf)**. "The generalized ratios intrinsic dimension estimator (GRIDE)." *Scientific Reports*, 12, 20005. [DOI:10.1038/s41598-022-20991-1](https://doi.org/10.1038/s41598-022-20991-1)
+   - *Scale-dependent ID estimator with uncertainty quantification*
+
 ### Neural Network Applications
 
-3. **[Ansuini et al. (2019)](../../references/arxiv/Ansuini_2019_Intrinsic_dimension_data_representations_deep_neural.pdf)**. "Intrinsic dimension of data representations in deep neural networks." *NeurIPS 2019*. [arXiv:1905.12784](https://arxiv.org/abs/1905.12784)
+4. **[Ansuini et al. (2019)](../../references/arxiv/Ansuini_2019_Intrinsic_dimension_data_representations_deep_neural.pdf)**. "Intrinsic dimension of data representations in deep neural networks." *NeurIPS 2019*. [arXiv:1905.12784](https://arxiv.org/abs/1905.12784)
    - *ID analysis of deep networks*
 
-4. **[Pope et al. (2021)](../../references/arxiv/Pope_2021_Intrinsic_Dimension_Images_Impact_Learning.pdf)**. "The Intrinsic Dimension of Images and Its Impact on Learning." *ICLR 2021*. [arXiv:2104.08894](https://arxiv.org/abs/2104.08894)
+5. **[Pope et al. (2021)](../../references/arxiv/Pope_2021_Intrinsic_Dimension_Images_Impact_Learning.pdf)**. "The Intrinsic Dimension of Images and Its Impact on Learning." *ICLR 2021*. [arXiv:2104.08894](https://arxiv.org/abs/2104.08894)
    - *ID of image datasets*
+
+6. **[Aghajanyan et al. (2021)](../../references/arxiv/Aghajanyan_2021_Intrinsic_Dimensionality_Fine_Tuning.pdf)**. "Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning." *ACL-IJCNLP 2021*. [arXiv:2012.13255](https://arxiv.org/abs/2012.13255)
+   - *Low-ID subspace explains parameter-efficient fine-tuning*
 
 ### 2024-2025 Advances
 
-5. **Konz, N., et al.** (2024). "Unraveling Learning Differences via Intrinsic Dimension." *ICLR 2024*. [OpenReview](https://openreview.net/forum?id=ICLR2024-ID)
+7. **Konz, N., et al.** (2024). "Unraveling Learning Differences via Intrinsic Dimension." *ICLR 2024*. [OpenReview](https://openreview.net/forum?id=ICLR2024-ID)
    - *ID for understanding learning dynamics*
 
-6. **Noia, A., et al.** (2024). "Scale-dependent intrinsic dimension estimation." [arXiv](https://arxiv.org/search/?query=scale-dependent+intrinsic+dimension&searchtype=all)
+8. **Noia, A., et al.** (2024). "Scale-dependent intrinsic dimension estimation." [arXiv](https://arxiv.org/search/?query=scale-dependent+intrinsic+dimension&searchtype=all)
    - *Multiscale ID analysis*
 
-7. **Kataiwa, K., et al.** (2025). "Robust estimation of the intrinsic dimension of data sets." *Scientific Reports*, 15, 91676. [DOI:10.1038/s41598-025-91676-8](https://doi.org/10.1038/s41598-025-91676-8)
+9. **Kataiwa, K., et al.** (2025). "Robust estimation of the intrinsic dimension of data sets." *Scientific Reports*, 15, 91676. [DOI:10.1038/s41598-025-91676-8](https://doi.org/10.1038/s41598-025-91676-8)
    - *Noise-robust ID estimation*
 
-8. **Valeriani, L., et al.** (2024). "Intrinsic dimension correlation in neural networks." [arXiv:2406.15812](https://arxiv.org/abs/2406.15812)
+10. **Valeriani, L., et al.** (2024). "Intrinsic dimension correlation in neural networks." [arXiv:2406.15812](https://arxiv.org/abs/2406.15812)
    - *ID as a tool for network analysis*
 
 ### LLM-Specific
 
-9. **Cheng, X., et al.** (2023). "Intrinsic Dimension of LLM Representations." [arXiv](https://arxiv.org/search/?query=intrinsic+dimension+LLM+representations&searchtype=all)
-   - *ID in large language models*
+11. **[Cheng et al. (2025)](../../references/arxiv/Cheng_2025_HighDimensional_Abstraction_Phase_LMs.pdf)**. "Emergence of a High-Dimensional Abstraction Phase in Language Transformers." *ICLR 2025*. [OpenReview](https://openreview.net/forum?id=0fD3iIBhlV)
+   - *ID peaks mark abstraction and cross-model representational similarity*
 
-10. **Lee, S., et al.** (2024). "A Comparative Study of Learning Paradigms in Large Language Models via Intrinsic Dimension." *RepL4NLP 2025*. [ACL Anthology](https://aclanthology.org/)
+12. **[Ruppik et al. (2025)](../../references/arxiv/Ruppik_2025_Local_Intrinsic_Dimensions_Contextual_LMs.pdf)**. "Less is More: Local Intrinsic Dimensions of Contextual Language Models." *NeurIPS 2025*. [arXiv:2506.01034](https://arxiv.org/abs/2506.01034)
+   - *Local ID tracks training dynamics and generalization shifts*
+
+13. **Lee, S., et al.** (2024). "A Comparative Study of Learning Paradigms in Large Language Models via Intrinsic Dimension." *RepL4NLP 2025*. [ACL Anthology](https://aclanthology.org/)
     - *ID across learning paradigms*
 
 ---

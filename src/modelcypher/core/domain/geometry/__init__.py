@@ -38,6 +38,9 @@ _SUBMODULES = {
     "backend_matrix_utils",
     "signature_base",
     "numerical_stability",
+    # Anchor-relative grafting pipeline
+    "anchor_decoder",
+    "anchor_grafting",
     # Analysis and metrics
     "anchor_invariance_analyzer",
     "alignment_diagnostic",
@@ -168,6 +171,12 @@ _ATTR_TO_MODULE = {
     # Cross-dimension transfer via relative representation (CRITICAL for cross-arch merge)
     "cross_dimension_transfer": ("relative_representation", "cross_dimension_transfer"),
     "RelativeRepresentation": ("relative_representation", "RelativeRepresentation"),
+    # Anchor-relative concept grafting (CANONICAL merge pipeline)
+    "AnchorDecodingResult": ("anchor_decoder", "AnchorDecodingResult"),
+    "compute_anchor_decoder": ("anchor_decoder", "compute_anchor_decoder"),
+    "decode_to_activation_space": ("anchor_decoder", "decode_to_activation_space"),
+    "AnchorGraftingResult": ("anchor_grafting", "AnchorGraftingResult"),
+    "compute_anchor_grafting_delta": ("anchor_grafting", "compute_anchor_grafting_delta"),
     # DoRA analysis
     "ChangeType": ("dora_decomposition", "ChangeType"),
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),

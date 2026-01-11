@@ -80,7 +80,24 @@ class ModelProbeService:
         Raises:
             ValueError: If model path is invalid or config.json is missing.
         """
-        return self._probe.probe(model_path)
+        result = self._probe.probe(model_path)
+        try:
+            from modelcypher.core.domain.geometry.model_profile import ModelProfileStore
+            from modelcypher.core.use_cases.model_profiler_service import ModelProfilerService
+
+            store = ModelProfileStore()
+            profile, identity = store.ensure(model_path)
+            profiler = ModelProfilerService()
+            updated = profiler.update_identity(
+                profile,
+                model_path,
+                probe_result=result,
+                identity=identity,
+            )
+            store.save(updated, identity)
+        except Exception as exc:
+            logger.warning("Failed to persist model profile for %s: %s", model_path, exc)
+        return result
 
     def validate_merge(self, source: str, target: str) -> MergeValidationResult:
         """Validate merge compatibility between two models.

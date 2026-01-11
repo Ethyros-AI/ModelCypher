@@ -40,6 +40,162 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _compute_transplant_delta_anchor_relative(
+    weight_target: "Array",
+    activations_core: "Array",
+    delta_activations: "Array",
+    boundary_activations: "Array | None",
+    delta_scale: float,
+    backend: "Backend",
+) -> "TransplantDeltaResult":
+    """Anchor-relative mode: constrained least-squares with boundary preservation.
+
+    Solves:
+        min ||A_core @ delta_W - delta_A_core||_F²
+        s.t. A_boundary @ delta_W = 0
+
+    Via null-space projection:
+        N = I - pinv(A_boundary) @ A_boundary  (boundary null-space)
+        delta_W_unc = pinv(A_core) @ delta_A_core  (unconstrained)
+        delta_W = N @ delta_W_unc  (projected)
+        W' = W_target + delta_W.T
+    """
+    b = backend
+
+    # Convert inputs to float32
+    weight_target = b.astype(b.array(weight_target), "float32")
+    activations_core = b.astype(b.array(activations_core), "float32")
+    delta_activations = b.astype(b.array(delta_activations), "float32")
+    b.eval(weight_target, activations_core, delta_activations)
+
+    if len(weight_target.shape) != 2:
+        return TransplantDeltaResult(
+            merged_weight=weight_target,
+            applied=False,
+            null_dim=0,
+            delta_norm=0.0,
+            filtered_norm=0.0,
+            projection_loss=0.0,
+            preserved_fraction=1.0,
+        )
+
+    out_dim = int(weight_target.shape[0])
+    in_dim = int(weight_target.shape[1])
+    n_core = int(activations_core.shape[0])
+
+    logger.info(
+        "ANCHOR-RELATIVE TRANSPLANT: weight=[%d, %d], n_core=%d, delta_A shape=%s",
+        out_dim, in_dim, n_core, b.shape(delta_activations)
+    )
+
+    # Step 1: Compute boundary null-space projector N
+    # N = I - pinv(A_boundary) @ A_boundary
+    if boundary_activations is not None:
+        boundary_activations = b.astype(b.array(boundary_activations), "float32")
+        b.eval(boundary_activations)
+        n_boundary = int(boundary_activations.shape[0])
+
+        if n_boundary > 0:
+            # A_b is [m, in_dim], pinv(A_b) is [in_dim, m]
+            A_b_pinv = b.pinv(boundary_activations)
+            b.eval(A_b_pinv)
+
+            # N = I - pinv(A_b) @ A_b
+            # [in_dim, m] @ [m, in_dim] -> [in_dim, in_dim]
+            proj_b = b.matmul(A_b_pinv, boundary_activations)
+            b.eval(proj_b)
+
+            N = b.eye(in_dim) - proj_b
+            b.eval(N)
+
+            logger.info(
+                "ANCHOR-RELATIVE: Boundary null-space computed from %d samples",
+                n_boundary
+            )
+        else:
+            N = b.eye(in_dim)
+            n_boundary = 0
+    else:
+        N = b.eye(in_dim)
+        n_boundary = 0
+
+    # Step 2: Compute unconstrained solution
+    # delta_W_unc = pinv(A_core) @ delta_A_core
+    # A_core is [n, in_dim], pinv(A_core) is [in_dim, n]
+    # delta_A is [n, out_dim]
+    # Result: [in_dim, n] @ [n, out_dim] -> [in_dim, out_dim]
+    A_c_pinv = b.pinv(activations_core)
+    b.eval(A_c_pinv)
+
+    delta_W_unc = b.matmul(A_c_pinv, delta_activations)
+    b.eval(delta_W_unc)
+
+    # Step 3: Project to boundary null-space
+    # delta_W = N @ delta_W_unc
+    # [in_dim, in_dim] @ [in_dim, out_dim] -> [in_dim, out_dim]
+    delta_W = b.matmul(N, delta_W_unc)
+    b.eval(delta_W)
+
+    # Apply scale
+    if delta_scale != 1.0:
+        delta_W = delta_W * delta_scale
+        b.eval(delta_W)
+
+    # Step 4: Apply to weights
+    # W' = W_target + delta_W.T
+    # delta_W is [in_dim, out_dim], W is [out_dim, in_dim]
+    merged_weight = weight_target + b.transpose(delta_W)
+    b.eval(merged_weight)
+
+    # Compute metrics
+    delta_W_norm_arr = geodesic_norms(
+        b.reshape(delta_W, (1, -1)), b, use_cache=False
+    )
+    delta_W_unc_norm_arr = geodesic_norms(
+        b.reshape(delta_W_unc, (1, -1)), b, use_cache=False
+    )
+    delta_A_norm_arr = geodesic_norms(
+        b.reshape(delta_activations, (1, -1)), b, use_cache=False
+    )
+    b.eval(delta_W_norm_arr, delta_W_unc_norm_arr, delta_A_norm_arr)
+
+    delta_W_norm = float(b.to_scalar(delta_W_norm_arr[0]))
+    delta_W_unc_norm = float(b.to_scalar(delta_W_unc_norm_arr[0]))
+    delta_A_norm = float(b.to_scalar(delta_A_norm_arr[0]))
+
+    if delta_W_unc_norm > 0:
+        preserved_fraction = delta_W_norm / delta_W_unc_norm
+        projection_loss = max(0.0, 1.0 - preserved_fraction)
+    else:
+        preserved_fraction = 1.0
+        projection_loss = 0.0
+
+    # Compute null-space dimension (rank of N minus full rank)
+    # Approximation: use n_boundary as indicator
+    null_dim = n_boundary if n_boundary > 0 else 0
+
+    logger.info(
+        "ANCHOR-RELATIVE RESULT: delta_A_norm=%.4f, delta_W_norm=%.4f, "
+        "preserved=%.1f%%, n_boundary=%d",
+        delta_A_norm, delta_W_norm, 100.0 * preserved_fraction, n_boundary
+    )
+
+    return TransplantDeltaResult(
+        merged_weight=merged_weight,
+        applied=True,
+        null_dim=null_dim,
+        delta_norm=delta_A_norm,
+        filtered_norm=delta_W_norm,
+        projection_loss=projection_loss,
+        preserved_fraction=preserved_fraction,
+        delta_occupancy=None,
+        birkhoff_applied=False,
+        birkhoff_converged=False,
+        birkhoff_iterations=0,
+        birkhoff_spectral_clipped=False,
+    )
+
+
 @dataclass(frozen=True)
 class CoreBoundaryPartition:
     core_indices: list[int]
@@ -96,39 +252,74 @@ def partition_core_boundary(
 
 def compute_transplant_delta(
     weight_target: "Array",
-    weight_source_aligned: "Array",
+    weight_source_aligned: "Array | None",
     activations_core: "Array",
     backend: "Backend | None" = None,
     delta_scale: float = 1.0,
+    delta_activations: "Array | None" = None,
+    boundary_activations: "Array | None" = None,
 ) -> TransplantDeltaResult:
-    """Activate dormant neurons using source's patterns.
+    """Compute weight update with optional pre-computed activation delta.
 
-    This is NOT weight blending or delta filtering. This is neuron activation:
-    - Find dimensions where target has LOW activation variance (dormant neurons)
-    - For those dimensions, REPLACE with source's weights (wake them up)
-    - For active dimensions, KEEP target's weights unchanged
+    Two modes of operation:
 
-    The goal: make target's representation clouds DENSER without changing
-    the fundamental structure. Dormant neurons don't affect current behavior
-    but can sharpen reasoning by adding new pathways.
+    1. **Anchor-Relative Mode** (delta_activations provided):
+       Solves constrained least-squares for weight update:
 
-    Algorithm:
-        1. Compute per-dimension variance of target activations
-        2. Identify dormant dimensions (variance in bottom percentile)
-        3. merged[dormant] = source[dormant]  (activate with source)
-        4. merged[active] = target[active]    (preserve target)
+           min ||A_core @ delta_W - delta_A_core||_F²
+           s.t. A_boundary @ delta_W = 0
+
+       Solution via null-space projection:
+           N = I - pinv(A_boundary) @ A_boundary  (boundary null-space)
+           delta_W_unc = pinv(A_core) @ delta_A_core  (unconstrained)
+           delta_W = N @ delta_W_unc  (projected to boundary null-space)
+           W' = W_target + delta_W.T
+
+       This ensures boundary outputs are EXACTLY preserved while core
+       outputs move toward the source's knowledge.
+
+    2. **Dormancy Mode** (delta_activations=None, fallback):
+       Uses per-dimension variance to identify dormant neurons and
+       selectively replaces them with source weights.
 
     Args:
         weight_target: Target model weights to merge into.
-        weight_source_aligned: Source model weights (CKA-aligned).
-        activations_core: Target activation patterns (defines dormancy).
+        weight_source_aligned: Source model weights (CKA-aligned). Optional
+            if delta_activations is provided.
+        activations_core: Target activation patterns (core samples).
         backend: Optional Backend for GPU operations.
-        delta_scale: Not used in dormancy mode (kept for API compatibility).
+        delta_scale: Scale factor for delta (default 1.0).
+        delta_activations: Pre-computed delta in activation space [n, d_target].
+            If provided, uses anchor-relative constrained solver.
+        boundary_activations: Boundary activations for constraint [m, d_target].
+            Used in anchor-relative mode to preserve boundary outputs.
 
     Returns:
         TransplantDeltaResult with merged weight and diagnostics.
     """
     b = backend or get_default_backend()
+
+    # ==========================================================================
+    # ANCHOR-RELATIVE MODE: Constrained least-squares with boundary preservation
+    # ==========================================================================
+    if delta_activations is not None:
+        return _compute_transplant_delta_anchor_relative(
+            weight_target=weight_target,
+            activations_core=activations_core,
+            delta_activations=delta_activations,
+            boundary_activations=boundary_activations,
+            delta_scale=delta_scale,
+            backend=b,
+        )
+
+    # ==========================================================================
+    # DORMANCY MODE (fallback): Per-dimension variance-based selection
+    # ==========================================================================
+    if weight_source_aligned is None:
+        raise ValueError(
+            "weight_source_aligned is required when delta_activations is not provided"
+        )
+
     # Convert all inputs to float32 for numerical stability
     weight_target = b.astype(b.array(weight_target), "float32")
     weight_source_aligned = b.astype(b.array(weight_source_aligned), "float32")

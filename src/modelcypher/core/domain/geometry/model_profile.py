@@ -393,6 +393,8 @@ class ModelProfile:
     # === IDENTITY (always required) ===
     model_path: str
     model_id: str = ""
+    config_hash: str = ""
+    weights_hash: str = ""
     profile_version: str = SCHEMA_VERSION
     computed_at: str = ""
 
@@ -402,6 +404,7 @@ class ModelProfile:
     parameter_count: int = 0
     hidden_dim: int = 0
     num_layers: int = 0
+    weight_tensor_count: int = 0
     num_attention_heads: int = 0
     vocab_size: int = 0
 
@@ -468,6 +471,8 @@ class ModelProfile:
             # Identity
             "model_path": self.model_path,
             "model_id": self.model_id,
+            "config_hash": self.config_hash,
+            "weights_hash": self.weights_hash,
             "profile_version": self.profile_version,
             "computed_at": self.computed_at,
             # Architecture
@@ -476,6 +481,7 @@ class ModelProfile:
             "parameter_count": self.parameter_count,
             "hidden_dim": self.hidden_dim,
             "num_layers": self.num_layers,
+            "weight_tensor_count": self.weight_tensor_count,
             "num_attention_heads": self.num_attention_heads,
             "vocab_size": self.vocab_size,
             # Layer profiles
@@ -556,6 +562,8 @@ class ModelProfile:
         return cls(
             model_path=d["model_path"],
             model_id=d.get("model_id", ""),
+            config_hash=d.get("config_hash", ""),
+            weights_hash=d.get("weights_hash", ""),
             profile_version=d.get("profile_version", SCHEMA_VERSION),
             computed_at=d.get("computed_at", ""),
             model_family=d.get("model_family", "unknown"),
@@ -563,6 +571,7 @@ class ModelProfile:
             parameter_count=d.get("parameter_count", 0),
             hidden_dim=d.get("hidden_dim", 0),
             num_layers=d.get("num_layers", 0),
+            weight_tensor_count=d.get("weight_tensor_count", 0),
             num_attention_heads=d.get("num_attention_heads", 0),
             vocab_size=d.get("vocab_size", 0),
             layer_profiles=layer_profiles,
@@ -781,12 +790,18 @@ class ModelProfile:
             result.model_family = other.model_family
         if result.model_id == "" and other.model_id:
             result.model_id = other.model_id
+        if result.config_hash == "" and other.config_hash:
+            result.config_hash = other.config_hash
+        if result.weights_hash == "" and other.weights_hash:
+            result.weights_hash = other.weights_hash
         if result.parameter_count == 0:
             result.parameter_count = other.parameter_count
         if result.hidden_dim == 0:
             result.hidden_dim = other.hidden_dim
         if result.num_layers == 0:
             result.num_layers = other.num_layers
+        if result.weight_tensor_count == 0:
+            result.weight_tensor_count = other.weight_tensor_count
         if result.num_attention_heads == 0:
             result.num_attention_heads = other.num_attention_heads
         if result.vocab_size == 0:
@@ -815,6 +830,12 @@ class ModelProfileStore:
     def probe_cache_dir(self, model_id: str) -> Path:
         return ensure_dir(self._base_dir / model_id / "probe_cache")
 
+    def sidecar_dir(self, model_path: str) -> Path:
+        return ensure_dir(Path(model_path).expanduser().resolve() / ".modelcypher")
+
+    def sidecar_path(self, model_path: str) -> Path:
+        return self.sidecar_dir(model_path) / "profile.json"
+
     def load(self, model_path: str) -> tuple[ModelProfile | None, ModelIdentity]:
         identity = compute_model_identity(model_path)
         if identity.model_id in self._cache:
@@ -824,15 +845,41 @@ class ModelProfileStore:
             profile = ModelProfile.load(path)
             if not profile.model_id:
                 profile.model_id = identity.model_id
+            if profile.config_hash == "" and identity.config_hash:
+                profile.config_hash = identity.config_hash
+            if profile.weights_hash == "" and identity.weights_hash:
+                profile.weights_hash = identity.weights_hash
             self._cache[identity.model_id] = profile
             return profile, identity
+        sidecar = Path(identity.model_path).expanduser().resolve() / ".modelcypher" / "profile.json"
+        if sidecar.exists():
+            profile = ModelProfile.load(sidecar)
+            if profile.model_id and profile.model_id != identity.model_id:
+                logger.warning(
+                    "Profile sidecar does not match current model identity (%s), ignoring %s",
+                    identity.model_id,
+                    sidecar,
+                )
+            else:
+                if not profile.model_id:
+                    profile.model_id = identity.model_id
+                if profile.config_hash == "" and identity.config_hash:
+                    profile.config_hash = identity.config_hash
+                if profile.weights_hash == "" and identity.weights_hash:
+                    profile.weights_hash = identity.weights_hash
+                self._cache[identity.model_id] = profile
+                return profile, identity
         return None, identity
 
     def ensure(self, model_path: str) -> tuple[ModelProfile, ModelIdentity]:
         profile, identity = self.load(model_path)
         if profile is None:
-            profile = ModelProfile(model_path=str(Path(model_path).expanduser().resolve()))
-            profile.model_id = identity.model_id
+            profile = ModelProfile(
+                model_path=str(Path(model_path).expanduser().resolve()),
+                model_id=identity.model_id,
+                config_hash=identity.config_hash,
+                weights_hash=identity.weights_hash,
+            )
             self._cache[identity.model_id] = profile
         return profile, identity
 
@@ -840,9 +887,18 @@ class ModelProfileStore:
         if identity is None:
             identity = compute_model_identity(profile.model_path)
         profile.model_id = identity.model_id
+        if profile.config_hash == "":
+            profile.config_hash = identity.config_hash
+        if profile.weights_hash == "":
+            profile.weights_hash = identity.weights_hash
         path = self.profile_path(identity.model_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         profile.save(path)
+        try:
+            sidecar = self.sidecar_path(identity.model_path)
+            profile.save(sidecar)
+        except OSError as exc:
+            logger.warning("Failed to write profile sidecar: %s", exc)
         self._cache[identity.model_id] = profile
         return path
 

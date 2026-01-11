@@ -204,6 +204,7 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 ### NeurIPS
 - Li et al. (2018). Visualizing the Loss Landscape - https://papers.nips.cc/paper/2018
 - Garipov et al. (2018). Loss Surfaces, Mode Connectivity - https://papers.nips.cc/paper/2018
+- [Ruppik_2025_Local_Intrinsic_Dimensions_Contextual_LMs.pdf](arxiv/Ruppik_2025_Local_Intrinsic_Dimensions_Contextual_LMs.pdf) - Ruppik et al. (2025). Less is More: Local Intrinsic Dimensions of Contextual Language Models - NeurIPS 2025
 
 ### ICML
 - [Huh_2024_Platonic_Representation.pdf](arxiv/Huh_2024_Platonic_Representation.pdf) - Huh et al. (2024). Platonic Representation Hypothesis - ICML 2024, PMLR 235
@@ -214,11 +215,12 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 
 ### ICLR
 - [Deletang_2024_Language_Compression.pdf](arxiv/Deletang_2024_Language_Compression.pdf) - Delétang et al. (2024). Language Modeling Is Compression - ICLR 2024
+- [Cheng_2025_HighDimensional_Abstraction_Phase_LMs.pdf](arxiv/Cheng_2025_HighDimensional_Abstraction_Phase_LMs.pdf) - Cheng et al. (2025). Emergence of a High-Dimensional Abstraction Phase in Language Transformers - ICLR 2025
 
 ### ACL/NAACL
 - Hewitt & Manning (2019). Structural Probe - NAACL-HLT 2019
 - Li & Liang (2021). Prefix-Tuning - ACL-IJCNLP 2021
-- Aghajanyan et al. (2021). Intrinsic Dimensionality - ACL-IJCNLP 2021
+- [Aghajanyan_2021_Intrinsic_Dimensionality_Fine_Tuning.pdf](arxiv/Aghajanyan_2021_Intrinsic_Dimensionality_Fine_Tuning.pdf) - Aghajanyan et al. (2021). Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning - ACL-IJCNLP 2021
 - [Li_2025_TokAlign.pdf](arxiv/Li_2025_TokAlign.pdf) - Li et al. (2025). TokAlign: Efficient Vocabulary Adaptation via Token Alignment - ACL 2025
 
 ---
@@ -228,6 +230,7 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 | Citation | DOI |
 |----------|-----|
 | Farquhar et al. (2024). Detecting Hallucinations Using Semantic Entropy | Nature 630: 625-630 |
+| Denti et al. (2022). The generalized ratios intrinsic dimension estimator (GRIDE) | DOI:10.1038/s41598-022-20991-1 |
 
 ---
 
@@ -254,7 +257,7 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 
 | Category | Count | Status |
 |----------|-------|--------|
-| arXiv/OpenReview PDFs | 53 | ✅ Downloaded |
+| arXiv/OpenReview PDFs | 57 | ✅ Downloaded |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |

@@ -22,6 +22,7 @@ implemented in the codebase.
 | Curvature signals | arXiv 2024 | Implemented (raw metrics) | `src/modelcypher/core/domain/geometry/manifold_curvature.py` |
 | Fisher/CAMEx | ICLR 2025 | Not implemented | `docs/research/math/fisher_information.md` |
 | Null-space filtering | MINGLE-like | Implemented | `src/modelcypher/core/domain/geometry/geodesic_null_space.py` |
+| Anchor-relative concept grafting | Moschella 2023; ID work 2021-2025 | Design note | `docs/research/anchor_relative_concept_grafting.md` |
 
 ---
 
@@ -52,6 +53,19 @@ manifolds and projects deltas into that space.
 
 ## Not Implemented (Research Only)
 
+### Anchor-Relative Concept Grafting
+
+Proposed merge pathway that aligns in anchor-relative space and decodes updates
+back into target activations before null-space addition. This avoids applying
+feature-space transforms directly to weights.
+
+Key modules already exist:
+- `relative_representation.py` (anchor space)
+- `intrinsic_dimension.py` / `knowledge_density.py` (density/ID)
+- `geodesic_null_space.py` / `transplant.py` (target-native projection)
+
+Design details: `docs/research/anchor_relative_concept_grafting.md`.
+
 ### TSV-Merge (CVPR 2025)
 
 No TSV implementation exists in core code. Any future addition must:
@@ -70,3 +84,5 @@ must be used as a diagnostic or constraint, not as a blending weight.
 
 - Parameter-space averaging and interpolation are not used for merging.
 - All thresholds in core code are derived from data or machine epsilon.
+- Feature-space alignment transforms apply to activations; direct weight transforms
+  are not valid unless the full layer basis is changed consistently.

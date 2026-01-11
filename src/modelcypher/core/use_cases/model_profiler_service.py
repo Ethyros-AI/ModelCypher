@@ -136,6 +136,8 @@ class ModelProfilerService:
         self,
         profile: ModelProfile,
         model_path: str,
+        probe_result: "ModelProbeResult | None" = None,
+        identity: "ModelIdentity | None" = None,
     ) -> ModelProfile:
         """Update a profile with identity information from a model.
 
@@ -154,27 +156,41 @@ class ModelProfilerService:
             Updated ModelProfile with identity section
         """
         from modelcypher.core.domain.geometry.model_profile import compute_model_identity
-        from modelcypher.core.use_cases.model_probe_service import get_model_probe
 
-        probe = get_model_probe()
-        result = probe.probe(model_path)
-        identity = compute_model_identity(model_path)
+        if probe_result is None:
+            from modelcypher.infrastructure.model_probe_factory import get_model_probe
+
+            probe = get_model_probe()
+            probe_result = probe.probe(model_path)
+        if identity is None:
+            identity = compute_model_identity(model_path)
 
         # Infer model family from architecture
-        model_family = _infer_model_family(result.architecture) or profile.model_family
+        model_family = _infer_model_family(probe_result.architecture) or profile.model_family
+        num_layers = (
+            probe_result.layer_count_config
+            if probe_result.layer_count_config
+            else len(probe_result.layers)
+        )
+        weight_tensor_count = len(probe_result.layers)
 
         # Create updated profile with identity info
         updated = ModelProfile(
             model_path=model_path,
             model_id=profile.model_id or identity.model_id,
+            config_hash=identity.config_hash,
+            weights_hash=identity.weights_hash,
             profile_version=profile.profile_version,
             model_family=model_family,
-            architecture=result.architecture or profile.architecture,
-            parameter_count=result.parameter_count or profile.parameter_count,
-            hidden_dim=result.hidden_size or profile.hidden_dim,
-            num_layers=len(result.layers) or profile.num_layers,
-            num_attention_heads=result.num_attention_heads or profile.num_attention_heads,
-            vocab_size=result.vocab_size or profile.vocab_size,
+            architecture=probe_result.architecture or profile.architecture,
+            parameter_count=probe_result.parameter_count or profile.parameter_count,
+            hidden_dim=probe_result.hidden_size or profile.hidden_dim,
+            num_layers=num_layers or profile.num_layers,
+            weight_tensor_count=weight_tensor_count or profile.weight_tensor_count,
+            num_attention_heads=(
+                probe_result.num_attention_heads or profile.num_attention_heads
+            ),
+            vocab_size=probe_result.vocab_size or profile.vocab_size,
             # Preserve existing data
             layer_profiles=profile.layer_profiles,
             global_sectional_mean=profile.global_sectional_mean,

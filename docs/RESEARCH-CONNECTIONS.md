@@ -110,6 +110,41 @@ for checkpoint in training_checkpoints:
 
 ---
 
+## Intrinsic Dimension and Abstraction Phases in LLMs
+
+**Papers**:
+- Aghajanyan, A., Gupta, S., & Zettlemoyer, L. (2021). *Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning*. ([PDF](references/arxiv/Aghajanyan_2021_Intrinsic_Dimensionality_Fine_Tuning.pdf), [arXiv:2012.13255](https://arxiv.org/abs/2012.13255))
+- Denti, F., Doimo, D., Laio, A., & Mira, A. (2022). *The generalized ratios intrinsic dimension estimator (GRIDE).* ([PDF](references/arxiv/Denti_2022_GRIDE_Generalized_Ratios_Intrinsic_Dimension.pdf), [DOI:10.1038/s41598-022-20991-1](https://doi.org/10.1038/s41598-022-20991-1))
+- Cheng, E., et al. (2025). *Emergence of a High-Dimensional Abstraction Phase in Language Transformers*. ([PDF](references/arxiv/Cheng_2025_HighDimensional_Abstraction_Phase_LMs.pdf), [OpenReview](https://openreview.net/forum?id=0fD3iIBhlV))
+- Ruppik, B.M., et al. (2025). *Less is More: Local Intrinsic Dimensions of Contextual Language Models*. ([PDF](references/arxiv/Ruppik_2025_Local_Intrinsic_Dimensions_Contextual_LMs.pdf), [arXiv:2506.01034](https://arxiv.org/abs/2506.01034))
+
+### Core Findings
+
+- Fine-tuning operates in very low intrinsic-dimension subspaces (low ID explains PEFT effectiveness).
+- Intrinsic dimension is scale-dependent; robust estimators (GRIDE) track ID across neighborhood scales.
+- Mid-layer ID peaks correlate with abstraction and cross-model representational similarity.
+- Local ID decreases often precede capability gains and signal training regime shifts.
+
+### ModelCypher Implementation
+
+Our intrinsic dimension and density tooling supports data-derived compression and layer selection:
+
+```python
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+estimator = IntrinsicDimension(backend)
+global_id = estimator.compute(activations, with_ci=False)
+local_id = estimator.local_dimension_map(activations)
+
+# Use local_id.mean_dimension as a layer-specific compression signal
+mean_local_id = local_id.mean_dimension
+```
+
+These measurements feed density-guided transplant logic and anchor-relative grafting research
+(`docs/research/anchor_relative_concept_grafting.md`) for target-only, geometry-preserving updates.
+
+---
+
 ## The Topology and Geometry of Neural Representations
 
 **Paper**: Lin, B. & Kriegeskorte, N. (2024). *The topology and geometry of neural representations*. PNAS.

@@ -105,19 +105,21 @@ Can we compose $D_2 \circ E_1$ without retraining?
 
 ### Requirements
 
-1. **Semantic coverage**: Anchors should span the semantic space
-2. **Parallel**: Same semantic meaning across models
-3. **Diverse**: Not redundant
+1. **Semantic coverage**: Anchors must span the semantic space (measured by Gram spectrum)
+2. **Shared IDs**: Same anchor IDs across models
+3. **Deterministic**: No random sampling or hand-tuned counts
 
-### Strategies
+### ModelCypher Strategy (Data-Derived)
 
-1. **Class prototypes**: Use mean embeddings per class
-2. **Random sampling**: Works surprisingly well
-3. **Bootstrapping**: Learn anchors from unlabeled data (Cannistraci et al., 2023)
+1. **Atlas probes**: Use the unified atlas registry as the candidate anchor set.
+2. **Layer-native anchors**: Prefer per-layer activation means (not just token embeddings).
+3. **Spectral gap selection**: Choose anchor count via spectral gap detection on the Gram spectrum.
+4. **Pivoted QR selection**: Deterministically pick the max-volume anchor subset.
+5. **CKA verification**: Accept the smallest subset where CKA deviation <= sqrt(machine_epsilon).
 
-**ModelCypher default**: Anchors come from the atlas probe registry via
-`compute_anchor_embeddings()`, which averages token embeddings for each probe's
-support texts. Custom probe sets can be injected when needed.
+**Default implementation**: `compute_anchor_embeddings()` uses atlas probes and averages
+support-text embeddings. For per-layer anchors, the same probes are run through the
+model and averaged at the target layer.
 
 ---
 
@@ -184,6 +186,11 @@ result = cross_dimension_transfer(
 )
 aligned = result.relative_representation
 ```
+
+### 4. Anchor-Relative Concept Grafting
+
+Use anchor-relative space to select concepts, then decode into target activations
+before null-space addition. See `docs/research/anchor_relative_concept_grafting.md`.
 
 ---
 

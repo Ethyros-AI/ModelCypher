@@ -155,6 +155,15 @@ Keeps all parameters frozen, optimizing continuous task-specific vectors prepend
 **Aghajanyan, A., Gupta, S., & Zettlemoyer, L. (2021). Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning. *ACL-IJCNLP 2021*, pages 7319-7328.**
 Shows pretrained models have very low intrinsic dimension—RoBERTa achieves 90% performance by optimizing only **200 parameters** randomly projected into full space. *Framework relevance*: **Critical for geometric thesis.** Directly establishes fine-tuning operates within inherently low-dimensional subspaces, underlying all adapter-based safety methods.
 
+**[Denti, F., Doimo, D., Laio, A., & Mira, A. (2022)](../references/arxiv/Denti_2022_GRIDE_Generalized_Ratios_Intrinsic_Dimension.pdf). The generalized ratios intrinsic dimension estimator (GRIDE). *Scientific Reports*, 12, 20005.**
+Introduces a scale-aware intrinsic dimension estimator with uncertainty quantification. *Framework relevance*: Supports multiscale ID analysis and strengthens density-driven compression signals.
+
+**[Cheng, E., et al. (2025)](../references/arxiv/Cheng_2025_HighDimensional_Abstraction_Phase_LMs.pdf). Emergence of a High-Dimensional Abstraction Phase in Language Transformers. *ICLR 2025*.**
+Finds a mid-layer high-ID phase that correlates with abstraction and cross-model similarity. *Framework relevance*: Empirical support for a shared semantic processing phase across architectures.
+
+**[Ruppik, B.M., et al. (2025)](../references/arxiv/Ruppik_2025_Local_Intrinsic_Dimensions_Contextual_LMs.pdf). Less is More: Local Intrinsic Dimensions of Contextual Language Models. *NeurIPS 2025*.**
+Shows local ID shifts track training dynamics and generalization; reductions in mean local ID predict gains. *Framework relevance*: ID trajectories provide a data-derived signal for compression timing and layer selection.
+
 ### LoRA variants
 
 **Dettmers, T., Pagnoni, A., Holtzman, A., & Zettlemoyer, L. (2023). QLoRA: Efficient Finetuning of Quantized LLMs. *NeurIPS 2023*. arXiv:2305.14314.**
