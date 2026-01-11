@@ -807,13 +807,21 @@ def gpu_lstsq(
     b.eval(rhs_norm_sq)
     rhs_norm_sq_val = float(b.to_scalar(rhs_norm_sq))
     rhs_norm = sqrt_scalar(rhs_norm_sq_val, b)
-    tol = sqrt_eps * max(rhs_norm, eps)
+    sqrt_d = sqrt_scalar(float(d), b)
+    rhs_scale = rhs_norm / max(sqrt_d, 1.0)
+    tol = sqrt_eps * max(rhs_scale, eps)
+
+    B_norm_arr = b.norm(B)
+    b.eval(B_norm_arr)
+    B_norm_val = float(b.to_scalar(B_norm_arr))
+    sqrt_n = sqrt_scalar(float(n), b)
+    tol_primal = sqrt_eps * max(B_norm_val / max(sqrt_n, 1.0), eps)
 
     rnorm_sq_val = rhs_norm_sq_val
     rnorm_val = rhs_norm
     prev_rnorm = rnorm_val
 
-    refresh_interval = max(1, int(d))
+    refresh_interval = max(1, int(min(n, d)))
     restart_budget = int(max(1, ceil_scalar(log2_scalar(1.0 / eps, b), b)))
     max_iter = max(1, int(d)) * restart_budget
 
@@ -846,7 +854,13 @@ def gpu_lstsq(
 
         iterations_used = step + 1
         if rnorm_val <= tol:
-            break
+            X_tmp = b.matmul(A, Y * row_scale)
+            res = X_tmp - B
+            res_norm = b.norm(res)
+            b.eval(res_norm)
+            res_norm_val = float(b.to_scalar(res_norm))
+            if res_norm_val <= tol_primal:
+                break
 
         # Refresh residuals on drift or periodic cadence
         stagnation_threshold = sqrt_eps * max(prev_rnorm, rhs_norm, eps)
