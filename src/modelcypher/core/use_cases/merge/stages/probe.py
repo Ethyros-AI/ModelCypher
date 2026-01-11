@@ -20,9 +20,9 @@ Stage 1: PROBE - Build intersection map from probe responses.
 
 The intersection map is the PRIMARY CONTROL SIGNAL for all downstream operations.
 
-Two modes:
-- "precise": Run 403 probes through BOTH models, compute CKA on activations
-- "fast": Use weight-level CKA (faster but less accurate)
+We always run the full atlas probe corpus from JSON (thousands of probes),
+compute activation-level CKA, and avoid any downsampling. Token probing and
+weight-level shortcuts are intentionally disabled.
 
 Reference: Kornblith et al. (2019) "Similarity of Neural Network Representations"
 Reference: Chun et al. (2025) "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features"
@@ -68,14 +68,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Probe mode is ALWAYS "precise" - activation-level CKA is required for correct alignment.
-# "fast" mode is eliminated - weight-level CKA is fundamentally less accurate and
-# hides alignment problems that will cause gibberish output.
-_PROBE_MODE = "precise"
-
-# All probes are always run. The probe corpus (403 probes) was carefully designed
-# to cover the concept space. Limiting probes degrades coverage with no benefit.
-_MAX_PROBES = 0  # 0 = all probes
+# Probe mode is ALWAYS activation-level CKA with full atlas probes.
+# No token probing, no weight-level shortcuts.
 
 # Checkpoint interval: save progress every N probes
 _CHECKPOINT_INTERVAL = 50
@@ -457,7 +451,7 @@ def stage_probe(
     activation_store: "ActivationStore | None" = None,
     backend: "Backend | None" = None,
     checkpoint_dir: Path | str | None = None,
-    probe_mode: str = "atlas",  # "atlas" (963 conceptual) or "token" (49K+ vocab)
+    probe_mode: str = "atlas",  # Only "atlas" supported - 4300+ curated probes
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
@@ -580,13 +574,16 @@ def _probe_precise(
     target_path: str = "",
     backend: "Backend | None" = None,
     checkpoint_dir: Path | None = None,
-    probe_mode: str = "atlas",  # "atlas" (963 conceptual) or "token" (vocab-based)
+    probe_mode: str = "atlas",  # Only "atlas" is supported - 4300+ curated probes
 ) -> ProbeResult:
     """Precise probe mode: Run probes through BOTH models.
 
+    Uses Atlas JSON probes (4300+ curated conceptual + MMLU probes) for proper
+    geometric coverage of the manifold. More probes = better coverage of the
+    invariant shape that all models encode.
+
     Args:
-        probe_mode: "atlas" uses 963 curated conceptual probes.
-                    "token" uses vocabulary tokens as probes (49K+) for 100% dimension coverage.
+        probe_mode: Must be "atlas" (kept for cache key compatibility).
         checkpoint_dir: If provided, saves progress periodically and allows
             resume from last checkpoint on restart.
         activation_store: Required if checkpoint_dir is provided.
@@ -604,112 +601,14 @@ def _probe_precise(
         IntersectionMap,
     )
 
-    # Select probing mode
-    if probe_mode == "token":
-        # Token-based probing for 100% dimension coverage
-        from modelcypher.core.domain.agents.token_atlas import generate_token_probes, TokenProbe
-        logger.info("PROBE MODE: Token-based (vocab probes for dimension coverage)")
-        
-        # Determine required probe count: need at least max(source_dim, target_dim)
-        # Use 2x to guarantee full-rank with margin for numerical stability
-        source_hidden = None
-        target_hidden = None
-        for key in source_weights:
-            if "layers.0.self_attn.q_proj.weight" in key:
-                source_hidden = source_weights[key].shape[0]
-                break
-        for key in target_weights:
-            if "layers.0.self_attn.q_proj.weight" in key:
-                target_hidden = target_weights[key].shape[0]
-                break
-        
-        # Cap probes for memory stability. 2048 provides full-rank coverage for
-        # typical hidden dims (1024, 2048) while avoiding GPU OOM.
-        TOKEN_PROBE_CAP = 2048
-
-        min_probes_needed = max(source_hidden or 1024, target_hidden or 960)
-        max_probes = min_probes_needed * 2  # 2x for numerical margin
-        max_probes = max(max_probes, 1500)  # At least 1500 for 960-dim full coverage
-        max_probes = min(max_probes, TOKEN_PROBE_CAP)  # Cap to avoid OOM
-
-        logger.info("PROBE TOKEN: Dims source=%s target=%s, using %d probes",
-                    source_hidden, target_hidden, max_probes)
-
-        # Use target tokenizer for probe generation (target architecture defines the space)
-        token_probes = generate_token_probes(target_tokenizer, max_probes=max_probes)
-        # Convert TokenProbes to AtlasProbe format for compatibility
-        probes = [tp.to_atlas_probe() for tp in token_probes]
-        logger.info("PROBE TOKEN: Generated %d probes (2x max_dim, capped at %d)",
-                    len(probes), TOKEN_PROBE_CAP)
-    else:
-        # Default: Atlas probes from JSON files (curated conceptual + MMLU probes)
-        from modelcypher.core.domain.agents.probe_loader import load_all_probes
-        all_probes = load_all_probes()
-        logger.info("PROBE MODE: Atlas (loaded %d probes from JSON)", len(all_probes))
-        
-        # MEMORY OPTIMIZATION: Limit probes to 2x max hidden dimension
-        # This ensures full-rank coverage while preventing OOM
-        source_hidden = None
-        target_hidden = None
-        for key in source_weights:
-            if "layers.0.self_attn.q_proj.weight" in key:
-                source_hidden = source_weights[key].shape[0]
-                break
-        for key in target_weights:
-            if "layers.0.self_attn.q_proj.weight" in key:
-                target_hidden = target_weights[key].shape[0]
-                break
-        
-        # Use TARGET hidden dim - we project into target's space, so only need
-        # enough probes to span the target manifold. Source can be larger.
-        target_dim = target_hidden or 1024
-        # 2x for numerical stability in Gram matrix rank
-        max_probes = target_dim * 2
-
-        if len(all_probes) > max_probes:
-            logger.info("PROBE LIMIT: Capping %d probes to %d (2x target_dim=%d) - target space only",
-                       len(all_probes), max_probes, target_dim)
-            # Domain-stratified sampling to ensure coverage across all knowledge domains
-            # Group probes by domain
-            import random
-            from collections import defaultdict
-            random.seed(42)  # Deterministic sampling
-
-            probes_by_domain: dict[str, list[Any]] = defaultdict(list)
-            for probe in all_probes:
-                domain_key = getattr(probe.domain, 'value', str(probe.domain))
-                probes_by_domain[domain_key].append(probe)
-
-            # Allocate probes proportionally by domain, ensuring minimum 1 per domain
-            n_domains = len(probes_by_domain)
-            min_per_domain = max(1, max_probes // (n_domains * 2))  # At least 1, up to half
-            remaining = max_probes - (min_per_domain * n_domains)
-
-            probes = []
-            for domain_key, domain_probes in sorted(probes_by_domain.items()):
-                # Calculate proportional allocation for this domain
-                proportion = len(domain_probes) / len(all_probes)
-                extra_allocation = int(remaining * proportion)
-                n_sample = min(len(domain_probes), min_per_domain + extra_allocation)
-
-                # Sample from domain
-                if n_sample >= len(domain_probes):
-                    probes.extend(domain_probes)
-                else:
-                    probes.extend(random.sample(domain_probes, n_sample))
-
-            # If still under max_probes, fill with random remaining probes
-            if len(probes) < max_probes:
-                used_ids = {p.probe_id for p in probes}
-                remaining_probes = [p for p in all_probes if p.probe_id not in used_ids]
-                fill_count = min(max_probes - len(probes), len(remaining_probes))
-                if fill_count > 0:
-                    probes.extend(random.sample(remaining_probes, fill_count))
-
-            logger.info("PROBE STRATIFIED: %d domains, %d-%d probes per domain",
-                       n_domains, min_per_domain, max(len(v) for v in probes_by_domain.values()))
-        else:
-            probes = all_probes
+    # Load Atlas probes for manifold coverage.
+    # More probes = better coverage of the invariant shape.
+    # The alignment will self-constrain to effective rank via spectral gap detection
+    # (see invariant_alignment in numerical_stability.py), so probe count doesn't
+    # cause overfitting - the geometry determines the true dimensionality.
+    from modelcypher.core.domain.agents.probe_loader import load_all_probes
+    probes = load_all_probes()
+    logger.info("PROBE MODE: Atlas (%d probes, alignment rank derived from geometry)", len(probes))
             
     num_probes = len(probes)
 

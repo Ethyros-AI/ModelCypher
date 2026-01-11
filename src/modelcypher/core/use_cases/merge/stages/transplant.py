@@ -1836,13 +1836,32 @@ def stage_transplant(
                 logger.debug("Computing transplant delta for %s", key)
 
                 # Select appropriate source activations for density-aware transfer:
-                # - MLP weights: use intermediate activations (neuron-level density)
-                # - Other weights: use hidden activations (hidden-level density)
+                # Match activations to the WEIGHT'S INPUT DIMENSION (columns):
+                # - Gate/up projections (w1, w3): [inter, hidden] - INPUT is hidden → use hidden acts
+                # - Down projection (w2): [hidden, inter] - INPUT is intermediate → use inter acts
+                # - Attention/other: typically [hidden, hidden] → use hidden acts
+                #
+                # For density-aware transfer, we compare variance in the INPUT space because
+                # that's what the weight matrix "reads from" - where density matters.
                 source_acts_for_density = aligned_source_hidden
-                if is_mlp and aligned_source_inter is not None:
+
+                # Only use intermediate activations for DOWN projection (w2/down_proj)
+                # which has intermediate dimension as input
+                is_down_proj = any(down_name in key for down_name in [
+                    "feed_forward.w2",  # LFM2/Mamba style
+                    "down_proj",        # Standard transformer style
+                    "mlp.fc2",          # Some Llama variants
+                    "mlp.down",         # Alternative naming
+                ])
+                if is_down_proj and aligned_source_inter is not None:
                     source_acts_for_density = aligned_source_inter
                     logger.debug(
-                        "Using intermediate activations for MLP density (%s)",
+                        "Using intermediate activations for DOWN projection density (%s)",
+                        key
+                    )
+                elif aligned_source_hidden is not None:
+                    logger.debug(
+                        "Using hidden activations for density (%s)",
                         key
                     )
 

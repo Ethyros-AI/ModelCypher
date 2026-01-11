@@ -152,7 +152,7 @@ class MergePipelineService:
             source_path: Path to source model
             target_path: Path to target model
             output_dir: Output directory for merged model
-            probe_mode: "atlas" (963 probes) or "token" (49K+ vocab probes)
+            probe_mode: Only "atlas" supported (4600+ curated probes)
             skip_pre_analysis: If True, skip pre-merge interference analysis
                 for faster merges. The analysis is informational only and
                 does not affect merge quality.
