@@ -500,38 +500,37 @@ def compute_knn_point_cloud_density(
 
 
 def compute_density_weights(
-    density_diff: "Array",
+    source_densities: "Array",
+    target_densities: "Array",
     backend: "Backend | None" = None,
 ) -> "Array":
-    """Convert density difference to transfer weights.
+    """Convert source/target densities to transfer weights.
 
-    Positive density diff (source denser) → higher weight (transfer more)
-    Negative density diff (target denser) → lower weight (transfer less)
+    Uses the direct density ratio:
+        weight = source / (source + target)
 
-    Uses softmax-like normalization to ensure weights are in [0, 1].
+    This is purely data-derived (no heuristics) and yields weights in [0, 1].
 
     Args:
-        density_diff: Per-point density difference (source - target)
+        source_densities: Per-point source densities.
+        target_densities: Per-point target densities.
         backend: Compute backend.
 
     Returns:
         Per-point transfer weights in [0, 1].
     """
-    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
     b = backend or get_default_backend()
-    diff = b.array(density_diff)
-    b.eval(diff)
+    src = b.array(source_densities)
+    tgt = b.array(target_densities)
+    b.eval(src, tgt)
 
-    eps = float(machine_epsilon(b, diff))
-
-    # Sigmoid transformation: map (-inf, inf) → (0, 1)
-    # Higher density diff → higher weight
-    # Scale factor controls sharpness (derived from data range)
-    diff_range = float(b.to_scalar(b.max(diff) - b.min(diff)))
-    scale = 4.0 / (diff_range + eps)  # Maps ~95% of range to (0.02, 0.98)
-
-    weights = 1.0 / (1.0 + b.exp(-scale * diff))
+    eps = float(division_epsilon(b, src))
+    total = src + tgt
+    denom = b.maximum(total, b.full(b.shape(total), eps))
+    weights = src / denom
+    weights = b.clip(weights, 0.0, 1.0)
     b.eval(weights)
 
     return weights

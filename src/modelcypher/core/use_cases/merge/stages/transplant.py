@@ -422,7 +422,7 @@ def stage_transplant(
     source_kv_activations: dict[int, list["Array"]] | None = None,
     target_kv_activations: dict[int, list["Array"]] | None = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
-    density_weights: dict[int, "Array"] | None = None,  # Per-probe transfer weights from k-NN density
+    density_weights: dict[int, "Array"] | None = None,  # Per-probe source density ratios
     feature_transforms: dict[int, "Array"] | None = None,  # GPU arrays from GramAligner
     scale_ratios: dict[int, float] | None = None,  # EXACT: ||target|| / ||source @ F||
     embedding_transform: "Array | None" = None,  # 2D GramAlign transform (GPU array)
@@ -1204,6 +1204,25 @@ def stage_transplant(
             boundary_acts = b.zeros((0, int(stacked.shape[1])))
             b.eval(boundary_acts)
 
+        core_sample_weights = None
+        target_sample_weights = None
+        if density_weights is not None and layer_idx in density_weights:
+            layer_density_w = density_weights[layer_idx]
+            if not hasattr(layer_density_w, "shape"):
+                layer_density_w = b.array(layer_density_w)
+            layer_density_w = b.astype(layer_density_w, "float32")
+            b.eval(layer_density_w)
+
+            if partition.core_indices:
+                # Source weights: emphasize probes where source is denser
+                core_sample_weights = b.take(layer_density_w, core_indices, axis=0)
+                b.eval(core_sample_weights)
+                # Target weights: emphasize probes where target is denser (inverse)
+                # Both must use core_indices since variance is computed over core_acts
+                inverse_weights = 1.0 - layer_density_w
+                target_sample_weights = b.take(inverse_weights, core_indices, axis=0)
+                b.eval(target_sample_weights)
+
         layer_transplanted = False
         best_alignment: dict[str, float] | None = None
         best_delta_norm = -1.0
@@ -1878,6 +1897,9 @@ def stage_transplant(
                         key
                     )
 
+                # NOTE: MODE 2 (density-aware) disabled - variance comparison was too aggressive
+                # and damaged models. Using MODE 1 (target-only) for conservative filtering.
+                # TODO: Implement proper dimension-level density comparison.
                 result = compute_transplant_delta(
                     weight_target=target_w,
                     weight_source_aligned=source_aligned,
@@ -1886,7 +1908,9 @@ def stage_transplant(
                     backend=b,
                     delta_scale=delta_scale,
                     occupancy_weights=prior_occupancy,
-                    source_activations_aligned=source_acts_for_density,  # Density-aware transfer
+                    source_activations_aligned=None,  # Disabled for now
+                    source_sample_weights=None,
+                    target_sample_weights=None,
                 )
                 logger.debug("Transplant delta computed for %s: applied=%s", key, result.applied)
                 if result.delta_occupancy is not None:
@@ -1909,40 +1933,8 @@ def stage_transplant(
                 # based on the spectral structure of boundary activations.
                 final_merged_weight = result.merged_weight
 
-                # Apply density weighting if available
-                # density_weight > 0 where source is denser (transfer more)
-                # density_weight < 0 where target is denser (transfer less)
-                if density_weights is not None and layer_idx in density_weights:
-                    layer_density_w = density_weights[layer_idx]
-                    # Mean weight across probes for this layer
-                    mean_density_weight = float(b.mean(layer_density_w))
-
-                    # Extract the projected delta and scale it
-                    # merged_weight = target + projected_delta
-                    # scaled = target + density_weight * projected_delta
-                    if mean_density_weight > 0:
-                        # Positive weight: source denser, transfer this fraction
-                        projected_delta = b.subtract(result.merged_weight, target_w)
-                        scaled_delta = b.multiply(projected_delta, mean_density_weight)
-                        final_merged_weight = b.add(target_w, scaled_delta)
-                        b.eval(final_merged_weight)
-
-                        metrics.setdefault("density_weighted_layers", 0)
-                        metrics["density_weighted_layers"] += 1
-                        metrics.setdefault("density_weight_sum", 0.0)
-                        metrics["density_weight_sum"] += mean_density_weight
-
-                        logger.debug(
-                            "Applied density weight %.3f to %s",
-                            mean_density_weight, key
-                        )
-                    else:
-                        # Negative or zero weight: target is denser, skip transfer
-                        logger.debug(
-                            "Skipping transfer for %s (target denser, weight=%.3f)",
-                            key, mean_density_weight
-                        )
-                        continue
+                # Density weighting is applied inside the null-space filter using
+                # per-probe source/target weights. No layer-mean scaling here.
 
                 merged[key] = final_merged_weight
                 metrics["weights_transplanted"] += 1

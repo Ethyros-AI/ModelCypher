@@ -455,7 +455,7 @@ def run_merge(
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
         graft_mask=graft_mask,
-        density_weights=density_weights,  # Per-probe transfer weights from k-NN density
+        density_weights=density_weights,  # Per-probe source density ratios
         feature_transforms=feature_transforms,
         scale_ratios=scale_ratios,  # EXACT: ||target|| / ||source @ F|| per layer
         embedding_transform=embedding_transform,  # 2D GramAlign for embed_tokens

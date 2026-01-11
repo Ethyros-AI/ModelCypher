@@ -173,6 +173,8 @@ class GeodesicNullSpaceFilter:
         occupancy_weights: Any | None = None,
         basis: GeodesicNullSpaceBasis | None = None,
         source_activations: Any | None = None,
+        source_sample_weights: Any | None = None,
+        target_sample_weights: Any | None = None,
     ) -> GeodesicNullSpaceResult:
         """
         Filter weight delta using unified saliency projection.
@@ -260,6 +262,8 @@ class GeodesicNullSpaceFilter:
             prior_activations,
             k_neighbors=k_neighbors,
             source_activations=source_activations,
+            source_sample_weights=source_sample_weights,
+            target_sample_weights=target_sample_weights,
         )
 
         # Step 4: Compute tangent space projection matrix (GPU)
@@ -402,6 +406,8 @@ class GeodesicNullSpaceFilter:
         prior_activations: Any,
         k_neighbors: int | None = None,
         source_activations: Any | None = None,
+        source_sample_weights: Any | None = None,
+        target_sample_weights: Any | None = None,
     ) -> GeodesicNullSpaceBasis:
         """Compute a reusable geodesic null-space basis for projections.
 
@@ -422,10 +428,12 @@ class GeodesicNullSpaceFilter:
             prior_activations = backend.array(prior_activations)
         backend.eval(prior_activations)
 
+        cache_enabled = source_sample_weights is None and target_sample_weights is None
         cache_key = _cache.make_basis_key(prior_activations, backend, k_neighbors)
-        cached = _cache.get_basis(cache_key)
-        if cached is not None:
-            return cached
+        if cache_enabled:
+            cached = _cache.get_basis(cache_key)
+            if cached is not None:
+                return cached
 
         start = time.perf_counter()
         n_samples = int(prior_activations.shape[0])
@@ -502,67 +510,45 @@ class GeodesicNullSpaceFilter:
         # No hyperparameters - pure geometry.
         # =====================================================================
 
-        # Compute per-dimension statistics from activations
-        # (tangent vectors have similar structure, but activations are cleaner)
+        # Compute per-dimension statistics from activations.
         A = backend.transpose(tangent_vectors)  # [d, n_samples]
         if str(backend.dtype(A)) in ("float16", "bfloat16"):
             A = backend.astype(A, "float32")
         reg = regularization_epsilon(backend, A)
 
-        # =================================================================
-        # UNIFIED SALIENCY: VARIANCE + MAGNITUDE (AIM-inspired)
-        # =================================================================
-        # Two complementary signals tell us where we can safely add delta:
-        #
-        # 1. VARIANCE (our insight): How occupied is this direction?
-        #    High variance = many concepts spread here = dense = protect
-        #    Low variance = sparse region = room for new knowledge
-        #
-        # 2. MAGNITUDE (AIM paper, arXiv:2502.02421): How sensitive is output?
-        #    High magnitude = perturbations cause large errors = protect
-        #    Low magnitude = insensitive to changes = safe to modify
-        #
-        # Combined: Keep delta only where BOTH signals are low.
-        # Formula: keep = (1 - variance_norm) * (1 - magnitude_norm)
-        #
-        # This is probabilistic AND: "neither occupied NOR sensitive"
-        # - If variance=1 (full): keep≈0 regardless of magnitude
-        # - If magnitude=1 (sensitive): keep≈0 regardless of variance
-        # - If both=0: keep=1 (safe to add)
-        # - Gradual falloff in between, no hyperparameters
-        # =================================================================
+        def _weighted_variance(
+            activations: "Any",
+            sample_weights: "Any | None",
+        ) -> "Any":
+            acts = backend.astype(activations, "float32")
+            if sample_weights is None:
+                mean = backend.mean(acts, axis=0)
+                centered = acts - backend.reshape(mean, (1, d))
+                var = backend.mean(centered * centered, axis=0)
+                backend.eval(var)
+                return var
 
-        acts_f32 = backend.astype(prior_activations, "float32")
-        mean_per_dim = backend.mean(acts_f32, axis=0)  # [d]
-        centered = acts_f32 - backend.reshape(mean_per_dim, (1, d))
+            weights = sample_weights
+            if not hasattr(weights, "shape"):
+                weights = backend.array(weights)
+            weights = backend.astype(weights, "float32")
+            weights = backend.reshape(weights, (-1, 1))
+            backend.eval(weights)
 
-        # Signal 1: Variance per dimension (occupancy)
-        variance_per_dim = backend.mean(centered * centered, axis=0)  # [d]
-        backend.eval(variance_per_dim)
+            weight_sum = backend.sum(weights)
+            backend.eval(weight_sum)
+            weight_sum_val = float(backend.to_scalar(weight_sum))
+            if weight_sum_val <= reg:
+                var = backend.zeros((d,))
+                backend.eval(var)
+                return var
 
-        # Signal 2: Magnitude per dimension (sensitivity)
-        # Mean absolute activation - how strong is the signal here?
-        magnitude_per_dim = backend.mean(backend.abs(acts_f32), axis=0)  # [d]
-        backend.eval(magnitude_per_dim)
-
-        # Normalize both to [0, 1] range
-        max_var = backend.max(variance_per_dim)
-        max_mag = backend.max(magnitude_per_dim)
-        backend.eval(max_var, max_mag)
-        max_var_val = float(backend.to_scalar(max_var))
-        max_mag_val = float(backend.to_scalar(max_mag))
-
-        if max_var_val > reg:
-            variance_weights = variance_per_dim / max_var_val
-        else:
-            variance_weights = backend.zeros((d,))
-        backend.eval(variance_weights)
-
-        if max_mag_val > reg:
-            magnitude_weights = magnitude_per_dim / max_mag_val
-        else:
-            magnitude_weights = backend.zeros((d,))
-        backend.eval(magnitude_weights)
+            weighted_sum = backend.sum(weights * acts, axis=0)
+            mean = weighted_sum / weight_sum
+            centered = acts - backend.reshape(mean, (1, d))
+            var = backend.sum(weights * centered * centered, axis=0) / weight_sum
+            backend.eval(var)
+            return var
 
         # =================================================================
         # COMBINED SALIENCY: Unified projection weights
@@ -587,59 +573,76 @@ class GeodesicNullSpaceFilter:
         # =================================================================
 
         if source_activations is not None:
-            # MODE 2: Density-aware transfer using source activations
-            # Source activations should already be aligned to target coordinate system
-            if not hasattr(source_activations, 'shape'):
+            # MODE 2: Density-aware transfer using source vs target variance.
+            # NOTE: Sample weights are ignored here because source_activations and
+            # prior_activations may have different probe counts. Uniform variance
+            # is computed over each activation set independently.
+            if not hasattr(source_activations, "shape"):
                 source_activations = backend.array(source_activations)
             backend.eval(source_activations)
 
-            # Compute source variance per dimension
-            src_f32 = backend.astype(source_activations, "float32")
-            src_mean = backend.mean(src_f32, axis=0)
-            src_centered = src_f32 - backend.reshape(src_mean, (1, d))
-            src_variance = backend.mean(src_centered * src_centered, axis=0)
-            backend.eval(src_variance)
+            # Compute uniform variance (no sample weighting) for each activation set
+            source_variance = _weighted_variance(source_activations, None)
+            target_variance = _weighted_variance(prior_activations, None)
 
-            # Normalize source variance
-            src_max_var = backend.max(src_variance)
-            backend.eval(src_max_var)
-            src_max_var_val = float(backend.to_scalar(src_max_var))
+            src_max = backend.max(source_variance)
+            tgt_max = backend.max(target_variance)
+            backend.eval(src_max, tgt_max)
+            src_max_val = float(backend.to_scalar(src_max))
+            tgt_max_val = float(backend.to_scalar(tgt_max))
 
-            if src_max_var_val > reg:
-                source_confidence = src_variance / src_max_var_val
-            else:
-                source_confidence = backend.zeros((d,))
-            backend.eval(source_confidence)
+            source_confidence = (
+                source_variance / src_max_val if src_max_val > reg else backend.zeros((d,))
+            )
+            target_confidence = (
+                target_variance / tgt_max_val if tgt_max_val > reg else backend.zeros((d,))
+            )
+            backend.eval(source_confidence, target_confidence)
 
-            # target_confidence = variance_weights (already computed, normalized)
-            target_confidence = variance_weights
-
-            # Transfer formula: high source * low target
-            # transfer[d] = source_confidence[d] * (1 - target_confidence[d])
-            transfer_weights = source_confidence * (1.0 - target_confidence)
-            backend.eval(transfer_weights)
-
-            # Apply magnitude protection on top (don't modify sensitive dimensions)
-            # Final: transfer where source is dense AND target is sparse AND not sensitive
-            keep_weights = transfer_weights * (1.0 - magnitude_weights)
-            backend.eval(keep_weights)
-
-            # Normalize keep_weights to [0, 1] range
-            max_keep = backend.max(keep_weights)
-            backend.eval(max_keep)
-            max_keep_val = float(backend.to_scalar(max_keep))
-            if max_keep_val > reg:
-                keep_weights = keep_weights / max_keep_val
+            # Transfer where source is denser than target (no tunable thresholds).
+            diff = source_confidence - target_confidence
+            diff_pos = backend.maximum(diff, backend.zeros_like(diff))
+            denom = backend.maximum(
+                source_confidence + target_confidence,
+                backend.full(backend.shape(diff), reg),
+            )
+            keep_weights = diff_pos / denom
             backend.eval(keep_weights)
 
             logger.debug(
-                "DENSITY-AWARE transfer: source_conf_mean=%.3f, target_conf_mean=%.3f, transfer_mean=%.3f",
+                "DENSITY-AWARE transfer: source_conf_mean=%.3f, target_conf_mean=%.3f, keep_mean=%.3f",
                 float(backend.to_scalar(backend.mean(source_confidence))),
                 float(backend.to_scalar(backend.mean(target_confidence))),
                 float(backend.to_scalar(backend.mean(keep_weights))),
             )
         else:
-            # MODE 1 (legacy): Target-only filtering
+            # MODE 1 (legacy): Target-only filtering (variance + magnitude).
+            acts_f32 = backend.astype(prior_activations, "float32")
+            mean_per_dim = backend.mean(acts_f32, axis=0)  # [d]
+            centered = acts_f32 - backend.reshape(mean_per_dim, (1, d))
+
+            variance_per_dim = backend.mean(centered * centered, axis=0)  # [d]
+            magnitude_per_dim = backend.mean(backend.abs(acts_f32), axis=0)  # [d]
+            backend.eval(variance_per_dim, magnitude_per_dim)
+
+            max_var = backend.max(variance_per_dim)
+            max_mag = backend.max(magnitude_per_dim)
+            backend.eval(max_var, max_mag)
+            max_var_val = float(backend.to_scalar(max_var))
+            max_mag_val = float(backend.to_scalar(max_mag))
+
+            if max_var_val > reg:
+                variance_weights = variance_per_dim / max_var_val
+            else:
+                variance_weights = backend.zeros((d,))
+            backend.eval(variance_weights)
+
+            if max_mag_val > reg:
+                magnitude_weights = magnitude_per_dim / max_mag_val
+            else:
+                magnitude_weights = backend.zeros((d,))
+            backend.eval(magnitude_weights)
+
             keep_weights = (1.0 - variance_weights) * (1.0 - magnitude_weights)
             backend.eval(keep_weights)
 
@@ -663,10 +666,11 @@ class GeodesicNullSpaceFilter:
             regularization=reg,
         )
         elapsed_ms = (time.perf_counter() - start) * 1000
-        _cache.set_basis(cache_key, basis, elapsed_ms)
-        if k_neighbors is None:
-            explicit_key = _cache.make_basis_key(prior_activations, backend, actual_k)
-            _cache.set_basis(explicit_key, basis, elapsed_ms)
+        if cache_enabled:
+            _cache.set_basis(cache_key, basis, elapsed_ms)
+            if k_neighbors is None:
+                explicit_key = _cache.make_basis_key(prior_activations, backend, actual_k)
+                _cache.set_basis(explicit_key, basis, elapsed_ms)
         return basis
 
 

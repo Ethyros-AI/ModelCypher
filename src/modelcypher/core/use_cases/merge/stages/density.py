@@ -71,7 +71,7 @@ class DensityStageResult:
     # Point cloud density per layer (k-NN based)
     point_cloud_densities: dict[int, PointCloudDensityResult]
 
-    # Density-derived transfer weights per layer
+    # Density-derived source ratios per layer (per-probe)
     density_weights: dict[int, "Array"]
 
     # Metrics
@@ -323,7 +323,11 @@ def stage_density(
             point_cloud_densities[layer_idx] = pc_result
 
             # Compute transfer weights from density difference
-            weights = compute_density_weights(pc_result.density_diff, backend=b)
+            weights = compute_density_weights(
+                pc_result.source_densities,
+                pc_result.target_densities,
+                backend=b,
+            )
             density_weights[layer_idx] = weights
 
             total_positive_points += pc_result.positive_diff_count

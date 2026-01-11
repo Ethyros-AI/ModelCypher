@@ -166,7 +166,7 @@ def stage_density(
 
     Returns DensityStageResult with:
     - graft_mask: Dict mapping domains/layers to bool
-    - density_weights: Dict[int, Array] with per-layer density-based transfer weights
+    - density_weights: Dict[int, Array] with per-layer source density ratios per probe
     - metrics: Performance metrics
     """
     return stage_density_impl(
@@ -201,7 +201,7 @@ def stage_transplant(
     extract_layer_index_fn: Callable[[str], int | None] = lambda x: None,
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
-    density_weights: dict[int, "Array"] | None = None,  # Per-probe transfer weights from k-NN density
+    density_weights: dict[int, "Array"] | None = None,  # Per-probe source density ratios
     feature_transforms: dict[int, list[list[float]]] | None = None,
     scale_ratios: dict[int, float] | None = None,  # EXACT: ||target|| / ||source @ F||
     embedding_transform: list[list[float]] | None = None,  # 2D GramAlign

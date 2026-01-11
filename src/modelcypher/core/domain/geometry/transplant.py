@@ -106,6 +106,8 @@ def compute_transplant_delta(
     delta_scale: float = 1.0,
     occupancy_weights: "Array | None" = None,
     source_activations_aligned: "Array | None" = None,
+    source_sample_weights: "Array | None" = None,
+    target_sample_weights: "Array | None" = None,
 ) -> TransplantDeltaResult:
     """Compute boundary-preserving transplant update for a single weight matrix.
 
@@ -273,6 +275,8 @@ def compute_transplant_delta(
         prior_activations=activations_boundary,  # Target's activation patterns define null space
         occupancy_weights=occupancy_weights,
         source_activations=source_activations_aligned,  # Enables density-aware transfer mode
+        source_sample_weights=source_sample_weights,
+        target_sample_weights=target_sample_weights,
     )
     delta_in_null_space = result.filtered_delta  # Safe difference to add
     delta_occupancy = result.delta_weights
