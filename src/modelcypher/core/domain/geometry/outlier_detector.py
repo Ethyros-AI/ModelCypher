@@ -163,8 +163,12 @@ class OutlierDetector:
     ) -> OutlierResult:
         """Detect outliers from stress profile pairwise distances.
 
-        For each model, compute mean distance to all other models.
-        An outlier is a model with high mean distance (far from consensus).
+        For 3 models, uses efficient triangulation:
+        - Find the closest pair (consensus candidates)
+        - Check if the third is significantly farther from both
+        - If so, the third is the outlier
+
+        For 4+ models, uses mean distance with z-score detection.
 
         Args:
             profiles: List of RelationalStressProfile from each model.
@@ -194,7 +198,11 @@ class OutlierDetector:
                 pairwise[i][j] = dist
                 pairwise[j][i] = dist
 
-        # Mean distance to all other models for each model
+        # For exactly 3 models, use triangulation
+        if n_models == 3:
+            return self._triangulate_outlier(pairwise)
+
+        # For 4+ models, use mean distance approach
         mean_distances = []
         for i in range(n_models):
             total = sum(pairwise[i])
@@ -203,6 +211,97 @@ class OutlierDetector:
 
         # Use GPA-style detection on mean distances
         return self.detect_from_gpa(mean_distances)
+
+    def _triangulate_outlier(
+        self,
+        pairwise: list[list[float]],
+    ) -> OutlierResult:
+        """Efficient outlier detection for exactly 3 models using triangulation.
+
+        The consensus pair is the two models closest to each other.
+        The outlier is the third model IF it's significantly farther from
+        both consensus models than they are from each other.
+
+        Threshold: outlier's mean distance to consensus pair > 2x the
+        consensus pair's mutual distance.
+
+        Args:
+            pairwise: 3x3 pairwise distance matrix.
+
+        Returns:
+            OutlierResult with consensus and outlier indices.
+        """
+        # Get the three pairwise distances
+        d_01 = pairwise[0][1]
+        d_02 = pairwise[0][2]
+        d_12 = pairwise[1][2]
+
+        # Find the minimum distance - that's the consensus pair
+        min_dist = min(d_01, d_02, d_12)
+
+        if min_dist == d_01:
+            # Models 0 and 1 are closest, 2 is potential outlier
+            consensus_pair = (0, 1)
+            potential_outlier = 2
+            outlier_dists = (d_02, d_12)
+        elif min_dist == d_02:
+            # Models 0 and 2 are closest, 1 is potential outlier
+            consensus_pair = (0, 2)
+            potential_outlier = 1
+            outlier_dists = (d_01, d_12)
+        else:
+            # Models 1 and 2 are closest, 0 is potential outlier
+            consensus_pair = (1, 2)
+            potential_outlier = 0
+            outlier_dists = (d_01, d_02)
+
+        # Compute mean distance from potential outlier to consensus pair
+        outlier_mean_dist = sum(outlier_dists) / 2.0
+
+        # Threshold: outlier is confirmed if its mean distance to consensus
+        # is at least 2x the consensus pair's mutual distance
+        # This is derived from triangle inequality: if truly an outlier,
+        # it should be significantly farther from both consensus models
+        threshold_ratio = 2.0
+        is_outlier = outlier_mean_dist > threshold_ratio * min_dist
+
+        # Compute per-model "errors" as mean distance to others
+        errors = [
+            (pairwise[0][1] + pairwise[0][2]) / 2.0,
+            (pairwise[0][1] + pairwise[1][2]) / 2.0,
+            (pairwise[0][2] + pairwise[1][2]) / 2.0,
+        ]
+
+        if is_outlier:
+            consensus_indices = consensus_pair
+            outlier_indices = (potential_outlier,)
+            logger.info(
+                "Triangulation: model %d is outlier (dist=%.4f vs consensus=%.4f)",
+                potential_outlier,
+                outlier_mean_dist,
+                min_dist,
+            )
+        else:
+            # All models are similar - no outlier
+            consensus_indices = (0, 1, 2)
+            outlier_indices = ()
+            logger.info(
+                "Triangulation: no outlier detected (max_ratio=%.2f)",
+                outlier_mean_dist / max(min_dist, 1e-10),
+            )
+
+        mean_error = sum(errors) / 3.0
+        variance = sum((e - mean_error) ** 2 for e in errors) / 3.0
+        std_error = sqrt_scalar(variance, self._backend)
+
+        return OutlierResult(
+            consensus_indices=consensus_indices,
+            outlier_indices=outlier_indices,
+            errors=tuple(errors),
+            threshold=threshold_ratio * min_dist,
+            mean_error=mean_error,
+            std_error=std_error,
+        )
 
     def get_consensus_stress(
         self,

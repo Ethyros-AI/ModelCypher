@@ -34,6 +34,8 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from collections import OrderedDict
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -407,7 +409,7 @@ def _save_model_probe_cache(
     logger.info("PROBE CACHE: Saved per-model activations to %s", data_path)
 
 # =============================================================================
-# MEMORY-EFFICIENT ACTIVATION ACCUMULATION
+# MEMORY-EFFICIENT ACTIVATION ACCUMULATION + PAGING
 # =============================================================================
 
 def _accumulate_activation(
@@ -445,7 +447,7 @@ def _accumulate_activation(
             pad_rows = total_probes - int(existing_shape[0])
             padding = backend.zeros((pad_rows, dim), dtype=dtype)
             storage[layer_idx] = backend.concatenate([existing, padding], axis=0)
-            backend.eval(storage[layer_idx])
+    backend.eval(storage[layer_idx])
 
     dim = int(backend.shape(act)[1])
     indices = backend.full((1, dim), probe_index, dtype="int32")
@@ -453,6 +455,183 @@ def _accumulate_activation(
         storage[layer_idx], indices, act, axis=0
     )
     backend.eval(storage[layer_idx])
+
+
+def _accumulate_activation_batch(
+    storage: dict[int, "Array"],
+    layer_idx: int,
+    acts: list["Array"],
+    probe_indices: list[int],
+    backend: "Backend",
+    total_probes: int,
+) -> None:
+    if not acts:
+        return
+    if len(acts) != len(probe_indices):
+        raise ValueError("Batch activation count does not match probe indices")
+
+    normalized: list["Array"] = []
+    for act in acts:
+        if not hasattr(act, "shape"):
+            act = backend.array(act)
+        normalized.append(act)
+
+    stacked = backend.stack(normalized, axis=0)
+    backend.eval(stacked)
+
+    if layer_idx not in storage:
+        dim = int(backend.shape(stacked)[1])
+        storage[layer_idx] = backend.zeros((total_probes, dim), dtype=stacked.dtype)
+        backend.eval(storage[layer_idx])
+    else:
+        existing = storage[layer_idx]
+        existing_shape = backend.shape(existing)
+        if int(existing_shape[0]) < total_probes:
+            dim = int(existing_shape[1])
+            pad_rows = total_probes - int(existing_shape[0])
+            padding = backend.zeros((pad_rows, dim), dtype=existing.dtype)
+            storage[layer_idx] = backend.concatenate([existing, padding], axis=0)
+            backend.eval(storage[layer_idx])
+
+    dim = int(backend.shape(stacked)[1])
+    idx_arr = backend.array(probe_indices, dtype="int32")
+    idx_arr = backend.reshape(idx_arr, (-1, 1))
+    idx_mat = backend.broadcast_to(idx_arr, (len(probe_indices), dim))
+    storage[layer_idx] = backend.put_along_axis(
+        storage[layer_idx], idx_mat, stacked, axis=0
+    )
+    backend.eval(storage[layer_idx])
+
+
+def _flush_batch_activations(
+    storage: dict[int, "Array"],
+    acts_by_layer: dict[int, list["Array"]],
+    indices_by_layer: dict[int, list[int]],
+    backend: "Backend",
+    total_probes: int,
+) -> None:
+    for layer_idx, acts in acts_by_layer.items():
+        probe_indices = indices_by_layer.get(layer_idx, [])
+        if not probe_indices:
+            continue
+        _accumulate_activation_batch(
+            storage,
+            layer_idx,
+            acts,
+            probe_indices,
+            backend,
+            total_probes,
+        )
+
+
+class PagedActivations:
+    """Lazy activation loader backed by per-layer npz files."""
+
+    def __init__(
+        self,
+        base_dir: Path,
+        prefix: str,
+        layer_indices: list[int],
+        activation_store: "ActivationStore",
+        backend: "Backend",
+        cache_size: int = 2,
+    ) -> None:
+        self._base_dir = base_dir
+        self._prefix = prefix
+        self._layers = list(layer_indices)
+        self._layer_set = set(layer_indices)
+        self._activation_store = activation_store
+        self._backend = backend
+        self._cache: OrderedDict[int, "Array"] = OrderedDict()
+        self._cache_size = max(1, int(cache_size))
+
+    def _layer_path(self, layer_idx: int) -> Path:
+        return self._base_dir / f"{self._prefix}_{layer_idx}.npz"
+
+    def _load_layer(self, layer_idx: int) -> "Array | None":
+        if layer_idx in self._cache:
+            self._cache.move_to_end(layer_idx)
+            return self._cache[layer_idx]
+
+        path = self._layer_path(layer_idx)
+        loaded = self._activation_store.load_probe_activations(path, self._backend)
+        if not loaded:
+            return None
+        key = f"{self._prefix}_{layer_idx}"
+        arr = loaded.get(key)
+        if arr is None and loaded:
+            arr = next(iter(loaded.values()))
+        if arr is None:
+            return None
+
+        self._cache[layer_idx] = arr
+        if len(self._cache) > self._cache_size:
+            self._cache.popitem(last=False)
+            if hasattr(self._backend, "clear_cache"):
+                self._backend.clear_cache()
+        return arr
+
+    def __contains__(self, layer_idx: object) -> bool:
+        return int(layer_idx) in self._layer_set if isinstance(layer_idx, int) else False
+
+    def __getitem__(self, layer_idx: int) -> "Array":
+        value = self._load_layer(layer_idx)
+        if value is None:
+            raise KeyError(layer_idx)
+        return value
+
+    def get(self, layer_idx: int, default: Any = None) -> Any:
+        value = self._load_layer(layer_idx)
+        return value if value is not None else default
+
+    def keys(self) -> list[int]:
+        return list(self._layers)
+
+    def items(self) -> list[tuple[int, "Array"]]:
+        return [(layer_idx, self[layer_idx]) for layer_idx in self._layers]
+
+    def __iter__(self):
+        return iter(self._layers)
+
+    def __len__(self) -> int:
+        return len(self._layers)
+
+    def __bool__(self) -> bool:
+        return bool(self._layers)
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+        if hasattr(self._backend, "clear_cache"):
+            self._backend.clear_cache()
+
+    def clear(self) -> None:
+        self.clear_cache()
+
+
+def _page_activation_space(
+    activation_store: "ActivationStore",
+    base_dir: Path,
+    prefix: str,
+    activations: dict[int, "Array"],
+    backend: "Backend",
+    cache_size: int = 2,
+) -> PagedActivations:
+    base_dir.mkdir(parents=True, exist_ok=True)
+    layer_indices = sorted(activations.keys())
+    for layer_idx, acts in activations.items():
+        path = base_dir / f"{prefix}_{layer_idx}.npz"
+        activation_store.save_probe_activations(
+            path, {f"{prefix}_{layer_idx}": acts}, backend
+        )
+    activations.clear()
+    return PagedActivations(
+        base_dir=base_dir,
+        prefix=prefix,
+        layer_indices=layer_indices,
+        activation_store=activation_store,
+        backend=backend,
+        cache_size=cache_size,
+    )
 
 
 @dataclass
@@ -1180,6 +1359,27 @@ def _probe_precise(
                     target_q_batch, target_k_batch, target_v_batch = [], [], []
     
                 # Process batch results
+                source_hidden_accum: dict[int, list["Array"]] = {}
+                source_hidden_indices: dict[int, list[int]] = {}
+                target_hidden_accum: dict[int, list["Array"]] = {}
+                target_hidden_indices: dict[int, list[int]] = {}
+                source_inter_accum: dict[int, list["Array"]] = {}
+                source_inter_indices: dict[int, list[int]] = {}
+                target_inter_accum: dict[int, list["Array"]] = {}
+                target_inter_indices: dict[int, list[int]] = {}
+                source_q_accum: dict[int, list["Array"]] = {}
+                source_q_indices: dict[int, list[int]] = {}
+                target_q_accum: dict[int, list["Array"]] = {}
+                target_q_indices: dict[int, list[int]] = {}
+                source_k_accum: dict[int, list["Array"]] = {}
+                source_k_indices: dict[int, list[int]] = {}
+                target_k_accum: dict[int, list["Array"]] = {}
+                target_k_indices: dict[int, list[int]] = {}
+                source_v_accum: dict[int, list["Array"]] = {}
+                source_v_indices: dict[int, list[int]] = {}
+                target_v_accum: dict[int, list["Array"]] = {}
+                target_v_indices: dict[int, list[int]] = {}
+
                 for i, (probe, probe_text) in enumerate(batch):
                     # Skip probes that were already completed (from checkpoint)
                     if probe.probe_id in completed_probe_ids:
@@ -1205,122 +1405,60 @@ def _probe_precise(
                             source_activated[layer_idx] = _extract_top_k_dims(
                                 act, backend=b
                             )
-                            # MEMORY FIX: accumulate into single buffer per layer
-                            _accumulate_activation(
-                                source_layer_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            source_hidden_accum.setdefault(layer_idx, []).append(act)
+                            source_hidden_indices.setdefault(layer_idx, []).append(probe_index)
 
                     if run_target_inference:
                         for layer_idx, act in target_acts.items():
                             target_activated[layer_idx] = _extract_top_k_dims(
                                 act, backend=b
                             )
-                            # MEMORY FIX: accumulate into single buffer per layer
-                            _accumulate_activation(
-                                target_layer_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            target_hidden_accum.setdefault(layer_idx, []).append(act)
+                            target_hidden_indices.setdefault(layer_idx, []).append(probe_index)
 
                     # Store intermediate activations for multi-space stitching
                     if run_source_inference:
                         for layer_idx, act in source_intermediate_acts.items():
-                            _accumulate_activation(
-                                source_intermediate_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            source_inter_accum.setdefault(layer_idx, []).append(act)
+                            source_inter_indices.setdefault(layer_idx, []).append(probe_index)
 
                     if run_target_inference:
                         for layer_idx, act in target_intermediate_acts.items():
-                            _accumulate_activation(
-                                target_intermediate_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            target_inter_accum.setdefault(layer_idx, []).append(act)
+                            target_inter_indices.setdefault(layer_idx, []).append(probe_index)
 
                     # Store Q attention activations for q_proj/o_proj stitching
                     if run_source_inference:
                         for layer_idx, act in source_attention_acts.items():
-                            _accumulate_activation(
-                                source_attention_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            source_q_accum.setdefault(layer_idx, []).append(act)
+                            source_q_indices.setdefault(layer_idx, []).append(probe_index)
 
                     if run_target_inference:
                         for layer_idx, act in target_attention_acts.items():
-                            _accumulate_activation(
-                                target_attention_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            target_q_accum.setdefault(layer_idx, []).append(act)
+                            target_q_indices.setdefault(layer_idx, []).append(probe_index)
 
                     # Store K attention activations for k_proj stitching
                     if run_source_inference:
                         for layer_idx, act in source_k_acts.items():
-                            _accumulate_activation(
-                                source_k_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            source_k_accum.setdefault(layer_idx, []).append(act)
+                            source_k_indices.setdefault(layer_idx, []).append(probe_index)
 
                     if run_target_inference:
                         for layer_idx, act in target_k_acts.items():
-                            _accumulate_activation(
-                                target_k_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            target_k_accum.setdefault(layer_idx, []).append(act)
+                            target_k_indices.setdefault(layer_idx, []).append(probe_index)
 
                     # Store V attention activations for v_proj stitching
                     if run_source_inference:
                         for layer_idx, act in source_v_acts.items():
-                            _accumulate_activation(
-                                source_v_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            source_v_accum.setdefault(layer_idx, []).append(act)
+                            source_v_indices.setdefault(layer_idx, []).append(probe_index)
 
                     if run_target_inference:
                         for layer_idx, act in target_v_acts.items():
-                            _accumulate_activation(
-                                target_v_activations,
-                                layer_idx,
-                                act,
-                                b,
-                                probe_index,
-                                total_probes,
-                            )
+                            target_v_accum.setdefault(layer_idx, []).append(act)
+                            target_v_indices.setdefault(layer_idx, []).append(probe_index)
 
                     if run_source_inference and source_activated:
                         source_fingerprints.append(
@@ -1341,6 +1479,80 @@ def _probe_precise(
     
                     completed_probe_ids.add(probe.probe_id)
                     probes_processed += 1
+
+                if run_source_inference:
+                    _flush_batch_activations(
+                        source_layer_activations,
+                        source_hidden_accum,
+                        source_hidden_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        source_intermediate_activations,
+                        source_inter_accum,
+                        source_inter_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        source_attention_activations,
+                        source_q_accum,
+                        source_q_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        source_k_activations,
+                        source_k_accum,
+                        source_k_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        source_v_activations,
+                        source_v_accum,
+                        source_v_indices,
+                        b,
+                        total_probes,
+                    )
+
+                if run_target_inference:
+                    _flush_batch_activations(
+                        target_layer_activations,
+                        target_hidden_accum,
+                        target_hidden_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        target_intermediate_activations,
+                        target_inter_accum,
+                        target_inter_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        target_attention_activations,
+                        target_q_accum,
+                        target_q_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        target_k_activations,
+                        target_k_accum,
+                        target_k_indices,
+                        b,
+                        total_probes,
+                    )
+                    _flush_batch_activations(
+                        target_v_activations,
+                        target_v_accum,
+                        target_v_indices,
+                        b,
+                        total_probes,
+                    )
     
                 # Log progress at batch boundaries
                 if batch_end % 50 <= PROBE_BATCH_SIZE:
@@ -1731,6 +1943,86 @@ def _probe_precise(
             target_embedding_activations,
         ),
     )
+
+    page_activations = (
+        activation_store is not None
+        and os.environ.get("MC_PROBE_PAGE_ACTIVATIONS", "1") != "0"
+    )
+    if page_activations:
+        def _paged_dir(identity: Any | None, label: str) -> Path | None:
+            if identity is not None:
+                return (
+                    profile_store.probe_cache_dir(identity.model_id)
+                    / f"{probe_mode}_{probe_corpus_hash}_paged_{label}"
+                )
+            if checkpoint_dir is not None:
+                return checkpoint_dir / f"{probe_mode}_{probe_corpus_hash}_paged_{label}"
+            return None
+
+        source_paged_dir = _paged_dir(source_identity, "source")
+        if (
+            source_paged_dir is not None
+            and isinstance(source_layer_activations, dict)
+            and source_layer_activations
+        ):
+            source_layer_activations = _page_activation_space(
+                activation_store,
+                source_paged_dir,
+                "hidden",
+                source_layer_activations,
+                b,
+            )
+            logger.info("PROBE: Paged source hidden activations to %s", source_paged_dir)
+
+        target_paged_dir = _paged_dir(target_identity, "target")
+        if (
+            target_paged_dir is not None
+            and isinstance(target_layer_activations, dict)
+            and target_layer_activations
+        ):
+            target_layer_activations = _page_activation_space(
+                activation_store,
+                target_paged_dir,
+                "hidden",
+                target_layer_activations,
+                b,
+            )
+            logger.info("PROBE: Paged target hidden activations to %s", target_paged_dir)
+
+        if (
+            source_paged_dir is not None
+            and isinstance(source_intermediate_activations, dict)
+            and source_intermediate_activations
+        ):
+            source_intermediate_activations = _page_activation_space(
+                activation_store,
+                source_paged_dir,
+                "intermediate",
+                source_intermediate_activations,
+                b,
+            )
+            logger.info(
+                "PROBE: Paged source intermediate activations to %s", source_paged_dir
+            )
+
+        if (
+            target_paged_dir is not None
+            and isinstance(target_intermediate_activations, dict)
+            and target_intermediate_activations
+        ):
+            target_intermediate_activations = _page_activation_space(
+                activation_store,
+                target_paged_dir,
+                "intermediate",
+                target_intermediate_activations,
+                b,
+            )
+            logger.info(
+                "PROBE: Paged target intermediate activations to %s", target_paged_dir
+            )
+
+        if hasattr(b, "clear_cache"):
+            b.clear_cache()
 
     # Build IntersectionMap
     intersection_map_obj: IntersectionMap | None = None

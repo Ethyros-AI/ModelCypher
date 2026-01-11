@@ -252,11 +252,16 @@ class UnifiedGeometricMerger:
         delta_scale: float = 1.0,
         track_budget: bool = True,
         auto_scale: bool = False,
+        consensus_mode: bool = False,
     ) -> UnifiedMergeResult:
         """Merge multiple source models into a single target (N→1 merging).
 
         This is optimized for merging many models into one compact target (e.g., LFM2).
         The target is loaded and probed ONCE, then reused for all source merges.
+
+        When consensus_mode=True, uses two-phase merging:
+        1. CORRECTION: Fix concepts where target disagrees with source consensus
+        2. ADDITION: Add source-only knowledge via null-space projection
 
         Mathematical Foundation:
         -----------------------
@@ -311,6 +316,11 @@ class UnifiedGeometricMerger:
         auto_scale : bool
             If True, automatically compute delta_scale for each merge based on
             remaining budget. Overrides delta_scale parameter. Default False.
+        consensus_mode : bool
+            If True, enable two-phase merging: first correct concepts where
+            target disagrees with source consensus (no null-space projection),
+            then add source-only knowledge via null-space projection.
+            Uses triangulation-based outlier detection for 3+ models.
 
         Returns
         -------
@@ -352,6 +362,25 @@ class UnifiedGeometricMerger:
             logger.info(
                 "BATCH MERGE: Deviation tracking enabled (geometry handles safety by construction)"
             )
+
+        # Consensus mode: run correction phase BEFORE addition
+        # This fixes concepts where target disagrees with source consensus
+        corrections_applied = 0
+        if consensus_mode:
+            logger.info("BATCH MERGE: Phase 2 - Consensus correction (fix misaligned concepts)")
+            target_weights, corrections_applied = self._run_consensus_correction(
+                target_weights=target_weights,
+                source_paths=source_paths,
+                target_model=target_model,
+                target_tokenizer=target_tokenizer,
+            )
+            if corrections_applied > 0:
+                logger.info(
+                    "BATCH MERGE: Applied %d corrections (target moved to consensus)",
+                    corrections_applied,
+                )
+            else:
+                logger.info("BATCH MERGE: No corrections needed (target already at consensus)")
 
         if accumulative:
             # Accumulative mode: merge all sources into original target's null-space
@@ -475,6 +504,131 @@ class UnifiedGeometricMerger:
 
         logger.info("BATCH MERGE: Complete. Merged %d sources into target.", n_sources)
         return final_result
+
+    def _run_consensus_correction(
+        self,
+        target_weights: dict[str, Any],
+        source_paths: list[str],
+        target_model: Any,
+        target_tokenizer: Any,
+    ) -> tuple[dict[str, Any], int]:
+        """Run consensus correction phase.
+
+        Identifies concepts where target disagrees with source consensus and
+        applies corrections (moves target to consensus position).
+
+        This is Phase 1 of consensus-based merging:
+        - CORRECTION: Fix concepts target learned wrong (NO null-space projection)
+        - ADDITION: Add source-only knowledge (WITH null-space projection) - done after
+
+        Args:
+            target_weights: Target model weights.
+            source_paths: Paths to source models.
+            target_model: Loaded target model for probing.
+            target_tokenizer: Loaded tokenizer.
+
+        Returns:
+            (corrected_weights, corrections_count)
+        """
+        import logging
+        from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
+        from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
+
+        logger = logging.getLogger(__name__)
+
+        # Need at least 2 sources + target (3 models) for triangulation
+        all_paths = [None] + list(source_paths)  # target is at index 0
+        n_models = len(all_paths)
+
+        if n_models < 3:
+            logger.info("CONSENSUS: Need 3+ models for triangulation (got %d)", n_models)
+            return target_weights, 0
+
+        detector = OutlierDetector(self._backend)
+        corrector = ConsensusCorrector(self._backend)
+
+        # For now, use weight-based proxy for outlier detection
+        # (Full stress profile analysis requires activation probing per concept)
+        # This gives us a quick approximation using weight space distances
+
+        # Compute per-model weight signatures for each layer
+        corrections_applied = 0
+        corrected_weights = {k: self._backend.array(v) for k, v in target_weights.items()}
+
+        # Load source weights for comparison
+        source_weights_list = []
+        for source_path in source_paths:
+            weights, _ = self._model_loader.load_weights(source_path)
+            source_weights_list.append(weights)
+
+        # For each layer, check if target is an outlier
+        for layer_name in target_weights.keys():
+            if "weight" not in layer_name.lower():
+                continue
+
+            # Collect this layer's weights from all models
+            layer_weights = [target_weights[layer_name]]  # target first
+            for source_weights in source_weights_list:
+                if layer_name in source_weights:
+                    layer_weights.append(source_weights[layer_name])
+
+            if len(layer_weights) < 3:
+                continue
+
+            # Compute pairwise Frobenius distances
+            pairwise = [[0.0] * len(layer_weights) for _ in range(len(layer_weights))]
+            for i in range(len(layer_weights)):
+                for j in range(i + 1, len(layer_weights)):
+                    wi = self._backend.array(layer_weights[i])
+                    wj = self._backend.array(layer_weights[j])
+                    dist = float(self._backend.to_scalar(
+                        self._backend.sqrt(self._backend.sum((wi - wj) ** 2))
+                    ))
+                    pairwise[i][j] = dist
+                    pairwise[j][i] = dist
+
+            # Use triangulation for 3 models, z-score for more
+            if len(layer_weights) == 3:
+                result = detector._triangulate_outlier(pairwise)
+            else:
+                # Compute mean distances for z-score detection
+                mean_distances = []
+                for i in range(len(layer_weights)):
+                    total = sum(pairwise[i])
+                    mean_dist = total / (len(layer_weights) - 1)
+                    mean_distances.append(mean_dist)
+                result = detector.detect_from_gpa(mean_distances)
+
+            # Check if target (index 0) is an outlier
+            if 0 in result.outlier_indices:
+                # Target is wrong - compute consensus from sources
+                consensus_weights = []
+                for idx in result.consensus_indices:
+                    if idx > 0:  # Skip target if it's somehow in consensus
+                        consensus_weights.append(layer_weights[idx])
+
+                if consensus_weights:
+                    # Compute mean of consensus weights
+                    stacked = self._backend.stack(
+                        [self._backend.array(w) for w in consensus_weights],
+                        axis=0
+                    )
+                    consensus = self._backend.mean(stacked, axis=0)
+
+                    # Apply correction: move target to consensus
+                    # Unlike null-space projection, this intentionally changes behavior
+                    corrected_weights[layer_name] = consensus
+                    corrections_applied += 1
+
+                    logger.info(
+                        "CONSENSUS: Corrected layer %s (target was outlier, "
+                        "threshold=%.4f, target_dist=%.4f)",
+                        layer_name,
+                        result.threshold,
+                        result.errors[0] if result.errors else 0.0,
+                    )
+
+        return corrected_weights, corrections_applied
 
     def merge_multi_channel(
         self,

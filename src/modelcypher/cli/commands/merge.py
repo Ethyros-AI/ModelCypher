@@ -509,6 +509,7 @@ def batch(
             accumulative=accumulative,
             fast_mode=fast_mode,
             auto_scale=True,  # Always enabled - no user knob
+            consensus_mode=consensus_mode,
         )
 
     typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")

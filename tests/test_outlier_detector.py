@@ -196,3 +196,148 @@ class TestStressProfileDetection:
 
         assert 5 in result.outlier_indices
         assert len(result.consensus_indices) >= 4
+
+
+class TestTriangulation:
+    """Tests for 3-model triangulation-based outlier detection."""
+
+    def test_three_models_with_outlier(self):
+        """With 3 models, should detect the one that disagrees."""
+        detector = OutlierDetector()
+
+        class MockProfile:
+            def __init__(self, stress):
+                self.stress_vector = tuple(stress)
+
+            def distance_to(self, other):
+                import math
+                s1 = self.stress_vector
+                s2 = other.stress_vector
+                return math.sqrt(sum((a - b) ** 2 for a, b in zip(s1, s2)))
+
+        # Models 0 and 1 agree, model 2 is outlier
+        profiles = [
+            MockProfile([1.0, 2.0, 3.0]),
+            MockProfile([1.1, 2.1, 3.1]),  # Close to model 0
+            MockProfile([10.0, 20.0, 30.0]),  # Far from both
+        ]
+
+        result = detector.detect_from_stress_profiles(profiles)
+
+        # Model 2 should be detected as outlier
+        assert 2 in result.outlier_indices
+        assert 0 in result.consensus_indices
+        assert 1 in result.consensus_indices
+
+    def test_three_models_no_outlier(self):
+        """If all 3 models are similar, no outlier detected."""
+        detector = OutlierDetector()
+
+        class MockProfile:
+            def __init__(self, stress):
+                self.stress_vector = tuple(stress)
+
+            def distance_to(self, other):
+                import math
+                s1 = self.stress_vector
+                s2 = other.stress_vector
+                return math.sqrt(sum((a - b) ** 2 for a, b in zip(s1, s2)))
+
+        # All three models are similar
+        profiles = [
+            MockProfile([1.0, 2.0, 3.0]),
+            MockProfile([1.1, 2.1, 3.1]),
+            MockProfile([0.9, 1.9, 2.9]),
+        ]
+
+        result = detector.detect_from_stress_profiles(profiles)
+
+        # No outlier - all are consensus
+        assert len(result.outlier_indices) == 0
+        assert len(result.consensus_indices) == 3
+
+    def test_three_models_first_is_outlier(self):
+        """Triangulation should detect outlier regardless of position."""
+        detector = OutlierDetector()
+
+        class MockProfile:
+            def __init__(self, stress):
+                self.stress_vector = tuple(stress)
+
+            def distance_to(self, other):
+                import math
+                s1 = self.stress_vector
+                s2 = other.stress_vector
+                return math.sqrt(sum((a - b) ** 2 for a, b in zip(s1, s2)))
+
+        # Model 0 is the outlier, models 1 and 2 agree
+        profiles = [
+            MockProfile([10.0, 20.0, 30.0]),  # Outlier
+            MockProfile([1.0, 2.0, 3.0]),
+            MockProfile([1.1, 2.1, 3.1]),  # Close to model 1
+        ]
+
+        result = detector.detect_from_stress_profiles(profiles)
+
+        # Model 0 should be detected as outlier
+        assert 0 in result.outlier_indices
+        assert 1 in result.consensus_indices
+        assert 2 in result.consensus_indices
+
+    def test_three_models_middle_is_outlier(self):
+        """Triangulation should detect middle model as outlier."""
+        detector = OutlierDetector()
+
+        class MockProfile:
+            def __init__(self, stress):
+                self.stress_vector = tuple(stress)
+
+            def distance_to(self, other):
+                import math
+                s1 = self.stress_vector
+                s2 = other.stress_vector
+                return math.sqrt(sum((a - b) ** 2 for a, b in zip(s1, s2)))
+
+        # Model 1 is the outlier, models 0 and 2 agree
+        profiles = [
+            MockProfile([1.0, 2.0, 3.0]),
+            MockProfile([10.0, 20.0, 30.0]),  # Outlier
+            MockProfile([1.1, 2.1, 3.1]),  # Close to model 0
+        ]
+
+        result = detector.detect_from_stress_profiles(profiles)
+
+        # Model 1 should be detected as outlier
+        assert 1 in result.outlier_indices
+        assert 0 in result.consensus_indices
+        assert 2 in result.consensus_indices
+
+    def test_triangulation_threshold_boundary(self):
+        """Test that threshold is working correctly at boundary."""
+        detector = OutlierDetector()
+
+        class MockProfile:
+            def __init__(self, stress):
+                self.stress_vector = tuple(stress)
+
+            def distance_to(self, other):
+                import math
+                s1 = self.stress_vector
+                s2 = other.stress_vector
+                return math.sqrt(sum((a - b) ** 2 for a, b in zip(s1, s2)))
+
+        # Edge case: third model is exactly 2x distance
+        # d(0,1) = sqrt(0.03) ≈ 0.173
+        # d(0,2) = sqrt(0.75) ≈ 0.866, d(1,2) ≈ 0.866
+        # Mean outlier dist ≈ 0.866, threshold = 2 * 0.173 ≈ 0.346
+        # 0.866 > 0.346, so should be detected
+        profiles = [
+            MockProfile([1.0, 2.0, 3.0]),
+            MockProfile([1.1, 2.1, 3.1]),
+            MockProfile([1.5, 2.5, 3.5]),  # Moderately far
+        ]
+
+        result = detector.detect_from_stress_profiles(profiles)
+
+        # Should detect model 2 as outlier (mean dist > 2x consensus dist)
+        assert 2 in result.outlier_indices
