@@ -145,6 +145,38 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "accelerator: tests that require any GPU/accelerator")
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """Clean up MLX resources before Python exits to prevent segfaults.
+
+    MLX Metal buffers can cause segfaults (exit code 139) if not properly
+    released before Python's garbage collector runs at exit.
+    """
+    import gc
+
+    # Force garbage collection first to release Python references
+    gc.collect()
+    gc.collect()
+
+    # Clear MLX cache if available
+    if HAS_MLX:
+        try:
+            import mlx.core as mx
+
+            # Synchronize any pending operations
+            mx.eval(mx.zeros(1))
+
+            # Clear the memory cache
+            if hasattr(mx, "clear_cache"):
+                mx.clear_cache()
+            elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
+                mx.metal.clear_cache()
+
+            # Final GC pass
+            gc.collect()
+        except Exception:
+            pass  # Ignore cleanup errors
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _register_atlas_defaults():
     """Register default atlas inventories for geometry tests."""
