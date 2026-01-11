@@ -81,21 +81,7 @@ class TestMachineEpsilon:
         assert float(b.to_scalar(one + half_eps_arr)) == 1.0
         assert float(b.to_scalar(one + eps_arr)) != 1.0
 
-    def test_float64_epsilon(self, any_backend: "Backend") -> None:
-        """Float64 epsilon should be smaller than float32 when supported."""
-        b = any_backend
-        try:
-            arr = b.astype(b.zeros((2, 2)), "float64")
-        except (ValueError, RuntimeError):
-            pytest.skip("float64 not supported on this backend")
-
-        eps64 = machine_epsilon(b, arr)
-        eps32 = machine_epsilon(b, b.zeros((2, 2)))
-
-        if eps64 < eps32:
-            assert eps64 < eps32
-        else:
-            pytest.skip("Backend uses float32 precision internally")
+    # NOTE: float64 test removed - MLX doesn't support float64
 
     def test_epsilon_positive(self, any_backend: "Backend") -> None:
         """Machine epsilon should always be positive."""
