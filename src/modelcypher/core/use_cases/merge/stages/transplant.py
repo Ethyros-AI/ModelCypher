@@ -1925,12 +1925,27 @@ def stage_transplant(
                     )
                 else:
                     # Direct delta computation when anchors unavailable
-                    # delta_A = source_aligned - target (in activation space)
-                    # This is simpler but still projects into null space
-                    delta_A = source_aligned - target_w
+                    # Compute delta in OUTPUT activation space:
+                    # delta_A = (source_aligned @ input_acts.T).T - (target @ input_acts.T).T
+                    #         = input_acts @ (source_aligned - target).T
+                    # But we need the change in layer output, which is:
+                    # output_source = input_acts @ source_aligned.T
+                    # output_target = input_acts @ target.T
+                    # delta_A = output_source - output_target
+
+                    # Compute outputs for each probe
+                    output_source = b.matmul(core_acts, b.transpose(source_aligned))
+                    output_target = b.matmul(core_acts, b.transpose(target_w))
+                    b.eval(output_source, output_target)
+
+                    # Delta is the difference in outputs
+                    delta_A = output_source - output_target
+                    b.eval(delta_A)
+
                     logger.debug(
-                        "DIRECT DELTA: Layer %d using source-target difference",
+                        "DIRECT DELTA: Layer %d delta shape=%s",
                         layer_idx,
+                        list(delta_A.shape),
                     )
 
                 # Constrained least-squares transplant
