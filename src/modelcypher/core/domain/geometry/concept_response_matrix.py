@@ -241,7 +241,7 @@ class ConceptResponseMatrix:
         CKA = 1.0 for corresponding layers (same geometric structure).
         CKA < 1.0 for non-corresponding layers (different information).
         """
-        from modelcypher.core.domain.geometry.gram_aligner import find_alignment
+        from modelcypher.core.domain.geometry.cka import compute_cka
 
         backend = get_default_backend()
         cka_matrix = [[0.0 for _ in range(other.layer_count)] for _ in range(self.layer_count)]
@@ -251,43 +251,53 @@ class ConceptResponseMatrix:
         sorted_anchors = sorted(common)
 
         # Pre-extract all layer activations for efficiency
-        source_acts_cache: dict[int, "Array"] = {}
-        target_acts_cache: dict[int, "Array"] = {}
+        source_acts_cache: dict[int, tuple["Array", "Array"]] = {}
+        target_acts_cache: dict[int, tuple["Array", "Array"]] = {}
 
         for layer in range(self.layer_count):
             activations = self._extract_activations(layer, sorted_anchors)
             if activations is not None:
-                arr = backend.array(activations)
+                arr = backend.astype(backend.array(activations), "float32")
                 backend.eval(arr)
-                source_acts_cache[layer] = arr
+                source_mean = backend.mean(arr, axis=0, keepdims=True)
+                source_c = arr - source_mean
+                source_pinv = backend.pinv(source_c)
+                backend.eval(source_mean, source_c, source_pinv)
+                source_acts_cache[layer] = (arr, source_pinv)
 
         for layer in range(other.layer_count):
             activations = other._extract_activations(layer, sorted_anchors)
             if activations is not None:
-                arr = backend.array(activations)
+                arr = backend.astype(backend.array(activations), "float32")
                 backend.eval(arr)
-                target_acts_cache[layer] = arr
+                target_mean = backend.mean(arr, axis=0, keepdims=True)
+                target_c = arr - target_mean
+                backend.eval(target_mean, target_c)
+                target_acts_cache[layer] = (arr, target_c)
 
         # Compute alignment for each layer pair
         for source_layer in range(self.layer_count):
-            source_arr = source_acts_cache.get(source_layer)
-            if source_arr is None:
+            source_entry = source_acts_cache.get(source_layer)
+            if source_entry is None:
                 continue
+            source_arr, source_pinv = source_entry
 
             for target_layer in range(other.layer_count):
-                target_arr = target_acts_cache.get(target_layer)
-                if target_arr is None:
+                target_entry = target_acts_cache.get(target_layer)
+                if target_entry is None:
                     continue
+                target_arr, target_c = target_entry
 
-                # find_alignment computes the transform F such that source @ F ≈ target
-                # numerical_deviation = ||source @ F - target|| / ||target||
-                # For corresponding layers: deviation ≈ 0, so CKA ≈ 1.0
-                # For non-corresponding layers: deviation large, so CKA < 1.0
-                result = find_alignment(source_arr, target_arr, backend)
+                # Reuse source pseudoinverse across all target layers for this source layer.
+                # This preserves the invariant F = pinv(source_c) @ target_c and avoids
+                # recomputing pinv for every pair.
+                F = backend.matmul(source_pinv, target_c)
+                aligned = backend.matmul(source_arr, F)
+                backend.eval(F, aligned)
 
-                # Use 1 - deviation as CKA, clamped to [0, 1]
-                # For numerically exact alignment: deviation < precision_threshold ≈ 3.5e-4
-                cka = max(0.0, min(1.0, 1.0 - result.numerical_deviation))
+                # Geodesic CKA is the discriminative score for correspondence.
+                result = compute_cka(aligned, target_arr, backend)
+                cka = max(0.0, min(1.0, float(result.cka)))
                 cka_matrix[source_layer][target_layer] = cka
 
         return cka_matrix

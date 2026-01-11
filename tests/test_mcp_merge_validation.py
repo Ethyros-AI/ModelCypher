@@ -23,7 +23,6 @@ import asyncio
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -123,21 +122,64 @@ def test_model_path() -> str:
     return str(_TEST_MODEL)
 
 
+@pytest.fixture(scope="module")
+def mcp_payloads(
+    mcp_env: dict[str, str],
+    test_model_path: str,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, object]:
+    tmp_root = tmp_path_factory.mktemp("mcp_merge_validation")
+    model_dir = tmp_root / "stub-model"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    async def runner(session: ClientSession):
+        entropy_profile = await _await_with_timeout(
+            session.call_tool(
+                "mc_merge_entropy_profile",
+                arguments={"model": test_model_path},
+            )
+        )
+        entropy_validate = await _await_with_timeout(
+            session.call_tool(
+                "mc_merge_entropy_validate",
+                arguments={
+                    "sourceEntropies": {"layers.0": 2.0, "layers.1": 2.5},
+                    "targetEntropies": {"layers.0": 2.2, "layers.1": 2.4},
+                    "mergedEntropies": {"layers.0": 2.1, "layers.1": 2.45},
+                    "sourceModel": "source",
+                    "targetModel": "target",
+                },
+            )
+        )
+        knowledge_validate = await _await_with_timeout(
+            session.call_tool(
+                "mc_model_validate_knowledge",
+                arguments={
+                    "sourceModel": str(model_dir),
+                    "mergedModel": str(model_dir),
+                },
+            )
+        )
+        return {
+            "mc_merge_entropy_profile": entropy_profile,
+            "mc_merge_entropy_validate": entropy_validate,
+            "mc_model_validate_knowledge": knowledge_validate,
+        }
+
+    results = _run_mcp(mcp_env, runner)
+    return {
+        "mc_merge_entropy_profile": _extract_structured(results["mc_merge_entropy_profile"]),
+        "mc_merge_entropy_validate": _extract_structured(results["mc_merge_entropy_validate"]),
+        "mc_model_validate_knowledge": _extract_structured(results["mc_model_validate_knowledge"]),
+    }
+
+
 @requires_model
 class TestMergeEntropyProfileTool:
     """Tests for mc_merge_entropy_profile tool."""
 
-    def test_entropy_profile_schema(self, mcp_env: dict[str, str], test_model_path: str) -> None:
-        async def runner(session: ClientSession):
-            return await _await_with_timeout(
-                session.call_tool(
-                    "mc_merge_entropy_profile",
-                    arguments={"model": test_model_path},
-                )
-            )
-
-        result = _run_mcp(mcp_env, runner)
-        payload = _extract_structured(result)
+    def test_entropy_profile_schema(self, mcp_payloads: dict[str, object]) -> None:
+        payload = mcp_payloads["mc_merge_entropy_profile"]
 
         assert payload["_schema"] == "mc.merge.entropy.profile.v1"
         assert "modelName" in payload
@@ -150,23 +192,8 @@ class TestMergeEntropyProfileTool:
 class TestMergeEntropyValidateTool:
     """Tests for mc_merge_entropy_validate tool."""
 
-    def test_entropy_validate_schema(self, mcp_env: dict[str, str]) -> None:
-        async def runner(session: ClientSession):
-            return await _await_with_timeout(
-                session.call_tool(
-                    "mc_merge_entropy_validate",
-                    arguments={
-                        "sourceEntropies": {"layers.0": 2.0, "layers.1": 2.5},
-                        "targetEntropies": {"layers.0": 2.2, "layers.1": 2.4},
-                        "mergedEntropies": {"layers.0": 2.1, "layers.1": 2.45},
-                        "sourceModel": "source",
-                        "targetModel": "target",
-                    },
-                )
-            )
-
-        result = _run_mcp(mcp_env, runner)
-        payload = _extract_structured(result)
+    def test_entropy_validate_schema(self, mcp_payloads: dict[str, object]) -> None:
+        payload = mcp_payloads["mc_merge_entropy_validate"]
 
         assert payload["_schema"] == "mc.merge.entropy.validate.v1"
         assert "knowledgeRetention" in payload
@@ -180,25 +207,8 @@ class TestMergeEntropyValidateTool:
 class TestKnowledgeValidationTool:
     """Tests for mc_model_validate_knowledge tool."""
 
-    def test_knowledge_validation_schema(self, mcp_env: dict[str, str]) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            model_dir = Path(tmp) / "stub-model"
-            model_dir.mkdir(parents=True, exist_ok=True)
-
-            async def runner(session: ClientSession):
-                return await _await_with_timeout(
-                    session.call_tool(
-                        "mc_model_validate_knowledge",
-                        arguments={
-                            "sourceModel": str(model_dir),
-                            "mergedModel": str(model_dir),
-                        },
-                    )
-                )
-
-            result = _run_mcp(mcp_env, runner)
-            payload = _extract_structured(result)
-
+    def test_knowledge_validation_schema(self, mcp_payloads: dict[str, object]) -> None:
+        payload = mcp_payloads["mc_model_validate_knowledge"]
         assert payload["_schema"] == "mc.model.validate_knowledge.v1"
         assert "overallRetention" in payload
         assert "perDomain" in payload

@@ -835,9 +835,9 @@ class ManifoldStitcher:
         """Riemannian K-means clustering with geodesic distances.
 
         In high-dimensional spaces, curvature is inherent. Uses geodesic
-        distances and Fréchet centroids:
+        distances and geodesic medoids (exact discrete Fréchet means):
         1. Geodesic distances (via k-NN graph) for assignment step
-        2. Fréchet mean (Karcher mean) for centroid updates
+        2. Medoid update on the discrete manifold (minimizes sum of squared geodesic distances)
 
         This correctly handles curved manifolds where chord K-means fails:
         - Positive curvature: chord underestimates distances → clusters too spread
@@ -873,9 +873,6 @@ class ManifoldStitcher:
         from modelcypher.core.domain.geometry.riemannian_utils import (
             RiemannianGeometry,
         )
-        from modelcypher.core.domain.geometry.riemannian_types import (
-            GeodesicDistanceResult,
-        )
 
         riemannian = RiemannianGeometry(backend=b)
         # If geodesic_k_neighbors is specified, cap at n-1; otherwise let geodesic_distances
@@ -883,12 +880,9 @@ class ManifoldStitcher:
         k_to_use = min(geodesic_k_neighbors, n - 1) if geodesic_k_neighbors is not None else None
         geodesic_result = riemannian.geodesic_distances(pts, k_neighbors=k_to_use)
         # Get actual k from result (may differ if None was passed)
-        geodesic_k_neighbors = geodesic_result.k_neighbors
         geodesic_dist_matrix = geodesic_result.distances
-        geodesic_adj_matrix = geodesic_result.adjacency
-        def compute_distance_to_centroids(
-            pts_arr: "Array", centroid_indices: list[int]
-        ) -> "Array":
+
+        def compute_distance_to_centroids(centroid_indices: list[int]) -> "Array":
             """Compute geodesic distances from all points to selected centroids."""
             num_centroids = len(centroid_indices)
             if num_centroids == 0:
@@ -896,24 +890,19 @@ class ManifoldStitcher:
             idx_arr = b.array(centroid_indices)
             return b.take(geodesic_dist_matrix, idx_arr, axis=1)
 
-        def compute_geodesic_distances_to_centroids(centroids_arr: "Array") -> "Array":
-            """Compute geodesic distances from all points to centroids (geodesic-only)."""
-            num_centroids = int(centroids_arr.shape[0])
-            if num_centroids == 0:
-                return b.zeros((n, 0))
-            # Attach centroids to the manifold graph with chord edge weights.
-            cent_sq = b.sum(centroids_arr * centroids_arr, axis=1, keepdims=True)
-            pts_sq = b.sum(pts * pts, axis=1, keepdims=True)
-            cross = b.matmul(centroids_arr, b.transpose(pts))
-            dist_sq = cent_sq + b.transpose(pts_sq) - 2.0 * cross
-            dist_sq = b.maximum(dist_sq, b.zeros_like(dist_sq))
-            euc_dist = b.sqrt(dist_sq)
-
-            candidates = b.expand_dims(euc_dist, axis=2) + b.expand_dims(
-                geodesic_dist_matrix, axis=0
-            )
-            dists = b.min(candidates, axis=1)
-            return b.transpose(dists)
+        def compute_cluster_medoid(indices: list[int]) -> int | None:
+            """Return the medoid index minimizing sum of squared geodesic distances."""
+            if not indices:
+                return None
+            idx_arr = b.array(indices)
+            cluster_dist = b.take(geodesic_dist_matrix, idx_arr, axis=0)
+            cluster_dist = b.take(cluster_dist, idx_arr, axis=1)
+            dist_sq = cluster_dist * cluster_dist
+            sum_per_point = b.sum(dist_sq, axis=1)
+            b.eval(sum_per_point)
+            medoid_local = b.argmin(sum_per_point)
+            b.eval(medoid_local)
+            return indices[int(b.to_scalar(medoid_local))]
 
         # K-Means++ Initialization using actual data points as initial centroids
         steps = min(k, n)
@@ -927,7 +916,7 @@ class ManifoldStitcher:
 
         for step_idx in range(1, steps):
             # Compute distances to nearest existing centroid
-            dists = compute_distance_to_centroids(pts, centroid_indices)
+            dists = compute_distance_to_centroids(centroid_indices)
             min_dists = b.min(dists, axis=1)
 
             # Sample proportional to squared distance
@@ -954,12 +943,10 @@ class ManifoldStitcher:
         idx_arr = b.array(centroid_indices)
         centroids = b.take(pts, idx_arr, axis=0)
         assignments = b.zeros((n,), dtype="int32")
-        # Track representative data point for each centroid (for geodesic proxy)
-        centroid_reps = list(centroid_indices)
 
         for _ in range(max_iterations):
             # Assignment step: assign each point to nearest centroid using geodesic distances
-            dists = compute_geodesic_distances_to_centroids(centroids)
+            dists = compute_distance_to_centroids(centroid_indices)
             new_assignments = b.argmin(dists, axis=1)
 
             # Check convergence
@@ -969,52 +956,28 @@ class ManifoldStitcher:
                 break
             assignments = new_assignments
 
-            # Update step: compute new centroids using Fréchet mean
+            # Update step: compute new centroids using geodesic medoids (exact discrete mean)
             assignments_list = [int(x) for x in b.tolist(assignments)]
             indices_by_cluster: list[list[int]] = [[] for _ in range(k)]
             for idx, cluster_id in enumerate(assignments_list):
                 if 0 <= cluster_id < k:
                     indices_by_cluster[cluster_id].append(idx)
             new_centroids = []
+            new_centroid_indices = list(centroid_indices)
             for c in range(k):
                 indices = indices_by_cluster[c]
                 if indices:
-                    idx_arr = b.array(indices)
-                    cluster_pts = b.take(pts, idx_arr, axis=0)
-                    cluster_dist = b.take(geodesic_dist_matrix, idx_arr, axis=0)
-                    cluster_dist = b.take(cluster_dist, idx_arr, axis=1)
-                    cluster_adj = b.take(geodesic_adj_matrix, idx_arr, axis=0)
-                    cluster_adj = b.take(cluster_adj, idx_arr, axis=1)
-                    cluster_geo = GeodesicDistanceResult(
-                        distances=cluster_dist,
-                        adjacency=cluster_adj,
-                        inf_value=geodesic_result.inf_value,
-                        k_neighbors=geodesic_k_neighbors,
-                        connected=geodesic_result.connected,
-                    )
-                    result = riemannian.frechet_mean(
-                        cluster_pts,
-                        tolerance=regularization_epsilon(b, cluster_pts),
-                        geo_result=cluster_geo,
-                    )
-                    new_centroids.append(result.mean)
+                    medoid_idx = compute_cluster_medoid(indices)
+                    if medoid_idx is None:
+                        medoid_idx = centroid_indices[c]
+                    new_centroid_indices[c] = medoid_idx
+                    new_centroids.append(b.take(pts, b.array([medoid_idx]), axis=0))
                 else:
                     # Empty cluster: keep old centroid
-                    new_centroids.append(centroids[c])
-            centroids = b.stack(new_centroids, axis=0)
-
-            # Update representatives: find nearest data point to each new centroid
-            # Uses geodesic distance from current representative as primary signal
-            for ci in range(k):
-                old_rep = centroid_reps[ci]
-
-                # Find nearest data point using pure geodesic distance from old representative
-                col = b.take(geodesic_dist_matrix, b.array([old_rep]), axis=1)
-                col = b.squeeze(col, axis=1)
-                best_idx_arr = b.argmin(col)
-                b.eval(best_idx_arr)
-                best_idx = int(b.to_scalar(best_idx_arr))
-                centroid_reps[ci] = best_idx
+                    new_centroid_indices[c] = centroid_indices[c]
+                    new_centroids.append(b.take(pts, b.array([centroid_indices[c]]), axis=0))
+            centroids = b.concatenate(new_centroids, axis=0)
+            centroid_indices = new_centroid_indices
 
         return (_array_to_list(b, assignments), _array_to_2d_list(b, centroids))
 
