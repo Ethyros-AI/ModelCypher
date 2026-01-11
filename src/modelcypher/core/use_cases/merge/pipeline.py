@@ -33,7 +33,9 @@ from .helpers import (
     load_model_for_probing,
     load_tokenizer,
     load_weights,
+    load_transplant_occupancy,
     save_weights,
+    save_transplant_occupancy,
 )
 from .models import UnifiedMergeResult
 from .stages import (
@@ -70,6 +72,7 @@ def run_merge(
     source_weights: dict[str, "Array"] | None = None,
     activation_provider: "ActivationProvider | None" = None,
     activation_store: "ActivationStore | None" = None,
+    prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     # Delta budget control for sequential stacking
     delta_scale: float = 1.0,
 ) -> UnifiedMergeResult:
@@ -105,6 +108,17 @@ def run_merge(
         target_format = "safetensors"  # Assume safetensors for pre-loaded weights
     else:
         loaded_target_weights, target_format = load_weights(model_loader, target_path)
+
+    occupancy_source = "provided"
+    if prior_occupancy_by_layer is None:
+        prior_occupancy_by_layer = load_transplant_occupancy(target_path) or {}
+        occupancy_source = "target"
+    if prior_occupancy_by_layer:
+        logger.info(
+            "Loaded transplant occupancy for %d layers (%s)",
+            len(prior_occupancy_by_layer),
+            occupancy_source,
+        )
 
     # Identify layers
     layer_indices = extract_layer_indices(loaded_target_weights)
@@ -444,6 +458,7 @@ def run_merge(
         intermediate_transforms=intermediate_transforms,  # MLP transforms
         layer_mapping=layer_mapping,
         layer_status=probe_metrics.get("layer_status"),  # NEW: Per DIMENSIONAL_COMPRESSION.md
+        prior_occupancy_by_layer=prior_occupancy_by_layer,
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
         delta_scale=delta_scale,  # Delta budget control for sequential stacking
@@ -521,6 +536,9 @@ def run_merge(
         save_weights(effective_output, merged_weights, target_format, backend)
         copy_config_files(target_path, effective_output)
         final_output_path = effective_output
+        occupancy_by_layer = transplant_metrics.get("occupancy_by_layer")
+        if occupancy_by_layer:
+            save_transplant_occupancy(effective_output, occupancy_by_layer)
 
         # =================================================================
         # POST-MERGE DENSITY ESTIMATION (from transplant metrics)

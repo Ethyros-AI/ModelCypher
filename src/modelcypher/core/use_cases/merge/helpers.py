@@ -17,9 +17,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -145,6 +147,53 @@ def save_weights(
     # Backend handles serialization in the format it natively supports
     backend.save_safetensors(str(output_path), weights)
     logger.info("Saved merged weights to %s", output_path)
+
+
+def load_transplant_occupancy(model_path: str) -> dict[int, list[float]] | None:
+    """Load per-layer occupancy weights from a prior merge, if present."""
+    path = Path(model_path)
+    if path.is_file():
+        path = path.parent
+    occ_path = path / "transplant_occupancy.json"
+    if not occ_path.exists():
+        return None
+    try:
+        payload = json.loads(occ_path.read_text())
+        layers = payload.get("layers", {})
+        occupancy: dict[int, list[float]] = {}
+        for key, values in layers.items():
+            try:
+                layer_idx = int(key)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(values, list):
+                occupancy[layer_idx] = [float(v) for v in values]
+        return occupancy or None
+    except Exception as exc:
+        logger.warning("Failed to load transplant occupancy: %s", exc)
+        return None
+
+
+def save_transplant_occupancy(
+    output_dir: str,
+    occupancy_by_layer: dict[str, list[float]] | dict[int, list[float]],
+) -> None:
+    """Persist per-layer occupancy weights for future merges."""
+    if not occupancy_by_layer:
+        return
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    payload_layers: dict[str, list[float]] = {}
+    for key, values in occupancy_by_layer.items():
+        payload_layers[str(key)] = [float(v) for v in values]
+    payload = {
+        "_schema": "mc.merge.transplant.occupancy.v1",
+        "timestamp": datetime.utcnow().isoformat(),
+        "layers": payload_layers,
+    }
+    occ_path = path / "transplant_occupancy.json"
+    occ_path.write_text(json.dumps(payload, indent=2))
+    logger.info("Saved transplant occupancy to %s", occ_path)
 
 
 def copy_config_files(source_path: str, output_dir: str) -> None:

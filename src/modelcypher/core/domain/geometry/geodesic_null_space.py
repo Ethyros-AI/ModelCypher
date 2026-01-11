@@ -120,6 +120,9 @@ class GeodesicNullSpaceResult:
     # Mean geodesic distance (manifold scale)
     mean_geodesic_distance: float
 
+    # Per-dimension occupancy implied by the filtered delta (0-1, data-derived)
+    delta_weights: Any | None = None
+
 
 @dataclass(frozen=True)
 class GeodesicNullSpaceBasis:
@@ -167,6 +170,7 @@ class GeodesicNullSpaceFilter:
         weight_delta: Any,
         prior_activations: Any,
         k_neighbors: int | None = None,
+        occupancy_weights: Any | None = None,
         basis: GeodesicNullSpaceBasis | None = None,
     ) -> GeodesicNullSpaceResult:
         """
@@ -286,8 +290,23 @@ class GeodesicNullSpaceFilter:
             backend.eval(Q)
 
         # Extract variance weights and compute keep weights
-        variance_weights = backend.squeeze(Q)  # [d]
-        keep_weights = 1.0 - variance_weights  # [d] - high in sparse, low in dense
+        combined_weights = backend.squeeze(Q)  # [d]
+        if occupancy_weights is not None:
+            occ = occupancy_weights
+            if not hasattr(occ, "shape"):
+                occ = backend.array(occ)
+            occ = backend.astype(occ, proj_dtype)
+            if int(backend.shape(occ)[0]) == d:
+                occ = backend.clip(occ, 0.0, 1.0)
+                combined_weights = 1.0 - (1.0 - combined_weights) * (1.0 - occ)
+                backend.eval(combined_weights)
+            else:
+                logger.warning(
+                    "Occupancy weights dim mismatch: expected %d, got %d - ignoring",
+                    d,
+                    int(backend.shape(occ)[0]),
+                )
+        keep_weights = 1.0 - combined_weights  # [d] - high in sparse, low in dense
         backend.eval(keep_weights)
 
         # Apply variance-weighted projection
@@ -300,6 +319,19 @@ class GeodesicNullSpaceFilter:
         if str(proj_dtype) != str(delta_dtype):
             delta_safe = backend.astype(delta_safe, delta_dtype)
             backend.eval(delta_safe)
+
+        # Delta occupancy (per-dim magnitude of applied delta)
+        delta_weights = None
+        delta_reg = regularization_epsilon(backend, delta_safe)
+        delta_magnitude = backend.mean(backend.abs(delta_safe), axis=0)
+        max_delta = backend.max(delta_magnitude)
+        backend.eval(delta_magnitude, max_delta)
+        max_delta_val = float(backend.to_scalar(max_delta))
+        if max_delta_val > delta_reg:
+            delta_weights = delta_magnitude / max_delta_val
+        else:
+            delta_weights = backend.zeros((d,))
+        backend.eval(delta_weights)
 
         # Compute metrics (single geodesic pass for original/filtered norms)
         norm_inputs = backend.concatenate(
@@ -343,6 +375,7 @@ class GeodesicNullSpaceFilter:
             filtering_applied=filtering_applied,
             k_neighbors=basis.k_neighbors,
             mean_geodesic_distance=basis.mean_geodesic_distance,
+            delta_weights=delta_weights,
         )
 
     def _compute_basis(

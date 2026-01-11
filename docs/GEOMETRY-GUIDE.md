@@ -175,6 +175,24 @@ Atlas probes systematically span the semantic manifold, guaranteeing CKA = 1.0 a
 
 ---
 
+## Alignment Solver (GPU CGLS)
+
+Linear alignment uses the closed-form invariant:
+
+```text
+F = pinv(source) @ target
+```
+
+We solve this with GPU-only CGLS (conjugate gradients on the normal equations):
+- Column scaling to unit norm (preconditioning)
+- Tikhonov regularization with `machine_epsilon` (rank-safe)
+- All divisions guarded by epsilon
+- Periodic residual refresh to prevent numerical drift
+
+Iteration count is telemetry, not a tuning knob. Convergence thresholds are derived from dtype precision, never hardcoded.
+
+---
+
 ## Tool-by-tool explanations
 
 ### mc geometry training status

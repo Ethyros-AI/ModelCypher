@@ -120,6 +120,36 @@ def _proportional_layer_index(
     return mapped
 
 
+_MLP_INTERMEDIATE_KEYS = (
+    "gate_proj",
+    "up_proj",
+    "mlp.fc1",
+    "feed_forward.w1",
+    "feed_forward.w3",
+    "mlp.gate",
+    "mlp.up",
+)
+
+
+def _collect_mlp_projection_keys(
+    weights: dict[str, Any],
+    extract_layer_index_fn: Callable[[str], int | None],
+) -> dict[int, str]:
+    """Collect per-layer MLP projection keys (hidden -> intermediate)."""
+    candidates: dict[int, tuple[int, str]] = {}
+    for key in weights:
+        layer_idx = extract_layer_index_fn(key)
+        if layer_idx is None:
+            continue
+        for rank, pattern in enumerate(_MLP_INTERMEDIATE_KEYS):
+            if pattern in key:
+                current = candidates.get(layer_idx)
+                if current is None or rank < current[0]:
+                    candidates[layer_idx] = (rank, key)
+                break
+    return {layer: key for layer, (rank, key) in candidates.items()}
+
+
 # =============================================================================
 # PER-MODEL PROBE ACTIVATION CACHE (DISK)
 # =============================================================================
@@ -1570,9 +1600,13 @@ def _probe_precise(
     k_transforms: dict[int, Any] = {}  # target_layer -> K attention transform (GPU array)
     v_transforms: dict[int, Any] = {}  # target_layer -> V attention transform (GPU array)
     intermediate_transforms: dict[int, Any] = {}  # target_layer -> MLP intermediate transform (GPU array)
+    cgls_iterations_by_layer: dict[int, int] = {}
     gram_aligner = GramAligner(backend=b)
     rbf_consistency_checked = False
     rbf_consistency_hidden: dict[str, float] | None = None
+
+    source_mlp_proj_keys = _collect_mlp_projection_keys(source_weights, extract_layer_index_fn)
+    target_mlp_proj_keys = _collect_mlp_projection_keys(target_weights, extract_layer_index_fn)
 
     if source_layer_activations and target_layer_activations:
         source_layers = sorted(source_layer_activations.keys())
@@ -1621,6 +1655,8 @@ def _probe_precise(
                     "attention_transform": None,
                     "k_transform": None,
                     "v_transform": None,
+                    "intermediate_transform": None,
+                    "linear_iterations": 0,
                     "error": None,
                 }
 
@@ -1647,8 +1683,6 @@ def _probe_precise(
                 )
 
                 local_aligner = GramAligner(backend=b)
-                # Fast aligner for attention (5000 steps vs 50000) - good enough for trajectory guidance
-                fast_aligner = GramAligner(backend=b, max_steps=5000)
 
                 try:
                     # Stack source (for 1:1, this is just 1 source)
@@ -1683,6 +1717,14 @@ def _probe_precise(
                     
                     result["achieved_cka"] = alignment_result.achieved_cka  # Always 1.0 (invariant)
                     result["numerical_deviation"] = alignment_result.numerical_deviation
+                    result["linear_iterations"] = alignment_result.linear_iterations
+                    cgls_iterations_by_layer[tgt_layer] = alignment_result.linear_iterations
+                    logger.info(
+                        "ALIGNMENT: Layer %d <- %s: CGLS iters=%d",
+                        tgt_layer,
+                        src_layers_list,
+                        alignment_result.linear_iterations,
+                    )
 
                     F_arr = alignment_result.feature_transform  # Already GPU array
 
@@ -1754,270 +1796,70 @@ def _probe_precise(
                         )
                     
                     # =====================================================================
-                    # ATTENTION Q/K/V ALIGNMENT (pre-compute for transplant speed)
+                    # ATTENTION Q/K/V ALIGNMENT
                     # =====================================================================
-                    # OPTIMIZATION: Batch preparation of Q/K/V stacks, then single eval()
-                    # This reduces 3 GPU syncs to 1 per layer while keeping alignments separate
-                    # (separate alignments are mathematically required - see plan file)
-
-                    # Gather activation lists
-                    src_q_acts = [source_attention_activations.get(s) for s in src_layers_list]
-                    tgt_q_acts = target_attention_activations.get(tgt_layer)
-                    src_k_acts = [source_k_activations.get(s) for s in src_layers_list]
-                    tgt_k_acts = target_k_activations.get(tgt_layer)
-                    src_v_acts = [source_v_activations.get(s) for s in src_layers_list]
-                    tgt_v_acts = target_v_activations.get(tgt_layer)
-
-                    # Prepare Q/K/V stacks (lazy - no eval yet)
-                    q_prepared = None
-                    k_prepared = None
-                    v_prepared = None
-
-                    # Q preparation
-                    if all(acts is not None and len(acts) > 0 for acts in src_q_acts) and tgt_q_acts is not None and len(tgt_q_acts) > 0:
-                        n_attn_samples = min(len(tgt_q_acts), min(len(acts) for acts in src_q_acts))
-                        if n_attn_samples >= 2:
-                            try:
-                                src_q_stacks = []
-                                src_q_dims = []
-                                for s_list in src_q_acts:
-                                    stack = b.stack(s_list[:n_attn_samples], axis=0)
-                                    stack = b.astype(stack, "float32")
-                                    src_q_stacks.append(stack)
-                                    src_q_dims.append(stack.shape[1])
-
-                                tgt_q_stacked = b.stack(tgt_q_acts[:n_attn_samples], axis=0)
-                                tgt_q_stacked = b.astype(tgt_q_stacked, "float32")
-
-                                if len(src_q_stacks) == 1:
-                                    src_q_combined = src_q_stacks[0]
-                                else:
-                                    src_q_combined = b.concatenate(src_q_stacks, axis=1)
-
-                                # Store for batch eval (NO eval here)
-                                q_prepared = (src_q_combined, tgt_q_stacked, src_q_dims)
-                            except Exception as q_prep_err:
-                                logger.debug(
-                                    "PROBE: Q preparation failed for %s -> %d: %s",
-                                    src_layers_list, tgt_layer, q_prep_err
-                                )
-
-                    # K preparation
-                    if all(acts is not None and len(acts) > 0 for acts in src_k_acts) and tgt_k_acts is not None and len(tgt_k_acts) > 0:
-                        n_k_samples = min(len(tgt_k_acts), min(len(acts) for acts in src_k_acts))
-                        if n_k_samples >= 2:
-                            try:
-                                src_k_stacks = []
-                                src_k_dims = []
-                                for s_list in src_k_acts:
-                                    stack = b.stack(s_list[:n_k_samples], axis=0)
-                                    stack = b.astype(stack, "float32")
-                                    src_k_stacks.append(stack)
-                                    src_k_dims.append(stack.shape[1])
-
-                                tgt_k_stacked = b.stack(tgt_k_acts[:n_k_samples], axis=0)
-                                tgt_k_stacked = b.astype(tgt_k_stacked, "float32")
-
-                                if len(src_k_stacks) == 1:
-                                    src_k_combined = src_k_stacks[0]
-                                else:
-                                    src_k_combined = b.concatenate(src_k_stacks, axis=1)
-
-                                # Store for batch eval (NO eval here)
-                                k_prepared = (src_k_combined, tgt_k_stacked, src_k_dims)
-                            except Exception as k_prep_err:
-                                logger.debug(
-                                    "PROBE: K preparation failed for %s -> %d: %s",
-                                    src_layers_list, tgt_layer, k_prep_err
-                                )
-
-                    # V preparation
-                    if all(acts is not None and len(acts) > 0 for acts in src_v_acts) and tgt_v_acts is not None and len(tgt_v_acts) > 0:
-                        n_v_samples = min(len(tgt_v_acts), min(len(acts) for acts in src_v_acts))
-                        if n_v_samples >= 2:
-                            try:
-                                src_v_stacks = []
-                                src_v_dims = []
-                                for s_list in src_v_acts:
-                                    stack = b.stack(s_list[:n_v_samples], axis=0)
-                                    stack = b.astype(stack, "float32")
-                                    src_v_stacks.append(stack)
-                                    src_v_dims.append(stack.shape[1])
-
-                                tgt_v_stacked = b.stack(tgt_v_acts[:n_v_samples], axis=0)
-                                tgt_v_stacked = b.astype(tgt_v_stacked, "float32")
-
-                                if len(src_v_stacks) == 1:
-                                    src_v_combined = src_v_stacks[0]
-                                else:
-                                    src_v_combined = b.concatenate(src_v_stacks, axis=1)
-
-                                # Store for batch eval (NO eval here)
-                                v_prepared = (src_v_combined, tgt_v_stacked, src_v_dims)
-                            except Exception as v_prep_err:
-                                logger.debug(
-                                    "PROBE: V preparation failed for %s -> %d: %s",
-                                    src_layers_list, tgt_layer, v_prep_err
-                                )
-
-                    # BATCH EVAL: Single GPU sync for all prepared Q/K/V stacks
-                    # This replaces 3 separate evals with 1 batched eval
-                    stacks_to_eval = []
-                    if q_prepared is not None:
-                        stacks_to_eval.extend([q_prepared[0], q_prepared[1]])
-                    if k_prepared is not None:
-                        stacks_to_eval.extend([k_prepared[0], k_prepared[1]])
-                    if v_prepared is not None:
-                        stacks_to_eval.extend([v_prepared[0], v_prepared[1]])
-                    if stacks_to_eval:
-                        b.eval(*stacks_to_eval)
-
-                    # Q ALIGNMENT (must be separate - mathematically required)
-                    if q_prepared is not None:
-                        src_q_combined, tgt_q_stacked, src_q_dims = q_prepared
-                        try:
-                            q_alignment = fast_aligner.find_perfect_alignment(
-                                src_q_combined,
-                                tgt_q_stacked,
-                            )
-
-                            Q_arr = q_alignment.feature_transform  # Already GPU array
-
-                            split_q_transforms = {}
-                            start_idx = 0
-                            for s_layer, s_dim in zip(src_layers_list, src_q_dims):
-                                Q_slice = Q_arr[start_idx : start_idx + s_dim, :]
-                                split_q_transforms[s_layer] = Q_slice  # Keep as GPU array
-                                start_idx += s_dim
-
-                            result["attention_transform"] = split_q_transforms
-
-                            logger.debug(
-                                "PROBE: Q attention aligned for %s -> %d (CKA=%.4f)",
-                                src_layers_list, tgt_layer, q_alignment.achieved_cka
-                            )
-                        except Exception as q_err:
-                            logger.debug(
-                                "PROBE: Q attention alignment failed for %s -> %d: %s",
-                                src_layers_list, tgt_layer, q_err
-                            )
-
-                    # K ALIGNMENT (must be separate - mathematically required)
-                    if k_prepared is not None:
-                        src_k_combined, tgt_k_stacked, src_k_dims = k_prepared
-                        try:
-                            k_alignment = fast_aligner.find_perfect_alignment(
-                                src_k_combined,
-                                tgt_k_stacked,
-                            )
-
-                            K_arr = k_alignment.feature_transform  # Already GPU array
-
-                            split_k_transforms = {}
-                            start_idx = 0
-                            for s_layer, s_dim in zip(src_layers_list, src_k_dims):
-                                K_slice = K_arr[start_idx : start_idx + s_dim, :]
-                                split_k_transforms[s_layer] = K_slice  # Keep as GPU array
-                                start_idx += s_dim
-
-                            result["k_transform"] = split_k_transforms
-
-                            logger.debug(
-                                "PROBE: K attention aligned for %s -> %d (CKA=%.4f)",
-                                src_layers_list, tgt_layer, k_alignment.achieved_cka
-                            )
-                        except Exception as k_err:
-                            logger.debug(
-                                "PROBE: K attention alignment failed for %s -> %d: %s",
-                                src_layers_list, tgt_layer, k_err
-                            )
-
-                    # V ALIGNMENT (must be separate - mathematically required)
-                    if v_prepared is not None:
-                        src_v_combined, tgt_v_stacked, src_v_dims = v_prepared
-                        try:
-                            v_alignment = fast_aligner.find_perfect_alignment(
-                                src_v_combined,
-                                tgt_v_stacked,
-                            )
-
-                            V_arr = v_alignment.feature_transform  # Already GPU array
-
-                            split_v_transforms = {}
-                            start_idx = 0
-                            for s_layer, s_dim in zip(src_layers_list, src_v_dims):
-                                V_slice = V_arr[start_idx : start_idx + s_dim, :]
-                                split_v_transforms[s_layer] = V_slice  # Keep as GPU array
-                                start_idx += s_dim
-
-                            result["v_transform"] = split_v_transforms
-
-                            logger.debug(
-                                "PROBE: V attention aligned for %s -> %d (CKA=%.4f)",
-                                src_layers_list, tgt_layer, v_alignment.achieved_cka
-                            )
-                        except Exception as v_err:
-                            logger.debug(
-                                "PROBE: V attention alignment failed for %s -> %d: %s",
-                                src_layers_list, tgt_layer, v_err
-                            )
+                    # Skip per-channel GramAligner here; attention stitches are derived
+                    # compositionally from hidden alignment in transplant.
 
                     # =====================================================================
-                    # INTERMEDIATE MLP ALIGNMENT (pre-compute for transplant speed)
+                    # INTERMEDIATE MLP ALIGNMENT (compositional from hidden + weights)
                     # =====================================================================
-                    # Align source intermediate activations to target intermediate activations
-                    # This is the MAIN bottleneck in transplant - 50k steps per layer
-                    # Pre-computing here with fast_aligner saves ~80% of transplant time
-                    src_inter_acts = [source_intermediate_activations.get(s) for s in src_layers_list]
-                    tgt_inter_acts = target_intermediate_activations.get(tgt_layer)
-                    
-                    if all(acts is not None and len(acts) > 0 for acts in src_inter_acts) and tgt_inter_acts is not None and len(tgt_inter_acts) > 0:
-                        n_inter_samples = min(len(tgt_inter_acts), min(len(acts) for acts in src_inter_acts))
-                        if n_inter_samples >= 2:
-                            try:
-                                # Stack intermediate activations
-                                src_inter_stacks = []
-                                src_inter_dims = []
-                                for s_list in src_inter_acts:
-                                    stack = b.stack(s_list[:n_inter_samples], axis=0)
-                                    stack = b.astype(stack, "float32")
-                                    src_inter_stacks.append(stack)
-                                    src_inter_dims.append(stack.shape[1])
-                                
-                                tgt_inter_stacked = b.stack(tgt_inter_acts[:n_inter_samples], axis=0)
-                                tgt_inter_stacked = b.astype(tgt_inter_stacked, "float32")
-                                
-                                if len(src_inter_stacks) == 1:
-                                    src_inter_combined = src_inter_stacks[0]
-                                else:
-                                    src_inter_combined = b.concatenate(src_inter_stacks, axis=1)
-                                
-                                b.eval(src_inter_combined, tgt_inter_stacked)
-                                
-                                inter_alignment = fast_aligner.find_perfect_alignment(
-                                    src_inter_combined,
-                                    tgt_inter_stacked,
-                                )
-                                
-                                I_arr = inter_alignment.feature_transform  # Already GPU array
-
-                                split_inter_transforms = {}
-                                start_idx = 0
-                                for s_layer, s_dim in zip(src_layers_list, src_inter_dims):
-                                    I_slice = I_arr[start_idx : start_idx + s_dim, :]
-                                    split_inter_transforms[s_layer] = I_slice  # Keep as GPU array
-                                    start_idx += s_dim
-                                
+                    target_mlp_key = target_mlp_proj_keys.get(tgt_layer)
+                    if target_mlp_key is not None:
+                        target_w = target_weights.get(target_mlp_key)
+                        if (
+                            target_w is not None
+                            and hasattr(target_w, "shape")
+                            and len(target_w.shape) == 2
+                        ):
+                            target_w = b.astype(b.array(target_w), "float32")
+                            b.eval(target_w)
+                            split_inter_transforms = {}
+                            for s_layer in src_layers_list:
+                                source_mlp_key = source_mlp_proj_keys.get(s_layer)
+                                if source_mlp_key is None:
+                                    continue
+                                source_w = source_weights.get(source_mlp_key)
+                                if (
+                                    source_w is None
+                                    or not hasattr(source_w, "shape")
+                                    or len(source_w.shape) != 2
+                                ):
+                                    continue
+                                H = split_transforms.get(s_layer)
+                                if H is None:
+                                    continue
+                                h_src, h_tgt = b.shape(H)
+                                if h_src != int(source_w.shape[1]) or h_tgt != int(target_w.shape[1]):
+                                    logger.debug(
+                                        "PROBE: Intermediate stitch skipped for %s -> %d (hidden mismatch)",
+                                        s_layer,
+                                        tgt_layer,
+                                    )
+                                    continue
+                                source_w = b.astype(b.array(source_w), "float32")
+                                b.eval(source_w, H)
+                                try:
+                                    I_arr = local_aligner.compositional_stitch(
+                                        hidden_transform=H,
+                                        source_weight=source_w,
+                                        target_weight=target_w,
+                                    )
+                                    split_inter_transforms[s_layer] = I_arr  # Keep as GPU array
+                                except Exception as inter_err:
+                                    logger.debug(
+                                        "PROBE: Intermediate compositional stitch failed for %s -> %d: %s",
+                                        s_layer,
+                                        tgt_layer,
+                                        inter_err,
+                                    )
+                            if split_inter_transforms:
                                 result["intermediate_transform"] = split_inter_transforms
-                                
                                 logger.debug(
-                                    "PROBE: Intermediate aligned for %s -> %d (CKA=%.4f)",
-                                    src_layers_list, tgt_layer, inter_alignment.achieved_cka
-                                )
-                            except Exception as inter_err:
-                                logger.debug(
-                                    "PROBE: Intermediate alignment failed for %s -> %d: %s",
-                                    src_layers_list, tgt_layer, inter_err
+                                    "PROBE: Intermediate compositional stitch for %s -> %d (key=%s)",
+                                    src_layers_list,
+                                    tgt_layer,
+                                    target_mlp_key,
                                 )
 
                 except Exception as e:
@@ -2313,6 +2155,7 @@ def _probe_precise(
         "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
         "layer_cka_scores_raw": layer_cka_scores_raw,
+        "cgls_iterations_by_layer": cgls_iterations_by_layer,
         "mean_cka": mean_cka,
         "min_cka": min_cka,
         "mean_cka_raw": mean_cka_raw,

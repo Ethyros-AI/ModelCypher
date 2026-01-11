@@ -211,6 +211,7 @@ def stage_transplant(
     intermediate_transforms: dict[int, list[list[float]]] | None = None,  # MLP transforms
     layer_mapping: dict[int, int] | None = None,
     layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
+    prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     source_tokenizer: Any | None = None,  # For token correspondence
     target_tokenizer: Any | None = None,  # For token correspondence
     delta_scale: float = 1.0,  # Delta budget control for sequential stacking
@@ -243,6 +244,7 @@ def stage_transplant(
         intermediate_transforms=intermediate_transforms,  # MLP transforms
         layer_mapping=layer_mapping,
         layer_status=layer_status,  # NEW: Per DIMENSIONAL_COMPRESSION.md
+        prior_occupancy_by_layer=prior_occupancy_by_layer,
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
         delta_scale=delta_scale,

@@ -68,6 +68,7 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    gpu_lstsq,
     invariant_alignment,
     machine_epsilon,
     regularization_epsilon,
@@ -167,6 +168,10 @@ class AlignmentResult:
     # Apply to stitched weights: W_merged = scale_ratio * W_stitched
     scale_ratio: float = 1.0
 
+    # Linear solver telemetry (GPU CGLS for pinv)
+    linear_iterations: int = 0
+    linear_residual: float = 0.0
+
     @property
     def is_perfect(self) -> bool:
         """True if geodesic CKA is within precision threshold of 1.0."""
@@ -260,6 +265,8 @@ class GramAligner:
             numerical_deviation=0.0,  # Perfect precision for identity
             diagnostic=None,
             precision_threshold=precision,
+            linear_iterations=0,
+            linear_residual=0.0,
         )
 
     def _center(self, X: "Array") -> "Array":
@@ -328,11 +335,19 @@ class GramAligner:
         # F = pinv(source) @ target guarantees LINEAR CKA = 1.0
         start_time = time.perf_counter()
 
-        F = invariant_alignment(b, source_activations, target_activations)
+        linear_stats: dict[str, float] = {}
+        F = invariant_alignment(b, source_activations, target_activations, stats=linear_stats)
         b.eval(F)
 
         linear_elapsed = time.perf_counter() - start_time
-        logger.info("LINEAR ALIGNMENT: F = pinv(source) @ target (%.2fs)", linear_elapsed)
+        linear_iterations = int(linear_stats.get("iterations", 0.0))
+        linear_residual = float(linear_stats.get("residual_norm", 0.0))
+        logger.info(
+            "LINEAR ALIGNMENT: F = pinv(source) @ target (GPU CGLS, %.2fs, iters=%d)",
+            linear_elapsed,
+            linear_iterations,
+        )
+        logger.debug("LINEAR ALIGNMENT: CGLS residual=%.2e", linear_residual)
 
         # =================================================================
         # PHASE 2: Geodesic Refinement
@@ -381,6 +396,8 @@ class GramAligner:
             diagnostic=diagnostic,
             precision_threshold=precision,
             scale_ratio=scale_ratio,
+            linear_iterations=linear_iterations,
+            linear_residual=linear_residual,
         )
 
     def _geodesic_refine(
@@ -547,29 +564,18 @@ class GramAligner:
         W_tgt = b.astype(b.array(target_weight), "float32")
         b.eval(H, W_src, W_tgt)
 
-        # Compute: S = target_W @ H @ pinv(source_W)
-        # But weights are [proj_dim, hidden_dim], so we need:
+        # Solve for S directly without CPU pinv:
         # S @ W_src = W_tgt @ H
-        # S @ W_src @ W_src.T = W_tgt @ H @ W_src.T
-        # S = W_tgt @ H @ W_src.T @ (W_src @ W_src.T)^-1
-        # = W_tgt @ H @ pinv(W_src)
-
-        # Pseudoinverse of source weight
-        # W_src: [source_proj_dim, source_hidden_dim]
-        # pinv(W_src): [source_hidden_dim, source_proj_dim]
-        W_src_pinv = b.pinv(W_src)  # [source_hidden_dim, source_proj_dim]
-
-        # Compositional stitch: S = W_tgt @ H @ pinv(W_src)
-        # W_tgt: [target_proj_dim, target_hidden_dim]
-        # H: [source_hidden_dim, target_hidden_dim]
-        # pinv(W_src): [source_hidden_dim, source_proj_dim]
-        #
-        # W_tgt @ H.T: [target_proj_dim, source_hidden_dim]
-        # (W_tgt @ H.T) @ pinv(W_src): [target_proj_dim, source_proj_dim]
+        # (W_src.T) @ S.T = (W_tgt @ H).T
         H_T = b.transpose(H)  # [target_hidden_dim, source_hidden_dim]
-        intermediate = b.matmul(W_tgt, H_T)  # [target_proj_dim, source_hidden_dim]
-        stitch = b.matmul(intermediate, W_src_pinv)  # [target_proj_dim, source_proj_dim]
+        target_proj = b.matmul(W_tgt, H_T)  # [target_proj_dim, source_hidden_dim]
+        b.eval(target_proj)
 
+        A = b.transpose(W_src)  # [source_hidden_dim, source_proj_dim]
+        B = b.transpose(target_proj)  # [source_hidden_dim, target_proj_dim]
+        b.eval(A, B)
+
+        stitch_t = gpu_lstsq(b, A, B)  # [source_proj_dim, target_proj_dim]
+        stitch = b.transpose(stitch_t)  # [target_proj_dim, source_proj_dim]
         b.eval(stitch)
         return stitch
-

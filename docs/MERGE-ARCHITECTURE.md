@@ -24,6 +24,11 @@ Pipeline order (null-space transplant path):
 Pre-merge analysis and post-merge validation are orchestrated in
 `MergePipelineService` (not part of `run_merge()`).
 
+Transplant occupancy:
+- Stage 3 persists per-layer occupancy weights to `transplant_occupancy.json` in the output dir.
+- Subsequent merges load this file from the target model path to protect previously modified
+  dimensions during null-space projection.
+
 Permutation alignment note:
 - The older permutation stage (Git Re-Basin) is intentionally skipped in the current pipeline; alignment is handled by the probe stage’s Gram/CKA-derived transforms. The merge result still records `permute_metrics` for compatibility.
 

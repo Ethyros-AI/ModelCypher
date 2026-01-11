@@ -337,6 +337,12 @@ class UnifiedGeometricMerger:
         target_weights, _ = self._load_weights_as_arrays(target_path)
         target_model = self._load_model_for_probing(target_path)
         target_tokenizer = self._load_tokenizer(target_path)
+        current_occupancy_by_layer = merge_helpers.load_transplant_occupancy(target_path) or {}
+        if current_occupancy_by_layer:
+            logger.info(
+                "BATCH MERGE: Loaded transplant occupancy for %d layers",
+                len(current_occupancy_by_layer),
+            )
 
         # Initialize deviation tracker (measurement only - geometry handles safety)
         deviation_tracker = None
@@ -372,15 +378,19 @@ class UnifiedGeometricMerger:
                     probe_mode="atlas",
                     activation_provider=self._activation_provider,
                     activation_store=self._activation_store,
+                    prior_occupancy_by_layer=current_occupancy_by_layer,
                     delta_scale=effective_scale,
                 )
 
                 # Accumulate: add delta to merged weights
                 for key in merged_weights.keys():
-                    if key in result.weights:
+                    if key in result.merged_weights:
                         # delta = result - original_target
-                        delta = result.weights[key] - target_weights[key]
+                        delta = result.merged_weights[key] - target_weights[key]
                         merged_weights[key] = merged_weights[key] + delta
+                occupancy_update = result.transplant_metrics.get("occupancy_by_layer")
+                if occupancy_update:
+                    current_occupancy_by_layer = occupancy_update
 
                 # Measure deviation for transparency (informational only - geometry handles safety)
                 if deviation_tracker is not None:
@@ -396,15 +406,9 @@ class UnifiedGeometricMerger:
 
                 logger.info("BATCH MERGE: Source %d/%d complete", i + 1, n_sources)
 
-            # Create final result
-            from .models import UnifiedMergeResult
-            final_result = UnifiedMergeResult(
-                weights=merged_weights,
-                layer_metrics={},
-                total_layers=len(target_weights),
-                layers_modified=n_sources,  # Approximate
-                output_path=output_dir,
-            )
+            final_result = result
+            final_result.merged_weights = merged_weights
+            final_result.output_path = output_dir
 
         else:
             # Sequential mode: merge(merge(merge(target, A), B), C)
@@ -431,11 +435,15 @@ class UnifiedGeometricMerger:
                     probe_mode="atlas",
                     activation_provider=self._activation_provider,
                     activation_store=self._activation_store,
+                    prior_occupancy_by_layer=current_occupancy_by_layer,
                     delta_scale=effective_scale,
                 )
 
                 # Update target for next iteration
-                current_target = result.weights
+                current_target = result.merged_weights
+                occupancy_update = result.transplant_metrics.get("occupancy_by_layer")
+                if occupancy_update:
+                    current_occupancy_by_layer = occupancy_update
                 # Note: model/tokenizer stay the same (architecture unchanged)
 
                 # Measure deviation for transparency (informational only - geometry handles safety)
@@ -457,8 +465,13 @@ class UnifiedGeometricMerger:
         # Save if output_dir provided
         if output_dir:
             logger.info("BATCH MERGE: Saving merged model to %s", output_dir)
-            self._save_weights(output_dir, final_result.weights, "safetensors")
+            self._save_weights(output_dir, final_result.merged_weights, "safetensors")
             self._copy_config_files(target_path, output_dir)
+            if current_occupancy_by_layer:
+                merge_helpers.save_transplant_occupancy(
+                    output_dir,
+                    current_occupancy_by_layer,
+                )
 
         logger.info("BATCH MERGE: Complete. Merged %d sources into target.", n_sources)
         return final_result

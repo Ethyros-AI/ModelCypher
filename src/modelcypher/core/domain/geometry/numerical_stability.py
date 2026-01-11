@@ -747,14 +747,22 @@ def gpu_lstsq(
     backend: "Backend",
     A: "Array",
     B: "Array",
+    stats: dict[str, float] | None = None,
 ) -> "Array":
-    """GPU-accelerated least squares via normal equations.
+    """GPU-accelerated least squares via preconditioned CGLS.
 
     Solves: minimize ||A @ X - B||² for X
 
-    Uses normal equations: (A^T A) @ X = A^T B
-    - Heavy ops (A^T @ A, A^T @ B) run on GPU
-    - Only the [d,d] solve runs on CPU
+    Design guarantees:
+    - Column scaling to unit norm (preconditioning)
+    - Tikhonov regularization with lambda = machine_epsilon
+    - All divisions guarded by epsilon
+    - Residual refresh prevents numerical drift
+
+    If stats is provided, populates:
+    - iterations: CGLS iteration count
+    - residual_norm: final residual norm
+    - rhs_norm: right-hand-side norm
     """
     b = backend
 
@@ -772,21 +780,118 @@ def gpu_lstsq(
     B = b.astype(B, "float32")
     b.eval(A, B)
 
-    # GPU: Compute A^T @ A [d, d] and A^T @ B [d, m]
-    A_T = b.transpose(A)
-    G = b.matmul(A_T, A)  # [d, d] - Gram matrix
-    H = b.matmul(A_T, B)  # [d, m]
-    b.eval(G, H)
-
-    # Add regularization for numerical stability
     eps = machine_epsilon(b, A)
-    d_int = int(d)
-    G = G + eps * b.eye(d_int, dtype="float32")
-    b.eval(G)
+    sqrt_eps = sqrt_scalar(eps, b)
 
-    # CPU: Solve G @ X = H
-    X = b.solve(G, H)
+    # Precondition: scale columns to unit norm
+    col_norms = b.norm(A, axis=0)
+    col_norms = col_norms + eps
+    inv_col_norms = 1.0 / col_norms
+    row_scale = b.reshape(inv_col_norms, (int(d), 1))
+    diag_reg = b.reshape(inv_col_norms * inv_col_norms * eps, (int(d), 1))
+    A_T = b.transpose(A)
+    b.eval(col_norms, inv_col_norms, row_scale, diag_reg, A_T)
+
+    # Right-hand side: A_hat^T B
+    rhs = b.matmul(A_T, B)
+    rhs = rhs * row_scale
+    b.eval(rhs)
+
+    # Solve (A_hat^T A_hat + diag_reg) Y = rhs
+    Y = b.zeros((int(d), int(b.shape(B)[1])), dtype="float32")
+    R = rhs
+    P = rhs
+    b.eval(Y, R, P)
+
+    rhs_norm_sq = b.sum(rhs * rhs)
+    b.eval(rhs_norm_sq)
+    rhs_norm_sq_val = float(b.to_scalar(rhs_norm_sq))
+    rhs_norm = sqrt_scalar(rhs_norm_sq_val, b)
+    tol = sqrt_eps * max(rhs_norm, eps)
+
+    rnorm_sq_val = rhs_norm_sq_val
+    rnorm_val = rhs_norm
+    prev_rnorm = rnorm_val
+
+    refresh_interval = max(1, int(d))
+    restart_budget = int(max(1, ceil_scalar(log2_scalar(1.0 / eps, b), b)))
+    max_iter = max(1, int(d)) * restart_budget
+
+    iterations_used = 0
+    for step in range(max_iter):
+        # Apply normal equations with preconditioning + Tikhonov
+        P_scaled = P * row_scale
+        AP = b.matmul(A, P_scaled)
+        ATAP = b.matmul(A_T, AP)
+        ATAP = ATAP * row_scale
+        ATAP = ATAP + diag_reg * P
+        b.eval(ATAP)
+
+        denom = b.sum(P * ATAP)
+        b.eval(denom)
+        denom_val = float(b.to_scalar(denom))
+        if denom_val <= eps:
+            denom_val = eps
+
+        alpha = rnorm_sq_val / denom_val
+        Y = Y + alpha * P
+        R = R - alpha * ATAP
+        b.eval(Y, R)
+
+        old_rnorm_sq = rnorm_sq_val
+        rnorm_sq = b.sum(R * R)
+        b.eval(rnorm_sq)
+        rnorm_sq_val = float(b.to_scalar(rnorm_sq))
+        rnorm_val = sqrt_scalar(rnorm_sq_val, b)
+
+        iterations_used = step + 1
+        if rnorm_val <= tol:
+            break
+
+        # Refresh residuals on drift or periodic cadence
+        stagnation_threshold = sqrt_eps * max(prev_rnorm, rhs_norm, eps)
+        if (
+            not is_finite(rnorm_val, b)
+            or rnorm_val > prev_rnorm * (1.0 + sqrt_eps)
+            or rnorm_val >= prev_rnorm - stagnation_threshold
+        ):
+            X_tmp = b.matmul(A, Y * row_scale)
+            R = b.matmul(A_T, X_tmp)
+            R = rhs - R * row_scale - diag_reg * Y
+            b.eval(R)
+            rnorm_sq = b.sum(R * R)
+            b.eval(rnorm_sq)
+            rnorm_sq_val = float(b.to_scalar(rnorm_sq))
+            rnorm_val = sqrt_scalar(rnorm_sq_val, b)
+            P = R
+            prev_rnorm = rnorm_val
+            continue
+
+        if (step + 1) % refresh_interval == 0:
+            X_tmp = b.matmul(A, Y * row_scale)
+            R = b.matmul(A_T, X_tmp)
+            R = rhs - R * row_scale - diag_reg * Y
+            b.eval(R)
+            rnorm_sq = b.sum(R * R)
+            b.eval(rnorm_sq)
+            rnorm_sq_val = float(b.to_scalar(rnorm_sq))
+            rnorm_val = sqrt_scalar(rnorm_sq_val, b)
+            P = R
+            prev_rnorm = rnorm_val
+            continue
+
+        beta = rnorm_sq_val / max(old_rnorm_sq, eps)
+        P = R + beta * P
+        b.eval(P)
+        prev_rnorm = rnorm_val
+
+    X = Y * row_scale
     b.eval(X)
+
+    if stats is not None:
+        stats["iterations"] = float(iterations_used)
+        stats["residual_norm"] = float(rnorm_val)
+        stats["rhs_norm"] = float(rhs_norm)
 
     if squeeze_output:
         X = b.reshape(X, (-1,))
@@ -803,6 +908,7 @@ def invariant_alignment(
     backend: "Backend",
     source: "Array",
     target: "Array",
+    stats: dict[str, float] | None = None,
 ) -> "Array":
     """Compute the alignment transform F where CKA = 1.0 is GUARANTEED.
 
@@ -829,11 +935,8 @@ def invariant_alignment(
     target_c = target - target_mean
     b.eval(source_c, target_c)
 
-    # THE FORMULA: F = pinv(source) @ target
-    # Direct pinv gives machine-epsilon accuracy, normal equations don't
-    source_pinv = b.pinv(source_c)
-    b.eval(source_pinv)
-    F = b.matmul(source_pinv, target_c)
+    # THE FORMULA: F = pinv(source) @ target (solved via GPU CGLS)
+    F = gpu_lstsq(b, source_c, target_c, stats=stats)
     b.eval(F)
 
     return F

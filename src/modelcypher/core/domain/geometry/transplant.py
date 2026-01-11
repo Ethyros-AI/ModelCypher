@@ -60,6 +60,7 @@ class TransplantDeltaResult:
     filtered_norm: float
     projection_loss: float
     preserved_fraction: float
+    delta_occupancy: Any | None = None
     # Birkhoff projection metrics (optional, populated when birkhoff_config is used)
     birkhoff_applied: bool = False
     birkhoff_converged: bool = False
@@ -103,6 +104,7 @@ def compute_transplant_delta(
     activations_boundary: "Array",
     backend: "Backend | None" = None,
     delta_scale: float = 1.0,
+    occupancy_weights: "Array | None" = None,
 ) -> TransplantDeltaResult:
     """Compute boundary-preserving transplant update for a single weight matrix.
 
@@ -121,6 +123,8 @@ def compute_transplant_delta(
             stacking. Default 1.0 = full projection. Threshold is geometrically
             derived (1% of baseline weight norm) - exceeding causes generation
             degradation in sequential merges.
+        occupancy_weights: Optional per-dimension occupancy weights (0-1) from
+            prior merges to protect already-modified directions.
 
     Returns:
         TransplantDeltaResult with merged weight and diagnostics.
@@ -142,6 +146,7 @@ def compute_transplant_delta(
             filtered_norm=0.0,
             projection_loss=0.0,
             preserved_fraction=1.0,
+            delta_occupancy=None,
         )
 
     in_dim = int(weight_target.shape[1])
@@ -154,6 +159,7 @@ def compute_transplant_delta(
             filtered_norm=0.0,
             projection_loss=0.0,
             preserved_fraction=1.0,
+            delta_occupancy=None,
         )
 
     if int(activations_core.shape[0]) < 2:
@@ -165,6 +171,7 @@ def compute_transplant_delta(
             filtered_norm=0.0,
             projection_loss=0.0,
             preserved_fraction=1.0,
+            delta_occupancy=None,
         )
 
     # Early-exit: if source == target, there's nothing to transplant
@@ -183,6 +190,7 @@ def compute_transplant_delta(
             filtered_norm=0.0,
             projection_loss=0.0,
             preserved_fraction=1.0,
+            delta_occupancy=None,
         )
 
 
@@ -237,6 +245,7 @@ def compute_transplant_delta(
             filtered_norm=0.0,
             projection_loss=1.0,  # 100% loss - nothing could be applied
             preserved_fraction=0.0,
+            delta_occupancy=None,
         )
 
     # Project DELTA into target's NULL SPACE
@@ -244,8 +253,10 @@ def compute_transplant_delta(
     result = geo_filter.filter_delta(
         weight_delta=weight_delta,  # Project DELTA (source - target)
         prior_activations=activations_boundary,  # Target's activation patterns define null space
+        occupancy_weights=occupancy_weights,
     )
     delta_in_null_space = result.filtered_delta  # Safe difference to add
+    delta_occupancy = result.delta_weights
     geodesic_null_dim = result.orthogonal_dim
     b.eval(delta_in_null_space)
 
@@ -350,6 +361,7 @@ def compute_transplant_delta(
         filtered_norm=contribution_norm,  # Delta after null-space projection
         projection_loss=projection_loss,
         preserved_fraction=preserved_fraction,
+        delta_occupancy=delta_occupancy,
         birkhoff_applied=birkhoff_applied,
         birkhoff_converged=birkhoff_converged,
         birkhoff_iterations=birkhoff_iterations,

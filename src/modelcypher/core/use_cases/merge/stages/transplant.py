@@ -423,6 +423,7 @@ def stage_transplant(
     intermediate_transforms: dict[int, "Array"] | None = None,  # MLP intermediate (GPU arrays)
     layer_mapping: dict[int, int] | None = None,
     layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
+    prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     source_tokenizer: "Any | None" = None,  # For token correspondence
     target_tokenizer: "Any | None" = None,  # For token correspondence
     checkpoint_dir: Path | None = None,
@@ -463,6 +464,18 @@ def stage_transplant(
         "cka_after": [],
         "core_probes": 0,
     }
+
+    occupancy_by_layer: dict[int, "Array"] = {}
+    prior_occupancy_arrays: dict[int, "Array"] = {}
+    if prior_occupancy_by_layer:
+        for layer_idx, occ in prior_occupancy_by_layer.items():
+            if occ is None:
+                continue
+            occ_arr = b.array(occ)
+            occ_arr = b.astype(occ_arr, "float32")
+            b.eval(occ_arr)
+            prior_occupancy_arrays[int(layer_idx)] = occ_arr
+        metrics["occupancy_prior_layers"] = len(prior_occupancy_arrays)
 
     # REQUIRE real activations collected from probe runs.
     if not target_activations:
@@ -1059,6 +1072,23 @@ def stage_transplant(
         # Convert to float32 for numerical stability in linalg operations.
         stacked = b.astype(stacked, "float32")
         b.eval(stacked)
+
+        layer_dim = int(stacked.shape[1])
+        prior_occupancy = prior_occupancy_arrays.get(layer_idx)
+        if prior_occupancy is not None and int(prior_occupancy.shape[0]) != layer_dim:
+            logger.warning(
+                "OCCUPANCY: Layer %d dim mismatch (expected %d, got %d) - ignoring",
+                layer_idx,
+                layer_dim,
+                int(prior_occupancy.shape[0]),
+            )
+            prior_occupancy = None
+        if prior_occupancy is None:
+            prior_occupancy = b.zeros((layer_dim,), dtype="float32")
+        else:
+            prior_occupancy = b.astype(prior_occupancy, "float32")
+        layer_delta_occupancy = b.zeros((layer_dim,), dtype="float32")
+        b.eval(prior_occupancy, layer_delta_occupancy)
 
         # Filter core probes by graft mask (density-based selection)
         # Only include probes where source is denser than target at this layer
@@ -1751,8 +1781,19 @@ def stage_transplant(
                     activations_boundary=boundary_acts,
                     backend=b,
                     delta_scale=delta_scale,
+                    occupancy_weights=prior_occupancy,
                 )
                 logger.debug("Transplant delta computed for %s: applied=%s", key, result.applied)
+                if result.delta_occupancy is not None:
+                    delta_occ = result.delta_occupancy
+                    if not hasattr(delta_occ, "shape"):
+                        delta_occ = b.array(delta_occ)
+                    delta_occ = b.astype(delta_occ, "float32")
+                    if int(b.shape(delta_occ)[0]) == layer_dim:
+                        layer_delta_occupancy = 1.0 - (
+                            (1.0 - layer_delta_occupancy) * (1.0 - delta_occ)
+                        )
+                        b.eval(layer_delta_occupancy)
             except Exception as e:
                 logger.warning("Failed to compute transplant delta for %s: %s", key, e)
                 continue
@@ -1862,6 +1903,10 @@ def stage_transplant(
         if layer_transplanted:
             metrics["layers_transplanted"] += 1
 
+        layer_occupancy = 1.0 - (1.0 - prior_occupancy) * (1.0 - layer_delta_occupancy)
+        b.eval(layer_occupancy)
+        occupancy_by_layer[layer_idx] = layer_occupancy
+
         # Layer timing summary
         layer_elapsed = time.time() - layer_start_time
         logger.info(
@@ -1913,6 +1958,13 @@ def stage_transplant(
     if metrics["cka_after"]:
         ckas = metrics["cka_after"]
         metrics["mean_cka_after"] = sum(ckas) / len(ckas)
+    if occupancy_by_layer:
+        occupancy_payload: dict[str, list[float]] = {}
+        for layer_idx, occ in occupancy_by_layer.items():
+            b.eval(occ)
+            occupancy_payload[str(layer_idx)] = b.tolist(occ)
+        metrics["occupancy_by_layer"] = occupancy_payload
+        metrics["occupancy_layers"] = len(occupancy_payload)
     # Stage completion summary
     stage_elapsed = time.time() - stage_start_time
     metrics["total_time_seconds"] = stage_elapsed
