@@ -445,7 +445,6 @@ def stage_transplant(
     # Anchor-relative grafting parameters (canonical pipeline)
     source_anchors: dict[int, "Array"] | None = None,  # Per-layer anchor embeddings
     target_anchors: dict[int, "Array"] | None = None,  # Per-layer anchor embeddings
-    use_anchor_relative: bool = False,  # Enable anchor-relative mode
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -1875,58 +1874,68 @@ def stage_transplant(
             try:
                 logger.debug("Computing transplant delta for %s", key)
 
-                # Check if anchor-relative mode is enabled and anchors are available
-                delta_A = None
-                if (
-                    use_anchor_relative
-                    and source_anchors is not None
+                # Compute delta_A via anchor-relative pipeline
+                # This is the canonical geometric method - no fallback modes
+                if not (
+                    source_anchors is not None
                     and target_anchors is not None
                     and layer_idx in source_anchors
                     and layer_idx in target_anchors
                     and source_activations is not None
                     and layer_idx in source_activations
                 ):
-                    # Get source activations for this layer
-                    src_acts_list = source_activations[layer_idx]
-                    if src_acts_list:
-                        src_acts_stacked = b.concat(
-                            [b.array(a) for a in src_acts_list], axis=0
-                        )
-                        b.eval(src_acts_stacked)
+                    logger.warning(
+                        "TRANSPLANT: Skipping %s - anchors not available for layer %d",
+                        key, layer_idx
+                    )
+                    continue
 
-                        # Get anchors for this layer
-                        src_anch = source_anchors[layer_idx]
-                        tgt_anch = target_anchors[layer_idx]
+                # Get source activations for this layer
+                src_acts_list = source_activations[layer_idx]
+                if not src_acts_list:
+                    logger.warning(
+                        "TRANSPLANT: Skipping %s - no source activations for layer %d",
+                        key, layer_idx
+                    )
+                    continue
 
-                        # Compute delta_A via anchor-relative pipeline
-                        logger.info(
-                            "ANCHOR-RELATIVE: Computing grafting delta for layer %d",
-                            layer_idx,
-                        )
-                        grafting_result = compute_anchor_grafting_delta(
-                            source_activations=src_acts_stacked,
-                            target_activations=stacked,
-                            source_anchors=src_anch,
-                            target_anchors=tgt_anch,
-                            backend=b,
-                        )
-                        delta_A = grafting_result.delta_activations
-                        logger.info(
-                            "ANCHOR-RELATIVE: Layer %d delta_A computed, "
-                            "transfer_fraction=%.3f",
-                            layer_idx,
-                            grafting_result.transfer_fraction,
-                        )
+                src_acts_stacked = b.concat(
+                    [b.array(a) for a in src_acts_list], axis=0
+                )
+                b.eval(src_acts_stacked)
 
-                # Call transplant with optional delta_A
+                # Get anchors for this layer
+                src_anch = source_anchors[layer_idx]
+                tgt_anch = target_anchors[layer_idx]
+
+                # Compute delta_A via anchor-relative pipeline
+                logger.info(
+                    "ANCHOR-RELATIVE: Computing grafting delta for layer %d",
+                    layer_idx,
+                )
+                grafting_result = compute_anchor_grafting_delta(
+                    source_activations=src_acts_stacked,
+                    target_activations=stacked,
+                    source_anchors=src_anch,
+                    target_anchors=tgt_anch,
+                    backend=b,
+                )
+                delta_A = grafting_result.delta_activations
+                logger.info(
+                    "ANCHOR-RELATIVE: Layer %d delta_A computed, "
+                    "transfer_fraction=%.3f",
+                    layer_idx,
+                    grafting_result.transfer_fraction,
+                )
+
+                # Constrained least-squares transplant
                 result = compute_transplant_delta(
                     weight_target=target_w,
-                    weight_source_aligned=source_aligned if delta_A is None else None,
                     activations_core=core_acts,
+                    delta_activations=delta_A,
+                    boundary_activations=boundary_acts,
                     backend=b,
                     delta_scale=delta_scale,
-                    delta_activations=delta_A,
-                    boundary_activations=boundary_acts if delta_A is not None else None,
                 )
                 logger.debug("Transplant delta computed for %s: applied=%s", key, result.applied)
                 if result.delta_occupancy is not None:

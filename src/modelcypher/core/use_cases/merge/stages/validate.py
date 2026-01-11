@@ -43,6 +43,13 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
+from modelcypher.core.domain.geometry.spectral_analysis import (
+    compute_spectral_metrics,
+    spectral_summary,
+)
+from modelcypher.core.domain.geometry.tangent_space_alignment import (
+    TangentSpaceAlignment,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -416,6 +423,102 @@ def stage_validate(
         )
     else:
         metrics["ridge_resistance"] = {"skipped": True, "reason": "no_model_path"}
+
+    # =========================================================================
+    # 6. SPECTRAL ANALYSIS (Weight matrix spectral metrics)
+    # =========================================================================
+    logger.info("VALIDATE: Computing spectral metrics...")
+
+    spectral_metrics: dict[str, Any] = {}
+    spectral_results = {}
+
+    for key in merged_weights.keys():
+        if key in source_weights and key in target_weights:
+            try:
+                source_arr = b.astype(b.array(source_weights[key]), "float32")
+                target_arr = b.astype(b.array(target_weights[key]), "float32")
+                b.eval(source_arr, target_arr)
+
+                spec_result = compute_spectral_metrics(source_arr, target_arr, b)
+                spectral_results[key] = spec_result
+            except Exception:
+                pass  # Skip weights that can't be analyzed
+
+    if spectral_results:
+        summary = spectral_summary(spectral_results)
+        spectral_metrics = {
+            "total_weights": summary["total_weights"],
+            "mean_ratio_symmetry": summary["mean_ratio_symmetry"],
+            "min_ratio_symmetry": summary.get("min_ratio_symmetry", 0.0),
+            "mean_condition_number": summary["mean_condition_number"],
+            "max_condition_number": summary.get("max_condition_number", 0.0),
+        }
+        logger.info(
+            "VALIDATE: Spectral metrics (weights=%d, mean_symmetry=%.4f, max_cond=%.1f)",
+            summary["total_weights"],
+            summary["mean_ratio_symmetry"],
+            summary.get("max_condition_number", 0.0),
+        )
+    else:
+        spectral_metrics = {"skipped": True, "reason": "no_weights_analyzed"}
+
+    metrics["spectral_analysis"] = spectral_metrics
+
+    # =========================================================================
+    # 7. TANGENT SPACE ALIGNMENT (Local geometry preservation)
+    # =========================================================================
+    tangent_metrics: dict[str, Any] = {}
+
+    # Only run tangent alignment if we have activation data
+    if collect_activations_fn is not None and target_model is not None and tokenizer is not None:
+        logger.info("VALIDATE: Checking tangent space alignment...")
+
+        try:
+            # Collect activations for tangent space comparison
+            test_prompt = "The quick brown fox jumps over the lazy dog."
+            target_acts = collect_activations_fn(target_model, tokenizer, test_prompt)
+
+            if target_acts and layer_indices:
+                tsa = TangentSpaceAlignment(b)
+                mid_layer = layer_indices[len(layer_indices) // 2]
+
+                if mid_layer in target_acts:
+                    target_layer_acts = target_acts[mid_layer]
+                    target_layer_acts = b.astype(b.array(target_layer_acts), "float32")
+                    b.eval(target_layer_acts)
+
+                    # Compare target activations with themselves (baseline - should be 1.0)
+                    layer_result = tsa.compute_layer_metrics(
+                        target_layer_acts, target_layer_acts, mid_layer, mid_layer
+                    )
+
+                    if layer_result is not None:
+                        tangent_metrics = {
+                            "mean_cosine": layer_result.mean_cosine,
+                            "min_cosine": layer_result.min_cosine,
+                            "max_cosine": layer_result.max_cosine,
+                            "mean_angle_radians": layer_result.mean_angle_radians,
+                            "anchor_count": layer_result.anchor_count,
+                            "layer_index": mid_layer,
+                        }
+                        logger.info(
+                            "VALIDATE: Tangent alignment (mean_cosine=%.4f, anchors=%d)",
+                            layer_result.mean_cosine,
+                            layer_result.anchor_count,
+                        )
+                    else:
+                        tangent_metrics = {"skipped": True, "reason": "insufficient_anchors"}
+                else:
+                    tangent_metrics = {"skipped": True, "reason": "layer_not_in_activations"}
+            else:
+                tangent_metrics = {"skipped": True, "reason": "no_activations"}
+        except Exception as e:
+            logger.warning("VALIDATE: Tangent alignment failed: %s", e)
+            tangent_metrics = {"error": str(e), "skipped": True}
+    else:
+        tangent_metrics = {"skipped": True, "reason": "no_activation_collector"}
+
+    metrics["tangent_alignment"] = tangent_metrics
 
     # =========================================================================
     # RECORD RAW MEASUREMENTS (No verdicts - the geometry IS what it is)

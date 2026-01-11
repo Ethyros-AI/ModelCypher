@@ -17,11 +17,21 @@
 
 """Functional transplant for zero-shot knowledge transfer.
 
-Implements constrained replacement in weight space:
-    A_core @ W' = A_core @ W_source_aligned
-    A_boundary @ W' = A_boundary @ W_target
+Solves constrained least-squares for weight update:
 
-Update is projected into boundary null space, preserving connectivity by construction.
+    min ||A_core @ delta_W - delta_A_core||_F²
+    s.t. A_boundary @ delta_W = 0
+
+Solution via null-space projection:
+    N = I - pinv(A_boundary) @ A_boundary  (boundary null-space)
+    delta_W_unc = pinv(A_core) @ delta_A_core  (unconstrained)
+    delta_W = N @ delta_W_unc  (projected to boundary null-space)
+    W' = W_target + delta_W.T
+
+This ensures boundary outputs are EXACTLY preserved (to numerical precision)
+while core outputs move toward the source's knowledge.
+
+There are no heuristics, thresholds, or modes. The geometry determines everything.
 """
 
 from __future__ import annotations
@@ -31,7 +41,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -252,282 +261,49 @@ def partition_core_boundary(
 
 def compute_transplant_delta(
     weight_target: "Array",
-    weight_source_aligned: "Array | None",
     activations_core: "Array",
+    delta_activations: "Array",
+    boundary_activations: "Array | None" = None,
     backend: "Backend | None" = None,
     delta_scale: float = 1.0,
-    delta_activations: "Array | None" = None,
-    boundary_activations: "Array | None" = None,
-    # Backward compatibility alias
-    activations_boundary: "Array | None" = None,
 ) -> TransplantDeltaResult:
-    """Compute weight update with optional pre-computed activation delta.
+    """Compute weight update via constrained least-squares.
 
-    Two modes of operation:
+    Solves:
+        min ||A_core @ delta_W - delta_A_core||_F²
+        s.t. A_boundary @ delta_W = 0
 
-    1. **Anchor-Relative Mode** (delta_activations provided):
-       Solves constrained least-squares for weight update:
+    Solution via null-space projection:
+        N = I - pinv(A_boundary) @ A_boundary  (boundary null-space)
+        delta_W_unc = pinv(A_core) @ delta_A_core  (unconstrained)
+        delta_W = N @ delta_W_unc  (projected to boundary null-space)
+        W' = W_target + delta_W.T
 
-           min ||A_core @ delta_W - delta_A_core||_F²
-           s.t. A_boundary @ delta_W = 0
+    This ensures boundary outputs are EXACTLY preserved (to numerical precision)
+    while core outputs move toward the source's knowledge.
 
-       Solution via null-space projection:
-           N = I - pinv(A_boundary) @ A_boundary  (boundary null-space)
-           delta_W_unc = pinv(A_core) @ delta_A_core  (unconstrained)
-           delta_W = N @ delta_W_unc  (projected to boundary null-space)
-           W' = W_target + delta_W.T
-
-       This ensures boundary outputs are EXACTLY preserved while core
-       outputs move toward the source's knowledge.
-
-    2. **Dormancy Mode** (delta_activations=None, fallback):
-       Uses per-dimension variance to identify dormant neurons and
-       selectively replaces them with source weights.
+    There are no heuristics, thresholds, or modes. The geometry determines everything.
 
     Args:
-        weight_target: Target model weights to merge into.
-        weight_source_aligned: Source model weights (CKA-aligned). Optional
-            if delta_activations is provided.
-        activations_core: Target activation patterns (core samples).
+        weight_target: Target model weights to modify [out_dim, in_dim].
+        activations_core: Core activation samples [n_core, in_dim].
+        delta_activations: Desired change in activation space [n_core, out_dim].
+            Computed upstream via anchor-relative grafting.
+        boundary_activations: Boundary samples [n_boundary, in_dim]. If provided,
+            their outputs are exactly preserved: A_boundary @ W' = A_boundary @ W.
         backend: Optional Backend for GPU operations.
         delta_scale: Scale factor for delta (default 1.0).
-        delta_activations: Pre-computed delta in activation space [n, d_target].
-            If provided, uses anchor-relative constrained solver.
-        boundary_activations: Boundary activations for constraint [m, d_target].
-            Used in anchor-relative mode to preserve boundary outputs.
 
     Returns:
         TransplantDeltaResult with merged weight and diagnostics.
     """
     b = backend or get_default_backend()
 
-    # Backward compatibility: activations_boundary → boundary_activations
-    if activations_boundary is not None and boundary_activations is None:
-        boundary_activations = activations_boundary
-
-    # ==========================================================================
-    # ANCHOR-RELATIVE MODE: Constrained least-squares with boundary preservation
-    # ==========================================================================
-    if delta_activations is not None:
-        return _compute_transplant_delta_anchor_relative(
-            weight_target=weight_target,
-            activations_core=activations_core,
-            delta_activations=delta_activations,
-            boundary_activations=boundary_activations,
-            delta_scale=delta_scale,
-            backend=b,
-        )
-
-    # ==========================================================================
-    # DORMANCY MODE (fallback): Per-dimension variance-based selection
-    # ==========================================================================
-    if weight_source_aligned is None:
-        raise ValueError(
-            "weight_source_aligned is required when delta_activations is not provided"
-        )
-
-    # Convert all inputs to float32 for numerical stability
-    weight_target = b.astype(b.array(weight_target), "float32")
-    weight_source_aligned = b.astype(b.array(weight_source_aligned), "float32")
-    activations_core = b.astype(b.array(activations_core), "float32")
-    b.eval(weight_target, weight_source_aligned, activations_core)
-
-    if len(weight_target.shape) != 2:
-        return TransplantDeltaResult(
-            merged_weight=weight_target,
-            applied=False,
-            null_dim=0,
-            delta_norm=0.0,
-            filtered_norm=0.0,
-            projection_loss=0.0,
-            preserved_fraction=1.0,
-            delta_occupancy=None,
-        )
-
-    in_dim = int(weight_target.shape[1])
-    if int(activations_core.shape[1]) != in_dim:
-        return TransplantDeltaResult(
-            merged_weight=weight_target,
-            applied=False,
-            null_dim=0,
-            delta_norm=0.0,
-            filtered_norm=0.0,
-            projection_loss=0.0,
-            preserved_fraction=1.0,
-            delta_occupancy=None,
-        )
-
-    if int(activations_core.shape[0]) < 2:
-        return TransplantDeltaResult(
-            merged_weight=weight_target,
-            applied=False,
-            null_dim=0,
-            delta_norm=0.0,
-            filtered_norm=0.0,
-            projection_loss=0.0,
-            preserved_fraction=1.0,
-            delta_occupancy=None,
-        )
-
-    # Early-exit: if source == target, there's nothing to transplant
-    # This handles the edge case where weights are already identical
-    diff = weight_source_aligned - weight_target
-    diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b, use_cache=False)
-    b.eval(diff_norm_arr)
-    diff_norm = float(b.to_scalar(diff_norm_arr[0]))
-    reg = regularization_epsilon(b, weight_target)
-    if diff_norm <= reg:
-        return TransplantDeltaResult(
-            merged_weight=weight_target,
-            applied=True,
-            null_dim=0,
-            delta_norm=0.0,
-            filtered_norm=0.0,
-            projection_loss=0.0,
-            preserved_fraction=1.0,
-            delta_occupancy=None,
-        )
-
-
-    # ==========================================================================
-    # DORMANCY-BASED NEURON ACTIVATION
-    # ==========================================================================
-    # This is NOT weight blending. This is selective neuron activation:
-    #
-    # 1. Dormant dimensions: target has LOW variance (neurons not used)
-    #    - These don't affect target's current behavior
-    #    - REPLACE with source's weights to "wake them up"
-    #
-    # 2. Active dimensions: target has HIGH variance (neurons in use)
-    #    - These define target's current behavior
-    #    - KEEP unchanged to preserve structure
-    #
-    # Result: Denser point clouds, sharper reasoning, same fundamental structure
-    # ==========================================================================
-
-    out_dim = int(weight_source_aligned.shape[0])
-    in_dim = int(weight_source_aligned.shape[1])
-    n_samples = int(activations_core.shape[0])
-
-    # Compute per-dimension variance of target activations
-    # variance[d] = mean((act[:, d] - mean(act[:, d]))^2)
-    act_mean = b.mean(activations_core, axis=0)  # [in_dim]
-    b.eval(act_mean)
-    act_centered = activations_core - act_mean  # [n_samples, in_dim]
-    b.eval(act_centered)
-    act_var = b.mean(act_centered * act_centered, axis=0)  # [in_dim]
-    b.eval(act_var)
-
-    # Compute total variance for normalization
-    total_var = b.sum(act_var)
-    b.eval(total_var)
-    total_var_val = float(b.to_scalar(total_var))
-
-    if total_var_val <= 0:
-        # No variance in activations - can't determine dormancy
-        return TransplantDeltaResult(
-            merged_weight=weight_target,
-            applied=False,
-            null_dim=0,
-            delta_norm=0.0,
-            filtered_norm=0.0,
-            projection_loss=0.0,
-            preserved_fraction=1.0,
-            delta_occupancy=None,
-        )
-
-    # Normalize variance to get per-dimension "activity level" [0, 1]
-    # High activity = frequently used = preserve target
-    # Low activity = dormant = can activate with source
-    var_normalized = act_var / (total_var_val / in_dim)  # Relative to mean variance
-    b.eval(var_normalized)
-
-    # Compute dormancy threshold from data distribution
-    # CRITICAL: Use a CONSERVATIVE threshold - only truly dormant dimensions
-    # Using median selects 50% which is far too aggressive.
-    #
-    # Geometric principle: Only touch unused capacity. Most dimensions are ACTIVE.
-    # Use bottom 5th percentile: only dimensions with very low variance are dormant.
-    var_sorted = b.sort(var_normalized)
-    b.eval(var_sorted)
-
-    # 5th percentile index (bottom 5% of variance) - very conservative
-    # Only truly dormant dimensions get touched
-    percentile_5_idx = max(1, in_dim // 20)
-    threshold_arr = b.take(var_sorted, b.array([percentile_5_idx]), axis=0)
-    b.eval(threshold_arr)
-    threshold = float(b.to_scalar(threshold_arr[0]))
-
-    # Identify dormant dimensions (variance below 5th percentile)
-    # is_dormant[d] = 1.0 if dormant, 0.0 if active
-    is_dormant = b.astype(var_normalized < threshold, "float32")
-    b.eval(is_dormant)
-
-    # Count dormant dimensions
-    n_dormant = int(float(b.to_scalar(b.sum(is_dormant))))
-
-    logger.info(
-        "DORMANCY: %d/%d dimensions dormant (%.1f%%), threshold=%.4f",
-        n_dormant, in_dim, 100.0 * n_dormant / in_dim, threshold
-    )
-
-    # Create selection mask for each dimension
-    # merged[:, d] = source[:, d] if dormant else target[:, d]
-    # Reshape for broadcasting: [1, in_dim] for column selection
-    dormant_mask = b.reshape(is_dormant, (1, in_dim))
-    active_mask = 1.0 - dormant_mask
-    b.eval(dormant_mask, active_mask)
-
-    # Select: dormant from source, active from target
-    merged_weight = (weight_source_aligned * dormant_mask) + (weight_target * active_mask)
-    b.eval(merged_weight)
-
-    # Compute metrics for the dormancy-based merge
-    # weight_delta = actual change applied (merged - target)
-    weight_delta = merged_weight - weight_target
-    b.eval(weight_delta)
-
-    # full_delta = potential change (source_aligned - target)
-    full_delta = weight_source_aligned - weight_target
-    b.eval(full_delta)
-
-    # Compute norms
-    # full_delta_norm: how much difference between source and target (potential)
-    # applied_delta_norm: how much change was actually applied (via dormancy selection)
-    full_delta_norm_arr = geodesic_norms(
-        b.reshape(full_delta, (1, -1)), b, use_cache=False
-    )
-    applied_delta_norm_arr = geodesic_norms(
-        b.reshape(weight_delta, (1, -1)), b, use_cache=False
-    )
-    b.eval(full_delta_norm_arr, applied_delta_norm_arr)
-    full_delta_norm = float(b.to_scalar(full_delta_norm_arr[0]))
-    applied_delta_norm = float(b.to_scalar(applied_delta_norm_arr[0]))
-
-    if full_delta_norm > 0.0:
-        # How much of the potential delta was applied via dormancy selection
-        preserved_fraction = applied_delta_norm / full_delta_norm
-        projection_loss = max(0.0, 1.0 - preserved_fraction)
-    else:
-        preserved_fraction = 1.0
-        projection_loss = 0.0
-
-    logger.info(
-        "DORMANCY RESULT: applied_norm=%.4f, full_delta_norm=%.4f, preserved=%.1f%%",
-        applied_delta_norm, full_delta_norm, 100.0 * preserved_fraction
-    )
-
-    return TransplantDeltaResult(
-        merged_weight=merged_weight,
-        applied=True,
-        null_dim=n_dormant,  # Number of dormant dimensions activated
-        delta_norm=full_delta_norm,  # Potential change (source - target)
-        filtered_norm=applied_delta_norm,  # Actual change applied
-        projection_loss=projection_loss,
-        preserved_fraction=preserved_fraction,
-        delta_occupancy=None,  # Not used in dormancy mode
-        birkhoff_applied=False,  # Not used in dormancy mode
-        birkhoff_converged=False,
-        birkhoff_iterations=0,
-        birkhoff_spectral_clipped=False,
+    return _compute_transplant_delta_anchor_relative(
+        weight_target=weight_target,
+        activations_core=activations_core,
+        delta_activations=delta_activations,
+        boundary_activations=boundary_activations,
+        delta_scale=delta_scale,
+        backend=b,
     )
