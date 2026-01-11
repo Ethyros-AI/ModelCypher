@@ -839,22 +839,28 @@ def gpu_lstsq(
     B: "Array",
     stats: dict[str, float] | None = None,
 ) -> "Array":
-    """GPU-accelerated least squares via normal equations or CGLS fallback.
+    """Least squares via closed-form normal equations or CGLS fallback.
 
     Solves: minimize ||A @ X - B||² for X
 
     When n >= d (overdetermined), uses DIRECT closed-form:
         F = (A^T @ A + λI)^{-1} @ A^T @ B
 
-    This is O(d³) via Cholesky, instant on GPU.
+    When n < d (underdetermined), uses DUAL closed-form:
+        F = A^T @ (A @ A^T + λI)^{-1} @ B
 
-    Falls back to iterative CGLS only when necessary.
+    Both are O(min(n,d)³) via the backend's solve() which uses the most
+    appropriate method (Cholesky for SPD matrices). Note: MLX's solve()
+    may fall back to CPU for the linear system solve, but matmuls remain
+    on GPU. Performance is still excellent due to small matrix dimensions.
+
+    Falls back to iterative CGLS only if direct solve fails.
 
     If stats is provided, populates:
-    - iterations: CGLS iteration count (0 for direct solve)
+    - iterations: 0 for direct solve, count for CGLS
     - residual_norm: final residual norm
     - rhs_norm: right-hand-side norm
-    - method: 'normal_equations' or 'cgls'
+    - method: 'normal_equations', 'normal_equations_dual', or 'cgls'
     """
     b = backend
 

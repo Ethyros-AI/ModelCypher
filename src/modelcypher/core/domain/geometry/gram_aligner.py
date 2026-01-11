@@ -16,7 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Gram Matrix Aligner - Finds the EXACT transformation for GEODESIC CKA = 1.0.
+Gram Matrix Aligner - Closed-form linear alignment with geodesic diagnostics.
 
 Core Principle: Geodesic Distance is the Truth
 ==============================================
@@ -24,21 +24,19 @@ Euclidean distance is an approximation. In high-dimensional neural representatio
 spaces, the manifold has curvature. Geodesic distance (shortest path on k-NN graph)
 is the correct metric for pairwise relationships.
 
-LINEAR alignment (F = pinv(source) @ target) guarantees LINEAR CKA = 1.0.
+LINEAR alignment (F = pinv(source) @ target) guarantees LINEAR CKA = 1.0
+on the shared manifold.
 But linear CKA uses K = X @ X.T (Euclidean dot products).
 
 GEODESIC CKA uses K = exp(-D_geo²/2σ²) (RBF kernel on geodesic distances).
-Linear alignment does NOT guarantee geodesic CKA = 1.0.
-
-This matters for repeated merges: each linear-only alignment introduces ~3-28%
-geodesic error. After N merges, error compounds to 1 - 0.95^N. This is why
-repeated merges into the same target degrade the model.
+Linear alignment does NOT guarantee geodesic CKA = 1.0. Geodesic CKA reflects
+manifold overlap/coverage and can be < 1.0 when models carry novel structure or
+the probes do not span the full shared manifold.
 
 The Correct Approach
 ====================
-1. Initialize with linear Procrustes: F = pinv(source) @ target (fast, close)
-2. Refine F via gradient descent to maximize GEODESIC CKA (correct)
-3. Stop when geodesic CKA ≈ 1.0
+1. Closed-form linear Procrustes: F = pinv(source) @ target
+2. Measure geodesic CKA as a diagnostic of shared-manifold coverage
 
 No User-Configurable Thresholds
 ===============================
@@ -100,7 +98,7 @@ def find_alignment(
     target_activations: "Array",
     backend: "Backend | None" = None,
 ) -> AlignmentResult:
-    """Find the transformation that achieves CKA = 1.0.
+    """Find the closed-form linear alignment and report geodesic diagnostics.
 
     This is the main entry point.
 
@@ -116,13 +114,13 @@ def find_alignment(
     Returns
     -------
     AlignmentResult
-        The transformation achieving CKA = 1.0.
+        The linear alignment transform plus geodesic diagnostics.
 
     Example
     -------
     >>> result = find_alignment(source_acts, target_acts)
     >>> aligned_source = source_acts @ result.feature_transform
-    >>> # CKA(aligned_source, target_acts) ≈ 1.0
+    >>> # Linear CKA(aligned_source, target_acts) ≈ 1.0 on the shared manifold
     """
     aligner = GramAligner(backend)
     return aligner.find_perfect_alignment(source_activations, target_activations)
@@ -135,9 +133,9 @@ def find_alignment(
 
 @dataclass(frozen=True)
 class AlignmentResult:
-    """Result of finding geodesic CKA alignment.
+    """Result of linear alignment with geodesic diagnostics.
 
-    The transformation that achieves geodesic CKA ≈ 1.0, plus diagnostics.
+    The transformation from linear Procrustes plus geodesic CKA diagnostics.
     All thresholds are derived from dtype, not hardcoded.
     """
 
@@ -148,28 +146,28 @@ class AlignmentResult:
     # Number of iterations taken (0 = linear alignment was sufficient)
     iterations: int
 
-    # Numerical deviation from CKA = 1.0
-    # This is 1.0 - achieved_cka. Should be < precision_threshold for good alignment.
+    # Numerical deviation from geodesic CKA = 1.0
+    # This is 1.0 - achieved_cka. Should be < precision_threshold for full overlap.
     numerical_deviation: float
 
     # Dtype-derived precision threshold: sqrt(machine_epsilon)
     precision_threshold: float
 
     # GEODESIC CKA achieved by the alignment.
-    # This is the correct metric (uses k-NN graph + RBF kernel).
-    # Linear CKA would always be 1.0; geodesic CKA reflects manifold fidelity.
+    # This is the manifold-overlap diagnostic (k-NN graph + RBF kernel).
+    # Linear CKA is guaranteed on the shared manifold; geodesic CKA may be < 1.0.
     achieved_cka: float = 1.0
 
     # Diagnostic signal describing any residual gap
     diagnostic: "AlignmentSignal | None" = None
 
     # EXACT SCALE FACTOR: ||target|| / ||source @ F||
-    # When CKA ≈ 1.0, structure is aligned. This ratio preserves magnitude.
+    # When linear alignment is correct on the shared manifold, this ratio preserves magnitude.
     # Apply to stitched weights: W_merged = scale_ratio * W_stitched
     scale_ratio: float = 1.0
 
-    # Linear solver telemetry (GPU CGLS for pinv)
-    linear_iterations: int = 0
+    # Linear solver telemetry (normal equations or CGLS fallback)
+    linear_iterations: int = 0  # 0 = direct solve via normal equations
     linear_residual: float = 0.0
 
     @property
@@ -181,8 +179,8 @@ class AlignmentResult:
     def is_numerically_exact(self) -> bool:
         """True if geodesic CKA achieved 1.0 within dtype precision.
 
-        If False, the alignment may need more probes or the models may
-        have different manifold structures (which should not happen).
+        If False, probes may not span the full shared manifold or the models
+        include novel structure outside the overlap.
         """
         return self.numerical_deviation < self.precision_threshold
 
@@ -198,10 +196,11 @@ class AlignmentResult:
 
 
 class GramAligner:
-    """Finds the transformation that achieves CKA = 1.0.
+    """Finds the closed-form linear alignment and reports geodesic diagnostics.
 
     This is a SOLVER, not a test. Given two sets of activations, it finds
-    the transformation that makes them equivalent in the CKA sense.
+    the closed-form transform for linear alignment and reports geodesic CKA
+    as an overlap diagnostic.
 
     All tolerances are derived from the input dtype's machine epsilon.
     The `tolerance` and `regularization` parameters are accepted for
@@ -220,8 +219,8 @@ class GramAligner:
         max_iterations: int | None = None,  # IGNORED - kept for backward compat
         tolerance: float | None = None,  # IGNORED
         regularization: float | None = None,  # IGNORED
-        max_steps: int = 5000,  # Optimized: 5000 steps is sufficient for CKA>0.99
-        fast_mode: bool = False,  # Skip CKA precision check for speed
+        max_steps: int = 5000,  # Kept for backward compatibility (no iterative refinement)
+        fast_mode: bool = False,  # Skip CKA diagnostics for speed
     ) -> None:
         """Initialize the aligner.
 
@@ -239,8 +238,8 @@ class GramAligner:
         max_steps : int
             Maximum optimization steps for gradient descent. 50000 for precision, 5000 for speed.
         fast_mode : bool
-            If True, skip CKA precision check after computing F. Since CKA = 1.0 is
-            invariant (guaranteed by construction), this check is for debugging only.
+            If True, skip CKA diagnostics after computing F. The alignment is
+            closed-form; diagnostics are for reporting only.
             Set to True for batch/multi-merge operations where speed matters.
         """
         self._backend = backend or get_default_backend()
@@ -253,14 +252,14 @@ class GramAligner:
     def _identity_result(
         self, n: int, d: int, precision: float
     ) -> AlignmentResult:
-        """Return identity transform result (CKA = 1.0 trivially)."""
+        """Return identity transform result (CKA = 1.0 for identical inputs)."""
         b = self._backend
         I_feat = b.eye(d)
         I_sample = b.eye(n)
         b.eval(I_feat, I_sample)
         return AlignmentResult(
             feature_transform=I_feat,  # Keep on GPU
-            # achieved_cka=1.0 by default (invariant)
+            # achieved_cka=1.0 for identical inputs
             iterations=0,
             numerical_deviation=0.0,  # Perfect precision for identity
             diagnostic=None,
@@ -283,15 +282,16 @@ class GramAligner:
         max_refinement_passes: int = 10,
         F_init: "Array | None" = None,
     ) -> AlignmentResult:
-        """Find alignment transform where GEODESIC CKA = 1.0.
+        """Find alignment transform from linear Procrustes and report geodesic CKA.
 
         Two-phase alignment:
-        1. Linear Procrustes: F = pinv(source) @ target (fast initialization)
-        2. Geodesic refinement: gradient descent to maximize geodesic CKA (correct)
+        1. Linear Procrustes: F = pinv(source) @ target (closed-form)
+        2. Geodesic measurement: report manifold overlap/coverage
 
         Linear CKA uses K = X @ X.T (Euclidean). Geodesic CKA uses k-NN graph
-        + RBF kernel. Linear alignment guarantees linear CKA = 1.0 but NOT
-        geodesic CKA = 1.0. The refinement step fixes this.
+        + RBF kernel. Linear alignment guarantees linear CKA = 1.0 on the shared
+        manifold but does not force geodesic CKA to 1.0 when models have novel
+        structure or probes are incomplete.
 
         Parameters
         ----------
@@ -302,14 +302,14 @@ class GramAligner:
         strict : bool
             IGNORED. Kept for backward compatibility.
         max_refinement_passes : int
-            IGNORED. Iterations derived from convergence.
+            IGNORED. No iterative refinement is performed.
         F_init : Array | None
             IGNORED. Linear Procrustes is always the initialization.
 
         Returns
         -------
         AlignmentResult
-            The transformation achieving geodesic CKA ≈ 1.0.
+            The transformation from linear Procrustes plus geodesic diagnostics.
         """
         b = self._backend
         n_s, d_s = b.shape(source_activations)
@@ -342,17 +342,18 @@ class GramAligner:
         linear_elapsed = time.perf_counter() - start_time
         linear_iterations = int(linear_stats.get("iterations", 0.0))
         linear_residual = float(linear_stats.get("residual_norm", 0.0))
+        method = str(linear_stats.get("method", "cgls"))
         logger.info(
-            "LINEAR ALIGNMENT: F = pinv(source) @ target (GPU CGLS, %.2fs, iters=%d)",
+            "LINEAR ALIGNMENT: F = pinv(source) @ target (%s, %.2fs, iters=%d)",
+            method,
             linear_elapsed,
             linear_iterations,
         )
-        logger.debug("LINEAR ALIGNMENT: CGLS residual=%.2e", linear_residual)
+        logger.debug("LINEAR ALIGNMENT: Solver residual=%.2e", linear_residual)
 
         # =================================================================
-        # PHASE 2: Geodesic Refinement
+        # PHASE 2: Geodesic diagnostics
         # =================================================================
-        # Refine F to maximize GEODESIC CKA (the correct metric)
         refine_start = time.perf_counter()
         F, iterations, geodesic_cka = self._geodesic_refine(
             source_activations, target_activations, F
@@ -361,8 +362,8 @@ class GramAligner:
 
         total_elapsed = time.perf_counter() - start_time
         logger.info(
-            "GEODESIC REFINEMENT: %d iterations, CKA=%.6f (%.2fs, total %.2fs)",
-            iterations, geodesic_cka, refine_elapsed, total_elapsed
+            "GEODESIC CHECK: CKA=%.6f (%.2fs, total %.2fs)",
+            geodesic_cka, refine_elapsed, total_elapsed
         )
 
         # =====================================================================
@@ -385,7 +386,7 @@ class GramAligner:
         target_centered = self._center(target_activations)
         diagnostic = self._diagnose(source_aligned, target_centered, geodesic_cka)
 
-        # Numerical deviation from CKA = 1.0
+        # Numerical deviation from geodesic CKA = 1.0
         numerical_deviation = max(0.0, 1.0 - geodesic_cka)
 
         return AlignmentResult(
@@ -415,9 +416,8 @@ class GramAligner:
         Geodesic CKA measures how well this transfers to the manifold.
 
         If geodesic CKA < 1.0:
-        - Probes don't fully span the shared manifold
-        - Need more diverse probes (different semantic domains)
-        - The alignment is correct; the measurement is incomplete
+        - Probes don't fully span the shared manifold, or
+        - Models contain novel structure outside the overlap
 
         Parameters
         ----------
@@ -447,7 +447,7 @@ class GramAligner:
         if geodesic_cka < 0.99:
             logger.info(
                 "Linear alignment achieves geodesic CKA=%.4f (<1.0). "
-                "This indicates probe coverage may be insufficient for full manifold.",
+                "This reflects shared-manifold coverage and novel structure.",
                 geodesic_cka
             )
         else:
@@ -517,7 +517,7 @@ class GramAligner:
             S = target_W @ H @ pinv(source_W)
 
         This is mathematically guaranteed because:
-        1. H achieves CKA=1.0 for hidden states (verified)
+        1. H is the closed-form linear alignment on the shared manifold
         2. Linear projections preserve relationships under correct transform
         3. The stitch S exactly maps source projection geometry to target
 
@@ -525,7 +525,7 @@ class GramAligner:
         ----------
         hidden_transform : Array
             The hidden alignment transform H [d_source_hidden, d_target_hidden].
-            Must have achieved CKA=1.0 for hidden states.
+            Derived from linear alignment of hidden states.
         source_weight : Array
             Source projection weight [d_proj, d_source_hidden] (e.g., q_proj).
         target_weight : Array
@@ -534,8 +534,9 @@ class GramAligner:
         Returns
         -------
         Array
-            The compositional stitch S [d_source_proj, d_target_proj] that
+            The compositional stitch S [d_target_proj, d_source_proj] that
             transforms source projections to target geometry.
+            Usage: aligned_proj = S @ source_proj maps [batch, source_proj] → [batch, target_proj].
         """
         b = self._backend
 

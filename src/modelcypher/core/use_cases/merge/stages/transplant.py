@@ -57,7 +57,7 @@ def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
     Uses native b.pinv() which computes the exact pseudo-inverse via SVD.
     Includes fallback for numerical stability when SVD fails.
     
-    CKA=1.0 requires exact pseudo-inverse. If SVD fails due to numerical
+    Linear alignment on the shared manifold requires exact pseudo-inverse. If SVD fails due to numerical
     issues, we fall back to a regularized pseudo-inverse to maintain stability.
     """
     b = backend
@@ -433,10 +433,10 @@ def stage_transplant(
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
-    CKA = 1.0 is an invariant - all layers achieve perfect alignment.
-    Layer status is vestigial: all layers should be "converged".
+    Linear alignment is closed-form on the shared manifold.
+    Layer status is vestigial: all layers are processed.
     "boundary_preserved" and "skipped" are retained for API compatibility
-    but should never occur (CKA < 1.0 indicates an alignment bug).
+    but should rarely occur; deviations reflect overlap/coverage, not a hard failure.
 
     Args:
         delta_scale: Scale factor for projected deltas (0.0-1.0). Use < 1.0 for
@@ -496,13 +496,13 @@ def stage_transplant(
         metrics["transplant_skipped"] = "probe_metadata_mismatch"
         return TransplantStageResult(merged_weights=merged, metrics=metrics)
 
-    # CKA=1.0 INVARIANT: Null-space projection handles selectivity
+    # Null-space projection handles selectivity for aligned sources.
     # When graft_mask is None, graft all probes - the projection into null-space
     # ensures we only add to directions target doesn't use.
     core_probe_ids = set(probe_ids)
     if graft_mask is None:
         logger.info(
-            "TRANSPLANT: CKA=1.0 mode - %d probes, null-space projection handles selectivity",
+            "TRANSPLANT: Full-probe mode - %d probes, null-space projection handles selectivity",
             len(core_probe_ids)
         )
     else:
@@ -548,7 +548,7 @@ def stage_transplant(
 
     # ==========================================================================
     # 2D EMBEDDING ALIGNMENT: Apply GramAlign to embed_tokens
-    # Same CKA=1.0, same geodesic math - applied at embedding dimension
+    # Same closed-form alignment; geodesic CKA is diagnostic.
     # ==========================================================================
     
     # First, detect cross-vocabulary merge by checking vocab sizes
@@ -591,7 +591,7 @@ def stage_transplant(
         )
         logger.info(
             "CROSS-VOCAB MERGE: Target keeps its 1D↔2D interface. "
-            "Hidden manifold enriched via CKA=1.0 transplant."
+            "Hidden manifold enriched via aligned transplant."
         )
         # embed_tokens stays exactly as target - not modified
         metrics["cross_vocab_merge"] = True
@@ -607,7 +607,7 @@ def stage_transplant(
         # This aligns embedding geometry while preserving token order
         # =================================================================
         logger.info(
-            "SAME-VOCAB MERGE: Applying GramAlign to embed_tokens (same CKA=1.0)"
+            "SAME-VOCAB MERGE: Applying GramAlign to embed_tokens (linear alignment)"
         )
         
         # embedding_transform is already a GPU array from GramAligner
@@ -650,7 +650,7 @@ def stage_transplant(
         logger.info("EMBEDDING ALIGNMENT: No embedding_transform provided, using target embeddings")
 
     # ==========================================================================
-    # PER-LAYER ALIGNMENT: Use transforms from probe stage (CKA=1.0 verified)
+    # PER-LAYER ALIGNMENT: Use transforms from probe stage (linear alignment on shared manifold)
     # ==========================================================================
     # RIGOROUS GEOMETRY: No fallbacks. If probe stage didn't compute a transform,
     # that layer will not have stitches. The per-weight logic handles this by
@@ -826,24 +826,21 @@ def stage_transplant(
             continue
 
         # =======================================================================
-        # LAYER STATUS CHECK (Vestigial - CKA = 1.0 is invariant)
+        # LAYER STATUS CHECK (Vestigial - diagnostic only)
         # =======================================================================
-        # CKA = 1.0 is always achievable. "skipped" and "boundary_preserved" are
-        # retained for API compatibility but should NEVER occur. If they do,
-        # it indicates an alignment bug that needs investigation.
+        # "skipped" and "boundary_preserved" are retained for API compatibility.
+        # If they appear, log diagnostics and proceed with the layer.
         if layer_status:
             status = layer_status.get(layer_idx, "converged")
             if status == "skipped":
-                # This should NEVER happen - CKA < 0.5 is an alignment bug
-                logger.error(
-                    "TRANSPLANT: Layer %d marked 'skipped' - ALIGNMENT BUG, investigate!",
+                logger.warning(
+                    "TRANSPLANT: Layer %d marked 'skipped' by diagnostics; proceeding.",
                     layer_idx
                 )
                 # Still process the layer - don't give up
             elif status == "boundary_preserved":
-                # This should NEVER happen - CKA < 1.0 is an alignment bug
-                logger.error(
-                    "TRANSPLANT: Layer %d marked 'boundary_preserved' - ALIGNMENT BUG, investigate!",
+                logger.warning(
+                    "TRANSPLANT: Layer %d marked 'boundary_preserved' by diagnostics; proceeding.",
                     layer_idx
                 )
                 # Still process the layer - don't give up
@@ -934,13 +931,13 @@ def stage_transplant(
         # intermediate space has different semantic structure. ALWAYS use proportional mapping
         # for intermediate activations to ensure we compare semantically similar layers.
         # =================================================================
-        # GRAM ALIGNMENT: Find EXACT CKA = 1.0 transforms for hidden AND intermediate
+        # GRAM ALIGNMENT: Closed-form linear transforms for hidden AND intermediate
         # =================================================================
-        # GramAligner finds the mathematically guaranteed transformation that achieves
-        # CKA = 1.0. This is not an approximation - it's the exact solution.
+        # GramAligner finds the closed-form linear transform on the shared manifold.
+        # This is an exact solution for the overlap; geodesic CKA is diagnostic.
         #
         # The feature_transform maps source activations to target space such that
-        # their Gram matrices (relational geometry) are IDENTICAL.
+        # their Gram matrices (relational geometry) match on the shared manifold.
         #
         # MLP weights have shape [intermediate, hidden] or [hidden, intermediate].
         # We need transforms for BOTH axes to properly map weights.
@@ -949,7 +946,7 @@ def stage_transplant(
 
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
-        # USE PER-LAYER ALIGNED hidden stitch (from probe stage with CKA=1.0)
+        # USE PER-LAYER ALIGNED hidden stitch (from probe stage with linear alignment)
         # Each layer gets its own transform - different layers encode different
         # parts of the geometry at different resolutions.
         hidden_stitch_output = None
@@ -975,7 +972,7 @@ def stage_transplant(
             pass  # hidden_stitch_output/input stay None - will skip stitching
 
         # =================================================================
-        # USE PER-LAYER INTERMEDIATE stitch (from probe stage with CKA=1.0)
+        # USE PER-LAYER INTERMEDIATE stitch (from probe stage with linear alignment)
         # =================================================================
         # OPTIMIZATION: Use pre-computed transforms from probe stage instead of
         # running GramAligner per-layer. This saves ~50k optimization steps per layer.
@@ -984,16 +981,18 @@ def stage_transplant(
             if src_stitches_dict:
                 first_src = next(iter(src_stitches_dict))
                 intermediate_stitch_output, intermediate_stitch_input = src_stitches_dict[first_src]
-            if layer_num == 0:
+            if layer_num == 0 or intermediate_stitch_output is not None:
                 stitch_shape = intermediate_stitch_output.shape if intermediate_stitch_output is not None else "N/A"
+                # Diagnostic: log the intermediate stitch dimensions for debugging dimension swaps
                 logger.info(
-                    "Layer %d: Using per-layer intermediate stitch (shape=%s)",
+                    "TRANSPLANT INTER: Layer %d: intermediate_stitch_output shape=%s "
+                    "(shape[0]=tgt_inter, shape[1]=src_inter)",
                     layer_idx, stitch_shape
                 )
             metrics.setdefault("intermediate_cached_stitches", 0)
             metrics["intermediate_cached_stitches"] += 1
 
-        # USE PER-LAYER ATTENTION stitch (from probe stage with CKA=1.0)
+        # USE PER-LAYER ATTENTION stitch (from probe stage with linear alignment)
         if layer_idx in layer_attention_stitches:
             # layer_attention_stitches[layer_idx] is a dict {src_layer: (P, Q)}
             src_stitches_dict = layer_attention_stitches[layer_idx]
@@ -1007,7 +1006,7 @@ def stage_transplant(
                     layer_idx, stitch_shape
                 )
 
-        # USE PER-LAYER K stitch for k_proj (from probe stage with CKA=1.0)
+        # USE PER-LAYER K stitch for k_proj (from probe stage with linear alignment)
         if layer_idx in layer_k_stitches:
             # layer_k_stitches[layer_idx] is a dict {src_layer: (P, Q)}
             src_stitches_dict = layer_k_stitches[layer_idx]
@@ -1021,7 +1020,7 @@ def stage_transplant(
                     layer_idx, stitch_shape
                 )
 
-        # USE PER-LAYER V stitch for v_proj (from probe stage with CKA=1.0)
+        # USE PER-LAYER V stitch for v_proj (from probe stage with linear alignment)
         if layer_idx in layer_v_stitches:
             # layer_v_stitches[layer_idx] is a dict {src_layer: (P, Q)}
             src_stitches_dict = layer_v_stitches[layer_idx]
@@ -1486,7 +1485,7 @@ def stage_transplant(
                             else:
                                 # COMPOSITIONAL FALLBACK: Compute stitch from hidden + weights
                                 # This is mathematically guaranteed because:
-                                # 1. Hidden alignment achieves CKA=1.0 (verified)
+                                # 1. Hidden alignment uses closed-form linear transform
                                 # 2. Attention projections are linear functions of hidden
                                 # 3. Compositional stitch derives the correct transform
                                 target_w = target_weights.get(key)
@@ -1643,7 +1642,7 @@ def stage_transplant(
                     elif is_attention and attention_stitch_output is None:
                         # No attention stitch available - use COMPOSITIONAL STITCH from hidden transform
                         # This is mathematically guaranteed because:
-                        # 1. Hidden alignment achieves CKA=1.0 (verified by barometer)
+                        # 1. Hidden alignment uses closed-form linear transform
                         # 2. Attention projections are linear functions of hidden
                         # 3. Compositional stitch derives the correct transform
                         # OPTIMIZATION: Use cached dimensions

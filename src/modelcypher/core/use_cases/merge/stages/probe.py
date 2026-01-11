@@ -415,19 +415,19 @@ class ProbeResult:
     source_v_activations: dict[int, list[Any]] | None = None
     target_v_activations: dict[int, list[Any]] | None = None
     # Embedding-space activations: shape [hidden_dim] per sample (post-embed_tokens, pre-layer-0)
-    # Used for GramAlign at 2D interface - same CKA=1.0, same geodesic math
+    # Used for GramAlign at 2D interface - closed-form alignment + geodesic diagnostics
     source_embedding_activations: list[Any] | None = None
     target_embedding_activations: list[Any] | None = None
     probe_ids: list[str] | None = None
     probe_domains: list[str] | None = None
     # Layer alignment transforms: source_acts @ transforms[layer] -> aligned_source
-    # These transforms achieve CKA = 1.0 for each aligned layer pair
+    # Closed-form linear alignment on the shared manifold; geodesic CKA is diagnostic
     # Hidden-space transforms: for hidden dimension (e.g., 960 -> 896)
     feature_transforms: dict[int, list[list[float]]] | None = None
     # EXACT SCALE FACTOR per layer: ||target|| / ||source @ F||
     # Apply to stitched weights for exact magnitude match
     scale_ratios: dict[int, float] | None = None
-    # Embedding-space transform: for embed_tokens alignment (same CKA=1.0, same geodesic math)
+    # Embedding-space transform: for embed_tokens alignment (linear alignment + geodesic diagnostics)
     embedding_transform: list[list[float]] | None = None
     # Attention Q-space transforms: for q_proj/o_proj (e.g., 960 -> 896 for Q heads)
     attention_transforms: dict[int, list[list[float]]] | None = None
@@ -1058,7 +1058,7 @@ def _probe_precise(
                     )
     
                 # ===== EMBEDDING ACTIVATIONS (2D GramAlign) =====
-                # Same CKA=1.0, same geodesic math - applied at embedding dimension
+                # Same closed-form alignment; geodesic CKA is diagnostic
                 has_embedding = hasattr(activation_provider, "collect_embedding_activations")
                 if has_embedding:
                     for text in batch_texts:
@@ -1592,7 +1592,7 @@ def _probe_precise(
             intersection_map_obj = None
 
     # Align layers by proportional depth, then solve closed-form alignment per pair.
-    # CKA = 1.0 is invariant; we do not use CKA as a selector.
+    # CKA is diagnostic; we do not use it as a selector.
     layer_mapping: dict[int, int] = {}  # target_layer -> source_layer
     feature_transforms: dict[int, Any] = {}  # target_layer -> {src_layer: GPU array}
     scale_ratios: dict[int, float] = {}  # EXACT scale factor per layer: ||target|| / ||source @ F||
@@ -1616,7 +1616,7 @@ def _probe_precise(
 
         if n_source > 0 and n_target > 0:
             # =========================================================================
-            # PROPORTIONAL DEPTH MAPPING (CKA is invariant, not a selector)
+            # PROPORTIONAL DEPTH MAPPING (CKA is diagnostic, not a selector)
             # =========================================================================
             # Map layers by normalized depth and solve alignment per pair.
             # No CKA matrix, no Hungarian, no selection heuristics.
@@ -1649,8 +1649,9 @@ def _probe_precise(
                     "tgt_layer": tgt_layer,
                     "src_layers": src_layers_list,
                     "raw_cka": 0.0,
-                    "achieved_cka": 1.0,  # CKA = 1.0 is invariant
-                    "numerical_deviation": 0.0,  # For precision diagnostics
+                    "achieved_cka": 0.0,  # Linear CKA on shared manifold (set after alignment)
+                    "geodesic_cka": 0.0,
+                    "numerical_deviation": 0.0,  # Linear CKA deviation for diagnostics
                     "feature_transform": None,
                     "attention_transform": None,
                     "k_transform": None,
@@ -1705,7 +1706,10 @@ def _probe_precise(
                     
                     b.eval(src_combined, tgt_stacked)
                     
-                    from modelcypher.core.domain.geometry.cka import compute_cka_backend
+                    from modelcypher.core.domain.geometry.cka import (
+                        compute_cka_backend,
+                        compute_linear_cka,
+                    )
                     result["raw_cka"] = float(compute_cka_backend(src_combined, tgt_stacked, b))
 
                     alignment_result = local_aligner.find_perfect_alignment(
@@ -1713,34 +1717,35 @@ def _probe_precise(
                         tgt_stacked,
                         F_init=F_init,  # Zipper warm-start from neighbor
                     )
-                    # Alignment runs until CKA=1.0 within machine epsilon - no retry needed
+                    # Alignment is closed-form; no retry needed.
                     
-                    result["achieved_cka"] = alignment_result.achieved_cka  # Always 1.0 (invariant)
-                    result["numerical_deviation"] = alignment_result.numerical_deviation
+                    F_arr = alignment_result.feature_transform  # Already GPU array
+                    aligned = b.matmul(src_combined, F_arr)
+                    b.eval(aligned)
+                    linear_cka = float(compute_linear_cka(aligned, tgt_stacked, backend=b))
+                    linear_deviation = abs(1.0 - linear_cka)
+                    result["achieved_cka"] = linear_cka
+                    result["numerical_deviation"] = linear_deviation
+                    result["geodesic_cka"] = alignment_result.achieved_cka
                     result["linear_iterations"] = alignment_result.linear_iterations
                     cgls_iterations_by_layer[tgt_layer] = alignment_result.linear_iterations
                     logger.info(
-                        "ALIGNMENT: Layer %d <- %s: CGLS iters=%d",
+                        "ALIGNMENT: Layer %d <- %s: solver iters=%d",
                         tgt_layer,
                         src_layers_list,
                         alignment_result.linear_iterations,
                     )
 
-                    F_arr = alignment_result.feature_transform  # Already GPU array
-
                     # One-time geodesic RBF vs linear CKA consistency check (4D+).
                     if not rbf_consistency_checked:
                         from modelcypher.core.domain.geometry.cka import compute_cka
 
-                        aligned = b.matmul(src_combined, F_arr)
-                        b.eval(aligned)
+                        # aligned already computed for linear CKA above
                         rbf_result = compute_cka(aligned, tgt_stacked, backend=b)
                         rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
 
                         precision = sqrt_scalar(machine_epsilon(b, aligned), b)
                         rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
-                        linear_deviation = alignment_result.numerical_deviation
-                        linear_cka = 1.0 - linear_deviation
                         agreement_deviation = abs(rbf_val - linear_cka) if rbf_val == rbf_val else float("inf")
 
                         rbf_consistency_hidden = {
@@ -1751,18 +1756,23 @@ def _probe_precise(
                             "precision_threshold": float(precision),
                             "layer": float(tgt_layer),
                         }
-                        if rbf_deviation > precision:
+                        if linear_deviation > precision:
                             logger.error(
-                                "PROBE: RBF CKA deviation %.2e > precision %.2e for layer %d "
-                                "(linear deviation %.2e) - precision bug.",
+                                "PROBE: Linear CKA deviation %.2e > precision %.2e for layer %d.",
+                                linear_deviation,
+                                precision,
+                                tgt_layer,
+                            )
+                        if rbf_deviation > precision:
+                            logger.info(
+                                "PROBE: Geodesic CKA deviation %.2e > precision %.2e for layer %d.",
                                 rbf_deviation,
                                 precision,
                                 tgt_layer,
-                                linear_deviation,
                             )
                         if agreement_deviation > precision:
-                            logger.error(
-                                "PROBE: RBF vs linear CKA mismatch %.2e > precision %.2e for layer %d.",
+                            logger.info(
+                                "PROBE: Geodesic vs linear CKA deviation %.2e > precision %.2e for layer %d.",
                                 agreement_deviation,
                                 precision,
                                 tgt_layer,
@@ -1787,12 +1797,14 @@ def _probe_precise(
                     # Apply this to stitched weights for exact magnitude match
                     result["scale_ratio"] = alignment_result.scale_ratio
 
-                    # CKA = 1.0 is invariant. Check numerical precision instead.
-                    if not alignment_result.is_numerically_exact:
+                    # Linear CKA should be near 1.0 on the shared manifold. Check precision.
+                    if linear_deviation > precision:
                         logger.warning(
-                            "PROBE: Layer %s -> %d has numerical precision issue (deviation=%.2e). "
-                            "CKA = 1.0 by construction; this is a precision bug, not model incompatibility.",
-                            src_layers_list, tgt_layer, alignment_result.numerical_deviation
+                            "PROBE: Layer %s -> %d linear CKA deviation=%.2e > precision %.2e.",
+                            src_layers_list,
+                            tgt_layer,
+                            linear_deviation,
+                            precision,
                         )
                     
                     # =====================================================================
@@ -1802,65 +1814,62 @@ def _probe_precise(
                     # compositionally from hidden alignment in transplant.
 
                     # =====================================================================
-                    # INTERMEDIATE MLP ALIGNMENT (compositional from hidden + weights)
+                    # INTERMEDIATE MLP ALIGNMENT (direct from activations)
                     # =====================================================================
-                    target_mlp_key = target_mlp_proj_keys.get(tgt_layer)
-                    if target_mlp_key is not None:
-                        target_w = target_weights.get(target_mlp_key)
-                        if (
-                            target_w is not None
-                            and hasattr(target_w, "shape")
-                            and len(target_w.shape) == 2
-                        ):
-                            target_w = b.astype(b.array(target_w), "float32")
-                            b.eval(target_w)
-                            split_inter_transforms = {}
-                            for s_layer in src_layers_list:
-                                source_mlp_key = source_mlp_proj_keys.get(s_layer)
-                                if source_mlp_key is None:
-                                    continue
-                                source_w = source_weights.get(source_mlp_key)
-                                if (
-                                    source_w is None
-                                    or not hasattr(source_w, "shape")
-                                    or len(source_w.shape) != 2
-                                ):
-                                    continue
-                                H = split_transforms.get(s_layer)
-                                if H is None:
-                                    continue
-                                h_src, h_tgt = b.shape(H)
-                                if h_src != int(source_w.shape[1]) or h_tgt != int(target_w.shape[1]):
-                                    logger.debug(
-                                        "PROBE: Intermediate stitch skipped for %s -> %d (hidden mismatch)",
-                                        s_layer,
-                                        tgt_layer,
-                                    )
-                                    continue
-                                source_w = b.astype(b.array(source_w), "float32")
-                                b.eval(source_w, H)
-                                try:
-                                    I_arr = local_aligner.compositional_stitch(
-                                        hidden_transform=H,
-                                        source_weight=source_w,
-                                        target_weight=target_w,
-                                    )
-                                    split_inter_transforms[s_layer] = I_arr  # Keep as GPU array
-                                except Exception as inter_err:
-                                    logger.debug(
-                                        "PROBE: Intermediate compositional stitch failed for %s -> %d: %s",
-                                        s_layer,
-                                        tgt_layer,
-                                        inter_err,
-                                    )
-                            if split_inter_transforms:
-                                result["intermediate_transform"] = split_inter_transforms
-                                logger.debug(
-                                    "PROBE: Intermediate compositional stitch for %s -> %d (key=%s)",
-                                    src_layers_list,
-                                    tgt_layer,
-                                    target_mlp_key,
-                                )
+                    # Same closed-form as hidden: I = pinv(source_inter) @ target_inter
+                    # No compositional derivation needed - just measure and align.
+                    split_inter_transforms = {}
+                    for s_layer in src_layers_list:
+                        # Get intermediate activations for source and target layers
+                        src_inter_acts = source_intermediate_activations.get(s_layer)
+                        tgt_inter_acts = target_intermediate_activations.get(tgt_layer)
+
+                        if src_inter_acts is None or tgt_inter_acts is None:
+                            logger.debug(
+                                "PROBE INTER: No intermediate activations for %s -> %d",
+                                s_layer, tgt_layer
+                            )
+                            continue
+
+                        # Stack activations if needed (same format as hidden)
+                        if hasattr(src_inter_acts, 'shape') and len(b.shape(src_inter_acts)) == 2:
+                            src_inter_stacked = src_inter_acts
+                        else:
+                            src_inter_stacked = b.stack(list(src_inter_acts), axis=0)
+
+                        if hasattr(tgt_inter_acts, 'shape') and len(b.shape(tgt_inter_acts)) == 2:
+                            tgt_inter_stacked = tgt_inter_acts
+                        else:
+                            tgt_inter_stacked = b.stack(list(tgt_inter_acts), axis=0)
+
+                        src_inter_stacked = b.astype(src_inter_stacked, "float32")
+                        tgt_inter_stacked = b.astype(tgt_inter_stacked, "float32")
+                        b.eval(src_inter_stacked, tgt_inter_stacked)
+
+                        try:
+                            # Direct alignment: I = pinv(source_inter) @ target_inter
+                            inter_result = local_aligner.find_perfect_alignment(
+                                src_inter_stacked, tgt_inter_stacked
+                            )
+                            I_arr = inter_result.feature_transform
+                            split_inter_transforms[s_layer] = I_arr
+
+                            src_inter_dim = int(b.shape(src_inter_stacked)[1])
+                            tgt_inter_dim = int(b.shape(tgt_inter_stacked)[1])
+                            logger.info(
+                                "PROBE INTER DIRECT: %s -> %d: I=[%d, %d] (src_inter=%d, tgt_inter=%d)",
+                                s_layer, tgt_layer,
+                                int(b.shape(I_arr)[0]), int(b.shape(I_arr)[1]),
+                                src_inter_dim, tgt_inter_dim
+                            )
+                        except Exception as inter_err:
+                            logger.warning(
+                                "PROBE INTER: Direct alignment failed for %s -> %d: %s",
+                                s_layer, tgt_layer, inter_err
+                            )
+
+                    if split_inter_transforms:
+                        result["intermediate_transform"] = split_inter_transforms
 
                 except Exception as e:
                     raise RuntimeError(
@@ -1887,7 +1896,7 @@ def _probe_precise(
             # 1. Find nearest successfully aligned neighbor (by layer index)
             # 2. Use its F and R for warm-start and rotation hint
             # This is the "zipper" concept: easy layers align first, their geometry
-            # accelerates convergence for difficult neighbors.
+            # accelerates alignment for difficult neighbors.
             
             successful_alignments: dict[int, dict] = {}  # tgt_layer -> {F}
             
@@ -1930,8 +1939,7 @@ def _probe_precise(
                 if "scale_ratio" in result:
                     scale_ratios[tgt_layer] = result["scale_ratio"]
 
-                # Store alignment data for zipper warm-start of future layers
-                # CKA = 1.0 is invariant - all alignments achieve it, so store all of them
+                # Store alignment data for zipper warm-start of future layers.
                 if result.get("F_arr_raw") is not None:
                     successful_alignments[tgt_layer] = {
                         "F": result["F_arr_raw"],
@@ -1941,7 +1949,7 @@ def _probe_precise(
                 # Progress logging
                 completed += 1
                 logger.info(
-                    "PROBE ALIGNMENT: Layer %d/%d complete (tgt=%d, CKA=%.4f, raw_CKA=%.4f)",
+                    "PROBE ALIGNMENT: Layer %d/%d complete (tgt=%d, linear_CKA=%.4f, raw_CKA=%.4f)",
                     completed, len(alignment_tasks_sorted), tgt_layer,
                     result["achieved_cka"], result["raw_cka"]
                 )
@@ -2021,8 +2029,8 @@ def _probe_precise(
             weight_correlations[key] = 0.0
 
     cka_vals = list(layer_cka_scores.values())
-    # CKA = 1.0 is an invariant, not a target. Filter only NaN (alignment bugs).
-    # Low CKA means the alignment algorithm failed, not the layer - log and investigate.
+    # Linear CKA is diagnostic, not a gate. Filter only NaN (alignment bugs).
+    # Low linear CKA usually means limited overlap or probe coverage.
     valid_cka_vals = [v for v in cka_vals if v == v]  # NaN check only
     nan_count = len(cka_vals) - len(valid_cka_vals)
     if nan_count > 0:
@@ -2041,10 +2049,11 @@ def _probe_precise(
     # missing_cka_layers is for reporting - it doesn't block exact alignment
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
     # =========================================================================
-    # CKA = 1.0 IS AN INVARIANT, NOT A TARGET
+    # LINEAR CKA DIAGNOSTIC (STRICT OVERLAP CHECK)
     # =========================================================================
-    # Experiments verified: CKA = 1.000000 is always achievable across all model
-    # pairs and all layers. Any deviation indicates an alignment algorithm bug.
+    # perfect_alignment is a strict diagnostic: it only holds when every layer's
+    # linear CKA is within precision. This is not required for merging and can
+    # be false when models contain novel structure outside the shared manifold.
     # Use sqrt(machine_epsilon) as the tolerance (matches GramAligner convention).
     precision_threshold = sqrt_scalar(
         machine_epsilon(b, b.array([1.0], dtype="float32")),
@@ -2059,7 +2068,7 @@ def _probe_precise(
     # during pre-training. We must FIRST align, THEN measure shared vs novel.
     #
     # Compute CKA separately for:
-    # - SHARED: concepts both models respond to (CKA should be ~1.0 after alignment)
+    # - SHARED: concepts both models respond to (CKA should be high after alignment)
     # - NOVEL: concepts only source responds to (new knowledge being added)
     split_cka_result = None
     if source_layer_activations and target_layer_activations and feature_transforms:
@@ -2111,11 +2120,18 @@ def _probe_precise(
                     logger.warning("SPLIT CKA failed: %s", e)
 
     # =========================================================================
-    # LAYER CLASSIFICATION: ALL LAYERS CONVERGE
+    # LAYER CLASSIFICATION: ALL LAYERS PROCESSED
     # =========================================================================
-    # CKA=1.0 is the ONLY acceptable outcome. If CKA < 1.0, the alignment
-    # algorithm has a bug - fix the algorithm, not the threshold.
-    # "boundary_preserved" and "skipped" are vestigial - should never be used.
+    # Linear CKA measures STRUCTURAL OVERLAP between source and target spaces.
+    #
+    # CKA ≈ 1.0: Source fully covers target's representational space (shared manifold)
+    # CKA < 1.0: Target has structure outside source's column space (EXPECTED
+    #            for cross-dimensional alignment, e.g., 896 → 1024 hidden dims)
+    #
+    # This is NOT an alignment bug - it's measuring how much of target's
+    # geometry is captured by source. The null-space projection handles this
+    # correctly: it preserves target's unique structure while adding source's.
+    # =========================================================================
     layer_status: dict[int, str] = {}
     converged_layers: list[int] = []
     boundary_preserved_layers: list[int] = []  # VESTIGIAL: should always be empty
@@ -2132,18 +2148,19 @@ def _probe_precise(
             layer_status[layer_idx] = "converged"
             converged_layers.append(layer_idx)
         else:
-            # CKA < 1.0 is an ALIGNMENT BUG, not a layer property
-            # Mark as converged but log error for investigation
-            logger.error(
-                "LAYER %d achieved CKA=%.6f < 1.0 - ALIGNMENT BUG, investigate!",
-                layer_idx, cka
+            # CKA < 1.0 means target has structure outside source's column space.
+            # This is EXPECTED for cross-dimensional alignment (different hidden dims).
+            # Not a bug - the null-space projection handles this correctly.
+            logger.info(
+                "LAYER %d: structural overlap CKA=%.4f (target has %.1f%% unique structure)",
+                layer_idx, cka, (1.0 - cka) * 100
             )
             layer_status[layer_idx] = "converged"  # Still process the layer
             converged_layers.append(layer_idx)
 
     # Log classification summary
     logger.info(
-        "PROBE CLASSIFICATION: %d converged (all layers)",
+        "PROBE CLASSIFICATION: %d processed (all layers)",
         len(converged_layers)
     )
 
@@ -2199,10 +2216,10 @@ def _probe_precise(
     if rbf_consistency_hidden is not None:
         metrics["hidden_rbf_consistency"] = rbf_consistency_hidden
 
-    # mean_cka = POST-ALIGNMENT quality (should be 1.0 when aligned correctly)
-    # raw_cka_mean = PRE-ALIGNMENT CKA from actual activations (geometric invariant)
+    # mean_cka = Post-alignment linear overlap (shared-manifold coverage)
+    # raw_cka_mean = Pre-alignment linear CKA from actual activations
     logger.info(
-        "PROBE PRECISE: %d layers, post_cka=%.4f, raw_cka=%.4f",
+        "PROBE PRECISE: %d layers, post_linear_cka=%.4f, raw_linear_cka=%.4f",
         len(layer_confidences),
         mean_cka,
         metrics["raw_cka_mean"],
@@ -2259,7 +2276,7 @@ def _probe_precise(
 
     # =========================================================================
     # EMBEDDING GRAMALIGN (2D layer)
-    # Same CKA=1.0, same geodesic math - applied at embedding dimension
+    # Same closed-form alignment; geodesic CKA is diagnostic.
     # =========================================================================
     embedding_transform: list[list[float]] | None = None
     if source_embedding_activations is not None and target_embedding_activations is not None:
@@ -2281,7 +2298,7 @@ def _probe_precise(
         )
         if n_samples >= 2:
             logger.info(
-                "EMBEDDING GRAMALIGN: Computing 2D alignment with %d samples (same CKA=1.0, same geodesic math)",
+                "EMBEDDING GRAMALIGN: Computing 2D alignment with %d samples (linear alignment + geodesic diagnostics)",
                 n_samples,
             )
             try:
@@ -2291,26 +2308,33 @@ def _probe_precise(
                 tgt_stacked = b.astype(tgt_stacked, "float32")
                 b.eval(src_stacked, tgt_stacked)
 
-                # Use same GramAligner as hidden layers - CKA = 1.0 is invariant
+                # Use same GramAligner as hidden layers; linear CKA is diagnostic.
                 emb_result = gram_aligner.find_perfect_alignment(src_stacked, tgt_stacked)
                 emb_F = emb_result.feature_transform  # Already GPU array
                 embedding_transform = emb_F  # Keep as GPU array
-                metrics["embedding_cka"] = emb_result.achieved_cka  # Always 1.0 (invariant)
-                metrics["embedding_numerical_deviation"] = emb_result.numerical_deviation
+
+                from modelcypher.core.domain.geometry.cka import compute_linear_cka
+                emb_aligned = b.matmul(src_stacked, emb_F)
+                b.eval(emb_aligned)
+                emb_linear_cka = float(compute_linear_cka(emb_aligned, tgt_stacked, backend=b))
+                emb_linear_deviation = abs(1.0 - emb_linear_cka)
+
+                metrics["embedding_cka"] = emb_linear_cka
+                metrics["embedding_geodesic_cka"] = emb_result.achieved_cka
+                metrics["embedding_numerical_deviation"] = emb_linear_deviation
 
                 # One-time geodesic RBF vs linear CKA consistency check (2D).
                 try:
                     from modelcypher.core.domain.geometry.cka import compute_cka
 
-                    emb_aligned = b.matmul(src_stacked, emb_F)
-                    b.eval(emb_aligned)
+                    # emb_aligned already computed for linear CKA above
                     rbf_result = compute_cka(emb_aligned, tgt_stacked, backend=b)
                     rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
 
                     precision = sqrt_scalar(machine_epsilon(b, emb_aligned), b)
                     rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
-                    linear_deviation = emb_result.numerical_deviation
-                    linear_cka = 1.0 - linear_deviation
+                    linear_cka = emb_linear_cka
+                    linear_deviation = emb_linear_deviation
                     agreement_deviation = abs(rbf_val - linear_cka) if rbf_val == rbf_val else float("inf")
 
                     metrics["embedding_rbf_consistency"] = {
@@ -2320,17 +2344,21 @@ def _probe_precise(
                         "agreement_deviation": float(agreement_deviation),
                         "precision_threshold": float(precision),
                     }
-                    if rbf_deviation > precision:
+                    if linear_deviation > precision:
                         logger.error(
-                            "EMBEDDING GRAMALIGN: RBF CKA deviation %.2e > precision %.2e "
-                            "(linear deviation %.2e) - precision bug.",
+                            "EMBEDDING GRAMALIGN: Linear CKA deviation %.2e > precision %.2e.",
+                            linear_deviation,
+                            precision,
+                        )
+                    if rbf_deviation > precision:
+                        logger.info(
+                            "EMBEDDING GRAMALIGN: Geodesic CKA deviation %.2e > precision %.2e.",
                             rbf_deviation,
                             precision,
-                            linear_deviation,
                         )
                     if agreement_deviation > precision:
-                        logger.error(
-                            "EMBEDDING GRAMALIGN: RBF vs linear CKA mismatch %.2e > precision %.2e.",
+                        logger.info(
+                            "EMBEDDING GRAMALIGN: Geodesic vs linear CKA deviation %.2e > precision %.2e.",
                             agreement_deviation,
                             precision,
                         )
@@ -2340,18 +2368,12 @@ def _probe_precise(
                         consistency_err,
                     )
 
-                # CKA = 1.0 is invariant. Check numerical precision.
-                if emb_result.is_numerically_exact:
-                    logger.info(
-                        "EMBEDDING GRAMALIGN: CKA = 1.0 (invariant), precision deviation=%.2e",
-                        emb_result.numerical_deviation,
-                    )
-                else:
-                    # Numerical precision issue - this is a bug, not model incompatibility
-                    logger.error(
-                        "EMBEDDING GRAMALIGN: Numerical precision bug (deviation=%.2e). "
-                        "CKA = 1.0 by construction; investigate precision issue!",
-                        emb_result.numerical_deviation,
+                # Linear CKA is the diagnostic check for shared-manifold alignment.
+                if emb_linear_deviation > precision:
+                    logger.warning(
+                        "EMBEDDING GRAMALIGN: Linear CKA deviation %.2e > precision %.2e.",
+                        emb_linear_deviation,
+                        precision,
                     )
             except Exception as e:
                 logger.warning("EMBEDDING GRAMALIGN failed: %s", e)

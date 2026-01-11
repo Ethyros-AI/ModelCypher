@@ -715,10 +715,11 @@ class SplitCKAResult:
     - Coverage: which concepts they encode (shared vs. novel)
     - Density: how precisely concepts are locked in
 
-    For SHARED concepts (both models have), CKA should be 1.0 (invariant shape).
+    For SHARED concepts (both models have), CKA should be high after alignment
+    on the shared manifold (near 1.0).
     For NOVEL concepts (source has, target doesn't), CKA is undefined/low.
     """
-    # CKA on shared concepts only - should be ~1.0 for invariant shape
+    # CKA on shared concepts only - expected high after alignment
     shared_cka: float
     # CKA on novel concepts - expected to be low (target has no structure)
     novel_cka: float
@@ -748,7 +749,7 @@ def compute_cka_split(
     - SHARED: both models respond strongly (both have the concept)
     - NOVEL: source responds strongly, target doesn't (new to target)
 
-    For shared concepts, CKA should be 1.0 (invariant shape).
+    For shared concepts, CKA should be high after alignment (near 1.0).
     For novel concepts, CKA is expected to be low (target has no structure).
 
     The "response magnitude" per sample is the L2 norm of centered activations,

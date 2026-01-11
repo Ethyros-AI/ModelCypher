@@ -28,14 +28,14 @@ Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
 Key Principles:
 1. Null-space projection guarantees: A_boundary @ W' = A_boundary @ W_target
 2. Layer targeting enables surgical transplants
-3. Cross-dimensional projection via GramAligner achieves CKA=1.0
-4. Geodesic RKHS alignment subsumes discrete permutation alignment
+3. Cross-dimensional projection via GramAligner yields closed-form linear alignment
+4. Geometric alignment subsumes discrete permutation alignment
 
 References:
 - AlphaEdit (null-space): Fang et al. (2025) ICLR Outstanding Paper
 
 REMOVED (proven redundant):
-- PERMUTE: GramAligner's CKA=1.0 in geodesic RKHS subsumes discrete permutation alignment
+- PERMUTE: GramAligner alignment subsumes discrete permutation alignment
 - ROTATE/PROPAGATE: No boundary preservation guarantee
 
 Stage implementations are in merge/stages for modularity.
@@ -77,7 +77,7 @@ class UnifiedGeometricMerger:
 
     Pipeline: PROBE → DENSITY → TRANSPLANT
 
-    - PROBE (GramAlign): Computes CKA=1.0 transforms in geodesic RKHS.
+    - PROBE (GramAlign): Computes closed-form linear transforms; geodesic CKA is diagnostic.
       This continuous alignment subsumes discrete permutation alignment.
     - DENSITY: Identifies regions where source is denser than target.
     - TRANSPLANT: Null-space constrained projection preserves boundary behavior
@@ -260,12 +260,12 @@ class UnifiedGeometricMerger:
 
         Mathematical Foundation:
         -----------------------
-        CKA = 1.0 is an invariant (not a target). All models encode the same
-        geometric shape. The alignment transform F achieves CKA = 1.0 by
-        construction via F = pinv(source) @ target.
+        Linear alignment is closed-form on the shared manifold. The alignment
+        transform F is computed directly via F = pinv(source) @ target. Geodesic
+        CKA is reported as a diagnostic of overlap/coverage, not a target.
 
-        With fast_mode=True, we skip CKA precision checks since the closed-form
-        solution IS the answer. This provides significant speedup for batch ops.
+        With fast_mode=True, we skip CKA diagnostics since the closed-form
+        solution is already computed. This provides significant speedup for batch ops.
 
         Accumulative Merging:
         --------------------
@@ -301,8 +301,8 @@ class UnifiedGeometricMerger:
             If True (default), accumulate all sources into target's null-space.
             If False, merge sequentially (result = merge(merge(target, A), B)).
         fast_mode : bool
-            If True (default), skip CKA precision checks in GramAligner.
-            Safe because CKA = 1.0 is guaranteed by construction.
+            If True (default), skip CKA diagnostics in GramAligner.
+            Safe because alignment is closed-form.
         delta_scale : float
             Scale factor for knowledge injection (0.0-1.0). Use <1.0 for
             sequential stacking to stay within deviation budget (1% of weight norm).
@@ -503,11 +503,11 @@ class UnifiedGeometricMerger:
 
         Where:
         - H is doubly stochastic routing matrix [n_channels, n_channels]
-        - P_null projects into target's null-space (CKA = 1.0 preserved)
+        - P_null projects into target's null-space (shared-manifold geometry preserved)
         - δW_j is aligned delta from channel j
 
         Properties:
-        - CKA = 1.0 per channel (geometry preserved)
+        - Linear alignment per channel (shared-manifold geometry preserved)
         - Spectral norm ≤ 1.0 (stable combination)
         - No interference (channels add, not blend)
 

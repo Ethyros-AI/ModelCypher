@@ -202,11 +202,10 @@ def run_merge(
 
     if not perfect_alignment:
         # =====================================================================
-        # CKA = 1.0 IS INVARIANT - Imperfect alignment indicates a bug
+        # LINEAR CKA DIAGNOSTIC (NOT A GATE)
         # =====================================================================
-        # All layers should converge to CKA = 1.0. If not, the alignment
-        # algorithm has a bug that needs investigation. We proceed anyway
-        # to avoid blocking the merge, but log errors for debugging.
+        # Linear CKA < 1.0 typically reflects limited overlap or probe coverage.
+        # We proceed with the merge and log diagnostics for visibility.
         converged_count = probe_metrics.get("converged_count", 0)
         boundary_count = probe_metrics.get("boundary_preserved_count", 0)
         skipped_count = probe_metrics.get("skipped_count", 0)
@@ -214,17 +213,16 @@ def run_merge(
         mean_cka = probe_metrics.get("mean_cka", 0.0)
 
         if converged_count == 0:
-            # No converged layers at all - alignment algorithm is broken
             raise RuntimeError(
-                "PROBE: No layers achieved CKA = 1.0 (mean=%.6f, min=%.6f). "
-                "This indicates an alignment algorithm bug, not model incompatibility."
+                "PROBE: No aligned layers reported (mean=%.6f, min=%.6f). "
+                "Check probe activations and alignment inputs."
                 % (mean_cka, min_cka)
             )
-        
+
         # Proceed with selective transplant
         logger.warning(
-            "ADAPTIVE BAROMETER: %d converged, %d boundary-preserved, %d skipped. "
-            "Proceeding with selective transplant (mean_cka=%.4f).",
+            "ADAPTIVE BAROMETER: %d processed, %d boundary-preserved, %d skipped. "
+            "Proceeding with selective transplant (mean_linear_cka=%.4f).",
             converged_count, boundary_count, skipped_count, mean_cka
         )
 
@@ -403,7 +401,7 @@ def run_merge(
     default_backend.clear_cache()
     logger.info("Cleared unused activations - keeping only target_activations for transplant")
 
-    # PERMUTE STAGE REMOVED: GramAligner's CKA=1.0 alignment in geodesic RKHS
+    # PERMUTE STAGE REMOVED: GramAligner alignment subsumes permutation
     # subsumes discrete permutation alignment. Permutation matrices are a special
     # case of continuous linear transforms already optimized by the probe stage.
     permute_metrics = {"skipped": True, "reason": "subsumed_by_gram_alignment"}
