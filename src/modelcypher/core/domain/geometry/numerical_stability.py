@@ -747,26 +747,114 @@ def safe_inverse(
 # =============================================================================
 
 
+def newton_schulz_inverse(
+    backend: "Backend",
+    A: "Array",
+    max_iter: int = 15,
+    tol: float | None = None,
+) -> "Array":
+    """Pure matmul matrix inverse via Newton-Schulz iteration.
+
+    Solves: X = A^{-1} using only matmuls (guaranteed GPU).
+
+    Algorithm: X_{k+1} = X_k @ (2I - A @ X_k)
+    Converges quadratically when ||I - X_0 @ A|| < 1.
+
+    For SPD matrices (like Gram matrices), we use:
+        X_0 = I / trace(A)  (scales by average eigenvalue)
+
+    This is the GPU-friendly alternative to solve/cholesky which fall back to CPU.
+    """
+    b = backend
+
+    A = b.astype(A, "float32")
+    b.eval(A)
+
+    n = int(b.shape(A)[0])
+    eps = machine_epsilon(b, A)
+    if tol is None:
+        tol = sqrt_scalar(eps, b) * float(n)  # Scale tolerance by dimension
+
+    # Use Frobenius norm as upper bound on spectral radius
+    # ||A||_2 ≤ ||A||_F, so scaling by 1/||A||_F ensures spectral radius ≤ 1
+    A_norm = b.norm(A)
+    b.eval(A_norm)
+    A_norm_val = float(b.to_scalar(A_norm))
+
+    if A_norm_val < eps:
+        # Near-zero matrix
+        return b.eye(n) / eps
+
+    # Scale A to have spectral radius < 1 for convergence
+    # Use 1/||A||_F as conservative scaling (guarantees spectral radius < 1)
+    scale = 1.0 / A_norm_val
+    A_scaled = A * scale
+
+    # Initial guess for scaled problem: X_0 = A^T * scale (matches the spectral structure)
+    # For SPD matrices, A^T = A, so X_0 = A * scale^2
+    X = b.transpose(A) * (scale * scale)
+    I = b.eye(n)
+    b.eval(X, A_scaled)
+
+    prev_err = float("inf")
+
+    for i in range(max_iter):
+        # Newton-Schulz: X' = X @ (2I - A_scaled @ X)
+        AX = b.matmul(A_scaled, X)
+        diff = 2.0 * I - AX
+        X_new = b.matmul(X, diff)
+        b.eval(X_new)
+
+        # Check convergence: ||I - A_scaled @ X||_F
+        err_mat = I - b.matmul(A_scaled, X_new)
+        err = b.norm(err_mat)
+        b.eval(err)
+        err_val = float(b.to_scalar(err))
+
+        if err_val <= tol:
+            logger.debug(
+                "Newton-Schulz: Converged in %d iters, ||I - A X||=%.2e",
+                i + 1, err_val
+            )
+            # Scale back: inv(A) = scale * inv(A_scaled)
+            return X_new * scale
+
+        if err_val >= prev_err * 1.01:  # Allow small fluctuations
+            # Diverging - return current best
+            logger.debug(
+                "Newton-Schulz: Stalled at iter %d, ||I - A X||=%.2e",
+                i + 1, err_val
+            )
+            return X * scale
+
+        X = X_new
+        prev_err = err_val
+
+    return X * scale
+
+
 def gpu_lstsq(
     backend: "Backend",
     A: "Array",
     B: "Array",
     stats: dict[str, float] | None = None,
 ) -> "Array":
-    """GPU-accelerated least squares via preconditioned CGLS.
+    """GPU-accelerated least squares via normal equations or CGLS fallback.
 
     Solves: minimize ||A @ X - B||² for X
 
-    Design guarantees:
-    - Column scaling to unit norm (preconditioning)
-    - Tikhonov regularization with lambda = machine_epsilon
-    - All divisions guarded by epsilon
-    - Residual refresh prevents numerical drift
+    When n >= d (overdetermined), uses DIRECT closed-form:
+        F = (A^T @ A + λI)^{-1} @ A^T @ B
+
+    This is O(d³) via Cholesky, instant on GPU.
+
+    Falls back to iterative CGLS only when necessary.
 
     If stats is provided, populates:
-    - iterations: CGLS iteration count
+    - iterations: CGLS iteration count (0 for direct solve)
     - residual_norm: final residual norm
     - rhs_norm: right-hand-side norm
+    - method: 'normal_equations' or 'cgls'
     """
     b = backend
 
@@ -786,6 +874,167 @@ def gpu_lstsq(
 
     eps = machine_epsilon(b, A)
     sqrt_eps = sqrt_scalar(eps, b)
+
+    # =========================================================================
+    # DIRECT SOLVE via Normal Equations (when n >= d)
+    # =========================================================================
+    # The pseudoinverse for tall matrices has a closed form:
+    #   pinv(A) = (A^T @ A)^{-1} @ A^T
+    #
+    # So: X = pinv(A) @ B = (A^T @ A)^{-1} @ A^T @ B
+    #
+    # Let G = A^T @ A (d × d) and H = A^T @ B (d × k)
+    # Then X = solve(G, H) using Cholesky (G is positive semidefinite)
+    #
+    # This is O(d³) instead of O(max_iter × n × d), instant on GPU.
+    # =========================================================================
+
+    if n >= d:
+        start_time = time.perf_counter()
+        logger.info(
+            "NORMAL_EQ: Direct solve [%d x %d] -> [%d x %d] (n >= d, using closed-form)",
+            n, d, d, int(b.shape(B)[1])
+        )
+
+        # Compute A^T @ A (d × d) - this is the Gram matrix in feature space
+        A_T = b.transpose(A)
+        G = b.matmul(A_T, A)  # d × d
+        b.eval(G)
+
+        # Add Tikhonov regularization for numerical stability
+        # λ = eps × max(diag(G)) ensures well-conditioning
+        G_diag = b.diag(G)
+        max_diag = b.max(b.abs(G_diag))
+        b.eval(max_diag)
+        max_diag_val = float(b.to_scalar(max_diag))
+        reg_lambda = eps * max(max_diag_val, 1.0)
+
+        G_reg = G + reg_lambda * b.eye(d)
+        b.eval(G_reg)
+
+        # Compute A^T @ B (d × k)
+        H = b.matmul(A_T, B)  # d × k
+        b.eval(H)
+
+        # Solve G @ X = H directly
+        # The backend's solve() uses the most appropriate method internally
+        try:
+            X = b.solve(G_reg, H)
+            b.eval(X)
+
+            elapsed = time.perf_counter() - start_time
+
+            # Compute residual for logging
+            res = b.matmul(A, X) - B
+            res_norm = b.norm(res)
+            B_norm = b.norm(B)
+            b.eval(res_norm, B_norm)
+            res_norm_val = float(b.to_scalar(res_norm))
+            B_norm_val = float(b.to_scalar(B_norm))
+
+            logger.info(
+                "NORMAL_EQ: Solved in %.3fs, residual=%.2e, ||B||=%.2e",
+                elapsed, res_norm_val, B_norm_val
+            )
+
+            if stats is not None:
+                stats["iterations"] = 0.0
+                stats["residual_norm"] = res_norm_val
+                stats["rhs_norm"] = B_norm_val
+                stats["method"] = "normal_equations"
+
+            if squeeze_output:
+                X = b.reshape(X, (-1,))
+
+            return X
+
+        except Exception as e:
+            # Direct solve failed, fall back to CGLS
+            logger.warning(
+                "NORMAL_EQ: Direct solve failed (%s), falling back to CGLS",
+                str(e)
+            )
+
+    # =========================================================================
+    # DIRECT SOLVE for Underdetermined Systems (when n < d)
+    # =========================================================================
+    # For underdetermined systems, use the dual normal equations:
+    #   pinv(A) = A^T @ (A @ A^T)^{-1}
+    #
+    # So: X = pinv(A) @ B = A^T @ (A @ A^T)^{-1} @ B
+    #
+    # Let G = A @ A^T (n × n) - this is much smaller than d × d!
+    # Then solve G @ Y = B, and X = A^T @ Y
+    #
+    # This is O(n³) instead of O(d³) or iterating.
+    # =========================================================================
+
+    elif n < d:  # Underdetermined case
+        start_time = time.perf_counter()
+        logger.info(
+            "NORMAL_EQ_DUAL: Direct solve [%d x %d] -> [%d x %d] (n < d, using dual form)",
+            n, d, d, int(b.shape(B)[1])
+        )
+
+        # Compute A @ A^T (n × n) - the Gram matrix in sample space
+        A_T = b.transpose(A)
+        G = b.matmul(A, A_T)  # n × n (much smaller than d × d!)
+        b.eval(G)
+
+        # Add Tikhonov regularization
+        G_diag = b.diag(G)
+        max_diag = b.max(b.abs(G_diag))
+        b.eval(max_diag)
+        max_diag_val = float(b.to_scalar(max_diag))
+        reg_lambda = eps * max(max_diag_val, 1.0)
+
+        G_reg = G + reg_lambda * b.eye(n)
+        b.eval(G_reg)
+
+        try:
+            # Solve G @ Y = B for Y (n × k)
+            Y = b.solve(G_reg, B)
+            b.eval(Y)
+
+            # X = A^T @ Y (d × k)
+            X = b.matmul(A_T, Y)
+            b.eval(X)
+
+            elapsed = time.perf_counter() - start_time
+
+            # Compute residual for logging
+            res = b.matmul(A, X) - B
+            res_norm = b.norm(res)
+            B_norm = b.norm(B)
+            b.eval(res_norm, B_norm)
+            res_norm_val = float(b.to_scalar(res_norm))
+            B_norm_val = float(b.to_scalar(B_norm))
+
+            logger.info(
+                "NORMAL_EQ_DUAL: Solved in %.3fs, residual=%.2e, ||B||=%.2e",
+                elapsed, res_norm_val, B_norm_val
+            )
+
+            if stats is not None:
+                stats["iterations"] = 0.0
+                stats["residual_norm"] = res_norm_val
+                stats["rhs_norm"] = B_norm_val
+                stats["method"] = "normal_equations_dual"
+
+            if squeeze_output:
+                X = b.reshape(X, (-1,))
+
+            return X
+
+        except Exception as e:
+            logger.warning(
+                "NORMAL_EQ_DUAL: Direct solve failed (%s), falling back to CGLS",
+                str(e)
+            )
+
+    # =========================================================================
+    # CGLS Fallback (only if direct solves failed or n == d exactly)
+    # =========================================================================
 
     # Precondition: scale columns to unit norm
     col_norms = b.norm(A, axis=0)
@@ -949,6 +1198,7 @@ def gpu_lstsq(
         stats["iterations"] = float(iterations_used)
         stats["residual_norm"] = float(rnorm_val)
         stats["rhs_norm"] = float(rhs_norm)
+        stats["method"] = "cgls"
 
     if squeeze_output:
         X = b.reshape(X, (-1,))
