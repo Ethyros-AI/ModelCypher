@@ -757,7 +757,6 @@ mc geometry density diff <source_model_dir> <target_model_dir>
 - `mc geometry temporal` - Temporal geometry
 - `mc geometry social` - Social geometry
 - `mc geometry moral` - Moral geometry
-- `mc geometry emotion` - Emotion geometry
 - `mc geometry persona` - Persona extraction
 - `mc geometry safety` - Safety geometry (circuit-breaker, persona validation)
 - `mc geometry baseline` - Establish geometry baselines

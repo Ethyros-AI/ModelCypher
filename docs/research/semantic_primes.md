@@ -4,7 +4,7 @@
 > **Data**: `src/modelcypher/data/semantic_primes.json`,
 >           `semantic_prime_multilingual.json`, `semantic_prime_frames.json`
 > **Code**: `src/modelcypher/core/domain/agents/semantic_primes.py`,
->           `src/modelcypher/core/domain/agents/semantic_prime_atlas.py`
+>           `src/modelcypher/core/domain/agents/unified_atlas.py`
 > **CLI**: `mc geometry primes` (list / probe-model / compare)
 
 ---
@@ -22,8 +22,7 @@ embedding-space structure and compute CKA-based coherence metrics.
 - `semantic_primes.json` provides the English 2014 prime list and categories.
 - `semantic_prime_multilingual.json` and `semantic_prime_frames.json` are
   available for future multilingual/frames analysis.
-- `semantic_prime_atlas.py` contains a static English 2014 inventory used by
-  the CLI.
+- `semantic_primes.py` contains the English 2014 inventory used by the CLI.
 
 ---
 

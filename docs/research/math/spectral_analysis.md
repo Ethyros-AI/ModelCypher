@@ -66,7 +66,7 @@ def compute_spectral_metrics(source, target):
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/spectral_analysis.py`](../../../../src/modelcypher/core/domain/geometry/spectral_analysis.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/spectral_analysis.py`](../../../src/modelcypher/core/domain/geometry/spectral_analysis.py)
 
 **Key entry points**:
 - `compute_spectral_metrics()` - per-weight spectral metrics

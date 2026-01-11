@@ -233,7 +233,7 @@ Runtime is dominated by eigendecomposition ($O(n^3)$) and is data-dependent.
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/prime_geometry.py`](../../../../src/modelcypher/core/domain/geometry/prime_geometry.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/prime_geometry.py`](../../../src/modelcypher/core/domain/geometry/prime_geometry.py)
 
 **Key entry points**:
 - `generate_primes()` / `generate_prime_gaps()`

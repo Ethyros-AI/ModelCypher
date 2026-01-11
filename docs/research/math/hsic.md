@@ -215,7 +215,7 @@ $$\text{shift} = \text{HSIC}(\text{source features}, \text{domain indicator})$$
 
 HSIC is implemented as part of the CKA module (CKA = normalized HSIC).
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../../src/modelcypher/core/domain/geometry/cka.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../src/modelcypher/core/domain/geometry/cka.py)
 
 **Key entry points**:
 - `CKAResult` (stores HSIC values)

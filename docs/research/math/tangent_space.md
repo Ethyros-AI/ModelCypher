@@ -69,7 +69,7 @@ Notes:
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/tangent_space_alignment.py`](../../../../src/modelcypher/core/domain/geometry/tangent_space_alignment.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/tangent_space_alignment.py`](../../../src/modelcypher/core/domain/geometry/tangent_space_alignment.py)
 
 **Key entry points**:
 - `TangentSpaceAlignment.compute_layer_metrics()` - per-layer tangent metrics

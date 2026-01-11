@@ -119,7 +119,7 @@ for centered matrices with specific normalization.
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/generalized_procrustes.py`](../../../../src/modelcypher/core/domain/geometry/generalized_procrustes.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/generalized_procrustes.py`](../../../src/modelcypher/core/domain/geometry/generalized_procrustes.py)
 
 **Key entry points**:
 - `GeneralizedProcrustes.align()` - multi-model alignment with Fréchet consensus

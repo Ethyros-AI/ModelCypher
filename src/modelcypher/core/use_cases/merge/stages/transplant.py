@@ -621,50 +621,52 @@ def stage_transplant(
         
     elif embedding_transform is not None:
         # =================================================================
-        # SAME-VOCAB: APPLY GRAMALIGN TO EMBEDDINGS
+        # SAME-VOCAB: PRESERVE TARGET EMBEDDINGS
         # =================================================================
-        # Vocabulary sizes match - apply the geometric transform directly
-        # This aligns embedding geometry while preserving token order
+        # The embedding layer is the model's vocabulary representation.
+        # Replacing it with transformed source embeddings breaks the model.
+        #
+        # Correct approach: PRESERVE target embeddings. The transform F is
+        # used for aligning activations during layer transplant, not for
+        # replacing embeddings.
+        #
+        # Knowledge addition happens in hidden layers via null-space projection,
+        # not by modifying the embedding lookup table.
         # =================================================================
-        logger.info(
-            "SAME-VOCAB MERGE: Applying GramAlign to embed_tokens (linear alignment)"
-        )
-        
-        # embedding_transform is already a GPU array from GramAligner
-        F = b.astype(embedding_transform, "float32")
-        b.eval(F)
-        
         src_embed = source_weights[source_embed_key]
         src_embed = dequantize_if_needed(src_embed, source_embed_key, source_weights, b)
-        src_embed = b.astype(src_embed, "float32")
-        b.eval(src_embed)
-        
-        # Apply geometric transform: [vocab, src_hidden] @ [src_hidden, tgt_hidden] → [vocab, tgt_hidden]
-        aligned_embed = b.matmul(src_embed, F)
-        b.eval(aligned_embed)
-        
-        merged[target_embed_key] = aligned_embed
-        metrics["embedding_aligned"] = True
-        metrics["same_vocab_gramalign"] = True
-        
+
+        tgt_embed = target_weights[target_embed_key]
+        tgt_embed = dequantize_if_needed(tgt_embed, target_embed_key, target_weights, b)
+
+        src_hidden_dim = int(b.shape(src_embed)[1])
+        tgt_hidden_dim = int(b.shape(tgt_embed)[1])
+
+        # Keep target embeddings unchanged - preserve target's vocabulary representation
+        merged[target_embed_key] = tgt_embed
+        metrics["embedding_preserved"] = True
+        metrics["same_vocab_target_kept"] = True
+
         logger.info(
-            "EMBEDDING ALIGNMENT: embed_tokens aligned via GramAlign [%d,%d] → [%d,%d]",
-            int(b.shape(src_embed)[0]), int(b.shape(src_embed)[1]),
-            int(b.shape(aligned_embed)[0]), int(b.shape(aligned_embed)[1])
+            "EMBEDDING PRESERVED: Keeping target embed_tokens [%d,%d] (source was [%d,%d])",
+            int(b.shape(tgt_embed)[0]), tgt_hidden_dim,
+            int(b.shape(src_embed)[0]), src_hidden_dim
         )
-        
-        # Handle lm_head if separate (not weight-tied)
+
+        # Handle lm_head if separate (not weight-tied) - also keep target's
         lm_head_key = None
         for key in target_weights:
             if "lm_head" in key.lower() and "weight" in key:
                 lm_head_key = key
                 break
-        
+
         if lm_head_key:
-            merged[lm_head_key] = aligned_embed
-            logger.info("LM_HEAD ALIGNMENT: %s aligned with same geometry", lm_head_key)
+            tgt_lm_head = target_weights[lm_head_key]
+            tgt_lm_head = dequantize_if_needed(tgt_lm_head, lm_head_key, target_weights, b)
+            merged[lm_head_key] = tgt_lm_head
+            logger.info("LM_HEAD PRESERVED: Keeping target %s", lm_head_key)
         else:
-            logger.info("LM_HEAD ALIGNMENT: Weight-tied with embed_tokens")
+            logger.info("LM_HEAD: Weight-tied with embed_tokens (both preserved)")
             
     else:
         logger.info("EMBEDDING ALIGNMENT: No embedding_transform provided, using target embeddings")

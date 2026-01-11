@@ -84,7 +84,7 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/riemannian_utils.py`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/riemannian_utils.py`](../../../src/modelcypher/core/domain/geometry/riemannian_utils.py)
 
 **Key entry points**:
 - `FrechetMeanResult`

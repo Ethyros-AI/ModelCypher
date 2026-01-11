@@ -2032,6 +2032,11 @@ def _probe_precise(
 
     if source_fingerprints and target_fingerprints:
         try:
+            logger.info(
+                "PROBE: Building IntersectionMap from %d source + %d target fingerprints...",
+                len(source_fingerprints),
+                len(target_fingerprints),
+            )
             intersection_map_obj = build_intersection_map(
                 source_fingerprints=source_fingerprints,
                 target_fingerprints=target_fingerprints,

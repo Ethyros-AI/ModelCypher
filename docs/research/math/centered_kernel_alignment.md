@@ -129,7 +129,7 @@ This unifies several representation comparison methods under one framework.
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../../src/modelcypher/core/domain/geometry/cka.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../src/modelcypher/core/domain/geometry/cka.py)
 
 **Key entry points**:
 - `CKAResult` (result dataclass)

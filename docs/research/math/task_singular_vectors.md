@@ -35,6 +35,6 @@ Any TSV implementation in ModelCypher should follow existing principles:
 
 ## Related Modules
 
-- [`src/modelcypher/core/domain/geometry/geometric_lora.py`](../../../../src/modelcypher/core/domain/geometry/geometric_lora.py) - SVD-based low-rank factors
-- [`src/modelcypher/core/domain/geometry/safety_polytope.py`](../../../../src/modelcypher/core/domain/geometry/safety_polytope.py) - TSV_PRUNE diagnostic label
+- [`src/modelcypher/core/domain/geometry/geometric_lora.py`](../../../src/modelcypher/core/domain/geometry/geometric_lora.py) - SVD-based low-rank factors
+- [`src/modelcypher/core/domain/geometry/safety_polytope.py`](../../../src/modelcypher/core/domain/geometry/safety_polytope.py) - TSV_PRUNE diagnostic label
 - [spectral_analysis.md](spectral_analysis.md) - Spectral ratios and conditioning

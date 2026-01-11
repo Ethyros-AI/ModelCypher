@@ -10,8 +10,8 @@ SLERP provides spherical geodesic interpolation for diagnostics, visualization,
 and representation analysis. It is **not** used for model merging because
 interpolation discards information; ModelCypher merges with null-space addition.
 
-**In ModelCypher**: Implemented in `vector_math.py` with explicit warnings against
-using SLERP for merges.
+**In ModelCypher**: Used for visualization and diagnostics. Not used for merges
+(ModelCypher merges with null-space addition).
 
 ---
 
@@ -130,7 +130,7 @@ globally spherical. Use it for local, diagnostic interpolation only.
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/vector_math.py`](../../../../src/modelcypher/core/domain/geometry/vector_math.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/vector_math.py`](../../../src/modelcypher/core/domain/geometry/vector_math.py)
 
 **Key entry points**:
 - `VectorMath.slerp()` / `slerp_batch()` - CPU fallback

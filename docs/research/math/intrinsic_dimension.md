@@ -134,7 +134,7 @@ Output Layer:  ID ≈ number of classes
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/intrinsic_dimension.py`](../../../../src/modelcypher/core/domain/geometry/intrinsic_dimension.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/intrinsic_dimension.py`](../../../src/modelcypher/core/domain/geometry/intrinsic_dimension.py)
 
 **Key entry points**:
 - `IntrinsicDimension`

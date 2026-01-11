@@ -135,7 +135,7 @@ Relative representations align with our geometric framework:
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/relative_representation.py`](../../../../src/modelcypher/core/domain/geometry/relative_representation.py)
+**Primary Location**: [`src/modelcypher/core/domain/geometry/relative_representation.py`](../../../src/modelcypher/core/domain/geometry/relative_representation.py)
 
 **Key entry points**:
 - `compute_anchor_embeddings()` - build anchor embeddings from atlas probes
@@ -231,7 +231,7 @@ before null-space addition. See `docs/research/anchor_relative_concept_grafting.
 
 - [centered_kernel_alignment.md](centered_kernel_alignment.md) - CKA relates to relative repr via Gram matrices
 - [procrustes_analysis.md](procrustes_analysis.md) - Alternative alignment approach
-- [`src/modelcypher/core/domain/geometry/anchor_invariance_analyzer.py`](../../../../src/modelcypher/core/domain/geometry/anchor_invariance_analyzer.py) - Finding stable anchors
+- [`src/modelcypher/core/domain/geometry/anchor_invariance_analyzer.py`](../../../src/modelcypher/core/domain/geometry/anchor_invariance_analyzer.py) - Finding stable anchors
 
 ---
 

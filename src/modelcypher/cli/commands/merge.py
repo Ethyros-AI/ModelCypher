@@ -604,7 +604,7 @@ def batch(
         )
 
     typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")
-    typer.echo(f"  Total layers: {result.total_layers}")
+    typer.echo(f"  Total layers: {result.layer_count}")
     typer.echo(f"  Sources merged: {len(sources)}")
     if consensus_mode:
         typer.echo("  Mode: Consensus (correction applied before addition)")
