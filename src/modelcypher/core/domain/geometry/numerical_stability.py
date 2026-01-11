@@ -23,7 +23,11 @@ Use these functions instead of hardcoded values like 1e-8 or 1e-10.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -825,7 +829,16 @@ def gpu_lstsq(
     restart_budget = int(max(1, ceil_scalar(log2_scalar(1.0 / eps, b), b)))
     max_iter = max(1, int(d)) * restart_budget
 
+    # Log CGLS start
+    start_time = time.perf_counter()
+    log_interval = max(500, max_iter // 20)  # Log ~20 times during run
+    logger.info(
+        "CGLS: Starting [%d x %d] -> [%d x %d], max_iter=%d, tol=%.2e",
+        n, d, d, int(b.shape(B)[1]), max_iter, tol
+    )
+
     iterations_used = 0
+    last_log_time = start_time
     for step in range(max_iter):
         # Apply normal equations with preconditioning + Tikhonov
         P_scaled = P * row_scale
@@ -853,6 +866,18 @@ def gpu_lstsq(
         rnorm_val = sqrt_scalar(rnorm_sq_val, b)
 
         iterations_used = step + 1
+
+        # Progress logging
+        if iterations_used % log_interval == 0:
+            elapsed = time.perf_counter() - start_time
+            iters_per_sec = iterations_used / max(elapsed, 0.001)
+            remaining = (max_iter - iterations_used) / max(iters_per_sec, 0.001)
+            logger.info(
+                "CGLS: iter %d/%d (%.1f%%), residual=%.2e, %.1f iter/s, ~%.0fs remaining",
+                iterations_used, max_iter, 100.0 * iterations_used / max_iter,
+                rnorm_val, iters_per_sec, remaining
+            )
+
         if rnorm_val <= tol:
             X_tmp = b.matmul(A, Y * row_scale)
             res = X_tmp - B
@@ -860,6 +885,11 @@ def gpu_lstsq(
             b.eval(res_norm)
             res_norm_val = float(b.to_scalar(res_norm))
             if res_norm_val <= tol_primal:
+                elapsed = time.perf_counter() - start_time
+                logger.info(
+                    "CGLS: Converged at iter %d (%.2fs), residual=%.2e, primal=%.2e",
+                    iterations_used, elapsed, rnorm_val, res_norm_val
+                )
                 break
 
         # Refresh residuals on drift or periodic cadence
@@ -901,6 +931,19 @@ def gpu_lstsq(
 
     X = Y * row_scale
     b.eval(X)
+
+    # Log completion
+    total_elapsed = time.perf_counter() - start_time
+    if iterations_used >= max_iter:
+        logger.warning(
+            "CGLS: Hit max_iter=%d (%.2fs), residual=%.2e (may not have converged)",
+            max_iter, total_elapsed, rnorm_val
+        )
+    else:
+        logger.info(
+            "CGLS: Completed in %d iters (%.2fs), final residual=%.2e",
+            iterations_used, total_elapsed, rnorm_val
+        )
 
     if stats is not None:
         stats["iterations"] = float(iterations_used)

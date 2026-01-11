@@ -168,6 +168,11 @@ def load_transplant_occupancy(model_path: str) -> dict[int, list[float]] | None:
                 continue
             if isinstance(values, list):
                 occupancy[layer_idx] = [float(v) for v in values]
+        if occupancy:
+            logger.info(
+                "Loaded transplant occupancy from %s (%d layers)",
+                occ_path, len(occupancy)
+            )
         return occupancy or None
     except Exception as exc:
         logger.warning("Failed to load transplant occupancy: %s", exc)

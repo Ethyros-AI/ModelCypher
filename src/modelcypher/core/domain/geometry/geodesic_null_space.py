@@ -309,6 +309,17 @@ class GeodesicNullSpaceFilter:
         keep_weights = 1.0 - combined_weights  # [d] - high in sparse, low in dense
         backend.eval(keep_weights)
 
+        # Log occupancy stats
+        mean_keep = float(backend.to_scalar(backend.mean(keep_weights)))
+        if occupancy_weights is not None:
+            mean_occ = float(backend.to_scalar(backend.mean(occ)))
+            logger.debug(
+                "NULL-SPACE: dim=%d, mean_keep=%.3f, prior_occupancy=%.3f",
+                d, mean_keep, mean_occ
+            )
+        else:
+            logger.debug("NULL-SPACE: dim=%d, mean_keep=%.3f (no prior occupancy)", d, mean_keep)
+
         # Apply variance-weighted projection
         # delta_safe = delta * keep_weights (per-dimension scaling)
         n_rows = int(delta_proj.shape[0])

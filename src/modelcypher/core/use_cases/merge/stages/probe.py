@@ -1937,9 +1937,14 @@ def _probe_precise(
                         "F": result["F_arr_raw"],
                         "R": result.get("R_raw", None),  # R from procrustes (if available)
                     }
-                    logger.info(
-                        f"ZIPPER: Stored layer {tgt_layer} (deviation={result.get('numerical_deviation', 0.0):.2e}) for warm-start"
-                    )
+
+                # Progress logging
+                completed += 1
+                logger.info(
+                    "PROBE ALIGNMENT: Layer %d/%d complete (tgt=%d, CKA=%.4f, raw_CKA=%.4f)",
+                    completed, len(alignment_tasks_sorted), tgt_layer,
+                    result["achieved_cka"], result["raw_cka"]
+                )
 
                 if result["attention_transform"] is not None:
                     attention_transforms[tgt_layer] = result["attention_transform"]
