@@ -443,7 +443,7 @@ def _build_density_profile_from_activations(
 
         # Precompute mean cosine similarity per probe (cluster tightness) - VECTORIZED
         eps = float(machine_epsilon(b, act_matrix))
-        sim_matrix = geodesic_cosine_matrix(act_matrix, b)
+        sim_matrix = geodesic_cosine_matrix(act_matrix, b, use_cache=False)
         b.eval(sim_matrix)
 
         # Zero out diagonal (self-similarity) and compute mean per row on backend

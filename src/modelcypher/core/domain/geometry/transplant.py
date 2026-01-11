@@ -191,7 +191,7 @@ def compute_transplant_delta(
     # Early-exit: if source == target, there's nothing to transplant
     # This handles the edge case where weights are already identical
     diff = weight_source_aligned - weight_target
-    diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
+    diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b, use_cache=False)
     b.eval(diff_norm_arr)
     diff_norm = float(b.to_scalar(diff_norm_arr[0]))
     reg = regularization_epsilon(b, weight_target)
@@ -247,7 +247,9 @@ def compute_transplant_delta(
             "Cannot transplant without geometry.",
             n_boundary,
         )
-        delta_norm_arr = geodesic_norms(b.reshape(weight_delta, (1, -1)), b)
+        delta_norm_arr = geodesic_norms(
+            b.reshape(weight_delta, (1, -1)), b, use_cache=False
+        )
         b.eval(delta_norm_arr)
         delta_norm = float(b.to_scalar(delta_norm_arr[0]))
 
@@ -284,14 +286,16 @@ def compute_transplant_delta(
     # σ_max ≈ ||A @ v|| / ||v|| where v converges to top right singular vector
 
     # Frobenius norm provides upper bound: σ_max ≤ ||A||_F
-    frob_norm_arr = geodesic_norms(b.reshape(delta_in_null_space, (1, -1)), b)
+    frob_norm_arr = geodesic_norms(
+        b.reshape(delta_in_null_space, (1, -1)), b, use_cache=False
+    )
     b.eval(frob_norm_arr)
     frob_norm = float(b.to_scalar(frob_norm_arr[0]))
 
     # Power iteration for tighter bound (3 iterations usually sufficient)
     reg = regularization_epsilon(b, delta_in_null_space)
     v = b.ones((in_dim,), dtype="float32")
-    v_norms = geodesic_norms(b.reshape(v, (1, -1)), b)
+    v_norms = geodesic_norms(b.reshape(v, (1, -1)), b, use_cache=False)
     b.eval(v_norms)
     v = v / (float(b.to_scalar(v_norms[0])) + reg)
     b.eval(v)
@@ -306,7 +310,7 @@ def compute_transplant_delta(
         u = b.squeeze(u)
         b.eval(u)
         # Normalize
-        u_norm_arr = geodesic_norms(b.reshape(u, (1, -1)), b)
+        u_norm_arr = geodesic_norms(b.reshape(u, (1, -1)), b, use_cache=False)
         b.eval(u_norm_arr)
         u_norm_val = float(b.to_scalar(u_norm_arr[0]))
         if u_norm_val > reg:
@@ -316,7 +320,9 @@ def compute_transplant_delta(
     # Spectral norm estimate
     w_final = b.matmul(delta_in_null_space, b.reshape(v, (in_dim, 1)))
     w_final = b.squeeze(w_final)
-    spectral_norm_arr = geodesic_norms(b.reshape(w_final, (1, -1)), b)
+    spectral_norm_arr = geodesic_norms(
+        b.reshape(w_final, (1, -1)), b, use_cache=False
+    )
     b.eval(spectral_norm_arr)
     spectral_norm = float(b.to_scalar(spectral_norm_arr[0]))
 
@@ -356,8 +362,12 @@ def compute_transplant_delta(
     # Compute metrics
     # delta_norm: how much difference between source and target
     # contribution_norm: how much of that difference made it through null-space projection
-    original_delta_norm_arr = geodesic_norms(b.reshape(weight_delta, (1, -1)), b)
-    contribution_norm_arr = geodesic_norms(b.reshape(delta_contribution, (1, -1)), b)
+    original_delta_norm_arr = geodesic_norms(
+        b.reshape(weight_delta, (1, -1)), b, use_cache=False
+    )
+    contribution_norm_arr = geodesic_norms(
+        b.reshape(delta_contribution, (1, -1)), b, use_cache=False
+    )
     b.eval(original_delta_norm_arr, contribution_norm_arr)
     original_delta_norm = float(b.to_scalar(original_delta_norm_arr[0]))
     contribution_norm = float(b.to_scalar(contribution_norm_arr[0]))

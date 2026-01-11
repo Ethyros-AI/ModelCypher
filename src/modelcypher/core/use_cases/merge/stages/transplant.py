@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_paired_distances,
 )
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.cache import ComputationCache
 
 
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
@@ -289,10 +290,18 @@ def _compute_alignment_metrics(
 
         # Geodesic distance respects manifold curvature. Chord distance systematically errs.
     # Aggregate per-sample geodesic distances using geodesic norms.
-    geo_distances_before = geodesic_paired_distances(output_before, output_source, b)
-    geo_distances_after = geodesic_paired_distances(output_after, output_source, b)
-    dist_before_arr = geodesic_norms(b.reshape(geo_distances_before, (1, -1)), b)
-    dist_after_arr = geodesic_norms(b.reshape(geo_distances_after, (1, -1)), b)
+    geo_distances_before = geodesic_paired_distances(
+        output_before, output_source, b, use_cache=False
+    )
+    geo_distances_after = geodesic_paired_distances(
+        output_after, output_source, b, use_cache=False
+    )
+    dist_before_arr = geodesic_norms(
+        b.reshape(geo_distances_before, (1, -1)), b, use_cache=False
+    )
+    dist_after_arr = geodesic_norms(
+        b.reshape(geo_distances_after, (1, -1)), b, use_cache=False
+    )
     b.eval(dist_before_arr, dist_after_arr)
 
     dist_before = float(b.to_scalar(dist_before_arr))
@@ -445,6 +454,10 @@ def stage_transplant(
             exceeding causes generation degradation.
     """
     b = backend or get_default_backend()
+    # Release probe/density geodesic caches before heavy transplant work.
+    ComputationCache.shared().clear_all()
+    if hasattr(b, "clear_cache"):
+        b.clear_cache()
     merged: dict[str, "Array"] = dict(target_weights)
 
     metrics: dict[str, Any] = {
@@ -1973,11 +1986,19 @@ def stage_transplant(
                     )
                     # Geodesic distance: works in all dimensions (reduces to chord
                     # in flat spaces). Chord distance fails in high dimensions (4D+).
-                    geo_diffs = geodesic_paired_distances(merged_output, target_output, b)
+                    geo_diffs = geodesic_paired_distances(
+                        merged_output, target_output, b, use_cache=False
+                    )
                     origin = b.zeros_like(target_output)
-                    geo_target_norms = geodesic_paired_distances(origin, target_output, b)
-                    diff_norm_arr = geodesic_norms(b.reshape(geo_diffs, (1, -1)), b)
-                    target_norm_arr = geodesic_norms(b.reshape(geo_target_norms, (1, -1)), b)
+                    geo_target_norms = geodesic_paired_distances(
+                        origin, target_output, b, use_cache=False
+                    )
+                    diff_norm_arr = geodesic_norms(
+                        b.reshape(geo_diffs, (1, -1)), b, use_cache=False
+                    )
+                    target_norm_arr = geodesic_norms(
+                        b.reshape(geo_target_norms, (1, -1)), b, use_cache=False
+                    )
                     b.eval(diff_norm_arr, target_norm_arr)
 
                     diff_norm = float(b.to_scalar(diff_norm_arr))

@@ -559,6 +559,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         self,
         points: "Array",
         k_neighbors: int | None = None,
+        use_cache: bool = True,
     ) -> GeodesicDistanceResult:
         """
         Compute geodesic distances using a k-NN graph and shortest paths.
@@ -601,29 +602,32 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         # If k_neighbors specified, use it directly
         if k_neighbors is not None:
             k_neighbors = max(1, min(k_neighbors, n - 1))
-            return self._compute_geodesic_for_k(points, k_neighbors)
+            return self._compute_geodesic_for_k(points, k_neighbors, use_cache=use_cache)
 
         # Find minimum k for connectivity - this IS the geometric answer
-        kmin_key = _cache.make_kmin_key(points, backend)
-        cached_k = _cache.get_kmin(kmin_key)
-        if cached_k is not None:
-            cached_geo = _cache.get_geodesic(
-                _cache.make_geodesic_key(points, backend, int(cached_k))
-            )
-            if cached_geo is not None:
-                return cached_geo
+        if use_cache:
+            kmin_key = _cache.make_kmin_key(points, backend)
+            cached_k = _cache.get_kmin(kmin_key)
+            if cached_k is not None:
+                cached_geo = _cache.get_geodesic(
+                    _cache.make_geodesic_key(points, backend, int(cached_k))
+                )
+                if cached_geo is not None:
+                    return cached_geo
 
         k_start_time = time.perf_counter()
-        k_min, knn_idx, chord_dist = self._minimum_connected_k(points)
-        _cache.set_kmin(kmin_key, k_min, (time.perf_counter() - k_start_time) * 1000)
+        k_min, knn_idx, chord_dist = self._minimum_connected_k(points, use_cache=use_cache)
+        if use_cache:
+            _cache.set_kmin(kmin_key, k_min, (time.perf_counter() - k_start_time) * 1000)
         return self._compute_geodesic_for_k(
-            points, k_min, chord_dist=chord_dist, knn_idx=knn_idx
+            points, k_min, chord_dist=chord_dist, knn_idx=knn_idx, use_cache=use_cache
         )
 
     def _minimum_connected_k(
         self,
         points: "Array",
         chord_dist: "Array | None" = None,
+        use_cache: bool = True,
     ) -> tuple[int, "Array", "Array"]:
         """Find the minimum k that makes the k-NN graph connected."""
         backend = self._backend
@@ -633,7 +637,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         # Binary search: start at k=1, double until connected, then binary search
         if chord_dist is None:
-            chord_dist = self._chord_distance_matrix(points)
+            chord_dist = self._chord_distance_matrix(points, use_cache=use_cache)
             backend.eval(chord_dist)
 
         k_low = 1
@@ -764,6 +768,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         k_neighbors: int,
         chord_dist: "Array | None" = None,
         knn_idx: "Array | None" = None,
+        use_cache: bool = True,
     ) -> GeodesicDistanceResult:
         """Compute geodesic distances for a specific k value."""
         backend = self._backend
@@ -771,16 +776,17 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         k_neighbors = max(1, min(k_neighbors, n - 1))
 
         # Check cache first
-        cache_key = _cache.make_geodesic_key(points, backend, k_neighbors)
-        cached = _cache.get_geodesic(cache_key)
-        if cached is not None:
-            return cached
+        if use_cache:
+            cache_key = _cache.make_geodesic_key(points, backend, k_neighbors)
+            cached = _cache.get_geodesic(cache_key)
+            if cached is not None:
+                return cached
 
         start = time.perf_counter()
 
         # Compute chord distance matrix (local edge lengths)
         if chord_dist is None:
-            chord_dist = self._chord_distance_matrix(points)
+            chord_dist = self._chord_distance_matrix(points, use_cache=use_cache)
             backend.eval(chord_dist)
 
         # Fully connected graph: geodesic equals chord distance.
@@ -930,7 +936,8 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         # Cache result
         elapsed_ms = (time.perf_counter() - start) * 1000
-        _cache.set_geodesic(cache_key, result, elapsed_ms)
+        if use_cache:
+            _cache.set_geodesic(cache_key, result, elapsed_ms)
 
         return result
 

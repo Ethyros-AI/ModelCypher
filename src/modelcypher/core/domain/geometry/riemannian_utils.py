@@ -222,7 +222,11 @@ def find_sparse_direction(
 # ALL distance computations use k-NN geodesic (correct in high dimensions).
 
 
-def geodesic_norms(vectors: "Array", backend: "Backend") -> "Array":
+def geodesic_norms(
+    vectors: "Array",
+    backend: "Backend",
+    use_cache: bool = True,
+) -> "Array":
     """Compute geodesic norms (distance from origin) for each row.
 
     This computes the TRUE geodesic distance from the origin to each point,
@@ -251,7 +255,7 @@ def geodesic_norms(vectors: "Array", backend: "Backend") -> "Array":
 
     # Compute geodesic distances (k-NN graph + shortest paths)
     rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points_with_origin)
+    geo_result = rg.geodesic_distances(points_with_origin, use_cache=use_cache)
 
     # Extract distances from origin (row 0) to all other points
     norms = geo_result.distances[0, 1:]  # Skip distance to self
@@ -259,7 +263,11 @@ def geodesic_norms(vectors: "Array", backend: "Backend") -> "Array":
     return norms
 
 
-def geodesic_cosine_matrix(vectors: "Array", backend: "Backend") -> "Array":
+def geodesic_cosine_matrix(
+    vectors: "Array",
+    backend: "Backend",
+    use_cache: bool = True,
+) -> "Array":
     """Compute geodesic cosine similarities between all pairs.
 
     Uses the geodesic law of cosines:
@@ -290,7 +298,7 @@ def geodesic_cosine_matrix(vectors: "Array", backend: "Backend") -> "Array":
     backend.eval(points_with_origin)
 
     rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points_with_origin)
+    geo_result = rg.geodesic_distances(points_with_origin, use_cache=use_cache)
     D = geo_result.distances  # [n+1, n+1]
 
     # Extract distances from origin (row 0)
@@ -318,7 +326,12 @@ def geodesic_cosine_matrix(vectors: "Array", backend: "Backend") -> "Array":
     return cos_matrix
 
 
-def geodesic_cosine_batch(anchor: "Array", vectors: "Array", backend: "Backend") -> "Array":
+def geodesic_cosine_batch(
+    anchor: "Array",
+    vectors: "Array",
+    backend: "Backend",
+    use_cache: bool = True,
+) -> "Array":
     """Compute geodesic cosine similarities between anchor and each row.
 
     Args:
@@ -356,7 +369,7 @@ def geodesic_cosine_batch(anchor: "Array", vectors: "Array", backend: "Backend")
     backend.eval(points)
 
     rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points)
+    geo_result = rg.geodesic_distances(points, use_cache=use_cache)
     D = geo_result.distances  # [n+2, n+2]
 
     # Index 0 = origin, 1 = anchor, 2..n+1 = vectors
@@ -380,7 +393,12 @@ def geodesic_cosine_batch(anchor: "Array", vectors: "Array", backend: "Backend")
     return cos_vals
 
 
-def geodesic_cosine_between_sets(a: "Array", b: "Array", backend: "Backend") -> "Array":
+def geodesic_cosine_between_sets(
+    a: "Array",
+    b: "Array",
+    backend: "Backend",
+    use_cache: bool = True,
+) -> "Array":
     """Compute geodesic cosine similarities between two sets of vectors.
 
     Args:
@@ -415,7 +433,7 @@ def geodesic_cosine_between_sets(a: "Array", b: "Array", backend: "Backend") -> 
     backend.eval(points)
 
     rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points)
+    geo_result = rg.geodesic_distances(points, use_cache=use_cache)
     D = geo_result.distances  # [1+m+n, 1+m+n]
 
     # Indices: 0=origin, 1..m=set_a, m+1..m+n=set_b
@@ -441,7 +459,12 @@ def geodesic_cosine_between_sets(a: "Array", b: "Array", backend: "Backend") -> 
     return cos_matrix
 
 
-def geodesic_pairwise_metrics(a: "Array", b: "Array", backend: "Backend") -> tuple["Array", "Array"]:
+def geodesic_pairwise_metrics(
+    a: "Array",
+    b: "Array",
+    backend: "Backend",
+    use_cache: bool = True,
+) -> tuple["Array", "Array"]:
     """Compute geodesic cosines and distances for paired vectors.
 
     Given matrices A and B of shape [n, d], returns arrays where
@@ -483,7 +506,7 @@ def geodesic_pairwise_metrics(a: "Array", b: "Array", backend: "Backend") -> tup
     backend.eval(points)
 
     rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points)
+    geo_result = rg.geodesic_distances(points, use_cache=use_cache)
     D = geo_result.distances  # [1+2n, 1+2n]
 
     # Extract distances
@@ -518,7 +541,12 @@ def geodesic_pairwise_metrics(a: "Array", b: "Array", backend: "Backend") -> tup
     return cos_vals, distances
 
 
-def geodesic_paired_distances(a: "Array", b: "Array", backend: "Backend") -> "Array":
+def geodesic_paired_distances(
+    a: "Array",
+    b: "Array",
+    backend: "Backend",
+    use_cache: bool = True,
+) -> "Array":
     """Compute geodesic distances between paired vectors.
 
     Given matrices A and B of shape [n, d], returns an array of n geodesic
@@ -532,7 +560,7 @@ def geodesic_paired_distances(a: "Array", b: "Array", backend: "Backend") -> "Ar
     Returns:
         Array of shape [n] with geodesic distance for each pair
     """
-    _, distances = geodesic_pairwise_metrics(a, b, backend)
+    _, distances = geodesic_pairwise_metrics(a, b, backend, use_cache=use_cache)
     return distances
 
 
