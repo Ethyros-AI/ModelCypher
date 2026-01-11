@@ -39,6 +39,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.anchor_grafting import (
     compute_anchor_grafting_delta,
+    compute_anchor_grafting_with_ghost_anchors,
 )
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
@@ -1908,12 +1909,13 @@ def stage_transplant(
                 src_anch = source_anchors[layer_idx]
                 tgt_anch = target_anchors[layer_idx]
 
-                # Compute delta_A via anchor-relative pipeline
+                # Compute delta_A via anchor-relative pipeline with Ghost Anchors
+                # Ghost Anchors handle novel concepts that don't exist in target
                 logger.info(
-                    "ANCHOR-RELATIVE: Computing grafting delta for layer %d",
+                    "ANCHOR-RELATIVE: Computing grafting delta with Ghost Anchors for layer %d",
                     layer_idx,
                 )
-                grafting_result = compute_anchor_grafting_delta(
+                grafting_result = compute_anchor_grafting_with_ghost_anchors(
                     source_activations=src_acts_stacked,
                     target_activations=stacked,
                     source_anchors=src_anch,

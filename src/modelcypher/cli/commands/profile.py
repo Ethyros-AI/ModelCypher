@@ -438,13 +438,19 @@ def generate_profile(
     context = _context(ctx)
     validate_model_path(model_path, context=context)
     service = ModelProfilerService()
+    from modelcypher.cli.composition import get_model_probe_service
+
+    probe_service = get_model_probe_service()
 
     # Start with empty profile
     profile = ModelProfile(model_path=model_path)
 
     # Always try to get identity
     try:
-        profile = service.update_identity(profile, model_path)
+        probe_result = probe_service.probe(model_path)
+        profile = service.update_identity(
+            profile, model_path, probe_result=probe_result
+        )
     except Exception as e:
         logger.warning(f"Failed to extract identity: {e}")
 
@@ -519,8 +525,14 @@ def update_profile(
     # Update identity if model path provided
     if model_path:
         service = ModelProfilerService()
+        from modelcypher.cli.composition import get_model_probe_service
+
+        probe_service = get_model_probe_service()
         try:
-            profile = service.update_identity(profile, model_path)
+            probe_result = probe_service.probe(model_path)
+            profile = service.update_identity(
+                profile, model_path, probe_result=probe_result
+            )
         except Exception as e:
             typer.echo(f"Warning: Failed to extract identity: {e}", err=True)
 

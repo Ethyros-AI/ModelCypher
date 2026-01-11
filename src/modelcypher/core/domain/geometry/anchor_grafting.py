@@ -41,14 +41,22 @@ from modelcypher.core.domain.geometry.anchor_decoder import (
     compute_anchor_decoder,
     decode_to_activation_space,
 )
+from modelcypher.core.domain.geometry.cross_grounding_transfer import (
+    CrossGroundingSynthesizer,
+)
 from modelcypher.core.domain.geometry.knowledge_density import (
     compute_density_weights,
     compute_knn_point_cloud_density,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.relative_representation import (
     align_relative_representations,
     compute_relative_representation,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -58,6 +66,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AnchorGraftingResult",
     "compute_anchor_grafting_delta",
+    "compute_anchor_grafting_with_ghost_anchors",
 ]
 
 
@@ -227,6 +236,216 @@ def compute_anchor_grafting_delta(
         "ANCHOR GRAFTING: delta_A shape=%s, pipeline complete",
         b.shape(delta_activations),
     )
+
+    return AnchorGraftingResult(
+        delta_activations=delta_activations,
+        rotation_matrix=R,
+        alignment_error=alignment_error,
+        delta_relative=delta_S,
+        density_weights=density_weights,
+        decoder_matrix=decoder,
+        reconstruction_error=reconstruction_error,
+        source_density_mean=source_density_mean,
+        target_density_mean=target_density_mean,
+        transfer_fraction=transfer_fraction,
+    )
+
+
+def compute_anchor_grafting_with_ghost_anchors(
+    source_activations: "Array",
+    target_activations: "Array",
+    source_anchors: "Array",
+    target_anchors: "Array",
+    anchor_names: list[str] | None = None,
+    backend: "Backend | None" = None,
+) -> AnchorGraftingResult:
+    """Anchor grafting with Ghost Anchor synthesis for novel concepts.
+
+    This is the SINGULAR PIPELINE for perfect knowledge addition:
+
+    1. Compute relative representations and Procrustes alignment (ONCE)
+    2. Compute per-sample alignment residuals
+    3. Identify samples where residual > sqrt(machine_epsilon) - these are NOVEL
+    4. For novel samples, synthesize Ghost Anchors (coordinate-invariant positions)
+    5. Replace target activations with Ghost Anchor positions for novel samples
+    6. Complete the pipeline with corrected targets (reusing alignment)
+
+    The key insight: Novel concepts (high residual) have no meaningful target
+    representation. Ghost Anchors provide synthetic target positions that
+    preserve the concept's Relational Stress (distance pattern to anchors).
+    This is coordinate-invariant and survives rotation between models.
+
+    Args:
+        source_activations: Source activations [n, d_source]
+        target_activations: Target activations [n, d_target]
+        source_anchors: Source anchor embeddings [n_anchors, d_source]
+        target_anchors: Target anchor embeddings [n_anchors, d_target]
+        anchor_names: Optional names for anchors (for Ghost Anchor synthesis)
+        backend: Compute backend
+
+    Returns:
+        AnchorGraftingResult with combined aligned + Ghost Anchor deltas
+    """
+    b = backend or get_default_backend()
+
+    n_samples = int(b.shape(source_activations)[0])
+    n_anchors = int(b.shape(source_anchors)[0])
+    d_target = int(b.shape(target_activations)[1])
+
+    # Generate anchor names if not provided
+    if anchor_names is None:
+        anchor_names = [f"anchor_{i}" for i in range(n_anchors)]
+
+    # Step 1: Compute relative representations (ONCE - reused throughout)
+    S_s = compute_relative_representation(source_activations, source_anchors)
+    S_t_original = compute_relative_representation(target_activations, target_anchors)
+    b.eval(S_s, S_t_original)
+
+    # Procrustes alignment (ONCE - reused)
+    R, alignment_error = align_relative_representations(S_s, S_t_original)
+    b.eval(R)
+
+    # Aligned source in anchor space
+    S_s_aligned = b.matmul(S_s, b.transpose(R))
+    b.eval(S_s_aligned)
+
+    # Step 2: Compute per-sample alignment residuals (vectorized)
+    residual_vectors = S_s_aligned - S_t_original
+    residual_norms = geodesic_norms(residual_vectors, b)
+    b.eval(residual_norms)
+
+    # Threshold: sqrt(machine_epsilon) - derived from dtype, not arbitrary
+    eps = float(machine_epsilon(b, source_activations))
+    residual_threshold = sqrt_scalar(eps, b)
+
+    # Step 3: Identify novel samples using vectorized comparison
+    novel_mask_arr = residual_norms > residual_threshold
+    n_novel_arr = b.sum(b.astype(novel_mask_arr, "int32"))
+    b.eval(n_novel_arr)
+    n_novel = int(b.to_scalar(n_novel_arr))
+
+    logger.info(
+        "GHOST ANCHORS: %d/%d samples have residual > %.2e (novel concepts)",
+        n_novel,
+        n_samples,
+        residual_threshold,
+    )
+
+    # Step 4: For novel samples, synthesize Ghost Anchors
+    if n_novel > 0:
+        # Build anchor dicts ONCE (vectorized extraction)
+        source_anchors_list = b.tolist(source_anchors)
+        target_anchors_list = b.tolist(target_anchors)
+        source_anchor_dict = {
+            name: b.array(source_anchors_list[i])
+            for i, name in enumerate(anchor_names)
+        }
+        target_anchor_dict = {
+            name: b.array(target_anchors_list[i])
+            for i, name in enumerate(anchor_names)
+        }
+
+        synthesizer = CrossGroundingSynthesizer(b)
+
+        # Precompute grounding rotation ONCE (shared across all Ghost Anchors)
+        grounding_rotation = synthesizer._rotation_estimator.estimate_rotation(
+            source_anchor_dict, target_anchor_dict
+        )
+
+        # Extract novel sample indices
+        novel_mask_list = b.tolist(novel_mask_arr)
+        novel_indices = [i for i, is_novel in enumerate(novel_mask_list) if is_novel]
+
+        # Extract all source activations at once for novel samples
+        source_acts_list = b.tolist(source_activations)
+
+        # Synthesize Ghost Anchors for novel samples (reusing precomputed rotation)
+        ghost_positions = {}
+        for idx in novel_indices:
+            source_act = b.array(source_acts_list[idx])
+            ghost = synthesizer.synthesize_ghost_anchor(
+                concept_id=f"sample_{idx}",
+                source_activation=source_act,
+                source_anchors=source_anchor_dict,
+                target_anchors=target_anchor_dict,
+                grounding_rotation=grounding_rotation,
+            )
+            ghost_positions[idx] = ghost.target_position
+
+        # Build corrected target activations (vectorized where possible)
+        target_acts_list = b.tolist(target_activations)
+        corrected_list = []
+        for i in range(n_samples):
+            if i in ghost_positions:
+                corrected_list.append(b.tolist(ghost_positions[i]))
+            else:
+                corrected_list.append(target_acts_list[i])
+
+        corrected_target_activations = b.array(corrected_list)
+        b.eval(corrected_target_activations)
+
+        # Recompute S_t with corrected activations
+        S_t = compute_relative_representation(corrected_target_activations, target_anchors)
+        b.eval(S_t)
+
+        logger.info(
+            "GHOST ANCHORS: Synthesized %d Ghost Anchors",
+            n_novel,
+        )
+    else:
+        # No novel concepts - use original
+        corrected_target_activations = target_activations
+        S_t = S_t_original
+
+    # Step 5: Complete pipeline REUSING alignment (no redundant computation)
+    # delta_S = S_s @ R - S_t (with corrected S_t)
+    delta_S = S_s_aligned - S_t
+    b.eval(delta_S)
+
+    # Density computation in anchor space
+    density_result = compute_knn_point_cloud_density(
+        source_activations=S_s_aligned,
+        target_activations=S_t,
+        backend=b,
+    )
+    source_densities = density_result.source_densities
+    target_densities = density_result.target_densities
+    b.eval(source_densities, target_densities)
+
+    # Density weights
+    density_weights = compute_density_weights(
+        source_densities=source_densities,
+        target_densities=target_densities,
+        backend=b,
+    )
+    b.eval(density_weights)
+
+    source_density_mean = float(b.to_scalar(b.mean(source_densities)))
+    target_density_mean = float(b.to_scalar(b.mean(target_densities)))
+    transfer_fraction = float(b.to_scalar(b.mean(density_weights)))
+
+    logger.info(
+        "ANCHOR GRAFTING: source_density=%.4f, target_density=%.4f, transfer_fraction=%.3f",
+        source_density_mean,
+        target_density_mean,
+        transfer_fraction,
+    )
+
+    # Decoder using corrected target
+    decoder, reconstruction_error = compute_anchor_decoder(
+        target_relative_rep=S_t,
+        target_activations=corrected_target_activations,
+        backend=b,
+    )
+
+    # Decode to target activation space
+    delta_activations = decode_to_activation_space(
+        delta_relative=delta_S,
+        decoder=decoder,
+        density_weights=density_weights,
+        backend=b,
+    )
+    b.eval(delta_activations)
 
     return AnchorGraftingResult(
         delta_activations=delta_activations,

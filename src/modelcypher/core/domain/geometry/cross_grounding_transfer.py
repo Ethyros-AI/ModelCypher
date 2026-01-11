@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
     geodesic_svd,
+    gpu_lstsq,
     is_nan,
     machine_epsilon,
     pi_value,
@@ -649,9 +650,18 @@ class CrossGroundingSynthesizer:
         """
         Solve for the position in target space that minimizes relational stress residual.
 
-        This is a multilateration problem: given geodesic distances to known points,
-        find the position. We use iterative optimization with geodesic distance
-        measurement and tangent-space gradient approximation.
+        Uses closed-form multilateration via linearization and least squares.
+        The key insight: given distances d_i to anchor positions a_i, we can
+        eliminate the quadratic ||p||² term by subtracting pairs of equations,
+        yielding a linear system solvable in O(n*d²) instead of O(iterations*n²).
+
+        Mathematical derivation:
+        ||p - a_i||² = d_i²  =>  ||p||² - 2*a_i·p + ||a_i||² = d_i²
+
+        Subtracting equation for a_0 from equation for a_i:
+        2*(a_0 - a_i)·p = d_i² - d_0² + ||a_0||² - ||a_i||²
+
+        This gives linear system A·p = b, solved via least squares.
         """
         b = self._backend
 
@@ -659,38 +669,45 @@ class CrossGroundingSynthesizer:
         anchor_list = sorted(common_anchors)
         n_anchors = len(anchor_list)
 
-        # Target distances (from source stress profile - these are already geodesic)
+        if n_anchors < 2:
+            # Can't do multilateration with < 2 anchors, return first anchor position
+            first_anchor = anchor_list[0] if anchor_list else list(target_anchors.keys())[0]
+            return b.array(target_anchors[first_anchor])
+
+        # Target distances (from source stress profile)
         target_distances = {name: source_stress.anchor_distances[name] for name in common_anchors}
 
-        # Build anchor matrix
+        # Build anchor matrix [n_anchors, d]
         anchor_arrays = [b.reshape(target_anchors[a], (1, -1)) for a in anchor_list]
         anchor_matrix = b.concatenate(anchor_arrays, axis=0)
         anchor_arr = b.astype(anchor_matrix, "float32")
         b.eval(anchor_arr)
 
-        anchor_geo = geodesic_distance_matrix(anchor_arr, k_neighbors=None, backend=b)
-        b.eval(anchor_geo)
         eps = division_epsilon(b, anchor_arr)
+        d = int(b.shape(anchor_arr)[1])
 
-        # Scale target distances by the ratio of geodesic spreads
+        # Compute anchor norms squared (vectorized)
+        anchor_norms_sq = b.sum(anchor_arr ** 2, axis=1)
+        b.eval(anchor_norms_sq)
+
+        # Scale target distances by the ratio of anchor spreads
         source_vals = list(source_stress.anchor_distances.values())
         source_mean = sum(source_vals) / len(source_vals)
         source_variance = sum((v - source_mean) ** 2 for v in source_vals) / len(source_vals)
         source_spread = sqrt_scalar(source_variance, b)
 
-        # Target spread from non-zero geodesic distances
-        anchor_flat = b.reshape(anchor_geo, (-1,))
-        positive_mask = anchor_flat > 0
-        mask_f = b.astype(positive_mask, "float32")
-        count_arr = b.sum(mask_f)
-        b.eval(count_arr)
-        count = float(b.to_scalar(count_arr))
-        if count > 0:
-            values = anchor_flat * mask_f
-            mean_arr = b.sum(values) / count
-            var_arr = b.sum((values - mean_arr) ** 2 * mask_f) / count
-            b.eval(mean_arr, var_arr)
-            target_spread = sqrt_scalar(float(b.to_scalar(var_arr)), b)
+        # Target spread from pairwise Euclidean distances between anchors
+        # (faster than geodesic for scaling purposes)
+        anchor_diffs = anchor_arr[:, None, :] - anchor_arr[None, :, :]
+        anchor_pairwise_sq = b.sum(anchor_diffs ** 2, axis=2)
+        off_diag_mask = b.ones((n_anchors, n_anchors)) - b.eye(n_anchors)
+        off_diag_vals = anchor_pairwise_sq * off_diag_mask
+        total_pairs = n_anchors * (n_anchors - 1)
+        if total_pairs > 0:
+            mean_pair_sq = b.sum(off_diag_vals) / float(total_pairs)
+            var_pair_sq = b.sum((off_diag_vals - mean_pair_sq) ** 2 * off_diag_mask) / float(total_pairs)
+            b.eval(mean_pair_sq, var_pair_sq)
+            target_spread = sqrt_scalar(float(b.to_scalar(var_pair_sq)), b)
         else:
             target_spread = 0.0
 
@@ -699,64 +716,41 @@ class CrossGroundingSynthesizer:
         else:
             scale_factor = 1.0
 
-        scaled_distances = {k: v * scale_factor for k, v in target_distances.items()}
+        scaled_distances = [target_distances[name] * scale_factor for name in anchor_list]
+        target_dists_arr = b.array(scaled_distances)
+        target_dists_sq = target_dists_arr ** 2
+        b.eval(target_dists_sq)
 
-        # Initialize position as weighted centroid of target anchors
-        weights_list = [1.0 / (scaled_distances[name] + eps) for name in anchor_list]
-        weights_arr = b.array(weights_list)
-        total_weight_arr = b.sum(weights_arr)
-        b.eval(total_weight_arr)
-        total_weight = float(b.to_scalar(total_weight_arr))
+        # Build linear system using a_0 as reference
+        # A[i-1, :] = 2*(a_0 - a_i) for i = 1, ..., n_anchors-1
+        # b[i-1] = d_i² - d_0² + ||a_0||² - ||a_i||²
+        a_0 = b.take(anchor_arr, b.array([0]), axis=0)  # [1, d]
+        a_rest = anchor_arr[1:]  # [n_anchors-1, d]
+        A_mat = 2.0 * (b.broadcast_to(a_0, (n_anchors - 1, d)) - a_rest)
 
-        # Vectorized weighted position: sum(weights * positions) / total_weight
-        # anchor_matrix is [n_anchors, d], weights is [n_anchors]
-        normalized_weights = weights_arr / total_weight
-        position = b.sum(anchor_matrix * b.reshape(normalized_weights, (-1, 1)), axis=0)
+        d_0_sq = b.take(target_dists_sq, b.array([0]), axis=0)
+        d_rest_sq = target_dists_sq[1:]
+        norm_0_sq = b.take(anchor_norms_sq, b.array([0]), axis=0)
+        norm_rest_sq = anchor_norms_sq[1:]
+
+        b_vec = d_rest_sq - b.broadcast_to(d_0_sq, (n_anchors - 1,)) + b.broadcast_to(norm_0_sq, (n_anchors - 1,)) - norm_rest_sq
+        b.eval(A_mat, b_vec)
+
+        # Solve via least squares: A @ p = b
+        # gpu_lstsq expects [n, d] @ [d, k] = [n, k], we need [n, d] @ [d, 1] = [n, 1]
+        b_col = b.reshape(b_vec, (-1, 1))
+        try:
+            position = gpu_lstsq(b, A_mat, b_col)
+            position = b.squeeze(position, axis=1)
+        except Exception:
+            # Fallback: use weighted centroid if least squares fails
+            weights_list = [1.0 / (scaled_distances[i] + eps) for i in range(n_anchors)]
+            weights_arr = b.array(weights_list)
+            total_weight = b.sum(weights_arr)
+            normalized_weights = weights_arr / total_weight
+            position = b.sum(anchor_arr * b.reshape(normalized_weights, (-1, 1)), axis=0)
+
         b.eval(position)
-
-        distance_scale = max(scaled_distances.values()) if scaled_distances else 0.0
-        learning_rate = 1.0 / (distance_scale + eps)
-        error_scale = sum(abs(v) for v in scaled_distances.values())
-        error_threshold = eps * (error_scale + eps)
-
-        target_dists_arr = b.array([scaled_distances[name] for name in anchor_list])
-
-        for iteration in range(100):
-            # Compute current geodesic distances from position to anchors
-            pos_2d = b.reshape(position, (1, -1))
-            all_points = b.concatenate([pos_2d, anchor_matrix], axis=0)
-            points_arr = b.astype(all_points, "float32")
-            b.eval(points_arr)
-            geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=None, backend=b)
-            b.eval(geo_dist)
-
-            row0 = b.take(geo_dist, b.array([0]), axis=0)
-            row0 = b.squeeze(row0, axis=0)
-            anchor_indices = b.arange(1, n_anchors + 1)
-            current_dists = b.take(row0, anchor_indices, axis=0)
-
-            diffs = position - anchor_matrix
-            diff_norms = geodesic_norms(diffs, b)
-            valid_mask = b.astype(current_dists > eps, "float32") * b.astype(
-                diff_norms > eps, "float32"
-            )
-            safe_norms = b.maximum(diff_norms, b.full(diff_norms.shape, eps))
-            errors = current_dists - target_dists_arr
-            coeffs = (2.0 * errors) / safe_norms
-            coeffs = coeffs * valid_mask
-            gradient = b.sum(diffs * b.reshape(coeffs, (-1, 1)), axis=0)
-
-            total_error_arr = b.sum((errors * valid_mask) ** 2)
-            b.eval(gradient, total_error_arr)
-            total_error = float(b.to_scalar(total_error_arr))
-            position = position - learning_rate * gradient
-            b.eval(position)
-
-            if total_error < error_threshold:
-                break
-
-            learning_rate *= max(0.0, 1.0 - eps)
-
         return position
 
     def _compute_stress_preservation(

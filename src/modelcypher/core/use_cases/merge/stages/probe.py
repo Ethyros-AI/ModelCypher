@@ -50,6 +50,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
+from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
 from modelcypher.core.use_cases.merge.stages.probe_checkpoint import (
