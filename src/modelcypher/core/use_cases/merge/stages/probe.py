@@ -1798,13 +1798,15 @@ def _probe_precise(
                     result["scale_ratio"] = alignment_result.scale_ratio
 
                     # Linear CKA should be near 1.0 on the shared manifold. Check precision.
-                    if linear_deviation > precision:
+                    # Compute precision threshold for each layer (cheap operation)
+                    layer_precision = sqrt_scalar(machine_epsilon(b, aligned), b)
+                    if linear_deviation > layer_precision:
                         logger.warning(
                             "PROBE: Layer %s -> %d linear CKA deviation=%.2e > precision %.2e.",
                             src_layers_list,
                             tgt_layer,
                             linear_deviation,
-                            precision,
+                            layer_precision,
                         )
                     
                     # =====================================================================

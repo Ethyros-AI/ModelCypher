@@ -90,9 +90,11 @@ class TestGramAlignerPublicAPI:
         assert isinstance(result.achieved_cka, float)
         assert isinstance(result.numerical_deviation, float)
 
-        # CKA = 1.0 is invariant
-        assert result.achieved_cka == 1.0
-        assert result.is_perfect is True  # Always True (invariant)
+        # Geodesic CKA is diagnostic of overlap/coverage (may be < 1.0)
+        assert 0.0 <= result.achieved_cka <= 1.0
+        assert result.numerical_deviation >= 0.0
+        assert result.precision_threshold > 0.0
+        assert isinstance(result.is_perfect, bool)
     
     def test_compositional_stitch_exists(self) -> None:
         """compositional_stitch method should exist for attention transforms."""
