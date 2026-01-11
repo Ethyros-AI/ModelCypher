@@ -631,6 +631,7 @@ class GromovWassersteinDistance:
         conv_threshold = dtype_eps**0.5
         rel_threshold = dtype_eps**0.5
         sink_threshold = dtype_eps**0.5
+        sinkhorn_epsilon = self._derive_sinkhorn_epsilon(constC)
 
         T = T0
         prev_loss = float("inf")
@@ -665,7 +666,6 @@ class GromovWassersteinDistance:
             # Step 2: Solve linear OT to get descent direction
             # G = argmin_G <grad, G> subject to marginal constraints
             # Derive epsilon from gradient (cost matrix) scale
-            sinkhorn_epsilon = self._derive_sinkhorn_epsilon(grad)
             G = self._sinkhorn_solver.solve_linear_ot(
                 grad,
                 p,

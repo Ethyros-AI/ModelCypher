@@ -1079,6 +1079,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         points: "Array",
         mean: "Array | None" = None,
         geo_result: GeodesicDistanceResult | None = None,
+        geo_from_mean: "Array | None" = None,
     ) -> "Array":
         """
         Compute covariance matrix in the tangent space at the Fréchet mean.
@@ -1116,7 +1117,12 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
 
         # Map points to tangent space at mean
         # Log_μ(x) = (x - μ) * (geodesic_dist / chord_dist)
-        tangent_vectors = self._log_map_approximate(points, mean, geo_result)
+        tangent_vectors = self._log_map_approximate(
+            points,
+            mean,
+            geo_result,
+            geo_from_base=geo_from_mean,
+        )
 
         # Standard covariance in tangent space
         tangent_mean = backend.mean(tangent_vectors, axis=0, keepdims=True)
@@ -1131,11 +1137,17 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         points: "Array",
         base: "Array",
         geo_result: GeodesicDistanceResult | None = None,
+        geo_from_base: "Array | None" = None,
     ) -> "Array":
         """Map points to the tangent space at a base point."""
         if geo_result is None:
             geo_result = self.geodesic_distances(points)
-        return self._log_map_approximate(points, base, geo_result)
+        return self._log_map_approximate(
+            points,
+            base,
+            geo_result,
+            geo_from_base=geo_from_base,
+        )
 
     # --- Private helper methods ---
 
@@ -1461,6 +1473,7 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         points: "Array",
         mean: "Array",
         geo_result: GeodesicDistanceResult,
+        geo_from_base: "Array | None" = None,
     ) -> "Array":
         """
         Compute logarithmic map from mean to all points.
@@ -1473,9 +1486,12 @@ class RiemannianGeometry(RiemannianSamplingMixin, RiemannianInterpolationMixin):
         backend = self._backend
 
         # Attach mean to the k-NN graph for exact discrete geodesics
-        geo_from_mean = self._geodesic_distances_from_query(
-            points, mean, geo_result=geo_result
-        )
+        if geo_from_base is None:
+            geo_from_mean = self._geodesic_distances_from_query(
+                points, mean, geo_result=geo_result
+            )
+        else:
+            geo_from_mean = geo_from_base
 
         # Compute geodesic/chord ratio
         diff = points - backend.reshape(mean, (1, -1))

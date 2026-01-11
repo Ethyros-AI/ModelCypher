@@ -803,6 +803,7 @@ class RiemannianDensityEstimator:
             local_curvature,
             metric_fn,
             geo_result=geodesic_context,
+            geo_from_centroid=geo_from_centroid,
         )
 
         # Compute geodesic radius (extent of activations from centroid)
@@ -1065,6 +1066,7 @@ class RiemannianDensityEstimator:
         local_curvature: LocalCurvature | None,
         metric_fn: Callable[["Array"], "Array"] | None,
         geo_result: GeodesicDistanceResult | None = None,
+        geo_from_centroid: "Array | None" = None,
     ) -> "Array":
         """Estimate covariance with optional curvature correction.
 
@@ -1086,6 +1088,7 @@ class RiemannianDensityEstimator:
             activations,
             mean=centroid,
             geo_result=geo_result,
+            geo_from_mean=geo_from_centroid,
         )
 
         # Regularize - always use machine epsilon

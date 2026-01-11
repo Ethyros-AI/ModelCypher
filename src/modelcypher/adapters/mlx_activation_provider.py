@@ -454,6 +454,9 @@ class MLXActivationProvider:
         # Initialize result structure
         results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
 
+        # Collect all tensors lazily, eval once at the end for GPU efficiency
+        all_tensors = []
+
         try:
             if hasattr(model, "forward_with_hidden_states"):
                 _, hidden_states = model.forward_with_hidden_states(input_ids)
@@ -463,8 +466,8 @@ class MLXActivationProvider:
                         # Use only non-padded tokens for mean pooling
                         seq_len = len(all_token_ids[i])
                         pooled = mx.mean(hidden[i, :seq_len, :], axis=0)
-                        mx.eval(pooled)
                         results[i][layer_idx] = pooled
+                        all_tensors.append(pooled)
 
             elif hasattr(model, "model") and hasattr(model.model, "layers"):
                 inner = model.model
@@ -486,16 +489,19 @@ class MLXActivationProvider:
                         for i in range(batch_size):
                             seq_len = len(all_token_ids[i])
                             pooled = mx.mean(h[i, :seq_len, :], axis=0)
-                            mx.eval(pooled)
                             results[i][layer_idx] = pooled
+                            all_tensors.append(pooled)
             else:
                 output = model(input_ids)
-                mx.eval(output)
                 for i in range(batch_size):
                     seq_len = len(all_token_ids[i])
                     pooled = mx.mean(output[i, :seq_len, :], axis=0)
-                    mx.eval(pooled)
                     results[i][0] = pooled
+                    all_tensors.append(pooled)
+
+            # Single eval at the end - allows GPU to batch all operations
+            if all_tensors:
+                mx.eval(*all_tensors)
 
         except Exception as e:
             logger.warning("Batch activation collection failed: %s", e)
@@ -540,6 +546,7 @@ class MLXActivationProvider:
         batch_size = len(texts)
 
         results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        all_tensors = []  # Collect lazily, eval once at end
 
         try:
             if not (hasattr(model, "model") and hasattr(model.model, "layers")):
@@ -603,31 +610,28 @@ class MLXActivationProvider:
                         up = ff_module.up_proj(h_post)
                         gate = ff_module.gate_proj(h_post)
                         intermediate = nn.silu(gate) * up
-                        mx.eval(intermediate)
                         for i in range(batch_size):
                             seq_len = len(all_token_ids[i])
                             pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
-                            mx.eval(pooled)
                             results[i][layer_idx] = pooled
+                            all_tensors.append(pooled)
                     elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
                         # LFM2/Mamba-style SwiGLU (w1=gate, w3=up, w2=down)
                         gate = ff_module.w1(h_post)
                         up = ff_module.w3(h_post)
                         intermediate = nn.silu(gate) * up
-                        mx.eval(intermediate)
                         for i in range(batch_size):
                             seq_len = len(all_token_ids[i])
                             pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
-                            mx.eval(pooled)
                             results[i][layer_idx] = pooled
+                            all_tensors.append(pooled)
                     elif hasattr(ff_module, "fc1"):
                         intermediate = ff_module.fc1(h_post)
-                        mx.eval(intermediate)
                         for i in range(batch_size):
                             seq_len = len(all_token_ids[i])
                             pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
-                            mx.eval(pooled)
                             results[i][layer_idx] = pooled
+                            all_tensors.append(pooled)
 
                 # Complete layer forward
                 if hasattr(layer, "mlp"):
@@ -639,6 +643,10 @@ class MLXActivationProvider:
                 else:
                     result = layer(h)
                     h = result[0] if isinstance(result, tuple) else result
+
+            # Single eval at the end - allows GPU to batch all operations
+            if all_tensors:
+                mx.eval(*all_tensors)
 
         except Exception as e:
             logger.warning("Batch intermediate collection failed: %s", e)
