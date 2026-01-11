@@ -32,38 +32,7 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_dimensionality import ManifoldDimensionality
-from modelcypher.core.domain.geometry.manifold_fidelity_sweep import (
-    ManifoldFidelitySweep,
-)
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-
-
-def test_manifold_regularity_cka_identity():
-    """CKA should be 1.0 for identical manifold representations."""
-    x = mx.random.normal((32, 64))
-    # All parameters derived from data
-    sweep = ManifoldFidelitySweep()
-
-    cka = sweep._compute_cka(x, x)
-    backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([1.0]))
-    assert abs(float(cka) - 1.0) <= eps
-
-
-def test_manifold_regularity_distance_correlation():
-    """Distance correlation should be high for linearly related manifolds."""
-    mx.random.seed(42)  # Seed for reproducibility
-    x = mx.random.normal((20, 32))
-    # Linear transformation preserves distances up to scale
-    y = x @ mx.random.normal((32, 32))
-
-    # All parameters derived from data
-    sweep = ManifoldFidelitySweep()
-    dist_corr = sweep._compute_distance_correlation(x, y)
-
-    backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([1.0]))
-    assert 0.0 - eps <= float(dist_corr) <= 1.0 + eps
 
 
 def test_manifold_regularity_intrinsic_dimension():
@@ -88,38 +57,3 @@ def test_manifold_regularity_intrinsic_dimension():
     eps = division_epsilon(backend, backend.array([1.0]))
     assert summary.intrinsic_dimension >= eps
     assert summary.intrinsic_dimension <= len(points[0]) + eps
-
-
-def test_manifold_regularity_variance_captured():
-    """Test rank-based variance capture regularity."""
-    x = mx.random.normal((50, 64))
-    # Zero out some dimensions to control variance
-    x_low_rank = x * mx.array([1.0] * 10 + [0.0] * 54)
-
-    # All parameters derived from data
-    sweep = ManifoldFidelitySweep()
-    centered = sweep._center(x_low_rank)
-    svd = sweep._compute_svd(centered)
-
-    var_ratio = sweep._variance_ratio(svd[0], rank=10)
-
-    # Rank 10 should capture all variance
-    backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([1.0]))
-    assert abs(float(var_ratio) - 1.0) <= eps
-
-
-def test_manifold_regularity_procrustes_error():
-    """Procrustes error should be low for rotated manifolds."""
-    x = mx.random.normal((30, 16))
-    # Random rotation matrix - use CPU stream for QR decomposition
-    q, _ = mx.linalg.qr(mx.random.normal((16, 16)), stream=mx.cpu)
-    y = x @ q
-
-    # All parameters derived from data
-    sweep = ManifoldFidelitySweep()
-    error = sweep._compute_procrustes_error(x, y)
-
-    backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([1.0]))
-    assert error <= eps

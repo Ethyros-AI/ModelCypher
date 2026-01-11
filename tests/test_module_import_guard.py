@@ -44,6 +44,10 @@ def get_all_domain_modules() -> list[str]:
         if py_file.name == "__init__.py":
             continue
 
+        # Skip archived modules
+        if "_archive" in py_file.parts:
+            continue
+
         # Convert path to module name
         relative = py_file.relative_to(DOMAIN_DIR.parent.parent.parent)
         module_parts = list(relative.with_suffix("").parts)

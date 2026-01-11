@@ -291,40 +291,6 @@ class TestProjectViaLowrankGW:
         assert result.iterations == 0  # No projection needed
 
 
-class TestCrossDimensionalIntegration:
-    """Test integration with cross_dimensional_projection module."""
-
-    def test_large_row_mismatch_uses_lowrank(self, backend):
-        """Test that large row mismatches use low-rank GW instead of failing."""
-        from modelcypher.core.domain.geometry.cross_dimensional_projection import (
-            ProjectionMethod,
-            project_cross_dimensional,
-        )
-
-        b = backend
-        b.random_seed(42)
-
-        # Simulate MLP cross-architecture projection (reduced scale for test)
-        # Real case: Llama 70B (28672) -> Qwen 8B (12288)
-        # Test case: 500 -> 400 (still above the implicit tractability threshold in tests)
-        m_s, m_t = 500, 400
-        d = 64
-
-        source = b.random_normal((m_s, d))
-        target = b.random_normal((m_t, d))
-        b.eval(source, target)
-
-        # This should NOT raise an error now - uses low-rank GW
-        result = project_cross_dimensional(
-            source, target,
-            method=ProjectionMethod.GRAM_TRANSPORT,
-            backend=b,
-        )
-
-        assert result.projected.shape == (m_t, d)
-        assert result.metrics["row_distance"] >= 0
-
-
 class TestMathematicalProperties:
     """Test mathematical properties of the low-rank GW solution."""
 
