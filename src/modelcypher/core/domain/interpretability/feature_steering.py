@@ -217,8 +217,8 @@ class FeatureSteering:
         b.eval(pos, neg)
 
         # Compute Fréchet means (geodesic centroids)
-        pos_mean = frechet_mean(pos, b)
-        neg_mean = frechet_mean(neg, b)
+        pos_mean = frechet_mean(pos, backend=b)
+        neg_mean = frechet_mean(neg, backend=b)
         b.eval(pos_mean, neg_mean)
 
         # Direction from negative to positive
