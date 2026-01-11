@@ -435,7 +435,7 @@ def batch(
 
     # Outlier detection (optional analysis before merge)
     if detect_outliers:
-        from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
+        from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector, OutlierResult
 
         typer.echo("")
         typer.echo("=" * 60)
@@ -445,47 +445,132 @@ def batch(
         typer.echo("  (Models that disagree with consensus may have learned concepts wrong)")
         typer.echo("")
 
-        # Load weights and compute per-model alignment errors
+        # Outlier detection must happen in Gram space (dimension-invariant)
+        # We need to probe models first and compare their relational structure
+        typer.echo("  Note: Full outlier detection requires probing (runs during merge).")
+        typer.echo("  Pre-merge check uses Gram matrix comparison on a small probe set.")
+        typer.echo("")
+
+        # Load models and run quick probe to build Gram matrices
+        from modelcypher.core.domain.geometry.gram_aligner import linear_cka
+        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+        from modelcypher.core.domain.agents.probe_loader import ProbeLoader
+
         model_loader = MLXModelLoader()
         all_paths = [target] + list(sources)
 
-        # Compute pairwise weight distances as proxy for alignment error
-        # (Full stress profile analysis would require activation probing)
-        detector = OutlierDetector(backend)
-        weight_norms = []
+        # Load a small set of probes for quick comparison
+        probe_loader = ProbeLoader()
+        probes = probe_loader.load_probes()[:64]  # Quick check with 64 probes
+
+        # Collect Gram matrices for each model
+        gram_matrices = []
         for path in all_paths:
-            weights, _ = model_loader.load_weights(path)
-            total_norm = 0.0
-            for name, w in weights.items():
-                if "weight" in name.lower():
-                    total_norm += float(backend.to_scalar(backend.sum(w ** 2)))
-            weight_norms.append(total_norm ** 0.5)
+            model, tokenizer = model_loader.load_model(path)
 
-        # Compute deviations from mean as proxy errors
-        mean_norm = sum(weight_norms) / len(weight_norms)
-        proxy_errors = [abs(n - mean_norm) / mean_norm for n in weight_norms]
+            # Get activations for probes (middle layer)
+            from modelcypher.core.use_cases.merge.helpers import get_hidden_state
+            activations = []
+            for probe in probes:
+                try:
+                    act = get_hidden_state(model, tokenizer, probe.text, backend)
+                    if act is not None:
+                        activations.append(act)
+                except Exception:
+                    continue
 
-        result_detect = detector.detect_from_gpa(proxy_errors)
+            if len(activations) < 10:
+                typer.echo(f"  Warning: Too few valid probes for {path}")
+                gram_matrices.append(None)
+                continue
+
+            # Build Gram matrix K = X @ X.T (n_probes × n_probes, dimension-invariant)
+            X = backend.stack(activations, axis=0)
+            K = backend.matmul(X, backend.transpose(X, (1, 0)))
+            gram_matrices.append(K)
+
+            # Clean up model
+            del model
+            if hasattr(backend, "clear_cache"):
+                backend.clear_cache()
+
+        # Compare Gram matrices using CKA
+        # CKA is invariant to orthogonal transforms and isotropic scaling
+        detector = OutlierDetector(backend)
+        n_models = len(gram_matrices)
+        valid_grams = [(i, K) for i, K in enumerate(gram_matrices) if K is not None]
+
+        if len(valid_grams) < 2:
+            typer.echo("  Error: Need at least 2 valid Gram matrices for comparison.")
+            result_detect = None
+        else:
+            # Compute pairwise CKA distances (1 - CKA = distance)
+            pairwise_cka = {}
+            for i, (idx_i, K_i) in enumerate(valid_grams):
+                for j, (idx_j, K_j) in enumerate(valid_grams):
+                    if i < j:
+                        cka_val = float(backend.to_scalar(linear_cka(K_i, K_j, backend)))
+                        pairwise_cka[(idx_i, idx_j)] = cka_val
+
+            # Compute mean CKA for each model (higher = more aligned with others)
+            mean_cka = []
+            for idx, _ in valid_grams:
+                cka_sum = 0.0
+                count = 0
+                for (i, j), cka in pairwise_cka.items():
+                    if i == idx or j == idx:
+                        cka_sum += cka
+                        count += 1
+                mean_cka.append((idx, cka_sum / count if count > 0 else 0.0))
+
+            # Outliers have LOW mean CKA (far from others in representation space)
+            # Convert to "errors" (1 - mean_cka) for the detector
+            cka_errors = [1.0 - cka for _, cka in mean_cka]
+            result_detect = detector.detect_from_gpa(cka_errors)
+
+            # Map back to original indices
+            valid_indices = [idx for idx, _ in valid_grams]
+            result_detect = OutlierResult(
+                consensus_indices=tuple(valid_indices[i] for i in result_detect.consensus_indices),
+                outlier_indices=tuple(valid_indices[i] for i in result_detect.outlier_indices),
+                errors=tuple(cka_errors),
+                threshold=result_detect.threshold,
+                mean_error=result_detect.mean_error,
+                std_error=result_detect.std_error,
+            )
 
         typer.echo(f"  Models analyzed: {len(all_paths)}")
-        typer.echo(f"  Consensus models: {len(result_detect.consensus_indices)}")
-        typer.echo(f"  Outlier models: {len(result_detect.outlier_indices)}")
-        typer.echo(f"  Detection threshold: {result_detect.threshold:.4f}")
-        typer.echo("")
 
-        if result_detect.outlier_indices:
-            typer.echo("  OUTLIERS DETECTED:")
-            for idx in result_detect.outlier_indices:
-                model_path = all_paths[idx]
-                error = proxy_errors[idx]
-                role = "TARGET" if idx == 0 else f"SOURCE-{idx}"
-                typer.echo(f"    [{role}] {model_path} (deviation: {error:.4f})")
-            typer.echo("")
-            if 0 in result_detect.outlier_indices:
-                typer.echo("  WARNING: Target model is an outlier!")
-                typer.echo("           Consider using --consensus to correct misaligned concepts.")
+        if result_detect is None:
+            typer.echo("  Could not perform outlier detection (insufficient valid probes).")
         else:
-            typer.echo("  All models are in consensus. No outliers detected.")
+            typer.echo(f"  Consensus models: {len(result_detect.consensus_indices)}")
+            typer.echo(f"  Outlier models: {len(result_detect.outlier_indices)}")
+            typer.echo(f"  Detection threshold (1-CKA): {result_detect.threshold:.4f}")
+            typer.echo("")
+
+            # Show pairwise CKA values for transparency
+            typer.echo("  Pairwise CKA (representation similarity):")
+            for (i, j), cka in pairwise_cka.items():
+                path_i = all_paths[i].split("/")[-1]
+                path_j = all_paths[j].split("/")[-1]
+                typer.echo(f"    {path_i} <-> {path_j}: CKA={cka:.4f}")
+            typer.echo("")
+
+            if result_detect.outlier_indices:
+                typer.echo("  OUTLIERS DETECTED (low CKA with others):")
+                for idx in result_detect.outlier_indices:
+                    model_path = all_paths[idx]
+                    # Find mean CKA for this model
+                    model_mean_cka = mean_cka[valid_indices.index(idx)][1] if idx in valid_indices else 0.0
+                    role = "TARGET" if idx == 0 else f"SOURCE-{idx}"
+                    typer.echo(f"    [{role}] {model_path.split('/')[-1]} (mean CKA: {model_mean_cka:.4f})")
+                typer.echo("")
+                if 0 in result_detect.outlier_indices:
+                    typer.echo("  WARNING: Target model is an outlier!")
+                    typer.echo("           Consider using --consensus to correct misaligned concepts.")
+            else:
+                typer.echo("  All models share similar representation structure (in consensus).")
 
         typer.echo("=" * 60)
         typer.echo("")

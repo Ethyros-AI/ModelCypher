@@ -87,11 +87,13 @@ class OutlierDetector:
     ) -> OutlierResult:
         """Detect outliers from GPA per-model alignment errors.
 
-        Uses z-score detection with sigma derived from model count:
-        - 3 models: sigma = 1.5 (lenient - few data points)
-        - 6+ models: sigma = 2.0 (stricter - more data points)
+        Uses geometry-derived threshold based on the distribution of errors:
+        - Threshold = median + 2 * (median - min)
+        - The factor of 2 comes from triangle inequality reasoning:
+          if consensus models cluster within distance D, an outlier
+          at distance >2D cannot geometrically belong to that cluster.
 
-        The sigma value is interpolated linearly between these bounds.
+        This is scale-invariant and derived entirely from the data.
 
         Args:
             per_model_errors: Per-model alignment errors from GPA result.
@@ -121,14 +123,23 @@ class OutlierDetector:
         variance = float(b.mean((errors_arr - mean_err) ** 2))
         std_err = sqrt_scalar(variance, b)
 
-        # Derive sigma from model count (interpolate between 1.5 and 2.0)
-        # With 3 models: sigma = 1.5 (lenient)
-        # With 6+ models: sigma = 2.0 (stricter)
-        sigma = min(2.0, 1.5 + 0.1 * (n_models - 3))
-        sigma = max(1.5, sigma)
+        # Geometry-derived threshold using median and spread
+        # The median represents the "center" of the consensus cluster
+        # The spread (median - min) represents the cluster's natural radius
+        # Factor of 2 from triangle inequality: >2x cluster radius = outlier
+        sorted_errors = sorted(per_model_errors)
+        median_err = sorted_errors[n_models // 2]
+        min_err = sorted_errors[0]
+        cluster_radius = median_err - min_err
 
-        # Threshold = mean + sigma * std
-        threshold = mean_err + sigma * std_err
+        # Threshold: if your error is more than 2x the cluster radius
+        # above the median, you're geometrically outside the cluster
+        threshold = median_err + 2.0 * cluster_radius
+
+        # Fallback: if cluster_radius is near zero (all errors identical),
+        # use a small epsilon-relative threshold
+        if cluster_radius < eps:
+            threshold = median_err + eps
 
         # Detect outliers
         consensus_indices = []
@@ -141,11 +152,13 @@ class OutlierDetector:
                 consensus_indices.append(i)
 
         logger.info(
-            "Outlier detection: %d consensus, %d outliers (threshold=%.4f, sigma=%.2f)",
+            "Outlier detection: %d consensus, %d outliers "
+            "(threshold=%.4f, median=%.4f, cluster_radius=%.4f)",
             len(consensus_indices),
             len(outlier_indices),
             threshold,
-            sigma,
+            median_err,
+            cluster_radius,
         )
 
         return OutlierResult(

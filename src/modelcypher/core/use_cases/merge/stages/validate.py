@@ -31,10 +31,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    geodesic_svd,
     log_scalar,
     machine_epsilon,
     sqrt_scalar,
@@ -55,9 +53,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
-_cache = ComputationCache.shared()
-
-
 # ValidateConfig was REMOVED. Validation always runs all checks.
 # Ridge test prompts are internal test data.
 
@@ -587,11 +582,33 @@ def _compute_layer_condition_number(
     layer_idx: int,
     backend: "Backend",
 ) -> float:
-    """Compute condition number for layer weights."""
+    """Compute condition number for layer weights via Gram spectra."""
     import statistics
 
     b = backend
     layer_pattern = f"layers.{layer_idx}."
+
+    def _singular_values(matrix: Any) -> "Array | None":
+        val_arr = b.astype(b.array(matrix), "float32")
+        b.eval(val_arr)
+        shape = val_arr.shape
+        if len(shape) != 2:
+            return None
+        m = int(shape[0])
+        n = int(shape[1])
+        if m == 0 or n == 0:
+            return b.zeros((0,), dtype="float32")
+        if m >= n:
+            gram = b.matmul(b.transpose(val_arr), val_arr)
+        else:
+            gram = b.matmul(val_arr, b.transpose(val_arr))
+        b.eval(gram)
+        eigenvalues, _ = b.eigh(gram)
+        b.eval(eigenvalues)
+        eigenvalues = b.maximum(eigenvalues, b.zeros_like(eigenvalues))
+        s = b.sqrt(eigenvalues)
+        b.eval(s)
+        return s
 
     condition_numbers: list[float] = []
     for key, val in weights.items():
@@ -603,16 +620,9 @@ def _compute_layer_condition_number(
             continue
 
         try:
-            # Use backend for SVD
-            val_arr = b.astype(b.array(val), "float32")
-            b.eval(val_arr)
-            cache_key = _cache.make_svd_key(val_arr, b, full_matrices=False)
-            cached = _cache.get_svd(cache_key)
-            if cached is None:
-                U, s, Vt = geodesic_svd(b, val_arr)
-                _cache.set_svd(cache_key, (U, s, Vt))
-            else:
-                _, s, _ = cached
+            s = _singular_values(val)
+            if s is None:
+                continue
             b.eval(s)
             # Use dtype-derived threshold for singular value significance
             sv_eps = float(machine_epsilon(b, s))
@@ -648,11 +658,33 @@ def _estimate_layer_intrinsic_dim(
     layer_idx: int,
     backend: "Backend",
 ) -> int:
-    """Estimate intrinsic dimension from SVD spectrum."""
+    """Estimate intrinsic dimension from Gram spectrum."""
     import statistics
 
     b = backend
     layer_pattern = f"layers.{layer_idx}."
+
+    def _singular_values(matrix: Any) -> "Array | None":
+        val_arr = b.astype(b.array(matrix), "float32")
+        b.eval(val_arr)
+        shape = val_arr.shape
+        if len(shape) != 2:
+            return None
+        m = int(shape[0])
+        n = int(shape[1])
+        if m == 0 or n == 0:
+            return b.zeros((0,), dtype="float32")
+        if m >= n:
+            gram = b.matmul(b.transpose(val_arr), val_arr)
+        else:
+            gram = b.matmul(val_arr, b.transpose(val_arr))
+        b.eval(gram)
+        eigenvalues, _ = b.eigh(gram)
+        b.eval(eigenvalues)
+        eigenvalues = b.maximum(eigenvalues, b.zeros_like(eigenvalues))
+        s = b.sqrt(eigenvalues)
+        b.eval(s)
+        return s
 
     intrinsic_dims: list[int] = []
     for key, val in weights.items():
@@ -664,16 +696,9 @@ def _estimate_layer_intrinsic_dim(
             continue
 
         try:
-            # Use backend for SVD
-            val_arr = b.astype(b.array(val), "float32")
-            b.eval(val_arr)
-            cache_key = _cache.make_svd_key(val_arr, b, full_matrices=False)
-            cached = _cache.get_svd(cache_key)
-            if cached is None:
-                U, s, Vt = geodesic_svd(b, val_arr)
-                _cache.set_svd(cache_key, (U, s, Vt))
-            else:
-                _, s, _ = cached
+            s = _singular_values(val)
+            if s is None:
+                continue
             b.eval(s)
             # Use dtype-derived threshold - sqrt(eps) is standard numerical tolerance
             sv_eps = float(machine_epsilon(b, s))

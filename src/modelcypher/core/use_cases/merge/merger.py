@@ -512,14 +512,17 @@ class UnifiedGeometricMerger:
         target_model: Any,
         target_tokenizer: Any,
     ) -> tuple[dict[str, Any], int]:
-        """Run consensus correction phase.
+        """Run consensus correction using per-concept stress profile comparison.
 
-        Identifies concepts where target disagrees with source consensus and
-        applies corrections (moves target to consensus position).
+        Compares models via stress profiles (distances to anchors) which is
+        dimension-invariant. Corrects concepts where target disagrees with consensus.
 
-        This is Phase 1 of consensus-based merging:
-        - CORRECTION: Fix concepts target learned wrong (NO null-space projection)
-        - ADDITION: Add source-only knowledge (WITH null-space projection) - done after
+        Process:
+        1. Probe all models to get activations
+        2. Select anchor concepts (subset of probes)
+        3. Compute stress profiles (distances to anchors) for each concept
+        4. Find concepts where target's stress differs from consensus
+        5. Use multilateration + lstsq to correct those concepts
 
         Args:
             target_weights: Target model weights.
@@ -533,100 +536,193 @@ class UnifiedGeometricMerger:
         import logging
         from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
         from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
+        from modelcypher.core.domain.agents.probe_loader import ProbeLoader
+        from modelcypher.core.use_cases.merge.helpers import get_hidden_state
+        from modelcypher.core.domain.geometry.numerical_stability import gpu_lstsq
 
         logger = logging.getLogger(__name__)
+        b = self._backend
 
-        # Need at least 2 sources + target (3 models) for triangulation
-        all_paths = [None] + list(source_paths)  # target is at index 0
-        n_models = len(all_paths)
-
+        n_models = 1 + len(source_paths)
         if n_models < 3:
             logger.info("CONSENSUS: Need 3+ models for triangulation (got %d)", n_models)
             return target_weights, 0
 
-        detector = OutlierDetector(self._backend)
-        corrector = ConsensusCorrector(self._backend)
+        detector = OutlierDetector(b)
+        corrector = ConsensusCorrector(b)
 
-        # For now, use weight-based proxy for outlier detection
-        # (Full stress profile analysis requires activation probing per concept)
-        # This gives us a quick approximation using weight space distances
+        # Load probes - use subset for anchors, rest for concepts to check
+        probe_loader = ProbeLoader()
+        all_probes = probe_loader.load_probes()[:256]
+        n_anchors = min(32, len(all_probes) // 4)
+        anchor_probes = all_probes[:n_anchors]
+        concept_probes = all_probes[n_anchors:]
 
-        # Compute per-model weight signatures for each layer
-        corrections_applied = 0
-        corrected_weights = {k: self._backend.array(v) for k, v in target_weights.items()}
+        logger.info("CONSENSUS: Using %d anchors, checking %d concepts across %d models",
+                    n_anchors, len(concept_probes), n_models)
 
-        # Load source weights for comparison
-        source_weights_list = []
+        # Load source models
+        source_models = []
         for source_path in source_paths:
-            weights, _ = self._model_loader.load_weights(source_path)
-            source_weights_list.append(weights)
+            model, _ = self._model_loader.load_model(source_path)
+            source_models.append(model)
 
-        # For each layer, check if target is an outlier
-        for layer_name in target_weights.keys():
-            if "weight" not in layer_name.lower():
+        all_models = [target_model] + source_models
+
+        # Collect activations for all models
+        # model_activations[model_idx][probe_idx] = activation vector
+        model_activations = []
+        for model in all_models:
+            activations = {}
+            for i, probe in enumerate(all_probes):
+                try:
+                    act = get_hidden_state(model, target_tokenizer, probe.text, b)
+                    if act is not None:
+                        activations[i] = act
+                except Exception:
+                    continue
+            model_activations.append(activations)
+
+        # Find anchors valid across all models
+        valid_anchor_indices = []
+        for i in range(n_anchors):
+            if all(i in acts for acts in model_activations):
+                valid_anchor_indices.append(i)
+
+        if len(valid_anchor_indices) < 8:
+            logger.warning("CONSENSUS: Too few valid anchors (%d < 8). Skipping correction.",
+                          len(valid_anchor_indices))
+            for model in source_models:
+                del model
+            return target_weights, 0
+
+        logger.info("CONSENSUS: %d valid anchors across all models", len(valid_anchor_indices))
+
+        # Compute stress profiles for each concept in each model
+        def compute_stress(activation, anchor_acts):
+            """Compute distances from activation to each anchor."""
+            distances = []
+            for anchor_act in anchor_acts:
+                diff = activation - anchor_act
+                dist = b.sqrt(b.sum(diff ** 2))
+                distances.append(float(b.to_scalar(dist)))
+            return b.array(distances)
+
+        # Get anchor activations for each model (in their own spaces)
+        model_anchor_acts = []
+        for acts in model_activations:
+            anchor_acts = [acts[i] for i in valid_anchor_indices]
+            model_anchor_acts.append(anchor_acts)
+
+        # Compute stress profiles for concept probes
+        concept_stress = []  # [concept_idx][model_idx] = stress vector
+        valid_concept_indices = []
+
+        for concept_idx in range(n_anchors, len(all_probes)):
+            if not all(concept_idx in acts for acts in model_activations):
                 continue
 
-            # Collect this layer's weights from all models
-            layer_weights = [target_weights[layer_name]]  # target first
-            for source_weights in source_weights_list:
-                if layer_name in source_weights:
-                    layer_weights.append(source_weights[layer_name])
+            valid_concept_indices.append(concept_idx)
+            stresses = []
+            for model_idx, acts in enumerate(model_activations):
+                concept_act = acts[concept_idx]
+                stress = compute_stress(concept_act, model_anchor_acts[model_idx])
+                stresses.append(stress)
+            concept_stress.append(stresses)
 
-            if len(layer_weights) < 3:
-                continue
+        if not concept_stress:
+            logger.warning("CONSENSUS: No valid concepts to check. Skipping correction.")
+            for model in source_models:
+                del model
+            return target_weights, 0
 
-            # Compute pairwise Frobenius distances
-            pairwise = [[0.0] * len(layer_weights) for _ in range(len(layer_weights))]
-            for i in range(len(layer_weights)):
-                for j in range(i + 1, len(layer_weights)):
-                    wi = self._backend.array(layer_weights[i])
-                    wj = self._backend.array(layer_weights[j])
-                    dist = float(self._backend.to_scalar(
-                        self._backend.sqrt(self._backend.sum((wi - wj) ** 2))
-                    ))
+        logger.info("CONSENSUS: Checking %d concepts for outliers", len(concept_stress))
+
+        # Find concepts where target is an outlier
+        target_concept_acts = [model_activations[0][i] for i in valid_concept_indices]
+        outlier_concepts = []
+        consensus_positions = []
+
+        for c_idx, stresses in enumerate(concept_stress):
+            n = len(stresses)
+            pairwise = [[0.0] * n for _ in range(n)]
+            for i in range(n):
+                for j in range(i + 1, n):
+                    diff = stresses[i] - stresses[j]
+                    dist = float(b.to_scalar(b.sqrt(b.sum(diff ** 2))))
                     pairwise[i][j] = dist
                     pairwise[j][i] = dist
 
-            # Use triangulation for 3 models, z-score for more
-            if len(layer_weights) == 3:
+            if n == 3:
                 result = detector._triangulate_outlier(pairwise)
             else:
-                # Compute mean distances for z-score detection
-                mean_distances = []
-                for i in range(len(layer_weights)):
-                    total = sum(pairwise[i])
-                    mean_dist = total / (len(layer_weights) - 1)
-                    mean_distances.append(mean_dist)
-                result = detector.detect_from_gpa(mean_distances)
+                mean_dists = [sum(row) / (n - 1) for row in pairwise]
+                result = detector.detect_from_gpa(mean_dists)
 
-            # Check if target (index 0) is an outlier
             if 0 in result.outlier_indices:
-                # Target is wrong - compute consensus from sources
-                consensus_weights = []
-                for idx in result.consensus_indices:
-                    if idx > 0:  # Skip target if it's somehow in consensus
-                        consensus_weights.append(layer_weights[idx])
+                consensus_stresses = [stresses[i] for i in result.consensus_indices if i > 0]
+                if consensus_stresses:
+                    stacked = b.stack(consensus_stresses, axis=0)
+                    consensus_stress = b.mean(stacked, axis=0)
 
-                if consensus_weights:
-                    # Compute mean of consensus weights
-                    stacked = self._backend.stack(
-                        [self._backend.array(w) for w in consensus_weights],
-                        axis=0
+                    target_anchors = {
+                        f"anchor_{i}": model_anchor_acts[0][i]
+                        for i in range(len(valid_anchor_indices))
+                    }
+                    consensus_pos = corrector._solve_position_from_stress(
+                        consensus_stress, target_anchors
                     )
-                    consensus = self._backend.mean(stacked, axis=0)
+                    outlier_concepts.append(c_idx)
+                    consensus_positions.append(consensus_pos)
 
-                    # Apply correction: move target to consensus
-                    # Unlike null-space projection, this intentionally changes behavior
-                    corrected_weights[layer_name] = consensus
-                    corrections_applied += 1
+        if not outlier_concepts:
+            logger.info("CONSENSUS: No outlier concepts found. Target is in consensus.")
+            for model in source_models:
+                del model
+            return target_weights, 0
 
-                    logger.info(
-                        "CONSENSUS: Corrected layer %s (target was outlier, "
-                        "threshold=%.4f, target_dist=%.4f)",
-                        layer_name,
-                        result.threshold,
-                        result.errors[0] if result.errors else 0.0,
-                    )
+        logger.info("CONSENSUS: Found %d outlier concepts. Computing corrections.",
+                    len(outlier_concepts))
+
+        # Compute correction delta
+        target_outlier_acts = b.stack(
+            [target_concept_acts[i] for i in outlier_concepts], axis=0
+        )
+        consensus_pos_stack = b.stack(consensus_positions, axis=0)
+        delta_acts = consensus_pos_stack - target_outlier_acts
+        b.eval(delta_acts)
+
+        # Apply correction to output projection
+        output_keys = [k for k in target_weights.keys()
+                       if "lm_head" in k.lower() or "output" in k.lower()]
+        if not output_keys:
+            output_keys = [k for k in target_weights.keys() if "weight" in k.lower()]
+
+        corrected_weights = {k: b.array(v) for k, v in target_weights.items()}
+        corrections_applied = 0
+
+        if output_keys:
+            output_key = output_keys[0]
+            output_weight = b.array(target_weights[output_key])
+
+            weight_delta = gpu_lstsq(b, target_outlier_acts, delta_acts)
+            weight_delta = b.transpose(weight_delta)
+            b.eval(weight_delta)
+
+            delta_norm = float(b.to_scalar(b.sqrt(b.sum(weight_delta ** 2))))
+            weight_norm = float(b.to_scalar(b.sqrt(b.sum(output_weight ** 2))))
+            scale = min(1.0, 0.1 * weight_norm / (delta_norm + 1e-8))
+
+            corrected_weights[output_key] = output_weight + scale * weight_delta
+            corrections_applied = len(outlier_concepts)
+
+            logger.info("CONSENSUS: Applied correction to %s (scale=%.4f, %d concepts)",
+                        output_key, scale, corrections_applied)
+
+        for model in source_models:
+            del model
+        if hasattr(b, "clear_cache"):
+            b.clear_cache()
 
         return corrected_weights, corrections_applied
 

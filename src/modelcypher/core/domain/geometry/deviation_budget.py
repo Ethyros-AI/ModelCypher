@@ -104,8 +104,37 @@ class DeviationTracker:
 
         return float(backend.sqrt(total_sq))
 
+    def _singular_values(self, matrix: Any) -> Any | None:
+        backend = self._backend
+        arr = backend.array(matrix)
+        shape = backend.shape(arr)
+        if len(shape) < 2:
+            return None
+        if len(shape) > 2:
+            total_rows = 1
+            for dim in shape[:-1]:
+                total_rows *= dim
+            arr = backend.reshape(arr, (total_rows, shape[-1]))
+        arr = backend.astype(arr, "float32")
+        backend.eval(arr)
+        m = int(arr.shape[0])
+        n = int(arr.shape[1])
+        if m == 0 or n == 0:
+            return backend.zeros((0,), dtype="float32")
+        if m >= n:
+            gram = backend.matmul(backend.transpose(arr), arr)
+        else:
+            gram = backend.matmul(arr, backend.transpose(arr))
+        backend.eval(gram)
+        eigenvalues, _ = backend.eigh(gram)
+        backend.eval(eigenvalues)
+        eigenvalues = backend.maximum(eigenvalues, backend.zeros_like(eigenvalues))
+        s = backend.sqrt(eigenvalues)
+        backend.eval(s)
+        return s
+
     def _compute_condition_number(self, weights: dict[str, Any]) -> float:
-        """Compute effective condition number from weight matrices via SVD.
+        """Compute effective condition number from weight matrices via Gram spectra.
 
         The condition number κ = σ_max / σ_min measures matrix sensitivity to
         perturbations. For a collection of weight matrices, we compute:
@@ -118,29 +147,15 @@ class DeviationTracker:
         sigma_min_global = float("inf")
 
         for key, v in weights.items():
-            w = backend.array(v)
-            shape = backend.shape(w)
-
-            # Skip 1D tensors (biases)
-            if len(shape) < 2:
-                continue
-
-            # Reshape to 2D for SVD if needed
-            if len(shape) > 2:
-                total_rows = 1
-                for dim in shape[:-1]:
-                    total_rows *= dim
-                w = backend.reshape(w, (total_rows, shape[-1]))
-
             try:
-                _, S, _ = backend.svd(w)
-                backend.eval(S)
-
-                s_max = float(backend.max(S))
+                s = self._singular_values(v)
+                if s is None:
+                    continue
+                s_max = float(backend.max(s))
                 s_nonzero = backend.where(
-                    S > eps,
-                    S,
-                    backend.full_like(S, float("inf")),
+                    s > eps,
+                    s,
+                    backend.full_like(s, float("inf")),
                 )
                 s_min = float(backend.min(s_nonzero))
 
@@ -150,7 +165,7 @@ class DeviationTracker:
                     sigma_min_global = s_min
 
             except Exception:
-                logger.debug("SVD failed for weight '%s', skipping", key)
+                logger.debug("Spectrum solve failed for weight '%s', skipping", key)
                 continue
 
         if sigma_max_global <= eps or sigma_min_global == float("inf"):
@@ -250,7 +265,7 @@ class DeviationTracker:
         target_weights: dict[str, Any],
         target_activations: Any,
     ) -> float:
-        """Derive scale from null-space capacity via SVD.
+        """Derive scale from null-space capacity via Gram spectra.
 
         Formula: scale = null_space_capacity / delta_magnitude
 
@@ -277,12 +292,12 @@ class DeviationTracker:
                 total_rows *= dim
             activations = backend.reshape(activations, (total_rows, activations.shape[-1]))
 
-        # SVD to get singular values
         try:
-            _, S, _ = backend.svd(activations)
-            backend.eval(S)
+            S = self._singular_values(activations)
+            if S is None:
+                return 1.0
         except Exception:
-            logger.warning("SVD failed for activations, using scale=1.0")
+            logger.warning("Spectrum solve failed for activations, using scale=1.0")
             return 1.0
 
         # Effective dimensionality: d_eff = (Σσ)² / Σσ²
