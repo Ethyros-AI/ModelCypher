@@ -459,9 +459,13 @@ def batch(
         model_loader = MLXModelLoader()
         all_paths = [target] + list(sources)
 
-        # Load a small set of probes for quick comparison
+        # Load probes for quick Gram comparison
+        # Use sqrt(available) probes - balances coverage vs speed
         probe_loader = ProbeLoader()
-        probes = probe_loader.load_probes()[:64]  # Quick check with 64 probes
+        available_probes = probe_loader.load_probes()
+        n_probes = max(len(all_paths) + 2, int(len(available_probes) ** 0.5))
+        n_probes = min(n_probes, 128)  # Cap for pre-merge speed
+        probes = available_probes[:n_probes]
 
         # Collect Gram matrices for each model
         gram_matrices = []
@@ -479,8 +483,10 @@ def batch(
                 except Exception:
                     continue
 
-            if len(activations) < 10:
-                typer.echo(f"  Warning: Too few valid probes for {path}")
+            # Need at least n_models + 1 valid probes for meaningful Gram comparison
+            min_valid = len(all_paths) + 1
+            if len(activations) < min_valid:
+                typer.echo(f"  Warning: Too few valid probes ({len(activations)} < {min_valid}) for {path}")
                 gram_matrices.append(None)
                 continue
 

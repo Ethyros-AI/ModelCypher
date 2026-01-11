@@ -552,14 +552,15 @@ class UnifiedGeometricMerger:
         corrector = ConsensusCorrector(b)
 
         # Load probes - use subset for anchors, rest for concepts to check
+        # Anchor count is sqrt(n_probes) - balances resolution vs redundancy
+        # (geometrically motivated: anchor positions form a reference frame)
         probe_loader = ProbeLoader()
-        all_probes = probe_loader.load_probes()[:256]
-        n_anchors = min(32, len(all_probes) // 4)
-        anchor_probes = all_probes[:n_anchors]
-        concept_probes = all_probes[n_anchors:]
+        all_probes = probe_loader.load_probes()[:256]  # Practical memory limit
+        n_anchors = max(n_models + 2, int(len(all_probes) ** 0.5))  # sqrt(n) or enough for triangulation
+        n_anchors = min(n_anchors, len(all_probes) // 2)  # Leave at least half for concepts
 
         logger.info("CONSENSUS: Using %d anchors, checking %d concepts across %d models",
-                    n_anchors, len(concept_probes), n_models)
+                    n_anchors, len(all_probes) - n_anchors, n_models)
 
         # Load source models
         source_models = []
@@ -589,9 +590,11 @@ class UnifiedGeometricMerger:
             if all(i in acts for acts in model_activations):
                 valid_anchor_indices.append(i)
 
-        if len(valid_anchor_indices) < 8:
-            logger.warning("CONSENSUS: Too few valid anchors (%d < 8). Skipping correction.",
-                          len(valid_anchor_indices))
+        # Minimum anchors: need at least n_models + 1 for meaningful stress comparison
+        min_anchors = n_models + 1
+        if len(valid_anchor_indices) < min_anchors:
+            logger.warning("CONSENSUS: Too few valid anchors (%d < %d). Skipping correction.",
+                          len(valid_anchor_indices), min_anchors)
             for model in source_models:
                 del model
             return target_weights, 0
@@ -709,15 +712,33 @@ class UnifiedGeometricMerger:
             weight_delta = b.transpose(weight_delta)
             b.eval(weight_delta)
 
-            delta_norm = float(b.to_scalar(b.sqrt(b.sum(weight_delta ** 2))))
+            # Compute lstsq residual to gauge fit quality
+            # residual = ||delta_acts - target_outlier_acts @ weight_delta.T||
+            predicted = b.matmul(target_outlier_acts, b.transpose(weight_delta))
+            residual_vec = delta_acts - predicted
+            residual_norm = float(b.to_scalar(b.sqrt(b.sum(residual_vec ** 2))))
+            delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta_acts ** 2))))
+
+            # Scale based on fit quality: scale = 1 - (residual / delta)
+            # If residual is 0 (perfect fit), scale = 1.0
+            # If residual equals delta (no fit), scale = 0.0
+            fit_quality = 1.0 - min(1.0, residual_norm / (delta_norm + 1e-8))
+
+            # Also limit by weight magnitude ratio for numerical stability
+            weight_delta_norm = float(b.to_scalar(b.sqrt(b.sum(weight_delta ** 2))))
             weight_norm = float(b.to_scalar(b.sqrt(b.sum(output_weight ** 2))))
-            scale = min(1.0, 0.1 * weight_norm / (delta_norm + 1e-8))
+            magnitude_ratio = min(1.0, weight_norm / (weight_delta_norm + 1e-8))
+
+            # Final scale is the more conservative of fit quality and magnitude ratio
+            scale = min(fit_quality, magnitude_ratio)
 
             corrected_weights[output_key] = output_weight + scale * weight_delta
             corrections_applied = len(outlier_concepts)
 
-            logger.info("CONSENSUS: Applied correction to %s (scale=%.4f, %d concepts)",
-                        output_key, scale, corrections_applied)
+            logger.info(
+                "CONSENSUS: Applied correction to %s (scale=%.4f, fit=%.4f, mag_ratio=%.4f, %d concepts)",
+                output_key, scale, fit_quality, magnitude_ratio, corrections_applied
+            )
 
         for model in source_models:
             del model
