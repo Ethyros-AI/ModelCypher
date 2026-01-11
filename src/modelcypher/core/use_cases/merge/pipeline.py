@@ -362,17 +362,31 @@ def run_merge(
     # Intermediate/attention activations are unused after probe alignment.
     import gc
 
-    # Clear source activations (~20GB for 36 layers × [2048, 2048])
-    if source_activations:
-        source_activations.clear()
-        del source_activations
-        source_activations = None
+    # =========================================================================
+    # SELECTIVE MEMORY CLEANUP
+    # =========================================================================
+    # Keep activations needed for density-aware neuron-level transplant:
+    # - source_activations: For density comparison (hidden level)
+    # - source_intermediate_activations: For MLP neuron-level density
+    # - target_intermediate_activations: For MLP neuron-level density
+    # - target_activations: For null-space projection (already kept)
+    #
+    # Clear only what's not needed:
+    # - source_attention_activations: Attention transforms from probe stage suffice
+    # - target_attention_activations: Attention transforms from probe stage suffice
+    # - source/target_k_activations: K/V handled compositionally
 
-    # Clear unused source activation types
-    if source_intermediate_activations:
-        source_intermediate_activations.clear()
-        del source_intermediate_activations
-        source_intermediate_activations = None
+    # Keep source hidden activations for density comparison
+    # (Previously deleted - now needed for density-aware transfer)
+    logger.info(
+        "Keeping source activations for density-aware transfer: "
+        "source_acts=%s, source_inter=%s, target_inter=%s",
+        bool(source_activations),
+        bool(source_intermediate_activations),
+        bool(target_intermediate_activations),
+    )
+
+    # Clear attention activations (transforms from probe stage suffice)
     if source_attention_activations:
         source_attention_activations.clear()
         del source_attention_activations
@@ -382,11 +396,6 @@ def run_merge(
         del source_k_activations
         source_k_activations = None
 
-    # Clear target intermediate/attention (not used by transplant)
-    if target_intermediate_activations:
-        target_intermediate_activations.clear()
-        del target_intermediate_activations
-        target_intermediate_activations = None
     if target_attention_activations:
         target_attention_activations.clear()
         del target_attention_activations
@@ -396,10 +405,10 @@ def run_merge(
         del target_k_activations
         target_k_activations = None
 
-    # Force garbage collection and clear MLX cache again
+    # Force garbage collection and clear MLX cache
     gc.collect()
     default_backend.clear_cache()
-    logger.info("Cleared unused activations - keeping only target_activations for transplant")
+    logger.info("Cleared attention activations - keeping hidden+intermediate for transplant")
 
     # PERMUTE STAGE REMOVED: GramAligner alignment subsumes permutation
     # subsumes discrete permutation alignment. Permutation matrices are a special

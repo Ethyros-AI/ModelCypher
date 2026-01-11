@@ -105,6 +105,7 @@ def compute_transplant_delta(
     backend: "Backend | None" = None,
     delta_scale: float = 1.0,
     occupancy_weights: "Array | None" = None,
+    source_activations_aligned: "Array | None" = None,
 ) -> TransplantDeltaResult:
     """Compute boundary-preserving transplant update for a single weight matrix.
 
@@ -112,11 +113,20 @@ def compute_transplant_delta(
     No SVD, no pinv, no eigendecomposition. Geodesic math is accurate for
     high-dimensional manifolds (8kD+). Chord distance is only reliable up to 3D.
 
+    Two modes depending on whether source_activations_aligned is provided:
+
+    MODE 1 (legacy): Target-only filtering
+        Finds "room" in target based on low variance + low magnitude.
+
+    MODE 2 (density-aware): Source+target relative density
+        Transfers where source is DENSE and target is SPARSE.
+        Implements the "fog cloud overlay" principle.
+
     Args:
         weight_target: Target model weights to merge into.
         weight_source_aligned: Source model weights (CKA-aligned).
         activations_core: Core activation patterns (concepts to preserve).
-        activations_boundary: Boundary activation patterns (define null space).
+        activations_boundary: Target boundary activation patterns (define null space).
         backend: Optional Backend for GPU operations.
         delta_scale: Scale factor for the projected delta (0.0-1.0).
             Use < 1.0 to reduce knowledge injection per merge for sequential
@@ -125,6 +135,10 @@ def compute_transplant_delta(
             degradation in sequential merges.
         occupancy_weights: Optional per-dimension occupancy weights (0-1) from
             prior merges to protect already-modified directions.
+        source_activations_aligned: Optional source activations (already aligned
+            to target coordinate system). If provided, enables density-aware
+            transfer mode: transfers knowledge where source is dense AND target
+            is sparse, instead of just finding "room" in target.
 
     Returns:
         TransplantDeltaResult with merged weight and diagnostics.
@@ -250,10 +264,13 @@ def compute_transplant_delta(
 
     # Project DELTA into target's NULL SPACE
     # This finds what parts of the difference are orthogonal to target's active directions
+    # If source_activations_aligned is provided, uses density-aware transfer:
+    # transfers where source is DENSE and target is SPARSE
     result = geo_filter.filter_delta(
         weight_delta=weight_delta,  # Project DELTA (source - target)
         prior_activations=activations_boundary,  # Target's activation patterns define null space
         occupancy_weights=occupancy_weights,
+        source_activations=source_activations_aligned,  # Enables density-aware transfer mode
     )
     delta_in_null_space = result.filtered_delta  # Safe difference to add
     delta_occupancy = result.delta_weights

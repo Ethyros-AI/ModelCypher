@@ -172,32 +172,39 @@ class GeodesicNullSpaceFilter:
         k_neighbors: int | None = None,
         occupancy_weights: Any | None = None,
         basis: GeodesicNullSpaceBasis | None = None,
+        source_activations: Any | None = None,
     ) -> GeodesicNullSpaceResult:
         """
         Filter weight delta using unified saliency projection.
 
-        Combines two complementary signals to determine where delta is safe:
+        Two modes depending on whether source_activations is provided:
 
-        1. VARIANCE (occupancy): High variance = many concepts = protect
-        2. MAGNITUDE (sensitivity, AIM arXiv:2502.02421): High magnitude = protect
+        MODE 1 (legacy): Target-only filtering
+            Combines variance and magnitude signals from target:
+            keep = (1 - target_variance) * (1 - target_magnitude)
 
-        Formula: keep = (1 - variance_norm) * (1 - magnitude_norm)
+        MODE 2 (density-aware): Source+target relative density
+            Transfers knowledge where source is dense AND target is sparse:
+            transfer = source_confidence * (1 - target_confidence) * (1 - magnitude)
 
-        Delta is preserved only where BOTH signals are low (sparse AND insensitive).
-        Either high variance OR high magnitude triggers protection.
-        No hyperparameters - pure geometry.
+            - Source dense, target sparse → transfer ≈ 1 (source's unique knowledge)
+            - Source sparse, target dense → transfer ≈ 0 (protect target)
+            - Both dense → transfer ≈ 0 (target already knows it)
+            - Both sparse → transfer ≈ 0 (neither knows, ignore)
 
         Algorithm:
             1. Build k-NN graph from activations (GPU: matmul + argsort)
             2. Compute geodesic distances (GPU: Floyd-Warshall)
-            3. Compute per-dimension variance AND magnitude weights
-            4. Scale delta by keep = (1-var)(1-mag) per dimension
+            3. Compute per-dimension variance for source AND target
+            4. Scale delta by transfer weights per dimension
 
         Args:
             weight_delta: Weight update to filter. Shape: [out, in] or [d].
-            prior_activations: Activation matrix. Shape: [n_samples, d].
+            prior_activations: Target activation matrix. Shape: [n_samples, d].
             k_neighbors: k for k-NN graph. If None, auto-derived.
             basis: Optional precomputed geodesic basis for reuse.
+            source_activations: Optional source activations (already aligned).
+                If provided, enables density-aware transfer mode.
 
         Returns:
             GeodesicNullSpaceResult with filtered delta and diagnostics.
@@ -252,6 +259,7 @@ class GeodesicNullSpaceFilter:
         basis = basis or self._compute_basis(
             prior_activations,
             k_neighbors=k_neighbors,
+            source_activations=source_activations,
         )
 
         # Step 4: Compute tangent space projection matrix (GPU)
@@ -393,8 +401,21 @@ class GeodesicNullSpaceFilter:
         self,
         prior_activations: Any,
         k_neighbors: int | None = None,
+        source_activations: Any | None = None,
     ) -> GeodesicNullSpaceBasis:
-        """Compute a reusable geodesic null-space basis for projections."""
+        """Compute a reusable geodesic null-space basis for projections.
+
+        Args:
+            prior_activations: Target model activations defining the manifold.
+            k_neighbors: k-NN connectivity for geodesic computation.
+            source_activations: Optional source model activations (already aligned).
+                If provided, transfer weights are computed as:
+                    transfer = source_confidence * (1 - target_confidence)
+                This transfers knowledge where source is dense AND target is sparse.
+
+                If not provided (legacy mode), uses target-only filtering:
+                    keep = (1 - target_variance) * (1 - target_magnitude)
+        """
         backend = self._backend
         # Only wrap if not already a backend array - avoid breaking id()-based cache
         if not hasattr(prior_activations, 'shape'):
@@ -546,18 +567,83 @@ class GeodesicNullSpaceFilter:
         # =================================================================
         # COMBINED SALIENCY: Unified projection weights
         # =================================================================
-        # keep_weights = (1 - variance) * (1 - magnitude)
-        # This is "probabilistic AND": keep only if BOTH are low
+        # Two modes depending on whether source activations are available:
         #
-        # Equivalently, the projection strength is:
-        # combined_weights = 1 - keep_weights
-        #                  = 1 - (1-v)(1-m)
-        #                  = v + m - v*m  (probabilistic OR)
+        # MODE 1 (legacy, source_activations=None):
+        #   keep_weights = (1 - target_variance) * (1 - target_magnitude)
+        #   This finds "room" in target but ignores source knowledge density.
         #
-        # We store combined_weights in Q for the filter_delta method.
+        # MODE 2 (density-aware, source_activations provided):
+        #   transfer_weights = source_confidence * (1 - target_confidence)
+        #   This transfers knowledge where source is DENSE and target is SPARSE.
+        #
+        #   - Source dense, target sparse → transfer ≈ 1 (source's unique knowledge)
+        #   - Source sparse, target dense → transfer ≈ 0 (protect target)
+        #   - Both dense → transfer ≈ 0 (target already knows it)
+        #   - Both sparse → transfer ≈ 0 (neither knows, ignore)
+        #
+        # Mode 2 implements the "fog cloud overlay" principle:
+        # Transfer density from source where target has gaps, don't dilute.
         # =================================================================
-        keep_weights = (1.0 - variance_weights) * (1.0 - magnitude_weights)
-        combined_weights = 1.0 - keep_weights  # = v + m - v*m
+
+        if source_activations is not None:
+            # MODE 2: Density-aware transfer using source activations
+            # Source activations should already be aligned to target coordinate system
+            if not hasattr(source_activations, 'shape'):
+                source_activations = backend.array(source_activations)
+            backend.eval(source_activations)
+
+            # Compute source variance per dimension
+            src_f32 = backend.astype(source_activations, "float32")
+            src_mean = backend.mean(src_f32, axis=0)
+            src_centered = src_f32 - backend.reshape(src_mean, (1, d))
+            src_variance = backend.mean(src_centered * src_centered, axis=0)
+            backend.eval(src_variance)
+
+            # Normalize source variance
+            src_max_var = backend.max(src_variance)
+            backend.eval(src_max_var)
+            src_max_var_val = float(backend.to_scalar(src_max_var))
+
+            if src_max_var_val > reg:
+                source_confidence = src_variance / src_max_var_val
+            else:
+                source_confidence = backend.zeros((d,))
+            backend.eval(source_confidence)
+
+            # target_confidence = variance_weights (already computed, normalized)
+            target_confidence = variance_weights
+
+            # Transfer formula: high source * low target
+            # transfer[d] = source_confidence[d] * (1 - target_confidence[d])
+            transfer_weights = source_confidence * (1.0 - target_confidence)
+            backend.eval(transfer_weights)
+
+            # Apply magnitude protection on top (don't modify sensitive dimensions)
+            # Final: transfer where source is dense AND target is sparse AND not sensitive
+            keep_weights = transfer_weights * (1.0 - magnitude_weights)
+            backend.eval(keep_weights)
+
+            # Normalize keep_weights to [0, 1] range
+            max_keep = backend.max(keep_weights)
+            backend.eval(max_keep)
+            max_keep_val = float(backend.to_scalar(max_keep))
+            if max_keep_val > reg:
+                keep_weights = keep_weights / max_keep_val
+            backend.eval(keep_weights)
+
+            logger.debug(
+                "DENSITY-AWARE transfer: source_conf_mean=%.3f, target_conf_mean=%.3f, transfer_mean=%.3f",
+                float(backend.to_scalar(backend.mean(source_confidence))),
+                float(backend.to_scalar(backend.mean(target_confidence))),
+                float(backend.to_scalar(backend.mean(keep_weights))),
+            )
+        else:
+            # MODE 1 (legacy): Target-only filtering
+            keep_weights = (1.0 - variance_weights) * (1.0 - magnitude_weights)
+            backend.eval(keep_weights)
+
+        combined_weights = 1.0 - keep_weights  # For compatibility with filter_delta
         backend.eval(combined_weights)
 
         Q = backend.reshape(combined_weights, (d, 1))  # [d, 1] for compatibility
@@ -589,6 +675,7 @@ def filter_merge_delta_geodesic(
     target_weights: Any,
     prior_activations: Any,
     k_neighbors: int | None = None,
+    source_activations: Any | None = None,
 ) -> tuple[Any, GeodesicNullSpaceResult]:
     """
     Compute and filter merge delta using geodesic null-space projection.
@@ -603,11 +690,22 @@ def filter_merge_delta_geodesic(
         safe_delta = geodesic_null_projection(delta, prior_activations)
         merged = target + safe_delta
 
+    Two modes depending on whether source_activations is provided:
+
+    MODE 1 (legacy): Target-only filtering
+        Finds "room" in target based on low variance + low magnitude.
+
+    MODE 2 (density-aware): Source+target relative density
+        Transfers where source is DENSE and target is SPARSE.
+        Implements the "fog cloud overlay" principle.
+
     Args:
         source_weights: Source model weights.
         target_weights: Target model weights.
         prior_activations: Target activations defining the manifold structure.
         k_neighbors: k for k-NN graph (auto-derived if None).
+        source_activations: Optional source activations (already aligned).
+            If provided, enables density-aware transfer mode.
 
     Returns:
         Tuple of (merged_weights, filter_result).
@@ -623,7 +721,12 @@ def filter_merge_delta_geodesic(
 
     # Filter using geodesic null-space projection (GPU-only)
     geo_filter = GeodesicNullSpaceFilter(backend)
-    result = geo_filter.filter_delta(delta, prior_activations, k_neighbors=k_neighbors)
+    result = geo_filter.filter_delta(
+        delta,
+        prior_activations,
+        k_neighbors=k_neighbors,
+        source_activations=source_activations,
+    )
 
     # Merge = target + projected_delta (NO ALPHA)
     merged = target_weights + result.filtered_delta
