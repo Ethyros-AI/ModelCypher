@@ -72,7 +72,9 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    geodesic_svd,
     regularization_epsilon,
+    svd_auto_rank,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -550,6 +552,58 @@ class GeodesicNullSpaceFilter:
             backend.eval(var)
             return var
 
+        def _weighted_mean_abs(
+            activations: "Any",
+            sample_weights: "Any | None",
+        ) -> "Any":
+            acts = backend.astype(activations, "float32")
+            if sample_weights is None:
+                mean_abs = backend.mean(backend.abs(acts), axis=0)
+                backend.eval(mean_abs)
+                return mean_abs
+
+            weights = sample_weights
+            if not hasattr(weights, "shape"):
+                weights = backend.array(weights)
+            weights = backend.astype(weights, "float32")
+            weights = backend.reshape(weights, (-1, 1))
+            backend.eval(weights)
+
+            weight_sum = backend.sum(weights)
+            backend.eval(weight_sum)
+            weight_sum_val = float(backend.to_scalar(weight_sum))
+            if weight_sum_val <= reg:
+                mean_abs = backend.zeros((d,))
+                backend.eval(mean_abs)
+                return mean_abs
+
+            weighted_sum = backend.sum(weights * backend.abs(acts), axis=0)
+            mean_abs = weighted_sum / weight_sum
+            backend.eval(mean_abs)
+            return mean_abs
+
+        def _coerce_sample_weights(
+            sample_weights: "Any | None",
+            expected_len: int,
+            label: str,
+        ) -> "Any | None":
+            if sample_weights is None:
+                return None
+            weights = sample_weights
+            if not hasattr(weights, "shape"):
+                weights = backend.array(weights)
+            weights = backend.reshape(weights, (-1,))
+            backend.eval(weights)
+            if int(backend.shape(weights)[0]) != expected_len:
+                logger.warning(
+                    "DENSITY: %s sample weights len %d != %d; ignoring",
+                    label,
+                    int(backend.shape(weights)[0]),
+                    expected_len,
+                )
+                return None
+            return weights
+
         # =================================================================
         # COMBINED SALIENCY: Unified projection weights
         # =================================================================
@@ -574,16 +628,24 @@ class GeodesicNullSpaceFilter:
 
         if source_activations is not None:
             # MODE 2: Density-aware transfer using source vs target variance.
-            # NOTE: Sample weights are ignored here because source_activations and
-            # prior_activations may have different probe counts. Uniform variance
-            # is computed over each activation set independently.
+            # If sample weights are provided and aligned, use weighted variance.
             if not hasattr(source_activations, "shape"):
                 source_activations = backend.array(source_activations)
             backend.eval(source_activations)
 
-            # Compute uniform variance (no sample weighting) for each activation set
-            source_variance = _weighted_variance(source_activations, None)
-            target_variance = _weighted_variance(prior_activations, None)
+            # Compute per-dimension variance for each activation set
+            source_weights = _coerce_sample_weights(
+                source_sample_weights,
+                int(backend.shape(source_activations)[0]),
+                "source",
+            )
+            target_weights = _coerce_sample_weights(
+                target_sample_weights,
+                n_samples,
+                "target",
+            )
+            source_variance = _weighted_variance(source_activations, source_weights)
+            target_variance = _weighted_variance(prior_activations, target_weights)
 
             src_max = backend.max(source_variance)
             tgt_max = backend.max(target_variance)
@@ -617,13 +679,13 @@ class GeodesicNullSpaceFilter:
             )
         else:
             # MODE 1 (legacy): Target-only filtering (variance + magnitude).
-            acts_f32 = backend.astype(prior_activations, "float32")
-            mean_per_dim = backend.mean(acts_f32, axis=0)  # [d]
-            centered = acts_f32 - backend.reshape(mean_per_dim, (1, d))
-
-            variance_per_dim = backend.mean(centered * centered, axis=0)  # [d]
-            magnitude_per_dim = backend.mean(backend.abs(acts_f32), axis=0)  # [d]
-            backend.eval(variance_per_dim, magnitude_per_dim)
+            target_weights = _coerce_sample_weights(
+                target_sample_weights,
+                n_samples,
+                "target",
+            )
+            variance_per_dim = _weighted_variance(prior_activations, target_weights)
+            magnitude_per_dim = _weighted_mean_abs(prior_activations, target_weights)
 
             max_var = backend.max(variance_per_dim)
             max_mag = backend.max(magnitude_per_dim)
@@ -672,6 +734,168 @@ class GeodesicNullSpaceFilter:
                 explicit_key = _cache.make_basis_key(prior_activations, backend, actual_k)
                 _cache.set_basis(explicit_key, basis, elapsed_ms)
         return basis
+
+
+def filter_delta_svd(
+    weight_delta: Any,
+    backend: "Backend | None" = None,
+    energy_threshold: float = 0.99,
+) -> GeodesicNullSpaceResult:
+    """SVD-based delta filtering with low-rank truncation.
+
+    This is a closed-form approach that replaces variance-based filtering.
+    Task matrices (deltas) are inherently low-rank - research shows only ~3%
+    of singular components capture 98.5% of task-specific information.
+
+    Algorithm:
+        1. Decompose delta: U, S, Vt = SVD(delta)
+        2. Auto-rank: k = first index where cumsum(S^2) >= 0.99 * total
+        3. Truncate: delta_k = U[:,:k] @ diag(S[:k]) @ Vt[:k,:]
+        4. Return: low-rank filtered delta
+
+    This separates signal (top-k singular components) from noise (remaining)
+    without arbitrary variance/magnitude thresholds.
+
+    Parameters
+    ----------
+    weight_delta : Array
+        Weight difference (source_aligned - target). Shape: [out, in] or [d].
+    backend : Backend, optional
+        Backend for tensor operations.
+    energy_threshold : float
+        Fraction of total energy (Frobenius norm squared) to preserve.
+        Default 0.99 captures nearly all task information.
+
+    Returns
+    -------
+    GeodesicNullSpaceResult
+        Result with filtered delta and diagnostics.
+
+    References
+    ----------
+    - Yu et al. (2025). "TSV-Merge: Task Singular Vectors for Multi-Task Model Merging"
+    - Zhang et al. (2025). "STF: Superpose Task-specific Features"
+    """
+    b = backend or get_default_backend()
+    delta = b.astype(b.array(weight_delta), "float32")
+    b.eval(delta)
+
+    original_shape = delta.shape
+    original_ndim = len(original_shape)
+
+    # Flatten to 2D if needed (1D vectors treated as [1, d])
+    if original_ndim == 1:
+        delta_2d = b.reshape(delta, (1, int(original_shape[0])))
+    else:
+        delta_2d = delta
+    b.eval(delta_2d)
+
+    m, n = int(delta_2d.shape[0]), int(delta_2d.shape[1])
+
+    # Check for zero or near-zero delta
+    delta_norm_sq = b.sum(delta_2d * delta_2d)
+    b.eval(delta_norm_sq)
+    delta_norm_sq_val = float(b.to_scalar(delta_norm_sq))
+
+    reg = regularization_epsilon(b, delta_2d)
+    if delta_norm_sq_val < reg:
+        # Delta is effectively zero - return unchanged
+        return GeodesicNullSpaceResult(
+            filtered_delta=weight_delta,
+            original_delta=weight_delta,
+            orthogonal_dim=0,
+            projection_loss=0.0,
+            preserved_fraction=1.0,
+            original_norm=0.0,
+            filtered_norm=0.0,
+            filtering_applied=False,
+            k_neighbors=0,
+            mean_geodesic_distance=0.0,
+        )
+
+    # Compute SVD: delta = U @ diag(S) @ Vt
+    U, S, Vt = geodesic_svd(b, delta_2d)
+    b.eval(U, S, Vt)
+
+    n_sv = int(S.shape[0])
+    if n_sv == 0:
+        return GeodesicNullSpaceResult(
+            filtered_delta=weight_delta,
+            original_delta=weight_delta,
+            orthogonal_dim=0,
+            projection_loss=0.0,
+            preserved_fraction=1.0,
+            original_norm=float(b.to_scalar(b.sqrt(delta_norm_sq))),
+            filtered_norm=float(b.to_scalar(b.sqrt(delta_norm_sq))),
+            filtering_applied=False,
+            k_neighbors=0,
+            mean_geodesic_distance=0.0,
+        )
+
+    # Auto-determine rank by energy threshold
+    k = svd_auto_rank(S, b, energy_threshold)
+    k = max(1, min(k, n_sv))  # Ensure k is valid
+
+    # Truncate to top-k components
+    U_k = U[:, :k]
+    S_k = S[:k]
+    Vt_k = Vt[:k, :]
+    b.eval(U_k, S_k, Vt_k)
+
+    # Reconstruct low-rank delta: delta_k = U_k @ diag(S_k) @ Vt_k
+    # U_k: [m, k], S_k: [k], Vt_k: [k, n]
+    S_diag = b.reshape(S_k, (k, 1))  # [k, 1] for broadcasting
+    scaled_Vt = S_diag * Vt_k  # [k, n] - each row scaled by singular value
+    delta_filtered_2d = b.matmul(U_k, scaled_Vt)  # [m, n]
+    b.eval(delta_filtered_2d)
+
+    # Reshape back to original shape
+    if original_ndim == 1:
+        delta_filtered = b.reshape(delta_filtered_2d, original_shape)
+    else:
+        delta_filtered = delta_filtered_2d
+    b.eval(delta_filtered)
+
+    # Compute preserved fraction (ratio of energy)
+    S_sq = S * S
+    S_k_sq = S_k * S_k
+    total_energy = b.sum(S_sq)
+    kept_energy = b.sum(S_k_sq)
+    b.eval(total_energy, kept_energy)
+
+    total_energy_val = float(b.to_scalar(total_energy))
+    kept_energy_val = float(b.to_scalar(kept_energy))
+
+    if total_energy_val > reg:
+        preserved_fraction = kept_energy_val / total_energy_val
+    else:
+        preserved_fraction = 1.0
+
+    # Compute norms for reporting
+    original_norm = float(b.to_scalar(b.sqrt(delta_norm_sq)))
+    filtered_norm_sq = b.sum(delta_filtered * delta_filtered)
+    b.eval(filtered_norm_sq)
+    filtered_norm = float(b.to_scalar(b.sqrt(filtered_norm_sq)))
+
+    projection_loss = 1.0 - preserved_fraction
+
+    logger.info(
+        "SVD FILTER: rank=%d/%d (%.1f%% energy), preserved_fraction=%.3f",
+        k, n_sv, 100.0 * preserved_fraction, preserved_fraction
+    )
+
+    return GeodesicNullSpaceResult(
+        filtered_delta=delta_filtered,
+        original_delta=weight_delta,
+        orthogonal_dim=k,  # Using k as "effective dimension"
+        projection_loss=projection_loss,
+        preserved_fraction=preserved_fraction,
+        original_norm=original_norm,
+        filtered_norm=filtered_norm,
+        filtering_applied=True,
+        k_neighbors=0,  # Not applicable for SVD method
+        mean_geodesic_distance=0.0,  # Not applicable for SVD method
+    )
 
 
 def filter_merge_delta_geodesic(
@@ -743,5 +967,6 @@ __all__ = [
     "GeodesicNullSpaceBasis",
     "GeodesicNullSpaceResult",
     "GeodesicNullSpaceFilter",
-    "filter_merge_delta_geodesic",
+    "filter_delta_svd",  # New SVD-based filtering (preferred)
+    "filter_merge_delta_geodesic",  # Legacy variance-based filtering
 ]

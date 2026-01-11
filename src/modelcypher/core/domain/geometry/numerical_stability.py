@@ -673,6 +673,86 @@ def geodesic_svd(
     return U, S, Vt
 
 
+def svd_auto_rank(
+    singular_values: "Array",
+    backend: "Backend",
+    energy_threshold: float = 0.99,
+) -> int:
+    """Determine optimal SVD rank by cumulative energy.
+
+    Finds the minimum k such that the top-k singular values capture at least
+    energy_threshold fraction of total variance (Frobenius norm squared).
+
+    Formula: k = min{ j : sum(S[:j]^2) / sum(S^2) >= energy_threshold }
+
+    This is the principled way to determine low-rank truncation without
+    arbitrary thresholds. Research shows task matrices are inherently low-rank:
+    - ~3% of singular components capture 98.5% of task information
+    - Remaining components are noise from training dynamics
+
+    Parameters
+    ----------
+    singular_values : Array
+        Singular values from SVD, sorted in descending order.
+    backend : Backend
+        Backend for tensor operations.
+    energy_threshold : float
+        Fraction of total energy to preserve. Default 0.99 captures nearly
+        all task-specific information while filtering noise.
+
+    Returns
+    -------
+    int
+        Optimal rank k (number of singular values to keep).
+
+    References
+    ----------
+    - Yu et al. (2025). "TSV-Merge: Task Singular Vectors for Multi-Task Model Merging"
+    - Zhang et al. (2025). "STF: Superpose Task-specific Features for Multi-task Fine-tuned Models"
+    """
+    b = backend
+    S = b.astype(b.array(singular_values), "float32")
+    b.eval(S)
+
+    n = int(S.shape[0])
+    if n == 0:
+        return 0
+
+    # Compute squared singular values (energy per component)
+    S_sq = S * S
+    b.eval(S_sq)
+
+    # Total energy (Frobenius norm squared)
+    total_energy = b.sum(S_sq)
+    b.eval(total_energy)
+    total_energy_val = float(b.to_scalar(total_energy))
+
+    if total_energy_val <= 0:
+        return 0
+
+    # Cumulative sum of squared singular values
+    cumsum = b.cumsum(S_sq)
+    b.eval(cumsum)
+
+    # Threshold: energy_threshold * total_energy
+    threshold = energy_threshold * total_energy_val
+
+    # Find first index where cumsum >= threshold
+    mask = cumsum >= threshold
+    mask_int = b.astype(mask, "int32")
+    b.eval(mask_int)
+
+    # argmax on mask gives first True index (or 0 if all False)
+    first_idx = b.argmax(mask_int)
+    b.eval(first_idx)
+    k = int(b.to_scalar(first_idx)) + 1  # +1 to include that component
+
+    # Clamp to valid range
+    k = max(1, min(k, n))
+
+    return k
+
+
 def geodesic_pinv(backend: "Backend", array: "Array") -> "Array":
     """Compute EXACT Moore-Penrose pseudo-inverse using native backend operation."""
     b = backend

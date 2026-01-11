@@ -233,6 +233,8 @@ def register_model_tools(ctx: ServiceContext) -> None:
                 "numAttentionHeads": result.num_attention_heads,
                 "quantization": result.quantization,
                 "layerCount": len(result.layers),
+                "layerCountTensors": len(result.layers),
+                "layerCountConfig": result.layer_count_config,
                 "layers": [
                     {
                         "name": layer.name,

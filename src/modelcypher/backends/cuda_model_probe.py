@@ -45,6 +45,12 @@ from modelcypher.ports.model_probe import (
     MergeValidationResult,
     ModelProbeResult,
 )
+from modelcypher.utils.model_config import (
+    resolve_hidden_size,
+    resolve_num_hidden_layers,
+    resolve_num_attention_heads,
+    resolve_vocab_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +102,11 @@ class CUDAModelProbe(BaseModelProbe):
             raise ValueError(f"Invalid config.json: {exc}") from exc
 
         architecture = config.get("model_type", "unknown")
-        vocab_size = config.get("vocab_size", 0)
-        hidden_size = config.get("hidden_size", 0)
-        num_attention_heads = config.get("num_attention_heads", 0)
+        vocab_size = resolve_vocab_size(config)
+        hidden_size = resolve_hidden_size(config)
+        num_attention_heads = resolve_num_attention_heads(config)
         quantization = config.get("quantization_config", {}).get("quant_method")
+        layer_count_config = resolve_num_hidden_layers(config)
 
         layers, parameter_count = self._analyze_weights(path)
 
@@ -111,6 +118,7 @@ class CUDAModelProbe(BaseModelProbe):
             hidden_size=hidden_size,
             num_attention_heads=num_attention_heads,
             quantization=quantization,
+            layer_count_config=layer_count_config,
         )
 
     def validate_merge(self, source: str, target: str) -> MergeValidationResult:

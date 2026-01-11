@@ -1196,6 +1196,7 @@ def stage_transplant(
         core_acts = b.take(stacked, core_indices, axis=0)
         b.eval(core_acts)
 
+        boundary_indices = None
         if partition.boundary_indices:
             boundary_indices = b.array(partition.boundary_indices, dtype="int32")
             boundary_acts = b.take(stacked, boundary_indices, axis=0)
@@ -1217,10 +1218,10 @@ def stage_transplant(
                 # Source weights: emphasize probes where source is denser
                 core_sample_weights = b.take(layer_density_w, core_indices, axis=0)
                 b.eval(core_sample_weights)
-                # Target weights: emphasize probes where target is denser (inverse)
-                # Both must use core_indices since variance is computed over core_acts
+            if boundary_indices is not None:
+                # Target weights align with boundary_acts (null-space variance uses boundary activations)
                 inverse_weights = 1.0 - layer_density_w
-                target_sample_weights = b.take(inverse_weights, core_indices, axis=0)
+                target_sample_weights = b.take(inverse_weights, boundary_indices, axis=0)
                 b.eval(target_sample_weights)
 
         layer_transplanted = False
@@ -1867,50 +1868,13 @@ def stage_transplant(
             try:
                 logger.debug("Computing transplant delta for %s", key)
 
-                # Select appropriate source activations for density-aware transfer:
-                # Match activations to the WEIGHT'S INPUT DIMENSION (columns):
-                # - Gate/up projections (w1, w3): [inter, hidden] - INPUT is hidden → use hidden acts
-                # - Down projection (w2): [hidden, inter] - INPUT is intermediate → use inter acts
-                # - Attention/other: typically [hidden, hidden] → use hidden acts
-                #
-                # For density-aware transfer, we compare variance in the INPUT space because
-                # that's what the weight matrix "reads from" - where density matters.
-                source_acts_for_density = aligned_source_hidden
-
-                # Only use intermediate activations for DOWN projection (w2/down_proj)
-                # which has intermediate dimension as input
-                is_down_proj = any(down_name in key for down_name in [
-                    "feed_forward.w2",  # LFM2/Mamba style
-                    "down_proj",        # Standard transformer style
-                    "mlp.fc2",          # Some Llama variants
-                    "mlp.down",         # Alternative naming
-                ])
-                if is_down_proj and aligned_source_inter is not None:
-                    source_acts_for_density = aligned_source_inter
-                    logger.debug(
-                        "Using intermediate activations for DOWN projection density (%s)",
-                        key
-                    )
-                elif aligned_source_hidden is not None:
-                    logger.debug(
-                        "Using hidden activations for density (%s)",
-                        key
-                    )
-
-                # NOTE: MODE 2 (density-aware) disabled - variance comparison was too aggressive
-                # and damaged models. Using MODE 1 (target-only) for conservative filtering.
-                # TODO: Implement proper dimension-level density comparison.
+                # SVD-based low-rank filtering: keeps 99% of delta energy
                 result = compute_transplant_delta(
                     weight_target=target_w,
                     weight_source_aligned=source_aligned,
                     activations_core=core_acts,
-                    activations_boundary=boundary_acts,
                     backend=b,
                     delta_scale=delta_scale,
-                    occupancy_weights=prior_occupancy,
-                    source_activations_aligned=None,  # Disabled for now
-                    source_sample_weights=None,
-                    target_sample_weights=None,
                 )
                 logger.debug("Transplant delta computed for %s: applied=%s", key, result.applied)
                 if result.delta_occupancy is not None:

@@ -53,6 +53,7 @@ class ModelProbeResult:
     vocab_size: int
     hidden_size: int
     num_attention_heads: int
+    layer_count_config: int = 0
     quantization: str | None = None
 
 

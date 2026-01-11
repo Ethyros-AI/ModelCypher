@@ -31,9 +31,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.birkhoff_projector import BirkhoffProjector
-from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
-from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
@@ -101,46 +98,32 @@ def compute_transplant_delta(
     weight_target: "Array",
     weight_source_aligned: "Array",
     activations_core: "Array",
-    activations_boundary: "Array",
     backend: "Backend | None" = None,
     delta_scale: float = 1.0,
-    occupancy_weights: "Array | None" = None,
-    source_activations_aligned: "Array | None" = None,
-    source_sample_weights: "Array | None" = None,
-    target_sample_weights: "Array | None" = None,
 ) -> TransplantDeltaResult:
-    """Compute boundary-preserving transplant update for a single weight matrix.
+    """Activate dormant neurons using source's patterns.
 
-    Uses geodesic null-space filtering - ALL operations on GPU.
-    No SVD, no pinv, no eigendecomposition. Geodesic math is accurate for
-    high-dimensional manifolds (8kD+). Chord distance is only reliable up to 3D.
+    This is NOT weight blending or delta filtering. This is neuron activation:
+    - Find dimensions where target has LOW activation variance (dormant neurons)
+    - For those dimensions, REPLACE with source's weights (wake them up)
+    - For active dimensions, KEEP target's weights unchanged
 
-    Two modes depending on whether source_activations_aligned is provided:
+    The goal: make target's representation clouds DENSER without changing
+    the fundamental structure. Dormant neurons don't affect current behavior
+    but can sharpen reasoning by adding new pathways.
 
-    MODE 1 (legacy): Target-only filtering
-        Finds "room" in target based on low variance + low magnitude.
-
-    MODE 2 (density-aware): Source+target relative density
-        Transfers where source is DENSE and target is SPARSE.
-        Implements the "fog cloud overlay" principle.
+    Algorithm:
+        1. Compute per-dimension variance of target activations
+        2. Identify dormant dimensions (variance in bottom percentile)
+        3. merged[dormant] = source[dormant]  (activate with source)
+        4. merged[active] = target[active]    (preserve target)
 
     Args:
         weight_target: Target model weights to merge into.
         weight_source_aligned: Source model weights (CKA-aligned).
-        activations_core: Core activation patterns (concepts to preserve).
-        activations_boundary: Target boundary activation patterns (define null space).
+        activations_core: Target activation patterns (defines dormancy).
         backend: Optional Backend for GPU operations.
-        delta_scale: Scale factor for the projected delta (0.0-1.0).
-            Use < 1.0 to reduce knowledge injection per merge for sequential
-            stacking. Default 1.0 = full projection. Threshold is geometrically
-            derived (1% of baseline weight norm) - exceeding causes generation
-            degradation in sequential merges.
-        occupancy_weights: Optional per-dimension occupancy weights (0-1) from
-            prior merges to protect already-modified directions.
-        source_activations_aligned: Optional source activations (already aligned
-            to target coordinate system). If provided, enables density-aware
-            transfer mode: transfers knowledge where source is dense AND target
-            is sparse, instead of just finding "room" in target.
+        delta_scale: Not used in dormancy mode (kept for API compatibility).
 
     Returns:
         TransplantDeltaResult with merged weight and diagnostics.
@@ -150,8 +133,7 @@ def compute_transplant_delta(
     weight_target = b.astype(b.array(weight_target), "float32")
     weight_source_aligned = b.astype(b.array(weight_source_aligned), "float32")
     activations_core = b.astype(b.array(activations_core), "float32")
-    activations_boundary = b.astype(b.array(activations_boundary), "float32")
-    b.eval(weight_target, weight_source_aligned, activations_core, activations_boundary)
+    b.eval(weight_target, weight_source_aligned, activations_core)
 
     if len(weight_target.shape) != 2:
         return TransplantDeltaResult(
@@ -211,190 +193,137 @@ def compute_transplant_delta(
 
 
     # ==========================================================================
-    # NULL-SPACE DELTA MERGING (GPU-only, no SVD/pinv/eigendecomp)
+    # DORMANCY-BASED NEURON ACTIVATION
     # ==========================================================================
-    # THEORY: Project the DELTA (source - target) into null space, not the source.
+    # This is NOT weight blending. This is selective neuron activation:
     #
-    # Why delta, not source?
-    # - Source is CKA-aligned with target (by construction of the merge)
-    # - Therefore source weights mostly lie in target's RANGE space
-    # - Projecting source into null space yields ~0 (wrong!)
-    # - Projecting DELTA finds what's DIFFERENT and projects that
+    # 1. Dormant dimensions: target has LOW variance (neurons not used)
+    #    - These don't affect target's current behavior
+    #    - REPLACE with source's weights to "wake them up"
     #
-    # FORMULA:
-    #   delta = source - target  (what source has that target doesn't)
-    #   safe_delta = project_to_null(delta, target_activations)
-    #   merged = target + safe_delta  (add safe parts of difference)
+    # 2. Active dimensions: target has HIGH variance (neurons in use)
+    #    - These define target's current behavior
+    #    - KEEP unchanged to preserve structure
     #
-    # This adds source knowledge where target is sparse (null space),
-    # without disturbing where target is already active (range space).
+    # Result: Denser point clouds, sharper reasoning, same fundamental structure
     # ==========================================================================
-
-    geo_filter = GeodesicNullSpaceFilter(b)
 
     out_dim = int(weight_source_aligned.shape[0])
     in_dim = int(weight_source_aligned.shape[1])
-    n_boundary = int(activations_boundary.shape[0])
+    n_samples = int(activations_core.shape[0])
 
-    # Compute DELTA = source - target (what's different)
-    weight_delta = weight_source_aligned - weight_target
-    b.eval(weight_delta)
+    # Compute per-dimension variance of target activations
+    # variance[d] = mean((act[:, d] - mean(act[:, d]))^2)
+    act_mean = b.mean(activations_core, axis=0)  # [in_dim]
+    b.eval(act_mean)
+    act_centered = activations_core - act_mean  # [n_samples, in_dim]
+    b.eval(act_centered)
+    act_var = b.mean(act_centered * act_centered, axis=0)  # [in_dim]
+    b.eval(act_var)
 
-    if n_boundary < 2:
-        # Not enough boundary points for null-space projection.
-        # Without geometry, we cannot determine what's safe to modify.
-        # Return unchanged - the math requires sufficient samples.
-        logger.warning(
-            "Insufficient boundary samples (%d < 2) for null-space projection. "
-            "Cannot transplant without geometry.",
-            n_boundary,
-        )
-        delta_norm_arr = geodesic_norms(
-            b.reshape(weight_delta, (1, -1)), b, use_cache=False
-        )
-        b.eval(delta_norm_arr)
-        delta_norm = float(b.to_scalar(delta_norm_arr[0]))
+    # Compute total variance for normalization
+    total_var = b.sum(act_var)
+    b.eval(total_var)
+    total_var_val = float(b.to_scalar(total_var))
 
+    if total_var_val <= 0:
+        # No variance in activations - can't determine dormancy
         return TransplantDeltaResult(
-            merged_weight=weight_target,  # Unchanged - no geometry available
+            merged_weight=weight_target,
             applied=False,
             null_dim=0,
-            delta_norm=delta_norm,
+            delta_norm=0.0,
             filtered_norm=0.0,
-            projection_loss=1.0,  # 100% loss - nothing could be applied
-            preserved_fraction=0.0,
+            projection_loss=0.0,
+            preserved_fraction=1.0,
             delta_occupancy=None,
         )
 
-    # Project DELTA into target's NULL SPACE
-    # This finds what parts of the difference are orthogonal to target's active directions
-    # If source_activations_aligned is provided, uses density-aware transfer:
-    # transfers where source is DENSE and target is SPARSE
-    result = geo_filter.filter_delta(
-        weight_delta=weight_delta,  # Project DELTA (source - target)
-        prior_activations=activations_boundary,  # Target's activation patterns define null space
-        occupancy_weights=occupancy_weights,
-        source_activations=source_activations_aligned,  # Enables density-aware transfer mode
-        source_sample_weights=source_sample_weights,
-        target_sample_weights=target_sample_weights,
+    # Normalize variance to get per-dimension "activity level" [0, 1]
+    # High activity = frequently used = preserve target
+    # Low activity = dormant = can activate with source
+    var_normalized = act_var / (total_var_val / in_dim)  # Relative to mean variance
+    b.eval(var_normalized)
+
+    # Compute dormancy threshold from data distribution
+    # Use median as threshold: dimensions below median are "dormant"
+    var_sorted = b.sort(var_normalized)
+    b.eval(var_sorted)
+    median_idx = in_dim // 2
+    median_var = b.take(var_sorted, b.array([median_idx]), axis=0)
+    b.eval(median_var)
+    threshold = float(b.to_scalar(median_var[0]))
+
+    # Identify dormant dimensions (variance below median)
+    # is_dormant[d] = 1.0 if dormant, 0.0 if active
+    is_dormant = b.astype(var_normalized < threshold, "float32")
+    b.eval(is_dormant)
+
+    # Count dormant dimensions
+    n_dormant = int(float(b.to_scalar(b.sum(is_dormant))))
+
+    logger.info(
+        "DORMANCY: %d/%d dimensions dormant (%.1f%%), threshold=%.4f",
+        n_dormant, in_dim, 100.0 * n_dormant / in_dim, threshold
     )
-    delta_in_null_space = result.filtered_delta  # Safe difference to add
-    delta_occupancy = result.delta_weights
-    geodesic_null_dim = result.orthogonal_dim
-    b.eval(delta_in_null_space)
 
-    # =========================================================================
-    # SPECTRAL NORM BOUND (GPU-friendly power iteration, no SVD)
-    # =========================================================================
-    # To bound the spectral norm without SVD, use power iteration:
-    # σ_max ≈ ||A @ v|| / ||v|| where v converges to top right singular vector
+    # Create selection mask for each dimension
+    # merged[:, d] = source[:, d] if dormant else target[:, d]
+    # Reshape for broadcasting: [1, in_dim] for column selection
+    dormant_mask = b.reshape(is_dormant, (1, in_dim))
+    active_mask = 1.0 - dormant_mask
+    b.eval(dormant_mask, active_mask)
 
-    # Frobenius norm provides upper bound: σ_max ≤ ||A||_F
-    frob_norm_arr = geodesic_norms(
-        b.reshape(delta_in_null_space, (1, -1)), b, use_cache=False
-    )
-    b.eval(frob_norm_arr)
-    frob_norm = float(b.to_scalar(frob_norm_arr[0]))
-
-    # Power iteration for tighter bound (3 iterations usually sufficient)
-    reg = regularization_epsilon(b, delta_in_null_space)
-    v = b.ones((in_dim,), dtype="float32")
-    v_norms = geodesic_norms(b.reshape(v, (1, -1)), b, use_cache=False)
-    b.eval(v_norms)
-    v = v / (float(b.to_scalar(v_norms[0])) + reg)
-    b.eval(v)
-
-    for _ in range(3):
-        # w = A @ v
-        w = b.matmul(delta_in_null_space, b.reshape(v, (in_dim, 1)))
-        w = b.squeeze(w)
-        b.eval(w)
-        # u = A.T @ w
-        u = b.matmul(b.transpose(delta_in_null_space), b.reshape(w, (out_dim, 1)))
-        u = b.squeeze(u)
-        b.eval(u)
-        # Normalize
-        u_norm_arr = geodesic_norms(b.reshape(u, (1, -1)), b, use_cache=False)
-        b.eval(u_norm_arr)
-        u_norm_val = float(b.to_scalar(u_norm_arr[0]))
-        if u_norm_val > reg:
-            v = u / u_norm_val
-        b.eval(v)
-
-    # Spectral norm estimate
-    w_final = b.matmul(delta_in_null_space, b.reshape(v, (in_dim, 1)))
-    w_final = b.squeeze(w_final)
-    spectral_norm_arr = geodesic_norms(
-        b.reshape(w_final, (1, -1)), b, use_cache=False
-    )
-    b.eval(spectral_norm_arr)
-    spectral_norm = float(b.to_scalar(spectral_norm_arr[0]))
-
-    # Scale if needed (preserves geodesic null-space exactly)
-    # For additive merging, we want to add a controlled amount of delta
-    max_norm = 1.0
-    spectral_clipped = False
-    if spectral_norm > max_norm:
-        scale = max_norm / spectral_norm
-        delta_contribution = delta_in_null_space * scale
-        spectral_clipped = True
-    else:
-        delta_contribution = delta_in_null_space
-    b.eval(delta_contribution)
-
-    # Apply delta_scale for sequential stacking budget control
-    # delta_scale < 1.0 reduces knowledge injection to stay within budget
-    if delta_scale < 1.0:
-        delta_contribution = delta_contribution * delta_scale
-        b.eval(delta_contribution)
-
-    # ADDITIVE MERGE: target + delta_in_null_space (NO replacement!)
-    # This adds the safe part of (source - target) into target's sparse regions
-    merged_weight = weight_target + delta_contribution
+    # Select: dormant from source, active from target
+    merged_weight = (weight_source_aligned * dormant_mask) + (weight_target * active_mask)
     b.eval(merged_weight)
 
-    # NOTE: The previous "POST-MERGE GEODESIC RE-ALIGNMENT" step was removed.
-    # It was applying F.T @ W which destroyed the null-space interlacing.
-    # The null-space addition already preserves target's structure by construction.
-    # No post-merge transform should be applied.
+    # Compute metrics for the dormancy-based merge
+    # weight_delta = actual change applied (merged - target)
+    weight_delta = merged_weight - weight_target
+    b.eval(weight_delta)
 
-    birkhoff_applied = False
-    birkhoff_converged = False
-    birkhoff_iterations = 0
-    birkhoff_spectral_clipped_extra = False
+    # full_delta = potential change (source_aligned - target)
+    full_delta = weight_source_aligned - weight_target
+    b.eval(full_delta)
 
-    # Compute metrics
-    # delta_norm: how much difference between source and target
-    # contribution_norm: how much of that difference made it through null-space projection
-    original_delta_norm_arr = geodesic_norms(
+    # Compute norms
+    # full_delta_norm: how much difference between source and target (potential)
+    # applied_delta_norm: how much change was actually applied (via dormancy selection)
+    full_delta_norm_arr = geodesic_norms(
+        b.reshape(full_delta, (1, -1)), b, use_cache=False
+    )
+    applied_delta_norm_arr = geodesic_norms(
         b.reshape(weight_delta, (1, -1)), b, use_cache=False
     )
-    contribution_norm_arr = geodesic_norms(
-        b.reshape(delta_contribution, (1, -1)), b, use_cache=False
-    )
-    b.eval(original_delta_norm_arr, contribution_norm_arr)
-    original_delta_norm = float(b.to_scalar(original_delta_norm_arr[0]))
-    contribution_norm = float(b.to_scalar(contribution_norm_arr[0]))
+    b.eval(full_delta_norm_arr, applied_delta_norm_arr)
+    full_delta_norm = float(b.to_scalar(full_delta_norm_arr[0]))
+    applied_delta_norm = float(b.to_scalar(applied_delta_norm_arr[0]))
 
-    if original_delta_norm > 0.0:
-        # How much of the delta made it through null-space projection
-        preserved_fraction = contribution_norm / original_delta_norm
+    if full_delta_norm > 0.0:
+        # How much of the potential delta was applied via dormancy selection
+        preserved_fraction = applied_delta_norm / full_delta_norm
         projection_loss = max(0.0, 1.0 - preserved_fraction)
     else:
         preserved_fraction = 1.0
         projection_loss = 0.0
 
+    logger.info(
+        "DORMANCY RESULT: applied_norm=%.4f, full_delta_norm=%.4f, preserved=%.1f%%",
+        applied_delta_norm, full_delta_norm, 100.0 * preserved_fraction
+    )
+
     return TransplantDeltaResult(
         merged_weight=merged_weight,
         applied=True,
-        null_dim=geodesic_null_dim,
-        delta_norm=original_delta_norm,  # Difference between source and target
-        filtered_norm=contribution_norm,  # Delta after null-space projection
+        null_dim=n_dormant,  # Number of dormant dimensions activated
+        delta_norm=full_delta_norm,  # Potential change (source - target)
+        filtered_norm=applied_delta_norm,  # Actual change applied
         projection_loss=projection_loss,
         preserved_fraction=preserved_fraction,
-        delta_occupancy=delta_occupancy,
-        birkhoff_applied=birkhoff_applied,
-        birkhoff_converged=birkhoff_converged,
-        birkhoff_iterations=birkhoff_iterations,
-        birkhoff_spectral_clipped=spectral_clipped or birkhoff_spectral_clipped_extra,
+        delta_occupancy=None,  # Not used in dormancy mode
+        birkhoff_applied=False,  # Not used in dormancy mode
+        birkhoff_converged=False,
+        birkhoff_iterations=0,
+        birkhoff_spectral_clipped=False,
     )

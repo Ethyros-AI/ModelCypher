@@ -329,6 +329,8 @@ def model_probe(
         "numAttentionHeads": result.num_attention_heads,
         "quantization": result.quantization,
         "layerCount": len(result.layers),
+        "layerCountTensors": len(result.layers),
+        "layerCountConfig": result.layer_count_config,
         "layers": [
             {
                 "name": layer.name,
@@ -348,8 +350,10 @@ def model_probe(
             f"Vocab Size: {result.vocab_size:,}",
             f"Hidden Size: {result.hidden_size}",
             f"Attention Heads: {result.num_attention_heads}",
-            f"Layers: {len(result.layers)}",
+            f"Layers (tensors): {len(result.layers)}",
         ]
+        if result.layer_count_config:
+            lines.append(f"Layers (config): {result.layer_count_config}")
         if result.quantization:
             lines.append(f"Quantization: {result.quantization}")
         write_output("\n".join(lines), context.output_format, context.pretty)
