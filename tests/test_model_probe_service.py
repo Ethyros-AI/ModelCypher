@@ -30,10 +30,12 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.model_profile import ModelProfileStore
 from modelcypher.core.use_cases.model_probe_service import (
     ModelProbeResult,
     ModelProbeService,
 )
+from modelcypher.backends.safetensors_model_probe import SafeTensorsModelProbe
 from modelcypher.infrastructure.model_probe_factory import get_model_probe
 
 
@@ -130,6 +132,7 @@ def test_model_probe_returns_required_fields(
     assert result.hidden_size == hidden_size
     assert result.num_attention_heads is not None
     assert result.num_attention_heads == num_attention_heads
+    assert result.layer_count_config == 1
 
 
 def test_probe_missing_config_raises_error(tmp_path):
@@ -157,6 +160,32 @@ def test_probe_file_instead_of_directory_raises_error(tmp_path):
     service = ModelProbeService(probe=get_model_probe())
     with pytest.raises(ValueError, match="not a directory"):
         service.probe(str(file_path))
+
+
+def test_probe_persists_profile(tmp_path, monkeypatch):
+    """Probe should persist profile to global store and sidecar."""
+    monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "mc_home"))
+    model_dir = _create_mock_model(
+        tmp_path,
+        architecture="llama",
+        vocab_size=100,
+        hidden_size=16,
+        num_attention_heads=4,
+        num_layers=1,
+    )
+
+    service = ModelProbeService(probe=SafeTensorsModelProbe())
+    service.probe(str(model_dir))
+
+    store = ModelProfileStore()
+    profile, identity = store.load(str(model_dir))
+
+    assert profile is not None
+    assert profile.model_id == identity.model_id
+    assert profile.config_hash
+    assert profile.weights_hash
+    assert store.profile_path(identity.model_id).exists()
+    assert store.sidecar_path(str(model_dir)).exists()
 
 
 def test_validate_merge_compatible_models(tmp_path):

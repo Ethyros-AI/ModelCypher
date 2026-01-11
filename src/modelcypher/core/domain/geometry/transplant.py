@@ -258,6 +258,8 @@ def compute_transplant_delta(
     delta_scale: float = 1.0,
     delta_activations: "Array | None" = None,
     boundary_activations: "Array | None" = None,
+    # Backward compatibility alias
+    activations_boundary: "Array | None" = None,
 ) -> TransplantDeltaResult:
     """Compute weight update with optional pre-computed activation delta.
 
@@ -298,6 +300,10 @@ def compute_transplant_delta(
         TransplantDeltaResult with merged weight and diagnostics.
     """
     b = backend or get_default_backend()
+
+    # Backward compatibility: activations_boundary → boundary_activations
+    if activations_boundary is not None and boundary_activations is None:
+        boundary_activations = activations_boundary
 
     # ==========================================================================
     # ANCHOR-RELATIVE MODE: Constrained least-squares with boundary preservation
@@ -437,15 +443,22 @@ def compute_transplant_delta(
     b.eval(var_normalized)
 
     # Compute dormancy threshold from data distribution
-    # Use median as threshold: dimensions below median are "dormant"
+    # CRITICAL: Use a CONSERVATIVE threshold - only truly dormant dimensions
+    # Using median selects 50% which is far too aggressive.
+    #
+    # Geometric principle: Only touch unused capacity. Most dimensions are ACTIVE.
+    # Use bottom 5th percentile: only dimensions with very low variance are dormant.
     var_sorted = b.sort(var_normalized)
     b.eval(var_sorted)
-    median_idx = in_dim // 2
-    median_var = b.take(var_sorted, b.array([median_idx]), axis=0)
-    b.eval(median_var)
-    threshold = float(b.to_scalar(median_var[0]))
 
-    # Identify dormant dimensions (variance below median)
+    # 5th percentile index (bottom 5% of variance) - very conservative
+    # Only truly dormant dimensions get touched
+    percentile_5_idx = max(1, in_dim // 20)
+    threshold_arr = b.take(var_sorted, b.array([percentile_5_idx]), axis=0)
+    b.eval(threshold_arr)
+    threshold = float(b.to_scalar(threshold_arr[0]))
+
+    # Identify dormant dimensions (variance below 5th percentile)
     # is_dormant[d] = 1.0 if dormant, 0.0 if active
     is_dormant = b.astype(var_normalized < threshold, "float32")
     b.eval(is_dormant)

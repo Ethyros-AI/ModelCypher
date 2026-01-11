@@ -18,7 +18,7 @@
 """Model management CLI commands.
 
 Provides commands for:
-- Model listing, registration, deletion, fetching
+- Model listing, addition, deletion, fetching
 - Model search via HuggingFace Hub
 - Model probing for architecture details
 - Model merge validation
@@ -26,8 +26,10 @@ Provides commands for:
 
 Commands:
     mc model list
+    mc model add <repo_id|path> [--alias]
     mc model register <alias> --path <path>
     mc model search <query>
+    mc model info <path>
     mc model probe <path>
 """
 
@@ -37,6 +39,7 @@ import json
 import subprocess
 import sys
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Generator
 
 import typer
@@ -98,6 +101,91 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _default_alias(source: str, is_repo: bool) -> str:
+    if is_repo:
+        return source.replace("/", "--")
+    return Path(source).expanduser().resolve().name
+
+
+def _write_probe_output(
+    result: Any,
+    context: CLIContext,
+    include_profile: bool,
+    model_path: str,
+) -> None:
+    payload = {
+        "architecture": result.architecture,
+        "parameterCount": result.parameter_count,
+        "vocabSize": result.vocab_size,
+        "hiddenSize": result.hidden_size,
+        "numAttentionHeads": result.num_attention_heads,
+        "quantization": result.quantization,
+        "layerCount": len(result.layers),
+        "layerCountTensors": len(result.layers),
+        "layerCountConfig": result.layer_count_config,
+        "layers": [
+            {
+                "name": layer.name,
+                "type": layer.type,
+                "parameters": layer.parameters,
+                "shape": layer.shape,
+            }
+            for layer in result.layers[:20]
+        ],
+    }
+
+    if include_profile:
+        try:
+            from modelcypher.core.domain.geometry.model_profile import ModelProfileStore
+
+            store = ModelProfileStore()
+            profile, identity = store.load(model_path)
+            if profile:
+                payload["profile"] = {
+                    "modelId": profile.model_id,
+                    "configHash": profile.config_hash,
+                    "weightsHash": profile.weights_hash,
+                    "profilePath": str(store.profile_path(profile.model_id)),
+                    "sidecarPath": str(store.sidecar_path(profile.model_path)),
+                    "computedSections": profile.computed_sections,
+                }
+            else:
+                payload["profile"] = {
+                    "modelId": identity.model_id,
+                    "configHash": identity.config_hash,
+                    "weightsHash": identity.weights_hash,
+                    "profilePath": str(store.profile_path(identity.model_id)),
+                    "sidecarPath": str(store.sidecar_path(identity.model_path)),
+                    "computedSections": [],
+                }
+        except Exception:
+            payload["profile"] = None
+
+    if context.output_format == "text":
+        lines = [
+            "MODEL PROBE",
+            f"Architecture: {result.architecture}",
+            f"Parameters: {result.parameter_count:,}",
+            f"Vocab Size: {result.vocab_size:,}",
+            f"Hidden Size: {result.hidden_size}",
+            f"Attention Heads: {result.num_attention_heads}",
+            f"Layers (tensors): {len(result.layers)}",
+        ]
+        if result.layer_count_config:
+            lines.append(f"Layers (config): {result.layer_count_config}")
+        if result.quantization:
+            lines.append(f"Quantization: {result.quantization}")
+        if include_profile and payload.get("profile"):
+            profile = payload["profile"]
+            lines.append(f"Model ID: {profile.get('modelId', '')}")
+            lines.append(f"Config Hash: {profile.get('configHash', '')}")
+            lines.append(f"Weights Hash: {profile.get('weightsHash', '')}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 @app.command("list")
 def model_list(ctx: typer.Context) -> None:
     """List all registered models."""
@@ -105,6 +193,123 @@ def model_list(ctx: typer.Context) -> None:
     service = get_model_service()
     models = [model_payload(model) for model in service.list_models()]
     write_output(models, context.output_format, context.pretty)
+
+
+@app.command("add")
+def model_add(
+    ctx: typer.Context,
+    source: str = typer.Argument(
+        ..., help="Hugging Face repo ID or local model path"
+    ),
+    alias: str | None = typer.Option(None, "--alias"),
+    revision: str = typer.Option("main", "--revision"),
+    architecture: str | None = typer.Option(None, "--architecture"),
+    parameters: int | None = typer.Option(None, "--parameters"),
+    default_chat: bool = typer.Option(False, "--default-chat"),
+) -> None:
+    """Add a model (fetch or register) and persist its identity profile.
+
+    Examples:
+        mc model add LiquidAI/LFM2.5-1.2B-Instruct
+        mc model add ./models/my-model --alias my-model
+    """
+    context = _context(ctx)
+    service = get_model_service()
+    probe_service = get_model_probe_service()
+
+    source_path = Path(source).expanduser()
+    is_local = source_path.exists()
+    resolved_alias = alias or _default_alias(source, is_repo=not is_local)
+
+    if is_local:
+        resolved_path = str(source_path.resolve())
+        probe_result = None
+        detected_arch = architecture
+        detected_params = parameters
+        if architecture is None or parameters is None:
+            try:
+                probe_result = probe_service.probe(resolved_path)
+                if architecture is None:
+                    detected_arch = probe_result.architecture or "unknown"
+                if parameters is None and probe_result.parameter_count:
+                    detected_params = probe_result.parameter_count
+            except Exception as exc:
+                if architecture is None:
+                    error = ErrorDetail(
+                        code="MC-1002",
+                        title="Model add failed",
+                        detail=str(exc),
+                        hint="Provide --architecture when probing fails.",
+                        trace_id=context.trace_id,
+                    )
+                    write_error(error.as_dict(), context.output_format, context.pretty)
+                    raise typer.Exit(code=1)
+                typer.echo(f"Warning: probe failed: {exc}", err=True)
+        if detected_arch is None:
+            detected_arch = "unknown"
+
+        service.register_model(
+            resolved_alias,
+            resolved_path,
+            detected_arch,
+            parameters=detected_params,
+            default_chat=default_chat,
+        )
+        if probe_result is None:
+            try:
+                probe_service.probe(resolved_path)
+            except Exception as exc:
+                typer.echo(f"Warning: profile probe failed: {exc}", err=True)
+
+        payload = {
+            "source": source,
+            "localPath": resolved_path,
+            "registeredID": resolved_alias,
+            "detectedArchitecture": detected_arch,
+            "parameterCount": detected_params,
+        }
+        write_output(payload, context.output_format, context.pretty)
+        return
+
+    with prevent_sleep():
+        fetch_result = service.fetch_model(source, revision=revision, auto_register=False)
+
+    local_path = fetch_result["localPath"]
+    probe_result = None
+    detected_arch = architecture or fetch_result.get("detectedArchitecture") or "unknown"
+    detected_params = parameters
+    if architecture is None or parameters is None:
+        try:
+            probe_result = probe_service.probe(local_path)
+            if architecture is None:
+                detected_arch = probe_result.architecture or detected_arch
+            if parameters is None and probe_result.parameter_count:
+                detected_params = probe_result.parameter_count
+        except Exception as exc:
+            typer.echo(f"Warning: probe failed: {exc}", err=True)
+
+    service.register_model(
+        resolved_alias,
+        local_path,
+        detected_arch,
+        parameters=detected_params,
+        default_chat=default_chat,
+    )
+    if probe_result is None:
+        try:
+            probe_service.probe(local_path)
+        except Exception as exc:
+            typer.echo(f"Warning: profile probe failed: {exc}", err=True)
+
+    payload = {
+        "source": source,
+        "repoID": source,
+        "localPath": local_path,
+        "registeredID": resolved_alias,
+        "detectedArchitecture": detected_arch,
+        "parameterCount": detected_params,
+    }
+    write_output(payload, context.output_format, context.pretty)
 
 
 @app.command("register")
@@ -121,11 +326,20 @@ def model_register(
     Examples:
         mc model register my-llama --path ./models/llama --architecture llama
     """
+    typer.echo(
+        "DEPRECATED: use `mc model add <path> --alias <alias>` instead.",
+        err=True,
+    )
     context = _context(ctx)
     service = get_model_service()
     service.register_model(
         alias, path, architecture, parameters=parameters, default_chat=default_chat
     )
+    try:
+        probe_service = get_model_probe_service()
+        probe_service.probe(path)
+    except Exception as exc:
+        typer.echo(f"Warning: profile probe failed: {exc}", err=True)
     write_output({"registered": alias}, context.output_format, context.pretty)
 
 
@@ -225,9 +439,18 @@ def model_fetch(
         mc model fetch mlx-community/Llama-2-7b-mlx
         mc model fetch mlx-community/Llama-2-7b-mlx --auto-register --alias my-llama
     """
+    typer.echo(
+        "DEPRECATED: use `mc model add <repo_id> [--alias <alias>]` instead.",
+        err=True,
+    )
     context = _context(ctx)
     service = get_model_service()
     result = service.fetch_model(repo_id, revision, auto_register, alias, architecture)
+    try:
+        probe_service = get_model_probe_service()
+        probe_service.probe(result["localPath"])
+    except Exception as exc:
+        typer.echo(f"Warning: profile probe failed: {exc}", err=True)
     write_output(result, context.output_format, context.pretty)
 
 
@@ -286,15 +509,15 @@ def model_search(
     write_output(model_search_payload(page), context.output_format, context.pretty)
 
 
-@app.command("probe")
-def model_probe(
+@app.command("info")
+def model_info(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
 ) -> None:
-    """Probe a model for architecture details.
+    """Inspect a model and surface its stored identity profile.
 
     Examples:
-        mc model probe ./models/llama-7b
+        mc model info ./models/llama-7b
     """
     context = _context(ctx)
     service = get_model_probe_service()
@@ -321,45 +544,49 @@ def model_probe(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    payload = {
-        "architecture": result.architecture,
-        "parameterCount": result.parameter_count,
-        "vocabSize": result.vocab_size,
-        "hiddenSize": result.hidden_size,
-        "numAttentionHeads": result.num_attention_heads,
-        "quantization": result.quantization,
-        "layerCount": len(result.layers),
-        "layerCountTensors": len(result.layers),
-        "layerCountConfig": result.layer_count_config,
-        "layers": [
-            {
-                "name": layer.name,
-                "type": layer.type,
-                "parameters": layer.parameters,
-                "shape": layer.shape,
-            }
-            for layer in result.layers[:20]  # Limit to first 20 layers for readability
-        ],
-    }
+    _write_probe_output(result, context, include_profile=True, model_path=model_path)
 
-    if context.output_format == "text":
-        lines = [
-            "MODEL PROBE",
-            f"Architecture: {result.architecture}",
-            f"Parameters: {result.parameter_count:,}",
-            f"Vocab Size: {result.vocab_size:,}",
-            f"Hidden Size: {result.hidden_size}",
-            f"Attention Heads: {result.num_attention_heads}",
-            f"Layers (tensors): {len(result.layers)}",
-        ]
-        if result.layer_count_config:
-            lines.append(f"Layers (config): {result.layer_count_config}")
-        if result.quantization:
-            lines.append(f"Quantization: {result.quantization}")
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
 
-    write_output(payload, context.output_format, context.pretty)
+@app.command("probe")
+def model_probe(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+) -> None:
+    """Probe a model for architecture details.
+
+    Examples:
+        mc model probe ./models/llama-7b
+    """
+    typer.echo(
+        "DEPRECATED: use `mc model info <path>` instead.",
+        err=True,
+    )
+    context = _context(ctx)
+    service = get_model_probe_service()
+    try:
+        result = service.probe(model_path)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model probe failed",
+            detail=str(exc),
+            hint="Ensure the path points to a valid model directory with config.json",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model probe failed",
+            detail=str(exc),
+            hint="Check MLX runtime status (mc system status) and ensure MLX loads on this machine.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    _write_probe_output(result, context, include_profile=False, model_path=model_path)
 
 
 @app.command("validate-merge")

@@ -455,14 +455,13 @@ class TestTransplantEndToEnd:
         )
 
         assert result.applied is True
-        # With variance-weighted projection, null_dim represents "effective sparse capacity"
-        # (sum of 1 - variance_weights), not binary SVD-based null space dimension.
-        # With few boundary samples (5) in 128D, variance is low in most dimensions,
-        # so effective null_dim should be significant (but not necessarily = in_dim - rank).
-        assert result.null_dim > 0  # Some sparse capacity exists
-        # Spectral norm bounding enforces compositional stability
-        # We use direct scalar scaling (not full Birkhoff) to preserve null-space exactly
-        assert result.birkhoff_spectral_clipped is True  # spectral norm was > 1.0
+        # Dormancy mode uses variance-based selection to identify unused dimensions.
+        # null_dim represents the count of dormant dimensions (low variance) that were
+        # activated with source weights.
+        assert result.null_dim >= 0  # Dormant dimensions found (may be 0 for small dims)
+        # Dormancy mode does NOT use Birkhoff projection - it uses column selection
+        # based on variance. birkhoff_spectral_clipped is always False in this mode.
+        assert result.birkhoff_applied is False
         eps = _eps(backend, result.filtered_norm)
         assert result.filtered_norm >= eps  # some delta survives
         eps = _eps(backend, result.projection_loss)

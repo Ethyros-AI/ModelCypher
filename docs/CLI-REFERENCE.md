@@ -177,8 +177,31 @@ List all registered models.
 mc model list
 ```
 
+### mc model add
+Add a model (fetch from Hub or register a local path) and persist its identity profile.
+```bash
+mc model add <repo_id|path>
+mc model add LiquidAI/LFM2.5-1.2B-Instruct --alias lfm25
+mc model add ./models/my-model --alias my-model
+```
+
+**Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `--alias` | string | Alias for registration (defaults to repo or path name) |
+| `--revision` | string | Git revision (default: main) |
+| `--architecture` | string | Override architecture detection |
+| `--parameters` | int | Parameter count (optional) |
+| `--default-chat` | flag | Set as default chat model |
+
+### mc model info
+Inspect a model and surface its stored identity profile.
+```bash
+mc model info <model_path>
+```
+
 ### mc model register
-Register a local model.
+Register a local model. (deprecated; use `mc model add`)
 ```bash
 mc model register <alias> --path <path> --architecture <arch>
 mc model register my-llama --path ./models/llama --architecture llama
@@ -200,7 +223,7 @@ mc model delete my-llama
 ```
 
 ### mc model fetch
-Fetch a model from HuggingFace Hub.
+Fetch a model from HuggingFace Hub. (deprecated; use `mc model add`)
 ```bash
 mc model fetch <repo_id>
 mc model fetch mlx-community/Llama-2-7b-mlx --auto-register --alias my-llama
@@ -233,7 +256,7 @@ mc model search --author mlx-community --sort downloads
 | `--cursor` | string | Pagination cursor |
 
 ### mc model probe
-Probe a model for architecture details.
+Probe a model for architecture details. (deprecated; use `mc model info`)
 ```bash
 mc model probe <model_path>
 mc model probe ./models/llama-7b

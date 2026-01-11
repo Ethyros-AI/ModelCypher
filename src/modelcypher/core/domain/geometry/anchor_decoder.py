@@ -94,7 +94,7 @@ def compute_anchor_decoder(
 
     # Compute pseudo-inverse of S_t
     # S_t is [n, n_anchors], pinv(S_t) is [n_anchors, n]
-    S_t_pinv = geodesic_pinv(target_relative_rep, b)
+    S_t_pinv = geodesic_pinv(b, target_relative_rep)
     b.eval(S_t_pinv)
 
     # Decoder B = pinv(S_t) @ A_t
