@@ -140,7 +140,10 @@ class TestEntropyProperties:
         eps = _eps(variance, 0.0)
         assert variance >= -eps
 
-    @given(logits_array(), logits_array())
+    @given(
+        logits_array(size=st.integers(2, 256)),
+        logits_array(size=st.integers(2, 256)),
+    )
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_length_matches(self, logits_a, logits_b):
         """Batch compute should return correct number of results."""

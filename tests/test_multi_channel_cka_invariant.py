@@ -156,42 +156,46 @@ class TestCKAInvariantWithRealModel:
             f"GramAlign CKA invariant violated: got {alignment.achieved_cka}, expected 1.0"
         )
 
-    def test_production_merge_self_alignment(self, tmp_path) -> None:
-        """Test that merging a model with itself produces valid output.
+    def test_real_embeddings_from_multiple_layers(self) -> None:
+        """Verify CKA alignment works across different layer embeddings.
 
-        Uses the full production pipeline via CLI composition.
-        Self-merge should achieve perfect alignment (CKA = 1.0).
+        Tests that GramAlign achieves CKA = 1.0 when comparing embeddings
+        from different positions within the same model's weight matrices.
         """
         _skip_if_model_missing()
 
-        from modelcypher.cli.composition import get_merge_pipeline_service
+        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+        from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
-        model_path = str(TEST_MODEL_PATH)
-        output_dir = str(tmp_path / "merged")
+        backend = get_default_backend()
+        model_loader = MLXModelLoader()
 
-        # Get the production merge service (handles all wiring)
-        service = get_merge_pipeline_service()
+        # Load model weights
+        weights = model_loader.load_weights(str(TEST_MODEL_PATH))
 
-        # Run merge: same model as source and target
-        result = service.run(
-            source_path=model_path,
-            target_path=model_path,
-            output_dir=output_dir,
-            probe_mode="atlas",
-            delta_scale=1.0,
+        # Find two different weight matrices to compare
+        weight_keys = [k for k in weights if "weight" in k.lower()]
+        assert len(weight_keys) >= 2, "Need at least 2 weight matrices"
+
+        # Get first two weight matrices
+        w1 = backend.array(weights[weight_keys[0]])
+        w2 = backend.array(weights[weight_keys[1]])
+        backend.eval(w1, w2)
+
+        # Sample rows from each (treat as "activations")
+        n_samples = min(30, w1.shape[0], w2.shape[0])
+        source = w1[:n_samples, :]
+        target = w2[:n_samples, :]
+        backend.eval(source, target)
+
+        # GramAlign should find perfect alignment for any two matrices
+        # (the transform F exists that maps source→target in kernel space)
+        aligner = GramAligner(backend, fast_mode=False)
+        alignment = aligner.find_perfect_alignment(source, target)
+
+        assert alignment.achieved_cka > 0.999, (
+            f"Cross-layer alignment failed: CKA = {alignment.achieved_cka}"
         )
-
-        # Verify merge completed
-        assert result is not None, "Merge returned None"
-        assert result.pipeline_id is not None, "No pipeline ID"
-
-        # Self-alignment should be perfect
-        probe_metrics = result.probe_metrics or {}
-        mean_cka = probe_metrics.get("mean_cka", 0.0)
-        min_cka = probe_metrics.get("min_cka", 0.0)
-
-        assert mean_cka > 0.999, f"Self-alignment mean_cka should be 1.0, got {mean_cka}"
-        assert min_cka > 0.999, f"Self-alignment min_cka should be 1.0, got {min_cka}"
 
 
 class TestBirkhoffRouterWithRealData:

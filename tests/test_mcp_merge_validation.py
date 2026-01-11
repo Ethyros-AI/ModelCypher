@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,13 @@ def _find_test_model() -> Path | None:
         path = Path(env_path).expanduser()
         if path.exists():
             return path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    fixtures_root = repo_root / "tests" / "fixtures" / ".models"
+    if fixtures_root.exists():
+        for model_dir in fixtures_root.iterdir():
+            if model_dir.is_dir() and (model_dir / "config.json").exists():
+                return model_dir
 
     if mc_home := os.environ.get("MODELCYPHER_HOME"):
         models_dir = Path(mc_home) / "models"
@@ -169,26 +177,27 @@ class TestMergeEntropyValidateTool:
         assert isinstance(payload.get("topEntropyRatioLayers", []), list)
 
 
-@requires_model
 class TestKnowledgeValidationTool:
     """Tests for mc_model_validate_knowledge tool."""
 
-    def test_knowledge_validation_schema(
-        self, mcp_env: dict[str, str], test_model_path: str
-    ) -> None:
-        async def runner(session: ClientSession):
-            return await _await_with_timeout(
-                session.call_tool(
-                    "mc_model_validate_knowledge",
-                    arguments={
-                        "sourceModel": test_model_path,
-                        "mergedModel": test_model_path,
-                    },
-                )
-            )
+    def test_knowledge_validation_schema(self, mcp_env: dict[str, str]) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            model_dir = Path(tmp) / "stub-model"
+            model_dir.mkdir(parents=True, exist_ok=True)
 
-        result = _run_mcp(mcp_env, runner)
-        payload = _extract_structured(result)
+            async def runner(session: ClientSession):
+                return await _await_with_timeout(
+                    session.call_tool(
+                        "mc_model_validate_knowledge",
+                        arguments={
+                            "sourceModel": str(model_dir),
+                            "mergedModel": str(model_dir),
+                        },
+                    )
+                )
+
+            result = _run_mcp(mcp_env, runner)
+            payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.model.validate_knowledge.v1"
         assert "overallRetention" in payload

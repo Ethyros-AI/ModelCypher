@@ -300,7 +300,6 @@ class TestMCPCLIParity:
                 elif "HF_HOME" in os.environ:
                     del os.environ["HF_HOME"]
 
-    @pytest.mark.skip(reason="Test requires real model loading which isn't available in CI")
     @given(
         prompt=st.text(min_size=1, max_size=100).filter(lambda s: s.strip()),
     )
@@ -311,7 +310,8 @@ class TestMCPCLIParity:
 
         with tempfile.TemporaryDirectory() as model_dir:
             service = ThermoService()
-            result = service.detect(prompt, model_dir)
+            missing_model_path = str(Path(model_dir) / "missing-model")
+            result = service.detect(prompt, missing_model_path)
 
             # CLI output format (from app.py thermo_detect)
             cli_output = {
@@ -349,7 +349,6 @@ class TestMCPCLIParity:
             assert "_schema" in mcp_output
             assert mcp_output["_schema"] == "mc.thermo.detect.v1"
 
-    @pytest.mark.skip(reason="Test requires real model loading which isn't available in CI")
     @given(
         prompts=st.lists(
             st.text(min_size=1, max_size=50).filter(lambda s: s.strip()), min_size=1, max_size=10
@@ -362,8 +361,7 @@ class TestMCPCLIParity:
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            model_dir = tmp_path / "model"
-            model_dir.mkdir()
+            model_dir = tmp_path / "missing-model"
 
             # Create prompts file
             prompts_file = tmp_path / "prompts.json"
