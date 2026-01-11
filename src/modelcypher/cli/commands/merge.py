@@ -382,6 +382,8 @@ def batch(
     output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
     accumulative: bool = typer.Option(True, "--accumulative/--sequential", help="Accumulative (add all to target) vs sequential merging"),
     fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks (safe: CKA=1.0 is invariant)"),
+    detect_outliers: bool = typer.Option(False, "--detect-outliers", help="Analyze concept alignment before merging (shows which models disagree)"),
+    consensus_mode: bool = typer.Option(False, "--consensus/--no-consensus", help="Use consensus-based correction: fix misaligned concepts before adding"),
 ) -> None:
     """Merge multiple source models into a single target (N→1 merging).
 
@@ -395,13 +397,18 @@ def batch(
     Accumulative mode (default) projects all sources into the ORIGINAL target's
     null-space. This preserves target behavior while adding all source knowledge.
 
+    Consensus mode (--consensus) enables two-phase merging:
+    1. CORRECTION: Fix concepts where target disagrees with source consensus
+    2. ADDITION: Add source-only knowledge via null-space projection
+
     Scale is automatically computed for each merge based on measured delta
     magnitude and remaining budget (1% of weight norm). The math determines
     the safe injection amount - no user-configurable knobs.
 
     Examples:
         mc merge batch -s ./model1 -s ./model2 -s ./model3 -t ./lfm2 -o ./merged
-        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged
+        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged --consensus
+        mc merge batch -s ./m1 -s ./m2 -t ./target -o ./out --detect-outliers
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend

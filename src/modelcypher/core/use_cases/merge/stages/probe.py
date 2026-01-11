@@ -415,38 +415,44 @@ def _accumulate_activation(
     layer_idx: int,
     act: "Array",
     backend: "Backend",
+    probe_index: int,
+    total_probes: int,
 ) -> None:
-    """Accumulate activation into a single stacked array per layer.
+    """Accumulate activations in a fixed-size buffer per layer.
 
-    This is THE memory optimization: instead of storing thousands of small
-    arrays (each a Metal buffer), we concatenate into ONE array per layer.
-
-    Activations come in as 1D [hidden_dim] and we stack them to build
-    a 2D matrix [n_probes, hidden_dim].
-
-    Result: 32 Metal buffers per model instead of 4096×32 = 131,072
-
-    IMPORTANT: eval() is called after each concatenation to:
-    1. Materialize the new array immediately
-    2. Allow the old array (before concat) to be freed
-    3. Prevent the lazy computation graph from growing unboundedly
-    Without this, Metal resource limits are exceeded (~500K buffer limit).
+    Preallocating the full [n_probes, dim] array avoids O(n^2) concatenation
+    growth and prevents MLX memory pools from ballooning during long runs.
     """
-    import mlx.core as mx
+    if not hasattr(act, "shape"):
+        act = backend.array(act)
 
-    # Ensure activation is 2D [1, hidden_dim] for proper stacking
-    if len(act.shape) == 1:
-        act = mx.reshape(act, (1, -1))
+    act_shape = backend.shape(act)
+    if len(act_shape) == 1:
+        act = backend.reshape(act, (1, act_shape[0]))
+        act_shape = backend.shape(act)
 
     if layer_idx not in storage:
-        # First activation for this layer - store as 2D
-        storage[layer_idx] = act
+        dim = int(act_shape[1])
+        dtype = getattr(act, "dtype", None)
+        storage[layer_idx] = backend.zeros((total_probes, dim), dtype=dtype)
+        backend.eval(storage[layer_idx])
     else:
-        # Concatenate along axis 0 to build [n_probes, hidden_dim]
-        storage[layer_idx] = mx.concatenate([storage[layer_idx], act], axis=0)
+        existing = storage[layer_idx]
+        existing_shape = backend.shape(existing)
+        if int(existing_shape[0]) < total_probes:
+            dim = int(existing_shape[1])
+            dtype = getattr(existing, "dtype", None)
+            pad_rows = total_probes - int(existing_shape[0])
+            padding = backend.zeros((pad_rows, dim), dtype=dtype)
+            storage[layer_idx] = backend.concatenate([existing, padding], axis=0)
+            backend.eval(storage[layer_idx])
 
-    # Force evaluation to materialize buffer and allow old one to be freed
-    mx.eval(storage[layer_idx])
+    dim = int(backend.shape(act)[1])
+    indices = backend.full((1, dim), probe_index, dtype="int32")
+    storage[layer_idx] = backend.put_along_axis(
+        storage[layer_idx], indices, act, axis=0
+    )
+    backend.eval(storage[layer_idx])
 
 
 @dataclass
@@ -914,8 +920,8 @@ def _probe_precise(
     target_v_activations: dict[int, "Array"] = (
         target_cache.v_activations if target_cache else {}
     )
-    probe_ids: list[str] = []
-    probe_domains: list[str] = []
+    probe_ids: list[str] = list(expected_probe_ids)
+    probe_domains: list[str] = list(expected_probe_domains)
 
     probes_processed = 0
     probes_failed = invalid_probe_count
@@ -926,8 +932,6 @@ def _probe_precise(
     # =========================================================================
 
     if not run_inference:
-        probe_ids = list(expected_probe_ids)
-        probe_domains = list(expected_probe_domains)
         probes_processed = len(probe_ids)
 
     if run_inference:
@@ -961,6 +965,7 @@ def _probe_precise(
 
             if existing_checkpoint is not None:
                 completed_probe_ids = set(existing_checkpoint.get("probe_ids", []))
+                probes_processed = len(completed_probe_ids)
                 # Find how many valid probes were already completed
                 # We'll skip probes that are in completed_probe_ids
                 logger.info(
@@ -1017,6 +1022,7 @@ def _probe_precise(
             batch = valid_probes[batch_start:batch_end]
             batch_texts = [probe_text for _, probe_text in batch]
             batch_size = len(batch_texts)
+            total_probes = len(valid_probes)
             empty_batch = [{} for _ in range(batch_size)]
 
             try:
@@ -1169,6 +1175,7 @@ def _probe_precise(
                     # Skip probes that were already completed (from checkpoint)
                     if probe.probe_id in completed_probe_ids:
                         continue
+                    probe_index = batch_start + i
     
                     source_acts = source_hidden_batch[i]
                     target_acts = target_hidden_batch[i]
@@ -1190,7 +1197,14 @@ def _probe_precise(
                                 act, backend=b
                             )
                             # MEMORY FIX: accumulate into single buffer per layer
-                            _accumulate_activation(source_layer_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                source_layer_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     if run_target_inference:
                         for layer_idx, act in target_acts.items():
@@ -1198,43 +1212,106 @@ def _probe_precise(
                                 act, backend=b
                             )
                             # MEMORY FIX: accumulate into single buffer per layer
-                            _accumulate_activation(target_layer_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                target_layer_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     # Store intermediate activations for multi-space stitching
                     if run_source_inference:
                         for layer_idx, act in source_intermediate_acts.items():
-                            _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                source_intermediate_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     if run_target_inference:
                         for layer_idx, act in target_intermediate_acts.items():
-                            _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                target_intermediate_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     # Store Q attention activations for q_proj/o_proj stitching
                     if run_source_inference:
                         for layer_idx, act in source_attention_acts.items():
-                            _accumulate_activation(source_attention_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                source_attention_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     if run_target_inference:
                         for layer_idx, act in target_attention_acts.items():
-                            _accumulate_activation(target_attention_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                target_attention_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     # Store K attention activations for k_proj stitching
                     if run_source_inference:
                         for layer_idx, act in source_k_acts.items():
-                            _accumulate_activation(source_k_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                source_k_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     if run_target_inference:
                         for layer_idx, act in target_k_acts.items():
-                            _accumulate_activation(target_k_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                target_k_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     # Store V attention activations for v_proj stitching
                     if run_source_inference:
                         for layer_idx, act in source_v_acts.items():
-                            _accumulate_activation(source_v_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                source_v_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     if run_target_inference:
                         for layer_idx, act in target_v_acts.items():
-                            _accumulate_activation(target_v_activations, layer_idx, act, b)
+                            _accumulate_activation(
+                                target_v_activations,
+                                layer_idx,
+                                act,
+                                b,
+                                probe_index,
+                                total_probes,
+                            )
 
                     if run_source_inference and source_activated:
                         source_fingerprints.append(
@@ -1253,8 +1330,6 @@ def _probe_precise(
                             )
                         )
     
-                    probe_ids.append(probe.probe_id)
-                    probe_domains.append(probe.domain.value)
                     probes_processed += 1
     
                 # Log progress at batch boundaries
@@ -1305,10 +1380,11 @@ def _probe_precise(
             except Exception as e:
                 # On batch failure, fall back to sequential processing for this batch
                 logger.warning("Batch processing failed, falling back to sequential: %s", e)
-                for probe, probe_text in batch:
+                for i, (probe, probe_text) in enumerate(batch):
                     # Skip probes that were already completed (from checkpoint)
                     if probe.probe_id in completed_probe_ids:
                         continue
+                    probe_index = batch_start + i
     
                     try:
                         source_acts = (
@@ -1368,46 +1444,116 @@ def _probe_precise(
                                 source_activated_fallback[layer_idx] = _extract_top_k_dims(
                                     act, backend=b
                                 )
-                                _accumulate_activation(source_layer_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    source_layer_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_target_inference:
                             for layer_idx, act in target_acts.items():
                                 target_activated_fallback[layer_idx] = _extract_top_k_dims(
                                     act, backend=b
                                 )
-                                _accumulate_activation(target_layer_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    target_layer_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_source_inference:
                             for layer_idx, act in source_intermediate_acts.items():
-                                _accumulate_activation(source_intermediate_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    source_intermediate_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_target_inference:
                             for layer_idx, act in target_intermediate_acts.items():
-                                _accumulate_activation(target_intermediate_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    target_intermediate_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_source_inference:
                             for layer_idx, act in source_attention_acts.items():
-                                _accumulate_activation(source_attention_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    source_attention_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_target_inference:
                             for layer_idx, act in target_attention_acts.items():
-                                _accumulate_activation(target_attention_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    target_attention_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_source_inference:
                             for layer_idx, act in source_k_acts.items():
-                                _accumulate_activation(source_k_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    source_k_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_target_inference:
                             for layer_idx, act in target_k_acts.items():
-                                _accumulate_activation(target_k_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    target_k_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_source_inference:
                             for layer_idx, act in source_v_acts.items():
-                                _accumulate_activation(source_v_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    source_v_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_target_inference:
                             for layer_idx, act in target_v_acts.items():
-                                _accumulate_activation(target_v_activations, layer_idx, act, b)
+                                _accumulate_activation(
+                                    target_v_activations,
+                                    layer_idx,
+                                    act,
+                                    b,
+                                    probe_index,
+                                    total_probes,
+                                )
     
                         if run_source_inference and source_activated_fallback:
                             source_fingerprints.append(
@@ -1426,8 +1572,6 @@ def _probe_precise(
                                 )
                             )
     
-                        probe_ids.append(probe.probe_id)
-                        probe_domains.append(probe.domain.value)
                         probes_processed += 1
     
                     except Exception as inner_e:
@@ -1446,7 +1590,10 @@ def _probe_precise(
         _clear_probe_checkpoint(checkpoint_path)
 
     cache_ready = (
-        probe_ids == expected_probe_ids and probe_domains == expected_probe_domains
+        probe_ids == expected_probe_ids
+        and probe_domains == expected_probe_domains
+        and probes_processed == len(expected_probe_ids)
+        and probes_failed == invalid_probe_count
     )
 
     def _cache_spaces(
