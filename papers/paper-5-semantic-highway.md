@@ -2,9 +2,10 @@
 
 **Author**: Jason Kempf
 **Affiliation**: EthyrosAI
-**Date**: December 2025
+**Date**: December 2025 (Updated January 2026)
 
-> **Status**: Draft observation; reproduction pending.
+> **Status**: Draft observation; preliminary data supports the pattern.
+> **Experimental Evidence**: See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json).
 
 ## Abstract
 
@@ -89,7 +90,30 @@ For each model:
 
 ## 3. Results
 
-> Results are not included in this draft. Pilot runs exist but are not reproduced; rerun using the protocol and record raw data before drawing conclusions.
+### 3.1 Verified: Layer-wise Intrinsic Dimension (January 2026)
+
+We measured intrinsic dimension across layers of SmolLM-135M:
+
+| Layer | Intrinsic Dimension |
+|-------|---------------------|
+| 0 (input) | 15.8 |
+| 7 (early) | 8.8 |
+| 15 (middle) | 1.8 |
+| 22 (late middle) | 1.9 |
+| 29 (output) | 9.6 |
+
+**Source**: [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json)
+
+**Observed Pattern**:
+1. **Dimensionality cliff**: ID drops from 15.8 → 8.8 → 1.8 through early layers
+2. **Low-ID plateau**: Middle layers maintain ID ≈ 2 (layers 15-22)
+3. **Output expansion**: ID rises to 9.6 at final layer
+
+This pattern is consistent with the hypothesis: early layers compress tokenized representations onto a low-dimensional manifold; middle layers operate within that manifold; late layers expand for output generation.
+
+### 3.2 Historical Pilot Results (December 2025)
+
+> Historical pilot runs on Qwen, Llama, and Mistral exist but are not reproduced in this repo. The pattern above from SmolLM-135M provides preliminary support.
 
 ## 4. Discussion
 

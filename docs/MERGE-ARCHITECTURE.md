@@ -4,7 +4,7 @@ This document describes the consolidated merge subsystem and how the pipeline is
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
-- Global CLI options must come before the command path (example: `mc --output text merge run ...`).
+- Global CLI options can appear anywhere on the command line (example: `mc merge run ... --output text`).
 
 ## Entry Points
 

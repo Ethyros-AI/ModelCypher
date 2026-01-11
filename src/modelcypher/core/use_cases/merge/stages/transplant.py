@@ -1877,60 +1877,61 @@ def stage_transplant(
             try:
                 logger.debug("Computing transplant delta for %s", key)
 
-                # Compute delta_A via anchor-relative pipeline
-                # This is the canonical geometric method - no fallback modes
-                if not (
+                # Check if anchor-relative pipeline is available
+                has_anchors = (
                     source_anchors is not None
                     and target_anchors is not None
                     and layer_idx in source_anchors
                     and layer_idx in target_anchors
                     and source_activations is not None
                     and layer_idx in source_activations
-                ):
-                    logger.warning(
-                        "TRANSPLANT: Skipping %s - anchors not available for layer %d",
-                        key, layer_idx
+                )
+
+                if has_anchors:
+                    # Get source activations for this layer
+                    src_acts_list = source_activations[layer_idx]
+                    if not src_acts_list:
+                        has_anchors = False  # Fall back to direct delta
+
+                if has_anchors:
+                    src_acts_stacked = b.concat(
+                        [b.array(a) for a in src_acts_list], axis=0
                     )
-                    continue
+                    b.eval(src_acts_stacked)
 
-                # Get source activations for this layer
-                src_acts_list = source_activations[layer_idx]
-                if not src_acts_list:
-                    logger.warning(
-                        "TRANSPLANT: Skipping %s - no source activations for layer %d",
-                        key, layer_idx
+                    # Get anchors for this layer
+                    src_anch = source_anchors[layer_idx]
+                    tgt_anch = target_anchors[layer_idx]
+
+                    # Compute delta_A via anchor-relative pipeline with Ghost Anchors
+                    # Ghost Anchors handle novel concepts that don't exist in target
+                    logger.info(
+                        "ANCHOR-RELATIVE: Computing grafting delta with Ghost Anchors for layer %d",
+                        layer_idx,
                     )
-                    continue
-
-                src_acts_stacked = b.concat(
-                    [b.array(a) for a in src_acts_list], axis=0
-                )
-                b.eval(src_acts_stacked)
-
-                # Get anchors for this layer
-                src_anch = source_anchors[layer_idx]
-                tgt_anch = target_anchors[layer_idx]
-
-                # Compute delta_A via anchor-relative pipeline with Ghost Anchors
-                # Ghost Anchors handle novel concepts that don't exist in target
-                logger.info(
-                    "ANCHOR-RELATIVE: Computing grafting delta with Ghost Anchors for layer %d",
-                    layer_idx,
-                )
-                grafting_result = compute_anchor_grafting_with_ghost_anchors(
-                    source_activations=src_acts_stacked,
-                    target_activations=stacked,
-                    source_anchors=src_anch,
-                    target_anchors=tgt_anch,
-                    backend=b,
-                )
-                delta_A = grafting_result.delta_activations
-                logger.info(
-                    "ANCHOR-RELATIVE: Layer %d delta_A computed, "
-                    "transfer_fraction=%.3f",
-                    layer_idx,
-                    grafting_result.transfer_fraction,
-                )
+                    grafting_result = compute_anchor_grafting_with_ghost_anchors(
+                        source_activations=src_acts_stacked,
+                        target_activations=stacked,
+                        source_anchors=src_anch,
+                        target_anchors=tgt_anch,
+                        backend=b,
+                    )
+                    delta_A = grafting_result.delta_activations
+                    logger.info(
+                        "ANCHOR-RELATIVE: Layer %d delta_A computed, "
+                        "transfer_fraction=%.3f",
+                        layer_idx,
+                        grafting_result.transfer_fraction,
+                    )
+                else:
+                    # Direct delta computation when anchors unavailable
+                    # delta_A = source_aligned - target (in activation space)
+                    # This is simpler but still projects into null space
+                    delta_A = source_aligned - target_w
+                    logger.debug(
+                        "DIRECT DELTA: Layer %d using source-target difference",
+                        layer_idx,
+                    )
 
                 # Constrained least-squares transplant
                 result = compute_transplant_delta(

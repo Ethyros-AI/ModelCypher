@@ -1,0 +1,96 @@
+{
+  "timestamp": "2026-01-11T16:25:07.527019",
+  "model": "1d461723eec654e65efdc40cf49301c89c0c92f4",
+  "num_layers": 30,
+  "experiments": {
+    "semantic_primes": {
+      "count": 65,
+      "layer": 15,
+      "intrinsic_dimension": {
+        "value": null,
+        "ci_lower": null,
+        "ci_upper": null
+      },
+      "within_category_similarity": 0.9999415085349285,
+      "between_category_similarity": 0.9999488719476635,
+      "separation_ratio": 0.9999926362107688,
+      "categories_cluster": false
+    },
+    "cross_domain_cka": {
+      "layer": 15,
+      "domains": [
+        "spatial",
+        "temporal",
+        "social",
+        "moral"
+      ],
+      "cka_pairs": {
+        "spatial_vs_temporal": 0.1581115617312717,
+        "spatial_vs_social": 0.15162849325202216,
+        "spatial_vs_moral": 0.12055742844336578,
+        "temporal_vs_social": 0.1423134115342629,
+        "temporal_vs_moral": 0.2906576268274241,
+        "social_vs_moral": 0.22893231342120232
+      },
+      "mean_cka": 0.18203347253492483
+    },
+    "alignment_invariance": {
+      "early_layer": 7,
+      "late_layer": 22,
+      "probe_count": 15,
+      "raw_cka": 0.6024573263900722,
+      "aligned_cka": 1.0,
+      "alignment_achieved_cka": 1.0,
+      "is_perfect": true,
+      "numerical_deviation": 0.0,
+      "precision_threshold": 0.0003452669770922512
+    },
+    "layerwise_intrinsic_dimension": {
+      "layers": [
+        {
+          "layer": 0,
+          "intrinsic_dimension": 15.786269112506107
+        },
+        {
+          "layer": 7,
+          "intrinsic_dimension": 8.839829815485093
+        },
+        {
+          "layer": 15,
+          "intrinsic_dimension": 1.7714971200570426
+        },
+        {
+          "layer": 22,
+          "intrinsic_dimension": 1.867356516542069
+        },
+        {
+          "layer": 29,
+          "intrinsic_dimension": 9.591555381379594
+        }
+      ],
+      "pattern": "ID typically increases then decreases through layers"
+    },
+    "domain_geometry": {
+      "spatial": {
+        "probe_count": 23,
+        "mean_pairwise_similarity": 0.9997230532612253,
+        "intrinsic_dimension": 1.4713888044582537
+      },
+      "temporal": {
+        "probe_count": 25,
+        "mean_pairwise_similarity": 0.9994059763352077,
+        "intrinsic_dimension": 3.7361328673821355
+      },
+      "social": {
+        "probe_count": 25,
+        "mean_pairwise_similarity": 0.9995042957862218,
+        "intrinsic_dimension": 2.4444153973811416
+      },
+      "moral": {
+        "probe_count": 30,
+        "mean_pairwise_similarity": 0.9992299081265241,
+        "intrinsic_dimension": 8.012987455409641
+      }
+    }
+  }
+}

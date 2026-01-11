@@ -5,7 +5,7 @@
 >
 > **Note**: This guide is about *using* ModelCypher as a tool. For instructions on *developing* ModelCypher (coding rules, architecture, git policies), see [AGENTS.md](../AGENTS.md).
 >
-> **Repo note**: When running from this repo, use `poetry run mc ...`. Global CLI options must come before the command path (example: `mc --ai geometry ...`).
+> **Repo note**: When running from this repo, use `poetry run mc ...`. Global CLI options can appear anywhere on the command line (example: `mc geometry ... --ai`).
 
 ## Identity & Role
 

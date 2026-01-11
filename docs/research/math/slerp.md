@@ -128,31 +128,15 @@ globally spherical. Use it for local, diagnostic interpolation only.
 
 ---
 
-## Code Implementation
+## Implementation Notes
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/vector_math.py`](../../../src/modelcypher/core/domain/geometry/vector_math.py)
+SLERP is used for visualization and diagnostic interpolation. The algorithm
+is straightforward to implement using the backend's trigonometric operations.
 
-**Key entry points**:
-- `VectorMath.slerp()` / `slerp_batch()` - CPU fallback
-- `BackendVectorMath.slerp()` / `slerp_batch()` / `slerp_matrix()` - GPU path
-- `get_vector_math()` - factory for backend-aware math
-
-**Usage**:
-```python
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.vector_math import get_vector_math
-
-backend = get_default_backend()
-vm = get_vector_math(backend)  # Returns BackendVectorMath for GPU acceleration
-result = vm.slerp(v0, v1, 0.5)
-```
-
-**Design decisions**:
-1. **Explicit warning**: SLERP is for diagnostics/visualization, not merging.
-2. **Geodesic norms**: Uses backend geodesic norms and cosine similarity.
-3. **Numerical stability**: Epsilon derives from backend dtype via `division_epsilon`.
-4. **Edge cases**: Linear fallback for near-parallel (θ≈0) or near-antipodal (θ≈π).
-5. **Magnitude handling**: Optional `interpolate_magnitude` for rescaled outputs.
+**Key design decisions**:
+1. **Diagnostics only**: SLERP is for diagnostics/visualization, not merging.
+2. **Numerical stability**: Linear fallback for near-parallel (θ≈0) or near-antipodal (θ≈π).
+3. **Magnitude handling**: Optional magnitude interpolation for rescaled outputs.
 
 ---
 

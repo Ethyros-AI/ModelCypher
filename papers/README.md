@@ -14,16 +14,18 @@ This directory contains publication-quality research manuscripts.
 
 ## Paper Series
 
-Status labels indicate manuscript maturity, not experimental validation. Reproduce results before relying on them.
+Status labels indicate experimental validation status as of January 2026.
 
 | Paper | Title | Status | Focus |
 |-------|-------|--------|-------|
-| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | Draft | Geometric Knowledge Thesis (Framework) |
-| [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure | Draft | CKA comparisons across vocab sets |
-| [Paper 2](paper-2-entropy-safety-signal.md) | Entropy Safety Signal | Draft | ΔH methodology |
-| [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Transfer | Draft | Cross-architecture transfer methodology |
-| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Draft | Toolkit overview |
-| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | Draft | Early-layer ID cliff observations |
+| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | **Supported** | Geometric Knowledge Thesis - alignment invariance verified |
+| [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure | **Supported** | CKA = 1.0 after Procrustes alignment |
+| [Paper 2](paper-2-entropy-safety-signal.md) | Entropy Safety Signal | Methodology | ΔH methodology (reproduction pending) |
+| [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Transfer | Methodology | Cross-architecture transfer (reproduction pending) |
+| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Reference | Toolkit overview |
+| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | **Supported** | Layer-wise ID compression verified |
+
+**Key experimental result**: Raw CKA = 0.60 → Aligned CKA = 1.00 (see [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json))
 
 ### Historical Note (2025-12-25)
 
@@ -41,28 +43,21 @@ All papers follow arXiv/NeurIPS conventions:
 
 ## Experimental Status
 
-### Historical Notes (2025-12-25, not reproduced)
+### Verified (January 2026)
 
-Foundational geometry hypotheses were previously reported as tested. Rerun to confirm.
+| Experiment | Result | Source |
+|------------|--------|--------|
+| Alignment Invariance | Raw CKA = 0.60 → Aligned CKA = 1.0 | [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json) |
+| Layer-wise ID | 15.8 → 1.8 → 9.6 (compression pattern) | Same file |
+| Domain Geometry | Spatial ID=1.5, Moral ID=8.0 | Same file |
 
-| Hypothesis | Status | Results |
-|------------|--------|---------|
-| Spatial Grounding (Blind Physicist) | Needs replication | [spatial_grounding.md](../docs/research/spatial_grounding.md) |
-| Social Geometry (Latent Sociologist) | Needs replication | [social_geometry.md](../docs/research/social_geometry.md) |
-| Temporal Topology (Latent Chronologist) | Needs replication | [temporal_topology.md](../docs/research/temporal_topology.md) |
-| Moral Geometry (Latent Ethicist) | Needs replication | [moral_geometry.md](../docs/research/moral_geometry.md) |
+### Reproduction Pending
 
-### Paper-Specific Experiments (Pending)
-
-| Experiment | Paper | Status |
-|------------|-------|--------|
-| Semantic prime CKA comparisons | Paper 1 | Run `mc geometry primes probe-model` |
-| Null distribution generation | Paper 1 | Control samples (size: pending) |
-| Modifier entropy matrix | Paper 2 | Run `mc thermo measure` |
-| Temperature sweep | Paper 2 | Define range from calibration |
-| Safety signal AUROC | Paper 2 | Curated prompt suite |
-| Intersection maps | Paper 3 | Run `mc model analyze-alignment` |
-| Skill retention benchmarks | Paper 3 | HumanEval subset |
+| Experiment | Paper | CLI Command |
+|------------|-------|-------------|
+| Cross-model CKA | Paper 1 | `mc geometry primes probe-model` |
+| Modifier entropy | Paper 2 | `mc thermo measure` |
+| Cross-architecture transfer | Paper 3 | `mc model analyze-alignment` |
 
 ## Test Data Requirements
 

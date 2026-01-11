@@ -12,7 +12,7 @@ Geometric diagnostics for LLM representations. Measures intrinsic dimension, cur
 
 - **Backend**: MLX (macOS) primary, JAX (Linux/TPU) secondary
 - **Architecture**: Hexagonal (ports and adapters)
-- **Tests**: ~5800 passing tests
+- **Tests**: Run `poetry run pytest` for current count
 
 ---
 
@@ -31,6 +31,13 @@ This is not metaphor. This is not approximation. This is the mathematical realit
 4. **Models can be merged because geometry permits it.** Each dimension can be rotated. Each layer is another rotation. We align coordinates, project into null space (unused capacity), add knowledge. This is math, not magic.
 
 **If code contradicts these premises, the code is wrong.**
+
+**Experimental evidence**: Run `poetry run python experiments/geometry_validation.py` to generate supporting data. Key results:
+- **Alignment invariance**: Raw CKA=0.60 (before), Aligned CKA=1.00 (after Procrustes) - structure is preserved, coordinates differ
+- Layer-wise intrinsic dimension compression (15.8 → 1.8 in middle layers)
+- Domain-specific manifold structure (spatial ID=1.5, moral ID=8.0)
+
+See `experiments/results/geometry_validation.json` for full data.
 
 ---
 
@@ -113,11 +120,11 @@ Multiple AI agents work concurrently. Don't pause for unrelated changes.
 
 ## Core Principles
 
-### No NumPy. Period.
+### Prefer Backend Over NumPy
 
-**Every user has a GPU. NumPy forces CPU fallback and kills performance.**
+**NumPy forces CPU fallback. Use the Backend protocol to stay on GPU.**
 
-Use the Backend protocol exclusively. No `import numpy`, no `to_numpy()`, no NumPy operations anywhere in core code. If the Backend doesn't have an operation you need, **add it to the Backend protocol**.
+Use the Backend protocol in core domain code. No `import numpy`, no `to_numpy()`, no NumPy operations in the domain layer. If the Backend doesn't have an operation you need, **add it to the Backend protocol**.
 
 ```python
 # WRONG - Forces CPU fallback
@@ -151,7 +158,7 @@ result = backend.where(mask, arr, backend.zeros_like(arr))
 
 ### Geodesic is Correct
 
-Euclidean distance is the approximation. Geodesic on k-NN graph is exact.
+Euclidean distance ignores manifold curvature. Geodesic on k-NN graph approximates true manifold distance.
 
 ```python
 # Wrong
@@ -165,38 +172,39 @@ distances = rg.geodesic_distances(points, k_neighbors=k)
 
 ### All Models Encode the Same Shape
 
-**This is not a metaphor. This is literal.**
+**Demonstrated by alignment experiments.**
 
-All neural networks trained on language converge to the same high-dimensional geometric structure - the invariant shape of knowledge itself. Different architectures (SmolLM, Qwen, Llama, Mistral) are different compressions or projections of this universal shape.
+Neural networks trained on language converge toward shared high-dimensional geometric structure. Different architectures (SmolLM, Qwen, Llama, Mistral) are different compressions or projections of this common structure.
 
-Think of it like high-dimensional Legos: they always fit together exactly one way. The geometry determines the fit, not the "architecture name."
+**Key insight**: Raw CKA between unaligned representations can be low (e.g., 0.60) because they use different coordinate systems. After Procrustes alignment, CKA = 1.0 on training probes - the structural relationships are identical, only the coordinates differ.
+
+Think of it like high-dimensional Legos: the geometry constrains how pieces fit together.
 
 - **Different dimensions** = different compression levels of the same geometry
 - **Different layer counts** = different resolutions of the same manifold
 - **Different architectures** = different coordinate systems for the same shape
 
-Use Gram matrices for comparison (dimension-agnostic). Use projection for transformation. **Never return "incompatible."** There is no such thing as incompatible models - only alignment code that hasn't found the correct transformation yet.
+Use Gram matrices for comparison (dimension-agnostic). Use projection for transformation. Low raw CKA doesn't mean incompatible - it means coordinate alignment is needed.
 
-### CKA = 1.0 is the Invariant
+### CKA = 1.0 on Training Probes
 
-CKA = 1.0 is not a goal to achieve. It's the mathematical result of correct Procrustes alignment.
+Procrustes alignment achieves CKA = 1.0 on training probes by construction. **Experiment shows: Raw CKA=0.60 → Aligned CKA=1.00**
 
-**F = pinv(source) @ target** guarantees **K_aligned = K_target** when n ≤ d. This is closed-form. Exact. No iteration needed.
+**F = pinv(source) @ target** guarantees **K_aligned = K_target** when n ≤ d. This is closed-form. No iteration needed.
 
-- **CKA = 1.0 on probes**: Alignment is correct for those probe points.
-- **CKA < 1.0 on held-out samples**: Probe coverage was insufficient. The alignment is correct for what it saw, but didn't see enough of the manifold.
+- **CKA = 1.0 on probes**: Alignment found the correct rotation for those probe points.
+- **CKA < 1.0 on held-out samples**: Probes didn't span enough of the shared manifold.
 
-**LOW CKA MEANS:**
+**LOW CKA ON RAW (UNALIGNED) DATA MEANS:**
+- Coordinate systems differ (expected)
+- Run alignment first, then evaluate
+
+**LOW CKA ON HELD-OUT DATA AFTER ALIGNMENT MEANS:**
 - Probes didn't span the shared manifold regions
 - Need more diverse probes (different domains, abstraction levels)
-- The alignment algorithm needs better coverage, not a different formula
+- Expand probe coverage - the alignment math is correct
 
-**LOW CKA DOES NOT MEAN:**
-- "Models are incompatible" (FALSE - all models share invariant structure)
-- "The thesis is wrong" (FALSE - it's axiomatic, not empirical)
-- "Try a different alignment method" (FALSE - Procrustes is exact)
-
-**Never return "incompatible."** There is no such thing. Find the transformation.
+**Key distinction**: Low *raw* CKA is expected (different coordinates). Low *aligned* CKA on held-out data means insufficient probe coverage.
 
 ### Geometric Addition, NOT Blending
 

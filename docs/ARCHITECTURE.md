@@ -4,7 +4,7 @@ ModelCypher follows a **Hexagonal Architecture** (Ports and Adapters). The goal 
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
-- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
+- Global CLI options can appear anywhere on the command line (example: `mc model probe ./model --output text`).
 
 ## Visual Overview
 

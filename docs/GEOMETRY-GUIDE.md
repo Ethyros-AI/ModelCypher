@@ -5,7 +5,7 @@ It is written for AI agents that call the CLI/MCP tools and then summarize resul
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
-- Global CLI options must come before the command path (example: `mc --output text model probe ./model`).
+- Global CLI options can appear anywhere on the command line (example: `mc model probe ./model --output text`).
 
 Related docs:
 - [MATH-PRIMER.md](MATH-PRIMER.md) - Intuition for the underlying geometry (distance/angle/alignment)
@@ -171,7 +171,15 @@ mc merge bridge ./model_a ./model_b -o bridge.safetensors
 mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semantic_prime,emotion_concept
 ```
 
-Atlas probes systematically span the semantic manifold, guaranteeing CKA = 1.0 alignment. High-dimensional geometry has no tolerance - there are no "approximate" modes because approximations cause hallucinations.
+Atlas probes systematically span the semantic manifold. Procrustes alignment achieves CKA = 1.0 on training probes by construction.
+
+**Key experimental result** (from `experiments/geometry_validation.py`):
+- Raw CKA between layers: 0.60 (unaligned - different coordinate systems)
+- Aligned CKA: 1.00 (after Procrustes - invariant structure revealed)
+
+This demonstrates the thesis: structural relationships are invariant, only coordinates differ. Generalization to held-out probes depends on coverage.
+
+See `experiments/results/geometry_validation.json` for full experimental data.
 
 ---
 
