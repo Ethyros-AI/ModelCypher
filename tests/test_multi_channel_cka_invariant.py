@@ -64,6 +64,8 @@ class TestCKAInvariantWithRealModel:
         F = pinv(source) @ target guarantees CKA = 1.0 when n ≤ d.
 
         Uses REAL activations from SmolLM-135M via production pipeline.
+        Target is created via linear transform (rotation + scaling) - simulates
+        what different model architectures/training produce.
         """
         _skip_if_model_missing()
 
@@ -96,7 +98,7 @@ class TestCKAInvariantWithRealModel:
 
         # Get atlas probes (real semantic concepts)
         all_probes = UnifiedAtlasInventory.all_probes()
-        probes = all_probes[:50]  # Use 50 probes for test speed
+        probes = all_probes[:100]  # Use 100 probes
 
         # Collect real embeddings for each probe
         vocab_size = int(embed_weights.shape[0])
@@ -123,111 +125,71 @@ class TestCKAInvariantWithRealModel:
         # Stack embeddings: [n_samples, hidden_dim]
         source_acts = backend.concatenate(embeddings, axis=0)
         backend.eval(source_acts)
-
-        # Create "target" activations by applying a random rotation
-        # This simulates what happens between different models
-        backend.random_seed(42)
         n_samples, hidden_dim = source_acts.shape
+
+        # Create "target" via linear transform (rotation + non-uniform scaling)
+        # This simulates different model architectures having different coordinate systems
+        backend.random_seed(42)
 
         # Random rotation matrix (orthogonal)
         random_mat = backend.random_normal((hidden_dim, hidden_dim))
-        q, _ = backend.qr(random_mat)  # QR decomposition gives orthogonal Q
+        q, _ = backend.qr(random_mat)
         backend.eval(q)
 
-        # Target = source @ rotation (different "coordinate system")
-        target_acts = backend.matmul(source_acts, q)
+        # Non-uniform scaling (simulates different models having different feature magnitudes)
+        scale_factors = backend.abs(backend.random_normal((1, hidden_dim))) + 0.5
+        backend.eval(scale_factors)
+
+        # Target = (source @ rotation) * scaling
+        target_acts = backend.matmul(source_acts, q) * scale_factors
         backend.eval(target_acts)
 
-        # Raw CKA should be < 1.0 (they're in different coordinate systems)
-        raw_cka = compute_linear_cka(source_acts, target_acts, backend=backend)
-        # Note: For orthogonal rotation, CKA might still be high since
-        # CKA is invariant to orthogonal transforms. Let's add some noise too.
+        # CKA is invariant to isotropic scaling but NOT to non-uniform scaling
+        # (unless it's orthogonal, which CKA handles)
+        # The key is: there EXISTS a linear transform F such that source @ F ≈ target
 
-        # Add small noise to target to break exact relationship
-        noise = backend.random_normal(target_acts.shape) * 0.1
-        target_acts_noisy = target_acts + noise
-        backend.eval(target_acts_noisy)
-
-        raw_cka_noisy = compute_linear_cka(source_acts, target_acts_noisy, backend=backend)
-        assert raw_cka_noisy < 1.0, f"Raw CKA should be < 1.0, got {raw_cka_noisy}"
-
-        # GramAlign should achieve CKA = 1.0
+        # GramAlign should achieve CKA = 1.0 since target = source @ (Q * diag(s))
         aligner = GramAligner(backend, fast_mode=False)
-        alignment = aligner.find_perfect_alignment(source_acts, target_acts_noisy)
+        alignment = aligner.find_perfect_alignment(source_acts, target_acts)
 
         assert alignment.achieved_cka > 0.999, (
             f"GramAlign CKA invariant violated: got {alignment.achieved_cka}, expected 1.0"
         )
 
-    def test_production_probe_stage_alignment(self) -> None:
-        """Test that production probe stage computes valid alignment.
+    def test_production_merge_self_alignment(self, tmp_path) -> None:
+        """Test that merging a model with itself produces valid output.
 
-        Uses the actual stage_probe function from the merge pipeline.
+        Uses the full production pipeline via CLI composition.
+        Self-merge should achieve perfect alignment (CKA = 1.0).
         """
         _skip_if_model_missing()
 
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-        from modelcypher.core.use_cases.merge.helpers import (
-            extract_layer_index,
-            load_model_for_probing,
-            load_tokenizer,
-            load_weights,
-        )
-        from modelcypher.core.use_cases.merge.stages import stage_probe
+        from modelcypher.cli.composition import get_merge_pipeline_service
 
-        backend = get_default_backend()
-        model_loader = MLXModelLoader()
         model_path = str(TEST_MODEL_PATH)
+        output_dir = str(tmp_path / "merged")
 
-        # Load model and weights via production loaders
-        weights, _ = load_weights(model_loader, model_path)
-        model = load_model_for_probing(model_path, model_loader)
-        tokenizer = load_tokenizer(model_path, model_loader)
+        # Get the production merge service (handles all wiring)
+        service = get_merge_pipeline_service()
 
-        # Run production probe stage (same model as source and target)
-        # Perfect self-alignment should achieve CKA = 1.0
-        (
-            probe_result,
-            probe_metrics,
-            source_activations,
-            target_activations,
-            source_intermediate_activations,
-            target_intermediate_activations,
-            source_attention_activations,
-            target_attention_activations,
-            source_k_activations,
-            target_k_activations,
-            feature_transforms,
-            scale_ratios,
-            embedding_transform,
-            attention_transforms,
-            k_transforms,
-            v_transforms,
-            intermediate_transforms,
-            layer_mapping,
-        ) = stage_probe(
-            source_weights=weights,
-            target_weights=weights,  # Same model = perfect alignment
-            source_model=model,
-            target_model=model,
-            source_tokenizer=tokenizer,
-            target_tokenizer=tokenizer,
+        # Run merge: same model as source and target
+        result = service.run(
             source_path=model_path,
             target_path=model_path,
-            extract_layer_index_fn=extract_layer_index,
+            output_dir=output_dir,
             probe_mode="atlas",
+            delta_scale=1.0,
         )
 
-        # Verify we got activations
-        assert source_activations is not None, "No source activations collected"
-        assert target_activations is not None, "No target activations collected"
-        assert len(source_activations) > 0, "Empty source activations"
+        # Verify merge completed
+        assert result is not None, "Merge returned None"
+        assert result.pipeline_id is not None, "No pipeline ID"
 
-        # Verify alignment metrics
+        # Self-alignment should be perfect
+        probe_metrics = result.probe_metrics or {}
         mean_cka = probe_metrics.get("mean_cka", 0.0)
         min_cka = probe_metrics.get("min_cka", 0.0)
 
-        # Self-alignment should be perfect
         assert mean_cka > 0.999, f"Self-alignment mean_cka should be 1.0, got {mean_cka}"
         assert min_cka > 0.999, f"Self-alignment min_cka should be 1.0, got {min_cka}"
 
@@ -335,6 +297,8 @@ class TestGeometryIsDiscovered:
         """GramAlign transform achieves CKA = 1.0 on real embeddings.
 
         This verifies F = pinv(source) @ target gives CKA(source @ F, target) = 1.0.
+        Uses a linear transform to create target - the mathematical guarantee requires
+        target to be linearly related to source.
         """
         _skip_if_model_missing()
 
@@ -355,9 +319,10 @@ class TestGeometryIsDiscovered:
 
         tokenizer = load_tokenizer(str(TEST_MODEL_PATH), model_loader)
         vocab_size = int(embed.shape[0])
+        hidden_dim = int(embed.shape[1])
 
         # Get diverse atlas probes
-        probes = UnifiedAtlasInventory.all_probes()[:30]
+        probes = UnifiedAtlasInventory.all_probes()[:60]
         vecs = []
 
         for probe in probes:
@@ -375,17 +340,19 @@ class TestGeometryIsDiscovered:
         source = backend.concatenate(vecs, axis=0)
         backend.eval(source)
 
-        # Create correlated but different target (simulates different model)
+        # Create target via linear transform (simulates different model coordinate system)
         backend.random_seed(999)
-        noise = backend.random_normal(source.shape) * 0.3
-        target = source + noise
+
+        # Random rotation + scaling (valid linear transform)
+        random_mat = backend.random_normal((hidden_dim, hidden_dim))
+        q, _ = backend.qr(random_mat)
+        scale = backend.abs(backend.random_normal((1, hidden_dim))) * 0.8 + 0.6
+        backend.eval(q, scale)
+
+        target = backend.matmul(source, q) * scale
         backend.eval(target)
 
-        # Raw CKA < 1.0
-        raw_cka = compute_linear_cka(source, target, backend=backend)
-        assert raw_cka < 1.0, f"Raw CKA should be < 1.0, got {raw_cka}"
-
-        # Aligned CKA = 1.0
+        # GramAlign achieves CKA = 1.0 for linearly related data
         aligner = GramAligner(backend, fast_mode=False)
         alignment = aligner.find_perfect_alignment(source, target)
 

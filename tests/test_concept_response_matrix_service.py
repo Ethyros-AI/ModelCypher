@@ -63,6 +63,10 @@ def test_crm_build_and_compare(tmp_path: Path) -> None:
 
     engine = _FakeHiddenStateEngine(layer_count=2, hidden_dim=2)
     service = ConceptResponseMatrixService(engine=engine)
+    service._anchor_prompt_cache = [
+        ("test_anchor:alpha", ["alpha"]),
+        ("test_anchor:beta", ["beta"]),
+    ]
     output_path = tmp_path / "crm.json"
     summary = service.build(
         model_path=str(model_dir),

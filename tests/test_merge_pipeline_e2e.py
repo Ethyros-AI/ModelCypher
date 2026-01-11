@@ -31,10 +31,10 @@ def test_pipeline_uses_null_space_selectivity(monkeypatch) -> None:
         weights = {"model.layers.0.mlp.down_proj.weight": object()}
         return weights, "safetensors"
 
-    def fake_load_tokenizer(_path):
+    def fake_load_tokenizer(_path, _model_loader=None):
         return object()
 
-    def fake_load_model_for_probing(_path):
+    def fake_load_model_for_probing(_path, _model_loader=None):
         return object()
 
     def fake_stage_probe(**_kwargs):
