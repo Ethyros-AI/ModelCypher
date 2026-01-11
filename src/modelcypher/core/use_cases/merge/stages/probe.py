@@ -737,6 +737,7 @@ def _probe_precise(
     valid_probes = selected_probes
     expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
     expected_probe_domains = [probe.domain.value for probe, _ in valid_probes]
+    probe_domain_by_id = dict(zip(expected_probe_ids, expected_probe_domains))
     expected_probe_texts = [probe_text for _, probe_text in valid_probes]
 
     from modelcypher.core.domain.geometry.model_profile import (
@@ -1014,7 +1015,12 @@ def _probe_precise(
         # Check if activation provider supports batch methods
         has_batch_hidden = hasattr(activation_provider, "collect_hidden_activations_batch")
         has_batch_intermediate = hasattr(activation_provider, "collect_intermediate_activations_batch")
-        has_batch_attention = hasattr(activation_provider, "collect_attention_activations_batch")
+        # Attention activations are not required when compositional stitching is used.
+        collect_attention = False
+        has_batch_attention = (
+            collect_attention
+            and hasattr(activation_provider, "collect_attention_activations_batch")
+        )
 
         # Second pass: Batch forward passes
         for batch_start in range(0, len(valid_probes), PROBE_BATCH_SIZE):
@@ -1122,7 +1128,7 @@ def _probe_precise(
                     )
     
                 # ===== ATTENTION ACTIVATIONS (Q, K, V separately) =====
-                if has_batch_attention:
+                if collect_attention and has_batch_attention:
                     if run_source_inference:
                         source_q_batch, source_k_batch, source_v_batch = (
                             activation_provider.collect_attention_activations_batch(
@@ -1147,7 +1153,7 @@ def _probe_precise(
                             empty_batch,
                             empty_batch,
                         )
-                else:
+                elif collect_attention:
                     source_q_batch, source_k_batch, source_v_batch = [], [], []
                     target_q_batch, target_k_batch, target_v_batch = [], [], []
                     for text in batch_texts:
@@ -1169,6 +1175,9 @@ def _probe_precise(
                         target_q_batch.append(tgt_q)
                         target_k_batch.append(tgt_k)
                         target_v_batch.append(tgt_v)
+                else:
+                    source_q_batch, source_k_batch, source_v_batch = [], [], []
+                    target_q_batch, target_k_batch, target_v_batch = [], [], []
     
                 # Process batch results
                 for i, (probe, probe_text) in enumerate(batch):
@@ -1330,6 +1339,7 @@ def _probe_precise(
                             )
                         )
     
+                    completed_probe_ids.add(probe.probe_id)
                     probes_processed += 1
     
                 # Log progress at batch boundaries
@@ -1353,11 +1363,17 @@ def _probe_precise(
     
                 # Save checkpoint periodically
                 if checkpoint_path is not None and probes_processed % _CHECKPOINT_INTERVAL < PROBE_BATCH_SIZE:
+                    completed_probe_ids_list = [
+                        pid for pid in expected_probe_ids if pid in completed_probe_ids
+                    ]
+                    completed_probe_domains = [
+                        probe_domain_by_id[pid] for pid in completed_probe_ids_list
+                    ]
                     _save_probe_checkpoint(
                         checkpoint_path=checkpoint_path,
                         completed_probes=probes_processed,
-                        probe_ids=probe_ids,
-                        probe_domains=probe_domains,
+                        probe_ids=completed_probe_ids_list,
+                        probe_domains=completed_probe_domains,
                         total_probes=len(valid_probes),
                     )
                     # CRITICAL: Save activations alongside checkpoint for correct resume
@@ -1415,7 +1431,7 @@ def _probe_precise(
                             if run_target_inference
                             else {}
                         )
-                        if run_source_inference:
+                        if collect_attention and run_source_inference:
                             (
                                 source_attention_acts,
                                 source_k_acts,
@@ -1425,7 +1441,7 @@ def _probe_precise(
                             )
                         else:
                             source_attention_acts, source_k_acts, source_v_acts = {}, {}, {}
-                        if run_target_inference:
+                        if collect_attention and run_target_inference:
                             (
                                 target_attention_acts,
                                 target_k_acts,
@@ -1572,6 +1588,7 @@ def _probe_precise(
                                 )
                             )
     
+                        completed_probe_ids.add(probe.probe_id)
                         probes_processed += 1
     
                     except Exception as inner_e:
@@ -1812,10 +1829,15 @@ def _probe_precise(
 
                 src_act_lists = [source_layer_activations[s] for s in src_layers_list]
                 tgt_list = target_layer_activations[tgt_layer]
-                
-                n_samples = len(tgt_list)
+
+                def _activation_count(acts: Any) -> int:
+                    if hasattr(acts, "shape") and len(b.shape(acts)) == 2:
+                        return int(b.shape(acts)[0])
+                    return len(acts)
+
+                n_samples = _activation_count(tgt_list)
                 for s_list in src_act_lists:
-                    n_samples = min(n_samples, len(s_list))
+                    n_samples = min(n_samples, _activation_count(s_list))
                 
                 if n_samples < 2:
                     raise RuntimeError(
@@ -1839,12 +1861,18 @@ def _probe_precise(
                     src_stacks = []
                     src_dims = []
                     for s, s_list in zip(src_layers_list, src_act_lists):
-                        stack = b.stack(s_list[:n_samples], axis=0)
+                        if hasattr(s_list, "shape") and len(b.shape(s_list)) == 2:
+                            stack = s_list[:n_samples, :]
+                        else:
+                            stack = b.stack(s_list[:n_samples], axis=0)
                         stack = b.astype(stack, "float32")
                         src_stacks.append(stack)
                         src_dims.append(stack.shape[1])
-                    
-                    tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
+
+                    if hasattr(tgt_list, "shape") and len(b.shape(tgt_list)) == 2:
+                        tgt_stacked = tgt_list[:n_samples, :]
+                    else:
+                        tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
                     tgt_stacked = b.astype(tgt_stacked, "float32")
                     
                     # For 1:1 mapping, this is just src_stacks[0] (no concat needed)

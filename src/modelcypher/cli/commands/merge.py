@@ -429,7 +429,66 @@ def batch(
     typer.echo(f"BATCH MERGE: {len(sources)} sources → {target}")
     typer.echo(f"  Mode: {'accumulative' if accumulative else 'sequential'}")
     typer.echo(f"  Fast mode: {fast_mode} (CKA=1.0 is invariant)")
+    if consensus_mode:
+        typer.echo("  Consensus: ENABLED (correction + addition)")
     typer.echo("  Scale: auto-derived from deviation budget")
+
+    # Outlier detection (optional analysis before merge)
+    if detect_outliers:
+        from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
+
+        typer.echo("")
+        typer.echo("=" * 60)
+        typer.echo("OUTLIER DETECTION ANALYSIS")
+        typer.echo("=" * 60)
+        typer.echo("  Analyzing alignment across all models...")
+        typer.echo("  (Models that disagree with consensus may have learned concepts wrong)")
+        typer.echo("")
+
+        # Load weights and compute per-model alignment errors
+        model_loader = MLXModelLoader()
+        all_paths = [target] + list(sources)
+
+        # Compute pairwise weight distances as proxy for alignment error
+        # (Full stress profile analysis would require activation probing)
+        detector = OutlierDetector(backend)
+        weight_norms = []
+        for path in all_paths:
+            weights, _ = model_loader.load_weights(path)
+            total_norm = 0.0
+            for name, w in weights.items():
+                if "weight" in name.lower():
+                    total_norm += float(backend.to_scalar(backend.sum(w ** 2)))
+            weight_norms.append(total_norm ** 0.5)
+
+        # Compute deviations from mean as proxy errors
+        mean_norm = sum(weight_norms) / len(weight_norms)
+        proxy_errors = [abs(n - mean_norm) / mean_norm for n in weight_norms]
+
+        result_detect = detector.detect_from_gpa(proxy_errors)
+
+        typer.echo(f"  Models analyzed: {len(all_paths)}")
+        typer.echo(f"  Consensus models: {len(result_detect.consensus_indices)}")
+        typer.echo(f"  Outlier models: {len(result_detect.outlier_indices)}")
+        typer.echo(f"  Detection threshold: {result_detect.threshold:.4f}")
+        typer.echo("")
+
+        if result_detect.outlier_indices:
+            typer.echo("  OUTLIERS DETECTED:")
+            for idx in result_detect.outlier_indices:
+                model_path = all_paths[idx]
+                error = proxy_errors[idx]
+                role = "TARGET" if idx == 0 else f"SOURCE-{idx}"
+                typer.echo(f"    [{role}] {model_path} (deviation: {error:.4f})")
+            typer.echo("")
+            if 0 in result_detect.outlier_indices:
+                typer.echo("  WARNING: Target model is an outlier!")
+                typer.echo("           Consider using --consensus to correct misaligned concepts.")
+        else:
+            typer.echo("  All models are in consensus. No outliers detected.")
+
+        typer.echo("=" * 60)
+        typer.echo("")
 
     with prevent_sleep():
         from modelcypher.cli.composition import _get_registry
@@ -455,6 +514,8 @@ def batch(
     typer.echo(f"BATCH MERGE: Complete. Output saved to {output_dir}")
     typer.echo(f"  Total layers: {result.total_layers}")
     typer.echo(f"  Sources merged: {len(sources)}")
+    if consensus_mode:
+        typer.echo("  Mode: Consensus (correction applied before addition)")
 
 
 @app.command()

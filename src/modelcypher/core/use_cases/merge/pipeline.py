@@ -365,10 +365,8 @@ def run_merge(
     # =========================================================================
     # SELECTIVE MEMORY CLEANUP
     # =========================================================================
-    # Keep activations needed for density-aware neuron-level transplant:
+    # Keep activations needed for density-aware transplant:
     # - source_activations: For density comparison (hidden level)
-    # - source_intermediate_activations: For MLP neuron-level density
-    # - target_intermediate_activations: For MLP neuron-level density
     # - target_activations: For null-space projection (already kept)
     #
     # Clear only what's not needed:
@@ -377,14 +375,20 @@ def run_merge(
     # - source/target_k_activations: K/V handled compositionally
 
     # Keep source hidden activations for density comparison
-    # (Previously deleted - now needed for density-aware transfer)
+    # (Needed for density-aware transfer + anchor corrections)
     logger.info(
-        "Keeping source activations for density-aware transfer: "
-        "source_acts=%s, source_inter=%s, target_inter=%s",
+        "Keeping source activations for density-aware transfer: source_acts=%s",
         bool(source_activations),
-        bool(source_intermediate_activations),
-        bool(target_intermediate_activations),
     )
+
+    if source_intermediate_activations:
+        source_intermediate_activations.clear()
+        del source_intermediate_activations
+        source_intermediate_activations = None
+    if target_intermediate_activations:
+        target_intermediate_activations.clear()
+        del target_intermediate_activations
+        target_intermediate_activations = None
 
     # Clear attention activations (transforms from probe stage suffice)
     if source_attention_activations:
