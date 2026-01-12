@@ -298,9 +298,10 @@ class OutlierDetector:
             # All models are similar - no outlier
             consensus_indices = (0, 1, 2)
             outlier_indices = ()
+            eps = division_epsilon(self._backend, self._backend.array([min_dist]))
             logger.info(
                 "Triangulation: no outlier detected (max_ratio=%.2f)",
-                outlier_mean_dist / max(min_dist, 1e-10),
+                outlier_mean_dist / max(min_dist, eps),
             )
 
         mean_error = sum(errors) / 3.0

@@ -51,6 +51,7 @@ from modelcypher.core.domain.geometry.knowledge_density import (
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
+    ulp_scalar,
 )
 from modelcypher.core.domain.geometry.relative_representation import (
     align_relative_representations,
@@ -330,8 +331,8 @@ def compute_anchor_grafting_with_ghost_anchors(
     # Scale MAD by 1.4826 to estimate std for normal distribution
     residual_threshold = median_residual + 3.0 * 1.4826 * mad
 
-    # Minimum threshold: don't go below 1% of median to avoid numerical noise
-    min_threshold = max(median_residual * 0.01, 1e-6)
+    # Minimum threshold: use ULP of the median to avoid numerical noise.
+    min_threshold = ulp_scalar(median_residual, b)
     residual_threshold = max(residual_threshold, min_threshold)
 
     # Step 3: Identify novel samples using vectorized comparison

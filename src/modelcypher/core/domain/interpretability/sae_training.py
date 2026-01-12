@@ -38,7 +38,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.interpretability.sae import (
     SAEConfig,
@@ -476,7 +479,7 @@ class SAETrainer:
         """Apply Adam optimizer update."""
         b = self._backend
         beta1, beta2 = 0.9, 0.999
-        eps = 1e-8
+        eps = machine_epsilon(b, state.weights.W_enc)
         t = state.step + 1
 
         # Bias correction

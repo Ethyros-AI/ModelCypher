@@ -57,6 +57,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -198,9 +199,8 @@ def compute_weight_space_transplant(
         # Constraint weight = 1 - transfer_weight (preserve where target is dense)
         constraint_weights = 1.0 - density_weights  # [n]
 
-        # Apply sqrt for proper weighted least-squares
-        # Small epsilon to avoid sqrt(0)
-        eps = 1e-8
+        # Apply sqrt for proper weighted least-squares.
+        eps = division_epsilon(b, constraint_weights)
         sqrt_weights = b.sqrt(constraint_weights + eps)  # [n]
 
         # Weight the activations: A_weighted[i, :] = sqrt_w[i] * A[i, :]

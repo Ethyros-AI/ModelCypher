@@ -43,7 +43,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    regularization_epsilon,
+    ulp_scalar,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -422,12 +425,16 @@ class Transcoder:
         top_indices = b.take(sorted_indices, reversed_idx, axis=0)[:top_k]
         b.eval(top_indices)
 
+        max_abs = b.max(b.abs(features))
+        b.eval(max_abs)
+        min_activation = ulp_scalar(float(b.to_scalar(max_abs)), b)
+
         contributions = []
         for i in range(min(top_k, latent_dim)):
             idx = int(b.to_scalar(top_indices[i]))
             activation = float(b.to_scalar(features[idx]))
 
-            if abs(activation) < 1e-8:
+            if abs(activation) <= min_activation:
                 continue
 
             # Contribution = activation * decoder_row

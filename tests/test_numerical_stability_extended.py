@@ -47,6 +47,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     division_epsilon,
     regularization_epsilon,
+    tiny_value,
     newton_schulz_inverse,
     power_iteration_eigh,
     safe_inverse,
@@ -149,6 +150,45 @@ class TestGeodesicSVD:
 
         # Should handle gracefully (empty or zero singular values)
         assert U is not None
+
+    def test_svd_tiny_threshold(self, backend):
+        """Tiny-energy matrices should short-circuit; slightly larger should not."""
+        m, n = 4, 4
+        tiny = tiny_value(backend, backend.array([1.0]))
+        threshold = tiny * float(m * n)
+
+        small_energy = 0.5 * threshold
+        large_energy = 2.0 * threshold
+
+        scale_small = sqrt_scalar(small_energy / float(m * n), backend)
+        scale_large = sqrt_scalar(large_energy / float(m * n), backend)
+
+        A_small = backend.full((m, n), scale_small)
+        A_large = backend.full((m, n), scale_large)
+        backend.eval(A_small, A_large)
+
+        _, S_small, _ = geodesic_svd(backend, A_small)
+        _, S_large, _ = geodesic_svd(backend, A_large)
+
+        small_size = int(backend.shape(S_small)[0])
+        large_size = int(backend.shape(S_large)[0])
+
+        if small_size == 0:
+            max_small = 0.0
+        else:
+            max_small_arr = backend.max(backend.abs(S_small))
+            backend.eval(max_small_arr)
+            max_small = float(backend.to_scalar(max_small_arr))
+
+        if large_size == 0:
+            max_large = 0.0
+        else:
+            max_large_arr = backend.max(backend.abs(S_large))
+            backend.eval(max_large_arr)
+            max_large = float(backend.to_scalar(max_large_arr))
+
+        assert max_small == 0.0
+        assert max_large > 0.0
 
 
 class TestGeodesicPinv:

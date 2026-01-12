@@ -32,6 +32,49 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
+def _dtype_name(dtype: object) -> str:
+    name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
+    return name.replace("mlx.core.", "").replace("jax.numpy.", "")
+
+
+def _default_float_dtype(backend: "Backend") -> object:
+    return backend.array([1.0]).dtype
+
+
+def _promote_precision(
+    array: "Array",
+    backend: "Backend",
+    *,
+    min_dtype: object | None = None,
+) -> "Array":
+    """Promote low-precision or integer arrays to at least default float dtype."""
+    if min_dtype is None:
+        min_dtype = _default_float_dtype(backend)
+
+    if not hasattr(array, "dtype"):
+        return backend.array(array, dtype=min_dtype)
+
+    dtype_name = _dtype_name(array.dtype)
+    if (
+        "float16" in dtype_name
+        or "bfloat16" in dtype_name
+        or "int" in dtype_name
+        or "uint" in dtype_name
+        or "bool" in dtype_name
+    ):
+        return backend.astype(array, min_dtype)
+
+    try:
+        current_eps = backend.finfo(array.dtype).eps
+        min_eps = backend.finfo(min_dtype).eps
+    except Exception:
+        return backend.astype(array, min_dtype)
+
+    if current_eps > min_eps:
+        return backend.astype(array, min_dtype)
+
+    return array
+
 __all__ = [
     # Backend scalar helpers (use instead of math module)
     "sqrt_scalar",
@@ -591,8 +634,9 @@ def power_iteration_eigh(
 ) -> tuple["Array", "Array"]:
     """Compute EXACT eigendecomposition using native backend operation."""
     b = backend
-    matrix = b.astype(b.array(matrix), "float32")
+    matrix = _promote_precision(b.array(matrix), b)
     b.eval(matrix)
+    dtype = matrix.dtype
 
     shape = matrix.shape
     n = int(shape[-1])
@@ -600,8 +644,8 @@ def power_iteration_eigh(
     k = min(k, n)
     if k == 0:
         return (
-            b.zeros(batch_shape + (0,), dtype="float32"),
-            b.zeros(batch_shape + (n, 0), dtype="float32"),
+            b.zeros(batch_shape + (0,), dtype=dtype),
+            b.zeros(batch_shape + (n, 0), dtype=dtype),
         )
 
     eigenvalues_full, eigenvectors_full = b.eigh(matrix)
@@ -628,8 +672,9 @@ def geodesic_svd(
 ) -> tuple["Array", "Array", "Array"]:
     """Compute EXACT SVD using native backend operation."""
     b = backend
-    A = b.astype(b.array(array), "float32")
+    A = _promote_precision(b.array(array), b)
     b.eval(A)
+    dtype = A.dtype
 
     shape = A.shape
     if len(shape) < 2:
@@ -640,9 +685,9 @@ def geodesic_svd(
     max_rank = min(m, n)
 
     if m == 0 or n == 0:
-        U = b.zeros(batch_shape + (m, 0), dtype="float32")
-        S = b.zeros(batch_shape + (0,), dtype="float32")
-        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
+        U = b.zeros(batch_shape + (m, 0), dtype=dtype)
+        S = b.zeros(batch_shape + (0,), dtype=dtype)
+        Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
         return U, S, Vt
 
     # Defensive checks for LAPACK
@@ -665,10 +710,12 @@ def geodesic_svd(
     A_norm_sq = b.sum(A * A)
     b.eval(A_norm_sq)
     A_norm_sq_val = float(b.to_scalar(A_norm_sq))
-    if A_norm_sq_val < 1e-30:
-        U = b.zeros(batch_shape + (m, 0), dtype="float32")
-        S = b.zeros(batch_shape + (0,), dtype="float32")
-        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
+    tiny = tiny_value(b, A)
+    zero_threshold = tiny * max(1.0, float(m * n))
+    if A_norm_sq_val <= zero_threshold:
+        U = b.zeros(batch_shape + (m, 0), dtype=dtype)
+        S = b.zeros(batch_shape + (0,), dtype=dtype)
+        Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
         return U, S, Vt
 
     U_full, S_full, Vt_full = b.svd(A, compute_uv=True)
@@ -676,9 +723,9 @@ def geodesic_svd(
 
     k = min(k or max_rank, max_rank)
     if k == 0:
-        U = b.zeros((m, 0), dtype="float32")
-        S = b.zeros((0,), dtype="float32")
-        Vt = b.zeros((0, n), dtype="float32")
+        U = b.zeros((m, 0), dtype=dtype)
+        S = b.zeros((0,), dtype=dtype)
+        Vt = b.zeros((0, n), dtype=dtype)
         return U, S, Vt
 
     U = U_full[..., :k]
@@ -772,7 +819,7 @@ def svd_auto_rank(
 def geodesic_pinv(backend: "Backend", array: "Array") -> "Array":
     """Compute EXACT Moore-Penrose pseudo-inverse using native backend operation."""
     b = backend
-    A = b.array(array)
+    A = _promote_precision(b.array(array), b)
     b.eval(A)
 
     A_pinv = b.pinv(A)
@@ -788,8 +835,9 @@ def safe_inverse(
 ) -> tuple["Array", float]:
     """Compute matrix inverse with condition number check and optional regularization."""
     b = backend
-    matrix = b.astype(b.array(matrix), "float32")
+    matrix = _promote_precision(b.array(matrix), b)
     b.eval(matrix)
+    dtype = matrix.dtype
 
     n = int(matrix.shape[0])
     if n == 0:
@@ -799,14 +847,14 @@ def safe_inverse(
     b.eval(S)
 
     if int(S.shape[0]) == 0:
-        return b.eye(n), float("inf")
+        return b.eye(n, dtype=dtype), float("inf")
 
     max_s_arr = b.max(S)
     b.eval(max_s_arr)
     max_s = float(b.to_scalar(max_s_arr))
 
     if max_s == 0:
-        return b.eye(n), float("inf")
+        return b.eye(n, dtype=dtype), float("inf")
 
     eps = division_epsilon(b, matrix)
     pos_mask = S > eps
@@ -829,7 +877,7 @@ def safe_inverse(
         reg = max_reg * ramp
 
         if reg > 0:
-            matrix = matrix + reg * b.eye(n)
+            matrix = matrix + reg * b.eye(n, dtype=dtype)
             b.eval(matrix)
 
     inv_matrix = b.inv(matrix)
@@ -863,8 +911,9 @@ def newton_schulz_inverse(
     """
     b = backend
 
-    A = b.astype(A, "float32")
+    A = _promote_precision(b.array(A), b)
     b.eval(A)
+    dtype = A.dtype
 
     n = int(b.shape(A)[0])
     eps = machine_epsilon(b, A)
@@ -879,7 +928,7 @@ def newton_schulz_inverse(
 
     if A_norm_val < eps:
         # Near-zero matrix
-        return b.eye(n) / eps
+        return b.eye(n, dtype=dtype) / eps
 
     # Scale A to have spectral radius < 1 for convergence
     # Use 1/||A||_F as conservative scaling (guarantees spectral radius < 1)
@@ -889,7 +938,7 @@ def newton_schulz_inverse(
     # Initial guess for scaled problem: X_0 = A^T * scale (matches the spectral structure)
     # For SPD matrices, A^T = A, so X_0 = A * scale^2
     X = b.transpose(A) * (scale * scale)
-    I = b.eye(n)
+    I = b.eye(n, dtype=dtype)
     b.eval(X, A_scaled)
 
     prev_err = float("inf")
@@ -960,9 +1009,11 @@ def gpu_lstsq(
     """
     b = backend
 
+    A = _promote_precision(b.array(A), b)
     A_shape = b.shape(A)
     n, d = int(A_shape[0]), int(A_shape[1])
 
+    B = _promote_precision(b.array(B), b, min_dtype=A.dtype)
     B_shape = b.shape(B)
     if len(B_shape) == 1:
         B = b.reshape(B, (-1, 1))
@@ -970,8 +1021,6 @@ def gpu_lstsq(
     else:
         squeeze_output = False
 
-    A = b.astype(A, "float32")
-    B = b.astype(B, "float32")
     b.eval(A, B)
 
     eps = machine_epsilon(b, A)
@@ -1347,8 +1396,8 @@ def invariant_alignment(
     """
     b = backend
 
-    source = b.astype(source, "float32")
-    target = b.astype(target, "float32")
+    source = _promote_precision(b.array(source), b)
+    target = _promote_precision(b.array(target), b, min_dtype=source.dtype)
     b.eval(source, target)
 
     # Center both matrices (CKA uses centered Gram matrices)
