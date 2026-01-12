@@ -146,9 +146,9 @@ class ConceptVolume:
     _raw_activations_t: "Array | None" = field(default=None, repr=False)
     _log_norm_gaussian: float | None = field(default=None, repr=False)
     _log_norm_student_t: float | None = field(default=None, repr=False)
-    _laplacian_norm: float | None = field(default=None, repr=False)
+    _cached_laplacian_norm: float | None = field(default=None, repr=False)
     _volume: float | None = field(default=None, repr=False)
-    _uniform_norm: float | None = field(default=None, repr=False)
+    _cached_uniform_norm: float | None = field(default=None, repr=False)
 
     @property
     def dimension(self) -> int:
@@ -279,20 +279,20 @@ class ConceptVolume:
         return self._log_norm_student_t
 
     def _laplacian_norm(self) -> float:
-        if self._laplacian_norm is None:
+        if self._cached_laplacian_norm is None:
             backend = get_default_backend()
             d = self.dimension
             log_two = log_scalar(2.0, backend)
             norm_val = exp_scalar(-d * log_two, backend)
-            object.__setattr__(self, "_laplacian_norm", norm_val)
-        return self._laplacian_norm
+            object.__setattr__(self, "_cached_laplacian_norm", norm_val)
+        return self._cached_laplacian_norm
 
     def _uniform_norm(self) -> float:
-        if self._uniform_norm is None:
+        if self._cached_uniform_norm is None:
             volume_val = self.volume
             inv = 1.0 / volume_val if volume_val > 0.0 else 0.0
-            object.__setattr__(self, "_uniform_norm", inv)
-        return self._uniform_norm
+            object.__setattr__(self, "_cached_uniform_norm", inv)
+        return self._cached_uniform_norm
 
     def _compute_tangent_vector(self, point: "Array") -> "Array":
         """Compute tangent vector from centroid to point using log map.
