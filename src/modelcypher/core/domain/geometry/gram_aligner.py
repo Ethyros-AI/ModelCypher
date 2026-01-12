@@ -650,7 +650,7 @@ class GramAligner:
         )
 
         # Procrustes alignment in anchor space [k, k]
-        R, alignment_error = align_relative_representations(S_s, S_t, b)
+        R, alignment_error = align_relative_representations(S_s, S_t, backend=b)
         b.eval(R)
 
         # Aligned source in anchor space
@@ -671,13 +671,13 @@ class GramAligner:
         )
 
         return AlignmentResult(
-            transform=R,  # [k, k] rotation in anchor space
-            n_samples=n_s,
-            d_source=k,  # Effective dimension is k
-            d_target=k,
-            cka=cka,
-            precision=float(precision),
-            signal=None,
+            feature_transform=R,  # [k, k] rotation in anchor space
+            iterations=0,
+            numerical_deviation=max(0.0, 1.0 - cka),
+            precision_threshold=float(precision),
+            achieved_cka=cka,
+            diagnostic=None,
+            scale_ratio=1.0,  # No scale change in anchor space
             linear_iterations=0,
             linear_residual=alignment_error,
         )

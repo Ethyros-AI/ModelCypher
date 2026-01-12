@@ -119,6 +119,22 @@ def is_nan(value: float, backend: "Backend") -> bool:
     return bool(backend.to_scalar(result))
 
 
+def all_finite(arr: "Array", backend: "Backend") -> bool:
+    """Check if all elements in array are finite (not NaN or Inf).
+
+    Args:
+        arr: Array to check (any shape).
+        backend: Backend for tensor operations.
+
+    Returns:
+        True if all elements are finite, False otherwise.
+    """
+    finite_mask = backend.isfinite(arr)
+    all_ok = backend.all(finite_mask)
+    backend.eval(all_ok)
+    return bool(backend.to_scalar(all_ok))
+
+
 def log_scalar(value: float, backend: "Backend") -> float:
     """Compute natural log of scalar using backend."""
     arr = backend.array([value])

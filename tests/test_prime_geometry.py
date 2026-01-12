@@ -33,7 +33,41 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.prime_geometry import (
+from modelcypher.core.domain.geometry.prime_geometry_analysis import (
+    analyze_prime_geometry,
+    format_comprehensive_result,
+    format_result,
+    run_comprehensive_analysis,
+    run_perturbation_study,
+    run_scale_sweep,
+)
+from modelcypher.core.domain.geometry.prime_geometry_baselines import (
+    generate_baseline,
+    generate_cramer_model,
+    generate_poisson_gaps,
+    generate_random_gaps,
+    generate_uniform_gaps,
+    shuffled_gaps,
+)
+from modelcypher.core.domain.geometry.prime_geometry_embeddings import (
+    binary_digit_embedding,
+    digit_embedding,
+    generate_primes,
+    residue_embedding,
+    time_delay_embedding,
+)
+from modelcypher.core.domain.geometry.prime_geometry_spectral import (
+    analyze_eigenvalues,
+    compare_distributions,
+    compute_gram_matrix,
+)
+from modelcypher.core.domain.geometry.prime_geometry_stats import (
+    bootstrap_confidence_interval,
+    compute_cohens_d,
+    permutation_test,
+    run_hypothesis_test,
+)
+from modelcypher.core.domain.geometry.prime_geometry_types import (
     BaselineType,
     ComprehensiveResult,
     ConfidenceInterval,
@@ -46,30 +80,6 @@ from modelcypher.core.domain.geometry.prime_geometry import (
     PrimeSequence,
     ScaleSweepResult,
     SpectralComparison,
-    analyze_eigenvalues,
-    analyze_prime_geometry,
-    binary_digit_embedding,
-    bootstrap_confidence_interval,
-    compare_distributions,
-    compute_cohens_d,
-    compute_gram_matrix,
-    digit_embedding,
-    format_comprehensive_result,
-    format_result,
-    generate_baseline,
-    generate_cramer_model,
-    generate_poisson_gaps,
-    generate_primes,
-    generate_random_gaps,
-    generate_uniform_gaps,
-    permutation_test,
-    residue_embedding,
-    run_comprehensive_analysis,
-    run_hypothesis_test,
-    run_perturbation_study,
-    run_scale_sweep,
-    shuffled_gaps,
-    time_delay_embedding,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.support.array_utils import array_to_list

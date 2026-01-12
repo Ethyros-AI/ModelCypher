@@ -327,7 +327,7 @@ def generate_primes(n: int, backend: "Backend | None" = None) -> list[int]:
 
     Uses Sieve of Eratosthenes for efficiency.
     """
-    from modelcypher.core.domain.geometry.prime_geometry import generate_primes as _gen_primes
+    from modelcypher.core.domain.geometry.prime_geometry_embeddings import generate_primes as _gen_primes
 
     backend = backend or get_default_backend()
     prime_seq = _gen_primes(n, backend)

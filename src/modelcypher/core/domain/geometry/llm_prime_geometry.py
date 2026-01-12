@@ -19,7 +19,7 @@
 LLM Prime Geometry Analysis.
 
 Tests whether prime numbers have hidden geometric structure in LLM representation
-space. Extends the mathematical prime analysis (prime_geometry.py) to analyze
+space. Extends the mathematical prime analysis modules to analyze
 how neural networks represent numbers.
 
 Core Hypothesis:

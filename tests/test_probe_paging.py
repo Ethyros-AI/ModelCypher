@@ -17,7 +17,7 @@
 
 from modelcypher.adapters.activation_store import NPZActivationStore
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.use_cases.merge.stages.probe import (
+from modelcypher.core.use_cases.merge.stages.probe_activation_storage import (
     PagedActivations,
     _page_activation_space,
 )

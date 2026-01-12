@@ -84,7 +84,7 @@ def spectral_analysis(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.prime_geometry import (
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import (
         analyze_prime_geometry,
         format_result,
     )
@@ -173,10 +173,10 @@ def topology_analysis(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.prime_geometry import (
-        _derive_embedding_dim,
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import _derive_embedding_dim
+    from modelcypher.core.domain.geometry.prime_geometry_baselines import generate_random_gaps
+    from modelcypher.core.domain.geometry.prime_geometry_embeddings import (
         generate_primes,
-        generate_random_gaps,
         time_delay_embedding,
     )
     from modelcypher.core.domain.geometry.topological_fingerprint import (
@@ -288,10 +288,10 @@ def curvature_analysis(
     context = _context(ctx)
 
     from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
-    from modelcypher.core.domain.geometry.prime_geometry import (
-        _derive_embedding_dim,
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import _derive_embedding_dim
+    from modelcypher.core.domain.geometry.prime_geometry_baselines import generate_random_gaps
+    from modelcypher.core.domain.geometry.prime_geometry_embeddings import (
         generate_primes,
-        generate_random_gaps,
         time_delay_embedding,
     )
 
@@ -385,7 +385,7 @@ def parameter_sweep(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.prime_geometry import analyze_prime_geometry
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import analyze_prime_geometry
 
     backend = get_default_backend()
 
@@ -478,11 +478,11 @@ def full_analysis(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.prime_geometry import (
-        BaselineType,
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import (
         format_comprehensive_result,
         run_comprehensive_analysis,
     )
+    from modelcypher.core.domain.geometry.prime_geometry_types import BaselineType
 
     typer.echo(f"Running comprehensive analysis on {n_primes} primes...")
     dim_str = str(embedding_dim) if embedding_dim is not None else "auto (Takens' theorem)"
@@ -579,7 +579,7 @@ def scale_study(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.prime_geometry import run_scale_sweep
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import run_scale_sweep
 
     typer.echo(f"Running scale study up to {max_primes} primes...")
     typer.echo("")
@@ -694,7 +694,7 @@ def perturbation_study(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.prime_geometry import run_perturbation_study
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import run_perturbation_study
 
     # Parse noise levels
     levels = [float(x.strip()) for x in noise_levels.split(",")]

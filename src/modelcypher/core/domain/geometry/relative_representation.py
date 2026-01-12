@@ -152,6 +152,7 @@ def compute_anchor_embeddings(
 def compute_relative_representation(
     hidden_states: "Array",
     anchor_embeddings: "Array",
+    backend: "Backend | None" = None,
 ) -> "Array":
     """Compute anchor-relative representation.
 
@@ -164,11 +165,12 @@ def compute_relative_representation(
     Args:
         hidden_states: Hidden states [n, d_model]
         anchor_embeddings: Anchor embeddings [n_anchors, d_model]
+        backend: Backend for tensor operations. If None, uses default.
 
     Returns:
         Relative representation [n, n_anchors]
     """
-    backend = get_default_backend()
+    backend = backend or get_default_backend()
     hidden_arr = hidden_states if hasattr(hidden_states, "shape") else backend.array(hidden_states)
     anchors_arr = (
         anchor_embeddings if hasattr(anchor_embeddings, "shape") else backend.array(anchor_embeddings)
@@ -182,17 +184,19 @@ def compute_relative_representation(
 def align_relative_representations(
     source_rel: "Array",
     target_rel: "Array",
+    backend: "Backend | None" = None,
 ) -> tuple["Array", float]:
     """Find optimal rotation in anchor space using Procrustes.
 
     Args:
         source_rel: Source relative representation [n, n_anchors]
         target_rel: Target relative representation [n, n_anchors]
+        backend: Backend for tensor operations. If None, uses default.
 
     Returns:
         Tuple of (rotation_matrix [n_anchors, n_anchors], alignment_error)
     """
-    backend = get_default_backend()
+    backend = backend or get_default_backend()
 
     # Handle degenerate cases: single sample leads to all-zero centered matrices
     # after mean subtraction, causing singular matrices in SVD/det

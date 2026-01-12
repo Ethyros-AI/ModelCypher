@@ -232,7 +232,7 @@ def pytest_collection_modifyitems(config, items):
     skip_cuda = pytest.mark.skip(reason="CUDA not available")
     skip_accel = pytest.mark.skip(reason="No accelerator available")
 
-    # Filter out items from src/ directory (e.g., test_hypothesis in prime_geometry.py)
+    # Filter out items from src/ directory (e.g., test_hypothesis in prime geometry modules)
     filtered_items = []
     for item in items:
         item_path = str(item.fspath)
