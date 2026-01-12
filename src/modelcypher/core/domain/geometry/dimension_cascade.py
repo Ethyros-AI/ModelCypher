@@ -209,9 +209,6 @@ class DimensionCascade:
         # Sort dims descending (project from high to low)
         target_dims_sorted = sorted(resolved_target_dims, reverse=True)
 
-        # Derive curvature k from data: sqrt(n) is the standard heuristic
-        curvature_k = max(2, int(n_points ** 0.5))
-
         current = activations
         current_dim = hidden_dim
         projections: dict[int, "Array"] = {current_dim: current}
@@ -249,12 +246,11 @@ class DimensionCascade:
                 current, projected
             )
 
-            # Compute curvature at this dimension (always, if enough points)
-            if n_points > curvature_k:
-                k = min(curvature_k, n_points - 1)
+            # Compute curvature at this dimension (data-derived k via ORC)
+            if n_points > 1:
                 try:
                     orc = OllivierRicciCurvature(b)
-                    orc_result = orc.compute(projected, k_neighbors=k)
+                    orc_result = orc.compute(projected)
 
                     # Extract per-point curvatures
                     point_curvatures = b.array([

@@ -574,11 +574,12 @@ class LLMPrimeAnalyzer:
         # L3: Intrinsic Dimension
         h3 = self._test_hypothesis(
             "L3",
-            "Distinct Intrinsic Dimension: |ID(primes) - ID(composites)| > 1.0",
+            "Distinct Intrinsic Dimension: non-overlapping confidence intervals",
             prime_id.intrinsic_dimension,
             composite_id.intrinsic_dimension,
-            one_sided=False,  # Two-sided: either direction is interesting
-            threshold=1.0,  # Effect must be > 1.0 dimension
+            one_sided=False,
+            prime_ci=(prime_id.ci_lower, prime_id.ci_upper),
+            composite_ci=(composite_id.ci_lower, composite_id.ci_upper),
             layer=mid_layer,
         )
         hypotheses["L3"] = h3
@@ -597,7 +598,7 @@ class LLMPrimeAnalyzer:
         # Compute summary
         n_tested = len(hypotheses)
         n_passed = sum(1 for h in hypotheses.values() if h.passed is True)
-        has_signal = n_passed >= 2  # At least 2 of 4 hypotheses pass
+        has_signal = any(h.passed is True for h in hypotheses.values())
 
         # Build result
         result = PilotResult(
@@ -629,7 +630,8 @@ class LLMPrimeAnalyzer:
         prime_value: float,
         composite_value: float,
         one_sided: bool = True,
-        threshold: float | None = None,
+        prime_ci: tuple[float, float] | None = None,
+        composite_ci: tuple[float, float] | None = None,
         layer: int | None = None,
     ) -> HypothesisResult:
         """Run a single hypothesis test."""
@@ -652,16 +654,23 @@ class LLMPrimeAnalyzer:
         diff = prime_value - composite_value
         effect = EffectSize(d=diff)
 
-        # Determine pass/fail
-        if threshold is not None:
-            # For L3: check if difference exceeds threshold
-            passed = abs(diff) > threshold
+        eps = division_epsilon(self.backend, self.backend.array([prime_value, composite_value]))
+        passed = None
+        if prime_ci is not None and composite_ci is not None:
+            if any(math.isnan(val) for val in (*prime_ci, *composite_ci)):
+                passed = None
+            else:
+                lower_max = max(prime_ci[0], composite_ci[0])
+                upper_min = min(prime_ci[1], composite_ci[1])
+                gap_eps = division_epsilon(
+                    self.backend,
+                    self.backend.array([lower_max, upper_min]),
+                )
+                passed = lower_max > upper_min + gap_eps
         elif one_sided:
-            # For L1, L2: primes should be LESS than composites
-            passed = prime_value < composite_value and abs(effect.d) > 0.2
+            passed = prime_value < composite_value - eps
         else:
-            # Two-sided: any significant difference
-            passed = abs(effect.d) > 0.2
+            passed = abs(diff) > eps
 
         return HypothesisResult(
             hypothesis_id=hypothesis_id,

@@ -177,30 +177,23 @@ class ManifoldCurvatureProfile:
     # Estimated intrinsic dimension from curvature
     estimated_dimension: float | None
 
-    def get_high_curvature_regions(self, threshold: float | None = None) -> list[int]:
+    def get_high_curvature_regions(self) -> list[int]:
         """Get indices of points with unusually large curvature magnitude.
 
-        If threshold is None, derives an absolute cutoff from data:
-        abs(mean) + std (no hardcoded multipliers).
+        Uses a data-derived absolute cutoff: abs(mean) + std.
         """
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([self.global_mean]))
         mean_abs = abs(self.global_mean + eps)
         std_val = sqrt_scalar(self.global_variance, backend)
-        if threshold is None:
-            abs_threshold = mean_abs + std_val
-            return [
-                i
-                for i, lc in enumerate(self.local_curvatures)
-                if abs(lc.mean_sectional) > abs_threshold
-            ]
+        abs_threshold = mean_abs + std_val
         return [
             i
             for i, lc in enumerate(self.local_curvatures)
-            if abs(lc.mean_sectional) > threshold * mean_abs
+            if abs(lc.mean_sectional) > abs_threshold
         ]
 
-    def curvature_at_point(self, point: "Array", k: int = 3) -> LocalCurvature | None:
+    def curvature_at_point(self, point: "Array") -> LocalCurvature | None:
         """Find curvature at nearest measured point (k-NN interpolation).
 
         Uses geodesic distances for neighbor finding - chord distance
@@ -212,6 +205,9 @@ class ManifoldCurvatureProfile:
         # Build point matrix for geodesic distance computation
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
+        )
+        from modelcypher.core.domain.geometry.riemannian_validation import (
+            derive_k_neighbors,
         )
 
         backend = get_default_backend()
@@ -238,7 +234,32 @@ class ManifoldCurvatureProfile:
         row = backend.take(row, backend.arange(0, len(self.local_curvatures)), axis=0)
 
         total = int(row.shape[0])
+        k = derive_k_neighbors(all_points, backend)
         k = max(1, min(k, total))
+
+        # If query matches an existing point (within precision), return it directly
+        eps = division_epsilon(backend, row)
+        min_dist_arr = backend.min(row)
+        backend.eval(min_dist_arr)
+        min_dist = float(backend.to_scalar(min_dist_arr))
+        if min_dist <= eps:
+            nearest_idx_arr = backend.argmin(row)
+            backend.eval(nearest_idx_arr)
+            nearest_idx = int(backend.to_scalar(nearest_idx_arr))
+            nearest = self.local_curvatures[nearest_idx]
+            return LocalCurvature(
+                point=point,
+                mean_sectional=nearest.mean_sectional,
+                variance_sectional=nearest.variance_sectional,
+                min_sectional=nearest.min_sectional,
+                max_sectional=nearest.max_sectional,
+                principal_directions=nearest.principal_directions,
+                principal_curvatures=nearest.principal_curvatures,
+                sign=nearest.sign,
+                scalar_curvature=nearest.scalar_curvature,
+                principal_curvature_proxy=nearest.principal_curvature_proxy,
+            )
+
         kth = max(0, k - 1)
         partitioned = backend.argpartition(row, kth)
         nearest_indices_arr = partitioned[:k]

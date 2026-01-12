@@ -109,7 +109,7 @@ class TestCKADefaultBackend:
     def test_scale_invariance(self):
         """Linear CKA(αX, Y) = CKA(X, Y) for any scalar α > 0.
 
-        Note: RBF CKA with median-heuristic sigma is NOT scale-invariant
+        Note: RBF CKA with data-derived sigma is NOT scale-invariant
         because sigma adapts to data distribution. Linear CKA IS scale-invariant.
         """
         from modelcypher.core.domain.geometry.cka import compute_linear_cka
@@ -225,7 +225,7 @@ class TestCKAMultiBackend:
     def test_scale_invariance(self, any_backend: Backend):
         """Linear CKA(αX, Y) = CKA(X, Y) on all backends.
 
-        Note: RBF CKA with median-heuristic sigma is NOT scale-invariant.
+        Note: RBF CKA with data-derived sigma is NOT scale-invariant.
         Linear CKA IS scale-invariant.
         """
         from modelcypher.core.domain.geometry.cka import compute_linear_cka

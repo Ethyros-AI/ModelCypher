@@ -119,8 +119,8 @@ class TestCKAInvariance:
     def test_scale_invariance(self):
         """Linear CKA should be invariant to positive scaling.
 
-        Note: RBF CKA with median-heuristic sigma is NOT scale-invariant
-        because sigma adapts to data distribution. Linear CKA IS scale-invariant.
+        Note: RBF CKA with data-derived sigma is NOT scale-invariant because
+        the bandwidth adapts to data distribution. Linear CKA IS scale-invariant.
         """
         from modelcypher.core.domain.geometry.cka import compute_linear_cka
 

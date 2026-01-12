@@ -22,15 +22,11 @@ When 5 models agree on where "authority" lives and 1 differs, the 1 is WRONG.
 
 Mathematical Background:
     Given per-model alignment errors from GPA, or pairwise stress profile
-    distances, we detect outliers using z-scores with data-derived thresholds.
-
-    An outlier is a model whose error exceeds:
-        threshold = mean(errors) + k * std(errors)
-
-    where k is derived from the number of models (stricter with more models).
+    distances, we detect outliers using gap-derived thresholds from the
+    error distribution (no fixed constants).
 
     For stress profiles, we compute pairwise distances and identify models
-    with high mean distance to others as outliers.
+    with high mean distance to others as outliers using the same gap rule.
 """
 
 from __future__ import annotations
@@ -42,6 +38,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    find_magnitude_gap_threshold,
     sqrt_scalar,
 )
 
@@ -87,13 +84,8 @@ class OutlierDetector:
     ) -> OutlierResult:
         """Detect outliers from GPA per-model alignment errors.
 
-        Uses geometry-derived threshold based on the distribution of errors:
-        - Threshold = median + 2 * (median - min)
-        - The factor of 2 comes from triangle inequality reasoning:
-          if consensus models cluster within distance D, an outlier
-          at distance >2D cannot geometrically belong to that cluster.
-
-        This is scale-invariant and derived entirely from the data.
+        Uses gap-derived thresholds based on the distribution of errors.
+        No fixed constants or manual parameters are used.
 
         Args:
             per_model_errors: Per-model alignment errors from GPA result.
@@ -123,23 +115,11 @@ class OutlierDetector:
         variance = float(b.mean((errors_arr - mean_err) ** 2))
         std_err = sqrt_scalar(variance, b)
 
-        # Geometry-derived threshold using median and spread
-        # The median represents the "center" of the consensus cluster
-        # The spread (median - min) represents the cluster's natural radius
-        # Factor of 2 from triangle inequality: >2x cluster radius = outlier
         sorted_errors = sorted(per_model_errors)
         median_err = sorted_errors[n_models // 2]
-        min_err = sorted_errors[0]
-        cluster_radius = median_err - min_err
-
-        # Threshold: if your error is more than 2x the cluster radius
-        # above the median, you're geometrically outside the cluster
-        threshold = median_err + 2.0 * cluster_radius
-
-        # Fallback: if cluster_radius is near zero (all errors identical),
-        # use a small epsilon-relative threshold
-        if cluster_radius < eps:
-            threshold = median_err + eps
+        tail = [value for value in sorted_errors if value >= median_err]
+        threshold = find_magnitude_gap_threshold(tail, eps=eps, backend=b)
+        threshold = max(threshold, median_err + eps)
 
         # Detect outliers
         consensus_indices = []
@@ -153,12 +133,11 @@ class OutlierDetector:
 
         logger.info(
             "Outlier detection: %d consensus, %d outliers "
-            "(threshold=%.4f, median=%.4f, cluster_radius=%.4f)",
+            "(threshold=%.4f, median=%.4f)",
             len(consensus_indices),
             len(outlier_indices),
             threshold,
             median_err,
-            cluster_radius,
         )
 
         return OutlierResult(
@@ -211,11 +190,7 @@ class OutlierDetector:
                 pairwise[i][j] = dist
                 pairwise[j][i] = dist
 
-        # For exactly 3 models, use triangulation
-        if n_models == 3:
-            return self._triangulate_outlier(pairwise)
-
-        # For 4+ models, use mean distance approach
+        # Use mean distance approach for all model counts
         mean_distances = []
         for i in range(n_models):
             total = sum(pairwise[i])
@@ -224,98 +199,6 @@ class OutlierDetector:
 
         # Use GPA-style detection on mean distances
         return self.detect_from_gpa(mean_distances)
-
-    def _triangulate_outlier(
-        self,
-        pairwise: list[list[float]],
-    ) -> OutlierResult:
-        """Efficient outlier detection for exactly 3 models using triangulation.
-
-        The consensus pair is the two models closest to each other.
-        The outlier is the third model IF it's significantly farther from
-        both consensus models than they are from each other.
-
-        Threshold: outlier's mean distance to consensus pair > 2x the
-        consensus pair's mutual distance.
-
-        Args:
-            pairwise: 3x3 pairwise distance matrix.
-
-        Returns:
-            OutlierResult with consensus and outlier indices.
-        """
-        # Get the three pairwise distances
-        d_01 = pairwise[0][1]
-        d_02 = pairwise[0][2]
-        d_12 = pairwise[1][2]
-
-        # Find the minimum distance - that's the consensus pair
-        min_dist = min(d_01, d_02, d_12)
-
-        if min_dist == d_01:
-            # Models 0 and 1 are closest, 2 is potential outlier
-            consensus_pair = (0, 1)
-            potential_outlier = 2
-            outlier_dists = (d_02, d_12)
-        elif min_dist == d_02:
-            # Models 0 and 2 are closest, 1 is potential outlier
-            consensus_pair = (0, 2)
-            potential_outlier = 1
-            outlier_dists = (d_01, d_12)
-        else:
-            # Models 1 and 2 are closest, 0 is potential outlier
-            consensus_pair = (1, 2)
-            potential_outlier = 0
-            outlier_dists = (d_01, d_02)
-
-        # Compute mean distance from potential outlier to consensus pair
-        outlier_mean_dist = sum(outlier_dists) / 2.0
-
-        # Threshold: outlier is confirmed if its mean distance to consensus
-        # is at least 2x the consensus pair's mutual distance
-        # This is derived from triangle inequality: if truly an outlier,
-        # it should be significantly farther from both consensus models
-        threshold_ratio = 2.0
-        is_outlier = outlier_mean_dist > threshold_ratio * min_dist
-
-        # Compute per-model "errors" as mean distance to others
-        errors = [
-            (pairwise[0][1] + pairwise[0][2]) / 2.0,
-            (pairwise[0][1] + pairwise[1][2]) / 2.0,
-            (pairwise[0][2] + pairwise[1][2]) / 2.0,
-        ]
-
-        if is_outlier:
-            consensus_indices = consensus_pair
-            outlier_indices = (potential_outlier,)
-            logger.info(
-                "Triangulation: model %d is outlier (dist=%.4f vs consensus=%.4f)",
-                potential_outlier,
-                outlier_mean_dist,
-                min_dist,
-            )
-        else:
-            # All models are similar - no outlier
-            consensus_indices = (0, 1, 2)
-            outlier_indices = ()
-            eps = division_epsilon(self._backend, self._backend.array([min_dist]))
-            logger.info(
-                "Triangulation: no outlier detected (max_ratio=%.2f)",
-                outlier_mean_dist / max(min_dist, eps),
-            )
-
-        mean_error = sum(errors) / 3.0
-        variance = sum((e - mean_error) ** 2 for e in errors) / 3.0
-        std_error = sqrt_scalar(variance, self._backend)
-
-        return OutlierResult(
-            consensus_indices=consensus_indices,
-            outlier_indices=outlier_indices,
-            errors=tuple(errors),
-            threshold=threshold_ratio * min_dist,
-            mean_error=mean_error,
-            std_error=std_error,
-        )
 
     def get_consensus_stress(
         self,

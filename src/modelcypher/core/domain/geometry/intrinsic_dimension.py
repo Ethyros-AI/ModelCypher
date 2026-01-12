@@ -57,6 +57,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median,
+    division_epsilon,
+    find_magnitude_gap_threshold,
     machine_epsilon,
     safe_log_epsilon,
 )
@@ -115,15 +117,16 @@ class LocalDimensionMap:
     Identifies local dimension variation across the manifold, including
     regions where dimension drops (collapsed zones) or spikes (transition zones).
 
-    Deficiency detection uses z-score from the dimension distribution -
-    no arbitrary threshold needed. Points > 2σ below modal are deficient.
+    Deficiency detection uses gap detection on the deficit distribution -
+    no arbitrary threshold needed. Points below the data-derived deficit gap
+    are deficient.
     """
 
     dimensions: "Array"  # Per-point intrinsic dimension [n]
     modal_dimension: float  # Most common dimension (mode of distribution)
     mean_dimension: float  # Average dimension across points
     std_dimension: float  # Standard deviation of local dimensions
-    deficient_indices: list[int]  # Points > 2σ below modal dimension
+    deficient_indices: list[int]  # Points below data-derived deficit gap
     k_neighbors: int  # k derived from connectivity
 
 
@@ -868,26 +871,33 @@ class IntrinsicDimension:
             backend.eval(modal_dim_arr)
             modal_dim = backend.to_scalar(modal_dim_arr)
 
-        # Find deficient points: > 2σ below modal dimension (statistical outliers)
-        # This is data-derived, not an arbitrary threshold
+        # Find deficient points via gap detection on the deficit distribution
         deficient: list[int] = []
-        if std_dim > 0:
-            # Deficient = local_dim < modal_dim - 2*std_dim
-            threshold = modal_dim - 2.0 * std_dim
-            deficient_mask = valid_id & (local_dims < backend.array(threshold))
-            mask_int = backend.astype(deficient_mask, "int32")
-            count_arr = backend.sum(mask_int)
-            backend.eval(mask_int, count_arr)
-            count = int(backend.to_scalar(count_arr))
-            if count > 0:
-                neg_mask = -mask_int
-                kth = max(0, count - 1)
-                partitioned = backend.argpartition(neg_mask, kth)
-                selected = backend.take(partitioned, backend.arange(count), axis=0)
-                backend.eval(selected)
-                sorted_selected = backend.sort(selected)
-                backend.eval(sorted_selected)
-                deficient = [int(x) for x in backend.tolist(sorted_selected)]
+        eps = division_epsilon(backend, local_dims)
+        deficits = modal_dim - local_dims
+        deficit_mask = deficits > eps
+        count_arr = backend.sum(backend.astype(deficit_mask, "int32"))
+        backend.eval(count_arr)
+        count = int(backend.to_scalar(count_arr))
+        if count > 0:
+            deficit_vals = [float(x) for x in backend.tolist(deficits) if x > eps]
+            deficit_vals.sort()
+            deficit_threshold = find_magnitude_gap_threshold(deficit_vals, eps=eps, backend=backend)
+            if deficit_threshold > eps:
+                deficient_mask = deficit_mask & (deficits > deficit_threshold)
+                mask_int = backend.astype(deficient_mask, "int32")
+                count_arr = backend.sum(mask_int)
+                backend.eval(mask_int, count_arr)
+                count = int(backend.to_scalar(count_arr))
+                if count > 0:
+                    neg_mask = -mask_int
+                    kth = max(0, count - 1)
+                    partitioned = backend.argpartition(neg_mask, kth)
+                    selected = backend.take(partitioned, backend.arange(count), axis=0)
+                    backend.eval(selected)
+                    sorted_selected = backend.sort(selected)
+                    backend.eval(sorted_selected)
+                    deficient = [int(x) for x in backend.tolist(sorted_selected)]
 
         return LocalDimensionMap(
             dimensions=local_dims,
@@ -906,8 +916,8 @@ class IntrinsicDimension:
         """
         Find points where local intrinsic dimension is deficient.
 
-        Convenience method that returns indices of statistical outliers:
-        points where local ID is > 2σ below the modal dimension.
+        Convenience method that returns indices of deficit-gap outliers:
+        points where local ID falls below the data-derived deficit gap.
 
         These points indicate "dimension-collapsed" regions where the
         manifold is locally lower-dimensional than expected.

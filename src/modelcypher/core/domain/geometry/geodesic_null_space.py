@@ -1140,19 +1140,10 @@ def project_to_null_space(
         condition_number = float("inf")
         activation_rank = min(n_samples, d)
 
-    # Step 3: Compute G_inv = pinv(G) via Cholesky or direct solve
+    # Step 3: Compute G_inv = pinv(G)
     # G_inv @ G ≈ I
-    try:
-        # Try Cholesky for positive definite
-        L = b.cholesky(G_reg)
-        b.eval(L)
-        # G_inv = (L.T)^{-1} @ L^{-1}
-        # We'll compute G_inv @ x by solving L @ L.T @ y = x
-        # For now, use pinv directly
-        G_inv = b.pinv(G_reg)
-    except Exception:
-        # Fall back to pinv
-        G_inv = b.pinv(G_reg)
+    # Using pinv directly - it handles rank-deficiency correctly
+    G_inv = b.pinv(G_reg)
     b.eval(G_inv)
 
     # Step 4: Compute delta_safe = delta - (delta @ A.T) @ G_inv @ A

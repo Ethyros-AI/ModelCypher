@@ -226,25 +226,110 @@ def compute_weight_space_transplant(
     else:
         A_weighted = input_activations
 
+    # =========================================================================
+    # INTRINSIC NULL-SPACE PROJECTION
+    # =========================================================================
+    # The null-space is NOT about the number of probes - it's about the
+    # INTRINSIC DIMENSIONALITY of the target's representation.
+    #
+    # Even with many probes (n >> d), the target's activations live on a
+    # low-dimensional manifold. The "null space" is the orthogonal complement
+    # of this manifold - the "dark space" where we can add knowledge.
+    #
+    # Algorithm:
+    # 1. Compute covariance: C = A.T @ A / n  [d, d]
+    # 2. Eigendecompose: C = V @ diag(λ) @ V.T
+    # 3. Find intrinsic rank k where top-k eigenvalues capture 99% of variance
+    # 4. Null-space projector: N = V_null @ V_null.T where V_null = V[:, k:]
+    #
+    # This gives the TRUE null-space based on the target's intrinsic structure,
+    # independent of how many probes we use to estimate it.
+    # =========================================================================
+    VARIANCE_THRESHOLD = 0.99  # Preserve directions capturing 99% of variance
+
     # Compute null-space projector
-    if n_samples > 0:
-        A_pinv = b.pinv(A_weighted)  # [in_dim, n]
-        b.eval(A_pinv)
+    # GEOMETRY DOESN'T FAIL - if these operations fail, we have a bug upstream
+    if n_samples == 0:
+        raise ValueError(
+            "Cannot compute null-space with n_samples=0. "
+            "This indicates a bug in the probe stage - no activations were collected."
+        )
 
-        # N = I - pinv(A) @ A
-        # [in_dim, n] @ [n, in_dim] -> [in_dim, in_dim]
-        proj = b.matmul(A_pinv, A_weighted)
-        b.eval(proj)
+    # Compute covariance matrix C = A.T @ A / n [d, d]
+    # This is ALWAYS symmetric positive semi-definite by construction
+    AtA = b.matmul(b.transpose(A_weighted), A_weighted)
+    C = AtA / float(n_samples)
+    b.eval(C)
 
-        N = b.eye(in_dim) - proj  # [in_dim, in_dim]
+    # Eigendecomposition of symmetric PSD matrix - this ALWAYS succeeds
+    # If it fails, we have a bug (non-symmetric matrix, backend bug, etc.)
+    eigvals, eigvecs = b.eigh(C)  # eigvals [d], eigvecs [d, d]
+    b.eval(eigvals, eigvecs)
+
+    # Sort by descending eigenvalue (eigh returns ascending)
+    eigvals_list = [float(b.to_scalar(eigvals[i])) for i in range(in_dim)]
+    sorted_idx = sorted(range(in_dim), key=lambda i: eigvals_list[i], reverse=True)
+    idx = b.array(sorted_idx)
+    eigvals = b.take(eigvals, idx, axis=0)
+    eigvecs = b.take(eigvecs, idx, axis=1)
+    b.eval(eigvals, eigvecs)
+
+    # Compute total variance
+    eps = division_epsilon(b, eigvals)
+    eigvals_pos = b.maximum(eigvals, eps)
+    total_var = b.sum(eigvals_pos)
+    b.eval(total_var)
+    total_var_val = float(b.to_scalar(total_var))
+
+    if total_var_val < eps:
+        # Zero variance means all activations are identical/zero - this is a bug
+        raise ValueError(
+            f"Zero variance in activations (total_var={total_var_val:.2e}). "
+            "This indicates a bug in the pipeline - activations should have non-zero variance. "
+            "Check that the model is loaded correctly and inference is running properly."
+        )
+
+    # Find k where top-k eigenvalues capture VARIANCE_THRESHOLD of variance
+    cumsum = 0.0
+    k = 0
+    for i in range(in_dim):
+        ev = float(b.to_scalar(eigvals_pos[i]))
+        cumsum += ev
+        k = i + 1
+        if cumsum / total_var_val >= VARIANCE_THRESHOLD:
+            break
+
+    # Intrinsic rank = k (directions capturing 99% variance)
+    # Null rank = d - k (remaining directions)
+    null_rank = in_dim - k
+
+    logger.debug(
+        "INTRINSIC NULL-SPACE: intrinsic_rank=%d, null_rank=%d (%.1f%% variance in top %d of %d)",
+        k, null_rank, 100.0 * cumsum / total_var_val, k, in_dim
+    )
+
+    if null_rank > 0:
+        # Null-space projector: N = V_null @ V_null.T
+        # V_null = eigvecs[:, k:] (columns corresponding to small eigenvalues)
+        V_null = eigvecs[:, k:]  # [d, null_rank]
+        b.eval(V_null)
+
+        # N = V_null @ V_null.T [d, d]
+        N = b.matmul(V_null, b.transpose(V_null))
         b.eval(N)
-
-        # Approximate null rank = in_dim - rank(A)
-        # rank(A) ≈ min(n_samples, in_dim) when A is full rank
-        null_rank = max(0, in_dim - min(n_samples, in_dim))
     else:
-        N = b.eye(in_dim)
-        null_rank = in_dim
+        # null_rank=0 is GEOMETRICALLY VALID - it means the target uses ALL dimensions
+        # The 99% variance is spread across all d dimensions uniformly
+        # This is rare but possible for very well-trained models
+        # In this case, there is NO null-space to project into - all directions are occupied
+        # We MUST use N=0 - any transfer would violate the boundary
+        logger.info(
+            "INTRINSIC NULL-SPACE: null_rank=0, target uses all %d dimensions. "
+            "No null-space available for transfer - boundary will be fully preserved.",
+            in_dim
+        )
+        N = b.zeros((in_dim, in_dim))
+        b.eval(N)
 
     # Step 4: Project delta to null-space
     # delta_W_proj = delta_W @ N

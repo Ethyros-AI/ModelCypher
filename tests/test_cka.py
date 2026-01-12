@@ -309,7 +309,7 @@ class TestCKAInvariance:
     def test_scale_invariance(self, any_backend: "Backend") -> None:
         """Linear CKA should be invariant to scaling.
 
-        Note: RBF CKA with median-heuristic sigma is NOT scale-invariant
+        Note: RBF CKA with data-derived sigma is NOT scale-invariant
         because sigma adapts to data distribution. Linear CKA (K = X @ X.T)
         IS scale-invariant since scaling X by α scales K by α², which
         cancels in the normalized HSIC ratio.

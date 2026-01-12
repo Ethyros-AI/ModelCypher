@@ -37,7 +37,6 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
-    compute_median_nonzero,
     division_epsilon,
     is_finite,
     machine_epsilon,
@@ -161,17 +160,10 @@ def rbf_gram_matrix(
     sq_dist = geodesic_squared_distances(X, backend)
     n = int(X.shape[0])
 
-    # Compute sigma if not provided (median heuristic)
+    # Compute sigma if not provided (data-derived gap scale)
     computed_sigma = sigma
     if computed_sigma is None:
-        # Median of non-zero squared distances (shared utility)
-        median_val = compute_median_nonzero(sq_dist, backend)
-
-        if median_val > 0:
-            computed_sigma = sqrt_scalar(median_val / 2, backend)
-        else:
-            computed_sigma = 1.0
-        computed_sigma = max(computed_sigma, regularization_epsilon(backend, X))
+        computed_sigma = _derive_rbf_sigma_from_values(sq_dist, backend)
 
     # RBF kernel: K = exp(-D² / 2σ²)
     gram = _rbf_gram_from_sq_distances(sq_dist, computed_sigma, backend)
@@ -200,16 +192,9 @@ def rbf_gram_matrix_with_sigma(
     sq_dist = geodesic_squared_distances(X, backend)
     n = int(X.shape[0])
     
-    # Compute sigma if not provided (median heuristic)
+    # Compute sigma if not provided (data-derived gap scale)
     if sigma is None:
-        # Median of non-zero squared distances (shared utility)
-        median_val = compute_median_nonzero(sq_dist, backend)
-
-        if median_val > 0:
-            sigma = sqrt_scalar(median_val / 2, backend)
-        else:
-            sigma = 1.0
-        sigma = max(sigma, regularization_epsilon(backend, X))
+        sigma = _derive_rbf_sigma_from_values(sq_dist, backend)
     
     # RBF kernel
     gram = _rbf_gram_from_sq_distances(sq_dist, sigma, backend)
@@ -237,18 +222,58 @@ def _shared_rbf_sigma(
     flat_x = backend.reshape(sq_dist_x, (-1,))
     flat_y = backend.reshape(sq_dist_y, (-1,))
     combined = backend.concatenate([flat_x, flat_y], axis=0)
-    median_val = compute_median_nonzero(combined, backend)
+    return _derive_rbf_sigma_from_values(combined, backend)
 
-    if median_val > 0:
-        sigma = sqrt_scalar(median_val / 2, backend)
-    else:
-        sigma = 1.0
 
-    reg_eps = max(
-        regularization_epsilon(backend, sq_dist_x),
-        regularization_epsilon(backend, sq_dist_y),
-    )
-    return max(sigma, reg_eps)
+def _derive_rbf_sigma_from_values(
+    values: "Array",
+    backend: "Backend",
+) -> float:
+    """Derive RBF sigma from the data distribution (no fixed heuristics)."""
+    flat = backend.reshape(values, (-1,))
+    backend.eval(flat)
+
+    eps = division_epsilon(backend, flat)
+    mask = flat > eps
+    count_arr = backend.sum(backend.astype(mask, "int32"))
+    backend.eval(count_arr)
+    count = int(backend.to_scalar(count_arr))
+    if count <= 0:
+        return regularization_epsilon(backend, values)
+
+    inf = backend.full(flat.shape, float("inf"))
+    filtered = backend.where(mask, flat, inf)
+    sorted_vals = backend.sort(filtered)
+    backend.eval(sorted_vals)
+    vals = backend.take(sorted_vals, backend.arange(count), axis=0)
+    backend.eval(vals)
+
+    scale = None
+    if count >= 2:
+        curr = vals[:-1]
+        next_vals = vals[1:]
+        denom = backend.where(curr > eps, curr, backend.ones_like(curr))
+        rel_gap = (next_vals - curr) / denom
+        max_gap_arr = backend.max(rel_gap)
+        gap_idx_arr = backend.argmax(rel_gap)
+        backend.eval(max_gap_arr, gap_idx_arr)
+        max_gap = float(backend.to_scalar(max_gap_arr))
+        if max_gap > eps:
+            idx = int(backend.to_scalar(gap_idx_arr))
+            threshold_arr = vals[idx : idx + 1]
+            backend.eval(threshold_arr)
+            scale = float(backend.to_scalar(threshold_arr))
+
+    if scale is None:
+        sum_vals = backend.sum(vals)
+        backend.eval(sum_vals)
+        scale = float(backend.to_scalar(sum_vals)) / float(count)
+
+    if scale <= 0.0:
+        scale = eps
+
+    sigma = sqrt_scalar(scale / 2.0, backend)
+    return max(sigma, regularization_epsilon(backend, values))
 
 
 def _center_gram_matrix(

@@ -464,8 +464,7 @@ class TestManifoldCurvatureProfile:
         samples = make_gaussian_samples(n=12, d=4)
 
         profile = estimator.estimate_manifold_profile(samples)
-        backend = get_default_backend()
-        high_curv = profile.get_high_curvature_regions(threshold=_eps(backend))
+        high_curv = profile.get_high_curvature_regions()
 
         for idx in high_curv:
             assert 0 <= idx < len(profile.local_curvatures)
@@ -487,7 +486,7 @@ class TestCurvatureAtPoint:
         profile = estimator.estimate_manifold_profile(samples)
 
         # Query at first point
-        result = profile.curvature_at_point(samples[0], k=1)
+        result = profile.curvature_at_point(samples[0])
 
         assert result is not None
         # Should be close to stored value (exact match for k=1)
@@ -512,7 +511,7 @@ class TestCurvatureAtPoint:
         backend.random_seed(42)
         query = backend.random_normal((4,))
         backend.eval(query)
-        result = profile.curvature_at_point(query, k=3)
+        result = profile.curvature_at_point(query)
 
         assert isinstance(result, LocalCurvature)
 
@@ -1046,4 +1045,3 @@ class TestLazyMeasureProperties:
         measure_sum = float(backend.sum(measure))
         eps = _eps(backend)
         assert abs(measure_sum - 1.0) <= eps
-

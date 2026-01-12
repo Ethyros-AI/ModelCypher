@@ -140,4 +140,4 @@ def test_diff_transfer_reduces_core_error(backend):
 
     eps = division_epsilon(backend, target_weight) * float(out_dim)
     assert report.diff_residual_mean_after <= report.diff_residual_mean_before - eps
-    assert report.boundary_max_relative_diff <= report.boundary_tolerance * 10.0 + eps
+    assert report.boundary_max_relative_diff <= report.boundary_tolerance + eps
