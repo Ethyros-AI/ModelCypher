@@ -963,10 +963,326 @@ def filter_merge_delta_geodesic(
     return merged, result
 
 
+# =============================================================================
+# TRUE ORTHOGONAL NULL-SPACE PROJECTION
+# =============================================================================
+# This is the mathematically correct implementation that guarantees:
+#     A @ delta_safe.T = 0  (boundary activations preserved)
+#
+# The heuristic variance-weighted approach above does NOT guarantee this.
+# Use this function for precise boundary preservation.
+# =============================================================================
+
+
+@dataclass
+class NullSpaceProjectionResult:
+    """Result of true orthogonal null-space projection."""
+
+    # The projected delta (guaranteed: A @ delta.T = 0)
+    projected_delta: Any
+
+    # Original delta before projection
+    original_delta: Any
+
+    # Frobenius norm of original delta
+    original_norm: float
+
+    # Frobenius norm of projected delta
+    projected_norm: float
+
+    # Fraction of delta preserved (projected_norm / original_norm)
+    preserved_fraction: float
+
+    # Maximum boundary violation: max(|A @ delta.T|)
+    # Should be ~0 (within numerical precision)
+    boundary_violation: float
+
+    # Rank of the activation matrix (effective constraints)
+    activation_rank: int
+
+    # Condition number of A @ A.T (numerical stability indicator)
+    condition_number: float
+
+
+def project_to_null_space(
+    delta: Any,
+    boundary_activations: Any,
+    backend: "Backend | None" = None,
+    verify: bool = True,
+) -> NullSpaceProjectionResult:
+    """Project delta into the true orthogonal null-space of boundary activations.
+
+    MATHEMATICAL GUARANTEE:
+    =======================
+    Given boundary activations A [n_samples, d], this function computes:
+
+        P_null = I - A.T @ pinv(A @ A.T) @ A
+
+    And returns:
+
+        delta_safe = delta @ P_null
+
+    This GUARANTEES:
+
+        A @ delta_safe.T = 0
+
+    Meaning the boundary behavior is EXACTLY preserved (within numerical precision).
+
+    EFFICIENT COMPUTATION:
+    ======================
+    We avoid materializing the d×d projection matrix by computing:
+
+        delta_safe = delta - (delta @ A.T) @ pinv(A @ A.T) @ A
+
+    This is efficient when n_samples << d (typical: 45-2048 probes, 576-4096 dims).
+
+    Parameters
+    ----------
+    delta : Array
+        Weight delta to project. Shape: [out_dim, in_dim].
+        in_dim must match boundary_activations feature dimension.
+    boundary_activations : Array
+        Target activations defining the boundary. Shape: [n_samples, d].
+        These are the activations we want to preserve exactly.
+    backend : Backend, optional
+        Computation backend. Defaults to MLX.
+    verify : bool
+        If True, compute and return boundary violation metric.
+
+    Returns
+    -------
+    NullSpaceProjectionResult
+        Contains projected_delta with boundary_violation ≈ 0.
+
+    Mathematical Derivation
+    -----------------------
+    For weight matrix W: [out, in] and activations A: [n, in]:
+        output = A @ W.T  [n, out]
+
+    We want: A @ (W_target + delta_safe).T = A @ W_target.T
+    Therefore: A @ delta_safe.T = 0
+    So delta_safe.T must be in null(A) = {v : A @ v = 0}
+
+    The projection onto null(A) is:
+        P_null = I - A.T @ (A @ A.T)^{-1} @ A  (when invertible)
+        P_null = I - A.T @ pinv(A @ A.T) @ A   (general)
+
+    For delta [out, in]:
+        delta_safe = delta @ P_null
+                   = delta - delta @ A.T @ pinv(A @ A.T) @ A
+    """
+    b = backend or get_default_backend()
+
+    # Ensure arrays and float32 precision
+    delta = b.astype(b.array(delta), "float32")
+    A = b.astype(b.array(boundary_activations), "float32")
+    b.eval(delta, A)
+
+    # Validate dimensions
+    delta_shape = b.shape(delta)
+    A_shape = b.shape(A)
+
+    if len(delta_shape) != 2:
+        raise ValueError(f"delta must be 2D [out, in], got shape {delta_shape}")
+    if len(A_shape) != 2:
+        raise ValueError(f"activations must be 2D [n, d], got shape {A_shape}")
+
+    out_dim, in_dim = int(delta_shape[0]), int(delta_shape[1])
+    n_samples, d = int(A_shape[0]), int(A_shape[1])
+
+    if in_dim != d:
+        raise ValueError(
+            f"Dimension mismatch: delta has in_dim={in_dim}, "
+            f"activations have d={d}. These must match."
+        )
+
+    # Compute original norm
+    original_norm_sq = b.sum(delta * delta)
+    b.eval(original_norm_sq)
+    original_norm = float(b.to_scalar(b.sqrt(original_norm_sq)))
+
+    # Handle zero delta
+    eps = regularization_epsilon(b, delta)
+    if original_norm < eps:
+        return NullSpaceProjectionResult(
+            projected_delta=delta,
+            original_delta=delta,
+            original_norm=0.0,
+            projected_norm=0.0,
+            preserved_fraction=1.0,
+            boundary_violation=0.0,
+            activation_rank=0,
+            condition_number=1.0,
+        )
+
+    # Step 1: Compute G = A @ A.T [n, n] - small Gram matrix
+    G = b.matmul(A, b.transpose(A))  # [n, n]
+    b.eval(G)
+
+    # Step 2: Compute pinv(G) using stable solver
+    # G is symmetric positive semi-definite
+    # Add small regularization for numerical stability
+    reg = regularization_epsilon(b, G)
+    G_reg = G + reg * b.eye(n_samples)
+    b.eval(G_reg)
+
+    # Compute condition number for diagnostics
+    # Using eigenvalues of G
+    try:
+        eigvals = b.eigvalsh(G)
+        b.eval(eigvals)
+        eigvals_pos = b.maximum(eigvals, reg)
+        max_eig = float(b.to_scalar(b.max(eigvals_pos)))
+        min_eig = float(b.to_scalar(b.min(eigvals_pos)))
+        condition_number = max_eig / min_eig if min_eig > 0 else float("inf")
+        activation_rank = int(b.to_scalar(b.sum(b.cast(eigvals > reg * 10, "float32"))))
+    except Exception:
+        condition_number = float("inf")
+        activation_rank = min(n_samples, d)
+
+    # Step 3: Compute G_inv = pinv(G) via Cholesky or direct solve
+    # G_inv @ G ≈ I
+    try:
+        # Try Cholesky for positive definite
+        L = b.cholesky(G_reg)
+        b.eval(L)
+        # G_inv = (L.T)^{-1} @ L^{-1}
+        # We'll compute G_inv @ x by solving L @ L.T @ y = x
+        # For now, use pinv directly
+        G_inv = b.pinv(G_reg)
+    except Exception:
+        # Fall back to pinv
+        G_inv = b.pinv(G_reg)
+    b.eval(G_inv)
+
+    # Step 4: Compute delta_safe = delta - (delta @ A.T) @ G_inv @ A
+    # This avoids forming the d×d projection matrix
+
+    # delta @ A.T: [out, in] @ [in, n] = [out, n]
+    delta_AT = b.matmul(delta, b.transpose(A))
+    b.eval(delta_AT)
+
+    # (delta @ A.T) @ G_inv: [out, n] @ [n, n] = [out, n]
+    temp = b.matmul(delta_AT, G_inv)
+    b.eval(temp)
+
+    # temp @ A: [out, n] @ [n, in] = [out, in]
+    correction = b.matmul(temp, A)
+    b.eval(correction)
+
+    # delta_safe = delta - correction
+    delta_safe = delta - correction
+    b.eval(delta_safe)
+
+    # Compute projected norm
+    projected_norm_sq = b.sum(delta_safe * delta_safe)
+    b.eval(projected_norm_sq)
+    projected_norm = float(b.to_scalar(b.sqrt(projected_norm_sq)))
+
+    preserved_fraction = projected_norm / original_norm if original_norm > 0 else 1.0
+
+    # Verify boundary condition if requested
+    boundary_violation = 0.0
+    if verify:
+        # Compute A @ delta_safe.T - should be ≈ 0
+        # A @ delta_safe.T: [n, in] @ [in, out] = [n, out]
+        violation_matrix = b.matmul(A, b.transpose(delta_safe))
+        b.eval(violation_matrix)
+        max_violation = b.max(b.abs(violation_matrix))
+        b.eval(max_violation)
+        boundary_violation = float(b.to_scalar(max_violation))
+
+        if boundary_violation > 1e-4:
+            logger.warning(
+                "NULL-SPACE: Boundary violation %.2e exceeds tolerance. "
+                "Check activation rank (%d) and condition number (%.2e).",
+                boundary_violation,
+                activation_rank,
+                condition_number,
+            )
+
+    logger.info(
+        "NULL-SPACE PROJECTION: preserved=%.1f%%, violation=%.2e, rank=%d/%d, cond=%.2e",
+        preserved_fraction * 100,
+        boundary_violation,
+        activation_rank,
+        n_samples,
+        condition_number,
+    )
+
+    return NullSpaceProjectionResult(
+        projected_delta=delta_safe,
+        original_delta=delta,
+        original_norm=original_norm,
+        projected_norm=projected_norm,
+        preserved_fraction=preserved_fraction,
+        boundary_violation=boundary_violation,
+        activation_rank=activation_rank,
+        condition_number=condition_number,
+    )
+
+
+def filter_merge_delta_null_space(
+    source_weights: Any,
+    target_weights: Any,
+    boundary_activations: Any,
+    backend: "Backend | None" = None,
+) -> tuple[Any, NullSpaceProjectionResult]:
+    """Merge weights using TRUE orthogonal null-space projection.
+
+    This is the mathematically correct merge formula:
+
+        delta = source_aligned - target
+        delta_safe = project_to_null_space(delta, boundary_activations)
+        merged = target + delta_safe
+
+    GUARANTEE:
+        boundary_activations @ merged.T = boundary_activations @ target.T
+
+    The target's behavior on boundary activations is EXACTLY preserved.
+
+    Parameters
+    ----------
+    source_weights : Array
+        Source weights (already aligned to target space). Shape: [out, in].
+    target_weights : Array
+        Target weights to preserve boundary behavior. Shape: [out, in].
+    boundary_activations : Array
+        Target activations defining the boundary. Shape: [n_samples, in].
+
+    Returns
+    -------
+    tuple[Array, NullSpaceProjectionResult]
+        (merged_weights, projection_result)
+    """
+    b = backend or get_default_backend()
+
+    source_weights = b.array(source_weights)
+    target_weights = b.array(target_weights)
+    b.eval(source_weights, target_weights)
+
+    # Compute delta
+    delta = source_weights - target_weights
+    b.eval(delta)
+
+    # Project to true null-space
+    result = project_to_null_space(delta, boundary_activations, backend=b)
+
+    # Merge = target + projected_delta
+    merged = target_weights + result.projected_delta
+    b.eval(merged)
+
+    return merged, result
+
+
 __all__ = [
     "GeodesicNullSpaceBasis",
     "GeodesicNullSpaceResult",
     "GeodesicNullSpaceFilter",
-    "filter_delta_svd",  # New SVD-based filtering (preferred)
-    "filter_merge_delta_geodesic",  # Legacy variance-based filtering
+    "filter_delta_svd",  # SVD-based low-rank filtering
+    "filter_merge_delta_geodesic",  # Legacy variance-based filtering (HEURISTIC)
+    # TRUE ORTHOGONAL NULL-SPACE PROJECTION (mathematically correct)
+    "NullSpaceProjectionResult",
+    "project_to_null_space",
+    "filter_merge_delta_null_space",
 ]
