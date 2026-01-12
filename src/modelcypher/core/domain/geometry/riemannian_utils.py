@@ -160,8 +160,6 @@ def geodesic_distance_matrix(
 def farthest_point_sampling(
     points: "Array",
     n_samples: int,
-    seed_idx: int = 0,
-    k_neighbors: int | None = None,
     backend: "Backend | None" = None,
 ) -> list[int]:
     """
@@ -172,8 +170,6 @@ def farthest_point_sampling(
     Args:
         points: Point cloud [n, d]
         n_samples: Number of points to select
-        seed_idx: Starting point index
-        k_neighbors: k for geodesic graph
         backend: Backend to use
 
     Returns:
@@ -183,14 +179,13 @@ def farthest_point_sampling(
         backend = get_default_backend()
 
     rg = _get_riemannian_geometry(backend)
-    result = rg.farthest_point_sampling(points, n_samples, seed_idx, k_neighbors)
+    result = rg.farthest_point_sampling(points, n_samples)
     return result.selected_indices
 
 
 def find_sparse_direction(
     point_idx: int,
     points: "Array",
-    k: int = 10,
     backend: "Backend | None" = None,
 ) -> "Array":
     """
@@ -201,7 +196,6 @@ def find_sparse_direction(
     Args:
         point_idx: Index of the center point
         points: Point cloud [n, d]
-        k: Number of neighbors to analyze
         backend: Backend to use
 
     Returns:
@@ -211,7 +205,7 @@ def find_sparse_direction(
         backend = get_default_backend()
 
     rg = _get_riemannian_geometry(backend)
-    result = rg.directional_coverage(point_idx, points, k=k)
+    result = rg.directional_coverage(point_idx, points)
     return result.sparse_direction
 
 

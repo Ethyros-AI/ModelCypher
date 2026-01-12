@@ -619,10 +619,8 @@ class CUDABackend(Backend):
         return self.torch.argsort(array, dim=axis)
 
     def argpartition(self, array: Array, kth: int, axis: int = -1) -> Array:
-        # PyTorch doesn't have argpartition directly; use topk as approximation
-        # topk returns smallest k+1 elements when largest=False
-        _, indices = self.torch.topk(array, k=kth + 1, dim=axis, largest=False)
-        return indices
+        # Exact fallback: full argsort provides a valid partition.
+        return self.torch.argsort(array, dim=axis)
 
     def partition(self, array: Array, kth: int, axis: int = -1) -> Array:
         """Partition array elements around kth element along axis.
@@ -641,17 +639,8 @@ class CUDABackend(Backend):
         Array
             Partitioned array where elements less than kth are before it.
         """
-        # PyTorch lacks native partition; use topk for approximation
-        n = array.shape[axis]
-        if kth >= n:
-            return self.torch.sort(array, dim=axis).values
-
-        # Get bottom k+1 elements (values up to and including kth position)
-        bottom_k, _ = self.torch.topk(array, k=kth + 1, dim=axis, largest=False)
-        # Get top (n - k - 1) elements
-        top_rest, _ = self.torch.topk(array, k=n - kth - 1, dim=axis, largest=True)
-        # Concatenate: [smallest k] + [kth pivot] + [largest n-k-1]
-        return self.torch.cat([bottom_k, top_rest], dim=axis)
+        # Exact fallback: full sort provides a valid partition.
+        return self.torch.sort(array, dim=axis).values
 
     # --- Random (new) ---
     def random_normal(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:

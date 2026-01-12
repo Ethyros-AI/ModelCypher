@@ -178,17 +178,13 @@ class TestFarthestPointSampling:
 
         assert len(indices) == len(set(indices))
 
-    def test_seed_idx_included(self, backend):
-        """Seed index should be first in selected indices."""
+    def test_seed_idx_rejected(self, backend):
+        """Seed overrides are not supported."""
         points = backend.random_normal((32, 16))
         backend.eval(points)
 
-        seed_idx = 5
-        indices = farthest_point_sampling(
-            points, n_samples=5, seed_idx=seed_idx, backend=backend
-        )
-
-        assert indices[0] == seed_idx
+        with pytest.raises(TypeError):
+            farthest_point_sampling(points, n_samples=5, seed_idx=5, backend=backend)
 
     def test_sample_all_points(self, backend):
         """Sampling all points should return all indices."""

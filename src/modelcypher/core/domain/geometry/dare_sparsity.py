@@ -220,64 +220,26 @@ class DARESparsityAnalyzer:
         eps = b.finfo(next(iter(per_layer_arrays.values())).dtype).eps
         zero_threshold = global_max * eps
 
-        use_fast_path = total_count < 500_000_000
+        all_magnitudes = b.concatenate(list(per_layer_arrays.values()))
+        b.eval(all_magnitudes)
+        sorted_mags = b.sort(all_magnitudes)
+        b.eval(sorted_mags)
 
-        if use_fast_path:
-            all_magnitudes = b.concatenate(list(per_layer_arrays.values()))
-            b.eval(all_magnitudes)
+        def find_percentile_sorted(p: float) -> float:
+            kth = max(0, min(int(p * total_count), total_count - 1))
+            val = b.take(sorted_mags, b.array([kth]), axis=0)
+            val = b.squeeze(val)
+            b.eval(val)
+            return float(b.to_scalar(val))
 
-            def find_percentile_fast(p: float) -> float:
-                kth = max(0, min(int(p * total_count), total_count - 1))
-                partitioned = b.argpartition(all_magnitudes, kth)
-                prefix = b.take(partitioned, b.arange(kth + 1), axis=0)
-                val = b.max(b.take(all_magnitudes, prefix, axis=0))
-                b.eval(val)
-                return float(b.to_scalar(val))
+        p1 = find_percentile_sorted(0.01)
+        p5 = find_percentile_sorted(0.05)
+        median = find_percentile_sorted(0.50)
+        p95 = find_percentile_sorted(0.95)
+        p99 = find_percentile_sorted(0.99)
 
-            p1 = find_percentile_fast(0.01)
-            p5 = find_percentile_fast(0.05)
-            median = find_percentile_fast(0.50)
-            p95 = find_percentile_fast(0.95)
-            p99 = find_percentile_fast(0.99)
-
-            # 2. Spectral gap: find largest relative jump in sorted magnitudes
-            # Sample 1000 points to find approximate gap location (GPU-efficient)
-            sample_indices = [int(i * total_count / 1000) for i in range(1000)]
-            sorted_mags = b.sort(all_magnitudes)
-            b.eval(sorted_mags)
-            sample_idx_arr = b.array(sample_indices)
-            sample_vals = b.take(sorted_mags, sample_idx_arr, axis=0)
-            b.eval(sample_vals)
-            samples = [float(x) for x in b.tolist(sample_vals)]
-            gap_threshold = find_magnitude_gap_threshold(samples, eps=eps)
-        else:
-            def count_below(threshold: float) -> int:
-                total = 0
-                for flat in per_layer_arrays.values():
-                    cnt = b.sum(flat <= threshold)
-                    b.eval(cnt)
-                    total += int(b.to_scalar(cnt))
-                return total
-
-            def find_percentile(p: float) -> float:
-                target = int(p * total_count)
-                lo, hi = 0.0, global_max
-                for _ in range(30):
-                    mid = (lo + hi) / 2
-                    if count_below(mid) < target:
-                        lo = mid
-                    else:
-                        hi = mid
-                return (lo + hi) / 2
-
-            p1 = find_percentile(0.01)
-            p5 = find_percentile(0.05)
-            median = find_percentile(0.50)
-            p95 = find_percentile(0.95)
-            p99 = find_percentile(0.99)
-
-            # For very large arrays, use median as conservative gap estimate
-            gap_threshold = median
+        # 2. Spectral gap: find largest relative jump in sorted magnitudes
+        gap_threshold = find_magnitude_gap_threshold(sorted_mags, eps=eps, backend=b)
 
         drop_threshold = max(zero_threshold, gap_threshold)
 
@@ -350,10 +312,13 @@ class DARESparsityAnalyzer:
         zero_threshold = max(sorted_magnitudes) * eps
         drop_threshold = max(zero_threshold, gap_threshold)
 
+        precision = ulp_scalar(drop_threshold, get_default_backend())
         result: dict[str, set[int]] = {}
         for name, deltas in delta_weights.items():
             essential_indices = {
-                idx for idx, value in enumerate(deltas) if abs(float(value)) >= drop_threshold
+                idx
+                for idx, value in enumerate(deltas)
+                if abs(float(value)) + precision >= drop_threshold
             }
             result[name] = essential_indices
         return result

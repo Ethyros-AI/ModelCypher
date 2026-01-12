@@ -376,7 +376,7 @@ def infinity_threshold(backend: "Backend", array: "Array") -> float:
 
 
 def find_magnitude_gap_threshold(
-    sorted_values: list[float],
+    sorted_values: list[float] | "Array",
     eps: float | None = None,
     backend: "Backend | None" = None,
 ) -> float:
@@ -386,10 +386,18 @@ def find_magnitude_gap_threshold(
 
         backend = get_default_backend()
 
-    if not sorted_values:
+    if hasattr(sorted_values, "shape"):
+        values_arr = sorted_values  # type: ignore[assignment]
+        n = int(values_arr.shape[0])
+    else:
+        if not sorted_values:
+            return 0.0
+        values_arr = backend.array(sorted_values)
+        n = len(sorted_values)
+
+    if n == 0:
         return 0.0
 
-    values_arr = backend.array(sorted_values)
     if eps is None:
         abs_arr = backend.abs(values_arr)
         scale_arr = backend.maximum(backend.max(abs_arr), backend.array([1.0]))
@@ -397,11 +405,17 @@ def find_magnitude_gap_threshold(
         scale = float(backend.to_scalar(scale_arr))
         eps = ulp_scalar(scale, backend)
 
-    if len(sorted_values) < 3:
-        return sorted_values[len(sorted_values) // 2]
+    if n < 3:
+        mid_idx = backend.array([n // 2])
+        mid_val = backend.take(values_arr, mid_idx, axis=0)
+        mid_val = backend.squeeze(mid_val)
+        backend.eval(mid_val)
+        return float(backend.to_scalar(mid_val))
 
-    curr = values_arr[:-1]
-    next_vals = values_arr[1:]
+    idx = backend.arange(0, n - 1)
+    next_idx = backend.arange(1, n)
+    curr = backend.take(values_arr, idx, axis=0)
+    next_vals = backend.take(values_arr, next_idx, axis=0)
     diffs = next_vals - curr
     eps_arr = backend.array([eps])
     valid = curr > eps_arr
@@ -409,15 +423,27 @@ def find_magnitude_gap_threshold(
     rel_gaps = diffs / denom
     rel_gaps = backend.where(valid, rel_gaps, backend.zeros_like(rel_gaps))
     max_gap_arr = backend.max(rel_gaps)
-    gap_index_arr = backend.argmax(rel_gaps)
-    backend.eval(max_gap_arr, gap_index_arr)
+    backend.eval(max_gap_arr)
+    max_mask = rel_gaps == max_gap_arr
+    indices = backend.arange(0, n - 1)
+    inf_val = backend.full(indices.shape, float("inf"))
+    masked_indices = backend.where(max_mask, indices, inf_val)
+    gap_index_arr = backend.min(masked_indices)
+    backend.eval(gap_index_arr)
     max_gap = float(backend.to_scalar(max_gap_arr))
 
     if max_gap <= 0.0:
-        return sorted_values[len(sorted_values) // 2]
+        mid_idx = backend.array([n // 2])
+        mid_val = backend.take(values_arr, mid_idx, axis=0)
+        mid_val = backend.squeeze(mid_val)
+        backend.eval(mid_val)
+        return float(backend.to_scalar(mid_val))
 
     gap_index = int(backend.to_scalar(gap_index_arr))
-    return sorted_values[gap_index]
+    gap_val = backend.take(values_arr, backend.array([gap_index]), axis=0)
+    gap_val = backend.squeeze(gap_val)
+    backend.eval(gap_val)
+    return float(backend.to_scalar(gap_val))
 
 
 # =============================================================================

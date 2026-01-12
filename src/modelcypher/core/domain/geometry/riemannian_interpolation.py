@@ -60,14 +60,15 @@ class RiemannianInterpolationMixin:
         For t=0 returns p1, for t=1 returns p2.
 
         If points_context is provided, uses the graph structure to find
-        the geodesic path and interpolates along it. The geodesic is the
-        shortest path on the k-NN graph - exact for the discrete manifold.
+        the geodesic path and selects the nearest path vertex for the
+        requested arc length. The geodesic is the shortest path on the
+        k-NN graph - exact for the discrete manifold.
 
         Algorithm:
             1. Project p1, p2 onto the discrete manifold (find nearest points)
             2. Reconstruct shortest path from geodesic distance matrix
             3. Compute cumulative arc lengths along path
-            4. Interpolate along the path at parameter t
+            4. Select the nearest path vertex at arc length parameter t
 
         Args:
             p1: Start point [d]
@@ -132,15 +133,8 @@ class RiemannianInterpolationMixin:
                 f"Increase k_neighbors to improve graph connectivity."
             )
 
-        if len(path_indices) == 2:
-            # Direct neighbors on the graph - interpolate along this edge
-            # This is exact for the discrete manifold (edge IS the geodesic)
-            proj1 = points_context[idx1]
-            proj2 = points_context[idx2]
-            return (1.0 - t) * proj1 + t * proj2
-
         # 4. Compute cumulative arc lengths along path
-        arc_lengths = self._compute_path_arc_lengths(points_context, path_indices)
+        arc_lengths = self._compute_path_arc_lengths(geo_result.distances, path_indices)
         total_length = arc_lengths[-1]
 
         # Use precision-aware threshold for near-zero detection
@@ -250,17 +244,17 @@ class RiemannianInterpolationMixin:
 
     def _compute_path_arc_lengths(
         self,
-        points: "Array",
+        geo_dist: "Array",
         path_indices: list[int],
     ) -> list[float]:
         """
         Compute cumulative arc lengths along a path.
 
-        Uses chord length between consecutive points on the path.
-        This gives the actual length traveled along the discrete geodesic.
+        Uses geodesic distances between consecutive nodes in the path.
+        This is exact for the discrete manifold representation.
 
         Args:
-            points: Point cloud [n, d]
+            geo_dist: Geodesic distance matrix [n, n]
             path_indices: Indices forming the path
 
         Returns:
@@ -271,19 +265,17 @@ class RiemannianInterpolationMixin:
         if len(path_indices) <= 1:
             return [0.0]
 
-        path_idx_arr = backend.array(path_indices)
-        path_points = backend.take(points, path_idx_arr, axis=0)
-        diffs = path_points[1:] - path_points[:-1]
-        # INTENTIONAL CHORD: Discretized arc length along geodesic path.
-        # The path is a sequence of k-NN edges that approximates the geodesic.
-        # Each segment is short enough that chord length is a good
-        # approximation to arc length (first-order Taylor). The sum of these
-        # segment lengths IS the geodesic distance by construction.
-        segment_lengths = backend.sqrt(backend.sum(diffs * diffs, axis=1))
-        cumulative = backend.cumsum(segment_lengths, axis=0)
-        backend.eval(cumulative)
         arc_lengths = [0.0]
-        arc_lengths.extend(float(x) for x in backend.tolist(cumulative))
+        for i in range(len(path_indices) - 1):
+            start_idx = path_indices[i]
+            end_idx = path_indices[i + 1]
+            row = backend.take(geo_dist, backend.array([start_idx]), axis=0)
+            row = backend.squeeze(row, axis=0)
+            cell = backend.take(row, backend.array([end_idx]), axis=0)
+            cell = backend.squeeze(cell)
+            backend.eval(cell)
+            segment_length = float(backend.to_scalar(cell))
+            arc_lengths.append(arc_lengths[-1] + segment_length)
 
         return arc_lengths
 
@@ -295,10 +287,10 @@ class RiemannianInterpolationMixin:
         target_length: float,
     ) -> "Array":
         """
-        Interpolate along a discrete path at a given arc length.
+        Select the discrete path point nearest the target arc length.
 
-        Finds the segment containing the target length and performs
-        linear interpolation within that segment.
+        The discrete manifold is defined by graph vertices. Returning the
+        nearest vertex avoids introducing off-manifold approximations.
 
         Args:
             points: Point cloud [n, d]
@@ -311,30 +303,18 @@ class RiemannianInterpolationMixin:
         """
         backend = self._backend
 
-        # Use precision-aware threshold for near-zero detection
-        eps = division_epsilon(backend, points)
+        if not arc_lengths:
+            return points[path_indices[0]]
 
-        # Find the segment containing target_length
-        for i in range(len(arc_lengths) - 1):
-            if arc_lengths[i] <= target_length <= arc_lengths[i + 1]:
-                # Interpolate within this segment
-                segment_start = arc_lengths[i]
-                segment_end = arc_lengths[i + 1]
-                segment_length = segment_end - segment_start
+        best_idx = 0
+        best_delta = abs(arc_lengths[0] - target_length)
+        for i in range(1, len(arc_lengths)):
+            delta = abs(arc_lengths[i] - target_length)
+            if delta < best_delta:
+                best_delta = delta
+                best_idx = i
 
-                if segment_length < eps:
-                    return points[path_indices[i]]
-
-                # Local interpolation parameter within segment
-                local_t = (target_length - segment_start) / segment_length
-
-                p1 = points[path_indices[i]]
-                p2 = points[path_indices[i + 1]]
-
-                return (1.0 - local_t) * p1 + local_t * p2
-
-        # Fallback: return last point if target exceeds path length
-        return points[path_indices[-1]]
+        return points[path_indices[best_idx]]
 
 
 __all__ = ["RiemannianInterpolationMixin"]

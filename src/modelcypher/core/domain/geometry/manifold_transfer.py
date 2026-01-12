@@ -61,6 +61,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -327,8 +328,7 @@ class CrossManifoldProjector:
 
         # Compute geodesic distances via k-NN graph
         points_arr = backend.astype(all_points, "float32")
-        n_points = len(anchor_ids) + 1
-        k_neighbors = min(max(3, n_points // 3), n_points - 1)
+        k_neighbors = derive_k_neighbors(points_arr, backend)
 
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
         backend.eval(geo_dist)
@@ -433,7 +433,6 @@ class CrossManifoldProjector:
         # Convergence tolerance derived from data
         convergence_tolerance = regularization_epsilon(backend, target_centroids_arr)
         n_anchors = len(matching_anchor_ids)
-        k_neighbors = min(max(3, n_anchors // 3), n_anchors)
 
         # Initialize position
         if initial_position is not None:
@@ -445,6 +444,11 @@ class CrossManifoldProjector:
             weighted_centroids = target_centroids_arr * weights_expanded
             position = backend.sum(weighted_centroids, axis=0)
             backend.eval(position)
+
+        position_reshaped = backend.reshape(position, (1, -1))
+        all_points = backend.concatenate([position_reshaped, target_centroids_arr], axis=0)
+        points_arr = backend.astype(all_points, "float32")
+        k_neighbors = derive_k_neighbors(points_arr, backend)
 
         # Gradient descent to minimize stress
         best_position = position

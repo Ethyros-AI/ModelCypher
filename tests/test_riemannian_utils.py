@@ -78,6 +78,20 @@ def _max_abs(backend: "Backend", array) -> float:
     return float(backend.to_scalar(diff))
 
 
+def _derive_seed_idx(backend: "Backend", geo_dist) -> int:
+    finite_mask = backend.isfinite(geo_dist)
+    finite_sum = backend.sum(
+        backend.where(finite_mask, geo_dist, backend.zeros_like(geo_dist)), axis=1
+    )
+    finite_count = backend.sum(backend.astype(finite_mask, "int32"), axis=1)
+    finite_count = backend.maximum(finite_count, backend.ones_like(finite_count))
+    mean_dist = finite_sum / finite_count
+    backend.eval(mean_dist)
+    seed_idx_arr = backend.argmax(mean_dist)
+    backend.eval(seed_idx_arr)
+    return int(backend.to_scalar(seed_idx_arr))
+
+
 PI = 3.141592653589793
 
 
@@ -191,13 +205,13 @@ class TestDirectionalCoverage:
         result = DirectionalCoverage(
             sparse_direction=backend.array([1.0, 0.0, 0.0]),
             max_gap_angle=1.5,
-            coverage_uniformity=0.8,
+            coverage_variance=0.8,
             neighbor_directions=backend.zeros((5, 3)),
             point_idx=0,
         )
 
         assert result.max_gap_angle == 1.5
-        assert result.coverage_uniformity == 0.8
+        assert result.coverage_variance == 0.8
         assert result.point_idx == 0
 
 
@@ -694,14 +708,16 @@ class TestFarthestPointSampling:
         assert result.coverage_radius == 0.0
 
     def test_single_sample(self, any_backend: "Backend") -> None:
-        """FPS with n_samples=1 returns seed."""
+        """FPS with n_samples=1 returns the data-derived seed."""
         backend = any_backend
         rg = RiemannianGeometry(backend)
 
         points = backend.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
-        result = rg.farthest_point_sampling(points, n_samples=1, seed_idx=1)
+        result = rg.farthest_point_sampling(points, n_samples=1)
 
-        assert result.selected_indices == [1]
+        geo_result = rg.geodesic_distances(points)
+        expected_seed = _derive_seed_idx(backend, geo_result.distances)
+        assert result.selected_indices == [expected_seed]
 
     def test_all_samples(self, any_backend: "Backend") -> None:
         """FPS with n_samples=n returns all indices."""
@@ -719,9 +735,8 @@ class TestFarthestPointSampling:
         assert set(result.selected_indices) == {0, 1, 2}
 
     def test_samples_are_spread_out(self, any_backend: "Backend") -> None:
-        """FPS should select spread-out points."""
+        """FPS should select the farthest point from the seed."""
         backend = any_backend
-        backend.random_seed(42)
         rg = RiemannianGeometry(backend)
 
         # Create a cluster structure
@@ -735,23 +750,34 @@ class TestFarthestPointSampling:
         ]
         points = backend.array(points_list)
 
-        result = rg.farthest_point_sampling(points, n_samples=2, seed_idx=0)
+        result = rg.farthest_point_sampling(points, n_samples=2)
 
-        # Should select one from each cluster
         assert len(result.selected_indices) == 2
-        # First is seed (0), second should be from far cluster (3, 4, or 5)
-        assert result.selected_indices[0] == 0
-        assert result.selected_indices[1] in [3, 4, 5]
+        geo_result = rg.geodesic_distances(points)
+        geo_dist = geo_result.distances
+        seed_idx = _derive_seed_idx(backend, geo_dist)
+        row = backend.take(geo_dist, backend.array([seed_idx]), axis=0)
+        row = backend.squeeze(row, axis=0)
+        row_masked = backend.where(
+            backend.arange(0, int(points.shape[0])) == seed_idx,
+            backend.full((int(points.shape[0]),), float("-inf")),
+            row,
+        )
+        farthest_idx_arr = backend.argmax(row_masked)
+        backend.eval(farthest_idx_arr)
+        farthest_idx = int(backend.to_scalar(farthest_idx_arr))
 
-    def test_custom_seed(self, any_backend: "Backend") -> None:
-        """FPS with custom seed starts from that point."""
+        assert result.selected_indices[0] == seed_idx
+        assert result.selected_indices[1] == farthest_idx
+
+    def test_rejects_seed_override(self, any_backend: "Backend") -> None:
+        """FPS rejects explicit seed overrides."""
         backend = any_backend
         rg = RiemannianGeometry(backend)
 
         points = backend.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
-        result = rg.farthest_point_sampling(points, n_samples=2, seed_idx=2)
-
-        assert result.selected_indices[0] == 2
+        with pytest.raises(TypeError):
+            rg.farthest_point_sampling(points, n_samples=2, seed_idx=2)
 
 
 # =============================================================================
@@ -769,14 +795,14 @@ class TestDirectionalCoverage:
 
         # Single point (no neighbors)
         points = backend.array([[1.0, 2.0, 3.0]])
-        result = rg.directional_coverage(0, points, k=5)
+        result = rg.directional_coverage(0, points)
 
         # With no neighbors, any direction is equally sparse
         # The max_gap_angle should be large (pi for full hemisphere gap)
         # but the exact value depends on the candidate directions sampled
         eps = _div_eps(backend, result.max_gap_angle, PI)
         assert result.max_gap_angle >= PI / 2 - eps  # At least 90 degrees
-        assert result.coverage_uniformity >= 0.0  # Valid range
+        assert result.coverage_variance != result.coverage_variance  # NaN for undefined variance
         assert result.point_idx == 0
 
     def test_returns_unit_direction(self, any_backend: "Backend") -> None:
@@ -786,7 +812,7 @@ class TestDirectionalCoverage:
         rg = RiemannianGeometry(backend)
 
         points = backend.random_normal((10, 3))
-        result = rg.directional_coverage(0, points, k=5)
+        result = rg.directional_coverage(0, points)
 
         norm = backend.norm(result.sparse_direction)
         backend.eval(norm)
@@ -803,10 +829,9 @@ class TestDirectionalCoverage:
         rg = RiemannianGeometry(backend)
 
         points = backend.random_normal((15, 4))
-        result = rg.directional_coverage(0, points, k=8)
+        result = rg.directional_coverage(0, points)
 
-        eps = _eps(backend, result.coverage_uniformity)
-        assert -eps <= result.coverage_uniformity <= 1.0 + eps
+        assert result.coverage_variance >= -_eps(backend, result.coverage_variance)
 
 
 # =============================================================================
@@ -817,31 +842,23 @@ class TestDirectionalCoverage:
 class TestProposeInSparseDirection:
     """Tests for proposing points in sparse direction."""
 
-    def test_step_size_affects_distance(self, any_backend: "Backend") -> None:
-        """Larger step size should produce farther point."""
+    def test_proposed_is_existing_point(self, any_backend: "Backend") -> None:
+        """Proposed point should be one of the existing points."""
         backend = any_backend
         backend.random_seed(42)
         rg = RiemannianGeometry(backend)
 
         points = backend.random_normal((10, 3))
-        base_point = points[0]
+        proposed = rg.propose_in_sparse_direction(0, points)
 
-        proposed_small = rg.propose_in_sparse_direction(0, points, step_size=0.1)
-        proposed_large = rg.propose_in_sparse_direction(0, points, step_size=1.0)
+        diffs = points - proposed
+        dist_sq = backend.sum(diffs * diffs, axis=1)
+        backend.eval(dist_sq)
+        min_dist_sq = backend.min(dist_sq)
+        backend.eval(min_dist_sq)
+        min_val = float(backend.to_scalar(min_dist_sq))
 
-        # Compute distances from base
-        diff_small = proposed_small - base_point
-        diff_large = proposed_large - base_point
-
-        dist_small = backend.norm(diff_small)
-        dist_large = backend.norm(diff_large)
-        backend.eval(dist_small)
-        backend.eval(dist_large)
-        dist_small_val = float(backend.to_scalar(dist_small))
-        dist_large_val = float(backend.to_scalar(dist_large))
-
-        # Larger step should produce larger distance
-        assert dist_large_val > dist_small_val
+        assert min_val <= _eps(backend, min_val)
 
     def test_preserves_dimension(self, any_backend: "Backend") -> None:
         """Proposed point should have same dimension."""
@@ -850,7 +867,7 @@ class TestProposeInSparseDirection:
         rg = RiemannianGeometry(backend)
 
         points = backend.random_normal((10, 5))
-        proposed = rg.propose_in_sparse_direction(0, points, step_size=0.5)
+        proposed = rg.propose_in_sparse_direction(0, points)
 
         assert proposed.shape == (5,)
 
@@ -926,14 +943,13 @@ class TestFarthestPointSamplingConvenience:
         assert isinstance(indices, list)
         assert len(indices) == 3
 
-    def test_with_seed(self, any_backend: "Backend") -> None:
-        """Convenience function accepts seed_idx."""
+    def test_rejects_seed_override(self, any_backend: "Backend") -> None:
+        """Convenience function rejects seed override."""
         backend = any_backend
 
         points = backend.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
-        indices = farthest_point_sampling(points, n_samples=2, seed_idx=1, backend=backend)
-
-        assert indices[0] == 1
+        with pytest.raises(TypeError):
+            farthest_point_sampling(points, n_samples=2, seed_idx=1, backend=backend)
 
 
 class TestFindSparseDirectionConvenience:

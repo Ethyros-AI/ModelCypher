@@ -67,7 +67,7 @@ class DirectionalCoverage:
 
     sparse_direction: "Array"  # Unit vector in most sparse direction [d]
     max_gap_angle: float  # Largest angular gap (radians)
-    coverage_uniformity: float  # 0 = highly non-uniform, 1 = fully uniform
+    coverage_variance: float  # Variance of max cosine similarities (raw dispersion)
     neighbor_directions: "Array"  # Normalized tangent directions to neighbors [k, d]
     point_idx: int  # Index of the analyzed point
 

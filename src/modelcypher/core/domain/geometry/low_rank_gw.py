@@ -43,15 +43,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry._primitives.convergence import ConvergenceMonitor
 from modelcypher.core.domain.geometry.numerical_stability import (
-    compute_median,
     division_epsilon,
-    machine_epsilon,
+    geodesic_svd,
+    log_scalar,
     regularization_epsilon,
-    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    SharedSubspaceProjector,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -148,16 +150,14 @@ class LowRankGromovWasserstein:
         self,
         C1: "Array",
         C2: "Array",
-        seed: int | None = 42,
     ) -> LowRankGWResult:
         """
         Compute low-rank GW distance between two metric spaces.
 
         All parameters are derived from the data geometry:
-        - rank: sqrt(min(n, m)) clamped to [10, 500]
-        - regularization: median(cost) * sqrt(machine_epsilon)
-        - iterations: max(50, 2 * sqrt(n + m))
-        - convergence: regularization_epsilon
+        - rank: spectral gap on cost matrices
+        - regularization: dtype-derived epsilon scale
+        - iterations: convergence monitor derived from problem size
 
         Uses a simplified Sinkhorn-style algorithm that is numerically stable.
         Instead of explicit gradient computation, we:
@@ -168,7 +168,6 @@ class LowRankGromovWasserstein:
         Args:
             C1: Source distance/cost matrix [n, n]
             C2: Target distance/cost matrix [m, m]
-            seed: Random seed for reproducibility (None = no seeding)
 
         Returns:
             LowRankGWResult with factorized coupling and distance
@@ -181,10 +180,16 @@ class LowRankGromovWasserstein:
         n = int(C1.shape[0])
         m = int(C2.shape[0])
 
-        # Derive rank from problem size: sqrt(min(n, m)) clamped to [10, 500]
-        derived_rank = int(sqrt_scalar(float(min(n, m)), b))
-        derived_rank = max(10, min(500, derived_rank))
-        r = min(derived_rank, n, m)
+        # Derive rank from spectral gaps in the cost matrices.
+        _u1, s1, _vt1 = geodesic_svd(b, C1)
+        _u2, s2, _vt2 = geodesic_svd(b, C2)
+        b.eval(s1, s2)
+        var1 = s1 * s1
+        var2 = s2 * s2
+        b.eval(var1, var2)
+        k1 = SharedSubspaceProjector._select_component_count(var1, None, backend=b)
+        k2 = SharedSubspaceProjector._select_component_count(var2, None, backend=b)
+        r = min(max(1, min(k1, k2)), n, m)
 
         if n == 0 or m == 0:
             return LowRankGWResult(
@@ -231,21 +236,13 @@ class LowRankGromovWasserstein:
                     final_error=0.0,
                 )
 
-        # Derive regularization from cost matrix scale
-        # Use median of cost matrix scale * sqrt(machine_epsilon)
-        # This balances regularization strength with numerical precision
-        median_val = compute_median(C1, b)
-        eps = float(machine_epsilon(b, C1))
-        reg = max(median_val * (eps ** 0.5), eps)
+        # Derive regularization from dtype precision.
+        reg = max(regularization_epsilon(b, C1), regularization_epsilon(b, C2))
 
         logger.debug(
             "Low-Rank GW: n=%d, m=%d, rank=%d, reg=%.4f",
             n, m, r, reg
         )
-
-        # Set random seed for reproducibility
-        if seed is not None:
-            b.random_seed(seed)
 
         # Uniform marginals
         a = b.ones((n,)) / n  # Source marginal
@@ -253,23 +250,15 @@ class LowRankGromovWasserstein:
 
         # Initialize low-rank factors using simple uniform + noise
         Q, g, R = self._initialize_factors(n, m, r, a, p, b)
-
-        # Derive max_iterations from problem size: max(50, 2 * sqrt(n + m))
-        max_iterations = max(50, int(2 * sqrt_scalar(float(n + m), b)))
-
-        # Derive inner iterations from rank: max(20, rank)
-        max_inner_iterations = max(20, r)
-
-        # Derive convergence thresholds from regularization_epsilon
-        convergence_threshold = regularization_epsilon(b, C1)
-        inner_threshold = regularization_epsilon(b, C1)
+        max_dim = max(2, n, m, r)
+        monitor = ConvergenceMonitor(b, C1, max_iterations=max_dim)
 
         # GW iteration: alternating linearization and low-rank Sinkhorn
         prev_distance = float("inf")
         converged = False
         iterations = 0
 
-        for it in range(max_iterations):
+        for it in range(monitor.max_iterations):
             iterations = it + 1
 
             # Compute linearized cost matrix for current coupling
@@ -279,55 +268,25 @@ class LowRankGromovWasserstein:
 
             # Solve low-rank OT with this cost using Sinkhorn
             Q_new, g_new, R_new = self._lowrank_sinkhorn(
-                cost, a, p, r, reg,
-                max_inner_iterations, inner_threshold, b
+                cost, a, p, r, reg, b
             )
             b.eval(Q_new, g_new, R_new)
 
-            # Check for NaN and skip update if found
-            q_sum_arr = b.sum(Q_new)
-            b.eval(q_sum_arr)
-            q_sum = float(b.to_scalar(q_sum_arr))
-            if not (q_sum == q_sum):  # NaN check
-                logger.warning("NaN detected in iteration %d, using previous values", it)
+            distance = self._compute_gw_distance(Q_new, g_new, R_new, C1, C2, b)
+            if distance <= prev_distance + division_epsilon(b, C1):
+                Q = Q_new
+                g = g_new
+                R = R_new
+                b.eval(Q, g, R)
+                prev_distance = distance
+            else:
                 break
-
-            # Backtracking line search for step size
-            # Try α = 1.0, 0.5, 0.25, ... until we find improvement or hit minimum
-            best_alpha = 1.0
-            best_distance = float("inf")
-
-            for alpha in [1.0, 0.5, 0.25, 0.125]:
-                Q_trial = (1.0 - alpha) * Q + alpha * Q_new
-                g_trial = (1.0 - alpha) * g + alpha * g_new
-                R_trial = (1.0 - alpha) * R + alpha * R_new
-                b.eval(Q_trial, g_trial, R_trial)
-
-                trial_distance = self._compute_gw_distance(Q_trial, g_trial, R_trial, C1, C2, b)
-
-                if trial_distance < best_distance:
-                    best_distance = trial_distance
-                    best_alpha = alpha
-
-                # Early exit if we found improvement over previous iteration
-                if trial_distance < prev_distance:
-                    break
-
-            # Apply best step
-            Q = (1.0 - best_alpha) * Q + best_alpha * Q_new
-            g = (1.0 - best_alpha) * g + best_alpha * g_new
-            R = (1.0 - best_alpha) * R + best_alpha * R_new
-            b.eval(Q, g, R)
-
-            # Use best distance found
-            distance = best_distance
 
             # Check convergence
-            if abs(distance - prev_distance) < convergence_threshold:
-                converged = True
+            state = monitor.check(distance)
+            if monitor.should_stop(state):
+                converged = state.converged
                 break
-
-            prev_distance = distance
 
         # Compute final GW distance
         distance = self._compute_gw_distance(Q, g, R, C1, C2, b)
@@ -362,21 +321,15 @@ class LowRankGromovWasserstein:
         """Initialize Q, g, R to satisfy marginal constraints."""
         b = backend
 
-        # Initialize Q and R to be positive with marginal-like structure
-        # Q[i, k] ∝ a[i] * uniform_noise
-        # R[j, k] ∝ p[j] * uniform_noise
-        noise_Q = b.random_uniform(shape=(n, r)) * 0.5 + 0.5
-        noise_R = b.random_uniform(shape=(m, r)) * 0.5 + 0.5
-        b.eval(noise_Q, noise_R)
-
-        Q = a.reshape((-1, 1)) * noise_Q
-        R = p.reshape((-1, 1)) * noise_R
+        Q = b.ones((n, r)) * a.reshape((-1, 1))
+        R = b.ones((m, r)) * p.reshape((-1, 1))
         g = b.ones((r,))
         b.eval(Q, R, g)
         eps = division_epsilon(b, g)
+        monitor = ConvergenceMonitor(b, a, max_iterations=max(2, n, m, r))
 
-        # Normalize to satisfy marginals approximately
-        for _ in range(10):
+        # Normalize to satisfy marginals precisely
+        for _ in range(monitor.max_iterations):
             # Compute current marginals
             g_safe = b.maximum(g, b.full(g.shape, eps))
             g_inv = 1.0 / g_safe
@@ -405,6 +358,14 @@ class LowRankGromovWasserstein:
 
             b.eval(Q, R, g)
 
+            row_err_arr = b.max(b.abs(row_margin - a))
+            col_err_arr = b.max(b.abs(col_margin - p))
+            b.eval(row_err_arr, col_err_arr)
+            error = max(float(b.to_scalar(row_err_arr)), float(b.to_scalar(col_err_arr)))
+            state = monitor.check(error)
+            if monitor.should_stop(state):
+                break
+
         return Q, g, R
 
     def _compute_gw_cost_matrix(
@@ -430,11 +391,6 @@ class LowRankGromovWasserstein:
         n = int(C1.shape[0])
         m = int(C2.shape[0])
         eps = division_epsilon(b, g)
-
-        # For very large matrices, use sampling
-        max_direct_size = 5000
-        if n > max_direct_size or m > max_direct_size:
-            return self._compute_gw_cost_sampled(C1, C2, Q, g, R, n, m, b)
 
         # Reconstruct P for cost computation (only for moderate sizes)
         g_safe = b.maximum(g, b.full(g.shape, eps))
@@ -464,64 +420,6 @@ class LowRankGromovWasserstein:
 
         return cost
 
-    def _compute_gw_cost_sampled(
-        self,
-        C1: "Array",
-        C2: "Array",
-        Q: "Array",
-        g: "Array",
-        R: "Array",
-        n: int,
-        m: int,
-        backend: "Backend",
-    ) -> "Array":
-        """Compute approximate cost matrix using sampling for large matrices."""
-        b = backend
-
-        # Sample subset of rows and columns
-        sample_size = min(1000, n, m)
-
-        if n > sample_size:
-            idx_n = list(range(0, n, n // sample_size))[:sample_size]
-        else:
-            idx_n = list(range(n))
-
-        if m > sample_size:
-            idx_m = list(range(0, m, m // sample_size))[:sample_size]
-        else:
-            idx_m = list(range(m))
-
-        # Build sampled cost using row/column interactions
-        # For each (i,j), cost ∝ how different C1[i,:] is from C2[j,:]
-        # We use a simpler heuristic: cost[i,j] = ||C1[i,:] - C2[j,:]||² scaled
-
-        # Take representative rows
-        C1_rows = b.take(C1, b.array(idx_n), axis=0)  # [sample_n, n]
-        C2_rows = b.take(C2, b.array(idx_m), axis=0)  # [sample_m, m]
-        b.eval(C1_rows, C2_rows)
-
-        # Compute pairwise squared distance in row space
-        # Since dimensions differ, use Gram matrices
-        G1 = b.matmul(C1_rows, b.transpose(C1_rows))  # [sample_n, sample_n]
-        G2 = b.matmul(C2_rows, b.transpose(C2_rows))  # [sample_m, sample_m]
-
-        # Diagonal entries are squared norms
-        diag1 = b.diag(G1).reshape((-1, 1))  # [sample_n, 1]
-        diag2 = b.diag(G2).reshape((1, -1))  # [1, sample_m]
-
-        # Approximate cost: sum of squared norms (heuristic for row mismatch)
-        cost_sampled = diag1 + diag2
-        b.eval(cost_sampled)
-
-        # Use the mean cost value as a constant matrix
-        # This is a rough approximation but numerically stable
-        mean_cost = b.mean(cost_sampled)
-        b.eval(mean_cost)
-        cost = b.full((n, m), float(b.to_scalar(mean_cost)))
-        b.eval(cost)
-
-        return cost
-
     def _lowrank_sinkhorn(
         self,
         cost: "Array",
@@ -529,8 +427,6 @@ class LowRankGromovWasserstein:
         p: "Array",
         r: int,
         reg: float,
-        max_iter: int,
-        threshold: float,
         backend: "Backend",
     ) -> tuple["Array", "Array", "Array"]:
         """
@@ -553,112 +449,59 @@ class LowRankGromovWasserstein:
         cost_centered = cost - cost_min
         b.eval(cost_centered)
 
-        # Clamp to avoid overflow
-        max_exp = 80.0
+        max_log = log_scalar(b.finfo(cost.dtype).max, b)
         K_log = -cost_centered / max(reg, eps)
-        K_log = b.maximum(K_log, b.full(K_log.shape, -max_exp))
-        K_log = b.minimum(K_log, b.full(K_log.shape, max_exp))
+        K_log = b.maximum(K_log, b.full(K_log.shape, -max_log))
+        K_log = b.minimum(K_log, b.full(K_log.shape, max_log))
         K = b.exp(K_log)
         b.eval(K)
 
-        # Low-rank approximation of K using randomized SVD-like projection
-        # K ≈ U @ V^T where U: [n, r], V: [m, r]
-        # For numerical stability, use K @ random and K^T @ random
-        R_rand = b.random_uniform(shape=(m, r)) - 0.5
-        Q_rand = b.random_uniform(shape=(n, r)) - 0.5
-        b.eval(R_rand, Q_rand)
+        # Low-rank factors from exact SVD of the kernel
+        U, _s, Vt = geodesic_svd(b, K, k=r)
+        b.eval(U, Vt)
+        V = b.transpose(Vt)
 
-        # Power iteration to improve low-rank factors
-        U = b.matmul(K, R_rand)  # [n, r]
-        V = b.matmul(b.transpose(K), Q_rand)  # [m, r]
-        b.eval(U, V)
-
-        # Normalize columns using geodesic norms (transpose for column-wise)
-        U_col_norms = geodesic_norms(b.transpose(U), b)  # [r]
-        V_col_norms = geodesic_norms(b.transpose(V), b)  # [r]
-        b.eval(U_col_norms, V_col_norms)
-        U_norm = b.reshape(U_col_norms, (1, -1)) + eps  # [1, r]
-        V_norm = b.reshape(V_col_norms, (1, -1)) + eps  # [1, r]
-        U = U / U_norm
-        V = V / V_norm
-        b.eval(U, V)
-
-        # Initialize Q, R using low-rank kernel factors weighted by marginals
-        # This ensures the initial coupling is guided by the cost matrix
-        Q = b.abs(U) * a.reshape((-1, 1)) + eps
-        R = b.abs(V) * p.reshape((-1, 1)) + eps
+        U = b.abs(U)
+        V = b.abs(V)
+        Q = b.maximum(U, b.full(U.shape, eps)) * a.reshape((-1, 1))
+        R = b.maximum(V, b.full(V.shape, eps)) * p.reshape((-1, 1))
         g = b.ones((r,))
         b.eval(Q, R, g)
 
-        # Derive initial step size from cost scale:
-        # Use 1/(mean_cost) so that typical gradient step has magnitude ~1
-        cost_mean_arr = b.mean(cost)
-        b.eval(cost_mean_arr)
-        cost_mean = float(b.to_scalar(cost_mean_arr))
-        initial_step = 1.0 / max(cost_mean, eps) if cost_mean > eps else 1.0
+        monitor = ConvergenceMonitor(b, cost, max_iterations=max(2, n, m, r))
 
-        # Sinkhorn-like iterations incorporating the kernel
-        for it in range(max_iter):
+        for _ in range(monitor.max_iterations):
             g_safe = b.maximum(g, b.full(g.shape, eps))
             g_inv = 1.0 / g_safe
 
-            # Current coupling: P = Q @ diag(1/g) @ R^T
-            # We want to minimize <cost, P> while satisfying marginals
+            # Current marginals
+            R_sum = b.sum(R, axis=0)
+            row_margin = b.sum(Q * g_inv * R_sum, axis=1)
 
-            # Compute gradient of cost term w.r.t. Q and R
-            # d/dQ <cost, P> = cost @ R @ diag(1/g)
-            # d/dR <cost, P> = cost^T @ Q @ diag(1/g)
-            cost_grad_Q = b.matmul(cost, R) * g_inv  # [n, r]
-            cost_grad_R = b.matmul(b.transpose(cost), Q) * g_inv  # [m, r]
-            b.eval(cost_grad_Q, cost_grad_R)
+            Q_sum = b.sum(Q, axis=0)
+            col_margin = b.sum(R * g_inv * Q_sum, axis=1)
+            b.eval(row_margin, col_margin)
 
-            # Multiplicative update: move against gradient while maintaining positivity
-            # Q_new ∝ Q * exp(-step * grad)
-            # Decreasing step size: initial_step / (it + 1)
-            step = initial_step / (it + 1)
-            Q = Q * b.exp(-step * cost_grad_Q / (b.max(b.abs(cost_grad_Q)) + eps))
-            R = R * b.exp(-step * cost_grad_R / (b.max(b.abs(cost_grad_R)) + eps))
-            b.eval(Q, R)
+            # Scale Q to match row marginal
+            scale_Q = b.sqrt(a / (row_margin + eps))
+            Q = Q * scale_Q.reshape((-1, 1))
 
-            # Project onto marginal constraints using alternating scaling
-            for _ in range(3):
-                g_safe = b.maximum(g, b.full(g.shape, eps))
-                g_inv = 1.0 / g_safe
+            # Scale R to match column marginal
+            scale_R = b.sqrt(p / (col_margin + eps))
+            R = R * scale_R.reshape((-1, 1))
 
-                # Current marginals
-                R_sum = b.sum(R, axis=0)
-                row_margin = b.sum(Q * g_inv * R_sum, axis=1)
+            # Update g for balance
+            Q_sum = b.sum(Q, axis=0)
+            R_sum = b.sum(R, axis=0)
+            g = b.sqrt(Q_sum * R_sum + eps)
+            b.eval(Q, R, g)
 
-                Q_sum = b.sum(Q, axis=0)
-                col_margin = b.sum(R * g_inv * Q_sum, axis=1)
-                b.eval(row_margin, col_margin)
-
-                # Scale Q to match row marginal
-                scale_Q = b.sqrt(a / (row_margin + eps))
-                Q = Q * scale_Q.reshape((-1, 1))
-
-                # Scale R to match column marginal
-                scale_R = b.sqrt(p / (col_margin + eps))
-                R = R * scale_R.reshape((-1, 1))
-
-                # Update g for balance
-                Q_sum = b.sum(Q, axis=0)
-                R_sum = b.sum(R, axis=0)
-                g = b.sqrt(Q_sum * R_sum + eps)
-                b.eval(Q, R, g)
-
-            # Check convergence of marginals
-            g_safe = b.maximum(g, b.full(g.shape, eps))
-            row_margin = b.sum(Q * (1.0 / g_safe) * b.sum(R, axis=0), axis=1)
-            col_margin = b.sum(R * (1.0 / g_safe) * b.sum(Q, axis=0), axis=1)
             row_err_arr = b.max(b.abs(row_margin - a))
             col_err_arr = b.max(b.abs(col_margin - p))
             b.eval(row_err_arr, col_err_arr)
-
-            row_err = float(b.to_scalar(row_err_arr))
-            col_err = float(b.to_scalar(col_err_arr))
-
-            if row_err < threshold and col_err < threshold:
+            error = max(float(b.to_scalar(row_err_arr)), float(b.to_scalar(col_err_arr)))
+            state = monitor.check(error)
+            if monitor.should_stop(state):
                 break
 
         return Q, g, R
@@ -712,135 +555,36 @@ class LowRankGromovWasserstein:
         n = int(Q.shape[0])
         m = int(R.shape[0])
         eps = division_epsilon(b, g)
-
-        # For moderate sizes, compute exactly
-        max_exact = 2000
-        if n <= max_exact and m <= max_exact:
-            g_safe = b.maximum(g, b.full(g.shape, eps))
-            P = LowRankCoupling(Q, g_safe, R).to_dense(b)
-            b.eval(P)
-
-            # GW loss = trace(C1 @ P @ C2 @ P^T) - 2 * trace(C1 @ P @ C2^T @ P^T) + trace(C1 @ P^T @ P @ C2)
-            # Simplified: sum_{ijkl} C1[i,k]² P[i,j] P[k,l] + C2[j,l]² P[i,j] P[k,l] - 2 C1[i,k] C2[j,l] P[i,j] P[k,l]
-
-            # Term 1: trace(C1² @ P @ 1 @ 1^T @ P^T) = ||C1² @ P||_F² / n? No, simpler:
-            # sum_ij (sum_k C1[i,k]² P[k,:]) P[i,j] = P^T @ (C1² @ P @ 1)
-            # This gets complicated. Use direct computation for small matrices.
-
-            C1_P = b.matmul(C1, P)  # [n, m]
-            P_C2 = b.matmul(P, C2)  # [n, m]
-            b.eval(C1_P, P_C2)
-
-            # For squared loss GW:
-            # GW = sum_{ij} P[i,j] * (sum_k P[k,:] @ C1[i,k]² + sum_l C2[j,l]² P[:,l] - 2 C1 @ P @ C2^T)
-            # Simplified: trace(C1 @ P @ C2 @ P^T)... Let's use a more direct approach
-
-            # Direct: for each (i,j), compute contribution
-            # This is O(n²m²) but we limit to small matrices
-
-            # Use tensor product approach
-            # For GW with squared loss L(a,b) = (a-b)²:
-            # GW = sum_{ijkl} P[i,j] * P[k,l] * (C1[i,k] - C2[j,l])²
-            #    = sum_{ijkl} P[i,j] * P[k,l] * (C1[i,k]² + C2[j,l]² - 2*C1[i,k]*C2[j,l])
-            #
-            # Term 1: sum_{ijkl} P[i,j] P[k,l] C1[i,k]² = sum_{i,k} C1[i,k]² (sum_j P[i,j]) (sum_l P[k,l])
-            #       = sum_{i,k} C1[i,k]² * a[i] * a[k] (since marginals sum to a)
-            #       = <C1², a @ a^T> for uniform marginals
-            #
-            # Term 2: similar with C2
-            #
-            # Term 3: -2 * sum_{ijkl} P[i,j] P[k,l] C1[i,k] C2[j,l]
-            #       = -2 * trace(C1 @ P @ C2 @ P^T)
-
-            C1_sq = C1 * C1
-            C2_sq = C2 * C2
-
-            # For uniform marginals, term1 and term2 simplify
-            # Term 1: sum C1² * (1/n²) = mean(C1²)
-            # Term 2: sum C2² * (1/m²) = mean(C2²)
-            term1 = b.mean(C1_sq)
-            term2 = b.mean(C2_sq)
-
-            # Term 3: trace(C1 @ P @ C2 @ P^T) = sum_{ij} (C1 @ P)[i,j] * (C2 @ P^T)[j,i]
-            #       = sum_{ij} (C1 @ P)[i,j] * (P @ C2)[i,j]
-            C1_P = b.matmul(C1, P)  # [n, m]
-            P_C2 = b.matmul(P, C2)  # [n, m]
-            term3 = b.sum(C1_P * P_C2)
-
-            b.eval(term1, term2, term3)
-
-            # GW = term1 + term2 - 2 * term3
-            distance = term1 + term2 - 2.0 * term3
-            b.eval(distance)
-
-            return max(0.0, float(b.to_scalar(distance)))
-
-        # For larger matrices, use sampling
-        return self._compute_gw_distance_sampled(Q, g, R, C1, C2, n, m, b)
-
-    def _compute_gw_distance_sampled(
-        self,
-        Q: "Array",
-        g: "Array",
-        R: "Array",
-        C1: "Array",
-        C2: "Array",
-        n: int,
-        m: int,
-        backend: "Backend",
-    ) -> float:
-        """Compute approximate GW distance using sampling."""
-        b = backend
-        eps = division_epsilon(b, g)
-
-        sample_size = min(500, n, m)
-
-        if n > sample_size:
-            idx_n = list(range(0, n, n // sample_size))[:sample_size]
-        else:
-            idx_n = list(range(n))
-
-        if m > sample_size:
-            idx_m = list(range(0, m, m // sample_size))[:sample_size]
-        else:
-            idx_m = list(range(m))
-
-        idx_n_arr = b.array(idx_n)
-        idx_m_arr = b.array(idx_m)
-
-        Q_sub = b.take(Q, idx_n_arr, axis=0)
-        R_sub = b.take(R, idx_m_arr, axis=0)
-        C1_sub = b.take(b.take(C1, idx_n_arr, axis=0), idx_n_arr, axis=1)
-        C2_sub = b.take(b.take(C2, idx_m_arr, axis=0), idx_m_arr, axis=1)
-        b.eval(Q_sub, R_sub, C1_sub, C2_sub)
-
         g_safe = b.maximum(g, b.full(g.shape, eps))
-        P_sub = LowRankCoupling(Q_sub, g_safe, R_sub).to_dense(b)
-        b.eval(P_sub)
+        g_inv = 1.0 / g_safe
 
-        C1_sq = C1_sub * C1_sub
-        C2_sq = C2_sub * C2_sub
+        # Uniform marginals (derived from sizes).
+        a = b.ones((n,)) / n
+        p = b.ones((m,)) / m
 
-        f1_term = b.sum(b.matmul(C1_sq, P_sub), axis=1, keepdims=True)
-        f2_term = b.sum(b.matmul(b.transpose(P_sub), C2_sq), axis=1, keepdims=True)
-        const = f1_term + b.transpose(f2_term)
-        var = b.matmul(b.matmul(C1_sub, P_sub), b.transpose(C2_sub))
-        b.eval(const, var)
+        C1_sq = C1 * C1
+        C2_sq = C2 * C2
 
-        loss_mat = const - 2.0 * var
-        distance = b.sum(loss_mat * P_sub)
+        a_col = b.reshape(a, (-1, 1))
+        p_col = b.reshape(p, (-1, 1))
+        term1 = b.sum(C1_sq * (a_col * b.transpose(a_col)))
+        term2 = b.sum(C2_sq * (p_col * b.transpose(p_col)))
+
+        AQ = b.matmul(b.transpose(Q), b.matmul(C1, Q))
+        BR = b.matmul(b.transpose(R), b.matmul(C2, R))
+        g_outer = b.reshape(g_inv, (-1, 1)) * b.reshape(g_inv, (1, -1))
+        term3 = b.sum(AQ * BR * g_outer)
+        b.eval(term1, term2, term3)
+
+        distance = term1 + term2 - 2.0 * term3
         b.eval(distance)
-
-        # Scale by sampling ratio
-        scale = (n * m) / (len(idx_n) * len(idx_m))
-        return max(0.0, float(b.to_scalar(distance)) * scale)
+        return max(0.0, float(b.to_scalar(distance)))
 
 
 def compute_lowrank_gw(
     source_points: "Array",
     target_points: "Array",
     backend: "Backend | None" = None,
-    seed: int | None = 42,
 ) -> LowRankGWResult:
     """
     Compute low-rank Gromov-Wasserstein distance between point sets.
@@ -852,7 +596,6 @@ def compute_lowrank_gw(
         source_points: Source point matrix [n, d_s]
         target_points: Target point matrix [m, d_t]
         backend: Backend protocol implementation
-        seed: Random seed for reproducibility (None = no seeding)
 
     Returns:
         LowRankGWResult with factorized coupling and distance
@@ -873,14 +616,13 @@ def compute_lowrank_gw(
     b.eval(C1, C2)
 
     solver = LowRankGromovWasserstein(b)
-    return solver.compute(C1, C2, seed=seed)
+    return solver.compute(C1, C2)
 
 
 def project_via_lowrank_gw(
     source: "Array",
     target: "Array",
     backend: "Backend | None" = None,
-    seed: int | None = 42,
 ) -> tuple["Array", LowRankGWResult]:
     """
     Project source matrix to target shape using low-rank GW coupling.
@@ -893,7 +635,6 @@ def project_via_lowrank_gw(
         source: Source weight matrix [m_s, d_s]
         target: Target weight matrix [m_t, d_t]
         backend: Backend implementation
-        seed: Random seed for reproducibility (None = no seeding)
 
     Returns:
         Tuple of (projected matrix [m_t, d_t], GW result)
@@ -923,19 +664,9 @@ def project_via_lowrank_gw(
         G_target_col = b.matmul(b.transpose(target), target)  # [d_t, d_t]
         b.eval(G_source_col, G_target_col)
 
-        # If column dimension is small enough, use standard GW
-        if d_s <= 2000 and d_t <= 2000:
-            from modelcypher.core.domain.geometry.gromov_wasserstein import (
-                GromovWassersteinDistance,
-            )
-            gw = GromovWassersteinDistance(b)
-            col_result = gw.compute(G_source_col, G_target_col)
-            col_coupling = col_result.coupling
-        else:
-            # Use low-rank for large column dimensions too
-            lr_solver = LowRankGromovWasserstein(b)
-            col_result = lr_solver.compute(G_source_col, G_target_col, seed=seed)
-            col_coupling = col_result.coupling.to_dense(b)
+        lr_solver = LowRankGromovWasserstein(b)
+        col_result = lr_solver.compute(G_source_col, G_target_col)
+        col_coupling = col_result.coupling.to_dense(b)
 
         b.eval(col_coupling)
         projected = b.matmul(projected, col_coupling)
@@ -958,7 +689,7 @@ def project_via_lowrank_gw(
 
         # Use low-rank GW for row dimension
         lr_solver = LowRankGromovWasserstein(b)
-        row_result = lr_solver.compute(G_source_row, G_target_row, seed=seed)
+        row_result = lr_solver.compute(G_source_row, G_target_row)
 
         # Apply row coupling: P^T @ source
         projected = row_result.coupling.apply_left(projected, b)

@@ -80,7 +80,7 @@ class TestRiemannianTypes:
         result = DirectionalCoverage(
             sparse_direction=sparse_dir,
             max_gap_angle=0.5,
-            coverage_uniformity=0.8,
+            coverage_variance=0.8,
             neighbor_directions=neighbors,
             point_idx=1,
         )

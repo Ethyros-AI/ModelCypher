@@ -34,7 +34,10 @@ from modelcypher.core.domain.geometry.riemannian_types import (
     DirectionalCoverage,
     FarthestPointSamplingResult,
 )
-from modelcypher.core.domain.geometry.riemannian_validation import set_matrix_element
+from modelcypher.core.domain.geometry.riemannian_validation import (
+    derive_k_neighbors,
+    set_matrix_element,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -54,8 +57,6 @@ class RiemannianSamplingMixin:
         self,
         points: "Array",
         n_samples: int,
-        seed_idx: int = 0,
-        k_neighbors: int | None = None,
     ) -> FarthestPointSamplingResult:
         """
         Select points via geodesic farthest point sampling (maximin design).
@@ -77,8 +78,6 @@ class RiemannianSamplingMixin:
         Args:
             points: Point cloud [n, d]
             n_samples: Number of points to select
-            seed_idx: Starting point index (default: 0)
-            k_neighbors: k for geodesic graph (default: auto)
 
         Returns:
             FarthestPointSamplingResult with selected indices and coverage stats
@@ -97,12 +96,22 @@ class RiemannianSamplingMixin:
             )
 
         n_samples = max(1, min(n_samples, n))
-        seed_idx = max(0, min(seed_idx, n - 1))
-
         # Compute geodesic distances (cached)
-        geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
+        geo_result = self.geodesic_distances(points, k_neighbors=None)
         geo_dist = geo_result.distances
         backend.eval(geo_dist)
+
+        finite_mask = backend.isfinite(geo_dist)
+        finite_sum = backend.sum(
+            backend.where(finite_mask, geo_dist, backend.zeros_like(geo_dist)), axis=1
+        )
+        finite_count = backend.sum(backend.astype(finite_mask, "int32"), axis=1)
+        finite_count = backend.maximum(finite_count, backend.ones_like(finite_count))
+        mean_dist = finite_sum / finite_count
+        backend.eval(mean_dist)
+        seed_idx_arr = backend.argmax(mean_dist)
+        backend.eval(seed_idx_arr)
+        seed_idx = int(backend.to_scalar(seed_idx_arr))
 
         # Initialize: select seed
         selected = [seed_idx]
@@ -157,8 +166,6 @@ class RiemannianSamplingMixin:
         self,
         point_idx: int,
         points: "Array",
-        k: int = 10,
-        n_candidates: int = 100,
     ) -> DirectionalCoverage:
         """
         Analyze directional coverage in tangent space at a point.
@@ -178,9 +185,6 @@ class RiemannianSamplingMixin:
         Args:
             point_idx: Index of the center point
             points: Point cloud [n, d]
-            k: Number of neighbors to analyze
-            n_candidates: Number of random directions to test for gap finding
-
         Returns:
             DirectionalCoverage with sparse direction and metrics
         """
@@ -191,7 +195,7 @@ class RiemannianSamplingMixin:
         n = int(points.shape[0])
         d = int(points.shape[1])
         point_idx = max(0, min(point_idx, n - 1))
-        # k can be 0 when n=1 (single point has no neighbors)
+        k = derive_k_neighbors(points, backend)
         k = min(k, n - 1)
 
         # Early exit for isolated point (no neighbors possible)
@@ -205,7 +209,7 @@ class RiemannianSamplingMixin:
             return DirectionalCoverage(
                 sparse_direction=sparse_dir,
                 max_gap_angle=pi_value(backend),  # Full hemisphere is empty
-                coverage_uniformity=0.0,
+                coverage_variance=float("nan"),
                 neighbor_directions=backend.zeros((0, d)),
                 point_idx=point_idx,
             )
@@ -241,7 +245,7 @@ class RiemannianSamplingMixin:
             return DirectionalCoverage(
                 sparse_direction=sparse_dir,
                 max_gap_angle=pi_value(backend),  # Full hemisphere is empty
-                coverage_uniformity=0.0,
+                coverage_variance=float("nan"),
                 neighbor_directions=backend.zeros((0, d)),
                 point_idx=point_idx,
             )
@@ -260,12 +264,21 @@ class RiemannianSamplingMixin:
         tangent_dirs = tangent_vecs / norms_safe
         backend.eval(tangent_dirs)
 
-        # Find sparse direction by sampling candidates on the unit sphere.
-        # INTENTIONAL TANGENT: We're sampling directions in tangent space.
-        # The unit sphere here is the set of unit tangent vectors, not points
-        # on the data manifold.
-        backend.random_seed(42)  # Deterministic for reproducibility
-        candidates = backend.random_normal((n_candidates, d))
+        # Candidate directions derived from neighbor directions and tangent covariance.
+        cov = backend.matmul(backend.transpose(tangent_dirs), tangent_dirs) / float(k)
+        eigvals, eigvecs = backend.eigh(cov)
+        backend.eval(eigvecs)
+        eig_dirs = backend.transpose(eigvecs)
+
+        candidates = backend.concatenate(
+            [
+                tangent_dirs,
+                -tangent_dirs,
+                eig_dirs,
+                -eig_dirs,
+            ],
+            axis=0,
+        )
         cand_norms = backend.sqrt(
             backend.sum(candidates * candidates, axis=1, keepdims=True)
         )
@@ -301,19 +314,15 @@ class RiemannianSamplingMixin:
         clamped_sim = max(-1.0, min(1.0, min_max_sim))
         max_gap_angle = acos_scalar(clamped_sim, backend)
 
-        # Coverage uniformity: target is uniform distribution on sphere
-        # Measure as 1 - (variance of similarities)
-        # If all neighbors are in one direction, variance is high -> low uniformity
         sim_mean = backend.mean(max_sims)
         sim_var = backend.mean((max_sims - sim_mean) ** 2)
         backend.eval(sim_var)
-        # Normalize variance to [0, 1] range (max variance for similarities is ~1)
-        coverage_uniformity = max(0.0, 1.0 - float(backend.to_scalar(sim_var)))
+        coverage_variance = float(backend.to_scalar(sim_var))
 
         return DirectionalCoverage(
             sparse_direction=sparse_direction,
             max_gap_angle=max_gap_angle,
-            coverage_uniformity=coverage_uniformity,
+            coverage_variance=coverage_variance,
             neighbor_directions=tangent_dirs,
             point_idx=point_idx,
         )
@@ -322,28 +331,14 @@ class RiemannianSamplingMixin:
         self,
         point_idx: int,
         points: "Array",
-        step_size: float,
-        k: int = 10,
     ) -> "Array":
         """
-        Propose a new point by stepping in the sparsest tangent direction.
-
-        This implements tangent space exploration: identify the most
-        under-sampled direction at a point and propose a new point
-        in that direction via the exponential map.
-
-        For the discrete manifold, we use a first-order approximation:
-            x_new = x + step_size * sparse_direction
-
-        This is exact for flat manifolds and a first-order approximation for
-        small step sizes on curved manifolds.
+        Propose a new point by selecting the neighbor most aligned with
+        the sparsest tangent direction.
 
         Args:
             point_idx: Index of the base point
             points: Point cloud [n, d]
-            step_size: Distance to step in the sparse direction
-            k: Number of neighbors for directional analysis
-
         Returns:
             Proposed new point [d]
         """
@@ -355,14 +350,50 @@ class RiemannianSamplingMixin:
         point_idx = max(0, min(point_idx, n - 1))
 
         # Get directional coverage analysis
-        coverage = self.directional_coverage(point_idx, points, k=k)
+        coverage = self.directional_coverage(point_idx, points)
 
         # Base point
         base = points[point_idx]
 
-        # Exponential map approximation: x_new = x + step_size * v
-        # where v is the unit sparse direction
-        proposed = base + step_size * coverage.sparse_direction
+        k = derive_k_neighbors(points, backend)
+        k = min(k, n - 1)
+
+        if k == 0:
+            return base
+
+        # Choose existing neighbor most aligned with sparse direction.
+        geo_result = self.geodesic_distances(points, k_neighbors=k)
+        geo_dist = geo_result.distances
+        backend.eval(geo_dist)
+
+        row = backend.take(geo_dist, backend.array([point_idx]), axis=0)
+        row = backend.squeeze(row, axis=0)
+        inf = float("inf")
+        row_masked = backend.where(
+            backend.arange(0, n) == point_idx,
+            backend.full((n,), inf),
+            row,
+        )
+        kth = max(0, min(k - 1, n - 1))
+        partitioned = backend.argpartition(row_masked, kth)
+        neighbors = partitioned[:k]
+        neighbor_pts = backend.take(points, neighbors, axis=0)
+        tangent_vecs = neighbor_pts - backend.reshape(base, (1, -1))
+        norms = backend.sqrt(backend.sum(tangent_vecs * tangent_vecs, axis=1, keepdims=True))
+        eps = division_epsilon(backend, norms)
+        norms_safe = backend.maximum(norms, backend.full(norms.shape, eps))
+        tangent_dirs = tangent_vecs / norms_safe
+        backend.eval(tangent_dirs)
+
+        similarities = backend.matmul(
+            tangent_dirs, backend.reshape(coverage.sparse_direction, (-1, 1))
+        )
+        similarities = backend.squeeze(similarities, axis=1)
+        backend.eval(similarities)
+        aligned_idx_arr = backend.argmax(similarities)
+        backend.eval(aligned_idx_arr)
+        aligned_idx = int(backend.to_scalar(aligned_idx_arr))
+        proposed = neighbor_pts[aligned_idx]
 
         return proposed
 

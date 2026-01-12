@@ -27,6 +27,7 @@ from modelcypher.core.domain.geometry.low_rank_gw import (
     compute_lowrank_gw,
     project_via_lowrank_gw,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 @pytest.fixture
@@ -53,7 +54,8 @@ class TestLowRankCoupling:
 
         assert P.shape == (n, m)
         # All entries should be positive
-        assert float(b.tolist(b.min(P))) > -1e-8
+        eps = division_epsilon(b, P)
+        assert float(b.tolist(b.min(P))) > -eps
 
     def test_apply_left_shape(self, backend):
         """Test apply_left produces correct output shape."""
@@ -123,7 +125,8 @@ class TestLowRankGromovWasserstein:
         result = solver.compute(C, C)
 
         # Should detect identical matrices and return zero distance
-        assert result.distance < 5.0, f"Distance {result.distance} too high for identical matrices"
+        tol = division_epsilon(b, C)
+        assert result.distance <= tol, f"Distance {result.distance} too high for identical matrices"
 
     def test_different_sizes(self, backend):
         """Test low-rank GW handles different sized matrices."""
@@ -144,10 +147,10 @@ class TestLowRankGromovWasserstein:
         # Should produce valid result
         assert result.distance >= 0
         assert result.iterations > 0
-        # Rank is derived from sqrt(min(n, m)) clamped to [10, 500]
-        derived_rank = min(10, n, m)  # sqrt(20) ≈ 4.5, clamped to 10
-        assert result.coupling.Q.shape == (n, derived_rank)
-        assert result.coupling.R.shape == (m, derived_rank)
+        r = result.coupling.Q.shape[1]
+        assert 1 <= r <= min(n, m)
+        assert result.coupling.Q.shape == (n, r)
+        assert result.coupling.R.shape == (m, r)
 
     def test_coupling_marginals(self, backend):
         """Test that coupling approximately satisfies marginal constraints."""
@@ -180,9 +183,9 @@ class TestLowRankGromovWasserstein:
         expected_col = 1.0 / m
         col_error = float(b.tolist(b.max(b.abs(col_sums - expected_col))))
 
-        # Should be approximately correct (within tolerance)
-        assert row_error < 0.2, f"Row marginal error: {row_error}"
-        assert col_error < 0.2, f"Col marginal error: {col_error}"
+        tol = division_epsilon(b, P) * float(max(n, m))
+        assert row_error <= tol, f"Row marginal error: {row_error}"
+        assert col_error <= tol, f"Col marginal error: {col_error}"
 
     def test_large_dimension_tractable(self, backend):
         """Test that low-rank GW can handle dimensions that break standard GW."""
@@ -310,12 +313,14 @@ class TestMathematicalProperties:
         # All parameters derived from data
         solver = LowRankGromovWasserstein(b)
 
-        result_12 = solver.compute(C1, C2, seed=42)
-        result_21 = solver.compute(C2, C1, seed=42)
+        result_12 = solver.compute(C1, C2)
+        result_21 = solver.compute(C2, C1)
 
-        # Distances should be similar (not exact due to optimization)
-        ratio = result_12.distance / (result_21.distance + 1e-10)
-        assert 0.5 < ratio < 2.0, f"Asymmetry: {result_12.distance} vs {result_21.distance}"
+        # Distances should be similar (within precision)
+        eps = division_epsilon(b, C1)
+        diff = abs(result_12.distance - result_21.distance)
+        scale = max(result_12.distance, result_21.distance, 1.0)
+        assert diff <= eps * scale, f"Asymmetry: {result_12.distance} vs {result_21.distance}"
 
     def test_coupling_non_negative(self, backend):
         """Coupling entries should all be non-negative."""
@@ -338,10 +343,11 @@ class TestMathematicalProperties:
         b.eval(P)
 
         min_val = float(b.tolist(b.min(P)))
-        assert min_val >= -1e-8, f"Negative coupling entry: {min_val}"
+        eps = division_epsilon(b, P)
+        assert min_val >= -eps, f"Negative coupling entry: {min_val}"
 
     def test_convergence_consistent(self, backend):
-        """Algorithm should produce consistent results with same seed."""
+        """Algorithm should produce consistent results."""
         b = backend
 
         n, m = 35, 30
@@ -352,10 +358,11 @@ class TestMathematicalProperties:
         C2 = b.matmul(X2, b.transpose(X2))
         b.eval(C1, C2)
 
-        # All parameters derived from data, same seed for reproducibility
+        # All parameters derived from data
         solver = LowRankGromovWasserstein(b)
-        result_1 = solver.compute(C1, C2, seed=42)
-        result_2 = solver.compute(C1, C2, seed=42)
+        result_1 = solver.compute(C1, C2)
+        result_2 = solver.compute(C1, C2)
 
-        # Same seed should give same result
-        assert abs(result_1.distance - result_2.distance) < 1e-6
+        # Deterministic path should give same result
+        tol = division_epsilon(b, C1)
+        assert abs(result_1.distance - result_2.distance) <= tol
