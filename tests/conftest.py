@@ -26,6 +26,7 @@ from hypothesis import settings
 
 from modelcypher.ports.backend import Backend
 from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
+from modelcypher.core.domain._backend import get_default_backend
 
 # =============================================================================
 # Backend Availability Detection
@@ -125,8 +126,11 @@ settings.register_profile(
     deadline=None,
 )
 
-# Load the fast profile by default - override with HYPOTHESIS_PROFILE env var
-settings.load_profile("fast")
+# Load the requested profile (fast/ci/full). Default to fast for local speed.
+_profile = os.environ.get("HYPOTHESIS_PROFILE", "fast").strip().lower()
+if _profile not in {"fast", "ci", "full"}:
+    _profile = "fast"
+settings.load_profile(_profile)
 
 
 # =============================================================================
@@ -217,6 +221,44 @@ def _clear_cli_composition_cache():
             composition._get_factory.cache_clear()
     except ImportError:
         pass  # Module not loaded, nothing to clear
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_backend_after_test():
+    """Release backend resources between tests to prevent long-run crashes."""
+    yield
+    try:
+        from modelcypher.core.domain.cache import ComputationCache
+
+        ComputationCache.shared().clear_all()
+    except Exception:
+        pass
+    try:
+        backend = get_default_backend()
+    except Exception:
+        backend = None
+
+    if backend is not None:
+        try:
+            backend.clear_cache()
+        except Exception:
+            pass
+
+    if HAS_MLX:
+        try:
+            import mlx.core as mx
+
+            mx.eval(mx.zeros(1))
+            if hasattr(mx, "clear_cache"):
+                mx.clear_cache()
+            elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
+                mx.metal.clear_cache()
+        except Exception:
+            pass
+
+    import gc
+
+    gc.collect()
 
 
 def pytest_collection_modifyitems(config, items):

@@ -239,6 +239,9 @@ def _extract_top_k_dims(
         log2_dim = log2_scalar(float(dim + 1), b)
         k = max(1, int(ceil_scalar(log2_dim, b)))
 
+    # Clamp k to array dimension to avoid argpartition out-of-bounds
+    k = min(k, dim)
+
     # Derive threshold from dtype precision scaled by max magnitude (use backend ops)
     max_magnitude_arr = b.max(abs_vals)
     b.eval(max_magnitude_arr)
