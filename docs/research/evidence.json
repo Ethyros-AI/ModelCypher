@@ -1,0 +1,74 @@
+{
+  "_schema": "mc.geometry.research.evidence.v1",
+  "evidence": {
+    "alignment_generalization": {
+      "alignment_gain": 0.11573105018098861,
+      "coverage_ratio": 0.5249410713434663,
+      "holdout_cka": 0.9428425350849389,
+      "holdout_samples": 16,
+      "raw_holdout_cka": 0.8271114849039503,
+      "train_cka": 1.0,
+      "train_samples": 16
+    },
+    "causal_intervention": {
+      "boundary_max_relative_diff": 0.0,
+      "boundary_mean_relative_diff": 0.0,
+      "boundary_samples": 4,
+      "boundary_tolerance": 0.0003452669770922512,
+      "core_max_shift": 10.084113121032715,
+      "core_mean_shift": 5.124259948730469,
+      "core_residual_max": 12.882675170898438,
+      "core_residual_mean": 5.801424980163574,
+      "core_samples": 16,
+      "null_dim": 4,
+      "preserved_fraction": 0.9228170692582351,
+      "projection_loss": 0.07718293074176485
+    },
+    "curvature_convergence": {
+      "large": {
+        "analytic_curvature": 1.0,
+        "k_neighbors": 1,
+        "max_abs_error": 1.00000289240434,
+        "max_curvature": 1.0917117825779304e-05,
+        "mean_abs_error": 0.9999983711299774,
+        "mean_confidence": 0.749999896878432,
+        "mean_curvature": 1.628870022780203e-06,
+        "sample_count": 80
+      },
+      "max_abs_error_ratio": 1.0000023868946502,
+      "mean_abs_error_ratio": 0.9999992155675521,
+      "small": {
+        "analytic_curvature": 1.0,
+        "k_neighbors": 1,
+        "max_abs_error": 1.0000005055084833,
+        "max_curvature": 4.006866335157435e-06,
+        "mean_abs_error": 0.9999991555617629,
+        "mean_confidence": 0.6666666078180555,
+        "mean_curvature": 8.444382370691523e-07,
+        "sample_count": 48
+      }
+    },
+    "domain_alignment": null,
+    "geodesic_convergence": {
+      "large": {
+        "connected": true,
+        "k_neighbors": 2,
+        "max_abs_error": 0.0012676715850830078,
+        "mean_abs_error": 0.0006330672185868025,
+        "mean_relative_error": 0.0074759977869689465,
+        "sample_count": 64
+      },
+      "max_abs_error_ratio": 0.25121663123080556,
+      "mean_abs_error_ratio": 0.2508988841701988,
+      "mean_relative_error_ratio": 0.4909957511784816,
+      "small": {
+        "connected": true,
+        "k_neighbors": 2,
+        "max_abs_error": 0.00504612922668457,
+        "mean_abs_error": 0.002523196628317237,
+        "mean_relative_error": 0.015226196497678757,
+        "sample_count": 32
+      }
+    }
+  }
+}

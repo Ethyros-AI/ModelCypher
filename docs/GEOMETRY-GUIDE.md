@@ -96,6 +96,33 @@ They *cannot*:
 - replace eval suites, policy review, or red teaming,
 - guarantee causality ("metric went up, therefore X happened").
 
+## Evidence Suite (Reproducible Measurements)
+
+Use the evidence suite to generate raw measurements for alignment generalization,
+geodesic/curvature convergence, and causal intervention effects.
+
+```bash
+poetry run mc geometry research evidence \
+  --output-file docs/research/evidence.json
+
+poetry run mc geometry research evidence \
+  --model-a tests/fixtures/.models/HuggingFaceTB--SmolLM-135M \
+  --model-b tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16 \
+  --layer 0 \
+  --probe-count 24 \
+  --output-file docs/research/evidence_real_models.json
+```
+
+**Synthetic evidence (docs/research/evidence.json):**
+- Alignment generalization: train CKA=1.0, holdout CKA=0.9428425351, raw holdout CKA=0.8271114849, gain=0.1157310502, coverage=0.5249410713 (train=16, holdout=16).
+- Geodesic convergence (circle): mean abs error small=0.0025231966, large=0.0006330672, ratio=0.2508988842; mean rel error small=0.0152261965, large=0.0074759978, ratio=0.4909957512.
+- Curvature convergence (sphere, analytic curvature=1.0): mean abs error small=0.9999991556, large=0.9999983711, ratio=0.9999992156.
+- Causal intervention: core mean shift=5.1242599487, core residual mean=5.8014249802, boundary max diff=0.0, boundary tolerance=0.0003452670.
+
+**Real-model domain alignment (docs/research/evidence_real_models.json):**
+- Models: SmolLM-135M vs LFM2-350M (layerA=0, layerB=0, probes=24).
+- Domain `factual`: train CKA=1.0, holdout CKA=0.6864164951, raw holdout CKA=0.9581221736, gain=-0.2717056786, coverage=0.0019518083.
+
 ## Atlas Probe System
 
 The atlas system provides 4596 semantic concept probes organized by domain and source. These probes are used for alignment, bridge generation, and manifold analysis.

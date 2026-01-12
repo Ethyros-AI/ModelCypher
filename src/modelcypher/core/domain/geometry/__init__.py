@@ -134,6 +134,7 @@ _SUBMODULES = {
     "riemannian_utils",
     "safety_polytope",
     "shared_subspace_projector",
+    "shared_manifold",
     "social_geometry",
     "sparse_region_domains",
     "sparse_region_locator",

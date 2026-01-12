@@ -381,14 +381,9 @@ def run_merge(
         bool(source_activations),
     )
 
-    if source_intermediate_activations:
-        source_intermediate_activations.clear()
-        del source_intermediate_activations
-        source_intermediate_activations = None
-    if target_intermediate_activations:
-        target_intermediate_activations.clear()
-        del target_intermediate_activations
-        target_intermediate_activations = None
+    # NOTE: Keep intermediate activations - needed for down_proj null-space projection
+    # MLP down_proj weights have input dimension = intermediate_size, not hidden_size
+    # So we need intermediate activations to compute proper null-space boundaries
 
     # Clear attention activations (transforms from probe stage suffice)
     if source_attention_activations:
@@ -412,7 +407,12 @@ def run_merge(
     # Force garbage collection and clear MLX cache
     gc.collect()
     default_backend.clear_cache()
-    logger.info("Cleared attention activations - keeping hidden+intermediate for transplant")
+    logger.info(
+        "Cleared attention activations - kept hidden (%d layers) + intermediate (%d src, %d tgt) for transplant",
+        len(source_activations) if source_activations else 0,
+        len(source_intermediate_activations) if source_intermediate_activations else 0,
+        len(target_intermediate_activations) if target_intermediate_activations else 0,
+    )
 
     # PERMUTE STAGE REMOVED: GramAligner alignment subsumes permutation
     # subsumes discrete permutation alignment. Permutation matrices are a special

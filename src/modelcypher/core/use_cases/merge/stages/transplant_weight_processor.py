@@ -645,6 +645,17 @@ def process_layer_weights(
             activation_space = "intermediate"
 
             # First, get target intermediate activations (needed for null-space projection)
+            if target_intermediate_activations is None:
+                logger.warning(
+                    "INTERMEDIATE MISS: target_intermediate_activations is None for %s layer=%d",
+                    key, layer_idx
+                )
+            elif layer_idx not in target_intermediate_activations:
+                logger.warning(
+                    "INTERMEDIATE MISS: Layer %d not in target_intermediate_activations for %s (keys=%s)",
+                    layer_idx, key, list(target_intermediate_activations.keys())[:10]
+                )
+
             if (
                 target_intermediate_activations is not None
                 and layer_idx in target_intermediate_activations
