@@ -773,6 +773,7 @@ mc geometry density diff <source_model_dir> <target_model_dir>
 - `mc geometry training` - Training geometry monitoring
 - `mc geometry visualize` - Geometry visualization
 - `mc geometry interference` - Interference prediction
+- `mc geometry research evidence` - Evidence suite (alignment generalization, geodesic/curvature convergence, causal effects)
 
 Run `mc geometry <subcommand> --help` for detailed options.
 

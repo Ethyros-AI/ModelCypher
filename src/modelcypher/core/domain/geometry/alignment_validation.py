@@ -28,14 +28,13 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_linear_cka
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
-)
+from modelcypher.core.domain.geometry.atlas_protocols import enum_key
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.numerical_stability import invariant_alignment
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 
 
 @dataclass(frozen=True)
@@ -49,6 +48,15 @@ class AlignmentGeneralizationReport:
     raw_holdout_cka: float
     alignment_gain: float
     coverage_ratio: float
+
+
+@dataclass(frozen=True)
+class DomainAlignmentReport:
+    """Alignment generalization reports grouped by probe domain."""
+
+    domain_reports: dict[str, AlignmentGeneralizationReport]
+    domain_counts: dict[str, int]
+    skipped_domains: list[str]
 
 
 def _coverage_ratio(source: "Array", backend: "Backend") -> float:
@@ -125,3 +133,62 @@ def alignment_generalization_report(
         coverage_ratio=float(coverage_ratio),
     )
 
+
+def _even_odd_split(indices: list[int]) -> tuple[list[int], list[int]]:
+    """Deterministic split for domain-scoped alignment."""
+    train = indices[::2]
+    holdout = indices[1::2]
+    if len(train) < 2 or len(holdout) < 2:
+        raise ValueError("Need at least 2 samples in both train and holdout splits.")
+    return train, holdout
+
+
+def alignment_generalization_by_domain(
+    source: "Array",
+    target: "Array",
+    probes: list["AtlasProbeProtocol"],
+    backend: "Backend | None" = None,
+) -> DomainAlignmentReport:
+    """Compute alignment generalization per probe domain."""
+    backend = backend or get_default_backend()
+    if len(probes) == 0:
+        return DomainAlignmentReport(domain_reports={}, domain_counts={}, skipped_domains=[])
+
+    domain_indices: dict[str, list[int]] = {}
+    for idx, probe in enumerate(probes):
+        key = enum_key(getattr(probe, "domain", "unknown"))
+        domain_indices.setdefault(key, []).append(idx)
+
+    domain_reports: dict[str, AlignmentGeneralizationReport] = {}
+    domain_counts: dict[str, int] = {}
+    skipped: list[str] = []
+
+    for domain, indices in domain_indices.items():
+        domain_counts[domain] = len(indices)
+        try:
+            train_idx, holdout_idx = _even_odd_split(indices)
+        except ValueError:
+            skipped.append(domain)
+            continue
+
+        domain_reports[domain] = alignment_generalization_report(
+            source=source,
+            target=target,
+            train_indices=train_idx,
+            holdout_indices=holdout_idx,
+            backend=backend,
+        )
+
+    return DomainAlignmentReport(
+        domain_reports=domain_reports,
+        domain_counts=domain_counts,
+        skipped_domains=skipped,
+    )
+
+
+__all__ = [
+    "AlignmentGeneralizationReport",
+    "DomainAlignmentReport",
+    "alignment_generalization_by_domain",
+    "alignment_generalization_report",
+]

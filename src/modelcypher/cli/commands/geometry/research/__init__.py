@@ -25,6 +25,7 @@ from . import (
     curvature_cmds,
     density_cmds,
     diff_cmds,
+    evidence_cmds,
     eval_cmds,
     graft_cmds,
     profile_cmds,
@@ -38,6 +39,7 @@ def _register() -> None:
     curvature_cmds.register(app)
     density_cmds.register(app)
     diff_cmds.register(app)
+    evidence_cmds.register(app)
     graft_cmds.register(app)
     profile_cmds.register(app)
     eval_cmds.register(app)

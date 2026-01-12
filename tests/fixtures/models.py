@@ -110,12 +110,9 @@ def load_model_and_tokenizer(model_path: Path):
         Tuple of (model, tokenizer)
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-    from modelcypher.core.use_cases.merge.helpers import load_tokenizer
 
     loader = MLXModelLoader()
-    model = loader.load_model(str(model_path))
-    tokenizer = load_tokenizer(str(model_path), loader)
-
+    model, tokenizer = loader.load_model_for_training(str(model_path))
     return model, tokenizer
 
 
@@ -138,20 +135,18 @@ def collect_real_activations(
     Returns:
         Dict mapping layer index -> activation matrix [n_probes, hidden_dim]
     """
-    from modelcypher.adapters.mlx_inference import MLXInferenceProvider
+    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-    from modelcypher.core.use_cases.merge.helpers import load_tokenizer
 
     # Load model and tokenizer
     loader = MLXModelLoader()
-    model = loader.load_model(str(model_path))
-    tokenizer = load_tokenizer(str(model_path), loader)
+    model, tokenizer = loader.load_model_for_training(str(model_path))
 
     if tokenizer is None:
         raise ValueError(f"Failed to load tokenizer for {model_path}")
 
-    # Create inference provider
-    provider = MLXInferenceProvider()
+    # Create activation provider
+    provider = MLXActivationProvider()
 
     # Collect activations for each probe
     activations_by_layer: dict[int, list] = {}
@@ -160,21 +155,21 @@ def collect_real_activations(
         # Tokenize
         input_ids = tokenizer.encode(probe, add_special_tokens=True)
 
-        # Run inference and collect hidden states
-        hidden_states = provider.get_hidden_states(model, input_ids)
-
-        # hidden_states is list of [seq_len, hidden_dim] per layer
-        for layer_idx, layer_hidden in enumerate(hidden_states):
+        # Collect pooled activations per layer
+        activations = provider.collect_hidden_activations(
+            model, tokenizer, probe, token_ids=input_ids
+        )
+        for layer_idx, layer_hidden in activations.items():
             if layer_indices is not None and layer_idx not in layer_indices:
                 continue
 
-            # Take last token's hidden state as representative
-            last_token = layer_hidden[-1:]  # [1, hidden_dim]
-            last_token_arr = backend.array(last_token)
+            vec = backend.array(layer_hidden)
+            if len(vec.shape) == 1:
+                vec = backend.reshape(vec, (1, -1))
 
             if layer_idx not in activations_by_layer:
                 activations_by_layer[layer_idx] = []
-            activations_by_layer[layer_idx].append(last_token_arr)
+            activations_by_layer[layer_idx].append(vec)
 
     # Stack activations per layer
     result = {}

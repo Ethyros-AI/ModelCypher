@@ -638,27 +638,41 @@ def process_layer_weights(
         tgt_density_acts = None
         activation_space = "hidden"
 
+        # For cross-architecture, use layer_mapping to find the correct source layer
+        mapped_src_layer = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
+
         if weight_in_dim == tgt_inter_dim and tgt_inter_dim > 0:
             activation_space = "intermediate"
+
+            # First, get target intermediate activations (needed for null-space projection)
             if (
-                source_intermediate_activations is not None
-                and target_intermediate_activations is not None
-                and layer_idx in source_intermediate_activations
+                target_intermediate_activations is not None
                 and layer_idx in target_intermediate_activations
             ):
-                src_inter = source_intermediate_activations[layer_idx]
                 tgt_inter = target_intermediate_activations[layer_idx]
-                if src_inter is not None and tgt_inter is not None:
+                if tgt_inter is not None:
                     if hasattr(tgt_inter, "shape") and len(b.shape(tgt_inter)) == 2:
                         input_activations = _promote_precision(b.array(tgt_inter), b)
                     elif hasattr(tgt_inter, "__len__") and len(tgt_inter) > 0:
                         input_activations = b.stack([b.array(a) for a in tgt_inter], axis=0)
+                    tgt_density_acts = input_activations
 
+            # Then, get source intermediate activations for density comparison (optional)
+            if (
+                input_activations is not None
+                and source_intermediate_activations is not None
+                and mapped_src_layer in source_intermediate_activations
+            ):
+                src_inter = source_intermediate_activations[mapped_src_layer]
+                if src_inter is not None:
                     if hasattr(src_inter, "shape") and len(b.shape(src_inter)) == 2:
                         src_density_acts = _promote_precision(b.array(src_inter), b)
                     elif hasattr(src_inter, "__len__") and len(src_inter) > 0:
                         src_density_acts = b.stack([b.array(a) for a in src_inter], axis=0)
-                    tgt_density_acts = input_activations
+                    logger.debug(
+                        "INTERMEDIATE: Layer %d using mapped source layer %d for density",
+                        layer_idx, mapped_src_layer
+                    )
 
         if input_activations is None:
             activation_space = "hidden"
@@ -669,15 +683,20 @@ def process_layer_weights(
                         input_activations = _promote_precision(b.array(tgt_hidden), b)
                     elif hasattr(tgt_hidden, "__len__") and len(tgt_hidden) > 0:
                         input_activations = b.stack([b.array(a) for a in tgt_hidden], axis=0)
+                    tgt_density_acts = input_activations
 
-                    if source_activations is not None and layer_idx in source_activations:
-                        src_hidden = source_activations[layer_idx]
+                    # Use mapped source layer for density comparison
+                    if source_activations is not None and mapped_src_layer in source_activations:
+                        src_hidden = source_activations[mapped_src_layer]
                         if src_hidden is not None:
                             if hasattr(src_hidden, "shape") and len(b.shape(src_hidden)) == 2:
                                 src_density_acts = _promote_precision(b.array(src_hidden), b)
                             elif hasattr(src_hidden, "__len__") and len(src_hidden) > 0:
                                 src_density_acts = b.stack([b.array(a) for a in src_hidden], axis=0)
-                    tgt_density_acts = input_activations
+                            logger.debug(
+                                "HIDDEN: Layer %d using mapped source layer %d for density",
+                                layer_idx, mapped_src_layer
+                            )
 
         if input_activations is None:
             logger.warning(
@@ -697,6 +716,30 @@ def process_layer_weights(
             b.eval(src_density_acts)
         if tgt_density_acts is not None:
             b.eval(tgt_density_acts)
+
+        # Verify activation dimension matches weight input dimension
+        # This should NOT trigger after the fix - if it does, something else is wrong
+        input_act_dim = int(b.shape(input_activations)[1])
+        if input_act_dim != weight_in_dim:
+            logger.error(
+                "TRANSPLANT BUG: Activation dimension mismatch for %s: got %d, expected %d "
+                "(space=%s, layer=%d, mapped_src=%d). Falling back to direct stitch.",
+                key, input_act_dim, weight_in_dim, activation_space, layer_idx, mapped_src_layer
+            )
+            merged[key] = source_aligned
+            metrics.setdefault("activation_dim_mismatch", 0)
+            metrics["activation_dim_mismatch"] += 1
+            metrics["weights_transplanted"] += 1
+            continue
+
+        # Debug logging for shape verification
+        input_shape = b.shape(input_activations)
+        src_density_shape = b.shape(src_density_acts) if src_density_acts is not None else None
+        tgt_density_shape = b.shape(tgt_density_acts) if tgt_density_acts is not None else None
+        logger.debug(
+            "TRANSPLANT SHAPES: %s - input=%s, src_density=%s, tgt_density=%s (space=%s)",
+            key, input_shape, src_density_shape, tgt_density_shape, activation_space
+        )
 
         logger.debug(
             "TRANSPLANT: %s using %s activations [%d samples] for null-space",

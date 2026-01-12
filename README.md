@@ -51,12 +51,27 @@ poetry run python experiments/geometry_validation.py
 HYPOTHESIS_PROFILE=full poetry run pytest
 ```
 
-## Limitations
+## Evidence Suite
 
-- Alignment CKA = 1.0 is by construction on the probe set; generalization depends on probe diversity and coverage.
-- Geodesic distances and curvature are approximations based on k-NN graphs and sampling; they are not global proofs of manifold structure.
-- Results are model- and data-dependent; different architectures or domains require fresh measurements.
-- Geometry here is descriptive and structural, not a complete causal explanation of behavior.
+Run the evidence suite to quantify generalization, approximation error, cross-model/domain variation, and causal intervention effects.
+
+```bash
+# Synthetic evidence (alignment generalization, geodesic/curvature convergence, causal shift)
+poetry run mc geometry research evidence
+
+# Add domain alignment across two models
+poetry run mc geometry research evidence \
+  --model-a /path/to/model-a \
+  --model-b /path/to/model-b \
+  --layer 0 \
+  --probe-count 24
+```
+
+Evidence outputs (raw measurements):
+- Alignment generalization: train/holdout CKA + probe coverage ratio.
+- Geodesic + curvature convergence on analytic manifolds (circle/sphere) with error ratios.
+- Domain alignment metrics per probe domain (optional when model paths are provided).
+- Causal intervention: boundary preservation diffs + core shift residuals.
 
 ## Core Capabilities
 
