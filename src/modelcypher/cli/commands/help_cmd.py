@@ -34,6 +34,63 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+@app.command("command")
+def help_command(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Command name (e.g., 'merge', 'model', 'infer')"),
+) -> None:
+    """Show help for a specific CLI command.
+
+    This provides a convenient way to get help for any top-level command.
+
+    Examples:
+        mc help command merge
+        mc help command model
+        mc help command geometry
+    """
+    import shutil
+    import subprocess
+    import sys
+
+    context = _context(ctx)
+
+    # Find the mc executable
+    mc_path = shutil.which("mc")
+    if mc_path is None:
+        # Fallback: try to run mc directly (it might be available as an entry point)
+        mc_path = "mc"
+
+    # Run mc <name> --help
+    result = subprocess.run(
+        [mc_path, name, "--help"],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode == 0:
+        sys.stdout.write(result.stdout)
+    else:
+        # Check if it's a "command not found" error
+        stderr = result.stderr
+        if "No such command" in stderr:
+            error = ErrorDetail(
+                code="MC-1050",
+                title="Command not found",
+                detail=f"No such command: {name}",
+                hint="Run 'mc --help' to see available commands.",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+        else:
+            # Some other error - could be valid help output on stderr
+            if result.stdout:
+                sys.stdout.write(result.stdout)
+            if stderr:
+                sys.stderr.write(stderr)
+            raise typer.Exit(code=result.returncode)
+
+
 @app.command("ask")
 def help_ask(
     ctx: typer.Context,

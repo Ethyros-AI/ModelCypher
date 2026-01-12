@@ -84,7 +84,13 @@ class MLXModelProbe(BaseModelProbe):
 
     def probe(self, model_path: str) -> ModelProbeResult:
         """Probe model for architecture details using MLX."""
-        path = Path(model_path).expanduser().resolve()
+        # Normalize backslashes for cross-platform compatibility
+        import re
+        normalized = model_path.replace("\\", "/")
+        # Handle Windows drive letters (e.g., "C:/...") - prefix with / on Unix
+        if re.match(r"^[A-Za-z]:/", normalized):
+            normalized = "/" + normalized
+        path = Path(normalized).expanduser().resolve()
         if not path.exists():
             raise ValueError(f"Model path does not exist: {path}")
         if not path.is_dir():
@@ -156,8 +162,17 @@ class MLXModelProbe(BaseModelProbe):
 
     def analyze_alignment(self, model_a: str, model_b: str) -> AlignmentAnalysisResult:
         """Analyze alignment drift between two models."""
-        path_a = Path(model_a).expanduser().resolve()
-        path_b = Path(model_b).expanduser().resolve()
+        # Normalize backslashes for cross-platform compatibility
+        import re
+        norm_a = model_a.replace("\\", "/")
+        norm_b = model_b.replace("\\", "/")
+        # Handle Windows drive letters (e.g., "C:/...") - prefix with / on Unix
+        if re.match(r"^[A-Za-z]:/", norm_a):
+            norm_a = "/" + norm_a
+        if re.match(r"^[A-Za-z]:/", norm_b):
+            norm_b = "/" + norm_b
+        path_a = Path(norm_a).expanduser().resolve()
+        path_b = Path(norm_b).expanduser().resolve()
 
         weights_a = self._load_weight_tensors(path_a)
         weights_b = self._load_weight_tensors(path_b)

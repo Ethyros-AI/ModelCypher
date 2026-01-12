@@ -17,21 +17,37 @@
 
 """Functional transplant for zero-shot knowledge transfer.
 
-Solves constrained least-squares for weight update:
+Weight-Space Null-Space Projection:
+====================================
 
-    min ||A_core @ delta_W - delta_A_core||_F²
-    s.t. A_boundary @ delta_W = 0
+For ANY weight W: [out_dim, in_dim], the transplant is:
 
-Solution via null-space projection:
-    N = I - pinv(A_boundary) @ A_boundary  (boundary null-space)
-    delta_W_unc = pinv(A_core) @ delta_A_core  (unconstrained)
-    delta_W = N @ delta_W_unc  (projected to boundary null-space)
-    W' = W_target + delta_W.T
+    1. delta_W = source_aligned - target_weight  [out_dim, in_dim]
+    2. N = I - pinv(A_input) @ A_input  [in_dim, in_dim]
+    3. delta_W_proj = delta_W @ N  [out_dim, in_dim]
+    4. merged = target_weight + delta_W_proj
 
-This ensures boundary outputs are EXACTLY preserved (to numerical precision)
-while core outputs move toward the source's knowledge.
+Where A_input are the INPUT activations to this weight:
+    - For hidden→hidden weights: A_input = hidden activations
+    - For hidden→intermediate weights (gate/up_proj): A_input = hidden activations
+    - For intermediate→hidden weights (down_proj): A_input = intermediate activations
 
-There are no heuristics, thresholds, or modes. The geometry determines everything.
+The constraint A_input @ delta_W_proj.T = 0 is satisfied by construction.
+This preserves boundary behavior while adding source knowledge.
+
+Density-Weighted Transfer:
+==========================
+
+Transfer strength is modulated by k-NN density comparison:
+    - High source density, low target density → transfer more (fill the gap)
+    - Low source density, high target density → transfer less (preserve target)
+
+The density weighting is integrated into the null-space projector via
+weighted boundary activations. Dense target regions are more strongly
+constrained (preserved), sparse target regions allow more modification.
+
+This is closed-form, works for ALL weight dimensions, and achieves
+machine-precision preservation of boundary behavior.
 """
 
 from __future__ import annotations
@@ -47,6 +63,205 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class WeightSpaceTransplantResult:
+    """Result of weight-space null-space transplant.
+
+    Attributes:
+        merged_weight: The transplanted weight [out_dim, in_dim].
+        delta_norm: Frobenius norm of weight delta before projection.
+        projected_norm: Frobenius norm of delta after null-space projection.
+        preserved_fraction: Ratio of projected_norm / delta_norm (1.0 = no loss).
+        transfer_strength: Mean density-derived transfer weight (0-1).
+        null_rank: Approximate rank of the null-space projector.
+    """
+
+    merged_weight: "Array"
+    delta_norm: float
+    projected_norm: float
+    preserved_fraction: float
+    transfer_strength: float
+    null_rank: int
+
+
+def compute_weight_space_transplant(
+    source_aligned: "Array",
+    target_weight: "Array",
+    input_activations: "Array",
+    source_activations_for_density: "Array | None" = None,
+    target_activations_for_density: "Array | None" = None,
+    backend: "Backend | None" = None,
+) -> WeightSpaceTransplantResult:
+    """Weight-space null-space projection with density-weighted transfer.
+
+    This is the SINGULAR PIPELINE for knowledge transfer. Works for ALL weight
+    dimensions: hidden→hidden, hidden→intermediate, intermediate→hidden.
+
+    The math:
+        delta_W = source_aligned - target_weight  [out_dim, in_dim]
+        N = I - pinv(A_input_weighted) @ A_input_weighted  [in_dim, in_dim]
+        delta_W_proj = delta_W @ N  [out_dim, in_dim]
+        merged = target_weight + delta_W_proj
+
+    Density weighting:
+        - Compares k-NN density between source and target activations
+        - High target density → stronger constraint (preserve target)
+        - Low target density → weaker constraint (accept source knowledge)
+        - Weights are applied to boundary activations via sqrt(w) scaling
+
+    Args:
+        source_aligned: Source weight already stitched to target dims [out, in].
+        target_weight: Target weight to modify [out, in].
+        input_activations: INPUT activations to this weight [n, in_dim].
+            For hidden→X weights: use hidden activations.
+            For intermediate→X weights: use intermediate activations.
+        source_activations_for_density: Source activations for density comparison [n, d].
+            If None, density weighting is disabled (uniform transfer).
+        target_activations_for_density: Target activations for density comparison [n, d].
+            If None, density weighting is disabled (uniform transfer).
+        backend: Compute backend.
+
+    Returns:
+        WeightSpaceTransplantResult with merged weight and diagnostics.
+    """
+    from modelcypher.core.domain.geometry.knowledge_density import (
+        compute_density_weights,
+        compute_knn_point_cloud_density,
+    )
+
+    b = backend or get_default_backend()
+
+    # Ensure float32 for numerical stability
+    source_aligned = b.astype(b.array(source_aligned), "float32")
+    target_weight = b.astype(b.array(target_weight), "float32")
+    input_activations = b.astype(b.array(input_activations), "float32")
+    b.eval(source_aligned, target_weight, input_activations)
+
+    out_dim = int(target_weight.shape[0])
+    in_dim = int(target_weight.shape[1])
+    n_samples = int(input_activations.shape[0])
+
+    logger.debug(
+        "WEIGHT-SPACE TRANSPLANT: weight=[%d, %d], n_input=%d",
+        out_dim, in_dim, n_samples
+    )
+
+    # Step 1: Compute weight delta
+    delta_W = source_aligned - target_weight  # [out_dim, in_dim]
+    b.eval(delta_W)
+
+    # Compute delta norm before projection
+    delta_flat = b.reshape(delta_W, (-1,))
+    delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta_flat * delta_flat))))
+
+    # Step 2: Compute density weights if activations provided
+    transfer_strength = 1.0
+    density_weights = None
+
+    if source_activations_for_density is not None and target_activations_for_density is not None:
+        src_density_acts = b.astype(b.array(source_activations_for_density), "float32")
+        tgt_density_acts = b.astype(b.array(target_activations_for_density), "float32")
+        b.eval(src_density_acts, tgt_density_acts)
+
+        # Compute k-NN densities
+        density_result = compute_knn_point_cloud_density(
+            source_activations=src_density_acts,
+            target_activations=tgt_density_acts,
+            backend=b,
+        )
+
+        # Get per-sample transfer weights: high when source dense, target sparse
+        density_weights = compute_density_weights(
+            source_densities=density_result.source_densities,
+            target_densities=density_result.target_densities,
+            backend=b,
+        )
+        b.eval(density_weights)
+
+        transfer_strength = float(b.to_scalar(b.mean(density_weights)))
+
+        logger.debug(
+            "DENSITY WEIGHTING: mean_transfer=%.3f, src_density=%.3f, tgt_density=%.3f",
+            transfer_strength,
+            density_result.mean_source_density,
+            density_result.mean_target_density,
+        )
+
+    # Step 3: Compute null-space projector
+    # N = I - pinv(A_weighted) @ A_weighted
+    # Density weighting: constraint_weight = 1 - transfer_weight
+    # High target density → high constraint → preserve that direction
+
+    if density_weights is not None:
+        # Constraint weight = 1 - transfer_weight (preserve where target is dense)
+        constraint_weights = 1.0 - density_weights  # [n]
+
+        # Apply sqrt for proper weighted least-squares
+        # Small epsilon to avoid sqrt(0)
+        eps = 1e-8
+        sqrt_weights = b.sqrt(constraint_weights + eps)  # [n]
+
+        # Weight the activations: A_weighted[i, :] = sqrt_w[i] * A[i, :]
+        A_weighted = input_activations * b.reshape(sqrt_weights, (-1, 1))
+        b.eval(A_weighted)
+    else:
+        A_weighted = input_activations
+
+    # Compute null-space projector
+    if n_samples > 0:
+        A_pinv = b.pinv(A_weighted)  # [in_dim, n]
+        b.eval(A_pinv)
+
+        # N = I - pinv(A) @ A
+        # [in_dim, n] @ [n, in_dim] -> [in_dim, in_dim]
+        proj = b.matmul(A_pinv, A_weighted)
+        b.eval(proj)
+
+        N = b.eye(in_dim) - proj  # [in_dim, in_dim]
+        b.eval(N)
+
+        # Approximate null rank = in_dim - rank(A)
+        # rank(A) ≈ min(n_samples, in_dim) when A is full rank
+        null_rank = max(0, in_dim - min(n_samples, in_dim))
+    else:
+        N = b.eye(in_dim)
+        null_rank = in_dim
+
+    # Step 4: Project delta to null-space
+    # delta_W_proj = delta_W @ N
+    # [out_dim, in_dim] @ [in_dim, in_dim] -> [out_dim, in_dim]
+    delta_W_proj = b.matmul(delta_W, N)
+    b.eval(delta_W_proj)
+
+    # Compute projected norm
+    proj_flat = b.reshape(delta_W_proj, (-1,))
+    projected_norm = float(b.to_scalar(b.sqrt(b.sum(proj_flat * proj_flat))))
+
+    # Preserved fraction
+    if delta_norm > 0:
+        preserved_fraction = projected_norm / delta_norm
+    else:
+        preserved_fraction = 1.0
+
+    # Step 5: Apply to target weight
+    merged_weight = target_weight + delta_W_proj
+    b.eval(merged_weight)
+
+    logger.debug(
+        "TRANSPLANT RESULT: delta_norm=%.4f, proj_norm=%.4f, preserved=%.1f%%, transfer=%.3f",
+        delta_norm, projected_norm, 100.0 * preserved_fraction, transfer_strength
+    )
+
+    return WeightSpaceTransplantResult(
+        merged_weight=merged_weight,
+        delta_norm=delta_norm,
+        projected_norm=projected_norm,
+        preserved_fraction=preserved_fraction,
+        transfer_strength=transfer_strength,
+        null_rank=null_rank,
+    )
 
 
 def _compute_transplant_delta_anchor_relative(

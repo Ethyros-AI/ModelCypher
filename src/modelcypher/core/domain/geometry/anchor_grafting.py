@@ -314,9 +314,25 @@ def compute_anchor_grafting_with_ghost_anchors(
     residual_norms = geodesic_norms(residual_vectors, b)
     b.eval(residual_norms)
 
-    # Threshold: sqrt(machine_epsilon) - derived from dtype, not arbitrary
-    eps = float(machine_epsilon(b, source_activations))
-    residual_threshold = sqrt_scalar(eps, b)
+    # Threshold: Use STATISTICAL threshold, not machine epsilon
+    # Machine epsilon is for numerical precision, not semantic novelty
+    # Use median + 3*MAD (robust outlier detection) for true novelty
+    residual_list = b.tolist(residual_norms)
+    sorted_residuals = sorted(residual_list)
+    median_residual = sorted_residuals[len(sorted_residuals) // 2]
+
+    # MAD = median absolute deviation from median
+    abs_deviations = [abs(r - median_residual) for r in residual_list]
+    sorted_deviations = sorted(abs_deviations)
+    mad = sorted_deviations[len(sorted_deviations) // 2]
+
+    # Robust threshold: median + 3*MAD (standard outlier detection)
+    # Scale MAD by 1.4826 to estimate std for normal distribution
+    residual_threshold = median_residual + 3.0 * 1.4826 * mad
+
+    # Minimum threshold: don't go below 1% of median to avoid numerical noise
+    min_threshold = max(median_residual * 0.01, 1e-6)
+    residual_threshold = max(residual_threshold, min_threshold)
 
     # Step 3: Identify novel samples using vectorized comparison
     novel_mask_arr = residual_norms > residual_threshold
@@ -324,12 +340,21 @@ def compute_anchor_grafting_with_ghost_anchors(
     b.eval(n_novel_arr)
     n_novel = int(b.to_scalar(n_novel_arr))
 
-    logger.info(
-        "GHOST ANCHORS: %d/%d samples have residual > %.2e (novel concepts)",
-        n_novel,
-        n_samples,
-        residual_threshold,
-    )
+    # If >50% would be "novel", this indicates alignment mismatch, not true novelty
+    # Skip Ghost Anchors entirely - the aligned positions are good enough
+    novelty_ratio = n_novel / n_samples
+    if novelty_ratio > 0.5:
+        logger.info(
+            "GHOST ANCHORS: Skipping - %.1f%% samples exceed threshold (alignment mismatch, not novelty). "
+            "median_residual=%.4f, threshold=%.4f",
+            100.0 * novelty_ratio, median_residual, residual_threshold,
+        )
+        n_novel = 0  # Skip Ghost Anchor synthesis
+    else:
+        logger.info(
+            "GHOST ANCHORS: %d/%d samples (%.1f%%) have residual > %.4f (novel concepts)",
+            n_novel, n_samples, 100.0 * novelty_ratio, residual_threshold,
+        )
 
     # Step 4: For novel samples, synthesize Ghost Anchors
     if n_novel > 0:

@@ -57,7 +57,13 @@ class SafeTensorsModelProbe:
 
     def probe(self, model_path: str) -> ModelProbeResult:
         """Probe model for architecture details using safetensors metadata."""
-        path = Path(model_path).expanduser().resolve()
+        # Normalize backslashes for cross-platform compatibility
+        import re
+        normalized = model_path.replace("\\", "/")
+        # Handle Windows drive letters (e.g., "C:/...") - prefix with / on Unix
+        if re.match(r"^[A-Za-z]:/", normalized):
+            normalized = "/" + normalized
+        path = Path(normalized).expanduser().resolve()
         if not path.exists():
             raise ValueError(f"Model path does not exist: {path}")
         if not path.is_dir():
@@ -138,8 +144,17 @@ class SafeTensorsModelProbe:
         This implementation does not load tensors, so it cannot compute numeric drift.
         It reports layer set overlap + shape comparability; drift values are None.
         """
-        path_a = Path(model_a).expanduser().resolve()
-        path_b = Path(model_b).expanduser().resolve()
+        # Normalize backslashes for cross-platform compatibility
+        import re
+        norm_a = model_a.replace("\\", "/")
+        norm_b = model_b.replace("\\", "/")
+        # Handle Windows drive letters (e.g., "C:/...") - prefix with / on Unix
+        if re.match(r"^[A-Za-z]:/", norm_a):
+            norm_a = "/" + norm_a
+        if re.match(r"^[A-Za-z]:/", norm_b):
+            norm_b = "/" + norm_b
+        path_a = Path(norm_a).expanduser().resolve()
+        path_b = Path(norm_b).expanduser().resolve()
         if not path_a.exists() or not path_a.is_dir():
             raise ValueError(f"Model path does not exist: {path_a}")
         if not path_b.exists() or not path_b.is_dir():

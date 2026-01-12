@@ -580,3 +580,104 @@ class GramAligner:
         stitch = b.transpose(stitch_t)  # [target_proj_dim, source_proj_dim]
         b.eval(stitch)
         return stitch
+
+    def find_alignment_anchor_space(
+        self,
+        source_activations: "Array",
+        target_activations: "Array",
+        source_anchors: "Array",
+        target_anchors: "Array",
+    ) -> AlignmentResult:
+        """Find alignment in anchor-relative space (always well-posed).
+
+        THE ELEGANT SOLUTION FOR UNDERDETERMINED ALIGNMENT:
+        ====================================================
+        When n_probes < d_hidden, standard alignment is underdetermined.
+        Anchor-space alignment works in k dimensions (k = n_anchors),
+        which is overdetermined when n_probes > k.
+
+        Example:
+        - n_probes = 2048, d_hidden = 11008 → UNDERDETERMINED (n < d)
+        - n_probes = 2048, k_anchors = 45 → OVERDETERMINED (n > k)
+
+        The anchor-relative representation captures semantic structure
+        in k dimensions, where k is the number of anchor concepts.
+        This is dimension-invariant and works across architectures.
+
+        Math:
+            S_s = relative_rep(source_activations, source_anchors)  [n, k]
+            S_t = relative_rep(target_activations, target_anchors)  [n, k]
+            R = procrustes(S_s, S_t)  [k, k] - ALWAYS well-posed when n > k
+
+        Parameters
+        ----------
+        source_activations : Array
+            Source activations [n_samples, d_source].
+        target_activations : Array
+            Target activations [n_samples, d_target].
+        source_anchors : Array
+            Source anchor embeddings [n_anchors, d_source].
+        target_anchors : Array
+            Target anchor embeddings [n_anchors, d_target].
+
+        Returns
+        -------
+        AlignmentResult
+            Alignment result with rotation matrix R [k, k] in anchor space.
+        """
+        from modelcypher.core.domain.geometry.relative_representation import (
+            compute_relative_representation,
+            align_relative_representations,
+        )
+
+        b = self._backend
+
+        n_s = int(b.shape(source_activations)[0])
+        n_t = int(b.shape(target_activations)[0])
+        k = int(b.shape(source_anchors)[0])
+
+        if n_s != n_t:
+            raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
+
+        # Compute relative representations [n, k]
+        S_s = compute_relative_representation(source_activations, source_anchors, b)
+        S_t = compute_relative_representation(target_activations, target_anchors, b)
+        b.eval(S_s, S_t)
+
+        logger.info(
+            "ANCHOR-SPACE ALIGNMENT: n=%d, k=%d (overdetermined: %s)",
+            n_s, k, "yes" if n_s > k else "no"
+        )
+
+        # Procrustes alignment in anchor space [k, k]
+        R, alignment_error = align_relative_representations(S_s, S_t, b)
+        b.eval(R)
+
+        # Aligned source in anchor space
+        S_aligned = b.matmul(S_s, b.transpose(R))
+        b.eval(S_aligned)
+
+        # Compute CKA in anchor space
+        from modelcypher.core.domain.geometry.cka import compute_cka
+        cka_result = compute_cka(S_aligned, S_t, b)
+        cka = cka_result.cka if cka_result.is_valid else 0.0
+
+        eps = machine_epsilon(b, source_activations)
+        precision = sqrt_scalar(eps, b)
+
+        logger.info(
+            "ANCHOR-SPACE RESULT: CKA=%.6f, alignment_error=%.6f",
+            cka, alignment_error
+        )
+
+        return AlignmentResult(
+            transform=R,  # [k, k] rotation in anchor space
+            n_samples=n_s,
+            d_source=k,  # Effective dimension is k
+            d_target=k,
+            cka=cka,
+            precision=float(precision),
+            signal=None,
+            linear_iterations=0,
+            linear_residual=alignment_error,
+        )

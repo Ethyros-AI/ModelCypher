@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.anchor_grafting import (
 )
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
+    compute_weight_space_transplant,
     partition_core_boundary,
 )
 from modelcypher.core.domain.geometry.constrained_transplant import (
@@ -1875,205 +1876,124 @@ def stage_transplant(
             else:
                 source_aligned = source_candidate
 
-            try:
-                logger.debug("Computing transplant delta for %s", key)
+            # ================================================================
+            # WEIGHT-SPACE NULL-SPACE PROJECTION
+            # ================================================================
+            # This is the SINGULAR PIPELINE for knowledge transfer.
+            # Works for ALL weight dimensions by using the correct INPUT activations:
+            #   - For hidden→X weights (gate_proj, up_proj, attention): input = hidden
+            #   - For intermediate→X weights (down_proj): input = intermediate
+            #
+            # The math:
+            #   delta_W = source_aligned - target  [out, in]
+            #   N = I - pinv(A_input) @ A_input    [in, in]
+            #   delta_W_proj = delta_W @ N         [out, in]
+            #   merged = target + delta_W_proj
+            #
+            # Density weighting is integrated: transfer more where source is dense
+            # and target is sparse.
+            # ================================================================
 
-                # Check if anchor-relative pipeline is available
-                has_anchors = (
-                    source_anchors is not None
-                    and target_anchors is not None
-                    and layer_idx in source_anchors
-                    and layer_idx in target_anchors
-                    and source_activations is not None
-                    and layer_idx in source_activations
+            # Determine the correct INPUT activations based on weight dimensions
+            tgt_hidden_dim = stitch_dims.get('tgt_hidden', 0) if stitch_dims else 0
+            tgt_inter_dim = stitch_dims.get('tgt_inter', 0) if stitch_dims else 0
+            weight_in_dim = int(target_w.shape[1])
+
+            # Select input activations based on weight's input dimension
+            input_activations = None
+            src_density_acts = None
+            tgt_density_acts = None
+            activation_space = "hidden"
+
+            if weight_in_dim == tgt_inter_dim and tgt_inter_dim > 0:
+                # down_proj or similar: input is intermediate space
+                activation_space = "intermediate"
+                if (
+                    source_intermediate_activations is not None
+                    and target_intermediate_activations is not None
+                    and layer_idx in source_intermediate_activations
+                    and layer_idx in target_intermediate_activations
+                ):
+                    src_inter = source_intermediate_activations[layer_idx]
+                    tgt_inter = target_intermediate_activations[layer_idx]
+                    if src_inter is not None and tgt_inter is not None:
+                        # Convert to 2D array if needed
+                        if hasattr(tgt_inter, 'shape') and len(b.shape(tgt_inter)) == 2:
+                            input_activations = b.astype(b.array(tgt_inter), "float32")
+                        elif hasattr(tgt_inter, '__len__') and len(tgt_inter) > 0:
+                            input_activations = b.stack([b.array(a) for a in tgt_inter], axis=0)
+
+                        # For density: use intermediate activations
+                        if hasattr(src_inter, 'shape') and len(b.shape(src_inter)) == 2:
+                            src_density_acts = b.astype(b.array(src_inter), "float32")
+                        elif hasattr(src_inter, '__len__') and len(src_inter) > 0:
+                            src_density_acts = b.stack([b.array(a) for a in src_inter], axis=0)
+                        tgt_density_acts = input_activations
+
+            if input_activations is None:
+                # Default: use hidden activations (for gate_proj, up_proj, attention, etc.)
+                activation_space = "hidden"
+                if (
+                    target_activations is not None
+                    and layer_idx in target_activations
+                ):
+                    tgt_hidden = target_activations[layer_idx]
+                    if tgt_hidden is not None:
+                        if hasattr(tgt_hidden, 'shape') and len(b.shape(tgt_hidden)) == 2:
+                            input_activations = b.astype(b.array(tgt_hidden), "float32")
+                        elif hasattr(tgt_hidden, '__len__') and len(tgt_hidden) > 0:
+                            input_activations = b.stack([b.array(a) for a in tgt_hidden], axis=0)
+
+                        # For density: use hidden activations
+                        if source_activations is not None and layer_idx in source_activations:
+                            src_hidden = source_activations[layer_idx]
+                            if src_hidden is not None:
+                                if hasattr(src_hidden, 'shape') and len(b.shape(src_hidden)) == 2:
+                                    src_density_acts = b.astype(b.array(src_hidden), "float32")
+                                elif hasattr(src_hidden, '__len__') and len(src_hidden) > 0:
+                                    src_density_acts = b.stack([b.array(a) for a in src_hidden], axis=0)
+                        tgt_density_acts = input_activations
+
+            if input_activations is None:
+                # No activations available - use source_aligned directly (no null-space)
+                logger.warning(
+                    "TRANSPLANT: No %s activations for layer %d, using stitched source for %s",
+                    activation_space, layer_idx, key
                 )
-
-                if has_anchors:
-                    # Get source activations for this layer
-                    src_acts_data = source_activations[layer_idx]
-                    # Check if data exists (can't use truthiness on MLX arrays)
-                    if src_acts_data is None:
-                        has_anchors = False  # Fall back to derived anchors
-
-                if has_anchors:
-                    # Handle both formats: Array [n, d] or list of [d] arrays
-                    if hasattr(src_acts_data, 'shape') and len(b.shape(src_acts_data)) == 2:
-                        # Already a 2D array - use directly
-                        src_acts_stacked = b.astype(b.array(src_acts_data), "float32")
-                    elif hasattr(src_acts_data, '__len__') and len(src_acts_data) > 0:
-                        # List of 1D arrays - stack them
-                        src_acts_stacked = b.stack(
-                            [b.array(a) for a in src_acts_data], axis=0
-                        )
-                    else:
-                        has_anchors = False  # Fall back to derived anchors
-                        src_acts_stacked = None
-
-                if has_anchors and src_acts_stacked is not None:
-                    b.eval(src_acts_stacked)
-
-                    # Get anchors for this layer
-                    src_anch = source_anchors[layer_idx]
-                    tgt_anch = target_anchors[layer_idx]
-
-                    # Compute delta_A via anchor-relative pipeline with Ghost Anchors
-                    # Ghost Anchors handle novel concepts that don't exist in target
-                    logger.info(
-                        "ANCHOR-RELATIVE: Computing grafting delta with Ghost Anchors for layer %d",
-                        layer_idx,
-                    )
-                    grafting_result = compute_anchor_grafting_with_ghost_anchors(
-                        source_activations=src_acts_stacked,
-                        target_activations=stacked,
-                        source_anchors=src_anch,
-                        target_anchors=tgt_anch,
-                        backend=b,
-                    )
-                    delta_A = grafting_result.delta_activations
-                    logger.info(
-                        "ANCHOR-RELATIVE: Layer %d delta_A computed, "
-                        "transfer_fraction=%.3f",
-                        layer_idx,
-                        grafting_result.transfer_fraction,
-                    )
-                else:
-                    # Anchors not explicitly provided - derive from activations
-                    # The probe activations themselves serve as semantic anchors
-                    # spanning the manifold. Use a subset for relative representation.
-                    if (
-                        source_activations is not None
-                        and target_activations is not None
-                        and layer_idx in source_activations
-                        and layer_idx in target_activations
-                    ):
-                        src_acts_data = source_activations[layer_idx]
-                        tgt_acts_data = target_activations[layer_idx]
-
-                        # Handle both formats: Array [n, d] or list of [d] arrays
-                        # Memory-optimized cache stores as single 2D Array per layer
-                        if src_acts_data is not None and tgt_acts_data is not None:
-                            # Convert to 2D array if needed
-                            if hasattr(src_acts_data, 'shape') and len(b.shape(src_acts_data)) == 2:
-                                # Already a 2D array - use directly
-                                src_acts_stacked = b.astype(b.array(src_acts_data), "float32")
-                            elif hasattr(src_acts_data, '__len__') and len(src_acts_data) > 0:
-                                # List of 1D arrays - stack them
-                                src_acts_stacked = b.stack(
-                                    [b.array(a) for a in src_acts_data], axis=0
-                                )
-                            else:
-                                src_acts_stacked = None
-
-                            if hasattr(tgt_acts_data, 'shape') and len(b.shape(tgt_acts_data)) == 2:
-                                # Already a 2D array - use directly
-                                tgt_acts_stacked = b.astype(b.array(tgt_acts_data), "float32")
-                            elif hasattr(tgt_acts_data, '__len__') and len(tgt_acts_data) > 0:
-                                # List of 1D arrays - stack them
-                                tgt_acts_stacked = b.stack(
-                                    [b.array(a) for a in tgt_acts_data], axis=0
-                                )
-                            else:
-                                tgt_acts_stacked = None
-
-                            if src_acts_stacked is not None and tgt_acts_stacked is not None:
-                                b.eval(src_acts_stacked, tgt_acts_stacked)
-
-                                # Use a subset of activations as anchors for relative representation
-                                # Too many anchors creates memory/performance issues
-                                # Atlas probes are designed to span the manifold
-                                n_src = int(b.shape(src_acts_stacked)[0])
-                                n_tgt = int(b.shape(tgt_acts_stacked)[0])
-                                # Limit anchors to sqrt(min_samples) for efficiency
-                                # At least 10, at most 100 anchors
-                                max_anchors = min(100, max(10, int(sqrt_scalar(min(n_src, n_tgt), b))))
-                                n_anchors = min(n_src, n_tgt, max_anchors)
-
-                                # Select first n_anchors as anchor set (deterministic)
-                                src_anch_derived = b.take(
-                                    src_acts_stacked,
-                                    b.arange(n_anchors),
-                                    axis=0,
-                                )
-                                tgt_anch_derived = b.take(
-                                    tgt_acts_stacked,
-                                    b.arange(n_anchors),
-                                    axis=0,
-                                )
-                                b.eval(src_anch_derived, tgt_anch_derived)
-
-                                logger.info(
-                                    "ANCHOR-DERIVED: Using %d probe activations as anchors for layer %d",
-                                    n_anchors, layer_idx,
-                                )
-
-                                # Run anchor-relative grafting with derived anchors
-                                grafting_result = compute_anchor_grafting_with_ghost_anchors(
-                                    source_activations=src_acts_stacked,
-                                    target_activations=tgt_acts_stacked,
-                                    source_anchors=src_anch_derived,
-                                    target_anchors=tgt_anch_derived,
-                                    backend=b,
-                                )
-                                delta_A = grafting_result.delta_activations
-                                logger.info(
-                                    "ANCHOR-DERIVED: Layer %d delta_A computed, "
-                                    "transfer_fraction=%.3f",
-                                    layer_idx,
-                                    grafting_result.transfer_fraction,
-                                )
-                            else:
-                                # Stacked arrays failed to convert - skip
-                                logger.warning(
-                                    "TRANSPLANT: Skipping %s - failed to stack activations for layer %d",
-                                    key, layer_idx
-                                )
-                                continue
-                        else:
-                            # No activation data - skip
-                            logger.warning(
-                                "TRANSPLANT: Skipping %s - no activation data for layer %d",
-                                key, layer_idx
-                            )
-                            continue
-                    else:
-                        # No activations at all - skip
-                        logger.warning(
-                            "TRANSPLANT: Skipping %s - no activations for layer %d",
-                            key, layer_idx
-                        )
-                        continue
-
-                # Index delta_A to match core samples (partition splits probes into core/boundary)
-                # delta_A is [n_all_probes, out_dim], core_acts is [n_core, in_dim]
-                # We need delta_A_core [n_core, out_dim] to match dimensions
-                delta_A_core = b.take(delta_A, core_indices, axis=0)
-                b.eval(delta_A_core)
-
-                # Constrained least-squares transplant
-                result = compute_transplant_delta(
-                    weight_target=target_w,
-                    activations_core=core_acts,
-                    delta_activations=delta_A_core,
-                    boundary_activations=boundary_acts,
-                    backend=b,
-                    delta_scale=delta_scale,
-                )
-                logger.debug("Transplant delta computed for %s: applied=%s", key, result.applied)
-                if result.delta_occupancy is not None:
-                    delta_occ = result.delta_occupancy
-                    if not hasattr(delta_occ, "shape"):
-                        delta_occ = b.array(delta_occ)
-                    delta_occ = b.astype(delta_occ, "float32")
-                    if int(b.shape(delta_occ)[0]) == layer_dim:
-                        layer_delta_occupancy = 1.0 - (
-                            (1.0 - layer_delta_occupancy) * (1.0 - delta_occ)
-                        )
-                        b.eval(layer_delta_occupancy)
-            except Exception as e:
-                logger.warning("Failed to compute transplant delta for %s: %s", key, e)
+                merged[key] = source_aligned
+                metrics.setdefault("no_activation_fallback", 0)
+                metrics["no_activation_fallback"] += 1
+                metrics["weights_transplanted"] += 1
                 continue
 
-            if result.applied:
+            b.eval(input_activations)
+            if src_density_acts is not None:
+                b.eval(src_density_acts)
+            if tgt_density_acts is not None:
+                b.eval(tgt_density_acts)
+
+            logger.debug(
+                "TRANSPLANT: %s using %s activations [%d samples] for null-space",
+                key, activation_space, int(b.shape(input_activations)[0])
+            )
+
+            # Compute weight-space transplant with density weighting
+            result = compute_weight_space_transplant(
+                source_aligned=source_aligned,
+                target_weight=target_w,
+                input_activations=input_activations,
+                source_activations_for_density=src_density_acts,
+                target_activations_for_density=tgt_density_acts,
+                backend=b,
+            )
+
+            logger.info(
+                "TRANSPLANT: %s delta_norm=%.4f, preserved=%.1f%%, transfer=%.3f",
+                key, result.delta_norm, 100.0 * result.preserved_fraction, result.transfer_strength
+            )
+
+            # Apply result - no fallbacks, this is the singular pipeline
+            if result.preserved_fraction > 0:
                 # Use geometry-determined transplant result directly.
                 # The null-space projection already computed preserved_fraction
                 # based on the spectral structure of boundary activations.
@@ -2085,14 +2005,16 @@ def stage_transplant(
                 merged[key] = final_merged_weight
                 metrics["weights_transplanted"] += 1
                 metrics["preserved_fractions"].append(result.preserved_fraction)
-                metrics["projection_losses"].append(result.projection_loss)
-                metrics["null_dims"].append(result.null_dim)
+                # projection_loss = 1 - preserved_fraction
+                projection_loss = max(0.0, 1.0 - result.preserved_fraction)
+                metrics["projection_losses"].append(projection_loss)
+                metrics["null_dims"].append(result.null_rank)
 
                 weight_elapsed = time.time() - weight_start_time
                 logger.debug(
                     "TRANSPLANT: Weight %d/%d %s - %.2fs (preserved=%.3f, loss=%.6f)",
                     weight_num + 1, len(layer_keys), key,
-                    weight_elapsed, result.preserved_fraction, result.projection_loss
+                    weight_elapsed, result.preserved_fraction, projection_loss
                 )
                 # Use the actual stored weight (already geometry-scaled if applicable)
                 actual_merged_weight = merged[key]

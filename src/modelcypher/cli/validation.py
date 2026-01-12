@@ -33,6 +33,47 @@ from modelcypher.utils.errors import ErrorDetail
 from modelcypher.cli.output import write_error
 
 
+def normalize_path(path: str) -> Path:
+    """Normalize a path string to handle cross-platform input.
+
+    This function handles:
+    - Backslashes (Windows-style) converted to forward slashes
+    - Windows drive letters (C:) - preserved but not prepended with CWD
+    - Tilde expansion (~) to home directory
+    - Resolution to absolute path
+
+    Args:
+        path: Path string that may contain backslashes or tilde
+
+    Returns:
+        Normalized Path object
+
+    Examples:
+        >>> normalize_path("C:\\Users\\test\\model")  # Windows path
+        PosixPath('/C:/Users/test/model')
+        >>> normalize_path("~/models/llama")  # Tilde path
+        PosixPath('/home/user/models/llama')
+        >>> normalize_path("./relative/path")  # Relative path
+        PosixPath('/current/dir/relative/path')
+    """
+    # Convert backslashes to forward slashes for cross-platform compatibility
+    normalized = path.replace("\\", "/")
+
+    # Handle Windows drive letter paths (e.g., "C:/Users/...")
+    # On Unix systems, treat them as absolute paths starting with /C:/
+    # This prevents resolve() from prepending CWD
+    import re
+    if re.match(r"^[A-Za-z]:/", normalized):
+        # Windows-style absolute path - prefix with / to make it absolute on Unix
+        normalized = "/" + normalized
+
+    # Create Path object and expand ~ to home directory
+    p = Path(normalized).expanduser()
+
+    # Resolve to absolute path
+    return p.resolve()
+
+
 def validate_file_exists(
     path: str,
     *,
@@ -52,7 +93,7 @@ def validate_file_exists(
     Raises:
         typer.Exit: If file doesn't exist or isn't readable
     """
-    p = Path(path)
+    p = normalize_path(path)
     if not p.exists():
         _fail(
             code="MC-1020",
@@ -91,7 +132,7 @@ def validate_dir_exists(
     Raises:
         typer.Exit: If directory doesn't exist
     """
-    p = Path(path)
+    p = normalize_path(path)
     if not p.exists():
         _fail(
             code="MC-1022",

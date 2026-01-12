@@ -142,6 +142,12 @@ class HelpService:
             Dictionary with command metadata (service calls, affected resources, etc.)
         """
         command_lower = command.lower().strip()
+        # Normalize internal whitespace (collapse multiple spaces to single)
+        import re
+        command_lower = re.sub(r"\s+", " ", command_lower)
+        # Remove "mc " prefix if present
+        if command_lower.startswith("mc "):
+            command_lower = command_lower[3:]
 
         # Default fallback
         payload = {
@@ -152,9 +158,132 @@ class HelpService:
             "requiredPermissions": [],
             "warnings": [],
             "estimatedDuration": None,
+            "requiredOptions": [],
+            "example": None,
         }
 
-        if "train start" in command_lower:
+        # Merge commands
+        if command_lower in ("merge run", "merge"):
+            payload.update(
+                {
+                    "description": "Merge two models via null-space knowledge transplant. Takes knowledge from source and adds it to target without destroying target's capabilities.",
+                    "serviceCalls": ["MergePipelineService.merge"],
+                    "affectedResources": ["GPU Memory", "Disk Space", "CPU"],
+                    "requiredPermissions": ["Filesystem Read/Write", "GPU Access"],
+                    "warnings": ["Memory intensive - ensure sufficient GPU memory"],
+                    "estimatedDuration": "Minutes",
+                    "requiredOptions": ["--source/-s", "--target/-t", "--output-dir/-o"],
+                    "example": "mc merge run -s ./qwen -t ./smol -o ./merged",
+                }
+            )
+        elif "merge batch" in command_lower:
+            payload.update(
+                {
+                    "description": "Merge multiple source models into a single target (N→1 merging). Optimized for knowledge accumulation.",
+                    "serviceCalls": ["MergePipelineService.batch_merge"],
+                    "affectedResources": ["GPU Memory", "Disk Space", "CPU"],
+                    "requiredPermissions": ["Filesystem Read/Write", "GPU Access"],
+                    "warnings": ["Memory intensive - target loaded once, sources iterated"],
+                    "estimatedDuration": "Minutes to Hours",
+                    "requiredOptions": ["--source/-s (repeatable)", "--target/-t", "--output-dir/-o"],
+                    "example": "mc merge batch -s ./model1 -s ./model2 -t ./target -o ./merged",
+                }
+            )
+        # Model commands
+        elif "model info" in command_lower or "model probe" in command_lower:
+            payload.update(
+                {
+                    "description": "Inspect a model for architecture details, parameter counts, and stored identity profile.",
+                    "serviceCalls": ["ModelProbeService.probe"],
+                    "affectedResources": ["Memory (weight metadata)"],
+                    "requiredPermissions": ["Filesystem Read"],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                    "requiredOptions": ["<model_path>"],
+                    "example": "mc model info ./models/llama-7b",
+                }
+            )
+        elif "model list" in command_lower:
+            payload.update(
+                {
+                    "description": "List all registered models in the local registry.",
+                    "serviceCalls": ["ModelService.list_models"],
+                    "affectedResources": [],
+                    "requiredPermissions": ["Read Only"],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                    "requiredOptions": [],
+                    "example": "mc model list",
+                }
+            )
+        elif "model add" in command_lower:
+            payload.update(
+                {
+                    "description": "Add a model by fetching from HuggingFace or registering a local path.",
+                    "serviceCalls": ["ModelService.fetch_model", "ModelService.register_model"],
+                    "affectedResources": ["Disk Space", "Bandwidth (if fetching)"],
+                    "requiredPermissions": ["Filesystem Read/Write", "Network (if fetching)"],
+                    "warnings": ["Large download if fetching remote model"],
+                    "estimatedDuration": "Seconds to Minutes",
+                    "requiredOptions": ["<source>"],
+                    "example": "mc model add mlx-community/Qwen2-0.5B --alias qwen",
+                }
+            )
+        elif "model fetch" in command_lower:
+            payload.update(
+                {
+                    "description": "Download a model from HuggingFace Hub (deprecated, use 'mc model add').",
+                    "serviceCalls": ["ModelService.fetch_model"],
+                    "affectedResources": ["Bandwidth", "Disk Space"],
+                    "requiredPermissions": ["Network Access", "Filesystem Write"],
+                    "warnings": ["Large download size", "Deprecated: use 'mc model add'"],
+                    "estimatedDuration": "Seconds to Minutes",
+                    "requiredOptions": ["<repo_id>"],
+                    "example": "mc model fetch mlx-community/Llama-2-7b-mlx",
+                }
+            )
+        elif "model validate-merge" in command_lower:
+            payload.update(
+                {
+                    "description": "Validate merge compatibility between two models (architecture, vocab, dimensions).",
+                    "serviceCalls": ["ModelProbeService.validate_merge"],
+                    "affectedResources": ["Memory"],
+                    "requiredPermissions": ["Filesystem Read"],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                    "requiredOptions": ["--source", "--target"],
+                    "example": "mc model validate-merge --source ./model-a --target ./model-b",
+                }
+            )
+        # Inference commands
+        elif "infer run" in command_lower:
+            payload.update(
+                {
+                    "description": "Execute inference with a model, optionally with adapter and security scanning.",
+                    "serviceCalls": ["InferenceEngine.run"],
+                    "affectedResources": ["GPU Memory", "CPU"],
+                    "requiredPermissions": ["Filesystem Read", "GPU Access"],
+                    "warnings": ["Memory usage depends on model size"],
+                    "estimatedDuration": "Seconds",
+                    "requiredOptions": ["--model", "--prompt"],
+                    "example": "mc infer run --model ./llama --prompt 'Hello, world!'",
+                }
+            )
+        # System commands
+        elif "system status" in command_lower:
+            payload.update(
+                {
+                    "description": "Get system status including GPU availability, memory, and backend versions.",
+                    "serviceCalls": ["SystemService.status"],
+                    "affectedResources": [],
+                    "requiredPermissions": ["Read Only"],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                    "requiredOptions": [],
+                    "example": "mc system status",
+                }
+            )
+        elif "train start" in command_lower:
             payload.update(
                 {
                     "description": "Initialize and execute a LoRA fine-tuning job",
@@ -163,17 +292,8 @@ class HelpService:
                     "requiredPermissions": ["Filesystem Write", "GPU Access"],
                     "warnings": ["High power consumption", "Thermal throttling possible"],
                     "estimatedDuration": "Minutes to Hours",
-                }
-            )
-        elif "model fetch" in command_lower:
-            payload.update(
-                {
-                    "description": "Download a model from remote repository",
-                    "serviceCalls": ["ModelService.fetch", "HuggingFaceHub"],
-                    "affectedResources": ["Bandwidth", "Disk Space"],
-                    "requiredPermissions": ["Network Access", "Filesystem Write"],
-                    "warnings": ["Large download size"],
-                    "estimatedDuration": "Seconds to Minutes",
+                    "requiredOptions": ["--model", "--dataset"],
+                    "example": "mc train start --model qwen-0.5b --dataset data.jsonl --epochs 3",
                 }
             )
         elif "inventory" in command_lower:
@@ -185,6 +305,8 @@ class HelpService:
                     "requiredPermissions": ["Read Only"],
                     "warnings": [],
                     "estimatedDuration": "Fast",
+                    "requiredOptions": [],
+                    "example": "mc inventory",
                 }
             )
         elif "geometry validate" in command_lower:
@@ -196,6 +318,47 @@ class HelpService:
                     "requiredPermissions": ["Read Only"],
                     "warnings": ["Computationally intensive"],
                     "estimatedDuration": "Seconds",
+                    "requiredOptions": [],
+                    "example": "mc geometry validate",
+                }
+            )
+        elif "storage status" in command_lower:
+            payload.update(
+                {
+                    "description": "Return storage usage breakdown by category (models, checkpoints, etc.).",
+                    "serviceCalls": ["StorageService.status"],
+                    "affectedResources": [],
+                    "requiredPermissions": ["Filesystem Read"],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                    "requiredOptions": [],
+                    "example": "mc storage status",
+                }
+            )
+        elif "help command" in command_lower:
+            payload.update(
+                {
+                    "description": "Show help for a specific CLI command.",
+                    "serviceCalls": [],
+                    "affectedResources": [],
+                    "requiredPermissions": [],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                    "requiredOptions": ["<name>"],
+                    "example": "mc help command merge",
+                }
+            )
+        elif "help ask" in command_lower:
+            payload.update(
+                {
+                    "description": "Get contextual help for a question about ModelCypher.",
+                    "serviceCalls": ["HelpService.ask"],
+                    "affectedResources": [],
+                    "requiredPermissions": [],
+                    "warnings": [],
+                    "estimatedDuration": "Fast",
+                    "requiredOptions": ["<question>"],
+                    "example": "mc help ask 'how do I merge two models'",
                 }
             )
 
