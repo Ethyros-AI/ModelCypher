@@ -1890,14 +1890,26 @@ def stage_transplant(
 
                 if has_anchors:
                     # Get source activations for this layer
-                    src_acts_list = source_activations[layer_idx]
-                    if not src_acts_list:
-                        has_anchors = False  # Fall back to direct delta
+                    src_acts_data = source_activations[layer_idx]
+                    # Check if data exists (can't use truthiness on MLX arrays)
+                    if src_acts_data is None:
+                        has_anchors = False  # Fall back to derived anchors
 
                 if has_anchors:
-                    src_acts_stacked = b.concat(
-                        [b.array(a) for a in src_acts_list], axis=0
-                    )
+                    # Handle both formats: Array [n, d] or list of [d] arrays
+                    if hasattr(src_acts_data, 'shape') and len(b.shape(src_acts_data)) == 2:
+                        # Already a 2D array - use directly
+                        src_acts_stacked = b.astype(b.array(src_acts_data), "float32")
+                    elif hasattr(src_acts_data, '__len__') and len(src_acts_data) > 0:
+                        # List of 1D arrays - stack them
+                        src_acts_stacked = b.stack(
+                            [b.array(a) for a in src_acts_data], axis=0
+                        )
+                    else:
+                        has_anchors = False  # Fall back to derived anchors
+                        src_acts_stacked = None
+
+                if has_anchors and src_acts_stacked is not None:
                     b.eval(src_acts_stacked)
 
                     # Get anchors for this layer
@@ -1934,66 +1946,92 @@ def stage_transplant(
                         and layer_idx in source_activations
                         and layer_idx in target_activations
                     ):
-                        src_acts_list = source_activations[layer_idx]
-                        tgt_acts_list = target_activations[layer_idx]
+                        src_acts_data = source_activations[layer_idx]
+                        tgt_acts_data = target_activations[layer_idx]
 
-                        if src_acts_list and tgt_acts_list:
-                            # Stack all activations
-                            src_acts_stacked = b.concat(
-                                [b.array(a) for a in src_acts_list], axis=0
-                            )
-                            tgt_acts_stacked = b.concat(
-                                [b.array(a) for a in tgt_acts_list], axis=0
-                            )
-                            b.eval(src_acts_stacked, tgt_acts_stacked)
+                        # Handle both formats: Array [n, d] or list of [d] arrays
+                        # Memory-optimized cache stores as single 2D Array per layer
+                        if src_acts_data is not None and tgt_acts_data is not None:
+                            # Convert to 2D array if needed
+                            if hasattr(src_acts_data, 'shape') and len(b.shape(src_acts_data)) == 2:
+                                # Already a 2D array - use directly
+                                src_acts_stacked = b.astype(b.array(src_acts_data), "float32")
+                            elif hasattr(src_acts_data, '__len__') and len(src_acts_data) > 0:
+                                # List of 1D arrays - stack them
+                                src_acts_stacked = b.stack(
+                                    [b.array(a) for a in src_acts_data], axis=0
+                                )
+                            else:
+                                src_acts_stacked = None
 
-                            # Use a subset of activations as anchors for relative representation
-                            # Too many anchors creates memory/performance issues
-                            # Atlas probes are designed to span the manifold
-                            n_src = int(b.shape(src_acts_stacked)[0])
-                            n_tgt = int(b.shape(tgt_acts_stacked)[0])
-                            # Limit anchors to sqrt(min_samples) for efficiency
-                            # At least 10, at most 100 anchors
-                            max_anchors = min(100, max(10, int(sqrt_scalar(min(n_src, n_tgt), b))))
-                            n_anchors = min(n_src, n_tgt, max_anchors)
+                            if hasattr(tgt_acts_data, 'shape') and len(b.shape(tgt_acts_data)) == 2:
+                                # Already a 2D array - use directly
+                                tgt_acts_stacked = b.astype(b.array(tgt_acts_data), "float32")
+                            elif hasattr(tgt_acts_data, '__len__') and len(tgt_acts_data) > 0:
+                                # List of 1D arrays - stack them
+                                tgt_acts_stacked = b.stack(
+                                    [b.array(a) for a in tgt_acts_data], axis=0
+                                )
+                            else:
+                                tgt_acts_stacked = None
 
-                            # Select first n_anchors as anchor set (deterministic)
-                            src_anch_derived = b.take(
-                                src_acts_stacked,
-                                b.arange(n_anchors),
-                                axis=0,
-                            )
-                            tgt_anch_derived = b.take(
-                                tgt_acts_stacked,
-                                b.arange(n_anchors),
-                                axis=0,
-                            )
-                            b.eval(src_anch_derived, tgt_anch_derived)
+                            if src_acts_stacked is not None and tgt_acts_stacked is not None:
+                                b.eval(src_acts_stacked, tgt_acts_stacked)
 
-                            logger.info(
-                                "ANCHOR-DERIVED: Using %d probe activations as anchors for layer %d",
-                                n_anchors, layer_idx,
-                            )
+                                # Use a subset of activations as anchors for relative representation
+                                # Too many anchors creates memory/performance issues
+                                # Atlas probes are designed to span the manifold
+                                n_src = int(b.shape(src_acts_stacked)[0])
+                                n_tgt = int(b.shape(tgt_acts_stacked)[0])
+                                # Limit anchors to sqrt(min_samples) for efficiency
+                                # At least 10, at most 100 anchors
+                                max_anchors = min(100, max(10, int(sqrt_scalar(min(n_src, n_tgt), b))))
+                                n_anchors = min(n_src, n_tgt, max_anchors)
 
-                            # Run anchor-relative grafting with derived anchors
-                            grafting_result = compute_anchor_grafting_with_ghost_anchors(
-                                source_activations=src_acts_stacked,
-                                target_activations=tgt_acts_stacked,
-                                source_anchors=src_anch_derived,
-                                target_anchors=tgt_anch_derived,
-                                backend=b,
-                            )
-                            delta_A = grafting_result.delta_activations
-                            logger.info(
-                                "ANCHOR-DERIVED: Layer %d delta_A computed, "
-                                "transfer_fraction=%.3f",
-                                layer_idx,
-                                grafting_result.transfer_fraction,
-                            )
+                                # Select first n_anchors as anchor set (deterministic)
+                                src_anch_derived = b.take(
+                                    src_acts_stacked,
+                                    b.arange(n_anchors),
+                                    axis=0,
+                                )
+                                tgt_anch_derived = b.take(
+                                    tgt_acts_stacked,
+                                    b.arange(n_anchors),
+                                    axis=0,
+                                )
+                                b.eval(src_anch_derived, tgt_anch_derived)
+
+                                logger.info(
+                                    "ANCHOR-DERIVED: Using %d probe activations as anchors for layer %d",
+                                    n_anchors, layer_idx,
+                                )
+
+                                # Run anchor-relative grafting with derived anchors
+                                grafting_result = compute_anchor_grafting_with_ghost_anchors(
+                                    source_activations=src_acts_stacked,
+                                    target_activations=tgt_acts_stacked,
+                                    source_anchors=src_anch_derived,
+                                    target_anchors=tgt_anch_derived,
+                                    backend=b,
+                                )
+                                delta_A = grafting_result.delta_activations
+                                logger.info(
+                                    "ANCHOR-DERIVED: Layer %d delta_A computed, "
+                                    "transfer_fraction=%.3f",
+                                    layer_idx,
+                                    grafting_result.transfer_fraction,
+                                )
+                            else:
+                                # Stacked arrays failed to convert - skip
+                                logger.warning(
+                                    "TRANSPLANT: Skipping %s - failed to stack activations for layer %d",
+                                    key, layer_idx
+                                )
+                                continue
                         else:
-                            # No activations available - skip
+                            # No activation data - skip
                             logger.warning(
-                                "TRANSPLANT: Skipping %s - no activations for layer %d",
+                                "TRANSPLANT: Skipping %s - no activation data for layer %d",
                                 key, layer_idx
                             )
                             continue
