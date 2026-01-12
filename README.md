@@ -101,7 +101,7 @@ Tools available. See [docs/MCP.md](docs/MCP.md) for the full catalog.
 |-----|---------|
 | [docs/START-HERE.md](docs/START-HERE.md) | Main guide and reading paths |
 | [docs/getting_started.md](docs/getting_started.md) | Installation + first commands |
-| [CLAUDE.md](CLAUDE.md) | AI assistant guidance and architecture |
+| [AGENTS.md](AGENTS.md) | AI assistant guidance and architecture |
 | [docs/CLI-REFERENCE.md](docs/CLI-REFERENCE.md) | Command reference |
 | [docs/GEOMETRY-GUIDE.md](docs/GEOMETRY-GUIDE.md) | Geometry metrics explained |
 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Terminology |
