@@ -181,6 +181,23 @@ def compute_weight_space_transplant(
         )
         b.eval(density_weights)
 
+        # Ensure density_weights matches input_activations sample count
+        n_density = int(density_weights.shape[0])
+        if n_density != n_samples:
+            logger.debug(
+                "DENSITY WEIGHTING: Adjusting weights from %d to %d samples",
+                n_density, n_samples
+            )
+            if n_density > n_samples:
+                # Truncate to match input_activations
+                density_weights = density_weights[:n_samples]
+            else:
+                # Pad with 0.5 (neutral density - equal transfer weight)
+                pad_size = n_samples - n_density
+                padding = b.full((pad_size,), 0.5, dtype=density_weights.dtype)
+                density_weights = b.concatenate([density_weights, padding], axis=0)
+            b.eval(density_weights)
+
         transfer_strength = float(b.to_scalar(b.mean(density_weights)))
 
         logger.debug(

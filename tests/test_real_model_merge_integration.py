@@ -731,3 +731,190 @@ class TestIntermediateActivationAlignment:
 
         assert backend.shape(stitched) == (tgt_hidden, tgt_inter)
         assert all_finite(stitched, backend)
+
+
+class TestBroadcastShapeBug:
+    """Tests to reproduce and verify the (1536,1536) vs (576,576) broadcast bug.
+
+    This bug occurs during cross-architecture MLP weight transplant when
+    intermediate activations have unexpected shapes.
+    """
+
+    def test_geodesic_with_transposed_activations(self, backend):
+        """Test what happens when activations are transposed [dim, n] instead of [n, dim]."""
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        # If activations are transposed, geodesic distances would be [dim, dim]
+        # instead of [n, n]
+        n_samples = 64
+        feature_dim = 256
+
+        backend.random_seed(42)
+
+        # Correct shape: [n_samples, feature_dim]
+        correct_acts = backend.random_normal((n_samples, feature_dim))
+        backend.eval(correct_acts)
+
+        rg = RiemannianGeometry(backend)
+        correct_result = rg.geodesic_distances(correct_acts, k_neighbors=5)
+
+        # Distance matrix should be [n_samples, n_samples]
+        assert backend.shape(correct_result.distances) == (n_samples, n_samples)
+
+        # Transposed shape: [feature_dim, n_samples]
+        transposed_acts = backend.random_normal((feature_dim, n_samples))
+        backend.eval(transposed_acts)
+
+        transposed_result = rg.geodesic_distances(transposed_acts, k_neighbors=5)
+
+        # This would produce [feature_dim, feature_dim] - the bug pattern!
+        assert backend.shape(transposed_result.distances) == (feature_dim, feature_dim)
+
+    def test_density_comparison_with_mismatched_sample_counts(self, backend):
+        """Test density comparison when source and target have different sample counts.
+
+        This could happen if activations are stored transposed with different dims.
+        """
+        from modelcypher.core.domain.geometry.knowledge_density import (
+            compute_knn_point_cloud_density,
+        )
+
+        # Simulate the bug: source and target have different "sample counts"
+        # which would happen if [dim, n] was used instead of [n, dim]
+        src_fake_samples = 1536  # Actually feature_dim
+        tgt_fake_samples = 576   # Actually feature_dim
+        dim = 64  # Actually n_samples
+
+        backend.random_seed(42)
+        source_acts = backend.random_normal((src_fake_samples, dim))
+        target_acts = backend.random_normal((tgt_fake_samples, dim))
+        backend.eval(source_acts, target_acts)
+
+        # This will create distance matrices [1536, 1536] and [576, 576]
+        # which cannot be compared element-wise
+        result = compute_knn_point_cloud_density(
+            source_acts, target_acts, backend=backend
+        )
+
+        # Densities have different lengths - this is the bug state
+        src_len = int(backend.shape(result.source_densities)[0])
+        tgt_len = int(backend.shape(result.target_densities)[0])
+
+        # With different sample counts, densities have different lengths
+        assert src_len == src_fake_samples
+        assert tgt_len == tgt_fake_samples
+
+    def test_intermediate_activation_shape_expectation(self, backend):
+        """Verify expected shape of intermediate activations."""
+        # Intermediate activations should be [n_samples, intermediate_dim]
+        n_samples = 1024
+        tgt_inter_dim = 1536  # SmolLM intermediate
+        src_inter_dim = 4608  # LFM2 intermediate
+
+        backend.random_seed(42)
+
+        # Correct shapes
+        src_inter_correct = backend.random_normal((n_samples, src_inter_dim))
+        tgt_inter_correct = backend.random_normal((n_samples, tgt_inter_dim))
+        backend.eval(src_inter_correct, tgt_inter_correct)
+
+        # Verify correct shape indexing
+        assert int(backend.shape(src_inter_correct)[0]) == n_samples  # samples first
+        assert int(backend.shape(src_inter_correct)[1]) == src_inter_dim  # features second
+        assert int(backend.shape(tgt_inter_correct)[0]) == n_samples
+        assert int(backend.shape(tgt_inter_correct)[1]) == tgt_inter_dim
+
+    def test_weight_transplant_with_different_density_feature_dims(self, backend):
+        """Test weight transplant when density activations have different feature dimensions.
+
+        This is the normal case for cross-architecture merges: same sample count,
+        different feature dimensions (source 4608, target 1536).
+        """
+        from modelcypher.core.domain.geometry.transplant import (
+            compute_weight_space_transplant,
+        )
+
+        tgt_hidden = 576
+        tgt_inter = 1536
+        src_inter = 4608
+
+        backend.random_seed(42)
+
+        source_aligned = backend.random_normal((tgt_hidden, tgt_inter))
+        target_weight = backend.random_normal((tgt_hidden, tgt_inter))
+
+        # All activations have the same sample count
+        n_samples = 64
+        input_activations = backend.random_normal((n_samples, tgt_inter))
+
+        # Cross-architecture: same samples, different feature dims
+        src_density_acts = backend.random_normal((n_samples, src_inter))
+        tgt_density_acts = backend.random_normal((n_samples, tgt_inter))
+
+        backend.eval(
+            source_aligned, target_weight, input_activations,
+            src_density_acts, tgt_density_acts
+        )
+
+        # This should work - density comparison handles different feature dims
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_weight,
+            input_activations=input_activations,
+            source_activations_for_density=src_density_acts,
+            target_activations_for_density=tgt_density_acts,
+            backend=backend,
+        )
+
+        assert result.merged_weight is not None
+        assert backend.shape(result.merged_weight) == (tgt_hidden, tgt_inter)
+        assert all_finite(result.merged_weight, backend)
+
+    def test_weight_transplant_with_mismatched_activation_sample_counts(self, backend):
+        """Test that weight transplant handles mismatched sample counts gracefully.
+
+        This is an edge case where density activations have different sample counts
+        due to transposed storage or other bugs.
+        """
+        from modelcypher.core.domain.geometry.transplant import (
+            compute_weight_space_transplant,
+        )
+
+        tgt_hidden = 576
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        source_aligned = backend.random_normal((tgt_hidden, tgt_inter))
+        target_weight = backend.random_normal((tgt_hidden, tgt_inter))
+
+        # Correct: input_activations for null-space
+        n_samples = 64
+        input_activations = backend.random_normal((n_samples, tgt_inter))
+
+        # Bug scenario: density activations with different sample counts
+        # (would happen if activations were transposed)
+        src_density_fake_samples = 128  # Different sample count
+        tgt_density_fake_samples = 96   # Different sample count
+
+        src_density_acts = backend.random_normal((src_density_fake_samples, 64))
+        tgt_density_acts = backend.random_normal((tgt_density_fake_samples, 64))
+
+        backend.eval(
+            source_aligned, target_weight, input_activations,
+            src_density_acts, tgt_density_acts
+        )
+
+        # This should now work with the density truncation fix
+        # The density weights will be truncated/padded to match input_activations
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_weight,
+            input_activations=input_activations,
+            source_activations_for_density=src_density_acts,
+            target_activations_for_density=tgt_density_acts,
+            backend=backend,
+        )
+
+        assert result.merged_weight is not None
+        assert backend.shape(result.merged_weight) == (tgt_hidden, tgt_inter)

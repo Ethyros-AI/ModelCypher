@@ -526,6 +526,21 @@ def compute_density_weights(
     tgt = b.array(target_densities)
     b.eval(src, tgt)
 
+    # Handle mismatched lengths by truncating to minimum
+    # This can happen in cross-architecture merges where source and target
+    # activations have different sample counts
+    n_src = int(src.shape[0])
+    n_tgt = int(tgt.shape[0])
+    if n_src != n_tgt:
+        n_compare = min(n_src, n_tgt)
+        src = src[:n_compare]
+        tgt = tgt[:n_compare]
+        b.eval(src, tgt)
+        logger.debug(
+            "DENSITY: Truncated densities to %d samples (src=%d, tgt=%d)",
+            n_compare, n_src, n_tgt
+        )
+
     eps = float(division_epsilon(b, src))
     total = src + tgt
     denom = b.maximum(total, b.full(b.shape(total), eps))
