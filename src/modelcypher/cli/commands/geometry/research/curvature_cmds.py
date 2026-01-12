@@ -70,8 +70,10 @@ def register(app: typer.Typer) -> None:
             IntrinsicDimension,
         )
         from modelcypher.core.domain.geometry.manifold_curvature import (
-            OllivierRicciCurvature,
             SectionalCurvatureEstimator,
+        )
+        from modelcypher.core.domain.geometry.ollivier_ricci import (
+            OllivierRicciCurvature,
         )
 
         # Parse model info

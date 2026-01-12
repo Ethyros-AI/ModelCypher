@@ -34,14 +34,16 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_curvature import (
     CurvatureSign,
-    EdgeCurvature,
     LocalCurvature,
     ManifoldCurvatureProfile,
+    SectionalCurvatureEstimator,
+    compute_curvature_divergence,
+)
+from modelcypher.core.domain.geometry.ollivier_ricci import (
+    EdgeCurvature,
     NodeRicciCurvature,
     OllivierRicciCurvature,
     OllivierRicciResult,
-    SectionalCurvatureEstimator,
-    compute_curvature_divergence,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,

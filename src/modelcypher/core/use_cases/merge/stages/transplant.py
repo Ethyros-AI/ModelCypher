@@ -24,88 +24,41 @@ Replaces sparse concept regions while preserving boundary behavior:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 # NOTE: ProjectionMethod import removed - always use GRAM_TRANSPORT (the only correct method)
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
-    regularization_epsilon,
-    sqrt_scalar,
-)
-from modelcypher.core.domain.geometry.anchor_grafting import (
-    compute_anchor_grafting_delta,
-    compute_anchor_grafting_with_ghost_anchors,
 )
 from modelcypher.core.domain.geometry.transplant import (
-    compute_transplant_delta,
-    compute_weight_space_transplant,
     partition_core_boundary,
-)
-from modelcypher.core.domain.geometry.constrained_transplant import (
-    verify_boundary_invariance,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
 )
-from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.cache import ComputationCache
-
-
-def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
-    """Compute EXACT Moore-Penrose pseudo-inverse using native backend operation.
-
-    Uses native b.pinv() which computes the exact pseudo-inverse via SVD.
-    Includes fallback for numerical stability when SVD fails.
-    
-    Linear alignment on the shared manifold requires exact pseudo-inverse. If SVD fails due to numerical
-    issues, we fall back to a regularized pseudo-inverse to maintain stability.
-    """
-    b = backend
-    # F is already a GPU array from GramAligner
-    F = b.astype(F, "float32")
-    b.eval(F)
-
-    try:
-        # Try EXACT Moore-Penrose pseudo-inverse - no approximation
-        F_pinv = b.pinv(F)
-        b.eval(F_pinv)
-    except Exception as e:
-        # Fallback: use regularized pseudo-inverse for numerical stability
-        # This can happen when F has extreme values after scale normalization
-        logger.warning(
-            "GEODESIC PINV: SVD failed (%s), using regularized fallback",
-            str(e)[:50]
-        )
-        # Compute (F.T @ F + eps*I)^-1 @ F.T for thin matrices
-        # or F.T @ (F @ F.T + eps*I)^-1 for fat matrices
-        from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
-        eps = regularization_epsilon(b, F)
-        
-        n, m = b.shape(F)
-        if int(n) >= int(m):
-            # Thin or square: use (F.T @ F + eps*I)^-1 @ F.T
-            FtF = b.matmul(b.transpose(F), F)
-            reg = b.multiply(eps, b.eye(int(m)))
-            FtF_reg = b.add(FtF, reg)
-            inv_part = b.inv(FtF_reg)
-            F_pinv = b.matmul(inv_part, b.transpose(F))
-        else:
-            # Fat: use F.T @ (F @ F.T + eps*I)^-1
-            FFt = b.matmul(F, b.transpose(F))
-            reg = b.multiply(eps, b.eye(int(n)))
-            FFt_reg = b.add(FFt, reg)
-            inv_part = b.inv(FFt_reg)
-            F_pinv = b.matmul(b.transpose(F), inv_part)
-        b.eval(F_pinv)
-
-    return F_pinv
+from modelcypher.core.use_cases.merge.stages.transplant_checkpoint import (
+    _load_checkpoint,
+    _save_checkpoint,
+)
+from modelcypher.core.use_cases.merge.stages.transplant_helpers import (
+    _promote_precision,
+)
+from modelcypher.core.use_cases.merge.stages.transplant_stitches import (
+    compute_composite_stitches,
+)
+from modelcypher.core.use_cases.merge.stages.transplant_embeddings import (
+    apply_embedding_alignment,
+)
+from modelcypher.core.use_cases.merge.stages.transplant_weight_processor import (
+    process_layer_weights,
+)
 
 
 from modelcypher.core.domain.merging.exceptions import (
@@ -113,88 +66,6 @@ from modelcypher.core.domain.merging.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
 )
-
-
-# =============================================================================
-# CROSS-ARCHITECTURE WEIGHT KEY MAPPING
-# =============================================================================
-# Different architectures use different naming conventions for equivalent weights.
-# This mapping allows transplanting between architectures like Qwen ↔ LFM2.
-# =============================================================================
-
-# Semantic weight name mappings (bidirectional)
-_WEIGHT_NAME_EQUIVALENTS = [
-    # MLP/FFN weights (SwiGLU style)
-    ("feed_forward.w1", "mlp.gate_proj"),  # Gate projection
-    ("feed_forward.w2", "mlp.down_proj"),  # Down projection
-    ("feed_forward.w3", "mlp.up_proj"),    # Up projection
-    # Attention output projection
-    ("self_attn.out_proj", "self_attn.o_proj"),
-    # Norms
-    ("operator_norm", "input_layernorm"),
-    ("ffn_norm", "post_attention_layernorm"),
-]
-
-
-def _map_weight_key_cross_arch(
-    target_key: str,
-    source_keys: set[str],
-    layer_mapping: dict[int, int] | None,
-    extract_layer_fn: "Callable[[str], int | None]",
-) -> str | None:
-    """Map a target weight key to an equivalent source weight key.
-
-    Handles cross-architecture merges where weight naming differs:
-    - LFM2 uses feed_forward.w1/w2/w3, Qwen uses mlp.gate_proj/up_proj/down_proj
-    - LFM2 uses self_attn.out_proj, Qwen uses self_attn.o_proj
-
-    Returns:
-        Mapped source key if found, None otherwise.
-    """
-    # Direct lookup first
-    if target_key in source_keys:
-        return target_key
-
-    # Extract target layer index
-    target_layer = extract_layer_fn(target_key)
-    if target_layer is None:
-        return None
-
-    # Get mapped source layer
-    source_layer = layer_mapping.get(target_layer, target_layer) if layer_mapping else target_layer
-
-    # Try name equivalents
-    for tgt_pattern, src_pattern in _WEIGHT_NAME_EQUIVALENTS:
-        if tgt_pattern in target_key:
-            # Replace layer index and weight name
-            candidate = target_key.replace(
-                f"layers.{target_layer}",
-                f"layers.{source_layer}"
-            ).replace(tgt_pattern, src_pattern)
-
-            if candidate in source_keys:
-                return candidate
-
-        # Try reverse mapping (source pattern in target key)
-        if src_pattern in target_key:
-            candidate = target_key.replace(
-                f"layers.{target_layer}",
-                f"layers.{source_layer}"
-            ).replace(src_pattern, tgt_pattern)
-
-            if candidate in source_keys:
-                return candidate
-
-    # Try just layer mapping (same weight name)
-    if layer_mapping and target_layer != source_layer:
-        candidate = target_key.replace(
-            f"layers.{target_layer}",
-            f"layers.{source_layer}"
-        )
-        if candidate in source_keys:
-            return candidate
-
-    return None
 from modelcypher.core.use_cases.merge.stages.manifest import (
     TransplantManifest,
     WeightStatus,
@@ -203,7 +74,6 @@ from modelcypher.core.use_cases.merge.stages.manifest import (
 from modelcypher.core.use_cases.merge.stages.density import (
     filter_core_probes_by_graft_mask,
 )
-from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -218,198 +88,6 @@ class TransplantStageResult:
     merged_weights: dict[str, Any]
     metrics: dict[str, Any]
     manifest: TransplantManifest | None = None  # Track every weight's status
-
-
-
-
-def _save_checkpoint(
-    checkpoint_dir: Path,
-    layer_idx: int,
-    merged_weights: dict[str, Any],
-    metrics: dict[str, Any],
-) -> None:
-    """Save transplant progress checkpoint for resume capability."""
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save metadata (small JSON file with state)
-    meta_path = checkpoint_dir / "transplant_checkpoint.json"
-    meta = {
-        "last_completed_layer": layer_idx,
-        "timestamp": time.time(),
-        "weights_transplanted": metrics.get("weights_transplanted", 0),
-        "layers_transplanted": metrics.get("layers_transplanted", 0),
-    }
-    meta_path.write_text(json.dumps(meta, indent=2))
-    logger.info("CHECKPOINT: Saved progress at layer %d to %s", layer_idx, checkpoint_dir)
-
-
-def _load_checkpoint(checkpoint_dir: Path) -> tuple[int, dict[str, Any]] | None:
-    """Load transplant checkpoint if available.
-
-    Returns:
-        Tuple of (last_completed_layer, metadata) or None if no checkpoint exists.
-    """
-    meta_path = checkpoint_dir / "transplant_checkpoint.json"
-    if not meta_path.exists():
-        return None
-
-    try:
-        meta = json.loads(meta_path.read_text())
-        last_layer = meta.get("last_completed_layer", -1)
-        logger.info(
-            "CHECKPOINT: Resuming from layer %d (weights=%d, layers=%d)",
-            last_layer,
-            meta.get("weights_transplanted", 0),
-            meta.get("layers_transplanted", 0),
-        )
-        return last_layer, meta
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning("CHECKPOINT: Failed to load checkpoint: %s", e)
-        return None
-
-
-def _compute_alignment_metrics(
-    core_acts: "Array",
-    weight_before: "Array",
-    weight_after: "Array",
-    weight_source: "Array",
-    backend: "Backend",
-) -> dict[str, float]:
-    """Measure core distance shift toward the source for a single weight.
-
-    Metrics are only defined when activation and weight input dimensions match.
-    """
-    from modelcypher.core.domain.geometry.cka import compute_cka
-
-    b = backend
-
-    if int(core_acts.shape[1]) != int(weight_before.shape[1]):
-        raise DimensionMismatchError(
-            f"Alignment metrics require matching input dims; "
-            f"acts={int(core_acts.shape[1])}, weight_in={int(weight_before.shape[1])}"
-        )
-
-    output_before = b.matmul(core_acts, b.transpose(weight_before))
-    output_after = b.matmul(core_acts, b.transpose(weight_after))
-    output_source = b.matmul(core_acts, b.transpose(weight_source))
-    b.eval(output_before, output_after, output_source)
-
-        # Geodesic distance respects manifold curvature. Chord distance systematically errs.
-    # Aggregate per-sample geodesic distances using geodesic norms.
-    geo_distances_before = geodesic_paired_distances(
-        output_before, output_source, b, use_cache=False
-    )
-    geo_distances_after = geodesic_paired_distances(
-        output_after, output_source, b, use_cache=False
-    )
-    dist_before_arr = geodesic_norms(
-        b.reshape(geo_distances_before, (1, -1)), b, use_cache=False
-    )
-    dist_after_arr = geodesic_norms(
-        b.reshape(geo_distances_after, (1, -1)), b, use_cache=False
-    )
-    b.eval(dist_before_arr, dist_after_arr)
-
-    dist_before = float(b.to_scalar(dist_before_arr))
-    dist_after = float(b.to_scalar(dist_after_arr))
-
-    eps = float(machine_epsilon(b, weight_before))
-    if dist_before > eps:
-        core_distance_reduction = (dist_before - dist_after) / dist_before
-    else:
-        core_distance_reduction = 0.0
-
-    cka_before = compute_cka(output_before, output_source, backend=b)
-    cka_after = compute_cka(output_after, output_source, backend=b)
-
-    return {
-        "core_dist_to_source_before": dist_before,
-        "core_dist_to_source_after": dist_after,
-        "core_distance_reduction": core_distance_reduction,
-        "cka_before": cka_before.best,
-        "cka_after": cka_after.best,
-    }
-
-
-def _set_submatrix(
-    backend: "Backend",
-    target: "Array",
-    source: "Array",
-    row_offset: int,
-    col_offset: int,
-) -> "Array":
-    """Set a submatrix of target from source at the given offset.
-
-    Since MLX doesn't support in-place slice assignment, we construct the
-    result using concatenation or element-wise operations.
-    """
-    src_rows, src_cols = int(source.shape[0]), int(source.shape[1])
-    tgt_rows, tgt_cols = int(target.shape[0]), int(target.shape[1])
-
-    if src_rows == 0 or src_cols == 0:
-        return target
-
-    row_end = row_offset + src_rows
-    col_end = col_offset + src_cols
-
-    # Build middle block with column concatenation
-    mid_parts = []
-    if col_offset > 0:
-        mid_parts.append(target[row_offset:row_end, :col_offset])
-    mid_parts.append(source)
-    if col_end < tgt_cols:
-        mid_parts.append(target[row_offset:row_end, col_end:])
-
-    mid = mid_parts[0] if len(mid_parts) == 1 else backend.concatenate(mid_parts, axis=1)
-
-    # Stitch rows via concatenation
-    row_parts = []
-    if row_offset > 0:
-        row_parts.append(target[:row_offset, :])
-    row_parts.append(mid)
-    if row_end < tgt_rows:
-        row_parts.append(target[row_end:, :])
-
-    result = row_parts[0] if len(row_parts) == 1 else backend.concatenate(row_parts, axis=0)
-    backend.eval(result)
-    return result
-
-
-def _compute_dimension_projection(
-    backend: "Backend",
-    src_dim: int,
-    tgt_dim: int,
-) -> "Array":
-    """Compute an orthogonal projection matrix between dimensions.
-
-    For src_dim → tgt_dim:
-    - If tgt_dim < src_dim: truncation (keep first tgt_dim dimensions)
-    - If tgt_dim > src_dim: padding (embed in larger space)
-    - If equal: identity
-
-    Uses identity-based projection to preserve geometric structure.
-    """
-    if src_dim == tgt_dim:
-        return backend.eye(src_dim, dtype="float32")
-
-    min_dim = min(src_dim, tgt_dim)
-
-    # Create identity block of size min_dim x min_dim
-    identity_block = backend.eye(min_dim, dtype="float32")
-
-    if tgt_dim < src_dim:
-        # Truncation: [src_dim, tgt_dim]
-        # Stack: identity_block on top, zeros below
-        zeros_below = backend.zeros((src_dim - min_dim, tgt_dim), dtype="float32")
-        projection = backend.concatenate([identity_block, zeros_below], axis=0)
-    else:
-        # Padding: [src_dim, tgt_dim]
-        # Stack: identity_block on left, zeros on right
-        zeros_right = backend.zeros((src_dim, tgt_dim - min_dim), dtype="float32")
-        projection = backend.concatenate([identity_block, zeros_right], axis=1)
-
-    backend.eval(projection)
-    return projection
 
 
 def stage_transplant(
@@ -494,7 +172,7 @@ def stage_transplant(
             if occ is None:
                 continue
             occ_arr = b.array(occ)
-            occ_arr = b.astype(occ_arr, "float32")
+            occ_arr = _promote_precision(occ_arr, b)
             b.eval(occ_arr)
             prior_occupancy_arrays[int(layer_idx)] = occ_arr
         metrics["occupancy_prior_layers"] = len(prior_occupancy_arrays)
@@ -569,109 +247,16 @@ def stage_transplant(
     )
 
     # ==========================================================================
-    # 2D EMBEDDING ALIGNMENT: Apply GramAlign to embed_tokens
-    # Same closed-form alignment; geodesic CKA is diagnostic.
+    # 2D EMBEDDING ALIGNMENT: Preserve target vocab interface
     # ==========================================================================
-    
-    # First, detect cross-vocabulary merge by checking vocab sizes
-    source_embed_key = None
-    target_embed_key = None
-    
-    for key in source_weights:
-        if "embed_tokens.weight" in key or "wte.weight" in key:
-            source_embed_key = key
-            break
-            
-    for key in target_weights:
-        if "embed_tokens.weight" in key or "wte.weight" in key:
-            target_embed_key = key
-            break
-    
-    cross_vocab_merge = False
-    if source_embed_key and target_embed_key:
-        src_vocab_shape = b.shape(source_weights[source_embed_key])
-        tgt_vocab_shape = b.shape(target_weights[target_embed_key])
-        src_vocab_size = int(src_vocab_shape[0])
-        tgt_vocab_size = int(tgt_vocab_shape[0])
-        cross_vocab_merge = (src_vocab_size != tgt_vocab_size)
-    
-    if cross_vocab_merge:
-        # =================================================================
-        # CROSS-VOCAB: PRESERVE TARGET'S NATIVE VOCABULARY
-        # =================================================================
-        # Key insight: Don't try to force a French speaker to become Russian.
-        # Keep the target's native 1D↔2D interface (embedding ↔ token).
-        # Only transplant the enriched manifold (hidden layers).
-        #
-        # The target already speaks its language. We're giving it
-        # more sophisticated thoughts to express, not forcing translation.
-        # =================================================================
-        logger.info(
-            "CROSS-VOCAB MERGE: Preserving target's native vocabulary interface "
-            "(src: %d tokens, tgt: %d tokens)",
-            src_vocab_size, tgt_vocab_size
-        )
-        logger.info(
-            "CROSS-VOCAB MERGE: Target keeps its 1D↔2D interface. "
-            "Hidden manifold enriched via aligned transplant."
-        )
-        # embed_tokens stays exactly as target - not modified
-        metrics["cross_vocab_merge"] = True
-        metrics["preserved_target_vocab"] = True
-        metrics["src_vocab_size"] = src_vocab_size
-        metrics["tgt_vocab_size"] = tgt_vocab_size
-        
-    elif embedding_transform is not None:
-        # =================================================================
-        # SAME-VOCAB: PRESERVE TARGET EMBEDDINGS
-        # =================================================================
-        # The embedding layer is the model's vocabulary representation.
-        # Replacing it with transformed source embeddings breaks the model.
-        #
-        # Correct approach: PRESERVE target embeddings. The transform F is
-        # used for aligning activations during layer transplant, not for
-        # replacing embeddings.
-        #
-        # Knowledge addition happens in hidden layers via null-space projection,
-        # not by modifying the embedding lookup table.
-        # =================================================================
-        src_embed = source_weights[source_embed_key]
-        src_embed = dequantize_if_needed(src_embed, source_embed_key, source_weights, b)
-
-        tgt_embed = target_weights[target_embed_key]
-        tgt_embed = dequantize_if_needed(tgt_embed, target_embed_key, target_weights, b)
-
-        src_hidden_dim = int(b.shape(src_embed)[1])
-        tgt_hidden_dim = int(b.shape(tgt_embed)[1])
-
-        # Keep target embeddings unchanged - preserve target's vocabulary representation
-        merged[target_embed_key] = tgt_embed
-        metrics["embedding_preserved"] = True
-        metrics["same_vocab_target_kept"] = True
-
-        logger.info(
-            "EMBEDDING PRESERVED: Keeping target embed_tokens [%d,%d] (source was [%d,%d])",
-            int(b.shape(tgt_embed)[0]), tgt_hidden_dim,
-            int(b.shape(src_embed)[0]), src_hidden_dim
-        )
-
-        # Handle lm_head if separate (not weight-tied) - also keep target's
-        lm_head_key = None
-        for key in target_weights:
-            if "lm_head" in key.lower() and "weight" in key:
-                lm_head_key = key
-                break
-
-        if lm_head_key:
-            tgt_lm_head = target_weights[lm_head_key]
-            tgt_lm_head = dequantize_if_needed(tgt_lm_head, lm_head_key, target_weights, b)
-            merged[lm_head_key] = tgt_lm_head
-            logger.info("LM_HEAD PRESERVED: Keeping target %s", lm_head_key)
-        else:
-            logger.info("LM_HEAD: Weight-tied with embed_tokens (both preserved)")
-            
-    else:
-        logger.info("EMBEDDING ALIGNMENT: No embedding_transform provided, using target embeddings")
+    apply_embedding_alignment(
+        source_weights=source_weights,
+        target_weights=target_weights,
+        embedding_transform=embedding_transform,
+        merged=merged,
+        metrics=metrics,
+        backend=b,
+    )
 
     # ==========================================================================
     # PER-LAYER ALIGNMENT: Use transforms from probe stage (linear alignment on shared manifold)
@@ -687,108 +272,6 @@ def stage_transplant(
     #   - SmolLM attention dim = 15 * 64 = 960
     #   - Qwen attention dim = 14 * 64 = 896
     # ==========================================================================
-    # STITCH COMPUTATION HELPER
-    # ==========================================================================
-    def _compute_composite_stitches(
-        transforms_map: dict[int, Any],
-        desc: str,
-        layer_scale_ratios: dict[int, float] | None = None,  # EXACT magnitude factors
-    ) -> dict[int, dict[int, tuple[Any, Any]]]:
-        """Compute stitch matrices (P, Q) for each layer, supporting composite sources.
-        
-        If layer_scale_ratios is provided, applies EXACT scale correction:
-        F_scaled = F * scale_ratio so that ||source @ F_scaled|| = ||target||
-        """
-        result_stitches = {}
-        if not transforms_map:
-            return result_stitches
-
-        logger.info(
-            "%s: Processing stitches for %d target layers...",
-            desc, len(transforms_map)
-        )
-
-        for tgt_layer, data in transforms_map.items():
-            try:
-                # Normalize to dict {src: transform}
-                src_map = data if isinstance(data, dict) else {layer_mapping.get(tgt_layer, 0): data}
-                sorted_srcs = sorted(src_map.keys())
-
-                # Stack source transforms to reconstruct composite F
-                # Transforms are already GPU arrays from GramAligner
-                parts = []
-                dims = []
-                for s in sorted_srcs:
-                    arr = b.astype(src_map[s], "float32")  # Already GPU array
-                    parts.append(arr)
-                    dims.append(arr.shape[0])  # Source feature dim
-                
-                # F maps [Sum(Ds), Dt] (Source -> Target)
-                F = b.concatenate(parts, axis=0) if len(parts) > 1 else parts[0]
-                b.eval(F)
-
-                # Compute Stitches
-                # Output Stitch P = F.T (maps Tgt_Out -> Src_Out / aligns output space / activations)
-                # Note: Weights transformed via P @ W @ Q.
-                # If W maps In->Out, and Y = X @ W.T (MLX convention).
-                # Y_tgt = Y_src @ F.
-                # X_tgt @ W_tgt.T = X_src @ W_src.T @ F.
-                # We want W_tgt.T = Q.T @ W_src.T @ F.
-                # So P = F.T.
-                
-                # =====================================================================
-                # EXACT SCALE FACTOR: Apply scale_ratio to OUTPUT stitch (not F itself)
-                # =====================================================================
-                # scale_ratio = ||target|| / ||source @ F|| (computed in GramAligner)
-                # Applying to F before pinv causes numerical instability!
-                # Instead, apply to the OUTPUT stitch P:
-                #   P_scaled = F.T * scale_ratio
-                # This achieves exact output magnitude while preserving pinv stability.
-                # =====================================================================
-                
-                stitch_output_full = b.transpose(F)
-                
-                # Input Stitch Q = F_pinv.T (maps Src_In -> Tgt_In / aligns input space)
-                # Compute pinv on UNSCALED F for numerical stability
-                F_pinv = _geodesic_pinv(b, F)
-                stitch_input_full = b.transpose(F_pinv)
-                b.eval(stitch_output_full, stitch_input_full)
-                
-                # Apply scale correction to OUTPUT stitch for EXACT magnitude
-                if layer_scale_ratios and tgt_layer in layer_scale_ratios:
-                    sr = layer_scale_ratios[tgt_layer]
-                    if abs(sr - 1.0) > 1e-6:  # Only scale if meaningfully different from 1.0
-                        stitch_output_full = b.multiply(stitch_output_full, sr)
-                        b.eval(stitch_output_full)
-                        logger.debug(
-                            "%s layer %d: Applied scale_ratio=%.4f for EXACT magnitude",
-                            desc, tgt_layer, sr
-                        )
-
-                # Split composite stitches back to per-source
-                stitches = {}
-                idx_out = 0 # F.T cols are source dims
-                idx_in = 0  # F_pinv.T rows are source dims
-                
-                for s, d in zip(sorted_srcs, dims):
-                    # P slice: [Dt, d]
-                    p_slice = stitch_output_full[:, idx_out : idx_out + d]
-                    # Q slice: [d, Dt]
-                    q_slice = stitch_input_full[idx_in : idx_in + d, :]
-                    
-                    stitches[s] = (p_slice, q_slice)
-                    idx_out += d
-                    idx_in += d
-                
-                result_stitches[tgt_layer] = stitches
-
-            except Exception as e:
-                logger.warning("Failed to process stitches for %s layer %d: %s", desc, tgt_layer, e)
-                # Don't crash, just skip this stitch
-                
-        return result_stitches
-
-    # ==========================================================================
     # 1. PER-LAYER HIDDEN ALIGNMENT
     # ==========================================================================
     # Log scale_ratios status for debugging
@@ -800,8 +283,12 @@ def stage_transplant(
     else:
         logger.warning("SCALE RATIOS: Empty or None!")
     
-    layer_hidden_stitches = _compute_composite_stitches(
-        feature_transforms, "HIDDEN", scale_ratios  # Pass scale_ratios for EXACT magnitude
+    layer_hidden_stitches = compute_composite_stitches(
+        transforms_map=feature_transforms,
+        desc="HIDDEN",
+        backend=b,
+        layer_mapping=layer_mapping,
+        layer_scale_ratios=scale_ratios,
     )
     metrics["per_layer_alignment"] = bool(layer_hidden_stitches)
     metrics["layers_with_transforms"] = len(layer_hidden_stitches)
@@ -809,8 +296,11 @@ def stage_transplant(
     # ==========================================================================
     # 2. PER-LAYER ATTENTION ALIGNMENT (Q)
     # ==========================================================================
-    layer_attention_stitches = _compute_composite_stitches(
-        attention_transforms, "ATTENTION Q"
+    layer_attention_stitches = compute_composite_stitches(
+        transforms_map=attention_transforms,
+        desc="ATTENTION Q",
+        backend=b,
+        layer_mapping=layer_mapping,
     )
 
     # RIGOROUS GEOMETRY: No fallbacks for attention.
@@ -821,8 +311,18 @@ def stage_transplant(
     # ==========================================================================
     # 3. PER-LAYER K/V ALIGNMENT
     # ==========================================================================
-    layer_k_stitches = _compute_composite_stitches(k_transforms, "K PROJ")
-    layer_v_stitches = _compute_composite_stitches(v_transforms, "V PROJ")
+    layer_k_stitches = compute_composite_stitches(
+        transforms_map=k_transforms,
+        desc="K PROJ",
+        backend=b,
+        layer_mapping=layer_mapping,
+    )
+    layer_v_stitches = compute_composite_stitches(
+        transforms_map=v_transforms,
+        desc="V PROJ",
+        backend=b,
+        layer_mapping=layer_mapping,
+    )
     
     metrics["per_layer_k_alignment"] = bool(layer_k_stitches)
     metrics["per_layer_v_alignment"] = bool(layer_v_stitches)
@@ -832,8 +332,11 @@ def stage_transplant(
     # ==========================================================================
     # OPTIMIZATION: Use pre-computed intermediate transforms from probe stage
     # instead of running GramAligner per-layer (~50k steps saved per layer)
-    layer_intermediate_stitches = _compute_composite_stitches(
-        intermediate_transforms, "INTERMEDIATE"
+    layer_intermediate_stitches = compute_composite_stitches(
+        transforms_map=intermediate_transforms,
+        desc="INTERMEDIATE",
+        backend=b,
+        layer_mapping=layer_mapping,
     )
     metrics["per_layer_intermediate_alignment"] = bool(layer_intermediate_stitches)
 
@@ -968,8 +471,6 @@ def stage_transplant(
         #
         # OPTIMIZATION: All transforms are now pre-computed in probe stage.
 
-        from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-
         # USE PER-LAYER ALIGNED hidden stitch (from probe stage with linear alignment)
         # Each layer gets its own transform - different layers encode different
         # parts of the geometry at different resolutions.
@@ -1093,7 +594,7 @@ def stage_transplant(
             # List of 1D arrays - stack them
             stacked = b.stack(act_list, axis=0)
         # Convert to float32 for numerical stability in linalg operations.
-        stacked = b.astype(stacked, "float32")
+        stacked = _promote_precision(stacked, b)
         b.eval(stacked)
 
         layer_dim = int(stacked.shape[1])
@@ -1115,7 +616,7 @@ def stage_transplant(
                 src_hidden = src_acts
             else:
                 src_hidden = b.stack(src_acts, axis=0)
-            src_hidden = b.astype(src_hidden, "float32")
+            src_hidden = _promote_precision(src_hidden, b)
             b.eval(src_hidden)
 
             # Apply alignment transform F
@@ -1144,7 +645,7 @@ def stage_transplant(
                 src_inter = src_inter_acts
             else:
                 src_inter = b.stack(src_inter_acts, axis=0)
-            src_inter = b.astype(src_inter, "float32")
+            src_inter = _promote_precision(src_inter, b)
             b.eval(src_inter)
 
             # Apply intermediate alignment transform I
@@ -1170,7 +671,7 @@ def stage_transplant(
         if prior_occupancy is None:
             prior_occupancy = b.zeros((layer_dim,), dtype="float32")
         else:
-            prior_occupancy = b.astype(prior_occupancy, "float32")
+            prior_occupancy = _promote_precision(prior_occupancy, b)
         layer_delta_occupancy = b.zeros((layer_dim,), dtype="float32")
         b.eval(prior_occupancy, layer_delta_occupancy)
 
@@ -1216,862 +717,48 @@ def stage_transplant(
             boundary_acts = b.zeros((0, int(stacked.shape[1])))
             b.eval(boundary_acts)
 
-        core_sample_weights = None
-        target_sample_weights = None
-        if density_weights is not None and layer_idx in density_weights:
-            layer_density_w = density_weights[layer_idx]
-            if not hasattr(layer_density_w, "shape"):
-                layer_density_w = b.array(layer_density_w)
-            layer_density_w = b.astype(layer_density_w, "float32")
-            b.eval(layer_density_w)
-
-            if partition.core_indices:
-                # Source weights: emphasize probes where source is denser
-                core_sample_weights = b.take(layer_density_w, core_indices, axis=0)
-                b.eval(core_sample_weights)
-            if boundary_indices is not None:
-                # Target weights align with boundary_acts (null-space variance uses boundary activations)
-                inverse_weights = 1.0 - layer_density_w
-                target_sample_weights = b.take(inverse_weights, boundary_indices, axis=0)
-                b.eval(target_sample_weights)
-
         layer_transplanted = False
         best_alignment: dict[str, float] | None = None
         best_delta_norm = -1.0
         can_measure_alignment = core_acts is not None and int(core_acts.shape[0]) >= 2
 
-        for weight_num, key in enumerate(layer_keys):
-            weights_processed += 1
-            weight_start_time = time.time()
-
-            # Skip quantization metadata and non-weight tensors (only transplant actual matrices).
-            if key.endswith(".scales") or key.endswith(".biases"):
-                continue
-            if not key.endswith(".weight"):
-                continue
-
-            # Progress callback for external monitoring
-            if progress_callback:
-                progress_callback(
-                    f"Layer {layer_idx}: {key}",
-                    weights_processed,
-                    total_weights,
-                )
-
-            target_w = target_weights.get(key)
-
-            # Cross-architecture weight key mapping
-            # Try direct lookup first, then semantic equivalents
-            source_key = _map_weight_key_cross_arch(
-                target_key=key,
-                source_keys=set(source_weights.keys()),
-                layer_mapping=layer_mapping,
-                extract_layer_fn=extract_layer_index_fn,
-            )
-            source_w = source_weights.get(source_key) if source_key else None
-
-            if target_w is None or source_w is None:
-                # Log missing weights for debugging (only first few per layer)
-                if source_w is None and "conv.conv" not in key:  # Skip 3D conv weights
-                    metrics.setdefault("unmapped_weights", [])
-                    if len(metrics["unmapped_weights"]) < 20:
-                        metrics["unmapped_weights"].append(key)
-                continue
-
-            metrics["weights_considered"] += 1
-
-            # Skip non-1D/2D weights (only handle 1D norms and 2D matrices)
-            if not hasattr(target_w, "shape") or not hasattr(source_w, "shape"):
-                continue
-            ndim_t = len(target_w.shape)
-            ndim_s = len(source_w.shape)
-            if ndim_t not in (1, 2) or ndim_s not in (1, 2) or ndim_t != ndim_s:
-                continue
-
-            # Dequantize quantized weights (uint32/int dtypes) using scales/biases
-            target_dtype = str(getattr(target_w, 'dtype', '')).lower()
-            source_dtype = str(getattr(source_w, 'dtype', '')).lower()
-
-            if 'int' in target_dtype or 'uint' in target_dtype:
-                logger.debug("Dequantizing target weight: %s", key)
-                target_w = dequantize_if_needed(target_w, key, target_weights, b)
-                if target_w is None or not hasattr(target_w, 'shape'):
-                    logger.debug("Failed to dequantize target weight: %s", key)
-                    continue
-                # Check if still quantized after dequantize attempt
-                target_dtype = str(getattr(target_w, 'dtype', '')).lower()
-                if 'int' in target_dtype or 'uint' in target_dtype:
-                    logger.debug("Skipping still-quantized target weight: %s", key)
-                    continue
-
-            if 'int' in source_dtype or 'uint' in source_dtype:
-                # Use SOURCE_KEY (not target key) to find scales/biases in source dict
-                logger.debug("Dequantizing source weight: %s (source_key: %s)", key, source_key)
-                source_w = dequantize_if_needed(source_w, source_key, source_weights, b)
-                if source_w is None or not hasattr(source_w, 'shape'):
-                    logger.debug("Failed to dequantize source weight: %s", key)
-                    continue
-                # Check if still quantized after dequantize attempt
-                source_dtype = str(getattr(source_w, 'dtype', '')).lower()
-                if 'int' in source_dtype or 'uint' in source_dtype:
-                    logger.debug("Skipping still-quantized source weight: %s", key)
-                    continue
-
-            # =================================================================
-            # 1D WEIGHT HANDLING (layer norms, biases)
-            # =================================================================
-            # CRITICAL GEOMETRY: LayerNorm is the SCALE ADAPTER between layers.
-            # It calibrates activation magnitudes to match what each layer expects.
-            # 
-            # Target's LayerNorm was calibrated for target's embedding scale.
-            # Source's LayerNorm was calibrated for source's embedding scale.
-            # 
-            # When transplanting knowledge weights (Q,K,V,MLP), we must KEEP
-            # target's LayerNorm to maintain scale calibration. Otherwise the
-            # transplanted weights receive inputs at wrong magnitude.
-            # =================================================================
-            if len(source_w.shape) == 1 and len(target_w.shape) == 1:
-                src_dim = int(source_w.shape[0])
-                tgt_dim = int(target_w.shape[0])
-                
-                # PRESERVE TARGET'S LAYERNORM - it's the scale adapter
-                if 'layernorm' in key.lower() or 'norm' in key.lower():
-                    # Keep target's LayerNorm (already in merged from initialization)
-                    # Do NOT transplant source's - it has wrong scale calibration
-                    metrics.setdefault("norm_weights_preserved", 0)
-                    metrics["norm_weights_preserved"] += 1
-                    logger.debug("PRESERVING target LayerNorm: %s (scale adapter)", key)
-                    continue
-                
-                if src_dim != tgt_dim and hidden_stitch_output is not None:
-                    # Project 1D source weight to target dimension
-                    # For layer norm: w_tgt = mean(F.T @ diag(w_src), axis=1) weighted
-                    # Simpler approach: use F.T @ w_src (treating as column vector)
-                    stitch_success = False
-                    try:
-                        source_w_2d = b.reshape(source_w, (src_dim, 1))
-                        b.eval(source_w_2d)
-                        
-                        # F.T is [tgt_hidden, src_hidden], source_w_2d is [src_hidden, 1]
-                        # Result is [tgt_hidden, 1]
-                        projected = b.matmul(hidden_stitch_output, source_w_2d)
-                        b.eval(projected)
-                        
-                        source_aligned = b.reshape(projected, (tgt_dim,))
-                        b.eval(source_aligned)
-                        
-                        # Replace in merged weights
-                        merged[key] = source_aligned
-                        stitch_success = True
-                        logger.info(
-                            "1D stitch (norm/bias): %s [%d] → [%d]",
-                            key, src_dim, tgt_dim
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to stitch 1D weight %s: %s", key, e)
-                    
-                    if stitch_success:
-                        metrics.setdefault("norm_weights_stitched", 0)
-                        metrics["norm_weights_stitched"] += 1
-                        metrics["weights_transplanted"] += 1
-                    continue
-                elif src_dim == tgt_dim:
-                    # Same dimension - can directly use source
-                    merged[key] = source_w
-                    metrics["weights_transplanted"] += 1
-                    continue
-                else:
-                    # No stitch available for 1D weight
-                    continue
-
-            # Skip if shapes became non-2D after dequantization (2D logic below)
-            if len(target_w.shape) != 2 or len(source_w.shape) != 2:
-                continue
-
-            try:
-                # Convert to float32 backend arrays
-                logger.debug("Converting weight %s to float32", key)
-                target_w = b.astype(b.array(target_w), "float32")
-                source_w = b.astype(b.array(source_w), "float32")
-                b.eval(target_w, source_w)
-                logger.debug("Converted %s: target=%s, source=%s", key, target_w.shape, source_w.shape)
-            except Exception as e:
-                logger.warning("Failed to convert weight %s to float32: %s", key, e)
-                continue
-
-            source_candidate = source_w
-            if target_w.shape != source_candidate.shape:
-                # =================================================================
-                # MULTI-SPACE STITCHING: Apply pre-computed stitches to weights
-                # =================================================================
-                # MLP weights need BOTH hidden AND intermediate stitches:
-                #   gate_proj [intermediate, hidden] → [tgt_intermediate, tgt_hidden]
-                #   up_proj   [intermediate, hidden] → [tgt_intermediate, tgt_hidden]
-                #   down_proj [hidden, intermediate] → [tgt_hidden, tgt_intermediate]
-                #
-                # Attention weights only need hidden stitch:
-                #   q_proj, k_proj, v_proj [hidden, head*num_heads] → [tgt_hidden, ...]
-                #   o_proj [head*num_heads, hidden] → [..., tgt_hidden]
-
-                # Use ORIGINAL source shape for dimension matching.
-                original_source_shape = source_w.shape
-                # =================================================================
-                # WEIGHT TYPE DETECTION: Architecture-agnostic patterns
-                # =================================================================
-                # Match ALL architectures, not just specific naming conventions:
-                # - Standard transformer: gate_proj, up_proj, down_proj
-                # - Llama-style: mlp.fc1, mlp.fc2
-                # - LFM2/Mamba-style: feed_forward.w1, w2, w3
-                # - Hybrid conv: conv.in_proj, conv.out_proj
-                is_mlp = any(mlp_name in key for mlp_name in [
-                    "gate_proj", "up_proj", "down_proj",  # Standard
-                    "mlp.fc1", "mlp.fc2",                 # Llama
-                    "feed_forward.w1", "feed_forward.w2", "feed_forward.w3",  # LFM2
-                    "mlp.gate", "mlp.up", "mlp.down",     # Alternative naming
-                ])
-                # Conv projections in hybrid architectures (LFM2, Mamba, etc.)
-                is_conv_proj = any(conv_name in key for conv_name in [
-                    "conv.in_proj", "conv.out_proj",      # LFM2
-                    "in_proj", "out_proj",                # General projection names
-                ]) and "self_attn" not in key  # Exclude attention out_proj
-
-                # =================================================================
-                # MIRROR PROBLEM FIX: Correct weight folding transforms
-                # =================================================================
-                # GramAligner finds F such that: source @ F → target (activation alignment)
-                #
-                # For WEIGHT folding, we need the inverse on the INPUT side:
-                #   W_target = F_out.T @ W_source @ pinv(F_in).T
-                #
-                # Where:
-                #   - F_out.T [tgt_out, src_out] = stitch_output (left multiply for output dim)
-                #   - pinv(F_in).T [src_in, tgt_in] = stitch_input (right multiply for input dim)
-                #
-                # Weight shapes: [output_features, input_features]
-                #   - gate_proj/up_proj: [intermediate, hidden] (out=inter, in=hidden)
-                #   - down_proj:         [hidden, intermediate] (out=hidden, in=inter)
-                #   - attention:         [hidden, hidden] (both dims hidden)
-
-                if is_mlp and hidden_stitch_output is not None and intermediate_stitch_output is not None:
-                    # MLP weight: apply BOTH stitches with correct orientations
-                    # stitch_output for OUTPUT side (rows), stitch_input for INPUT side (cols)
-                    # OPTIMIZATION: Use cached dimensions instead of repeated .shape calls
-                    src_hidden_dim = stitch_dims['src_hidden']
-                    tgt_hidden_dim = stitch_dims['tgt_hidden']
-                    src_inter_dim = stitch_dims['src_inter']
-                    tgt_inter_dim = stitch_dims['tgt_inter']
-
-                    logger.info(
-                        "MLP weight %s: applying dual stitch (hidden %d→%d, inter %d→%d)",
-                        key, src_hidden_dim, tgt_hidden_dim, src_inter_dim, tgt_inter_dim
-                    )
-
-                    # Determine which dimension is which from ORIGINAL source shape
-                    dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
-
-                    if dim0 == src_inter_dim and dim1 == src_hidden_dim:
-                        # gate_proj/up_proj: [intermediate, hidden] → [tgt_inter, tgt_hidden]
-                        # Output=intermediate (rows), Input=hidden (cols)
-                        # W_target = inter_stitch_output @ W @ hidden_stitch_input
-                        source_aligned = b.matmul(intermediate_stitch_output, source_w)
-                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                        b.eval(source_aligned)
-                        logger.info("Dual stitch (gate/up): [%d,%d] → [%d,%d]",
-                                    dim0, dim1, tgt_inter_dim, tgt_hidden_dim)
-
-                    elif dim0 == src_hidden_dim and dim1 == src_inter_dim:
-                        # down_proj: [hidden, intermediate] → [tgt_hidden, tgt_inter]
-                        # Output=hidden (rows), Input=intermediate (cols)
-                        # W_target = hidden_stitch_output @ W @ inter_stitch_input
-                        source_aligned = b.matmul(hidden_stitch_output, source_w)
-                        source_aligned = b.matmul(source_aligned, intermediate_stitch_input)
-                        b.eval(source_aligned)
-                        logger.info("Dual stitch (down): [%d,%d] → [%d,%d]",
-                                    dim0, dim1, tgt_hidden_dim, tgt_inter_dim)
-
-                    else:
-                        logger.warning(
-                            "MLP weight %s shape [%d,%d] doesn't match expected dims "
-                            "(hidden=%d, inter=%d) - skipping",
-                            key, dim0, dim1, src_hidden_dim, src_inter_dim
-                        )
-                        continue
-
-                    metrics.setdefault("dual_stitch_applied", 0)
-                    metrics["dual_stitch_applied"] += 1
-
-                elif hidden_stitch_output is not None and hidden_stitch_input is not None:
-                    # =================================================================
-                    # ATTENTION WEIGHT STITCHING (replaces previous skip logic)
-                    # =================================================================
-                    # A structural incompatibility IS a geometric one. Head count difference
-                    # is just another dimension mismatch that GramAligner can solve.
-                    #
-                    # Example: SmolLM (15 heads) → Qwen (14 heads)
-                    #   - q_proj [960, 960] → [896, 896]
-                    #   - 960 = 15 * 64 (SmolLM attention dim)
-                    #   - 896 = 14 * 64 (Qwen attention dim)
-                    #   - GramAligner finds F such that CKA(src_attn @ F, tgt_attn) = 1.0
-                    #
-                    # Weight stitching for attention:
-                    #   - q_proj/k_proj/v_proj: [attn_dim, hidden_dim]
-                    #     → attention_stitch_output @ W @ hidden_stitch_input
-                    #   - o_proj: [hidden_dim, attn_dim]
-                    #     → hidden_stitch_output @ W @ attention_stitch_input
-                    is_attention = any(attn_name in key for attn_name in [
-                        "q_proj", "k_proj", "v_proj", "o_proj",
-                        "self_attn", "query", "key", "value",
-                    ])
-
-                    attention_stitch_applied = False
-
-                    if is_attention and attention_stitch_output is not None:
-                        # We have attention stitch - apply it!
-                        # OPTIMIZATION: Use cached dimensions instead of repeated .shape calls
-                        src_attn_dim = stitch_dims['src_attn']
-                        tgt_attn_dim = stitch_dims['tgt_attn']
-                        src_hidden_dim = stitch_dims['src_hidden']
-                        tgt_hidden_dim = stitch_dims['tgt_hidden']
-                        dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
-
-                        # Get KV stitch dimensions for GQA detection (use cached if available)
-                        # GQA models: K/V have fewer heads than Q (e.g., SmolLM: Q=960, KV=320)
-                        src_kv_dim = stitch_dims.get('src_kv', src_attn_dim)
-                        tgt_kv_dim = stitch_dims.get('tgt_kv', tgt_attn_dim)
-
-                        # Determine attention weight pattern
-                        # GQA: q_proj uses Q-attention dim, k_proj/v_proj use KV-attention dim
-                        is_q = any(n in key for n in ["q_proj", "query"])
-                        is_kv = any(n in key for n in ["k_proj", "v_proj", "key", "value"])
-                        is_o = any(n in key for n in ["o_proj", "out_proj"])
-
-                        if is_q and dim0 == src_attn_dim and dim1 == src_hidden_dim:
-                            # q_proj: [Q_attn, hidden] → attention_stitch @ W @ hidden_stitch
-                            source_aligned = b.matmul(attention_stitch_output, source_w)
-                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                            b.eval(source_aligned)
-                            logger.info(
-                                "Attention stitch (q_proj): %s [%d,%d] → [%d,%d]",
-                                key, dim0, dim1, tgt_attn_dim, tgt_hidden_dim
-                            )
-                            metrics.setdefault("attention_stitched", 0)
-                            metrics["attention_stitched"] += 1
-                            attention_stitch_applied = True
-
-                        elif is_q and dim0 == src_attn_dim and dim1 == src_attn_dim:
-                            # QWEN-style Q: [Q_attn, Q_attn] → attention_stitch @ W @ attention_stitch_input
-                            # Both dimensions are attention dimensions
-                            source_aligned = b.matmul(attention_stitch_output, source_w)
-                            source_aligned = b.matmul(source_aligned, attention_stitch_input)
-                            b.eval(source_aligned)
-                            logger.info(
-                                "Attention stitch (q_proj square): %s [%d,%d] → [%d,%d]",
-                                key, dim0, dim1, tgt_attn_dim, tgt_attn_dim
-                            )
-                            metrics.setdefault("attention_stitched", 0)
-                            metrics["attention_stitched"] += 1
-                            attention_stitch_applied = True
-
-                        elif is_kv and dim1 == src_hidden_dim:
-                            # k_proj/v_proj (GQA): [KV_attn, hidden]
-                            # Try using pre-computed stitch first
-                            is_k = any(n in key for n in ["k_proj", "key"])
-                            is_v_proj = any(n in key for n in ["v_proj", "value"])
-
-                            kv_out = None
-                            stitch_type = "compositional"
-
-                            if is_k and k_stitch_output is not None:
-                                kv_out = k_stitch_output
-                                stitch_type = "K stitch (probe)"
-                            elif is_v_proj and v_stitch_output is not None:
-                                kv_out = v_stitch_output
-                                stitch_type = "V stitch (probe)"
-                            else:
-                                # COMPOSITIONAL FALLBACK: Compute stitch from hidden + weights
-                                # This is mathematically guaranteed because:
-                                # 1. Hidden alignment uses closed-form linear transform
-                                # 2. Attention projections are linear functions of hidden
-                                # 3. Compositional stitch derives the correct transform
-                                target_w = target_weights.get(key)
-                                if target_w is not None and hidden_stitch_output is not None:
-                                    aligner = GramAligner(backend=b)
-                                    # compositional_stitch wants H: [src_hidden, tgt_hidden]
-                                    # hidden_stitch_output is F.T: [tgt_hidden, src_hidden]
-                                    # So we need to transpose
-                                    H = b.transpose(hidden_stitch_output)
-                                    target_w_float = b.astype(b.array(target_w), "float32")
-                                    b.eval(H, target_w_float)
-
-                                    kv_out = aligner.compositional_stitch(
-                                        hidden_transform=H,
-                                        source_weight=source_w,
-                                        target_weight=target_w_float,
-                                    )
-                                    b.eval(kv_out)
-                                    stitch_type = "compositional"
-                                    logger.info(
-                                        "COMPOSITIONAL STITCH for %s: derived from hidden + weights",
-                                        key
-                                    )
-
-                            if kv_out is not None:
-                                source_aligned = b.matmul(kv_out, source_w)
-                                source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                                b.eval(source_aligned)
-                                logger.info(
-                                    "%s (k/v_proj): %s [%d,%d] → aligned",
-                                    stitch_type, key, dim0, dim1
-                                )
-                                metrics.setdefault("kv_stitched", 0)
-                                metrics["kv_stitched"] += 1
-                                attention_stitch_applied = True
-                            else:
-                                logger.warning(
-                                    "No stitch available for %s - using attention_stitch fallback",
-                                    key
-                                )
-                                if attention_stitch_output is not None:
-                                    source_aligned = b.matmul(attention_stitch_output, source_w)
-                                    source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                                    b.eval(source_aligned)
-                                    attention_stitch_applied = True
-
-                        elif is_o and dim0 == src_hidden_dim and dim1 == src_attn_dim:
-                            # o_proj: [hidden, attn] → hidden_stitch_output @ W @ attention_stitch_input
-                            source_aligned = b.matmul(hidden_stitch_output, source_w)
-                            source_aligned = b.matmul(source_aligned, attention_stitch_input)
-                            b.eval(source_aligned)
-                            logger.info(
-                                "Attention stitch (o_proj): %s [%d,%d] → [%d,%d]",
-                                key, dim0, dim1, tgt_hidden_dim, tgt_attn_dim
-                            )
-                            metrics.setdefault("attention_stitched", 0)
-                            metrics["attention_stitched"] += 1
-                            attention_stitch_applied = True
-
-                        elif is_o and dim0 == src_hidden_dim and dim1 != src_attn_dim:
-                            # Hybrid attention architecture: o_proj input dim differs from Q output dim
-                            # This happens in models like Qwen3-Next with mixed regular/linear attention
-                            # where o_proj only receives regular attention output
-                            #
-                            # We compute a stitch based on the actual dimensions:
-                            # - hidden_stitch_output: [tgt_hidden, src_hidden] - for rows
-                            # - attention dimension needs separate handling
-                            target_o_dim1 = int(target_w.shape[1])  # Target's o_proj input dim
-
-                            logger.info(
-                                "Hybrid attention detected for %s: o_proj dim1=%d != Q_attn_dim=%d. "
-                                "Computing adaptive stitch → target dim=%d",
-                                key, dim1, src_attn_dim, target_o_dim1
-                            )
-
-                            # Apply hidden stitch to rows first
-                            source_aligned = b.matmul(hidden_stitch_output, source_w)
-                            # source_aligned now: [tgt_hidden_dim, dim1]
-
-                            # For columns: compute transformation from dim1 → target_o_dim1
-                            # Strategy: If dim1 is a subset of src_attn_dim (e.g., regular heads only),
-                            # use the corresponding subset of attention_stitch
-                            if dim1 < src_attn_dim and target_o_dim1 <= tgt_attn_dim:
-                                # Hybrid attention: o_proj uses subset of attention dimensions
-                                # Take first dim1 rows and first target_o_dim1 columns of attention_stitch
-                                # attention_stitch_input: [src_attn_dim, tgt_attn_dim]
-                                # We need: [dim1, target_o_dim1]
-                                partial_stitch = attention_stitch_input[:dim1, :target_o_dim1]
-                                source_aligned = b.matmul(source_aligned, partial_stitch)
-                                b.eval(source_aligned)
-                                logger.info(
-                                    "Partial attention stitch (o_proj): %s [%d,%d] → [%d,%d] "
-                                    "(using %dx%d submatrix of %dx%d stitch)",
-                                    key, dim0, dim1, tgt_hidden_dim, target_o_dim1,
-                                    dim1, target_o_dim1, src_attn_dim, tgt_attn_dim
-                                )
-                            elif dim1 == src_kv_dim and kv_stitch_input is not None:
-                                # o_proj uses KV dimension (unusual but handle it)
-                                # Resize kv_stitch if needed
-                                # OPTIMIZATION: Use cached dimension
-                                kv_in_cols = stitch_dims.get('tgt_kv', int(kv_stitch_input.shape[1]))
-                                if kv_in_cols >= target_o_dim1:
-                                    o_stitch = kv_stitch_input[:, :target_o_dim1]
-                                else:
-                                    # Pad with identity-like projection
-                                    o_stitch = b.zeros((dim1, target_o_dim1), dtype=kv_stitch_input.dtype)
-                                    o_stitch = _set_submatrix(b, o_stitch, kv_stitch_input, 0, 0)
-                                source_aligned = b.matmul(source_aligned, o_stitch)
-                                b.eval(source_aligned)
-                                logger.info(
-                                    "KV-based attention stitch (o_proj): %s [%d,%d] → [%d,%d]",
-                                    key, dim0, dim1, tgt_hidden_dim, target_o_dim1
-                                )
-                            else:
-                                # Compute orthogonal projection between dimensions
-                                # This preserves as much geometric structure as possible
-                                logger.info(
-                                    "Computing orthogonal projection for o_proj: %d → %d",
-                                    dim1, target_o_dim1
-                                )
-                                projection = _compute_dimension_projection(b, dim1, target_o_dim1)
-                                source_aligned = b.matmul(source_aligned, projection)
-                                b.eval(source_aligned)
-                                logger.info(
-                                    "Projected attention stitch (o_proj): %s [%d,%d] → [%d,%d]",
-                                    key, dim0, dim1, tgt_hidden_dim, target_o_dim1
-                                )
-
-                            metrics.setdefault("attention_stitched", 0)
-                            metrics["attention_stitched"] += 1
-                            metrics.setdefault("hybrid_attention_handled", 0)
-                            metrics["hybrid_attention_handled"] += 1
-                            attention_stitch_applied = True
-
-                        else:
-                            raise DimensionMismatchError(
-                                stage="ATTENTION_WEIGHT_STITCH",
-                                weight_key=key,
-                                message=(
-                                    "Attention weight shape does not match expected "
-                                    f"(attn={src_attn_dim}, kv={src_kv_dim}, hidden={src_hidden_dim})"
-                                ),
-                                context={
-                                    "weight_shape": [dim0, dim1],
-                                    "expected_attn_dim": src_attn_dim,
-                                    "expected_kv_dim": src_kv_dim,
-                                    "expected_hidden_dim": src_hidden_dim,
-                                    "is_q": is_q,
-                                    "is_kv": is_kv,
-                                    "is_o": is_o,
-                                },
-                            )
-
-                    elif is_attention and attention_stitch_output is None:
-                        # No attention stitch available - use COMPOSITIONAL STITCH from hidden transform
-                        # This is mathematically guaranteed because:
-                        # 1. Hidden alignment uses closed-form linear transform
-                        # 2. Attention projections are linear functions of hidden
-                        # 3. Compositional stitch derives the correct transform
-                        # OPTIMIZATION: Use cached dimensions
-                        src_hidden_dim = stitch_dims['src_hidden']
-                        tgt_hidden_dim = stitch_dims['tgt_hidden']
-                        dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
-                        
-                        logger.info(
-                            "COMPOSITIONAL ATTENTION STITCH for %s (no explicit attention transform)",
-                            key
-                        )
-                        
-                        target_w_float = b.astype(b.array(target_w), "float32")
-                        b.eval(target_w_float)
-                        
-                        # Derive attention stitch from hidden + weights
-                        aligner = GramAligner(backend=b)
-                        # hidden_stitch_output is F.T: [tgt_hidden, src_hidden]
-                        # compositional_stitch wants H: [src_hidden, tgt_hidden]
-                        H = b.transpose(hidden_stitch_output)
-                        b.eval(H)
-                        
-                        attn_stitch = aligner.compositional_stitch(
-                            hidden_transform=H,
-                            source_weight=source_w,
-                            target_weight=target_w_float,
-                        )
-                        b.eval(attn_stitch)
-                        
-                        # Apply compositional attention stitch
-                        # For [attn, hidden] weights: attn_stitch @ W @ hidden_stitch_input
-                        # For [hidden, attn] weights: hidden_stitch_output @ W @ attn_stitch.T
-                        if dim0 != src_hidden_dim and dim1 == src_hidden_dim:
-                            # q/k/v proj: [attn, hidden]
-                            source_aligned = b.matmul(attn_stitch, source_w)
-                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                            b.eval(source_aligned)
-                        elif dim0 == src_hidden_dim and dim1 != src_hidden_dim:
-                            # o_proj: [hidden, attn]
-                            attn_stitch_in = b.transpose(attn_stitch)
-                            source_aligned = b.matmul(hidden_stitch_output, source_w)
-                            source_aligned = b.matmul(source_aligned, attn_stitch_in)
-                            b.eval(source_aligned)
-                        else:
-                            # Both dims hidden - use just hidden stitch
-                            source_aligned = b.matmul(hidden_stitch_output, source_w)
-                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                            b.eval(source_aligned)
-                        
-                        metrics.setdefault("compositional_attention_stitched", 0)
-                        metrics["compositional_attention_stitched"] += 1
-                        attention_stitch_applied = True
-
-                    # Non-attention weight with hidden dimensions (e.g., layer norm)
-                    # Skip hidden stitch if attention stitch was already applied
-                    if not attention_stitch_applied:
-                        # W_target = hidden_stitch_output @ W @ hidden_stitch_input
-                        # OPTIMIZATION: Use cached dimensions
-                        src_hidden_dim = stitch_dims['src_hidden']
-                        tgt_hidden_dim = stitch_dims['tgt_hidden']
-                        dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
-
-                        if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
-                            # BOTH dimensions are hidden_dim
-                            source_aligned = b.matmul(hidden_stitch_output, source_w)
-                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                            b.eval(source_aligned)
-                            logger.info("Hidden stitch (both dims): [%d,%d] → [%d,%d]",
-                                        dim0, dim1, tgt_hidden_dim, tgt_hidden_dim)
-
-                        elif dim0 == src_hidden_dim:
-                            # Hidden dim is OUTPUT only (rows): hidden_stitch_output @ W
-                            source_aligned = b.matmul(hidden_stitch_output, source_w)
-                            b.eval(source_aligned)
-                            logger.info("Hidden stitch (output only): [%d,%d] → [%d,%d]",
-                                        dim0, dim1, tgt_hidden_dim, dim1)
-
-                        elif dim1 == src_hidden_dim:
-                            # Hidden dim is INPUT only (cols): W @ hidden_stitch_input
-                            source_aligned = b.matmul(source_w, hidden_stitch_input)
-                            b.eval(source_aligned)
-                            logger.info("Hidden stitch (input only): [%d,%d] → [%d,%d]",
-                                        dim0, dim1, dim0, tgt_hidden_dim)
-
-                        else:
-                            # No fallbacks. If dimensions don't match, the stitch is wrong.
-                            raise DimensionMismatchError(
-                                stage="HIDDEN_WEIGHT_STITCH",
-                                weight_key=key,
-                                message=f"Weight shape [{dim0},{dim1}] doesn't match hidden_dim {src_hidden_dim}",
-                                context={
-                                    "weight_shape": [dim0, dim1],
-                                    "expected_hidden_dim": src_hidden_dim,
-                                    "stitch_type": "hidden",
-                                },
-                            )
-
-                        metrics.setdefault("hidden_stitch_applied", 0)
-                        metrics["hidden_stitch_applied"] += 1
-
-                else:
-                    # No fallbacks. The stitch MUST exist.
-                    raise StitchUnavailableError(
-                        stage="CROSS_ARCHITECTURE_STITCH",
-                        weight_key=key,
-                        message="Cross-architecture weight but no stitch transformation available",
-                        context={
-                            "source_shape": list(source_w.shape),
-                            "target_shape": list(target_w.shape),
-                            "reason": "No hidden or attention stitch computed",
-                        },
-                    )
-
-                # Verify final shape matches target. No fallbacks.
-                if source_aligned.shape != target_w.shape:
-                    raise DimensionMismatchError(
-                        stage="POST_STITCH_VALIDATION",
-                        weight_key=key,
-                        message=f"Shape mismatch after stitch: {source_aligned.shape} vs {target_w.shape}",
-                        context={
-                            "aligned_shape": list(source_aligned.shape),
-                            "target_shape": list(target_w.shape),
-                        },
-                    )
-
-            else:
-                source_aligned = source_candidate
-
-            # ================================================================
-            # WEIGHT-SPACE NULL-SPACE PROJECTION
-            # ================================================================
-            # This is the SINGULAR PIPELINE for knowledge transfer.
-            # Works for ALL weight dimensions by using the correct INPUT activations:
-            #   - For hidden→X weights (gate_proj, up_proj, attention): input = hidden
-            #   - For intermediate→X weights (down_proj): input = intermediate
-            #
-            # The math:
-            #   delta_W = source_aligned - target  [out, in]
-            #   N = I - pinv(A_input) @ A_input    [in, in]
-            #   delta_W_proj = delta_W @ N         [out, in]
-            #   merged = target + delta_W_proj
-            #
-            # Density weighting is integrated: transfer more where source is dense
-            # and target is sparse.
-            # ================================================================
-
-            # Determine the correct INPUT activations based on weight dimensions
-            tgt_hidden_dim = stitch_dims.get('tgt_hidden', 0) if stitch_dims else 0
-            tgt_inter_dim = stitch_dims.get('tgt_inter', 0) if stitch_dims else 0
-            weight_in_dim = int(target_w.shape[1])
-
-            # Select input activations based on weight's input dimension
-            input_activations = None
-            src_density_acts = None
-            tgt_density_acts = None
-            activation_space = "hidden"
-
-            if weight_in_dim == tgt_inter_dim and tgt_inter_dim > 0:
-                # down_proj or similar: input is intermediate space
-                activation_space = "intermediate"
-                if (
-                    source_intermediate_activations is not None
-                    and target_intermediate_activations is not None
-                    and layer_idx in source_intermediate_activations
-                    and layer_idx in target_intermediate_activations
-                ):
-                    src_inter = source_intermediate_activations[layer_idx]
-                    tgt_inter = target_intermediate_activations[layer_idx]
-                    if src_inter is not None and tgt_inter is not None:
-                        # Convert to 2D array if needed
-                        if hasattr(tgt_inter, 'shape') and len(b.shape(tgt_inter)) == 2:
-                            input_activations = b.astype(b.array(tgt_inter), "float32")
-                        elif hasattr(tgt_inter, '__len__') and len(tgt_inter) > 0:
-                            input_activations = b.stack([b.array(a) for a in tgt_inter], axis=0)
-
-                        # For density: use intermediate activations
-                        if hasattr(src_inter, 'shape') and len(b.shape(src_inter)) == 2:
-                            src_density_acts = b.astype(b.array(src_inter), "float32")
-                        elif hasattr(src_inter, '__len__') and len(src_inter) > 0:
-                            src_density_acts = b.stack([b.array(a) for a in src_inter], axis=0)
-                        tgt_density_acts = input_activations
-
-            if input_activations is None:
-                # Default: use hidden activations (for gate_proj, up_proj, attention, etc.)
-                activation_space = "hidden"
-                if (
-                    target_activations is not None
-                    and layer_idx in target_activations
-                ):
-                    tgt_hidden = target_activations[layer_idx]
-                    if tgt_hidden is not None:
-                        if hasattr(tgt_hidden, 'shape') and len(b.shape(tgt_hidden)) == 2:
-                            input_activations = b.astype(b.array(tgt_hidden), "float32")
-                        elif hasattr(tgt_hidden, '__len__') and len(tgt_hidden) > 0:
-                            input_activations = b.stack([b.array(a) for a in tgt_hidden], axis=0)
-
-                        # For density: use hidden activations
-                        if source_activations is not None and layer_idx in source_activations:
-                            src_hidden = source_activations[layer_idx]
-                            if src_hidden is not None:
-                                if hasattr(src_hidden, 'shape') and len(b.shape(src_hidden)) == 2:
-                                    src_density_acts = b.astype(b.array(src_hidden), "float32")
-                                elif hasattr(src_hidden, '__len__') and len(src_hidden) > 0:
-                                    src_density_acts = b.stack([b.array(a) for a in src_hidden], axis=0)
-                        tgt_density_acts = input_activations
-
-            if input_activations is None:
-                # No activations available - use source_aligned directly (no null-space)
-                logger.warning(
-                    "TRANSPLANT: No %s activations for layer %d, using stitched source for %s",
-                    activation_space, layer_idx, key
-                )
-                merged[key] = source_aligned
-                metrics.setdefault("no_activation_fallback", 0)
-                metrics["no_activation_fallback"] += 1
-                metrics["weights_transplanted"] += 1
-                continue
-
-            b.eval(input_activations)
-            if src_density_acts is not None:
-                b.eval(src_density_acts)
-            if tgt_density_acts is not None:
-                b.eval(tgt_density_acts)
-
-            logger.debug(
-                "TRANSPLANT: %s using %s activations [%d samples] for null-space",
-                key, activation_space, int(b.shape(input_activations)[0])
-            )
-
-            # Compute weight-space transplant with density weighting
-            result = compute_weight_space_transplant(
-                source_aligned=source_aligned,
-                target_weight=target_w,
-                input_activations=input_activations,
-                source_activations_for_density=src_density_acts,
-                target_activations_for_density=tgt_density_acts,
-                backend=b,
-            )
-
-            logger.info(
-                "TRANSPLANT: %s delta_norm=%.4f, preserved=%.1f%%, transfer=%.3f",
-                key, result.delta_norm, 100.0 * result.preserved_fraction, result.transfer_strength
-            )
-
-            # Apply result - no fallbacks, this is the singular pipeline
-            if result.preserved_fraction > 0:
-                # Use geometry-determined transplant result directly.
-                # The null-space projection already computed preserved_fraction
-                # based on the spectral structure of boundary activations.
-                final_merged_weight = result.merged_weight
-
-                # Density weighting is applied inside the null-space filter using
-                # per-probe source/target weights. No layer-mean scaling here.
-
-                merged[key] = final_merged_weight
-                metrics["weights_transplanted"] += 1
-                metrics["preserved_fractions"].append(result.preserved_fraction)
-                # projection_loss = 1 - preserved_fraction
-                projection_loss = max(0.0, 1.0 - result.preserved_fraction)
-                metrics["projection_losses"].append(projection_loss)
-                metrics["null_dims"].append(result.null_rank)
-
-                weight_elapsed = time.time() - weight_start_time
-                logger.debug(
-                    "TRANSPLANT: Weight %d/%d %s - %.2fs (preserved=%.3f, loss=%.6f)",
-                    weight_num + 1, len(layer_keys), key,
-                    weight_elapsed, result.preserved_fraction, projection_loss
-                )
-                # Use the actual stored weight (already geometry-scaled if applicable)
-                actual_merged_weight = merged[key]
-                if can_measure_alignment and result.delta_norm > best_delta_norm:
-                    try:
-                        best_alignment = _compute_alignment_metrics(
-                            core_acts=core_acts,
-                            weight_before=target_w,
-                            weight_after=actual_merged_weight,
-                            weight_source=source_aligned,
-                            backend=b,
-                        )
-                        best_delta_norm = result.delta_norm
-                    except Exception as e:
-                        logger.debug("Alignment metrics failed for %s: %s", key, e)
-                if int(boundary_acts.shape[0]) > 0:
-                    if int(boundary_acts.shape[1]) != int(target_w.shape[1]):
-                        logger.debug(
-                            "Boundary metrics skipped for %s (acts=%d, weight_in=%d)",
-                            key,
-                            int(boundary_acts.shape[1]),
-                            int(target_w.shape[1]),
-                        )
-                        continue
-
-                    target_output = b.matmul(boundary_acts, b.transpose(target_w))
-                    merged_output = b.matmul(
-                        boundary_acts, b.transpose(actual_merged_weight)
-                    )
-                    # Geodesic distance: works in all dimensions (reduces to chord
-                    # in flat spaces). Chord distance fails in high dimensions (4D+).
-                    geo_diffs = geodesic_paired_distances(
-                        merged_output, target_output, b, use_cache=False
-                    )
-                    origin = b.zeros_like(target_output)
-                    geo_target_norms = geodesic_paired_distances(
-                        origin, target_output, b, use_cache=False
-                    )
-                    diff_norm_arr = geodesic_norms(
-                        b.reshape(geo_diffs, (1, -1)), b, use_cache=False
-                    )
-                    target_norm_arr = geodesic_norms(
-                        b.reshape(geo_target_norms, (1, -1)), b, use_cache=False
-                    )
-                    b.eval(diff_norm_arr, target_norm_arr)
-
-                    diff_norm = float(b.to_scalar(diff_norm_arr))
-                    target_norm = float(b.to_scalar(target_norm_arr))
-                    eps = float(machine_epsilon(b, target_w))
-
-                    if target_norm > eps:
-                        relative_diff = diff_norm / target_norm
-                    else:
-                        relative_diff = 0.0 if diff_norm <= eps else float("inf")
-
-                    metrics["boundary_relative_diffs"].append(relative_diff)
-                layer_transplanted = True
+        weight_result = process_layer_weights(
+            layer_idx=layer_idx,
+            layer_keys=layer_keys,
+            source_weights=source_weights,
+            target_weights=target_weights,
+            merged=merged,
+            metrics=metrics,
+            layer_mapping=layer_mapping,
+            extract_layer_index_fn=extract_layer_index_fn,
+            backend=b,
+            total_weights=total_weights,
+            weights_processed=weights_processed,
+            progress_callback=progress_callback,
+            hidden_stitch_output=hidden_stitch_output,
+            hidden_stitch_input=hidden_stitch_input,
+            intermediate_stitch_output=intermediate_stitch_output,
+            intermediate_stitch_input=intermediate_stitch_input,
+            attention_stitch_output=attention_stitch_output,
+            attention_stitch_input=attention_stitch_input,
+            k_stitch_output=k_stitch_output,
+            k_stitch_input=k_stitch_input,
+            v_stitch_output=v_stitch_output,
+            v_stitch_input=v_stitch_input,
+            kv_stitch_input=kv_stitch_input,
+            stitch_dims=stitch_dims,
+            source_activations=source_activations,
+            target_activations=target_activations,
+            source_intermediate_activations=source_intermediate_activations,
+            target_intermediate_activations=target_intermediate_activations,
+            core_acts=core_acts,
+            boundary_acts=boundary_acts,
+            can_measure_alignment=can_measure_alignment,
+        )
+        weights_processed = weight_result.weights_processed
+        layer_transplanted = weight_result.layer_transplanted
+        best_alignment = weight_result.best_alignment
+        best_delta_norm = weight_result.best_delta_norm
 
         if layer_transplanted:
             metrics["layers_transplanted"] += 1
@@ -2089,7 +776,7 @@ def stage_transplant(
 
         # Save checkpoint after each layer
         if checkpoint_dir:
-            _save_checkpoint(checkpoint_dir, layer_idx, merged, metrics)
+            _save_checkpoint(checkpoint_dir, layer_idx, metrics)
 
         if best_alignment is not None:
             metrics["core_distance_reductions"].append(best_alignment["core_distance_reduction"])

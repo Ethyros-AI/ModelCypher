@@ -287,7 +287,7 @@ def curvature_analysis(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.manifold_curvature import OllivierRicci
+    from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
     from modelcypher.core.domain.geometry.prime_geometry import (
         _derive_embedding_dim,
         generate_primes,
@@ -314,7 +314,7 @@ def curvature_analysis(
     random_embedded = time_delay_embedding(random_gaps, embedding_dim, backend=backend)
 
     # Compute curvature - k derived from default config
-    ricci = OllivierRicci(backend)
+    ricci = OllivierRicciCurvature(backend)
 
     typer.echo("Computing prime gap curvature...")
     prime_curv = ricci.compute(prime_embedded)  # k from config

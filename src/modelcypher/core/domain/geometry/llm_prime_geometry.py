@@ -361,7 +361,7 @@ def compute_curvature(
     backend: "Backend",
 ) -> CurvatureMetrics:
     """Compute Ollivier-Ricci curvature statistics."""
-    from modelcypher.core.domain.geometry.manifold_curvature import OllivierRicciCurvature
+    from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
 
     try:
         ricci = OllivierRicciCurvature(backend)

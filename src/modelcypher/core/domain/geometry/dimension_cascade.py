@@ -46,9 +46,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-from modelcypher.core.domain.geometry.manifold_curvature import (
-    OllivierRicciCurvature,
-)
+from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     power_iteration_eigh,

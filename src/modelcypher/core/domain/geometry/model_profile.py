@@ -1095,8 +1095,7 @@ class ModelProfileExtractor:
             k for k-NN graph is computed from data, not user-specified.
             Domain metrics are computed from actual geometry, not placeholders.
         """
-        from modelcypher.core.domain.geometry.manifold_curvature import (
-            OllivierRicciConfig,
+        from modelcypher.core.domain.geometry.ollivier_ricci import (
             OllivierRicciCurvature,
         )
 
@@ -1138,14 +1137,9 @@ class ModelProfileExtractor:
                         "This indicates degenerate or insufficient activation data. "
                         "Check that the layer has sufficient variance and enough samples."
                     )
-                k = max(3, int(2 * id_value))
-
-                # Compute Ollivier-Ricci curvature with computed k
-                orc = OllivierRicciCurvature(
-                    config=OllivierRicciConfig(k_neighbors=k),
-                    backend=self._backend,
-                )
-                result = orc.compute(activations, k_neighbors=k)
+                # Compute Ollivier-Ricci curvature (k derived from data)
+                orc = OllivierRicciCurvature(backend=self._backend)
+                result = orc.compute(activations)
                 curvature = result.mean_edge_curvature
 
                 # Skip NaN values
