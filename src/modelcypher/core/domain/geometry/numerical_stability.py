@@ -1067,12 +1067,20 @@ def gpu_lstsq(
         G = b.matmul(A, A_T)  # n × n (much smaller than d × d!)
         b.eval(G)
 
-        # Add Tikhonov regularization
+        # Add Tikhonov regularization with under-determination scaling
+        # When n << d, the system has many more degrees of freedom than
+        # constraints. We scale regularization by d/n to shrink the solution
+        # proportionally to the rank deficiency. This prevents wild
+        # extrapolation in the unconstrained directions.
         G_diag = b.diag(G)
         max_diag = b.max(b.abs(G_diag))
         b.eval(max_diag)
         max_diag_val = float(b.to_scalar(max_diag))
-        reg_lambda = eps * max(max_diag_val, 1.0)
+
+        # Scale regularization by under-determination ratio
+        # sqrt(d/n) provides moderate shrinkage - not too aggressive
+        underdetermination_ratio = (d / n) ** 0.5  # e.g., sqrt(11008/2048) ≈ 2.3
+        reg_lambda = eps * max(max_diag_val, 1.0) * underdetermination_ratio
 
         G_reg = G + reg_lambda * b.eye(n)
         b.eval(G_reg)
@@ -1355,14 +1363,17 @@ def invariant_alignment(
     d_source = int(b.shape(source_c)[1])
 
     if n_samples < d_source:
-        logger.warning(
-            "UNDERDETERMINED ALIGNMENT: n=%d < d=%d - alignment may overfit. "
-            "Use more diverse probes for better manifold coverage.",
-            n_samples, d_source
+        # Compute the under-determination ratio for informational logging
+        ratio = d_source / n_samples
+        logger.info(
+            "UNDERDETERMINED ALIGNMENT: n=%d < d=%d (ratio=%.1fx). "
+            "Using sqrt-scaled Tikhonov regularization for stability.",
+            n_samples, d_source, ratio
         )
         if stats is not None:
             stats["underdetermined"] = 1.0
             stats["n_samples"] = float(n_samples)
             stats["d_source"] = float(d_source)
+            stats["underdetermination_ratio"] = ratio
 
     return F

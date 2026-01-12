@@ -2043,11 +2043,17 @@ def stage_transplant(
                         )
                         continue
 
+                # Index delta_A to match core samples (partition splits probes into core/boundary)
+                # delta_A is [n_all_probes, out_dim], core_acts is [n_core, in_dim]
+                # We need delta_A_core [n_core, out_dim] to match dimensions
+                delta_A_core = b.take(delta_A, core_indices, axis=0)
+                b.eval(delta_A_core)
+
                 # Constrained least-squares transplant
                 result = compute_transplant_delta(
                     weight_target=target_w,
                     activations_core=core_acts,
-                    delta_activations=delta_A,
+                    delta_activations=delta_A_core,
                     boundary_activations=boundary_acts,
                     backend=b,
                     delta_scale=delta_scale,

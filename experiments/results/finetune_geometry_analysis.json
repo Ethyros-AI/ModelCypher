@@ -1,0 +1,36 @@
+{
+  "experiment": "finetune_geometry_analysis",
+  "date": "2026-01-11T20:01:00.841466",
+  "base_model": "Qwen2.5-3B-Instruct-bf16",
+  "finetuned_model": "Qwen2.5-Coder-3B-Instruct-bf16",
+  "layer": 16,
+  "hidden_dim": 2048,
+  "prompts": {
+    "general_count": 8,
+    "code_count": 8
+  },
+  "crosscoder_config": {
+    "shared_expansion": 4,
+    "exclusive_expansion": 2,
+    "shared_dim": 8192,
+    "exclusive_dim": 4096,
+    "total_latent_dim": 16384
+  },
+  "results": {
+    "shared_feature_count": 7296,
+    "base_exclusive_count": 3695,
+    "ft_exclusive_count": 3702,
+    "shared_pct": 44.53125,
+    "base_exclusive_pct": 22.552490234375,
+    "ft_exclusive_pct": 22.59521484375,
+    "shared_cka": 1.0,
+    "base_exclusive_energy": 54082.41015625,
+    "ft_exclusive_energy": 51899.640625,
+    "change_magnitude": 0.5086275010527744
+  },
+  "validation": {
+    "manifold_preserved": true,
+    "features_added": true,
+    "hypothesis_supported": true
+  }
+}
