@@ -283,10 +283,14 @@ class MLXBackend(Backend):
         self.mx.eval(*arrays)
 
     def clear_cache(self) -> None:
-        """Clear Metal GPU memory cache to release lazy computations."""
-        import gc
+        """Clear Metal GPU memory cache to release lazy computations.
 
-        gc.collect()
+        Note: We intentionally do NOT call gc.collect() here. Triggering Python's
+        garbage collector during MLX operations can cause segfaults due to reentrancy
+        issues when the GC tries to finalize MLX arrays that are still in use.
+        Let Python's GC run on its own schedule; mx.clear_cache() is sufficient
+        for releasing GPU memory.
+        """
         # Use mx.clear_cache() (not mx.metal.clear_cache which is deprecated)
         if hasattr(self.mx, "clear_cache"):
             self.mx.clear_cache()

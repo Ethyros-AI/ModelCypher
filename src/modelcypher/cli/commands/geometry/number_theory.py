@@ -173,7 +173,7 @@ def topology_analysis(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.prime_geometry_analysis import _derive_embedding_dim
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import derive_embedding_dim
     from modelcypher.core.domain.geometry.prime_geometry_baselines import generate_random_gaps
     from modelcypher.core.domain.geometry.prime_geometry_embeddings import (
         generate_primes,
@@ -192,7 +192,7 @@ def topology_analysis(
 
     # Auto-derive embedding dimension if not specified
     if embedding_dim is None:
-        embedding_dim = _derive_embedding_dim(primes.gaps, 1, backend)
+        embedding_dim = derive_embedding_dim(primes.gaps, 1, backend)
         typer.echo(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
     prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, backend=backend)
@@ -288,7 +288,7 @@ def curvature_analysis(
     context = _context(ctx)
 
     from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
-    from modelcypher.core.domain.geometry.prime_geometry_analysis import _derive_embedding_dim
+    from modelcypher.core.domain.geometry.prime_geometry_analysis import derive_embedding_dim
     from modelcypher.core.domain.geometry.prime_geometry_baselines import generate_random_gaps
     from modelcypher.core.domain.geometry.prime_geometry_embeddings import (
         generate_primes,
@@ -304,7 +304,7 @@ def curvature_analysis(
 
     # Auto-derive embedding dimension if not specified
     if embedding_dim is None:
-        embedding_dim = _derive_embedding_dim(primes.gaps, 1, backend)
+        embedding_dim = derive_embedding_dim(primes.gaps, 1, backend)
         typer.echo(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
     prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, backend=backend)

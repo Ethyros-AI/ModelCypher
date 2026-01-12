@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _derive_embedding_dim(sequence: "Array", delay: int, backend: "Backend") -> int:
+def derive_embedding_dim(sequence: "Array", delay: int, backend: "Backend") -> int:
     """Derive embedding dimension from sequence using Takens' theorem.
 
     Takens' embedding theorem states that for a d-dimensional attractor,
@@ -146,7 +146,7 @@ def analyze_prime_geometry(
 
     # Auto-derive embedding dimension if not specified
     if embedding_dim is None:
-        embedding_dim = _derive_embedding_dim(primes.gaps, delay, backend)
+        embedding_dim = derive_embedding_dim(primes.gaps, delay, backend)
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
     # Compute mean gap for random baseline
@@ -339,7 +339,7 @@ def run_comprehensive_analysis(
 
     # Auto-derive embedding dimension if not specified
     if embedding_dim is None:
-        embedding_dim = _derive_embedding_dim(primes.gaps, delay, backend)
+        embedding_dim = derive_embedding_dim(primes.gaps, delay, backend)
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
     # Auto-derive bootstrap count if not specified
@@ -543,7 +543,7 @@ def run_perturbation_study(
 
     # Auto-derive embedding dimension if not specified
     if embedding_dim is None:
-        embedding_dim = _derive_embedding_dim(primes.gaps, 1, backend)
+        embedding_dim = derive_embedding_dim(primes.gaps, 1, backend)
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
     mean_gap_arr = backend.mean(_promote_precision(primes.gaps, backend))
     backend.eval(mean_gap_arr)

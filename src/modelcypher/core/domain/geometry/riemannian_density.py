@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
@@ -70,6 +70,63 @@ from .riemannian_utils import (
 logger = logging.getLogger(__name__)
 
 _cache = ComputationCache.shared()
+
+
+def _dtype_name(dtype: Any) -> str:
+    name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
+    return name.replace("mlx.core.", "").replace("jax.numpy.", "")
+
+
+def _default_float_dtype(backend: "Backend") -> Any:
+    return backend.array([1.0]).dtype
+
+
+def _float_dtype_for(array: "Array | None", backend: "Backend") -> Any:
+    if array is not None and hasattr(array, "dtype"):
+        name = _dtype_name(array.dtype)
+        if "float" in name:
+            return array.dtype
+    return _default_float_dtype(backend)
+
+
+def _promote_precision(
+    array: "Array",
+    backend: "Backend",
+    *,
+    min_dtype: Any | None = None,
+) -> "Array":
+    """Promote low-precision or integer arrays to at least float32/default float."""
+    if min_dtype is None:
+        min_dtype = _default_float_dtype(backend)
+
+    if not hasattr(array, "dtype"):
+        return backend.array(array, dtype=min_dtype)
+
+    dtype_name = _dtype_name(array.dtype)
+    if (
+        "float16" in dtype_name
+        or "bfloat16" in dtype_name
+        or "int" in dtype_name
+        or "uint" in dtype_name
+        or "bool" in dtype_name
+    ):
+        return backend.astype(array, min_dtype)
+
+    try:
+        current_eps = backend.finfo(array.dtype).eps
+        min_eps = backend.finfo(min_dtype).eps
+    except Exception:
+        return backend.astype(array, min_dtype)
+
+    if current_eps > min_eps:
+        return backend.astype(array, min_dtype)
+
+    return array
+
+
+def _mask_sum(mask: "Array", backend: "Backend", *, dtype_source: "Array | None" = None) -> "Array":
+    dtype = _float_dtype_for(dtype_source, backend)
+    return backend.sum(backend.astype(mask, dtype))
 
 
 
@@ -306,8 +363,8 @@ class ConceptVolume:
             Tangent vector at centroid pointing toward point
         """
         backend = get_default_backend()
-        point_arr = backend.array(point)
-        centroid_arr = backend.array(self.centroid)
+        point_arr = _promote_precision(backend.array(point), backend)
+        centroid_arr = _promote_precision(self.centroid, backend)
         diff = point_arr - centroid_arr
 
         # Geodesic context is mandatory for curvature-correct log maps
@@ -461,7 +518,7 @@ class ConceptVolume:
         centroid_2d = backend.reshape(self.centroid, (1, -1))
         point_2d = backend.reshape(point_arr, (1, -1))
         points = backend.concatenate([centroid_2d, point_2d], axis=0)
-        points_arr = backend.astype(points, "float32")
+        points_arr = _promote_precision(points, backend)
         backend.eval(points_arr)
 
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=1, backend=backend)
@@ -501,7 +558,7 @@ class ConceptVolume:
         temp = backend.matmul(diff, self.precision)  # (n, d)
         mahal_sq = backend.sum(temp * diff, axis=1)  # (n,)
         backend.eval(mahal_sq)
-        return backend.sqrt(backend.maximum(mahal_sq, backend.array(0.0)))
+        return backend.sqrt(backend.maximum(mahal_sq, backend.zeros_like(mahal_sq)))
 
     def _compute_tangent_vectors_batch(self, points: "Array") -> "Array":
         """Compute tangent vectors from centroid to multiple points using log map.
@@ -515,8 +572,8 @@ class ConceptVolume:
             Tangent vectors at centroid (n x d)
         """
         backend = get_default_backend()
-        points_arr = backend.array(points)
-        centroid_arr = backend.array(self.centroid)
+        points_arr = _promote_precision(backend.array(points), backend)
+        centroid_arr = _promote_precision(self.centroid, backend)
         diff = points_arr - centroid_arr  # (n, d)
 
         # Geodesic context is required - no chord-only fallback on curved manifolds
@@ -632,7 +689,7 @@ class ConceptVolume:
 
         elif self.influence_type == InfluenceType.LAPLACIAN:
             # Multivariate Laplacian: exp(-sqrt(mahal_sq)) / 2^d
-            mahal = backend.sqrt(backend.maximum(mahal_sq, backend.array(0.0)))
+            mahal = backend.sqrt(backend.maximum(mahal_sq, backend.zeros_like(mahal_sq)))
             norm_val = self._laplacian_norm()
             densities = backend.exp(-mahal) * backend.array(norm_val)
 
@@ -736,7 +793,7 @@ class RiemannianDensityEstimator:
         """
         backend = get_default_backend()
         # Convert to backend array if needed (handles numpy from tests)
-        activations = backend.array(activations)
+        activations = _promote_precision(backend.array(activations), backend)
         backend.eval(activations)
         shape = activations.shape
         n, d = int(shape[0]), int(shape[1])
@@ -926,7 +983,7 @@ class RiemannianDensityEstimator:
             centroid_a_2d = backend.reshape(volume_a.centroid, (1, -1))
             centroid_b_2d = backend.reshape(volume_b.centroid, (1, -1))
             centroids = backend.concatenate([centroid_a_2d, centroid_b_2d], axis=0)
-            centroids_arr = backend.astype(centroids, "float32")
+            centroids_arr = _promote_precision(centroids, backend)
 
             geo_dist = geodesic_distance_matrix(centroids_arr, k_neighbors=1, backend=backend)
             geo_elem = geo_dist[0, 1]
@@ -1203,7 +1260,7 @@ class RiemannianDensityEstimator:
                 # Add centroid to points for distance computation
                 centroid_2d = backend.reshape(centroid, (1, -1))
                 points_with_centroid = backend.concatenate([centroid_2d, activations], axis=0)
-                points_arr = backend.astype(points_with_centroid, "float32")
+                points_arr = _promote_precision(points_with_centroid, backend)
                 backend.eval(points_arr)
 
                 # Get geodesic distances from centroid (index 0) to all points
@@ -1284,9 +1341,13 @@ class RiemannianDensityEstimator:
         For Gaussian distributions, we approximate using Monte Carlo.
         """
         backend = get_default_backend()
-        # Monte Carlo estimation with samples from both distributions
-        n_samples = 1000
+        # Monte Carlo estimation with samples from both distributions.
+        # Use sqrt(n*d) to match Monte Carlo error ~ 1/sqrt(N) to data scale.
+        import math
+
         d = volume_a.dimension
+        n_data = max(1, min(volume_a.num_samples, volume_b.num_samples))
+        n_samples = max(2, int(math.ceil(math.sqrt(n_data * d))))
 
         # Sample from multivariate normal: X = mean + L @ Z where L is Cholesky of cov
         # Z ~ N(0, I)
@@ -1321,8 +1382,8 @@ class RiemannianDensityEstimator:
         b_in_a_mask = volume_a.contains_batch(samples_b)
 
         # Sum boolean masks to get counts
-        a_in_b_sum = backend.sum(backend.astype(a_in_b_mask, "float32"))
-        b_in_a_sum = backend.sum(backend.astype(b_in_a_mask, "float32"))
+        a_in_b_sum = _mask_sum(a_in_b_mask, backend, dtype_source=volume_b.centroid)
+        b_in_a_sum = _mask_sum(b_in_a_mask, backend, dtype_source=volume_a.centroid)
         backend.eval(a_in_b_sum, b_in_a_sum)
 
         a_in_b = int(backend.to_scalar(a_in_b_sum))
