@@ -129,10 +129,19 @@ def main():
     try:
         id_result = id_computer.compute(matrix)
         intrinsic_dim = float(id_result.intrinsic_dimension)
-        id_ci = (float(id_result.ci.lower), float(id_result.ci.upper))
-        logger.info(f"Intrinsic dimension: {intrinsic_dim:.2f} (95% CI: [{id_ci[0]:.2f}, {id_ci[1]:.2f}])")
+        if id_result.ci is not None:
+            id_ci = (float(id_result.ci.lower), float(id_result.ci.upper))
+            logger.info(
+                "Intrinsic dimension: %.2f (95%% CI: [%.2f, %.2f])",
+                intrinsic_dim,
+                id_ci[0],
+                id_ci[1],
+            )
+        else:
+            id_ci = (None, None)
+            logger.info("Intrinsic dimension: %.2f (CI unavailable)", intrinsic_dim)
     except Exception as e:
-        logger.warning(f"Intrinsic dimension computation failed: {e}")
+        logger.warning("Intrinsic dimension computation failed: %s", e)
         intrinsic_dim = None
         id_ci = (None, None)
 

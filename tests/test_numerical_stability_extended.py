@@ -34,6 +34,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_linear_cka
 from modelcypher.core.domain.geometry.numerical_stability import (
     all_finite,
     compute_median,
@@ -471,6 +472,31 @@ class TestInvariantAlignment:
         F = invariant_alignment(backend, source, target, stats=stats)
 
         assert "residual_norm" in stats or "method" in stats
+
+    @given(
+        n_samples=st.integers(min_value=5, max_value=20),
+        extra_dims=st.integers(min_value=0, max_value=20),
+        target_dim=st.integers(min_value=5, max_value=24),
+    )
+    @settings(max_examples=20, deadline=None)
+    def test_alignment_linear_cka_one(self, n_samples, extra_dims, target_dim):
+        """Invariant alignment should yield CKA=1.0 on probes when n <= d."""
+        backend = get_default_backend()
+        source_dim = n_samples + extra_dims
+
+        source = backend.random_normal((n_samples, source_dim))
+        target = backend.random_normal((n_samples, target_dim))
+        backend.eval(source, target)
+
+        F = invariant_alignment(backend, source, target)
+        aligned = backend.matmul(source, F)
+        backend.eval(aligned)
+
+        cka = compute_linear_cka(aligned, target, backend)
+        eps = division_epsilon(backend, aligned)
+        tol = eps * max(1.0, float(n_samples))
+
+        assert 1.0 - cka <= tol
 
 
 class TestComputeMedian:

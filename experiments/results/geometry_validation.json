@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-01-11T16:25:07.527019",
+  "timestamp": "2026-01-12T12:15:20.846880",
   "model": "1d461723eec654e65efdc40cf49301c89c0c92f4",
   "num_layers": 30,
   "experiments": {
@@ -7,7 +7,7 @@
       "count": 65,
       "layer": 15,
       "intrinsic_dimension": {
-        "value": null,
+        "value": 5.773581809388265,
         "ci_lower": null,
         "ci_upper": null
       },
@@ -39,10 +39,10 @@
       "late_layer": 22,
       "probe_count": 15,
       "raw_cka": 0.6024573263900722,
-      "aligned_cka": 1.0,
-      "alignment_achieved_cka": 1.0,
+      "aligned_cka": 0.9999999043125578,
+      "alignment_achieved_cka": 0.9999999043125578,
       "is_perfect": true,
-      "numerical_deviation": 0.0,
+      "numerical_deviation": 9.568744219201619e-08,
       "precision_threshold": 0.0003452669770922512
     },
     "layerwise_intrinsic_dimension": {

@@ -28,7 +28,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    division_epsilon,
+)
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     compute_weight_space_transplant,
@@ -82,7 +85,9 @@ class TestComputeWeightSpaceTransplant:
         )
 
         # Delta norm should be zero when source == target
-        assert result.delta_norm < 1e-5
+        eps = division_epsilon(backend, weight)
+        scale = max(1.0, float(out_dim * in_dim))
+        assert result.delta_norm <= eps * scale
 
     def test_preserved_fraction_bounded(self, backend):
         """Preserved fraction should be in [0, 1]."""
@@ -262,7 +267,9 @@ class TestComputeTransplantDelta:
 
         # Note: Due to null-space projection, this relationship may not be exact
         # but half scale should generally produce smaller changes
-        assert float(backend.to_scalar(diff_half)) <= float(backend.to_scalar(diff_full)) + 0.1
+        eps = division_epsilon(backend, result_full.merged_weight)
+        scale = max(1.0, float(out_dim * in_dim))
+        assert float(backend.to_scalar(diff_half)) <= float(backend.to_scalar(diff_full)) + eps * scale
 
     def test_1d_weight_returns_unchanged(self, backend):
         """1D weights should return unchanged."""
@@ -406,7 +413,42 @@ class TestTransplantMathematicalProperties:
             backend=backend,
         )
 
-        assert 0.0 <= result.preserved_fraction <= 1.0 + 1e-6
+        eps = division_epsilon(backend, source_aligned)
+        assert 0.0 <= result.preserved_fraction <= 1.0 + eps
+
+    @given(
+        out_dim=st.integers(min_value=8, max_value=32),
+        in_dim=st.integers(min_value=8, max_value=32),
+        n_samples=st.integers(min_value=4, max_value=16),
+    )
+    @settings(max_examples=10, deadline=None)
+    def test_null_space_constraint(self, out_dim, in_dim, n_samples):
+        """Projected delta should preserve boundary: A @ delta.T ≈ 0."""
+        backend = get_default_backend()
+        source_aligned = backend.random_normal((out_dim, in_dim))
+        target_weight = backend.random_normal((out_dim, in_dim))
+        input_activations = backend.random_normal((n_samples, in_dim))
+        backend.eval(source_aligned, target_weight, input_activations)
+
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_weight,
+            input_activations=input_activations,
+            backend=backend,
+        )
+
+        delta_proj = result.merged_weight - target_weight
+        residual = backend.matmul(input_activations, backend.transpose(delta_proj))
+        res_norm = backend.norm(residual)
+        act_norm = backend.norm(input_activations)
+        delta_norm = backend.norm(delta_proj)
+        backend.eval(res_norm, act_norm, delta_norm)
+
+        eps = division_epsilon(backend, input_activations)
+        scale = float(backend.to_scalar(act_norm)) * float(backend.to_scalar(delta_norm))
+        tol = eps * max(1.0, scale)
+
+        assert float(backend.to_scalar(res_norm)) <= tol
 
     @given(
         n_probes=st.integers(min_value=5, max_value=20),

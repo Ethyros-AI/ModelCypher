@@ -33,6 +33,31 @@ poetry run mc geometry spatial probe-model /path/to/model
 poetry run mc thermo measure --model /path/to/model "Your prompt here"
 ```
 
+## Evidence & Reproducibility
+
+ModelCypher supports the claim that LLM representations behave like shared, curved geometry by providing reproducible measurements (not a proof). Key checks:
+
+- Alignment invariance on probes: raw CKA increases to aligned CKA ~1.0 after Procrustes (see `experiments/results/geometry_validation.json`).
+- Layer-wise intrinsic dimension compression and domain-specific manifold structure (same report).
+- Property-based invariants: extensive Hypothesis tests for null-space projection, CKA invariants, and numerical stability.
+
+Reproduce:
+
+```bash
+# Geometry experiments (writes experiments/results/geometry_validation.json)
+poetry run python experiments/geometry_validation.py
+
+# Property-based tests (full)
+HYPOTHESIS_PROFILE=full poetry run pytest
+```
+
+## Limitations
+
+- Alignment CKA = 1.0 is by construction on the probe set; generalization depends on probe diversity and coverage.
+- Geodesic distances and curvature are approximations based on k-NN graphs and sampling; they are not global proofs of manifold structure.
+- Results are model- and data-dependent; different architectures or domains require fresh measurements.
+- Geometry here is descriptive and structural, not a complete causal explanation of behavior.
+
 ## Core Capabilities
 
 | Command Group | Purpose |

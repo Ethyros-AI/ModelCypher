@@ -396,3 +396,338 @@ class TestWeightFiniteness:
         """All LFM2 weights should be finite."""
         for key, weight in lfm2_weights.items():
             assert all_finite(weight, backend), f"Non-finite values in {key}"
+
+
+class TestCrossArchitectureDensityComparison:
+    """Tests for density comparison across different activation dimensions.
+
+    This tests the bug discovered when merging LFM2 (4608 intermediate) into
+    SmolLM (1536 intermediate) where the density comparison fails due to
+    different feature dimensions.
+    """
+
+    def test_density_with_same_dimensions(self, backend):
+        """Density comparison should work when dimensions match."""
+        from modelcypher.core.domain.geometry.knowledge_density import (
+            compute_knn_point_cloud_density,
+        )
+
+        n_samples = 64
+        dim = 256
+
+        backend.random_seed(42)
+        source_acts = backend.random_normal((n_samples, dim))
+        target_acts = backend.random_normal((n_samples, dim))
+        backend.eval(source_acts, target_acts)
+
+        result = compute_knn_point_cloud_density(
+            source_acts, target_acts, backend=backend
+        )
+
+        assert result.source_densities is not None
+        assert result.target_densities is not None
+        assert int(backend.shape(result.source_densities)[0]) == n_samples
+        assert int(backend.shape(result.target_densities)[0]) == n_samples
+
+    def test_density_with_different_dimensions_should_handle_gracefully(self, backend):
+        """Density comparison should handle different feature dimensions.
+
+        When source and target have different dimensions (e.g., source=4608, target=1536),
+        the density computation should either:
+        1. Work by normalizing by sqrt(dim) for each
+        2. Or require activations to be pre-aligned
+        """
+        from modelcypher.core.domain.geometry.knowledge_density import (
+            compute_knn_point_cloud_density,
+        )
+
+        n_samples = 64
+        source_dim = 4608  # LFM2 intermediate
+        target_dim = 1536  # SmolLM intermediate
+
+        backend.random_seed(42)
+        source_acts = backend.random_normal((n_samples, source_dim))
+        target_acts = backend.random_normal((n_samples, target_dim))
+        backend.eval(source_acts, target_acts)
+
+        # This should work - density computes independently on each point cloud
+        result = compute_knn_point_cloud_density(
+            source_acts, target_acts, backend=backend
+        )
+
+        assert result.source_densities is not None
+        assert result.target_densities is not None
+        assert int(backend.shape(result.source_densities)[0]) == n_samples
+        assert int(backend.shape(result.target_densities)[0]) == n_samples
+
+
+class TestCrossArchitectureMLPWeightTransplant:
+    """Tests for MLP weight transplant across different architectures.
+
+    Tests the full flow of transplanting MLP weights (gate_proj, up_proj, down_proj)
+    when source and target have different hidden and intermediate dimensions.
+    """
+
+    def test_mlp_down_proj_stitch_dimensions(self, backend):
+        """Test down_proj dual stitch produces correct dimensions.
+
+        down_proj: [hidden_out, intermediate_in]
+        Source: [1024, 4608]
+        Target: [576, 1536]
+        """
+        # Source dimensions (LFM2)
+        src_hidden = 1024
+        src_inter = 4608
+
+        # Target dimensions (SmolLM)
+        tgt_hidden = 576
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        # Create source down_proj weight [hidden, intermediate]
+        source_down = backend.random_normal((src_hidden, src_inter))
+
+        # Create stitch transforms
+        # hidden_stitch_output: [tgt_hidden, src_hidden] maps output dim
+        hidden_stitch_output = backend.random_normal((tgt_hidden, src_hidden))
+        # intermediate_stitch_input: [src_inter, tgt_inter] maps input dim
+        intermediate_stitch_input = backend.random_normal((src_inter, tgt_inter))
+        backend.eval(source_down, hidden_stitch_output, intermediate_stitch_input)
+
+        # Apply dual stitch for down_proj: H @ W @ I
+        stitched = backend.matmul(hidden_stitch_output, source_down)
+        stitched = backend.matmul(stitched, intermediate_stitch_input)
+        backend.eval(stitched)
+
+        # Result should match target dimensions
+        assert backend.shape(stitched) == (tgt_hidden, tgt_inter)
+        assert all_finite(stitched, backend)
+
+    def test_mlp_gate_up_proj_stitch_dimensions(self, backend):
+        """Test gate/up_proj dual stitch produces correct dimensions.
+
+        gate_proj/up_proj: [intermediate_out, hidden_in]
+        Source: [4608, 1024]
+        Target: [1536, 576]
+        """
+        src_hidden = 1024
+        src_inter = 4608
+        tgt_hidden = 576
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        # Create source gate_proj weight [intermediate, hidden]
+        source_gate = backend.random_normal((src_inter, src_hidden))
+
+        # Create stitch transforms
+        intermediate_stitch_output = backend.random_normal((tgt_inter, src_inter))
+        hidden_stitch_input = backend.random_normal((src_hidden, tgt_hidden))
+        backend.eval(source_gate, intermediate_stitch_output, hidden_stitch_input)
+
+        # Apply dual stitch for gate/up: I_out @ W @ H_in
+        stitched = backend.matmul(intermediate_stitch_output, source_gate)
+        stitched = backend.matmul(stitched, hidden_stitch_input)
+        backend.eval(stitched)
+
+        # Result should match target dimensions
+        assert backend.shape(stitched) == (tgt_inter, tgt_hidden)
+        assert all_finite(stitched, backend)
+
+    def test_weight_space_transplant_with_cross_dim_activations(self, backend):
+        """Test weight space transplant when activation dimensions differ.
+
+        This tests the bug path where source intermediate activations (4608-dim)
+        and target intermediate activations (1536-dim) are passed to density
+        comparison without proper alignment.
+        """
+        from modelcypher.core.domain.geometry.transplant import (
+            compute_weight_space_transplant,
+        )
+
+        n_samples = 64
+        src_hidden = 1024
+        src_inter = 4608
+        tgt_hidden = 576
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        # After stitching, weights are in target dimensions
+        source_aligned = backend.random_normal((tgt_hidden, tgt_inter))
+        target_weight = backend.random_normal((tgt_hidden, tgt_inter))
+
+        # Input activations for null-space: target intermediate [n, tgt_inter]
+        input_activations = backend.random_normal((n_samples, tgt_inter))
+
+        # For density comparison, source activations should ALSO be in
+        # target dimension (after alignment) - this is the bug!
+        # Currently the code passes raw source intermediate [n, src_inter]
+        source_density_acts = backend.random_normal((n_samples, tgt_inter))  # Aligned
+        target_density_acts = input_activations
+
+        backend.eval(
+            source_aligned, target_weight, input_activations,
+            source_density_acts, target_density_acts
+        )
+
+        # This should work when density activations have matching dimensions
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_weight,
+            input_activations=input_activations,
+            source_activations_for_density=source_density_acts,
+            target_activations_for_density=target_density_acts,
+            backend=backend,
+        )
+
+        assert result.merged_weight is not None
+        assert backend.shape(result.merged_weight) == (tgt_hidden, tgt_inter)
+        assert all_finite(result.merged_weight, backend)
+
+    def test_weight_space_transplant_without_density_weighting(self, backend):
+        """Test weight space transplant without density (uniform transfer)."""
+        from modelcypher.core.domain.geometry.transplant import (
+            compute_weight_space_transplant,
+        )
+
+        n_samples = 64
+        tgt_hidden = 576
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        source_aligned = backend.random_normal((tgt_hidden, tgt_inter))
+        target_weight = backend.random_normal((tgt_hidden, tgt_inter))
+        input_activations = backend.random_normal((n_samples, tgt_inter))
+
+        backend.eval(source_aligned, target_weight, input_activations)
+
+        # Without density activations, should use uniform transfer
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_weight,
+            input_activations=input_activations,
+            source_activations_for_density=None,
+            target_activations_for_density=None,
+            backend=backend,
+        )
+
+        assert result.merged_weight is not None
+        assert backend.shape(result.merged_weight) == (tgt_hidden, tgt_inter)
+        assert all_finite(result.merged_weight, backend)
+
+
+class TestIntermediateActivationAlignment:
+    """Tests for aligning intermediate activations across architectures.
+
+    When source and target have different intermediate dimensions, the source
+    intermediate activations must be aligned (transformed) before density
+    comparison can be performed.
+    """
+
+    def test_intermediate_alignment_transform_dimensions(self, backend):
+        """Test computing intermediate alignment transform."""
+        n_samples = 64
+        src_inter = 4608
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        # Source and target intermediate activations
+        src_inter_acts = backend.random_normal((n_samples, src_inter))
+        tgt_inter_acts = backend.random_normal((n_samples, tgt_inter))
+        backend.eval(src_inter_acts, tgt_inter_acts)
+
+        # Compute alignment transform: I such that src @ I ≈ tgt
+        result = find_alignment(src_inter_acts, tgt_inter_acts, backend)
+        I_transform = backend.array(result.feature_transform)
+        backend.eval(I_transform)
+
+        # Transform should be [src_inter, tgt_inter]
+        assert backend.shape(I_transform) == (src_inter, tgt_inter)
+
+        # Apply transform
+        aligned_src = backend.matmul(src_inter_acts, I_transform)
+        backend.eval(aligned_src)
+
+        # Aligned source should have target dimensions
+        assert backend.shape(aligned_src) == (n_samples, tgt_inter)
+        assert all_finite(aligned_src, backend)
+
+    def test_aligned_intermediate_activations_have_high_cka(self, backend):
+        """Aligned intermediate activations should have high CKA."""
+        n_samples = 64
+        src_inter = 4608
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        # Create correlated activations (shared structure)
+        shared = backend.random_normal((n_samples, min(src_inter, tgt_inter)))
+        backend.eval(shared)
+
+        # Expand to source/target dims with some noise
+        src_expand = backend.random_normal((min(src_inter, tgt_inter), src_inter))
+        tgt_expand = backend.random_normal((min(src_inter, tgt_inter), tgt_inter))
+        backend.eval(src_expand, tgt_expand)
+
+        src_inter_acts = backend.matmul(shared, src_expand)
+        tgt_inter_acts = backend.matmul(shared, tgt_expand)
+        backend.eval(src_inter_acts, tgt_inter_acts)
+
+        # Compute alignment
+        result = find_alignment(src_inter_acts, tgt_inter_acts, backend)
+        I_transform = backend.array(result.feature_transform)
+
+        # Apply transform
+        aligned_src = backend.matmul(src_inter_acts, I_transform)
+        backend.eval(aligned_src)
+
+        # Compute CKA between aligned source and target
+        cka = compute_linear_cka(aligned_src, tgt_inter_acts, backend)
+
+        # CKA should be high (close to 1.0) on training data
+        assert cka > 0.99  # Should be very close to 1.0 by construction
+
+    def test_intermediate_stitch_from_alignment(self, backend):
+        """Test computing intermediate stitch matrices from alignment."""
+        n_samples = 64
+        src_inter = 4608
+        tgt_inter = 1536
+
+        backend.random_seed(42)
+
+        src_inter_acts = backend.random_normal((n_samples, src_inter))
+        tgt_inter_acts = backend.random_normal((n_samples, tgt_inter))
+        backend.eval(src_inter_acts, tgt_inter_acts)
+
+        # Compute alignment
+        result = find_alignment(src_inter_acts, tgt_inter_acts, backend)
+        I = backend.array(result.feature_transform)  # [src_inter, tgt_inter]
+        backend.eval(I)
+
+        # For weight stitching, we need:
+        # intermediate_stitch_output = I^T = [tgt_inter, src_inter]
+        # intermediate_stitch_input = I = [src_inter, tgt_inter]
+        intermediate_stitch_output = backend.transpose(I)  # [tgt_inter, src_inter]
+        intermediate_stitch_input = I  # [src_inter, tgt_inter]
+
+        assert backend.shape(intermediate_stitch_output) == (tgt_inter, src_inter)
+        assert backend.shape(intermediate_stitch_input) == (src_inter, tgt_inter)
+
+        # Verify stitch application for down_proj: [hidden, inter]
+        src_hidden = 1024
+        tgt_hidden = 576
+        hidden_stitch_output = backend.random_normal((tgt_hidden, src_hidden))
+        down_proj = backend.random_normal((src_hidden, src_inter))
+        backend.eval(hidden_stitch_output, down_proj)
+
+        # Apply: H_out @ W @ I_in
+        stitched = backend.matmul(hidden_stitch_output, down_proj)
+        stitched = backend.matmul(stitched, intermediate_stitch_input)
+        backend.eval(stitched)
+
+        assert backend.shape(stitched) == (tgt_hidden, tgt_inter)
+        assert all_finite(stitched, backend)

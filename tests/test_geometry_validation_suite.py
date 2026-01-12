@@ -28,6 +28,9 @@ Tests the mathematical validation suite that verifies:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
 )
@@ -313,3 +316,31 @@ class TestDimensionConstraintValidation:
         assert validation.component_count_base == validation.component_count_padded
         assert validation.cycle_count_base == validation.cycle_count_padded
         assert validation.betti_numbers_base == validation.betti_numbers_padded
+
+
+class TestGeometryValidationResults:
+    """Regression checks for geometry validation experiment outputs."""
+
+    def test_alignment_invariance_results(self) -> None:
+        """Aligned CKA should match the invariant alignment claim."""
+        results_path = Path("experiments/results/geometry_validation.json")
+        assert results_path.exists()
+
+        with results_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+
+        experiments = data.get("experiments", {})
+        alignment = experiments.get("alignment_invariance", {})
+        raw_cka = alignment.get("raw_cka")
+        aligned_cka = alignment.get("aligned_cka")
+        achieved_cka = alignment.get("alignment_achieved_cka")
+        precision_threshold = alignment.get("precision_threshold")
+
+        assert raw_cka is not None
+        assert aligned_cka is not None
+        assert achieved_cka is not None
+
+        assert precision_threshold is not None
+        assert abs(aligned_cka - 1.0) <= precision_threshold
+        assert abs(achieved_cka - 1.0) <= precision_threshold
+        assert raw_cka < aligned_cka
