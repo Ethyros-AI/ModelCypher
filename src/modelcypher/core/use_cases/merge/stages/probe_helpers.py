@@ -59,13 +59,21 @@ def _infer_required_probe_count(
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
 ) -> tuple[int, int, int]:
-    """Infer geometry-derived probe count from hidden dimensions."""
+    """Infer MINIMUM probe count required for exact alignment from hidden dimensions.
+
+    The math requires n >= d (probes >= max hidden dim) for exact closed-form
+    alignment. This returns the minimum; callers should use ALL available probes
+    for maximum manifold coverage, not limit to this minimum.
+
+    Returns:
+        (min_required, source_dim, target_dim) where min_required = max(dims)
+    """
     from modelcypher.core.use_cases.merge.helpers import infer_hidden_dim
 
     source_dim = infer_hidden_dim(source_weights)
     target_dim = infer_hidden_dim(target_weights)
-    required = max(source_dim, target_dim)
-    return required, source_dim, target_dim
+    min_required = max(source_dim, target_dim)
+    return min_required, source_dim, target_dim
 
 
 def _select_geometry_probes(

@@ -121,6 +121,8 @@ __all__ = [
     "gpu_lstsq",
     # Invariant alignment (CKA = 1.0 by construction)
     "invariant_alignment",
+    # Geodesic invariant alignment (preserves manifold structure)
+    "geodesic_invariant_alignment",
 ]
 
 
@@ -1466,5 +1468,164 @@ def invariant_alignment(
             stats["n_samples"] = float(n_samples)
             stats["d_source"] = float(d_source)
             stats["underdetermination_ratio"] = ratio
+
+    return F
+
+
+def geodesic_invariant_alignment(
+    backend: "Backend",
+    source: "Array",
+    target: "Array",
+    stats: dict[str, float] | None = None,
+) -> "Array":
+    """Find alignment F that preserves geodesic manifold structure.
+
+    THE MATHEMATICS:
+    ================
+    Instead of minimizing ||source @ F - target||_F (Euclidean distance),
+    this finds F that preserves pairwise geodesic relationships.
+
+    The algorithm:
+    1. Compute geodesic cosine matrices G_s and G_t (relative representations)
+       - G[i,j] = geodesic_cos(point_i, point_j) using k-NN graph distances
+       - Each row represents a point by its geodesic similarities to all others
+    2. Find rotation R via Procrustes on the relative representations
+       - SVD: G_s.T @ G_t = U @ S @ V.T
+       - R = U @ V.T (orthogonal alignment in relative space)
+    3. Transfer through aligned relative space:
+       - transferred = G_s @ R @ pinv(G_t) @ target
+    4. Recover feature-space transform:
+       - F = lstsq(source, transferred)
+
+    This preserves manifold structure because geodesic cosines capture the
+    intrinsic geometry (curvature, topology) that Euclidean distance ignores.
+
+    WHY THIS WORKS:
+    ===============
+    Neural manifolds are curved in high dimensions. Euclidean distance treats
+    the space as flat, leading to alignment errors that compound through layers.
+    Geodesic cosines "linearize" the curved structure - after this transform,
+    linear alignment (Procrustes) correctly preserves relationships.
+
+    Reference: Yu et al. 2025 "Relative Geodesic Representations" (NeurIPS)
+    showed geodesic achieves 0.99 alignment vs 0.01 for linear methods.
+    """
+    from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
+
+    b = backend
+
+    source = _promote_precision(b.array(source), b)
+    target = _promote_precision(b.array(target), b, min_dtype=source.dtype)
+    b.eval(source, target)
+
+    n_samples = int(b.shape(source)[0])
+    d_source = int(b.shape(source)[1])
+    d_target = int(b.shape(target)[1])
+
+    if stats is not None:
+        stats["geodesic_alignment"] = 1.0
+        stats["n_samples"] = float(n_samples)
+        stats["d_source"] = float(d_source)
+        stats["d_target"] = float(d_target)
+
+    # Step 1: Compute geodesic cosine matrices (relative representations)
+    # Each row represents a point by its geodesic similarities to all others
+    t0 = time.time()
+    G_source = geodesic_cosine_matrix(source, b)
+    G_target = geodesic_cosine_matrix(target, b)
+    b.eval(G_source, G_target)
+    t_geo = time.time() - t0
+
+    if stats is not None:
+        stats["geodesic_time_sec"] = t_geo
+
+    logger.info(
+        "Geodesic cosine matrices computed: source %s, target %s (%.2fs)",
+        b.shape(G_source), b.shape(G_target), t_geo
+    )
+
+    # Step 2: Center both matrices for Procrustes
+    G_source_mean = b.mean(G_source, axis=0, keepdims=True)
+    G_target_mean = b.mean(G_target, axis=0, keepdims=True)
+    G_source_c = G_source - G_source_mean
+    G_target_c = G_target - G_target_mean
+    b.eval(G_source_c, G_target_c)
+
+    # Step 3: Procrustes alignment in relative space
+    # Find R such that G_source @ R ≈ G_target
+    # SVD of G_source.T @ G_target = U @ S @ V.T, then R = U @ V.T
+    C = b.matmul(b.transpose(G_source_c), G_target_c)
+    b.eval(C)
+
+    U, S, Vt = b.svd(C)
+    b.eval(U, S, Vt)
+
+    R = b.matmul(U, Vt)
+    b.eval(R)
+
+    # Ensure proper rotation (det = +1)
+    det_val = b.det(R)
+    b.eval(det_val)
+    det_scalar = float(b.to_scalar(det_val))
+    if det_scalar < 0:
+        # Flip sign of last column of U to get proper rotation
+        n_cols = int(b.shape(U)[1])
+        sign_arr = b.ones((n_cols,))
+        idx = b.arange(n_cols)
+        sign_arr = b.where(idx == (n_cols - 1), b.full(sign_arr.shape, -1.0), sign_arr)
+        U = U * sign_arr
+        R = b.matmul(U, Vt)
+        b.eval(R)
+
+    if stats is not None:
+        # Measure alignment quality in relative space
+        G_aligned = b.matmul(G_source_c, R)
+        b.eval(G_aligned)
+        diff = G_aligned - G_target_c
+        frob_norm = b.sqrt(b.sum(diff * diff))
+        target_norm = b.sqrt(b.sum(G_target_c * G_target_c))
+        b.eval(frob_norm, target_norm)
+        rel_error = float(b.to_scalar(frob_norm)) / max(float(b.to_scalar(target_norm)), 1e-12)
+        stats["relative_space_alignment_error"] = rel_error
+        logger.info("Relative space alignment error: %.6f", rel_error)
+
+    # Step 4: Transfer through aligned relative space
+    # transferred = G_source @ R @ pinv(G_target) @ target
+    # Use SVD for stable pseudo-inverse of G_target
+
+    G_aligned = b.matmul(G_source, R)
+    b.eval(G_aligned)
+
+    # Stable pseudo-inverse of G_target via SVD
+    U_t, S_t, Vt_t = b.svd(G_target)
+    b.eval(U_t, S_t, Vt_t)
+
+    # Threshold singular values
+    eps = machine_epsilon(b, G_target)
+    max_s = b.max(S_t)
+    b.eval(max_s)
+    threshold = eps * float(b.to_scalar(max_s)) * float(n_samples)
+    S_t_safe = b.where(S_t > threshold, S_t, b.ones_like(S_t))
+    S_t_inv = b.where(S_t > threshold, 1.0 / S_t_safe, b.zeros_like(S_t))
+    b.eval(S_t_inv)
+
+    # pinv(G_target) = V @ diag(S_inv) @ U.T
+    G_target_pinv = b.matmul(b.transpose(Vt_t), S_t_inv[:, None] * b.transpose(U_t))
+    b.eval(G_target_pinv)
+
+    # transferred = G_aligned @ pinv(G_target) @ target
+    temp = b.matmul(G_aligned, G_target_pinv)
+    transferred = b.matmul(temp, target)
+    b.eval(transferred)
+
+    # Step 5: Recover feature-space transform F
+    # F = lstsq(source, transferred) using gpu_lstsq for stability
+    F = gpu_lstsq(b, source, transferred, stats=stats)
+    b.eval(F)
+
+    logger.info(
+        "Geodesic alignment complete: F shape %s, d_source=%d, d_target=%d",
+        b.shape(F), d_source, d_target
+    )
 
     return F

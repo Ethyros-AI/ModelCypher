@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -92,13 +93,39 @@ class DeviationTracker:
         self._baseline_condition_numbers: dict[str, float] = {}
 
     def _compute_weight_norm(self, weights: dict[str, Any]) -> float:
-        """Compute total Frobenius norm of all weight tensors."""
+        """Compute total geodesic Frobenius-like norm of all weight tensors.
+
+        Uses geodesic norms (k-NN graph shortest paths) to properly account
+        for manifold curvature in the weight space.
+        """
         backend = self._backend
         total_sq = backend.array(0.0)
 
         for v in weights.values():
             w = backend.array(v)
-            w_sq = backend.sum(w * w)
+            shape = backend.shape(w)
+
+            if len(shape) >= 2:
+                # Reshape to 2D if needed (flatten all but last dim)
+                if len(shape) > 2:
+                    n_rows = 1
+                    for dim in shape[:-1]:
+                        n_rows *= dim
+                    w = backend.reshape(w, (n_rows, shape[-1]))
+                    shape = backend.shape(w)
+
+                # Use geodesic norms if we have enough rows for k-NN graph
+                if shape[0] >= 2:
+                    geo_norms_arr = geodesic_norms(w, backend, use_cache=False)
+                    backend.eval(geo_norms_arr)
+                    w_sq = backend.sum(geo_norms_arr * geo_norms_arr)
+                else:
+                    # Single row: fall back to Euclidean
+                    w_sq = backend.sum(w * w)
+            else:
+                # 1D tensor: use Euclidean
+                w_sq = backend.sum(w * w)
+
             total_sq = total_sq + w_sq
             backend.eval(total_sq)
 
@@ -199,7 +226,11 @@ class DeviationTracker:
         current_weights: dict[str, Any],
         baseline_name: str = "default",
     ) -> float:
-        """Compute L2 deviation from baseline."""
+        """Compute geodesic deviation from baseline.
+
+        Uses geodesic norms (k-NN graph shortest paths) to properly account
+        for manifold curvature in the weight delta.
+        """
         if baseline_name not in self._baseline_weights:
             logger.warning(f"No baseline '{baseline_name}' recorded")
             return 0.0
@@ -215,7 +246,27 @@ class DeviationTracker:
                 base = baseline[key]
 
                 delta = current - base
-                deviation_sq = backend.sum(delta * delta)
+                shape = backend.shape(delta)
+
+                if len(shape) >= 2:
+                    # Reshape to 2D if needed
+                    if len(shape) > 2:
+                        n_rows = 1
+                        for dim in shape[:-1]:
+                            n_rows *= dim
+                        delta = backend.reshape(delta, (n_rows, shape[-1]))
+                        shape = backend.shape(delta)
+
+                    # Use geodesic norms if we have enough rows
+                    if shape[0] >= 2:
+                        geo_norms_arr = geodesic_norms(delta, backend, use_cache=False)
+                        backend.eval(geo_norms_arr)
+                        deviation_sq = backend.sum(geo_norms_arr * geo_norms_arr)
+                    else:
+                        deviation_sq = backend.sum(delta * delta)
+                else:
+                    deviation_sq = backend.sum(delta * delta)
+
                 total_deviation_sq = total_deviation_sq + deviation_sq
                 backend.eval(total_deviation_sq)
 

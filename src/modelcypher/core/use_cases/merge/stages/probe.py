@@ -20,9 +20,12 @@ Stage 1: PROBE - Build intersection map from probe responses.
 
 The intersection map is the PRIMARY CONTROL SIGNAL for all downstream operations.
 
-We always run the atlas probe corpus from JSON, with the probe count derived
-from geometry (hidden dimensions of source/target). Token probing and
-weight-level shortcuts are intentionally disabled.
+We run the COMPLETE atlas probe corpus from JSON - ALL probes are used for
+maximum manifold coverage. Geometry requires n >= d probes (where d = max hidden dim),
+but MORE probes means BETTER coverage of the shared representational space.
+The atlas exists for complete coverage; limiting probes artificially loses information.
+
+Token probing and weight-level shortcuts are intentionally disabled.
 
 Reference: Kornblith et al. (2019) "Similarity of Neural Network Representations"
 Reference: Chun et al. (2025) "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features"
@@ -324,32 +327,32 @@ def _probe_precise(
             continue
         valid_probes.append((probe, probe_text))
 
-    required_count, source_dim, target_dim = _infer_required_probe_count(
+    # GEOMETRY PRINCIPLE: Use ALL available probes for maximum manifold coverage.
+    # The math requires n >= d (probes >= hidden_dim) for exact alignment,
+    # but MORE probes means BETTER coverage of the shared representational space.
+    # There is no benefit to limiting probes - use everything we have.
+    min_required, source_dim, target_dim = _infer_required_probe_count(
         source_weights, target_weights
     )
 
-    if required_count <= 0:
+    # ALWAYS use all valid probes - the atlas exists for complete manifold coverage
+    selected_probes = list(valid_probes)
+
+    if len(valid_probes) < min_required:
         logger.warning(
-            "PROBE MODE: Hidden dims unavailable; using all %d valid probes",
-            len(valid_probes),
-        )
-        selected_probes = list(valid_probes)
-    elif required_count > len(valid_probes):
-        logger.warning(
-            "PROBE MODE: Geometry requires %d probes (src_dim=%d, tgt_dim=%d) "
-            "but only %d valid probes available; using all probes",
-            required_count,
+            "PROBE MODE: Geometry requires minimum %d probes (src_dim=%d, tgt_dim=%d) "
+            "but only %d valid probes available; alignment may be incomplete",
+            min_required,
             source_dim,
             target_dim,
             len(valid_probes),
         )
-        selected_probes = list(valid_probes)
     else:
-        selected_probes = _select_geometry_probes(valid_probes, required_count)
         logger.info(
-            "PROBE MODE: Geometry-selected %d/%d probes (src_dim=%d, tgt_dim=%d)",
+            "PROBE MODE: Using ALL %d probes for complete manifold coverage "
+            "(geometry minimum=%d, src_dim=%d, tgt_dim=%d)",
             len(selected_probes),
-            len(valid_probes),
+            min_required,
             source_dim,
             target_dim,
         )

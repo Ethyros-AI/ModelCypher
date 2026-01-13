@@ -264,7 +264,7 @@ class IntrinsicDimension:
                 continue
 
             try:
-                # Compute distance matrix (uses fast chord path for small n)
+                # Compute geodesic distance matrix
                 dist_sq = self._geodesic_distance_matrix_squared(points)
 
                 # Compute mu ratios lazily (no eval inside)
@@ -425,45 +425,21 @@ class IntrinsicDimension:
         return d
 
     def _geodesic_distance_matrix_squared(self, points: "Array") -> "Array":
-        """Computes pairwise squared distances for TwoNN estimation.
+        """Computes pairwise squared geodesic distances for TwoNN estimation.
 
-        For small sample sizes (n < SMALL_SAMPLE_THRESHOLD), uses chord distance
-        directly. This is justified because:
-        1. TwoNN only needs accurate r1 (nearest) and r2 (2nd nearest) distances
-        2. For small n, the 2nd nearest neighbor is typically a direct neighbor
-           (graph path length = 1), so geodesic = chord
-        3. Curvature correction is O(path_length × local_curvature) ≈ negligible
-           when path_length ≈ 1
-
-        For larger samples, uses the full geodesic computation via k-NN graph
-        and Floyd-Warshall shortest paths (Isomap-style).
-
-        The threshold is data-derived from manifold learning theory:
-        - Expected graph diameter = O(log(n) / log(k)) where k = ceil(log(n))
-        - For n < 20, diameter ≈ 1-2, making curvature correction negligible
+        Uses k-NN graph and Floyd-Warshall shortest paths (Isomap-style)
+        to compute true manifold distances. Always geodesic - no chord
+        approximation, as even small curvature errors can propagate.
 
         Returns:
-            [N, N] squared distance matrix (chord for small n, geodesic otherwise)
+            [N, N] squared geodesic distance matrix
         """
         import math
 
         backend = self._backend
         n = int(points.shape[0])
 
-        # Threshold derived from manifold learning theory:
-        # For n < 20, k-NN graph with k=ceil(log(n)) has diameter ~1-2
-        # This means 2nd nearest neighbor is a direct neighbor, so chord ≈ geodesic
-        SMALL_SAMPLE_THRESHOLD = 20
-
-        if n < SMALL_SAMPLE_THRESHOLD:
-            # Fast path: compute chord distance directly
-            # chord_dist[i,j] = ||points[i] - points[j]||
-            # Using broadcasting: (n,1,d) - (1,n,d) -> (n,n,d) -> sum -> (n,n)
-            diff = backend.reshape(points, (n, 1, -1)) - backend.reshape(points, (1, n, -1))
-            chord_dist_sq = backend.sum(diff * diff, axis=-1)
-            return chord_dist_sq
-
-        # Full geodesic computation for larger samples
+        # Full geodesic computation for all samples
         riemannian = RiemannianGeometry(backend=self._backend)
 
         # First, find minimum k for connectivity (Berry & Sauer 2016)
@@ -492,7 +468,7 @@ class IntrinsicDimension:
         """Computes the ratio mu = r2 / r1 for each point from a distance matrix.
 
         Args:
-            dist_sq: [N, N] squared distance matrix (chord or geodesic)
+            dist_sq: [N, N] squared geodesic distance matrix
 
         Returns:
             [M] array of mu ratios for M valid points (where r1 > 0)

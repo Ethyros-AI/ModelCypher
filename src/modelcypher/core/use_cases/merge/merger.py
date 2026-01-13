@@ -602,13 +602,30 @@ class UnifiedGeometricMerger:
         logger.info("CONSENSUS: %d valid anchors across all models", len(valid_anchor_indices))
 
         # Compute stress profiles for each concept in each model
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
         def compute_stress(activation, anchor_acts):
-            """Compute distances from activation to each anchor."""
-            distances = []
-            for anchor_act in anchor_acts:
-                diff = activation - anchor_act
-                dist = b.sqrt(b.sum(diff ** 2))
-                distances.append(float(b.to_scalar(dist)))
+            """Compute geodesic distances from activation to each anchor.
+
+            Uses k-NN geodesic distances instead of Euclidean chord distances
+            to properly capture manifold structure in high dimensions.
+            """
+            # Stack activation (first) + all anchors into single point cloud
+            act_2d = b.reshape(activation, (1, -1))
+            anchors_2d = b.stack(anchor_acts, axis=0)  # [n_anchors, d]
+            combined = b.concatenate([act_2d, anchors_2d], axis=0)  # [n_anchors+1, d]
+            b.eval(combined)
+
+            # Compute geodesic distances on combined point cloud
+            rg = RiemannianGeometry(b)
+            geo_result = rg.geodesic_distances(combined)
+            dist_matrix = geo_result.distances  # [n_anchors+1, n_anchors+1]
+            b.eval(dist_matrix)
+
+            # Extract first row (distances from activation to each anchor)
+            # Skip index 0 (self-distance)
+            n_anchors = len(anchor_acts)
+            distances = [float(b.to_scalar(dist_matrix[0, i + 1])) for i in range(n_anchors)]
             return b.array(distances)
 
         # Get anchor activations for each model (in their own spaces)
@@ -648,11 +665,21 @@ class UnifiedGeometricMerger:
 
         for c_idx, stresses in enumerate(concept_stress):
             n = len(stresses)
+            # Stack stress vectors into point cloud for geodesic distance computation
+            stress_cloud = b.stack(stresses, axis=0)  # [n_models, n_anchors]
+            b.eval(stress_cloud)
+
+            # Compute geodesic pairwise distances in stress space
+            rg = RiemannianGeometry(b)
+            geo_result = rg.geodesic_distances(stress_cloud)
+            geo_dist_matrix = geo_result.distances  # [n, n]
+            b.eval(geo_dist_matrix)
+
+            # Extract pairwise distances as Python floats
             pairwise = [[0.0] * n for _ in range(n)]
             for i in range(n):
                 for j in range(i + 1, n):
-                    diff = stresses[i] - stresses[j]
-                    dist = float(b.to_scalar(b.sqrt(b.sum(diff ** 2))))
+                    dist = float(b.to_scalar(geo_dist_matrix[i, j]))
                     pairwise[i][j] = dist
                     pairwise[j][i] = dist
 
@@ -712,19 +739,28 @@ class UnifiedGeometricMerger:
             weight_delta = b.transpose(weight_delta)
             b.eval(weight_delta)
 
-            # Compute lstsq residual to gauge fit quality
-            # residual = ||delta_acts - target_outlier_acts @ weight_delta.T||
+            # Compute lstsq residual to gauge fit quality using geodesic norms
+            # residual = ||delta_acts - target_outlier_acts @ weight_delta.T||_geodesic
+            from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+
             predicted = b.matmul(target_outlier_acts, b.transpose(weight_delta))
             residual_vec = delta_acts - predicted
-            residual_norm = float(b.to_scalar(b.sqrt(b.sum(residual_vec ** 2))))
-            delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta_acts ** 2))))
+            b.eval(residual_vec)
+
+            # Use geodesic norms for manifold-aware magnitude measurement
+            residual_geo_norms = geodesic_norms(residual_vec, b)
+            delta_geo_norms = geodesic_norms(delta_acts, b)
+            b.eval(residual_geo_norms, delta_geo_norms)
+            residual_norm = float(b.to_scalar(b.mean(residual_geo_norms)))
+            delta_norm = float(b.to_scalar(b.mean(delta_geo_norms)))
 
             # Scale based on fit quality: scale = 1 - (residual / delta)
             # If residual is 0 (perfect fit), scale = 1.0
             # If residual equals delta (no fit), scale = 0.0
             fit_quality = 1.0 - min(1.0, residual_norm / (delta_norm + 1e-8))
 
-            # Also limit by weight magnitude ratio for numerical stability
+            # For weight magnitudes, use Frobenius norm (weight matrices, not activations)
+            # Weight matrices don't lie on the same activation manifold
             weight_delta_norm = float(b.to_scalar(b.sqrt(b.sum(weight_delta ** 2))))
             weight_norm = float(b.to_scalar(b.sqrt(b.sum(output_weight ** 2))))
             magnitude_ratio = min(1.0, weight_norm / (weight_delta_norm + 1e-8))

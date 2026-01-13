@@ -564,40 +564,43 @@ def compute_linear_cka(
     backend: "Backend | None" = None,
 ) -> float:
     """
-    Compute CKA using LINEAR Gram matrices: K = X @ X.T.
-    
-    This matches the Gram matrices used in solve_via_gram_alignment.
-    For perfect alignment with linear Gram alignment, use this function
-    (NOT compute_cka which uses RBF Gram).
-    
-    Linear CKA = HSIC(K_x, K_y) / sqrt(HSIC(K_x, K_x) * HSIC(K_y, K_y))
-    where K_x = X @ X.T (linear Gram, NOT RBF)
-    
+    Compute CKA using geodesic RBF Gram matrices.
+
+    Uses geodesic distances (k-NN graph + shortest paths) to properly
+    handle curved neural representation manifolds. RBF kernel converts
+    geodesic distances to similarities.
+
+    CKA = HSIC(K_x, K_y) / sqrt(HSIC(K_x, K_x) * HSIC(K_y, K_y))
+    where K_x, K_y are geodesic RBF Gram matrices.
+
     Args:
         activations_x: [n_samples, features_x]
         activations_y: [n_samples, features_y]
         backend: Backend protocol. If None, uses default.
-    
+
     Returns:
         CKA similarity in [0, 1].
     """
     if backend is None:
         backend = get_default_backend()
-    
+
     n = int(activations_x.shape[0])
     if n <= 1:
         return 0.0
     if activations_x.shape[0] != activations_y.shape[0]:
         return 0.0
-    
-    # LINEAR Gram matrices: K = X @ X.T
-    gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
-    gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
+
+    # Geodesic RBF Gram matrices: proper manifold distance
+    sq_dist_x = geodesic_squared_distances(activations_x, backend)
+    sq_dist_y = geodesic_squared_distances(activations_y, backend)
+    sigma = _shared_rbf_sigma(sq_dist_x, sq_dist_y, backend)
+    gram_x = _rbf_gram_from_sq_distances(sq_dist_x, sigma, backend)
+    gram_y = _rbf_gram_from_sq_distances(sq_dist_y, sigma, backend)
     backend.eval(gram_x, gram_y)
 
-    # Center the Gram matrices
-    centered_x = _center_gram_matrix(gram_x, backend)
-    centered_y = _center_gram_matrix(gram_y, backend)
+    # Center the Gram matrices (don't cache - sigma is shared, not per-array)
+    centered_x = _center_gram_matrix(gram_x, backend, cache_key=None)
+    centered_y = _center_gram_matrix(gram_y, backend, cache_key=None)
     backend.eval(centered_x, centered_y)
 
     # Compute raw HSIC sums directly (no (n-1)^2 normalization needed)

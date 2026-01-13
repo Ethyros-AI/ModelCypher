@@ -50,6 +50,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     gpu_lstsq,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    geodesic_norms,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (
@@ -158,17 +162,35 @@ class ConsensusCorrector:
 
         b.eval(weight_delta)
 
-        # Compute diagnostics
-        correction_magnitude = float(b.to_scalar(
-            b.sqrt(b.sum(weight_delta ** 2))
-        ))
+        # Compute diagnostics using geodesic norms
+        # Treat weight_delta rows as points, compute geodesic Frobenius-like norm
+        shape = b.shape(weight_delta)
+        if len(shape) == 2 and shape[0] >= 2:
+            geo_norms_arr = geodesic_norms(weight_delta, b, use_cache=False)
+            b.eval(geo_norms_arr)
+            sum_sq = b.sum(geo_norms_arr * geo_norms_arr)
+            correction_magnitude = float(b.to_scalar(b.sqrt(sum_sq)))
+        else:
+            # Fallback for small matrices
+            correction_magnitude = float(b.to_scalar(
+                b.sqrt(b.sum(weight_delta ** 2))
+            ))
 
-        # Stress reduction: distance between target and consensus stress
+        # Stress reduction: geodesic distance between target and consensus stress
         target_stress = self._compute_stress_from_position(
             target_position, target_anchors
         )
-        stress_dist = b.sqrt(b.sum((target_stress - consensus_stress) ** 2))
-        stress_reduction = float(b.to_scalar(stress_dist))
+        # Stack target and consensus stress to compute geodesic distance
+        stress_pair = b.stack([target_stress, consensus_stress], axis=0)
+        b.eval(stress_pair)
+        if stress_pair.shape[0] >= 2:
+            rg = RiemannianGeometry(b)
+            geo_result = rg.geodesic_distances(stress_pair, use_cache=False)
+            stress_reduction = float(b.to_scalar(geo_result.distances[0, 1]))
+        else:
+            # Fallback
+            stress_dist = b.sqrt(b.sum((target_stress - consensus_stress) ** 2))
+            stress_reduction = float(b.to_scalar(stress_dist))
 
         logger.info(
             "Correction computed: magnitude=%.4f, stress_reduction=%.4f",
@@ -290,24 +312,39 @@ class ConsensusCorrector:
         position: "Array",
         anchor_positions: dict[str, "Array"],
     ) -> "Array":
-        """Compute stress vector (distances to anchors) from position.
+        """Compute stress vector (geodesic distances to anchors) from position.
+
+        Uses k-NN graph shortest paths to compute true manifold distances.
 
         Args:
             position: Position in target space [d].
             anchor_positions: Dict mapping anchor names to positions [d].
 
         Returns:
-            Stress vector [n_anchors] of distances to each anchor.
+            Stress vector [n_anchors] of geodesic distances to each anchor.
         """
         b = self._backend
 
         anchor_list = sorted(anchor_positions.keys())
-        distances = []
+        n_anchors = len(anchor_list)
 
-        for anchor_name in anchor_list:
-            anchor_pos = anchor_positions[anchor_name]
-            diff = position - b.array(anchor_pos)
-            dist = b.sqrt(b.sum(diff ** 2))
-            distances.append(float(b.to_scalar(dist)))
+        if n_anchors == 0:
+            return b.array([])
 
-        return b.array(distances)
+        # Stack position and all anchors into point cloud
+        # position at index 0, anchors at indices 1..n_anchors
+        position_2d = b.reshape(position, (1, -1))
+        anchor_arrays = [b.reshape(b.array(anchor_positions[name]), (1, -1))
+                        for name in anchor_list]
+        points = b.concatenate([position_2d] + anchor_arrays, axis=0)
+        b.eval(points)
+
+        # Compute geodesic distances
+        rg = RiemannianGeometry(b)
+        geo_result = rg.geodesic_distances(points, use_cache=False)
+
+        # Extract distances from position (row 0) to each anchor (rows 1..n)
+        distances = geo_result.distances[0, 1:]
+        b.eval(distances)
+
+        return distances

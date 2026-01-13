@@ -61,12 +61,59 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    geodesic_cosine_between_sets,
+    geodesic_norms,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+def _geodesic_frobenius_norm(
+    weight: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute geodesic analogue of Frobenius norm for weight matrices.
+
+    Treats each row of the weight matrix as a point in feature space,
+    computes geodesic distance from origin for each row, then aggregates
+    as sqrt(sum(geodesic_norms²)).
+
+    This properly accounts for manifold curvature in the weight space.
+
+    Args:
+        weight: Weight matrix [out_dim, in_dim]
+        backend: Backend for tensor operations
+
+    Returns:
+        Geodesic Frobenius-like norm (scalar)
+    """
+    b = backend
+    shape = b.shape(weight)
+    if len(shape) != 2:
+        # Fall back to regular Frobenius for non-2D
+        flat = b.reshape(weight, (-1,))
+        return float(b.to_scalar(b.sqrt(b.sum(flat * flat))))
+
+    out_dim, in_dim = shape
+
+    # Need at least 2 rows to build k-NN graph
+    if out_dim < 2:
+        flat = b.reshape(weight, (-1,))
+        return float(b.to_scalar(b.sqrt(b.sum(flat * flat))))
+
+    # Treat each row as a point, get geodesic norms
+    geo_norms = geodesic_norms(weight, backend, use_cache=False)
+    b.eval(geo_norms)
+
+    # Geodesic Frobenius = sqrt(sum(geodesic_norms²))
+    sum_sq = b.sum(geo_norms * geo_norms)
+    geo_frob = b.sqrt(sum_sq)
+    b.eval(geo_frob)
+    return float(b.to_scalar(geo_frob))
 
 
 @dataclass(frozen=True)
@@ -160,14 +207,9 @@ def compute_weight_space_transplant(
     # =========================================================================
     eps = division_epsilon(b, target_weight)
 
-    source_flat = b.reshape(source_aligned, (-1,))
-    target_flat = b.reshape(target_weight, (-1,))
-    source_norm = b.sqrt(b.sum(source_flat * source_flat) + eps)
-    target_norm = b.sqrt(b.sum(target_flat * target_flat) + eps)
-    b.eval(source_norm, target_norm)
-
-    source_norm_val = float(b.to_scalar(source_norm))
-    target_norm_val = float(b.to_scalar(target_norm))
+    # Geodesic Frobenius norms (treat rows as points on manifold)
+    source_norm_val = _geodesic_frobenius_norm(source_aligned, b)
+    target_norm_val = _geodesic_frobenius_norm(target_weight, b)
 
     # Normalize source_aligned to match target magnitude
     if source_norm_val > eps:
@@ -192,21 +234,31 @@ def compute_weight_space_transplant(
     delta_W = source_normalized - target_weight  # [out_dim, in_dim]
     b.eval(delta_W)
 
-    # Compute delta norm before projection
-    delta_flat = b.reshape(delta_W, (-1,))
-    delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta_flat * delta_flat))))
+    # Compute delta norm before projection (geodesic Frobenius)
+    delta_norm = _geodesic_frobenius_norm(delta_W, b)
 
-    # Compute cosine similarity between normalized source and target
+    # Compute geodesic cosine similarity between normalized source and target
     # This measures alignment quality BEFORE null-space projection
-    source_flat = b.reshape(source_normalized, (-1,))
-    target_flat = b.reshape(target_weight, (-1,))
-    dot_product = b.sum(source_flat * target_flat)
-    source_n = b.sqrt(b.sum(source_flat * source_flat))
-    target_n = b.sqrt(b.sum(target_flat * target_flat))
-    b.eval(dot_product, source_n, target_n)
-    cosine_sim = float(b.to_scalar(dot_product)) / (
-        float(b.to_scalar(source_n)) * float(b.to_scalar(target_n)) + eps
-    )
+    # Uses geodesic law of cosines: cos(θ) = (d²(0,a) + d²(0,b) - d²(a,b)) / (2·d(0,a)·d(0,b))
+    if out_dim >= 2:  # Need at least 2 rows for k-NN graph
+        geo_cos_matrix = geodesic_cosine_between_sets(
+            source_normalized, target_weight, b, use_cache=False
+        )
+        b.eval(geo_cos_matrix)
+        # Mean of diagonal: similarity between corresponding rows
+        diag_cos = b.diag(geo_cos_matrix)
+        cosine_sim = float(b.to_scalar(b.mean(diag_cos)))
+    else:
+        # Fall back to Euclidean for single-row matrices
+        source_flat = b.reshape(source_normalized, (-1,))
+        target_flat = b.reshape(target_weight, (-1,))
+        dot_product = b.sum(source_flat * target_flat)
+        source_n = b.sqrt(b.sum(source_flat * source_flat))
+        target_n = b.sqrt(b.sum(target_flat * target_flat))
+        b.eval(dot_product, source_n, target_n)
+        cosine_sim = float(b.to_scalar(dot_product)) / (
+            float(b.to_scalar(source_n)) * float(b.to_scalar(target_n)) + eps
+        )
 
     logger.info(
         "STITCH QUALITY: cosine_sim=%.4f, delta_norm=%.4f, target_norm=%.4f (ratio=%.2f)",
@@ -404,9 +456,8 @@ def compute_weight_space_transplant(
     delta_W_proj = b.matmul(delta_W, N)
     b.eval(delta_W_proj)
 
-    # Compute projected norm
-    proj_flat = b.reshape(delta_W_proj, (-1,))
-    projected_norm = float(b.to_scalar(b.sqrt(b.sum(proj_flat * proj_flat))))
+    # Compute projected norm (geodesic Frobenius)
+    projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)
 
     # Preserved fraction
     if delta_norm > 0:

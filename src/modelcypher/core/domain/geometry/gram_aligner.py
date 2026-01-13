@@ -330,7 +330,7 @@ class GramAligner:
             return self._identity_result(int(n_s), int(d_s), precision)
 
         # =================================================================
-        # PHASE 1: Linear Procrustes (initialization)
+        # PHASE 1: Linear Procrustes (closed-form alignment)
         # =================================================================
         # F = pinv(source) @ target guarantees LINEAR CKA = 1.0
         start_time = time.perf_counter()
