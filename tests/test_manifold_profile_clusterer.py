@@ -51,9 +51,10 @@ def _make_point(
 
 def test_region_classification() -> None:
     backend = get_default_backend()
-    entropies = [1.0, 1.1, 5.0, 5.2]
-    variances = [0.05, 0.06, 0.5, 0.6]
-    coherences = [0.9, 0.88, 0.2, 0.25]
+    # Use values with clear gaps to ensure robust threshold detection
+    entropies = [0.5, 0.6, 5.0, 5.5]  # Clear gap between 0.6 and 5.0
+    variances = [0.01, 0.02, 0.5, 0.6]  # Clear gap between 0.02 and 0.5
+    coherences = [0.95, 0.92, 0.2, 0.1]  # Clear gap between 0.92 and 0.2
     eps = division_epsilon(backend, backend.array(entropies))
     entropy_threshold = find_magnitude_gap_threshold(sorted(entropies), eps=eps)
     variance_threshold = find_magnitude_gap_threshold(sorted(variances), eps=eps)
@@ -72,13 +73,14 @@ def test_region_classification() -> None:
         high_coherence=coherence_high,
         low_coherence=coherence_low,
     )
+    # Create point clearly in DENSE region: low entropy, low variance, high coherence
     point = ManifoldPoint(
         id=uuid4(),
-        mean_entropy=min(entropies),
-        entropy_variance=min(variances),
+        mean_entropy=0.4,  # Clearly below low_entropy threshold
+        entropy_variance=0.005,  # Clearly below low_variance threshold
         first_token_entropy=1.0,
         gate_count=1,
-        mean_gate_similarity=max(coherences),
+        mean_gate_similarity=0.98,  # Clearly above high_coherence threshold
         dominant_gate_category=0.0,
         entropy_path_correlation=0.0,
         assessment_strength=0.5,

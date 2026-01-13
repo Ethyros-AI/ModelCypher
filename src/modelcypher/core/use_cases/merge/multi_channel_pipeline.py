@@ -64,6 +64,7 @@ from modelcypher.core.domain.geometry.channel_projector import (
     ChannelProjector,
     MultiChannelProjectionResult,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -377,10 +378,12 @@ class MultiChannelMergePipeline:
         delta_flat = backend.reshape(combined_delta, (-1,))
         merged_flat = backend.reshape(merged, (-1,))
 
-        target_norm = backend.sum(target_flat * target_flat) ** 0.5
-        delta_norm = backend.sum(delta_flat * delta_flat) ** 0.5
-        merged_norm = backend.sum(merged_flat * merged_flat) ** 0.5
-        backend.eval(target_norm, delta_norm, merged_norm)
+        norm_vectors = backend.stack([target_flat, delta_flat, merged_flat], axis=0)
+        geo_norms = geodesic_norms(norm_vectors, backend, use_cache=False)
+        backend.eval(geo_norms)
+        target_norm = float(backend.to_scalar(geo_norms[0]))
+        delta_norm = float(backend.to_scalar(geo_norms[1]))
+        merged_norm = float(backend.to_scalar(geo_norms[2]))
 
         return LayerMergeResult(
             layer_name=layer_name,
@@ -388,9 +391,9 @@ class MultiChannelMergePipeline:
             channel_projection=projection_result,
             routing_result=routing_result,
             combined_delta=combined_delta,
-            target_norm=float(backend.to_scalar(target_norm)),
-            delta_norm=float(backend.to_scalar(delta_norm)),
-            merged_norm=float(backend.to_scalar(merged_norm)),
+            target_norm=target_norm,
+            delta_norm=delta_norm,
+            merged_norm=merged_norm,
         )
 
 

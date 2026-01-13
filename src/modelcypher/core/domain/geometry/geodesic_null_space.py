@@ -88,6 +88,79 @@ logger = logging.getLogger(__name__)
 _cache = ComputationCache.shared()
 
 
+def _as_2d(matrix: "Array", backend: "Backend") -> "Array":
+    arr = backend.array(matrix) if not hasattr(matrix, "shape") else matrix
+    shape = backend.shape(arr)
+    if len(shape) != 2 or int(shape[0]) < 1:
+        return backend.reshape(arr, (1, -1))
+    return arr
+
+
+def _geodesic_frobenius_from_row_norms(
+    row_norms: "Array",
+    backend: "Backend",
+) -> float:
+    sum_sq = backend.sum(row_norms * row_norms)
+    backend.eval(sum_sq)
+    return float(
+        backend.to_scalar(
+            backend.sqrt(sum_sq + regularization_epsilon(backend, row_norms))
+        )
+    )
+
+
+def _geodesic_frobenius_norm(
+    matrix: "Array",
+    backend: "Backend",
+) -> float:
+    arr = _as_2d(matrix, backend)
+    energy = backend.sum(arr * arr)
+    backend.eval(energy)
+    if float(backend.to_scalar(energy)) <= regularization_epsilon(backend, arr):
+        return 0.0
+    norms = geodesic_norms(arr, backend, use_cache=False)
+    backend.eval(norms)
+    return _geodesic_frobenius_from_row_norms(norms, backend)
+
+
+def _geodesic_frobenius_norms_pair(
+    original: "Array",
+    filtered: "Array",
+    backend: "Backend",
+) -> tuple[float, float]:
+    original_arr = _as_2d(original, backend)
+    filtered_arr = _as_2d(filtered, backend)
+    original_energy = backend.sum(original_arr * original_arr)
+    filtered_energy = backend.sum(filtered_arr * filtered_arr)
+    backend.eval(original_energy, filtered_energy)
+    original_zero = (
+        float(backend.to_scalar(original_energy))
+        <= regularization_epsilon(backend, original_arr)
+    )
+    filtered_zero = (
+        float(backend.to_scalar(filtered_energy))
+        <= regularization_epsilon(backend, filtered_arr)
+    )
+    if original_zero and filtered_zero:
+        return 0.0, 0.0
+    combined = backend.concatenate([original_arr, filtered_arr], axis=0)
+    norms = geodesic_norms(combined, backend, use_cache=False)
+    backend.eval(norms)
+    original_rows = int(backend.shape(original_arr)[0])
+    original_norms = norms[:original_rows]
+    filtered_norms = norms[original_rows:]
+    original_norm = 0.0 if original_zero else _geodesic_frobenius_from_row_norms(
+        original_norms, backend
+    )
+    filtered_norm = 0.0 if filtered_zero else _geodesic_frobenius_from_row_norms(
+        filtered_norms, backend
+    )
+    return (
+        original_norm,
+        filtered_norm,
+    )
+
+
 @dataclass
 class GeodesicNullSpaceResult:
     """Result of geodesic null-space filtering."""
@@ -358,19 +431,10 @@ class GeodesicNullSpaceFilter:
             delta_weights = backend.zeros((d,))
         backend.eval(delta_weights)
 
-        # Compute metrics (single geodesic pass for original/filtered norms)
-        norm_inputs = backend.concatenate(
-            [
-                backend.reshape(delta_flat, (1, -1)),
-                backend.reshape(delta_safe, (1, -1)),
-            ],
-            axis=0,
+        # Compute geodesic Frobenius-like norms on a shared graph
+        original_norm, filtered_norm = _geodesic_frobenius_norms_pair(
+            delta_proj, delta_safe, backend
         )
-        norms_arr = geodesic_norms(norm_inputs, backend)
-        backend.eval(norms_arr)
-
-        original_norm = float(backend.to_scalar(norms_arr[0]))
-        filtered_norm = float(backend.to_scalar(norms_arr[1]))
         filtering_applied = abs(original_norm - filtered_norm) > reg
         orthogonal_dim = basis.orthogonal_dim
 
@@ -792,13 +856,10 @@ def filter_delta_svd(
 
     m, n = int(delta_2d.shape[0]), int(delta_2d.shape[1])
 
-    # Check for zero or near-zero delta
-    delta_norm_sq = b.sum(delta_2d * delta_2d)
-    b.eval(delta_norm_sq)
-    delta_norm_sq_val = float(b.to_scalar(delta_norm_sq))
-
     reg = regularization_epsilon(b, delta_2d)
-    if delta_norm_sq_val < reg:
+    # Check for zero or near-zero delta (geodesic Frobenius-like norm)
+    delta_norm = _geodesic_frobenius_norm(delta_2d, b)
+    if delta_norm < reg:
         # Delta is effectively zero - return unchanged
         return GeodesicNullSpaceResult(
             filtered_delta=weight_delta,
@@ -825,8 +886,8 @@ def filter_delta_svd(
             orthogonal_dim=0,
             projection_loss=0.0,
             preserved_fraction=1.0,
-            original_norm=float(b.to_scalar(b.sqrt(delta_norm_sq))),
-            filtered_norm=float(b.to_scalar(b.sqrt(delta_norm_sq))),
+            original_norm=delta_norm,
+            filtered_norm=delta_norm,
             filtering_applied=False,
             k_neighbors=0,
             mean_geodesic_distance=0.0,
@@ -856,7 +917,7 @@ def filter_delta_svd(
         delta_filtered = delta_filtered_2d
     b.eval(delta_filtered)
 
-    # Compute preserved fraction (ratio of energy)
+    # Compute preserved energy fraction (SVD spectrum)
     S_sq = S * S
     S_k_sq = S_k * S_k
     total_energy = b.sum(S_sq)
@@ -867,21 +928,25 @@ def filter_delta_svd(
     kept_energy_val = float(b.to_scalar(kept_energy))
 
     if total_energy_val > reg:
-        preserved_fraction = kept_energy_val / total_energy_val
+        energy_preserved = kept_energy_val / total_energy_val
+    else:
+        energy_preserved = 1.0
+
+    # Compute geodesic Frobenius-like norms for reporting (shared graph)
+    original_norm, filtered_norm = _geodesic_frobenius_norms_pair(
+        delta_2d, delta_filtered_2d, b
+    )
+
+    if original_norm > 0:
+        preserved_fraction = filtered_norm / original_norm
     else:
         preserved_fraction = 1.0
-
-    # Compute norms for reporting
-    original_norm = float(b.to_scalar(b.sqrt(delta_norm_sq)))
-    filtered_norm_sq = b.sum(delta_filtered * delta_filtered)
-    b.eval(filtered_norm_sq)
-    filtered_norm = float(b.to_scalar(b.sqrt(filtered_norm_sq)))
 
     projection_loss = 1.0 - preserved_fraction
 
     logger.info(
-        "SVD FILTER: rank=%d/%d (%.1f%% energy), preserved_fraction=%.3f",
-        k, n_sv, 100.0 * preserved_fraction, preserved_fraction
+        "SVD FILTER: rank=%d/%d (%.1f%% energy), geo_preserved=%.3f",
+        k, n_sv, 100.0 * energy_preserved, preserved_fraction
     )
 
     return GeodesicNullSpaceResult(
@@ -984,10 +1049,10 @@ class NullSpaceProjectionResult:
     # Original delta before projection
     original_delta: Any
 
-    # Frobenius norm of original delta
+    # Geodesic Frobenius-like norm of original delta
     original_norm: float
 
-    # Frobenius norm of projected delta
+    # Geodesic Frobenius-like norm of projected delta
     projected_norm: float
 
     # Fraction of delta preserved (projected_norm / original_norm)
@@ -1096,20 +1161,8 @@ def project_to_null_space(
             f"activations have d={d}. These must match."
         )
 
-    def _geodesic_frobenius_norm(matrix: "Array") -> float:
-        shape = b.shape(matrix)
-        if len(shape) != 2:
-            matrix = b.reshape(matrix, (1, -1))
-        elif shape[0] < 1:
-            matrix = b.reshape(matrix, (1, -1))
-        norms = geodesic_norms(matrix, b, use_cache=False)
-        b.eval(norms)
-        sum_sq = b.sum(norms * norms)
-        b.eval(sum_sq)
-        return float(b.to_scalar(b.sqrt(sum_sq + regularization_epsilon(b, norms))))
-
     # Compute original norm (geodesic Frobenius-like)
-    original_norm = _geodesic_frobenius_norm(delta)
+    original_norm = _geodesic_frobenius_norm(delta, b)
 
     # Handle zero delta
     eps = regularization_epsilon(b, delta)
@@ -1176,7 +1229,7 @@ def project_to_null_space(
     b.eval(delta_safe)
 
     # Compute projected norm (geodesic Frobenius-like)
-    projected_norm = _geodesic_frobenius_norm(delta_safe)
+    projected_norm = _geodesic_frobenius_norm(delta_safe, b)
 
     preserved_fraction = projected_norm / original_norm if original_norm > 0 else 1.0
 

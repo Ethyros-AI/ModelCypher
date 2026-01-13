@@ -56,7 +56,7 @@ class DeviationMeasurement:
     We report measurements for transparency, not for gating decisions.
     """
 
-    # Current deviation from baseline (L2 norm)
+    # Current deviation from baseline (geodesic norm)
     deviation: float
 
     # Baseline weight norm for context
@@ -239,25 +239,17 @@ class DeviationTracker:
 
                 delta = current - base
                 shape = backend.shape(delta)
+                if len(shape) > 2:
+                    n_rows = 1
+                    for dim in shape[:-1]:
+                        n_rows *= dim
+                    delta = backend.reshape(delta, (n_rows, shape[-1]))
+                elif len(shape) == 1:
+                    delta = backend.reshape(delta, (1, shape[0]))
 
-                if len(shape) >= 2:
-                    # Reshape to 2D if needed
-                    if len(shape) > 2:
-                        n_rows = 1
-                        for dim in shape[:-1]:
-                            n_rows *= dim
-                        delta = backend.reshape(delta, (n_rows, shape[-1]))
-                        shape = backend.shape(delta)
-
-                    # Use geodesic norms if we have enough rows
-                    if shape[0] >= 2:
-                        geo_norms_arr = geodesic_norms(delta, backend, use_cache=False)
-                        backend.eval(geo_norms_arr)
-                        deviation_sq = backend.sum(geo_norms_arr * geo_norms_arr)
-                    else:
-                        deviation_sq = backend.sum(delta * delta)
-                else:
-                    deviation_sq = backend.sum(delta * delta)
+                geo_norms_arr = geodesic_norms(delta, backend, use_cache=False)
+                backend.eval(geo_norms_arr)
+                deviation_sq = backend.sum(geo_norms_arr * geo_norms_arr)
 
                 total_deviation_sq = total_deviation_sq + deviation_sq
                 backend.eval(total_deviation_sq)
@@ -302,25 +294,17 @@ class DeviationTracker:
                 tgt = backend.array(target_weights[key])
                 delta = src - tgt
                 shape = backend.shape(delta)
+                if len(shape) > 2:
+                    n_rows = 1
+                    for dim in shape[:-1]:
+                        n_rows *= dim
+                    delta = backend.reshape(delta, (n_rows, shape[-1]))
+                elif len(shape) == 1:
+                    delta = backend.reshape(delta, (1, shape[0]))
 
-                if len(shape) >= 2:
-                    # Reshape to 2D if needed
-                    if len(shape) > 2:
-                        n_rows = 1
-                        for dim in shape[:-1]:
-                            n_rows *= dim
-                        delta = backend.reshape(delta, (n_rows, shape[-1]))
-                        shape = backend.shape(delta)
-
-                    # Use geodesic norms if we have enough rows
-                    if shape[0] >= 2:
-                        geo_norms_arr = geodesic_norms(delta, backend, use_cache=False)
-                        backend.eval(geo_norms_arr)
-                        delta_contrib = backend.sum(geo_norms_arr * geo_norms_arr)
-                    else:
-                        delta_contrib = backend.sum(delta * delta)
-                else:
-                    delta_contrib = backend.sum(delta * delta)
+                geo_norms_arr = geodesic_norms(delta, backend, use_cache=False)
+                backend.eval(geo_norms_arr)
+                delta_contrib = backend.sum(geo_norms_arr * geo_norms_arr)
 
                 delta_sq = delta_sq + delta_contrib
                 backend.eval(delta_sq)

@@ -260,10 +260,6 @@ class RelationalStressComputer:
         anchor_matrix = b.concatenate(anchor_list, axis=0)
         n_anch = int(anchor_matrix.shape[0])
         if n_anch >= 2:
-            from modelcypher.core.domain.geometry.riemannian_utils import (
-                geodesic_distance_matrix,
-            )
-
             geo_dist = geodesic_distance_matrix(anchor_matrix, backend=b)
             b.eval(geo_dist)
             off_diag_mask = b.ones((n_anch, n_anch)) - b.eye(n_anch)
@@ -717,10 +713,6 @@ class CrossGroundingSynthesizer:
 
         # Target spread from geodesic pairwise distances between anchors
         if n_anchors >= 2:
-            from modelcypher.core.domain.geometry.riemannian_utils import (
-                geodesic_distance_matrix,
-            )
-
             geo_dist = geodesic_distance_matrix(anchor_arr, backend=b)
             b.eval(geo_dist)
             off_diag_mask = b.ones((n_anchors, n_anchors)) - b.eye(n_anchors)

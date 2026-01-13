@@ -233,25 +233,13 @@ def compute_weight_space_transplant(
     # Compute geodesic cosine similarity between normalized source and target
     # This measures alignment quality BEFORE null-space projection
     # Uses geodesic law of cosines: cos(θ) = (d²(0,a) + d²(0,b) - d²(a,b)) / (2·d(0,a)·d(0,b))
-    if out_dim >= 2:  # Need at least 2 rows for k-NN graph
-        geo_cos_matrix = geodesic_cosine_between_sets(
-            source_normalized, target_weight, b, use_cache=False
-        )
-        b.eval(geo_cos_matrix)
-        # Mean of diagonal: similarity between corresponding rows
-        diag_cos = b.diag(geo_cos_matrix)
-        cosine_sim = float(b.to_scalar(b.mean(diag_cos)))
-    else:
-        # Fall back to Euclidean for single-row matrices
-        source_flat = b.reshape(source_normalized, (-1,))
-        target_flat = b.reshape(target_weight, (-1,))
-        dot_product = b.sum(source_flat * target_flat)
-        source_n = b.sqrt(b.sum(source_flat * source_flat))
-        target_n = b.sqrt(b.sum(target_flat * target_flat))
-        b.eval(dot_product, source_n, target_n)
-        cosine_sim = float(b.to_scalar(dot_product)) / (
-            float(b.to_scalar(source_n)) * float(b.to_scalar(target_n)) + eps
-        )
+    geo_cos_matrix = geodesic_cosine_between_sets(
+        source_normalized, target_weight, b, use_cache=False
+    )
+    b.eval(geo_cos_matrix)
+    # Mean of diagonal: similarity between corresponding rows
+    diag_cos = b.diag(geo_cos_matrix)
+    cosine_sim = float(b.to_scalar(b.mean(diag_cos)))
 
     logger.info(
         "STITCH QUALITY: cosine_sim=%.4f, delta_norm=%.4f, target_norm=%.4f (ratio=%.2f)",

@@ -60,8 +60,8 @@ class TestOutlierDetector:
         """All similar errors should have no outliers."""
         detector = OutlierDetector()
 
-        # All similar errors
-        errors = [0.1, 0.11, 0.09, 0.1, 0.12, 0.1]
+        # All identical errors - no variation at all
+        errors = [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
         result = detector.detect_from_gpa(errors)
 

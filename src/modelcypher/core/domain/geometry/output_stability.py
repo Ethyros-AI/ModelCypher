@@ -74,6 +74,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_svd,
     safe_log_epsilon,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -103,7 +104,7 @@ class OutputStabilityMetrics:
     # Min singular value (smallest mode)
     min_singular_value: float
 
-    # Frobenius norm of the weight matrix
+    # Geodesic Frobenius-like norm of the weight matrix
     frobenius_norm: float
 
     # Number of singular values computed
@@ -139,6 +140,22 @@ def _to_float(val: Any) -> float:
     return float(val)
 
 
+def _geodesic_frobenius_norm(matrix: "Array", backend: "Backend") -> float:
+    arr = backend.array(matrix) if not hasattr(matrix, "shape") else matrix
+    shape = backend.shape(arr)
+    if len(shape) != 2 or int(shape[0]) < 1:
+        arr = backend.reshape(arr, (1, -1))
+    norms = geodesic_norms(arr, backend, use_cache=False)
+    backend.eval(norms)
+    sum_sq = backend.sum(norms * norms)
+    backend.eval(sum_sq)
+    return float(
+        backend.to_scalar(
+            backend.sqrt(sum_sq + division_epsilon(backend, norms))
+        )
+    )
+
+
 def compute_output_stability(
     weight_matrix: "Array",
     backend: "Backend | None" = None,
@@ -165,9 +182,7 @@ def compute_output_stability(
     # Handle 1D weights (biases, layernorms)
     if weight_matrix.ndim == 1:
         # For 1D, these metrics don't apply meaningfully
-        norm_arr = b.sqrt(b.sum(weight_matrix * weight_matrix))
-        b.eval(norm_arr)
-        frob_norm = float(b.to_scalar(norm_arr))
+        frob_norm = _geodesic_frobenius_norm(weight_matrix, b)
 
         return OutputStabilityMetrics(
             condition_number=1.0,  # 1D has no condition number
@@ -212,11 +227,13 @@ def compute_output_stability(
     condition_number = sigma_max / max(sigma_min, eps)
     condition_number = min(condition_number, max_condition)
 
-    # Frobenius norm: sqrt(∑σ²)
+    # Geodesic Frobenius-like norm (manifold-aware)
+    frob_norm = _geodesic_frobenius_norm(W_f32, b)
+
+    # Spectral energy (Euclidean) for effective rank
     S_sq = S * S
     frob_sq = b.sum(S_sq)
     b.eval(frob_sq)
-    frob_norm = float(b.to_scalar(b.sqrt(frob_sq)))
 
     # Sum of singular values
     S_sum = b.sum(S)

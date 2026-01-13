@@ -135,8 +135,12 @@ class TestComputeCompositeStitches:
         assert backend.shape(P0)[1] == 16  # First source dim
         assert backend.shape(P1)[1] == 8   # Second source dim
 
-    def test_scale_ratio_applied(self, backend):
-        """Scale ratio should be applied to output stitch."""
+    def test_scale_ratio_not_applied(self, backend):
+        """Scale ratio is intentionally NOT applied to weight stitch transforms.
+
+        The scale_ratio parameter normalizes activation magnitudes during alignment,
+        but should not scale weight transforms - scaling would shrink weights.
+        """
         transform = backend.ones((8, 16))  # All ones for easy checking
         backend.eval(transform)
 
@@ -163,11 +167,11 @@ class TestComputeCompositeStitches:
         P_scaled, _ = result_scaled[0][0]
         P_unscaled, _ = result_unscaled[0][0]
 
-        # Scaled should be 2x unscaled
+        # Scale ratio is NOT applied to weight stitches - should be identical
         ratio = backend.mean(P_scaled) / backend.mean(P_unscaled)
         backend.eval(ratio)
 
-        assert abs(float(backend.to_scalar(ratio)) - 2.0) < 0.1
+        assert abs(float(backend.to_scalar(ratio)) - 1.0) < 0.1
 
     def test_stitch_roundtrip_approximate(self, backend):
         """P @ Q should approximate identity (for well-conditioned F)."""

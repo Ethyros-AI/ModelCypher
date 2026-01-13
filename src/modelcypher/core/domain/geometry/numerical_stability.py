@@ -407,12 +407,28 @@ def find_magnitude_gap_threshold(
         scale = float(backend.to_scalar(scale_arr))
         eps = ulp_scalar(scale, backend)
 
-    if n < 3:
-        mid_idx = backend.array([n // 2])
-        mid_val = backend.take(values_arr, mid_idx, axis=0)
-        mid_val = backend.squeeze(mid_val)
-        backend.eval(mid_val)
-        return float(backend.to_scalar(mid_val))
+    if n == 1:
+        # Single value - return it as the threshold
+        first_val = backend.take(values_arr, backend.array([0]), axis=0)
+        first_val = backend.squeeze(first_val)
+        backend.eval(first_val)
+        return float(backend.to_scalar(first_val))
+
+    if n == 2:
+        # Two values - check for a significant relative gap
+        # If gap > 50%, return the smaller (threshold), else return larger (no outlier)
+        first_val = backend.take(values_arr, backend.array([0]), axis=0)
+        second_val = backend.take(values_arr, backend.array([1]), axis=0)
+        first_val = backend.squeeze(first_val)
+        second_val = backend.squeeze(second_val)
+        backend.eval(first_val, second_val)
+        v0 = float(backend.to_scalar(first_val))
+        v1 = float(backend.to_scalar(second_val))
+        if v0 > eps:
+            rel_gap = (v1 - v0) / v0
+            if rel_gap > 0.5:  # Significant gap - return smaller as threshold
+                return v0
+        return v1  # No significant gap - return larger (nothing will be flagged)
 
     idx = backend.arange(0, n - 1)
     next_idx = backend.arange(1, n)
