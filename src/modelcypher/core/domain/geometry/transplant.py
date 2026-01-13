@@ -94,16 +94,9 @@ def _geodesic_frobenius_norm(
     b = backend
     shape = b.shape(weight)
     if len(shape) != 2:
-        # Fall back to regular Frobenius for non-2D
-        flat = b.reshape(weight, (-1,))
-        return float(b.to_scalar(b.sqrt(b.sum(flat * flat))))
-
-    out_dim, in_dim = shape
-
-    # Need at least 2 rows to build k-NN graph
-    if out_dim < 2:
-        flat = b.reshape(weight, (-1,))
-        return float(b.to_scalar(b.sqrt(b.sum(flat * flat))))
+        weight = b.reshape(weight, (1, -1))
+    elif shape[0] < 1:
+        return 0.0
 
     # Treat each row as a point, get geodesic norms
     geo_norms = geodesic_norms(weight, backend, use_cache=False)

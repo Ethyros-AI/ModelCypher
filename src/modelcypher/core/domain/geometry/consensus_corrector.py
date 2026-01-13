@@ -165,16 +165,15 @@ class ConsensusCorrector:
         # Compute diagnostics using geodesic norms
         # Treat weight_delta rows as points, compute geodesic Frobenius-like norm
         shape = b.shape(weight_delta)
-        if len(shape) == 2 and shape[0] >= 2:
-            geo_norms_arr = geodesic_norms(weight_delta, b, use_cache=False)
-            b.eval(geo_norms_arr)
-            sum_sq = b.sum(geo_norms_arr * geo_norms_arr)
-            correction_magnitude = float(b.to_scalar(b.sqrt(sum_sq)))
-        else:
-            # Fallback for small matrices
-            correction_magnitude = float(b.to_scalar(
-                b.sqrt(b.sum(weight_delta ** 2))
-            ))
+        if len(shape) != 2:
+            weight_delta = b.reshape(weight_delta, (1, -1))
+        elif shape[0] < 1:
+            weight_delta = b.reshape(weight_delta, (1, -1))
+
+        geo_norms_arr = geodesic_norms(weight_delta, b, use_cache=False)
+        b.eval(geo_norms_arr)
+        sum_sq = b.sum(geo_norms_arr * geo_norms_arr)
+        correction_magnitude = float(b.to_scalar(b.sqrt(sum_sq)))
 
         # Stress reduction: geodesic distance between target and consensus stress
         target_stress = self._compute_stress_from_position(
@@ -183,14 +182,9 @@ class ConsensusCorrector:
         # Stack target and consensus stress to compute geodesic distance
         stress_pair = b.stack([target_stress, consensus_stress], axis=0)
         b.eval(stress_pair)
-        if stress_pair.shape[0] >= 2:
-            rg = RiemannianGeometry(b)
-            geo_result = rg.geodesic_distances(stress_pair, use_cache=False)
-            stress_reduction = float(b.to_scalar(geo_result.distances[0, 1]))
-        else:
-            # Fallback
-            stress_dist = b.sqrt(b.sum((target_stress - consensus_stress) ** 2))
-            stress_reduction = float(b.to_scalar(stress_dist))
+        rg = RiemannianGeometry(b)
+        geo_result = rg.geodesic_distances(stress_pair, use_cache=False)
+        stress_reduction = float(b.to_scalar(geo_result.distances[0, 1]))
 
         logger.info(
             "Correction computed: magnitude=%.4f, stress_reduction=%.4f",

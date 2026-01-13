@@ -763,12 +763,13 @@ class UnifiedGeometricMerger:
             # Treat rows as points, compute geodesic norms, aggregate
             def _geodesic_frobenius(w):
                 shape = b.shape(w)
-                if len(shape) >= 2 and shape[0] >= 2:
-                    geo_norms_arr = geodesic_norms(w, b)
-                    b.eval(geo_norms_arr)
-                    return float(b.to_scalar(b.sqrt(b.sum(geo_norms_arr * geo_norms_arr))))
-                else:
-                    return float(b.to_scalar(b.sqrt(b.sum(w * w))))
+                if len(shape) != 2:
+                    w = b.reshape(w, (1, -1))
+                elif shape[0] < 1:
+                    w = b.reshape(w, (1, -1))
+                geo_norms_arr = geodesic_norms(w, b)
+                b.eval(geo_norms_arr)
+                return float(b.to_scalar(b.sqrt(b.sum(geo_norms_arr * geo_norms_arr))))
 
             weight_delta_norm = _geodesic_frobenius(weight_delta)
             weight_norm = _geodesic_frobenius(output_weight)

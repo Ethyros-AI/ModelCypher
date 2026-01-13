@@ -105,26 +105,18 @@ class DeviationTracker:
             w = backend.array(v)
             shape = backend.shape(w)
 
-            if len(shape) >= 2:
-                # Reshape to 2D if needed (flatten all but last dim)
-                if len(shape) > 2:
-                    n_rows = 1
-                    for dim in shape[:-1]:
-                        n_rows *= dim
-                    w = backend.reshape(w, (n_rows, shape[-1]))
-                    shape = backend.shape(w)
+            # Reshape to 2D if needed (flatten all but last dim)
+            if len(shape) > 2:
+                n_rows = 1
+                for dim in shape[:-1]:
+                    n_rows *= dim
+                w = backend.reshape(w, (n_rows, shape[-1]))
+            elif len(shape) == 1:
+                w = backend.reshape(w, (1, shape[0]))
 
-                # Use geodesic norms if we have enough rows for k-NN graph
-                if shape[0] >= 2:
-                    geo_norms_arr = geodesic_norms(w, backend, use_cache=False)
-                    backend.eval(geo_norms_arr)
-                    w_sq = backend.sum(geo_norms_arr * geo_norms_arr)
-                else:
-                    # Single row: fall back to Euclidean
-                    w_sq = backend.sum(w * w)
-            else:
-                # 1D tensor: use Euclidean
-                w_sq = backend.sum(w * w)
+            geo_norms_arr = geodesic_norms(w, backend, use_cache=False)
+            backend.eval(geo_norms_arr)
+            w_sq = backend.sum(geo_norms_arr * geo_norms_arr)
 
             total_sq = total_sq + w_sq
             backend.eval(total_sq)

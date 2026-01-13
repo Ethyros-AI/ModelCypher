@@ -707,17 +707,27 @@ def research_memory_token(
         neutral_pooled = mx.mean(neutral_embed, axis=1)
         mx.eval(source_pooled, neutral_pooled)
 
-        # AUTO-DERIVE scale from activation geometry
+        # AUTO-DERIVE scale from activation geometry (geodesic norms)
         # Formula: scale = activation_norm / delta_norm
         # This ensures the injection magnitude matches typical activations
         # Mathematical basis: scale × ||delta|| = ||activation||
-        source_norm = float(mx.sqrt(mx.sum(source_pooled * source_pooled)).item())
-        neutral_norm = float(mx.sqrt(mx.sum(neutral_pooled * neutral_pooled)).item())
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+
+        backend = get_default_backend()
+        pooled = backend.stack([source_pooled, neutral_pooled], axis=0)
+        geo_norms = geodesic_norms(pooled, backend)
+        backend.eval(geo_norms)
+        source_norm = float(backend.to_scalar(geo_norms[0]))
+        neutral_norm = float(backend.to_scalar(geo_norms[1]))
         mean_norm = (source_norm + neutral_norm) / 2.0
 
         # Delta (injection direction)
         delta = source_pooled - neutral_pooled
-        delta_norm = float(mx.sqrt(mx.sum(delta * delta)).item())
+        delta_row = backend.reshape(delta, (1, -1))
+        delta_geo = geodesic_norms(delta_row, backend)
+        backend.eval(delta_geo)
+        delta_norm = float(backend.to_scalar(delta_geo[0]))
 
         # Scale derived from ratio of activation norm to delta norm
         # Formula: scale × ||delta|| = ||activation|| ensures injection matches typical signal

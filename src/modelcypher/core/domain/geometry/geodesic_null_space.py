@@ -1096,10 +1096,20 @@ def project_to_null_space(
             f"activations have d={d}. These must match."
         )
 
-    # Compute original norm
-    original_norm_sq = b.sum(delta * delta)
-    b.eval(original_norm_sq)
-    original_norm = float(b.to_scalar(b.sqrt(original_norm_sq)))
+    def _geodesic_frobenius_norm(matrix: "Array") -> float:
+        shape = b.shape(matrix)
+        if len(shape) != 2:
+            matrix = b.reshape(matrix, (1, -1))
+        elif shape[0] < 1:
+            matrix = b.reshape(matrix, (1, -1))
+        norms = geodesic_norms(matrix, b, use_cache=False)
+        b.eval(norms)
+        sum_sq = b.sum(norms * norms)
+        b.eval(sum_sq)
+        return float(b.to_scalar(b.sqrt(sum_sq + regularization_epsilon(b, norms))))
+
+    # Compute original norm (geodesic Frobenius-like)
+    original_norm = _geodesic_frobenius_norm(delta)
 
     # Handle zero delta
     eps = regularization_epsilon(b, delta)
@@ -1165,10 +1175,8 @@ def project_to_null_space(
     delta_safe = delta - correction
     b.eval(delta_safe)
 
-    # Compute projected norm
-    projected_norm_sq = b.sum(delta_safe * delta_safe)
-    b.eval(projected_norm_sq)
-    projected_norm = float(b.to_scalar(b.sqrt(projected_norm_sq)))
+    # Compute projected norm (geodesic Frobenius-like)
+    projected_norm = _geodesic_frobenius_norm(delta_safe)
 
     preserved_fraction = projected_norm / original_norm if original_norm > 0 else 1.0
 

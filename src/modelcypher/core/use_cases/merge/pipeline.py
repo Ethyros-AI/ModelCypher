@@ -202,9 +202,9 @@ def run_merge(
 
     if not perfect_alignment:
         # =====================================================================
-        # LINEAR CKA DIAGNOSTIC (NOT A GATE)
+        # GEODESIC CKA DIAGNOSTIC (NOT A GATE)
         # =====================================================================
-        # Linear CKA < 1.0 typically reflects limited overlap or probe coverage.
+        # Geodesic CKA < 1.0 typically reflects limited overlap or probe coverage.
         # We proceed with the merge and log diagnostics for visibility.
         converged_count = probe_metrics.get("converged_count", 0)
         boundary_count = probe_metrics.get("boundary_preserved_count", 0)

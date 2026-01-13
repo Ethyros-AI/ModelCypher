@@ -96,13 +96,17 @@ class TestCKAPipeline:
 
         assert cka_self == pytest.approx(1.0, rel=1e-5)
 
-    def test_scaled_activations_same_cka(self, backend):
-        """Linear CKA: scaling activations should not change CKA (invariant to scale).
+    def test_scaled_activations_change_cka(self, backend):
+        """Geodesic CKA should change when activations are scaled.
 
-        Note: RBF CKA with median-heuristic sigma is NOT scale-invariant
-        because sigma adapts to data distribution. Linear CKA IS scale-invariant.
+        RBF CKA adapts sigma to the data distribution, so scaling activations
+        shifts geodesic distances and changes CKA.
         """
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
+        from modelcypher.core.domain.geometry.numerical_stability import (
+            machine_epsilon,
+            sqrt_scalar,
+        )
 
         backend.random_seed(42)
         X = backend.random_normal((50, 64))
@@ -114,10 +118,11 @@ class TestCKAPipeline:
         X_scaled = X * 100.0
         backend.eval(X_scaled)
 
-        cka_original = compute_linear_cka(X, Y, backend)
-        cka_scaled = compute_linear_cka(X_scaled, Y, backend)
+        cka_original = compute_geodesic_cka(X, Y, backend)
+        cka_scaled = compute_geodesic_cka(X_scaled, Y, backend)
 
-        assert cka_original == pytest.approx(cka_scaled, rel=1e-5)
+        precision = float(sqrt_scalar(machine_epsilon(backend, X), backend))
+        assert abs(cka_original - cka_scaled) > precision
 
 
 class TestCKACacheIntegration:

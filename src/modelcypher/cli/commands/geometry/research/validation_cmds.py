@@ -564,7 +564,7 @@ def register(app: typer.Typer) -> None:
                 }
 
             result = {
-                "_schema": "mc.geometry.research.strong_test.v3",
+                "_schema": "mc.geometry.research.strong_test.v4",
                 "models": {
                     "source": str(model_a),
                     "target": str(model_b),
