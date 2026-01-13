@@ -212,6 +212,62 @@ class TestCompositionalStitch:
         assert shape[0] == d_proj
         assert shape[1] == d_proj
 
+    def test_stitch_matches_projection_equation(self, backend):
+        """Stitch should satisfy S @ W_src ≈ W_tgt @ H.T."""
+        backend.random_seed(42)
+
+        d_src_hidden, d_tgt_hidden = 32, 24
+        d_src_proj, d_tgt_proj = 20, 16
+
+        H = backend.random_normal((d_src_hidden, d_tgt_hidden))
+        W_src = backend.random_normal((d_src_proj, d_src_hidden))
+        W_tgt = backend.random_normal((d_tgt_proj, d_tgt_hidden))
+        backend.eval(H, W_src, W_tgt)
+
+        aligner = GramAligner(backend)
+        stitch = aligner.compositional_stitch(H, W_src, W_tgt)
+        backend.eval(stitch)
+
+        lhs = backend.matmul(stitch, W_src)
+        rhs = backend.matmul(W_tgt, backend.transpose(H))
+        diff = backend.max(backend.abs(lhs - rhs))
+        backend.eval(diff)
+
+        zero_stitch = backend.zeros_like(stitch)
+        baseline = backend.matmul(zero_stitch, W_src)
+        baseline_diff = backend.max(backend.abs(baseline - rhs))
+        backend.eval(baseline_diff)
+
+        assert float(backend.to_scalar(diff)) <= float(backend.to_scalar(baseline_diff))
+
+    def test_input_stitch_reduces_projection_error(self, backend):
+        """Input stitch should reduce ||W_tgt @ S - H^T @ W_src||."""
+        backend.random_seed(42)
+
+        d_src_hidden, d_tgt_hidden = 32, 24
+        d_src_inter, d_tgt_inter = 28, 20
+
+        H = backend.random_normal((d_src_hidden, d_tgt_hidden))
+        W_src = backend.random_normal((d_src_hidden, d_src_inter))
+        W_tgt = backend.random_normal((d_tgt_hidden, d_tgt_inter))
+        backend.eval(H, W_src, W_tgt)
+
+        aligner = GramAligner(backend)
+        stitch_in = aligner.compositional_stitch_input(H, W_src, W_tgt)
+        backend.eval(stitch_in)
+
+        lhs = backend.matmul(W_tgt, stitch_in)
+        rhs = backend.matmul(backend.transpose(H), W_src)
+        diff = backend.max(backend.abs(lhs - rhs))
+        backend.eval(diff)
+
+        zero_in = backend.zeros_like(stitch_in)
+        baseline = backend.matmul(W_tgt, zero_in)
+        baseline_diff = backend.max(backend.abs(baseline - rhs))
+        backend.eval(baseline_diff)
+
+        assert float(backend.to_scalar(diff)) <= float(backend.to_scalar(baseline_diff))
+
 
 class TestCompositionalStitchEdgeCases:
     """Edge case tests for compositional_stitch."""

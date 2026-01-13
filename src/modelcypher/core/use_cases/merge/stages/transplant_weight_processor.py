@@ -54,6 +54,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _stable_sigmoid(backend: "Backend", values: "Array") -> "Array":
+    """Compute sigmoid with overflow-safe branching."""
+    b = backend
+    one = b.ones_like(values)
+    zero = b.zeros_like(values)
+    exp_neg = b.exp(-values)
+    exp_pos = b.exp(values)
+    sigmoid_pos = one / (one + exp_neg)
+    sigmoid_neg = exp_pos / (one + exp_pos)
+    result = b.where(values >= zero, sigmoid_pos, sigmoid_neg)
+    b.eval(result)
+    return result
+
+
+def _silu(backend: "Backend", values: "Array") -> "Array":
+    """Compute SiLU activation using backend ops."""
+    b = backend
+    sigmoid = _stable_sigmoid(b, values)
+    silu = values * sigmoid
+    b.eval(silu)
+    return silu
+
+
 @dataclass
 class LayerWeightResult:
     weights_processed: int
@@ -80,18 +103,20 @@ def process_layer_weights(
     hidden_stitch_input: "Array | None",
     intermediate_stitch_output: "Array | None",
     intermediate_stitch_input: "Array | None",
-    attention_stitch_output: "Array | None",
-    attention_stitch_input: "Array | None",
-    k_stitch_output: "Array | None",
-    k_stitch_input: "Array | None",
-    v_stitch_output: "Array | None",
-    v_stitch_input: "Array | None",
-    kv_stitch_input: "Array | None",
-    stitch_dims: dict[str, int],
-    source_activations: dict[int, list["Array"]] | None,
-    target_activations: dict[int, list["Array"]] | None,
-    source_intermediate_activations: dict[int, list["Array"]] | None,
-    target_intermediate_activations: dict[int, list["Array"]] | None,
+    gate_stitch_output: "Array | None" = None,  # PRE-SiLU for gate/up cross-arch
+    gate_stitch_input: "Array | None" = None,   # PRE-SiLU for gate/up cross-arch
+    attention_stitch_output: "Array | None" = None,
+    attention_stitch_input: "Array | None" = None,
+    k_stitch_output: "Array | None" = None,
+    k_stitch_input: "Array | None" = None,
+    v_stitch_output: "Array | None" = None,
+    v_stitch_input: "Array | None" = None,
+    kv_stitch_input: "Array | None" = None,
+    stitch_dims: dict[str, int] | None = None,
+    source_activations: dict[int, list["Array"]] | None = None,
+    target_activations: dict[int, list["Array"]] | None = None,
+    source_intermediate_activations: dict[int, list["Array"]] | None = None,
+    target_intermediate_activations: dict[int, list["Array"]] | None = None,
     core_acts: "Array",
     boundary_acts: "Array",
     can_measure_alignment: bool,
@@ -100,10 +125,72 @@ def process_layer_weights(
     layer_transplanted = False
     best_alignment: dict[str, float] | None = None
     best_delta_norm = -1.0
+    mlp_weights: dict[str, "Array"] = {}
+    merged_intermediate: "Array | None" = None
 
-    for weight_num, key in enumerate(layer_keys):
+    def _mlp_role(weight_key: str) -> str | None:
+        key_lower = weight_key.lower()
+        if any(pat in key_lower for pat in ["gate_proj", "mlp.gate", "feed_forward.w1", ".w1"]):
+            return "gate"
+        if any(pat in key_lower for pat in ["up_proj", "mlp.up", "feed_forward.w3", ".w3", "mlp.fc1"]):
+            return "up"
+        if any(pat in key_lower for pat in ["down_proj", "mlp.down", "feed_forward.w2", ".w2", "mlp.fc2"]):
+            return "down"
+        return None
+
+    def _mlp_priority(weight_key: str) -> int:
+        role = _mlp_role(weight_key)
+        if role == "gate":
+            return 0
+        if role == "up":
+            return 1
+        if role == "down":
+            return 2
+        return 3
+
+    def _get_merged_intermediate() -> "Array | None":
+        nonlocal merged_intermediate
+        if merged_intermediate is not None:
+            return merged_intermediate
+
+        gate_w = mlp_weights.get("gate")
+        up_w = mlp_weights.get("up")
+        if gate_w is None or up_w is None:
+            return None
+
+        if target_activations is None or layer_idx not in target_activations:
+            return None
+
+        tgt_hidden = target_activations[layer_idx]
+        if tgt_hidden is None:
+            return None
+
+        if hasattr(tgt_hidden, "shape") and len(b.shape(tgt_hidden)) == 2:
+            hidden = _promote_precision(b.array(tgt_hidden), b)
+        elif hasattr(tgt_hidden, "__len__") and len(tgt_hidden) > 0:
+            hidden = b.stack([b.array(a) for a in tgt_hidden], axis=0)
+            hidden = _promote_precision(hidden, b)
+        else:
+            return None
+
+        gate_w = _promote_precision(b.array(gate_w), b)
+        up_w = _promote_precision(b.array(up_w), b)
+        b.eval(hidden, gate_w, up_w)
+
+        gate_out = b.matmul(hidden, b.transpose(gate_w))
+        up_out = b.matmul(hidden, b.transpose(up_w))
+        b.eval(gate_out, up_out)
+
+        merged_intermediate = _silu(b, gate_out) * up_out
+        b.eval(merged_intermediate)
+        return merged_intermediate
+
+    ordered_layer_keys = sorted(layer_keys, key=_mlp_priority)
+
+    for weight_num, key in enumerate(ordered_layer_keys):
         weights_processed += 1
         weight_start_time = time.time()
+        mlp_role = _mlp_role(key)
 
         if key.endswith(".scales") or key.endswith(".biases"):
             continue
@@ -234,11 +321,22 @@ def process_layer_weights(
                 "feed_forward.w1", "feed_forward.w2", "feed_forward.w3",
                 "mlp.gate", "mlp.up", "mlp.down",
             ])
-            if is_mlp and hidden_stitch_output is not None and intermediate_stitch_output is not None:
+            if is_mlp and hidden_stitch_output is not None and hidden_stitch_input is not None:
                 src_hidden_dim = stitch_dims["src_hidden"]
                 tgt_hidden_dim = stitch_dims["tgt_hidden"]
-                src_inter_dim = stitch_dims["src_inter"]
-                tgt_inter_dim = stitch_dims["tgt_inter"]
+                if "src_inter" in stitch_dims:
+                    src_inter_dim = stitch_dims["src_inter"]
+                else:
+                    src_inter_dim = dim0 if dim0 != src_hidden_dim else dim1
+
+                if "tgt_inter" in stitch_dims:
+                    tgt_inter_dim = stitch_dims["tgt_inter"]
+                elif target_w is not None:
+                    tgt_dim0 = int(target_w.shape[0])
+                    tgt_dim1 = int(target_w.shape[1])
+                    tgt_inter_dim = tgt_dim0 if tgt_dim0 != tgt_hidden_dim else tgt_dim1
+                else:
+                    tgt_inter_dim = 0
 
                 logger.info(
                     "MLP weight %s: applying dual stitch (hidden %d→%d, inter %d→%d)",
@@ -251,27 +349,184 @@ def process_layer_weights(
 
                 dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
+                is_gate_or_up = any(
+                    mlp_name in key
+                    for mlp_name in [
+                        "gate_proj",
+                        "up_proj",
+                        "mlp.gate",
+                        "mlp.up",
+                        "feed_forward.w1",
+                        "feed_forward.w3",
+                        ".w1",
+                        ".w3",
+                    ]
+                )
+
                 if dim0 == src_inter_dim and dim1 == src_hidden_dim:
-                    source_aligned = b.matmul(intermediate_stitch_output, source_w)
+                    # CRITICAL FOR CROSS-ARCHITECTURE:
+                    # Use gate_stitch_output (PRE-SiLU alignment) for gate/up weights
+                    # instead of intermediate_stitch_output (POST-SiLU alignment).
+                    # Compressions don't commute with SiLU, so POST-SiLU alignment
+                    # gives wrong results for PRE-SiLU weight outputs.
+                    if is_gate_or_up and gate_stitch_output is not None:
+                        output_stitch = gate_stitch_output
+                        logger.info(
+                            "Using PRE-SiLU gate_stitch for %s (cross-arch fix)",
+                            key,
+                        )
+                    else:
+                        output_stitch = intermediate_stitch_output
+                        if is_gate_or_up and src_inter_dim != tgt_inter_dim:
+                            # Cross-architecture without gate stitch - log warning
+                            logger.warning(
+                                "CROSS-ARCH: %s uses POST-SiLU alignment (gate_stitch unavailable). "
+                                "This may cause output quality degradation.",
+                                key,
+                            )
+                    if is_gate_or_up and target_w is not None and gate_stitch_output is None:
+                        # Fallback: try compositional stitch (legacy approach)
+                        try:
+                            aligner = GramAligner(backend=b)
+                            H = b.transpose(hidden_stitch_output)
+                            target_w_float = _promote_precision(b.array(target_w), b)
+                            b.eval(H, target_w_float)
+                            output_stitch = aligner.compositional_stitch(
+                                hidden_transform=H,
+                                source_weight=source_w,
+                                target_weight=target_w_float,
+                            )
+                            b.eval(output_stitch)
+                            metrics.setdefault("mlp_gate_up_compositional", 0)
+                            metrics["mlp_gate_up_compositional"] += 1
+                            logger.info(
+                                "MLP compositional stitch for %s: [%d,%d] → [%d,%d]",
+                                key,
+                                dim0,
+                                dim1,
+                                tgt_inter_dim,
+                                tgt_hidden_dim,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "MLP compositional stitch failed for %s: %s",
+                                key,
+                                e,
+                            )
+                            if gate_stitch_output is not None:
+                                output_stitch = gate_stitch_output
+                            else:
+                                output_stitch = intermediate_stitch_output
+
+                    if output_stitch is None:
+                        raise StitchUnavailableError(
+                            stage="MLP_GATE_UP_STITCH",
+                            weight_key=key,
+                            message="Missing intermediate stitch for gate/up projection",
+                            context={
+                                "weight_shape": [dim0, dim1],
+                                "src_hidden_dim": src_hidden_dim,
+                                "src_inter_dim": src_inter_dim,
+                            },
+                        )
+
+                    source_aligned = b.matmul(output_stitch, source_w)
                     source_aligned = b.matmul(source_aligned, hidden_stitch_input)
                     b.eval(source_aligned)
                     logger.info(
                         "Dual stitch (gate/up): [%d,%d] → [%d,%d]",
                         dim0,
                         dim1,
-                        tgt_inter_dim,
+                        int(output_stitch.shape[0]),
                         tgt_hidden_dim,
                     )
+
                 elif dim0 == src_hidden_dim and dim1 == src_inter_dim:
+                    if hidden_stitch_output is None:
+                        raise StitchUnavailableError(
+                            stage="MLP_DOWN_STITCH",
+                            weight_key=key,
+                            message="Missing hidden stitch for down projection",
+                            context={
+                                "weight_shape": [dim0, dim1],
+                                "src_hidden_dim": src_hidden_dim,
+                                "src_inter_dim": src_inter_dim,
+                            },
+                        )
+                    # For down_proj INPUT stitch:
+                    # Use compositional_stitch_input as PRIMARY approach.
+                    # This derives input stitch from hidden alignment + weights,
+                    # ensuring consistency with how gate/up stitches are computed.
+                    #
+                    # While intermediate_stitch_input (Procrustes on POST-SiLU) is
+                    # theoretically correct, it causes consistency issues:
+                    # - down_proj aligned using TARGET intermediates
+                    # - but at inference, receives MERGED intermediates (from gate/up)
+                    # - the 2% difference in gate/up + SiLU nonlinearity = divergence
+                    #
+                    # Compositional stitch derives input from hidden+weights,
+                    # which is more consistent with the merged gate/up.
+                    input_stitch = None
+                    if target_w is not None:
+                        try:
+                            aligner = GramAligner(backend=b)
+                            H = b.transpose(hidden_stitch_output)
+                            target_w_float = _promote_precision(b.array(target_w), b)
+                            b.eval(H, target_w_float)
+                            input_stitch = aligner.compositional_stitch_input(
+                                hidden_transform=H,
+                                source_weight=source_w,
+                                target_weight=target_w_float,
+                            )
+                            b.eval(input_stitch)
+                            metrics.setdefault("mlp_down_compositional", 0)
+                            metrics["mlp_down_compositional"] += 1
+                            logger.info(
+                                "MLP compositional input stitch for %s: W=[%d,%d], S_in=[%d,%d] → [%d,%d]",
+                                key,
+                                dim0,
+                                dim1,
+                                int(input_stitch.shape[0]),
+                                int(input_stitch.shape[1]),
+                                tgt_hidden_dim,
+                                tgt_inter_dim,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "MLP compositional input stitch failed for %s: %s",
+                                key,
+                                e,
+                            )
+                    # Fallback: intermediate stitch from probe
+                    if input_stitch is None:
+                        input_stitch = intermediate_stitch_input
+                        if input_stitch is not None:
+                            logger.info(
+                                "MLP down_proj using intermediate_stitch fallback for %s",
+                                key,
+                            )
+
+                    if input_stitch is None:
+                        raise StitchUnavailableError(
+                            stage="MLP_DOWN_STITCH",
+                            weight_key=key,
+                            message="Missing intermediate stitch for down projection",
+                            context={
+                                "weight_shape": [dim0, dim1],
+                                "src_hidden_dim": src_hidden_dim,
+                                "src_inter_dim": src_inter_dim,
+                            },
+                        )
+
                     source_aligned = b.matmul(hidden_stitch_output, source_w)
-                    source_aligned = b.matmul(source_aligned, intermediate_stitch_input)
+                    source_aligned = b.matmul(source_aligned, input_stitch)
                     b.eval(source_aligned)
                     logger.info(
                         "Dual stitch (down): [%d,%d] → [%d,%d]",
                         dim0,
                         dim1,
                         tgt_hidden_dim,
-                        tgt_inter_dim,
+                        int(input_stitch.shape[0]),
                     )
                 else:
                     logger.warning(
@@ -644,6 +899,12 @@ def process_layer_weights(
         if weight_in_dim == tgt_inter_dim and tgt_inter_dim > 0:
             activation_space = "intermediate"
 
+            if mlp_role == "down":
+                merged_input = _get_merged_intermediate()
+                if merged_input is not None:
+                    input_activations = merged_input
+                    tgt_density_acts = merged_input
+
             # First, get target intermediate activations (needed for null-space projection)
             if target_intermediate_activations is None:
                 logger.warning(
@@ -659,6 +920,7 @@ def process_layer_weights(
             if (
                 target_intermediate_activations is not None
                 and layer_idx in target_intermediate_activations
+                and input_activations is None
             ):
                 tgt_inter = target_intermediate_activations[layer_idx]
                 if tgt_inter is not None:
@@ -780,6 +1042,9 @@ def process_layer_weights(
             final_merged_weight = result.merged_weight
 
             merged[key] = final_merged_weight
+            if mlp_role in ("gate", "up"):
+                mlp_weights[mlp_role] = final_merged_weight
+                merged_intermediate = None
             metrics["weights_transplanted"] += 1
             metrics["preserved_fractions"].append(result.preserved_fraction)
             projection_loss = max(0.0, 1.0 - result.preserved_fraction)
@@ -790,7 +1055,7 @@ def process_layer_weights(
             logger.debug(
                 "TRANSPLANT: Weight %d/%d %s - %.2fs (preserved=%.3f, loss=%.6f)",
                 weight_num + 1,
-                len(layer_keys),
+                len(ordered_layer_keys),
                 key,
                 weight_elapsed,
                 result.preserved_fraction,

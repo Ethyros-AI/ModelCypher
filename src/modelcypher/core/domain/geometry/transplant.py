@@ -57,7 +57,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -144,18 +147,74 @@ def compute_weight_space_transplant(
     in_dim = int(target_weight.shape[1])
     n_samples = int(input_activations.shape[0])
 
+    # =========================================================================
+    # MAGNITUDE NORMALIZATION FOR CROSS-ARCHITECTURE MERGING
+    # =========================================================================
+    # The Procrustes transform F is NOT norm-preserving when dimensions differ.
+    # The stitch formula P @ W @ Q can amplify/shrink weights by 50x or more.
+    #
+    # To ensure meaningful knowledge transfer (not magnitude artifacts):
+    # 1. Normalize source_aligned to match target_weight's Frobenius norm
+    # 2. Compute delta in this normalized space
+    # 3. The delta represents structural differences, not scale differences
+    # =========================================================================
+    eps = division_epsilon(b, target_weight)
+
+    source_flat = b.reshape(source_aligned, (-1,))
+    target_flat = b.reshape(target_weight, (-1,))
+    source_norm = b.sqrt(b.sum(source_flat * source_flat) + eps)
+    target_norm = b.sqrt(b.sum(target_flat * target_flat) + eps)
+    b.eval(source_norm, target_norm)
+
+    source_norm_val = float(b.to_scalar(source_norm))
+    target_norm_val = float(b.to_scalar(target_norm))
+
+    # Normalize source_aligned to match target magnitude
+    if source_norm_val > eps:
+        norm_scale = target_norm_val / source_norm_val
+        source_normalized = source_aligned * norm_scale
+        b.eval(source_normalized)
+        logger.debug(
+            "MAGNITUDE NORM: source=%.2f, target=%.2f, scale=%.4f",
+            source_norm_val, target_norm_val, norm_scale
+        )
+    else:
+        source_normalized = source_aligned
+        norm_scale = 1.0
+        logger.debug("MAGNITUDE NORM: skipped (source_norm near zero)")
+
     logger.debug(
         "WEIGHT-SPACE TRANSPLANT: weight=[%d, %d], n_input=%d",
         out_dim, in_dim, n_samples
     )
 
-    # Step 1: Compute weight delta
-    delta_W = source_aligned - target_weight  # [out_dim, in_dim]
+    # Step 1: Compute weight delta (in normalized space)
+    delta_W = source_normalized - target_weight  # [out_dim, in_dim]
     b.eval(delta_W)
 
     # Compute delta norm before projection
     delta_flat = b.reshape(delta_W, (-1,))
     delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta_flat * delta_flat))))
+
+    # Compute cosine similarity between normalized source and target
+    # This measures alignment quality BEFORE null-space projection
+    source_flat = b.reshape(source_normalized, (-1,))
+    target_flat = b.reshape(target_weight, (-1,))
+    dot_product = b.sum(source_flat * target_flat)
+    source_n = b.sqrt(b.sum(source_flat * source_flat))
+    target_n = b.sqrt(b.sum(target_flat * target_flat))
+    b.eval(dot_product, source_n, target_n)
+    cosine_sim = float(b.to_scalar(dot_product)) / (
+        float(b.to_scalar(source_n)) * float(b.to_scalar(target_n)) + eps
+    )
+
+    logger.info(
+        "STITCH QUALITY: cosine_sim=%.4f, delta_norm=%.4f, target_norm=%.4f (ratio=%.2f)",
+        cosine_sim,
+        delta_norm,
+        target_norm_val,
+        delta_norm / (target_norm_val + eps),
+    )
 
     # Step 2: Compute density weights if activations provided
     transfer_strength = 1.0
@@ -181,22 +240,20 @@ def compute_weight_space_transplant(
         )
         b.eval(density_weights)
 
-        # Ensure density_weights matches input_activations sample count
+        # Align density weights and input activations to the same sample count
         n_density = int(density_weights.shape[0])
         if n_density != n_samples:
+            n_compare = min(n_density, n_samples)
             logger.debug(
-                "DENSITY WEIGHTING: Adjusting weights from %d to %d samples",
-                n_density, n_samples
+                "DENSITY WEIGHTING: Truncating to %d samples (density=%d, activations=%d)",
+                n_compare,
+                n_density,
+                n_samples,
             )
-            if n_density > n_samples:
-                # Truncate to match input_activations
-                density_weights = density_weights[:n_samples]
-            else:
-                # Pad with 0.5 (neutral density - equal transfer weight)
-                pad_size = n_samples - n_density
-                padding = b.full((pad_size,), 0.5, dtype=density_weights.dtype)
-                density_weights = b.concatenate([density_weights, padding], axis=0)
-            b.eval(density_weights)
+            density_weights = density_weights[:n_compare]
+            input_activations = input_activations[:n_compare]
+            n_samples = n_compare
+            b.eval(density_weights, input_activations)
 
         transfer_strength = float(b.to_scalar(b.mean(density_weights)))
 
@@ -239,14 +296,12 @@ def compute_weight_space_transplant(
     # Algorithm:
     # 1. Compute covariance: C = A.T @ A / n  [d, d]
     # 2. Eigendecompose: C = V @ diag(λ) @ V.T
-    # 3. Find intrinsic rank k where top-k eigenvalues capture 99% of variance
+    # 3. Find intrinsic rank k via numerical rank threshold
     # 4. Null-space projector: N = V_null @ V_null.T where V_null = V[:, k:]
     #
     # This gives the TRUE null-space based on the target's intrinsic structure,
     # independent of how many probes we use to estimate it.
     # =========================================================================
-    VARIANCE_THRESHOLD = 0.99  # Preserve directions capturing 99% of variance
-
     # Compute null-space projector
     # GEOMETRY DOESN'T FAIL - if these operations fail, we have a bug upstream
     if n_samples == 0:
@@ -275,7 +330,7 @@ def compute_weight_space_transplant(
     b.eval(eigvals, eigvecs)
 
     # Compute total variance
-    eps = division_epsilon(b, eigvals)
+    eps = machine_epsilon(b, eigvals)
     eigvals_pos = b.maximum(eigvals, eps)
     total_var = b.sum(eigvals_pos)
     b.eval(total_var)
@@ -289,23 +344,35 @@ def compute_weight_space_transplant(
             "Check that the model is loaded correctly and inference is running properly."
         )
 
-    # Find k where top-k eigenvalues capture VARIANCE_THRESHOLD of variance
-    cumsum = 0.0
+    # Determine intrinsic rank via numerical rank threshold
+    max_eig = float(b.to_scalar(b.max(eigvals_pos)))
+    rank_tol = max_eig * float(max(in_dim, n_samples)) * float(eps)
+
     k = 0
     for i in range(in_dim):
         ev = float(b.to_scalar(eigvals_pos[i]))
-        cumsum += ev
-        k = i + 1
-        if cumsum / total_var_val >= VARIANCE_THRESHOLD:
-            break
+        if ev > rank_tol:
+            k += 1
 
-    # Intrinsic rank = k (directions capturing 99% variance)
+    # Intrinsic rank = k (numerically significant directions)
     # Null rank = d - k (remaining directions)
     null_rank = in_dim - k
 
-    logger.debug(
-        "INTRINSIC NULL-SPACE: intrinsic_rank=%d, null_rank=%d (%.1f%% variance in top %d of %d)",
-        k, null_rank, 100.0 * cumsum / total_var_val, k, in_dim
+    # Compute eigenvalue statistics for diagnostics
+    min_eig = float(b.to_scalar(b.min(eigvals_pos)))
+    median_idx = in_dim // 2
+    median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
+
+    logger.info(
+        "NULL-SPACE DIAG: intrinsic_rank=%d/%d, null_rank=%d (rank_tol=%.3e, "
+        "max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
+        k,
+        in_dim,
+        null_rank,
+        rank_tol,
+        max_eig,
+        median_eig,
+        min_eig,
     )
 
     if null_rank > 0:
@@ -318,8 +385,8 @@ def compute_weight_space_transplant(
         N = b.matmul(V_null, b.transpose(V_null))
         b.eval(N)
     else:
-        # null_rank=0 is GEOMETRICALLY VALID - it means the target uses ALL dimensions
-        # The 99% variance is spread across all d dimensions uniformly
+    # null_rank=0 is GEOMETRICALLY VALID - it means the target uses ALL dimensions
+    # under the numerical rank threshold (no eigenvalues fall below rank_tol)
         # This is rare but possible for very well-trained models
         # In this case, there is NO null-space to project into - all directions are occupied
         # We MUST use N=0 - any transfer would violate the boundary
@@ -348,6 +415,10 @@ def compute_weight_space_transplant(
         preserved_fraction = 1.0
 
     # Step 5: Apply to target weight
+    # NOTE: No directional constraint. The null-space projection IS the geometry.
+    # If we've correctly projected delta into null-space, the merged weight will
+    # preserve target behavior by construction. Adding cosine constraints is a
+    # "vibes" heuristic that fights against the geometric solution.
     merged_weight = target_weight + delta_W_proj
     b.eval(merged_weight)
 

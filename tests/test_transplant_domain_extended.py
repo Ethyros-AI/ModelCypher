@@ -153,6 +153,59 @@ class TestComputeWeightSpaceTransplant:
         # null_rank = in_dim - min(n_samples, in_dim) = 16 - 8 = 8
         assert result.null_rank >= 0
 
+    def test_null_rank_respects_numerical_rank(self, backend):
+        """Numerical rank should bound null_rank for low-rank activations."""
+        out_dim, in_dim = 32, 16
+        n_samples = 12
+        rank = 4
+
+        source_aligned = backend.random_normal((out_dim, in_dim))
+        target_weight = backend.random_normal((out_dim, in_dim))
+        base = backend.random_normal((n_samples, rank))
+        projection = backend.random_normal((rank, in_dim))
+        input_activations = backend.matmul(base, projection)
+        backend.eval(source_aligned, target_weight, input_activations)
+
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_weight,
+            input_activations=input_activations,
+            backend=backend,
+        )
+
+        assert result.null_rank >= in_dim - rank
+
+    def test_density_length_mismatch_truncates(self, backend):
+        """Density weighting should handle mismatched sample counts."""
+        out_dim, in_dim = 32, 16
+        n_samples = 10
+        n_density = 6
+
+        source_aligned = backend.random_normal((out_dim, in_dim))
+        target_weight = backend.random_normal((out_dim, in_dim))
+        input_activations = backend.random_normal((n_samples, in_dim))
+        src_density_acts = backend.random_normal((n_density, in_dim))
+        tgt_density_acts = backend.random_normal((n_density, in_dim))
+        backend.eval(
+            source_aligned,
+            target_weight,
+            input_activations,
+            src_density_acts,
+            tgt_density_acts,
+        )
+
+        result = compute_weight_space_transplant(
+            source_aligned=source_aligned,
+            target_weight=target_weight,
+            input_activations=input_activations,
+            source_activations_for_density=src_density_acts,
+            target_activations_for_density=tgt_density_acts,
+            backend=backend,
+        )
+
+        assert result.merged_weight is not None
+        assert all_finite(result.merged_weight, backend)
+
 
 class TestComputeTransplantDelta:
     """Tests for compute_transplant_delta()."""

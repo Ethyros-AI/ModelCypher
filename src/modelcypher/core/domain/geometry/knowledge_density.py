@@ -366,7 +366,7 @@ def compute_knn_point_cloud_density(
     Args:
         source_activations: [n_points, dim] activations from source model
         target_activations: [n_points, dim] activations from target model
-        k: Number of neighbors. If None, derived from data (sqrt(n)).
+        k: Number of neighbors. If None, derived from connectivity of the k-NN graph.
         backend: Compute backend.
 
     Returns:
@@ -374,6 +374,7 @@ def compute_knn_point_cloud_density(
     """
     from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+    from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 
     b = backend or get_default_backend()
 
@@ -400,10 +401,11 @@ def compute_knn_point_cloud_density(
             negative_diff_count=0,
         )
 
-    # Derive k from data if not specified: sqrt(n) is standard for k-NN density
-    # Bounded to ensure robustness
+    # Derive k from intrinsic connectivity if not specified
     if k is None:
-        k = max(3, min(int(min(n_source, n_target) ** 0.5), 50))
+        k_source = derive_k_neighbors(source, b)
+        k_target = derive_k_neighbors(target, b)
+        k = max(k_source, k_target, 1)
 
     # Ensure k doesn't exceed available points
     k = min(k, n_source - 1, n_target - 1)
@@ -411,17 +413,6 @@ def compute_knn_point_cloud_density(
     # Use geodesic distances (Riemannian geometry)
     rg = RiemannianGeometry(b)
     eps = float(division_epsilon(b, source))
-
-    # Get embedding dimensions for normalization
-    # In high dimensions, distances scale with sqrt(dim) due to curse of dimensionality
-    # To compare densities across different dimensional spaces, we normalize by sqrt(dim)
-    src_dim = int(source.shape[1]) if len(source.shape) > 1 else 1
-    tgt_dim = int(target.shape[1]) if len(target.shape) > 1 else 1
-
-    # Dimensional scaling factor: sqrt(dim) accounts for volume scaling in high-D
-    # A model with 8192-dim has ~2.8x larger typical distances than 1024-dim
-    src_dim_scale = float(src_dim ** 0.5)
-    tgt_dim_scale = float(tgt_dim ** 0.5)
 
     # Compute k-NN density for source points
     # Distance matrix: [n_source, n_source]
@@ -435,10 +426,7 @@ def compute_knn_point_cloud_density(
     # Skip first column (self-distance = 0), take next k columns
     source_k_dists = source_sorted[:, 1:k+1]
     source_mean_k_dist = b.mean(source_k_dists, axis=1)
-    # Normalize distances by sqrt(dim) before computing density
-    # This makes density comparable across different dimensional spaces
-    source_mean_k_dist_norm = source_mean_k_dist / src_dim_scale
-    source_densities = 1.0 / (source_mean_k_dist_norm + eps)
+    source_densities = 1.0 / (source_mean_k_dist + eps)
     b.eval(source_densities)
 
     # Compute k-NN density for target points
@@ -449,9 +437,7 @@ def compute_knn_point_cloud_density(
     target_sorted = b.sort(target_dist_matrix, axis=1)
     target_k_dists = target_sorted[:, 1:k+1]
     target_mean_k_dist = b.mean(target_k_dists, axis=1)
-    # Normalize distances by sqrt(dim) before computing density
-    target_mean_k_dist_norm = target_mean_k_dist / tgt_dim_scale
-    target_densities = 1.0 / (target_mean_k_dist_norm + eps)
+    target_densities = 1.0 / (target_mean_k_dist + eps)
     b.eval(target_densities)
 
     # Normalize densities to [0, 1] range for comparison

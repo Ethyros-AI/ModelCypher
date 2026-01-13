@@ -169,6 +169,132 @@ class MLXActivationProvider:
             logger.warning("Embedding activation collection failed: %s", e)
             return mx.zeros((960,))
 
+    def collect_gate_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, "Array"]:
+        """
+        Collect per-layer PRE-SiLU gate_proj activations for a text input.
+
+        Captures the OUTPUT of gate_proj BEFORE SiLU is applied.
+        This is the correct activation space for gate_proj weight stitching.
+
+        CRITICAL FOR CROSS-ARCHITECTURE MERGING:
+        - Post-SiLU activations (SiLU(gate) * up) are used for down_proj
+        - But gate_proj/up_proj weights output to PRE-SiLU space
+        - Compressions don't commute with nonlinearities (unlike rotations)
+        - So we need separate alignments for pre and post nonlinearity
+
+        Shape: [intermediate_dim] (e.g., 2560 for SmolLM, 4864 for Qwen)
+
+        Returns MLX arrays directly (stays on Metal GPU).
+        """
+        import mlx.core as mx
+
+        if token_ids is None:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                token_ids = tokens
+            else:
+                token_ids = list(tokens.ids)
+        input_ids = mx.array([token_ids])
+
+        activations: dict[int, "Array"] = {}
+
+        try:
+            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+                logger.debug("Model structure not compatible with gate activation collection")
+                return activations
+
+            inner = model.model
+
+            # Get embeddings
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
+            else:
+                logger.debug("Cannot find embedding layer")
+                return activations
+
+            for layer_idx, layer in enumerate(inner.layers):
+                # Apply input layer norm
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                # Apply self-attention
+                if hasattr(layer, "self_attn"):
+                    attn_out = layer.self_attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                elif hasattr(layer, "attn"):
+                    attn_out = layer.attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = mx.zeros_like(h)
+
+                # Add residual
+                h = h + attn_out
+
+                # Post-attention norm
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+                # Extract PRE-SiLU gate_proj output
+                ff_module = None
+                if hasattr(layer, "mlp"):
+                    ff_module = layer.mlp
+                elif hasattr(layer, "feed_forward"):
+                    ff_module = layer.feed_forward
+
+                if ff_module is not None:
+                    if hasattr(ff_module, "gate_proj"):
+                        # Standard SwiGLU/SiLU architecture - get gate output BEFORE SiLU
+                        gate = ff_module.gate_proj(h_post)
+                        mx.eval(gate)
+                        # Mean pool over sequence
+                        pooled = mx.mean(gate, axis=(0, 1))
+                        mx.eval(pooled)
+                        activations[layer_idx] = pooled
+                    elif hasattr(ff_module, "w1"):
+                        # LFM2/Mamba-style (w1=gate)
+                        gate = ff_module.w1(h_post)
+                        mx.eval(gate)
+                        pooled = mx.mean(gate, axis=(0, 1))
+                        mx.eval(pooled)
+                        activations[layer_idx] = pooled
+
+                # Complete the layer forward for next iteration
+                if hasattr(layer, "mlp"):
+                    mlp_out = layer.mlp(h_post)
+                    h = h + mlp_out
+                elif hasattr(layer, "feed_forward"):
+                    ff_out = layer.feed_forward(h_post)
+                    h = h + ff_out
+                else:
+                    result = layer(h)
+                    if isinstance(result, tuple):
+                        h = result[0]
+                    else:
+                        h = result
+
+        except Exception as e:
+            logger.warning("Gate activation collection failed: %s", e)
+
+        return activations
+
     def collect_intermediate_activations(
         self,
         model: Any,
@@ -180,7 +306,11 @@ class MLXActivationProvider:
         Collect per-layer MLP intermediate activations for a text input.
 
         Captures the activation INSIDE the MLP (after gate_proj * up_proj, before down_proj).
-        This is the intermediate representation space, distinct from the hidden space.
+        This is the POST-nonlinearity space: SiLU(gate) * up
+
+        NOTE: This is correct for down_proj input stitching, but NOT for gate_proj/up_proj
+        output stitching. For cross-architecture merging, use collect_gate_activations()
+        to get the PRE-SiLU space alignment.
 
         Shape: [intermediate_dim] (e.g., 2560 for SmolLM, 4864 for Qwen)
 
@@ -652,6 +782,135 @@ class MLXActivationProvider:
             logger.warning("Batch intermediate collection failed: %s", e)
             return [
                 self.collect_intermediate_activations(model, tokenizer, text)
+                for text in texts
+            ]
+
+        return results
+
+    def collect_gate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, "Array"]]:
+        """
+        Collect per-layer PRE-SiLU gate_proj activations for multiple texts.
+
+        This is the correct activation space for gate_proj/up_proj weight stitching.
+        For cross-architecture merging, compressions don't commute with SiLU.
+
+        Returns list of dicts, one per input text.
+        """
+        import mlx.core as mx
+
+        if not texts:
+            return []
+
+        all_token_ids = []
+        for text in texts:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(list(tokens.ids))
+
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = mx.array(padded)
+        batch_size = len(texts)
+
+        results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        all_tensors = []
+
+        try:
+            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+                logger.debug("Model not compatible with batch gate collection")
+                return [
+                    self.collect_gate_activations(model, tokenizer, text)
+                    for text in texts
+                ]
+
+            inner = model.model
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
+            else:
+                return [
+                    self.collect_gate_activations(model, tokenizer, text)
+                    for text in texts
+                ]
+
+            for layer_idx, layer in enumerate(inner.layers):
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                if hasattr(layer, "self_attn"):
+                    attn_out = layer.self_attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                elif hasattr(layer, "attn"):
+                    attn_out = layer.attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = mx.zeros_like(h)
+
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+                # Extract PRE-SiLU gate_proj output for batch
+                ff_module = None
+                if hasattr(layer, "mlp"):
+                    ff_module = layer.mlp
+                elif hasattr(layer, "feed_forward"):
+                    ff_module = layer.feed_forward
+
+                if ff_module is not None:
+                    if hasattr(ff_module, "gate_proj"):
+                        gate = ff_module.gate_proj(h_post)
+                        for i in range(batch_size):
+                            seq_len = len(all_token_ids[i])
+                            pooled = mx.mean(gate[i, :seq_len, :], axis=0)
+                            results[i][layer_idx] = pooled
+                            all_tensors.append(pooled)
+                    elif hasattr(ff_module, "w1"):
+                        gate = ff_module.w1(h_post)
+                        for i in range(batch_size):
+                            seq_len = len(all_token_ids[i])
+                            pooled = mx.mean(gate[i, :seq_len, :], axis=0)
+                            results[i][layer_idx] = pooled
+                            all_tensors.append(pooled)
+
+                # Complete layer forward
+                if hasattr(layer, "mlp"):
+                    mlp_out = layer.mlp(h_post)
+                    h = h + mlp_out
+                elif hasattr(layer, "feed_forward"):
+                    ff_out = layer.feed_forward(h_post)
+                    h = h + ff_out
+                else:
+                    result = layer(h)
+                    h = result[0] if isinstance(result, tuple) else result
+
+            if all_tensors:
+                mx.eval(*all_tensors)
+
+        except Exception as e:
+            logger.warning("Batch gate collection failed: %s", e)
+            return [
+                self.collect_gate_activations(model, tokenizer, text)
                 for text in texts
             ]
 

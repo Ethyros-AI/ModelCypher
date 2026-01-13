@@ -48,6 +48,7 @@ class AlignmentResult:
     k_transforms: dict[int, Any]
     v_transforms: dict[int, Any]
     intermediate_transforms: dict[int, Any]
+    gate_transforms: dict[int, Any]  # PRE-SiLU for gate_proj/up_proj stitching
     layer_cka_scores: dict[int, float]
     layer_cka_scores_raw: dict[int, float]
     cgls_iterations_by_layer: dict[int, int]
@@ -92,6 +93,8 @@ def align_layers(
     target_layer_activations: dict[int, "Array"],
     source_intermediate_activations: dict[int, "Array"],
     target_intermediate_activations: dict[int, "Array"],
+    source_gate_activations: dict[int, "Array"] | None = None,
+    target_gate_activations: dict[int, "Array"] | None = None,
     backend: "Backend",
 ) -> AlignmentResult:
     layer_mapping: dict[int, int] = {}
@@ -101,6 +104,7 @@ def align_layers(
     k_transforms: dict[int, Any] = {}
     v_transforms: dict[int, Any] = {}
     intermediate_transforms: dict[int, Any] = {}
+    gate_transforms: dict[int, Any] = {}  # PRE-SiLU for cross-arch gate/up stitching
     layer_cka_scores: dict[int, float] = {}
     layer_cka_scores_raw: dict[int, float] = {}
     cgls_iterations_by_layer: dict[int, int] = {}
@@ -115,6 +119,7 @@ def align_layers(
             k_transforms=k_transforms,
             v_transforms=v_transforms,
             intermediate_transforms=intermediate_transforms,
+            gate_transforms=gate_transforms,
             layer_cka_scores=layer_cka_scores,
             layer_cka_scores_raw=layer_cka_scores_raw,
             cgls_iterations_by_layer=cgls_iterations_by_layer,
@@ -159,6 +164,7 @@ def align_layers(
             "k_transform": None,
             "v_transform": None,
             "intermediate_transform": None,
+            "gate_transform": None,  # PRE-SiLU for cross-arch gate/up stitching
             "linear_iterations": 0,
             "error": None,
         }
@@ -366,6 +372,75 @@ def align_layers(
             if split_inter_transforms:
                 result["intermediate_transform"] = split_inter_transforms
 
+            # GATE TRANSFORMS: PRE-SiLU activations for cross-architecture gate/up stitching
+            # The intermediate transform is computed on POST-SiLU activations (SiLU(gate)*up),
+            # but gate_proj/up_proj output to PRE-SiLU space. For cross-architecture merging,
+            # compressions don't commute with SiLU, so we need separate alignment.
+            split_gate_transforms: dict[int, Any] = {}
+            if source_gate_activations and target_gate_activations:
+                for s_layer in src_layers_list:
+                    src_gate_acts = source_gate_activations.get(s_layer)
+                    tgt_gate_acts = target_gate_activations.get(tgt_layer)
+
+                    if src_gate_acts is None or tgt_gate_acts is None:
+                        logger.debug(
+                            "PROBE GATE: No gate activations for %s -> %d",
+                            s_layer,
+                            tgt_layer,
+                        )
+                        continue
+
+                    gate_samples = min(
+                        _activation_count(backend, src_gate_acts),
+                        _activation_count(backend, tgt_gate_acts),
+                        n_samples,
+                    )
+                    if gate_samples < 2:
+                        logger.warning(
+                            "PROBE GATE: Insufficient samples for %s -> %d: %d",
+                            s_layer,
+                            tgt_layer,
+                            gate_samples,
+                        )
+                        continue
+
+                    src_gate_stacked = _stack_activations(
+                        backend, src_gate_acts, gate_samples
+                    )
+                    tgt_gate_stacked = _stack_activations(
+                        backend, tgt_gate_acts, gate_samples
+                    )
+                    backend.eval(src_gate_stacked, tgt_gate_stacked)
+
+                    try:
+                        gate_result = local_aligner.find_perfect_alignment(
+                            src_gate_stacked, tgt_gate_stacked
+                        )
+                        G_arr = gate_result.feature_transform
+                        split_gate_transforms[s_layer] = G_arr
+
+                        src_gate_dim = int(backend.shape(src_gate_stacked)[1])
+                        tgt_gate_dim = int(backend.shape(tgt_gate_stacked)[1])
+                        logger.info(
+                            "PROBE GATE DIRECT: %s -> %d: G=[%d, %d] (src_gate=%d, tgt_gate=%d)",
+                            s_layer,
+                            tgt_layer,
+                            int(backend.shape(G_arr)[0]),
+                            int(backend.shape(G_arr)[1]),
+                            src_gate_dim,
+                            tgt_gate_dim,
+                        )
+                    except Exception as gate_err:
+                        logger.warning(
+                            "PROBE GATE: Direct alignment failed for %s -> %d: %s",
+                            s_layer,
+                            tgt_layer,
+                            gate_err,
+                        )
+
+            if split_gate_transforms:
+                result["gate_transform"] = split_gate_transforms
+
         except Exception as e:
             raise RuntimeError(
                 f"GramAligner failed for {src_layers_list} -> {tgt_layer}: {e}"
@@ -447,6 +522,9 @@ def align_layers(
         if result.get("intermediate_transform") is not None:
             intermediate_transforms[tgt_layer] = result["intermediate_transform"]
 
+        if result.get("gate_transform") is not None:
+            gate_transforms[tgt_layer] = result["gate_transform"]
+
         if completed % 5 == 0 or completed == len(alignment_tasks):
             logger.info(
                 "PROBE: Aligned %d/%d target layers (zipper: %d warm-started)...",
@@ -471,6 +549,7 @@ def align_layers(
         k_transforms=k_transforms,
         v_transforms=v_transforms,
         intermediate_transforms=intermediate_transforms,
+        gate_transforms=gate_transforms,
         layer_cka_scores=layer_cka_scores,
         layer_cka_scores_raw=layer_cka_scores_raw,
         cgls_iterations_by_layer=cgls_iterations_by_layer,

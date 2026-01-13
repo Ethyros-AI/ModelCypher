@@ -100,9 +100,12 @@ class TestGramAlignerPublicAPI:
         """compositional_stitch method should exist for attention transforms."""
         backend = get_default_backend()
         aligner = GramAligner(backend)
-        
+
         assert hasattr(aligner, "compositional_stitch"), (
             "GramAligner missing compositional_stitch method for attention transforms"
+        )
+        assert hasattr(aligner, "compositional_stitch_input"), (
+            "GramAligner missing compositional_stitch_input method for down_proj transforms"
         )
 
 

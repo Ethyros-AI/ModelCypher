@@ -581,6 +581,76 @@ class GramAligner:
         b.eval(stitch)
         return stitch
 
+    def compositional_stitch_input(
+        self,
+        hidden_transform: "Array",
+        source_weight: "Array",
+        target_weight: "Array",
+    ) -> "Array":
+        """Derive input stitch for down projections from hidden alignment + weights.
+
+        For down_proj, the weight alignment chain is:
+            aligned_W = P @ W_src @ S_in
+
+        Where P = H^T is the hidden output stitch. We want:
+            P @ W_src @ S_in ≈ W_tgt
+
+        Rearranging: (P @ W_src) @ S_in ≈ W_tgt
+        Let A = P @ W_src, solve: A @ S_in ≈ W_tgt
+
+        This is the CORRECT equation. The previous version solved:
+            W_tgt @ S_in = H^T @ W_src
+        which is a different (incorrect) formulation.
+
+        Parameters
+        ----------
+        hidden_transform : Array
+            Hidden alignment H [d_source_hidden, d_target_hidden].
+        source_weight : Array
+            Source down_proj weight [d_source_hidden, d_source_inter].
+        target_weight : Array
+            Target down_proj weight [d_target_hidden, d_target_inter].
+
+        Returns
+        -------
+        Array
+            Input stitch S_in [d_source_inter, d_target_inter].
+            For weight matmul chain: hidden_stitch @ W_src @ input_stitch -> [tgt_h, tgt_i]
+        """
+        b = self._backend
+
+        source_hidden_dim, source_inter_dim = b.shape(source_weight)
+        target_hidden_dim, target_inter_dim = b.shape(target_weight)
+        h_src, h_tgt = b.shape(hidden_transform)
+
+        if h_src != source_hidden_dim:
+            raise ValueError(
+                f"hidden_transform source dim ({h_src}) != "
+                f"source_weight hidden dim ({source_hidden_dim})"
+            )
+        if h_tgt != target_hidden_dim:
+            raise ValueError(
+                f"hidden_transform target dim ({h_tgt}) != "
+                f"target_weight hidden dim ({target_hidden_dim})"
+            )
+
+        H = b.astype(b.array(hidden_transform), "float32")
+        W_src = b.astype(b.array(source_weight), "float32")
+        W_tgt = b.astype(b.array(target_weight), "float32")
+        b.eval(H, W_src, W_tgt)
+
+        # Compute A = P @ W_src = H^T @ W_src
+        # Shape: [tgt_hidden, src_hidden] @ [src_hidden, src_inter] = [tgt_hidden, src_inter]
+        A = b.matmul(b.transpose(H), W_src)  # [tgt_hidden, src_inter]
+        b.eval(A)
+
+        # Solve: A @ S_in = W_tgt for S_in
+        # A = [tgt_hidden, src_inter], W_tgt = [tgt_hidden, tgt_inter]
+        # S_in = [src_inter, tgt_inter]
+        S_in = gpu_lstsq(b, A, W_tgt)  # [src_inter, tgt_inter]
+        b.eval(S_in)
+        return S_in
+
     def find_alignment_anchor_space(
         self,
         source_activations: "Array",
