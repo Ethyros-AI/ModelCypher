@@ -25,6 +25,7 @@ Commands:
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import typer
@@ -64,7 +65,6 @@ def safety_adapter_probe(
 
     from modelcypher.core.domain.safety import (
         DeltaFeatureExtractor,
-        DeltaFeatureSet,
     )
 
     adapter_path = Path(adapter)
@@ -78,16 +78,9 @@ def safety_adapter_probe(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Create extractor and analyze
-    DeltaFeatureExtractor()
-
     try:
-        # Simulate probe (actual implementation would load adapter weights)
-        features = DeltaFeatureSet(
-            geodesic_spreads=(0.01, 0.02, 0.015, 0.018),
-            sparsity=(0.1, 0.15, 0.12, 0.08),
-            outlier_layer_indices=(),
-        )
+        extractor = DeltaFeatureExtractor()
+        features = asyncio.run(extractor.extract(adapter_path))
     except Exception as exc:
         error = ErrorDetail(
             code="MC-3002",
@@ -100,15 +93,18 @@ def safety_adapter_probe(
 
     payload = {
         "adapterPath": str(adapter_path),
+        "baseModelPath": base_model,
         "tier": tier,
+        "featureVersion": features.feature_version,
         "layerCount": features.layer_count,
         "outlierLayerCount": len(features.outlier_layer_indices),
         "outlierLayerIndices": list(features.outlier_layer_indices),
         "maxGeodesicSpread": features.max_geodesic_spread,
         "meanGeodesicSpread": features.mean_geodesic_spread,
         "meanSparsity": features.mean_sparsity,
-        "geodesicSpreads": list(features.geodesic_spreads[:10]),
-        "sparsity": list(features.sparsity[:10]),
+        "geodesicSpreads": list(features.geodesic_spreads),
+        "sparsity": list(features.sparsity),
+        "cosineToAligned": list(features.cosine_to_aligned),
     }
 
     if context.output_format == "text":
@@ -116,6 +112,11 @@ def safety_adapter_probe(
             "ADAPTER PROBE",
             f"Adapter: {adapter_path}",
             f"Tier: {tier}",
+        ]
+        if base_model:
+            lines.append(f"Base Model: {base_model}")
+        lines.extend(
+            [
             "",
             f"Layers Analyzed: {features.layer_count}",
             f"Outlier Layers: {len(features.outlier_layer_indices)}",
@@ -126,7 +127,8 @@ def safety_adapter_probe(
             "",
             "Sparsity Statistics:",
             f"  Mean: {features.mean_sparsity:.2%}",
-        ]
+            ]
+        )
         if features.outlier_layer_indices:
             lines.append("")
             lines.append("Outlier Layer Indices:")

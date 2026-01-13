@@ -776,27 +776,55 @@ def process_layer_weights(
                     b.eval(target_w_float)
 
                     aligner = GramAligner(backend=b)
-                    H = b.transpose(hidden_stitch_output)
+                    # CRITICAL: Use hidden_stitch_input directly - this is the SAME transform
+                    # applied in the application chain below (W_src @ hidden_stitch_input).
+                    # Previously used hidden_stitch_output.T which is F (the original transform),
+                    # but application uses hidden_stitch_input = pinv(F).T - different matrix!
+                    H = hidden_stitch_input
                     b.eval(H)
 
-                    attn_stitch = aligner.compositional_stitch(
-                        hidden_transform=H,
-                        source_weight=source_w,
-                        target_weight=target_w_float,
-                    )
-                    b.eval(attn_stitch)
-
+                    # Use the correct compositional stitch variant based on weight orientation
                     if dim0 != src_hidden_dim and dim1 == src_hidden_dim:
+                        # Branch 1: q/k/v_proj type [proj_dim, hidden_dim] - hidden on input side
+                        # compositional_stitch solves: attn_stitch @ (W_src @ H) = W_tgt
+                        # Application: attn_stitch @ W_src @ hidden_stitch_input
+                        attn_stitch = aligner.compositional_stitch(
+                            hidden_transform=H,
+                            source_weight=source_w,
+                            target_weight=target_w_float,
+                        )
+                        b.eval(attn_stitch)
                         source_aligned = b.matmul(attn_stitch, source_w)
                         source_aligned = b.matmul(source_aligned, hidden_stitch_input)
                         b.eval(source_aligned)
                     elif dim0 == src_hidden_dim and dim1 != src_hidden_dim:
-                        attn_stitch_in = b.transpose(attn_stitch)
+                        # Branch 2: o_proj type [hidden_dim, proj_dim] - hidden on output side
+                        # compositional_stitch_input solves: (P @ W_src) @ S_in = W_tgt
+                        # where P = H^T = hidden_stitch_output
+                        # So H = hidden_stitch_output.T
+                        # Application: hidden_stitch_output @ W_src @ attn_stitch_in
+                        H_out = b.transpose(hidden_stitch_output)
+                        b.eval(H_out)
+                        attn_stitch_in = aligner.compositional_stitch_input(
+                            hidden_transform=H_out,
+                            source_weight=source_w,
+                            target_weight=target_w_float,
+                        )
+                        b.eval(attn_stitch_in)
                         source_aligned = b.matmul(hidden_stitch_output, source_w)
                         source_aligned = b.matmul(source_aligned, attn_stitch_in)
                         b.eval(source_aligned)
                     else:
-                        source_aligned = b.matmul(hidden_stitch_output, source_w)
+                        # Branch 3: Both dims are hidden (e.g., q_proj where num_heads*head_dim == hidden)
+                        # Still need compositional stitch because semantics differ (attention vs hidden)
+                        # Use same approach as Branch 1 since input side IS hidden
+                        attn_stitch = aligner.compositional_stitch(
+                            hidden_transform=H,
+                            source_weight=source_w,
+                            target_weight=target_w_float,
+                        )
+                        b.eval(attn_stitch)
+                        source_aligned = b.matmul(attn_stitch, source_w)
                         source_aligned = b.matmul(source_aligned, hidden_stitch_input)
                         b.eval(source_aligned)
 

@@ -213,7 +213,7 @@ class TestCompositionalStitch:
         assert shape[1] == d_proj
 
     def test_stitch_matches_projection_equation(self, backend):
-        """Stitch should satisfy S @ W_src ≈ W_tgt @ H.T."""
+        """Stitch should satisfy S @ (W_src @ H) ≈ W_tgt."""
         backend.random_seed(42)
 
         d_src_hidden, d_tgt_hidden = 32, 24
@@ -228,20 +228,21 @@ class TestCompositionalStitch:
         stitch = aligner.compositional_stitch(H, W_src, W_tgt)
         backend.eval(stitch)
 
-        lhs = backend.matmul(stitch, W_src)
-        rhs = backend.matmul(W_tgt, backend.transpose(H))
-        diff = backend.max(backend.abs(lhs - rhs))
+        # The equation solved is: S @ (W_src @ H) = W_tgt
+        W_src_transformed = backend.matmul(W_src, H)  # [src_proj, tgt_hidden]
+        lhs = backend.matmul(stitch, W_src_transformed)  # [tgt_proj, tgt_hidden]
+        diff = backend.max(backend.abs(lhs - W_tgt))
         backend.eval(diff)
 
         zero_stitch = backend.zeros_like(stitch)
-        baseline = backend.matmul(zero_stitch, W_src)
-        baseline_diff = backend.max(backend.abs(baseline - rhs))
+        baseline = backend.matmul(zero_stitch, W_src_transformed)
+        baseline_diff = backend.max(backend.abs(baseline - W_tgt))
         backend.eval(baseline_diff)
 
         assert float(backend.to_scalar(diff)) <= float(backend.to_scalar(baseline_diff))
 
     def test_input_stitch_reduces_projection_error(self, backend):
-        """Input stitch should reduce ||W_tgt @ S - H^T @ W_src||."""
+        """Input stitch should satisfy: (H^T @ W_src) @ S_in ≈ W_tgt."""
         backend.random_seed(42)
 
         d_src_hidden, d_tgt_hidden = 32, 24
@@ -256,14 +257,16 @@ class TestCompositionalStitch:
         stitch_in = aligner.compositional_stitch_input(H, W_src, W_tgt)
         backend.eval(stitch_in)
 
-        lhs = backend.matmul(W_tgt, stitch_in)
-        rhs = backend.matmul(backend.transpose(H), W_src)
-        diff = backend.max(backend.abs(lhs - rhs))
+        # The equation solved is: (H^T @ W_src) @ S_in = W_tgt
+        A = backend.matmul(backend.transpose(H), W_src)  # [tgt_hidden, src_inter]
+        lhs = backend.matmul(A, stitch_in)  # [tgt_hidden, tgt_inter]
+        diff = backend.max(backend.abs(lhs - W_tgt))
         backend.eval(diff)
 
+        # Compare against baseline (zero stitch)
         zero_in = backend.zeros_like(stitch_in)
-        baseline = backend.matmul(W_tgt, zero_in)
-        baseline_diff = backend.max(backend.abs(baseline - rhs))
+        baseline = backend.matmul(A, zero_in)
+        baseline_diff = backend.max(backend.abs(baseline - W_tgt))
         backend.eval(baseline_diff)
 
         assert float(backend.to_scalar(diff)) <= float(backend.to_scalar(baseline_diff))

@@ -499,44 +499,37 @@ class GramAligner:
     ) -> "Array":
         """Derive projection stitch from hidden alignment + weight geometry.
 
-        This is the CORRECT way to compute attention transforms. Instead of
-        trying to independently align Q/K/V activations (which will fail because
-        inputs are unaligned), we derive the transform mathematically:
+        For cross-architecture merging where attention/projection dimensions differ,
+        we need to derive the output stitch S from the hidden alignment H and weights.
 
-            source_proj(source_hidden) should align with target_proj(target_hidden)
+        The application chain is:
+            source_aligned = S @ W_src @ H
 
-        With hidden alignment H such that: source_hidden @ H ≈ target_hidden
+        We want source_aligned = W_tgt, so we solve:
+            S @ (W_src @ H) = W_tgt
 
-        For a linear projection W (q_proj, k_proj, v_proj):
-            source_W @ source_hidden should produce same geometry as:
-            target_W @ target_hidden = target_W @ (source_hidden @ H)
+        CRITICAL: The naive approach of solving S @ W_src = W_tgt @ H.T is WRONG!
+        That gives source_aligned = (W_tgt @ H.T) @ H = W_tgt @ (H.T @ H).
+        For dimension-reducing Procrustes, H.T @ H ≠ I, causing garbage results.
 
-        The stitch formula is:
-            S @ source_W @ source_hidden = target_W @ source_hidden @ H
-            S @ source_W = target_W @ H
-            S = target_W @ H @ pinv(source_W)
-
-        This is mathematically guaranteed because:
-        1. H is the closed-form linear alignment on the shared manifold
-        2. Linear projections preserve relationships under correct transform
-        3. The stitch S exactly maps source projection geometry to target
+        The correct approach solves S @ (W_src @ H) = W_tgt directly.
+        This ensures source_aligned = W_tgt after the full application chain.
 
         Parameters
         ----------
         hidden_transform : Array
             The hidden alignment transform H [d_source_hidden, d_target_hidden].
-            Derived from linear alignment of hidden states.
+            Maps source hidden states to target hidden space.
         source_weight : Array
-            Source projection weight [d_proj, d_source_hidden] (e.g., q_proj).
+            Source projection weight [d_source_proj, d_source_hidden].
         target_weight : Array
-            Target projection weight [d_proj, d_target_hidden] (e.g., q_proj).
+            Target projection weight [d_target_proj, d_target_hidden].
 
         Returns
         -------
         Array
-            The compositional stitch S [d_target_proj, d_source_proj] that
-            transforms source projections to target geometry.
-            Usage: aligned_proj = S @ source_proj maps [batch, source_proj] → [batch, target_proj].
+            The compositional stitch S [d_target_proj, d_source_proj] such that
+            S @ source_weight @ hidden_transform ≈ target_weight.
         """
         b = self._backend
 
@@ -565,19 +558,32 @@ class GramAligner:
         W_tgt = b.astype(b.array(target_weight), "float32")
         b.eval(H, W_src, W_tgt)
 
-        # Solve for S directly without CPU pinv:
-        # S @ W_src = W_tgt @ H
-        # (W_src.T) @ S.T = (W_tgt @ H).T
-        H_T = b.transpose(H)  # [target_hidden_dim, source_hidden_dim]
-        target_proj = b.matmul(W_tgt, H_T)  # [target_proj_dim, source_hidden_dim]
-        b.eval(target_proj)
+        # CORRECTED FORMULA:
+        # ==================
+        # The application chain is: source_aligned = S @ W_src @ H
+        # We want: source_aligned = W_tgt
+        # So: S @ (W_src @ H) = W_tgt
+        #
+        # Previous (wrong) formula solved: S @ W_src = W_tgt @ H.T
+        # Which gives: source_aligned = (W_tgt @ H.T) @ H = W_tgt @ (H.T @ H)
+        # And H.T @ H ≠ I for dimension-reducing Procrustes!
+        #
+        # Correct formula solves: S @ (W_src @ H) = W_tgt directly.
+        # This ensures source_aligned = W_tgt after applying @ H.
 
-        A = b.transpose(W_src)  # [source_hidden_dim, source_proj_dim]
-        B = b.transpose(target_proj)  # [source_hidden_dim, target_proj_dim]
+        # Compute W_src @ H = [src_proj, src_hidden] @ [src_hidden, tgt_hidden]
+        #                   = [src_proj, tgt_hidden]
+        W_src_transformed = b.matmul(W_src, H)
+        b.eval(W_src_transformed)
+
+        # Solve: S @ W_src_transformed = W_tgt
+        # Equivalently: W_src_transformed.T @ S.T = W_tgt.T
+        A = b.transpose(W_src_transformed)  # [tgt_hidden, src_proj]
+        B = b.transpose(W_tgt)  # [tgt_hidden, tgt_proj]
         b.eval(A, B)
 
-        stitch_t = gpu_lstsq(b, A, B)  # [source_proj_dim, target_proj_dim]
-        stitch = b.transpose(stitch_t)  # [target_proj_dim, source_proj_dim]
+        stitch_t = gpu_lstsq(b, A, B)  # [src_proj, tgt_proj]
+        stitch = b.transpose(stitch_t)  # [tgt_proj, src_proj]
         b.eval(stitch)
         return stitch
 
