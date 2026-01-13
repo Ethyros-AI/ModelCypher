@@ -470,8 +470,11 @@ def compute_knn_point_cloud_density(
     negative_mask = density_diff < -eps
     b.eval(positive_mask, negative_mask)
 
-    positive_count = int(b.to_scalar(b.sum(b.astype(positive_mask, "float32"))))
-    negative_count = int(b.to_scalar(b.sum(b.astype(negative_mask, "float32"))))
+    from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
+
+    count_dtype = precision_dtype(b, reference=density_diff)
+    positive_count = int(b.to_scalar(b.sum(b.astype(positive_mask, count_dtype))))
+    negative_count = int(b.to_scalar(b.sum(b.astype(negative_mask, count_dtype))))
 
     return PointCloudDensityResult(
         source_densities=source_densities_norm,

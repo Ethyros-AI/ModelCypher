@@ -671,6 +671,7 @@ class JAXBackend(Backend):
         if isinstance(dtype, str):
             dtype_map = {
                 "float32": self.jnp.float32,
+                "float64": self.jnp.float64,
                 "float16": self.jnp.float16,
                 "bfloat16": self.jnp.bfloat16,
                 "int32": self.jnp.int32,
@@ -686,6 +687,7 @@ class JAXBackend(Backend):
         name = name.replace("jax.numpy.", "")
         dtype_map = {
             "float32": self.jnp.float32,
+            "float64": self.jnp.float64,
             "float16": self.jnp.float16,
             "bfloat16": self.jnp.bfloat16,
             "int32": self.jnp.int32,

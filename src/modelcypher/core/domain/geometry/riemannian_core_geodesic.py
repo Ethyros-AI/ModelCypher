@@ -75,6 +75,7 @@ class RiemannianGeodesicMixin:
         points: "Array",
         k_neighbors: int | None = None,
         use_cache: bool = True,
+        refine_iterations: int = 1,
     ) -> GeodesicDistanceResult:
         """
         Compute geodesic distances using a k-NN graph and shortest paths.
@@ -82,6 +83,8 @@ class RiemannianGeodesicMixin:
         This implements the Isomap-style geodesic computation:
         1. Build a k-NN graph where edge weights are Euclidean (chord) distances
         2. Compute shortest paths (geodesics) using Floyd-Warshall
+        3. Optional refinement: rebuild k-NN graph using geodesic distances
+           and re-run shortest paths to reduce bootstrap bias.
 
         CHORD BOOTSTRAP: Local edge weights use Euclidean distances, which
         approximate geodesic distances when k is small (local flatness).
@@ -100,6 +103,9 @@ class RiemannianGeodesicMixin:
             points: Point cloud [n, d]
             k_neighbors: Number of neighbors for graph. If None, automatically
                          finds the minimum k that ensures graph connectivity.
+            refine_iterations: Number of geodesic refinement passes. Each pass
+                rebuilds k-NN using geodesic distances and recomputes shortest
+                paths to reduce chord bootstrap influence.
 
         Returns:
             GeodesicDistanceResult with pairwise geodesic distances
@@ -123,16 +129,22 @@ class RiemannianGeodesicMixin:
         # If k_neighbors specified, use it directly
         if k_neighbors is not None:
             k_neighbors = max(1, min(k_neighbors, n - 1))
-            return self._compute_geodesic_for_k(points, k_neighbors, use_cache=use_cache)
+            return self._compute_geodesic_for_k(
+                points,
+                k_neighbors,
+                use_cache=use_cache,
+                refine_iterations=refine_iterations,
+            )
 
         # Find minimum k for connectivity - this IS the geometric answer
         if use_cache:
             kmin_key = _cache.make_kmin_key(points, backend)
             cached_k = _cache.get_kmin(kmin_key)
             if cached_k is not None:
-                cached_geo = _cache.get_geodesic(
-                    _cache.make_geodesic_key(points, backend, int(cached_k))
-                )
+                cache_key = _cache.make_geodesic_key(points, backend, int(cached_k))
+                if refine_iterations > 0:
+                    cache_key = f"{cache_key}_r{refine_iterations}"
+                cached_geo = _cache.get_geodesic(cache_key)
                 if cached_geo is not None:
                     return cached_geo
 
@@ -141,7 +153,12 @@ class RiemannianGeodesicMixin:
         if use_cache:
             _cache.set_kmin(kmin_key, k_min, (time.perf_counter() - k_start_time) * 1000)
         return self._compute_geodesic_for_k(
-            points, k_min, chord_dist=chord_dist, knn_idx=knn_idx, use_cache=use_cache
+            points,
+            k_min,
+            chord_dist=chord_dist,
+            knn_idx=knn_idx,
+            use_cache=use_cache,
+            refine_iterations=refine_iterations,
         )
 
     def _minimum_connected_k(
@@ -251,6 +268,56 @@ class RiemannianGeodesicMixin:
         backend.eval(knn_idx)
         return knn_idx, inf_val
 
+    def _knn_indices_from_distances(
+        self,
+        distances: "Array",
+        k_neighbors: int,
+    ) -> tuple["Array", float]:
+        """Compute k-NN indices from a generic distance matrix."""
+        backend = self._backend
+        n = int(distances.shape[0])
+        k_neighbors = max(1, min(k_neighbors, n - 1))
+
+        inf_thresh = infinity_threshold(backend, distances)
+        finite_mask = distances < inf_thresh
+        max_dist_arr = backend.max(
+            backend.where(finite_mask, distances, backend.zeros_like(distances))
+        )
+        backend.eval(max_dist_arr)
+        max_dist = float(backend.to_scalar(max_dist_arr))
+        eps = machine_epsilon(backend, distances)
+        base = max(max_dist, eps)
+        inf_val = min(base / eps, backend.finfo(distances.dtype).max)
+
+        eye = backend.eye(n)
+        dist_no_self = distances + eye * inf_val
+        dist_for_sort = dist_no_self
+
+        tie_eps = machine_epsilon(backend, distances)
+        col_indices = backend.arange(n)
+        col_indices_row = backend.reshape(col_indices, (1, n))
+        tie_breaker = backend.astype(col_indices_row, distances.dtype) * tie_eps
+        dist_for_sort = dist_for_sort + tie_breaker
+
+        kth = max(0, min(k_neighbors - 1, n - 1))
+        partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
+
+        kth_idx = partitioned_idx[:, kth : kth + 1]
+        kth_vals = backend.take_along_axis(dist_no_self, kth_idx, axis=1)
+        tie_mask = dist_no_self <= (kth_vals + tie_eps)
+        tie_count = backend.sum(backend.astype(tie_mask, "int32"), axis=1)
+        max_ties_arr = backend.max(tie_count)
+        backend.eval(max_ties_arr)
+        max_ties = int(backend.to_scalar(max_ties_arr))
+        if max_ties > k_neighbors:
+            k_neighbors = max(1, min(max_ties, n - 1))
+            kth = max(0, min(k_neighbors - 1, n - 1))
+            partitioned_idx = backend.argpartition(dist_for_sort, kth, axis=1)
+
+        knn_idx = partitioned_idx[:, :k_neighbors]
+        backend.eval(knn_idx)
+        return knn_idx, inf_val
+
     def _is_knn_connected(self, knn_idx: "Array") -> bool:
         """Check graph connectivity from k-NN indices without Floyd-Warshall."""
         neighbors = self._backend.tolist(knn_idx)
@@ -290,6 +357,7 @@ class RiemannianGeodesicMixin:
         chord_dist: "Array | None" = None,
         knn_idx: "Array | None" = None,
         use_cache: bool = True,
+        refine_iterations: int = 1,
     ) -> GeodesicDistanceResult:
         """Compute geodesic distances for a specific k value."""
         backend = self._backend
@@ -299,6 +367,8 @@ class RiemannianGeodesicMixin:
         # Check cache first
         if use_cache:
             cache_key = _cache.make_geodesic_key(points, backend, k_neighbors)
+            if refine_iterations > 0:
+                cache_key = f"{cache_key}_r{refine_iterations}"
             cached = _cache.get_geodesic(cache_key)
             if cached is not None:
                 return cached
@@ -372,6 +442,56 @@ class RiemannianGeodesicMixin:
         adj = backend.minimum(adj, backend.transpose(adj))
         backend.eval(adj)
 
+        # Floyd-Warshall: GPU-native all-pairs shortest paths
+        # Uses backend.floyd_warshall() which is JIT-compiled on all backends (MLX/JAX/CUDA)
+        # For typical n (100-1000), O(n³) on GPU is ~1-2ms - faster than scipy CPU roundtrip
+        geo_dist_arr = backend.floyd_warshall(adj)
+        backend.eval(geo_dist_arr)
+
+        # Optional refinement: rebuild graph using geodesic distances
+        if refine_iterations > 0 and n > 2:
+            prev_knn = None
+            refined_adj = None
+            refined_dist = geo_dist_arr
+            refined_inf_val = None
+            for _ in range(refine_iterations):
+                knn_refined, inf_val_refined = self._knn_indices_from_distances(
+                    refined_dist, k_neighbors
+                )
+                if prev_knn is not None:
+                    knn_equal = backend.all(knn_refined == prev_knn)
+                    backend.eval(knn_equal)
+                    if bool(backend.to_scalar(knn_equal)):
+                        break
+                prev_knn = knn_refined
+                refined_inf_val = inf_val_refined
+
+                eye = backend.eye(n)
+                refined_adj = backend.full((n, n), inf_val_refined)
+                refined_adj = refined_adj * (1.0 - eye)
+
+                neighbor_dists = backend.take_along_axis(refined_dist, knn_refined, axis=1)
+                finite_mask = backend.isfinite(neighbor_dists)
+                neighbor_dists = backend.where(
+                    finite_mask,
+                    neighbor_dists,
+                    backend.full(neighbor_dists.shape, inf_val_refined),
+                )
+                refined_adj = backend.put_along_axis(
+                    refined_adj, knn_refined, neighbor_dists, axis=1
+                )
+                refined_adj = backend.minimum(refined_adj, backend.transpose(refined_adj))
+                backend.eval(refined_adj)
+
+                refined_dist = backend.floyd_warshall(refined_adj)
+                backend.eval(refined_dist)
+
+            if refined_adj is not None:
+                adj = refined_adj
+                geo_dist_arr = refined_dist
+                if refined_inf_val is not None:
+                    inf_val = refined_inf_val
+
         # Compute infinity threshold from dtype precision (not arbitrary 0.9)
         inf_thresh = infinity_threshold(backend, adj)
 
@@ -390,12 +510,6 @@ class RiemannianGeodesicMixin:
                 f"Adjacency matrix: n={n}, k={k_neighbors}, "
                 f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
             )
-
-        # Floyd-Warshall: GPU-native all-pairs shortest paths
-        # Uses backend.floyd_warshall() which is JIT-compiled on all backends (MLX/JAX/CUDA)
-        # For typical n (100-1000), O(n³) on GPU is ~1-2ms - faster than scipy CPU roundtrip
-        geo_dist_arr = backend.floyd_warshall(adj)
-        backend.eval(geo_dist_arr)
 
         # Diagnostic: check geodesic matrix after Floyd-Warshall (single-pass validation)
         if logger.isEnabledFor(logging.DEBUG):
@@ -465,7 +579,7 @@ class RiemannianGeodesicMixin:
     def _chord_distance_matrix(
         self, points: "Array", use_cache: bool = True
     ) -> "Array":
-        """Compute pairwise Euclidean (chord) distances for k-NN graph construction.
+        """Compute pairwise Euclidean (chord) distances for k-NN bootstrap.
 
         Uses the identity ||a - b||² = ||a||² + ||b||² - 2*a·b to avoid
         O(n² * d) intermediate memory while preserving rotation invariance.
@@ -475,6 +589,10 @@ class RiemannianGeodesicMixin:
         edge weights in the k-NN graph. This is the standard Isomap approach.
         For small k, local Euclidean distances approximate local geodesic
         distances (the manifold is approximately flat at small scales).
+
+        In strict mode, the chord graph is only used to seed an initial
+        geodesic estimate; subsequent refinement rebuilds k-NN edges using
+        geodesic distances.
 
         For curved manifolds with high curvature, chords underestimate true
         geodesic arc lengths. Alternative approaches that avoid chord bootstrap:

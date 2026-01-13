@@ -73,6 +73,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_svd,
+    machine_epsilon,
+    precision_dtype,
     regularization_epsilon,
     svd_auto_rank,
 )
@@ -365,9 +367,7 @@ class GeodesicNullSpaceFilter:
         Q = basis.Q  # Contains variance_weights [d, 1]
 
         delta_dtype = backend.dtype(delta_matrix)
-        proj_dtype = delta_dtype
-        if str(delta_dtype) in ("float16", "bfloat16"):
-            proj_dtype = "float32"
+        proj_dtype = precision_dtype(backend, reference=delta_matrix)
         delta_proj = delta_matrix
         if str(proj_dtype) != str(delta_dtype):
             delta_proj = backend.astype(delta_matrix, proj_dtype)
@@ -518,7 +518,8 @@ class GeodesicNullSpaceFilter:
         finite_mask = backend.isfinite(geo_distances)
         non_diag_mask = eye_mask < 0.5  # Off-diagonal
         valid_mask = finite_mask * non_diag_mask
-        valid_count = backend.sum(backend.astype(valid_mask, "float32"))
+        count_dtype = precision_dtype(backend, reference=geo_distances)
+        valid_count = backend.sum(backend.astype(valid_mask, count_dtype))
         backend.eval(valid_count)
         valid_count_val = int(backend.to_scalar(valid_count))
 
@@ -578,15 +579,16 @@ class GeodesicNullSpaceFilter:
 
         # Compute per-dimension statistics from activations.
         A = backend.transpose(tangent_vectors)  # [d, n_samples]
-        if str(backend.dtype(A)) in ("float16", "bfloat16"):
-            A = backend.astype(A, "float32")
+        stats_dtype = precision_dtype(backend, reference=A)
+        if str(backend.dtype(A)) != str(stats_dtype):
+            A = backend.astype(A, stats_dtype)
         reg = regularization_epsilon(backend, A)
 
         def _weighted_variance(
             activations: "Any",
             sample_weights: "Any | None",
         ) -> "Any":
-            acts = backend.astype(activations, "float32")
+            acts = backend.astype(activations, stats_dtype)
             if sample_weights is None:
                 mean = backend.mean(acts, axis=0)
                 centered = acts - backend.reshape(mean, (1, d))
@@ -597,7 +599,7 @@ class GeodesicNullSpaceFilter:
             weights = sample_weights
             if not hasattr(weights, "shape"):
                 weights = backend.array(weights)
-            weights = backend.astype(weights, "float32")
+            weights = backend.astype(weights, stats_dtype)
             weights = backend.reshape(weights, (-1, 1))
             backend.eval(weights)
 
@@ -620,7 +622,7 @@ class GeodesicNullSpaceFilter:
             activations: "Any",
             sample_weights: "Any | None",
         ) -> "Any":
-            acts = backend.astype(activations, "float32")
+            acts = backend.astype(activations, stats_dtype)
             if sample_weights is None:
                 mean_abs = backend.mean(backend.abs(acts), axis=0)
                 backend.eval(mean_abs)
@@ -629,7 +631,7 @@ class GeodesicNullSpaceFilter:
             weights = sample_weights
             if not hasattr(weights, "shape"):
                 weights = backend.array(weights)
-            weights = backend.astype(weights, "float32")
+            weights = backend.astype(weights, stats_dtype)
             weights = backend.reshape(weights, (-1, 1))
             backend.eval(weights)
 
@@ -841,7 +843,8 @@ def filter_delta_svd(
     - Zhang et al. (2025). "STF: Superpose Task-specific Features"
     """
     b = backend or get_default_backend()
-    delta = b.astype(b.array(weight_delta), "float32")
+    delta = b.array(weight_delta)
+    delta = b.astype(delta, precision_dtype(b, reference=delta))
     b.eval(delta)
 
     original_shape = delta.shape
@@ -1138,9 +1141,18 @@ def project_to_null_space(
     """
     b = backend or get_default_backend()
 
-    # Ensure arrays and float32 precision
-    delta = b.astype(b.array(delta), "float32")
-    A = b.astype(b.array(boundary_activations), "float32")
+    # Ensure arrays and precision dtype
+    delta = b.array(delta)
+    A = b.array(boundary_activations)
+    compute_dtype = precision_dtype(b, reference=delta)
+    if hasattr(A, "dtype"):
+        try:
+            if b.finfo(A.dtype).eps < b.finfo(compute_dtype).eps:
+                compute_dtype = A.dtype
+        except Exception:
+            pass
+    delta = b.astype(delta, compute_dtype)
+    A = b.astype(A, compute_dtype)
     b.eval(delta, A)
 
     # Validate dimensions
@@ -1198,7 +1210,8 @@ def project_to_null_space(
         max_eig = float(b.to_scalar(b.max(eigvals_pos)))
         min_eig = float(b.to_scalar(b.min(eigvals_pos)))
         condition_number = max_eig / min_eig if min_eig > 0 else float("inf")
-        activation_rank = int(b.to_scalar(b.sum(b.cast(eigvals > reg * 10, "float32"))))
+        rank_mask = b.astype(eigvals > reg * 10, precision_dtype(b, reference=eigvals))
+        activation_rank = int(b.to_scalar(b.sum(rank_mask)))
     except Exception:
         condition_number = float("inf")
         activation_rank = min(n_samples, d)
@@ -1244,7 +1257,14 @@ def project_to_null_space(
         b.eval(max_violation)
         boundary_violation = float(b.to_scalar(max_violation))
 
-        if boundary_violation > 1e-4:
+        max_abs_A = b.max(b.abs(A))
+        max_abs_delta = b.max(b.abs(delta_safe))
+        b.eval(max_abs_A, max_abs_delta)
+        scale = float(b.to_scalar(max_abs_A)) * float(b.to_scalar(max_abs_delta))
+        scale = max(scale, 1.0)
+        violation_tol = scale * machine_epsilon(b, delta_safe)
+
+        if boundary_violation > violation_tol:
             logger.warning(
                 "NULL-SPACE: Boundary violation %.2e exceeds tolerance. "
                 "Check activation rank (%d) and condition number (%.2e).",

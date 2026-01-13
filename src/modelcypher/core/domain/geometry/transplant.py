@@ -60,6 +60,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_between_sets,
@@ -177,10 +178,21 @@ def compute_weight_space_transplant(
 
     b = backend or get_default_backend()
 
-    # Ensure float32 for numerical stability
-    source_aligned = b.astype(b.array(source_aligned), "float32")
-    target_weight = b.astype(b.array(target_weight), "float32")
-    input_activations = b.astype(b.array(input_activations), "float32")
+    source_aligned = b.array(source_aligned)
+    target_weight = b.array(target_weight)
+    input_activations = b.array(input_activations)
+    output_dtype = b.dtype(target_weight)
+    compute_dtype = precision_dtype(b, reference=target_weight)
+    for arr in (source_aligned, input_activations):
+        if hasattr(arr, "dtype"):
+            try:
+                if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
+                    compute_dtype = arr.dtype
+            except Exception:
+                pass
+    source_aligned = b.astype(source_aligned, compute_dtype)
+    target_weight = b.astype(target_weight, compute_dtype)
+    input_activations = b.astype(input_activations, compute_dtype)
     b.eval(source_aligned, target_weight, input_activations)
 
     out_dim = int(target_weight.shape[0])
@@ -254,8 +266,12 @@ def compute_weight_space_transplant(
     density_weights = None
 
     if source_activations_for_density is not None and target_activations_for_density is not None:
-        src_density_acts = b.astype(b.array(source_activations_for_density), "float32")
-        tgt_density_acts = b.astype(b.array(target_activations_for_density), "float32")
+        src_density_acts = b.astype(
+            b.array(source_activations_for_density), compute_dtype
+        )
+        tgt_density_acts = b.astype(
+            b.array(target_activations_for_density), compute_dtype
+        )
         b.eval(src_density_acts, tgt_density_acts)
 
         # Compute k-NN densities
@@ -452,6 +468,8 @@ def compute_weight_space_transplant(
     # preserve target behavior by construction. Adding cosine constraints is a
     # "vibes" heuristic that fights against the geometric solution.
     merged_weight = target_weight + delta_W_proj
+    if str(b.dtype(merged_weight)) != str(output_dtype):
+        merged_weight = b.astype(merged_weight, output_dtype)
     b.eval(merged_weight)
 
     logger.debug(
@@ -491,10 +509,21 @@ def _compute_transplant_delta_anchor_relative(
     """
     b = backend
 
-    # Convert inputs to float32
-    weight_target = b.astype(b.array(weight_target), "float32")
-    activations_core = b.astype(b.array(activations_core), "float32")
-    delta_activations = b.astype(b.array(delta_activations), "float32")
+    weight_target = b.array(weight_target)
+    activations_core = b.array(activations_core)
+    delta_activations = b.array(delta_activations)
+    output_dtype = b.dtype(weight_target)
+    compute_dtype = precision_dtype(b, reference=weight_target)
+    for arr in (activations_core, delta_activations):
+        if hasattr(arr, "dtype"):
+            try:
+                if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
+                    compute_dtype = arr.dtype
+            except Exception:
+                pass
+    weight_target = b.astype(weight_target, compute_dtype)
+    activations_core = b.astype(activations_core, compute_dtype)
+    delta_activations = b.astype(delta_activations, compute_dtype)
     b.eval(weight_target, activations_core, delta_activations)
 
     if len(weight_target.shape) != 2:
@@ -520,7 +549,7 @@ def _compute_transplant_delta_anchor_relative(
     # Step 1: Compute boundary null-space projector N
     # N = I - pinv(A_boundary) @ A_boundary
     if boundary_activations is not None:
-        boundary_activations = b.astype(b.array(boundary_activations), "float32")
+        boundary_activations = b.astype(b.array(boundary_activations), compute_dtype)
         b.eval(boundary_activations)
         n_boundary = int(boundary_activations.shape[0])
 
@@ -574,6 +603,8 @@ def _compute_transplant_delta_anchor_relative(
     # W' = W_target + delta_W.T
     # delta_W is [in_dim, out_dim], W is [out_dim, in_dim]
     merged_weight = weight_target + b.transpose(delta_W)
+    if str(b.dtype(merged_weight)) != str(output_dtype):
+        merged_weight = b.astype(merged_weight, output_dtype)
     b.eval(merged_weight)
 
     # Compute metrics

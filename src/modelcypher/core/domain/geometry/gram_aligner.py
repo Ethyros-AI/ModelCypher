@@ -69,6 +69,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     gpu_lstsq,
     invariant_alignment,
     machine_epsilon,
+    precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
 )
@@ -319,9 +320,13 @@ class GramAligner:
         if n_s != n_t:
             raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
 
-        # Ensure float32 for stability
-        source_activations = b.astype(source_activations, "float32")
-        target_activations = b.astype(target_activations, "float32")
+        # Promote to highest available precision for alignment stability
+        source_activations = b.astype(
+            source_activations, precision_dtype(b, reference=source_activations)
+        )
+        target_activations = b.astype(
+            target_activations, precision_dtype(b, reference=target_activations)
+        )
 
         eps = machine_epsilon(b, source_activations)
         precision = sqrt_scalar(eps, b)
@@ -564,10 +569,20 @@ class GramAligner:
                 f"target_weight hidden dim ({target_hidden_dim})"
             )
 
-        # Cast to float32 for numerical stability
-        H = b.astype(b.array(hidden_transform), "float32")
-        W_src = b.astype(b.array(source_weight), "float32")
-        W_tgt = b.astype(b.array(target_weight), "float32")
+        H = b.array(hidden_transform)
+        W_src = b.array(source_weight)
+        W_tgt = b.array(target_weight)
+        compute_dtype = precision_dtype(b, reference=H)
+        for arr in (W_src, W_tgt):
+            if hasattr(arr, "dtype"):
+                try:
+                    if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
+                        compute_dtype = arr.dtype
+                except Exception:
+                    pass
+        H = b.astype(H, compute_dtype)
+        W_src = b.astype(W_src, compute_dtype)
+        W_tgt = b.astype(W_tgt, compute_dtype)
         b.eval(H, W_src, W_tgt)
 
         # CORRECTED FORMULA:
@@ -652,9 +667,20 @@ class GramAligner:
                 f"target_weight hidden dim ({target_hidden_dim})"
             )
 
-        H = b.astype(b.array(hidden_transform), "float32")
-        W_src = b.astype(b.array(source_weight), "float32")
-        W_tgt = b.astype(b.array(target_weight), "float32")
+        H = b.array(hidden_transform)
+        W_src = b.array(source_weight)
+        W_tgt = b.array(target_weight)
+        compute_dtype = precision_dtype(b, reference=H)
+        for arr in (W_src, W_tgt):
+            if hasattr(arr, "dtype"):
+                try:
+                    if b.finfo(arr.dtype).eps < b.finfo(compute_dtype).eps:
+                        compute_dtype = arr.dtype
+                except Exception:
+                    pass
+        H = b.astype(H, compute_dtype)
+        W_src = b.astype(W_src, compute_dtype)
+        W_tgt = b.astype(W_tgt, compute_dtype)
         b.eval(H, W_src, W_tgt)
 
         # Compute A = P @ W_src = H^T @ W_src

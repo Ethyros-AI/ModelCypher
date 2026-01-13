@@ -26,6 +26,7 @@ from modelcypher.core.domain.geometry.manifold_stitcher import ModelFingerprints
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     power_iteration_eigh,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
@@ -197,7 +198,7 @@ class ModelFingerprintsProjection:
                     matrix[row][col] = float(dim.activation)
 
         backend = get_default_backend()
-        points_arr = backend.array(matrix, dtype="float32")
+        points_arr = backend.array(matrix, dtype=precision_dtype(backend))
         backend.eval(points_arr)
 
         projected = ModelFingerprintsProjection._project_geodesic_mds(

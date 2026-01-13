@@ -48,6 +48,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     gpu_lstsq,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -250,8 +251,18 @@ class ConsensusCorrector:
         # Build anchor matrix [n_anchors, d]
         anchor_arrays = [b.reshape(anchor_positions[a], (1, -1)) for a in anchor_list]
         anchor_matrix = b.concatenate(anchor_arrays, axis=0)
-        anchor_arr = b.astype(anchor_matrix, "float32")
-        b.eval(anchor_arr)
+        anchor_arr = b.array(anchor_matrix)
+        stress_vec = stress_vector if hasattr(stress_vector, "shape") else b.array(stress_vector)
+        compute_dtype = precision_dtype(b, reference=anchor_arr)
+        if hasattr(stress_vec, "dtype"):
+            try:
+                if b.finfo(stress_vec.dtype).eps < b.finfo(compute_dtype).eps:
+                    compute_dtype = stress_vec.dtype
+            except Exception:
+                pass
+        anchor_arr = b.astype(anchor_arr, compute_dtype)
+        stress_vec = b.astype(stress_vec, compute_dtype)
+        b.eval(anchor_arr, stress_vec)
 
         d = int(b.shape(anchor_arr)[1])
         eps = division_epsilon(b, anchor_arr)
@@ -261,7 +272,7 @@ class ConsensusCorrector:
         b.eval(anchor_norms_sq)
 
         # Target distances from stress vector
-        target_dists_sq = stress_vector ** 2
+        target_dists_sq = stress_vec ** 2
         b.eval(target_dists_sq)
 
         # Build linear system using a_0 as reference
@@ -289,7 +300,7 @@ class ConsensusCorrector:
             position = b.squeeze(position, axis=1)
         except Exception:
             # Fallback: weighted centroid
-            stress_1d = b.reshape(stress_vector, (-1,))
+            stress_1d = b.reshape(stress_vec, (-1,))
             weights_arr = 1.0 / (stress_1d + eps)
             total_weight = b.sum(weights_arr)
             normalized_weights = weights_arr / total_weight

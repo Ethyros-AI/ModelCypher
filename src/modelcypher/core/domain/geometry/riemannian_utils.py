@@ -135,6 +135,7 @@ def geodesic_distance_matrix(
     points: "Array",
     k_neighbors: int | None = None,
     backend: "Backend | None" = None,
+    refine_iterations: int = 1,
 ) -> "Array":
     """
     Compute pairwise geodesic distances.
@@ -145,6 +146,7 @@ def geodesic_distance_matrix(
         points: Point cloud [n, d]
         k_neighbors: Number of neighbors for graph construction
         backend: Backend to use
+        refine_iterations: Number of geodesic refinement passes
 
     Returns:
         Geodesic distance matrix [n, n]
@@ -153,7 +155,9 @@ def geodesic_distance_matrix(
         backend = get_default_backend()
 
     rg = _get_riemannian_geometry(backend)
-    result = rg.geodesic_distances(points, k_neighbors)
+    result = rg.geodesic_distances(
+        points, k_neighbors, refine_iterations=refine_iterations
+    )
     return result.distances
 
 
@@ -513,12 +517,11 @@ def geodesic_pairwise_metrics(
     d0_a = backend.take(D[0], a_indices, axis=0)  # [n]
     d0_b = backend.take(D[0], b_indices, axis=0)  # [n]
 
-    # Extract pairwise distances between matched pairs
-    # D[a_i, b_i] for each i
-    distances = backend.array([
-        float(backend.to_scalar(D[int(backend.to_scalar(a_indices[i])), int(backend.to_scalar(b_indices[i]))]))
-        for i in range(n)
-    ])
+    # Extract pairwise distances between matched pairs D[a_i, b_i] without CPU loops
+    size = int(D.shape[0])
+    flat_D = backend.reshape(D, (-1,))
+    linear_idx = a_indices * size + b_indices
+    distances = backend.take(flat_D, linear_idx, axis=0)
 
     # Geodesic law of cosines
     eps = division_epsilon(backend, d0_a)
@@ -585,8 +588,11 @@ def geodesic_cosine_sparse(
     if not keys:
         raise ValueError("Cannot compute cosine similarity of empty sparse vectors")
 
-    vec_a = backend.array([float(a.get(key, 0.0)) for key in keys], dtype="float32")
-    vec_b = backend.array([float(b.get(key, 0.0)) for key in keys], dtype="float32")
+    from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
+
+    dtype = precision_dtype(backend)
+    vec_a = backend.array([float(a.get(key, 0.0)) for key in keys], dtype=dtype)
+    vec_b = backend.array([float(b.get(key, 0.0)) for key in keys], dtype=dtype)
     backend.eval(vec_a, vec_b)
 
     # Stack as 2 vectors and compute cosine

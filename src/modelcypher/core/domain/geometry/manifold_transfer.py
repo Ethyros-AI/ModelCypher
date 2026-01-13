@@ -58,6 +58,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
+    precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
 )
@@ -327,7 +328,8 @@ class CrossManifoldProjector:
         all_points = backend.concatenate([concept_reshaped] + anchor_reshaped, axis=0)
 
         # Compute geodesic distances via k-NN graph
-        points_arr = backend.astype(all_points, "float32")
+        points_arr = backend.array(all_points)
+        points_arr = backend.astype(points_arr, precision_dtype(backend, reference=points_arr))
         k_neighbors = derive_k_neighbors(points_arr, backend)
 
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
@@ -428,6 +430,7 @@ class CrossManifoldProjector:
         weights = weights / weight_sum
 
         backend.eval(target_centroids_arr)
+        compute_dtype = precision_dtype(backend, reference=target_centroids_arr)
         d = int(target_centroids_arr.shape[1])
         eps = division_epsilon(backend, target_centroids_arr)
         # Convergence tolerance derived from data
@@ -447,7 +450,7 @@ class CrossManifoldProjector:
 
         position_reshaped = backend.reshape(position, (1, -1))
         all_points = backend.concatenate([position_reshaped, target_centroids_arr], axis=0)
-        points_arr = backend.astype(all_points, "float32")
+        points_arr = backend.astype(all_points, compute_dtype)
         k_neighbors = derive_k_neighbors(points_arr, backend)
 
         # Gradient descent to minimize stress
@@ -466,7 +469,7 @@ class CrossManifoldProjector:
             # Build point matrix: [position, anchor_0, anchor_1, ...]
             position_reshaped = backend.reshape(position, (1, -1))
             all_points = backend.concatenate([position_reshaped, target_centroids_arr], axis=0)
-            points_arr = backend.astype(all_points, "float32")
+            points_arr = backend.astype(all_points, compute_dtype)
 
             # Compute geodesic distances
             geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
@@ -497,8 +500,8 @@ class CrossManifoldProjector:
             diff_norms = geodesic_norms(diffs, backend)
             eps_vec = backend.full(diff_norms.shape, eps)
             safe_norms = backend.maximum(diff_norms, eps_vec)
-            valid_mask = backend.astype(current_distances > eps, "float32") * backend.astype(
-                diff_norms > eps, "float32"
+            valid_mask = backend.astype(current_distances > eps, compute_dtype) * backend.astype(
+                diff_norms > eps, compute_dtype
             )
             coeffs = (2.0 * weights * residuals) / safe_norms
             coeffs = coeffs * valid_mask
@@ -511,7 +514,7 @@ class CrossManifoldProjector:
         # Compute final geodesic distances for minimum-stress position
         best_position_reshaped = backend.reshape(best_position, (1, -1))
         all_points = backend.concatenate([best_position_reshaped, target_centroids_arr], axis=0)
-        points_arr = backend.astype(all_points, "float32")
+        points_arr = backend.astype(all_points, compute_dtype)
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=backend)
         backend.eval(geo_dist)
         row0 = backend.take(geo_dist, backend.array([0]), axis=0)

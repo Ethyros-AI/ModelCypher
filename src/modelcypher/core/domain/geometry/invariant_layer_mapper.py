@@ -46,6 +46,7 @@ from modelcypher.core.domain.geometry.atlas_registry import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     log2_scalar,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain._backend import get_default_backend
@@ -904,7 +905,7 @@ class InvariantLayerMapper:
             return []
 
         backend = get_default_backend()
-        sim = backend.array(similarity_matrix, dtype="float32")
+        sim = backend.array(similarity_matrix, dtype=precision_dtype(backend))
         backend.eval(sim)
 
         neg_inf = -float(backend.finfo().max)

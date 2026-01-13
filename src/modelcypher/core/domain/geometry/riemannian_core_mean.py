@@ -296,9 +296,15 @@ class RiemannianMeanMixin:
 
                     # Convergence in tangent space: step size of the update.
                     step_vec = new_mu - mu
-                    step_norm_arr = backend.sqrt(backend.sum(step_vec * step_vec))
+                    from modelcypher.core.domain.geometry.riemannian_utils import (
+                        geodesic_norms,
+                    )
+
+                    step_norm_arr = geodesic_norms(
+                        backend.reshape(step_vec, (1, -1)), backend, use_cache=False
+                    )
                     backend.eval(step_norm_arr)
-                    step_val = float(backend.to_scalar(step_norm_arr))
+                    step_val = float(backend.to_scalar(step_norm_arr[0]))
 
                     if step_val < tol:
                         converged = True
@@ -537,9 +543,13 @@ class RiemannianMeanMixin:
             backend.eval(gradient)
 
         # Compute gradient norm for step size
-        grad_norm_arr = backend.sqrt(backend.sum(gradient * gradient))
+        from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+
+        grad_norm_arr = geodesic_norms(
+            backend.reshape(gradient, (1, -1)), backend, use_cache=False
+        )
         backend.eval(grad_norm_arr)
-        grad_norm = float(backend.to_scalar(grad_norm_arr))
+        grad_norm = float(backend.to_scalar(grad_norm_arr[0]))
 
         # Adaptive step size based on data scale
         mean_geo_arr = backend.mean(geo_from_mu)

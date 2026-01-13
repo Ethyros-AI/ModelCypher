@@ -84,6 +84,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
     machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -252,7 +253,8 @@ class ConceptResponseMatrix:
         for layer in range(self.layer_count):
             activations = self._extract_activations(layer, sorted_anchors)
             if activations is not None:
-                arr = backend.astype(backend.array(activations), "float32")
+                arr = backend.array(activations)
+                arr = backend.astype(arr, precision_dtype(backend, reference=arr))
                 backend.eval(arr)
                 source_mean = backend.mean(arr, axis=0, keepdims=True)
                 source_c = arr - source_mean
@@ -263,7 +265,8 @@ class ConceptResponseMatrix:
         for layer in range(other.layer_count):
             activations = other._extract_activations(layer, sorted_anchors)
             if activations is not None:
-                arr = backend.astype(backend.array(activations), "float32")
+                arr = backend.array(activations)
+                arr = backend.astype(arr, precision_dtype(backend, reference=arr))
                 backend.eval(arr)
                 target_mean = backend.mean(arr, axis=0, keepdims=True)
                 target_c = arr - target_mean

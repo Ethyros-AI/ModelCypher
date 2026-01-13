@@ -41,6 +41,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     machine_epsilon,
     power_iteration_eigh,
+    precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
 )
@@ -412,10 +413,14 @@ def compute_cka(
     # Auto-convert lists to arrays
     if isinstance(activations_x, list):
         activations_x = backend.array(activations_x)
-        activations_x = backend.astype(activations_x, "float32")
+        activations_x = backend.astype(
+            activations_x, precision_dtype(backend, reference=activations_x)
+        )
     if isinstance(activations_y, list):
         activations_y = backend.array(activations_y)
-        activations_y = backend.astype(activations_y, "float32")
+        activations_y = backend.astype(
+            activations_y, precision_dtype(backend, reference=activations_y)
+        )
     
     n = int(activations_x.shape[0])
     if n <= 1:
@@ -456,8 +461,13 @@ def compute_cka(
     
     # CKA = HSIC(x,y) / sqrt(HSIC(x,x) * HSIC(y,y))
     denom = sqrt_scalar(hsic_xx * hsic_yy, backend)
-    eps = division_epsilon(backend, gram_x)
-    
+
+    # Epsilon for division safety based on HSIC scale, not Gram scale.
+    # HSIC values are normalized by n² and can be legitimately small for large n.
+    # Use machine epsilon times the larger HSIC self-similarity as threshold.
+    hsic_scale = max(hsic_xx, hsic_yy, 1e-30)
+    eps = machine_epsilon(backend, gram_x) * sqrt_scalar(hsic_scale, backend)
+
     if denom < eps:
         return CKAResult(0.0, hsic_xy, hsic_xx, hsic_yy, n)
     
@@ -521,10 +531,13 @@ def compute_cka_from_grams(
     
     # CKA
     denom = sqrt_scalar(hsic_aa * hsic_bb, backend)
-    eps = division_epsilon(backend, gram_a)
+
+    # Epsilon based on HSIC scale, not Gram scale
+    hsic_scale = max(hsic_aa, hsic_bb, 1e-30)
+    eps = machine_epsilon(backend, gram_a) * sqrt_scalar(hsic_scale, backend)
     if denom < eps:
         return 0.0
-    
+
     return max(0.0, min(1.0, hsic_ab / denom))
 
 
@@ -551,10 +564,13 @@ def compute_cka_from_centered_grams(
     hsic_bb = _hsic_from_centered(centered_b, centered_b, backend)
     
     denom = sqrt_scalar(hsic_aa * hsic_bb, backend)
-    eps = division_epsilon(backend, centered_a)
+
+    # Epsilon based on HSIC scale, not centered Gram scale
+    hsic_scale = max(hsic_aa, hsic_bb, 1e-30)
+    eps = machine_epsilon(backend, centered_a) * sqrt_scalar(hsic_scale, backend)
     if denom < eps:
         return 0.0
-    
+
     return max(0.0, min(1.0, hsic_ab / denom))
 
 
@@ -731,8 +747,8 @@ def compute_cka_from_lists(
     
     arr_x = backend.array(x)
     arr_y = backend.array(y)
-    arr_x = backend.astype(arr_x, "float32")
-    arr_y = backend.astype(arr_y, "float32")
+    arr_x = backend.astype(arr_x, precision_dtype(backend, reference=arr_x))
+    arr_y = backend.astype(arr_y, precision_dtype(backend, reference=arr_y))
     
     result = compute_cka(arr_x, arr_y, backend, estimator, feature_bias_correction)
     return result.best if result.is_valid else 0.0
@@ -858,8 +874,9 @@ def compute_cka_split(
     b.eval(shared_mask, novel_mask)
 
     # Count samples in each category
-    shared_count = int(b.to_scalar(b.sum(b.astype(shared_mask, "float32"))))
-    novel_count = int(b.to_scalar(b.sum(b.astype(novel_mask, "float32"))))
+    count_dtype = precision_dtype(b, reference=source_response)
+    shared_count = int(b.to_scalar(b.sum(b.astype(shared_mask, count_dtype))))
+    novel_count = int(b.to_scalar(b.sum(b.astype(novel_mask, count_dtype))))
 
     # Response means for debugging
     source_resp_mean = float(b.to_scalar(b.mean(source_norm)))

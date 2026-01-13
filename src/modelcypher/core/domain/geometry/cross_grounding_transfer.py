@@ -48,6 +48,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_nan,
     machine_epsilon,
     pi_value,
+    precision_dtype,
     power_iteration_eigh,
     sqrt_scalar,
     ulp_scalar,
@@ -221,7 +222,8 @@ class RelationalStressComputer:
         concept_2d = b.reshape(concept_activation, (1, -1))
         anchor_list = [b.reshape(anchor_activations[n], (1, -1)) for n in anchor_names]
         all_points = b.concatenate([concept_2d] + anchor_list, axis=0)
-        points_arr = b.astype(all_points, "float32")
+        points_arr = b.array(all_points)
+        points_arr = b.astype(points_arr, precision_dtype(b, reference=points_arr))
         b.eval(points_arr)
 
         # Compute geodesic distances (curvature-aware)
@@ -352,7 +354,9 @@ class RelationalStressComputer:
         normalized_directions = all_directions / b.reshape(safe_norms, (-1, 1))
 
         # Mask out invalid directions by setting to zero
-        mask_2d = b.reshape(b.astype(valid_mask, "float32"), (-1, 1))
+        mask_2d = b.reshape(
+            b.astype(valid_mask, precision_dtype(b, reference=valid_mask)), (-1, 1)
+        )
         directions_matrix = normalized_directions * mask_2d
         b.eval(directions_matrix)
 
@@ -416,14 +420,24 @@ class GroundingRotationEstimator:
         # Build source position matrix
         source_list = [b.reshape(source_anchors[a], (1, -1)) for a in common_list]
         source_matrix = b.concatenate(source_list, axis=0)
-        source_arr = b.astype(source_matrix, "float32")
-        source_geo = geodesic_distance_matrix(source_arr, k_neighbors=None, backend=b)
-        b.eval(source_geo)
 
         # Build target position matrix
         target_list = [b.reshape(target_anchors[a], (1, -1)) for a in common_list]
         target_matrix = b.concatenate(target_list, axis=0)
-        target_arr = b.astype(target_matrix, "float32")
+
+        compute_dtype = precision_dtype(b, reference=source_matrix)
+        if hasattr(target_matrix, "dtype"):
+            try:
+                if b.finfo(target_matrix.dtype).eps < b.finfo(compute_dtype).eps:
+                    compute_dtype = target_matrix.dtype
+            except Exception:
+                pass
+
+        source_arr = b.astype(source_matrix, compute_dtype)
+        target_arr = b.astype(target_matrix, compute_dtype)
+
+        source_geo = geodesic_distance_matrix(source_arr, k_neighbors=None, backend=b)
+        b.eval(source_geo)
         target_geo = geodesic_distance_matrix(target_arr, k_neighbors=None, backend=b)
         b.eval(target_geo)
 
@@ -693,7 +707,8 @@ class CrossGroundingSynthesizer:
         # Build anchor matrix [n_anchors, d]
         anchor_arrays = [b.reshape(target_anchors[a], (1, -1)) for a in anchor_list]
         anchor_matrix = b.concatenate(anchor_arrays, axis=0)
-        anchor_arr = b.astype(anchor_matrix, "float32")
+        anchor_arr = b.array(anchor_matrix)
+        anchor_arr = b.astype(anchor_arr, precision_dtype(b, reference=anchor_arr))
         b.eval(anchor_arr)
 
         eps = division_epsilon(b, anchor_arr)
