@@ -18,12 +18,11 @@
 """
 Bridge Generator for cross-modal knowledge transfer.
 
-Creates affine bridges between encoder spaces using GramAlign. The key insight
-is that CKA = 1.0 is achievable across ALL modalities because neural networks
-discover the same invariant geometry.
+Creates affine bridges between encoder spaces using GramAlign. Linear alignment
+is closed-form; geodesic CKA reports manifold overlap and coverage.
 
 Validated Experimentally (January 2026):
-    | Modality Pair     | Raw CKA | Aligned CKA |
+    | Modality Pair     | Raw CKA | Aligned CKA (probes) |
     |-------------------|---------|-------------|
     | Text ↔ Vision     | 0.7842  | 1.0000      |
     | Text ↔ Audio      | 0.5469  | 1.0000      |
@@ -59,7 +58,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.cka import compute_linear_cka
+from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
 if TYPE_CHECKING:
@@ -72,8 +71,8 @@ logger = logging.getLogger(__name__)
 class BridgeGeneratorResult:
     """Result of generating a cross-modal bridge.
 
-    The bridge transform F maps from source space to target space such that
-    CKA(source @ F, target) = 1.0 (invariant).
+    The bridge transform F maps from source space to target space. Geodesic
+    CKA(source @ F, target) reports overlap on the shared manifold.
 
     For the reverse direction (target → source), use F_inv.
     """
@@ -91,10 +90,10 @@ class BridgeGeneratorResult:
     source_dim: int
     target_dim: int
 
-    # CKA achieved (should be 1.0, invariant)
+    # Geodesic CKA achieved (overlap diagnostic)
     cka_achieved: float
 
-    # Numerical deviation from CKA = 1.0
+    # 1.0 - geodesic CKA
     numerical_deviation: float
 
     # Raw CKA before alignment (for diagnostics)
@@ -269,8 +268,8 @@ class BridgeGenerator:
         )
 
         # Compute raw CKA before alignment
-        raw_cka = compute_linear_cka(source_acts, target_acts, backend=backend)
-        logger.info("Raw CKA (before alignment): %.4f", raw_cka)
+        raw_cka = compute_geodesic_cka(source_acts, target_acts, backend=backend)
+        logger.info("Raw geodesic CKA (before alignment): %.4f", raw_cka)
 
         # Find the alignment transform
         alignment = self._aligner.find_perfect_alignment(source_acts, target_acts)
@@ -280,7 +279,7 @@ class BridgeGenerator:
         scale_ratio = alignment.scale_ratio
         F = alignment.feature_transform  # [d_source, d_target]
 
-        logger.info("Aligned CKA: %.4f (deviation: %.2e)", cka_achieved, numerical_deviation)
+        logger.info("Aligned geodesic CKA: %.4f (deviation: %.2e)", cka_achieved, numerical_deviation)
         logger.info("Scale ratio: %.4f", scale_ratio)
         logger.info("Transform shape: %s", F.shape)
 

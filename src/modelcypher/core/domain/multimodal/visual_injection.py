@@ -59,6 +59,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.affine_bridge import HybridBridge
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.multimodal.attention_memory import (
     AttentionMemoryInjector,
     KNOWN_ARCHITECTURES,
@@ -281,10 +282,9 @@ class VisualConceptInjector:
 
         backend = self._backend
 
-        # Compute L2 norms of calibration activations
-        norms = backend.sqrt(backend.sum(
-            self._calibration_activations ** 2, axis=1
-        ))
+        # Compute geodesic norms of calibration activations (manifold-aware)
+        # Uses k-NN graph shortest paths to account for curvature
+        norms = geodesic_norms(self._calibration_activations, backend, use_cache=False)
         backend.eval(norms)
 
         # Scale is half the mean norm (conservative but effective)
@@ -407,14 +407,15 @@ class VisualConceptInjector:
             )
 
         # Measure memory scale for transparency (geometry handles safety by construction)
+        memory_vec = backend.reshape(memory.embedding, (1, -1))
+        memory_norms = geodesic_norms(memory_vec, backend, use_cache=False)
+        backend.eval(memory_norms)
         memory_content = MemoryTokenContent(
             content=memory.embedding,
             source_concept=memory.source_type,
             scale_applied=memory.scale,
             null_space_projected=memory.null_space_projected,
-            direction_norm=float(backend.to_scalar(
-                backend.sqrt(backend.sum(memory.embedding * memory.embedding))
-            )),
+            direction_norm=float(backend.to_scalar(memory_norms[0])),
         )
         is_valid, info_message = self._memory_injector.validate_memory_scale(
             memory_content,

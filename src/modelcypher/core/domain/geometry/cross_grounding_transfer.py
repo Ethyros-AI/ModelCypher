@@ -256,11 +256,28 @@ class RelationalStressComputer:
             for i, name in enumerate(anchor_names)
         }
 
-        # Normalize distances by the spread of anchor positions
+        # Normalize distances by the geodesic spread of anchor positions
         anchor_matrix = b.concatenate(anchor_list, axis=0)
-        anchor_std = b.std(anchor_matrix)
-        b.eval(anchor_std)
-        anchor_spread = float(b.to_scalar(anchor_std))
+        n_anch = int(anchor_matrix.shape[0])
+        if n_anch >= 2:
+            from modelcypher.core.domain.geometry.riemannian_utils import (
+                geodesic_distance_matrix,
+            )
+
+            geo_dist = geodesic_distance_matrix(anchor_matrix, backend=b)
+            b.eval(geo_dist)
+            off_diag_mask = b.ones((n_anch, n_anch)) - b.eye(n_anch)
+            off_diag_vals = geo_dist * off_diag_mask
+            total_pairs = n_anch * (n_anch - 1)
+            if total_pairs > 0:
+                mean_dist = b.sum(off_diag_vals) / float(total_pairs)
+                b.eval(mean_dist)
+                anchor_spread = float(b.to_scalar(mean_dist))
+            else:
+                anchor_spread = 0.0
+        else:
+            anchor_spread = float(b.to_scalar(b.std(anchor_matrix)))
+
         if anchor_spread > 0:
             normalized = {k: v / anchor_spread for k, v in distances.items()}
         else:
@@ -686,8 +703,10 @@ class CrossGroundingSynthesizer:
         eps = division_epsilon(b, anchor_arr)
         d = int(b.shape(anchor_arr)[1])
 
-        # Compute anchor norms squared (vectorized)
-        anchor_norms_sq = b.sum(anchor_arr ** 2, axis=1)
+        # Compute anchor norms squared using geodesic (k-NN graph shortest paths)
+        geo_anch_norms = geodesic_norms(anchor_arr, b, use_cache=False)
+        b.eval(geo_anch_norms)
+        anchor_norms_sq = geo_anch_norms * geo_anch_norms
         b.eval(anchor_norms_sq)
 
         # Scale target distances by the ratio of anchor spreads
@@ -696,18 +715,25 @@ class CrossGroundingSynthesizer:
         source_variance = sum((v - source_mean) ** 2 for v in source_vals) / len(source_vals)
         source_spread = sqrt_scalar(source_variance, b)
 
-        # Target spread from pairwise Euclidean distances between anchors
-        # (faster than geodesic for scaling purposes)
-        anchor_diffs = anchor_arr[:, None, :] - anchor_arr[None, :, :]
-        anchor_pairwise_sq = b.sum(anchor_diffs ** 2, axis=2)
-        off_diag_mask = b.ones((n_anchors, n_anchors)) - b.eye(n_anchors)
-        off_diag_vals = anchor_pairwise_sq * off_diag_mask
-        total_pairs = n_anchors * (n_anchors - 1)
-        if total_pairs > 0:
-            mean_pair_sq = b.sum(off_diag_vals) / float(total_pairs)
-            var_pair_sq = b.sum((off_diag_vals - mean_pair_sq) ** 2 * off_diag_mask) / float(total_pairs)
-            b.eval(mean_pair_sq, var_pair_sq)
-            target_spread = sqrt_scalar(float(b.to_scalar(var_pair_sq)), b)
+        # Target spread from geodesic pairwise distances between anchors
+        if n_anchors >= 2:
+            from modelcypher.core.domain.geometry.riemannian_utils import (
+                geodesic_distance_matrix,
+            )
+
+            geo_dist = geodesic_distance_matrix(anchor_arr, backend=b)
+            b.eval(geo_dist)
+            off_diag_mask = b.ones((n_anchors, n_anchors)) - b.eye(n_anchors)
+            off_diag = geo_dist * off_diag_mask
+            total_pairs = n_anchors * (n_anchors - 1)
+            if total_pairs > 0:
+                mean_dist = b.sum(off_diag) / float(total_pairs)
+                diff = (geo_dist - mean_dist) * off_diag_mask
+                var_dist = b.sum(diff * diff) / float(total_pairs)
+                b.eval(mean_dist, var_dist)
+                target_spread = sqrt_scalar(float(b.to_scalar(var_dist)), b)
+            else:
+                target_spread = 0.0
         else:
             target_spread = 0.0
 

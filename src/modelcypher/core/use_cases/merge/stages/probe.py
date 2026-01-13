@@ -911,8 +911,8 @@ def _probe_precise(
             weight_correlations[key] = 0.0
 
     cka_vals = list(layer_cka_scores.values())
-    # Linear CKA is diagnostic, not a gate. Filter only NaN (alignment bugs).
-    # Low linear CKA usually means limited overlap or probe coverage.
+    # Geodesic CKA is diagnostic, not a gate. Filter only NaN (alignment bugs).
+    # Low geodesic CKA usually means limited overlap or probe coverage.
     valid_cka_vals = [v for v in cka_vals if v == v]  # NaN check only
     nan_count = len(cka_vals) - len(valid_cka_vals)
     if nan_count > 0:
@@ -931,10 +931,10 @@ def _probe_precise(
     # missing_cka_layers is for reporting - it doesn't block exact alignment
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
     # =========================================================================
-    # LINEAR CKA DIAGNOSTIC (STRICT OVERLAP CHECK)
+    # GEODESIC CKA DIAGNOSTIC (STRICT OVERLAP CHECK)
     # =========================================================================
     # perfect_alignment is a strict diagnostic: it only holds when every layer's
-    # linear CKA is within precision. This is not required for merging and can
+    # geodesic CKA is within precision. This is not required for merging and can
     # be false when models contain novel structure outside the shared manifold.
     # Use sqrt(machine_epsilon) as the tolerance (matches GramAligner convention).
     precision_ref = _precision_reference(
@@ -1007,7 +1007,7 @@ def _probe_precise(
     # =========================================================================
     # LAYER CLASSIFICATION: ALL LAYERS PROCESSED
     # =========================================================================
-    # Linear CKA measures STRUCTURAL OVERLAP between source and target spaces.
+    # Geodesic CKA measures STRUCTURAL OVERLAP between source and target spaces.
     #
     # CKA ≈ 1.0: Source fully covers target's representational space (shared manifold)
     # CKA < 1.0: Target has structure outside source's column space (EXPECTED
@@ -1101,10 +1101,10 @@ def _probe_precise(
     if rbf_consistency_hidden is not None:
         metrics["hidden_rbf_consistency"] = rbf_consistency_hidden
 
-    # mean_cka = Post-alignment linear overlap (shared-manifold coverage)
-    # raw_cka_mean = Pre-alignment linear CKA from actual activations
+    # mean_cka = Post-alignment geodesic CKA (shared-manifold coverage)
+    # raw_cka_mean = Pre-alignment geodesic CKA from actual activations
     logger.info(
-        "PROBE PRECISE: %d layers, post_linear_cka=%.4f, raw_linear_cka=%.4f",
+        "PROBE PRECISE: %d layers, post_geodesic_cka=%.4f, raw_geodesic_cka=%.4f",
         len(layer_confidences),
         mean_cka,
         metrics["raw_cka_mean"],
@@ -1195,71 +1195,72 @@ def _probe_precise(
                 tgt_stacked = _promote_precision(tgt_stacked, b)
                 b.eval(src_stacked, tgt_stacked)
 
-                # Use same GramAligner as hidden layers; linear CKA is diagnostic.
+                # Use same GramAligner as hidden layers
                 emb_result = gram_aligner.find_perfect_alignment(src_stacked, tgt_stacked)
                 emb_F = emb_result.feature_transform  # Already GPU array
                 embedding_transform = emb_F  # Keep as GPU array
 
-                from modelcypher.core.domain.geometry.cka import compute_linear_cka
                 emb_aligned = b.matmul(src_stacked, emb_F)
                 b.eval(emb_aligned)
-                emb_linear_cka = float(compute_linear_cka(emb_aligned, tgt_stacked, backend=b))
-                emb_linear_deviation = abs(1.0 - emb_linear_cka)
 
-                metrics["embedding_cka"] = emb_linear_cka
-                metrics["embedding_geodesic_cka"] = emb_result.achieved_cka
-                metrics["embedding_numerical_deviation"] = emb_linear_deviation
+                # Primary metric: geodesic RBF CKA (what the alignment optimizes)
+                emb_geodesic_cka = emb_result.achieved_cka
+                emb_geodesic_deviation = abs(1.0 - emb_geodesic_cka)
 
-                # One-time geodesic RBF vs linear CKA consistency check (2D).
+                metrics["embedding_cka"] = emb_geodesic_cka
+                metrics["embedding_geodesic_cka"] = emb_geodesic_cka  # Same (for clarity)
+                metrics["embedding_numerical_deviation"] = emb_geodesic_deviation
+
+                # One-time geodesic RBF CKA consistency check (aligner vs compute_cka)
                 try:
                     from modelcypher.core.domain.geometry.cka import compute_cka
 
-                    # emb_aligned already computed for linear CKA above
+                    # Verify geodesic RBF CKA via independent computation
                     rbf_result = compute_cka(emb_aligned, tgt_stacked, backend=b)
                     rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
 
                     precision = sqrt_scalar(machine_epsilon(b, emb_aligned), b)
                     rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
-                    linear_cka = emb_linear_cka
-                    linear_deviation = emb_linear_deviation
-                    agreement_deviation = abs(rbf_val - linear_cka) if rbf_val == rbf_val else float("inf")
+                    # Agreement: aligner's geodesic CKA vs compute_cka's geodesic CKA
+                    agreement_deviation = abs(rbf_val - emb_geodesic_cka) if rbf_val == rbf_val else float("inf")
 
                     metrics["embedding_rbf_consistency"] = {
                         "rbf_cka": float(rbf_val) if rbf_val == rbf_val else 0.0,
                         "rbf_deviation": float(rbf_deviation),
-                        "linear_deviation": float(linear_deviation),
+                        "geodesic_deviation": float(emb_geodesic_deviation),
                         "agreement_deviation": float(agreement_deviation),
                         "precision_threshold": float(precision),
                     }
-                    if linear_deviation > precision:
+                    # Geodesic CKA should be ~1.0 after alignment (by construction)
+                    if emb_geodesic_deviation > precision:
                         logger.error(
-                            "EMBEDDING GRAMALIGN: Linear CKA deviation %.2e > precision %.2e.",
-                            linear_deviation,
+                            "EMBEDDING GRAMALIGN: Geodesic CKA deviation %.2e > precision %.2e.",
+                            emb_geodesic_deviation,
                             precision,
                         )
                     if rbf_deviation > precision:
                         logger.info(
-                            "EMBEDDING GRAMALIGN: Geodesic CKA deviation %.2e > precision %.2e.",
+                            "EMBEDDING GRAMALIGN: Independent RBF CKA deviation %.2e > precision %.2e.",
                             rbf_deviation,
                             precision,
                         )
                     if agreement_deviation > precision:
                         logger.info(
-                            "EMBEDDING GRAMALIGN: Geodesic vs linear CKA deviation %.2e > precision %.2e.",
+                            "EMBEDDING GRAMALIGN: Aligner vs compute_cka geodesic CKA deviation %.2e > precision %.2e.",
                             agreement_deviation,
                             precision,
                         )
                 except Exception as consistency_err:
                     logger.warning(
-                        "EMBEDDING GRAMALIGN: RBF/linear consistency check failed: %s",
+                        "EMBEDDING GRAMALIGN: RBF consistency check failed: %s",
                         consistency_err,
                     )
 
-                # Linear CKA is the diagnostic check for shared-manifold alignment.
-                if emb_linear_deviation > precision:
+                # Geodesic CKA is the diagnostic check for shared-manifold alignment
+                if emb_geodesic_deviation > precision:
                     logger.warning(
-                        "EMBEDDING GRAMALIGN: Linear CKA deviation %.2e > precision %.2e.",
-                        emb_linear_deviation,
+                        "EMBEDDING GRAMALIGN: Geodesic CKA deviation %.2e > precision %.2e.",
+                        emb_geodesic_deviation,
                         precision,
                     )
             except Exception as e:

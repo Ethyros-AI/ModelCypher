@@ -247,7 +247,7 @@ def register(app: typer.Typer) -> None:
         invariant_mode: bool = typer.Option(
             False,
             "--invariant-mode",
-            help="Test CKA=1.0 invariant (n < d). This is the thesis mode.",
+            help="Test underdetermined alignment regime (n < d) for generalization.",
         ),
         n_train: int = typer.Option(
             0,
@@ -273,8 +273,8 @@ def register(app: typer.Typer) -> None:
         across all models - this is why they all converge on the same semantics.
 
         This command measures how well we've aligned the coordinate systems between
-        two models. CKA = 1.0 is what you GET with proper alignment - it's not a
-        hypothesis to test, it's the mathematical reality of Procrustes alignment.
+        two models. Linear alignment is closed-form; geodesic CKA reports overlap
+        on the shared manifold.
 
         LOW TEST CKA MEANS:
         - The probe set didn't cover the shared manifold regions
@@ -288,10 +288,10 @@ def register(app: typer.Typer) -> None:
 
         TWO MODES:
 
-        1. INVARIANT MODE (--invariant-mode): Uses n < d.
-           - CKA = 1.0 on probes is guaranteed (closed-form Procrustes)
+        1. UNDERDETERMINED MODE (--invariant-mode): Uses n < d.
+           - Linear alignment on probes is exact (closed-form Procrustes)
            - Tests whether alignment generalizes to held-out concepts
-           - Low test CKA = probe coverage issue, not structure issue
+           - Low geodesic CKA = probe coverage issue, not structure issue
 
         2. OVERLAP MODE (default): Uses n > d.
            - Measures how much structure the probe set captures
@@ -316,7 +316,7 @@ def register(app: typer.Typer) -> None:
                 resolve_model_backbone,
             )
             from modelcypher.core.domain._backend import get_default_backend
-            from modelcypher.core.domain.geometry.cka import compute_linear_cka, compute_cka
+            from modelcypher.core.domain.geometry.cka import compute_cka
             from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 
             if test_size < 4:
@@ -363,14 +363,14 @@ def register(app: typer.Typer) -> None:
                 n_train_required = n_train
                 mode_str = "user-specified"
             elif invariant_mode:
-                # INVARIANT MODE: n < d guarantees CKA = 1.0 (underdetermined Procrustes)
+                # UNDERDETERMINED MODE: n < d makes linear alignment exact on probes.
                 # Use 0.5 * min(d) to ensure we're well below the rank limit
                 n_train_required = d_min // 2
-                mode_str = "invariant (n < d, CKA=1.0 guaranteed)"
+                mode_str = "underdetermined (n < d, linear alignment exact)"
             else:
                 # OVERLAP MODE: n > d measures actual overlap (overdetermined)
                 n_train_required = 2 * d_max
-                mode_str = "overlap (n > d, CKA measured)"
+                mode_str = "overlap (n > d, geodesic CKA measured)"
 
             typer.echo(f"Geometry: d_source={d_source}, d_target={d_target}, d_min={d_min}")
             typer.echo(f"Mode: {mode_str}")
@@ -413,7 +413,7 @@ def register(app: typer.Typer) -> None:
 
             # Check if we have enough words based on mode
             if invariant_mode:
-                # INVARIANT MODE: We want n < d, so fewer words is fine
+                # UNDERDETERMINED MODE: We want n < d, so fewer words is fine
                 # Just need enough for a meaningful test (at least 50 or n_train_required)
                 min_required = min(50, n_train_required)
                 if eligible_count < min_required + test_size:
@@ -426,7 +426,7 @@ def register(app: typer.Typer) -> None:
                 if n_train_actual >= d_min:
                     typer.secho(
                         f"WARNING: n_train_actual={n_train_actual} >= d_min={d_min}.\n"
-                        f"CKA=1.0 is NOT guaranteed in this configuration.\n"
+                        f"Linear alignment is no longer underdetermined in this configuration.\n"
                         f"Reduce --n-train or use fewer test samples.",
                         fg=typer.colors.YELLOW,
                     )
@@ -511,12 +511,6 @@ def register(app: typer.Typer) -> None:
             aligned_test = backend.matmul(source_test, alignment.feature_transform)
             backend.eval(aligned_train, aligned_test)
 
-            # LINEAR CKA (Euclidean - matches GramAligner's linear Gram)
-            train_cka_raw = compute_linear_cka(source_train, target_train, backend)
-            train_cka_aligned = compute_linear_cka(aligned_train, target_train, backend)
-            test_cka_raw = compute_linear_cka(source_test, target_test, backend)
-            test_cka_aligned = compute_linear_cka(aligned_test, target_test, backend)
-
             # GEODESIC CKA (RBF on geodesic distances - correct for high-d manifolds)
             # This uses k-NN graph + geodesic distances, not Euclidean dot products
             train_geo_raw = compute_cka(source_train, target_train, backend)
@@ -532,15 +526,8 @@ def register(app: typer.Typer) -> None:
             rank_bound = min(n_train_final, actual_source_dim, actual_target_dim)
 
             # Determine if we're in underdetermined (invariant) or overdetermined (overlap) regime
-            is_underdetermined = n_train_final < actual_d_min  # n < d: CKA=1.0 guaranteed
+            is_underdetermined = n_train_final < actual_d_min  # n < d: linear alignment exact on probes
             is_full_rank = rank_bound >= actual_d_min
-
-            # In invariant mode, CKA=1.0 should be approximately 1.0 (within numerical tolerance)
-            # Tolerance derived from float32 machine epsilon (2^-23 ≈ 1.19e-7), with sqrt for accumulated error
-            # sqrt(eps) ≈ 3.45e-4 accounts for O(sqrt(n)) error accumulation in matrix operations
-            float32_machine_eps = 2.0 ** -23  # Exact float32 machine epsilon
-            cka_invariant_tolerance = 1.0 - (float32_machine_eps ** 0.5)
-            cka_invariant_holds = train_cka_aligned > cka_invariant_tolerance if is_underdetermined else None
 
             # Random baseline comparison (sanity check)
             random_baseline_result = None
@@ -567,13 +554,13 @@ def register(app: typer.Typer) -> None:
                 aligned_test_random = backend.matmul(source_test, random_alignment.feature_transform)
                 backend.eval(aligned_train_random, aligned_test_random)
 
-                random_train_cka = compute_linear_cka(aligned_train_random, random_train, backend)
-                random_test_cka = compute_linear_cka(aligned_test_random, random_test, backend)
+                random_train_cka = compute_cka(aligned_train_random, random_train, backend)
+                random_test_cka = compute_cka(aligned_test_random, random_test, backend)
 
                 # Raw measurements only - no interpretation
                 random_baseline_result = {
-                    "trainCkaAligned": random_train_cka,
-                    "testCkaAligned": random_test_cka,
+                    "trainCkaAligned": random_train_cka.cka if random_train_cka.is_valid else 0.0,
+                    "testCkaAligned": random_test_cka.cka if random_test_cka.is_valid else 0.0,
                 }
 
             result = {
@@ -592,7 +579,6 @@ def register(app: typer.Typer) -> None:
                     "name": "invariant" if invariant_mode else "overlap",
                     "description": mode_str,
                     "isUnderdetermined": is_underdetermined,
-                    "ckaInvariantHolds": cka_invariant_holds,
                 },
                 "geometry": {
                     "sourceDim": actual_source_dim,
@@ -614,12 +600,6 @@ def register(app: typer.Typer) -> None:
                     "eligibleWords": eligible_count,
                 },
                 "cka": {
-                    "linear": {
-                        "trainRaw": train_cka_raw,
-                        "trainAligned": train_cka_aligned,
-                        "testRaw": test_cka_raw,
-                        "testAligned": test_cka_aligned,
-                    },
                     "geodesic": {
                         "trainRaw": train_geo_raw.cka if train_geo_raw.is_valid else 0.0,
                         "trainAligned": train_geo_aligned.cka if train_geo_aligned.is_valid else 0.0,
@@ -643,7 +623,7 @@ def register(app: typer.Typer) -> None:
                 output.write_text(json_module.dumps(result, indent=2), encoding="utf-8")
 
             if context.output_format == "text":
-                mode_header = "INVARIANT MODE" if invariant_mode else "OVERLAP MODE"
+                mode_header = "UNDERDETERMINED MODE" if invariant_mode else "OVERLAP MODE"
                 regime_str = "UNDERDETERMINED (n < d)" if is_underdetermined else "OVERDETERMINED (n > d)"
                 lines = [
                     "=" * 60,
@@ -669,12 +649,6 @@ def register(app: typer.Typer) -> None:
                     f"  Train words used: {len(train_shared)}",
                     f"  Test words used: {len(test_shared)}",
                     "",
-                    "CKA RESULTS (Linear - Euclidean):",
-                    f"  Train CKA (raw):     {train_cka_raw:.6f}",
-                    f"  Train CKA (aligned): {train_cka_aligned:.6f}",
-                    f"  Test CKA (raw):      {test_cka_raw:.6f}",
-                    f"  Test CKA (aligned):  {test_cka_aligned:.6f}",
-                    "",
                     "CKA RESULTS (Geodesic - Riemannian):",
                     f"  Train CKA (raw):     {train_geo_raw.cka:.6f}",
                     f"  Train CKA (aligned): {train_geo_aligned.cka:.6f}",
@@ -684,13 +658,10 @@ def register(app: typer.Typer) -> None:
                 ]
 
                 lines.append("TRAIN SET:")
-                lines.append(f"  train_cka_linear = {train_cka_aligned:.6f}")
                 lines.append(f"  train_cka_geodesic = {train_geo_aligned.cka:.6f}")
-                lines.append(f"  cka_invariant_holds = {cka_invariant_holds}")
 
                 lines.append("")
                 lines.append("TEST SET:")
-                lines.append(f"  test_cka_linear = {test_cka_aligned:.6f}")
                 lines.append(f"  test_cka_geodesic = {test_geo_aligned.cka:.6f}")
 
                 if random_baseline_result is not None:

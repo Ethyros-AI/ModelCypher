@@ -1043,7 +1043,7 @@ class RiemannianDensityEstimator:
         kernel K = exp(-d_geo²/2σ²). This respects manifold curvature, unlike
         linear CKA (K = X @ X^T) which assumes flat geometry.
 
-        CKA = 1.0 means identical representational geometry (exact alignment)
+        Geodesic CKA near 1.0 indicates strong representational overlap
         CKA = 0.0 means orthogonal representations (no overlap)
 
         Args:

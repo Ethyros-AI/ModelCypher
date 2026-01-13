@@ -28,7 +28,7 @@ projections onto constrained manifolds." Combining them enables multi-modal
 knowledge addition without interference.
 
 Properties:
-    1. CKA = 1.0 per channel (null-space preserves geometry)
+    1. Geodesic CKA per channel reported as overlap diagnostics
     2. Stable combination (doubly stochastic spectral norm ≤ 1.0)
     3. No interference (channels add, not blend)
 
@@ -153,7 +153,7 @@ class BirkhoffRouter:
     Integration with Null-Space:
         This router is designed to work with GeodesicNullSpaceFilter:
 
-        1. Each channel's delta is projected to target's null space (CKA=1.0)
+        1. Each channel's delta is projected to target's null space (geodesic CKA diagnostic)
         2. Channels are combined via this router (stable mixing)
         3. Result is added to target weights (geometric addition)
     """

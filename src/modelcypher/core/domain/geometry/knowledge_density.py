@@ -453,7 +453,7 @@ def compute_knn_point_cloud_density(
 
     # Density difference: positive where source is denser (transfer opportunity)
     # We need to match points between source and target
-    # Since they're aligned via CKA=1.0, corresponding indices should match
+    # Aligned indices should match; geodesic CKA reports overlap diagnostics
     n_compare = min(n_source, n_target)
     src_compare = source_densities_norm[:n_compare]
     tgt_compare = target_densities_norm[:n_compare]

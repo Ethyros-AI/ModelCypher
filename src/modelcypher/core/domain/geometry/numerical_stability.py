@@ -119,7 +119,7 @@ __all__ = [
     "power_iteration_eigh",
     # GPU-accelerated linear algebra
     "gpu_lstsq",
-    # Invariant alignment (CKA = 1.0 by construction)
+# Invariant alignment (linear CKA = 1.0 by construction)
     "invariant_alignment",
     # Geodesic invariant alignment (preserves manifold structure)
     "geodesic_invariant_alignment",
@@ -1394,7 +1394,7 @@ def gpu_lstsq(
 
 
 # =============================================================================
-# Invariant Alignment: CKA = 1.0 by Construction
+# Invariant Alignment: Linear CKA = 1.0 by Construction
 # =============================================================================
 
 
@@ -1404,7 +1404,7 @@ def invariant_alignment(
     target: "Array",
     stats: dict[str, float] | None = None,
 ) -> "Array":
-    """Compute the alignment transform F where CKA = 1.0 is GUARANTEED.
+    """Compute the alignment transform F where linear CKA = 1.0 is GUARANTEED.
 
     THE MATHEMATICS:
     ================
@@ -1414,7 +1414,7 @@ def invariant_alignment(
         aligned = source @ F = source @ pinv(source) @ target = P @ target
 
     Where P = source @ pinv(source) is the orthogonal projector onto source's
-    column space. CKA = 1.0 by construction.
+    column space. Linear CKA = 1.0 by construction.
 
     LOW-RANK TRUNCATION:
     ====================

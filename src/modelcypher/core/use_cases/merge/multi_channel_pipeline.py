@@ -29,7 +29,7 @@ Mathematical Foundation:
     3. Merge: W' = W_target + combined (geometric addition)
 
     Properties:
-    - CKA = 1.0 per channel (null-space preserves geometry)
+    - Geodesic CKA per channel is reported as overlap diagnostics
     - Stable combination (Birkhoff spectral norm ≤ 1.0)
     - No interference (channels add, not blend)
 
@@ -81,13 +81,13 @@ class MultiChannelMergeConfig:
     # Routing mode for channel combination
     routing_mode: str = "uniform"  # "uniform", "identity", "diagonal_weighted"
 
-    # Whether to verify CKA = 1.0 per channel (slower but safer)
+    # Whether to verify geodesic CKA per channel (slower but safer)
     verify_cka: bool = True
 
     # k-NN neighbors for null-space computation (None = auto-derive)
     k_neighbors: int | None = None
 
-    # Fast mode skips CKA precision checks
+    # Fast mode skips geodesic CKA diagnostics
     fast_mode: bool = False
 
 
@@ -125,7 +125,7 @@ class MultiChannelMergeResult:
     # Per-layer results
     layer_results: dict[str, LayerMergeResult]
 
-    # Per-channel CKA (should all be 1.0)
+    # Per-channel geodesic CKA (overlap diagnostic)
     per_channel_cka: dict[str, float]
 
     # Routing matrix used (last layer's, representative)
@@ -172,7 +172,7 @@ class MultiChannelMergePipeline:
         │                           │      ┌──────────────┐                  │
         │  Source 2 (VL Model) ─────┼──►   │   Channel    │   ┌───────────┐  │
         │                           │      │   Projector  │──►│  Birkhoff │  │
-        │  Source 3 (Text Model) ───┤      │  (CKA=1.0)   │   │   Router  │  │
+    │  Source 3 (Text Model) ───┤      │  (CKA diag)  │   │   Router  │  │
         │                           │      └──────────────┘   └─────┬─────┘  │
         │  Target Model ────────────┘                               │        │
         │                                                           ▼        │
@@ -417,7 +417,7 @@ def run_multi_channel_merge(
         target_weights: {layer_name: weights}.
         channels: List of channel IDs to merge.
         routing_mode: How to combine channels ("uniform", "identity").
-        fast_mode: Skip CKA precision checks.
+        fast_mode: Skip geodesic CKA diagnostics.
         backend: Backend for tensor operations.
 
     Returns:

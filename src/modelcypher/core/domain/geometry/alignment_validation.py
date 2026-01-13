@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cka import compute_linear_cka
+from modelcypher.core.domain.geometry.cka import compute_geodesic_cka, rbf_gram_matrix_with_sigma
 from modelcypher.core.domain.geometry.atlas_protocols import enum_key
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.numerical_stability import invariant_alignment
@@ -60,13 +60,13 @@ class DomainAlignmentReport:
 
 
 def _coverage_ratio(source: "Array", backend: "Backend") -> float:
-    """Compute probe coverage as effective rank divided by ambient dimension."""
+    """Compute probe coverage as effective rank from geodesic Gram spectrum."""
     n = int(source.shape[0])
     d = int(source.shape[1])
     if n <= 0 or d <= 0:
         return 0.0
 
-    gram = backend.matmul(source, backend.transpose(source))
+    gram, _ = rbf_gram_matrix_with_sigma(source, backend)
     eigvals, _ = backend.eigh(gram)
     zeros = backend.zeros_like(eigvals)
     eigvals = backend.maximum(eigvals, zeros)
@@ -116,9 +116,9 @@ def alignment_generalization_report(
     aligned_holdout = backend.matmul(source_holdout, F)
     backend.eval(aligned_train, aligned_holdout)
 
-    train_cka = compute_linear_cka(aligned_train, target_train, backend)
-    holdout_cka = compute_linear_cka(aligned_holdout, target_holdout, backend)
-    raw_holdout_cka = compute_linear_cka(source_holdout, target_holdout, backend)
+    train_cka = compute_geodesic_cka(aligned_train, target_train, backend)
+    holdout_cka = compute_geodesic_cka(aligned_holdout, target_holdout, backend)
+    raw_holdout_cka = compute_geodesic_cka(source_holdout, target_holdout, backend)
 
     alignment_gain = holdout_cka - raw_holdout_cka
     coverage_ratio = _coverage_ratio(source_train, backend)

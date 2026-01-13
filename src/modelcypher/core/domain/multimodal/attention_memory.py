@@ -67,6 +67,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.core.ports.backend import Array, Backend
@@ -346,10 +347,11 @@ class AttentionMemoryInjector:
         direction = source - neutral
         backend.eval(direction)
 
-        # Compute norm before projection
-        direction_norm = float(
-            backend.to_scalar(backend.sqrt(backend.sum(direction * direction)))
-        )
+        # Compute norm before projection (geodesic distance from origin)
+        direction_2d = backend.reshape(direction, (1, -1))
+        direction_norms = geodesic_norms(direction_2d, backend, use_cache=False)
+        backend.eval(direction_norms)
+        direction_norm = float(backend.to_scalar(direction_norms[0]))
 
         if use_null_space and null_basis is not None:
             # Project into null-space
@@ -389,23 +391,25 @@ class AttentionMemoryInjector:
         """
         backend = self._backend
 
-        # Compute memory norm
+        # Compute memory norm (geodesic distance from origin)
         content = backend.array(memory_content.content)
-        memory_norm = float(
-            backend.to_scalar(backend.sqrt(backend.sum(content * content)))
-        )
+        content_2d = backend.reshape(content, (1, -1))
+        memory_norms = geodesic_norms(content_2d, backend, use_cache=False)
+        backend.eval(memory_norms)
+        memory_norm = float(backend.to_scalar(memory_norms[0]))
 
-        # Compute layer activation norm
+        # Compute layer activation norm using geodesic norms
         activations = backend.array(layer_activations)
-        if len(activations.shape) > 1:
-            layer_norms = backend.sqrt(
-                backend.sum(activations * activations, axis=-1)
-            )
-            layer_norm = float(backend.to_scalar(backend.mean(layer_norms)))
-        else:
-            layer_norm = float(
-                backend.to_scalar(backend.sqrt(backend.sum(activations * activations)))
-            )
+        if len(activations.shape) > 2:
+            total_rows = 1
+            for dim in activations.shape[:-1]:
+                total_rows *= dim
+            activations = backend.reshape(activations, (total_rows, activations.shape[-1]))
+        elif len(activations.shape) == 1:
+            activations = backend.reshape(activations, (1, -1))
+        layer_norms = geodesic_norms(activations, backend, use_cache=False)
+        backend.eval(layer_norms)
+        layer_norm = float(backend.to_scalar(backend.mean(layer_norms)))
 
         # Compute relative magnitude (informational only)
         # Use sqrt(float32 machine epsilon) for safe division

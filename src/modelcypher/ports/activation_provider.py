@@ -111,7 +111,8 @@ class ActivationProvider(Protocol):
         Shape: [hidden_dim] (mean-pooled over sequence length).
 
         Used for GramAlign at the 1D→2D interface (token IDs → embedding space).
-        Same CKA=1.0, same geodesic math - applied at the embedding dimension.
+        Linear alignment is exact on probes; geodesic CKA is the overlap diagnostic
+        at the embedding dimension.
 
         Args:
             model: The loaded model.

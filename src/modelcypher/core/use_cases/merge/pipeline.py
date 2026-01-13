@@ -222,7 +222,7 @@ def run_merge(
         # Proceed with selective transplant
         logger.warning(
             "ADAPTIVE BAROMETER: %d processed, %d boundary-preserved, %d skipped. "
-            "Proceeding with selective transplant (mean_linear_cka=%.4f).",
+            "Proceeding with selective transplant (mean_geodesic_cka=%.4f).",
             converged_count, boundary_count, skipped_count, mean_cka
         )
 

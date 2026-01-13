@@ -558,7 +558,7 @@ def compute_cka_from_centered_grams(
     return max(0.0, min(1.0, hsic_ab / denom))
 
 
-def compute_linear_cka(
+def compute_geodesic_cka(
     activations_x: "Array",
     activations_y: "Array",
     backend: "Backend | None" = None,
@@ -641,6 +641,15 @@ def compute_linear_cka(
         return 0.0
 
     return max(0.0, min(1.0, hsic_xy / denom))
+
+
+def compute_linear_cka(
+    activations_x: "Array",
+    activations_y: "Array",
+    backend: "Backend | None" = None,
+) -> float:
+    """DEPRECATED: use compute_geodesic_cka (geodesic RBF kernel)."""
+    return compute_geodesic_cka(activations_x, activations_y, backend)
 
 
 # =============================================================================
@@ -816,10 +825,12 @@ def compute_cka_split(
     target_c = target_activations - target_mean
     b.eval(source_c, target_c)
 
-    # Response magnitude per sample = L2 norm of centered activations
+    # Response magnitude per sample = geodesic norm of centered activations
     # This measures how much the model "responds" to each sample
-    source_response = b.sqrt(b.sum(source_c * source_c, axis=1))  # [n]
-    target_response = b.sqrt(b.sum(target_c * target_c, axis=1))  # [n]
+    # Uses k-NN graph shortest paths for proper manifold distances
+    from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+    source_response = geodesic_norms(source_c, b, use_cache=False)  # [n]
+    target_response = geodesic_norms(target_c, b, use_cache=False)  # [n]
     b.eval(source_response, target_response)
 
     # Normalize to [0, 1] range (relative to max)
@@ -905,7 +916,8 @@ def compute_cka_split(
 __all__ = [
     # Core
     "compute_cka",
-    "compute_linear_cka",  # For linear Gram alignment validation
+    "compute_geodesic_cka",
+    "compute_linear_cka",
     "compute_cka_from_grams",
     "compute_cka_from_centered_grams",
     "rbf_gram_matrix",

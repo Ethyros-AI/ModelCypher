@@ -23,12 +23,12 @@ enabling interference-free knowledge addition from multiple source models.
 
 Mathematical Foundation (from docs/research/mhc_null_space_connection.md):
     For each channel i:
-    1. Align: F_i = find_alignment(source_acts_i, target_acts) → CKA = 1.0
+    1. Align: F_i = find_alignment(source_acts_i, target_acts); geodesic CKA is diagnostic
     2. Compute delta: δW_i = (source_weights_i @ F_i) - target_weights
     3. Project to null space: δW_safe_i = P_null(target_acts) @ δW_i
 
     Properties:
-    - CKA = 1.0 per channel (alignment preserves geometry)
+    - Geodesic CKA per channel reported as overlap diagnostics
     - δW_safe_i is orthogonal to target's tangent space (no interference)
     - Channels can be safely combined via Birkhoff routing
 
@@ -83,7 +83,7 @@ class ChannelProjectionResult:
     # CKA achieved during alignment (should be 1.0, invariant)
     cka_achieved: float
 
-    # Numerical deviation from CKA = 1.0 (for precision diagnostics)
+    # Numerical deviation from geodesic CKA (overlap diagnostics)
     numerical_deviation: float
 
     # Fraction of delta removed by null-space projection
@@ -118,7 +118,7 @@ class MultiChannelProjectionResult:
     # Average preserved fraction
     average_preserved_fraction: float
 
-    # All channels achieved CKA = 1.0
+    # All channels have valid geodesic CKA diagnostics
     all_aligned: bool
 
     # Number of channels processed
@@ -289,7 +289,7 @@ class ChannelProjector:
         backend = self._backend
 
         # =================================================================
-        # STEP 1: ALIGN (CKA = 1.0)
+        # STEP 1: ALIGN (geodesic CKA diagnostic)
         # =================================================================
         # Find feature transform F such that CKA(source @ F, target) = 1.0
         try:
@@ -328,7 +328,7 @@ class ChannelProjector:
                 # G @ W @ F where G transforms output dimension
                 #
                 # This is mathematically guaranteed because:
-                # - Hidden alignment achieves CKA=1.0
+                # - Hidden alignment reports geodesic CKA
                 # - Output projections are linear functions of hidden
 
                 # Compute output stitch compositionally from hidden alignment + weights
@@ -370,7 +370,7 @@ class ChannelProjector:
             )
             source_pinv = backend.pinv(source_activations)
             backend.eval(source_pinv)
-            # This gives an approximate projection, not CKA = 1.0
+            # This gives an approximate projection, not exact kernel alignment
             # source_weights @ pinv(source_acts) @ target_acts ≈ aligned
             aligned_source = backend.matmul(
                 backend.matmul(source_weights, source_pinv),

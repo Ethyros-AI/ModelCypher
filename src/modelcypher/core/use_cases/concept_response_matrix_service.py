@@ -69,7 +69,7 @@ class CRMCompareSummary:
     target_path: str
     common_anchor_count: int
     mean_cka: float
-    alignment_precision: float  # Numerical precision (1.0 = exact, CKA=1.0 is invariant)
+    alignment_precision: float  # Numerical precision (1.0 = exact kernel alignment)
     aligned: bool
     layer_correspondence: list[dict[str, float | int]]
     cka_matrix: list[list[float]] | None

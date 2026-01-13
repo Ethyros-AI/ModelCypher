@@ -663,7 +663,7 @@ class SectionalCurvatureEstimator:
             return division_epsilon(backend, neighbors)
 
         # Compute characteristic scale as median neighbor distance
-        # Use ALL points - no subsampling. CKA=1.0 requires exact computation.
+        # Use ALL points - no subsampling. Geodesic diagnostics need full coverage.
         subset = neighbors
 
         # Compute pairwise geodesic distances for scale estimation

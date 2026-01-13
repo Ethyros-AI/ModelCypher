@@ -128,7 +128,8 @@ class MLXActivationProvider:
         Shape: [hidden_dim] (mean-pooled over sequence length).
 
         Used for GramAlign at the 1D→2D interface (token IDs → embedding space).
-        Same CKA=1.0, same geodesic math - applied at the embedding dimension.
+        Linear alignment is exact on probes; geodesic CKA is the overlap diagnostic
+        at the embedding dimension.
 
         Returns MLX array directly (stays on Metal GPU).
         """
@@ -451,7 +452,8 @@ class MLXActivationProvider:
         2. K activations: [num_kv_heads * head_dim] - for k_proj stitching
         3. V activations: [num_kv_heads * head_dim] - for v_proj stitching
 
-        Each component gets its own CKA=1.0 alignment transform.
+        Each component gets its own alignment transform; geodesic CKA reports
+        overlap per component.
 
         Returns tuple of (q_activations, k_activations, v_activations).
         """

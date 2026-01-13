@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cka import compute_linear_cka
+from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
@@ -495,7 +495,7 @@ class Crosscoder:
             shared_ft_contrib = shared_base_contrib  # Same shared features
             b.eval(shared_base_contrib, shared_ft_contrib)
 
-            shared_cka = compute_linear_cka(shared_base_contrib, shared_ft_contrib, b)
+            shared_cka = compute_geodesic_cka(shared_base_contrib, shared_ft_contrib, b)
         else:
             shared_cka = 1.0  # No shared features = perfectly aligned (trivially)
 

@@ -63,7 +63,7 @@ Properties:
 ===========
 
 - Dimension-agnostic: Works across ANY dimensions via Gram matrices
-- CKA = 1.0 for aligned layers: Exact alignment is always achievable
+- Linear alignment is closed-form; geodesic CKA reports overlap for aligned layers
 - No interpolation: Projects to shared subspace, doesn't blend representations
 - Numerically stable: Uses regularization derived from dtype, not heuristics
 

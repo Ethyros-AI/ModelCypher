@@ -160,8 +160,8 @@ def geometry_crm_compare(
         payload["ckaMatrix"] = summary.cka_matrix
 
     if context.output_format == "text":
-        # CKA = 1.0 is an INVARIANT, not a measurement
-        # We report numerical precision of the alignment computation
+        # Gram-space kernel alignment is exact by construction.
+        # We report numerical precision of that computation.
         precision_status = "OK" if summary.alignment_precision > 0.999 else "PRECISION ISSUE"
         lines = [
             "CRM COMPARISON",
@@ -169,7 +169,7 @@ def geometry_crm_compare(
             f"Target: {summary.target_path}",
             f"Common Anchors: {summary.common_anchor_count}",
             "",
-            "Alignment (CKA = 1.0 invariant):",
+            "Alignment (Gram-space kernel precision):",
             f"  Numerical Precision: {summary.alignment_precision:.4f} ({precision_status})",
             "",
             "Layer Mapping:",

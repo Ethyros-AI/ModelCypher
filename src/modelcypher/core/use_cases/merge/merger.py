@@ -759,10 +759,19 @@ class UnifiedGeometricMerger:
             # If residual equals delta (no fit), scale = 0.0
             fit_quality = 1.0 - min(1.0, residual_norm / (delta_norm + 1e-8))
 
-            # For weight magnitudes, use Frobenius norm (weight matrices, not activations)
-            # Weight matrices don't lie on the same activation manifold
-            weight_delta_norm = float(b.to_scalar(b.sqrt(b.sum(weight_delta ** 2))))
-            weight_norm = float(b.to_scalar(b.sqrt(b.sum(output_weight ** 2))))
+            # Geodesic Frobenius-like norm for weight matrices
+            # Treat rows as points, compute geodesic norms, aggregate
+            def _geodesic_frobenius(w):
+                shape = b.shape(w)
+                if len(shape) >= 2 and shape[0] >= 2:
+                    geo_norms_arr = geodesic_norms(w, b)
+                    b.eval(geo_norms_arr)
+                    return float(b.to_scalar(b.sqrt(b.sum(geo_norms_arr * geo_norms_arr))))
+                else:
+                    return float(b.to_scalar(b.sqrt(b.sum(w * w))))
+
+            weight_delta_norm = _geodesic_frobenius(weight_delta)
+            weight_norm = _geodesic_frobenius(output_weight)
             magnitude_ratio = min(1.0, weight_norm / (weight_delta_norm + 1e-8))
 
             # Final scale is the more conservative of fit quality and magnitude ratio

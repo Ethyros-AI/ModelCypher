@@ -63,13 +63,11 @@ class MergeValidationError(MergeError):
 
 
 class AlignmentFailureError(MergeValidationError):
-    """GramAligner failed to achieve CKA = 1.0.
+    """Alignment diagnostics reported a failure.
 
-    The geometry is INVARIANT across all LLMs - they encode the same relational
-    structure (angles, distances, topology). If CKA < 1.0, it means our algorithm
-    has a bug, not that the models are "incompatible."
-
-    Fix the algorithm. The exact alignment EXISTS - we just failed to find it.
+    Linear alignment is closed-form; geodesic CKA is an overlap diagnostic and
+    can be < 1.0 when probes miss shared structure. This error should be used
+    for numerical failures (NaN/Inf) or missing prerequisites, not low CKA.
 
     Context typically includes:
     - achieved_cka: The CKA value that was achieved
@@ -83,13 +81,10 @@ class AlignmentFailureError(MergeValidationError):
 
 
 class AlignmentPrecisionError(MergeError):
-    """Strict mode: GramAligner failed to achieve CKA = 1.0.
+    """Strict mode: alignment precision check failed.
 
-    This is raised in strict mode when the alignment algorithm doesn't achieve
-    perfect CKA=1.0 (within float32 precision). This indicates a bug in the
-    alignment algorithm, not model incompatibility.
-
-    The geometry is INVARIANT across all LLMs. CKA = 1.0 is ALWAYS achievable.
+    Linear alignment is closed-form; geodesic CKA is diagnostic and may be
+    < 1.0. This error should be reserved for numerical failures, not low CKA.
     """
 
     pass

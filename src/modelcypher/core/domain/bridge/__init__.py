@@ -18,8 +18,8 @@
 """Bridge module for cross-modal knowledge transfer.
 
 This module provides tools for creating affine bridges between encoder spaces.
-Based on the validated finding that CKA = 1.0 is achievable across all modalities
-(vision, audio, text, diffusion).
+Linear alignment is closed-form; geodesic CKA reports manifold overlap across
+modalities (vision, audio, text, diffusion).
 
 Key insight: The geometry is discovered, not created. Different encoders learn
 the same invariant shape - bridges are just coordinate transforms.

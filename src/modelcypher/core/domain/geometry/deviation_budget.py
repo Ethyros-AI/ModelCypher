@@ -296,7 +296,11 @@ class DeviationTracker:
         source_weights: dict[str, Any],
         target_weights: dict[str, Any],
     ) -> float:
-        """Compute the L2 magnitude of delta between source and target."""
+        """Compute geodesic magnitude of delta between source and target.
+
+        Uses geodesic norms (k-NN graph shortest paths) to properly account
+        for manifold curvature in the weight delta.
+        """
         backend = self._backend
         delta_sq = backend.array(0.0)
 
@@ -305,7 +309,28 @@ class DeviationTracker:
                 src = backend.array(source_weights[key])
                 tgt = backend.array(target_weights[key])
                 delta = src - tgt
-                delta_sq = delta_sq + backend.sum(delta * delta)
+                shape = backend.shape(delta)
+
+                if len(shape) >= 2:
+                    # Reshape to 2D if needed
+                    if len(shape) > 2:
+                        n_rows = 1
+                        for dim in shape[:-1]:
+                            n_rows *= dim
+                        delta = backend.reshape(delta, (n_rows, shape[-1]))
+                        shape = backend.shape(delta)
+
+                    # Use geodesic norms if we have enough rows
+                    if shape[0] >= 2:
+                        geo_norms_arr = geodesic_norms(delta, backend, use_cache=False)
+                        backend.eval(geo_norms_arr)
+                        delta_contrib = backend.sum(geo_norms_arr * geo_norms_arr)
+                    else:
+                        delta_contrib = backend.sum(delta * delta)
+                else:
+                    delta_contrib = backend.sum(delta * delta)
+
+                delta_sq = delta_sq + delta_contrib
                 backend.eval(delta_sq)
 
         return float(backend.sqrt(delta_sq))

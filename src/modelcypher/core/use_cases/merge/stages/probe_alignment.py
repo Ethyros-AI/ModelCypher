@@ -213,7 +213,6 @@ def align_layers(
 
             from modelcypher.core.domain.geometry.cka import (
                 compute_cka_backend,
-                compute_linear_cka,
             )
 
             result["raw_cka"] = float(
@@ -229,13 +228,13 @@ def align_layers(
             F_arr = alignment_result.feature_transform
             aligned = backend.matmul(src_combined, F_arr)
             backend.eval(aligned)
-            linear_cka = float(
-                compute_linear_cka(aligned, tgt_stacked, backend=backend)
-            )
-            linear_deviation = abs(1.0 - linear_cka)
-            result["achieved_cka"] = linear_cka
-            result["numerical_deviation"] = linear_deviation
-            result["geodesic_cka"] = alignment_result.achieved_cka
+
+            # Primary metric: geodesic RBF CKA (what the alignment optimizes)
+            geodesic_cka = alignment_result.achieved_cka
+            geodesic_deviation = abs(1.0 - geodesic_cka)
+            result["achieved_cka"] = geodesic_cka
+            result["numerical_deviation"] = geodesic_deviation
+            result["geodesic_cka"] = geodesic_cka  # Same as achieved_cka (for clarity)
             result["linear_iterations"] = alignment_result.linear_iterations
             cgls_iterations_by_layer[tgt_layer] = alignment_result.linear_iterations
             logger.info(
@@ -248,38 +247,41 @@ def align_layers(
             if not rbf_consistency_checked:
                 from modelcypher.core.domain.geometry.cka import compute_cka
 
+                # Verify geodesic RBF CKA via independent computation
                 rbf_result = compute_cka(aligned, tgt_stacked, backend=backend)
                 rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
 
                 precision = sqrt_scalar(machine_epsilon(backend, aligned), backend)
                 rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
-                agreement_deviation = abs(rbf_val - linear_cka) if rbf_val == rbf_val else float("inf")
+                # Agreement: aligner's geodesic CKA vs compute_cka's geodesic CKA
+                agreement_deviation = abs(rbf_val - geodesic_cka) if rbf_val == rbf_val else float("inf")
 
                 rbf_consistency_hidden = {
                     "rbf_cka": float(rbf_val) if rbf_val == rbf_val else 0.0,
                     "rbf_deviation": float(rbf_deviation),
-                    "linear_deviation": float(linear_deviation),
+                    "geodesic_deviation": float(geodesic_deviation),
                     "agreement_deviation": float(agreement_deviation),
                     "precision_threshold": float(precision),
                     "layer": float(tgt_layer),
                 }
-                if linear_deviation > precision:
+                # Geodesic CKA should be ~1.0 after alignment (by construction)
+                if geodesic_deviation > precision:
                     logger.error(
-                        "PROBE: Linear CKA deviation %.2e > precision %.2e for layer %d.",
-                        linear_deviation,
+                        "PROBE: Geodesic CKA deviation %.2e > precision %.2e for layer %d.",
+                        geodesic_deviation,
                         precision,
                         tgt_layer,
                     )
                 if rbf_deviation > precision:
                     logger.info(
-                        "PROBE: Geodesic CKA deviation %.2e > precision %.2e for layer %d.",
+                        "PROBE: Independent RBF CKA deviation %.2e > precision %.2e for layer %d.",
                         rbf_deviation,
                         precision,
                         tgt_layer,
                     )
                 if agreement_deviation > precision:
                     logger.info(
-                        "PROBE: Geodesic vs linear CKA deviation %.2e > precision %.2e for layer %d.",
+                        "PROBE: Aligner vs compute_cka geodesic CKA deviation %.2e > precision %.2e for layer %d.",
                         agreement_deviation,
                         precision,
                         tgt_layer,
@@ -299,12 +301,12 @@ def align_layers(
             result["scale_ratio"] = alignment_result.scale_ratio
 
             layer_precision = sqrt_scalar(machine_epsilon(backend, aligned), backend)
-            if linear_deviation > layer_precision:
+            if geodesic_deviation > layer_precision:
                 logger.warning(
-                    "PROBE: Layer %s -> %d linear CKA deviation=%.2e > precision %.2e.",
+                    "PROBE: Layer %s -> %d geodesic CKA deviation=%.2e > precision %.2e.",
                     src_layers_list,
                     tgt_layer,
-                    linear_deviation,
+                    geodesic_deviation,
                     layer_precision,
                 )
 

@@ -41,7 +41,7 @@ For a weight matrix W with singular values σ₁ ≥ σ₂ ≥ ... ≥ σᵣ:
    - Stable models have effective rank >> 1
 
 These metrics track numerical stability - distinct from geometric alignment (CKA).
-A merged model can have CKA=1.0 (geometry preserved) but degraded stability
+A merged model can have high geodesic CKA (geometry overlap) but degraded stability
 (high condition number) leading to broken generation.
 
 Usage:

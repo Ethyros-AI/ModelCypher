@@ -29,7 +29,7 @@ Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
 Stage 4: VALIDATE - Safety checks (numerical stability, refusal preservation, behavioral probes)
 
 REMOVED (proven redundant):
-- PERMUTE: GramAligner's CKA=1.0 in geodesic RKHS subsumes discrete permutation alignment.
+- PERMUTE: GramAligner alignment in RKHS subsumes discrete permutation alignment.
   Permutation is a special case of continuous linear transforms already optimized by probe.
 - ROTATE/PROPAGATE: No mathematical guarantee of boundary preservation.
 
@@ -51,7 +51,7 @@ from .density import (
     stage_density as stage_density_impl,
 )
 # NOTE: ProbeConfig was REMOVED - Probe always uses precise mode with all probes.
-# PERMUTE STAGE REMOVED: GramAligner's CKA=1.0 alignment subsumes permutation.
+# PERMUTE STAGE REMOVED: GramAligner alignment subsumes permutation.
 from .transplant import (
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,

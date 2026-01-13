@@ -72,6 +72,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -370,12 +371,8 @@ class GramAligner:
         # SCALE RATIO: ||target|| / ||source @ F||
         # =====================================================================
         source_aligned = b.matmul(source_activations, F)
-        aligned_norm = b.sqrt(b.sum(source_aligned * source_aligned) + regularization_epsilon(b, source_aligned))
-        target_norm = b.sqrt(b.sum(target_activations * target_activations) + regularization_epsilon(b, target_activations))
-        b.eval(aligned_norm, target_norm)
-
-        aligned_norm_val = float(b.to_scalar(aligned_norm))
-        target_norm_val = float(b.to_scalar(target_norm))
+        aligned_norm_val = self._geodesic_frobenius_norm(source_aligned)
+        target_norm_val = self._geodesic_frobenius_norm(target_activations)
 
         if aligned_norm_val > precision:
             scale_ratio = target_norm_val / aligned_norm_val
@@ -454,6 +451,21 @@ class GramAligner:
             logger.debug("Linear alignment achieves geodesic CKA=%.6f", geodesic_cka)
 
         return F_init, 0, geodesic_cka
+
+    def _geodesic_frobenius_norm(self, values: "Array") -> float:
+        """Compute a geodesic Frobenius-like norm for activation matrices."""
+        b = self._backend
+        arr = b.array(values) if not hasattr(values, "shape") else values
+        shape = b.shape(arr)
+        if len(shape) == 1:
+            arr = b.reshape(arr, (1, shape[0]))
+        elif len(shape) != 2:
+            arr = b.reshape(arr, (shape[0], -1))
+
+        norms = geodesic_norms(arr, b)
+        norms_sq = b.sum(norms * norms)
+        b.eval(norms, norms_sq)
+        return float(b.to_scalar(b.sqrt(norms_sq + regularization_epsilon(b, norms))))
 
     def _diagnose(
         self,

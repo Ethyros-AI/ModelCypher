@@ -27,9 +27,9 @@ destroying existing knowledge.
 
 Pipeline:
 1. Extract embeddings from all modalities for shared concepts
-2. Align each modality to target LLM geometry (CKA=1.0)
+2. Align each modality to target LLM geometry (closed-form linear alignment)
 3. Project aligned knowledge into null space
-4. Validate geometry preservation
+4. Validate geometry preservation (geodesic CKA diagnostics)
 """
 
 from __future__ import annotations
@@ -48,6 +48,12 @@ from modelcypher.core.domain.multimodal import (
     ModalityEmbeddings,
 )
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.geometry.cka import (
+    geodesic_squared_distances,
+    _shared_rbf_sigma,
+    _rbf_gram_from_sq_distances,
+)
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +96,7 @@ class MultiModalMergeService:
 
     This service orchestrates the complete pipeline:
     1. Extract embeddings from target LLM and source modalities
-    2. Align each source to target geometry (CKA=1.0)
+    2. Align each source to target geometry (linear alignment; geodesic CKA diagnostics)
     3. Merge into null space
     4. Validate preservation
 
@@ -176,7 +182,7 @@ class MultiModalMergeService:
         for source in source_embeds:
             cka_before = self._compute_cka(source.embeddings, target_embeds.embeddings)
 
-            # Use GramAligner to find CKA=1.0 transform
+            # Use GramAligner to find linear alignment; geodesic CKA is diagnostic
             result = self._aligner.find_perfect_alignment(
                 source.embeddings,
                 target_embeds.embeddings,
@@ -252,19 +258,24 @@ class MultiModalMergeService:
         X: "Backend.Array",  # type: ignore
         Y: "Backend.Array",  # type: ignore
     ) -> float:
-        """Compute CKA between two embedding matrices."""
+        """Compute CKA between two embedding matrices using geodesic RBF Gram."""
         backend = self._backend
 
         X = backend.astype(X, "float32")
         Y = backend.astype(Y, "float32")
+        backend.eval(X, Y)
 
-        # Center
-        X = X - backend.mean(X, axis=0, keepdims=True)
-        Y = Y - backend.mean(Y, axis=0, keepdims=True)
+        # Geodesic RBF Gram matrices (manifold-aware similarity)
+        sq_dist_X = geodesic_squared_distances(X, backend)
+        sq_dist_Y = geodesic_squared_distances(Y, backend)
+        backend.eval(sq_dist_X, sq_dist_Y)
 
-        # Gram matrices
-        K = backend.matmul(X, backend.transpose(X))
-        L = backend.matmul(Y, backend.transpose(Y))
+        # Shared sigma for consistent scale
+        sigma = _shared_rbf_sigma(sq_dist_X, sq_dist_Y, backend)
+
+        K = _rbf_gram_from_sq_distances(sq_dist_X, sigma, backend)
+        L = _rbf_gram_from_sq_distances(sq_dist_Y, sigma, backend)
+        backend.eval(K, L)
 
         n = int(K.shape[0])
         H = backend.eye(n) - backend.ones((n, n)) / n
@@ -326,12 +337,21 @@ class MultiModalMergeService:
         # Apply weights to delta
         filtered_delta = delta * weights
 
-        # Compute norms for metrics
+        # Compute geodesic norms for metrics (manifold-aware magnitude)
+        delta_2d = delta
+        filtered_2d = filtered_delta
+        if len(delta.shape) == 1:
+            delta_2d = backend.reshape(delta, (1, -1))
+        if len(filtered_delta.shape) == 1:
+            filtered_2d = backend.reshape(filtered_delta, (1, -1))
+        geo_norms_before = geodesic_norms(delta_2d, backend, use_cache=False)
+        geo_norms_after = geodesic_norms(filtered_2d, backend, use_cache=False)
+        backend.eval(geo_norms_before, geo_norms_after)
         delta_norm_before = float(
-            backend.to_scalar(backend.sqrt(backend.sum(delta * delta)))
+            backend.to_scalar(backend.sqrt(backend.sum(geo_norms_before * geo_norms_before)))
         )
         delta_norm_after = float(
-            backend.to_scalar(backend.sqrt(backend.sum(filtered_delta * filtered_delta)))
+            backend.to_scalar(backend.sqrt(backend.sum(geo_norms_after * geo_norms_after)))
         )
 
         # sqrt(float32 machine epsilon) for division safety

@@ -573,12 +573,12 @@ def filter_core_probes_by_graft_mask(
         core_probe_ids: Original set of core probe IDs (from domain selection).
         layer_idx: Current layer being processed.
         graft_mask: Graft mask from density analysis. If None, graft all probes
-            (CKA=1.0 invariant means null-space projection handles selectivity).
+            (null-space projection handles selectivity).
 
     Returns:
         Filtered set of probe IDs that should be grafted at this layer.
     """
-    # CKA=1.0 invariant: when graft_mask is None, graft everything
+    # When graft_mask is None, graft everything.
     # Null-space projection ensures non-interference by construction
     if graft_mask is None:
         return core_probe_ids

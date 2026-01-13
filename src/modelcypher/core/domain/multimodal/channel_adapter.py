@@ -32,7 +32,7 @@ Architecture:
     │  CLIP Encoder ──────┐                                               │
     │                     │   ┌──────────────┐   ┌───────────────┐        │
     │  Whisper Encoder ───┼──►│  GramAligner │──►│  Null Space   │        │
-    │                     │   │  (CKA=1.0)   │   │  Projection   │        │
+    │                     │   │ (CKA diag)  │   │  Projection   │        │
     │  Target LLM ────────┘   └──────────────┘   └───────┬───────┘        │
     │                                                    │                │
     │                         ┌──────────────────────────┴───────────┐    │
@@ -160,7 +160,7 @@ class MultiModalChannelAdapter:
 
         This method:
         1. Extracts embeddings from target LLM and source encoders
-        2. Computes alignment transforms (CKA=1.0)
+        2. Computes alignment transforms (geodesic CKA diagnostics)
         3. Creates bidirectional offramp projections
         4. Merges aligned knowledge into target's null space
 

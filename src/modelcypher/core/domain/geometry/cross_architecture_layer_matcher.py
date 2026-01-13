@@ -273,6 +273,7 @@ class CrossArchitectureLayerMatcher:
         mean_cka = sum(mapping.cka for mapping in mappings) / float(len(mappings)) if mappings else 0.0
         backend = get_default_backend()
         eps = machine_epsilon(backend, backend.array([1.0]))
+        # "Aligned" here means numerically perfect geodesic match (rare).
         aligned = bool(mappings) and all(mapping.cka >= 1.0 - eps for mapping in mappings)
 
         visualization = VisualizationData(
@@ -485,17 +486,17 @@ class CrossArchitectureLayerMatcher:
     ) -> list[list[float]]:
         """Compute CKA matrix using Gram alignment.
 
-        For each (source_layer, target_layer) pair, finds the alignment transform
-        and uses (1 - numerical_deviation) as the correspondence score.
+        For each (source_layer, target_layer) pair, measures geodesic CKA
+        without applying any alignment transform.
 
-        CKA = 1.0 for corresponding layers (same geometric structure).
-        CKA < 1.0 for non-corresponding layers (different information).
+        Geodesic CKA near 1.0 suggests strong structural overlap.
+        Lower CKA indicates divergent structure or limited probe coverage.
         """
-        # Use compute_linear_cka to MEASURE similarity between layers.
+        # Use geodesic CKA to MEASURE similarity between layers.
         # NOTE: We DO NOT use find_alignment here because:
-        # - find_alignment TRANSFORMS source to match target, achieving CKA=1.0 by construction
+        # - find_alignment TRANSFORMS source to match target (linear alignment on probes)
         # - Here we want to MEASURE native similarity WITHOUT transformation
-        from modelcypher.core.domain.geometry.cka import compute_linear_cka
+        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 
         rows = source_crm.layer_count
         cols = target_crm.layer_count
@@ -537,7 +538,7 @@ class CrossArchitectureLayerMatcher:
                     continue
 
                 # Measure native CKA similarity between layers
-                cka = compute_linear_cka(source_arr, target_arr, backend)
+                cka = compute_geodesic_cka(source_arr, target_arr, backend)
                 matrix[source_layer][target_layer] = max(0.0, min(1.0, cka))
 
         return matrix

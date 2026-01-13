@@ -381,7 +381,7 @@ def batch(
     target: str = typer.Option(..., "--target", "-t", help="Target model (receives all knowledge)"),
     output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
     accumulative: bool = typer.Option(True, "--accumulative/--sequential", help="Accumulative (add all to target) vs sequential merging"),
-    fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks (safe: CKA=1.0 is invariant)"),
+    fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips geodesic CKA diagnostics (alignment is closed-form)"),
     detect_outliers: bool = typer.Option(False, "--detect-outliers", help="Analyze concept alignment before merging (shows which models disagree)"),
     consensus_mode: bool = typer.Option(False, "--consensus/--no-consensus", help="Use consensus-based correction: fix misaligned concepts before adding"),
 ) -> None:
@@ -391,8 +391,8 @@ def batch(
     target (e.g., LFM2). The target is loaded and probed ONCE, then reused
     for all source merges.
 
-    CKA = 1.0 is an invariant (not a target). All models encode the same
-    geometric shape. The alignment transform achieves CKA = 1.0 by construction.
+    Linear alignment is closed-form. Geodesic CKA reports manifold overlap
+    and can be < 1.0 when probes miss shared structure.
 
     Accumulative mode (default) projects all sources into the ORIGINAL target's
     null-space. This preserves target behavior while adding all source knowledge.
@@ -428,7 +428,7 @@ def batch(
 
     typer.echo(f"BATCH MERGE: {len(sources)} sources → {target}")
     typer.echo(f"  Mode: {'accumulative' if accumulative else 'sequential'}")
-    typer.echo(f"  Fast mode: {fast_mode} (CKA=1.0 is invariant)")
+    typer.echo(f"  Fast mode: {fast_mode} (geodesic diagnostics skipped)")
     if consensus_mode:
         typer.echo("  Consensus: ENABLED (correction + addition)")
     typer.echo("  Scale: auto-derived from deviation budget")
@@ -452,7 +452,12 @@ def batch(
         typer.echo("")
 
         # Load models and run quick probe to build Gram matrices
-        from modelcypher.core.domain.geometry.gram_aligner import linear_cka
+        from modelcypher.core.domain.geometry.cka import (
+            compute_cka_from_grams,
+            geodesic_squared_distances,
+            _shared_rbf_sigma,
+            _rbf_gram_from_sq_distances,
+        )
         from modelcypher.adapters.mlx_model_loader import MLXModelLoader
         from modelcypher.core.domain.agents.probe_loader import ProbeLoader
 
@@ -490,9 +495,15 @@ def batch(
                 gram_matrices.append(None)
                 continue
 
-            # Build Gram matrix K = X @ X.T (n_probes × n_probes, dimension-invariant)
+            # Build geodesic RBF Gram matrix (n_probes × n_probes, dimension-invariant)
+            # Uses k-NN graph shortest paths for proper manifold distances
             X = backend.stack(activations, axis=0)
-            K = backend.matmul(X, backend.transpose(X, (1, 0)))
+            backend.eval(X)
+            sq_dist = geodesic_squared_distances(X, backend)
+            # Use median heuristic for sigma (data-derived, no hardcoded values)
+            sigma = _shared_rbf_sigma(sq_dist, sq_dist, backend)
+            K = _rbf_gram_from_sq_distances(sq_dist, sigma, backend)
+            backend.eval(K)
             gram_matrices.append(K)
 
             # Clean up model
@@ -500,8 +511,7 @@ def batch(
             if hasattr(backend, "clear_cache"):
                 backend.clear_cache()
 
-        # Compare Gram matrices using CKA
-        # CKA is invariant to orthogonal transforms and isotropic scaling
+        # Compare Gram matrices using geodesic CKA (overlap diagnostic)
         detector = OutlierDetector(backend)
         n_models = len(gram_matrices)
         valid_grams = [(i, K) for i, K in enumerate(gram_matrices) if K is not None]
@@ -515,7 +525,7 @@ def batch(
             for i, (idx_i, K_i) in enumerate(valid_grams):
                 for j, (idx_j, K_j) in enumerate(valid_grams):
                     if i < j:
-                        cka_val = float(backend.to_scalar(linear_cka(K_i, K_j, backend)))
+                        cka_val = compute_cka_from_grams(K_i, K_j, backend)
                         pairwise_cka[(idx_i, idx_j)] = cka_val
 
             # Compute mean CKA for each model (higher = more aligned with others)
@@ -705,7 +715,7 @@ def multi_channel(
         W' = W_target + sum_j H[i,j] * P_null(A_target) @ delta_W_j
 
     Properties:
-    - CKA = 1.0 per channel (geometry preserved)
+    - Geodesic CKA per channel is reported as overlap diagnostics
     - Spectral norm <= 1.0 (stable combination)
     - No interference (channels add, not blend)
 
@@ -793,13 +803,12 @@ def bridge(
 ) -> None:
     """Generate a cross-modal bridge between two encoders.
 
-    Creates a linear transform that maps embeddings from SOURCE space to TARGET
-    space with CKA = 1.0 (perfect kernel alignment). The bridge can then be
-    applied to transform embeddings between modalities.
+    Creates a linear transform that maps embeddings from SOURCE space to TARGET.
+    Geodesic CKA reports manifold overlap for the aligned embeddings.
 
     Uses semantic concept probes from the atlas system (4596 probes across 23
     categories). These structured concepts span the semantic manifold systematically,
-    guaranteeing CKA = 1.0 alignment.
+    improving probe coverage for geodesic alignment diagnostics.
 
     The bridge is saved in safetensors format and includes:
     - Forward transform (source → target)
@@ -808,8 +817,8 @@ def bridge(
     - Metadata (dimensions, names, CKA achieved)
 
     Mathematical Foundation:
-        F = pinv(K_source) @ K_target  (via GramAlign)
-        Guarantees CKA(source @ F, target) = 1.0 when n ≤ min(d_source, d_target)
+        F = pinv(source) @ target  (closed-form linear alignment)
+        Geodesic CKA reports overlap on the aligned probes.
 
     Examples:
         mc merge bridge /path/to/clip /path/to/lfm2 -o clip_to_lfm2.safetensors
@@ -873,7 +882,7 @@ def bridge(
         typer.echo(f"  Source dim: {source_embed.shape[-1]}, Target dim: {target_embed.shape[-1]}")
 
         # Sample activations using atlas semantic probes
-        # Atlas probes span the manifold systematically, guaranteeing CKA = 1.0
+        # Atlas probes span the manifold systematically, improving overlap diagnostics
         typer.echo("  Loading atlas probes (semantic concepts)...")
         source_activations, target_activations = _sample_atlas_probes(
             backend,

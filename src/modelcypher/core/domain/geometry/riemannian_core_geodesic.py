@@ -80,8 +80,14 @@ class RiemannianGeodesicMixin:
         Compute geodesic distances using a k-NN graph and shortest paths.
 
         This implements the Isomap-style geodesic computation:
-        1. Build a k-NN graph where edge weights are chord distances (local edges)
-        2. Compute shortest paths (geodesics) using Floyd-Warshall or sparse Dijkstra
+        1. Build a k-NN graph where edge weights are Euclidean (chord) distances
+        2. Compute shortest paths (geodesics) using Floyd-Warshall
+
+        CHORD BOOTSTRAP: Local edge weights use Euclidean distances, which
+        approximate geodesic distances when k is small (local flatness).
+        For highly curved manifolds, alternatives like heat kernel method
+        (Varadhan's formula) would provide more accurate local distances.
+        See _chord_distance_matrix() docstring for details.
 
         When k_neighbors is None, the method finds the MINIMUM k that makes
         the graph connected. This is a geometric property of the point cloud -
@@ -459,10 +465,26 @@ class RiemannianGeodesicMixin:
     def _chord_distance_matrix(
         self, points: "Array", use_cache: bool = True
     ) -> "Array":
-        """Compute pairwise geodesic-compatible distances.
+        """Compute pairwise Euclidean (chord) distances for k-NN graph construction.
 
         Uses the identity ||a - b||² = ||a||² + ||b||² - 2*a·b to avoid
         O(n² * d) intermediate memory while preserving rotation invariance.
+
+        NOTE ON CHORD BOOTSTRAP:
+        This method computes Euclidean (chord) distances, which are used as
+        edge weights in the k-NN graph. This is the standard Isomap approach.
+        For small k, local Euclidean distances approximate local geodesic
+        distances (the manifold is approximately flat at small scales).
+
+        For curved manifolds with high curvature, chords underestimate true
+        geodesic arc lengths. Alternative approaches that avoid chord bootstrap:
+        - Heat kernel method: d²(x,y) ≈ -4t log(k_t(x,y)) via Varadhan's formula
+        - Intrinsic Laplacian eigenvectors
+        - Local PCA tangent estimation
+
+        The current Isomap approach is accurate when:
+        - k is small relative to manifold curvature (local flatness)
+        - The manifold is well-sampled (no gaps)
 
         Args:
             points: Input points [n, d].

@@ -43,12 +43,10 @@ Key Concepts:
     - Transition alignment: Compares layer-to-layer deltas between models, measuring
       whether models transform representations in similar ways.
 
-Invariant:
-    CKA = 1.0 for corresponding layers when alignment is correct.
-
-    If CKA < 1.0 between matched layers, this indicates an algorithm bug in the
-    alignment code, NOT model incompatibility. All LLMs trained on language encode
-    the same geometric structure - the invariant shape of knowledge.
+Diagnostic:
+    Geodesic CKA near 1.0 for matched layers indicates strong overlap on the
+    shared manifold. Lower values reflect divergent structure or limited probe
+    coverage, not model incompatibility.
 
 Usage:
     crm_source = ConceptResponseMatrix(model_id="source", layer_count=32, ...)
@@ -233,13 +231,10 @@ class ConceptResponseMatrix:
         return matrix or None
 
     def compute_cka_matrix(self, other: ConceptResponseMatrix) -> list[list[float]]:
-        """Compute CKA matrix using Gram alignment.
+        """Compute geodesic CKA matrix between native layer activations.
 
-        For each (source_layer, target_layer) pair, finds the alignment transform
-        and uses (1 - numerical_deviation) as the correspondence score.
-
-        CKA = 1.0 for corresponding layers (same geometric structure).
-        CKA < 1.0 for non-corresponding layers (different information).
+        Geodesic CKA near 1.0 suggests strong structural overlap; lower values
+        indicate divergent structure or limited probe coverage.
         """
         from modelcypher.core.domain.geometry.cka import compute_cka
 
@@ -329,21 +324,26 @@ class ConceptResponseMatrix:
     def compute_alignment_transform(self, other: ConceptResponseMatrix) -> tuple[float, list[list[float]] | None]:
         """Compute the alignment transform between representation spaces.
 
-        CKA = 1.0 IS AN INVARIANT in Gram space. The transform T = K_t^{1/2} @ K_s^{-1/2}
-        satisfies T @ K_s @ T^T = K_t exactly (by algebra).
+        We align in GRAM SPACE using geodesic RBF kernels. The transform
+        T = K_t^{1/2} @ K_s^{-1/2} satisfies T @ K_s @ T^T = K_t exactly.
 
         This method verifies alignment in GRAM SPACE (pairwise relationships),
-        NOT in feature space. Feature-space least-squares does NOT guarantee CKA = 1.0.
+        NOT in feature space. Feature-space least-squares does NOT guarantee
+        kernel alignment.
 
         Returns:
             (numerical_precision, T) where:
             - numerical_precision: How close Gram alignment got to exact (1.0 = perfect)
             - T: The Gram-space transform matrix [n_samples, n_samples]
 
-        If numerical_precision < 1.0, there's a precision issue in the algorithm.
-        This is NEVER model incompatibility - all models are compatible.
+        If numerical_precision < 1.0, it's a numerical precision issue.
         """
-        from modelcypher.core.domain.geometry.cka import _center_gram_matrix
+        from modelcypher.core.domain.geometry.cka import (
+            _center_gram_matrix,
+            _rbf_gram_from_sq_distances,
+            _shared_rbf_sigma,
+            geodesic_squared_distances,
+        )
 
         backend = get_default_backend()
         common = sorted(
@@ -372,24 +372,12 @@ class ConceptResponseMatrix:
         source_repr = _stack_all_layers(self, common)
         target_repr = _stack_all_layers(other, common)
 
-        # Normalize to unit Frobenius norm for numerical stability
-        eps = division_epsilon(backend, source_repr)
-        source_norm_sq = backend.sum(source_repr * source_repr)
-        target_norm_sq = backend.sum(target_repr * target_repr)
-        backend.eval(source_norm_sq, target_norm_sq)
-
-        source_norm = backend.sqrt(source_norm_sq + eps)
-        target_norm = backend.sqrt(target_norm_sq + eps)
-        backend.eval(source_norm, target_norm)
-
-        source_normalized = source_repr / source_norm
-        target_normalized = target_repr / target_norm
-        backend.eval(source_normalized, target_normalized)
-
-        # Compute Gram matrices: K = X @ X^T captures pairwise relationships
-        # These are [n_samples, n_samples] regardless of feature dimensions
-        K_s = backend.matmul(source_normalized, backend.transpose(source_normalized))
-        K_t = backend.matmul(target_normalized, backend.transpose(target_normalized))
+        # Compute geodesic RBF Gram matrices (dimension-invariant)
+        sq_dist_s = geodesic_squared_distances(source_repr, backend)
+        sq_dist_t = geodesic_squared_distances(target_repr, backend)
+        sigma = _shared_rbf_sigma(sq_dist_s, sq_dist_t, backend)
+        K_s = _rbf_gram_from_sq_distances(sq_dist_s, sigma, backend)
+        K_t = _rbf_gram_from_sq_distances(sq_dist_t, sigma, backend)
         backend.eval(K_s, K_t)
 
         # Center the Gram matrices (required for CKA)
@@ -453,6 +441,7 @@ class ConceptResponseMatrix:
         target_gram_norm = sqrt_scalar(float(backend.to_scalar(target_gram_norm_sq)), backend)
 
         # Relative error (numerical precision)
+        eps = division_epsilon(backend, K_t_c)
         relative_error = diff_norm / (target_gram_norm + eps) if target_gram_norm > eps else 0.0
         precision = max(0.0, min(1.0, 1.0 - relative_error))
 
@@ -500,7 +489,7 @@ class ConceptResponseMatrix:
             sum(match.cka for match in matches) / float(len(matches)) if matches else 0.0
         )
 
-        # ALIGNMENT: Compute transform F (derived from CKA = 1.0 constraint)
+        # ALIGNMENT: Compute Gram-space transform (kernel alignment constraint)
         alignment_precision, _ = self.compute_alignment_transform(other)
 
         report = ComparisonReport(
@@ -513,8 +502,7 @@ class ConceptResponseMatrix:
             alignment_precision=alignment_precision,
         )
 
-        # Check numerical precision of the alignment computation
-        # CKA = 1.0 is the invariant used to derive F. Precision < 1.0 = algorithm bug.
+        # Check numerical precision of the Gram alignment computation
         backend = get_default_backend()
         eps = machine_epsilon(backend, backend.array([alignment_precision]))
         threshold = backend.sqrt(backend.array([eps]))
@@ -524,7 +512,7 @@ class ConceptResponseMatrix:
             logger.warning(
                 "Alignment precision=%.4f (expected 1.0). "
                 "This is a numerical precision issue in the algorithm, NOT model incompatibility. "
-                "CKA = 1.0 is invariant - all models encode the same geometric structure.",
+                "Kernel alignment in Gram space is exact by construction.",
                 alignment_precision,
             )
 
@@ -563,8 +551,8 @@ class ConceptResponseMatrix:
             if not source_delta or not target_delta:
                 continue
 
-            transition_cka = self.compute_linear_cka(source_delta, target_delta)
-            state_cka = self.compute_linear_cka(source_current, target_current)
+            transition_cka = self.compute_geodesic_cka(source_delta, target_delta)
+            state_cka = self.compute_geodesic_cka(source_current, target_current)
             transitions.append(
                 LayerTransitionResult(
                     from_layer=layer,
@@ -759,11 +747,8 @@ class ConceptResponseMatrix:
         return matrix
 
     @staticmethod
-    def compute_linear_cka(x: list[list[float]], y: list[list[float]]) -> float:
-        """Compute linear CKA between activation matrices.
-
-        Delegates to the canonical CKA implementation in cka.py.
-        """
+    def compute_geodesic_cka(x: list[list[float]], y: list[list[float]]) -> float:
+        """Compute geodesic CKA between activation matrices."""
         from modelcypher.core.domain.geometry.cka import (
             HSICEstimator,
             compute_cka_from_lists,
@@ -775,6 +760,11 @@ class ConceptResponseMatrix:
             estimator=HSICEstimator.AUTO,
             feature_bias_correction=True,
         )
+
+    @staticmethod
+    def compute_linear_cka(x: list[list[float]], y: list[list[float]]) -> float:
+        """DEPRECATED: use compute_geodesic_cka."""
+        return ConceptResponseMatrix.compute_geodesic_cka(x, y)
 
     @staticmethod
     def _compute_layer_delta(
@@ -812,12 +802,9 @@ class ComparisonReport:
     """Comparison report between two ConceptResponseMatrices.
 
     alignment_precision: Numerical precision of the alignment computation.
-        CKA = 1.0 is an INVARIANT used to derive the alignment transform F.
-        This field reports how close the floating-point computation got to
-        the theoretical exact (1.0 = perfect precision).
-
-        If < 1.0, there's a precision issue in the ALGORITHM, not in the models.
-        All models are compatible - they encode the same geometric structure.
+        This field reports how close the Gram-space kernel alignment got to
+        the theoretical exact (1.0 = perfect precision). Values < 1.0 indicate
+        numerical precision limits, not model incompatibility.
     """
 
     source_model: str
@@ -836,7 +823,7 @@ class ComparisonReport:
 
         @property
         def is_perfect(self) -> bool:
-            """True if CKA = 1.0 within sqrt(machine_epsilon).
+            """True if geodesic CKA is within sqrt(machine_epsilon) of 1.0.
 
             Uses sqrt(eps) ≈ 3.5e-4 to account for accumulated numerical error
             in matrix operations (sqrt, pinv, matmul).
@@ -848,19 +835,12 @@ class ComparisonReport:
 
     @property
     def is_perfect(self) -> bool:
-        """True if ALL layer matches achieved CKA = 1.0 (within machine epsilon).
-
-        If False, something is wrong with the alignment algorithm. The geometry
-        is INVARIANT - all LLMs encode the same relational structure.
-        """
+        """True if ALL layer matches are within precision of geodesic CKA = 1.0."""
         return all(match.is_perfect for match in self.layer_correspondence)
 
     @property
     def imperfect_matches(self) -> list["ComparisonReport.LayerMatch"]:
-        """Returns layer matches that failed to achieve CKA = 1.0.
-
-        Non-empty list indicates an algorithm bug. Debug these layers.
-        """
+        """Returns layer matches below the strict CKA=1.0 diagnostic threshold."""
         return [m for m in self.layer_correspondence if not m.is_perfect]
 
 
