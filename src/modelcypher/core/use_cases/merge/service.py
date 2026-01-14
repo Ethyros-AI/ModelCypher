@@ -143,7 +143,7 @@ class MergePipelineService:
         target_path: str,
         output_dir: str,
         probe_mode: str = "atlas",
-        skip_pre_analysis: bool = False,
+        skip_pre_analysis: bool = True,  # Skip by default - informational only
         delta_scale: float = 1.0,
     ) -> PipelineResult:
         """Run the complete merge pipeline.
@@ -167,11 +167,16 @@ class MergePipelineService:
         pipeline_id = f"pipeline-{uuid.uuid4().hex[:8]}"
         logger.info("Starting merge pipeline %s", pipeline_id)
 
-        # Load models once upfront - reused across pre-merge analysis and merge
-        logger.info("Loading models for pipeline...")
-        source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
-        target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
-        logger.info("Models loaded successfully")
+        source_model = None
+        target_model = None
+        source_tokenizer = None
+        target_tokenizer = None
+
+        if not skip_pre_analysis:
+            logger.info("Loading models for pre-merge analysis...")
+            source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
+            target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
+            logger.info("Models loaded successfully")
 
         # Stage 1: Pre-merge analysis (using pre-loaded models)
         pre_start = time.time()

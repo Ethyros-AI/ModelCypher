@@ -47,7 +47,6 @@ from .stages import (
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,6 @@ def run_merge(
     # Optional pre-loaded weights to avoid redundant disk I/O
     source_weights: dict[str, "Array"] | None = None,
     activation_provider: "ActivationProvider | None" = None,
-    activation_store: "ActivationStore | None" = None,
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     # Delta budget control for sequential stacking
     delta_scale: float = 1.0,
@@ -183,7 +181,6 @@ def run_merge(
         extract_layer_index_fn=extract_layer_index,
         probe_mode=probe_mode,
         activation_provider=activation_provider,
-        activation_store=activation_store,
     )
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
@@ -308,51 +305,40 @@ def run_merge(
     probe_ids_list = probe_result.get("probe_ids", [])
     probe_domains_list = probe_result.get("probe_domains", [])
 
-    density_result = None
-    graft_mask = None
-    density_metrics: dict[str, Any] = {}
-
-    density_weights: dict[int, Any] | None = None
-
     # Run density stage with alignment transforms for cross-dimensional comparison
     # The transforms project source activations into target space BEFORE comparing,
     # so density comparison is always apples-to-apples in target's coordinate system.
     # This finds where target is TRULY sparse in specific concepts, not just smaller.
-    if source_activations and target_activations and probe_ids_list:
-        try:
-            density_result = stage_density(
-                source_activations=source_activations,
-                target_activations=target_activations,
-                probe_ids=probe_ids_list,
-                probe_domains=probe_domains_list,
-                layers=layer_indices,
-                feature_transforms=feature_transforms,  # Project source→target space
-                layer_mapping=layer_mapping,  # Use DP correspondence (target_layer -> source_layer)
-                backend=backend,
-            )
-            graft_mask = density_result.graft_mask
-            density_weights = density_result.density_weights
-            density_metrics = density_result.metrics
+    if not source_activations or not target_activations:
+        raise RuntimeError("DENSITY: Missing activations for density analysis.")
+    if not probe_ids_list:
+        raise RuntimeError("DENSITY: Missing probe IDs for density analysis.")
 
-            logger.info(
-                "DENSITY: %d concepts analyzed, %d graft opportunities (source denser), %d skip (target dense)",
-                density_metrics.get("concepts_analyzed", 0),
-                density_metrics.get("positive_opportunity_count", 0),
-                density_metrics.get("nonpositive_opportunity_count", 0),
-            )
-            logger.info(
-                "DENSITY: Point cloud - %d points source denser, %d target denser (k-NN based)",
-                density_metrics.get("point_cloud_positive_points", 0),
-                density_metrics.get("point_cloud_negative_points", 0),
-            )
-        except Exception as e:
-            logger.warning("DENSITY: Stage failed, falling back to graft-all mode: %s", e)
-            graft_mask = None
-            density_weights = None
-            density_metrics = {"error": str(e), "fallback": "graft_all"}
-    else:
-        logger.warning("DENSITY: Missing activations, falling back to graft-all mode")
-        density_metrics = {"skipped": True, "reason": "missing_activations"}
+    density_result = stage_density(
+        source_activations=source_activations,
+        target_activations=target_activations,
+        probe_ids=probe_ids_list,
+        probe_domains=probe_domains_list,
+        layers=layer_indices,
+        feature_transforms=feature_transforms,  # Project source→target space
+        layer_mapping=layer_mapping,  # Use DP correspondence (target_layer -> source_layer)
+        backend=backend,
+    )
+    graft_mask = density_result.graft_mask
+    density_weights = density_result.density_weights
+    density_metrics = density_result.metrics
+
+    logger.info(
+        "DENSITY: %d concepts analyzed, %d graft opportunities (source denser), %d skip (target dense)",
+        density_metrics.get("concepts_analyzed", 0),
+        density_metrics.get("positive_opportunity_count", 0),
+        density_metrics.get("nonpositive_opportunity_count", 0),
+    )
+    logger.info(
+        "DENSITY: Point cloud - %d points source denser, %d target denser (k-NN based)",
+        density_metrics.get("point_cloud_positive_points", 0),
+        density_metrics.get("point_cloud_negative_points", 0),
+    )
 
     # =========================================================================
     # MEMORY CLEANUP: Delete activations not needed for transplant
@@ -486,28 +472,36 @@ def run_merge(
         import json as _json_for_quant
 
         from modelcypher.core.use_cases.quantization_utils import (
-            QuantizationHint,
             quantization_plan_from_payload,
             requantize_weights,
         )
 
         # Read target config to get quantization params
         config_path = Path(target_path) / "config.json"
-        quant_hint = QuantizationHint(bits=4, group_size=64, mode="affine")  # Default
-        if config_path.exists():
-            try:
-                with open(config_path) as f:
-                    config_data = _json_for_quant.load(f)
-                quant_plan = quantization_plan_from_payload(config_data)
-                if quant_plan and quant_plan[0]:
-                    quant_hint = quant_plan[0]
-                    logger.info(
-                        "Detected target quantization: %d-bit, group_size=%d",
-                        quant_hint.bits,
-                        quant_hint.group_size,
-                    )
-            except Exception as exc:
-                logger.warning("Could not read target config for quantization: %s", exc)
+        if not config_path.exists():
+            raise RuntimeError(
+                "Target is quantized but config.json is missing. "
+                "Quantization parameters are required for exact requantization."
+            )
+        try:
+            with open(config_path) as f:
+                config_data = _json_for_quant.load(f)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to read target config.json for quantization parameters: {exc}"
+            ) from exc
+
+        quant_plan = quantization_plan_from_payload(config_data)
+        if not quant_plan or not quant_plan[0]:
+            raise RuntimeError(
+                "Target is quantized but quantization parameters are missing from config.json."
+            )
+        quant_hint = quant_plan[0]
+        logger.info(
+            "Detected target quantization: %d-bit, group_size=%d",
+            quant_hint.bits,
+            quant_hint.group_size,
+        )
 
         # Preserve vocabulary-tied weights (embeddings, lm_head) from target.
         # Cross-vocab merging: we can't align embeddings by vocab row because

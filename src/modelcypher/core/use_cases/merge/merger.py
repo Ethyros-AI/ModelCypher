@@ -60,7 +60,6 @@ from .pipeline import run_merge
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 __all__ = [
@@ -90,7 +89,6 @@ class UnifiedGeometricMerger:
         self,
         model_loader: "ModelLoaderPort",
         activation_provider: "ActivationProvider | None" = None,
-        activation_store: "ActivationStore | None" = None,
         backend: "Backend | None" = None,
     ) -> None:
         """Initialize with required dependencies.
@@ -102,7 +100,6 @@ class UnifiedGeometricMerger:
         """
         self._model_loader = model_loader
         self._activation_provider = activation_provider
-        self._activation_store = activation_store
 
         # Default to configured backend (respects MC_BACKEND/MODELCYPHER_BACKEND)
         self._backend = backend or get_default_backend()
@@ -147,7 +144,6 @@ class UnifiedGeometricMerger:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             activation_provider=self._activation_provider,
-            activation_store=self._activation_store,
             delta_scale=delta_scale,
         )
 
@@ -173,7 +169,6 @@ class UnifiedGeometricMerger:
             target_path=target_path,
             extract_layer_index_fn=merge_helpers.extract_layer_index,
             activation_provider=self._activation_provider,
-            activation_store=self._activation_store,
         )
 
 
@@ -406,7 +401,6 @@ class UnifiedGeometricMerger:
                     target_tokenizer=target_tokenizer,  # Reuse tokenizer
                     probe_mode="atlas",
                     activation_provider=self._activation_provider,
-                    activation_store=self._activation_store,
                     prior_occupancy_by_layer=current_occupancy_by_layer,
                     delta_scale=effective_scale,
                 )
@@ -463,7 +457,6 @@ class UnifiedGeometricMerger:
                     target_tokenizer=current_tokenizer,
                     probe_mode="atlas",
                     activation_provider=self._activation_provider,
-                    activation_store=self._activation_store,
                     prior_occupancy_by_layer=current_occupancy_by_layer,
                     delta_scale=effective_scale,
                 )
@@ -915,7 +908,6 @@ class UnifiedGeometricMerger:
                 extract_layer_index_fn=merge_helpers.extract_layer_index,
                 probe_mode="atlas",
                 activation_provider=self._activation_provider,
-                activation_store=self._activation_store,
             )
 
             # Extract from tuple: indices per stages/__init__.py

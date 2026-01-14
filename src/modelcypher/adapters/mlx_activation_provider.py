@@ -143,32 +143,31 @@ class MLXActivationProvider:
                 token_ids = list(tokens.ids)
         input_ids = mx.array([token_ids])
 
-        try:
-            if hasattr(model, "model"):
-                inner = model.model
-                if hasattr(inner, "embed_tokens"):
-                    h = inner.embed_tokens(input_ids)
-                elif hasattr(inner, "wte"):
-                    h = inner.wte(input_ids)
-                else:
-                    logger.warning("Cannot find embedding layer")
-                    return mx.zeros((960,))  # Fallback
+        if hasattr(model, "model"):
+            inner = model.model
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
             else:
-                h = model.embed(input_ids) if hasattr(model, "embed") else None
+                raise RuntimeError(
+                    "Cannot find embedding layer (embed_tokens or wte). "
+                    "Model architecture not supported for embedding collection."
+                )
+        else:
+            h = model.embed(input_ids) if hasattr(model, "embed") else None
 
-            if h is not None:
-                # h: [batch=1, seq_len, hidden_dim]
-                # Mean pool over sequence to get [hidden_dim]
-                pooled = mx.mean(h, axis=(0, 1))
-                mx.eval(pooled)
-                return pooled
-            else:
-                logger.warning("No embedding output collected")
-                return mx.zeros((960,))
+        if h is None:
+            raise RuntimeError(
+                "No embedding output collected. Model.embed() returned None or "
+                "model structure not compatible."
+            )
 
-        except Exception as e:
-            logger.warning("Embedding activation collection failed: %s", e)
-            return mx.zeros((960,))
+        # h: [batch=1, seq_len, hidden_dim]
+        # Mean pool over sequence to get [hidden_dim]
+        pooled = mx.mean(h, axis=(0, 1))
+        mx.eval(pooled)
+        return pooled
 
     def collect_gate_activations(
         self,
@@ -537,6 +536,149 @@ class MLXActivationProvider:
         return q_activations, k_activations, v_activations
 
 
+    def collect_probe_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ):
+        """
+        Collect hidden + intermediate + embedding activations in one batched pass.
+        """
+        from modelcypher.ports.activation_provider import ProbeActivationBatch
+
+        import mlx.core as mx
+        from mlx import nn
+
+        if not texts:
+            return ProbeActivationBatch(hidden=[], intermediate=[], embedding=[])
+
+        all_token_ids: list[list[int]] = []
+        for text in texts:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(list(tokens.ids))
+
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = mx.array(padded)
+        batch_size = len(texts)
+
+        hidden_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        intermediate_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        embedding_results: list["Array"] = []
+        all_tensors: list["Array"] = []
+
+        if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+            raise RuntimeError("Model structure not compatible with probe batch collection.")
+
+        inner = model.model
+        if hasattr(inner, "embed_tokens"):
+            h = inner.embed_tokens(input_ids)
+        elif hasattr(inner, "wte"):
+            h = inner.wte(input_ids)
+        else:
+            raise RuntimeError(
+                "Cannot find embedding layer (embed_tokens or wte). "
+                "Model architecture not supported for probe collection."
+            )
+
+        for i in range(batch_size):
+            seq_len = len(all_token_ids[i])
+            pooled = mx.mean(h[i, :seq_len, :], axis=0)
+            embedding_results.append(pooled)
+            all_tensors.append(pooled)
+
+        for layer_idx, layer in enumerate(inner.layers):
+            if hasattr(layer, "input_layernorm"):
+                h_norm = layer.input_layernorm(h)
+            elif hasattr(layer, "ln_1"):
+                h_norm = layer.ln_1(h)
+            else:
+                h_norm = h
+
+            if hasattr(layer, "self_attn"):
+                attn_out = layer.self_attn(h_norm)
+                if isinstance(attn_out, tuple):
+                    attn_out = attn_out[0]
+            elif hasattr(layer, "attn"):
+                attn_out = layer.attn(h_norm)
+                if isinstance(attn_out, tuple):
+                    attn_out = attn_out[0]
+            else:
+                raise RuntimeError(
+                    "Model attention block not found; probe collection requires attention."
+                )
+
+            h = h + attn_out
+
+            if hasattr(layer, "post_attention_layernorm"):
+                h_post = layer.post_attention_layernorm(h)
+            elif hasattr(layer, "ln_2"):
+                h_post = layer.ln_2(h)
+            else:
+                h_post = h
+
+            ff_module = None
+            if hasattr(layer, "mlp"):
+                ff_module = layer.mlp
+            elif hasattr(layer, "feed_forward"):
+                ff_module = layer.feed_forward
+
+            intermediate = None
+            if ff_module is not None:
+                if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
+                    up = ff_module.up_proj(h_post)
+                    gate = ff_module.gate_proj(h_post)
+                    intermediate = nn.silu(gate) * up
+                elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
+                    gate = ff_module.w1(h_post)
+                    up = ff_module.w3(h_post)
+                    intermediate = nn.silu(gate) * up
+                elif hasattr(ff_module, "fc1"):
+                    intermediate = ff_module.fc1(h_post)
+
+            if intermediate is None:
+                raise RuntimeError(
+                    "Model MLP block not found; probe collection requires intermediate activations."
+                )
+
+            for i in range(batch_size):
+                seq_len = len(all_token_ids[i])
+                pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
+                intermediate_results[i][layer_idx] = pooled
+                all_tensors.append(pooled)
+
+            if hasattr(layer, "mlp"):
+                mlp_out = layer.mlp(h_post)
+                h = h + mlp_out
+            elif hasattr(layer, "feed_forward"):
+                ff_out = layer.feed_forward(h_post)
+                h = h + ff_out
+            else:
+                raise RuntimeError(
+                    "Model MLP output path not found; probe collection requires MLP output."
+                )
+
+            for i in range(batch_size):
+                seq_len = len(all_token_ids[i])
+                pooled = mx.mean(h[i, :seq_len, :], axis=0)
+                hidden_results[i][layer_idx] = pooled
+                all_tensors.append(pooled)
+
+        if all_tensors:
+            mx.eval(*all_tensors)
+
+        return ProbeActivationBatch(
+            hidden=hidden_results,
+            intermediate=intermediate_results,
+            embedding=embedding_results,
+        )
+
+
     # ==========================================================================
     # BATCHED METHODS - Process multiple texts in a single forward pass
     # ==========================================================================
@@ -636,12 +778,7 @@ class MLXActivationProvider:
                 mx.eval(*all_tensors)
 
         except Exception as e:
-            logger.warning("Batch activation collection failed: %s", e)
-            # Fall back to sequential processing
-            return [
-                self.collect_hidden_activations(model, tokenizer, text)
-                for text in texts
-            ]
+            raise RuntimeError(f"Batch activation collection failed: {e}") from e
 
         return results
 
@@ -682,11 +819,7 @@ class MLXActivationProvider:
 
         try:
             if not (hasattr(model, "model") and hasattr(model.model, "layers")):
-                logger.debug("Model not compatible with batch intermediate collection")
-                return [
-                    self.collect_intermediate_activations(model, tokenizer, text)
-                    for text in texts
-                ]
+                raise RuntimeError("Model not compatible with batch intermediate collection")
 
             inner = model.model
             if hasattr(inner, "embed_tokens"):
@@ -694,10 +827,7 @@ class MLXActivationProvider:
             elif hasattr(inner, "wte"):
                 h = inner.wte(input_ids)
             else:
-                return [
-                    self.collect_intermediate_activations(model, tokenizer, text)
-                    for text in texts
-                ]
+                raise RuntimeError("Cannot find embedding layer for batch intermediate collection")
 
             for layer_idx, layer in enumerate(inner.layers):
                 # Apply input layer norm
@@ -781,11 +911,7 @@ class MLXActivationProvider:
                 mx.eval(*all_tensors)
 
         except Exception as e:
-            logger.warning("Batch intermediate collection failed: %s", e)
-            return [
-                self.collect_intermediate_activations(model, tokenizer, text)
-                for text in texts
-            ]
+            raise RuntimeError(f"Batch intermediate collection failed: {e}") from e
 
         return results
 
@@ -827,11 +953,7 @@ class MLXActivationProvider:
 
         try:
             if not (hasattr(model, "model") and hasattr(model.model, "layers")):
-                logger.debug("Model not compatible with batch gate collection")
-                return [
-                    self.collect_gate_activations(model, tokenizer, text)
-                    for text in texts
-                ]
+                raise RuntimeError("Model not compatible with batch gate collection")
 
             inner = model.model
             if hasattr(inner, "embed_tokens"):
@@ -839,10 +961,7 @@ class MLXActivationProvider:
             elif hasattr(inner, "wte"):
                 h = inner.wte(input_ids)
             else:
-                return [
-                    self.collect_gate_activations(model, tokenizer, text)
-                    for text in texts
-                ]
+                raise RuntimeError("Cannot find embedding layer for batch gate collection")
 
             for layer_idx, layer in enumerate(inner.layers):
                 if hasattr(layer, "input_layernorm"):
@@ -910,11 +1029,7 @@ class MLXActivationProvider:
                 mx.eval(*all_tensors)
 
         except Exception as e:
-            logger.warning("Batch gate collection failed: %s", e)
-            return [
-                self.collect_gate_activations(model, tokenizer, text)
-                for text in texts
-            ]
+            raise RuntimeError(f"Batch gate collection failed: {e}") from e
 
         return results
 
@@ -954,14 +1069,7 @@ class MLXActivationProvider:
 
         try:
             if not (hasattr(model, "model") and hasattr(model.model, "layers")):
-                logger.debug("Model not compatible with batch attention collection")
-                q_list, k_list, v_list = [], [], []
-                for text in texts:
-                    q, k, v = self.collect_attention_activations(model, tokenizer, text)
-                    q_list.append(q)
-                    k_list.append(k)
-                    v_list.append(v)
-                return q_list, k_list, v_list
+                raise RuntimeError("Model not compatible with batch attention collection")
 
             inner = model.model
             if hasattr(inner, "embed_tokens"):
@@ -969,13 +1077,7 @@ class MLXActivationProvider:
             elif hasattr(inner, "wte"):
                 h = inner.wte(input_ids)
             else:
-                q_list, k_list, v_list = [], [], []
-                for text in texts:
-                    q, k, v = self.collect_attention_activations(model, tokenizer, text)
-                    q_list.append(q)
-                    k_list.append(k)
-                    v_list.append(v)
-                return q_list, k_list, v_list
+                raise RuntimeError("Cannot find embedding layer for batch attention collection")
 
             for layer_idx, layer in enumerate(inner.layers):
                 if hasattr(layer, "input_layernorm"):
@@ -1011,16 +1113,83 @@ class MLXActivationProvider:
                 h = result[0] if isinstance(result, tuple) else result
 
         except Exception as e:
-            logger.warning("Batch attention collection failed: %s", e)
-            q_list, k_list, v_list = [], [], []
-            for text in texts:
-                q, k, v = self.collect_attention_activations(model, tokenizer, text)
-                q_list.append(q)
-                k_list.append(k)
-                v_list.append(v)
-            return q_list, k_list, v_list
+            raise RuntimeError(f"Batch attention collection failed: {e}") from e
 
         return q_results, k_results, v_results
+
+    def collect_embedding_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list["Array"]:
+        """
+        Collect post-embedding activations for multiple texts in one pass.
+
+        This is the batched version of collect_embedding_activations().
+        More efficient because it shares tokenization overhead and allows
+        GPU batching of embedding lookups.
+
+        Returns list of MLX arrays, one per input text.
+        """
+        import mlx.core as mx
+
+        if not texts:
+            return []
+
+        # Tokenize all texts
+        all_token_ids = []
+        for text in texts:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                all_token_ids.append(tokens)
+            else:
+                all_token_ids.append(list(tokens.ids))
+
+        # Find max length for padding
+        max_len = max(len(ids) for ids in all_token_ids)
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+
+        # Pad all sequences
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = mx.array(padded)  # [batch_size, max_len]
+        batch_size = len(texts)
+
+        results: list["Array"] = []
+
+        # Get embedding layer
+        if hasattr(model, "model"):
+            inner = model.model
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
+            else:
+                raise RuntimeError(
+                    "Cannot find embedding layer (embed_tokens or wte). "
+                    "Model architecture not supported for embedding collection."
+                )
+        else:
+            h = model.embed(input_ids) if hasattr(model, "embed") else None
+
+        if h is None:
+            raise RuntimeError(
+                "No embedding output collected. Model.embed() returned None or "
+                "model structure not compatible."
+            )
+
+        # h: [batch_size, max_len, hidden_dim]
+        # Mean pool over non-padded tokens for each sample
+        for i in range(batch_size):
+            seq_len = len(all_token_ids[i])
+            pooled = mx.mean(h[i, :seq_len, :], axis=0)
+            results.append(pooled)
+
+        # Single eval at the end
+        if results:
+            mx.eval(*results)
+
+        return results
 
 
 def get_activation_provider() -> MLXActivationProvider:

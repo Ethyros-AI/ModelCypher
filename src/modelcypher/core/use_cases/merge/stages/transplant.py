@@ -193,30 +193,22 @@ def stage_transplant(
         raise RuntimeError("Transplant requires probe metadata (probe_ids, probe_domains)")
 
     if len(probe_ids) != len(probe_domains):
-        metrics["transplant_skipped"] = "probe_metadata_mismatch"
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
+        raise RuntimeError("Transplant probe metadata mismatch (probe_ids != probe_domains).")
 
-    # Null-space projection handles selectivity for aligned sources.
-    # When graft_mask is None, graft all probes - the projection into null-space
-    # ensures we only add to directions target doesn't use.
-    core_probe_ids = set(probe_ids)
     if graft_mask is None:
-        logger.info(
-            "TRANSPLANT: Full-probe mode - %d probes, null-space projection handles selectivity",
-            len(core_probe_ids)
-        )
-    else:
-        logger.info(
-            "TRANSPLANT: Selective mode - %d candidate probes, graft_mask decides",
-            len(core_probe_ids)
-        )
+        raise RuntimeError("Transplant requires a graft_mask from density stage.")
+
+    core_probe_ids = set(probe_ids)
+    logger.info(
+        "TRANSPLANT: Selective mode - %d candidate probes, graft_mask decides",
+        len(core_probe_ids)
+    )
 
     metrics["core_probes"] = len(core_probe_ids)
     metrics["density_only_mode"] = True  # Always geometry-driven now
 
     if not core_probe_ids:
-        metrics["transplant_skipped"] = "no_core_probes"
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
+        raise RuntimeError("Transplant requires non-empty probe_ids.")
 
     weights_by_layer: dict[int, list[str]] = {}
     for key in target_weights:
@@ -751,6 +743,7 @@ def stage_transplant(
             target_activations=target_activations,
             source_intermediate_activations=source_intermediate_activations,
             target_intermediate_activations=target_intermediate_activations,
+            density_weights_by_layer=density_weights,
             core_acts=core_acts,
             boundary_acts=boundary_acts,
             can_measure_alignment=can_measure_alignment,

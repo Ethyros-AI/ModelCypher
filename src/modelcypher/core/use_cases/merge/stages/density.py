@@ -241,7 +241,10 @@ def stage_density(
             return len(acts.shape) == 0 or int(acts.shape[0]) == 0
 
         if _is_empty(src_acts) or _is_empty(tgt_acts):
-            continue
+            raise RuntimeError(
+                "DENSITY: Missing activations for layer "
+                f"{layer_idx} (source_layer={source_layer_idx})."
+            )
 
         try:
             # Handle both list of 1D vectors and pre-stacked 2D arrays

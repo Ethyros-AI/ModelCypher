@@ -30,7 +30,11 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
 )
-from modelcypher.core.domain.geometry.transplant import compute_weight_space_transplant
+from modelcypher.core.domain.geometry.transplant import (
+    NullSpaceProjector,
+    compute_null_space_projector,
+    compute_weight_space_transplant,
+)
 from modelcypher.core.domain.merging.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
@@ -117,6 +121,7 @@ def process_layer_weights(
     target_activations: dict[int, list["Array"]] | None = None,
     source_intermediate_activations: dict[int, list["Array"]] | None = None,
     target_intermediate_activations: dict[int, list["Array"]] | None = None,
+    density_weights_by_layer: dict[int, "Array"] | None = None,
     core_acts: "Array",
     boundary_acts: "Array",
     can_measure_alignment: bool,
@@ -127,6 +132,7 @@ def process_layer_weights(
     best_delta_norm = -1.0
     mlp_weights: dict[str, "Array"] = {}
     merged_intermediate: "Array | None" = None
+    null_space_cache: dict[str, NullSpaceProjector] = {}
 
     def _mlp_role(weight_key: str) -> str | None:
         key_lower = weight_key.lower()
@@ -920,6 +926,7 @@ def process_layer_weights(
         src_density_acts = None
         tgt_density_acts = None
         activation_space = "hidden"
+        merged_intermediate_used = False
 
         # For cross-architecture, use layer_mapping to find the correct source layer
         mapped_src_layer = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
@@ -932,6 +939,7 @@ def process_layer_weights(
                 if merged_input is not None:
                     input_activations = merged_input
                     tgt_density_acts = merged_input
+                    merged_intermediate_used = True
 
             # First, get target intermediate activations (needed for null-space projection)
             if target_intermediate_activations is None:
@@ -986,18 +994,19 @@ def process_layer_weights(
                         input_activations = b.stack([b.array(a) for a in tgt_hidden], axis=0)
                     tgt_density_acts = input_activations
 
-                    # Use mapped source layer for density comparison
-                    if source_activations is not None and mapped_src_layer in source_activations:
-                        src_hidden = source_activations[mapped_src_layer]
-                        if src_hidden is not None:
-                            if hasattr(src_hidden, "shape") and len(b.shape(src_hidden)) == 2:
-                                src_density_acts = _promote_precision(b.array(src_hidden), b)
-                            elif hasattr(src_hidden, "__len__") and len(src_hidden) > 0:
-                                src_density_acts = b.stack([b.array(a) for a in src_hidden], axis=0)
-                            logger.debug(
-                                "HIDDEN: Layer %d using mapped source layer %d for density",
-                                layer_idx, mapped_src_layer
-                            )
+                    if density_weights_by_layer is None or layer_idx not in density_weights_by_layer:
+                        # Use mapped source layer for density comparison
+                        if source_activations is not None and mapped_src_layer in source_activations:
+                            src_hidden = source_activations[mapped_src_layer]
+                            if src_hidden is not None:
+                                if hasattr(src_hidden, "shape") and len(b.shape(src_hidden)) == 2:
+                                    src_density_acts = _promote_precision(b.array(src_hidden), b)
+                                elif hasattr(src_hidden, "__len__") and len(src_hidden) > 0:
+                                    src_density_acts = b.stack([b.array(a) for a in src_hidden], axis=0)
+                                logger.debug(
+                                    "HIDDEN: Layer %d using mapped source layer %d for density",
+                                    layer_idx, mapped_src_layer
+                                )
 
         if input_activations is None:
             logger.warning(
@@ -1049,12 +1058,43 @@ def process_layer_weights(
             int(b.shape(input_activations)[0]),
         )
 
+        density_weights_override = None
+        cache_key = None
+        use_cache = False
+        if activation_space == "hidden":
+            use_cache = True
+            cache_key = "hidden"
+            if density_weights_by_layer is not None:
+                density_weights_override = density_weights_by_layer.get(layer_idx)
+        elif activation_space == "intermediate":
+            use_cache = not merged_intermediate_used
+            cache_key = "intermediate" if use_cache else None
+
+        null_space_projector = None
+        if use_cache and cache_key in null_space_cache:
+            null_space_projector = null_space_cache[cache_key]
+        else:
+            null_space_projector = compute_null_space_projector(
+                input_activations=input_activations,
+                density_weights=density_weights_override,
+                source_activations_for_density=None
+                if density_weights_override is not None
+                else src_density_acts,
+                target_activations_for_density=None
+                if density_weights_override is not None
+                else tgt_density_acts,
+                backend=b,
+            )
+            if use_cache and cache_key:
+                null_space_cache[cache_key] = null_space_projector
+
         result = compute_weight_space_transplant(
             source_aligned=source_aligned,
             target_weight=target_w,
             input_activations=input_activations,
             source_activations_for_density=src_density_acts,
             target_activations_for_density=tgt_density_acts,
+            null_space_projector=null_space_projector,
             backend=b,
         )
 

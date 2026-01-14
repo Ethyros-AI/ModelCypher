@@ -16,9 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Stage 1: PROBE - Build intersection map from probe responses.
-
-The intersection map is the PRIMARY CONTROL SIGNAL for all downstream operations.
+Stage 1: PROBE - Compute alignment transforms from probe responses.
 
 We run the COMPLETE atlas probe corpus from JSON - ALL probes are used for
 maximum manifold coverage. Geometry requires n >= d probes (where d = max hidden dim),
@@ -35,10 +33,7 @@ Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Tr
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -47,31 +42,17 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.use_cases.merge.stages.probe_activation_storage import (
-    _page_activation_space,
-)
 from modelcypher.core.use_cases.merge.stages.probe_alignment import align_layers
-from modelcypher.core.use_cases.merge.stages.probe_cache import (
-    ModelProbeCache,
-    _load_model_probe_cache,
-    _save_model_probe_cache,
-)
-from modelcypher.core.use_cases.merge.stages.probe_checkpoint import (
-    clear_probe_checkpoint as _clear_probe_checkpoint,
-)
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
-    _extract_top_k_dims,
     _infer_required_probe_count,
     _precision_reference,
     _promote_precision,
-    _select_geometry_probes,
     _select_probe_text,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
@@ -79,9 +60,6 @@ logger = logging.getLogger(__name__)
 
 # Probe mode is ALWAYS activation-level CKA with atlas JSON probes.
 # No token probing, no weight-level shortcuts.
-
-# Checkpoint interval: save progress every N probes
-_CHECKPOINT_INTERVAL = 50
 
 @dataclass
 class ProbeResult:
@@ -151,11 +129,8 @@ def stage_probe(
     source_tokenizer: Any | None = None,
     target_tokenizer: Any | None = None,
     tokenizer: Any | None = None,
-    collect_activations_fn: Callable | None = None,
     activation_provider: "ActivationProvider | None" = None,
-    activation_store: "ActivationStore | None" = None,
     backend: "Backend | None" = None,
-    checkpoint_dir: Path | str | None = None,
     probe_mode: str = "atlas",  # Only "atlas" supported - atlas JSON probes
 ) -> ProbeResult:
     """
@@ -171,9 +146,6 @@ def stage_probe(
         source_model: Loaded source model (required)
         target_model: Loaded target model (required)
         tokenizer: Tokenizer (for precise mode)
-        collect_activations_fn: Function to collect layer activations
-        checkpoint_dir: Optional directory for checkpoint files. If provided,
-            probe progress will be saved periodically and can be resumed.
 
     Returns:
         ProbeResult with correlations, confidences, and intersection map
@@ -186,56 +158,15 @@ def stage_probe(
         source_tokenizer = source_tokenizer or tokenizer
         target_tokenizer = target_tokenizer or tokenizer
 
-    # =========================================================================
-    # PRE-FLIGHT: Check tokenizer alignment before expensive probing
-    # =========================================================================
-    if source_tokenizer is not None and target_tokenizer is not None:
-        try:
-            from modelcypher.core.domain.geometry.dimensional_alignment import (
-                measure_1d_alignment,
-            )
-            alignment_1d = measure_1d_alignment(source_tokenizer, target_tokenizer)
-            
-            # Report tokenizer alignment measurement (no interpretation)
-            logger.info(
-                "PRE-FLIGHT: Tokenizer vocabulary overlap Jaccard=%.2f",
-                alignment_1d.vocab_jaccard,
-            )
-        except Exception as e:
-            logger.debug("PRE-FLIGHT: Skipped tokenizer check: %s", e)
-
     # ALWAYS use precise mode - this is not configurable.
     # Activation-level CKA is required for correct geometric alignment.
 
-    # Get activation provider: use provided, or derive from collect_activations_fn, or auto-detect
     if activation_provider is None:
-        if collect_activations_fn is not None:
-            # Legacy compatibility: wrap the callable as a provider-like object
-            # This maintains backwards compatibility with existing callers
-            class LegacyActivationProvider:
-                def __init__(self, fn: Callable):
-                    self._fn = fn
-
-                def collect_hidden_activations(
-                    self, model: Any, tokenizer: Any, text: str, token_ids: list[int] | None = None
-                ) -> dict:
-                    return self._fn(model, tokenizer, text)
-
-                def collect_intermediate_activations(
-                    self, model: Any, tokenizer: Any, text: str, token_ids: list[int] | None = None
-                ) -> dict:
-                    # Legacy doesn't support intermediate activations
-                    return {}
-
-                def collect_attention_activations(
-                    self, model: Any, tokenizer: Any, text: str, token_ids: list[int] | None = None
-                ) -> tuple[dict, dict]:
-                    # Legacy doesn't support attention activations
-                    return {}, {}
-
-            activation_provider = LegacyActivationProvider(collect_activations_fn)
-        else:
-            raise ValueError("Activation provider required for probe stage")
+        raise ValueError("Activation provider required for probe stage")
+    if not hasattr(activation_provider, "collect_probe_activations_batch"):
+        raise ValueError(
+            "Activation provider must implement collect_probe_activations_batch for strict probing."
+        )
 
     if (
         source_model is not None
@@ -251,11 +182,9 @@ def stage_probe(
             target_weights=target_weights,
             extract_layer_index_fn=extract_layer_index_fn,
             activation_provider=activation_provider,
-            activation_store=activation_store,
             source_path=source_path,
             target_path=target_path,
             backend=backend,
-            checkpoint_dir=Path(checkpoint_dir) if checkpoint_dir else None,
             probe_mode=probe_mode,
         )
     else:
@@ -278,11 +207,9 @@ def _probe_precise(
     target_weights: dict[str, Any],
     extract_layer_index_fn: Callable[[str], int | None],
     activation_provider: "ActivationProvider",
-    activation_store: "ActivationStore | None" = None,
     source_path: str = "",
     target_path: str = "",
     backend: "Backend | None" = None,
-    checkpoint_dir: Path | None = None,
     probe_mode: str = "atlas",  # Only "atlas" is supported - atlas JSON probes
 ) -> ProbeResult:
     """Precise probe mode: Run probes through BOTH models.
@@ -291,22 +218,9 @@ def _probe_precise(
     for broad manifold coverage without user configuration.
 
     Args:
-        probe_mode: Must be "atlas" (kept for cache key compatibility).
-        checkpoint_dir: If provided, saves progress periodically and allows
-            resume from last checkpoint on restart.
-        activation_store: Required if checkpoint_dir is provided.
+        probe_mode: Must be "atlas".
     """
     b = backend or get_default_backend()
-    from modelcypher.core.domain.geometry.intersection_similarity import (
-        IntersectionSimilarityMode,
-        build_intersection_map,
-    )
-    from modelcypher.core.domain.geometry.manifold_stitcher import (
-        ActivatedDimension,
-        ActivationFingerprint,
-        IntersectionMap,
-    )
-
     # Load Atlas probes for manifold coverage.
     # Probe count is derived from geometry (hidden dimensions).
     from modelcypher.core.domain.agents.probe_loader import load_all_probes
@@ -315,16 +229,12 @@ def _probe_precise(
 
     # Pre-validate probes for usable text (used for caching + inference).
     valid_probes: list[tuple[Any, str]] = []
-    invalid_probe_count = 0
     for probe in probes:
         probe_text = _select_probe_text(probe)
         if probe_text is None:
-            logger.warning(
-                "Probe '%s' skipped: no valid support texts or fallback",
-                probe.probe_id,
+            raise ValueError(
+                f"Probe '{probe.probe_id}' has no valid support texts or fallback."
             )
-            invalid_probe_count += 1
-            continue
         valid_probes.append((probe, probe_text))
 
     # GEOMETRY PRINCIPLE: Use ALL available probes for maximum manifold coverage.
@@ -357,491 +267,58 @@ def _probe_precise(
             target_dim,
         )
 
-    if invalid_probe_count:
-        logger.info("PROBE MODE: Skipped %d probes with no usable text", invalid_probe_count)
-
     valid_probes = selected_probes
     expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
     expected_probe_domains = [probe.domain.value for probe, _ in valid_probes]
-    probe_domain_by_id = dict(zip(expected_probe_ids, expected_probe_domains))
-    expected_probe_texts = [probe_text for _, probe_text in valid_probes]
-
-    from modelcypher.core.domain.geometry.model_profile import (
-        ModelProfileStore,
-        compute_probe_corpus_hash,
+    logger.info(
+        "PROBE PRECISE: Running %d probes through source + target models...",
+        len(valid_probes),
     )
 
-    probe_corpus_hash = compute_probe_corpus_hash(
-        probe_mode=probe_mode,
-        probe_ids=expected_probe_ids,
-        probe_texts=expected_probe_texts,
-    )
-    profile_store = ModelProfileStore()
-    source_profile: ModelProfile | None = None
-    target_profile: ModelProfile | None = None
-    source_identity = None
-    target_identity = None
+    source_layer_activations: dict[int, "Array"] = {}
+    target_layer_activations: dict[int, "Array"] = {}
+    source_intermediate_activations: dict[int, "Array"] = {}
+    target_intermediate_activations: dict[int, "Array"] = {}
+    source_attention_activations: dict[int, "Array"] = {}
+    target_attention_activations: dict[int, "Array"] = {}
+    source_k_activations: dict[int, "Array"] = {}
+    target_k_activations: dict[int, "Array"] = {}
+    source_v_activations: dict[int, "Array"] = {}
+    target_v_activations: dict[int, "Array"] = {}
+    source_embedding_activations: list["Array"] | "Array" = []
+    target_embedding_activations: list["Array"] | "Array" = []
 
-    if source_path:
-        source_profile, source_identity = profile_store.ensure(source_path)
-    if target_path:
-        target_profile, target_identity = profile_store.ensure(target_path)
-
-    cache_key = f"{probe_mode}:{probe_corpus_hash}"
-
-    source_cache: ModelProbeCache | None = None
-    target_cache: ModelProbeCache | None = None
-
-    if source_identity and expected_probe_ids:
-        source_cache = _load_model_probe_cache(
-            model_id=source_identity.model_id,
-            probe_mode=probe_mode,
-            probe_corpus_hash=probe_corpus_hash,
-            backend=b,
-        )
-        if source_cache:
-            logger.info(
-                "PROBE CACHE: Loaded per-model activations for source %s",
-                source_identity.model_id,
-            )
-
-    if target_identity and expected_probe_ids:
-        target_cache = _load_model_probe_cache(
-            model_id=target_identity.model_id,
-            probe_mode=probe_mode,
-            probe_corpus_hash=probe_corpus_hash,
-            backend=b,
-        )
-        if target_cache:
-            logger.info(
-                "PROBE CACHE: Loaded per-model activations for target %s",
-                target_identity.model_id,
-            )
-
-    source_fingerprints: list[ActivationFingerprint] = []
-    target_fingerprints: list[ActivationFingerprint] = []
-
-    if (
-        source_profile
-        and source_profile.probe_corpus_hash == probe_corpus_hash
-        and source_profile.probe_fingerprints
-    ):
-        source_fingerprints = source_profile.probe_fingerprints
-    if (
-        target_profile
-        and target_profile.probe_corpus_hash == probe_corpus_hash
-        and target_profile.probe_fingerprints
-    ):
-        target_fingerprints = target_profile.probe_fingerprints
-
-    run_source_inference = source_cache is None
-    run_target_inference = target_cache is None
-    run_inference = run_source_inference or run_target_inference
-
-    if run_source_inference:
-        source_fingerprints = []
-    if run_target_inference:
-        target_fingerprints = []
-
-    if run_inference:
-        logger.info(
-            "PROBE PRECISE: Running %d probes through %s%s models...",
-            len(valid_probes),
-            "source" if run_source_inference else "",
-            " + target" if run_target_inference else "",
-        )
-    else:
-        logger.info(
-            "PROBE PRECISE: Using cached activations for %d probes",
-            len(valid_probes),
-        )
-
-    # MEMORY OPTIMIZATION: Store as single stacked Array per layer, not list of arrays
-    # This reduces Metal buffer count from 4096×32 = 131,072 to just 32 per model
-    source_layer_activations: dict[int, "Array"] = (
-        source_cache.hidden_activations if source_cache else {}
-    )
-    target_layer_activations: dict[int, "Array"] = (
-        target_cache.hidden_activations if target_cache else {}
-    )
-
-    def _fingerprints_from_cache(
-        probes: list[tuple[Any, str]],
-        layer_activations: dict[int, "Array"],
-    ) -> list[ActivationFingerprint]:
-        fingerprints: list[ActivationFingerprint] = []
-        if not layer_activations:
-            return fingerprints
-
-        # Assume all layers share the same probe count
-        sample_layer = next(iter(layer_activations.values()))
-        probe_count = int(b.shape(sample_layer)[0])
-
-        for probe_idx, (probe, _probe_text) in enumerate(probes):
-            if probe_idx >= probe_count:
-                break
-            activated: dict[int, list[ActivatedDimension]] = {}
-            for layer_idx, stacked in layer_activations.items():
-                row = b.take(stacked, b.array([probe_idx]), axis=0)
-                row = b.squeeze(row, axis=0)
-                dims = _extract_top_k_dims(row, backend=b)
-                if dims:
-                    activated[layer_idx] = dims
-            if activated:
-                fingerprints.append(
-                    ActivationFingerprint(
-                        prime_id=probe.probe_id,
-                        prime_text=probe.name,
-                        activated_dimensions=activated,
-                    )
-                )
-        return fingerprints
-
-    if source_cache and not source_fingerprints:
-        logger.info("PROBE CACHE: Rebuilding source fingerprints from cached activations")
-        source_fingerprints = _fingerprints_from_cache(
-            valid_probes, source_layer_activations
-        )
-    if target_cache and not target_fingerprints:
-        logger.info("PROBE CACHE: Rebuilding target fingerprints from cached activations")
-        target_fingerprints = _fingerprints_from_cache(
-            valid_probes, target_layer_activations
-        )
-
-    source_embedding_activations: list["Array"] | "Array" = (
-        source_cache.embedding_activations
-        if source_cache and source_cache.embedding_activations is not None
-        else []
-    )
-    target_embedding_activations: list["Array"] | "Array" = (
-        target_cache.embedding_activations
-        if target_cache and target_cache.embedding_activations is not None
-        else []
-    )
-    # MEMORY OPTIMIZATION: Store as single stacked Array per layer, not list
-    # This reduces Metal buffer count from 131K to just 32 per model
-    source_intermediate_activations: dict[int, "Array"] = (
-        source_cache.intermediate_activations if source_cache else {}
-    )
-    target_intermediate_activations: dict[int, "Array"] = (
-        target_cache.intermediate_activations if target_cache else {}
-    )
-    # Q Attention-space activations for q_proj/o_proj stitching (cross-architecture merges)
-    source_attention_activations: dict[int, "Array"] = (
-        source_cache.attention_activations if source_cache else {}
-    )
-    target_attention_activations: dict[int, "Array"] = (
-        target_cache.attention_activations if target_cache else {}
-    )
-    # K Attention-space activations for k_proj stitching (separate for granular alignment)
-    source_k_activations: dict[int, "Array"] = (
-        source_cache.k_activations if source_cache else {}
-    )
-    target_k_activations: dict[int, "Array"] = (
-        target_cache.k_activations if target_cache else {}
-    )
-    # V Attention-space activations for v_proj stitching (separate for granular alignment)
-    source_v_activations: dict[int, "Array"] = (
-        source_cache.v_activations if source_cache else {}
-    )
-    target_v_activations: dict[int, "Array"] = (
-        target_cache.v_activations if target_cache else {}
-    )
     probe_ids: list[str] = list(expected_probe_ids)
     probe_domains: list[str] = list(expected_probe_domains)
-
-    probes_processed = 0
-    probes_failed = invalid_probe_count
-    checkpoint_path: Path | None = None  # Defined early so it's available for cleanup
 
     # =========================================================================
     # BATCHED PROBE COLLECTION - Process probes in batches for efficiency
     # =========================================================================
-
-    if not run_inference:
-        probes_processed = len(probe_ids)
-
-    if run_inference:
-        probes_processed, probes_failed, checkpoint_path = run_probe_inference(
-            valid_probes=valid_probes,
-            expected_probe_ids=expected_probe_ids,
-            probe_domain_by_id=probe_domain_by_id,
-            source_model=source_model,
-            target_model=target_model,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-            activation_provider=activation_provider,
-            activation_store=activation_store,
-            backend=b,
-            checkpoint_dir=checkpoint_dir,
-            source_layer_activations=source_layer_activations,
-            target_layer_activations=target_layer_activations,
-            source_intermediate_activations=source_intermediate_activations,
-            target_intermediate_activations=target_intermediate_activations,
-            source_attention_activations=source_attention_activations,
-            target_attention_activations=target_attention_activations,
-            source_k_activations=source_k_activations,
-            target_k_activations=target_k_activations,
-            source_v_activations=source_v_activations,
-            target_v_activations=target_v_activations,
-            source_embedding_activations=source_embedding_activations,
-            target_embedding_activations=target_embedding_activations,
-            source_fingerprints=source_fingerprints,
-            target_fingerprints=target_fingerprints,
-            run_source_inference=run_source_inference,
-            run_target_inference=run_target_inference,
-            invalid_probe_count=invalid_probe_count,
-            checkpoint_interval=_CHECKPOINT_INTERVAL,
-        )
+    probes_processed, probes_failed = run_probe_inference(
+        valid_probes=valid_probes,
+        source_model=source_model,
+        target_model=target_model,
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        activation_provider=activation_provider,
+        backend=b,
+        source_layer_activations=source_layer_activations,
+        target_layer_activations=target_layer_activations,
+        source_intermediate_activations=source_intermediate_activations,
+        target_intermediate_activations=target_intermediate_activations,
+        source_embedding_activations=source_embedding_activations,
+        target_embedding_activations=target_embedding_activations,
+    )
 
     logger.info(
-        "PROBE PRECISE: Completed %d probes (%d failed), built %d fingerprints",
+        "PROBE PRECISE: Completed %d probes (%d failed)",
         probes_processed,
         probes_failed,
-        len(source_fingerprints),
     )
 
-    # Clear checkpoint after successful completion
-    if checkpoint_path is not None:
-        _clear_probe_checkpoint(checkpoint_path)
-
-    cache_ready = (
-        probe_ids == expected_probe_ids
-        and probe_domains == expected_probe_domains
-        and probes_processed == len(expected_probe_ids)
-        and probes_failed == invalid_probe_count
-    )
-
-    def _cache_spaces(
-        hidden: dict[int, "Array"],
-        intermediate: dict[int, "Array"],
-        attention: dict[int, "Array"],
-        k_act: dict[int, "Array"],
-        v_act: dict[int, "Array"],
-        embedding: "Array | list[Array] | None",
-    ) -> list[str]:
-        spaces = ["hidden"] if hidden else []
-        if intermediate:
-            spaces.append("intermediate")
-        if attention:
-            spaces.append("attention_q")
-        if k_act:
-            spaces.append("attention_k")
-        if v_act:
-            spaces.append("attention_v")
-        if embedding is not None:
-            spaces.append("embedding")
-        return spaces
-
-    def _update_profile_cache(
-        profile: ModelProfile | None,
-        identity: Any | None,
-        fingerprints: list[ActivationFingerprint],
-        cache_present: bool,
-        spaces: list[str],
-    ) -> None:
-        if profile is None or identity is None:
-            return
-        updated = False
-        if cache_ready and fingerprints:
-            profile.probe_fingerprints = fingerprints
-            profile.probe_corpus_hash = probe_corpus_hash
-            updated = True
-        if cache_present and spaces:
-            profile.probe_corpus_hash = probe_corpus_hash
-            profile.probe_cache[cache_key] = {
-                "probe_mode": probe_mode,
-                "probe_corpus_hash": probe_corpus_hash,
-                "probe_count": len(expected_probe_ids),
-                "spaces": spaces,
-                "updated_at": datetime.now().isoformat(),
-            }
-            updated = True
-        if updated:
-            try:
-                profile_store.save(profile, identity)
-                logger.info("PROBE: Updated profile cache for %s", profile.model_id)
-            except Exception as e:
-                logger.warning("PROBE: Failed to save profile cache: %s", e)
-
-    # Save per-model caches and fingerprints
-    if run_source_inference and cache_ready and source_identity and source_layer_activations:
-        _save_model_probe_cache(
-            model_id=source_identity.model_id,
-            probe_mode=probe_mode,
-            probe_corpus_hash=probe_corpus_hash,
-            probe_ids=probe_ids,
-            probe_domains=probe_domains,
-            hidden_activations=source_layer_activations,
-            intermediate_activations=source_intermediate_activations,
-            attention_activations=source_attention_activations,
-            k_activations=source_k_activations,
-            v_activations=source_v_activations,
-            embedding_activations=source_embedding_activations,
-        )
-
-    if run_target_inference and cache_ready and target_identity and target_layer_activations:
-        _save_model_probe_cache(
-            model_id=target_identity.model_id,
-            probe_mode=probe_mode,
-            probe_corpus_hash=probe_corpus_hash,
-            probe_ids=probe_ids,
-            probe_domains=probe_domains,
-            hidden_activations=target_layer_activations,
-            intermediate_activations=target_intermediate_activations,
-            attention_activations=target_attention_activations,
-            k_activations=target_k_activations,
-            v_activations=target_v_activations,
-            embedding_activations=target_embedding_activations,
-        )
-
-    source_cache_present = source_cache is not None or (
-        run_source_inference and cache_ready
-    )
-    target_cache_present = target_cache is not None or (
-        run_target_inference and cache_ready
-    )
-
-    _update_profile_cache(
-        source_profile,
-        source_identity,
-        source_fingerprints,
-        source_cache_present,
-        _cache_spaces(
-            source_layer_activations,
-            source_intermediate_activations,
-            source_attention_activations,
-            source_k_activations,
-            source_v_activations,
-            source_embedding_activations,
-        ),
-    )
-    _update_profile_cache(
-        target_profile,
-        target_identity,
-        target_fingerprints,
-        target_cache_present,
-        _cache_spaces(
-            target_layer_activations,
-            target_intermediate_activations,
-            target_attention_activations,
-            target_k_activations,
-            target_v_activations,
-            target_embedding_activations,
-        ),
-    )
-
-    # Paging disabled by default - causes MLX SIGSEGV crashes in compile_replace
-    # due to interaction between lazy evaluation and memory management.
-    # Can be re-enabled with MC_PROBE_PAGE_ACTIVATIONS=1 if memory is tight.
-    page_activations = (
-        activation_store is not None
-        and os.environ.get("MC_PROBE_PAGE_ACTIVATIONS", "0") == "1"
-    )
-    if page_activations:
-        def _paged_dir(identity: Any | None, label: str) -> Path | None:
-            if identity is not None:
-                return (
-                    profile_store.probe_cache_dir(identity.model_id)
-                    / f"{probe_mode}_{probe_corpus_hash}_paged_{label}"
-                )
-            if checkpoint_dir is not None:
-                return checkpoint_dir / f"{probe_mode}_{probe_corpus_hash}_paged_{label}"
-            return None
-
-        source_paged_dir = _paged_dir(source_identity, "source")
-        if (
-            source_paged_dir is not None
-            and isinstance(source_layer_activations, dict)
-            and source_layer_activations
-        ):
-            source_layer_activations = _page_activation_space(
-                activation_store,
-                source_paged_dir,
-                "hidden",
-                source_layer_activations,
-                b,
-            )
-            logger.info("PROBE: Paged source hidden activations to %s", source_paged_dir)
-
-        target_paged_dir = _paged_dir(target_identity, "target")
-        if (
-            target_paged_dir is not None
-            and isinstance(target_layer_activations, dict)
-            and target_layer_activations
-        ):
-            target_layer_activations = _page_activation_space(
-                activation_store,
-                target_paged_dir,
-                "hidden",
-                target_layer_activations,
-                b,
-            )
-            logger.info("PROBE: Paged target hidden activations to %s", target_paged_dir)
-
-        if (
-            source_paged_dir is not None
-            and isinstance(source_intermediate_activations, dict)
-            and source_intermediate_activations
-        ):
-            source_intermediate_activations = _page_activation_space(
-                activation_store,
-                source_paged_dir,
-                "intermediate",
-                source_intermediate_activations,
-                b,
-            )
-            logger.info(
-                "PROBE: Paged source intermediate activations to %s", source_paged_dir
-            )
-
-        if (
-            target_paged_dir is not None
-            and isinstance(target_intermediate_activations, dict)
-            and target_intermediate_activations
-        ):
-            target_intermediate_activations = _page_activation_space(
-                activation_store,
-                target_paged_dir,
-                "intermediate",
-                target_intermediate_activations,
-                b,
-            )
-            logger.info(
-                "PROBE: Paged target intermediate activations to %s", target_paged_dir
-            )
-
-        if hasattr(b, "clear_cache"):
-            b.clear_cache()
-
-    # Build IntersectionMap
-    intersection_map_obj: IntersectionMap | None = None
+    intersection_map_obj: Any | None = None
     dimension_correlations: dict = {}
     layer_cka_scores: dict[int, float] = {}
-
-    if source_fingerprints and target_fingerprints:
-        try:
-            logger.info(
-                "PROBE: Building IntersectionMap from %d source + %d target fingerprints...",
-                len(source_fingerprints),
-                len(target_fingerprints),
-            )
-            intersection_map_obj = build_intersection_map(
-                source_fingerprints=source_fingerprints,
-                target_fingerprints=target_fingerprints,
-                source_model=source_path or "source",
-                target_model=target_path or "target",
-                mode=IntersectionSimilarityMode.CKA,  # Pure geometry - CKA is the metric
-            )
-            dimension_correlations = intersection_map_obj.dimension_correlations
-            logger.info(
-                "PROBE PRECISE: Built IntersectionMap (%d layers), sparse mean_layer_cka=%.3f",
-                len(intersection_map_obj.layer_confidences),
-                intersection_map_obj.mean_layer_cka,
-            )
-        except Exception as e:
-            logger.warning("Failed to build IntersectionMap: %s", e)
-            intersection_map_obj = None
 
     # Align layers by proportional depth, then solve closed-form alignment per pair.
     # CKA is diagnostic; we do not use it as a selector.
@@ -862,16 +339,10 @@ def _probe_precise(
     layer_cka_scores = alignment_result.layer_cka_scores
     cgls_iterations_by_layer = alignment_result.cgls_iterations_by_layer
 
-    # Extract layer confidences (CKA-first, IntersectionMap as fallback)
-    # No fallbacks beyond geometric signals - if we don't have alignment, we don't merge
+    # Extract layer confidences (CKA-only, no fallbacks)
     layer_confidences: dict[int, float] = {}
     if layer_cka_scores:
         layer_confidences.update(layer_cka_scores)
-
-    if intersection_map_obj is not None:
-        for lc in intersection_map_obj.layer_confidences:
-            if lc.layer not in layer_confidences:
-                layer_confidences[lc.layer] = lc.confidence
 
     if not layer_confidences:
         logger.error(
@@ -889,7 +360,6 @@ def _probe_precise(
                 "probes_total": len(probes),
                 "probes_processed": probes_processed,
                 "probes_failed": probes_failed,
-                "fingerprints_built": len(source_fingerprints),
                 "layers_analyzed": 0,
                 "probe_failed": True,
                 "failure_reason": "No layer correlations - cannot determine geometric alignment",
@@ -940,63 +410,7 @@ def _probe_precise(
     precision_threshold = sqrt_scalar(machine_epsilon(b, precision_ref), b)
     perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
 
-    # =========================================================================
-    # SPLIT CKA: SHARED VS. NOVEL CONCEPTS (POST-ALIGNMENT)
-    # =========================================================================
-    # CKA is meaningless BEFORE alignment - high-d representations get twisted
-    # during pre-training. We must FIRST align, THEN measure shared vs novel.
-    #
-    # Compute CKA separately for:
-    # - SHARED: concepts both models respond to (CKA should be high after alignment)
-    # - NOVEL: concepts only source responds to (new knowledge being added)
     split_cka_result = None
-    if source_layer_activations and target_layer_activations and feature_transforms:
-        from modelcypher.core.domain.geometry.cka import compute_cka_split
-
-        # Use the layer with highest post-alignment CKA as representative
-        if layer_cka_scores:
-            best_layer = max(layer_cka_scores.keys(), key=lambda k: layer_cka_scores[k])
-            # Find corresponding source layer from layer_mapping
-            src_layer = layer_mapping.get(best_layer)
-            # feature_transforms[tgt_layer] is a dict: {src_layer_idx: [[...], [...]]}
-            F_transform_dict = feature_transforms.get(best_layer)
-
-            if (src_layer is not None and
-                src_layer in source_layer_activations and
-                best_layer in target_layer_activations and
-                F_transform_dict is not None and
-                src_layer in F_transform_dict):
-
-                src_acts = source_layer_activations[src_layer]
-                tgt_acts = target_layer_activations[best_layer]
-
-                # APPLY ALIGNMENT: source @ F -> aligned source in target's coordinate system
-                # F_transform_dict[src_layer] is a GPU array (kept as array for efficiency)
-                F_arr = F_transform_dict[src_layer]
-                # Handle both GPU arrays (new) and lists (legacy cache)
-                if not hasattr(F_arr, "shape"):
-                    F_arr = b.array(F_arr)
-                F_arr = _promote_precision(F_arr, b)
-                src_acts_precise = _promote_precision(src_acts, b)
-                aligned_src = b.matmul(src_acts_precise, F_arr)
-                b.eval(aligned_src)
-
-                try:
-                    # Compute split CKA on ALIGNED source vs target
-                    split_cka_result = compute_cka_split(aligned_src, tgt_acts, backend=b)
-                    logger.info(
-                        "SPLIT CKA POST-ALIGN (layer %d): shared=%.4f (n=%d, %.1f%%), novel=%.4f (n=%d, %.1f%%), full=%.4f",
-                        best_layer,
-                        split_cka_result.shared_cka,
-                        split_cka_result.n_shared,
-                        split_cka_result.shared_fraction * 100,
-                        split_cka_result.novel_cka,
-                        split_cka_result.n_novel,
-                        split_cka_result.novel_fraction * 100,
-                        split_cka_result.full_cka,
-                    )
-                except Exception as e:
-                    logger.warning("SPLIT CKA failed: %s", e)
 
     # =========================================================================
     # LAYER CLASSIFICATION: ALL LAYERS PROCESSED
@@ -1048,7 +462,6 @@ def _probe_precise(
         "probes_total": len(probes),
         "probes_processed": probes_processed,
         "probes_failed": probes_failed,
-        "fingerprints_built": len(source_fingerprints),
         "layers_analyzed": len(layer_confidences),
         "layers_with_cka": len(layer_cka_scores),
         "layers_with_data": len(layers_with_data),
@@ -1070,7 +483,6 @@ def _probe_precise(
         "skipped_count": len(skipped_layers),
         "atlas_sources": list(set(p.source.value for p in probes)),
         "atlas_domains": list(set(p.domain.value for p in probes)),
-        "intersection_map_built": intersection_map_obj is not None,
         # SPLIT CKA: separates "alignment quality" from "novelty fraction"
         "split_cka": {
             "shared_cka": split_cka_result.shared_cka if split_cka_result else None,
@@ -1090,53 +502,51 @@ def _probe_precise(
     )
 
     # =========================================================================
-    # PROPAGATE TRANSFORMS TO ALL TARGET LAYERS
+    # VALIDATE TRANSFORMS FOR ALL TARGET LAYERS (STRICT - NO FALLBACKS)
     # =========================================================================
     # Proportional mapping defines transforms for all target layers.
     # If any transforms are missing, it indicates missing activations or
-    # an alignment bug and should be investigated.
+    # an alignment bug - fail fast instead of propagating incorrect transforms.
     all_target_layers = sorted(set(target_layer_activations.keys()))
+    if not feature_transforms:
+        raise RuntimeError("PROBE FAILED: No feature transforms computed.")
     if feature_transforms and len(feature_transforms) < len(all_target_layers):
-        missing_count = len(all_target_layers) - len(feature_transforms)
-        logger.error(
-            "PROBE: Missing %d feature transforms; propagating nearest neighbor as fallback.",
-            missing_count,
+        missing_layers = [l for l in all_target_layers if l not in feature_transforms]
+        raise RuntimeError(
+            f"PROBE FAILED: Missing feature transforms for {len(missing_layers)} layers: {missing_layers}. "
+            f"This indicates missing activations or an alignment bug. "
+            f"Available transforms: {sorted(feature_transforms.keys())}"
         )
-        mapped_layers = sorted(feature_transforms.keys())
-        logger.info(
-            "PROBE: Propagating transforms from %d mapped layers to %d total layers",
-            len(mapped_layers),
-            len(all_target_layers),
+
+    if not intermediate_transforms:
+        raise RuntimeError("PROBE FAILED: No intermediate transforms computed.")
+    if intermediate_transforms and len(intermediate_transforms) < len(all_target_layers):
+        missing_layers = [l for l in all_target_layers if l not in intermediate_transforms]
+        raise RuntimeError(
+            f"PROBE FAILED: Missing intermediate transforms for {len(missing_layers)} layers: {missing_layers}. "
+            f"Available transforms: {sorted(intermediate_transforms.keys())}"
         )
-        for tgt_layer in all_target_layers:
-            if tgt_layer not in feature_transforms:
-                # Find nearest mapped layer
-                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
-                feature_transforms[tgt_layer] = feature_transforms[nearest]
-                # Also propagate layer_mapping
-                if nearest in layer_mapping:
-                    layer_mapping[tgt_layer] = layer_mapping[nearest]
 
     if attention_transforms and len(attention_transforms) < len(all_target_layers):
-        mapped_layers = sorted(attention_transforms.keys())
-        for tgt_layer in all_target_layers:
-            if tgt_layer not in attention_transforms:
-                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
-                attention_transforms[tgt_layer] = attention_transforms[nearest]
+        missing_layers = [l for l in all_target_layers if l not in attention_transforms]
+        raise RuntimeError(
+            f"PROBE FAILED: Missing attention transforms for {len(missing_layers)} layers: {missing_layers}. "
+            f"Available transforms: {sorted(attention_transforms.keys())}"
+        )
 
     if k_transforms and len(k_transforms) < len(all_target_layers):
-        mapped_layers = sorted(k_transforms.keys())
-        for tgt_layer in all_target_layers:
-            if tgt_layer not in k_transforms:
-                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
-                k_transforms[tgt_layer] = k_transforms[nearest]
+        missing_layers = [l for l in all_target_layers if l not in k_transforms]
+        raise RuntimeError(
+            f"PROBE FAILED: Missing K transforms for {len(missing_layers)} layers: {missing_layers}. "
+            f"Available transforms: {sorted(k_transforms.keys())}"
+        )
 
     if v_transforms and len(v_transforms) < len(all_target_layers):
-        mapped_layers = sorted(v_transforms.keys())
-        for tgt_layer in all_target_layers:
-            if tgt_layer not in v_transforms:
-                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
-                v_transforms[tgt_layer] = v_transforms[nearest]
+        missing_layers = [l for l in all_target_layers if l not in v_transforms]
+        raise RuntimeError(
+            f"PROBE FAILED: Missing V transforms for {len(missing_layers)} layers: {missing_layers}. "
+            f"Available transforms: {sorted(v_transforms.keys())}"
+        )
 
     gram_aligner = GramAligner(backend=b)
 
@@ -1162,31 +572,37 @@ def _probe_precise(
             _embedding_count(source_embedding_activations),
             _embedding_count(target_embedding_activations),
         )
-        if n_samples >= 2:
-            logger.info(
-                "EMBEDDING GRAMALIGN: Computing 2D alignment with %d samples (linear alignment + geodesic diagnostics)",
-                n_samples,
+        if n_samples < 2:
+            raise RuntimeError(
+                f"EMBEDDING GRAMALIGN: Insufficient samples ({n_samples}) for alignment."
             )
-            try:
-                src_stacked = _stack_embeddings(source_embedding_activations, n_samples)
-                tgt_stacked = _stack_embeddings(target_embedding_activations, n_samples)
-                src_stacked = _promote_precision(src_stacked, b)
-                tgt_stacked = _promote_precision(tgt_stacked, b)
-                b.eval(src_stacked, tgt_stacked)
 
-                # Use same GramAligner as hidden layers
-                emb_result = gram_aligner.find_perfect_alignment(src_stacked, tgt_stacked)
-                emb_F = emb_result.feature_transform  # Already GPU array
-                embedding_transform = emb_F  # Keep as GPU array
+        logger.info(
+            "EMBEDDING GRAMALIGN: Computing 2D alignment with %d samples (linear alignment + geodesic diagnostics)",
+            n_samples,
+        )
+        src_stacked = _stack_embeddings(source_embedding_activations, n_samples)
+        tgt_stacked = _stack_embeddings(target_embedding_activations, n_samples)
+        src_stacked = _promote_precision(src_stacked, b)
+        tgt_stacked = _promote_precision(tgt_stacked, b)
+        b.eval(src_stacked, tgt_stacked)
 
-                emb_aligned = b.matmul(src_stacked, emb_F)
-                b.eval(emb_aligned)
+        # Use same GramAligner as hidden layers
+        emb_result = gram_aligner.find_perfect_alignment(src_stacked, tgt_stacked)
+        emb_F = emb_result.feature_transform  # Already GPU array
+        embedding_transform = emb_F  # Keep as GPU array
 
-                # Geodesic CKA from alignment
-                emb_geodesic_cka = emb_result.achieved_cka
-                metrics["embedding_cka"] = emb_geodesic_cka
-            except Exception as e:
-                logger.warning("EMBEDDING GRAMALIGN failed: %s", e)
+        emb_aligned = b.matmul(src_stacked, emb_F)
+        b.eval(emb_aligned)
+
+        # Geodesic CKA from alignment
+        emb_geodesic_cka = emb_result.achieved_cka
+        metrics["embedding_cka"] = emb_geodesic_cka
+    else:
+        raise RuntimeError("EMBEDDING GRAMALIGN: Missing embedding activations.")
+
+    if embedding_transform is None:
+        raise RuntimeError("EMBEDDING GRAMALIGN failed to produce a transform.")
 
     return ProbeResult(
         correlations=weight_correlations,

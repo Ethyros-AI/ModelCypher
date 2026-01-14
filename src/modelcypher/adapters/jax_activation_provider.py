@@ -169,6 +169,48 @@ class JAXActivationProvider:
 
         return activations
 
+    def collect_embedding_activations(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> "Array":
+        """
+        Collect post-embedding activation for a text input.
+
+        Uses the embedding output from hidden_states[0] when available.
+        """
+        if not self._available:
+            raise RuntimeError("JAX backend not available. Install: pip install jax jaxlib")
+
+        if token_ids is None:
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+            if isinstance(tokens, list):
+                token_ids = tokens
+            else:
+                token_ids = list(tokens.ids)
+        input_ids = self.jnp.array([token_ids])
+
+        # HuggingFace FlaxPreTrainedModel pattern
+        if hasattr(model, "__call__") and hasattr(model, "config"):
+            outputs = model(input_ids, output_hidden_states=True)
+            if hasattr(outputs, "hidden_states") and outputs.hidden_states:
+                emb = outputs.hidden_states[0]
+                return self.jnp.mean(emb, axis=(0, 1))
+
+        # Custom forward_with_hidden_states pattern
+        if hasattr(model, "forward_with_hidden_states"):
+            _, hidden_states = model.forward_with_hidden_states(input_ids)
+            if hidden_states:
+                emb = hidden_states[0]
+                return self.jnp.mean(emb, axis=(0, 1))
+
+        raise RuntimeError(
+            "Embedding activations unavailable for this JAX model. "
+            "Model must expose hidden_states with embedding output."
+        )
+
     def collect_intermediate_activations(
         self,
         model: Any,
@@ -227,6 +269,32 @@ class JAXActivationProvider:
             logger.warning("Intermediate activation collection failed: %s", e)
 
         return activations
+
+    def collect_probe_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ):
+        """
+        Collect hidden + intermediate + embedding activations for multiple texts.
+        """
+        from modelcypher.ports.activation_provider import ProbeActivationBatch
+
+        hidden: list[dict[int, "Array"]] = []
+        intermediate: list[dict[int, "Array"]] = []
+        embedding: list["Array"] = []
+
+        for text in texts:
+            hidden.append(self.collect_hidden_activations(model, tokenizer, text))
+            intermediate.append(self.collect_intermediate_activations(model, tokenizer, text))
+            embedding.append(self.collect_embedding_activations(model, tokenizer, text))
+
+        return ProbeActivationBatch(
+            hidden=hidden,
+            intermediate=intermediate,
+            embedding=embedding,
+        )
 
     def collect_attention_activations(
         self,

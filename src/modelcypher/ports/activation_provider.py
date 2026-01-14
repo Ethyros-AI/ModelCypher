@@ -55,10 +55,20 @@ Usage:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 # TypeVar for array types - same as Backend protocol
 Array = TypeVar("Array")
+
+
+@dataclass(frozen=True)
+class ProbeActivationBatch:
+    """Batch activations for probe alignment in a single forward pass."""
+
+    hidden: list[dict[int, Array]]
+    intermediate: list[dict[int, Array]]
+    embedding: list[Array]
 
 
 @runtime_checkable
@@ -186,6 +196,20 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    def collect_probe_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> ProbeActivationBatch:
+        """
+        Collect hidden + intermediate + embedding activations for multiple texts in one pass.
+
+        This is the strict, efficient probe path used for merge alignment. Implementations
+        must not fall back to sequential collection.
+        """
+        ...
+
     # ==========================================================================
     # BATCHED METHODS - Process multiple texts in a single forward pass
     # ==========================================================================
@@ -264,4 +288,4 @@ class ActivationProvider(Protocol):
         ...
 
 
-__all__ = ["ActivationProvider", "Array"]
+__all__ = ["ActivationProvider", "Array", "ProbeActivationBatch"]

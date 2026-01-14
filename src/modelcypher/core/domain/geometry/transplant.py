@@ -131,12 +131,179 @@ class WeightSpaceTransplantResult:
     null_rank: int
 
 
+@dataclass(frozen=True)
+class NullSpaceProjector:
+    """Precomputed null-space projector with density-derived transfer strength."""
+
+    projector: "Array"
+    null_rank: int
+    transfer_strength: float
+
+
+def compute_null_space_projector(
+    input_activations: "Array",
+    *,
+    source_activations_for_density: "Array | None" = None,
+    target_activations_for_density: "Array | None" = None,
+    density_weights: "Array | None" = None,
+    backend: "Backend | None" = None,
+) -> NullSpaceProjector:
+    """Compute a reusable null-space projector from input activations.
+
+    If density_weights are provided, they are used directly to weight the
+    boundary activations. Otherwise, density weights are computed from
+    source/target activations when available.
+    """
+    from modelcypher.core.domain.geometry.knowledge_density import (
+        compute_density_weights,
+        compute_knn_point_cloud_density,
+    )
+
+    b = backend or get_default_backend()
+
+    input_activations = b.array(input_activations)
+    compute_dtype = precision_dtype(b, reference=input_activations)
+
+    if density_weights is not None:
+        density_weights = b.astype(b.array(density_weights), compute_dtype)
+    if source_activations_for_density is not None:
+        source_activations_for_density = b.astype(
+            b.array(source_activations_for_density), compute_dtype
+        )
+    if target_activations_for_density is not None:
+        target_activations_for_density = b.astype(
+            b.array(target_activations_for_density), compute_dtype
+        )
+
+    input_activations = b.astype(input_activations, compute_dtype)
+    b.eval(input_activations)
+
+    n_samples = int(input_activations.shape[0])
+    if n_samples == 0:
+        raise ValueError(
+            "Cannot compute null-space with n_samples=0. "
+            "This indicates a bug in the probe stage - no activations were collected."
+        )
+
+    transfer_strength = 1.0
+
+    if density_weights is None and source_activations_for_density is not None and target_activations_for_density is not None:
+        b.eval(source_activations_for_density, target_activations_for_density)
+        density_result = compute_knn_point_cloud_density(
+            source_activations=source_activations_for_density,
+            target_activations=target_activations_for_density,
+            backend=b,
+        )
+        density_weights = compute_density_weights(
+            source_densities=density_result.source_densities,
+            target_densities=density_result.target_densities,
+            backend=b,
+        )
+        density_weights = b.astype(density_weights, compute_dtype)
+        b.eval(density_weights)
+
+    if density_weights is not None:
+        n_density = int(density_weights.shape[0])
+        if n_density != n_samples:
+            n_compare = min(n_density, n_samples)
+            density_weights = density_weights[:n_compare]
+            input_activations = input_activations[:n_compare]
+            n_samples = n_compare
+            b.eval(density_weights, input_activations)
+
+        transfer_strength = float(b.to_scalar(b.mean(density_weights)))
+
+        constraint_weights = 1.0 - density_weights
+        eps = division_epsilon(b, constraint_weights)
+        sqrt_weights = b.sqrt(constraint_weights + eps)
+        A_weighted = input_activations * b.reshape(sqrt_weights, (-1, 1))
+        b.eval(A_weighted)
+    else:
+        A_weighted = input_activations
+
+    # Compute covariance matrix C = A.T @ A / n [d, d]
+    AtA = b.matmul(b.transpose(A_weighted), A_weighted)
+    C = AtA / float(n_samples)
+    b.eval(C)
+
+    eigvals, eigvecs = b.eigh(C)
+    b.eval(eigvals, eigvecs)
+
+    idx = b.argsort(-eigvals, axis=0)
+    eigvals = b.take(eigvals, idx, axis=0)
+    eigvecs = b.take(eigvecs, idx, axis=1)
+    b.eval(eigvals, eigvecs)
+
+    eps = machine_epsilon(b, eigvals)
+    eigvals_pos = b.maximum(eigvals, eps)
+    total_var = b.sum(eigvals_pos)
+    b.eval(total_var)
+    total_var_val = float(b.to_scalar(total_var))
+
+    if total_var_val < eps:
+        raise ValueError(
+            f"Zero variance in activations (total_var={total_var_val:.2e}). "
+            "This indicates a bug in the pipeline - activations should have non-zero variance. "
+            "Check that the model is loaded correctly and inference is running properly."
+        )
+
+    max_eig_arr = b.max(eigvals_pos)
+    b.eval(max_eig_arr)
+    max_eig = float(b.to_scalar(max_eig_arr))
+    rank_tol = max_eig * float(max(int(eigvals_pos.shape[0]), n_samples)) * float(eps)
+
+    significant_mask = b.astype(eigvals_pos > rank_tol, eigvals_pos.dtype)
+    k_arr = b.sum(significant_mask)
+    b.eval(k_arr)
+    k = int(b.to_scalar(k_arr))
+
+    in_dim = int(eigvals_pos.shape[0])
+    null_rank = in_dim - k
+
+    min_eig = float(b.to_scalar(b.min(eigvals_pos)))
+    median_idx = in_dim // 2
+    median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
+
+    logger.info(
+        "NULL-SPACE DIAG: intrinsic_rank=%d/%d, null_rank=%d (rank_tol=%.3e, "
+        "max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
+        k,
+        in_dim,
+        null_rank,
+        rank_tol,
+        max_eig,
+        median_eig,
+        min_eig,
+    )
+
+    if null_rank > 0:
+        V_null = eigvecs[:, k:]
+        b.eval(V_null)
+        N = b.matmul(V_null, b.transpose(V_null))
+        b.eval(N)
+    else:
+        logger.info(
+            "INTRINSIC NULL-SPACE: null_rank=0, target uses all %d dimensions. "
+            "No null-space available for transfer - boundary will be fully preserved.",
+            in_dim
+        )
+        N = b.zeros((in_dim, in_dim))
+        b.eval(N)
+
+    return NullSpaceProjector(
+        projector=N,
+        null_rank=null_rank,
+        transfer_strength=transfer_strength,
+    )
+
+
 def compute_weight_space_transplant(
     source_aligned: "Array",
     target_weight: "Array",
     input_activations: "Array",
     source_activations_for_density: "Array | None" = None,
     target_activations_for_density: "Array | None" = None,
+    null_space_projector: "NullSpaceProjector | None" = None,
     backend: "Backend | None" = None,
 ) -> WeightSpaceTransplantResult:
     """Weight-space null-space projection with density-weighted transfer.
@@ -171,11 +338,6 @@ def compute_weight_space_transplant(
     Returns:
         WeightSpaceTransplantResult with merged weight and diagnostics.
     """
-    from modelcypher.core.domain.geometry.knowledge_density import (
-        compute_density_weights,
-        compute_knn_point_cloud_density,
-    )
-
     b = backend or get_default_backend()
 
     source_aligned = b.array(source_aligned)
@@ -261,191 +423,17 @@ def compute_weight_space_transplant(
         delta_norm / (target_norm_val + eps),
     )
 
-    # Step 2: Compute density weights if activations provided
-    transfer_strength = 1.0
-    density_weights = None
-
-    if source_activations_for_density is not None and target_activations_for_density is not None:
-        src_density_acts = b.astype(
-            b.array(source_activations_for_density), compute_dtype
-        )
-        tgt_density_acts = b.astype(
-            b.array(target_activations_for_density), compute_dtype
-        )
-        b.eval(src_density_acts, tgt_density_acts)
-
-        # Compute k-NN densities
-        density_result = compute_knn_point_cloud_density(
-            source_activations=src_density_acts,
-            target_activations=tgt_density_acts,
+    if null_space_projector is None:
+        null_space_projector = compute_null_space_projector(
+            input_activations=input_activations,
+            source_activations_for_density=source_activations_for_density,
+            target_activations_for_density=target_activations_for_density,
             backend=b,
         )
 
-        # Get per-sample transfer weights: high when source dense, target sparse
-        density_weights = compute_density_weights(
-            source_densities=density_result.source_densities,
-            target_densities=density_result.target_densities,
-            backend=b,
-        )
-        b.eval(density_weights)
-
-        # Align density weights and input activations to the same sample count
-        n_density = int(density_weights.shape[0])
-        if n_density != n_samples:
-            n_compare = min(n_density, n_samples)
-            logger.debug(
-                "DENSITY WEIGHTING: Truncating to %d samples (density=%d, activations=%d)",
-                n_compare,
-                n_density,
-                n_samples,
-            )
-            density_weights = density_weights[:n_compare]
-            input_activations = input_activations[:n_compare]
-            n_samples = n_compare
-            b.eval(density_weights, input_activations)
-
-        transfer_strength = float(b.to_scalar(b.mean(density_weights)))
-
-        logger.debug(
-            "DENSITY WEIGHTING: mean_transfer=%.3f, src_density=%.3f, tgt_density=%.3f",
-            transfer_strength,
-            density_result.mean_source_density,
-            density_result.mean_target_density,
-        )
-
-    # Step 3: Compute null-space projector
-    # N = I - pinv(A_weighted) @ A_weighted
-    # Density weighting: constraint_weight = 1 - transfer_weight
-    # High target density → high constraint → preserve that direction
-
-    if density_weights is not None:
-        # Constraint weight = 1 - transfer_weight (preserve where target is dense)
-        constraint_weights = 1.0 - density_weights  # [n]
-
-        # Apply sqrt for proper weighted least-squares.
-        eps = division_epsilon(b, constraint_weights)
-        sqrt_weights = b.sqrt(constraint_weights + eps)  # [n]
-
-        # Weight the activations: A_weighted[i, :] = sqrt_w[i] * A[i, :]
-        A_weighted = input_activations * b.reshape(sqrt_weights, (-1, 1))
-        b.eval(A_weighted)
-    else:
-        A_weighted = input_activations
-
-    # =========================================================================
-    # INTRINSIC NULL-SPACE PROJECTION
-    # =========================================================================
-    # The null-space is NOT about the number of probes - it's about the
-    # INTRINSIC DIMENSIONALITY of the target's representation.
-    #
-    # Even with many probes (n >> d), the target's activations live on a
-    # low-dimensional manifold. The "null space" is the orthogonal complement
-    # of this manifold - the "dark space" where we can add knowledge.
-    #
-    # Algorithm:
-    # 1. Compute covariance: C = A.T @ A / n  [d, d]
-    # 2. Eigendecompose: C = V @ diag(λ) @ V.T
-    # 3. Find intrinsic rank k via numerical rank threshold
-    # 4. Null-space projector: N = V_null @ V_null.T where V_null = V[:, k:]
-    #
-    # This gives the TRUE null-space based on the target's intrinsic structure,
-    # independent of how many probes we use to estimate it.
-    # =========================================================================
-    # Compute null-space projector
-    # GEOMETRY DOESN'T FAIL - if these operations fail, we have a bug upstream
-    if n_samples == 0:
-        raise ValueError(
-            "Cannot compute null-space with n_samples=0. "
-            "This indicates a bug in the probe stage - no activations were collected."
-        )
-
-    # Compute covariance matrix C = A.T @ A / n [d, d]
-    # This is ALWAYS symmetric positive semi-definite by construction
-    AtA = b.matmul(b.transpose(A_weighted), A_weighted)
-    C = AtA / float(n_samples)
-    b.eval(C)
-
-    # Eigendecomposition of symmetric PSD matrix - this ALWAYS succeeds
-    # If it fails, we have a bug (non-symmetric matrix, backend bug, etc.)
-    eigvals, eigvecs = b.eigh(C)  # eigvals [d], eigvecs [d, d]
-    b.eval(eigvals, eigvecs)
-
-    # Sort by descending eigenvalue (eigh returns ascending)
-    eigvals_list = [float(b.to_scalar(eigvals[i])) for i in range(in_dim)]
-    sorted_idx = sorted(range(in_dim), key=lambda i: eigvals_list[i], reverse=True)
-    idx = b.array(sorted_idx)
-    eigvals = b.take(eigvals, idx, axis=0)
-    eigvecs = b.take(eigvecs, idx, axis=1)
-    b.eval(eigvals, eigvecs)
-
-    # Compute total variance
-    eps = machine_epsilon(b, eigvals)
-    eigvals_pos = b.maximum(eigvals, eps)
-    total_var = b.sum(eigvals_pos)
-    b.eval(total_var)
-    total_var_val = float(b.to_scalar(total_var))
-
-    if total_var_val < eps:
-        # Zero variance means all activations are identical/zero - this is a bug
-        raise ValueError(
-            f"Zero variance in activations (total_var={total_var_val:.2e}). "
-            "This indicates a bug in the pipeline - activations should have non-zero variance. "
-            "Check that the model is loaded correctly and inference is running properly."
-        )
-
-    # Determine intrinsic rank via numerical rank threshold
-    max_eig = float(b.to_scalar(b.max(eigvals_pos)))
-    rank_tol = max_eig * float(max(in_dim, n_samples)) * float(eps)
-
-    k = 0
-    for i in range(in_dim):
-        ev = float(b.to_scalar(eigvals_pos[i]))
-        if ev > rank_tol:
-            k += 1
-
-    # Intrinsic rank = k (numerically significant directions)
-    # Null rank = d - k (remaining directions)
-    null_rank = in_dim - k
-
-    # Compute eigenvalue statistics for diagnostics
-    min_eig = float(b.to_scalar(b.min(eigvals_pos)))
-    median_idx = in_dim // 2
-    median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
-
-    logger.info(
-        "NULL-SPACE DIAG: intrinsic_rank=%d/%d, null_rank=%d (rank_tol=%.3e, "
-        "max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
-        k,
-        in_dim,
-        null_rank,
-        rank_tol,
-        max_eig,
-        median_eig,
-        min_eig,
-    )
-
-    if null_rank > 0:
-        # Null-space projector: N = V_null @ V_null.T
-        # V_null = eigvecs[:, k:] (columns corresponding to small eigenvalues)
-        V_null = eigvecs[:, k:]  # [d, null_rank]
-        b.eval(V_null)
-
-        # N = V_null @ V_null.T [d, d]
-        N = b.matmul(V_null, b.transpose(V_null))
-        b.eval(N)
-    else:
-    # null_rank=0 is GEOMETRICALLY VALID - it means the target uses ALL dimensions
-    # under the numerical rank threshold (no eigenvalues fall below rank_tol)
-        # This is rare but possible for very well-trained models
-        # In this case, there is NO null-space to project into - all directions are occupied
-        # We MUST use N=0 - any transfer would violate the boundary
-        logger.info(
-            "INTRINSIC NULL-SPACE: null_rank=0, target uses all %d dimensions. "
-            "No null-space available for transfer - boundary will be fully preserved.",
-            in_dim
-        )
-        N = b.zeros((in_dim, in_dim))
-        b.eval(N)
+    N = null_space_projector.projector
+    null_rank = null_space_projector.null_rank
+    transfer_strength = null_space_projector.transfer_strength
 
     # Step 4: Project delta to null-space
     # delta_W_proj = delta_W @ N

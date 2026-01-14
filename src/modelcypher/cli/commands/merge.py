@@ -599,7 +599,6 @@ def batch(
             model_loader=model_loader,
             backend=backend,
             activation_provider=registry.activation_provider,
-            activation_store=registry.activation_store,
         )
 
         # Always use auto_scale - math determines safe injection amount

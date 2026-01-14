@@ -21,12 +21,11 @@ Merge pipeline stages.
 Each stage is a standalone module that can be imported and tested independently.
 The UnifiedGeometricMerger orchestrates these stages in sequence.
 
-Pipeline: PROBE → DENSITY → TRANSPLANT → VALIDATE
+Pipeline: PROBE → DENSITY → TRANSPLANT
 
-Stage 1: PROBE - Build intersection map from probe responses, compute GramAlign transforms
+Stage 1: PROBE - Compute GramAlign transforms from probe responses
 Stage 2: DENSITY - Knowledge density profiling for graft mask
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
-Stage 4: VALIDATE - Safety checks (numerical stability, refusal preservation, behavioral probes)
 
 REMOVED (proven redundant):
 - PERMUTE: GramAligner alignment in RKHS subsumes discrete permutation alignment.
@@ -39,7 +38,6 @@ References:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from .probe import (
@@ -56,14 +54,9 @@ from .transplant import (
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,
 )
-from .validate import (
-    ValidateResult,
-    stage_validate as stage_validate_impl,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
-    from modelcypher.ports.activation_store import ActivationStore
     from modelcypher.ports.backend import Array, Backend
 
 def stage_probe(
@@ -79,10 +72,7 @@ def stage_probe(
     extract_layer_index_fn: Callable[[str], int | None],
     probe_mode: str = "atlas",
     activation_provider: "ActivationProvider | None" = None,
-    activation_store: "ActivationStore | None" = None,
-    collect_activations_fn: Callable | None = None,
     backend: "Backend | None" = None,
-    checkpoint_dir: Path | str | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -114,11 +104,8 @@ def stage_probe(
         target_tokenizer=target_tokenizer,
         source_path=source_path,
         target_path=target_path,
-        collect_activations_fn=collect_activations_fn,
         activation_provider=activation_provider,
-        activation_store=activation_store,
         backend=backend,
-        checkpoint_dir=checkpoint_dir,
         probe_mode=probe_mode,
     )
 
@@ -253,47 +240,6 @@ def stage_transplant(
     return result.merged_weights, result.metrics
 
 
-def stage_validate(
-    *,
-    merged_weights: dict[str, "Array"],
-    source_weights: dict[str, "Array"],
-    target_weights: dict[str, "Array"],
-    layer_confidences: dict[int, float],
-    layer_indices: list[int],
-    hidden_dim: int,
-    target_model: Any | None = None,
-    target_model_path: str | None = None,
-    tokenizer: Any | None = None,
-    collect_activations_fn: Callable | None = None,
-    merged_model_path: str | None = None,
-    backend: "Backend | None" = None,
-) -> tuple[dict[str, Any], "ValidateResult"]:
-    """Stage 4: Validation of merged weights.
-
-    Returns raw measurements only. No verdicts - the geometry IS what it is.
-    Callers interpret measurements relative to their own baselines.
-
-    Returns:
-        Tuple of (metrics dict, ValidateResult)
-    """
-    result = stage_validate_impl(
-        merged_weights=merged_weights,
-        source_weights=source_weights,
-        target_weights=target_weights,
-        layer_confidences=layer_confidences,
-        layer_indices=layer_indices,
-        hidden_dim=hidden_dim,
-        target_model=target_model,
-        target_model_path=target_model_path,
-        tokenizer=tokenizer,
-        collect_activations_fn=collect_activations_fn,
-        merged_model_path=merged_model_path,
-        backend=backend,
-    )
-
-    return result.metrics, result
-
-
 __all__ = [
     # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
     "stage_probe",
@@ -304,7 +250,4 @@ __all__ = [
     # Stage 3: Transplant (geometry-driven, graft_mask only)
     "stage_transplant",
     "TransplantStageResult",
-    # Stage 4: Validate (safety checks for merged weights)
-    "stage_validate",
-    "ValidateResult",
 ]

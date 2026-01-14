@@ -236,7 +236,6 @@ class ServiceFactory:
         geometric_merger = UnifiedGeometricMerger(
             model_loader=self._registry.model_loader,
             activation_provider=self._registry.activation_provider,
-            activation_store=self._registry.activation_store,
         )
         return MergePipelineService(
             waypoint_service=waypoint_service,
