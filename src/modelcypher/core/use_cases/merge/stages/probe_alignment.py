@@ -49,10 +49,8 @@ class AlignmentResult:
     v_transforms: dict[int, Any]
     intermediate_transforms: dict[int, Any]
     gate_transforms: dict[int, Any]  # PRE-SiLU for gate_proj/up_proj stitching
-    layer_cka_scores: dict[int, float]
-    layer_cka_scores_raw: dict[int, float]
+    layer_cka_scores: dict[int, float]  # Geodesic CKA only
     cgls_iterations_by_layer: dict[int, int]
-    rbf_consistency_hidden: dict[str, float] | None
 
 
 def _activation_count(backend: "Backend", acts: Any) -> int:
@@ -106,9 +104,7 @@ def align_layers(
     intermediate_transforms: dict[int, Any] = {}
     gate_transforms: dict[int, Any] = {}  # PRE-SiLU for cross-arch gate/up stitching
     layer_cka_scores: dict[int, float] = {}
-    layer_cka_scores_raw: dict[int, float] = {}
     cgls_iterations_by_layer: dict[int, int] = {}
-    rbf_consistency_hidden: dict[str, float] | None = None
 
     if not (source_layer_activations and target_layer_activations):
         return AlignmentResult(
@@ -121,9 +117,7 @@ def align_layers(
             intermediate_transforms=intermediate_transforms,
             gate_transforms=gate_transforms,
             layer_cka_scores=layer_cka_scores,
-            layer_cka_scores_raw=layer_cka_scores_raw,
             cgls_iterations_by_layer=cgls_iterations_by_layer,
-            rbf_consistency_hidden=rbf_consistency_hidden,
         )
 
     source_layers = sorted(source_layer_activations.keys())
@@ -141,21 +135,17 @@ def align_layers(
         len(alignment_tasks),
     )
 
-    rbf_consistency_checked = False
-
     def _align_target_group(
         tgt_idx: int,
         src_indices: list[int],
         F_init: "Array | None" = None,
     ) -> dict:
-        nonlocal rbf_consistency_checked, rbf_consistency_hidden
         tgt_layer = target_layers[tgt_idx]
         src_layers_list = [source_layers[i] for i in src_indices]
 
         result: dict[str, Any] = {
             "tgt_layer": tgt_layer,
             "src_layers": src_layers_list,
-            "raw_cka": 0.0,
             "achieved_cka": 0.0,
             "geodesic_cka": 0.0,
             "numerical_deviation": 0.0,
@@ -211,14 +201,6 @@ def align_layers(
 
             backend.eval(src_combined, tgt_stacked)
 
-            from modelcypher.core.domain.geometry.cka import (
-                compute_cka_backend,
-            )
-
-            result["raw_cka"] = float(
-                compute_cka_backend(src_combined, tgt_stacked, backend)
-            )
-
             alignment_result = local_aligner.find_perfect_alignment(
                 src_combined,
                 tgt_stacked,
@@ -237,57 +219,6 @@ def align_layers(
             result["geodesic_cka"] = geodesic_cka  # Same as achieved_cka (for clarity)
             result["linear_iterations"] = alignment_result.linear_iterations
             cgls_iterations_by_layer[tgt_layer] = alignment_result.linear_iterations
-            logger.info(
-                "ALIGNMENT: Layer %d <- %s: solver iters=%d",
-                tgt_layer,
-                src_layers_list,
-                alignment_result.linear_iterations,
-            )
-
-            if not rbf_consistency_checked:
-                from modelcypher.core.domain.geometry.cka import compute_cka
-
-                # Verify geodesic RBF CKA via independent computation
-                rbf_result = compute_cka(aligned, tgt_stacked, backend=backend)
-                rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
-
-                precision = sqrt_scalar(machine_epsilon(backend, aligned), backend)
-                rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
-                # Agreement: aligner's geodesic CKA vs compute_cka's geodesic CKA
-                agreement_deviation = abs(rbf_val - geodesic_cka) if rbf_val == rbf_val else float("inf")
-
-                rbf_consistency_hidden = {
-                    "rbf_cka": float(rbf_val) if rbf_val == rbf_val else 0.0,
-                    "rbf_deviation": float(rbf_deviation),
-                    "geodesic_deviation": float(geodesic_deviation),
-                    "agreement_deviation": float(agreement_deviation),
-                    "precision_threshold": float(precision),
-                    "layer": float(tgt_layer),
-                }
-                # Geodesic CKA should be ~1.0 after alignment (by construction)
-                if geodesic_deviation > precision:
-                    logger.error(
-                        "PROBE: Geodesic CKA deviation %.2e > precision %.2e for layer %d.",
-                        geodesic_deviation,
-                        precision,
-                        tgt_layer,
-                    )
-                if rbf_deviation > precision:
-                    logger.info(
-                        "PROBE: Independent RBF CKA deviation %.2e > precision %.2e for layer %d.",
-                        rbf_deviation,
-                        precision,
-                        tgt_layer,
-                    )
-                if agreement_deviation > precision:
-                    logger.info(
-                        "PROBE: Aligner vs compute_cka geodesic CKA deviation %.2e > precision %.2e for layer %d.",
-                        agreement_deviation,
-                        precision,
-                        tgt_layer,
-                    )
-                rbf_consistency_checked = True
-
             result["F_arr_raw"] = F_arr
 
             split_transforms: dict[int, Any] = {}
@@ -491,7 +422,6 @@ def align_layers(
             )
         feature_transforms[tgt_layer] = result["feature_transform"]
         layer_cka_scores[tgt_layer] = result["achieved_cka"]
-        layer_cka_scores_raw[tgt_layer] = result["raw_cka"]
 
         if "scale_ratio" in result:
             scale_ratios[tgt_layer] = result["scale_ratio"]
@@ -504,12 +434,11 @@ def align_layers(
 
         completed += 1
         logger.info(
-            "PROBE ALIGNMENT: Layer %d/%d complete (tgt=%d, linear_CKA=%.4f, raw_CKA=%.4f)",
+            "PROBE ALIGNMENT: Layer %d/%d complete (tgt=%d, geodesic_CKA=%.4f)",
             completed,
             len(alignment_tasks),
             tgt_layer,
             result["achieved_cka"],
-            result["raw_cka"],
         )
 
         if result["attention_transform"] is not None:
@@ -553,7 +482,5 @@ def align_layers(
         intermediate_transforms=intermediate_transforms,
         gate_transforms=gate_transforms,
         layer_cka_scores=layer_cka_scores,
-        layer_cka_scores_raw=layer_cka_scores_raw,
         cgls_iterations_by_layer=cgls_iterations_by_layer,
-        rbf_consistency_hidden=rbf_consistency_hidden,
     )

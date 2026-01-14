@@ -180,14 +180,11 @@ class TestAlignmentResult:
             intermediate_transforms={},
             gate_transforms={},
             layer_cka_scores={0: 1.0},
-            layer_cka_scores_raw={0: 0.8},
             cgls_iterations_by_layer={0: 10},
-            rbf_consistency_hidden=None,
         )
 
         assert result.layer_mapping == {0: 0}
         assert result.layer_cka_scores == {0: 1.0}
-        assert result.rbf_consistency_hidden is None
 
 
 class TestAlignLayers:

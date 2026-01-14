@@ -818,7 +818,6 @@ def _probe_precise(
     intersection_map_obj: IntersectionMap | None = None
     dimension_correlations: dict = {}
     layer_cka_scores: dict[int, float] = {}
-    layer_cka_scores_raw: dict[int, float] = {}
 
     if source_fingerprints and target_fingerprints:
         try:
@@ -861,9 +860,7 @@ def _probe_precise(
     v_transforms = alignment_result.v_transforms
     intermediate_transforms = alignment_result.intermediate_transforms
     layer_cka_scores = alignment_result.layer_cka_scores
-    layer_cka_scores_raw = alignment_result.layer_cka_scores_raw
     cgls_iterations_by_layer = alignment_result.cgls_iterations_by_layer
-    rbf_consistency_hidden = alignment_result.rbf_consistency_hidden
 
     # Extract layer confidences (CKA-first, IntersectionMap as fallback)
     # No fallbacks beyond geometric signals - if we don't have alignment, we don't merge
@@ -922,9 +919,6 @@ def _probe_precise(
         )
     mean_cka = sum(valid_cka_vals) / len(valid_cka_vals) if valid_cka_vals else 0.0
     min_cka = min(valid_cka_vals) if valid_cka_vals else 0.0
-    raw_cka_vals = list(layer_cka_scores_raw.values())
-    mean_cka_raw = sum(raw_cka_vals) / len(raw_cka_vals) if raw_cka_vals else 0.0
-    min_cka_raw = min(raw_cka_vals) if raw_cka_vals else 0.0
     # layers_with_data: layers that have activations in both models (for reporting)
     layers_with_data = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
     # Proportional mapping defines a correspondence for every target layer.
@@ -1061,16 +1055,12 @@ def _probe_precise(
         "missing_cka_layers": len(missing_cka_layers),
         "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
-        "layer_cka_scores_raw": layer_cka_scores_raw,
         "cgls_iterations_by_layer": cgls_iterations_by_layer,
         "mean_cka": mean_cka,
         "min_cka": min_cka,
-        "mean_cka_raw": mean_cka_raw,
-        "min_cka_raw": min_cka_raw,
-        "cka_estimator": "auto",
-        "feature_bias_correction": True,
+        "cka_estimator": "geodesic",
         "perfect_alignment": perfect_alignment,
-        # NEW: Layer classification for adaptive barometer
+        # Layer classification for adaptive barometer
         "layer_status": layer_status,
         "converged_layers": converged_layers,
         "boundary_preserved_layers": boundary_preserved_layers,
@@ -1081,12 +1071,6 @@ def _probe_precise(
         "atlas_sources": list(set(p.source.value for p in probes)),
         "atlas_domains": list(set(p.domain.value for p in probes)),
         "intersection_map_built": intersection_map_obj is not None,
-        # TRUE pre-alignment CKA from actual activation vectors (not sparse fingerprints)
-        "raw_cka_mean": (
-            sum(layer_cka_scores_raw.values()) / len(layer_cka_scores_raw)
-            if layer_cka_scores_raw
-            else 0.0
-        ),
         # SPLIT CKA: separates "alignment quality" from "novelty fraction"
         "split_cka": {
             "shared_cka": split_cka_result.shared_cka if split_cka_result else None,
@@ -1098,16 +1082,11 @@ def _probe_precise(
             "n_novel": split_cka_result.n_novel if split_cka_result else None,
         } if split_cka_result else None,
     }
-    if rbf_consistency_hidden is not None:
-        metrics["hidden_rbf_consistency"] = rbf_consistency_hidden
 
-    # mean_cka = Post-alignment geodesic CKA (shared-manifold coverage)
-    # raw_cka_mean = Pre-alignment geodesic CKA from actual activations
     logger.info(
-        "PROBE PRECISE: %d layers, post_geodesic_cka=%.4f, raw_geodesic_cka=%.4f",
+        "PROBE PRECISE: %d layers, geodesic_cka=%.4f",
         len(layer_confidences),
         mean_cka,
-        metrics["raw_cka_mean"],
     )
 
     # =========================================================================
@@ -1203,66 +1182,9 @@ def _probe_precise(
                 emb_aligned = b.matmul(src_stacked, emb_F)
                 b.eval(emb_aligned)
 
-                # Primary metric: geodesic RBF CKA (what the alignment optimizes)
+                # Geodesic CKA from alignment
                 emb_geodesic_cka = emb_result.achieved_cka
-                emb_geodesic_deviation = abs(1.0 - emb_geodesic_cka)
-
                 metrics["embedding_cka"] = emb_geodesic_cka
-                metrics["embedding_geodesic_cka"] = emb_geodesic_cka  # Same (for clarity)
-                metrics["embedding_numerical_deviation"] = emb_geodesic_deviation
-
-                # One-time geodesic RBF CKA consistency check (aligner vs compute_cka)
-                try:
-                    from modelcypher.core.domain.geometry.cka import compute_cka
-
-                    # Verify geodesic RBF CKA via independent computation
-                    rbf_result = compute_cka(emb_aligned, tgt_stacked, backend=b)
-                    rbf_val = rbf_result.best if rbf_result.is_valid else float("nan")
-
-                    precision = sqrt_scalar(machine_epsilon(b, emb_aligned), b)
-                    rbf_deviation = abs(1.0 - rbf_val) if rbf_val == rbf_val else float("inf")
-                    # Agreement: aligner's geodesic CKA vs compute_cka's geodesic CKA
-                    agreement_deviation = abs(rbf_val - emb_geodesic_cka) if rbf_val == rbf_val else float("inf")
-
-                    metrics["embedding_rbf_consistency"] = {
-                        "rbf_cka": float(rbf_val) if rbf_val == rbf_val else 0.0,
-                        "rbf_deviation": float(rbf_deviation),
-                        "geodesic_deviation": float(emb_geodesic_deviation),
-                        "agreement_deviation": float(agreement_deviation),
-                        "precision_threshold": float(precision),
-                    }
-                    # Geodesic CKA should be ~1.0 after alignment (by construction)
-                    if emb_geodesic_deviation > precision:
-                        logger.error(
-                            "EMBEDDING GRAMALIGN: Geodesic CKA deviation %.2e > precision %.2e.",
-                            emb_geodesic_deviation,
-                            precision,
-                        )
-                    if rbf_deviation > precision:
-                        logger.info(
-                            "EMBEDDING GRAMALIGN: Independent RBF CKA deviation %.2e > precision %.2e.",
-                            rbf_deviation,
-                            precision,
-                        )
-                    if agreement_deviation > precision:
-                        logger.info(
-                            "EMBEDDING GRAMALIGN: Aligner vs compute_cka geodesic CKA deviation %.2e > precision %.2e.",
-                            agreement_deviation,
-                            precision,
-                        )
-                except Exception as consistency_err:
-                    logger.warning(
-                        "EMBEDDING GRAMALIGN: RBF consistency check failed: %s",
-                        consistency_err,
-                    )
-
-                # Geodesic CKA is the diagnostic check for shared-manifold alignment
-                if emb_geodesic_deviation > precision:
-                    logger.warning(
-                        "EMBEDDING GRAMALIGN: Geodesic CKA deviation %.2e > precision %.2e.",
-                        emb_geodesic_deviation,
-                        precision,
-                    )
             except Exception as e:
                 logger.warning("EMBEDDING GRAMALIGN failed: %s", e)
 
