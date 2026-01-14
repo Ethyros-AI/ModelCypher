@@ -182,7 +182,7 @@ def align_layers(
             tgt_dim,
         )
 
-        local_aligner = GramAligner(backend=backend)
+        local_aligner = GramAligner(backend=backend, use_geodesic_alignment=False)
 
         try:
             src_stacks = []
@@ -260,7 +260,7 @@ def align_layers(
                     n_samples,
                 )
                 if inter_samples < 2:
-                    logger.warning(
+                    logger.debug(
                         "PROBE INTER: Insufficient samples for %s -> %d: %d",
                         s_layer,
                         tgt_layer,
@@ -295,7 +295,7 @@ def align_layers(
                         tgt_inter_dim,
                     )
                 except Exception as inter_err:
-                    logger.warning(
+                    logger.debug(
                         "PROBE INTER: Direct alignment failed for %s -> %d: %s",
                         s_layer,
                         tgt_layer,
@@ -329,7 +329,7 @@ def align_layers(
                         n_samples,
                     )
                     if gate_samples < 2:
-                        logger.warning(
+                        logger.debug(
                             "PROBE GATE: Insufficient samples for %s -> %d: %d",
                             s_layer,
                             tgt_layer,
@@ -364,12 +364,12 @@ def align_layers(
                             tgt_gate_dim,
                         )
                     except Exception as gate_err:
-                        logger.warning(
-                            "PROBE GATE: Direct alignment failed for %s -> %d: %s",
-                            s_layer,
-                            tgt_layer,
-                            gate_err,
-                        )
+                    logger.debug(
+                        "PROBE GATE: Direct alignment failed for %s -> %d: %s",
+                        s_layer,
+                        tgt_layer,
+                        gate_err,
+                    )
 
             if split_gate_transforms:
                 result["gate_transform"] = split_gate_transforms

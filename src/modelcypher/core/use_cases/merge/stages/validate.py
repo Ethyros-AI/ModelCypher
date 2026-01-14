@@ -603,7 +603,8 @@ def _compute_layer_condition_number(
         else:
             gram = b.matmul(val_arr, b.transpose(val_arr))
         b.eval(gram)
-        eigenvalues, _ = b.eigh(gram)
+        # Use eigvalsh (eigenvalues only) - ~50% faster than eigh
+        eigenvalues = b.eigvalsh(gram)
         b.eval(eigenvalues)
         eigenvalues = b.maximum(eigenvalues, b.zeros_like(eigenvalues))
         s = b.sqrt(eigenvalues)
@@ -679,7 +680,8 @@ def _estimate_layer_intrinsic_dim(
         else:
             gram = b.matmul(val_arr, b.transpose(val_arr))
         b.eval(gram)
-        eigenvalues, _ = b.eigh(gram)
+        # Use eigvalsh (eigenvalues only) - ~50% faster than eigh
+        eigenvalues = b.eigvalsh(gram)
         b.eval(eigenvalues)
         eigenvalues = b.maximum(eigenvalues, b.zeros_like(eigenvalues))
         s = b.sqrt(eigenvalues)

@@ -146,7 +146,8 @@ class DeviationTracker:
         else:
             gram = backend.matmul(arr, backend.transpose(arr))
         backend.eval(gram)
-        eigenvalues, _ = backend.eigh(gram)
+        # Use eigvalsh (eigenvalues only) - ~50% faster than eigh
+        eigenvalues = backend.eigvalsh(gram)
         backend.eval(eigenvalues)
         eigenvalues = backend.maximum(eigenvalues, backend.zeros_like(eigenvalues))
         s = backend.sqrt(eigenvalues)

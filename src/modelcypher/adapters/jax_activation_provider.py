@@ -299,6 +299,19 @@ class JAXActivationProvider:
             embedding=embedding,
         )
 
+    def collect_gate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, "Array"]]:
+        """
+        Collect per-layer PRE-SiLU gate activations for multiple texts.
+
+        JAX gate extraction is not supported in this adapter; returns empty dicts.
+        """
+        return [{} for _ in texts]
+
     def collect_attention_activations(
         self,
         model: Any,

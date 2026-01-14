@@ -67,7 +67,8 @@ def _coverage_ratio(source: "Array", backend: "Backend") -> float:
         return 0.0
 
     gram, _ = rbf_gram_matrix_with_sigma(source, backend)
-    eigvals, _ = backend.eigh(gram)
+    # Use eigvalsh (eigenvalues only) - ~50% faster than eigh
+    eigvals = backend.eigvalsh(gram)
     zeros = backend.zeros_like(eigvals)
     eigvals = backend.maximum(eigvals, zeros)
 

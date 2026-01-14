@@ -238,7 +238,7 @@ def run_merge(
             sorted(feature_transforms.keys())[:5],  # First 5 for brevity
         )
     else:
-        logger.warning("PROBE: No hidden transforms computed - cross-arch merge will fail")
+        raise RuntimeError("PROBE: No hidden transforms computed; cannot proceed.")
 
     if attention_transforms:
         logger.info(
@@ -266,7 +266,7 @@ def run_merge(
             dict(list(layer_mapping.items())[:5]),
         )
     else:
-        logger.warning("PROBE: No layer mapping - cross-arch merge will fail")
+        raise RuntimeError("PROBE: No layer mapping computed; cannot proceed.")
 
     # Log activation collection results
     if source_activations and target_activations:
@@ -568,34 +568,31 @@ def run_merge(
         # - preserved_fraction (how much delta was added)
         logger.info("STAGE 4: VALIDATE (density estimation from transplant metrics)")
         post_merge_density = None
-        try:
-            source_density = density_metrics.get("overall_source_density", 0)
-            target_density = density_metrics.get("overall_target_density", 0)
-            opportunity = density_metrics.get("overall_opportunity", 0)
-            preserved_fraction = transplant_metrics.get("mean_preserved_fraction", 0)
+        source_density = density_metrics.get("overall_source_density", 0)
+        target_density = density_metrics.get("overall_target_density", 0)
+        opportunity = density_metrics.get("overall_opportunity", 0)
+        preserved_fraction = transplant_metrics.get("mean_preserved_fraction", 0)
 
-            if target_density > 0 and opportunity > 0:
-                # Estimate post-merge density based on how much of the density
-                # opportunity was captured via null-space projection.
-                # Formula: target_density + (opportunity * preserved_fraction)
-                # This is exact for null-space addition: we add density in
-                # orthogonal directions without disturbing existing structure.
-                density_gain = opportunity * preserved_fraction
-                post_merge_density = target_density + density_gain
-                density_change = (density_gain / target_density * 100) if target_density > 0 else 0
-                logger.info(
-                    "POST-MERGE: estimated density=%.4f (was %.4f, +%.1f%% from transplant)",
-                    post_merge_density, target_density, density_change
-                )
-            elif target_density > 0:
-                # No opportunity but we have target density - use it as baseline
-                post_merge_density = target_density
-                logger.info(
-                    "POST-MERGE: density=%.4f (no opportunity for increase)",
-                    post_merge_density
-                )
-        except Exception as e:
-            logger.warning("Post-merge density estimation skipped: %s", e)
+        if target_density > 0 and opportunity > 0:
+            # Estimate post-merge density based on how much of the density
+            # opportunity was captured via null-space projection.
+            # Formula: target_density + (opportunity * preserved_fraction)
+            # This is exact for null-space addition: we add density in
+            # orthogonal directions without disturbing existing structure.
+            density_gain = opportunity * preserved_fraction
+            post_merge_density = target_density + density_gain
+            density_change = (density_gain / target_density * 100) if target_density > 0 else 0
+            logger.info(
+                "POST-MERGE: estimated density=%.4f (was %.4f, +%.1f%% from transplant)",
+                post_merge_density, target_density, density_change
+            )
+        elif target_density > 0:
+            # No opportunity but we have target density - use it as baseline
+            post_merge_density = target_density
+            logger.info(
+                "POST-MERGE: density=%.4f (no opportunity for increase)",
+                post_merge_density
+            )
 
         # Save merge analysis report for scientific reproducibility
         import json

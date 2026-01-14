@@ -856,7 +856,7 @@ def compute_cka_split(
     if feature_transform is None:
         F = b.matmul(geodesic_pinv(b, source_arr), target_arr)
     else:
-        F = b.array(feature_transform)
+        F = feature_transform if hasattr(feature_transform, "dtype") else b.array(feature_transform)
         F = b.astype(F, precision_dtype(b, reference=F))
     b.eval(F)
 

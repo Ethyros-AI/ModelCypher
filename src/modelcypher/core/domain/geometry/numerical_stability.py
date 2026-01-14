@@ -899,13 +899,15 @@ def svd_auto_rank(
 
 
 def geodesic_pinv(backend: "Backend", array: "Array") -> "Array":
-    """Compute EXACT Moore-Penrose pseudo-inverse using native backend operation."""
+    """Compute exact Moore-Penrose pseudo-inverse with session cache reuse."""
     b = backend
     A = _promote_precision(b.array(array), b)
     b.eval(A)
 
-    A_pinv = b.pinv(A)
-    b.eval(A_pinv)
+    from modelcypher.core.domain.cache import ComputationCache
+
+    cache = ComputationCache.shared()
+    A_pinv = cache.get_or_compute_pinv(A, b)
 
     return A_pinv
 

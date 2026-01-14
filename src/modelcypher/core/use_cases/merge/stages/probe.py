@@ -154,8 +154,7 @@ def stage_probe(
         ProbeResult with correlations, confidences, and intersection map
     """
     if probe_mode != "atlas":
-        logger.warning("PROBE MODE: %s unsupported; forcing atlas", probe_mode)
-        probe_mode = "atlas"
+        raise ValueError(f"PROBE MODE: {probe_mode} unsupported; atlas is required.")
 
     if tokenizer is not None:
         source_tokenizer = source_tokenizer or tokenizer
@@ -252,23 +251,20 @@ def _probe_precise(
     selected_probes = list(valid_probes)
 
     if len(valid_probes) < min_required:
-        logger.warning(
+        raise RuntimeError(
             "PROBE MODE: Geometry requires minimum %d probes (src_dim=%d, tgt_dim=%d) "
-            "but only %d valid probes available; alignment may be incomplete",
-            min_required,
-            source_dim,
-            target_dim,
-            len(valid_probes),
+            "but only %d valid probes available. Add probes before merging."
+            % (min_required, source_dim, target_dim, len(valid_probes))
         )
-    else:
-        logger.info(
-            "PROBE MODE: Using ALL %d probes for complete manifold coverage "
-            "(geometry minimum=%d, src_dim=%d, tgt_dim=%d)",
-            len(selected_probes),
-            min_required,
-            source_dim,
-            target_dim,
-        )
+
+    logger.info(
+        "PROBE MODE: Using ALL %d probes for complete manifold coverage "
+        "(geometry minimum=%d, src_dim=%d, tgt_dim=%d)",
+        len(selected_probes),
+        min_required,
+        source_dim,
+        target_dim,
+    )
 
     valid_probes = selected_probes
     expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
@@ -513,7 +509,7 @@ def _probe_precise(
             f"Available transforms: {sorted(v_transforms.keys())}"
         )
 
-    gram_aligner = GramAligner(backend=b)
+    gram_aligner = GramAligner(backend=b, use_geodesic_alignment=False)
     embedding_cka: float | None = None
 
     # =========================================================================

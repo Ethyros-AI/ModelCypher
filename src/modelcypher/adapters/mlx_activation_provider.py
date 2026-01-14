@@ -635,15 +635,20 @@ class MLXActivationProvider:
 
             intermediate = None
             gate = None
+            mlp_out = None
             if ff_module is not None:
                 if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
                     up = ff_module.up_proj(h_post)
                     gate = ff_module.gate_proj(h_post)
                     intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "down_proj"):
+                        mlp_out = ff_module.down_proj(intermediate)
                 elif hasattr(ff_module, "w1") and hasattr(ff_module, "w3"):
                     gate = ff_module.w1(h_post)
                     up = ff_module.w3(h_post)
                     intermediate = nn.silu(gate) * up
+                    if hasattr(ff_module, "w2"):
+                        mlp_out = ff_module.w2(intermediate)
                 elif hasattr(ff_module, "fc1"):
                     intermediate = ff_module.fc1(h_post)
 
@@ -665,16 +670,17 @@ class MLXActivationProvider:
                     gate_results[i][layer_idx] = pooled_gate[i]
                 all_tensors.append(pooled_gate)
 
-            if hasattr(layer, "mlp"):
-                mlp_out = layer.mlp(h_post)
-                h = h + mlp_out
-            elif hasattr(layer, "feed_forward"):
-                ff_out = layer.feed_forward(h_post)
-                h = h + ff_out
-            else:
-                raise RuntimeError(
-                    "Model MLP output path not found; probe collection requires MLP output."
-                )
+            if mlp_out is None:
+                if hasattr(layer, "mlp"):
+                    mlp_out = layer.mlp(h_post)
+                elif hasattr(layer, "feed_forward"):
+                    mlp_out = layer.feed_forward(h_post)
+                else:
+                    raise RuntimeError(
+                        "Model MLP output path not found; probe collection requires MLP output."
+                    )
+
+            h = h + mlp_out
 
             pooled_hidden = mx.sum(h * mask[:, :, None], axis=1) / denom
             for i in range(batch_size):
@@ -962,27 +968,27 @@ class MLXActivationProvider:
         batch_size = len(texts)
 
         results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
-        all_tensors = []
+        all_tensors: list["Array"] = []
 
         try:
             if not (hasattr(model, "model") and hasattr(model.model, "layers")):
                 raise RuntimeError("Model not compatible with batch gate collection")
 
             inner = model.model
-        if hasattr(inner, "embed_tokens"):
-            h = inner.embed_tokens(input_ids)
-        elif hasattr(inner, "wte"):
-            h = inner.wte(input_ids)
-        else:
-            raise RuntimeError("Cannot find embedding layer for batch gate collection")
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(input_ids)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(input_ids)
+            else:
+                raise RuntimeError("Cannot find embedding layer for batch gate collection")
 
-        seq_lengths = [len(ids) for ids in all_token_ids]
-        lengths = mx.array(seq_lengths, dtype=h.dtype)
-        pos = mx.arange(max_len)
-        mask = (pos[None, :] < lengths[:, None]).astype(h.dtype)
-        denom = lengths[:, None]
+            seq_lengths = [len(ids) for ids in all_token_ids]
+            lengths = mx.array(seq_lengths, dtype=h.dtype)
+            pos = mx.arange(max_len)
+            mask = (pos[None, :] < lengths[:, None]).astype(h.dtype)
+            denom = lengths[:, None]
 
-        for layer_idx, layer in enumerate(inner.layers):
+            for layer_idx, layer in enumerate(inner.layers):
                 if hasattr(layer, "input_layernorm"):
                     h_norm = layer.input_layernorm(h)
                 elif hasattr(layer, "ln_1"):
@@ -1042,6 +1048,7 @@ class MLXActivationProvider:
                     result = layer(h)
                     h = result[0] if isinstance(result, tuple) else result
 
+            # Single eval at the end - allows GPU to batch all operations
             if all_tensors:
                 mx.eval(*all_tensors)
 
@@ -1049,90 +1056,6 @@ class MLXActivationProvider:
             raise RuntimeError(f"Batch gate collection failed: {e}") from e
 
         return results
-
-    def collect_attention_activations_batch(
-        self,
-        model: Any,
-        tokenizer: Any,
-        texts: list[str],
-    ) -> tuple[list[dict[int, "Array"]], list[dict[int, "Array"]], list[dict[int, "Array"]]]:
-        """
-        Collect per-layer attention Q, K, and V activations for multiple texts.
-
-        Returns tuple of (q_activations_list, k_activations_list, v_activations_list).
-        """
-        import mlx.core as mx
-
-        if not texts:
-            return [], [], []
-
-        all_token_ids = []
-        for text in texts:
-            tokens = tokenizer.encode(text, add_special_tokens=True)
-            if isinstance(tokens, list):
-                all_token_ids.append(tokens)
-            else:
-                all_token_ids.append(list(tokens.ids))
-
-        max_len = max(len(ids) for ids in all_token_ids)
-        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
-        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
-        input_ids = mx.array(padded)
-        batch_size = len(texts)
-
-        q_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
-        k_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
-        v_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
-
-        try:
-            if not (hasattr(model, "model") and hasattr(model.model, "layers")):
-                raise RuntimeError("Model not compatible with batch attention collection")
-
-            inner = model.model
-            if hasattr(inner, "embed_tokens"):
-                h = inner.embed_tokens(input_ids)
-            elif hasattr(inner, "wte"):
-                h = inner.wte(input_ids)
-            else:
-                raise RuntimeError("Cannot find embedding layer for batch attention collection")
-
-            for layer_idx, layer in enumerate(inner.layers):
-                if hasattr(layer, "input_layernorm"):
-                    h_norm = layer.input_layernorm(h)
-                elif hasattr(layer, "ln_1"):
-                    h_norm = layer.ln_1(h)
-                else:
-                    h_norm = h
-
-                attn = layer.self_attn if hasattr(layer, "self_attn") else getattr(layer, "attn", None)
-
-                if attn is not None and hasattr(attn, "q_proj"):
-                    q = attn.q_proj(h_norm)
-                    k = attn.k_proj(h_norm)
-                    v = attn.v_proj(h_norm)
-                    mx.eval(q)
-                    mx.eval(k)
-                    mx.eval(v)
-
-                    for i in range(batch_size):
-                        seq_len = len(all_token_ids[i])
-                        q_pooled = mx.mean(q[i, :seq_len, :], axis=0)
-                        k_pooled = mx.mean(k[i, :seq_len, :], axis=0)
-                        v_pooled = mx.mean(v[i, :seq_len, :], axis=0)
-                        mx.eval(q_pooled)
-                        mx.eval(k_pooled)
-                        mx.eval(v_pooled)
-                        q_results[i][layer_idx] = q_pooled
-                        k_results[i][layer_idx] = k_pooled
-                        v_results[i][layer_idx] = v_pooled
-
-                result = layer(h)
-                h = result[0] if isinstance(result, tuple) else result
-
-        except Exception as e:
-            raise RuntimeError(f"Batch attention collection failed: {e}") from e
-
-        return q_results, k_results, v_results
 
     def collect_embedding_activations_batch(
         self,

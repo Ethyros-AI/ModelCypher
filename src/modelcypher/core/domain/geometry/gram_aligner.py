@@ -190,11 +190,12 @@ class AlignmentResult:
 
 
 class GramAligner:
-    """Finds geodesic manifold-preserving alignment between activation spaces.
+    """Finds linear alignment with geodesic diagnostics between activation spaces.
 
-    This is a SOLVER, not a test. Given two sets of activations, it finds
-    the transform that preserves intrinsic manifold geometry via geodesic
-    cosine alignment in relative representation space.
+    This is a SOLVER, not a test. Given two sets of activations, it finds the
+    closed-form linear transform on the shared manifold (F = pinv(S) @ T).
+    Geodesic CKA is diagnostic; optional geodesic-invariant alignment can be
+    enabled when desired.
 
     All tolerances are derived from the input dtype's machine epsilon.
 
@@ -213,6 +214,7 @@ class GramAligner:
         regularization: float | None = None,  # IGNORED
         max_steps: int = 5000,  # Kept for backward compatibility (no iterative refinement)
         fast_mode: bool = False,  # Skip CKA diagnostics for speed
+        use_geodesic_alignment: bool = False,  # Optional geodesic alignment pass
     ) -> None:
         """Initialize the aligner.
 
@@ -230,6 +232,10 @@ class GramAligner:
             IGNORED. Kept for backward compatibility.
         fast_mode : bool
             If True, skip CKA diagnostics after computing F.
+        use_geodesic_alignment : bool
+            If True, run geodesic-invariant alignment when geodesic CKA indicates
+            non-overlap. Default False to keep the closed-form linear alignment
+            on the shared manifold and use geodesic CKA purely as a diagnostic.
         """
         self._backend = backend or get_default_backend()
         self._max_iterations = max_iterations
@@ -237,6 +243,7 @@ class GramAligner:
         self._regularization = regularization
         self._max_steps = max_steps
         self._fast_mode = fast_mode
+        self._use_geodesic_alignment = use_geodesic_alignment
 
     def _identity_result(
         self, n: int, d: int, precision: float
@@ -347,7 +354,7 @@ class GramAligner:
         iterations = linear_iterations
         geodesic_cka = linear_cka
 
-        if geodesic_cka < (1.0 - precision):
+        if self._use_geodesic_alignment and geodesic_cka < (1.0 - precision):
             start_time = time.perf_counter()
             F_geo = geodesic_invariant_alignment(
                 b, source_activations, target_activations, stats=alignment_stats
