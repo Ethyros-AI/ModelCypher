@@ -46,6 +46,8 @@ def run_probe_inference(
     target_layer_activations: dict[int, "Array"],
     source_intermediate_activations: dict[int, "Array"],
     target_intermediate_activations: dict[int, "Array"],
+    source_gate_activations: dict[int, "Array"],
+    target_gate_activations: dict[int, "Array"],
     source_embedding_activations: list["Array"] | "Array",
     target_embedding_activations: list["Array"] | "Array",
 ) -> tuple[int, int]:
@@ -73,6 +75,10 @@ def run_probe_inference(
         if len(batch_data.intermediate) != expected:
             raise RuntimeError(
                 f"{label} intermediate batch size mismatch: {len(batch_data.intermediate)} != {expected}"
+            )
+        if len(batch_data.gate) != expected:
+            raise RuntimeError(
+                f"{label} gate batch size mismatch: {len(batch_data.gate)} != {expected}"
             )
         if len(batch_data.embedding) != expected:
             raise RuntimeError(
@@ -103,6 +109,10 @@ def run_probe_inference(
         source_inter_indices: dict[int, list[int]] = {}
         target_inter_accum: dict[int, list["Array"]] = {}
         target_inter_indices: dict[int, list[int]] = {}
+        source_gate_accum: dict[int, list["Array"]] = {}
+        source_gate_indices: dict[int, list[int]] = {}
+        target_gate_accum: dict[int, list["Array"]] = {}
+        target_gate_indices: dict[int, list[int]] = {}
 
         for i in range(batch_size):
             probe_index = batch_start + i
@@ -111,6 +121,8 @@ def run_probe_inference(
             target_acts = target_batch.hidden[i]
             source_intermediate_acts = source_batch.intermediate[i]
             target_intermediate_acts = target_batch.intermediate[i]
+            source_gate_acts = source_batch.gate[i]
+            target_gate_acts = target_batch.gate[i]
 
             for layer_idx, act in source_acts.items():
                 source_hidden_accum.setdefault(layer_idx, []).append(act)
@@ -127,6 +139,14 @@ def run_probe_inference(
             for layer_idx, act in target_intermediate_acts.items():
                 target_inter_accum.setdefault(layer_idx, []).append(act)
                 target_inter_indices.setdefault(layer_idx, []).append(probe_index)
+
+            for layer_idx, act in source_gate_acts.items():
+                source_gate_accum.setdefault(layer_idx, []).append(act)
+                source_gate_indices.setdefault(layer_idx, []).append(probe_index)
+
+            for layer_idx, act in target_gate_acts.items():
+                target_gate_accum.setdefault(layer_idx, []).append(act)
+                target_gate_indices.setdefault(layer_idx, []).append(probe_index)
 
         if isinstance(source_embedding_activations, list):
             source_embedding_activations.extend(source_batch.embedding)
@@ -158,6 +178,20 @@ def run_probe_inference(
             target_intermediate_activations,
             target_inter_accum,
             target_inter_indices,
+            backend,
+            total_probes,
+        )
+        _flush_batch_activations(
+            source_gate_activations,
+            source_gate_accum,
+            source_gate_indices,
+            backend,
+            total_probes,
+        )
+        _flush_batch_activations(
+            target_gate_activations,
+            target_gate_accum,
+            target_gate_indices,
             backend,
             total_probes,
         )

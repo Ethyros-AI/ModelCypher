@@ -41,6 +41,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.cka import compute_cka_split
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.use_cases.merge.stages.probe_alignment import align_layers
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
@@ -114,6 +115,8 @@ class ProbeResult:
     v_transforms: dict[int, list[list[float]]] | None = None
     # Intermediate-space transforms: for MLP gate/up/down projections (pre-computed)
     intermediate_transforms: dict[int, list[list[float]]] | None = None
+    # Gate-space transforms: for PRE-SiLU gate/up projections (cross-arch)
+    gate_transforms: dict[int, list[list[float]]] | None = None
     # Layer mapping: target_layer -> source_layer (from proportional depth mapping)
     layer_mapping: dict[int, int] | None = None
 
@@ -279,6 +282,8 @@ def _probe_precise(
     target_layer_activations: dict[int, "Array"] = {}
     source_intermediate_activations: dict[int, "Array"] = {}
     target_intermediate_activations: dict[int, "Array"] = {}
+    source_gate_activations: dict[int, "Array"] = {}
+    target_gate_activations: dict[int, "Array"] = {}
     source_attention_activations: dict[int, "Array"] = {}
     target_attention_activations: dict[int, "Array"] = {}
     source_k_activations: dict[int, "Array"] = {}
@@ -306,6 +311,8 @@ def _probe_precise(
         target_layer_activations=target_layer_activations,
         source_intermediate_activations=source_intermediate_activations,
         target_intermediate_activations=target_intermediate_activations,
+        source_gate_activations=source_gate_activations,
+        target_gate_activations=target_gate_activations,
         source_embedding_activations=source_embedding_activations,
         target_embedding_activations=target_embedding_activations,
     )
@@ -327,6 +334,8 @@ def _probe_precise(
         target_layer_activations=target_layer_activations,
         source_intermediate_activations=source_intermediate_activations,
         target_intermediate_activations=target_intermediate_activations,
+        source_gate_activations=source_gate_activations,
+        target_gate_activations=target_gate_activations,
         backend=b,
     )
     layer_mapping = alignment_result.layer_mapping
@@ -336,6 +345,7 @@ def _probe_precise(
     k_transforms = alignment_result.k_transforms
     v_transforms = alignment_result.v_transforms
     intermediate_transforms = alignment_result.intermediate_transforms
+    gate_transforms = alignment_result.gate_transforms
     layer_cka_scores = alignment_result.layer_cka_scores
     cgls_iterations_by_layer = alignment_result.cgls_iterations_by_layer
 
@@ -408,7 +418,6 @@ def _probe_precise(
         target_layer_activations,
     )
     precision_threshold = sqrt_scalar(machine_epsilon(b, precision_ref), b)
-    perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
 
     split_cka_result = None
 
@@ -455,50 +464,6 @@ def _probe_precise(
     logger.info(
         "PROBE CLASSIFICATION: %d processed (all layers)",
         len(converged_layers)
-    )
-
-    metrics = {
-        "probe_mode": "precise",
-        "probes_total": len(probes),
-        "probes_processed": probes_processed,
-        "probes_failed": probes_failed,
-        "layers_analyzed": len(layer_confidences),
-        "layers_with_cka": len(layer_cka_scores),
-        "layers_with_data": len(layers_with_data),
-        "missing_cka_layers": len(missing_cka_layers),
-        "layer_confidences": layer_confidences,
-        "layer_cka_scores": layer_cka_scores,
-        "cgls_iterations_by_layer": cgls_iterations_by_layer,
-        "mean_cka": mean_cka,
-        "min_cka": min_cka,
-        "cka_estimator": "geodesic",
-        "perfect_alignment": perfect_alignment,
-        # Layer classification for adaptive barometer
-        "layer_status": layer_status,
-        "converged_layers": converged_layers,
-        "boundary_preserved_layers": boundary_preserved_layers,
-        "skipped_layers": skipped_layers,
-        "converged_count": len(converged_layers),
-        "boundary_preserved_count": len(boundary_preserved_layers),
-        "skipped_count": len(skipped_layers),
-        "atlas_sources": list(set(p.source.value for p in probes)),
-        "atlas_domains": list(set(p.domain.value for p in probes)),
-        # SPLIT CKA: separates "alignment quality" from "novelty fraction"
-        "split_cka": {
-            "shared_cka": split_cka_result.shared_cka if split_cka_result else None,
-            "novel_cka": split_cka_result.novel_cka if split_cka_result else None,
-            "full_cka": split_cka_result.full_cka if split_cka_result else None,
-            "shared_fraction": split_cka_result.shared_fraction if split_cka_result else None,
-            "novel_fraction": split_cka_result.novel_fraction if split_cka_result else None,
-            "n_shared": split_cka_result.n_shared if split_cka_result else None,
-            "n_novel": split_cka_result.n_novel if split_cka_result else None,
-        } if split_cka_result else None,
-    }
-
-    logger.info(
-        "PROBE PRECISE: %d layers, geodesic_cka=%.4f",
-        len(layer_confidences),
-        mean_cka,
     )
 
     # =========================================================================
@@ -549,6 +514,7 @@ def _probe_precise(
         )
 
     gram_aligner = GramAligner(backend=b)
+    embedding_cka: float | None = None
 
     # =========================================================================
     # EMBEDDING GRAMALIGN (2D layer)
@@ -597,12 +563,78 @@ def _probe_precise(
 
         # Geodesic CKA from alignment
         emb_geodesic_cka = emb_result.achieved_cka
-        metrics["embedding_cka"] = emb_geodesic_cka
+        embedding_cka = emb_geodesic_cka
+
+        split_cka_result = compute_cka_split(
+            src_stacked,
+            tgt_stacked,
+            backend=b,
+            feature_transform=embedding_transform,
+        )
     else:
         raise RuntimeError("EMBEDDING GRAMALIGN: Missing embedding activations.")
 
     if embedding_transform is None:
         raise RuntimeError("EMBEDDING GRAMALIGN failed to produce a transform.")
+
+    if split_cka_result and split_cka_result.n_shared >= 4:
+        perfect_alignment = split_cka_result.shared_cka >= 1.0 - precision_threshold
+    else:
+        perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold
+
+    metrics = {
+        "probe_mode": "precise",
+        "probes_total": len(probes),
+        "probes_processed": probes_processed,
+        "probes_failed": probes_failed,
+        "layers_analyzed": len(layer_confidences),
+        "layers_with_cka": len(layer_cka_scores),
+        "layers_with_data": len(layers_with_data),
+        "missing_cka_layers": len(missing_cka_layers),
+        "layer_confidences": layer_confidences,
+        "layer_cka_scores": layer_cka_scores,
+        "cgls_iterations_by_layer": cgls_iterations_by_layer,
+        "mean_cka": mean_cka,
+        "min_cka": min_cka,
+        "cka_estimator": "geodesic",
+        "perfect_alignment": perfect_alignment,
+        "embedding_cka": embedding_cka,
+        # Layer classification for adaptive barometer
+        "layer_status": layer_status,
+        "converged_layers": converged_layers,
+        "boundary_preserved_layers": boundary_preserved_layers,
+        "skipped_layers": skipped_layers,
+        "converged_count": len(converged_layers),
+        "boundary_preserved_count": len(boundary_preserved_layers),
+        "skipped_count": len(skipped_layers),
+        "atlas_sources": list(set(p.source.value for p in probes)),
+        "atlas_domains": list(set(p.domain.value for p in probes)),
+        # SPLIT CKA: separates "alignment quality" from "novelty fraction"
+        "split_cka": {
+            "shared_cka": split_cka_result.shared_cka if split_cka_result else None,
+            "novel_cka": split_cka_result.novel_cka if split_cka_result else None,
+            "full_cka": split_cka_result.full_cka if split_cka_result else None,
+            "shared_fraction": split_cka_result.shared_fraction if split_cka_result else None,
+            "novel_fraction": split_cka_result.novel_fraction if split_cka_result else None,
+            "n_shared": split_cka_result.n_shared if split_cka_result else None,
+            "n_novel": split_cka_result.n_novel if split_cka_result else None,
+        } if split_cka_result else None,
+    }
+
+    if split_cka_result:
+        logger.info(
+            "PROBE PRECISE: %d layers, geodesic_cka=%.4f, shared_cka=%.4f, shared_fraction=%.4f",
+            len(layer_confidences),
+            mean_cka,
+            split_cka_result.shared_cka,
+            split_cka_result.shared_fraction,
+        )
+    else:
+        logger.info(
+            "PROBE PRECISE: %d layers, geodesic_cka=%.4f",
+            len(layer_confidences),
+            mean_cka,
+        )
 
     return ProbeResult(
         correlations=weight_correlations,
@@ -631,5 +663,6 @@ def _probe_precise(
         k_transforms=k_transforms if k_transforms else None,
         v_transforms=v_transforms if v_transforms else None,
         intermediate_transforms=intermediate_transforms if intermediate_transforms else None,
+        gate_transforms=gate_transforms if gate_transforms else None,
         layer_mapping=layer_mapping if layer_mapping else None,
     )

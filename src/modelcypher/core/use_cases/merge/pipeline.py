@@ -168,6 +168,7 @@ def run_merge(
         k_transforms,
         v_transforms,
         intermediate_transforms,  # MLP transforms
+        gate_transforms,  # PRE-SiLU gate transforms
         layer_mapping,
     ) = stage_probe(
         source_weights=loaded_source_weights,
@@ -201,13 +202,14 @@ def run_merge(
         # =====================================================================
         # GEODESIC CKA DIAGNOSTIC (NOT A GATE)
         # =====================================================================
-        # Geodesic CKA < 1.0 typically reflects limited overlap or probe coverage.
-        # We proceed with the merge and log diagnostics for visibility.
+        # Geodesic CKA < 1.0 reflects limited overlap or novel structure.
+        # We proceed with the merge and log shared-manifold diagnostics.
         converged_count = probe_metrics.get("converged_count", 0)
         boundary_count = probe_metrics.get("boundary_preserved_count", 0)
         skipped_count = probe_metrics.get("skipped_count", 0)
         min_cka = probe_metrics.get("min_cka", 0.0)
         mean_cka = probe_metrics.get("mean_cka", 0.0)
+        split_cka = probe_metrics.get("split_cka") or {}
 
         if converged_count == 0:
             raise RuntimeError(
@@ -217,10 +219,15 @@ def run_merge(
             )
 
         # Proceed with selective transplant
-        logger.warning(
+        logger.info(
             "ADAPTIVE BAROMETER: %d processed, %d boundary-preserved, %d skipped. "
-            "Proceeding with selective transplant (mean_geodesic_cka=%.4f).",
-            converged_count, boundary_count, skipped_count, mean_cka
+            "Proceeding with selective transplant (mean_geodesic_cka=%.4f, shared_cka=%s, shared_fraction=%s).",
+            converged_count,
+            boundary_count,
+            skipped_count,
+            mean_cka,
+            split_cka.get("shared_cka"),
+            split_cka.get("shared_fraction"),
         )
 
     # Log transform results from probe stage
@@ -453,6 +460,7 @@ def run_merge(
         k_transforms=k_transforms,
         v_transforms=v_transforms,
         intermediate_transforms=intermediate_transforms,  # MLP transforms
+        gate_transforms=gate_transforms,  # PRE-SiLU gate transforms
         layer_mapping=layer_mapping,
         layer_status=probe_metrics.get("layer_status"),  # NEW: Per DIMENSIONAL_COMPRESSION.md
         prior_occupancy_by_layer=prior_occupancy_by_layer,

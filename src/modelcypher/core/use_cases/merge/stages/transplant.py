@@ -114,6 +114,7 @@ def stage_transplant(
     k_transforms: dict[int, "Array"] | None = None,  # GPU arrays
     v_transforms: dict[int, "Array"] | None = None,  # GPU arrays
     intermediate_transforms: dict[int, "Array"] | None = None,  # MLP intermediate (GPU arrays)
+    gate_transforms: dict[int, "Array"] | None = None,  # PRE-SiLU gate transforms (GPU arrays)
     layer_mapping: dict[int, int] | None = None,
     layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
@@ -332,6 +333,14 @@ def stage_transplant(
     )
     metrics["per_layer_intermediate_alignment"] = bool(layer_intermediate_stitches)
 
+    layer_gate_stitches = compute_composite_stitches(
+        transforms_map=gate_transforms,
+        desc="GATE",
+        backend=b,
+        layer_mapping=layer_mapping,
+    )
+    metrics["per_layer_gate_alignment"] = bool(layer_gate_stitches)
+
     # ==========================================================================
     # RIGOROUS GEOMETRY: All transforms handled above via _compute_composite_stitches.
     # No fallbacks - if transforms missing, the per-weight logic handles errors.
@@ -436,6 +445,8 @@ def stage_transplant(
         hidden_stitch_input = None   # pinv(F).T for input side [src_hidden, tgt_hidden]
         intermediate_stitch_output = None  # F.T for output side
         intermediate_stitch_input = None   # pinv(F).T for input side
+        gate_stitch_output = None  # F.T for PRE-SiLU gate output
+        gate_stitch_input = None   # pinv(F).T for PRE-SiLU gate input
         attention_stitch_output = None  # F.T for Q attention output [tgt_attn, src_attn]
         attention_stitch_input = None   # pinv(F).T for Q attention input [src_attn, tgt_attn]
         k_stitch_output = None  # F.T for K attention output [tgt_k, src_k]
@@ -508,6 +519,18 @@ def stage_transplant(
                 )
             metrics.setdefault("intermediate_cached_stitches", 0)
             metrics["intermediate_cached_stitches"] += 1
+
+        if layer_idx in layer_gate_stitches:
+            src_stitches_dict = layer_gate_stitches[layer_idx]
+            if src_stitches_dict:
+                first_src = next(iter(src_stitches_dict))
+                gate_stitch_output, gate_stitch_input = src_stitches_dict[first_src]
+            if layer_num == 0 and gate_stitch_output is not None:
+                stitch_shape = gate_stitch_output.shape
+                logger.info(
+                    "Layer %d: Using per-layer gate stitch (shape=%s)",
+                    layer_idx, stitch_shape
+                )
 
         # USE PER-LAYER ATTENTION stitch (from probe stage with linear alignment)
         if layer_idx in layer_attention_stitches:
@@ -731,6 +754,8 @@ def stage_transplant(
             hidden_stitch_input=hidden_stitch_input,
             intermediate_stitch_output=intermediate_stitch_output,
             intermediate_stitch_input=intermediate_stitch_input,
+            gate_stitch_output=gate_stitch_output,
+            gate_stitch_input=gate_stitch_input,
             attention_stitch_output=attention_stitch_output,
             attention_stitch_input=attention_stitch_input,
             k_stitch_output=k_stitch_output,

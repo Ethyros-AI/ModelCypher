@@ -416,59 +416,70 @@ def compute_knn_point_cloud_density(
 
     # Compute k-NN density for source points
     # Distance matrix: [n_source, n_source]
+    # Note: geodesic_distances has internal evals (Floyd-Warshall), so we can't
+    # batch across source/target geodesic computations. But we can batch the
+    # downstream density computations.
     source_geo_result = rg.geodesic_distances(source, k_neighbors=k)
-    source_dist_matrix = source_geo_result.distances  # Extract the distance array
-    b.eval(source_dist_matrix)
+    source_dist_matrix = source_geo_result.distances
+
+    # Compute k-NN density for target points (starts parallel with source processing)
+    target_geo_result = rg.geodesic_distances(target, k_neighbors=k)
+    target_dist_matrix = target_geo_result.distances
 
     # Sort each row to get k nearest distances (exclude self = distance 0)
-    # Take mean of k nearest (excluding first which is self)
+    # All operations below are lazy until final batch eval
     source_sorted = b.sort(source_dist_matrix, axis=1)
+    target_sorted = b.sort(target_dist_matrix, axis=1)
+
     # Skip first column (self-distance = 0), take next k columns
     source_k_dists = source_sorted[:, 1:k+1]
-    source_mean_k_dist = b.mean(source_k_dists, axis=1)
-    source_densities = 1.0 / (source_mean_k_dist + eps)
-    b.eval(source_densities)
-
-    # Compute k-NN density for target points
-    target_geo_result = rg.geodesic_distances(target, k_neighbors=k)
-    target_dist_matrix = target_geo_result.distances  # Extract the distance array
-    b.eval(target_dist_matrix)
-
-    target_sorted = b.sort(target_dist_matrix, axis=1)
     target_k_dists = target_sorted[:, 1:k+1]
+
+    source_mean_k_dist = b.mean(source_k_dists, axis=1)
     target_mean_k_dist = b.mean(target_k_dists, axis=1)
+
+    source_densities = 1.0 / (source_mean_k_dist + eps)
     target_densities = 1.0 / (target_mean_k_dist + eps)
-    b.eval(target_densities)
 
     # Normalize densities to [0, 1] range for comparison
-    # Use global max to ensure same scale
     max_src = b.max(source_densities)
     max_tgt = b.max(target_densities)
-    b.eval(max_src, max_tgt)
+
+    # Single eval for all density computations
+    b.eval(source_densities, target_densities, max_src, max_tgt)
+
+    # Use global max to ensure same scale
     global_max = max(float(b.to_scalar(max_src)), float(b.to_scalar(max_tgt)), eps)
 
     source_densities_norm = source_densities / global_max
     target_densities_norm = target_densities / global_max
-    b.eval(source_densities_norm, target_densities_norm)
 
     # Density difference: positive where source is denser (transfer opportunity)
-    # We need to match points between source and target
-    # Aligned indices should match; geodesic CKA reports overlap diagnostics
     n_compare = min(n_source, n_target)
     src_compare = source_densities_norm[:n_compare]
     tgt_compare = target_densities_norm[:n_compare]
     density_diff = src_compare - tgt_compare
-    b.eval(density_diff)
 
-    # Compute statistics
-    mean_src = float(b.to_scalar(b.mean(source_densities_norm)))
-    mean_tgt = float(b.to_scalar(b.mean(target_densities_norm)))
-    mean_diff = float(b.to_scalar(b.mean(density_diff)))
+    # Compute all statistics lazily
+    mean_src_arr = b.mean(source_densities_norm)
+    mean_tgt_arr = b.mean(target_densities_norm)
+    mean_diff_arr = b.mean(density_diff)
 
     # Count positive/negative differences
     positive_mask = density_diff > eps
     negative_mask = density_diff < -eps
-    b.eval(positive_mask, negative_mask)
+
+    # Single batch eval for all downstream computations
+    b.eval(
+        source_densities_norm, target_densities_norm, density_diff,
+        mean_src_arr, mean_tgt_arr, mean_diff_arr,
+        positive_mask, negative_mask
+    )
+
+    # Extract scalars after batch eval
+    mean_src = float(b.to_scalar(mean_src_arr))
+    mean_tgt = float(b.to_scalar(mean_tgt_arr))
+    mean_diff = float(b.to_scalar(mean_diff_arr))
 
     from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
 

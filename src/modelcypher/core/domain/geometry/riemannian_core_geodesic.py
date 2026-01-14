@@ -167,13 +167,20 @@ class RiemannianGeodesicMixin:
         chord_dist: "Array | None" = None,
         use_cache: bool = True,
     ) -> tuple[int, "Array", "Array"]:
-        """Find the minimum k that makes the k-NN graph connected."""
+        """Find the minimum k that makes the k-NN graph connected.
+
+        Uses a smarter starting bound based on graph connectivity theory:
+        for n points in general position, k >= log2(n) is typically sufficient.
+        This reduces the number of iterations in the doubling phase.
+        """
+        import math
+
         backend = self._backend
         n = int(points.shape[0])
         if n <= 1:
             return 0, backend.zeros((n, 0)), backend.zeros((n, n))
 
-        # Binary search: start at k=1, double until connected, then binary search
+        # Binary search: use log2(n) as smarter starting bound
         if chord_dist is None:
             chord_dist = self._chord_distance_matrix(points, use_cache=use_cache)
             backend.eval(chord_dist)
@@ -187,8 +194,10 @@ class RiemannianGeodesicMixin:
         if self._is_knn_connected(knn_low):
             return k_low, knn_low, chord_dist
 
-        # Double k until connected to find upper bound
-        k_test = 2
+        # Use theoretical bound: for random graphs, k >= log2(n) typically sufficient
+        # This is exact - we're just starting the search at a smarter point
+        k_theoretical = max(int(math.ceil(math.log2(max(2, n)))), 2)
+        k_test = min(k_theoretical, k_high)
         while k_test < k_high:
             knn_test, _ = self._knn_indices_from_chord(chord_dist, k_test)
             if self._is_knn_connected(knn_test):

@@ -38,6 +38,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_pinv,
     is_finite,
     machine_epsilon,
     power_iteration_eigh,
@@ -795,27 +796,27 @@ def compute_cka_split(
     source_activations: "Array",
     target_activations: "Array",
     backend: "Backend | None" = None,
-    response_threshold: float = 0.5,
+    response_threshold: float | None = None,
+    feature_transform: "Array | None" = None,
 ) -> SplitCKAResult:
     """Compute CKA separately for shared vs. novel concepts.
 
     Separates samples into:
-    - SHARED: both models respond strongly (both have the concept)
-    - NOVEL: source responds strongly, target doesn't (new to target)
+    - SHARED: target lies in the aligned source column space (projection residual ~ 0)
+    - NOVEL: target has residual outside the aligned source column space
 
-    For shared concepts, CKA should be high after alignment (near 1.0).
-    For novel concepts, CKA is expected to be low (target has no structure).
-
-    The "response magnitude" per sample is the L2 norm of centered activations,
-    normalized to [0, 1] range. Samples where both normalized responses are
-    above threshold are "shared"; samples where source is above but target
-    is below threshold are "novel".
+    Shared/novel is derived from a closed-form projection residual:
+    - Compute aligned target projection T_shared = S @ pinv(S) @ T
+    - Residual R = T - T_shared is the novel component
+    - Samples with residual norm <= precision-scaled target norm are "shared"
+    - Samples with residual norm > precision-scaled target norm are "novel"
 
     Args:
         source_activations: [n_samples, d_source]
         target_activations: [n_samples, d_target]
         backend: Backend protocol. If None, uses default.
-        response_threshold: Normalized response threshold (0.5 = median split)
+        response_threshold: Ignored (kept for backward compatibility).
+        feature_transform: Optional alignment transform to reuse (source @ F ≈ target).
 
     Returns:
         SplitCKAResult with separate CKA for shared vs. novel concepts.
@@ -825,6 +826,7 @@ def compute_cka_split(
 
     b = backend
     n = int(source_activations.shape[0])
+    _ = response_threshold
 
     if n < 4:
         # Not enough samples to split
@@ -835,56 +837,57 @@ def compute_cka_split(
             source_response_mean=0.0, target_response_mean=0.0,
         )
 
-    # Center activations (remove feature means)
-    source_mean = b.mean(source_activations, axis=0, keepdims=True)
-    target_mean = b.mean(target_activations, axis=0, keepdims=True)
-    source_c = source_activations - source_mean
-    target_c = target_activations - target_mean
-    b.eval(source_c, target_c)
+    if source_activations.shape[0] != target_activations.shape[0]:
+        return SplitCKAResult(
+            shared_cka=0.0, novel_cka=0.0, full_cka=0.0,
+            shared_fraction=0.0, novel_fraction=0.0,
+            n_shared=0, n_novel=0, n_total=n,
+            source_response_mean=0.0, target_response_mean=0.0,
+        )
 
-    # Response magnitude per sample = geodesic norm of centered activations
-    # This measures how much the model "responds" to each sample
-    # Uses k-NN graph shortest paths for proper manifold distances
-    from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
-    source_response = geodesic_norms(source_c, b, use_cache=False)  # [n]
-    target_response = geodesic_norms(target_c, b, use_cache=False)  # [n]
-    b.eval(source_response, target_response)
+    source_arr = b.astype(
+        source_activations, precision_dtype(b, reference=source_activations)
+    )
+    target_arr = b.astype(
+        target_activations, precision_dtype(b, reference=target_activations)
+    )
+    b.eval(source_arr, target_arr)
 
-    # Normalize to [0, 1] range (relative to max)
-    eps = division_epsilon(b, source_response)
-    source_max = b.max(source_response)
-    target_max = b.max(target_response)
-    b.eval(source_max, target_max)
-    source_max_val = float(b.to_scalar(source_max))
-    target_max_val = float(b.to_scalar(target_max))
+    if feature_transform is None:
+        F = b.matmul(geodesic_pinv(b, source_arr), target_arr)
+    else:
+        F = b.array(feature_transform)
+        F = b.astype(F, precision_dtype(b, reference=F))
+    b.eval(F)
 
-    source_norm = source_response / (source_max_val + eps)
-    target_norm = target_response / (target_max_val + eps)
-    b.eval(source_norm, target_norm)
+    aligned = b.matmul(source_arr, F)
+    residual = target_arr - aligned
+    b.eval(aligned, residual)
 
-    # Create masks for shared vs. novel concepts
-    thresh = b.array([response_threshold])
-    source_high = source_norm > thresh  # [n] bool
-    target_high = target_norm > thresh  # [n] bool
-    b.eval(source_high, target_high)
+    residual_norms = b.sqrt(b.sum(residual * residual, axis=1))
+    target_norms = b.sqrt(b.sum(target_arr * target_arr, axis=1))
+    aligned_norms = b.sqrt(b.sum(aligned * aligned, axis=1))
+    b.eval(residual_norms, target_norms, aligned_norms)
 
-    # Shared: both models respond strongly
-    # Novel: source responds, target doesn't
-    shared_mask = source_high & target_high  # Both high
-    novel_mask = source_high & (~target_high)  # Source high, target low
+    eps = machine_epsilon(b, target_arr)
+    precision = sqrt_scalar(eps, b)
+    precision_arr = b.array([precision], dtype=target_norms.dtype)
+    threshold = precision_arr * (target_norms + precision_arr)
+    shared_mask = residual_norms <= threshold
+    novel_mask = residual_norms > threshold
     b.eval(shared_mask, novel_mask)
 
     # Count samples in each category
-    count_dtype = precision_dtype(b, reference=source_response)
+    count_dtype = precision_dtype(b, reference=target_norms)
     shared_count = int(b.to_scalar(b.sum(b.astype(shared_mask, count_dtype))))
     novel_count = int(b.to_scalar(b.sum(b.astype(novel_mask, count_dtype))))
 
     # Response means for debugging
-    source_resp_mean = float(b.to_scalar(b.mean(source_norm)))
-    target_resp_mean = float(b.to_scalar(b.mean(target_norm)))
+    source_resp_mean = float(b.to_scalar(b.mean(aligned_norms)))
+    target_resp_mean = float(b.to_scalar(b.mean(target_norms)))
 
     # Compute full CKA
-    full_result = compute_cka(source_activations, target_activations, backend)
+    full_result = compute_cka(aligned, target_arr, backend)
     full_cka = full_result.cka if full_result.is_valid else 0.0
 
     # Compute CKA on shared samples only (if enough)
@@ -895,8 +898,8 @@ def compute_cka_split(
         shared_indices = b.nonzero(shared_mask)
         if len(shared_indices) > 0 and shared_indices[0].shape[0] >= 4:
             shared_idx = shared_indices[0]
-            source_shared = b.take(source_activations, shared_idx, axis=0)
-            target_shared = b.take(target_activations, shared_idx, axis=0)
+            source_shared = b.take(aligned, shared_idx, axis=0)
+            target_shared = b.take(target_arr, shared_idx, axis=0)
             b.eval(source_shared, target_shared)
             shared_result = compute_cka(source_shared, target_shared, backend)
             shared_cka = shared_result.cka if shared_result.is_valid else 0.0
@@ -907,8 +910,8 @@ def compute_cka_split(
         novel_indices = b.nonzero(novel_mask)
         if len(novel_indices) > 0 and novel_indices[0].shape[0] >= 4:
             novel_idx = novel_indices[0]
-            source_novel = b.take(source_activations, novel_idx, axis=0)
-            target_novel = b.take(target_activations, novel_idx, axis=0)
+            source_novel = b.take(aligned, novel_idx, axis=0)
+            target_novel = b.take(target_arr, novel_idx, axis=0)
             b.eval(source_novel, target_novel)
             novel_result = compute_cka(source_novel, target_novel, backend)
             novel_cka = novel_result.cka if novel_result.is_valid else 0.0

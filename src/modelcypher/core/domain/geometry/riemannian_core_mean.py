@@ -250,6 +250,57 @@ class RiemannianMeanMixin:
             # Initialize at geodesic medoid (distance-minimizing point).
             geo_dist = geo_result.distances
             backend.eval(geo_dist)
+
+            # ===================================================================
+            # FLAT MANIFOLD DETECTION (EXACT OPTIMIZATION)
+            # When geodesic ≈ chord for all pairs, the manifold is locally flat
+            # and the Fréchet mean equals the weighted Euclidean mean EXACTLY.
+            # This is not an approximation - flat manifolds ARE Euclidean by definition.
+            # ===================================================================
+            chord_dist = self._chord_distance_matrix(points, use_cache=True)
+            backend.eval(chord_dist)
+
+            # Compare geodesic vs chord distances
+            # For flat manifolds: geo_dist / chord_dist ≈ 1.0 everywhere
+            eps_flat = division_epsilon(backend, chord_dist)
+            chord_safe = backend.maximum(chord_dist, backend.full(chord_dist.shape, eps_flat))
+            ratio = geo_dist / chord_safe
+
+            # Exclude diagonal (self-distances are 0/0)
+            eye_mask = backend.eye(n, dtype=ratio.dtype)
+            ratio_off_diag = ratio * (1.0 - eye_mask) + eye_mask  # Replace diagonal with 1.0
+
+            # Check maximum deviation from 1.0
+            max_deviation_arr = backend.max(backend.abs(ratio_off_diag - 1.0))
+            backend.eval(max_deviation_arr)
+            max_deviation = float(backend.to_scalar(max_deviation_arr))
+
+            # Threshold: sqrt(machine_epsilon) - same scale as convergence tolerance
+            flat_threshold = float(machine_epsilon(backend, ratio)) ** 0.5
+
+            if max_deviation < flat_threshold:
+                # Manifold is flat - weighted Euclidean mean IS the Fréchet mean
+                logger.debug(
+                    "FLAT MANIFOLD DETECTED: max_deviation=%.2e < threshold=%.2e, "
+                    "using exact Euclidean mean (skipping %d potential iterations)",
+                    max_deviation, flat_threshold, max_iterations
+                )
+                weights_col = backend.reshape(weights_arr, (n, 1))
+                mu = backend.sum(points * weights_col, axis=0)
+                diffs = points - mu
+                sq_norms = backend.sum(diffs * diffs, axis=1)
+                variance = backend.sum(sq_norms * weights_arr)
+                backend.eval(mu, variance)
+
+                result = FrechetMeanResult(
+                    mean=mu,
+                    iterations=0,  # No iterations needed - closed-form solution
+                    converged=True,
+                    final_variance=float(backend.to_scalar(variance)),
+                )
+                _cache.set_frechet(cache_key, result, 0.0)
+                return result
+
             weights_row = backend.reshape(weights_arr, (1, n))
             weighted = geo_dist * weights_row
             sum_per_point = backend.sum(weighted, axis=1)
@@ -549,12 +600,10 @@ class RiemannianMeanMixin:
         grad_norm_arr = geodesic_norms(
             backend.reshape(gradient, (1, -1)), backend, use_cache=False
         )
-        backend.eval(grad_norm_arr)
-        grad_norm = float(backend.to_scalar(grad_norm_arr[0]))
-
-        # Adaptive step size based on data scale
+        # Batch eval: compute gradient norm and mean geodesic in single GPU sync
         mean_geo_arr = backend.mean(geo_from_mu)
-        backend.eval(mean_geo_arr)
+        backend.eval(grad_norm_arr, mean_geo_arr)
+        grad_norm = float(backend.to_scalar(grad_norm_arr[0]))
         mean_geo = float(backend.to_scalar(mean_geo_arr))
         n_points = int(geo_from_mu.shape[0])
         eps_float = float(machine_epsilon(backend, gradient))
@@ -572,12 +621,10 @@ class RiemannianMeanMixin:
         # Update
         new_mu = mu + eta * gradient
 
-        # Validate output
-        backend.eval(new_mu)
+        # Validate output - batch all validation operations into single eval
         new_mu_isfinite = backend.isfinite(new_mu)
-        backend.eval(new_mu_isfinite)
         new_mu_nonfinite_arr = _count_not_mask(new_mu_isfinite, backend, dtype_source=new_mu)
-        backend.eval(new_mu_nonfinite_arr)
+        backend.eval(new_mu, new_mu_nonfinite_arr)  # Single eval for update + validation
         new_mu_nonfinite = int(backend.to_scalar(new_mu_nonfinite_arr))
 
         if new_mu_nonfinite > 0:

@@ -233,7 +233,7 @@ def align_layers(
 
             layer_precision = sqrt_scalar(machine_epsilon(backend, aligned), backend)
             if geodesic_deviation > layer_precision:
-                logger.warning(
+                logger.debug(
                     "PROBE: Layer %s -> %d geodesic CKA deviation=%.2e > precision %.2e.",
                     src_layers_list,
                     tgt_layer,

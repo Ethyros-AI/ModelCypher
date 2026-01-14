@@ -458,15 +458,14 @@ class GramAligner:
         result = compute_cka(aligned, target, b)
         geodesic_cka = result.cka if result.is_valid else 0.0
 
-        # Log diagnostic information
-        if geodesic_cka < 0.99:
-            logger.info(
-                "Linear alignment achieves geodesic CKA=%.4f (<1.0). "
-                "This reflects shared-manifold coverage and novel structure.",
+        precision = sqrt_scalar(machine_epsilon(b, source), b)
+        if geodesic_cka < (1.0 - precision):
+            logger.debug(
+                "Linear alignment geodesic CKA=%.6f (shared-manifold coverage + novelty).",
                 geodesic_cka
             )
         else:
-            logger.debug("Linear alignment achieves geodesic CKA=%.6f", geodesic_cka)
+            logger.debug("Linear alignment geodesic CKA=%.6f", geodesic_cka)
 
         return F_init, 0, geodesic_cka
 

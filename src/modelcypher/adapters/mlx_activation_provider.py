@@ -543,7 +543,7 @@ class MLXActivationProvider:
         texts: list[str],
     ):
         """
-        Collect hidden + intermediate + embedding activations in one batched pass.
+        Collect hidden + intermediate + gate + embedding activations in one batched pass.
         """
         from modelcypher.ports.activation_provider import ProbeActivationBatch
 
@@ -551,7 +551,7 @@ class MLXActivationProvider:
         from mlx import nn
 
         if not texts:
-            return ProbeActivationBatch(hidden=[], intermediate=[], embedding=[])
+            return ProbeActivationBatch(hidden=[], intermediate=[], gate=[], embedding=[])
 
         all_token_ids: list[list[int]] = []
         for text in texts:
@@ -569,6 +569,7 @@ class MLXActivationProvider:
 
         hidden_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
         intermediate_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
+        gate_results: list[dict[int, "Array"]] = [{} for _ in range(batch_size)]
         embedding_results: list["Array"] = []
         all_tensors: list["Array"] = []
 
@@ -586,11 +587,15 @@ class MLXActivationProvider:
                 "Model architecture not supported for probe collection."
             )
 
+        seq_lengths = [len(ids) for ids in all_token_ids]
+        lengths = mx.array(seq_lengths, dtype=h.dtype)
+        pos = mx.arange(max_len)
+        mask = (pos[None, :] < lengths[:, None]).astype(h.dtype)
+        denom = lengths[:, None]
+        pooled_embeddings = mx.sum(h * mask[:, :, None], axis=1) / denom
         for i in range(batch_size):
-            seq_len = len(all_token_ids[i])
-            pooled = mx.mean(h[i, :seq_len, :], axis=0)
-            embedding_results.append(pooled)
-            all_tensors.append(pooled)
+            embedding_results.append(pooled_embeddings[i])
+        all_tensors.append(pooled_embeddings)
 
         for layer_idx, layer in enumerate(inner.layers):
             if hasattr(layer, "input_layernorm"):
@@ -629,6 +634,7 @@ class MLXActivationProvider:
                 ff_module = layer.feed_forward
 
             intermediate = None
+            gate = None
             if ff_module is not None:
                 if hasattr(ff_module, "up_proj") and hasattr(ff_module, "gate_proj"):
                     up = ff_module.up_proj(h_post)
@@ -646,11 +652,18 @@ class MLXActivationProvider:
                     "Model MLP block not found; probe collection requires intermediate activations."
                 )
 
+            pooled_intermediate = mx.sum(
+                intermediate * mask[:, :, None], axis=1
+            ) / denom
             for i in range(batch_size):
-                seq_len = len(all_token_ids[i])
-                pooled = mx.mean(intermediate[i, :seq_len, :], axis=0)
-                intermediate_results[i][layer_idx] = pooled
-                all_tensors.append(pooled)
+                intermediate_results[i][layer_idx] = pooled_intermediate[i]
+            all_tensors.append(pooled_intermediate)
+
+            if gate is not None:
+                pooled_gate = mx.sum(gate * mask[:, :, None], axis=1) / denom
+                for i in range(batch_size):
+                    gate_results[i][layer_idx] = pooled_gate[i]
+                all_tensors.append(pooled_gate)
 
             if hasattr(layer, "mlp"):
                 mlp_out = layer.mlp(h_post)
@@ -663,11 +676,10 @@ class MLXActivationProvider:
                     "Model MLP output path not found; probe collection requires MLP output."
                 )
 
+            pooled_hidden = mx.sum(h * mask[:, :, None], axis=1) / denom
             for i in range(batch_size):
-                seq_len = len(all_token_ids[i])
-                pooled = mx.mean(h[i, :seq_len, :], axis=0)
-                hidden_results[i][layer_idx] = pooled
-                all_tensors.append(pooled)
+                hidden_results[i][layer_idx] = pooled_hidden[i]
+            all_tensors.append(pooled_hidden)
 
         if all_tensors:
             mx.eval(*all_tensors)
@@ -675,6 +687,7 @@ class MLXActivationProvider:
         return ProbeActivationBatch(
             hidden=hidden_results,
             intermediate=intermediate_results,
+            gate=gate_results,
             embedding=embedding_results,
         )
 
@@ -956,14 +969,20 @@ class MLXActivationProvider:
                 raise RuntimeError("Model not compatible with batch gate collection")
 
             inner = model.model
-            if hasattr(inner, "embed_tokens"):
-                h = inner.embed_tokens(input_ids)
-            elif hasattr(inner, "wte"):
-                h = inner.wte(input_ids)
-            else:
-                raise RuntimeError("Cannot find embedding layer for batch gate collection")
+        if hasattr(inner, "embed_tokens"):
+            h = inner.embed_tokens(input_ids)
+        elif hasattr(inner, "wte"):
+            h = inner.wte(input_ids)
+        else:
+            raise RuntimeError("Cannot find embedding layer for batch gate collection")
 
-            for layer_idx, layer in enumerate(inner.layers):
+        seq_lengths = [len(ids) for ids in all_token_ids]
+        lengths = mx.array(seq_lengths, dtype=h.dtype)
+        pos = mx.arange(max_len)
+        mask = (pos[None, :] < lengths[:, None]).astype(h.dtype)
+        denom = lengths[:, None]
+
+        for layer_idx, layer in enumerate(inner.layers):
                 if hasattr(layer, "input_layernorm"):
                     h_norm = layer.input_layernorm(h)
                 elif hasattr(layer, "ln_1"):
@@ -1001,18 +1020,16 @@ class MLXActivationProvider:
                 if ff_module is not None:
                     if hasattr(ff_module, "gate_proj"):
                         gate = ff_module.gate_proj(h_post)
+                        pooled_gate = mx.sum(gate * mask[:, :, None], axis=1) / denom
                         for i in range(batch_size):
-                            seq_len = len(all_token_ids[i])
-                            pooled = mx.mean(gate[i, :seq_len, :], axis=0)
-                            results[i][layer_idx] = pooled
-                            all_tensors.append(pooled)
+                            results[i][layer_idx] = pooled_gate[i]
+                        all_tensors.append(pooled_gate)
                     elif hasattr(ff_module, "w1"):
                         gate = ff_module.w1(h_post)
+                        pooled_gate = mx.sum(gate * mask[:, :, None], axis=1) / denom
                         for i in range(batch_size):
-                            seq_len = len(all_token_ids[i])
-                            pooled = mx.mean(gate[i, :seq_len, :], axis=0)
-                            results[i][layer_idx] = pooled
-                            all_tensors.append(pooled)
+                            results[i][layer_idx] = pooled_gate[i]
+                        all_tensors.append(pooled_gate)
 
                 # Complete layer forward
                 if hasattr(layer, "mlp"):

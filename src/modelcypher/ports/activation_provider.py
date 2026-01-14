@@ -68,6 +68,7 @@ class ProbeActivationBatch:
 
     hidden: list[dict[int, Array]]
     intermediate: list[dict[int, Array]]
+    gate: list[dict[int, Array]]
     embedding: list[Array]
 
 
@@ -203,7 +204,7 @@ class ActivationProvider(Protocol):
         texts: list[str],
     ) -> ProbeActivationBatch:
         """
-        Collect hidden + intermediate + embedding activations for multiple texts in one pass.
+        Collect hidden + intermediate + gate + embedding activations for multiple texts in one pass.
 
         This is the strict, efficient probe path used for merge alignment. Implementations
         must not fall back to sequential collection.
@@ -250,6 +251,30 @@ class ActivationProvider(Protocol):
     ) -> list[dict[int, Array]]:
         """
         Collect per-layer MLP intermediate activations for multiple texts in one pass.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding texts.
+            texts: List of text inputs to process.
+
+        Returns:
+            List of dicts, one per input text, each mapping layer_idx -> activation.
+
+        Raises:
+            NotImplementedError: If batching is not supported by this implementation.
+        """
+        ...
+
+    def collect_gate_activations_batch(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> list[dict[int, Array]]:
+        """
+        Collect per-layer PRE-SiLU gate activations for multiple texts in one pass.
+
+        This is the correct activation space for gate_proj/up_proj stitching.
 
         Args:
             model: The loaded model.

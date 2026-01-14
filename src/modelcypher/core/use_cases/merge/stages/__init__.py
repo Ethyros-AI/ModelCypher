@@ -91,6 +91,7 @@ def stage_probe(
     dict[int, list[list[float]]] | None,  # k_transforms (K)
     dict[int, list[list[float]]] | None,  # v_transforms (V)
     dict[int, list[list[float]]] | None,  # intermediate_transforms (MLP)
+    dict[int, list[list[float]]] | None,  # gate_transforms (PRE-SiLU)
     dict[int, int] | None,  # layer_mapping
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
@@ -134,6 +135,7 @@ def stage_probe(
         result.k_transforms,
         result.v_transforms,
         result.intermediate_transforms,  # MLP transforms
+        result.gate_transforms,  # PRE-SiLU gate transforms
         result.layer_mapping,
     )
 
@@ -196,6 +198,7 @@ def stage_transplant(
     k_transforms: dict[int, list[list[float]]] | None = None,
     v_transforms: dict[int, list[list[float]]] | None = None,
     intermediate_transforms: dict[int, list[list[float]]] | None = None,  # MLP transforms
+    gate_transforms: dict[int, list[list[float]]] | None = None,  # PRE-SiLU gate transforms
     layer_mapping: dict[int, int] | None = None,
     layer_status: dict[int, str] | None = None,  # NEW: Per DIMENSIONAL_COMPRESSION.md
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
@@ -229,6 +232,7 @@ def stage_transplant(
         k_transforms=k_transforms,
         v_transforms=v_transforms,
         intermediate_transforms=intermediate_transforms,  # MLP transforms
+        gate_transforms=gate_transforms,  # PRE-SiLU gate transforms
         layer_mapping=layer_mapping,
         layer_status=layer_status,  # NEW: Per DIMENSIONAL_COMPRESSION.md
         prior_occupancy_by_layer=prior_occupancy_by_layer,

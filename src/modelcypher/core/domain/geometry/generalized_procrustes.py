@@ -240,11 +240,14 @@ class GeneralizedProcrustes:
             # Skip SVD to avoid numerical errors in the null space.
             diff = X0 - X1
             # Use geodesic norms for matrix distance (flatten to row vector)
+            # Batch all norm computations in single eval for efficiency
             diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
             x_norm_arr = geodesic_norms(b.reshape(X0, (1, -1)), b)
-            b.eval(diff_norm_arr, x_norm_arr)
+            x1_norm_arr = geodesic_norms(b.reshape(X1, (1, -1)), b)
+            b.eval(diff_norm_arr, x_norm_arr, x1_norm_arr)  # Single eval for all norms
             diff_norm = float(b.to_scalar(diff_norm_arr))
             x_norm = float(b.to_scalar(x_norm_arr))
+            x1_norm = float(b.to_scalar(x1_norm_arr))
             eps = float(division_epsilon(b, X0))
 
             if diff_norm <= eps * max(x_norm, 1.0):
@@ -270,9 +273,7 @@ class GeneralizedProcrustes:
                 )
 
             # Check for degenerate (zero/near-zero) matrices that would crash SVD/det
-            x1_norm_arr = geodesic_norms(b.reshape(X1, (1, -1)), b)
-            b.eval(x1_norm_arr)
-            x1_norm = float(b.to_scalar(x1_norm_arr))
+            # x1_norm already computed above in batched eval
 
             if x_norm <= eps or x1_norm <= eps:
                 # One or both matrices are degenerate - use identity rotation
@@ -304,15 +305,22 @@ class GeneralizedProcrustes:
 
             M = b.matmul(b.transpose(X1), X0)
             U, _, Vt = geodesic_svd(b, M)
-            R1 = b.matmul(U, Vt)
+            R1_raw = b.matmul(U, Vt)
 
             # Never allow reflections - preserves orientation
-            det_val = b.det(R1)
-            b.eval(det_val)
-            if float(b.to_scalar(det_val)) < 0:
-                U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
-                R1 = b.matmul(U_fixed, Vt)
-                b.eval(R1)
+            # Use lazy where-based approach to avoid eval in hot path
+            det_val = b.det(R1_raw)
+            sign = b.where(det_val < 0, b.array(-1.0), b.array(1.0))
+            # Create scale vector for last column: [1, 1, ..., 1, sign]
+            k_dim = int(U.shape[1])
+            if k_dim > 1:
+                scale = b.concatenate([b.ones((k_dim - 1,)), b.reshape(sign, (1,))], axis=0)
+                U_scaled = U * b.reshape(scale, (1, k_dim))
+                R1 = b.matmul(U_scaled, Vt)
+            else:
+                # k=1 edge case: just apply sign directly
+                R1 = R1_raw * sign
+            # No eval needed here - all operations are lazy
 
             Rs = b.stack([base_eye, R1], axis=0)
             aligned_X = b.stack([X0, b.matmul(X1, R1)], axis=0)
@@ -377,8 +385,8 @@ class GeneralizedProcrustes:
             Rs = b.matmul(U_batch, Vt_batch)
 
             # Never allow reflections - preserves orientation (batched)
+            # Note: det and where are kept lazy - no eval needed here
             dets = b.det(Rs)
-            b.eval(dets)
             signs = b.where(dets < 0, b.full(dets.shape, -1.0), b.full(dets.shape, 1.0))
             k = int(U_batch.shape[2])
             if k > 0:

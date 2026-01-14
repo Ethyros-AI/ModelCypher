@@ -106,7 +106,7 @@ def _geodesic_frobenius_norm(
     # Geodesic Frobenius = sqrt(sum(geodesic_norms²))
     sum_sq = b.sum(geo_norms * geo_norms)
     geo_frob = b.sqrt(sum_sq)
-    b.eval(geo_frob)
+    # Note: to_scalar forces eval, so no explicit eval needed here
     return float(b.to_scalar(geo_frob))
 
 

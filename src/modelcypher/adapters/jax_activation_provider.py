@@ -283,16 +283,19 @@ class JAXActivationProvider:
 
         hidden: list[dict[int, "Array"]] = []
         intermediate: list[dict[int, "Array"]] = []
+        gate: list[dict[int, "Array"]] = []
         embedding: list["Array"] = []
 
         for text in texts:
             hidden.append(self.collect_hidden_activations(model, tokenizer, text))
             intermediate.append(self.collect_intermediate_activations(model, tokenizer, text))
+            gate.append({})
             embedding.append(self.collect_embedding_activations(model, tokenizer, text))
 
         return ProbeActivationBatch(
             hidden=hidden,
             intermediate=intermediate,
+            gate=gate,
             embedding=embedding,
         )
 
