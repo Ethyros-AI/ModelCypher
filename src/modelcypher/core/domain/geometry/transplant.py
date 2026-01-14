@@ -57,11 +57,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     precision_dtype,
-    svd_auto_rank,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_between_sets,
@@ -249,28 +249,25 @@ def compute_null_space_projector(
         )
 
     # =========================================================================
-    # PRINCIPLED RANK DETERMINATION VIA CUMULATIVE ENERGY
+    # PRINCIPLED RANK DETERMINATION VIA GEODESIC INTRINSIC DIMENSION
     # =========================================================================
-    # OLD HEURISTIC: rank_tol = max_eig * n * eps (scale-dependent, arbitrary)
+    # The intrinsic dimension of the activation manifold IS the rank.
+    # It's not a threshold to choose - it's a geometric property to measure.
     #
-    # NEW PRINCIPLED: Use svd_auto_rank() which finds minimum k such that
-    # sum(S[:k]²) / sum(S²) >= energy_threshold (scale-invariant, semantic)
+    # Uses TwoNN estimator (Facco et al., 2017) with geodesic distances:
+    # - k_neighbors: Derived from connectivity (Berry & Sauer 2016)
+    # - All parameters derived from data - no magic numbers
     #
-    # Convert eigenvalues to singular values: S = sqrt(eigenvalues)
-    # Note: eigenvalues of C = A.T @ A / n are squared singular values / n,
-    # but the energy ratio is scale-invariant so this doesn't matter.
-    #
-    # References:
-    # - Yu et al. (2025) "TSV-Merge" shows ~3% of components capture 98.5% info
-    # - Zhang et al. (2025) "STF" uses similar energy-based truncation
+    # "Intrinsic dimension (ID) is a direct geometric measurement - NOT an estimate."
     # =========================================================================
-    singular_values = b.sqrt(eigvals_pos)
-    b.eval(singular_values)
+    id_estimator = IntrinsicDimension(b)
+    id_result = id_estimator.compute(input_activations)
+    intrinsic_dim = id_result.intrinsic_dimension
 
-    # Determine rank capturing 99% of variance (principled, scale-invariant)
-    k = svd_auto_rank(singular_values, b, energy_threshold=0.99)
-
+    # Round to nearest integer for rank (ID is continuous, rank is discrete)
+    # Clamp to valid range [1, in_dim]
     in_dim = int(eigvals_pos.shape[0])
+    k = max(1, min(int(round(intrinsic_dim)), in_dim))
     null_rank = in_dim - k
 
     # Compute diagnostics for logging
@@ -282,14 +279,15 @@ def compute_null_space_projector(
     median_idx = in_dim // 2
     median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
 
-    # Compute actual energy captured by top-k components
+    # Compute energy in top-k components (diagnostic, not for rank selection)
     top_k_energy = b.sum(eigvals_pos[:k])
     b.eval(top_k_energy)
     energy_captured = float(b.to_scalar(top_k_energy)) / total_var_val
 
     logger.info(
-        "NULL-SPACE DIAG: intrinsic_rank=%d/%d, null_rank=%d (energy_captured=%.4f, "
-        "max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
+        "NULL-SPACE DIAG: intrinsic_dim=%.2f, k=%d/%d, null_rank=%d "
+        "(energy_captured=%.4f, max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
+        intrinsic_dim,
         k,
         in_dim,
         null_rank,
