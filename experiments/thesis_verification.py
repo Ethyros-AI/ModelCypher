@@ -11,9 +11,7 @@ Phases:
 1. Raw CKA - baseline without alignment
 2. Gram-Aligned CKA - after finding optimal transformation
 
-Success Criteria:
-- Raw CKA > 0.85 all pairs
-- Gram-Aligned CKA = 1.0 (within machine epsilon)
+Outputs raw measurements only - no hardcoded thresholds or qualitative interpretations.
 """
 
 from __future__ import annotations
@@ -41,11 +39,21 @@ logger = logging.getLogger(__name__)
 # Configuration
 # =============================================================================
 
+import os
+from pathlib import Path
+
+# Model paths from environment or default to HuggingFace cache
+_MODEL_BASE = os.environ.get(
+    "MODELCYPHER_MODEL_PATH",
+    str(Path.home() / ".cache/huggingface/hub")
+)
+
+# These are example model names - update paths or set MODELCYPHER_MODEL_PATH
 MODELS = {
-    "qwen": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit",
-    "smollm": "/Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit",
-    "llama": "/Volumes/CodeCypher/models/mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit",
-    "mistral": "/Volumes/CodeCypher/models/mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+    "qwen": f"{_MODEL_BASE}/Qwen2.5-0.5B-Instruct-4bit",
+    "smollm": f"{_MODEL_BASE}/SmolLM-360M-Instruct-4bit",
+    "llama": f"{_MODEL_BASE}/TinyLlama-1.1B-Chat-v1.0-4bit",
+    "mistral": f"{_MODEL_BASE}/Mistral-7B-Instruct-v0.3-4bit",
 }
 
 # Random words for control comparison (common English words)
@@ -201,8 +209,6 @@ def run_experiment():
     logger.info("\n" + "=" * 60)
     logger.info("PHASE 1: RAW CROSS-FAMILY CKA (No Alignment)")
     logger.info("=" * 60)
-    logger.info("Expected if thesis holds: > 0.85 all pairs")
-    logger.info("")
 
     model_names = list(models.keys())
     raw_results = {}
@@ -218,15 +224,12 @@ def run_experiment():
             cka_value = compute_linear_cka(acts_a, acts_b, backend)
             raw_results[(name_a, name_b, word_set)] = cka_value
 
-            status = "PASS" if cka_value > 0.85 else "FAIL"
-            logger.info(f"  {word_set:10s}: CKA = {cka_value:.4f} [{status}]")
+            logger.info(f"  {word_set:10s}: CKA = {cka_value:.6f}")
 
     # Phase 2: Gram-Aligned CKA
     logger.info("\n" + "=" * 60)
     logger.info("PHASE 2: GRAM-ALIGNED CKA")
     logger.info("=" * 60)
-    logger.info("Expected if thesis holds: = 1.0 (within epsilon)")
-    logger.info("")
 
     aligned_results = {}
 
@@ -249,8 +252,7 @@ def run_experiment():
 
                 aligned_results[(name_a, name_b, word_set)] = aligned_cka
 
-                status = "PASS" if aligned_cka > 0.99 else "PARTIAL" if aligned_cka > 0.95 else "FAIL"
-                logger.info(f"  {word_set:10s}: CKA = {aligned_cka:.6f} [{status}]")
+                logger.info(f"  {word_set:10s}: CKA = {aligned_cka:.6f}")
 
             except Exception as e:
                 logger.warning(f"  {word_set:10s}: Alignment failed - {e}")
@@ -267,10 +269,10 @@ def run_experiment():
         raw_mean = sum(raw_values) / len(raw_values)
         raw_min = min(raw_values)
         raw_max = max(raw_values)
-        logger.info(f"\nRaw CKA: mean={raw_mean:.4f}, min={raw_min:.4f}, max={raw_max:.4f}")
-
-        raw_pass = sum(1 for v in raw_values if v > 0.85)
-        logger.info(f"  Passing (>0.85): {raw_pass}/{len(raw_values)}")
+        raw_std = (sum((v - raw_mean) ** 2 for v in raw_values) / len(raw_values)) ** 0.5
+        logger.info(f"\nRaw CKA (n={len(raw_values)}):")
+        logger.info(f"  mean={raw_mean:.6f}, std={raw_std:.6f}")
+        logger.info(f"  min={raw_min:.6f}, max={raw_max:.6f}")
 
     # Aligned CKA summary
     aligned_values = [v for v in aligned_results.values() if v is not None]
@@ -278,34 +280,12 @@ def run_experiment():
         aligned_mean = sum(aligned_values) / len(aligned_values)
         aligned_min = min(aligned_values)
         aligned_max = max(aligned_values)
-        logger.info(f"\nAligned CKA: mean={aligned_mean:.6f}, min={aligned_min:.6f}, max={aligned_max:.6f}")
+        aligned_std = (sum((v - aligned_mean) ** 2 for v in aligned_values) / len(aligned_values)) ** 0.5
+        logger.info(f"\nAligned CKA (n={len(aligned_values)}):")
+        logger.info(f"  mean={aligned_mean:.6f}, std={aligned_std:.6f}")
+        logger.info(f"  min={aligned_min:.6f}, max={aligned_max:.6f}")
 
-        aligned_pass = sum(1 for v in aligned_values if v > 0.99)
-        logger.info(f"  Passing (>0.99): {aligned_pass}/{len(aligned_values)}")
-
-    # Verdict
-    logger.info("\n" + "=" * 60)
-    logger.info("THESIS VERDICT")
-    logger.info("=" * 60)
-
-    all_raw_pass = all(v > 0.85 for v in raw_values) if raw_values else False
-    all_aligned_pass = all(v > 0.99 for v in aligned_values) if aligned_values else False
-
-    if all_aligned_pass:
-        logger.info("\nTHESIS VERIFIED")
-        logger.info("All models converge to invariant geometry.")
-        logger.info("Gram alignment achieves CKA = 1.0 across all pairs.")
-        return 0
-    elif all_raw_pass:
-        logger.info("\nTHESIS PARTIALLY SUPPORTED")
-        logger.info("Raw CKA is high across families, but alignment doesn't reach 1.0.")
-        logger.info("This may indicate minor structural differences or numerical issues.")
-        return 0
-    else:
-        logger.info("\nTHESIS REQUIRES INVESTIGATION")
-        logger.info("Some model pairs show lower CKA than expected.")
-        logger.info("This could indicate model-specific structure or probe issues.")
-        return 1
+    return 0
 
 
 if __name__ == "__main__":

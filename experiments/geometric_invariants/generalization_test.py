@@ -251,13 +251,19 @@ def main():
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     args = parser.parse_args()
 
+    import os
+    model_base = os.environ.get(
+        "MODELCYPHER_MODEL_PATH",
+        str(Path.home() / ".cache/huggingface/hub")
+    )
+
     model_a_path = Path(args.model_a)
     model_b_path = Path(args.model_b)
 
     if not model_a_path.exists():
-        model_a_path = Path("/Volumes/CodeCypher/models/mlx-community") / args.model_a
+        model_a_path = Path(model_base) / args.model_a
     if not model_b_path.exists():
-        model_b_path = Path("/Volumes/CodeCypher/models/mlx-community") / args.model_b
+        model_b_path = Path(model_base) / args.model_b
 
     result = run_generalization_test(
         model_a_path,

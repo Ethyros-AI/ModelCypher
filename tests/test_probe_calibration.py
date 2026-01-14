@@ -84,12 +84,20 @@ class TestProbeCalibrator:
 
     def test_compute_cka_identical(self):
         """compute_cka with identical activations returns ~1.0."""
+        import math
         calibrator = ProbeCalibrator()
         activations = [[1.0, 0.0], [0.5, 0.5], [0.0, 1.0]]
-        
+
         cka = calibrator.compute_cka(activations, activations)
-        
-        assert cka >= 0.99
+
+        # Threshold derived from machine epsilon: 1.0 - sqrt(eps)
+        # For float64, eps ~= 2.2e-16, sqrt(eps) ~= 1.5e-8
+        eps = 2.220446049250313e-16  # sys.float_info.epsilon
+        numerical_identity_threshold = 1.0 - math.sqrt(eps)
+        assert cka >= numerical_identity_threshold, (
+            f"CKA of identical data ({cka}) below numerical identity threshold "
+            f"({numerical_identity_threshold})"
+        )
 
     def test_compute_cka_range(self):
         """compute_cka returns value in [0, 1]."""

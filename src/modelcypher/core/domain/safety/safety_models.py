@@ -134,6 +134,17 @@ class SafetyThresholds:
 
     Values between 0.0 and 1.0. Lower thresholds are stricter (more flags).
     Provides presets: strict, default, permissive.
+
+    WARNING: The preset values are ARBITRARY PLACEHOLDERS, not calibrated
+    from empirical data. Users MUST calibrate these thresholds for their
+    specific deployment using labeled safety data and ROC curve analysis.
+
+    To calibrate:
+    1. Collect labeled examples of safe/unsafe content for each category
+    2. Run classifier predictions on the labeled set
+    3. Generate ROC curves and choose thresholds based on your
+       false-positive/false-negative tolerance
+    4. Create custom SafetyThresholds with calibrated values
     """
 
     toxicity: float
@@ -163,7 +174,11 @@ class SafetyThresholds:
 
     @classmethod
     def default(cls) -> SafetyThresholds:
-        """Default thresholds for general use."""
+        """Default thresholds - ARBITRARY PLACEHOLDERS, not calibrated.
+
+        These values are NOT derived from empirical data. Use as a starting
+        point only. Calibrate for your specific deployment before production use.
+        """
         return cls(
             toxicity=0.7,
             hate_speech=0.6,
@@ -178,12 +193,16 @@ class SafetyThresholds:
 
     @classmethod
     def recommended(cls) -> SafetyThresholds:
-        """Alias for default thresholds."""
+        """Alias for default - still arbitrary, not calibrated."""
         return cls.default()
 
     @classmethod
     def strict(cls) -> SafetyThresholds:
-        """Stricter thresholds for high-risk use cases."""
+        """Stricter thresholds - ARBITRARY PLACEHOLDERS, not calibrated.
+
+        Lower values = more flags. Use as a starting point for high-risk
+        deployments. Calibrate based on your false-positive tolerance.
+        """
         return cls(
             toxicity=0.5,
             hate_speech=0.4,
@@ -198,7 +217,11 @@ class SafetyThresholds:
 
     @classmethod
     def permissive(cls) -> SafetyThresholds:
-        """Permissive thresholds for curated datasets."""
+        """Permissive thresholds - ARBITRARY PLACEHOLDERS, not calibrated.
+
+        Higher values = fewer flags. May be appropriate for curated datasets
+        or internal tooling. Calibrate based on your false-negative tolerance.
+        """
         return cls(
             toxicity=0.85,
             hate_speech=0.8,

@@ -7,7 +7,7 @@ This experiment extends thesis_verification.py to analyze CKA across layer depth
 - Map corresponding layers by position ratio
 - Compute raw and aligned CKA at key positions (0%, 25%, 50%, 75%, 100%)
 
-If thesis holds uniformly: Aligned CKA = 1.0 at ALL layer positions.
+Outputs raw measurements only - no hardcoded thresholds or qualitative interpretations.
 """
 
 from __future__ import annotations
@@ -35,10 +35,20 @@ logger = logging.getLogger(__name__)
 # Configuration
 # =============================================================================
 
+import os
+from pathlib import Path
+
+# Model paths from environment or default to HuggingFace cache
+_MODEL_BASE = os.environ.get(
+    "MODELCYPHER_MODEL_PATH",
+    str(Path.home() / ".cache/huggingface/hub")
+)
+
+# These are example model names - update paths or set MODELCYPHER_MODEL_PATH
 MODELS = {
-    "qwen": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-4bit",
-    "smollm": "/Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit",
-    "llama": "/Volumes/CodeCypher/models/mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit",
+    "qwen": f"{_MODEL_BASE}/Qwen2.5-0.5B-Instruct-4bit",
+    "smollm": f"{_MODEL_BASE}/SmolLM-360M-Instruct-4bit",
+    "llama": f"{_MODEL_BASE}/TinyLlama-1.1B-Chat-v1.0-4bit",
 }
 
 # Random words for control comparison
@@ -267,43 +277,32 @@ def run_experiment():
         raw_mean = sum(raw_vals) / len(raw_vals) if raw_vals else 0
         aligned_mean = sum(aligned_vals) / len(aligned_vals) if aligned_vals else 0
         aligned_min = min(aligned_vals) if aligned_vals else 0
-
-        status = "PASS" if aligned_min > 0.99 else "PARTIAL" if aligned_min > 0.95 else "FAIL"
+        aligned_max = max(aligned_vals) if aligned_vals else 0
 
         pos_str = f"{pos:.0%}"
-        logger.info(f"{pos_str:>5}: raw_mean={raw_mean:.4f}, aligned_mean={aligned_mean:.6f}, "
-                   f"aligned_min={aligned_min:.6f} [{status}]")
+        logger.info(f"{pos_str:>5}: raw_mean={raw_mean:.6f}, aligned_mean={aligned_mean:.6f}, "
+                   f"aligned_range=[{aligned_min:.6f}, {aligned_max:.6f}]")
 
-    # Final verdict
+    # Final summary
     logger.info("\n" + "=" * 60)
-    logger.info("VERDICT")
+    logger.info("OVERALL STATISTICS")
     logger.info("=" * 60)
 
     all_aligned = [r["aligned_cka"] for r in results if r["aligned_cka"] is not None]
     if not all_aligned:
-        logger.info("\nNO RESULTS - All alignments failed")
+        logger.info("\nNo successful alignments")
         return 1
 
     min_aligned = min(all_aligned)
+    max_aligned = max(all_aligned)
     mean_aligned = sum(all_aligned) / len(all_aligned)
+    std_aligned = (sum((v - mean_aligned) ** 2 for v in all_aligned) / len(all_aligned)) ** 0.5
 
-    if min_aligned > 0.99:
-        logger.info("\nTHESIS VERIFIED ACROSS ALL LAYERS")
-        logger.info(f"All {len(all_aligned)} layer pairs achieve CKA > 0.99")
-        logger.info(f"Min aligned CKA: {min_aligned:.6f}")
-        logger.info(f"Mean aligned CKA: {mean_aligned:.6f}")
-        logger.info("\nThe invariant geometry exists throughout the entire network depth.")
-        return 0
-    elif min_aligned > 0.95:
-        logger.info("\nTHESIS PARTIALLY SUPPORTED")
-        logger.info(f"Most layer pairs achieve high CKA but not all reach 0.99")
-        logger.info(f"Min aligned CKA: {min_aligned:.6f}")
-        return 0
-    else:
-        logger.info("\nTHESIS REQUIRES INVESTIGATION")
-        logger.info(f"Some layer pairs show unexpectedly low CKA")
-        logger.info(f"Min aligned CKA: {min_aligned:.6f}")
-        return 1
+    logger.info(f"\nAligned CKA across all layer pairs (n={len(all_aligned)}):")
+    logger.info(f"  mean={mean_aligned:.6f}, std={std_aligned:.6f}")
+    logger.info(f"  min={min_aligned:.6f}, max={max_aligned:.6f}")
+
+    return 0
 
 
 if __name__ == "__main__":

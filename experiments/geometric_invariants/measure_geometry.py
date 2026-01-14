@@ -105,11 +105,21 @@ class ExperimentResult:
 
 
 def get_model_paths() -> dict[str, Path]:
-    """Get paths to available models."""
+    """Get paths to available models.
+
+    Uses MODELCYPHER_MODEL_PATH environment variable if set,
+    otherwise falls back to HuggingFace cache.
+    """
+    import os
     models = {}
 
-    # MLX-community models
-    mlx_base = Path("/Volumes/CodeCypher/models/mlx-community")
+    # Check environment variable first, then HuggingFace cache
+    model_base = os.environ.get("MODELCYPHER_MODEL_PATH")
+    if model_base:
+        mlx_base = Path(model_base)
+    else:
+        mlx_base = Path.home() / ".cache/huggingface/hub"
+
     if mlx_base.exists():
         for model_dir in mlx_base.iterdir():
             if model_dir.is_dir() and not model_dir.name.startswith("."):

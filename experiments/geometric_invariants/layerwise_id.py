@@ -202,9 +202,15 @@ def main():
     )
     args = parser.parse_args()
 
+    import os
     model_path = Path(args.model)
     if not model_path.exists():
-        model_path = Path("/Volumes/CodeCypher/models/mlx-community") / args.model
+        # Check environment variable, then HuggingFace cache
+        model_base = os.environ.get(
+            "MODELCYPHER_MODEL_PATH",
+            str(Path.home() / ".cache/huggingface/hub")
+        )
+        model_path = Path(model_base) / args.model
 
     profile = measure_layerwise_id(model_path, n_probes=args.n_probes)
 

@@ -162,7 +162,6 @@ def geometry_crm_compare(
     if context.output_format == "text":
         # Gram-space kernel alignment is exact by construction.
         # We report numerical precision of that computation.
-        precision_status = "OK" if summary.alignment_precision > 0.999 else "PRECISION ISSUE"
         lines = [
             "CRM COMPARISON",
             f"Source: {summary.source_path}",
@@ -170,7 +169,7 @@ def geometry_crm_compare(
             f"Common Anchors: {summary.common_anchor_count}",
             "",
             "Alignment (Gram-space kernel precision):",
-            f"  Numerical Precision: {summary.alignment_precision:.4f} ({precision_status})",
+            f"  Numerical Precision: {summary.alignment_precision:.6f}",
             "",
             "Layer Mapping:",
             f"  Mean Precision: {summary.mean_cka:.4f}",
