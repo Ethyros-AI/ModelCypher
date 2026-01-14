@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
+    tiny_value,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
@@ -465,7 +466,7 @@ def compute_cka(
     # Epsilon for division safety based on HSIC scale, not Gram scale.
     # HSIC values are normalized by n² and can be legitimately small for large n.
     # Use machine epsilon times the larger HSIC self-similarity as threshold.
-    hsic_scale = max(hsic_xx, hsic_yy, 1e-30)
+    hsic_scale = max(hsic_xx, hsic_yy, tiny_value(backend, gram_x))
     eps = machine_epsilon(backend, gram_x) * sqrt_scalar(hsic_scale, backend)
 
     if denom < eps:
@@ -533,7 +534,7 @@ def compute_cka_from_grams(
     denom = sqrt_scalar(hsic_aa * hsic_bb, backend)
 
     # Epsilon based on HSIC scale, not Gram scale
-    hsic_scale = max(hsic_aa, hsic_bb, 1e-30)
+    hsic_scale = max(hsic_aa, hsic_bb, tiny_value(backend, gram_a))
     eps = machine_epsilon(backend, gram_a) * sqrt_scalar(hsic_scale, backend)
     if denom < eps:
         return 0.0
@@ -566,7 +567,7 @@ def compute_cka_from_centered_grams(
     denom = sqrt_scalar(hsic_aa * hsic_bb, backend)
 
     # Epsilon based on HSIC scale, not centered Gram scale
-    hsic_scale = max(hsic_aa, hsic_bb, 1e-30)
+    hsic_scale = max(hsic_aa, hsic_bb, tiny_value(backend, centered_a))
     eps = machine_epsilon(backend, centered_a) * sqrt_scalar(hsic_scale, backend)
     if denom < eps:
         return 0.0

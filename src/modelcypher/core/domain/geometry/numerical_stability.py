@@ -1639,7 +1639,8 @@ def geodesic_invariant_alignment(
         frob_norm = b.sqrt(b.sum(diff * diff))
         target_norm = b.sqrt(b.sum(G_target_c * G_target_c))
         b.eval(frob_norm, target_norm)
-        rel_error = float(b.to_scalar(frob_norm)) / max(float(b.to_scalar(target_norm)), 1e-12)
+        denom_eps = division_epsilon(b, target_norm)
+        rel_error = float(b.to_scalar(frob_norm)) / max(float(b.to_scalar(target_norm)), denom_eps)
         stats["relative_space_alignment_error"] = rel_error
         logger.info("Relative space alignment error: %.6f", rel_error)
 

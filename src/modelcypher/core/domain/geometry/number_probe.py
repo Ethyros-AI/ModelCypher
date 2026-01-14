@@ -39,6 +39,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -292,8 +293,9 @@ class NumberProbe:
                     if layer_idx in target_layers:
                         # Mean-pool over sequence length to get [hidden_dim]
                         pooled = mx.mean(h, axis=(0, 1))
-                        # Convert to float32 for numerical stability
-                        pooled = pooled.astype(mx.float32)
+                        # Promote to highest available precision for stability
+                        target_dtype = precision_dtype(self.backend, reference=pooled)
+                        pooled = self.backend.astype(pooled, target_dtype)
                         mx.eval(pooled)
                         activations[layer_idx] = pooled
 

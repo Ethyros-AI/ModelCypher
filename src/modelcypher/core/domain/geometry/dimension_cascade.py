@@ -49,6 +49,8 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimens
 from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    infinity_threshold,
+    is_finite,
     power_iteration_eigh,
     precision_dtype,
 )
@@ -352,9 +354,11 @@ class DimensionCascade:
 
         # Handle disconnected graph: replace inf with max finite distance
         # This preserves the graph structure while avoiding numerical issues
-        max_finite = b.max(b.where(geo_dist < 1e30, geo_dist, b.zeros_like(geo_dist)))
+        finite_mask = b.isfinite(geo_dist)
+        finite_vals = b.where(finite_mask, geo_dist, b.zeros_like(geo_dist))
+        max_finite = b.max(finite_vals)
         b.eval(max_finite)
-        geo_dist = b.where(geo_dist < 1e30, geo_dist, max_finite)
+        geo_dist = b.where(finite_mask, geo_dist, max_finite)
         b.eval(geo_dist)
 
         # Step 2: Classical MDS on geodesic distances
@@ -505,7 +509,8 @@ class DimensionCascade:
         coupling_max_arr = b.max(b.abs(coupling))
         b.eval(coupling_max_arr)
         coupling_max = float(b.to_scalar(coupling_max_arr))
-        if coupling_max > 1e10 or coupling_max != coupling_max:  # NaN check
+        max_finite = infinity_threshold(b, coupling)
+        if not is_finite(coupling_max, b) or coupling_max > max_finite:
             raise ValueError(
                 f"Coupling matrix has numerical issues (max={coupling_max:.2e}). "
                 "This indicates ill-conditioned input data. Increase regularization "

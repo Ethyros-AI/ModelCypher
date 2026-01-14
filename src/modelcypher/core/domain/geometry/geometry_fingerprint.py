@@ -71,7 +71,9 @@ class GeometricFingerprint:
         backend = get_default_backend()
 
         # Vectorized off-diagonal statistics - O(n²) GPU ops vs O(n²) Python loops
-        gram_arr = backend.reshape(backend.array(gram), (n, n))
+        gram_arr = backend.array(gram)
+        gram_arr = backend.astype(gram_arr, precision_dtype(backend, reference=gram_arr))
+        gram_arr = backend.reshape(gram_arr, (n, n))
         mask = 1.0 - backend.eye(n)  # 1 for off-diagonal, 0 for diagonal
         off_diag_count = n * (n - 1)  # n² - n off-diagonal elements
 
@@ -111,7 +113,9 @@ class GeometricFingerprint:
         backend.random_seed(42)
 
         # Convert gram to matrix once - vectorized matmul is O(n²) GPU ops vs O(n²) Python loops
-        gram_arr = backend.reshape(backend.array(gram), (n, n))
+        gram_arr = backend.array(gram)
+        gram_arr = backend.astype(gram_arr, precision_dtype(backend, reference=gram_arr))
+        gram_arr = backend.reshape(gram_arr, (n, n))
         backend.eval(gram_arr)
 
         v = backend.random_normal((n,))
@@ -122,8 +126,8 @@ class GeometricFingerprint:
             v = v / norm
 
         # Convergence parameters derived from theory
-        # sqrt(float32 machine epsilon) for convergence tolerance
-        tol = 2.0 ** -11.5
+        # sqrt(machine epsilon) for convergence tolerance
+        tol = division_epsilon(backend, gram_arr)
         min_iter = int(math.ceil(math.log2(max(2, n)))) + 1
         max_iter = 10 * n
 

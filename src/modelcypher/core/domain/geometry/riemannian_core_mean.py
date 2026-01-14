@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    infinity_threshold,
     is_inf,
     machine_epsilon,
 )
@@ -531,7 +532,7 @@ class RiemannianMeanMixin:
         has_nonfinite = int(backend.to_scalar(grad_nonfinite_arr)) > 0
 
         if has_nonfinite:
-            max_finite = 1e38
+            max_finite = infinity_threshold(backend, gradient)
             grad_isnan = backend.isnan(gradient)
             grad_isinf = backend.isinf(gradient)
             grad_sign = backend.sign(gradient)

@@ -32,16 +32,12 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
     log_scalar,
     machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 logger = logging.getLogger(__name__)
-
-# IEEE 754 float32 machine epsilon (2^-23)
-# This is the smallest value where 1.0 + eps != 1.0 in float32.
-_FLOAT32_MACHINE_EPS = 2.0 ** -23
-
 
 class TransformationType(str, Enum):
     """Types of transformations that may be needed for merging."""
@@ -439,9 +435,10 @@ def create_diagnostic_vector(
     interference_score = min(1.0, max(0.0, interference))
     importance_score = min(1.0, max(0.0, refinement_density))
 
-    # Use float32 precision bounds for stability normalization.
+    # Use dtype precision bounds for stability normalization.
     _b = get_default_backend()
-    max_stable_condition = 1.0 / sqrt_scalar(_FLOAT32_MACHINE_EPS, _b)
+    eps = machine_epsilon(_b, _b.array([1.0], dtype=precision_dtype(_b)))
+    max_stable_condition = 1.0 / sqrt_scalar(eps, _b)
     if condition_number <= 1.0:
         instability_score = 0.0
     else:

@@ -42,13 +42,17 @@ spatial concepts—one shaped by tactile/auditory experience, one by visual.
 from __future__ import annotations
 
 import logging
+import math
+import sys
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    infinity_threshold,
+    precision_dtype,
     sqrt_scalar,
 )
-from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import (
@@ -80,8 +84,9 @@ def _category_key(value: object) -> str:
 
 def _safe_to_list(backend: "Backend", arr: "Array") -> list[float]:
     """Convert array to Python list using native tolist() - handles bfloat16."""
-    arr_f32 = backend.astype(arr, "float32")
-    flat = backend.reshape(arr_f32, (-1,))
+    target_dtype = precision_dtype(backend, reference=arr)
+    arr_precise = backend.astype(arr, target_dtype)
+    flat = backend.reshape(arr_precise, (-1,))
     backend.eval(flat)
     return backend.tolist(flat)
 
@@ -99,7 +104,7 @@ def _backend_isnan(backend: "Backend", arr: "Array") -> "Array":
 def _backend_isinf(backend: "Backend", arr: "Array") -> "Array":
     """Check for infinite values using backend ops."""
     # Inf is greater than any finite value
-    max_finite = 1e38  # Below float32 max
+    max_finite = infinity_threshold(backend, arr)
     return backend.abs(arr) > max_finite
 
 
@@ -107,23 +112,28 @@ def _backend_nan_to_num(
     backend: "Backend",
     arr: "Array",
     nan_val: float = 0.0,
-    posinf_val: float = 1e10,
-    neginf_val: float = -1e10,
+    posinf_val: float | None = None,
+    neginf_val: float | None = None,
 ) -> "Array":
     """Replace NaN/Inf with finite values using backend ops."""
     b = backend
     result = arr
+    max_finite = infinity_threshold(b, arr)
+    if posinf_val is None:
+        posinf_val = max_finite
+    if neginf_val is None:
+        neginf_val = -max_finite
 
     # Replace NaN
     is_nan = _backend_isnan(b, arr)
     result = b.where(is_nan, b.full(arr.shape, nan_val), result)
 
     # Replace positive infinity
-    is_posinf = arr > 1e38
+    is_posinf = arr > max_finite
     result = b.where(is_posinf, b.full(arr.shape, posinf_val), result)
 
     # Replace negative infinity
-    is_neginf = arr < -1e38
+    is_neginf = arr < -max_finite
     result = b.where(is_neginf, b.full(arr.shape, neginf_val), result)
 
     b.eval(result)
@@ -216,9 +226,20 @@ def _backend_std(backend: "Backend", arr: "Array") -> float:
     return sqrt_scalar(_backend_var(backend, arr), backend)
 
 
-def _backend_clip(backend: "Backend", arr: "Array", min_val: float, max_val: float) -> "Array":
+def _backend_clip(
+    backend: "Backend",
+    arr: "Array",
+    min_val: float | None = None,
+    max_val: float | None = None,
+) -> "Array":
     """Clip array values to [min_val, max_val] using backend ops."""
     b = backend
+    if min_val is None or max_val is None:
+        limit = infinity_threshold(b, arr)
+        if min_val is None:
+            min_val = -limit
+        if max_val is None:
+            max_val = limit
     result = b.maximum(arr, b.full(arr.shape, min_val))
     result = b.minimum(result, b.full(result.shape, max_val))
     b.eval(result)
@@ -232,7 +253,8 @@ def _scalar_isnan(x: float) -> bool:
 
 def _scalar_isinf(x: float) -> bool:
     """Check if a scalar Python float is infinite."""
-    return abs(x) > 1e38
+    max_finite = sys.float_info.max * math.sqrt(sys.float_info.epsilon)
+    return abs(x) > max_finite
 
 
 # =============================================================================
@@ -593,10 +615,10 @@ class GravityGradientAnalyzer:
             if anchor.name in ("ceiling", "sky"):
                 raw_act = anchor_activations[anchor.name]
                 # Clip to prevent overflow using backend
-                ceiling_act = _backend_clip(b, raw_act, -1e10, 1e10)
+                ceiling_act = _backend_clip(b, raw_act)
             if anchor.name in ("floor", "ground"):
                 raw_act = anchor_activations[anchor.name]
-                floor_act = _backend_clip(b, raw_act, -1e10, 1e10)
+                floor_act = _backend_clip(b, raw_act)
 
         gravity_dir = None
         gravity_dir_array = None  # Keep backend array for dot products
@@ -617,7 +639,7 @@ class GravityGradientAnalyzer:
         mass_positions = []
         for anchor in available:
             raw_act = anchor_activations[anchor.name]
-            act = _backend_clip(b, raw_act, -1e10, 1e10)
+            act = _backend_clip(b, raw_act)
 
             # Project onto gravity axis
             if gravity_dir_array is not None:
@@ -786,7 +808,7 @@ class VolumetricDensityProber:
         for anchor in available:
             raw_act = anchor_activations[anchor.name]
             # Clip to prevent overflow using backend
-            act = _backend_clip(b, raw_act, -1e10, 1e10)
+            act = _backend_clip(b, raw_act)
 
             norm = _backend_vector_norm(b, act)
             var = _backend_var(b, act)
