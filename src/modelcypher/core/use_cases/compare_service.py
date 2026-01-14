@@ -106,7 +106,7 @@ class CompareService:
         checkpoints: list[str],
         prompt: str,
         max_tokens: int = 100,
-        temperature: float = 0.7,
+        temperature: float = 0.7,  # Convention: 0.7 balances coherence/creativity
     ) -> CompareRunResult:
         """Execute A/B comparison between checkpoints.
 
@@ -114,7 +114,9 @@ class CompareService:
             checkpoints: List of checkpoint paths to compare.
             prompt: Prompt to compare on (required).
             max_tokens: Maximum generation length.
-            temperature: Sampling temperature.
+            temperature: Sampling temperature. Default 0.7 is a common convention
+                balancing coherence and creativity. Adjust based on task:
+                lower (0.1-0.3) for factual tasks, higher (0.8-1.0) for creative.
 
         Returns:
             CompareRunResult with comparison_id.

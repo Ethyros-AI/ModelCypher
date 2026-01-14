@@ -398,6 +398,7 @@ class LocalInferenceEngine(HiddenStateEngine):
             text += response.text
             last_response = response
 
+        # Min duration (1μs) prevents div-by-zero, below timer resolution.
         duration = max(time.time() - start, 1e-6)
         if last_response is None:
             token_count = 0
@@ -438,6 +439,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         resolved_max_tokens = max_tokens or STUB_MAX_TOKENS
         start = time.time()
         response = self._generate_text_stub(prompt, max_tokens=resolved_max_tokens)
+        # Min duration (1μs) prevents div-by-zero, below timer resolution.
         duration = max(time.time() - start, 1e-6)
         token_count = len(response.split())
         tokens_per_second = float(token_count) / duration

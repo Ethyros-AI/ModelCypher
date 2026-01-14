@@ -146,15 +146,20 @@ class EntropySignature:
         local_max = max(self.trajectory)
         local_min_index = self.trajectory.index(local_min)
 
-        # Drop ratio (avoid division by zero)
-        local_drop_ratio = local_max / local_min if local_min > 0.001 else local_max + 1
+        # Drop ratio - guard against division by near-zero.
+        # Threshold 0.001 chosen as entropy values are typically O(1),
+        # so 0.001 represents numerical noise floor.
+        _ENTROPY_FLOOR = 0.001
+        local_drop_ratio = local_max / local_min if local_min > _ENTROPY_FLOOR else local_max + 1
 
         # Standard deviation
         variance = sum((h - local_mean) ** 2 for h in self.trajectory) / n
         _b = get_default_backend()
         local_std = sqrt_scalar(variance, _b)
 
-        # Spike count: values > 2σ from mean
+        # Spike count: values > 2σ from mean.
+        # 2σ threshold captures ~5% tails under normal distribution.
+        # This is a statistical convention, not arbitrary.
         spike_threshold = 2 * local_std
         local_spike_count = sum(1 for h in self.trajectory if abs(h - local_mean) > spike_threshold)
 
@@ -176,11 +181,17 @@ class EntropySignature:
         for i in range(1, len(gradients)):
             curvature += abs(gradients[i] - gradients[i - 1])
 
-        # Tokens to first significant drop (30% from baseline)
-        baseline = sum(self.trajectory[: min(3, len(self.trajectory))]) / min(
-            3, len(self.trajectory)
+        # Tokens to first significant drop.
+        # Baseline = mean of first 3 tokens (minimum for stable estimate).
+        # Drop = 30% below baseline (0.7 * baseline).
+        # NOTE: 3 tokens and 30% threshold are heuristics that should be
+        # calibrated for specific jailbreak detection requirements.
+        _BASELINE_WINDOW = 3
+        _DROP_FRACTION = 0.7  # 30% drop = 70% of baseline
+        baseline = sum(self.trajectory[: min(_BASELINE_WINDOW, len(self.trajectory))]) / min(
+            _BASELINE_WINDOW, len(self.trajectory)
         )
-        drop_threshold = baseline * 0.7
+        drop_threshold = baseline * _DROP_FRACTION
         local_tokens_to_first_drop: int | None = None
         for i, h in enumerate(self.trajectory):
             if h < drop_threshold:
