@@ -590,48 +590,73 @@ class MLXActivationProvider:
         seq_lengths = [len(ids) for ids in all_token_ids]
         lengths = mx.array(seq_lengths, dtype=h.dtype)
         pos = mx.arange(max_len)
-        mask = (pos[None, :] < lengths[:, None]).astype(h.dtype)
+        pad_mask = pos[None, :] < lengths[:, None]
+        mask = pad_mask.astype(h.dtype)
         denom = lengths[:, None]
+        causal = pos[:, None] >= pos[None, :]
+        attn_mask = pad_mask[:, :, None] & pad_mask[:, None, :] & causal[None, :, :]
+        attn_mask = attn_mask[:, None, :, :]
         pooled_embeddings = mx.sum(h * mask[:, :, None], axis=1) / denom
         for i in range(batch_size):
             embedding_results.append(pooled_embeddings[i])
         all_tensors.append(pooled_embeddings)
 
         for layer_idx, layer in enumerate(inner.layers):
-            if hasattr(layer, "input_layernorm"):
-                h_norm = layer.input_layernorm(h)
-            elif hasattr(layer, "ln_1"):
-                h_norm = layer.ln_1(h)
-            else:
-                h_norm = h
+            is_lfm2 = (
+                hasattr(layer, "operator_norm")
+                and hasattr(layer, "ffn_norm")
+                and hasattr(layer, "feed_forward")
+            )
 
-            if hasattr(layer, "self_attn"):
-                attn_out = layer.self_attn(h_norm)
-                if isinstance(attn_out, tuple):
-                    attn_out = attn_out[0]
-            elif hasattr(layer, "attn"):
-                attn_out = layer.attn(h_norm)
-                if isinstance(attn_out, tuple):
-                    attn_out = attn_out[0]
-            else:
-                raise RuntimeError(
-                    "Model attention block not found; probe collection requires attention."
-                )
-
-            h = h + attn_out
-
-            if hasattr(layer, "post_attention_layernorm"):
-                h_post = layer.post_attention_layernorm(h)
-            elif hasattr(layer, "ln_2"):
-                h_post = layer.ln_2(h)
-            else:
-                h_post = h
-
-            ff_module = None
-            if hasattr(layer, "mlp"):
-                ff_module = layer.mlp
-            elif hasattr(layer, "feed_forward"):
+            if is_lfm2:
+                h_norm = layer.operator_norm(h)
+                if hasattr(layer, "self_attn"):
+                    attn_out = layer.self_attn(h_norm, mask=attn_mask, cache=None)
+                elif hasattr(layer, "conv"):
+                    attn_out = layer.conv(h_norm, mask=pad_mask, cache=None)
+                else:
+                    raise RuntimeError(
+                        "LFM2 block missing attention/conv module for probe collection."
+                    )
+                h = h + attn_out
+                h_post = layer.ffn_norm(h)
                 ff_module = layer.feed_forward
+            else:
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                else:
+                    h_norm = h
+
+                if hasattr(layer, "self_attn"):
+                    attn_out = layer.self_attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                elif hasattr(layer, "attn"):
+                    attn_out = layer.attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    raise RuntimeError(
+                        "Model attention block not found; probe collection requires attention."
+                    )
+
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                else:
+                    h_post = h
+
+            if not is_lfm2:
+                ff_module = None
+                if hasattr(layer, "mlp"):
+                    ff_module = layer.mlp
+                elif hasattr(layer, "feed_forward"):
+                    ff_module = layer.feed_forward
 
             intermediate = None
             gate = None
@@ -985,43 +1010,64 @@ class MLXActivationProvider:
             seq_lengths = [len(ids) for ids in all_token_ids]
             lengths = mx.array(seq_lengths, dtype=h.dtype)
             pos = mx.arange(max_len)
-            mask = (pos[None, :] < lengths[:, None]).astype(h.dtype)
+            pad_mask = pos[None, :] < lengths[:, None]
+            mask = pad_mask.astype(h.dtype)
             denom = lengths[:, None]
+            causal = pos[:, None] >= pos[None, :]
+            attn_mask = pad_mask[:, :, None] & pad_mask[:, None, :] & causal[None, :, :]
+            attn_mask = attn_mask[:, None, :, :]
 
             for layer_idx, layer in enumerate(inner.layers):
-                if hasattr(layer, "input_layernorm"):
-                    h_norm = layer.input_layernorm(h)
-                elif hasattr(layer, "ln_1"):
-                    h_norm = layer.ln_1(h)
-                else:
-                    h_norm = h
+                is_lfm2 = (
+                    hasattr(layer, "operator_norm")
+                    and hasattr(layer, "ffn_norm")
+                    and hasattr(layer, "feed_forward")
+                )
 
-                if hasattr(layer, "self_attn"):
-                    attn_out = layer.self_attn(h_norm)
-                    if isinstance(attn_out, tuple):
-                        attn_out = attn_out[0]
-                elif hasattr(layer, "attn"):
-                    attn_out = layer.attn(h_norm)
-                    if isinstance(attn_out, tuple):
-                        attn_out = attn_out[0]
-                else:
-                    attn_out = mx.zeros_like(h)
-
-                h = h + attn_out
-
-                if hasattr(layer, "post_attention_layernorm"):
-                    h_post = layer.post_attention_layernorm(h)
-                elif hasattr(layer, "ln_2"):
-                    h_post = layer.ln_2(h)
-                else:
-                    h_post = h
-
-                # Extract PRE-SiLU gate_proj output for batch
-                ff_module = None
-                if hasattr(layer, "mlp"):
-                    ff_module = layer.mlp
-                elif hasattr(layer, "feed_forward"):
+                if is_lfm2:
+                    h_norm = layer.operator_norm(h)
+                    if hasattr(layer, "self_attn"):
+                        attn_out = layer.self_attn(h_norm, mask=attn_mask, cache=None)
+                    elif hasattr(layer, "conv"):
+                        attn_out = layer.conv(h_norm, mask=pad_mask, cache=None)
+                    else:
+                        attn_out = mx.zeros_like(h)
+                    h = h + attn_out
+                    h_post = layer.ffn_norm(h)
                     ff_module = layer.feed_forward
+                else:
+                    if hasattr(layer, "input_layernorm"):
+                        h_norm = layer.input_layernorm(h)
+                    elif hasattr(layer, "ln_1"):
+                        h_norm = layer.ln_1(h)
+                    else:
+                        h_norm = h
+
+                    if hasattr(layer, "self_attn"):
+                        attn_out = layer.self_attn(h_norm)
+                        if isinstance(attn_out, tuple):
+                            attn_out = attn_out[0]
+                    elif hasattr(layer, "attn"):
+                        attn_out = layer.attn(h_norm)
+                        if isinstance(attn_out, tuple):
+                            attn_out = attn_out[0]
+                    else:
+                        attn_out = mx.zeros_like(h)
+
+                    h = h + attn_out
+
+                    if hasattr(layer, "post_attention_layernorm"):
+                        h_post = layer.post_attention_layernorm(h)
+                    elif hasattr(layer, "ln_2"):
+                        h_post = layer.ln_2(h)
+                    else:
+                        h_post = h
+
+                    ff_module = None
+                    if hasattr(layer, "mlp"):
+                        ff_module = layer.mlp
+                    elif hasattr(layer, "feed_forward"):
+                        ff_module = layer.feed_forward
 
                 if ff_module is not None:
                     if hasattr(ff_module, "gate_proj"):
@@ -1046,7 +1092,7 @@ class MLXActivationProvider:
                     h = h + ff_out
                 else:
                     result = layer(h)
-                    h = result[0] if isinstance(result, tuple) else result
+                    h = h + (result[0] if isinstance(result, tuple) else result)
 
             # Single eval at the end - allows GPU to batch all operations
             if all_tensors:

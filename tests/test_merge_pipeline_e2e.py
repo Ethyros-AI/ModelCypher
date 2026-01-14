@@ -55,20 +55,30 @@ def test_pipeline_uses_null_space_selectivity(monkeypatch) -> None:
             None,  # target_attention_activations
             None,  # source_k_activations
             None,  # target_k_activations
-            None,  # feature_transforms
-            None,  # scale_ratios
+            {0: "fake_transform"},  # feature_transforms (required)
+            {0: 1.0},  # scale_ratios
             None,  # embedding_transform
             None,  # attention_transforms
             None,  # k_transforms
             None,  # v_transforms
             None,  # intermediate_transforms
-            None,  # layer_mapping
+            None,  # gate_transforms
+            {0: [0]},  # layer_mapping
         )
 
     def fake_stage_transplant(*, graft_mask, **_kwargs):
         calls["graft_mask"] = graft_mask
         calls["transplant_called"] = True
         return {}, {"preserved_fractions": [], "cka_after": []}
+
+    def fake_stage_density(**_kwargs):
+        # Minimal density result that passes pipeline checks
+        # Use a simple mock object with required attributes
+        class MockDensityResult:
+            graft_mask = None  # None = null-space handles selectivity
+            density_weights = {0: None}
+            metrics = {}
+        return MockDensityResult()
 
     def fake_infer_hidden_dim(_weights):
         return 2
@@ -77,6 +87,7 @@ def test_pipeline_uses_null_space_selectivity(monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "load_tokenizer", fake_load_tokenizer)
     monkeypatch.setattr(pipeline, "load_model_for_probing", fake_load_model_for_probing)
     monkeypatch.setattr(pipeline, "stage_probe", fake_stage_probe)
+    monkeypatch.setattr(pipeline, "stage_density", fake_stage_density)
     monkeypatch.setattr(pipeline, "stage_transplant", fake_stage_transplant)
     monkeypatch.setattr(pipeline, "infer_hidden_dim", fake_infer_hidden_dim)
 

@@ -364,12 +364,12 @@ def align_layers(
                             tgt_gate_dim,
                         )
                     except Exception as gate_err:
-                    logger.debug(
-                        "PROBE GATE: Direct alignment failed for %s -> %d: %s",
-                        s_layer,
-                        tgt_layer,
-                        gate_err,
-                    )
+                        logger.debug(
+                            "PROBE GATE: Direct alignment failed for %s -> %d: %s",
+                            s_layer,
+                            tgt_layer,
+                            gate_err,
+                        )
 
             if split_gate_transforms:
                 result["gate_transform"] = split_gate_transforms

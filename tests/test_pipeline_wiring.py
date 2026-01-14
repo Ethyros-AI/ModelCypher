@@ -38,13 +38,11 @@ class TestPipelineImports:
             stage_probe,
             stage_density,
             stage_transplant,
-            stage_validate,
         )
-        
+
         assert callable(stage_probe)
         assert callable(stage_density)
         assert callable(stage_transplant)
-        assert callable(stage_validate)
     
     def test_permute_stage_removed(self) -> None:
         """PERMUTE stage should NOT be importable (removed)."""

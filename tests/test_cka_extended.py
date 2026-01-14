@@ -179,31 +179,31 @@ class TestCKASplit:
         # Note: some samples may be neither (both low response)
         assert result.shared_fraction + result.novel_fraction <= 1.0 + 1e-6
 
-    def test_threshold_zero_all_shared(self, backend):
-        """With threshold=0, all samples should be shared (both > 0)."""
+    def test_identical_data_all_shared(self, backend):
+        """With identical source and target, all samples should be shared."""
         backend.random_seed(42)
-        # Use non-zero data that will have response > 0
+        # When source and target are identical, projection residual is zero
         source = backend.random_normal((50, 32)) + 1.0
-        target = backend.random_normal((50, 32)) + 1.0
+        target = source  # Identical data
         backend.eval(source, target)
 
-        result = compute_cka_split(source, target, backend, response_threshold=0.0)
+        result = compute_cka_split(source, target, backend)
 
-        # With threshold=0, most samples should be "shared" (both have some response)
-        assert result.n_shared > 0
+        # With identical data, all samples should be "shared" (residual ~ 0)
+        assert result.n_shared == 50
 
-    def test_threshold_one_few_shared(self, backend):
-        """With threshold=1.0, few/no samples should be shared."""
+    def test_random_data_mostly_novel(self, backend):
+        """With independent random data, most samples should be novel."""
         backend.random_seed(42)
         source = backend.random_normal((50, 32))
         target = backend.random_normal((50, 32))
         backend.eval(source, target)
 
-        result = compute_cka_split(source, target, backend, response_threshold=1.0)
+        result = compute_cka_split(source, target, backend)
 
-        # With threshold=1.0, only max-response samples qualify
-        # This is a strict threshold, so shared count should be low
-        assert result.n_shared <= 5  # Very few samples at threshold=1.0
+        # With independent random data, projection residual will be large
+        # Most samples should be "novel" (not well-aligned)
+        assert result.n_novel >= result.n_shared
 
     def test_too_few_samples_returns_zeros(self, backend):
         """With < 4 samples, should return zeros."""
