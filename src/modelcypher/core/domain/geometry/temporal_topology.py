@@ -48,6 +48,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     is_nan,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
@@ -186,7 +187,9 @@ class TemporalTopologyAnalyzer:
             raise ValueError(f"Insufficient anchors: {len(concepts)} < 10 required")
 
         backend = get_default_backend()
-        matrix = backend.array([self.activations[c] for c in concepts], dtype="float32")
+        matrix = backend.array(
+            [self.activations[c] for c in concepts], dtype=precision_dtype(backend)
+        )
         backend.eval(matrix)
 
         # Normalize for geodesic cosine similarity

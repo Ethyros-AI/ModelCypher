@@ -26,6 +26,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
@@ -175,7 +176,7 @@ class PathGeometry:
         for gate_id, vec in gate_embeddings.items():
             if not vec:
                 continue
-            arr = backend.array(vec, dtype="float32")
+            arr = backend.array(vec, dtype=precision_dtype(backend))
             cache[gate_id] = arr
             arrays.append(arr)
         if arrays:
@@ -735,8 +736,12 @@ class BackendPathGeometry:
         """
         # Align signature vectors on shared dimensions.
         count = min(len(sig_a.level1), len(sig_b.level1))
-        a_arr = self.backend.array(sig_a.level1[:count], dtype="float32")
-        b_arr = self.backend.array(sig_b.level1[:count], dtype="float32")
+        a_arr = self.backend.array(
+            sig_a.level1[:count], dtype=precision_dtype(self.backend)
+        )
+        b_arr = self.backend.array(
+            sig_b.level1[:count], dtype=precision_dtype(self.backend)
+        )
         level1_a = self.backend.reshape(a_arr, (1, -1))
         level1_b = self.backend.reshape(b_arr, (1, -1))
 

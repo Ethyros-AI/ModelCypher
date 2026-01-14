@@ -53,6 +53,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_nan,
     machine_epsilon,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
 
@@ -306,7 +307,7 @@ class CrossArchitectureLayerMatcher:
             return [], 0.0
 
         backend = get_default_backend()
-        sim = backend.array(similarity_matrix, dtype="float32")
+        sim = backend.array(similarity_matrix, dtype=precision_dtype(backend))
         backend.eval(sim)
 
         neg_inf = -float(backend.finfo().max)
@@ -396,16 +397,18 @@ class CrossArchitectureLayerMatcher:
             sorted_indices = backend.argsort(values_arr)
             # Create rank array: for each position in sorted order, assign rank
             # We need the inverse: for each original position, what's its rank?
-            ranks_arr = backend.zeros((n,), dtype="float32")
+            ranks_arr = backend.zeros((n,), dtype=precision_dtype(backend))
             # Use scatter-like operation: ranks[sorted_indices[i]] = i + 1
             # Since we don't have scatter, use argsort of argsort
             inverse_indices = backend.argsort(sorted_indices)
             # Ranks are 1-indexed
-            ranks_arr = backend.astype(inverse_indices, "float32") + 1.0
+            ranks_arr = backend.astype(
+                inverse_indices, precision_dtype(backend, reference=inverse_indices)
+            ) + 1.0
             return ranks_arr
 
-        x_arr = backend.array(x, dtype="float32")
-        y_arr = backend.array(y, dtype="float32")
+        x_arr = backend.array(x, dtype=precision_dtype(backend))
+        y_arr = backend.array(y, dtype=precision_dtype(backend))
         rank_x_arr = ranks_vectorized(x_arr)
         rank_y_arr = ranks_vectorized(y_arr)
         backend.eval(rank_x_arr, rank_y_arr)
@@ -461,7 +464,7 @@ class CrossArchitectureLayerMatcher:
         backend = get_default_backend()
 
         # Vectorized weighted sum using backend operations
-        combined_arr = backend.zeros((rows, cols), dtype="float32")
+        combined_arr = backend.zeros((rows, cols), dtype=precision_dtype(backend))
 
         for category, weight in normalized.items():
             anchors = anchors_by_category.get(category)
@@ -472,7 +475,7 @@ class CrossArchitectureLayerMatcher:
                 target_crm,
                 anchors,
             )
-            matrix_arr = backend.array(matrix, dtype="float32")
+            matrix_arr = backend.array(matrix, dtype=precision_dtype(backend))
             combined_arr = combined_arr + weight * matrix_arr
 
         backend.eval(combined_arr)

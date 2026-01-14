@@ -46,6 +46,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     power_iteration_eigh,
     regularization_epsilon,
     sqrt_scalar,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_batch,
@@ -201,8 +202,8 @@ class SocialGeometryAnalyzer:
         X_t = backend.transpose(X_centered)
         cov = backend.matmul(X_t, X_centered) / max(n - 1, 1)
 
-        # Eigendecomposition (geodesic - GPU-only, float32 required)
-        cov = backend.astype(cov, "float32")
+        # Eigendecomposition (geodesic - GPU-only)
+        cov = backend.astype(cov, precision_dtype(backend, reference=cov))
         n_cov = int(cov.shape[0])
         eigenvalues, eigenvectors = power_iteration_eigh(backend, cov, k=n_cov)
         backend.eval(eigenvalues, eigenvectors)
@@ -420,7 +421,7 @@ class SocialGeometryAnalyzer:
             # Compute low-status centroid via Fréchet mean
             low_vecs = [backend.reshape(backend.array(activations[n]), (1, -1)) for n in low_status]
             low_activations = backend.concatenate(low_vecs, axis=0)
-            low_arr = backend.astype(low_activations, "float32")
+            low_arr = backend.astype(low_activations, precision_dtype(backend, reference=low_activations))
             low_tol = regularization_epsilon(backend, low_arr)
             low_result = rg.frechet_mean(
                 low_arr, tolerance=low_tol  # max_iterations auto-derived from n
@@ -431,7 +432,7 @@ class SocialGeometryAnalyzer:
             # Compute high-status centroid via Fréchet mean
             high_vecs = [backend.reshape(backend.array(activations[n]), (1, -1)) for n in high_status]
             high_activations = backend.concatenate(high_vecs, axis=0)
-            high_arr = backend.astype(high_activations, "float32")
+            high_arr = backend.astype(high_activations, precision_dtype(backend, reference=high_activations))
             high_tol = regularization_epsilon(backend, high_arr)
             high_result = rg.frechet_mean(
                 high_arr, tolerance=high_tol  # max_iterations auto-derived from n

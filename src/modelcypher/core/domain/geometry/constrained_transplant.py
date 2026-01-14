@@ -35,6 +35,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_paired_distances
 from modelcypher.core.domain.geometry.transplant import compute_transplant_delta
@@ -118,7 +119,9 @@ def verify_boundary_invariance(
     max_rel_diff_arr = b.max(relative_diffs)
     b.eval(max_rel_diff_arr)
     max_rel_diff = float(b.to_scalar(max_rel_diff_arr))
-    inf_count = b.sum(b.astype(b.isinf(relative_diffs), "float32"))
+    inf_count = b.sum(
+        b.astype(b.isinf(relative_diffs), precision_dtype(b, reference=relative_diffs))
+    )
     b.eval(inf_count)
     if float(b.to_scalar(inf_count)) > 0:
         mean_rel_diff = float("inf")

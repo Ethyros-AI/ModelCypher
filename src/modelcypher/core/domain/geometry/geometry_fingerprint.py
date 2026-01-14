@@ -28,6 +28,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     power_iteration_eigh,
+    precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
 )
@@ -210,7 +211,9 @@ class GeometricFingerprint:
             return [float(gram[0])]
 
         backend = get_default_backend()
-        matrix = backend.reshape(backend.array(gram, dtype="float32"), (n, n))
+        matrix = backend.reshape(
+            backend.array(gram, dtype=precision_dtype(backend)), (n, n)
+        )
         eigenvalues, _ = power_iteration_eigh(backend, matrix, k=n)
         backend.eval(eigenvalues)
         eigen_list = backend.tolist(eigenvalues)

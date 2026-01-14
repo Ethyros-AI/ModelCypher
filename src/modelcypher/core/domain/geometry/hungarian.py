@@ -46,7 +46,10 @@ import functools
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import is_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    is_finite,
+    precision_dtype,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -108,7 +111,8 @@ def hungarian_assignment(
         Assignment array where assignment[i] = j means source i maps to target j.
     """
     b = backend or get_default_backend()
-    cost = b.array(cost_matrix, dtype="float32")
+    cost = b.array(cost_matrix)
+    cost = b.astype(cost, precision_dtype(b, reference=cost))
     b.eval(cost)
 
     n = int(cost.shape[0])
@@ -224,8 +228,9 @@ def _hungarian_backend_impl(cost: "Array", b: "Backend") -> "Array":
         return b.zeros((0,), dtype="int32")
 
     size = n + 1
-    u = b.zeros((size,), dtype="float32")
-    v = b.zeros((size,), dtype="float32")
+    work_dtype = precision_dtype(b, reference=cost)
+    u = b.zeros((size,), dtype=work_dtype)
+    v = b.zeros((size,), dtype=work_dtype)
     p = b.zeros((size,), dtype="int32")
     way = b.zeros((n,), dtype="int32")
 
@@ -233,9 +238,9 @@ def _hungarian_backend_impl(cost: "Array", b: "Backend") -> "Array":
     row_idx = b.arange(size, dtype="int32")
     row_idx_matrix = b.reshape(row_idx, (1, size))
 
-    inf_vec = b.full((n,), float("inf"), dtype="float32")
-    zeros = b.zeros((n,), dtype="float32")
-    ones = b.ones((n,), dtype="float32")
+    inf_vec = b.full((n,), float("inf"), dtype=work_dtype)
+    zeros = b.zeros((n,), dtype=work_dtype)
+    ones = b.ones((n,), dtype=work_dtype)
 
     for i in range(1, n + 1):
         p = b.where(row_idx == 0, b.full(p.shape, i, dtype="int32"), p)
@@ -279,12 +284,12 @@ def _hungarian_backend_impl(cost: "Array", b: "Backend") -> "Array":
             p_cols = b.take(p, col_idx, axis=0)
             p_cols_row = b.reshape(p_cols, (n, 1))
             used_col = b.reshape(used, (n, 1))
-            row_match = b.astype(p_cols_row == row_idx_matrix, "float32")
+            row_match = b.astype(p_cols_row == row_idx_matrix, work_dtype)
             counts = b.sum(row_match * used_col, axis=0)
 
             p0 = b.take(p, b.array([0], dtype="int32"), axis=0)
             p0_mask = row_idx == p0
-            p0_one = b.astype(p0_mask, "float32")
+            p0_one = b.astype(p0_mask, work_dtype)
             u = u + (counts + p0_one) * delta
 
             v0 = b.take(v, b.array([0], dtype="int32"), axis=0)
@@ -312,7 +317,7 @@ def _hungarian_backend_impl(cost: "Array", b: "Backend") -> "Array":
     row_idx_small = b.arange(n, dtype="int32")
     rows_matrix = b.reshape(rows, (n, 1))
     row_idx_matrix = b.reshape(row_idx_small, (1, n))
-    one_hot = b.astype(rows_matrix == row_idx_matrix, "float32")
+    one_hot = b.astype(rows_matrix == row_idx_matrix, work_dtype)
     col_vals = b.reshape(col_idx - 1, (n, 1))
     result = b.sum(one_hot * col_vals, axis=0)
     return b.astype(result, "int32")

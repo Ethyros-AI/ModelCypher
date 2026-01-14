@@ -79,6 +79,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     log_scalar,
     machine_epsilon,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
 
@@ -313,7 +314,8 @@ class TopologicalFingerprint:
             return b.zeros((0, 0))
 
         b = backend or get_default_backend()
-        pts = b.astype(b.array(points), "float32")  # Ensure float for numerical operations
+        pts = b.array(points)
+        pts = b.astype(pts, precision_dtype(b, reference=pts))
 
         # Use geodesic distances on the fully connected graph to preserve cycles
         # in small point sets used for persistent homology.
@@ -402,7 +404,8 @@ class TopologicalFingerprint:
         component_birth = [0.0] * n  # All points born at 0 in Rips
 
         b = get_default_backend()
-        dist_arr = b.astype(b.array(distances), "float32")
+        dist_arr = b.array(distances)
+        dist_arr = b.astype(dist_arr, precision_dtype(b, reference=dist_arr))
         row_idx, col_idx = b.triu_indices(n, k=1)
         flat_dist = b.reshape(dist_arr, (-1,))
         flat_idx = row_idx * n + col_idx

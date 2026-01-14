@@ -51,6 +51,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     power_iteration_eigh,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
@@ -338,7 +339,8 @@ class BackendMatrixUtils:
         if n < 2:
             # Count positive values
             mask = eig_flat > 0
-            count_arr = b.sum(b.astype(mask, "float32"))
+            count_dtype = precision_dtype(b, reference=eig_flat)
+            count_arr = b.sum(b.astype(mask, count_dtype))
             b.eval(count_arr)
             count = int(b.to_scalar(count_arr))
             return count
@@ -359,7 +361,8 @@ class BackendMatrixUtils:
 
         # Count positive eigenvalues (those not -inf after sort)
         is_positive = sorted_desc > float("-inf")
-        positive_count_arr = b.sum(b.astype(is_positive, "float32"))
+        count_dtype = precision_dtype(b, reference=sorted_desc)
+        positive_count_arr = b.sum(b.astype(is_positive, count_dtype))
         b.eval(positive_count_arr)
         positive_count = int(b.to_scalar(positive_count_arr))
 
@@ -455,7 +458,7 @@ class BackendMatrixUtils:
         b.eval(exceeds_threshold)
 
         # Convert to float mask and find first True (argmax on boolean gives first 1)
-        exceeds_float = b.astype(exceeds_threshold, "float32")
+        exceeds_float = b.astype(exceeds_threshold, precision_dtype(b, reference=cumsum_arr))
         # If no element exceeds threshold, argmax returns 0, so we check max
         max_exceeds_arr = b.max(exceeds_float)
         b.eval(max_exceeds_arr)
@@ -464,7 +467,9 @@ class BackendMatrixUtils:
         if max_exceeds < 1:  # All values are 0.0 (False), none exceed threshold
             # No element exceeds threshold, return full count of positive eigenvalues
             positive_mask = eig_sorted > 0
-            positive_count_arr = b.sum(b.astype(positive_mask, "float32"))
+            positive_count_arr = b.sum(
+                b.astype(positive_mask, precision_dtype(b, reference=eig_sorted))
+            )
             b.eval(positive_count_arr)
             return int(b.to_scalar(positive_count_arr))
 

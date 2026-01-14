@@ -55,6 +55,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     power_iteration_eigh,
+    precision_dtype,
     regularization_epsilon,
     safe_inverse,
     sqrt_scalar,
@@ -220,7 +221,9 @@ class ManifoldCurvatureProfile:
         point_arr = backend.array(point)
         query_reshaped = backend.reshape(point_arr, (1, -1))
         all_points_with_query = backend.concatenate([all_points, query_reshaped], axis=0)
-        pts_arr = backend.astype(all_points_with_query, "float32")
+        pts_arr = backend.astype(
+            all_points_with_query, precision_dtype(backend, reference=all_points_with_query)
+        )
 
         # Geodesic distance matrix (k=None triggers connectivity-based selection)
         # Last row contains distances from query to all points
@@ -425,7 +428,9 @@ class SectionalCurvatureEstimator:
         backend.eval(curvature_arr, valid_mask)
 
         # Compute count of valid curvatures on backend
-        valid_float = backend.astype(valid_mask, "float32")
+        valid_float = backend.astype(
+            valid_mask, precision_dtype(backend, reference=valid_mask)
+        )
         valid_count_arr = backend.sum(valid_float)
         backend.eval(valid_count_arr)
         valid_count = int(backend.to_scalar(valid_count_arr))
@@ -541,7 +546,7 @@ class SectionalCurvatureEstimator:
         k_neighbors = min(k_neighbors, n - 1)  # Can't exceed available points
 
         # Compute full geodesic distance matrix once
-        pts_arr = backend.astype(points, "float32")
+        pts_arr = backend.astype(points, precision_dtype(backend, reference=points))
         geo_dist = geodesic_distance_matrix(
             pts_arr, k_neighbors=min(k_neighbors, n - 1), backend=backend
         )

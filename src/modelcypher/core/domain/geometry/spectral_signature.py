@@ -32,6 +32,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
     infinity_threshold,
     power_iteration_eigh,
+    precision_dtype,
     regularization_epsilon,
     safe_log_epsilon,
     tiny_value,
@@ -140,7 +141,8 @@ class SpectralSignature:
         if kernel_bandwidth <= bandwidth_floor:
             kernel_bandwidth = bandwidth_floor
 
-        weights_arr = backend.zeros((n, n), dtype="float32")
+        weights_dtype = precision_dtype(backend, reference=geodesic_dist)
+        weights_arr = backend.zeros((n, n), dtype=weights_dtype)
         if edge_count > 0:
             sigma_sq = kernel_bandwidth * kernel_bandwidth * 2.0
             edge_mask = backend.where(
@@ -151,7 +153,7 @@ class SpectralSignature:
             weights_arr = backend.exp(-(geodesic_dist * geodesic_dist) / sigma_sq)
             weights_arr = weights_arr * edge_mask
             weights_arr = weights_arr * (1.0 - backend.eye(n))
-            weights_arr = backend.astype(weights_arr, "float32")
+            weights_arr = backend.astype(weights_arr, weights_dtype)
 
         backend.eval(weights_arr)
         degree = backend.sum(weights_arr, axis=1)

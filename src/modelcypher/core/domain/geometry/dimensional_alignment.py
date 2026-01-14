@@ -194,6 +194,7 @@ def measure_3d_alignment(
     )
     from modelcypher.core.domain.geometry.numerical_stability import (
         machine_epsilon,
+        precision_dtype,
         sqrt_scalar,
     )
 
@@ -246,8 +247,12 @@ def measure_3d_alignment(
         # Compute CKA between pre and post LayerNorm
         pre_stacked = backend.stack(pre_ln_acts, axis=0)
         post_stacked = backend.stack(post_ln_acts, axis=0)
-        pre_stacked = backend.astype(pre_stacked, "float32")
-        post_stacked = backend.astype(post_stacked, "float32")
+        pre_stacked = backend.astype(
+            pre_stacked, precision_dtype(backend, reference=pre_stacked)
+        )
+        post_stacked = backend.astype(
+            post_stacked, precision_dtype(backend, reference=post_stacked)
+        )
         backend.eval(pre_stacked, post_stacked)
 
         cka_result = compute_cka(

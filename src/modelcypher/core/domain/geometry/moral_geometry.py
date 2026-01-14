@@ -47,6 +47,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     is_nan,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
@@ -245,15 +246,15 @@ class MoralGeometryAnalyzer:
                 act = activations[cid]
             else:
                 continue
-            # Ensure activation is a backend array and float32
+            # Ensure activation is a backend array with precision dtype
             act_arr = backend.array(act) if not hasattr(act, "shape") else act
-            act_arr = backend.astype(act_arr, "float32")
+            act_arr = backend.astype(act_arr, precision_dtype(backend, reference=act_arr))
             act_list.append(act_arr)
 
         # Use concatenate with reshape instead of stack for broader compatibility
         reshaped = [backend.reshape(a, (1, -1)) for a in act_list]
         matrix = backend.concatenate(reshaped, axis=0)
-        matrix = backend.astype(matrix, "float32")
+        matrix = backend.astype(matrix, precision_dtype(backend, reference=matrix))
 
         # Normalize for geodesic cosine similarity
         norms = geodesic_norms(matrix, backend)

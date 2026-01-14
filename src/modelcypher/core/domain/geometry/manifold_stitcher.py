@@ -102,6 +102,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     log_scalar,
+    precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
 )
@@ -950,7 +951,8 @@ class ManifoldStitcher:
             new_assignments = b.argmin(dists, axis=1)
 
             # Check convergence
-            same = b.sum(b.astype(assignments == new_assignments, "float32"))
+            count_dtype = precision_dtype(b, reference=assignments)
+            same = b.sum(b.astype(assignments == new_assignments, count_dtype))
             b.eval(same)
             if float(b.to_scalar(same)) == float(n):
                 break

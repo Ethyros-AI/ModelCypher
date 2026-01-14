@@ -30,6 +30,7 @@ _cache = ComputationCache.shared()
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
+    precision_dtype,
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
@@ -494,7 +495,9 @@ class GeometryValidationSuite:
         transition_count = self_result.transition_count if self_result else 0
         path_count = self_result.path_count if self_result else 0
 
-        corr_arr = backend.array([self_corr, perturbed_corr], dtype="float32")
+        corr_arr = backend.array(
+            [self_corr, perturbed_corr], dtype=precision_dtype(backend)
+        )
         corr_eps = machine_epsilon(backend, corr_arr)
         passed = (
             self_corr == self_corr
@@ -562,13 +565,17 @@ class GeometryValidationSuite:
         eig_min = min(signature.eigenvalues) if signature.eigenvalues else 0.0
         eig_max = max(signature.eigenvalues) if signature.eigenvalues else 0.0
 
-        eig_arr = backend.array(signature.eigenvalues or [0.0], dtype="float32")
+        eig_arr = backend.array(
+            signature.eigenvalues or [0.0], dtype=precision_dtype(backend)
+        )
         eig_eps = regularization_epsilon(backend, eig_arr)
 
         # Normalized Laplacian is always used (it's the correct approach)
         eigen_bounds_ok = eig_min >= -eig_eps and eig_max <= 2.0 + eig_eps
 
-        heat_arr = backend.array(signature.heat_trace or [0.0], dtype="float32")
+        heat_arr = backend.array(
+            signature.heat_trace or [0.0], dtype=precision_dtype(backend)
+        )
         heat_eps = regularization_epsilon(backend, heat_arr)
 
         # Vectorized monotonicity check: heat[i] + eps >= heat[i+1] for all i
@@ -689,7 +696,9 @@ class GeometryValidationSuite:
         cka_eps = machine_epsilon(backend, gram_base)
         eigen_eps = regularization_epsilon(
             backend,
-            backend.array(sig_base.eigenvalues or [0.0], dtype="float32"),
+            backend.array(
+                sig_base.eigenvalues or [0.0], dtype=precision_dtype(backend)
+            ),
         )
         entropy_eps = machine_epsilon(
             backend,
@@ -697,7 +706,7 @@ class GeometryValidationSuite:
         )
         heat_eps = regularization_epsilon(
             backend,
-            backend.array(sig_base.heat_trace or [0.0], dtype="float32"),
+            backend.array(sig_base.heat_trace or [0.0], dtype=precision_dtype(backend)),
         )
         topo_eps = machine_epsilon(
             backend,
@@ -708,7 +717,7 @@ class GeometryValidationSuite:
                     fp_base.summary.max_persistence,
                     fp_padded.summary.max_persistence,
                 ],
-                dtype="float32",
+                dtype=precision_dtype(backend),
             ),
         )
         passed = (

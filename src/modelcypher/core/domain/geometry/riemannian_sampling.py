@@ -29,6 +29,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_inf,
     pi_value,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_types import (
     DirectionalCoverage,
@@ -116,7 +117,7 @@ class RiemannianSamplingMixin:
         # Initialize: select seed
         selected = [seed_idx]
         index_grid = backend.arange(0, n)
-        mask = backend.astype(index_grid == seed_idx, "float32")
+        mask = backend.astype(index_grid == seed_idx, precision_dtype(backend, reference=geo_dist))
         backend.eval(mask)
 
         # Min distance from each point to the selected set
@@ -138,7 +139,9 @@ class RiemannianSamplingMixin:
             selected.append(farthest_idx)
 
             # Update mask for selected points
-            one_hot = backend.astype(index_grid == farthest_idx, "float32")
+            one_hot = backend.astype(
+                index_grid == farthest_idx, precision_dtype(backend, reference=geo_dist)
+            )
             mask = backend.minimum(mask + one_hot, backend.ones_like(mask))
 
             # Update min distances: element-wise minimum with new point's distances

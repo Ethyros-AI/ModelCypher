@@ -52,6 +52,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     condition_threshold,
     division_epsilon,
     geodesic_svd,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
@@ -159,9 +160,9 @@ def compute_spectral_metrics(
     source_arr = b.array(source_weight) if not hasattr(source_weight, "shape") else source_weight
     target_arr = b.array(target_weight) if not hasattr(target_weight, "shape") else target_weight
 
-    # Cast to float32 for SVD (bfloat16 not supported)
-    source_f32 = b.astype(source_arr, "float32")
-    target_f32 = b.astype(target_arr, "float32")
+    # Promote for SVD (bfloat16 not supported)
+    source_f32 = b.astype(source_arr, precision_dtype(b, reference=source_arr))
+    target_f32 = b.astype(target_arr, precision_dtype(b, reference=target_arr))
 
     # Geodesic SVD - GPU-only power iteration, iterates until convergence
     # For (vocab_size, hidden_dim) matrices, we compute the full SVD

@@ -70,6 +70,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     geodesic_svd,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
@@ -215,9 +216,16 @@ class AffineBridge:
         self._source_dim = source_dim
         self._target_dim = target_dim
 
-        # Ensure float32 for numerical stability
-        X = backend.astype(X_train, "float32")
-        Y = backend.astype(Y_train, "float32")
+        # Promote to highest available precision for stability
+        compute_dtype = precision_dtype(backend, reference=X_train)
+        if hasattr(Y_train, "dtype"):
+            try:
+                if backend.finfo(Y_train.dtype).eps < backend.finfo(compute_dtype).eps:
+                    compute_dtype = Y_train.dtype
+            except Exception:
+                pass
+        X = backend.astype(X_train, compute_dtype)
+        Y = backend.astype(Y_train, compute_dtype)
 
         # Compute X^T X
         XtX = backend.matmul(backend.transpose(X), X)
@@ -263,8 +271,8 @@ class AffineBridge:
         n_test = None
         generalization_gap = None
         if X_test is not None and Y_test is not None:
-            X_test_f = backend.astype(X_test, "float32")
-            Y_test_f = backend.astype(Y_test, "float32")
+            X_test_f = backend.astype(X_test, compute_dtype)
+            Y_test_f = backend.astype(Y_test, compute_dtype)
             _, test_cosine = self._evaluate(X_test_f, Y_test_f)
             n_test = int(X_test.shape[0])
             generalization_gap = train_cosine - test_cosine
@@ -329,7 +337,7 @@ class AffineBridge:
             raise ValueError(msg)
 
         backend = self._backend
-        X_f = backend.astype(X, "float32")
+        X_f = backend.astype(X, precision_dtype(backend, reference=self._W))
         aligned = backend.matmul(X_f, self._W) + self._b
         backend.eval(aligned)
         return aligned
@@ -343,8 +351,8 @@ class AffineBridge:
             b: Bias vector [target_dim]
         """
         backend = self._backend
-        self._W = backend.astype(W, "float32")
-        self._b = backend.astype(b, "float32")
+        self._W = backend.astype(W, precision_dtype(backend, reference=W))
+        self._b = backend.astype(b, precision_dtype(backend, reference=b))
         backend.eval(self._W, self._b)
 
         self._source_dim = int(self._W.shape[0])
@@ -391,7 +399,9 @@ class VocabConstrainedProjection:
             vocab_embeddings: [vocab_size, embed_dim] token embeddings
         """
         backend = self._backend
-        self._vocab_embeddings = backend.astype(vocab_embeddings, "float32")
+        self._vocab_embeddings = backend.astype(
+            vocab_embeddings, precision_dtype(backend, reference=vocab_embeddings)
+        )
 
         # Pre-compute normalized vocabulary for cosine attention
         norms = geodesic_norms(self._vocab_embeddings, backend)
@@ -431,7 +441,7 @@ class VocabConstrainedProjection:
             raise ValueError(msg)
 
         backend = self._backend
-        X_f = backend.astype(X, "float32")
+        X_f = backend.astype(X, precision_dtype(backend, reference=self._vocab_embeddings))
 
         # Normalize input for cosine similarity
         x_norms = geodesic_norms(X_f, backend)

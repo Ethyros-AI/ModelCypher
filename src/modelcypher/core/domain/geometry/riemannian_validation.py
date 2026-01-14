@@ -236,8 +236,9 @@ def set_matrix_element(
 
     # Element-wise AND via multiplication (both are boolean-like 0/1)
     # Convert to float for multiplication
-    row_float = backend.astype(row_mask_2d, "float32")
-    col_float = backend.astype(col_mask_2d, "float32")
+    mask_dtype = matrix.dtype if hasattr(matrix, "dtype") else backend.array([1.0]).dtype
+    row_float = backend.astype(row_mask_2d, mask_dtype)
+    col_float = backend.astype(col_mask_2d, mask_dtype)
     mask = row_float * col_float  # [n, m], 1.0 at (i,j), 0.0 elsewhere
 
     # Update: matrix * (1 - mask) + value * mask

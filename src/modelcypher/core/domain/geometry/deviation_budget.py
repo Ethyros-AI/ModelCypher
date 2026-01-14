@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -134,12 +135,12 @@ class DeviationTracker:
             for dim in shape[:-1]:
                 total_rows *= dim
             arr = backend.reshape(arr, (total_rows, shape[-1]))
-        arr = backend.astype(arr, "float32")
+        arr = backend.astype(arr, precision_dtype(backend, reference=arr))
         backend.eval(arr)
         m = int(arr.shape[0])
         n = int(arr.shape[1])
         if m == 0 or n == 0:
-            return backend.zeros((0,), dtype="float32")
+            return backend.zeros((0,), dtype=arr.dtype)
         if m >= n:
             gram = backend.matmul(backend.transpose(arr), arr)
         else:

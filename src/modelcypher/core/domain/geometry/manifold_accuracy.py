@@ -23,7 +23,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    precision_dtype,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     derive_k_neighbors,
@@ -80,7 +83,7 @@ def geodesic_accuracy_report(
     diff = b.where(mask, diff, b.zeros_like(diff))
     b.eval(diff)
 
-    mask_f = b.astype(mask, "float32")
+    mask_f = b.astype(mask, precision_dtype(b, reference=mask))
     count = b.sum(mask_f)
     b.eval(count)
     count_val = float(b.to_scalar(count))

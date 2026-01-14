@@ -72,6 +72,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     condition_threshold,
     division_epsilon,
     geodesic_svd,
+    precision_dtype,
     safe_log_epsilon,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
@@ -196,7 +197,7 @@ def compute_output_stability(
 
     # 2D weight matrices - compute SVD
     W = b.array(weight_matrix) if not hasattr(weight_matrix, "shape") else weight_matrix
-    W_f32 = b.astype(W, "float32")
+    W_f32 = b.astype(W, precision_dtype(b, reference=W))
 
     # Compute full SVD (exact, no approximation)
     _, S, _ = geodesic_svd(b, W_f32)
@@ -295,9 +296,9 @@ def compare_stability(
         StabilityComparison with ratios and deltas
     """
     # Use sqrt(machine_epsilon) for safe division
-    # float32 machine epsilon = 2^-23, sqrt = 2^-11.5 ≈ 3.45e-4
     import math
-    eps = math.sqrt(2.0 ** -23)  # sqrt of float32 machine epsilon
+    import sys
+    eps = math.sqrt(sys.float_info.epsilon)
 
     return StabilityComparison(
         condition_number_ratio=after.condition_number / max(before.condition_number, eps),

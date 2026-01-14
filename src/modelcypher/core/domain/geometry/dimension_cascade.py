@@ -50,6 +50,7 @@ from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvatu
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     power_iteration_eigh,
+    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
@@ -187,11 +188,11 @@ class DimensionCascade:
             resolved_target_dims,
         )
 
-        # Cast to float32 if needed - SVD and other linalg ops require float32+
-        if 'float16' in str(activations.dtype):
-            activations = b.astype(activations, "float32")
+        # Promote low-precision activations for stable linalg
+        if "float16" in str(activations.dtype) or "bfloat16" in str(activations.dtype):
+            activations = b.astype(activations, precision_dtype(b, reference=activations))
             b.eval(activations)
-            logger.debug("Cast activations from float16 to float32 for numerical stability")
+            logger.debug("Promoted activations for numerical stability")
 
         # Compute intrinsic dimension - this is the TRUE dimensionality
         # All parameters derived from data (Berry & Sauer 2016 for k, Facco et al. for method)
@@ -330,9 +331,9 @@ class DimensionCascade:
         n_points = points.shape[0]
         source_dim = points.shape[1]
 
-        # Cast to float32 if needed
-        if 'float16' in str(points.dtype):
-            points = b.astype(points, "float32")
+        # Promote low-precision points for stable linalg
+        if "float16" in str(points.dtype) or "bfloat16" in str(points.dtype):
+            points = b.astype(points, precision_dtype(b, reference=points))
             b.eval(points)
 
         logger.debug("Computing geodesic distances for Isomap (n=%d)", n_points)

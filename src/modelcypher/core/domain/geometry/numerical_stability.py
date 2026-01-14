@@ -666,8 +666,9 @@ def compute_spearman_correlation(
 
     lhs_rank = backend.argsort(backend.argsort(lhs_arr, axis=0), axis=0)
     rhs_rank = backend.argsort(backend.argsort(rhs_arr, axis=0), axis=0)
-    lhs_rank = backend.astype(lhs_rank, "float32")
-    rhs_rank = backend.astype(rhs_rank, "float32")
+    rank_dtype = precision_dtype(backend, reference=lhs_rank)
+    lhs_rank = backend.astype(lhs_rank, rank_dtype)
+    rhs_rank = backend.astype(rhs_rank, rank_dtype)
 
     mean_l = backend.mean(lhs_rank)
     mean_r = backend.mean(rhs_rank)
@@ -774,15 +775,15 @@ def geodesic_svd(
     A_sum_val = float(b.to_scalar(A_sum))
 
     if A_sum_val != A_sum_val:  # NaN check
-        U = b.zeros(batch_shape + (m, 0), dtype="float32")
-        S = b.zeros(batch_shape + (0,), dtype="float32")
-        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
+        U = b.zeros(batch_shape + (m, 0), dtype=dtype)
+        S = b.zeros(batch_shape + (0,), dtype=dtype)
+        Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
         return U, S, Vt
 
     if abs(A_sum_val) == float("inf"):
-        U = b.zeros(batch_shape + (m, 0), dtype="float32")
-        S = b.zeros(batch_shape + (0,), dtype="float32")
-        Vt = b.zeros(batch_shape + (0, n), dtype="float32")
+        U = b.zeros(batch_shape + (m, 0), dtype=dtype)
+        S = b.zeros(batch_shape + (0,), dtype=dtype)
+        Vt = b.zeros(batch_shape + (0, n), dtype=dtype)
         return U, S, Vt
 
     A_norm_sq = b.sum(A * A)
@@ -852,7 +853,10 @@ def svd_auto_rank(
     - Zhang et al. (2025). "STF: Superpose Task-specific Features for Multi-task Fine-tuned Models"
     """
     b = backend
-    S = b.astype(b.array(singular_values), "float32")
+    S = b.astype(
+        b.array(singular_values),
+        precision_dtype(b, reference=b.array(singular_values)),
+    )
     b.eval(S)
 
     n = int(S.shape[0])
@@ -1288,7 +1292,7 @@ def gpu_lstsq(
     b.eval(rhs)
 
     # Solve (A_hat^T A_hat + diag_reg) Y = rhs
-    Y = b.zeros((int(d), int(b.shape(B)[1])), dtype="float32")
+    Y = b.zeros((int(d), int(b.shape(B)[1])), dtype=precision_dtype(b, reference=A))
     R = rhs
     P = rhs
     b.eval(Y, R, P)

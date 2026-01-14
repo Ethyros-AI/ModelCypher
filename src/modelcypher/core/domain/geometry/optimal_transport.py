@@ -48,6 +48,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median,
     division_epsilon,
+    precision_dtype,
     regularization_epsilon,
     safe_log_epsilon,
     tiny_value,
@@ -144,15 +145,16 @@ class SinkhornSolver:
         m = int(cost_matrix.shape[1])
 
         # Default to uniform marginals
+        weights_dtype = precision_dtype(backend, reference=cost_matrix)
         mu = (
             source_marginal
             if source_marginal is not None
-            else backend.ones((n,), dtype="float32") / float(n)
+            else backend.ones((n,), dtype=weights_dtype) / float(n)
         )
         nu = (
             target_marginal
             if target_marginal is not None
-            else backend.ones((m,), dtype="float32") / float(m)
+            else backend.ones((m,), dtype=weights_dtype) / float(m)
         )
         backend.eval(mu, nu)
 
@@ -300,8 +302,9 @@ class SinkhornSolver:
         logK = -cost_matrix / epsilon
         backend.eval(log_mu, log_nu, logK)
 
-        f = backend.zeros((n,), dtype="float32")
-        g = backend.zeros((m,), dtype="float32")
+        log_dtype = precision_dtype(backend, reference=cost_matrix)
+        f = backend.zeros((n,), dtype=log_dtype)
+        g = backend.zeros((m,), dtype=log_dtype)
         backend.eval(f, g)
 
         converged = False

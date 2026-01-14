@@ -62,6 +62,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.number_probe import (
@@ -255,7 +256,7 @@ class PilotResult:
 
 def compute_gram_matrix(X: "Array", backend: "Backend") -> "Array":
     """Compute Gram matrix K = X @ X^T."""
-    X = backend.astype(X, "float32")
+    X = backend.astype(X, precision_dtype(backend, reference=X))
     return backend.matmul(X, backend.transpose(X))
 
 
@@ -328,7 +329,7 @@ def compute_intrinsic_dimension(
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
     estimator = IntrinsicDimension(backend)
-    X_float = backend.astype(X, "float32")
+    X_float = backend.astype(X, precision_dtype(backend, reference=X))
 
     try:
         result = estimator.compute(X_float, with_ci=True)
@@ -365,7 +366,7 @@ def compute_curvature(
 
     try:
         ricci = OllivierRicciCurvature(backend)
-        X_float = backend.astype(X, "float32")
+        X_float = backend.astype(X, precision_dtype(backend, reference=X))
         result = ricci.compute(X_float)
 
         # Extract min/max from edge_curvatures list
