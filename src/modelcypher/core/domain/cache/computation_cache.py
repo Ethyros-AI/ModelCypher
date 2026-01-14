@@ -887,7 +887,12 @@ class ComputationCache:
         with self._id_cache_lock:
             self._id_cache.clear()
 
-        logger.info("Cleared all computation caches")
+        if logger.isEnabledFor(logging.INFO):
+            try:
+                logger.info("Cleared all computation caches")
+            except ValueError:
+                # Logging handlers can be closed during test teardown.
+                pass
 
     def get_cache_sizes(self) -> dict[str, int]:
         """Get the size of each cache."""

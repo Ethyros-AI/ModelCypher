@@ -58,6 +58,7 @@ from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSigna
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_invariant_alignment,
+    geodesic_pinv,
     gpu_lstsq,
     machine_epsilon,
     precision_dtype,
@@ -319,35 +320,70 @@ class GramAligner:
             return self._identity_result(int(n_s), int(d_s), precision)
 
         # =================================================================
+        # LINEAR ALIGNMENT CHECK (exact solution on shared manifold)
+        # =================================================================
+        # Closed-form alignment guarantees CKA=1.0 on training probes when the
+        # target is a linear transform of the source. If this already achieves
+        # numerical precision, skip geodesic alignment entirely.
+        linear_start = time.perf_counter()
+        F_linear = b.matmul(geodesic_pinv(b, source_activations), target_activations)
+        b.eval(F_linear)
+        F_linear, linear_iterations, linear_cka = self._geodesic_refine(
+            source_activations, target_activations, F_linear
+        )
+        linear_elapsed = time.perf_counter() - linear_start
+        logger.debug(
+            "LINEAR ALIGNMENT: geodesic CKA=%.6f (%.2fs)",
+            linear_cka,
+            linear_elapsed,
+        )
+
+        # =================================================================
         # PHASE 1: Geodesic alignment (manifold-preserving)
         # =================================================================
         # Uses k-NN geodesic distances to preserve intrinsic manifold structure
-        start_time = time.perf_counter()
-
         alignment_stats: dict[str, float] = {}
-        F = geodesic_invariant_alignment(b, source_activations, target_activations, stats=alignment_stats)
-        b.eval(F)
+        F = F_linear
+        iterations = linear_iterations
+        geodesic_cka = linear_cka
 
-        alignment_elapsed = time.perf_counter() - start_time
-        logger.info(
-            "GEODESIC ALIGNMENT: manifold-preserving transform (%.2fs)",
-            alignment_elapsed,
-        )
+        if geodesic_cka < (1.0 - precision):
+            start_time = time.perf_counter()
+            F_geo = geodesic_invariant_alignment(
+                b, source_activations, target_activations, stats=alignment_stats
+            )
+            b.eval(F_geo)
 
-        # =================================================================
-        # PHASE 2: Geodesic diagnostics
-        # =================================================================
-        refine_start = time.perf_counter()
-        F, iterations, geodesic_cka = self._geodesic_refine(
-            source_activations, target_activations, F
-        )
-        refine_elapsed = time.perf_counter() - refine_start
+            alignment_elapsed = time.perf_counter() - start_time
+            logger.info(
+                "GEODESIC ALIGNMENT: manifold-preserving transform (%.2fs)",
+                alignment_elapsed,
+            )
 
-        total_elapsed = time.perf_counter() - start_time
-        logger.info(
-            "GEODESIC CHECK: CKA=%.6f (%.2fs, total %.2fs)",
-            geodesic_cka, refine_elapsed, total_elapsed
-        )
+            # =================================================================
+            # PHASE 2: Geodesic diagnostics
+            # =================================================================
+            refine_start = time.perf_counter()
+            F_geo, geo_iterations, geodesic_cka_geo = self._geodesic_refine(
+                source_activations, target_activations, F_geo
+            )
+            refine_elapsed = time.perf_counter() - refine_start
+
+            total_elapsed = time.perf_counter() - start_time
+            logger.info(
+                "GEODESIC CHECK: CKA=%.6f (%.2fs, total %.2fs)",
+                geodesic_cka_geo, refine_elapsed, total_elapsed
+            )
+
+            if geodesic_cka_geo >= geodesic_cka:
+                F = F_geo
+                iterations = geo_iterations
+                geodesic_cka = geodesic_cka_geo
+                alignment_stats["alignment_method"] = 1.0  # geodesic
+            else:
+                alignment_stats["alignment_method"] = 0.0  # linear
+        else:
+            alignment_stats["alignment_method"] = 0.0  # linear exact
 
         # =====================================================================
         # SCALE RATIO: ||target|| / ||source @ F||
