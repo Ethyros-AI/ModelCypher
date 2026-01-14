@@ -61,6 +61,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     precision_dtype,
+    svd_auto_rank,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_between_sets,
@@ -247,30 +248,52 @@ def compute_null_space_projector(
             "Check that the model is loaded correctly and inference is running properly."
         )
 
-    max_eig_arr = b.max(eigvals_pos)
-    b.eval(max_eig_arr)
-    max_eig = float(b.to_scalar(max_eig_arr))
-    rank_tol = max_eig * float(max(int(eigvals_pos.shape[0]), n_samples)) * float(eps)
+    # =========================================================================
+    # PRINCIPLED RANK DETERMINATION VIA CUMULATIVE ENERGY
+    # =========================================================================
+    # OLD HEURISTIC: rank_tol = max_eig * n * eps (scale-dependent, arbitrary)
+    #
+    # NEW PRINCIPLED: Use svd_auto_rank() which finds minimum k such that
+    # sum(S[:k]²) / sum(S²) >= energy_threshold (scale-invariant, semantic)
+    #
+    # Convert eigenvalues to singular values: S = sqrt(eigenvalues)
+    # Note: eigenvalues of C = A.T @ A / n are squared singular values / n,
+    # but the energy ratio is scale-invariant so this doesn't matter.
+    #
+    # References:
+    # - Yu et al. (2025) "TSV-Merge" shows ~3% of components capture 98.5% info
+    # - Zhang et al. (2025) "STF" uses similar energy-based truncation
+    # =========================================================================
+    singular_values = b.sqrt(eigvals_pos)
+    b.eval(singular_values)
 
-    significant_mask = b.astype(eigvals_pos > rank_tol, eigvals_pos.dtype)
-    k_arr = b.sum(significant_mask)
-    b.eval(k_arr)
-    k = int(b.to_scalar(k_arr))
+    # Determine rank capturing 99% of variance (principled, scale-invariant)
+    k = svd_auto_rank(singular_values, b, energy_threshold=0.99)
 
     in_dim = int(eigvals_pos.shape[0])
     null_rank = in_dim - k
 
-    min_eig = float(b.to_scalar(b.min(eigvals_pos)))
+    # Compute diagnostics for logging
+    max_eig_arr = b.max(eigvals_pos)
+    min_eig_arr = b.min(eigvals_pos)
+    b.eval(max_eig_arr, min_eig_arr)
+    max_eig = float(b.to_scalar(max_eig_arr))
+    min_eig = float(b.to_scalar(min_eig_arr))
     median_idx = in_dim // 2
     median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
 
+    # Compute actual energy captured by top-k components
+    top_k_energy = b.sum(eigvals_pos[:k])
+    b.eval(top_k_energy)
+    energy_captured = float(b.to_scalar(top_k_energy)) / total_var_val
+
     logger.info(
-        "NULL-SPACE DIAG: intrinsic_rank=%d/%d, null_rank=%d (rank_tol=%.3e, "
+        "NULL-SPACE DIAG: intrinsic_rank=%d/%d, null_rank=%d (energy_captured=%.4f, "
         "max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
         k,
         in_dim,
         null_rank,
-        rank_tol,
+        energy_captured,
         max_eig,
         median_eig,
         min_eig,

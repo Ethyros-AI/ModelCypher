@@ -305,15 +305,48 @@ def geodesic_cosine_matrix(
     # Extract pairwise distances (excluding origin)
     D_pairs = D[1:, 1:]  # [n, n] pairwise distances
 
-    # Geodesic law of cosines: cos(θ) = (d0i² + d0j² - dij²) / (2 × d0i × d0j)
-    d0_row = backend.reshape(d0, (1, n))
-    d0_col = backend.reshape(d0, (n, 1))
+    # =========================================================================
+    # STABLE GEODESIC COSINE VIA HALF-ANGLE FORMULA
+    # =========================================================================
+    # The standard law of cosines: cos(θ) = (a² + b² - c²) / (2ab)
+    # suffers from catastrophic cancellation when θ ≈ 0 (c ≈ 0) or θ ≈ π
+    #
+    # STABLE FORMULA using half-angle identity:
+    #   sin²(θ/2) = (b + c - a)(a + c - b) / (4ab)
+    #   cos(θ) = 1 - 2*sin²(θ/2)
+    #
+    # This avoids subtracting nearly-equal squared quantities by using
+    # products of smaller terms. Numerically stable for all angles.
+    #
+    # Reference: Kahan, W. (2014) "How Futile are Mindless Assessments of
+    # Roundoff in Floating-Point Computation?" - Section on triangle area
+    # =========================================================================
+    d0_row = backend.reshape(d0, (1, n))  # b
+    d0_col = backend.reshape(d0, (n, 1))  # a
 
     eps = division_epsilon(backend, d0)
-    denom = 2.0 * d0_col * d0_row
+    denom = 2.0 * d0_col * d0_row  # 2ab
     safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
 
-    cos_matrix = (d0_col * d0_col + d0_row * d0_row - D_pairs * D_pairs) / safe_denom
+    # Half-angle terms: (b + c - a) and (a + c - b)
+    # where a = d0_col, b = d0_row, c = D_pairs
+    term1 = d0_row + D_pairs - d0_col  # (b + c - a)
+    term2 = d0_col + D_pairs - d0_row  # (a + c - b)
+    backend.eval(term1, term2)
+
+    # Clamp negative terms (can happen due to floating point, indicates θ ≈ 0 or θ ≈ π)
+    # When term1 or term2 < 0, the triangle inequality is violated (numerical noise)
+    term1_safe = backend.maximum(term1, backend.zeros_like(term1))
+    term2_safe = backend.maximum(term2, backend.zeros_like(term2))
+
+    # sin²(θ/2) = term1 * term2 / (4ab) = term1 * term2 / (2 * denom)
+    sin_sq_half = (term1_safe * term2_safe) / (2.0 * safe_denom)
+    # Clamp to [0, 1] for sin²
+    sin_sq_half = backend.clip(sin_sq_half, 0.0, 1.0)
+
+    # cos(θ) = 1 - 2*sin²(θ/2)
+    cos_matrix = 1.0 - 2.0 * sin_sq_half
+    # Final clamp to [-1, 1] for numerical safety
     cos_matrix = backend.clip(cos_matrix, -1.0, 1.0)
 
     # Zero out entries where either point is at origin
@@ -375,12 +408,21 @@ def geodesic_cosine_batch(
     d0_vectors = D[0, 2:]  # [n] distances from origin to each vector
     d_anchor_vectors = D[1, 2:]  # [n] distances from anchor to each vector
 
-    # Geodesic law of cosines
+    # Stable geodesic cosine via half-angle formula (see geodesic_cosine_matrix)
+    # a = d0_anchor, b = d0_vectors, c = d_anchor_vectors
     eps = division_epsilon(backend, d0_vectors)
     denom = 2.0 * d0_anchor * d0_vectors
     safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
 
-    cos_vals = (d0_anchor * d0_anchor + d0_vectors * d0_vectors - d_anchor_vectors * d_anchor_vectors) / safe_denom
+    # Half-angle terms
+    term1 = d0_vectors + d_anchor_vectors - d0_anchor  # (b + c - a)
+    term2 = d0_anchor + d_anchor_vectors - d0_vectors  # (a + c - b)
+    term1_safe = backend.maximum(term1, backend.zeros_like(term1))
+    term2_safe = backend.maximum(term2, backend.zeros_like(term2))
+
+    sin_sq_half = (term1_safe * term2_safe) / (2.0 * safe_denom)
+    sin_sq_half = backend.clip(sin_sq_half, 0.0, 1.0)
+    cos_vals = 1.0 - 2.0 * sin_sq_half
     cos_vals = backend.clip(cos_vals, -1.0, 1.0)
 
     # Zero out if anchor or vector at origin
@@ -439,7 +481,8 @@ def geodesic_cosine_between_sets(
     d0_b = D[0, m+1:]   # [n] distances from origin to set_b
     D_ab = D[1:m+1, m+1:]  # [m, n] pairwise distances between sets
 
-    # Geodesic law of cosines
+    # Stable geodesic cosine via half-angle formula (see geodesic_cosine_matrix)
+    # a = d0_a_col, b = d0_b_row, c = D_ab
     eps = division_epsilon(backend, D_ab)
     d0_a_col = backend.reshape(d0_a, (m, 1))
     d0_b_row = backend.reshape(d0_b, (1, n))
@@ -447,7 +490,15 @@ def geodesic_cosine_between_sets(
     denom = 2.0 * d0_a_col * d0_b_row
     safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
 
-    cos_matrix = (d0_a_col * d0_a_col + d0_b_row * d0_b_row - D_ab * D_ab) / safe_denom
+    # Half-angle terms
+    term1 = d0_b_row + D_ab - d0_a_col  # (b + c - a)
+    term2 = d0_a_col + D_ab - d0_b_row  # (a + c - b)
+    term1_safe = backend.maximum(term1, backend.zeros_like(term1))
+    term2_safe = backend.maximum(term2, backend.zeros_like(term2))
+
+    sin_sq_half = (term1_safe * term2_safe) / (2.0 * safe_denom)
+    sin_sq_half = backend.clip(sin_sq_half, 0.0, 1.0)
+    cos_matrix = 1.0 - 2.0 * sin_sq_half
     cos_matrix = backend.clip(cos_matrix, -1.0, 1.0)
 
     valid = backend.minimum(d0_a_col > eps, d0_b_row > eps)
@@ -523,12 +574,21 @@ def geodesic_pairwise_metrics(
     linear_idx = a_indices * size + b_indices
     distances = backend.take(flat_D, linear_idx, axis=0)
 
-    # Geodesic law of cosines
+    # Stable geodesic cosine via half-angle formula (see geodesic_cosine_matrix)
+    # a = d0_a, b = d0_b, c = distances
     eps = division_epsilon(backend, d0_a)
     denom = 2.0 * d0_a * d0_b
     safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
 
-    cos_vals = (d0_a * d0_a + d0_b * d0_b - distances * distances) / safe_denom
+    # Half-angle terms
+    term1 = d0_b + distances - d0_a  # (b + c - a)
+    term2 = d0_a + distances - d0_b  # (a + c - b)
+    term1_safe = backend.maximum(term1, backend.zeros_like(term1))
+    term2_safe = backend.maximum(term2, backend.zeros_like(term2))
+
+    sin_sq_half = (term1_safe * term2_safe) / (2.0 * safe_denom)
+    sin_sq_half = backend.clip(sin_sq_half, 0.0, 1.0)
+    cos_vals = 1.0 - 2.0 * sin_sq_half
     cos_vals = backend.clip(cos_vals, -1.0, 1.0)
 
     valid = backend.minimum(d0_a > eps, d0_b > eps)
