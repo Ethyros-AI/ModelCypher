@@ -1126,27 +1126,40 @@ class MLXBackend(Backend):
 
     # --- Fused Metal Kernels (mx.fast.*) ---
 
-    def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
+    def rms_norm(
+        self,
+        x: Array,
+        weight: Array | None,
+        eps: float = 1e-5,
+        stream: Any | None = None,
+    ) -> Array:
         """Apply RMS normalization using fused kernel.
 
         Parameters
         ----------
         x : Array
             Input array to normalize.
-        weight : Array
+        weight : Array or None
             Scaling weights.
         eps : float, optional
             Epsilon for numerical stability. Default is 1e-5.
+        stream : Any, optional
+            Stream or device for execution. Default is None.
 
         Returns
         -------
         Array
             RMS-normalized output.
         """
-        return self.mx.fast.rms_norm(x, weight, eps)
+        return self.mx.fast.rms_norm(x, weight, eps, stream=stream)
 
     def layer_norm(
-        self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
+        self,
+        x: Array,
+        weight: Array | None,
+        bias: Array | None,
+        eps: float = 1e-5,
+        stream: Any | None = None,
     ) -> Array:
         """Apply layer normalization using fused kernel.
 
@@ -1160,22 +1173,26 @@ class MLXBackend(Backend):
             Bias terms.
         eps : float, optional
             Epsilon for numerical stability. Default is 1e-5.
+        stream : Any, optional
+            Stream or device for execution. Default is None.
 
         Returns
         -------
         Array
             Layer-normalized output.
         """
-        return self.mx.fast.layer_norm(x, weight, bias, eps)
+        return self.mx.fast.layer_norm(x, weight, bias, eps, stream=stream)
 
     def rope(
         self,
         x: Array,
         dims: int,
         traditional: bool = False,
-        base: float = 10000.0,
+        base: float | None = 10000.0,
         scale: float = 1.0,
-        offset: int = 0,
+        offset: int | Array = 0,
+        freqs: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Apply rotary position embeddings using fused kernel.
 
@@ -1187,20 +1204,33 @@ class MLXBackend(Backend):
             Number of dimensions to apply RoPE to.
         traditional : bool, optional
             Use traditional RoPE formulation. Default is False.
-        base : float, optional
+        base : float or None, optional
             Base for frequency computation. Default is 10000.0.
         scale : float, optional
             Scaling factor. Default is 1.0.
-        offset : int, optional
+        offset : int or Array, optional
             Position offset. Default is 0.
+        freqs : Array or None, optional
+            Optional precomputed frequencies. If set, base must be None.
+        stream : Any, optional
+            Stream or device for execution. Default is None.
 
         Returns
         -------
         Array
             Output with rotary position embeddings applied.
         """
+        if freqs is not None and base is not None:
+            raise ValueError("rope() expects base=None when freqs is provided")
         return self.mx.fast.rope(
-            x, dims, traditional=traditional, base=base, scale=scale, offset=offset
+            x,
+            dims,
+            traditional=traditional,
+            base=base,
+            scale=scale,
+            offset=offset,
+            freqs=freqs,
+            stream=stream,
         )
 
     def scaled_dot_product_attention(
@@ -1209,7 +1239,9 @@ class MLXBackend(Backend):
         k: Array,
         v: Array,
         scale: float,
-        mask: Array | None = None,
+        mask: Array | str | None = None,
+        sinks: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Compute scaled dot-product attention using fused kernel.
 
@@ -1223,15 +1255,21 @@ class MLXBackend(Backend):
             Value array.
         scale : float
             Scaling factor for attention scores.
-        mask : Array or None, optional
+        mask : Array, str, or None, optional
             Attention mask. Default is None.
+        sinks : Array or None, optional
+            Attention sinks. Default is None.
+        stream : Any, optional
+            Stream or device for execution. Default is None.
 
         Returns
         -------
         Array
             Attention output.
         """
-        return self.mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask=mask)
+        return self.mx.fast.scaled_dot_product_attention(
+            q, k, v, scale=scale, mask=mask, sinks=sinks, stream=stream
+        )
 
     # --- Stream Management for CPU/GPU Parallelism ---
 

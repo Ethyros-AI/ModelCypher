@@ -16,42 +16,33 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Gram Matrix Aligner - Closed-form linear alignment with geodesic diagnostics.
+Gram Matrix Aligner - Geodesic manifold-preserving alignment.
 
 Core Principle: Geodesic Distance is the Truth
 ==============================================
-Euclidean distance is an approximation. In high-dimensional neural representation
-spaces, the manifold has curvature. Geodesic distance (shortest path on k-NN graph)
-is the correct metric for pairwise relationships.
+Neural representation spaces are curved manifolds. Geodesic distance (shortest
+path on k-NN graph) is the correct metric - it respects intrinsic geometry.
 
-LINEAR alignment (F = pinv(source) @ target) guarantees LINEAR CKA = 1.0
-on the shared manifold.
-But linear CKA uses K = X @ X.T (Euclidean dot products).
+This module uses geodesic_invariant_alignment which:
+1. Computes pairwise geodesic cosines (relative representations)
+2. Finds optimal rotation in relative space via Procrustes
+3. Transfers through aligned relative space back to feature space
 
-GEODESIC CKA uses K = exp(-D_geo²/2σ²) (RBF kernel on geodesic distances).
-Linear alignment does NOT guarantee geodesic CKA = 1.0. Geodesic CKA reflects
-manifold overlap/coverage and can be < 1.0 when models carry novel structure or
-the probes do not span the full shared manifold.
+This preserves manifold structure that flat-space methods destroy.
 
-The Correct Approach
-====================
-1. Closed-form linear Procrustes: F = pinv(source) @ target
-2. Measure geodesic CKA as a diagnostic of shared-manifold coverage
+Geodesic CKA uses K = exp(-D_geo²/2σ²) (RBF kernel on geodesic distances).
+Geodesic CKA < 1.0 indicates models carry novel structure or probes don't
+span the full shared manifold.
 
 No User-Configurable Thresholds
 ===============================
 All tolerances are derived from machine epsilon of the input dtype.
-- Convergence tolerance: sqrt(machine_epsilon)
-- Regularization: sqrt(machine_epsilon)
-- "Exact" alignment: 1.0 - sqrt(machine_epsilon)
 
 References:
+    - Yu et al. (2025). "Relative Geodesic Representations" - NeurIPS
     - Kornblith et al. (2019). "Similarity of Neural Network Representations
       Revisited." arXiv:1905.00414
-    - Williams (2001). "On a Connection between Kernel PCA and Metric
-      Multidimensional Scaling." Machine Learning 46(1):11-19
     - Tenenbaum et al. (2000). "Isomap" - geodesic distance via k-NN graph
-    - See: docs/DIMENSIONAL_COMPRESSION.md for full philosophy
 """
 
 from __future__ import annotations
@@ -66,8 +57,8 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_invariant_alignment,
     gpu_lstsq,
-    invariant_alignment,
     machine_epsilon,
     precision_dtype,
     regularization_epsilon,
@@ -198,15 +189,13 @@ class AlignmentResult:
 
 
 class GramAligner:
-    """Finds the closed-form linear alignment and reports geodesic diagnostics.
+    """Finds geodesic manifold-preserving alignment between activation spaces.
 
     This is a SOLVER, not a test. Given two sets of activations, it finds
-    the closed-form transform for linear alignment and reports geodesic CKA
-    as an overlap diagnostic.
+    the transform that preserves intrinsic manifold geometry via geodesic
+    cosine alignment in relative representation space.
 
     All tolerances are derived from the input dtype's machine epsilon.
-    The `tolerance` and `regularization` parameters are accepted for
-    backward compatibility but are IGNORED.
 
     Usage
     -----
@@ -231,18 +220,15 @@ class GramAligner:
         backend : Backend, optional
             Backend for tensor operations.
         max_iterations : int
-            IGNORED. Kept for backward compatibility only. The closed-form
-            solution F = pinv(source) @ target needs no iteration.
+            IGNORED. Kept for backward compatibility only.
         tolerance : float
             IGNORED. Derived from dtype.
         regularization : float
             IGNORED. Derived from dtype.
         max_steps : int
-            Maximum optimization steps for gradient descent. 50000 for precision, 5000 for speed.
+            IGNORED. Kept for backward compatibility.
         fast_mode : bool
-            If True, skip CKA diagnostics after computing F. The alignment is
-            closed-form; diagnostics are for reporting only.
-            Set to True for batch/multi-merge operations where speed matters.
+            If True, skip CKA diagnostics after computing F.
         """
         self._backend = backend or get_default_backend()
         self._max_iterations = max_iterations
@@ -284,16 +270,11 @@ class GramAligner:
         max_refinement_passes: int = 10,
         F_init: "Array | None" = None,
     ) -> AlignmentResult:
-        """Find alignment transform from linear Procrustes and report geodesic CKA.
+        """Find alignment transform that preserves geodesic manifold structure.
 
-        Two-phase alignment:
-        1. Linear Procrustes: F = pinv(source) @ target (closed-form)
-        2. Geodesic measurement: report manifold overlap/coverage
-
-        Linear CKA uses K = X @ X.T (Euclidean). Geodesic CKA uses k-NN graph
-        + RBF kernel. Linear alignment guarantees linear CKA = 1.0 on the shared
-        manifold but does not force geodesic CKA to 1.0 when models have novel
-        structure or probes are incomplete.
+        Uses geodesic_invariant_alignment which operates in relative representation
+        space (pairwise geodesic similarities via k-NN graphs). This preserves
+        the intrinsic manifold geometry that Euclidean methods destroy.
 
         Parameters
         ----------
@@ -304,14 +285,14 @@ class GramAligner:
         strict : bool
             IGNORED. Kept for backward compatibility.
         max_refinement_passes : int
-            IGNORED. No iterative refinement is performed.
+            IGNORED. Kept for backward compatibility.
         F_init : Array | None
-            IGNORED. Linear Procrustes is always the initialization.
+            IGNORED. Kept for backward compatibility.
 
         Returns
         -------
         AlignmentResult
-            The transformation from linear Procrustes plus geodesic diagnostics.
+            The geodesic-preserving transformation plus diagnostics.
         """
         b = self._backend
         n_s, d_s = b.shape(source_activations)
@@ -319,6 +300,9 @@ class GramAligner:
 
         if n_s != n_t:
             raise ValueError(f"Sample counts must match: source={n_s}, target={n_t}")
+
+        # Fast path: identity check (before any array copies)
+        is_same_input = source_activations is target_activations
 
         # Promote to highest available precision for alignment stability
         source_activations = b.astype(
@@ -331,31 +315,24 @@ class GramAligner:
         eps = machine_epsilon(b, source_activations)
         precision = sqrt_scalar(eps, b)
 
-        # Fast path: identity check
-        if source_activations is target_activations:
+        if is_same_input:
             return self._identity_result(int(n_s), int(d_s), precision)
 
         # =================================================================
-        # PHASE 1: Linear Procrustes (closed-form alignment)
+        # PHASE 1: Geodesic alignment (manifold-preserving)
         # =================================================================
-        # F = pinv(source) @ target guarantees LINEAR CKA = 1.0
+        # Uses k-NN geodesic distances to preserve intrinsic manifold structure
         start_time = time.perf_counter()
 
-        linear_stats: dict[str, float] = {}
-        F = invariant_alignment(b, source_activations, target_activations, stats=linear_stats)
+        alignment_stats: dict[str, float] = {}
+        F = geodesic_invariant_alignment(b, source_activations, target_activations, stats=alignment_stats)
         b.eval(F)
 
-        linear_elapsed = time.perf_counter() - start_time
-        linear_iterations = int(linear_stats.get("iterations", 0.0))
-        linear_residual = float(linear_stats.get("residual_norm", 0.0))
-        method = str(linear_stats.get("method", "cgls"))
+        alignment_elapsed = time.perf_counter() - start_time
         logger.info(
-            "LINEAR ALIGNMENT: F = pinv(source) @ target (%s, %.2fs, iters=%d)",
-            method,
-            linear_elapsed,
-            linear_iterations,
+            "GEODESIC ALIGNMENT: manifold-preserving transform (%.2fs)",
+            alignment_elapsed,
         )
-        logger.debug("LINEAR ALIGNMENT: Solver residual=%.2e", linear_residual)
 
         # =================================================================
         # PHASE 2: Geodesic diagnostics
@@ -399,8 +376,8 @@ class GramAligner:
             diagnostic=diagnostic,
             precision_threshold=precision,
             scale_ratio=scale_ratio,
-            linear_iterations=linear_iterations,
-            linear_residual=linear_residual,
+            linear_iterations=0,  # Legacy field - geodesic alignment is direct
+            linear_residual=alignment_stats.get("relative_space_alignment_error", 0.0),
         )
 
     def _geodesic_refine(

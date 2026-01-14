@@ -653,20 +653,29 @@ class Backend(Protocol):
         ...
 
     # --- Fused Operations (Metal Kernels) ---
-    def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
+    def rms_norm(
+        self, x: Array, weight: Array | None, eps: float = 1e-5, stream: Any | None = None
+    ) -> Array:
         """Fused RMS normalization kernel.
 
         Combines sqrt, mean, and multiply into single kernel.
         Critical for transformer inference performance.
+        Supports optional streams on backends that expose them.
         """
         ...
 
     def layer_norm(
-        self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
+        self,
+        x: Array,
+        weight: Array | None,
+        bias: Array | None,
+        eps: float = 1e-5,
+        stream: Any | None = None,
     ) -> Array:
         """Fused Layer normalization kernel.
 
         Combines mean, variance, normalize, scale, and shift into single kernel.
+        Supports optional streams on backends that expose them.
         """
         ...
 
@@ -675,14 +684,17 @@ class Backend(Protocol):
         x: Array,
         dims: int,
         traditional: bool = False,
-        base: float = 10000.0,
+        base: float | None = 10000.0,
         scale: float = 1.0,
-        offset: int = 0,
+        offset: int | Array = 0,
+        freqs: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Fused Rotary Position Embedding kernel.
 
         Applies rotary position embeddings in a single fused operation.
         Essential for efficient attention computation.
+        If freqs is provided, base must be None.
         """
         ...
 
@@ -692,12 +704,15 @@ class Backend(Protocol):
         k: Array,
         v: Array,
         scale: float,
-        mask: Array | None = None,
+        mask: Array | str | None = None,
+        sinks: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Fused Scaled Dot-Product Attention kernel (Flash-attention-style).
 
         Combines Q@K^T, scaling, masking, softmax, and @V into optimized kernel.
         Dramatically reduces memory bandwidth and improves throughput.
+        mask may be "causal" or an additive/boolean mask.
         """
         ...
 

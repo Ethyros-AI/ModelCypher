@@ -792,17 +792,25 @@ class JAXBackend(Backend):
 
     # --- Fused Kernels ---
 
-    def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
+    def rms_norm(
+        self,
+        x: Array,
+        weight: Array | None,
+        eps: float = 1e-5,
+        stream: Any | None = None,
+    ) -> Array:
         """Apply RMS normalization.
 
         Parameters
         ----------
         x : Array
             Input array to normalize.
-        weight : Array
-            Scaling weights.
+        weight : Array or None
+            Scaling weights. If None, returns normalized input.
         eps : float, optional
             Epsilon for numerical stability. Default is 1e-5.
+        stream : Any, optional
+            Unused in JAX. Included for API compatibility.
 
         Returns
         -------
@@ -812,10 +820,17 @@ class JAXBackend(Backend):
         # RMSNorm: x / sqrt(mean(x^2) + eps) * weight
         variance = self.jnp.mean(x**2, axis=-1, keepdims=True)
         x_normed = x * self.jax.lax.rsqrt(variance + eps)
+        if weight is None:
+            return x_normed
         return x_normed * weight
 
     def layer_norm(
-        self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
+        self,
+        x: Array,
+        weight: Array | None,
+        bias: Array | None,
+        eps: float = 1e-5,
+        stream: Any | None = None,
     ) -> Array:
         """Apply layer normalization.
 
@@ -829,6 +844,8 @@ class JAXBackend(Backend):
             Bias terms.
         eps : float, optional
             Epsilon for numerical stability. Default is 1e-5.
+        stream : Any, optional
+            Unused in JAX. Included for API compatibility.
 
         Returns
         -------
@@ -850,9 +867,11 @@ class JAXBackend(Backend):
         x: Array,
         dims: int,
         traditional: bool = False,
-        base: float = 10000.0,
+        base: float | None = 10000.0,
         scale: float = 1.0,
-        offset: int = 0,
+        offset: int | Array = 0,
+        freqs: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Apply rotary position embeddings.
 
@@ -864,12 +883,16 @@ class JAXBackend(Backend):
             Number of dimensions to apply RoPE to.
         traditional : bool, optional
             Use traditional RoPE formulation. Default is False.
-        base : float, optional
+        base : float or None, optional
             Base for frequency computation. Default is 10000.0.
         scale : float, optional
             Scaling factor. Default is 1.0.
-        offset : int, optional
+        offset : int or Array, optional
             Position offset. Default is 0.
+        freqs : Array or None, optional
+            Optional precomputed frequencies. If set, base must be None.
+        stream : Any, optional
+            Unused in JAX. Included for API compatibility.
 
         Returns
         -------
@@ -879,20 +902,35 @@ class JAXBackend(Backend):
         seq_len = x.shape[-2]
         half_dims = dims // 2
 
-        # Compute frequencies
-        inv_freq = 1.0 / (base ** (self.jnp.arange(0, half_dims, dtype=x.dtype) / half_dims))
+        if freqs is None:
+            if base is None:
+                raise ValueError("rope() expects base when freqs is not provided")
+            inv_freq = 1.0 / (
+                base ** (self.jnp.arange(0, half_dims, dtype=x.dtype) / half_dims)
+            )
+            positions = self.jnp.arange(seq_len, dtype=x.dtype)
+            if isinstance(offset, (int, float)):
+                positions = positions + offset
+            else:
+                offset_arr = self.jnp.asarray(offset, dtype=x.dtype)
+                positions = positions + offset_arr[..., None]
+            positions = positions * scale
+            freqs = positions[..., None] * inv_freq
+        else:
+            if base is not None:
+                raise ValueError("rope() expects base=None when freqs is provided")
+            freqs = freqs
 
-        # Position indices
-        positions = (self.jnp.arange(seq_len) + offset) * scale
-
-        # Compute sin/cos: [seq_len, half_dims]
-        freqs = self.jnp.outer(positions, inv_freq)
         cos = self.jnp.cos(freqs)
         sin = self.jnp.sin(freqs)
 
         # Reshape for broadcasting
-        cos = cos[None, None, :, :]  # [1, 1, seq_len, half_dims]
-        sin = sin[None, None, :, :]  # [1, 1, seq_len, half_dims]
+        if cos.ndim == 2:
+            cos = cos.reshape((1,) * (x.ndim - 2) + cos.shape)
+            sin = sin.reshape((1,) * (x.ndim - 2) + sin.shape)
+        elif cos.ndim == 3:
+            cos = cos.reshape((cos.shape[0],) + (1,) * (x.ndim - 3) + cos.shape[1:])
+            sin = sin.reshape((sin.shape[0],) + (1,) * (x.ndim - 3) + sin.shape[1:])
 
         # Split x into two halves
         x1 = x[..., :half_dims]
@@ -919,7 +957,9 @@ class JAXBackend(Backend):
         k: Array,
         v: Array,
         scale: float,
-        mask: Array | None = None,
+        mask: Array | str | None = None,
+        sinks: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Compute scaled dot-product attention.
 
@@ -933,20 +973,37 @@ class JAXBackend(Backend):
             Value array.
         scale : float
             Scaling factor for attention scores.
-        mask : Array or None, optional
-            Attention mask. Default is None.
+        mask : Array, str, or None, optional
+            Attention mask. Use "causal" for causal masking.
+        sinks : Array or None, optional
+            Attention sinks. Not supported in JAX backend.
+        stream : Any, optional
+            Unused in JAX. Included for API compatibility.
 
         Returns
         -------
         Array
             Attention output.
         """
+        if sinks is not None:
+            raise NotImplementedError("Attention sinks are only supported in the MLX backend")
         # Compute attention scores: Q @ K^T * scale
         scores = self.jnp.einsum("...qhd,...khd->...hqk", q, k) * scale
 
         # Apply mask if provided
         if mask is not None:
-            scores = scores + mask
+            if isinstance(mask, str):
+                if mask != "causal":
+                    raise ValueError(f"Unsupported attention mask: {mask}")
+                t_q = q.shape[-2]
+                t_kv = k.shape[-2]
+                mask = self.jnp.tril(self.jnp.ones((t_q, t_kv), dtype=bool))
+            mask_arr = self.jnp.asarray(mask)
+            if mask_arr.dtype == self.jnp.bool_:
+                neg_inf = self.jnp.finfo(scores.dtype).min
+                scores = self.jnp.where(mask_arr, scores, neg_inf)
+            else:
+                scores = scores + mask_arr
 
         # Softmax and apply to values
         attn_weights = self.jax.nn.softmax(scores, axis=-1)

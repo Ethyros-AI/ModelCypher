@@ -860,17 +860,25 @@ class CUDABackend(Backend):
 
     # --- Fused CUDA Kernels ---
 
-    def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
+    def rms_norm(
+        self,
+        x: Array,
+        weight: Array | None,
+        eps: float = 1e-5,
+        stream: Any | None = None,
+    ) -> Array:
         """Apply RMS normalization using fused kernel.
 
         Parameters
         ----------
         x : Array
             Input tensor to normalize.
-        weight : Array
-            Scaling weights.
+        weight : Array or None
+            Scaling weights. If None, returns normalized input.
         eps : float, optional
             Epsilon for numerical stability. Default is 1e-5.
+        stream : Any, optional
+            Unused in CUDA backend. Included for API compatibility.
 
         Returns
         -------
@@ -879,14 +887,22 @@ class CUDABackend(Backend):
         """
         # PyTorch 2.5+ has native rms_norm, fallback for older versions
         if hasattr(self.torch.nn.functional, "rms_norm"):
-            return self.torch.nn.functional.rms_norm(x, weight.shape, weight, eps)
+            normalized_shape = (x.shape[-1],)
+            return self.torch.nn.functional.rms_norm(x, normalized_shape, weight, eps)
         # Manual implementation for older PyTorch
         variance = x.pow(2).mean(dim=-1, keepdim=True)
         x_normed = x * self.torch.rsqrt(variance + eps)
+        if weight is None:
+            return x_normed
         return x_normed * weight
 
     def layer_norm(
-        self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
+        self,
+        x: Array,
+        weight: Array | None,
+        bias: Array | None,
+        eps: float = 1e-5,
+        stream: Any | None = None,
     ) -> Array:
         """Apply layer normalization using fused kernel.
 
@@ -900,6 +916,8 @@ class CUDABackend(Backend):
             Bias terms.
         eps : float, optional
             Epsilon for numerical stability. Default is 1e-5.
+        stream : Any, optional
+            Unused in CUDA backend. Included for API compatibility.
 
         Returns
         -------
@@ -914,9 +932,11 @@ class CUDABackend(Backend):
         x: Array,
         dims: int,
         traditional: bool = False,
-        base: float = 10000.0,
+        base: float | None = 10000.0,
         scale: float = 1.0,
-        offset: int = 0,
+        offset: int | Array = 0,
+        freqs: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Apply rotary position embeddings.
 
@@ -928,12 +948,16 @@ class CUDABackend(Backend):
             Number of dimensions to apply RoPE to.
         traditional : bool, optional
             Use traditional RoPE formulation. Default is False.
-        base : float, optional
+        base : float or None, optional
             Base for frequency computation. Default is 10000.0.
         scale : float, optional
             Scaling factor. Default is 1.0.
-        offset : int, optional
+        offset : int or Array, optional
             Position offset. Default is 0.
+        freqs : Array or None, optional
+            Optional precomputed frequencies. If set, base must be None.
+        stream : Any, optional
+            Unused in CUDA backend. Included for API compatibility.
 
         Returns
         -------
@@ -944,22 +968,39 @@ class CUDABackend(Backend):
         seq_len = x.shape[-2]
         half_dims = dims // 2
 
-        # Compute frequencies
-        inv_freq = 1.0 / (
-            base ** (self.torch.arange(0, half_dims, dtype=x.dtype, device=x.device) / half_dims)
-        )
+        if freqs is None:
+            if base is None:
+                raise ValueError("rope() expects base when freqs is not provided")
+            inv_freq = 1.0 / (
+                base
+                ** (
+                    self.torch.arange(0, half_dims, dtype=x.dtype, device=x.device)
+                    / half_dims
+                )
+            )
+            positions = self.torch.arange(seq_len, device=x.device, dtype=x.dtype)
+            if isinstance(offset, (int, float)):
+                positions = positions + offset
+            else:
+                offset_arr = self.torch.as_tensor(offset, dtype=x.dtype, device=x.device)
+                positions = positions + offset_arr[..., None]
+            positions = positions * scale
+            freqs = positions[..., None] * inv_freq
+        else:
+            if base is not None:
+                raise ValueError("rope() expects base=None when freqs is provided")
+            freqs = self.torch.as_tensor(freqs, dtype=x.dtype, device=x.device)
 
-        # Position indices
-        positions = (self.torch.arange(seq_len, device=x.device) + offset) * scale
-
-        # Compute sin/cos: [seq_len, half_dims]
-        freqs = self.torch.einsum("i,j->ij", positions, inv_freq)
         cos = freqs.cos()
         sin = freqs.sin()
 
         # Reshape for broadcasting
-        cos = cos.unsqueeze(0).unsqueeze(0)  # [1, 1, seq_len, half_dims]
-        sin = sin.unsqueeze(0).unsqueeze(0)  # [1, 1, seq_len, half_dims]
+        if cos.ndim == 2:
+            cos = cos.view((1,) * (x.ndim - 2) + cos.shape)
+            sin = sin.view((1,) * (x.ndim - 2) + sin.shape)
+        elif cos.ndim == 3:
+            cos = cos.view((cos.shape[0],) + (1,) * (x.ndim - 3) + cos.shape[1:])
+            sin = sin.view((sin.shape[0],) + (1,) * (x.ndim - 3) + sin.shape[1:])
 
         # Split x into two halves
         x1 = x[..., :half_dims]
@@ -984,7 +1025,9 @@ class CUDABackend(Backend):
         k: Array,
         v: Array,
         scale: float,
-        mask: Array | None = None,
+        mask: Array | str | None = None,
+        sinks: Array | None = None,
+        stream: Any | None = None,
     ) -> Array:
         """Compute scaled dot-product attention using FlashAttention.
 
@@ -998,16 +1041,29 @@ class CUDABackend(Backend):
             Value tensor.
         scale : float
             Scaling factor for attention scores.
-        mask : Array or None, optional
-            Attention mask. Default is None.
+        mask : Array, str, or None, optional
+            Attention mask. Use "causal" for causal masking.
+        sinks : Array or None, optional
+            Attention sinks. Not supported in CUDA backend.
+        stream : Any, optional
+            Unused in CUDA backend. Included for API compatibility.
 
         Returns
         -------
         Array
             Attention output.
         """
+        if sinks is not None:
+            raise NotImplementedError("Attention sinks are only supported in the MLX backend")
+        is_causal = False
+        attn_mask = mask
+        if isinstance(mask, str):
+            if mask != "causal":
+                raise ValueError(f"Unsupported attention mask: {mask}")
+            attn_mask = None
+            is_causal = True
         return self.torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=mask, scale=scale
+            q, k, v, attn_mask=attn_mask, is_causal=is_causal, scale=scale
         )
 
     # --- Stream Management for CPU/GPU Parallelism ---

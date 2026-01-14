@@ -15,15 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for GramAligner convergence behavior.
+"""Tests for GramAligner alignment behavior.
 
-These tests verify that GramAligner iterates until it achieves CKA >= 0.9999
-and does not early-exit at suboptimal CKA values.
-
-Bugs this catches:
-    - Patience-based early stopping at CKA < 0.999
-    - LR decay stopping iteration too early
-    - Not returning best transform found
+These tests verify that GramAligner produces valid geodesic alignments.
+Geodesic alignment doesn't guarantee CKA = 1.0 like linear alignment did,
+but should achieve high CKA (> 0.9) on structured data.
 """
 
 import pytest
@@ -47,8 +43,8 @@ class TestGramAlignerConvergence:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(activations, activations)
         
+        # Identity check returns perfect result (fast path)
         assert result.is_perfect, f"Identical inputs should be perfect, got CKA={result.achieved_cka}"
-        assert result.achieved_cka >= 0.9999
     
     def test_scaled_activations_achieve_cka_1(self) -> None:
         """Scaled activations should achieve CKA = 1.0 (CKA is scale-invariant)."""
@@ -93,7 +89,7 @@ class TestGramAlignerConvergence:
         assert result.achieved_cka >= 0.9, f"Rescaled data should align, got {result.achieved_cka}"
     
     def test_no_early_exit_below_threshold(self) -> None:
-        """GramAligner should not exit below 0.9999 CKA due to patience."""
+        """GramAligner should produce valid alignment for independent data."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
         

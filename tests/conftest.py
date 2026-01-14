@@ -154,14 +154,20 @@ def pytest_sessionfinish(session, exitstatus):
 
     MLX Metal buffers can cause segfaults (exit code 139) if not properly
     released before Python's garbage collector runs at exit.
+
+    IMPORTANT: gc.collect() must run BEFORE MLX cache clearing, not after.
+    Calling gc.collect() after mx.clear_cache() causes segfaults due to
+    reentrancy issues when Python's GC tries to finalize MLX arrays that
+    reference freed Metal buffers.
     """
     import gc
 
-    # Force garbage collection first to release Python references
+    # Force garbage collection FIRST to release Python references to MLX arrays
+    # This must happen before any MLX cache clearing
     gc.collect()
     gc.collect()
 
-    # Clear MLX cache if available
+    # Clear MLX cache AFTER gc.collect() - do NOT gc.collect() after this
     if HAS_MLX:
         try:
             import mlx.core as mx
@@ -175,8 +181,7 @@ def pytest_sessionfinish(session, exitstatus):
             elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
                 mx.metal.clear_cache()
 
-            # Final GC pass
-            gc.collect()
+            # Do NOT call gc.collect() here - that causes segfaults
         except Exception:
             pass  # Ignore cleanup errors
 
@@ -225,14 +230,30 @@ def _clear_cli_composition_cache():
 
 @pytest.fixture(autouse=True)
 def _cleanup_backend_after_test():
-    """Release backend resources between tests to prevent long-run crashes."""
+    """Release backend resources between tests to prevent long-run crashes.
+
+    IMPORTANT: gc.collect() must run BEFORE MLX cache clearing, not after.
+    Calling gc.collect() after mx.clear_cache() can cause segfaults due to
+    reentrancy issues when Python's GC tries to finalize MLX arrays that
+    reference freed Metal buffers. See mlx_backend.py::clear_cache() docs.
+    """
     yield
+
+    # Step 1: Run gc.collect() FIRST to release Python references to MLX arrays.
+    # This must happen before any MLX cache clearing.
+    import gc
+
+    gc.collect()
+
+    # Step 2: Clear application-level caches
     try:
         from modelcypher.core.domain.cache import ComputationCache
 
         ComputationCache.shared().clear_all()
     except Exception:
         pass
+
+    # Step 3: Clear backend cache (uses safe clearing pattern)
     try:
         backend = get_default_backend()
     except Exception:
@@ -244,6 +265,8 @@ def _cleanup_backend_after_test():
         except Exception:
             pass
 
+    # Step 4: Sync MLX and clear Metal cache
+    # Do NOT call gc.collect() after this - that causes segfaults
     if HAS_MLX:
         try:
             import mlx.core as mx
@@ -255,10 +278,6 @@ def _cleanup_backend_after_test():
                 mx.metal.clear_cache()
         except Exception:
             pass
-
-    import gc
-
-    gc.collect()
 
 
 def pytest_collection_modifyitems(config, items):
