@@ -136,7 +136,7 @@ def stage_probe(
     tokenizer: Any | None = None,
     activation_provider: "ActivationProvider | None" = None,
     backend: "Backend | None" = None,
-    probe_mode: str = "atlas",  # Only "atlas" supported - atlas JSON probes
+    probe_mode: str = "atlas",  # "atlas" (geometry-min) or "atlas_full"
 ) -> ProbeResult:
     """
     Stage 1: Build intersection map from probe responses.
@@ -155,8 +155,10 @@ def stage_probe(
     Returns:
         ProbeResult with correlations, confidences, and intersection map
     """
-    if probe_mode != "atlas":
-        raise ValueError(f"PROBE MODE: {probe_mode} unsupported; atlas is required.")
+    if probe_mode not in ("atlas", "atlas_full"):
+        raise ValueError(
+            f"PROBE MODE: {probe_mode} unsupported; atlas or atlas_full is required."
+        )
 
     if tokenizer is not None:
         source_tokenizer = source_tokenizer or tokenizer
@@ -218,11 +220,11 @@ def _probe_precise(
 ) -> ProbeResult:
     """Precise probe mode: Run probes through BOTH models.
 
-    Uses Atlas JSON probes with a geometry-derived count (hidden dimensions)
-    for broad manifold coverage without user configuration.
+    Uses Atlas JSON probes with either geometry-derived count (atlas)
+    or full corpus coverage (atlas_full).
 
     Args:
-        probe_mode: Must be "atlas".
+        probe_mode: "atlas" or "atlas_full".
     """
     b = backend or get_default_backend()
     # Load Atlas probes for manifold coverage.
@@ -241,14 +243,16 @@ def _probe_precise(
             )
         valid_probes.append((probe, probe_text))
 
-    # GEOMETRY PRINCIPLE: Use the exact probe count implied by intrinsic rank.
-    # Closed-form alignment requires n >= rank(source), n >= rank(target).
-    # This is the minimal sufficient count; no extra probes are required.
+    # GEOMETRY PRINCIPLE: Use the exact probe count implied by intrinsic rank,
+    # unless full atlas coverage is explicitly requested.
     min_required, source_dim, target_dim = _infer_required_probe_count(
         source_weights, target_weights
     )
 
-    selected_probes = _select_geometry_probes(valid_probes, min_required)
+    if probe_mode == "atlas_full":
+        selected_probes = valid_probes
+    else:
+        selected_probes = _select_geometry_probes(valid_probes, min_required)
 
     if len(valid_probes) < min_required:
         raise RuntimeError(
@@ -257,13 +261,22 @@ def _probe_precise(
             % (min_required, source_dim, target_dim, len(valid_probes))
         )
 
-    logger.info(
-        "PROBE MODE: Using %d probes (geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
-        len(selected_probes),
-        min_required,
-        source_dim,
-        target_dim,
-    )
+    if probe_mode == "atlas_full":
+        logger.info(
+            "PROBE MODE: Using full atlas (%d probes, geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
+            len(selected_probes),
+            min_required,
+            source_dim,
+            target_dim,
+        )
+    else:
+        logger.info(
+            "PROBE MODE: Using %d probes (geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
+            len(selected_probes),
+            min_required,
+            source_dim,
+            target_dim,
+        )
 
     valid_probes = selected_probes
     expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]

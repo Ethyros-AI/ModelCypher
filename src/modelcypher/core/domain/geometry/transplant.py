@@ -60,6 +60,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_pinv,
     machine_epsilon,
     precision_dtype,
     svd_rank_threshold,
@@ -137,9 +138,11 @@ class WeightSpaceTransplantResult:
 class NullSpaceProjector:
     """Precomputed null-space projector with density-derived transfer strength."""
 
-    projector: "Array"
+    weighted_activations: "Array"
+    gram_inv: "Array"
     null_rank: int
     transfer_strength: float
+    projector: "Array | None" = None
 
 
 def compute_null_space_projector(
@@ -223,20 +226,18 @@ def compute_null_space_projector(
     else:
         A_weighted = input_activations
 
-    # Compute covariance matrix C = A.T @ A / n [d, d]
-    AtA = b.matmul(b.transpose(A_weighted), A_weighted)
-    C = AtA / float(n_samples)
-    b.eval(C)
+    # Build Gram matrix in sample space (n x n) for exact null-space projection
+    AAt = b.matmul(A_weighted, b.transpose(A_weighted))
+    b.eval(AAt)
 
-    eigvals, eigvecs = b.eigh(C)
+    eps = machine_epsilon(b, AAt)
+    eigvals, eigvecs = b.eigh(AAt)
     b.eval(eigvals, eigvecs)
 
     idx = b.argsort(-eigvals, axis=0)
     eigvals = b.take(eigvals, idx, axis=0)
-    eigvecs = b.take(eigvecs, idx, axis=1)
-    b.eval(eigvals, eigvecs)
+    b.eval(eigvals)
 
-    eps = machine_epsilon(b, eigvals)
     eigvals_pos = b.maximum(eigvals, eps)
     total_var = b.sum(eigvals_pos)
     b.eval(total_var)
@@ -266,17 +267,18 @@ def compute_null_space_projector(
     id_result = id_estimator.compute(input_activations)
     intrinsic_dim = id_result.intrinsic_dimension
 
-    in_dim = int(eigvals_pos.shape[0])
+    in_dim = int(input_activations.shape[1])
+    sample_dim = int(eigvals_pos.shape[0])
 
     max_eig_arr = b.max(eigvals_pos)
     min_eig_arr = b.min(eigvals_pos)
     b.eval(max_eig_arr, min_eig_arr)
     max_eig = float(b.to_scalar(max_eig_arr))
     min_eig = float(b.to_scalar(min_eig_arr))
-    median_idx = in_dim // 2
+    median_idx = sample_dim // 2
     median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
 
-    k = max(1, min(int(round(intrinsic_dim)), in_dim))
+    k = max(1, min(int(round(intrinsic_dim)), sample_dim))
     top_k_energy = b.sum(eigvals_pos[:k])
     b.eval(top_k_energy)
     energy_captured = float(b.to_scalar(top_k_energy)) / total_var_val
@@ -287,13 +289,11 @@ def compute_null_space_projector(
     rank_threshold = max_eig_safe * rank_scale
     rank_mask = eigvals_pos > rank_threshold
     rank_mask = b.astype(rank_mask, compute_dtype)
-    keep_weights = b.maximum(b.zeros_like(rank_mask), 1.0 - rank_mask)
-    b.eval(keep_weights)
 
     activation_rank_arr = b.sum(rank_mask)
     b.eval(activation_rank_arr)
     activation_rank = int(round(float(b.to_scalar(activation_rank_arr))))
-    activation_rank = max(0, min(activation_rank, in_dim))
+    activation_rank = max(0, min(activation_rank, sample_dim))
     null_rank = max(0, in_dim - activation_rank)
 
     logger.info(
@@ -301,9 +301,9 @@ def compute_null_space_projector(
         "(energy_captured=%.4f, max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
         intrinsic_dim,
         k,
-        in_dim,
+        sample_dim,
         activation_rank,
-        in_dim,
+        sample_dim,
         null_rank,
         energy_captured,
         max_eig,
@@ -311,12 +311,12 @@ def compute_null_space_projector(
         min_eig,
     )
 
-    scaled = eigvecs * b.reshape(keep_weights, (1, -1))
-    N = b.matmul(scaled, b.transpose(eigvecs))
-    b.eval(N)
+    AAt_inv = geodesic_pinv(b, AAt)
+    b.eval(AAt_inv)
 
     return NullSpaceProjector(
-        projector=N,
+        weighted_activations=A_weighted,
+        gram_inv=AAt_inv,
         null_rank=null_rank,
         transfer_strength=transfer_strength,
     )
@@ -461,10 +461,22 @@ def compute_weight_space_transplant(
     transfer_strength = null_space_projector.transfer_strength
 
     # Step 4: Project delta to null-space
-    # delta_W_proj = delta_W @ N
-    # [out_dim, in_dim] @ [in_dim, in_dim] -> [out_dim, in_dim]
-    delta_W_proj = b.matmul(delta_W, N)
-    b.eval(delta_W_proj)
+    if N is None:
+        A_weighted = null_space_projector.weighted_activations
+        gram_inv = null_space_projector.gram_inv
+        b.eval(A_weighted, gram_inv)
+
+        # delta_W_proj = delta_W - (delta_W @ A.T) @ (A @ A.T)^+ @ A
+        delta_row = b.matmul(delta_W, b.transpose(A_weighted))
+        correction = b.matmul(delta_row, gram_inv)
+        correction = b.matmul(correction, A_weighted)
+        delta_W_proj = delta_W - correction
+        b.eval(delta_W_proj)
+    else:
+        # delta_W_proj = delta_W @ N
+        # [out_dim, in_dim] @ [in_dim, in_dim] -> [out_dim, in_dim]
+        delta_W_proj = b.matmul(delta_W, N)
+        b.eval(delta_W_proj)
 
     # Compute projected norm (geodesic Frobenius)
     projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)

@@ -158,13 +158,14 @@ def _run_merge(
     target: str,
     output_dir: str,
     output_file: str | None,
+    full_atlas: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Core merge logic shared by callback and run command.
 
     Scale is always 1.0 for single merges - the null-space projection
     already ensures safe knowledge addition. No user-configurable knobs.
-    Always uses atlas probes with geometry-derived count.
+    Uses atlas probes with geometry-derived count unless full atlas is requested.
     """
     from modelcypher.cli.composition import get_merge_pipeline_service
 
@@ -184,12 +185,11 @@ def _run_merge(
     try:
         with prevent_sleep():
             # delta_scale=1.0 always - null-space projection handles safety
-            # probe_mode="atlas" always - geometry-derived probe count
             result = service.run(
                 source_path=source,
                 target_path=target,
                 output_dir=output_dir,
-                probe_mode="atlas",
+                probe_mode="atlas_full" if full_atlas else "atlas",
                 delta_scale=1.0,
             )
 
@@ -312,6 +312,11 @@ def merge_callback(
     target: str | None = typer.Option(None, "--target", "-t", help="Path to target model (receives knowledge)"),
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="Output directory for merged model"),
     output_file: str | None = typer.Option(None, "--output-file", "-f", help="Save full pipeline result to JSON file"),
+    full_atlas: bool = typer.Option(
+        False,
+        "--full-atlas/--geometry-min",
+        help="Use full atlas probes instead of geometry-minimum set",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
@@ -331,7 +336,15 @@ def merge_callback(
 
     # If options were provided directly, run the merge
     if source and target and output_dir:
-        _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
+        _run_merge(
+            ctx,
+            source,
+            target,
+            output_dir,
+            output_file,
+            full_atlas=full_atlas,
+            dry_run=dry_run,
+        )
     elif source or target or output_dir:
         # Partial options provided - show error
         missing = []
@@ -358,6 +371,11 @@ def run(
         "-f",
         help="Save full pipeline result to JSON file",
     ),
+    full_atlas: bool = typer.Option(
+        False,
+        "--full-atlas/--geometry-min",
+        help="Use full atlas probes instead of geometry-minimum set",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would happen without actually merging"),
 ) -> None:
     """Merge two models via null-space knowledge transplant.
@@ -371,7 +389,15 @@ def run(
     Examples:
         mc merge run -s ./qwen -t ./smol -o ./merged
     """
-    _run_merge(ctx, source, target, output_dir, output_file, dry_run=dry_run)
+    _run_merge(
+        ctx,
+        source,
+        target,
+        output_dir,
+        output_file,
+        full_atlas=full_atlas,
+        dry_run=dry_run,
+    )
 
 
 @app.command()

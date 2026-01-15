@@ -163,9 +163,7 @@ class TestNullSpaceProjectorRankConsistency:
             backend=b,
         )
 
-        # The projector matrix is [d, d]
-        projector_shape = b.shape(projector.projector)
-        total_dim = int(projector_shape[0])
+        total_dim = d_features
 
         # intrinsic_rank is determined by svd_auto_rank
         # null_rank = total_dim - intrinsic_rank
@@ -267,15 +265,15 @@ class TestNullSpaceProjectorNumericalStability:
 
 
 class TestNullSpaceProjectorProperties:
-    """Property-based tests for null-space projector."""
+    """Property-based tests for null-space projection."""
 
     @given(
         n_samples=st.integers(min_value=10, max_value=100),
         d_features=st.integers(min_value=5, max_value=50),
     )
     @settings(max_examples=10, deadline=None)
-    def test_projector_is_symmetric(self, n_samples, d_features):
-        """Null-space projector N should be symmetric."""
+    def test_projection_satisfies_null_constraint(self, n_samples, d_features):
+        """Projected deltas should satisfy A @ delta^T = 0."""
         backend = get_default_backend()
         backend.random_seed(42)
 
@@ -287,21 +285,31 @@ class TestNullSpaceProjectorProperties:
             backend=backend,
         )
 
-        N = projector.projector
-        N_T = backend.transpose(N)
-        backend.eval(N, N_T)
+        A = projector.weighted_activations
+        gram_inv = projector.gram_inv
 
-        # Check symmetry: N == N^T
-        diff = backend.sum(backend.abs(N - N_T))
+        out_dim = 3
+        delta_W = backend.random_normal((out_dim, d_features))
+        backend.eval(A, gram_inv, delta_W)
+
+        delta_row = backend.matmul(delta_W, backend.transpose(A))
+        correction = backend.matmul(delta_row, gram_inv)
+        correction = backend.matmul(correction, A)
+        delta_proj = delta_W - correction
+        backend.eval(delta_proj)
+
+        residual = backend.matmul(A, backend.transpose(delta_proj))
+        backend.eval(residual)
+
+        diff = backend.sum(backend.abs(residual))
         backend.eval(diff)
         diff_val = float(backend.to_scalar(diff))
 
-        eps = sqrt_scalar(machine_epsilon(backend, N), backend)
-        d = int(backend.shape(N)[0])
-        tolerance = eps * d * d  # Scale by matrix size
+        eps = sqrt_scalar(machine_epsilon(backend, residual), backend)
+        tolerance = eps * float(n_samples) * float(out_dim)
 
         assert diff_val < tolerance, (
-            f"Projector not symmetric: ||N - N^T|| = {diff_val}"
+            f"Projection violates null constraint: ||A @ delta^T|| = {diff_val}"
         )
 
     @given(
@@ -309,8 +317,8 @@ class TestNullSpaceProjectorProperties:
         d_features=st.integers(min_value=5, max_value=50),
     )
     @settings(max_examples=10, deadline=None)
-    def test_projector_is_idempotent(self, n_samples, d_features):
-        """Null-space projector N should satisfy N @ N = N (idempotent)."""
+    def test_projection_is_idempotent(self, n_samples, d_features):
+        """Applying the projection twice should be a no-op."""
         backend = get_default_backend()
         backend.random_seed(42)
 
@@ -322,19 +330,31 @@ class TestNullSpaceProjectorProperties:
             backend=backend,
         )
 
-        N = projector.projector
-        N_squared = backend.matmul(N, N)
-        backend.eval(N, N_squared)
+        A = projector.weighted_activations
+        gram_inv = projector.gram_inv
 
-        # Check idempotency: N @ N == N
-        diff = backend.sum(backend.abs(N_squared - N))
+        out_dim = 3
+        delta_W = backend.random_normal((out_dim, d_features))
+        backend.eval(A, gram_inv, delta_W)
+
+        def _project(delta):
+            delta_row = backend.matmul(delta, backend.transpose(A))
+            correction = backend.matmul(delta_row, gram_inv)
+            correction = backend.matmul(correction, A)
+            projected = delta - correction
+            backend.eval(projected)
+            return projected
+
+        delta_once = _project(delta_W)
+        delta_twice = _project(delta_once)
+
+        diff = backend.sum(backend.abs(delta_twice - delta_once))
         backend.eval(diff)
         diff_val = float(backend.to_scalar(diff))
 
-        eps = sqrt_scalar(machine_epsilon(backend, N), backend)
-        d = int(backend.shape(N)[0])
-        tolerance = eps * d * d  # Scale by matrix size
+        eps = sqrt_scalar(machine_epsilon(backend, delta_once), backend)
+        tolerance = eps * float(d_features) * float(out_dim)
 
         assert diff_val < tolerance, (
-            f"Projector not idempotent: ||N @ N - N|| = {diff_val}"
+            f"Projection not idempotent: ||P(P(delta)) - P(delta)|| = {diff_val}"
         )
