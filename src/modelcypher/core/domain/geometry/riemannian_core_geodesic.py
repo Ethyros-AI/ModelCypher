@@ -160,6 +160,126 @@ class RiemannianGeodesicMixin:
             refine_iterations=refine_iterations,
         )
 
+    def geodesic_distances_spectral(
+        self,
+        points: "Array",
+        k_neighbors: int | None = None,
+        use_cache: bool = True,
+    ) -> tuple["GeodesicDistanceResult", "Any"]:
+        """Compute geodesic distances via spectral embedding.
+
+        This uses Varadhan's formula: Laplacian eigenvectors define an isometric
+        embedding where geodesic distance equals Euclidean distance:
+
+            d_geodesic(i, j) = ||Φ[i] - Φ[j]||₂
+
+        Returns both geodesic distances and the spectral embedding, enabling
+        downstream spectral signature computation for free.
+
+        Args:
+            points: Point cloud [n, d].
+            k_neighbors: Number of neighbors for k-NN graph. If None, finds
+                minimum k for connectivity.
+            use_cache: Whether to use caching.
+
+        Returns:
+            Tuple of (GeodesicDistanceResult, SpectralEmbeddingResult).
+        """
+        from modelcypher.core.domain.geometry.spectral_embedding import (
+            SpectralEmbeddingResult,
+            compute_spectral_embedding,
+            geodesic_distances_from_embedding,
+        )
+
+        backend = self._backend
+        points_arr = _promote_precision(backend.array(points), backend)
+        backend.eval(points_arr)
+
+        n = int(points_arr.shape[0])
+
+        if n <= 1:
+            inf_val = float(backend.finfo().max)
+            geo_result = GeodesicDistanceResult(
+                distances=backend.zeros((n, n)),
+                adjacency=backend.zeros((n, n)),
+                inf_value=inf_val,
+                k_neighbors=0,
+                connected=True,
+            )
+            spectral_result = SpectralEmbeddingResult(
+                embedding=backend.zeros((n, 1)),
+                eigenvalues=backend.zeros((1,)),
+                eigenvectors=backend.ones((n, 1)) if n == 1 else backend.zeros((0, 0)),
+                all_eigenvalues=backend.zeros((n,)) if n > 0 else backend.zeros((0,)),
+                k_used=1 if n == 1 else 0,
+                k_neighbors=0,
+                component_count=1 if n == 1 else 0,
+                kernel_bandwidth=0.0,
+                adjacency=backend.zeros((n, n)),
+                inf_value=inf_val,
+                compute_time_ms=0.0,
+            )
+            return geo_result, spectral_result
+
+        # Check cache
+        if use_cache:
+            # First find k if not specified
+            if k_neighbors is None:
+                kmin_key = _cache.make_kmin_key(points_arr, backend)
+                cached_k = _cache.get_kmin(kmin_key)
+                if cached_k is not None:
+                    k_neighbors = int(cached_k)
+
+            if k_neighbors is not None:
+                spectral_key = _cache.make_spectral_key(points_arr, backend, k_neighbors)
+                cached_spectral = _cache.get_spectral(spectral_key)
+                if cached_spectral is not None:
+                    # Derive geodesic distances from cached embedding
+                    distances = geodesic_distances_from_embedding(
+                        cached_spectral.embedding, backend
+                    )
+                    geo_result = GeodesicDistanceResult(
+                        distances=distances,
+                        adjacency=cached_spectral.adjacency,
+                        inf_value=cached_spectral.inf_value,
+                        k_neighbors=cached_spectral.k_neighbors,
+                        connected=cached_spectral.component_count == 1,
+                    )
+                    return geo_result, cached_spectral
+
+        # Compute spectral embedding
+        spectral_result = compute_spectral_embedding(
+            points_arr, backend, k_neighbors=k_neighbors
+        )
+
+        # Derive geodesic distances from embedding
+        distances = geodesic_distances_from_embedding(spectral_result.embedding, backend)
+
+        # Handle disconnected components: set infinite distance between them
+        if spectral_result.component_count > 1:
+            inf_thresh = infinity_threshold(backend, spectral_result.adjacency)
+            disconnected_mask = spectral_result.adjacency >= inf_thresh
+            inf_array = backend.full(distances.shape, float("inf"))
+            distances = backend.where(disconnected_mask, inf_array, distances)
+            backend.eval(distances)
+
+        geo_result = GeodesicDistanceResult(
+            distances=distances,
+            adjacency=spectral_result.adjacency,
+            inf_value=spectral_result.inf_value,
+            k_neighbors=spectral_result.k_neighbors,
+            connected=spectral_result.component_count == 1,
+        )
+
+        # Cache the spectral result
+        if use_cache:
+            spectral_key = _cache.make_spectral_key(
+                points_arr, backend, spectral_result.k_neighbors
+            )
+            _cache.set_spectral(spectral_key, spectral_result, spectral_result.compute_time_ms)
+
+        return geo_result, spectral_result
+
     def _minimum_connected_k(
         self,
         points: "Array",

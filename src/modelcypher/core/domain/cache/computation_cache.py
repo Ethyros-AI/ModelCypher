@@ -135,6 +135,7 @@ class ComputationCache:
         max_chord_entries: int = 256,
         max_stitch_entries: int = 128,
         max_pinv_entries: int = 64,
+        max_spectral_entries: int = 256,
     ) -> None:
         """
         Initialize the computation cache.
@@ -166,6 +167,8 @@ class ComputationCache:
             max_chord_entries: Maximum chord distance entries. n² dense matrices.
             max_stitch_entries: Maximum stitch transform entries. Transform matrices.
             max_pinv_entries: Maximum pseudoinverse entries. Can be very large.
+            max_spectral_entries: Maximum spectral embedding entries. Contains
+                embedding matrix, eigenvalues, and eigenvectors.
         """
         self._max_gram_entries = max_gram_entries
         self._max_geodesic_entries = max_geodesic_entries
@@ -177,6 +180,7 @@ class ComputationCache:
         self._max_chord_entries = max_chord_entries
         self._max_stitch_entries = max_stitch_entries
         self._max_pinv_entries = max_pinv_entries
+        self._max_spectral_entries = max_spectral_entries
 
         # Separate LRU caches for different computation types
         # Using OrderedDict for O(1) move_to_end() and eviction
@@ -209,6 +213,9 @@ class ComputationCache:
 
         self._pinv_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._pinv_lock = threading.Lock()
+
+        self._spectral_cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._spectral_lock = threading.Lock()
 
         self._stats = CacheStats()
         self._stats_lock = threading.Lock()
@@ -650,6 +657,45 @@ class ComputationCache:
             self._max_kmin_entries,
         )
 
+    # --- Spectral Embedding Cache ---
+
+    def make_spectral_key(
+        self,
+        arr: "Array",
+        backend: "Backend",
+        k_neighbors: int,
+    ) -> str:
+        """Create cache key for spectral embedding computation.
+
+        The spectral embedding is the unified result that produces both
+        geodesic distances and spectral signatures.
+        """
+        base_key = self.make_array_key(arr, backend)
+        bid = self._backend_id(backend)
+        return f"spectral_{bid}_k{k_neighbors}_{base_key}"
+
+    def get_spectral(self, key: str) -> Any | None:
+        """Get cached spectral embedding result."""
+        return self._get_from_cache(
+            key,
+            self._spectral_cache,
+            self._spectral_lock,
+            "spectral",
+        )
+
+    def set_spectral(
+        self, key: str, value: Any, compute_time_ms: float = 0.0
+    ) -> None:
+        """Cache spectral embedding result."""
+        self._set_in_cache(
+            key,
+            value,
+            compute_time_ms,
+            self._spectral_cache,
+            self._spectral_lock,
+            self._max_spectral_entries,
+        )
+
     # --- Pseudoinverse Cache ---
 
     def make_pinv_key(self, arr: "Array", backend: "Backend") -> str:
@@ -881,6 +927,9 @@ class ComputationCache:
         with self._pinv_lock:
             self._pinv_cache.clear()
 
+        with self._spectral_lock:
+            self._spectral_cache.clear()
+
         with self._stats_lock:
             self._stats = CacheStats()
 
@@ -914,6 +963,9 @@ class ComputationCache:
         with self._kmin_lock:
             self._kmin_cache.clear()
 
+        with self._spectral_lock:
+            self._spectral_cache.clear()
+
         if logger.isEnabledFor(logging.INFO):
             try:
                 logger.info("Cleared geometry computation caches")
@@ -931,5 +983,6 @@ class ComputationCache:
             "frechet": len(self._frechet_cache),
             "basis": len(self._basis_cache),
             "kmin": len(self._kmin_cache),
+            "spectral": len(self._spectral_cache),
             "pinv": len(self._pinv_cache),
         }

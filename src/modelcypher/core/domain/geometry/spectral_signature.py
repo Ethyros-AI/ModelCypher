@@ -66,9 +66,95 @@ class SpectralSignature:
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
 
+    def compute_from_embedding(
+        self,
+        embedding_result: "Any",
+    ) -> SpectralSignatureResult:
+        """Compute spectral signature from a pre-computed spectral embedding.
+
+        This is the efficient path when you already have a SpectralEmbeddingResult
+        (e.g., from geodesic_distances_spectral). The eigenvalues are reused
+        directly, avoiding redundant eigendecomposition.
+
+        Args:
+            embedding_result: SpectralEmbeddingResult from compute_spectral_embedding
+                or geodesic_distances_spectral.
+
+        Returns:
+            SpectralSignatureResult with spectral metrics.
+        """
+        backend = self._backend
+
+        # Extract data from embedding result
+        eigenvalues = embedding_result.eigenvalues
+        adjacency = embedding_result.adjacency
+        k_neighbors = embedding_result.k_neighbors
+        kernel_bandwidth = embedding_result.kernel_bandwidth
+        component_count = embedding_result.component_count
+        inf_value = embedding_result.inf_value
+
+        backend.eval(eigenvalues, adjacency)
+
+        n = int(adjacency.shape[0])
+        if n == 0:
+            return SpectralSignatureResult(
+                eigenvalues=[],
+                heat_trace=[],
+                heat_times=[],
+                spectral_entropy=0.0,
+                algebraic_connectivity=0.0,
+                component_count=0,
+                node_count=0,
+                edge_count=0,
+                k_neighbors=0,
+                kernel_bandwidth=0.0,
+                normalized_laplacian=True,
+                connected=True,
+            )
+
+        # Count edges
+        inf_thresh = infinity_threshold(backend, adjacency)
+        edge_mask = adjacency < inf_thresh
+        edge_count_total_arr = backend.sum(backend.astype(edge_mask, "int32"))
+        backend.eval(edge_count_total_arr)
+        edge_count_total = int(backend.to_scalar(edge_count_total_arr))
+        edge_count = max(0, (edge_count_total - n) // 2)
+
+        # Use all_eigenvalues which includes zero eigenvalues
+        full_eigvals = embedding_result.all_eigenvalues
+        backend.eval(full_eigvals)
+        eig_list = [float(x) for x in backend.tolist(full_eigvals)]
+
+        # Derive heat trace times from eigenvalue spectrum
+        heat_times = _derive_heat_times_from_spectrum(eig_list, backend)
+
+        spectral_entropy = _spectral_entropy(
+            backend, full_eigvals, regularization_epsilon(backend, full_eigvals)
+        )
+        algebraic_connectivity = eig_list[component_count] if len(eig_list) > component_count else 0.0
+        connected = component_count == 1
+
+        heat_trace = _heat_trace(backend, full_eigvals, heat_times)
+
+        return SpectralSignatureResult(
+            eigenvalues=eig_list,
+            heat_trace=heat_trace,
+            heat_times=heat_times,
+            spectral_entropy=spectral_entropy,
+            algebraic_connectivity=algebraic_connectivity,
+            component_count=component_count,
+            node_count=n,
+            edge_count=edge_count,
+            k_neighbors=k_neighbors,
+            kernel_bandwidth=float(kernel_bandwidth),
+            normalized_laplacian=True,
+            connected=connected,
+        )
+
     def compute(
         self,
         points: list[list[float]],
+        use_unified_embedding: bool = False,
     ) -> SpectralSignatureResult:
         """Compute spectral signature for a point cloud.
 
@@ -77,10 +163,23 @@ class SpectralSignature:
         - kernel_bandwidth: derived from median neighbor distance
         - heat_trace_times: derived from magnitude gaps in the spectrum
         - normalized_laplacian: canonical for graph Laplacians
+
+        Args:
+            points: Point cloud as list of lists.
+            use_unified_embedding: If True, use the unified spectral embedding
+                which shares computation with geodesic distances.
         """
         backend = self._backend
         points_arr = backend.array(points)
         backend.eval(points_arr)
+
+        # Unified path: use spectral embedding (shares eigendecomposition)
+        if use_unified_embedding:
+            from modelcypher.core.domain.geometry.spectral_embedding import (
+                compute_spectral_embedding,
+            )
+            embedding_result = compute_spectral_embedding(points_arr, backend)
+            return self.compute_from_embedding(embedding_result)
 
         n = int(points_arr.shape[0]) if len(points_arr.shape) > 0 else 0
 
