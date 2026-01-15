@@ -29,6 +29,7 @@ from . import (
     eval_cmds,
     graft_cmds,
     manifold_evidence_cmds,
+    prompt_manifold_cmds,
     profile_cmds,
     shared_manifold_cmds,
     validation_cmds,
@@ -48,6 +49,7 @@ def _register() -> None:
     validation_cmds.register(app)
     shared_manifold_cmds.register(app)
     manifold_evidence_cmds.register(app)
+    prompt_manifold_cmds.register(app)
 
 
 _register()

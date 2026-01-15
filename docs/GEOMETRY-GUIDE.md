@@ -90,6 +90,21 @@ These are raw measurements; they do not claim proof by themselves, but they
 are the empirical checks required to justify the assumptions behind a
 constant-rank manifold theorem.
 
+## Prompt-Manifold Jacobian Evidence
+
+The `mc geometry research prompt-manifold` command measures how many prompt
+manifold directions *functionally* influence a layer's activation.
+
+It does this by:
+- deriving a prompt-manifold basis from pooled atlas prompt embeddings,
+- sampling coefficient points from those same prompts,
+- estimating the effective rank of the Jacobian (via random projections) of
+  layer activations with respect to prompt-manifold coordinates.
+
+If the intrinsic dimension is the semantic seed, this Jacobian rank estimates
+the *support manifold* needed to route that seed through the network. It is a
+data-derived diagnostic, not a thresholded interpretation.
+
 ## Geodesic Distance (Core Principle)
 
 **When ModelCypher reports a distance in representation space, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.**

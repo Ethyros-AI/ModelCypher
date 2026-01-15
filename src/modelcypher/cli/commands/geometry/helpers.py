@@ -24,6 +24,7 @@ use these helpers instead of reimplementing them.
 Functions:
 - resolve_model_backbone: Extract text backbone from various model architectures
 - forward_through_backbone: Forward pass through text backbone
+- forward_through_backbone_embeddings: Forward pass from pre-embedded inputs
 - extract_anchor_activations: Extract activations for a list of anchors
 - save_activations_json: Save activations to JSON file
 """
@@ -154,6 +155,17 @@ def resolve_model_backbone(model, model_type: str | None = None):
     return None
 
 
+def _apply_layer_with_mask(layer, hidden, mask):
+    """Apply a transformer layer with best-effort mask handling."""
+    try:
+        return layer(hidden, mask=mask)
+    except (TypeError, ValueError):
+        try:
+            return layer(hidden, mask)
+        except (TypeError, ValueError):
+            return layer(hidden)
+
+
 def forward_through_backbone(
     input_ids,
     embed_tokens,
@@ -192,21 +204,38 @@ def forward_through_backbone(
 
     # Forward through layers
     for i, layer in enumerate(layers):
-        try:
-            # Try keyword argument first (most common)
-            hidden = layer(hidden, mask=mask)
-        except TypeError:
-            try:
-                # Try positional arguments
-                hidden = layer(hidden, mask)
-            except TypeError:
-                # Fall back to no mask (some architectures)
-                hidden = layer(hidden)
+        hidden = _apply_layer_with_mask(layer, hidden, mask)
 
         if i == actual_target:
             break
 
     # Apply final norm if available and we went through all layers
+    if norm is not None and actual_target == len(layers) - 1:
+        hidden = norm(hidden)
+
+    return hidden
+
+
+def forward_through_backbone_embeddings(
+    embedded,
+    layers,
+    norm,
+    target_layer: int,
+    backend: "Backend",
+):
+    """Forward pass through text backbone starting from embeddings."""
+    hidden = embedded
+
+    seq_len = embedded.shape[1]
+    mask = backend.create_causal_mask(seq_len, hidden.dtype)
+
+    actual_target = target_layer if target_layer >= 0 else len(layers) - 1
+
+    for i, layer in enumerate(layers):
+        hidden = _apply_layer_with_mask(layer, hidden, mask)
+        if i == actual_target:
+            break
+
     if norm is not None and actual_target == len(layers) - 1:
         hidden = norm(hidden)
 
