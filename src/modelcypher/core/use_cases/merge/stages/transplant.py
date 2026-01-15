@@ -772,6 +772,7 @@ def stage_transplant(
             core_acts=core_acts,
             boundary_acts=boundary_acts,
             can_measure_alignment=can_measure_alignment,
+            delta_scale=delta_scale,
         )
         weights_processed = weight_result.weights_processed
         layer_transplanted = weight_result.layer_transplanted

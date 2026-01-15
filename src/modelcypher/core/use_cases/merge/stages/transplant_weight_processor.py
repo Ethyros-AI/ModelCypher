@@ -125,6 +125,7 @@ def process_layer_weights(
     core_acts: "Array",
     boundary_acts: "Array",
     can_measure_alignment: bool,
+    delta_scale: float = 1.0,
 ) -> LayerWeightResult:
     b = backend
     layer_transplanted = False
@@ -1149,6 +1150,7 @@ def process_layer_weights(
             source_activations_for_density=src_density_acts,
             target_activations_for_density=tgt_density_acts,
             null_space_projector=null_space_projector,
+            delta_scale=delta_scale,
             backend=b,
         )
 

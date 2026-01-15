@@ -335,6 +335,7 @@ def compute_weight_space_transplant(
     null_space_projector: "NullSpaceProjector | None" = None,
     direction_novelty_result: "DirectionNoveltyResult | None" = None,
     apply_novelty_filter: bool = True,
+    delta_scale: float = 1.0,
     backend: "Backend | None" = None,
 ) -> WeightSpaceTransplantResult:
     """Weight-space null-space projection with density-weighted transfer.
@@ -571,7 +572,11 @@ def compute_weight_space_transplant(
     # If we've correctly projected delta into null-space, the merged weight will
     # preserve target behavior by construction. Adding cosine constraints is a
     # "vibes" heuristic that fights against the geometric solution.
-    merged_weight = target_weight + delta_W_proj
+    #
+    # delta_scale: Controls how much of the projected delta to apply.
+    # When novel_fraction ≈ 0 (models encode same structure), delta_scale
+    # should be low to prevent corruption.
+    merged_weight = target_weight + delta_scale * delta_W_proj
     if str(b.dtype(merged_weight)) != str(output_dtype):
         merged_weight = b.astype(merged_weight, output_dtype)
     b.eval(merged_weight)
