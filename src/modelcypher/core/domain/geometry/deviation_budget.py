@@ -164,7 +164,7 @@ class DeviationTracker:
             κ_eff = max(σ_max across all) / min(σ_min across all)
         """
         backend = self._backend
-        eps = math.sqrt(sys.float_info.epsilon)
+        eps = division_epsilon(backend, backend.array([1.0]))
 
         sigma_max_global = 0.0
         sigma_min_global = float("inf")

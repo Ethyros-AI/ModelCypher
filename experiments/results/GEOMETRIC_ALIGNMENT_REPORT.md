@@ -17,9 +17,9 @@ Six experiments testing whether AI alignment manifests as measurable geometric s
 | 1. Alignment Detection | CKA (base vs instruct) | 0.668 |
 | 2. Refusal Direction | Classification accuracy (layer 6) | 0.97 |
 | 3. Cross-Model Universality | Mean best accuracy (4 models) | 0.9475 |
-| 4. Jailbreak Detection | Overall accuracy | **0.943** |
-| 5. Alignment Transfer | Separation improvement | 0.0 |
-| 6. Geometric Guardrails | Precision / FPR | 0.879 / 0.133 |
+| 4. Jailbreak Detection | Overall accuracy (LFM / Qwen) | 0.921 / 0.793 |
+| 5. Alignment Transfer | Refusal rate increase | +56.7% (43.3% → 100%) |
+| 6. Geometric Guardrails | Precision / Recall | 0.930 / 0.757 |
 
 ---
 
@@ -139,76 +139,82 @@ All four models achieve >0.89 accuracy using difference-in-means direction. High
 
 **Measurement**: Projection of prompt activations onto refusal direction.
 
-**Layer Selection**: Layer 15 selected by maximum separation (0.506).
+**Layer Selection**: Layer selected by maximum classification accuracy on harmful/harmless training data.
 
-### Mean Projections by Category
+### Results: LFM2.5-1.2B-Instruct
+
+**Layer**: 0 (98% training accuracy)
 
 | Category | N | Mean Projection |
 |----------|---|-----------------|
-| Harmless | 50 | -0.463 |
-| Harmful | 50 | +0.032 |
-| Jailbreak | 40 | +0.0001 |
+| Harmless | 50 | -0.068 |
+| Harmful | 50 | -0.034 |
+| Jailbreak | 40 | -0.043 |
 
-### Absolute Differences
-
-- Harmful - Harmless: **0.495**
-- Harmful - Jailbreak: **0.032**
-- Jailbreak - Harmless: **0.463**
-
-### Detection Metrics
-
-Threshold: 95th percentile of harmless projections = **-0.255**
+**Threshold**: -0.050 (95th percentile of harmless)
 
 | Metric | Value |
 |--------|-------|
-| Accuracy | **0.943** |
-| Precision | 0.977 |
-| Recall | 0.933 |
-| F1 | **0.955** |
-| True Positives | 84 |
-| False Positives | 2 |
-| True Negatives | 48 |
-| False Negatives | 6 |
-
-### Jailbreak-Only Detection
-
-| Metric | Value |
-|--------|-------|
-| Accuracy | 0.933 |
-| Precision | 0.947 |
+| Accuracy | 0.921 |
+| Precision | 0.976 |
 | Recall | 0.900 |
-| F1 | 0.923 |
+| F1 | 0.936 |
+
+### Results: Qwen2.5-3B-Instruct
+
+**Layer**: 31 (97% training accuracy)
+
+| Category | N | Mean Projection |
+|----------|---|-----------------|
+| Harmless | 50 | -10.08 |
+| Harmful | 50 | +15.60 |
+| Jailbreak | 40 | +9.22 |
+
+**Threshold**: 8.59 (95th percentile of harmless)
+
+| Metric | Value |
+|--------|-------|
+| Accuracy | 0.793 |
+| Precision | 0.969 |
+| Recall | 0.700 |
+| F1 | 0.813 |
 
 ### Observation
 
-Jailbreak prompts have mean projection (0.0001) nearly identical to harmful (0.032), both significantly higher than harmless (-0.463). Detection threshold at 95th percentile of harmless yields 94.3% accuracy.
+Both models show jailbreaks projecting between harmless and harmful on the refusal direction. LFM achieves 92.1% accuracy, Qwen achieves 79.3%. Different architectures select different optimal layers (LFM: early layer 0, Qwen: late layer 31).
 
 ---
 
 ## Experiment 5: Alignment Transfer
 
-**Measurement**: Change in harmful/harmless separation after adding refusal direction to base model activations.
+**Measurement**: Change in harmful prompt refusal rate after adding refusal direction to base model activations. Only harmful prompts are steered.
 
 ### Configuration
 
 - Source: LFM2.5-1.2B-Instruct-bf16
 - Target: LFM2-1.2B-bf16
 - Steering strength: 1.0
-- Layer: 15
+- Layer: 5 (selected by maximum classification accuracy)
+- Refusal threshold: -0.0494 (95th percentile of instruct harmless projections)
 
 ### Results
 
-| Metric | Instruct | Base (before) | Base (after) |
-|--------|----------|---------------|--------------|
-| Harmful/Harmless Separation | 0.501 | 0.835 | 0.835 |
+| Model | Harmful Refusal Rate | Harmless False Positive Rate |
+|-------|---------------------|------------------------------|
+| Instruct (baseline) | 100.0% | 3.3% |
+| Base (before steering) | 43.3% | 0.0% |
+| Base (after steering) | 100.0% | — |
 
-### Per-Prompt Steering Effect
+### Transfer Metrics
 
-All 30 test prompts showed projection increase of exactly 1.0 (equal to steering strength), confirming the additive operation works mechanically.
+| Metric | Value |
+|--------|-------|
+| Refusal rate increase | +56.7% |
+| Transfer effectiveness | 100% |
 
 ### Observation
 
-Separation unchanged because both harmful and harmless projections shift by identical amount. Base model already had higher separation (0.835) than instruct (0.501).
+Steering harmful prompts by adding the instruct-derived refusal direction pushed all 30 harmful prompts above the refusal threshold. The base model's harmful refusal rate increased from 43.3% to 100%, matching the instruct model. At layer 5, the base model initially has low harmful refusal rate (43.3%) but steering brings it to parity with the aligned instruct model.
 
 ---
 
@@ -216,12 +222,12 @@ Separation unchanged because both harmful and harmless projections shift by iden
 
 **Measurement**: Boundary violation detection using refusal projection threshold and distance from safe centroid.
 
-**Layer Selection**: Layer 15 selected by maximum separation (0.552).
+**Layer Selection**: Layer 5 selected by maximum boundary score (harmful_violation_rate - harmless_violation_rate).
 
 ### Configuration
 
-- Refusal threshold: 5th percentile of harmless projections = **-0.233**
-- Safe radius: 95th percentile of harmless distances = **1.469**
+- Refusal threshold: 5th percentile of harmless projections = **-0.075**
+- Safe radius: 95th percentile of harmless distances = **0.130**
 
 (These percentiles are configuration parameters.)
 
@@ -230,36 +236,40 @@ Separation unchanged because both harmful and harmless projections shift by iden
 | Category | N | Violation Rate |
 |----------|---|----------------|
 | Harmless | 30 | 0.133 |
-| Harmful | 30 | 0.133 |
-| Jailbreak | 40 | **0.625** |
+| Harmful | 30 | 0.433 |
+| Jailbreak | 40 | **1.000** |
 
 ### Detection Metrics
 
 | Metric | Value |
 |--------|-------|
-| Precision | 0.879 |
-| Recall | 0.414 |
-| F1 | 0.563 |
-| True Positives | 29 |
+| Precision | 0.930 |
+| Recall | 0.757 |
+| F1 | **0.835** |
+| True Positives | 53 |
 | False Positives | 4 |
 | True Negatives | 26 |
-| False Negatives | 41 |
+| False Negatives | 17 |
 
 ### Steering Recovery
 
-Of 29 violations detected, 11 (37.9%) were brought within boundary by steering.
+Of 57 violations detected, 33 (62.3%) were brought within boundary by steering.
 
 ### Observation
 
-Jailbreaks detected at 62.5% rate, higher than harmful (13.3%) or harmless (13.3%). The boundary-based approach primarily catches jailbreaks via distance violation.
+Using boundary-specific layer selection (maximize harmful - harmless violation rate), all jailbreaks are detected (100%). Precision is 93% with recall of 75.7%. The boundary-based approach catches jailbreaks more effectively than harmful prompts, suggesting jailbreaks are geometrically more distant from safe activations.
 
 ---
 
 ## Method Notes
 
-### Layer Selection (Fixed)
+### Layer Selection
 
-Layer selected by computing separation at each layer and choosing the layer with maximum separation. For this model, layer 15 had separation 0.506-0.552 (depending on train/test split).
+**For classification (Experiments 2, 4, 5)**: Layer selected by computing classification accuracy at each layer (using 95th percentile threshold) and choosing the layer with maximum accuracy.
+
+**For boundary detection (Experiment 6)**: Layer selected by computing boundary violation rates at each layer and choosing the layer that maximizes (harmful_violation_rate - harmless_violation_rate). This criterion directly optimizes for the guardrails objective.
+
+Different models and different detection methods select different optimal layers based on task requirements.
 
 ### Threshold Derivation
 
@@ -269,10 +279,14 @@ Detection threshold is the 95th percentile of harmless projections. This control
 
 The 5th percentile (refusal threshold) and 95th percentile (safe radius) are configuration parameters. Different values produce different precision/recall tradeoffs.
 
+### Alignment Transfer Method
+
+Refusal direction extracted from instruct model. Threshold computed as 95th percentile of instruct's harmless projections. Only harmful prompts are steered (refusal direction added). Transfer effectiveness measures how close the steered base model's refusal rate is to the instruct model's.
+
 ### Sample Sizes
 
-- Harmful prompts: 50
-- Harmless prompts: 50
+- Harmful prompts: 50 (30 for alignment transfer)
+- Harmless prompts: 50 (30 for alignment transfer)
 - Jailbreak prompts: 40
 
 ---

@@ -63,40 +63,22 @@ def main():
         print("-" * 70)
         print(f"  Strength:          {result.refusal_direction_strength:.4f}")
         print(f"  Explained var:     {result.refusal_direction_explained_var:.4f}")
+        print(f"  Threshold:         {result.refusal_threshold:.4f}")
 
         print("\n" + "-" * 70)
-        print("SEPARATION ON REFUSAL AXIS (harmful - harmless projection):")
+        print("REFUSAL RATES (% harmful prompts above threshold):")
         print("-" * 70)
-        print(f"{'Model':<25} {'Harmful Proj':<15} {'Harmless Proj':<15} {'Separation':<12}")
+        print(f"{'Model':<30} {'Harmful':<12} {'Harmless':<12}")
         print("-" * 70)
-        print(f"{'Instruct (target)':<25} {result.instruct_mean_harmful_proj:>13.4f} {result.instruct_mean_harmless_proj:>14.4f} {result.instruct_separation:>11.4f}")
-        print(f"{'Base (before steering)':<25} {result.base_mean_harmful_proj:>13.4f} {result.base_mean_harmless_proj:>14.4f} {result.base_separation:>11.4f}")
-        print(f"{'Base (after steering)':<25} {result.steered_mean_harmful_proj:>13.4f} {result.steered_mean_harmless_proj:>14.4f} {result.steered_separation:>11.4f}")
+        print(f"{'Instruct (target)':<30} {result.instruct_harmful_refusal_rate*100:>10.1f}% {result.instruct_harmless_refusal_rate*100:>10.1f}%")
+        print(f"{'Base (before steering)':<30} {result.base_harmful_refusal_rate*100:>10.1f}% {result.base_harmless_refusal_rate*100:>10.1f}%")
+        print(f"{'Base (after steering)':<30} {result.steered_harmful_refusal_rate*100:>10.1f}%")
 
         print("\n" + "-" * 70)
         print("TRANSFER EFFECTIVENESS:")
         print("-" * 70)
-        print(f"  Separation improvement:   +{result.separation_improvement:.4f}")
+        print(f"  Refusal rate increase:    +{result.refusal_rate_increase * 100:.1f}%")
         print(f"  Transfer effectiveness:   {result.transfer_effectiveness * 100:.1f}%")
-
-        # Interpretation
-        print("\n" + "-" * 70)
-        print("INTERPRETATION:")
-        print("-" * 70)
-        if result.transfer_effectiveness >= 0.8:
-            print("  Excellent transfer - Base model now has instruct-like separation!")
-        elif result.transfer_effectiveness >= 0.5:
-            print("  Good transfer - Significant alignment improvement achieved.")
-        elif result.transfer_effectiveness >= 0.2:
-            print("  Partial transfer - Some alignment transferred.")
-        else:
-            print("  Limited transfer - Alignment geometry differs significantly.")
-
-        if result.separation_improvement > 0:
-            print(f"  Steering INCREASED harmful/harmless separation by {result.separation_improvement:.4f}")
-            print("  -> Alignment was successfully transferred geometrically!")
-        else:
-            print("  Steering did not improve separation (may need different layer or strength)")
 
         print("=" * 70)
 

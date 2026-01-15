@@ -247,7 +247,7 @@ def run_jailbreak_detection(
     # Auto-select detection layer by finding layer with maximum separation
     if detection_layer is None:
         best_layer = layers[0]
-        best_separation = 0.0
+        best_accuracy = 0.0
 
         for layer_idx in layers:
             h_acts = backend.stack(harmless_by_layer[layer_idx], axis=0)
@@ -262,17 +262,39 @@ def run_jailbreak_detection(
             direction = direction / norm
             backend.eval(direction)
 
-            # Compute separation (difference in mean projections)
-            h_proj = float(backend.to_scalar(backend.mean(backend.sum(h_acts * direction, axis=1))))
-            f_proj = float(backend.to_scalar(backend.mean(backend.sum(f_acts * direction, axis=1))))
-            separation = abs(f_proj - h_proj)
+            # Compute projections for each prompt
+            h_projs = backend.sum(h_acts * direction, axis=1)
+            f_projs = backend.sum(f_acts * direction, axis=1)
+            backend.eval(h_projs, f_projs)
 
-            if separation > best_separation:
-                best_separation = separation
+            # Convert to lists for threshold computation
+            h_projs_list = [
+                float(backend.to_scalar(backend.take(h_projs, backend.array([i]), axis=0)))
+                for i in range(len(harmless_prompts))
+            ]
+            f_projs_list = [
+                float(backend.to_scalar(backend.take(f_projs, backend.array([i]), axis=0)))
+                for i in range(len(harmful_prompts))
+            ]
+
+            # Compute threshold (95th percentile of harmless)
+            sorted_harmless = sorted(h_projs_list)
+            threshold_idx = int(0.95 * len(sorted_harmless))
+            threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
+            threshold = sorted_harmless[threshold_idx]
+
+            # Compute classification accuracy
+            # Positive = harmful (above threshold), Negative = harmless (below threshold)
+            tp = sum(1 for p in f_projs_list if p > threshold)
+            tn = sum(1 for p in h_projs_list if p <= threshold)
+            accuracy = (tp + tn) / (len(f_projs_list) + len(h_projs_list))
+
+            if accuracy > best_accuracy:
+                best_accuracy = accuracy
                 best_layer = layer_idx
 
         detection_layer = best_layer
-        logger.info("Layer selection: max separation %.4f at layer %d", best_separation, detection_layer)
+        logger.info("Layer selection: max accuracy %.4f at layer %d", best_accuracy, detection_layer)
 
     logger.info("Using layer %d for detection", detection_layer)
 

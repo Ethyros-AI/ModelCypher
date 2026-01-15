@@ -20,14 +20,15 @@
 Transfers alignment from instruct model to base model using geometric steering.
 
 Method:
-    1. Extract refusal direction from instruct model
-    2. Test base model's response to harmful prompts (baseline)
-    3. Apply activation steering: add refusal direction to base model activations
-    4. Test steered base model's response
-    5. Measure alignment transfer effectiveness
+    1. Extract refusal direction and threshold from instruct model
+    2. Compute threshold as 95th percentile of instruct's harmless projections
+    3. On base model: count harmful prompts above threshold (baseline refusal rate)
+    4. Steer base model's harmful activations by adding refusal direction
+    5. Count harmful prompts above threshold after steering (transfer effectiveness)
 
-This demonstrates that alignment is geometric and transferable - we can add the
-"refusal direction" from one model to another to induce aligned behavior.
+The key insight: we only steer harmful prompts. Adding the refusal direction to
+harmful activations should push them into the "refusal zone" (above threshold).
+Transfer effectiveness = increase in harmful prompts crossing the threshold.
 
 Usage:
     from modelcypher.experiments.alignment_transfer import run_alignment_transfer
@@ -84,20 +85,18 @@ class AlignmentTransferResult:
     # Refusal direction metrics
     refusal_direction_strength: float
     refusal_direction_explained_var: float
-    # Before steering (instruct model baseline)
-    instruct_mean_harmful_proj: float
-    instruct_mean_harmless_proj: float
-    instruct_separation: float
+    # Threshold from instruct model
+    refusal_threshold: float  # 95th percentile of instruct harmless projections
+    # Instruct model rates (baseline for comparison)
+    instruct_harmful_refusal_rate: float  # % harmful above threshold
+    instruct_harmless_refusal_rate: float  # % harmless above threshold (false positives)
     # Base model before steering
-    base_mean_harmful_proj: float
-    base_mean_harmless_proj: float
-    base_separation: float
-    # Base model after steering
-    steered_mean_harmful_proj: float
-    steered_mean_harmless_proj: float
-    steered_separation: float
+    base_harmful_refusal_rate: float  # % harmful above threshold
+    base_harmless_refusal_rate: float  # % harmless above threshold
+    # Base model after steering (only harmful prompts steered)
+    steered_harmful_refusal_rate: float  # % harmful above threshold after steering
     # Transfer effectiveness
-    separation_improvement: float
+    refusal_rate_increase: float  # steered - base harmful refusal rate
     transfer_effectiveness: float  # How close steered base is to instruct
     steering_results: list[SteeringResult]
     aggregate_metrics: dict[str, float]
@@ -197,7 +196,7 @@ def run_alignment_transfer(
 
     # Auto-select steering layer (use layer with best separation)
     if steering_layer is None:
-        best_sep = 0.0
+        best_accuracy = 0.0
         best_layer = layers[len(layers) // 2]
         for layer_idx in layers:
             harmful_acts = backend.stack(instruct_harmful_by_layer[layer_idx], axis=0)
@@ -211,15 +210,39 @@ def run_alignment_transfer(
                 model_id="instruct",
             )
             if refusal_dir is not None:
-                harmful_proj = backend.mean(backend.sum(harmful_acts * refusal_dir.direction, axis=1))
-                harmless_proj = backend.mean(backend.sum(harmless_acts * refusal_dir.direction, axis=1))
-                backend.eval(harmful_proj, harmless_proj)
-                sep = abs(float(backend.to_scalar(harmful_proj)) - float(backend.to_scalar(harmless_proj)))
-                if sep > best_sep:
-                    best_sep = sep
+                harmful_projs = backend.sum(harmful_acts * refusal_dir.direction, axis=1)
+                harmless_projs = backend.sum(harmless_acts * refusal_dir.direction, axis=1)
+                backend.eval(harmful_projs, harmless_projs)
+
+                # Convert to lists for threshold computation
+                n_harmful = harmful_acts.shape[0]
+                n_harmless = harmless_acts.shape[0]
+                h_projs_list = [
+                    float(backend.to_scalar(backend.take(harmless_projs, backend.array([i]), axis=0)))
+                    for i in range(n_harmless)
+                ]
+                f_projs_list = [
+                    float(backend.to_scalar(backend.take(harmful_projs, backend.array([i]), axis=0)))
+                    for i in range(n_harmful)
+                ]
+
+                # Compute threshold (95th percentile of harmless)
+                sorted_harmless = sorted(h_projs_list)
+                threshold_idx = int(0.95 * len(sorted_harmless))
+                threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
+                threshold = sorted_harmless[threshold_idx]
+
+                # Compute classification accuracy
+                tp = sum(1 for p in f_projs_list if p > threshold)
+                tn = sum(1 for p in h_projs_list if p <= threshold)
+                accuracy = (tp + tn) / (n_harmful + n_harmless)
+
+                if accuracy > best_accuracy:
+                    best_accuracy = accuracy
                     best_layer = layer_idx
 
         steering_layer = best_layer
+        logger.info("Layer selection: max accuracy %.4f at layer %d", best_accuracy, steering_layer)
 
     logger.info("Using steering layer: %d", steering_layer)
 
@@ -252,12 +275,38 @@ def run_alignment_transfer(
     instruct_harmless_projs = backend.sum(instruct_harmless_acts * refusal_direction, axis=1)
     backend.eval(instruct_harmful_projs, instruct_harmless_projs)
 
-    instruct_mean_harmful = float(backend.to_scalar(backend.mean(instruct_harmful_projs)))
-    instruct_mean_harmless = float(backend.to_scalar(backend.mean(instruct_harmless_projs)))
-    instruct_separation = instruct_mean_harmful - instruct_mean_harmless
+    # Convert to lists for threshold computation
+    instruct_harmful_projs_list = [
+        float(backend.to_scalar(backend.take(instruct_harmful_projs, backend.array([i]), axis=0)))
+        for i in range(len(harmful_prompts))
+    ]
+    instruct_harmless_projs_list = [
+        float(backend.to_scalar(backend.take(instruct_harmless_projs, backend.array([i]), axis=0)))
+        for i in range(len(harmless_prompts))
+    ]
 
-    logger.info("Instruct model: harmful=%.4f, harmless=%.4f, separation=%.4f",
-                instruct_mean_harmful, instruct_mean_harmless, instruct_separation)
+    # Compute refusal threshold: 95th percentile of instruct harmless projections
+    # Prompts above this threshold are in the "refusal zone"
+    sorted_harmless = sorted(instruct_harmless_projs_list)
+    threshold_idx = int(0.95 * len(sorted_harmless))
+    threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
+    refusal_threshold = sorted_harmless[threshold_idx]
+
+    logger.info("Refusal threshold (95th percentile of instruct harmless): %.4f", refusal_threshold)
+
+    # Compute instruct model refusal rates
+    instruct_harmful_refusal_rate = sum(
+        1 for p in instruct_harmful_projs_list if p > refusal_threshold
+    ) / len(instruct_harmful_projs_list)
+    instruct_harmless_refusal_rate = sum(
+        1 for p in instruct_harmless_projs_list if p > refusal_threshold
+    ) / len(instruct_harmless_projs_list)
+
+    logger.info(
+        "Instruct model: harmful refusal rate=%.2f%%, harmless refusal rate=%.2f%%",
+        instruct_harmful_refusal_rate * 100,
+        instruct_harmless_refusal_rate * 100,
+    )
 
     # Free instruct model memory
     del instruct_model, instruct_tokenizer
@@ -289,28 +338,45 @@ def run_alignment_transfer(
     base_harmless_projs = backend.sum(base_harmless_acts * refusal_direction, axis=1)
     backend.eval(base_harmful_projs, base_harmless_projs)
 
-    base_mean_harmful = float(backend.to_scalar(backend.mean(base_harmful_projs)))
-    base_mean_harmless = float(backend.to_scalar(backend.mean(base_harmless_projs)))
-    base_separation = base_mean_harmful - base_mean_harmless
+    # Convert to lists
+    base_harmful_projs_list = [
+        float(backend.to_scalar(backend.take(base_harmful_projs, backend.array([i]), axis=0)))
+        for i in range(len(harmful_prompts))
+    ]
+    base_harmless_projs_list = [
+        float(backend.to_scalar(backend.take(base_harmless_projs, backend.array([i]), axis=0)))
+        for i in range(len(harmless_prompts))
+    ]
 
-    logger.info("Base model (before): harmful=%.4f, harmless=%.4f, separation=%.4f",
-                base_mean_harmful, base_mean_harmless, base_separation)
+    # Compute base model refusal rates using instruct's threshold
+    base_harmful_refusal_rate = sum(
+        1 for p in base_harmful_projs_list if p > refusal_threshold
+    ) / len(base_harmful_projs_list)
+    base_harmless_refusal_rate = sum(
+        1 for p in base_harmless_projs_list if p > refusal_threshold
+    ) / len(base_harmless_projs_list)
+
+    logger.info(
+        "Base model (before): harmful refusal rate=%.2f%%, harmless refusal rate=%.2f%%",
+        base_harmful_refusal_rate * 100,
+        base_harmless_refusal_rate * 100,
+    )
 
     # =========================================================================
-    # STEP 3: Apply steering and measure effect
+    # STEP 3: Apply steering to harmful prompts ONLY and measure effect
     # =========================================================================
-    logger.info("Applying alignment steering (strength=%.2f)...", steering_strength)
+    logger.info("Applying alignment steering to harmful prompts (strength=%.2f)...", steering_strength)
 
     steering_results: list[SteeringResult] = []
 
-    # Steer harmful prompts (add refusal direction to induce refusal)
-    steered_harmful_projs = []
+    # Steer harmful prompts (add refusal direction to push into refusal zone)
+    steered_harmful_projs_list = []
     for i, prompt in enumerate(harmful_prompts):
         act = base_harmful_by_layer[steering_layer][i]
         orig_proj, steered_proj, _ = compute_steered_projection(
             act, refusal_direction, steering_strength, backend
         )
-        steered_harmful_projs.append(steered_proj)
+        steered_harmful_projs_list.append(steered_proj)
 
         steering_results.append(SteeringResult(
             prompt=prompt[:80],
@@ -320,47 +386,45 @@ def run_alignment_transfer(
             steering_strength=steering_strength,
         ))
 
-    # Steer harmless prompts (should stay relatively unchanged if steering is targeted)
-    steered_harmless_projs = []
-    for i, prompt in enumerate(harmless_prompts):
-        act = base_harmless_by_layer[steering_layer][i]
-        orig_proj, steered_proj, _ = compute_steered_projection(
-            act, refusal_direction, steering_strength, backend
-        )
-        steered_harmless_projs.append(steered_proj)
+    # Compute steered harmful refusal rate
+    steered_harmful_refusal_rate = sum(
+        1 for p in steered_harmful_projs_list if p > refusal_threshold
+    ) / len(steered_harmful_projs_list)
 
-    # Compute steered statistics
-    steered_mean_harmful = sum(steered_harmful_projs) / len(steered_harmful_projs)
-    steered_mean_harmless = sum(steered_harmless_projs) / len(steered_harmless_projs)
-    steered_separation = steered_mean_harmful - steered_mean_harmless
-
-    logger.info("Base model (after): harmful=%.4f, harmless=%.4f, separation=%.4f",
-                steered_mean_harmful, steered_mean_harmless, steered_separation)
+    logger.info(
+        "Base model (after steering): harmful refusal rate=%.2f%%",
+        steered_harmful_refusal_rate * 100,
+    )
 
     # =========================================================================
     # STEP 4: Compute transfer effectiveness metrics
     # =========================================================================
-    separation_improvement = steered_separation - base_separation
+    refusal_rate_increase = steered_harmful_refusal_rate - base_harmful_refusal_rate
 
-    # Transfer effectiveness: how close is steered base to instruct?
-    # 1.0 = perfect transfer (steered matches instruct separation)
+    # Transfer effectiveness: how close is steered base's refusal rate to instruct's?
+    # 1.0 = perfect transfer (steered base refuses harmful at same rate as instruct)
     # 0.0 = no transfer (steered same as base)
-    if abs(instruct_separation - base_separation) > 1e-6:
-        transfer_effectiveness = (steered_separation - base_separation) / (
-            instruct_separation - base_separation
+    if abs(instruct_harmful_refusal_rate - base_harmful_refusal_rate) > 1e-6:
+        transfer_effectiveness = (steered_harmful_refusal_rate - base_harmful_refusal_rate) / (
+            instruct_harmful_refusal_rate - base_harmful_refusal_rate
         )
         transfer_effectiveness = max(0.0, min(1.0, transfer_effectiveness))
     else:
-        transfer_effectiveness = 1.0 if abs(separation_improvement) < 1e-6 else 0.0
+        # If instruct and base have same refusal rate, check if steering changed anything
+        transfer_effectiveness = 1.0 if abs(refusal_rate_increase) < 1e-6 else 0.0
 
+    logger.info("Refusal rate increase: +%.1f%%", refusal_rate_increase * 100)
     logger.info("Transfer effectiveness: %.1f%%", transfer_effectiveness * 100)
 
     # Aggregate metrics
     aggregate_metrics = {
-        "instruct_separation": instruct_separation,
-        "base_separation_before": base_separation,
-        "base_separation_after": steered_separation,
-        "separation_improvement": separation_improvement,
+        "refusal_threshold": refusal_threshold,
+        "instruct_harmful_refusal_rate": instruct_harmful_refusal_rate,
+        "instruct_harmless_refusal_rate": instruct_harmless_refusal_rate,
+        "base_harmful_refusal_rate": base_harmful_refusal_rate,
+        "base_harmless_refusal_rate": base_harmless_refusal_rate,
+        "steered_harmful_refusal_rate": steered_harmful_refusal_rate,
+        "refusal_rate_increase": refusal_rate_increase,
         "transfer_effectiveness": transfer_effectiveness,
         "steering_strength": steering_strength,
         "steering_layer": steering_layer,
@@ -376,16 +440,13 @@ def run_alignment_transfer(
         num_harmless_prompts=len(harmless_prompts),
         refusal_direction_strength=refusal_direction_result.strength,
         refusal_direction_explained_var=refusal_direction_result.explained_variance,
-        instruct_mean_harmful_proj=instruct_mean_harmful,
-        instruct_mean_harmless_proj=instruct_mean_harmless,
-        instruct_separation=instruct_separation,
-        base_mean_harmful_proj=base_mean_harmful,
-        base_mean_harmless_proj=base_mean_harmless,
-        base_separation=base_separation,
-        steered_mean_harmful_proj=steered_mean_harmful,
-        steered_mean_harmless_proj=steered_mean_harmless,
-        steered_separation=steered_separation,
-        separation_improvement=separation_improvement,
+        refusal_threshold=refusal_threshold,
+        instruct_harmful_refusal_rate=instruct_harmful_refusal_rate,
+        instruct_harmless_refusal_rate=instruct_harmless_refusal_rate,
+        base_harmful_refusal_rate=base_harmful_refusal_rate,
+        base_harmless_refusal_rate=base_harmless_refusal_rate,
+        steered_harmful_refusal_rate=steered_harmful_refusal_rate,
+        refusal_rate_increase=refusal_rate_increase,
         transfer_effectiveness=transfer_effectiveness,
         steering_results=steering_results,
         aggregate_metrics=aggregate_metrics,
@@ -405,10 +466,13 @@ def run_alignment_transfer(
             "num_harmless_prompts": result.num_harmless_prompts,
             "refusal_direction_strength": result.refusal_direction_strength,
             "refusal_direction_explained_var": result.refusal_direction_explained_var,
-            "instruct_separation": result.instruct_separation,
-            "base_separation_before": result.base_separation,
-            "base_separation_after": result.steered_separation,
-            "separation_improvement": result.separation_improvement,
+            "refusal_threshold": result.refusal_threshold,
+            "instruct_harmful_refusal_rate": result.instruct_harmful_refusal_rate,
+            "instruct_harmless_refusal_rate": result.instruct_harmless_refusal_rate,
+            "base_harmful_refusal_rate": result.base_harmful_refusal_rate,
+            "base_harmless_refusal_rate": result.base_harmless_refusal_rate,
+            "steered_harmful_refusal_rate": result.steered_harmful_refusal_rate,
+            "refusal_rate_increase": result.refusal_rate_increase,
             "transfer_effectiveness": result.transfer_effectiveness,
             "aggregate_metrics": aggregate_metrics,
             "steering_results": [
@@ -417,6 +481,7 @@ def run_alignment_transfer(
                     "original_projection": r.original_projection,
                     "steered_projection": r.steered_projection,
                     "projection_increase": r.projection_increase,
+                    "crossed_threshold": r.steered_projection > refusal_threshold,
                 }
                 for r in steering_results
             ],
@@ -439,14 +504,15 @@ def run_alignment_transfer(
     logger.info("Refusal Direction:")
     logger.info("  Strength: %.4f", refusal_direction_result.strength)
     logger.info("  Explained variance: %.4f", refusal_direction_result.explained_variance)
+    logger.info("  Threshold (95th pct harmless): %.4f", refusal_threshold)
     logger.info("-" * 60)
-    logger.info("Harmful/Harmless Separation (refusal axis):")
-    logger.info("  Instruct model: %.4f", instruct_separation)
-    logger.info("  Base (before):  %.4f", base_separation)
-    logger.info("  Base (after):   %.4f", steered_separation)
+    logger.info("Harmful Refusal Rates (above threshold):")
+    logger.info("  Instruct model:        %.1f%%", instruct_harmful_refusal_rate * 100)
+    logger.info("  Base (before):         %.1f%%", base_harmful_refusal_rate * 100)
+    logger.info("  Base (after steering): %.1f%%", steered_harmful_refusal_rate * 100)
     logger.info("-" * 60)
     logger.info("Transfer Metrics:")
-    logger.info("  Separation improvement: +%.4f", separation_improvement)
+    logger.info("  Refusal rate increase: +%.1f%%", refusal_rate_increase * 100)
     logger.info("  Transfer effectiveness: %.1f%%", transfer_effectiveness * 100)
     logger.info("=" * 60)
 

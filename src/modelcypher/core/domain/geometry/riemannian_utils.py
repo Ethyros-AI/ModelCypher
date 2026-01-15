@@ -224,6 +224,8 @@ def _geodesic_origin_distances(
     points: "Array",
     backend: "Backend",
     use_cache: bool = True,
+    *,
+    connect_origin_to_all: bool = True,
 ) -> tuple["GeodesicDistanceResult", "Array"]:
     """Compute geodesic distances among points plus distances from origin.
 
@@ -234,9 +236,43 @@ def _geodesic_origin_distances(
     geo_result = rg.geodesic_distances(points, use_cache=use_cache)
     d = int(backend.shape(points)[1])
     origin = backend.zeros((d,), dtype=getattr(points, "dtype", None))
-    d0 = rg._geodesic_distances_from_query(points, origin, geo_result=geo_result)
+    k_neighbors = int(backend.shape(points)[0]) if connect_origin_to_all else None
+    d0 = rg._geodesic_distances_from_query(
+        points,
+        origin,
+        geo_result=geo_result,
+        k_neighbors=k_neighbors,
+    )
     backend.eval(d0)
     return geo_result, d0
+
+
+def _chord_cosine_matrix(
+    vectors: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Compute cosine similarity matrix using chord (Euclidean) norms."""
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+    vectors_arr = backend.array(vectors) if not hasattr(vectors, "shape") else vectors
+    shape = backend.shape(vectors_arr)
+    if len(shape) != 2:
+        raise ValueError("chord_cosine_matrix requires [n, d] vectors")
+    n, _ = shape
+    if n == 0:
+        return backend.array([])
+
+    norms = backend.sqrt(backend.sum(vectors_arr * vectors_arr, axis=1, keepdims=True))
+    denom = backend.matmul(norms, backend.transpose(norms))
+    eps = division_epsilon(backend, vectors_arr)
+    denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+    dot = backend.matmul(vectors_arr, backend.transpose(vectors_arr))
+    cos_matrix = dot / denom_safe
+    cos_matrix = backend.clip(cos_matrix, -1.0, 1.0)
+    valid = denom > eps
+    cos_matrix = backend.where(valid, cos_matrix, backend.zeros_like(cos_matrix))
+    backend.eval(cos_matrix)
+    return cos_matrix
 
 
 def geodesic_norms(
@@ -307,9 +343,17 @@ def geodesic_cosine_matrix(
     n, d = shape
     if n == 0:
         return backend.array([])
+    if n < 3:
+        # Too few points to infer a manifold; fall back to chord cosine.
+        return _chord_cosine_matrix(vectors_arr, backend)
 
     # Compute geodesic distances among points; attach origin as a query only.
-    geo_result, d0 = _geodesic_origin_distances(vectors_arr, backend, use_cache=use_cache)
+    geo_result, d0 = _geodesic_origin_distances(
+        vectors_arr,
+        backend,
+        use_cache=use_cache,
+        connect_origin_to_all=True,
+    )
     D_pairs = geo_result.distances  # [n, n] pairwise distances
 
     # =========================================================================
@@ -399,6 +443,23 @@ def geodesic_cosine_batch(
         raise ValueError("Anchor and vectors must share feature dimension")
 
     n, d = shape_vectors
+    if n < 3:
+        # Too few points to infer a manifold; fall back to chord cosine.
+        dot = backend.sum(
+            vectors_arr * backend.reshape(anchor_arr, (1, d)),
+            axis=1,
+        )
+        anchor_norm = backend.sqrt(backend.sum(anchor_arr * anchor_arr))
+        vector_norms = backend.sqrt(backend.sum(vectors_arr * vectors_arr, axis=1))
+        eps = division_epsilon(backend, vectors_arr)
+        denom = anchor_norm * vector_norms
+        denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+        cos_vals = dot / denom_safe
+        cos_vals = backend.clip(cos_vals, -1.0, 1.0)
+        valid = denom > eps
+        cos_vals = backend.where(valid, cos_vals, backend.zeros_like(cos_vals))
+        backend.eval(cos_vals)
+        return cos_vals
 
     rg = _get_riemannian_geometry(backend)
     k_neighbors = derive_k_neighbors(vectors_arr, backend) if n > 1 else None
@@ -487,11 +548,30 @@ def geodesic_cosine_between_sets(
     m, d = shape_a
     n = shape_b[0]
 
+    if m + n < 3:
+        norms_a = backend.sqrt(backend.sum(a_arr * a_arr, axis=1, keepdims=True))
+        norms_b = backend.sqrt(backend.sum(b_arr * b_arr, axis=1, keepdims=True))
+        denom = backend.matmul(norms_a, backend.transpose(norms_b))
+        eps = division_epsilon(backend, a_arr)
+        denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+        dot = backend.matmul(a_arr, backend.transpose(b_arr))
+        cos_matrix = dot / denom_safe
+        cos_matrix = backend.clip(cos_matrix, -1.0, 1.0)
+        valid = denom > eps
+        cos_matrix = backend.where(valid, cos_matrix, backend.zeros_like(cos_matrix))
+        backend.eval(cos_matrix)
+        return cos_matrix
+
     # Stack: set_a, set_b (origin attached as query only)
     points = backend.concatenate([a_arr, b_arr], axis=0)
     backend.eval(points)
 
-    geo_result, d0 = _geodesic_origin_distances(points, backend, use_cache=use_cache)
+    geo_result, d0 = _geodesic_origin_distances(
+        points,
+        backend,
+        use_cache=use_cache,
+        connect_origin_to_all=True,
+    )
     D = geo_result.distances  # [m+n, m+n]
 
     # Indices: 0..m-1=set_a, m..m+n-1=set_b
@@ -570,7 +650,10 @@ def geodesic_pairwise_metrics(
     backend.eval(interleaved)
 
     geo_result, d0_all = _geodesic_origin_distances(
-        interleaved, backend, use_cache=use_cache
+        interleaved,
+        backend,
+        use_cache=use_cache,
+        connect_origin_to_all=True,
     )
     D = geo_result.distances  # [2n, 2n]
 

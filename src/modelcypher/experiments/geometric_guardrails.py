@@ -179,17 +179,18 @@ def run_geometric_guardrails(
 
     layers = sorted(train_harmful_by_layer.keys())
 
-    # Auto-select detection layer by finding layer with maximum separation
+    # Auto-select detection layer by finding layer with best boundary detection
+    # For guardrails, we want to maximize (harmful_violation_rate - harmless_violation_rate)
     if detection_layer is None:
         best_layer = layers[0]
-        best_separation = 0.0
+        best_score = -1.0
 
         for layer_idx in layers:
             h_acts = b.stack(train_harmless_by_layer[layer_idx], axis=0)
             f_acts = b.stack(train_harmful_by_layer[layer_idx], axis=0)
             b.eval(h_acts, f_acts)
 
-            # Compute direction and separation
+            # Compute direction
             h_mean = b.mean(h_acts, axis=0)
             f_mean = b.mean(f_acts, axis=0)
             direction = f_mean - h_mean
@@ -197,16 +198,71 @@ def run_geometric_guardrails(
             direction = direction / norm
             b.eval(direction)
 
-            h_proj = float(b.to_scalar(b.mean(b.sum(h_acts * direction, axis=1))))
-            f_proj = float(b.to_scalar(b.mean(b.sum(f_acts * direction, axis=1))))
-            separation = abs(f_proj - h_proj)
+            # Compute safe centroid (mean of harmless)
+            safe_centroid = h_mean
 
-            if separation > best_separation:
-                best_separation = separation
+            # Compute projections onto refusal direction
+            n_harmless = h_acts.shape[0]
+            n_harmful = f_acts.shape[0]
+
+            h_projs_list = []
+            h_dists_list = []
+            for i in range(n_harmless):
+                act = b.take(h_acts, b.array([i]), axis=0)
+                act = b.reshape(act, (act.shape[1],))
+                proj = float(b.to_scalar(b.sum(act * direction)))
+                diff = act - safe_centroid
+                dist = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
+                h_projs_list.append(proj)
+                h_dists_list.append(dist)
+
+            f_projs_list = []
+            f_dists_list = []
+            for i in range(n_harmful):
+                act = b.take(f_acts, b.array([i]), axis=0)
+                act = b.reshape(act, (act.shape[1],))
+                proj = float(b.to_scalar(b.sum(act * direction)))
+                diff = act - safe_centroid
+                dist = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
+                f_projs_list.append(proj)
+                f_dists_list.append(dist)
+
+            # Compute boundary thresholds from harmless distribution
+            sorted_projs = sorted(h_projs_list)
+            refusal_thresh_idx = int(refusal_percentile / 100.0 * len(sorted_projs))
+            refusal_thresh_idx = max(0, min(refusal_thresh_idx, len(sorted_projs) - 1))
+            refusal_threshold = sorted_projs[refusal_thresh_idx]
+
+            sorted_dists = sorted(h_dists_list)
+            dist_thresh_idx = int(distance_percentile / 100.0 * len(sorted_dists))
+            dist_thresh_idx = max(0, min(dist_thresh_idx, len(sorted_dists) - 1))
+            safe_radius = sorted_dists[dist_thresh_idx]
+
+            # Check violations (below refusal threshold OR outside safe radius)
+            harmless_violations = sum(
+                1 for p, d in zip(h_projs_list, h_dists_list)
+                if p < refusal_threshold or d > safe_radius
+            )
+            harmful_violations = sum(
+                1 for p, d in zip(f_projs_list, f_dists_list)
+                if p < refusal_threshold or d > safe_radius
+            )
+
+            harmless_viol_rate = harmless_violations / max(n_harmless, 1)
+            harmful_viol_rate = harmful_violations / max(n_harmful, 1)
+
+            # Score = harmful detection rate - harmless false positive rate
+            score = harmful_viol_rate - harmless_viol_rate
+
+            if score > best_score:
+                best_score = score
                 best_layer = layer_idx
 
         detection_layer = best_layer
-        logger.info("Layer selection: max separation %.4f at layer %d", best_separation, detection_layer)
+        logger.info(
+            "Layer selection: max boundary score %.4f at layer %d",
+            best_score, detection_layer
+        )
 
     logger.info("Using detection layer: %d / %d", detection_layer, len(layers))
 
