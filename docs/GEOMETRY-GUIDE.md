@@ -73,6 +73,11 @@ singular values squared from centered activations). ID and effective rank are
 complementary: ID estimates local manifold complexity, while effective rank
 estimates how much support the model uses to carry that complexity.
 
+Derived diagnostics reported by `mc geometry research manifold-evidence`:
+- support ratio = effective_rank / ambient_dim (Renyi + Shannon)
+- null ratio = 1 - support ratio (Renyi + Shannon)
+- ID gap = effective_rank - intrinsic_dimension (Renyi + Shannon, when ID is available)
+
 ## Manifold Evidence (Toward Theorem)
 
 To move from thesis to theorem, we need evidence that:

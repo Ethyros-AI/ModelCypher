@@ -46,6 +46,16 @@ class CurvatureSummary:
 
 
 @dataclass(frozen=True)
+class SupportManifoldDiagnostics:
+    renyi_support_ratio: float
+    shannon_support_ratio: float
+    renyi_null_ratio: float
+    shannon_null_ratio: float
+    renyi_id_gap: float | None
+    shannon_id_gap: float | None
+
+
+@dataclass(frozen=True)
 class ManifoldEvidenceResult:
     sample_count: int
     feature_dim: int
@@ -53,6 +63,7 @@ class ManifoldEvidenceResult:
     intrinsic_dimension: float | None
     intrinsic_dimension_usable: int
     effective_rank: EffectiveRankResult
+    support_diagnostics: SupportManifoldDiagnostics
     tangent_rank: EffectiveRankResult | None
     curvature: CurvatureSummary | None
     frechet_variance: float | None
@@ -77,6 +88,39 @@ def _summarize_curvature(profile: "ManifoldCurvatureProfile") -> CurvatureSummar
     )
 
 
+def _compute_support_diagnostics(
+    feature_dim: int,
+    effective_rank: EffectiveRankResult,
+    intrinsic_dimension: float | None,
+) -> SupportManifoldDiagnostics:
+    if feature_dim > 0:
+        renyi_support_ratio = effective_rank.renyi_effective_rank / feature_dim
+        shannon_support_ratio = effective_rank.shannon_effective_rank / feature_dim
+        renyi_null_ratio = 1.0 - renyi_support_ratio
+        shannon_null_ratio = 1.0 - shannon_support_ratio
+    else:
+        renyi_support_ratio = 0.0
+        shannon_support_ratio = 0.0
+        renyi_null_ratio = 0.0
+        shannon_null_ratio = 0.0
+
+    if intrinsic_dimension is None:
+        renyi_id_gap = None
+        shannon_id_gap = None
+    else:
+        renyi_id_gap = effective_rank.renyi_effective_rank - intrinsic_dimension
+        shannon_id_gap = effective_rank.shannon_effective_rank - intrinsic_dimension
+
+    return SupportManifoldDiagnostics(
+        renyi_support_ratio=renyi_support_ratio,
+        shannon_support_ratio=shannon_support_ratio,
+        renyi_null_ratio=renyi_null_ratio,
+        shannon_null_ratio=shannon_null_ratio,
+        renyi_id_gap=renyi_id_gap,
+        shannon_id_gap=shannon_id_gap,
+    )
+
+
 def compute_manifold_evidence(
     points: "Array",
     backend: "Backend | None" = None,
@@ -87,19 +131,23 @@ def compute_manifold_evidence(
     b.eval(pts)
 
     if len(pts.shape) < 2:
+        empty_effective_rank = EffectiveRankResult(
+            renyi_effective_rank=0.0,
+            shannon_effective_rank=0.0,
+            spectral_entropy=0.0,
+            sample_count=0,
+            feature_dim=0,
+            n_singular_values=0,
+        )
         return ManifoldEvidenceResult(
             sample_count=0,
             feature_dim=0,
             k_neighbors=0,
             intrinsic_dimension=None,
             intrinsic_dimension_usable=0,
-            effective_rank=EffectiveRankResult(
-                renyi_effective_rank=0.0,
-                shannon_effective_rank=0.0,
-                spectral_entropy=0.0,
-                sample_count=0,
-                feature_dim=0,
-                n_singular_values=0,
+            effective_rank=empty_effective_rank,
+            support_diagnostics=_compute_support_diagnostics(
+                0, empty_effective_rank, None
             ),
             tangent_rank=None,
             curvature=None,
@@ -109,19 +157,23 @@ def compute_manifold_evidence(
     sample_count = int(pts.shape[0])
     feature_dim = int(pts.shape[1])
     if sample_count == 0 or feature_dim == 0:
+        empty_effective_rank = EffectiveRankResult(
+            renyi_effective_rank=0.0,
+            shannon_effective_rank=0.0,
+            spectral_entropy=0.0,
+            sample_count=sample_count,
+            feature_dim=feature_dim,
+            n_singular_values=0,
+        )
         return ManifoldEvidenceResult(
             sample_count=sample_count,
             feature_dim=feature_dim,
             k_neighbors=0,
             intrinsic_dimension=None,
             intrinsic_dimension_usable=0,
-            effective_rank=EffectiveRankResult(
-                renyi_effective_rank=0.0,
-                shannon_effective_rank=0.0,
-                spectral_entropy=0.0,
-                sample_count=sample_count,
-                feature_dim=feature_dim,
-                n_singular_values=0,
+            effective_rank=empty_effective_rank,
+            support_diagnostics=_compute_support_diagnostics(
+                feature_dim, empty_effective_rank, None
             ),
             tangent_rank=None,
             curvature=None,
@@ -141,6 +193,9 @@ def compute_manifold_evidence(
 
     er_computer = EffectiveRank(b)
     effective_rank = er_computer.compute(pts)
+    support_diagnostics = _compute_support_diagnostics(
+        feature_dim, effective_rank, intrinsic_dimension
+    )
 
     rg = RiemannianGeometry(b)
     tangent_rank: EffectiveRankResult | None = None
@@ -169,6 +224,7 @@ def compute_manifold_evidence(
         intrinsic_dimension=intrinsic_dimension,
         intrinsic_dimension_usable=intrinsic_usable,
         effective_rank=effective_rank,
+        support_diagnostics=support_diagnostics,
         tangent_rank=tangent_rank,
         curvature=curvature_summary,
         frechet_variance=frechet_variance,
@@ -177,6 +233,7 @@ def compute_manifold_evidence(
 
 __all__ = [
     "CurvatureSummary",
+    "SupportManifoldDiagnostics",
     "ManifoldEvidenceResult",
     "compute_manifold_evidence",
 ]

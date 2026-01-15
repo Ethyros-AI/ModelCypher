@@ -241,7 +241,19 @@ def register(app: typer.Typer) -> None:
                     f"Intrinsic dimension: {report.intrinsic_dimension}",
                     f"Effective rank (Renyi): {report.effective_rank.renyi_effective_rank:.4f}",
                     f"Effective rank (Shannon): {report.effective_rank.shannon_effective_rank:.4f}",
+                    f"Support ratio (Renyi): {report.support_diagnostics.renyi_support_ratio:.4f}",
+                    f"Support ratio (Shannon): {report.support_diagnostics.shannon_support_ratio:.4f}",
+                    f"Null ratio (Renyi): {report.support_diagnostics.renyi_null_ratio:.4f}",
+                    f"Null ratio (Shannon): {report.support_diagnostics.shannon_null_ratio:.4f}",
                 ]
+                if report.support_diagnostics.renyi_id_gap is not None:
+                    lines.append(
+                        f"ID gap (Renyi): {report.support_diagnostics.renyi_id_gap:.4f}"
+                    )
+                if report.support_diagnostics.shannon_id_gap is not None:
+                    lines.append(
+                        f"ID gap (Shannon): {report.support_diagnostics.shannon_id_gap:.4f}"
+                    )
                 if report.tangent_rank is not None:
                     lines.append(
                         f"Tangent rank (Renyi): {report.tangent_rank.renyi_effective_rank:.4f}"
