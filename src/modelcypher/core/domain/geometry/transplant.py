@@ -69,6 +69,10 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_between_sets,
     geodesic_norms,
 )
+from modelcypher.core.domain.geometry.direction_novelty import (
+    DirectionNoveltyResult,
+    compute_per_direction_novelty,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -329,6 +333,8 @@ def compute_weight_space_transplant(
     source_activations_for_density: "Array | None" = None,
     target_activations_for_density: "Array | None" = None,
     null_space_projector: "NullSpaceProjector | None" = None,
+    direction_novelty_result: "DirectionNoveltyResult | None" = None,
+    apply_novelty_filter: bool = True,
     backend: "Backend | None" = None,
 ) -> WeightSpaceTransplantResult:
     """Weight-space null-space projection with density-weighted transfer.
@@ -358,6 +364,11 @@ def compute_weight_space_transplant(
             If None, density weighting is disabled (uniform transfer).
         target_activations_for_density: Target activations for density comparison [n, d].
             If None, density weighting is disabled (uniform transfer).
+        direction_novelty_result: Optional per-direction novelty analysis.
+            If provided and apply_novelty_filter=True, only transfers knowledge in
+            directions where source has high variance but target has low variance.
+        apply_novelty_filter: Whether to apply direction novelty filtering.
+            Default True. Set False to use only null-space projection.
         backend: Compute backend.
 
     Returns:
@@ -477,6 +488,74 @@ def compute_weight_space_transplant(
         # [out_dim, in_dim] @ [in_dim, in_dim] -> [out_dim, in_dim]
         delta_W_proj = b.matmul(delta_W, N)
         b.eval(delta_W_proj)
+
+    # =========================================================================
+    # DIRECTION NOVELTY FILTERING (OPTIONAL)
+    # =========================================================================
+    # After null-space projection, optionally filter to only keep delta in
+    # directions that are "activated in source, dormant in target".
+    #
+    # This is an additional constraint on top of null-space projection:
+    # - Null-space: don't disturb what target is actively using
+    # - Novelty filter: only transfer what source uniquely has
+    #
+    # Together, these ensure precision knowledge transfer.
+    # =========================================================================
+    novelty_filtered = False
+    if apply_novelty_filter and direction_novelty_result is not None:
+        novel_mask = direction_novelty_result.novel_mask
+        mask_shape = b.shape(novel_mask)
+
+        # Only apply if dimensions match (in_dim)
+        if int(mask_shape[0]) == in_dim:
+            # Convert bool mask to float (0.0 or 1.0)
+            novel_mask_float = b.astype(novel_mask, compute_dtype)
+            b.eval(novel_mask_float)
+
+            # Apply mask column-wise: delta_filtered = delta * mask
+            # Each column of delta_W_proj corresponds to an input direction
+            delta_W_proj = delta_W_proj * novel_mask_float
+            b.eval(delta_W_proj)
+            novelty_filtered = True
+
+            logger.info(
+                "NOVELTY FILTER: applied mask (%d/%d novel directions, threshold=%.4f)",
+                direction_novelty_result.novel_count,
+                int(mask_shape[0]),
+                direction_novelty_result.threshold,
+            )
+        else:
+            logger.warning(
+                "NOVELTY FILTER: dimension mismatch (mask=%d, weight_in=%d), skipping",
+                int(mask_shape[0]),
+                in_dim,
+            )
+    elif apply_novelty_filter and source_activations_for_density is not None and target_activations_for_density is not None:
+        # Compute novelty on the fly if not provided
+        try:
+            novelty_result = compute_per_direction_novelty(
+                source_activations_for_density,
+                target_activations_for_density,
+                backend=b,
+            )
+            novel_mask = novelty_result.novel_mask
+            mask_shape = b.shape(novel_mask)
+
+            # Only apply if dimensions match
+            if int(mask_shape[0]) == in_dim:
+                novel_mask_float = b.astype(novel_mask, compute_dtype)
+                b.eval(novel_mask_float)
+                delta_W_proj = delta_W_proj * novel_mask_float
+                b.eval(delta_W_proj)
+                novelty_filtered = True
+
+                logger.info(
+                    "NOVELTY FILTER (computed): %d/%d novel directions",
+                    novelty_result.novel_count,
+                    int(mask_shape[0]),
+                )
+        except Exception as e:
+            logger.debug("NOVELTY FILTER: computation failed, skipping: %s", e)
 
     # Compute projected norm (geodesic Frobenius)
     projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)

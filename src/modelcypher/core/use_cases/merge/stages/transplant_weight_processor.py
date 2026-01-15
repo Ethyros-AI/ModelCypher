@@ -341,7 +341,131 @@ def process_layer_weights(
                 "feed_forward.w1", "feed_forward.w2", "feed_forward.w3",
                 "mlp.gate", "mlp.up", "mlp.down",
             ])
-            if is_mlp and hidden_stitch_output is not None and hidden_stitch_input is not None:
+
+            # =========================================================================
+            # CONV LAYER HANDLING (LFM2 hybrid architecture)
+            # =========================================================================
+            # LFM2 models have conv layers with specific dimension patterns:
+            # - conv.in_proj.weight: (3×hidden, hidden) - projects to 3x for conv
+            # - conv.out_proj.weight: (hidden, hidden) - projects back
+            # - conv.conv.weight: (hidden, 3, 1) - the actual convolution kernel
+            #
+            # These need special stitching since dim0 of in_proj is 3×hidden, not
+            # the MLP intermediate dimension.
+            # =========================================================================
+            is_conv = ".conv." in key and any(
+                conv_name in key for conv_name in ["in_proj", "out_proj", "conv.conv"]
+            )
+            if is_conv and hidden_stitch_output is not None and hidden_stitch_input is not None:
+                src_hidden_dim = stitch_dims["src_hidden"]
+                tgt_hidden_dim = stitch_dims["tgt_hidden"]
+                dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
+
+                if "conv.in_proj" in key:
+                    # in_proj: (3×src_hidden, src_hidden) → (3×tgt_hidden, tgt_hidden)
+                    # The 3× factor is intrinsic to the conv architecture
+                    conv_factor = dim0 // src_hidden_dim  # Should be 3
+                    if dim0 == conv_factor * src_hidden_dim and dim1 == src_hidden_dim:
+                        # Build a block-diagonal output stitch: replicate hidden_stitch for each factor
+                        # For 3× expansion: [[H, 0, 0], [0, H, 0], [0, 0, H]] where H is hidden_stitch_output
+                        conv_output_stitch = b.zeros((conv_factor * tgt_hidden_dim, conv_factor * src_hidden_dim))
+                        b.eval(conv_output_stitch)
+                        for i in range(conv_factor):
+                            row_start = i * tgt_hidden_dim
+                            row_end = (i + 1) * tgt_hidden_dim
+                            col_start = i * src_hidden_dim
+                            col_end = (i + 1) * src_hidden_dim
+                            # Build full matrix with block diagonal
+                            block_rows = []
+                            for bi in range(conv_factor):
+                                if bi == i:
+                                    block_rows.append(hidden_stitch_output)
+                                else:
+                                    block_rows.append(b.zeros((tgt_hidden_dim, src_hidden_dim)))
+                            conv_output_stitch = b.concatenate(
+                                [b.concatenate([block_rows[bi] for bi in range(conv_factor)], axis=1)
+                                 if j == 0 else b.zeros((tgt_hidden_dim, conv_factor * src_hidden_dim))
+                                 for j in range(1)],
+                                axis=0
+                            ) if conv_factor == 1 else b.concatenate([
+                                b.concatenate([
+                                    hidden_stitch_output if bi == bj else b.zeros((tgt_hidden_dim, src_hidden_dim))
+                                    for bj in range(conv_factor)
+                                ], axis=1)
+                                for bi in range(conv_factor)
+                            ], axis=0)
+                        b.eval(conv_output_stitch)
+
+                        source_aligned = b.matmul(conv_output_stitch, source_w)
+                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
+                        b.eval(source_aligned)
+                        logger.info(
+                            "Conv stitch (in_proj): [%d,%d] → [%d,%d] (factor=%d×hidden)",
+                            dim0,
+                            dim1,
+                            conv_factor * tgt_hidden_dim,
+                            tgt_hidden_dim,
+                            conv_factor,
+                        )
+                        metrics.setdefault("conv_stitched", 0)
+                        metrics["conv_stitched"] += 1
+                    else:
+                        logger.warning(
+                            "Conv in_proj %s shape [%d,%d] unexpected for hidden=%d - skipping",
+                            key, dim0, dim1, src_hidden_dim,
+                        )
+                        continue
+
+                elif "conv.out_proj" in key:
+                    # out_proj: (src_hidden, src_hidden) → (tgt_hidden, tgt_hidden)
+                    if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
+                        source_aligned = b.matmul(hidden_stitch_output, source_w)
+                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
+                        b.eval(source_aligned)
+                        logger.info(
+                            "Conv stitch (out_proj): [%d,%d] → [%d,%d]",
+                            dim0,
+                            dim1,
+                            tgt_hidden_dim,
+                            tgt_hidden_dim,
+                        )
+                        metrics.setdefault("conv_stitched", 0)
+                        metrics["conv_stitched"] += 1
+                    else:
+                        logger.warning(
+                            "Conv out_proj %s shape [%d,%d] unexpected for hidden=%d - skipping",
+                            key, dim0, dim1, src_hidden_dim,
+                        )
+                        continue
+
+                elif "conv.conv" in key:
+                    # conv.weight: (src_hidden, kernel_size, 1) → (tgt_hidden, kernel_size, 1)
+                    # Only need to stitch dim0
+                    if len(original_source_shape) == 3 and dim0 == src_hidden_dim:
+                        # 3D weight: (hidden, kernel, 1)
+                        kernel_size = int(original_source_shape[1])
+                        # Reshape to 2D, stitch, reshape back
+                        source_2d = b.reshape(source_w, (dim0, kernel_size))
+                        source_aligned_2d = b.matmul(hidden_stitch_output, source_2d)
+                        source_aligned = b.reshape(source_aligned_2d, (tgt_hidden_dim, kernel_size, 1))
+                        b.eval(source_aligned)
+                        logger.info(
+                            "Conv stitch (conv.conv): [%d,%d,1] → [%d,%d,1]",
+                            dim0,
+                            kernel_size,
+                            tgt_hidden_dim,
+                            kernel_size,
+                        )
+                        metrics.setdefault("conv_stitched", 0)
+                        metrics["conv_stitched"] += 1
+                    else:
+                        logger.warning(
+                            "Conv conv.weight %s shape %s unexpected for hidden=%d - skipping",
+                            key, original_source_shape, src_hidden_dim,
+                        )
+                        continue
+
+            elif is_mlp and hidden_stitch_output is not None and hidden_stitch_input is not None:
                 src_hidden_dim = stitch_dims["src_hidden"]
                 tgt_hidden_dim = stitch_dims["tgt_hidden"]
                 if "src_inter" in stitch_dims:

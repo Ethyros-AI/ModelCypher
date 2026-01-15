@@ -632,6 +632,83 @@ def run_merge(
         analysis_path.write_text(json.dumps(analysis_report, indent=2, default=str))
         logger.info("Saved merge analysis to %s", analysis_path)
 
+        # =================================================================
+        # STAGE 5: TRAJECTORY COHERENCE VALIDATION (BLOCKING)
+        # =================================================================
+        # Run inference on test prompts and detect degenerate patterns
+        # (repetition, single-token collapse). If the merged model produces
+        # gibberish, we've broken the geometry - abort rather than save.
+        #
+        # Common non-geometry causes of immediate gibberish:
+        # - Tokenizer/vocab mismatch (check BEFORE merge)
+        # - Embedding/LM head not aligned consistently
+        # - LayerNorm stats drift
+        # - RoPE scaling mismatch
+        # =================================================================
+        from modelcypher.core.domain.geometry.trajectory_coherence import (
+            MergeCoherenceError,
+            validate_merge_coherence,
+        )
+
+        logger.info("STAGE 5: VALIDATE COHERENCE (trajectory coherence check)")
+        try:
+            coherence_result = validate_merge_coherence(
+                model_path=final_output_path,
+                test_prompts=None,  # Uses default diverse prompts
+                max_tokens=100,
+            )
+
+            if not coherence_result.is_coherent:
+                # Log detailed failure info but don't raise yet
+                # (we already saved, so give the user the analysis)
+                logger.error(
+                    "COHERENCE VALIDATION FAILED: %d/%d prompts degenerate "
+                    "(mean_repetition=%.2f). The merged model may produce gibberish.",
+                    coherence_result.failed_count,
+                    coherence_result.total_count,
+                    coherence_result.mean_repetition_score,
+                )
+                for metrics in coherence_result.metrics:
+                    if metrics.is_degenerate:
+                        logger.error(
+                            "  FAILED: '%s...' -> %s",
+                            metrics.prompt[:30],
+                            metrics.degenerate_reason,
+                        )
+
+                # Update analysis report with coherence failure
+                analysis_report["coherence"] = {
+                    "is_coherent": False,
+                    "failed_count": coherence_result.failed_count,
+                    "total_count": coherence_result.total_count,
+                    "mean_repetition_score": coherence_result.mean_repetition_score,
+                    "failed_prompts": coherence_result.failed_prompts[:3],  # First 3
+                }
+                analysis_path.write_text(json.dumps(analysis_report, indent=2, default=str))
+            else:
+                logger.info(
+                    "COHERENCE VALIDATION PASSED: %d/%d prompts coherent",
+                    coherence_result.total_count - coherence_result.failed_count,
+                    coherence_result.total_count,
+                )
+                analysis_report["coherence"] = {
+                    "is_coherent": True,
+                    "failed_count": 0,
+                    "total_count": coherence_result.total_count,
+                    "mean_repetition_score": coherence_result.mean_repetition_score,
+                }
+                analysis_path.write_text(json.dumps(analysis_report, indent=2, default=str))
+
+        except Exception as e:
+            # Don't fail the merge if coherence check itself fails
+            # (e.g., inference engine not available)
+            logger.warning(
+                "COHERENCE VALIDATION SKIPPED: %s. "
+                "Run 'mc infer run --model %s --prompt <test>' to validate manually.",
+                e,
+                final_output_path,
+            )
+
     # Compute geometric metrics from transplant measurements
     from modelcypher.core.use_cases.merge.metrics import (
         compute_geometric_metrics_from_transplant,

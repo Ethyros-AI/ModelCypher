@@ -49,6 +49,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     tiny_value,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.subspace import (
+    compute_subspace_overlap,
+    project_to_subspace,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -862,76 +866,114 @@ def compute_cka_split(
     b.eval(F)
 
     aligned = b.matmul(source_arr, F)
-    residual = target_arr - aligned
-    b.eval(aligned, residual)
+    b.eval(aligned)
 
-    residual_norms = b.sqrt(b.sum(residual * residual, axis=1))
-    target_norms = b.sqrt(b.sum(target_arr * target_arr, axis=1))
+    # Compute response magnitudes for diagnostics
     aligned_norms = b.sqrt(b.sum(aligned * aligned, axis=1))
-    b.eval(residual_norms, target_norms, aligned_norms)
+    target_norms = b.sqrt(b.sum(target_arr * target_arr, axis=1))
+    b.eval(aligned_norms, target_norms)
 
-    eps = division_epsilon(b, target_arr)
-    residual_ratio = residual_norms / (target_norms + eps)
-    sorted_ratio = b.sort(residual_ratio, axis=0)
-    b.eval(residual_ratio, sorted_ratio)
-
-    ratio_threshold = find_magnitude_gap_threshold(sorted_ratio, backend=b)
-    ratio_threshold_arr = b.array([ratio_threshold], dtype=residual_ratio.dtype)
-    shared_mask = residual_ratio <= ratio_threshold_arr
-    novel_mask = residual_ratio > ratio_threshold_arr
-    b.eval(shared_mask, novel_mask)
-
-    # Count samples in each category
-    count_dtype = precision_dtype(b, reference=target_norms)
-    shared_count = int(b.to_scalar(b.sum(b.astype(shared_mask, count_dtype))))
-    novel_count = int(b.to_scalar(b.sum(b.astype(novel_mask, count_dtype))))
-
-    # Response means for debugging
     source_resp_mean = float(b.to_scalar(b.mean(aligned_norms)))
     target_resp_mean = float(b.to_scalar(b.mean(target_norms)))
 
-    # Compute full CKA
+    # Compute full CKA on all samples
     full_result = compute_cka(aligned, target_arr, backend)
     full_cka = full_result.cka if full_result.is_valid else 0.0
 
-    # Compute CKA on shared samples only (if enough)
-    shared_cka = 0.0
-    if shared_count >= 4:
-        # Use mask to select shared samples
-        # Convert bool mask to indices
-        shared_indices = b.nonzero(shared_mask)
-        if len(shared_indices) > 0 and shared_indices[0].shape[0] >= 4:
-            shared_idx = shared_indices[0]
-            source_shared = b.take(aligned, shared_idx, axis=0)
-            target_shared = b.take(target_arr, shared_idx, axis=0)
-            b.eval(source_shared, target_shared)
-            shared_result = compute_cka(source_shared, target_shared, backend)
-            shared_cka = shared_result.cka if shared_result.is_valid else 0.0
+    # =================================================================
+    # NEW: Rank-derived subspace splitting (replaces residual-ratio)
+    # =================================================================
+    # Use SVD-based principal angle analysis to identify which DIRECTIONS
+    # are shared vs novel, not which SAMPLES. This is mathematically
+    # grounded in the intrinsic geometry.
+    #
+    # The old approach used residual_ratio = ||target - aligned|| / ||target||
+    # with gap-threshold detection. This failed when the distribution was
+    # smooth/unimodal, causing catastrophic misclassification (e.g.,
+    # n_shared=2, n_novel=815 when novel_cka=0.9999).
+    # =================================================================
 
-    # Compute CKA on novel samples only (if enough)
-    novel_cka = 0.0
-    if novel_count >= 4:
-        novel_indices = b.nonzero(novel_mask)
-        if len(novel_indices) > 0 and novel_indices[0].shape[0] >= 4:
-            novel_idx = novel_indices[0]
-            source_novel = b.take(aligned, novel_idx, axis=0)
-            target_novel = b.take(target_arr, novel_idx, axis=0)
-            b.eval(source_novel, target_novel)
-            novel_result = compute_cka(source_novel, target_novel, backend)
-            novel_cka = novel_result.cka if novel_result.is_valid else 0.0
+    try:
+        subspace_result = compute_subspace_overlap(aligned, target_arr, b)
 
-    return SplitCKAResult(
-        shared_cka=shared_cka,
-        novel_cka=novel_cka,
-        full_cka=full_cka,
-        shared_fraction=shared_count / n if n > 0 else 0.0,
-        novel_fraction=novel_count / n if n > 0 else 0.0,
-        n_shared=shared_count,
-        n_novel=novel_count,
-        n_total=n,
-        source_response_mean=source_resp_mean,
-        target_response_mean=target_resp_mean,
-    )
+        # Get shared and novel ranks
+        shared_rank = subspace_result.shared_rank
+        source_rank = subspace_result.source_rank
+        novel_rank = max(0, source_rank - shared_rank)
+
+        # Overlap fraction is the fraction of source subspace that aligns with target
+        shared_fraction = subspace_result.overlap_fraction
+        novel_fraction = 1.0 - shared_fraction
+
+        # Compute CKA on projections to shared/novel subspaces
+        shared_cka = 0.0
+        novel_cka = 0.0
+
+        # Shared subspace CKA
+        shared_basis_shape = b.shape(subspace_result.shared_basis)
+        if int(shared_basis_shape[0]) > 0:
+            # Project both aligned source and target onto shared subspace
+            shared_src_proj = project_to_subspace(aligned, subspace_result.shared_basis, b)
+            shared_tgt_proj = project_to_subspace(target_arr, subspace_result.shared_basis, b)
+            b.eval(shared_src_proj, shared_tgt_proj)
+
+            # CKA on shared subspace projections
+            if int(b.shape(shared_src_proj)[1]) >= 2:
+                shared_result = compute_cka(shared_src_proj, shared_tgt_proj, backend)
+                shared_cka = shared_result.cka if shared_result.is_valid else 0.0
+
+        # Novel subspace CKA
+        novel_basis_shape = b.shape(subspace_result.novel_basis)
+        if int(novel_basis_shape[0]) > 0:
+            # Project both onto novel subspace
+            novel_src_proj = project_to_subspace(aligned, subspace_result.novel_basis, b)
+            novel_tgt_proj = project_to_subspace(target_arr, subspace_result.novel_basis, b)
+            b.eval(novel_src_proj, novel_tgt_proj)
+
+            # CKA on novel subspace projections
+            # Low CKA here validates that these directions ARE truly novel
+            if int(b.shape(novel_src_proj)[1]) >= 2:
+                novel_result = compute_cka(novel_src_proj, novel_tgt_proj, backend)
+                novel_cka = novel_result.cka if novel_result.is_valid else 0.0
+
+        logger.debug(
+            "Split CKA (rank-derived): shared_rank=%d, novel_rank=%d, "
+            "shared_cka=%.4f, novel_cka=%.4f, overlap=%.2f%%",
+            shared_rank,
+            novel_rank,
+            shared_cka,
+            novel_cka,
+            shared_fraction * 100,
+        )
+
+        return SplitCKAResult(
+            shared_cka=shared_cka,
+            novel_cka=novel_cka,
+            full_cka=full_cka,
+            shared_fraction=shared_fraction,
+            novel_fraction=novel_fraction,
+            n_shared=shared_rank,
+            n_novel=novel_rank,
+            n_total=source_rank,
+            source_response_mean=source_resp_mean,
+            target_response_mean=target_resp_mean,
+        )
+
+    except Exception as e:
+        # Fallback: if subspace analysis fails, return degenerate result
+        logger.warning("Subspace analysis failed, returning degenerate split: %s", e)
+        return SplitCKAResult(
+            shared_cka=full_cka,  # Use full CKA as shared
+            novel_cka=0.0,
+            full_cka=full_cka,
+            shared_fraction=1.0,
+            novel_fraction=0.0,
+            n_shared=n,
+            n_novel=0,
+            n_total=n,
+            source_response_mean=source_resp_mean,
+            target_response_mean=target_resp_mean,
+        )
 
 
 # =============================================================================
