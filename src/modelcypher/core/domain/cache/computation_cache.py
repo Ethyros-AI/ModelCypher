@@ -894,6 +894,33 @@ class ComputationCache:
                 # Logging handlers can be closed during test teardown.
                 pass
 
+    def clear_geometry_caches(self) -> None:
+        """Clear geometry-heavy caches (O(n^2) buffers)."""
+        with self._gram_lock:
+            self._gram_cache.clear()
+
+        with self._centered_gram_lock:
+            self._centered_gram_cache.clear()
+
+        with self._geodesic_lock:
+            self._geodesic_cache.clear()
+
+        with self._chord_lock:
+            self._chord_cache.clear()
+
+        with self._basis_lock:
+            self._basis_cache.clear()
+
+        with self._kmin_lock:
+            self._kmin_cache.clear()
+
+        if logger.isEnabledFor(logging.INFO):
+            try:
+                logger.info("Cleared geometry computation caches")
+            except ValueError:
+                # Logging handlers can be closed during test teardown.
+                pass
+
     def get_cache_sizes(self) -> dict[str, int]:
         """Get the size of each cache."""
         return {

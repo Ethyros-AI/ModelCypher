@@ -400,18 +400,33 @@ def geodesic_cosine_batch(
 
     n, d = shape_vectors
 
-    # Stack: anchor, all vectors (origin attached as query only).
-    anchor_2d = backend.reshape(anchor_arr, (1, d))
-    points = backend.concatenate([anchor_2d, vectors_arr], axis=0)
-    backend.eval(points)
+    rg = _get_riemannian_geometry(backend)
+    k_neighbors = derive_k_neighbors(vectors_arr, backend) if n > 1 else None
 
-    geo_result, d0 = _geodesic_origin_distances(points, backend, use_cache=use_cache)
-    D = geo_result.distances  # [n+1, n+1]
+    # Distances from origin to each vector (single-source path).
+    origin = backend.zeros((d,), dtype=getattr(vectors_arr, "dtype", None))
+    d0_vectors = rg._geodesic_distances_from_query(
+        vectors_arr,
+        origin,
+        geo_result=None,
+        k_neighbors=k_neighbors,
+        use_single_source=True,
+        use_cache=use_cache,
+    )
 
-    # Index 0 = anchor, 1..n = vectors
-    d0_anchor = d0[0]  # distance from origin to anchor
-    d0_vectors = d0[1:]  # [n] distances from origin to each vector
-    d_anchor_vectors = D[0, 1:]  # [n] distances from anchor to each vector
+    # Distances from anchor to each vector (single-source path).
+    d_anchor_vectors = rg._geodesic_distances_from_query(
+        vectors_arr,
+        anchor_arr,
+        geo_result=None,
+        k_neighbors=k_neighbors,
+        use_single_source=True,
+        use_cache=use_cache,
+    )
+
+    # Distance from origin to anchor via the shared manifold:
+    # shortest path between two query nodes attached to the same graph.
+    d0_anchor = backend.min(d0_vectors + d_anchor_vectors)
 
     # Stable geodesic cosine via half-angle formula (see geodesic_cosine_matrix)
     # a = d0_anchor, b = d0_vectors, c = d_anchor_vectors

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 
 from .helpers import (
     copy_config_files,
@@ -298,6 +299,7 @@ def run_merge(
     del source_model
     del target_model
     default_backend = get_default_backend()
+    ComputationCache.shared().clear_geometry_caches()
     default_backend.clear_cache()
     logger.info("Cleared GPU cache after probe stage")
 
@@ -399,6 +401,7 @@ def run_merge(
 
     # Force garbage collection and clear MLX cache
     gc.collect()
+    ComputationCache.shared().clear_geometry_caches()
     default_backend.clear_cache()
     logger.info(
         "Cleared attention activations - kept hidden (%d layers) + intermediate (%d src, %d tgt) for transplant",
