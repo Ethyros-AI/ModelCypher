@@ -649,6 +649,14 @@ class RiemannianGeodesicMixin:
         dist_sq = norm_diff_sq + term2
         backend.eval(dist_sq)
 
+        # Clamp near-zero distances (identical points) based on dtype scale.
+        zero_threshold = norm_product * (2.0 * eps)
+        dist_sq = backend.where(
+            dist_sq <= zero_threshold,
+            backend.zeros_like(dist_sq),
+            dist_sq,
+        )
+
         # Safety clamp (should not be needed with stable formula, but belt-and-suspenders)
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         result = backend.sqrt(dist_sq)

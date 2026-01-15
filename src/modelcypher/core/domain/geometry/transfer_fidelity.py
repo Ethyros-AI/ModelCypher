@@ -22,13 +22,13 @@ from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_pearson_correlation,
     exp_scalar,
     is_finite,
     log_scalar,
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_pairwise_metrics
 
 
 @dataclass(frozen=True)
@@ -81,15 +81,13 @@ class TransferFidelityPrediction:
         if sample_size == 0:
             return None
 
-        mean_a = _b.mean(vec_a_arr)
-        mean_b = _b.mean(vec_b_arr)
-        centered_a = vec_a_arr - mean_a
-        centered_b = vec_b_arr - mean_b
-        centered_a_mat = _b.reshape(centered_a, (1, -1))
-        centered_b_mat = _b.reshape(centered_b, (1, -1))
-        cos_arr, _ = geodesic_pairwise_metrics(centered_a_mat, centered_b_mat, _b)
-        _b.eval(cos_arr)
-        correlation = float(_b.to_scalar(cos_arr[0])) if cos_arr.size else 0.0
+        vec_a_list = _b.tolist(vec_a_arr)
+        vec_b_list = _b.tolist(vec_b_arr)
+        correlation = compute_pearson_correlation(
+            vec_a_list,
+            vec_b_list,
+            backend=_b,
+        )
         if not is_finite(correlation, _b):
             return None
 

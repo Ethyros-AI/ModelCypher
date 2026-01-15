@@ -32,6 +32,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     all_finite,
     division_epsilon,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     compute_weight_space_transplant,
@@ -498,9 +499,9 @@ class TestTransplantMathematicalProperties:
 
         delta_proj = result.merged_weight - target_weight
         residual = backend.matmul(input_activations, backend.transpose(delta_proj))
-        res_norm = backend.norm(residual)
-        act_norm = backend.norm(input_activations)
-        delta_norm = backend.norm(delta_proj)
+        res_norm = backend.mean(geodesic_norms(residual, backend))
+        act_norm = backend.mean(geodesic_norms(input_activations, backend))
+        delta_norm = backend.mean(geodesic_norms(delta_proj, backend))
         backend.eval(res_norm, act_norm, delta_norm)
 
         eps = division_epsilon(backend, input_activations)

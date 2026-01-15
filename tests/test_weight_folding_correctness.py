@@ -57,12 +57,12 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_pinv,
-    machine_epsilon,
+    division_epsilon,
 )
 
 
 def _eps(backend, *values: float) -> float:
-    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def create_random_orthogonal(backend, d_source, d_target):

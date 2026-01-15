@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.knowledge_density import (
     compute_knn_point_cloud_density,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     find_magnitude_gap_threshold,
     sqrt_scalar,
     ulp_scalar,
@@ -302,13 +303,28 @@ def compute_anchor_grafting_with_ghost_anchors(
     S_t_original = compute_relative_representation(target_activations, target_anchors)
     b.eval(S_s, S_t_original)
 
-    # Procrustes alignment (ONCE - reused)
-    R, alignment_error = align_relative_representations(S_s, S_t_original)
-    b.eval(R)
+    diff_rel = S_s - S_t_original
+    diff_norms = geodesic_norms(diff_rel, b)
+    max_diff = b.max(diff_norms)
+    rel_norms = geodesic_norms(S_t_original, b)
+    mean_rel_norm = b.mean(rel_norms)
+    b.eval(max_diff, mean_rel_norm)
+    eps = division_epsilon(b, S_s)
+    norm_scale = max(1.0, float(b.to_scalar(mean_rel_norm)))
 
-    # Aligned source in anchor space
-    S_s_aligned = b.matmul(S_s, b.transpose(R))
-    b.eval(S_s_aligned)
+    if float(b.to_scalar(max_diff)) <= eps * norm_scale:
+        R = b.eye(n_anchors)
+        alignment_error = 0.0
+        S_s_aligned = S_s
+        b.eval(R, S_s_aligned)
+    else:
+        # Procrustes alignment (ONCE - reused)
+        R, alignment_error = align_relative_representations(S_s, S_t_original)
+        b.eval(R)
+
+        # Aligned source in anchor space
+        S_s_aligned = b.matmul(S_s, b.transpose(R))
+        b.eval(S_s_aligned)
 
     # Step 2: Compute per-sample alignment residuals (vectorized)
     residual_vectors = S_s_aligned - S_t_original
@@ -414,6 +430,14 @@ def compute_anchor_grafting_with_ghost_anchors(
     # delta_S = S_s @ R - S_t (with corrected S_t)
     delta_S = S_s_aligned - S_t
     b.eval(delta_S)
+
+    delta_norms = geodesic_norms(delta_S, b)
+    max_delta = b.max(delta_norms)
+    b.eval(max_delta)
+    eps = division_epsilon(b, delta_S)
+    if float(b.to_scalar(max_delta)) <= eps:
+        delta_S = b.zeros_like(delta_S)
+        b.eval(delta_S)
 
     # Density computation in anchor space
     density_result = compute_knn_point_cloud_density(

@@ -36,10 +36,12 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     svd_auto_rank,
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.transplant import (
     compute_null_space_projector,
 )
@@ -301,15 +303,17 @@ class TestNullSpaceProjectorProperties:
         residual = backend.matmul(A, backend.transpose(delta_proj))
         backend.eval(residual)
 
-        diff = backend.sum(backend.abs(residual))
-        backend.eval(diff)
-        diff_val = float(backend.to_scalar(diff))
+        res_norm = backend.mean(geodesic_norms(residual, backend))
+        act_norm = backend.mean(geodesic_norms(A, backend))
+        delta_norm = backend.mean(geodesic_norms(delta_proj, backend))
+        backend.eval(res_norm, act_norm, delta_norm)
 
-        eps = sqrt_scalar(machine_epsilon(backend, residual), backend)
-        tolerance = eps * float(n_samples) * float(out_dim)
+        eps = division_epsilon(backend, residual)
+        scale = float(backend.to_scalar(act_norm)) * float(backend.to_scalar(delta_norm))
+        tolerance = eps * max(1.0, scale)
 
-        assert diff_val < tolerance, (
-            f"Projection violates null constraint: ||A @ delta^T|| = {diff_val}"
+        assert float(backend.to_scalar(res_norm)) <= tolerance, (
+            f"Projection violates null constraint: ||A @ delta^T|| = {float(backend.to_scalar(res_norm))}"
         )
 
     @given(

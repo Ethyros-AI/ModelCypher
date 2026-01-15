@@ -641,6 +641,22 @@ def geodesic_pairwise_metrics(
         raise ValueError("Inputs must share shape for paired metrics")
 
     n, d = shape_a
+    if n < 3:
+        # Too few points to infer a manifold; fall back to chord metrics.
+        diff = a_arr - b_arr
+        distances = backend.sqrt(backend.sum(diff * diff, axis=1))
+        dot = backend.sum(a_arr * b_arr, axis=1)
+        norm_a = backend.sqrt(backend.sum(a_arr * a_arr, axis=1))
+        norm_b = backend.sqrt(backend.sum(b_arr * b_arr, axis=1))
+        eps = division_epsilon(backend, a_arr)
+        denom = norm_a * norm_b
+        denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+        cos_vals = dot / denom_safe
+        cos_vals = backend.clip(cos_vals, -1.0, 1.0)
+        valid = denom > eps
+        cos_vals = backend.where(valid, cos_vals, backend.zeros_like(cos_vals))
+        backend.eval(cos_vals, distances)
+        return cos_vals, distances
 
     # Interleave a and b for efficient geodesic computation
     interleaved = backend.reshape(

@@ -235,7 +235,7 @@ class ManifoldClusterer:
         rg = RiemannianGeometry(backend)
 
         # Use connectivity-derived k to avoid arbitrary neighborhood choices.
-        result = rg.geodesic_distances(features, k_neighbors=None)
+        result = rg.geodesic_distances(features, k_neighbors=None, refine_iterations=0)
         return result.distances
 
     def _resolve_epsilon(self, geodesic_matrix) -> float:
@@ -262,7 +262,15 @@ class ManifoldClusterer:
             prefix = backend.take(part, backend.arange(mid + 1), axis=0)
             median = backend.max(backend.take(nearest, prefix, axis=0))
             backend.eval(median)
-            return float(backend.to_scalar(backend.squeeze(median)))
+            median_val = float(backend.to_scalar(backend.squeeze(median)))
+            eps_floor = division_epsilon(backend, geodesic_matrix)
+            if median_val <= eps_floor:
+                max_dist_arr = backend.max(geodesic_matrix)
+                backend.eval(max_dist_arr)
+                max_dist = float(backend.to_scalar(max_dist_arr))
+                scale = max(1.0, max_dist)
+                eps_floor = eps_floor * scale
+            return max(median_val, eps_floor)
         low_part = backend.argpartition(nearest, mid - 1)
         low_prefix = backend.take(low_part, backend.arange(mid), axis=0)
         lower = backend.max(backend.take(nearest, low_prefix, axis=0))
@@ -272,7 +280,15 @@ class ManifoldClusterer:
         backend.eval(lower, upper)
         median = (backend.squeeze(lower) + backend.squeeze(upper)) / 2.0
         backend.eval(median)
-        return float(backend.to_scalar(median))
+        median_val = float(backend.to_scalar(median))
+        eps_floor = division_epsilon(backend, geodesic_matrix)
+        if median_val <= eps_floor:
+            max_dist_arr = backend.max(geodesic_matrix)
+            backend.eval(max_dist_arr)
+            max_dist = float(backend.to_scalar(max_dist_arr))
+            scale = max(1.0, max_dist)
+            eps_floor = eps_floor * scale
+        return max(median_val, eps_floor)
 
     def _geodesic_distance_pair(self, p1: ManifoldPoint, p2: ManifoldPoint) -> float:
         """Compute geodesic distance between two points.

@@ -31,6 +31,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 
 @pytest.fixture
@@ -478,8 +479,8 @@ class TestAlignmentSignalDiagnostics:
         # Scale ratio should reflect the relative normalization.
         scale_ratio = signal.metadata["scale_ratio"]
         div_eps = division_epsilon(backend, source)
-        src_norm = backend.mean(backend.norm(source, axis=1))
-        tgt_norm = backend.mean(backend.norm(target, axis=1))
+        src_norm = backend.mean(geodesic_norms(source, backend))
+        tgt_norm = backend.mean(geodesic_norms(target, backend))
         backend.eval(src_norm, tgt_norm)
         src_norm_val = float(backend.tolist(src_norm))
         tgt_norm_val = float(backend.tolist(tgt_norm))
