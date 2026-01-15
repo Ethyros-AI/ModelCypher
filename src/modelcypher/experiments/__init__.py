@@ -31,6 +31,7 @@ Experiments:
     4. Jailbreak Detection: Detect jailbreaks from activation geometry
     5. Alignment Transfer: Transfer alignment via null-space projection
     6. Geometric Guardrails: Enforce alignment boundaries at inference time
+    7. Cross-Model Alignment: Transfer refusal direction via Procrustes alignment
 
 References:
     - Huh et al. (2024). "The Platonic Representation Hypothesis." arXiv:2405.07987

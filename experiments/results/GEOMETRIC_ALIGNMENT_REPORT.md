@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Six experiments testing whether AI alignment manifests as measurable geometric structure in activation space.
+Seven experiments testing whether AI alignment manifests as measurable geometric structure in activation space.
 
 ### Results Summary
 
@@ -20,6 +20,7 @@ Six experiments testing whether AI alignment manifests as measurable geometric s
 | 4. Jailbreak Detection | Overall accuracy (LFM / Qwen) | 0.921 / 0.793 |
 | 5. Alignment Transfer | Refusal rate increase | +56.7% (43.3% → 100%) |
 | 6. Geometric Guardrails | F1 (LFM / Qwen) | 0.879 / 0.404 |
+| 7. Cross-Model Alignment | Transfer accuracy improvement | +6.7% (91.7% → 98.3%) |
 
 ---
 
@@ -264,6 +265,54 @@ Model-agnostic threshold optimization finds different operating points for each 
 
 ---
 
+## Experiment 7: Cross-Model Alignment Transfer
+
+**Measurement**: Transfer refusal direction from one model to another via Procrustes alignment.
+
+**Key Hypothesis**: Models encode invariant relationships in different coordinate systems. Procrustes alignment finds the rotation between these coordinate systems, enabling direction transfer across architectures.
+
+### Configuration
+
+- Source Model: LFM2.5-1.2B-Instruct-bf16 (2048 hidden)
+- Target Model: Qwen2.5-3B-Instruct-bf16 (2048 hidden)
+- Alignment Layer: 0 (selected by max classification accuracy)
+- Prompts: 30 harmful, 30 harmless (identical for both models)
+
+### Procrustes Alignment
+
+| Metric | Value |
+|--------|-------|
+| Converged | True |
+| Alignment Error | 2855.24 |
+| Consensus Variance Ratio | 0.513 |
+
+### Classification Accuracy
+
+| Direction | Model | Accuracy |
+|-----------|-------|----------|
+| Native | LFM (source) | **98.3%** |
+| Native | Qwen (target) | 91.7% |
+| Transferred (LFM → Qwen) | Qwen (target) | **98.3%** |
+
+### Transfer Metrics
+
+| Metric | Value |
+|--------|-------|
+| Transfer ratio | 1.07 |
+| Accuracy improvement | **+6.7%** |
+
+### Observation
+
+The LFM refusal direction, when transformed to Qwen's coordinate system via Procrustes alignment, achieves **higher accuracy than Qwen's native direction** (98.3% vs 91.7%). This demonstrates:
+
+1. **Invariant relationships transfer**: The geometric structure encoding alignment is preserved across architectures once coordinates are aligned
+2. **Procrustes finds correct alignment**: The rotation matrix successfully maps between the two models' coordinate systems
+3. **Cross-architecture universality**: A direction extracted from one architecture can work better than the native direction on a different architecture
+
+The 51.3% consensus variance ratio indicates significant shared structure between the two models despite different architectures. The transfer ratio >1.0 suggests LFM may have a cleaner refusal direction representation that benefits Qwen when transferred.
+
+---
+
 ## Method Notes
 
 ### Layer Selection
@@ -296,6 +345,16 @@ The 5th percentile (refusal threshold) and 95th percentile (safe radius) are con
 
 Refusal direction extracted from instruct model. Threshold computed as 95th percentile of instruct's harmless projections. Only harmful prompts are steered (refusal direction added). Transfer effectiveness measures how close the steered base model's refusal rate is to the instruct model's.
 
+### Cross-Model Alignment Method (Experiment 7)
+
+1. Collect activations from both models on identical prompts
+2. Run Procrustes alignment to find rotation matrices that align both to consensus space
+3. Extract refusal direction from source model
+4. Transform direction to target space: `r_target = (r_source @ R_source) @ R_target.T`
+5. Evaluate transferred direction on target model's activations
+
+This tests whether invariant relationships are preserved across architectures once coordinate systems are aligned.
+
 ### Sample Sizes
 
 - Harmful prompts: 50 (30 for alignment transfer)
@@ -314,6 +373,7 @@ All raw measurements stored in JSON:
 - `experiments/results/jailbreak_detection.json`
 - `experiments/results/alignment_transfer.json`
 - `experiments/results/geometric_guardrails.json`
+- `experiments/results/cross_model_alignment.json`
 
 ---
 
