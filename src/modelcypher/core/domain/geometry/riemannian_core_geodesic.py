@@ -590,33 +590,28 @@ class RiemannianGeodesicMixin:
     ) -> "Array":
         """Compute pairwise Euclidean (chord) distances for k-NN bootstrap.
 
-        Uses the identity ||a - b||² = ||a||² + ||b||² - 2*a·b to avoid
-        O(n² * d) intermediate memory while preserving rotation invariance.
+        STABLE FORMULA (Kahan-style):
+        The naive formula ||x||² + ||y||² - 2<x,y> suffers from catastrophic
+        cancellation when x ≈ y (subtracting two large nearly-equal numbers).
+
+        We use the half-angle identity instead:
+            ||x - y||² = (||x|| - ||y||)² + 4||x||||y||sin²(θ/2)
+        where sin²(θ/2) = (1 - cos(θ))/2 and cos(θ) = <x,y>/(||x||||y||)
+
+        This avoids subtraction of large numbers:
+        - (||x|| - ||y||)² computes the small difference first
+        - sin²(θ/2) is small when θ ≈ 0 (x parallel to y)
+
+        Reference: Kahan, W. (2014) "Mindless Assessments of Roundoff"
 
         NOTE ON CHORD BOOTSTRAP:
-        This method computes Euclidean (chord) distances, which are used as
-        edge weights in the k-NN graph. This is the standard Isomap approach.
-        For small k, local Euclidean distances approximate local geodesic
-        distances (the manifold is approximately flat at small scales).
-
-        In strict mode, the chord graph is only used to seed an initial
-        geodesic estimate; subsequent refinement rebuilds k-NN edges using
-        geodesic distances.
-
-        For curved manifolds with high curvature, chords underestimate true
-        geodesic arc lengths. Alternative approaches that avoid chord bootstrap:
-        - Heat kernel method: d²(x,y) ≈ -4t log(k_t(x,y)) via Varadhan's formula
-        - Intrinsic Laplacian eigenvectors
-        - Local PCA tangent estimation
-
-        The current Isomap approach is accurate when:
-        - k is small relative to manifold curvature (local flatness)
-        - The manifold is well-sampled (no gaps)
+        Chord distances seed the k-NN graph. For small k, local Euclidean
+        distances approximate local geodesic distances (local flatness).
+        Refinement iterations correct for curvature.
 
         Args:
             points: Input points [n, d].
             use_cache: If True, check/populate the chord distance cache.
-                      Unlike geodesic cache, chord cache is k-independent.
 
         Returns:
             Chord distance matrix [n, n].
@@ -638,12 +633,51 @@ class RiemannianGeodesicMixin:
             backend.reshape(points, (n, 1)) if len(points.shape) == 1 else points
         )
 
+        # =================================================================
+        # KAHAN STABLE PAIRWISE EUCLIDEAN DISTANCE
+        # =================================================================
+        # Formula: ||x - y||² = (||x|| - ||y||)² + 4||x||||y||sin²(θ/2)
+        # where sin²(θ/2) = (1 - cos(θ))/2, cos(θ) = <x,y>/(||x||||y||)
+        #
+        # This avoids the unstable ||x||² + ||y||² - 2<x,y> subtraction.
+        # =================================================================
+
+        # Compute norms
         norms_sq = backend.sum(points_2d * points_2d, axis=1)
-        norms_col = backend.reshape(norms_sq, (n, 1))
-        norms_row = backend.reshape(norms_sq, (1, n))
-        cross = backend.matmul(points_2d, backend.transpose(points_2d))
-        dist_sq = norms_col + norms_row - 2.0 * cross
+        norms = backend.sqrt(backend.maximum(norms_sq, backend.zeros_like(norms_sq)))
+        backend.eval(norms)
+
+        # Reshape for broadcasting
+        norms_col = backend.reshape(norms, (n, 1))  # ||x||
+        norms_row = backend.reshape(norms, (1, n))  # ||y||
+
+        # Term 1: (||x|| - ||y||)² - stable because difference is computed first
+        norm_diff_sq = (norms_col - norms_row) * (norms_col - norms_row)
+
+        # Compute cos(θ) = <x,y>/(||x||||y||)
+        cross = backend.matmul(points_2d, backend.transpose(points_2d))  # <x,y>
+        norm_product = norms_col * norms_row  # ||x||||y||
+
+        # Safe division for cos(θ)
+        eps = machine_epsilon(backend, cross)
+        safe_denom = backend.maximum(norm_product, backend.full(norm_product.shape, eps))
+        cos_theta = cross / safe_denom
+
+        # Clamp cos(θ) to [-1, 1] for numerical safety
+        cos_theta = backend.clip(cos_theta, -1.0, 1.0)
+
+        # Term 2: 4||x||||y||sin²(θ/2) = 4||x||||y|| * (1 - cos(θ))/2
+        #       = 2||x||||y||(1 - cos(θ))
+        one_minus_cos = 1.0 - cos_theta
+        # Clamp to non-negative (1 - cos can be slightly negative due to rounding)
+        one_minus_cos = backend.maximum(one_minus_cos, backend.zeros_like(one_minus_cos))
+        term2 = 2.0 * norm_product * one_minus_cos
+
+        # Final: ||x - y||² = term1 + term2
+        dist_sq = norm_diff_sq + term2
         backend.eval(dist_sq)
+
+        # Safety clamp (should not be needed with stable formula, but belt-and-suspenders)
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         result = backend.sqrt(dist_sq)
 

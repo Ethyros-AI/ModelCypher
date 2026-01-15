@@ -1657,13 +1657,40 @@ def geodesic_invariant_alignment(
     U_t, S_t, Vt_t = b.svd(G_target)
     b.eval(U_t, S_t, Vt_t)
 
-    # Threshold singular values
-    eps = machine_epsilon(b, G_target)
-    max_s = b.max(S_t)
-    b.eval(max_s)
-    threshold = eps * float(b.to_scalar(max_s)) * float(n_samples)
-    S_t_safe = b.where(S_t > threshold, S_t, b.ones_like(S_t))
-    S_t_inv = b.where(S_t > threshold, 1.0 / S_t_safe, b.zeros_like(S_t))
+    # =========================================================================
+    # PRINCIPLED RANK DETERMINATION VIA GEODESIC INTRINSIC DIMENSION
+    # =========================================================================
+    # OLD HEURISTIC: threshold = eps * max_s * n_samples (arbitrary)
+    #
+    # NEW PRINCIPLED: Use intrinsic dimension of target manifold.
+    # The effective rank of G_target (similarity matrix) equals the intrinsic
+    # dimension of the underlying manifold - no magic numbers needed.
+    #
+    # Reference: Facco et al. (2017) TwoNN with geodesic distances
+    # =========================================================================
+    from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+    id_estimator = IntrinsicDimension(b)
+    id_result = id_estimator.compute(target)
+    intrinsic_dim = id_result.intrinsic_dimension
+
+    # Effective rank = intrinsic dimension (clamped to valid range)
+    effective_rank = max(1, min(int(round(intrinsic_dim)), n_samples))
+
+    logger.info(
+        "Geodesic alignment: intrinsic_dim=%.2f, effective_rank=%d/%d",
+        intrinsic_dim, effective_rank, n_samples
+    )
+
+    # Keep top effective_rank singular values, zero out the rest
+    # Create mask: True for indices < effective_rank
+    indices = b.arange(len(S_t))
+    rank_mask = indices < effective_rank
+    rank_mask_float = b.astype(rank_mask, S_t.dtype)
+
+    # Safe inversion: replace zeros with ones before division, then mask out
+    S_t_safe = b.where(S_t > machine_epsilon(b, S_t), S_t, b.ones_like(S_t))
+    S_t_inv = rank_mask_float / S_t_safe
     b.eval(S_t_inv)
 
     # pinv(G_target) = V @ diag(S_inv) @ U.T
