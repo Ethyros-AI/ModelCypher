@@ -1193,3 +1193,321 @@ def _sample_atlas_probes(
     target_activations = backend.concatenate(target_embeds_list, axis=0)
 
     return source_activations, target_activations
+
+
+@app.command()
+def validate(
+    ctx: typer.Context,
+    model: str = typer.Argument(..., help="Path to merged model to validate"),
+    baseline: str | None = typer.Option(
+        None, "--baseline", "-b", help="Path to baseline measurements JSON for comparison"
+    ),
+    output_file: str | None = typer.Option(
+        None, "--output", "-o", help="Save validation report to JSON file"
+    ),
+    skip_density: bool = typer.Option(
+        False, "--skip-density", help="Skip intrinsic dimension and null space measurements"
+    ),
+    num_prompts: int = typer.Option(
+        10, "--num-prompts", "-n", help="Number of test prompts for coherence validation"
+    ),
+    max_tokens: int = typer.Option(
+        100, "--max-tokens", "-m", help="Max tokens per generation for coherence test"
+    ),
+) -> None:
+    """Validate a merged model for coherent generation and density.
+
+    This command runs post-merge validation to ensure the model:
+    1. Generates coherent, non-repetitive output
+    2. Has increased density (intrinsic dimension)
+    3. Has reduced null space (more utilized capacity)
+
+    Success criterion: Model generates coherently. If coherence fails,
+    the merge damaged the model's generation capability.
+
+    Examples:
+        mc merge validate /path/to/merged
+        mc merge validate /path/to/merged --baseline baselines.json
+        mc merge validate /path/to/merged -o results/validation.json
+    """
+    from datetime import datetime
+
+    from modelcypher.cli.composition import get_inference_engine, get_model_loader, get_registry
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+    from modelcypher.core.domain.geometry.trajectory_coherence import validate_merge_coherence
+
+    context = _context(ctx)
+    backend = get_default_backend()
+
+    # Validate model path
+    if not validate_model_path(model, context=context):
+        raise typer.Exit(code=1)
+
+    typer.echo("=" * 70)
+    typer.echo("POST-MERGE VALIDATION")
+    typer.echo("=" * 70)
+    typer.echo(f"Model: {model}")
+    typer.echo("")
+
+    validation_results: dict[str, any] = {
+        "_schema": "mc.merge.validation.v1",
+        "timestamp": datetime.utcnow().isoformat(),
+        "model_path": model,
+    }
+
+    # === PHASE 1: COHERENCE VALIDATION (Required) ===
+    typer.echo("PHASE 1: COHERENCE VALIDATION")
+    typer.echo("-" * 40)
+
+    # Extended test prompts for thorough validation
+    test_prompts = [
+        "The most important thing about machine learning is",
+        "In mathematics, a function is defined as",
+        "The capital of France is Paris, and the capital of Germany is",
+        "When you want to write good code, you should",
+        "A neural network consists of layers that",
+        "The difference between supervised and unsupervised learning is",
+        "In physics, energy is conserved, which means",
+        "A good explanation should be clear and",
+        "The relationship between input and output in a system",
+        "When debugging code, the first step is usually to",
+    ][:num_prompts]
+
+    try:
+        inference_engine = get_inference_engine()
+        typer.echo(f"  Running {len(test_prompts)} coherence tests...")
+
+        coherence_result = validate_merge_coherence(
+            model_path=model,
+            inference_engine=inference_engine,
+            test_prompts=test_prompts,
+            max_tokens=max_tokens,
+        )
+
+        validation_results["coherence"] = {
+            "is_coherent": coherence_result.is_coherent,
+            "passed_count": coherence_result.total_count - coherence_result.failed_count,
+            "failed_count": coherence_result.failed_count,
+            "total_count": coherence_result.total_count,
+            "mean_repetition_score": round(coherence_result.mean_repetition_score, 4),
+            "failed_prompts": coherence_result.failed_prompts,
+        }
+
+        if coherence_result.is_coherent:
+            typer.echo(f"  [PASS] Coherence: {coherence_result.total_count - coherence_result.failed_count}/{coherence_result.total_count} prompts passed")
+            typer.echo(f"  Mean repetition score: {coherence_result.mean_repetition_score:.4f}")
+        else:
+            typer.echo(f"  [FAIL] Coherence: {coherence_result.failed_count}/{coherence_result.total_count} prompts failed")
+            typer.echo(f"  Mean repetition score: {coherence_result.mean_repetition_score:.4f}")
+            typer.echo("")
+            typer.echo("  FAILED PROMPTS:")
+            for i, (prompt, metrics) in enumerate(zip(coherence_result.failed_prompts,
+                                                       [m for m in coherence_result.metrics if m.is_degenerate])):
+                typer.echo(f"    {i+1}. '{prompt[:40]}...'")
+                typer.echo(f"       Reason: {metrics.degenerate_reason}")
+
+    except Exception as e:
+        typer.echo(f"  [ERROR] Coherence validation failed: {e}")
+        validation_results["coherence"] = {
+            "is_coherent": False,
+            "error": str(e),
+        }
+
+    typer.echo("")
+
+    # === PHASE 2: DENSITY METRICS (Optional) ===
+    if not skip_density:
+        typer.echo("PHASE 2: DENSITY METRICS")
+        typer.echo("-" * 40)
+
+        try:
+            registry = get_registry()
+            model_loader = get_model_loader()
+
+            # Load model for activation extraction
+            typer.echo("  Loading model for density measurement...")
+            loaded_model, tokenizer = model_loader.load_model_for_training(model)
+
+            # Collect activations using probes
+            typer.echo("  Collecting activations from probe prompts...")
+            from modelcypher.core.domain.agents.probe_loader import ProbeLoader
+
+            probe_loader = ProbeLoader()
+            all_probes = probe_loader.load_probes()
+
+            # Use subset of probes for density measurement (faster)
+            density_probes = all_probes[:min(100, len(all_probes))]
+
+            # Collect hidden state activations
+            activation_provider = registry.activation_provider
+            probe_texts = [p.text for p in density_probes]
+
+            try:
+                activations_list = activation_provider.collect_hidden_activations_batch(
+                    loaded_model, tokenizer, probe_texts
+                )
+            except NotImplementedError:
+                # Fall back to sequential
+                activations_list = []
+                for text in probe_texts:
+                    try:
+                        act_dict = activation_provider.collect_hidden_activations(
+                            loaded_model, tokenizer, text
+                        )
+                        activations_list.append(act_dict)
+                    except Exception:
+                        continue
+
+            if activations_list:
+                # Compute per-layer intrinsic dimension
+                typer.echo("  Computing intrinsic dimension per layer...")
+                id_estimator = IntrinsicDimension(backend)
+
+                layer_ids = {}
+                # Get layer indices from first activation dict
+                if activations_list:
+                    layer_indices = sorted(activations_list[0].keys())
+
+                    for layer_idx in layer_indices:
+                        # Collect activations for this layer across all probes
+                        layer_acts = []
+                        for act_dict in activations_list:
+                            if layer_idx in act_dict:
+                                layer_acts.append(act_dict[layer_idx])
+
+                        if len(layer_acts) >= 10:
+                            points = backend.stack(layer_acts, axis=0)
+                            backend.eval(points)
+
+                            try:
+                                estimate = id_estimator.compute(points)
+                                layer_ids[layer_idx] = estimate.intrinsic_dimension
+                            except Exception:
+                                continue
+
+                if layer_ids:
+                    mean_id = sum(layer_ids.values()) / len(layer_ids)
+                    max_id = max(layer_ids.values())
+                    min_id = min(layer_ids.values())
+
+                    # Estimate null space ratio from variance
+                    # Null space = directions with near-zero variance
+                    # Simplified: (hidden_dim - mean_ID) / hidden_dim
+                    hidden_dim = next(iter(activations_list[0].values())).shape[-1] if activations_list else 0
+                    null_space_ratio = (hidden_dim - mean_id) / hidden_dim if hidden_dim > 0 else 0.0
+
+                    validation_results["density"] = {
+                        "mean_intrinsic_dimension": round(mean_id, 4),
+                        "max_intrinsic_dimension": round(max_id, 4),
+                        "min_intrinsic_dimension": round(min_id, 4),
+                        "hidden_dimension": hidden_dim,
+                        "estimated_null_space_ratio": round(null_space_ratio, 6),
+                        "layers_measured": len(layer_ids),
+                        "probes_used": len(activations_list),
+                        "layer_dimensions": {str(k): round(v, 4) for k, v in layer_ids.items()},
+                    }
+
+                    typer.echo(f"  Mean intrinsic dimension: {mean_id:.2f}")
+                    typer.echo(f"  Range: [{min_id:.2f}, {max_id:.2f}]")
+                    typer.echo(f"  Hidden dimension: {hidden_dim}")
+                    typer.echo(f"  Estimated null space ratio: {null_space_ratio:.2%}")
+                else:
+                    typer.echo("  [WARN] Could not compute intrinsic dimension")
+                    validation_results["density"] = {"error": "Failed to compute ID"}
+            else:
+                typer.echo("  [WARN] No activations collected")
+                validation_results["density"] = {"error": "No activations collected"}
+
+            # Clean up
+            del loaded_model
+            if hasattr(backend, "clear_cache"):
+                backend.clear_cache()
+
+        except Exception as e:
+            typer.echo(f"  [ERROR] Density measurement failed: {e}")
+            validation_results["density"] = {"error": str(e)}
+
+        typer.echo("")
+
+    # === PHASE 3: BASELINE COMPARISON (Optional) ===
+    if baseline:
+        typer.echo("PHASE 3: BASELINE COMPARISON")
+        typer.echo("-" * 40)
+
+        try:
+            baseline_path = Path(baseline)
+            if baseline_path.exists():
+                baseline_data = json.loads(baseline_path.read_text())
+
+                comparison = {}
+
+                # Compare intrinsic dimension if available
+                if "density" in validation_results and "mean_intrinsic_dimension" in validation_results["density"]:
+                    merged_id = validation_results["density"]["mean_intrinsic_dimension"]
+
+                    if "comparison" in baseline_data and "mean_intrinsic_dimension" in baseline_data["comparison"]:
+                        baseline_ids = baseline_data["comparison"]["mean_intrinsic_dimension"]
+                        for model_name, baseline_id in baseline_ids.items():
+                            delta = merged_id - baseline_id
+                            comparison[f"id_delta_vs_{model_name}"] = round(delta, 4)
+                            improvement = "IMPROVED" if delta > 0 else "DECREASED"
+                            typer.echo(f"  ID vs {model_name}: {delta:+.2f} ({improvement})")
+
+                    if "comparison" in baseline_data and "mean_null_space_ratio" in baseline_data["comparison"]:
+                        baseline_nulls = baseline_data["comparison"]["mean_null_space_ratio"]
+                        merged_null = validation_results["density"].get("estimated_null_space_ratio", 0)
+                        for model_name, baseline_null in baseline_nulls.items():
+                            delta = merged_null - baseline_null
+                            comparison[f"null_delta_vs_{model_name}"] = round(delta, 6)
+                            improvement = "MORE DENSE" if delta < 0 else "LESS DENSE"
+                            typer.echo(f"  Null space vs {model_name}: {delta:+.4f} ({improvement})")
+
+                validation_results["baseline_comparison"] = comparison
+            else:
+                typer.echo(f"  [WARN] Baseline file not found: {baseline}")
+                validation_results["baseline_comparison"] = {"error": f"File not found: {baseline}"}
+
+        except Exception as e:
+            typer.echo(f"  [ERROR] Baseline comparison failed: {e}")
+            validation_results["baseline_comparison"] = {"error": str(e)}
+
+        typer.echo("")
+
+    # === FINAL SUMMARY ===
+    typer.echo("=" * 70)
+    typer.echo("VALIDATION SUMMARY")
+    typer.echo("=" * 70)
+
+    coherence_status = validation_results.get("coherence", {})
+    is_coherent = coherence_status.get("is_coherent", False)
+
+    if is_coherent:
+        typer.echo("  [PASS] Model generates coherent output")
+        validation_results["overall_status"] = "PASS"
+    else:
+        typer.echo("  [FAIL] Model produces degenerate output")
+        validation_results["overall_status"] = "FAIL"
+
+    if "density" in validation_results and "mean_intrinsic_dimension" in validation_results["density"]:
+        mean_id = validation_results["density"]["mean_intrinsic_dimension"]
+        null_ratio = validation_results["density"].get("estimated_null_space_ratio", 0)
+        typer.echo(f"  Intrinsic dimension: {mean_id:.2f}")
+        typer.echo(f"  Null space utilization: {(1 - null_ratio) * 100:.1f}%")
+
+    typer.echo("=" * 70)
+
+    # Save results if requested
+    if output_file:
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(validation_results, indent=2))
+        typer.echo(f"\nResults saved to {output_file}")
+
+    # JSON output
+    if context.output_format == "json":
+        write_output(validation_results, context.output_format, context.pretty)
+
+    # Exit with appropriate code
+    if not is_coherent:
+        raise typer.Exit(code=1)
