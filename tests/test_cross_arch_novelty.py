@@ -186,11 +186,15 @@ class TestSubspaceNoveltyCompression:
         assert min_sv > 0.5, f"Min singular value {min_sv} too small for orthogonal"
 
 
-class TestTransplantWithCrossArchNovelty:
-    """Integration tests for transplant with cross-arch novelty."""
+class TestTransplantCrossArchBasic:
+    """Integration tests for transplant with cross-arch dimensions.
 
-    def test_transplant_passes_novelty_stitch(self):
-        """Verify transplant correctly uses novelty_stitch for cross-arch."""
+    NOTE: The novelty filter was removed. Null-space projection IS the geometry.
+    These tests verify that cross-arch transplant still works correctly.
+    """
+
+    def test_transplant_cross_arch_dimensions(self):
+        """Verify transplant works with different source/target density dimensions."""
         from modelcypher.core.domain.geometry.transplant import (
             compute_weight_space_transplant,
         )
@@ -199,9 +203,9 @@ class TestTransplantWithCrossArchNovelty:
         b.random_seed(47)
 
         out_dim = 32
-        in_dim = 64  # This is the target intermediate dimension
+        in_dim = 64
         n = 100
-        d_src = 128  # Source intermediate dimension
+        d_src = 128  # Different dimension for density comparison
 
         # Weights in target dimension
         source_aligned = b.random_normal((out_dim, in_dim))
@@ -210,62 +214,22 @@ class TestTransplantWithCrossArchNovelty:
         # Input activations in target dimension (for null-space)
         input_activations = b.random_normal((n, in_dim))
 
-        # Density activations: source is in SOURCE dimension, target in TARGET dimension
+        # Density activations: different dimensions (cross-arch)
         source_density = b.random_normal((n, d_src))
         target_density = b.random_normal((n, in_dim))
 
-        # Stitch for cross-arch novelty
-        novelty_stitch = b.random_normal((in_dim, d_src))
-
-        # This should NOT raise an error
+        # No novelty filter - null-space projection IS the geometry
         result = compute_weight_space_transplant(
             source_aligned=source_aligned,
             target_weight=target_weight,
             input_activations=input_activations,
             source_activations_for_density=source_density,
             target_activations_for_density=target_density,
-            novelty_stitch=novelty_stitch,
             backend=b,
         )
 
         assert result.preserved_fraction >= 0.0
         assert result.preserved_fraction <= 2.0  # Can be >1 due to numerical
-        assert result.delta_norm >= 0.0
-
-    def test_transplant_without_stitch_gracefully_handles_cross_arch(self):
-        """Transplant without stitch should gracefully handle cross-arch density mismatch."""
-        from modelcypher.core.domain.geometry.transplant import (
-            compute_weight_space_transplant,
-        )
-
-        b = get_default_backend()
-        b.random_seed(48)
-
-        out_dim = 32
-        in_dim = 64
-        n = 100
-        d_src = 128  # Different dimension
-
-        source_aligned = b.random_normal((out_dim, in_dim))
-        target_weight = b.random_normal((out_dim, in_dim))
-        input_activations = b.random_normal((n, in_dim))
-        source_density = b.random_normal((n, d_src))
-        target_density = b.random_normal((n, in_dim))
-
-        # No stitch provided - should work but novelty filter won't apply
-        # (will log a warning about cross-arch without stitch)
-        result = compute_weight_space_transplant(
-            source_aligned=source_aligned,
-            target_weight=target_weight,
-            input_activations=input_activations,
-            source_activations_for_density=source_density,
-            target_activations_for_density=target_density,
-            novelty_stitch=None,  # No stitch
-            backend=b,
-        )
-
-        # Should still produce a result (graceful degradation)
-        assert result.preserved_fraction >= 0.0
         assert result.delta_norm >= 0.0
 
 

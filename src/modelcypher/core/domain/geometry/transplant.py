@@ -66,13 +66,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     svd_rank_threshold,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
-    geodesic_cosine_between_sets,
     geodesic_norms,
-)
-from modelcypher.core.domain.geometry.direction_novelty import (
-    DirectionNoveltyResult,
-    compute_per_direction_novelty,
-    compute_subspace_novelty,
+    geodesic_pairwise_metrics,
 )
 
 if TYPE_CHECKING:
@@ -334,9 +329,6 @@ def compute_weight_space_transplant(
     source_activations_for_density: "Array | None" = None,
     target_activations_for_density: "Array | None" = None,
     null_space_projector: "NullSpaceProjector | None" = None,
-    direction_novelty_result: "DirectionNoveltyResult | None" = None,
-    apply_novelty_filter: bool = True,
-    novelty_stitch: "Array | None" = None,
     delta_scale: float = 1.0,
     backend: "Backend | None" = None,
 ) -> WeightSpaceTransplantResult:
@@ -368,14 +360,6 @@ def compute_weight_space_transplant(
             For cross-arch, this can have different dimension than target.
         target_activations_for_density: Target activations for density comparison [n, d_tgt].
             If None, density weighting is disabled (uniform transfer).
-        direction_novelty_result: Optional per-direction novelty analysis.
-            If provided and apply_novelty_filter=True, only transfers knowledge in
-            directions where source has high variance but target has low variance.
-        apply_novelty_filter: Whether to apply direction novelty filtering.
-            Default True. Set False to use only null-space projection.
-        novelty_stitch: Optional alignment matrix [d_tgt, d_src] for cross-arch novelty.
-            Required when source and target density activations have different dimensions.
-            Used by compute_subspace_novelty for geometry-faithful novelty in shared basis.
         backend: Compute backend.
 
     Returns:
@@ -450,13 +434,11 @@ def compute_weight_space_transplant(
     # Compute geodesic cosine similarity between normalized source and target
     # This measures alignment quality BEFORE null-space projection
     # Uses geodesic law of cosines: cos(θ) = (d²(0,a) + d²(0,b) - d²(a,b)) / (2·d(0,a)·d(0,b))
-    geo_cos_matrix = geodesic_cosine_between_sets(
+    # NOTE: Use geodesic_pairwise_metrics for O(n) instead of O(n²) full matrix
+    cos_vals, _ = geodesic_pairwise_metrics(
         source_normalized, target_weight, b, use_cache=False
     )
-    b.eval(geo_cos_matrix)
-    # Mean of diagonal: similarity between corresponding rows
-    diag_cos = b.diag(geo_cos_matrix)
-    cosine_sim = float(b.to_scalar(b.mean(diag_cos)))
+    cosine_sim = float(b.to_scalar(b.mean(cos_vals)))
 
     logger.info(
         "STITCH QUALITY: cosine_sim=%.4f, delta_norm=%.4f, target_norm=%.4f (ratio=%.2f)",
@@ -496,110 +478,6 @@ def compute_weight_space_transplant(
         delta_W_proj = b.matmul(delta_W, N)
         b.eval(delta_W_proj)
 
-    # =========================================================================
-    # DIRECTION NOVELTY FILTERING (OPTIONAL)
-    # =========================================================================
-    # After null-space projection, optionally filter to only keep delta in
-    # directions that are "activated in source, dormant in target".
-    #
-    # This is an additional constraint on top of null-space projection:
-    # - Null-space: don't disturb what target is actively using
-    # - Novelty filter: only transfer what source uniquely has
-    #
-    # Together, these ensure precision knowledge transfer.
-    # =========================================================================
-    novelty_filtered = False
-    if apply_novelty_filter and direction_novelty_result is not None:
-        novel_mask = direction_novelty_result.novel_mask
-        mask_shape = b.shape(novel_mask)
-
-        # Only apply if dimensions match (in_dim)
-        if int(mask_shape[0]) == in_dim:
-            # Convert bool mask to float (0.0 or 1.0)
-            novel_mask_float = b.astype(novel_mask, compute_dtype)
-            b.eval(novel_mask_float)
-
-            # Apply mask column-wise: delta_filtered = delta * mask
-            # Each column of delta_W_proj corresponds to an input direction
-            delta_W_proj = delta_W_proj * novel_mask_float
-            b.eval(delta_W_proj)
-            novelty_filtered = True
-
-            logger.info(
-                "NOVELTY FILTER: applied mask (%d/%d novel directions, threshold=%.4f)",
-                direction_novelty_result.novel_count,
-                int(mask_shape[0]),
-                direction_novelty_result.threshold,
-            )
-        else:
-            logger.warning(
-                "NOVELTY FILTER: dimension mismatch (mask=%d, weight_in=%d), skipping",
-                int(mask_shape[0]),
-                in_dim,
-            )
-    elif apply_novelty_filter and source_activations_for_density is not None and target_activations_for_density is not None:
-        # Compute novelty on the fly if not provided
-        try:
-            src_density_shape = b.shape(source_activations_for_density)
-            tgt_density_shape = b.shape(target_activations_for_density)
-            d_src = int(src_density_shape[1])
-            d_tgt = int(tgt_density_shape[1])
-
-            if d_src != d_tgt:
-                # Cross-architecture: use geometry-faithful subspace novelty
-                if novelty_stitch is None:
-                    logger.warning(
-                        "NOVELTY FILTER: cross-arch (src=%d, tgt=%d) but no stitch provided, skipping",
-                        d_src, d_tgt
-                    )
-                else:
-                    novelty_result = compute_subspace_novelty(
-                        source_activations_for_density,
-                        target_activations_for_density,
-                        stitch=novelty_stitch,
-                        backend=b,
-                    )
-                    novel_mask = novelty_result.novel_mask
-                    mask_shape = b.shape(novel_mask)
-
-                    if int(mask_shape[0]) == in_dim:
-                        novel_mask_float = b.astype(novel_mask, compute_dtype)
-                        b.eval(novel_mask_float)
-                        delta_W_proj = delta_W_proj * novel_mask_float
-                        b.eval(delta_W_proj)
-                        novelty_filtered = True
-
-                        logger.info(
-                            "NOVELTY FILTER (subspace): %d/%d novel directions (cross-arch %d→%d)",
-                            novelty_result.novel_count,
-                            int(mask_shape[0]),
-                            d_src, d_tgt
-                        )
-            else:
-                # Same-architecture: use variance-based novelty
-                novelty_result = compute_per_direction_novelty(
-                    source_activations_for_density,
-                    target_activations_for_density,
-                    backend=b,
-                )
-                novel_mask = novelty_result.novel_mask
-                mask_shape = b.shape(novel_mask)
-
-                if int(mask_shape[0]) == in_dim:
-                    novel_mask_float = b.astype(novel_mask, compute_dtype)
-                    b.eval(novel_mask_float)
-                    delta_W_proj = delta_W_proj * novel_mask_float
-                    b.eval(delta_W_proj)
-                    novelty_filtered = True
-
-                    logger.info(
-                        "NOVELTY FILTER (variance): %d/%d novel directions",
-                        novelty_result.novel_count,
-                        int(mask_shape[0]),
-                    )
-        except Exception as e:
-            logger.warning("NOVELTY FILTER: computation failed: %s", e)
-
     # Compute projected norm (geodesic Frobenius)
     projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)
 
@@ -610,14 +488,9 @@ def compute_weight_space_transplant(
         preserved_fraction = 1.0
 
     # Step 5: Apply to target weight
-    # NOTE: No directional constraint. The null-space projection IS the geometry.
+    # NOTE: The null-space projection IS the geometry. No additional filtering needed.
     # If we've correctly projected delta into null-space, the merged weight will
-    # preserve target behavior by construction. Adding cosine constraints is a
-    # "vibes" heuristic that fights against the geometric solution.
-    #
-    # delta_scale: Controls how much of the projected delta to apply.
-    # When novel_fraction ≈ 0 (models encode same structure), delta_scale
-    # should be low to prevent corruption.
+    # preserve target behavior by construction.
     merged_weight = target_weight + delta_scale * delta_W_proj
     if str(b.dtype(merged_weight)) != str(output_dtype):
         merged_weight = b.astype(merged_weight, output_dtype)

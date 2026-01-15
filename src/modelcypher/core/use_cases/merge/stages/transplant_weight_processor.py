@@ -81,41 +81,6 @@ def _silu(backend: "Backend", values: "Array") -> "Array":
     return silu
 
 
-def _orthonormalize_stitch(
-    stitch: "Array",
-    backend: "Backend",
-) -> "Array":
-    """Orthonormalize a stitch matrix using SVD.
-
-    For cross-architecture merging, the stitch matrix can have scaling artifacts
-    from dimension compression (e.g., 11008 → 8192). This distorts variance
-    comparisons for novelty filtering.
-
-    Solution: Use the nearest orthogonal matrix U @ V^T, which removes scaling
-    while preserving the rotation (subspace alignment).
-
-    Args:
-        stitch: Original stitch matrix [tgt_dim, src_dim]
-        backend: Backend for tensor operations
-
-    Returns:
-        Orthonormalized stitch [tgt_dim, src_dim]
-    """
-    b = backend
-    U, S, Vt = b.svd(stitch, compute_uv=True)
-    b.eval(U, S, Vt)
-
-    # U @ V^T is the nearest orthogonal matrix to the original stitch
-    # (in Frobenius norm sense - Procrustes solution)
-    # U has shape [tgt_dim, min(tgt, src)]
-    # Vt has shape [min(tgt, src), src_dim]
-    # Result: [tgt_dim, src_dim]
-    ortho_stitch = b.matmul(U, Vt)
-    b.eval(ortho_stitch)
-
-    return ortho_stitch
-
-
 @dataclass
 class LayerWeightResult:
     weights_processed: int
@@ -245,9 +210,6 @@ def process_layer_weights(
         weights_processed += 1
         weight_start_time = time.time()
         mlp_role = _mlp_role(key)
-        # Track cross-arch down_proj for novelty filter bypass
-        # (compression artifacts distort variance comparison)
-        skip_novelty_for_cross_arch_down = False
 
         if key.endswith(".scales") or key.endswith(".biases"):
             continue
@@ -711,17 +673,6 @@ def process_layer_weights(
                         tgt_hidden_dim,
                         int(input_stitch.shape[0]),
                     )
-                    # Cross-arch down_proj: skip novelty filter when intermediate dims differ
-                    # The stitching compression (11008 → 8192) artificially reduces source
-                    # variance relative to target, causing the novelty filter to incorrectly
-                    # classify almost all directions as "shared" rather than "novel".
-                    if src_inter_dim != tgt_inter_dim:
-                        skip_novelty_for_cross_arch_down = True
-                        logger.info(
-                            "CROSS-ARCH DOWN: Skipping novelty filter (src_inter=%d, tgt_inter=%d)",
-                            src_inter_dim,
-                            tgt_inter_dim,
-                        )
                 else:
                     logger.warning(
                         "MLP weight %s shape [%d,%d] doesn't match expected dims "
@@ -1122,24 +1073,11 @@ def process_layer_weights(
             metrics["no_activation_preserved"] += 1
             continue
 
-        # Determine novelty_stitch for cross-arch cases
-        # For cross-arch, we pass unaligned source acts + stitch to compute_subspace_novelty
-        novelty_stitch = None
-
+        # Align density activations to target space
         if activation_space == "hidden":
             src_density_acts = _align_density_acts(src_density_acts, hidden_stitch_output)
         elif activation_space == "intermediate":
-            if skip_novelty_for_cross_arch_down:
-                # Cross-arch down_proj: DON'T align source - pass original + stitch
-                # compute_subspace_novelty will do geometry-faithful alignment internally
-                novelty_stitch = intermediate_stitch_output
-                logger.debug(
-                    "CROSS-ARCH DOWN: Using subspace novelty with stitch (src=%s, tgt=%s)",
-                    b.shape(src_density_acts) if src_density_acts is not None else None,
-                    b.shape(tgt_density_acts) if tgt_density_acts is not None else None,
-                )
-            else:
-                src_density_acts = _align_density_acts(src_density_acts, intermediate_stitch_output)
+            src_density_acts = _align_density_acts(src_density_acts, intermediate_stitch_output)
 
         b.eval(input_activations)
         if src_density_acts is not None:
@@ -1206,8 +1144,7 @@ def process_layer_weights(
             if use_cache and cache_key:
                 null_space_cache[cache_key] = null_space_projector
 
-        # Novelty filter is always enabled. For cross-arch merging, we pass the stitch
-        # so compute_subspace_novelty can do geometry-faithful principal angle analysis
+        # Null-space projection IS the geometry. No additional filtering.
         result = compute_weight_space_transplant(
             source_aligned=source_aligned,
             target_weight=target_w,
@@ -1215,8 +1152,6 @@ def process_layer_weights(
             source_activations_for_density=src_density_acts,
             target_activations_for_density=tgt_density_acts,
             null_space_projector=null_space_projector,
-            apply_novelty_filter=True,
-            novelty_stitch=novelty_stitch,
             delta_scale=delta_scale,
             backend=b,
         )
