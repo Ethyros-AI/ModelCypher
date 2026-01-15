@@ -220,6 +220,25 @@ def find_sparse_direction(
 # ALL distance computations use k-NN geodesic (correct in high dimensions).
 
 
+def _geodesic_origin_distances(
+    points: "Array",
+    backend: "Backend",
+    use_cache: bool = True,
+) -> tuple["GeodesicDistanceResult", "Array"]:
+    """Compute geodesic distances among points plus distances from origin.
+
+    The origin is attached as an out-of-sample query so it does NOT alter
+    the k-NN graph among the existing points.
+    """
+    rg = _get_riemannian_geometry(backend)
+    geo_result = rg.geodesic_distances(points, use_cache=use_cache)
+    d = int(backend.shape(points)[1])
+    origin = backend.zeros((d,), dtype=getattr(points, "dtype", None))
+    d0 = rg._geodesic_distances_from_query(points, origin, geo_result=geo_result)
+    backend.eval(d0)
+    return geo_result, d0
+
+
 def geodesic_norms(
     vectors: "Array",
     backend: "Backend",
@@ -246,17 +265,16 @@ def geodesic_norms(
     if n == 0:
         return backend.array([])
 
-    # Add origin to the point set
-    origin = backend.zeros((1, d))
-    points_with_origin = backend.concatenate([origin, vectors_arr], axis=0)
-    backend.eval(points_with_origin)
-
-    # Compute geodesic distances (k-NN graph + shortest paths)
     rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points_with_origin, use_cache=use_cache)
-
-    # Extract distances from origin (row 0) to all other points
-    norms = geo_result.distances[0, 1:]  # Skip distance to self
+    d = int(backend.shape(vectors_arr)[1])
+    origin = backend.zeros((d,), dtype=getattr(vectors_arr, "dtype", None))
+    norms = rg._geodesic_distances_from_query(
+        vectors_arr,
+        origin,
+        geo_result=None,
+        use_single_source=True,
+        use_cache=use_cache,
+    )
     backend.eval(norms)
     return norms
 
@@ -290,20 +308,9 @@ def geodesic_cosine_matrix(
     if n == 0:
         return backend.array([])
 
-    # Add origin and compute all geodesic distances
-    origin = backend.zeros((1, d))
-    points_with_origin = backend.concatenate([origin, vectors_arr], axis=0)
-    backend.eval(points_with_origin)
-
-    rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points_with_origin, use_cache=use_cache)
-    D = geo_result.distances  # [n+1, n+1]
-
-    # Extract distances from origin (row 0)
-    d0 = D[0, 1:]  # [n] distances from origin to each point
-
-    # Extract pairwise distances (excluding origin)
-    D_pairs = D[1:, 1:]  # [n, n] pairwise distances
+    # Compute geodesic distances among points; attach origin as a query only.
+    geo_result, d0 = _geodesic_origin_distances(vectors_arr, backend, use_cache=use_cache)
+    D_pairs = geo_result.distances  # [n, n] pairwise distances
 
     # =========================================================================
     # STABLE GEODESIC COSINE VIA HALF-ANGLE FORMULA
@@ -393,20 +400,18 @@ def geodesic_cosine_batch(
 
     n, d = shape_vectors
 
-    # Stack: origin, anchor, all vectors
-    origin = backend.zeros((1, d))
+    # Stack: anchor, all vectors (origin attached as query only).
     anchor_2d = backend.reshape(anchor_arr, (1, d))
-    points = backend.concatenate([origin, anchor_2d, vectors_arr], axis=0)
+    points = backend.concatenate([anchor_2d, vectors_arr], axis=0)
     backend.eval(points)
 
-    rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points, use_cache=use_cache)
-    D = geo_result.distances  # [n+2, n+2]
+    geo_result, d0 = _geodesic_origin_distances(points, backend, use_cache=use_cache)
+    D = geo_result.distances  # [n+1, n+1]
 
-    # Index 0 = origin, 1 = anchor, 2..n+1 = vectors
-    d0_anchor = D[0, 1]  # distance from origin to anchor
-    d0_vectors = D[0, 2:]  # [n] distances from origin to each vector
-    d_anchor_vectors = D[1, 2:]  # [n] distances from anchor to each vector
+    # Index 0 = anchor, 1..n = vectors
+    d0_anchor = d0[0]  # distance from origin to anchor
+    d0_vectors = d0[1:]  # [n] distances from origin to each vector
+    d_anchor_vectors = D[0, 1:]  # [n] distances from anchor to each vector
 
     # Stable geodesic cosine via half-angle formula (see geodesic_cosine_matrix)
     # a = d0_anchor, b = d0_vectors, c = d_anchor_vectors
@@ -467,19 +472,17 @@ def geodesic_cosine_between_sets(
     m, d = shape_a
     n = shape_b[0]
 
-    # Stack: origin, set_a, set_b
-    origin = backend.zeros((1, d))
-    points = backend.concatenate([origin, a_arr, b_arr], axis=0)
+    # Stack: set_a, set_b (origin attached as query only)
+    points = backend.concatenate([a_arr, b_arr], axis=0)
     backend.eval(points)
 
-    rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points, use_cache=use_cache)
-    D = geo_result.distances  # [1+m+n, 1+m+n]
+    geo_result, d0 = _geodesic_origin_distances(points, backend, use_cache=use_cache)
+    D = geo_result.distances  # [m+n, m+n]
 
-    # Indices: 0=origin, 1..m=set_a, m+1..m+n=set_b
-    d0_a = D[0, 1:m+1]  # [m] distances from origin to set_a
-    d0_b = D[0, m+1:]   # [n] distances from origin to set_b
-    D_ab = D[1:m+1, m+1:]  # [m, n] pairwise distances between sets
+    # Indices: 0..m-1=set_a, m..m+n-1=set_b
+    d0_a = d0[:m]  # [m] distances from origin to set_a
+    d0_b = d0[m:]  # [n] distances from origin to set_b
+    D_ab = D[:m, m:]  # [m, n] pairwise distances between sets
 
     # Stable geodesic cosine via half-angle formula (see geodesic_cosine_matrix)
     # a = d0_a_col, b = d0_b_row, c = D_ab
@@ -544,29 +547,25 @@ def geodesic_pairwise_metrics(
 
     n, d = shape_a
 
-    # Stack: origin, interleaved pairs (a0, b0, a1, b1, ...)
-    origin = backend.zeros((1, d))
     # Interleave a and b for efficient geodesic computation
     interleaved = backend.reshape(
         backend.stack([a_arr, b_arr], axis=1),
         (2 * n, d)
     )
-    points = backend.concatenate([origin, interleaved], axis=0)
-    backend.eval(points)
+    backend.eval(interleaved)
 
-    rg = _get_riemannian_geometry(backend)
-    geo_result = rg.geodesic_distances(points, use_cache=use_cache)
-    D = geo_result.distances  # [1+2n, 1+2n]
+    geo_result, d0_all = _geodesic_origin_distances(
+        interleaved, backend, use_cache=use_cache
+    )
+    D = geo_result.distances  # [2n, 2n]
 
-    # Extract distances
-    # Index 0 = origin
-    # Indices 1, 3, 5, ... = a[0], a[1], a[2], ...
-    # Indices 2, 4, 6, ... = b[0], b[1], b[2], ...
-    a_indices = backend.arange(1, 2*n, 2)  # [1, 3, 5, ...]
-    b_indices = backend.arange(2, 2*n + 1, 2)  # [2, 4, 6, ...]
+    # Indices 0, 2, 4, ... = a[0], a[1], a[2], ...
+    # Indices 1, 3, 5, ... = b[0], b[1], b[2], ...
+    a_indices = backend.arange(0, 2*n, 2)  # [0, 2, 4, ...]
+    b_indices = backend.arange(1, 2*n, 2)  # [1, 3, 5, ...]
 
-    d0_a = backend.take(D[0], a_indices, axis=0)  # [n]
-    d0_b = backend.take(D[0], b_indices, axis=0)  # [n]
+    d0_a = backend.take(d0_all, a_indices, axis=0)  # [n]
+    d0_b = backend.take(d0_all, b_indices, axis=0)  # [n]
 
     # Extract pairwise distances between matched pairs D[a_i, b_i] without CPU loops
     size = int(D.shape[0])

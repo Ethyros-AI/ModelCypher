@@ -48,6 +48,7 @@ from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _infer_required_probe_count,
     _precision_reference,
     _promote_precision,
+    _select_geometry_probes,
     _select_probe_text,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
@@ -239,27 +240,24 @@ def _probe_precise(
             )
         valid_probes.append((probe, probe_text))
 
-    # GEOMETRY PRINCIPLE: Use ALL available probes for maximum manifold coverage.
-    # The math requires n >= d (probes >= hidden_dim) for exact alignment,
-    # but MORE probes means BETTER coverage of the shared representational space.
-    # There is no benefit to limiting probes - use everything we have.
+    # GEOMETRY PRINCIPLE: Use the exact probe count implied by intrinsic rank.
+    # Closed-form alignment requires n >= rank(source), n >= rank(target).
+    # This is the minimal sufficient count; no extra probes are required.
     min_required, source_dim, target_dim = _infer_required_probe_count(
         source_weights, target_weights
     )
 
-    # ALWAYS use all valid probes - the atlas exists for complete manifold coverage
-    selected_probes = list(valid_probes)
+    selected_probes = _select_geometry_probes(valid_probes, min_required)
 
     if len(valid_probes) < min_required:
         raise RuntimeError(
-            "PROBE MODE: Geometry requires minimum %d probes (src_dim=%d, tgt_dim=%d) "
+            "PROBE MODE: Geometry requires minimum %d probes (src_rank=%d, tgt_rank=%d) "
             "but only %d valid probes available. Add probes before merging."
             % (min_required, source_dim, target_dim, len(valid_probes))
         )
 
     logger.info(
-        "PROBE MODE: Using ALL %d probes for complete manifold coverage "
-        "(geometry minimum=%d, src_dim=%d, tgt_dim=%d)",
+        "PROBE MODE: Using %d probes (geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
         len(selected_probes),
         min_required,
         source_dim,

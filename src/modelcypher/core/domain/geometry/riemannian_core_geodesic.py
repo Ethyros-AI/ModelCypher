@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     infinity_threshold,
     machine_epsilon,
     tiny_value,
@@ -417,39 +416,12 @@ class RiemannianGeodesicMixin:
                     f"Points shape: {points.shape}, points NaN: {points_nan}, points Inf: {points_inf}"
                 )
 
-        # Build k-NN adjacency and run shortest paths (Floyd-Warshall or sparse Dijkstra).
-        # Use a sentinel derived from data scale and dtype precision to avoid overflow.
-        max_dist_arr = backend.max(chord_dist)
-        backend.eval(max_dist_arr)
-        max_dist = float(backend.to_scalar(max_dist_arr))
-        eps = machine_epsilon(backend, chord_dist)
-        base = max(max_dist, eps)
-        inf_val = min(base / eps, backend.finfo(chord_dist.dtype).max)
-        eye = backend.eye(n)
-
-        if knn_idx is None:
-            knn_idx, _ = self._knn_indices_from_chord(chord_dist, k_neighbors)
-        k_neighbors = int(knn_idx.shape[1])
-
-        adj = backend.full((n, n), inf_val)
-        adj = adj * (1.0 - eye)
-
-        # For edge weights, preserve true zeros (identical points) but floor
-        # very small non-zero distances to prevent numerical issues.
-        edge_eps = float(division_epsilon(backend, chord_dist))
-        zero_threshold = tiny_value(backend, chord_dist)
-        is_effectively_zero = chord_dist < zero_threshold
-        dist_floor = backend.where(
-            is_effectively_zero,
-            backend.zeros_like(chord_dist),
-            backend.maximum(chord_dist, edge_eps),
+        # Build k-NN adjacency and run shortest paths (Floyd-Warshall).
+        adj, knn_idx, inf_val, k_neighbors = self._build_knn_adjacency(
+            chord_dist,
+            k_neighbors,
+            knn_idx=knn_idx,
         )
-
-        neighbor_dists = backend.take_along_axis(dist_floor, knn_idx, axis=1)
-        adj = backend.put_along_axis(adj, knn_idx, neighbor_dists, axis=1)
-
-        adj = backend.minimum(adj, backend.transpose(adj))
-        backend.eval(adj)
 
         # Floyd-Warshall: GPU-native all-pairs shortest paths
         # Uses backend.floyd_warshall() which is JIT-compiled on all backends (MLX/JAX/CUDA)
@@ -688,12 +660,60 @@ class RiemannianGeodesicMixin:
 
         return result
 
+    def _build_knn_adjacency(
+        self,
+        chord_dist: "Array",
+        k_neighbors: int,
+        knn_idx: "Array | None" = None,
+    ) -> tuple["Array", "Array", float, int]:
+        """Build a symmetric k-NN adjacency matrix with data-derived sentinels."""
+        backend = self._backend
+        n = int(chord_dist.shape[0])
+        k_neighbors = max(1, min(int(k_neighbors), n - 1))
+
+        max_dist_arr = backend.max(chord_dist)
+        backend.eval(max_dist_arr)
+        max_dist = float(backend.to_scalar(max_dist_arr))
+        eps = machine_epsilon(backend, chord_dist)
+        base = max(max_dist, eps)
+        inf_val = min(base / eps, backend.finfo(chord_dist.dtype).max)
+        eye = backend.eye(n)
+
+        if knn_idx is None:
+            knn_idx, _ = self._knn_indices_from_chord(chord_dist, k_neighbors)
+        k_neighbors = int(knn_idx.shape[1])
+
+        adj = backend.full((n, n), inf_val)
+        adj = adj * (1.0 - eye)
+
+        # Preserve true zeros (identical points), but floor tiny non-zero edges
+        # by data scale to avoid distorting small valid chords.
+        edge_eps = float(max_dist * eps)
+        zero_threshold = tiny_value(backend, chord_dist)
+        is_effectively_zero = chord_dist < zero_threshold
+        dist_floor = backend.where(
+            is_effectively_zero,
+            backend.zeros_like(chord_dist),
+            backend.maximum(chord_dist, edge_eps),
+        )
+
+        neighbor_dists = backend.take_along_axis(dist_floor, knn_idx, axis=1)
+        adj = backend.put_along_axis(adj, knn_idx, neighbor_dists, axis=1)
+
+        adj = backend.minimum(adj, backend.transpose(adj))
+        backend.eval(adj)
+
+        return adj, knn_idx, inf_val, k_neighbors
+
     def _geodesic_distances_from_query(
         self,
         points: "Array",
         query: "Array",
         geo_result: GeodesicDistanceResult | None = None,
         k_neighbors: int | None = None,
+        *,
+        use_single_source: bool = False,
+        use_cache: bool = True,
     ) -> "Array":
         """Compute geodesic distances from an out-of-sample query point.
 
@@ -710,55 +730,138 @@ class RiemannianGeodesicMixin:
         if n == 0:
             return backend.zeros((0,))
 
-        if geo_result is None:
-            geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
+        if use_single_source:
+            if geo_result is not None:
+                adj = geo_result.adjacency
+                inf_val = geo_result.inf_value
+                if k_neighbors is None:
+                    k_neighbors = geo_result.k_neighbors
+            else:
+                if k_neighbors is None:
+                    k_neighbors, knn_idx, chord_dist = self._minimum_connected_k(
+                        points, use_cache=use_cache
+                    )
+                else:
+                    k_neighbors = max(1, min(int(k_neighbors), n - 1))
+                    chord_dist = self._chord_distance_matrix(points, use_cache=use_cache)
+                    backend.eval(chord_dist)
+                    knn_idx, _ = self._knn_indices_from_chord(chord_dist, k_neighbors)
+                adj, _, inf_val, k_neighbors = self._build_knn_adjacency(
+                    chord_dist,
+                    k_neighbors,
+                    knn_idx=knn_idx,
+                )
 
-        if k_neighbors is None:
-            k_neighbors = geo_result.k_neighbors
-        k_neighbors = max(1, min(int(k_neighbors), n))
+            k_neighbors = max(1, min(int(k_neighbors or 1), n))
 
-        # Chord distances from query to all points (squared for stable top-k)
-        diff = points - backend.reshape(query, (1, -1))
-        dist_sq = backend.sum(diff * diff, axis=1)
-        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-        backend.eval(dist_sq)
-        chord_dist = backend.sqrt(dist_sq)
+            diff = points - backend.reshape(query, (1, -1))
+            dist_sq = backend.sum(diff * diff, axis=1)
+            dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+            backend.eval(dist_sq)
+            chord_dist_query = backend.sqrt(dist_sq)
+            chord_dist = chord_dist_query
 
-        # Attach query to its k nearest neighbors in the manifold graph.
-        # This preserves the discrete geodesic structure and avoids O(n^2).
-        if k_neighbors >= n:
-            weights_col = backend.reshape(chord_dist, (n, 1))
-            candidates = geo_result.distances + weights_col
-            geo_from_query = backend.min(candidates, axis=0)
-        else:
-            tie_eps = machine_epsilon(backend, dist_sq)
-            col_indices = backend.arange(n)
-            dist_for_sort = dist_sq + backend.astype(col_indices, dist_sq.dtype) * tie_eps
-            kth = max(0, min(k_neighbors - 1, n - 1))
-            partitioned_idx = backend.argpartition(dist_for_sort, kth)
-            neighbor_idx = partitioned_idx[:k_neighbors]
+            max_query_arr = backend.max(chord_dist_query)
+            backend.eval(max_query_arr)
+            max_query = float(backend.to_scalar(max_query_arr))
+            eps = machine_epsilon(backend, chord_dist_query)
+            edge_eps = float(max_query * eps)
+            zero_threshold = tiny_value(backend, chord_dist_query)
+            is_effectively_zero = chord_dist_query < zero_threshold
+            chord_floor = backend.where(
+                is_effectively_zero,
+                backend.zeros_like(chord_dist_query),
+                backend.maximum(chord_dist_query, edge_eps),
+            )
 
-            # Include all ties at the k-th distance to preserve symmetry.
-            kth_idx = partitioned_idx[kth]
-            kth_dist_sq = backend.take(dist_sq, kth_idx, axis=0)
-            tie_mask = dist_sq <= (kth_dist_sq + tie_eps)
-            tie_count_arr = backend.sum(backend.astype(tie_mask, "int32"))
-            backend.eval(tie_count_arr)
-            tie_count = int(backend.to_scalar(tie_count_arr))
-            if tie_count > k_neighbors:
-                k_neighbors = tie_count
+            if k_neighbors >= n:
+                neighbor_idx = backend.arange(n)
+                neighbor_dists = chord_floor
+            else:
+                tie_eps = machine_epsilon(backend, dist_sq)
+                col_indices = backend.arange(n)
+                dist_for_sort = dist_sq + backend.astype(col_indices, dist_sq.dtype) * tie_eps
                 kth = max(0, min(k_neighbors - 1, n - 1))
                 partitioned_idx = backend.argpartition(dist_for_sort, kth)
                 neighbor_idx = partitioned_idx[:k_neighbors]
 
-            neighbor_dist_sq = backend.take(dist_sq, neighbor_idx, axis=0)
-            neighbor_dist_sq = backend.maximum(neighbor_dist_sq, backend.zeros_like(neighbor_dist_sq))
-            neighbor_dists = backend.sqrt(neighbor_dist_sq)
+                kth_idx = partitioned_idx[kth]
+                kth_dist_sq = backend.take(dist_sq, kth_idx, axis=0)
+                tie_mask = dist_sq <= (kth_dist_sq + tie_eps)
+                tie_count_arr = backend.sum(backend.astype(tie_mask, "int32"))
+                backend.eval(tie_count_arr)
+                tie_count = int(backend.to_scalar(tie_count_arr))
+                if tie_count > k_neighbors:
+                    k_neighbors = tie_count
+                    kth = max(0, min(k_neighbors - 1, n - 1))
+                    partitioned_idx = backend.argpartition(dist_for_sort, kth)
+                    neighbor_idx = partitioned_idx[:k_neighbors]
 
-            neighbor_geo = backend.take(geo_result.distances, neighbor_idx, axis=0)
-            weights_col = backend.reshape(neighbor_dists, (k_neighbors, 1))
-            candidates = neighbor_geo + weights_col
-            geo_from_query = backend.min(candidates, axis=0)
+                neighbor_dists = backend.take(chord_floor, neighbor_idx, axis=0)
+
+            query_row = backend.full((n,), inf_val)
+            query_row = backend.put_along_axis(query_row, neighbor_idx, neighbor_dists, axis=0)
+            query_col = backend.reshape(query_row, (n, 1))
+
+            top = backend.concatenate([adj, query_col], axis=1)
+            bottom = backend.concatenate(
+                [backend.reshape(query_row, (1, n)), backend.zeros((1, 1))],
+                axis=1,
+            )
+            adj_ext = backend.concatenate([top, bottom], axis=0)
+
+            geo_all = backend.single_source_shortest_paths(adj_ext, n)
+            geo_from_query = backend.take(geo_all, backend.arange(n), axis=0)
+        else:
+            if geo_result is None:
+                geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
+
+            if k_neighbors is None:
+                k_neighbors = geo_result.k_neighbors
+            k_neighbors = max(1, min(int(k_neighbors), n))
+
+            # Chord distances from query to all points (squared for stable top-k)
+            diff = points - backend.reshape(query, (1, -1))
+            dist_sq = backend.sum(diff * diff, axis=1)
+            dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+            backend.eval(dist_sq)
+            chord_dist = backend.sqrt(dist_sq)
+
+            # Attach query to its k nearest neighbors in the manifold graph.
+            # This preserves the discrete geodesic structure and avoids O(n^2).
+            if k_neighbors >= n:
+                weights_col = backend.reshape(chord_dist, (n, 1))
+                candidates = geo_result.distances + weights_col
+                geo_from_query = backend.min(candidates, axis=0)
+            else:
+                tie_eps = machine_epsilon(backend, dist_sq)
+                col_indices = backend.arange(n)
+                dist_for_sort = dist_sq + backend.astype(col_indices, dist_sq.dtype) * tie_eps
+                kth = max(0, min(k_neighbors - 1, n - 1))
+                partitioned_idx = backend.argpartition(dist_for_sort, kth)
+                neighbor_idx = partitioned_idx[:k_neighbors]
+
+                # Include all ties at the k-th distance to preserve symmetry.
+                kth_idx = partitioned_idx[kth]
+                kth_dist_sq = backend.take(dist_sq, kth_idx, axis=0)
+                tie_mask = dist_sq <= (kth_dist_sq + tie_eps)
+                tie_count_arr = backend.sum(backend.astype(tie_mask, "int32"))
+                backend.eval(tie_count_arr)
+                tie_count = int(backend.to_scalar(tie_count_arr))
+                if tie_count > k_neighbors:
+                    k_neighbors = tie_count
+                    kth = max(0, min(k_neighbors - 1, n - 1))
+                    partitioned_idx = backend.argpartition(dist_for_sort, kth)
+                    neighbor_idx = partitioned_idx[:k_neighbors]
+
+                neighbor_dist_sq = backend.take(dist_sq, neighbor_idx, axis=0)
+                neighbor_dist_sq = backend.maximum(neighbor_dist_sq, backend.zeros_like(neighbor_dist_sq))
+                neighbor_dists = backend.sqrt(neighbor_dist_sq)
+
+                neighbor_geo = backend.take(geo_result.distances, neighbor_idx, axis=0)
+                weights_col = backend.reshape(neighbor_dists, (k_neighbors, 1))
+                candidates = neighbor_geo + weights_col
+                geo_from_query = backend.min(candidates, axis=0)
 
         # Check if all points are reachable (no inf or nan values)
         backend.eval(geo_from_query)
@@ -773,15 +876,21 @@ class RiemannianGeodesicMixin:
 
         current_k = n
         if final_nonfinite > 0:
-            mat_nonfinite = count_nonfinite(geo_result.distances, backend)
             chord_nonfinite = count_nonfinite(chord_dist, backend)
-
-            logger.warning(
-                f"_geodesic_distances_from_query: {final_nonfinite}/{n} points unreachable "
-                f"even with k={current_k} neighbors. "
-                f"Geodesic matrix has {mat_nonfinite} non-finite values. "
-                f"Chord distances have {chord_nonfinite} non-finite values."
-            )
+            if geo_result is not None:
+                mat_nonfinite = count_nonfinite(geo_result.distances, backend)
+                logger.warning(
+                    f"_geodesic_distances_from_query: {final_nonfinite}/{n} points unreachable "
+                    f"even with k={current_k} neighbors. "
+                    f"Geodesic matrix has {mat_nonfinite} non-finite values. "
+                    f"Chord distances have {chord_nonfinite} non-finite values."
+                )
+            else:
+                logger.warning(
+                    f"_geodesic_distances_from_query: {final_nonfinite}/{n} points unreachable "
+                    f"even with k={current_k} neighbors. "
+                    f"Chord distances have {chord_nonfinite} non-finite values."
+                )
 
         return geo_from_query
 

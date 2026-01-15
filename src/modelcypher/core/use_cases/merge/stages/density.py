@@ -183,8 +183,16 @@ def stage_density(
     # This is a streamlined version that works with pre-collected activations
     import traceback
     try:
+        if layer_mapping:
+            mapped_source_activations: dict[int, Any] = {}
+            for layer_idx in layers:
+                source_layer_idx = layer_mapping.get(layer_idx, layer_idx)
+                mapped_source_activations[layer_idx] = source_activations.get(source_layer_idx)
+        else:
+            mapped_source_activations = source_activations
+
         source_profile = _build_density_profile_from_activations(
-            activations=source_activations,
+            activations=mapped_source_activations,
             probe_ids=probe_ids,
             probe_domains=probe_domains,
             layers=layers,

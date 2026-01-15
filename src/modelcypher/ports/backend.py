@@ -431,6 +431,17 @@ class Backend(Protocol):
             Array of shortest-path distances [n, n].
         """
         ...
+    def single_source_shortest_paths(self, dist: Array, source_index: int) -> Array:
+        """Compute shortest paths from a single source using a dense adjacency matrix.
+
+        Args:
+            dist: Square distance matrix [n, n] with non-negative edge weights.
+            source_index: Index of the source node.
+
+        Returns:
+            Array of shortest-path distances [n] from source to all nodes.
+        """
+        ...
 
     # --- Transforms ---
     def vmap(

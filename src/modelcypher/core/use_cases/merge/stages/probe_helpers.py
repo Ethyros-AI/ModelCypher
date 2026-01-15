@@ -26,6 +26,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     ceil_scalar,
     log2_scalar,
     machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
 )
 
@@ -59,21 +60,73 @@ def _infer_required_probe_count(
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
 ) -> tuple[int, int, int]:
-    """Infer MINIMUM probe count required for exact alignment from hidden dimensions.
+    """Infer exact probe count from intrinsic rank (weight-space spectrum).
 
-    The math requires n >= d (probes >= max hidden dim) for exact closed-form
-    alignment. This returns the minimum; callers should use ALL available probes
-    for maximum manifold coverage, not limit to this minimum.
+    Closed-form alignment on the shared manifold requires n >= rank(source)
+    and n >= rank(target). We estimate rank via singular value support of
+    per-layer weight matrices using machine-epsilon thresholds (no heuristics).
 
     Returns:
-        (min_required, source_dim, target_dim) where min_required = max(dims)
+        (min_required, source_rank, target_rank)
     """
-    from modelcypher.core.use_cases.merge.helpers import infer_hidden_dim
+    from modelcypher.core.use_cases.merge.helpers import extract_layer_index, infer_hidden_dim
 
-    source_dim = infer_hidden_dim(source_weights)
-    target_dim = infer_hidden_dim(target_weights)
-    min_required = max(source_dim, target_dim)
-    return min_required, source_dim, target_dim
+    backend = get_default_backend()
+
+    def _spectral_rank(matrix: Any) -> int | None:
+        if not hasattr(matrix, "shape") or len(matrix.shape) != 2:
+            return None
+        arr = backend.array(matrix)
+        arr = backend.astype(arr, precision_dtype(backend, reference=arr))
+        m = int(arr.shape[0])
+        n = int(arr.shape[1])
+        if m == 0 or n == 0:
+            return 0
+        if m >= n:
+            gram = backend.matmul(backend.transpose(arr), arr)
+        else:
+            gram = backend.matmul(arr, backend.transpose(arr))
+        backend.eval(gram)
+        eigenvalues = backend.eigvalsh(gram)
+        eigenvalues = backend.maximum(eigenvalues, backend.zeros_like(eigenvalues))
+        s = backend.sqrt(eigenvalues)
+        backend.eval(s)
+        s_max_arr = backend.max(s)
+        backend.eval(s_max_arr)
+        s_max = float(backend.to_scalar(s_max_arr))
+        if s_max <= 0:
+            return 0
+        eps = machine_epsilon(backend, s)
+        threshold = s_max * sqrt_scalar(eps, backend)
+        count_arr = backend.sum(backend.astype(s > threshold, "int32"))
+        backend.eval(count_arr)
+        return int(backend.to_scalar(count_arr))
+
+    def _model_intrinsic_rank(weights: dict[str, Any]) -> int:
+        per_layer: dict[int, int] = {}
+        for key, val in weights.items():
+            layer_idx = extract_layer_index(key)
+            if layer_idx is None:
+                continue
+            rank = _spectral_rank(val)
+            if rank is None:
+                continue
+            current = per_layer.get(layer_idx, 0)
+            per_layer[layer_idx] = rank if rank > current else current
+        if not per_layer:
+            return 0
+        return max(per_layer.values())
+
+    source_rank = _model_intrinsic_rank(source_weights)
+    target_rank = _model_intrinsic_rank(target_weights)
+
+    if source_rank <= 0:
+        source_rank = infer_hidden_dim(source_weights)
+    if target_rank <= 0:
+        target_rank = infer_hidden_dim(target_weights)
+
+    min_required = max(source_rank, target_rank)
+    return min_required, source_rank, target_rank
 
 
 def _select_geometry_probes(
