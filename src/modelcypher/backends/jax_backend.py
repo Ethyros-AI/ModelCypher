@@ -401,6 +401,48 @@ class JAXBackend(Backend):
 
         return compiled(mat)
 
+    def single_source_shortest_paths(self, dist: Array, source_index: int) -> Array:
+        """Compute shortest paths from a single source using Dijkstra-style relaxation."""
+        mat = self.jnp.array(dist)
+        if mat.ndim != 2 or mat.shape[0] != mat.shape[1]:
+            raise ValueError("single_source_shortest_paths requires a square [n, n] matrix")
+        n = int(mat.shape[0])
+        if n <= 1:
+            return mat[0] if n == 1 else mat
+
+        src = int(source_index)
+        if src < 0 or src >= n:
+            raise ValueError("source_index out of bounds")
+
+        cache_key = f"sssp_{n}_{mat.dtype}_{src}"
+        compiled = self._compiled_cache.get(cache_key)
+        if compiled is None:
+            def _sssp(d: Array) -> Array:
+                idx = self.jnp.arange(n)
+                dist_vec = d[src]
+                visited = (idx == src).astype(d.dtype)
+                inf_val = self.jnp.finfo(d.dtype).max
+
+                def body(_, state):
+                    dist_vec, visited = state
+                    masked = dist_vec + visited * inf_val
+                    min_idx = self.jnp.argmin(masked)
+                    is_min = idx == min_idx
+                    visited = self.jnp.minimum(visited + is_min.astype(d.dtype), 1.0)
+                    row = d[min_idx]
+                    dist_at_min = dist_vec[min_idx]
+                    alt = dist_at_min + row
+                    dist_vec = self.jnp.minimum(dist_vec, alt)
+                    return dist_vec, visited
+
+                dist_vec, _ = self.jax.lax.fori_loop(0, n - 1, body, (dist_vec, visited))
+                return dist_vec
+
+            compiled = self.jax.jit(_sssp)
+            self._compiled_cache[cache_key] = compiled
+
+        return compiled(mat)
+
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
         return self.jnp.take(array, indices, axis=axis)

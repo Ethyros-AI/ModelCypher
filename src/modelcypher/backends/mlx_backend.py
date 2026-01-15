@@ -245,6 +245,38 @@ class MLXBackend(Backend):
 
         return compiled(dist_arr)
 
+    def single_source_shortest_paths(self, dist: Array, source_index: int) -> Array:
+        """Compute shortest paths from a single source using Dijkstra-style relaxation."""
+        mx = self.mx
+        dist_arr = dist if type(dist).__module__.startswith("mlx") else mx.array(dist)
+        if dist_arr.ndim != 2 or dist_arr.shape[0] != dist_arr.shape[1]:
+            raise ValueError("single_source_shortest_paths requires a square [n, n] matrix")
+        n = int(dist_arr.shape[0])
+        if n <= 1:
+            return dist_arr[0] if n == 1 else dist_arr
+
+        src = int(source_index)
+        if src < 0 or src >= n:
+            raise ValueError("source_index out of bounds")
+
+        idx = mx.arange(n)
+        dist_vec = dist_arr[src]
+        visited = self.astype(idx == src, dist_arr.dtype)
+        inf_val = mx.array(mx.finfo(dist_arr.dtype).max)
+
+        for _ in range(n - 1):
+            masked = dist_vec + visited * inf_val
+            min_idx = mx.argmin(masked)
+            is_min = idx == min_idx
+            visited = mx.minimum(visited + self.astype(is_min, dist_arr.dtype), 1.0)
+
+            row = mx.take(dist_arr, min_idx, axis=0)
+            dist_at_min = mx.take(dist_vec, min_idx, axis=0)
+            alt = dist_at_min + row
+            dist_vec = mx.minimum(dist_vec, alt)
+
+        return dist_vec
+
     # --- Quantization (lazy - no eval) ---
     def quantize(
         self,

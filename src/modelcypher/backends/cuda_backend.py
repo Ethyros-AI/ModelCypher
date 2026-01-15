@@ -588,6 +588,38 @@ class CUDABackend(Backend):
 
         return compiled(dist_arr)
 
+    def single_source_shortest_paths(self, dist: Array, source_index: int) -> Array:
+        """Compute shortest paths from a single source using Dijkstra-style relaxation."""
+        dist_arr = dist if hasattr(dist, "device") else self._tensor(dist)
+        if dist_arr.ndim != 2 or dist_arr.shape[0] != dist_arr.shape[1]:
+            raise ValueError("single_source_shortest_paths requires a square [n, n] matrix")
+        n = int(dist_arr.shape[0])
+        if n <= 1:
+            return dist_arr[0] if n == 1 else dist_arr
+
+        src = int(source_index)
+        if src < 0 or src >= n:
+            raise ValueError("source_index out of bounds")
+
+        device = dist_arr.device
+        idx = self.torch.arange(n, device=device)
+        dist_vec = dist_arr[src]
+        visited = (idx == src).to(dist_arr.dtype)
+        inf_val = self.torch.tensor(self.torch.finfo(dist_arr.dtype).max, device=device)
+        one = self.torch.tensor(1.0, dtype=dist_arr.dtype, device=device)
+
+        for _ in range(n - 1):
+            masked = dist_vec + visited * inf_val
+            min_idx = self.torch.argmin(masked)
+            is_min = idx == min_idx
+            visited = self.torch.minimum(visited + is_min.to(dist_arr.dtype), one)
+            row = dist_arr[min_idx]
+            dist_at_min = dist_vec[min_idx]
+            alt = dist_at_min + row
+            dist_vec = self.torch.minimum(dist_vec, alt)
+
+        return dist_vec
+
     # --- Indexing ---
     def take(self, array: Array, indices: Array, axis: int | None = None) -> Array:
         if axis is None:
