@@ -179,9 +179,35 @@ def run_geometric_guardrails(
 
     layers = sorted(train_harmful_by_layer.keys())
 
-    # Auto-select detection layer if not specified
+    # Auto-select detection layer by finding layer with maximum separation
     if detection_layer is None:
-        detection_layer = layers[int(len(layers) * 0.75)]
+        best_layer = layers[0]
+        best_separation = 0.0
+
+        for layer_idx in layers:
+            h_acts = b.stack(train_harmless_by_layer[layer_idx], axis=0)
+            f_acts = b.stack(train_harmful_by_layer[layer_idx], axis=0)
+            b.eval(h_acts, f_acts)
+
+            # Compute direction and separation
+            h_mean = b.mean(h_acts, axis=0)
+            f_mean = b.mean(f_acts, axis=0)
+            direction = f_mean - h_mean
+            norm = b.sqrt(b.sum(direction * direction))
+            direction = direction / norm
+            b.eval(direction)
+
+            h_proj = float(b.to_scalar(b.mean(b.sum(h_acts * direction, axis=1))))
+            f_proj = float(b.to_scalar(b.mean(b.sum(f_acts * direction, axis=1))))
+            separation = abs(f_proj - h_proj)
+
+            if separation > best_separation:
+                best_separation = separation
+                best_layer = layer_idx
+
+        detection_layer = best_layer
+        logger.info("Layer selection: max separation %.4f at layer %d", best_separation, detection_layer)
+
     logger.info("Using detection layer: %d / %d", detection_layer, len(layers))
 
     # Stack training activations

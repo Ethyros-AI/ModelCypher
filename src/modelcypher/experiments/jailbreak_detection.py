@@ -244,10 +244,35 @@ def run_jailbreak_detection(
 
     layers = sorted(harmless_by_layer.keys())
 
-    # Auto-select detection layer if not specified (use middle-late layer)
+    # Auto-select detection layer by finding layer with maximum separation
     if detection_layer is None:
-        # Use layer at ~75% depth (good balance of accuracy and early detection)
-        detection_layer = layers[int(len(layers) * 0.75)]
+        best_layer = layers[0]
+        best_separation = 0.0
+
+        for layer_idx in layers:
+            h_acts = backend.stack(harmless_by_layer[layer_idx], axis=0)
+            f_acts = backend.stack(harmful_by_layer[layer_idx], axis=0)
+            backend.eval(h_acts, f_acts)
+
+            # Compute refusal direction for this layer
+            h_mean = backend.mean(h_acts, axis=0)
+            f_mean = backend.mean(f_acts, axis=0)
+            direction = f_mean - h_mean
+            norm = backend.sqrt(backend.sum(direction * direction))
+            direction = direction / norm
+            backend.eval(direction)
+
+            # Compute separation (difference in mean projections)
+            h_proj = float(backend.to_scalar(backend.mean(backend.sum(h_acts * direction, axis=1))))
+            f_proj = float(backend.to_scalar(backend.mean(backend.sum(f_acts * direction, axis=1))))
+            separation = abs(f_proj - h_proj)
+
+            if separation > best_separation:
+                best_separation = separation
+                best_layer = layer_idx
+
+        detection_layer = best_layer
+        logger.info("Layer selection: max separation %.4f at layer %d", best_separation, detection_layer)
 
     logger.info("Using layer %d for detection", detection_layer)
 
@@ -316,22 +341,18 @@ def run_jailbreak_detection(
     logger.info("Mean projections - Harmless: %.4f, Harmful: %.4f, Jailbreak: %.4f",
                 mean_harmless, mean_harmful, mean_jailbreak)
 
-    # Simple threshold-based classifier for jailbreak detection
-    # Key insight from Arditi et al.:
-    # - Harmful prompts have HIGH projection onto refusal direction (triggers refusal)
-    # - Harmless prompts have LOW/negative projection
-    # - Jailbreaks try to suppress the refusal direction (lower projection than expected for harmful)
+    # Threshold derived from harmless distribution
+    # Use the 95th percentile of harmless projections as threshold
+    # This gives us a controlled 5% false positive rate by construction
+    sorted_harmless = sorted(harmless_projs)
+    threshold_idx = int(0.95 * len(sorted_harmless))
+    threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
+    threshold_jailbreak = sorted_harmless[threshold_idx]
 
-    # For detecting HARMFUL content (including jailbreaks with harmful intent):
-    # Use threshold between harmless and the lower of harmful/jailbreak
-    threshold_harmful = (mean_harmless + mean_harmful) / 2.0
+    # Also compute threshold for harmful (95th percentile)
+    threshold_harmful = threshold_jailbreak  # Same threshold for consistency
 
-    # For detecting JAILBREAKS specifically (harmful content with suppressed refusal):
-    # Jailbreaks are between harmless and harmful
-    threshold_jailbreak = (mean_harmless + mean_jailbreak) / 2.0
-
-    logger.info("Detection threshold (harmful): %.4f", threshold_harmful)
-    logger.info("Detection threshold (jailbreak): %.4f", threshold_jailbreak)
+    logger.info("Detection threshold (95th percentile of harmless): %.4f", threshold_jailbreak)
 
     # Classify: projection > threshold => potential harmful/jailbreak
     predictions: list[bool] = []
