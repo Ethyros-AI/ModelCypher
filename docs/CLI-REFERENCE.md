@@ -775,6 +775,7 @@ mc geometry density diff <source_model_dir> <target_model_dir>
 - `mc geometry visualize` - Geometry visualization
 - `mc geometry interference` - Interference prediction
 - `mc geometry research evidence` - Evidence suite (alignment generalization, geodesic/curvature convergence, causal effects)
+- `mc geometry research manifold-evidence` - Manifold evidence metrics (ID, effective rank, tangent rank, curvature)
 - `mc geometry research shared-manifold` - Shared-manifold coverage, residuals, and diff-basis summary
 
 Run `mc geometry <subcommand> --help` for detailed options.

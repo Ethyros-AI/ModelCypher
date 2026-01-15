@@ -98,6 +98,7 @@ _SUBMODULES = {
     "manifold_accuracy",
     "manifold_curvature",
     "manifold_dimensionality",
+    "manifold_evidence",
     "manifold_fidelity_sweep",
     "manifold_profile",
     "manifold_stitcher",

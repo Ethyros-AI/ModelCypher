@@ -1,0 +1,151 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+from __future__ import annotations
+
+from dataclasses import asdict
+from pathlib import Path
+
+import typer
+
+from modelcypher.cli.output import write_error, write_output
+
+from .common import cleanup_memory, get_context, load_model_and_provider
+
+
+def _select_probes(probe_count: int | None, probes: list):
+    if probe_count is None:
+        return probes
+    if probe_count <= 0:
+        raise ValueError("probe-count must be positive.")
+    if probe_count >= len(probes):
+        return probes
+    step = max(1, len(probes) // probe_count)
+    return probes[::step][:probe_count]
+
+
+def register(app: typer.Typer) -> None:
+    @app.command("manifold-evidence")
+    def manifold_evidence(
+        ctx: typer.Context,
+        model: Path = typer.Argument(..., help="Path to model directory"),
+        layer: int | None = typer.Option(
+            None, "--layer", help="Layer index (defaults to middle layer)"
+        ),
+        probe_count: int | None = typer.Option(
+            None, "--probe-count", help="Optional cap on number of probes"
+        ),
+        output: Path | None = typer.Option(
+            None, "--output-file", help="Path to save evidence JSON"
+        ),
+    ) -> None:
+        """Compute manifold evidence metrics from atlas probe activations."""
+        context = get_context(ctx)
+
+        try:
+            from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+            from modelcypher.core.domain.geometry.manifold_evidence import (
+                compute_manifold_evidence,
+            )
+
+            probes = UnifiedAtlasInventory.all_probes()
+            if not probes:
+                raise ValueError("No atlas probes available.")
+
+            selected = _select_probes(probe_count, probes)
+            prompts = []
+            for probe in selected:
+                if probe.support_texts:
+                    prompts.append(probe.support_texts[0])
+                else:
+                    prompts.append(probe.name)
+
+            model_obj, _tokenizer, backend, provider, num_layers = load_model_and_provider(
+                str(model)
+            )
+            if layer is None:
+                layer_idx = max(0, num_layers // 2)
+            else:
+                if layer < 0 or layer >= num_layers:
+                    raise ValueError(
+                        f"Layer {layer} out of range for model with {num_layers} layers."
+                    )
+                layer_idx = layer
+
+            activations = provider.get_activations(prompts, layer_idx)
+            if len(activations) != len(prompts):
+                raise ValueError(
+                    "Activation collection returned mismatched sample counts. "
+                    "Reduce probe count or inspect probes."
+                )
+
+            arr = backend.array(activations)
+            backend.eval(arr)
+
+            report = compute_manifold_evidence(arr, backend=backend)
+            cleanup_memory()
+
+            payload = {
+                "_schema": "mc.geometry.research.manifold_evidence.v1",
+                "modelPath": str(model),
+                "layer": layer_idx,
+                "probeCount": len(selected),
+                "activationCount": len(activations),
+                "evidence": asdict(report),
+            }
+
+            if output:
+                from modelcypher.utils.json import dump_json
+
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(dump_json(payload, pretty=True))
+
+            if context.output_format == "text":
+                lines = [
+                    "",
+                    "=" * 60,
+                    "MANIFOLD EVIDENCE REPORT",
+                    "=" * 60,
+                    f"Model: {model}",
+                    f"Layer: {layer_idx}",
+                    f"Samples: {report.sample_count}",
+                    f"Intrinsic dimension: {report.intrinsic_dimension}",
+                    f"Effective rank (Renyi): {report.effective_rank.renyi_effective_rank:.4f}",
+                    f"Effective rank (Shannon): {report.effective_rank.shannon_effective_rank:.4f}",
+                ]
+                if report.tangent_rank is not None:
+                    lines.append(
+                        f"Tangent rank (Renyi): {report.tangent_rank.renyi_effective_rank:.4f}"
+                    )
+                    lines.append(
+                        f"Tangent rank (Shannon): {report.tangent_rank.shannon_effective_rank:.4f}"
+                    )
+                if report.curvature is not None:
+                    lines.append("")
+                    lines.append("Curvature:")
+                    lines.append(f"  Mean sectional: {report.curvature.mean_sectional:.6f}")
+                    lines.append(f"  Min sectional: {report.curvature.min_sectional:.6f}")
+                    lines.append(f"  Max sectional: {report.curvature.max_sectional:.6f}")
+                    lines.append(f"  Dominant sign: {report.curvature.dominant_sign}")
+                write_output("\n".join(lines), context.output_format, context.pretty)
+                return
+
+            write_output(payload, context.output_format, context.pretty)
+
+        except Exception as exc:
+            write_error(f"Manifold evidence failed: {exc}", context.output_format)
+            raise typer.Exit(1) from exc

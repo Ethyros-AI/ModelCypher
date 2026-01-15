@@ -73,6 +73,23 @@ singular values squared from centered activations). ID and effective rank are
 complementary: ID estimates local manifold complexity, while effective rank
 estimates how much support the model uses to carry that complexity.
 
+## Manifold Evidence (Toward Theorem)
+
+To move from thesis to theorem, we need evidence that:
+1) representations occupy a low-dimensional manifold,
+2) the manifold is curved (non-zero curvature),
+3) local tangent dimension is stable (constant-rank behavior).
+
+The `mc geometry research manifold-evidence` command reports:
+- intrinsic dimension (TwoNN),
+- effective rank (support manifold),
+- tangent-space effective rank (log-map at Fréchet mean),
+- sectional curvature summary.
+
+These are raw measurements; they do not claim proof by themselves, but they
+are the empirical checks required to justify the assumptions behind a
+constant-rank manifold theorem.
+
 ## Geodesic Distance (Core Principle)
 
 **When ModelCypher reports a distance in representation space, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.**
