@@ -199,10 +199,10 @@ def compute_layer_refusal_metrics(
     # Harmful should have projection > threshold
     # Harmless should have projection < threshold
     harmful_correct = backend.sum(
-        backend.cast(harmful_proj > threshold, backend.dtype(harmful_proj))
+        backend.astype(harmful_proj > threshold, backend.dtype(harmful_proj))
     )
     harmless_correct = backend.sum(
-        backend.cast(harmless_proj < threshold, backend.dtype(harmless_proj))
+        backend.astype(harmless_proj < threshold, backend.dtype(harmless_proj))
     )
     backend.eval(harmful_correct, harmless_correct)
 
