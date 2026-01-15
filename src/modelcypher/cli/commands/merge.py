@@ -655,10 +655,10 @@ def deviation(
     model_loader = MLXModelLoader()
 
     typer.echo("  Loading baseline weights...")
-    baseline_weights, _ = model_loader.load_weights(baseline)
+    baseline_weights = model_loader.load_weights(baseline)
 
     typer.echo("  Loading current weights...")
-    current_weights, _ = model_loader.load_weights(current)
+    current_weights = model_loader.load_weights(current)
 
     # Measure deviation
     tracker = DeviationTracker(backend=backend)

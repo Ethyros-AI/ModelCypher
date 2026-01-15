@@ -796,6 +796,10 @@ def stage_transplant(
         if checkpoint_dir:
             _save_checkpoint(checkpoint_dir, layer_idx, metrics)
 
+        ComputationCache.shared().clear_geometry_caches()
+        if hasattr(b, "clear_cache"):
+            b.clear_cache()
+
         if best_alignment is not None:
             metrics["core_distance_reductions"].append(best_alignment["core_distance_reduction"])
             metrics["core_dist_to_source_before"].append(

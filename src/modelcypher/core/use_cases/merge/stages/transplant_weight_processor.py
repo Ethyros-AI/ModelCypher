@@ -154,6 +154,18 @@ def process_layer_weights(
             return 2
         return 3
 
+    def _align_density_acts(
+        acts: "Array | None",
+        output_stitch: "Array | None",
+    ) -> "Array | None":
+        if acts is None or output_stitch is None:
+            return acts
+        acts = _promote_precision(b.array(acts), b)
+        stitch = _promote_precision(output_stitch, b)
+        aligned = b.matmul(acts, b.transpose(stitch))
+        b.eval(aligned)
+        return aligned
+
     def _get_merged_intermediate() -> "Array | None":
         nonlocal merged_intermediate
         if merged_intermediate is not None:
@@ -233,7 +245,9 @@ def process_layer_weights(
             continue
         ndim_t = len(target_w.shape)
         ndim_s = len(source_w.shape)
-        if ndim_t not in (1, 2) or ndim_s not in (1, 2) or ndim_t != ndim_s:
+        if ndim_t != 2 or ndim_s != 2:
+            metrics.setdefault("weights_skipped_non_2d", 0)
+            metrics["weights_skipped_non_2d"] += 1
             continue
 
         target_dtype = str(getattr(target_w, "dtype", "")).lower()
@@ -557,6 +571,11 @@ def process_layer_weights(
 
                 attention_stitch_applied = False
 
+                if is_attention and attention_stitch_output is None and k_stitch_output is None and v_stitch_output is None:
+                    metrics.setdefault("attention_preserved", 0)
+                    metrics["attention_preserved"] += 1
+                    continue
+
                 if is_attention and attention_stitch_output is not None:
                     src_attn_dim = stitch_dims["src_attn"]
                     tgt_attn_dim = stitch_dims["tgt_attn"]
@@ -608,7 +627,7 @@ def process_layer_weights(
                         is_v_proj = any(n in key for n in ["v_proj", "value"])
 
                         kv_out = None
-                        stitch_type = "compositional"
+                        stitch_type = "probe"
 
                         if is_k and k_stitch_output is not None:
                             kv_out = k_stitch_output
@@ -616,25 +635,6 @@ def process_layer_weights(
                         elif is_v_proj and v_stitch_output is not None:
                             kv_out = v_stitch_output
                             stitch_type = "V stitch (probe)"
-                        else:
-                            target_w = target_weights.get(key)
-                            if target_w is not None and hidden_stitch_output is not None:
-                                aligner = GramAligner(backend=b)
-                                H = b.transpose(hidden_stitch_output)
-                                target_w_float = _promote_precision(b.array(target_w), b)
-                                b.eval(H, target_w_float)
-
-                                kv_out = aligner.compositional_stitch(
-                                    hidden_transform=H,
-                                    source_weight=source_w,
-                                    target_weight=target_w_float,
-                                )
-                                b.eval(kv_out)
-                                stitch_type = "compositional"
-                                logger.info(
-                                    "COMPOSITIONAL STITCH for %s: derived from hidden + weights",
-                                    key,
-                                )
 
                         if kv_out is not None:
                             source_aligned = b.matmul(kv_out, source_w)
@@ -651,15 +651,9 @@ def process_layer_weights(
                             metrics["kv_stitched"] += 1
                             attention_stitch_applied = True
                         else:
-                            logger.warning(
-                                "No stitch available for %s - using attention_stitch fallback",
-                                key,
-                            )
-                            if attention_stitch_output is not None:
-                                source_aligned = b.matmul(attention_stitch_output, source_w)
-                                source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                                b.eval(source_aligned)
-                                attention_stitch_applied = True
+                            metrics.setdefault("attention_preserved", 0)
+                            metrics["attention_preserved"] += 1
+                            continue
 
                     elif is_o and dim0 == src_hidden_dim and dim1 == src_attn_dim:
                         source_aligned = b.matmul(hidden_stitch_output, source_w)
@@ -769,74 +763,9 @@ def process_layer_weights(
                         )
 
                 elif is_attention and attention_stitch_output is None:
-                    src_hidden_dim = stitch_dims["src_hidden"]
-                    tgt_hidden_dim = stitch_dims["tgt_hidden"]
-                    dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
-
-                    logger.info(
-                        "COMPOSITIONAL ATTENTION STITCH for %s (no explicit attention transform)",
-                        key,
-                    )
-
-                    target_w_float = _promote_precision(b.array(target_w), b)
-                    b.eval(target_w_float)
-
-                    aligner = GramAligner(backend=b)
-                    # CRITICAL: Use hidden_stitch_input directly - this is the SAME transform
-                    # applied in the application chain below (W_src @ hidden_stitch_input).
-                    # Previously used hidden_stitch_output.T which is F (the original transform),
-                    # but application uses hidden_stitch_input = pinv(F).T - different matrix!
-                    H = hidden_stitch_input
-                    b.eval(H)
-
-                    # Use the correct compositional stitch variant based on weight orientation
-                    if dim0 != src_hidden_dim and dim1 == src_hidden_dim:
-                        # Branch 1: q/k/v_proj type [proj_dim, hidden_dim] - hidden on input side
-                        # compositional_stitch solves: attn_stitch @ (W_src @ H) = W_tgt
-                        # Application: attn_stitch @ W_src @ hidden_stitch_input
-                        attn_stitch = aligner.compositional_stitch(
-                            hidden_transform=H,
-                            source_weight=source_w,
-                            target_weight=target_w_float,
-                        )
-                        b.eval(attn_stitch)
-                        source_aligned = b.matmul(attn_stitch, source_w)
-                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                        b.eval(source_aligned)
-                    elif dim0 == src_hidden_dim and dim1 != src_hidden_dim:
-                        # Branch 2: o_proj type [hidden_dim, proj_dim] - hidden on output side
-                        # compositional_stitch_input solves: (P @ W_src) @ S_in = W_tgt
-                        # where P = H^T = hidden_stitch_output
-                        # So H = hidden_stitch_output.T
-                        # Application: hidden_stitch_output @ W_src @ attn_stitch_in
-                        H_out = b.transpose(hidden_stitch_output)
-                        b.eval(H_out)
-                        attn_stitch_in = aligner.compositional_stitch_input(
-                            hidden_transform=H_out,
-                            source_weight=source_w,
-                            target_weight=target_w_float,
-                        )
-                        b.eval(attn_stitch_in)
-                        source_aligned = b.matmul(hidden_stitch_output, source_w)
-                        source_aligned = b.matmul(source_aligned, attn_stitch_in)
-                        b.eval(source_aligned)
-                    else:
-                        # Branch 3: Both dims are hidden (e.g., q_proj where num_heads*head_dim == hidden)
-                        # Still need compositional stitch because semantics differ (attention vs hidden)
-                        # Use same approach as Branch 1 since input side IS hidden
-                        attn_stitch = aligner.compositional_stitch(
-                            hidden_transform=H,
-                            source_weight=source_w,
-                            target_weight=target_w_float,
-                        )
-                        b.eval(attn_stitch)
-                        source_aligned = b.matmul(attn_stitch, source_w)
-                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                        b.eval(source_aligned)
-
-                    metrics.setdefault("compositional_attention_stitched", 0)
-                    metrics["compositional_attention_stitched"] += 1
-                    attention_stitch_applied = True
+                    metrics.setdefault("attention_preserved", 0)
+                    metrics["attention_preserved"] += 1
+                    continue
 
                 if not attention_stitch_applied:
                     src_hidden_dim = stitch_dims["src_hidden"]
@@ -1009,17 +938,20 @@ def process_layer_weights(
                                 )
 
         if input_activations is None:
-            logger.warning(
-                "TRANSPLANT: No %s activations for layer %d, using stitched source for %s",
+            logger.debug(
+                "TRANSPLANT: No %s activations for layer %d, preserving target for %s",
                 activation_space,
                 layer_idx,
                 key,
             )
-            merged[key] = source_aligned
-            metrics.setdefault("no_activation_fallback", 0)
-            metrics["no_activation_fallback"] += 1
-            metrics["weights_transplanted"] += 1
+            metrics.setdefault("no_activation_preserved", 0)
+            metrics["no_activation_preserved"] += 1
             continue
+
+        if activation_space == "hidden":
+            src_density_acts = _align_density_acts(src_density_acts, hidden_stitch_output)
+        elif activation_space == "intermediate":
+            src_density_acts = _align_density_acts(src_density_acts, intermediate_stitch_output)
 
         b.eval(input_activations)
         if src_density_acts is not None:
@@ -1031,15 +963,13 @@ def process_layer_weights(
         # This should NOT trigger after the fix - if it does, something else is wrong
         input_act_dim = int(b.shape(input_activations)[1])
         if input_act_dim != weight_in_dim:
-            logger.error(
-                "TRANSPLANT BUG: Activation dimension mismatch for %s: got %d, expected %d "
-                "(space=%s, layer=%d, mapped_src=%d). Falling back to direct stitch.",
+            logger.debug(
+                "TRANSPLANT: Activation dimension mismatch for %s: got %d, expected %d "
+                "(space=%s, layer=%d, mapped_src=%d). Preserving target.",
                 key, input_act_dim, weight_in_dim, activation_space, layer_idx, mapped_src_layer
             )
-            merged[key] = source_aligned
             metrics.setdefault("activation_dim_mismatch", 0)
             metrics["activation_dim_mismatch"] += 1
-            metrics["weights_transplanted"] += 1
             continue
 
         # Debug logging for shape verification

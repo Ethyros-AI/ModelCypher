@@ -63,8 +63,9 @@ def _infer_required_probe_count(
     """Infer exact probe count from intrinsic rank (weight-space spectrum).
 
     Closed-form alignment on the shared manifold requires n >= rank(source)
-    and n >= rank(target). We estimate rank via singular value support of
-    per-layer weight matrices using machine-epsilon thresholds (no heuristics).
+    and n >= rank(target). We derive rank from the intrinsic dimensionality
+    of weight spectra using the participation ratio (Rényi effective rank),
+    which is a closed-form, data-derived measure (no heuristics).
 
     Returns:
         (min_required, source_rank, target_rank)
@@ -73,7 +74,7 @@ def _infer_required_probe_count(
 
     backend = get_default_backend()
 
-    def _spectral_rank(matrix: Any) -> int | None:
+    def _intrinsic_rank(matrix: Any) -> int | None:
         if not hasattr(matrix, "shape") or len(matrix.shape) != 2:
             return None
         arr = backend.array(matrix)
@@ -89,18 +90,16 @@ def _infer_required_probe_count(
         backend.eval(gram)
         eigenvalues = backend.eigvalsh(gram)
         eigenvalues = backend.maximum(eigenvalues, backend.zeros_like(eigenvalues))
-        s = backend.sqrt(eigenvalues)
-        backend.eval(s)
-        s_max_arr = backend.max(s)
-        backend.eval(s_max_arr)
-        s_max = float(backend.to_scalar(s_max_arr))
-        if s_max <= 0:
+        sum_vals = backend.sum(eigenvalues)
+        sum_sq = backend.sum(eigenvalues * eigenvalues)
+        backend.eval(sum_vals, sum_sq)
+        sum_val = float(backend.to_scalar(sum_vals))
+        sum_sq_val = float(backend.to_scalar(sum_sq))
+        if sum_sq_val <= 0.0 or sum_val <= 0.0:
             return 0
-        eps = machine_epsilon(backend, s)
-        threshold = s_max * sqrt_scalar(eps, backend)
-        count_arr = backend.sum(backend.astype(s > threshold, "int32"))
-        backend.eval(count_arr)
-        return int(backend.to_scalar(count_arr))
+        eff_rank = (sum_val * sum_val) / sum_sq_val
+        max_rank = min(m, n)
+        return max(1, min(int(round(eff_rank)), max_rank))
 
     def _model_intrinsic_rank(weights: dict[str, Any]) -> int:
         per_layer: dict[int, int] = {}
@@ -108,7 +107,7 @@ def _infer_required_probe_count(
             layer_idx = extract_layer_index(key)
             if layer_idx is None:
                 continue
-            rank = _spectral_rank(val)
+            rank = _intrinsic_rank(val)
             if rank is None:
                 continue
             current = per_layer.get(layer_idx, 0)

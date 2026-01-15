@@ -856,8 +856,8 @@ class MLXBackend(Backend):
         if axis < 0:
             axis = ndim + axis
 
-        # Ensure indices are int32
-        indices_int = indices.astype(self.mx.int32)
+        # Ensure indices are int64 to avoid overflow on large arrays
+        indices_int = indices.astype(self.mx.int64)
 
         # For 2D arrays along axis=1 (the common case), use efficient gather
         if ndim == 2 and axis == 1:
@@ -866,7 +866,9 @@ class MLXBackend(Backend):
             n_gather = int(indices.shape[1])
 
             # Compute linear indices: row * n_cols + col_index
-            row_offsets = self.mx.reshape(self.mx.arange(n_rows), (-1, 1)) * n_cols
+            row_offsets = self.mx.reshape(
+                self.mx.arange(n_rows, dtype=self.mx.int64), (-1, 1)
+            ) * n_cols
             linear_indices = row_offsets + indices_int
             flat_array = self.mx.reshape(array, (-1,))
             flat_indices = self.mx.reshape(linear_indices, (-1,))

@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    geodesic_pinv,
     machine_epsilon,
     sqrt_scalar,
 )
@@ -559,11 +560,13 @@ def _probe_precise(
         emb_geodesic_cka = emb_result.achieved_cka
         embedding_cka = emb_geodesic_cka
 
+        linear_transform = b.matmul(geodesic_pinv(b, src_stacked), tgt_stacked)
+        b.eval(linear_transform)
         split_cka_result = compute_cka_split(
             src_stacked,
             tgt_stacked,
             backend=b,
-            feature_transform=embedding_transform,
+            feature_transform=linear_transform,
         )
     else:
         raise RuntimeError("EMBEDDING GRAMALIGN: Missing embedding activations.")

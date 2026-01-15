@@ -38,6 +38,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    find_magnitude_gap_threshold,
     geodesic_pinv,
     is_finite,
     machine_epsilon,
@@ -869,12 +870,15 @@ def compute_cka_split(
     aligned_norms = b.sqrt(b.sum(aligned * aligned, axis=1))
     b.eval(residual_norms, target_norms, aligned_norms)
 
-    eps = machine_epsilon(b, target_arr)
-    precision = sqrt_scalar(eps, b)
-    precision_arr = b.array([precision], dtype=target_norms.dtype)
-    threshold = precision_arr * (target_norms + precision_arr)
-    shared_mask = residual_norms <= threshold
-    novel_mask = residual_norms > threshold
+    eps = division_epsilon(b, target_arr)
+    residual_ratio = residual_norms / (target_norms + eps)
+    sorted_ratio = b.sort(residual_ratio, axis=0)
+    b.eval(residual_ratio, sorted_ratio)
+
+    ratio_threshold = find_magnitude_gap_threshold(sorted_ratio, backend=b)
+    ratio_threshold_arr = b.array([ratio_threshold], dtype=residual_ratio.dtype)
+    shared_mask = residual_ratio <= ratio_threshold_arr
+    novel_mask = residual_ratio > ratio_threshold_arr
     b.eval(shared_mask, novel_mask)
 
     # Count samples in each category

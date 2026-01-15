@@ -208,6 +208,44 @@ def _run_frechet_benchmark(
     )
 
 
+def _run_geodesic_cosine_batch_benchmark(
+    backend, n_points: int, n_dims: int, clear_cache: bool = True
+) -> BenchmarkResult:
+    """Benchmark geodesic cosine batch using single-source paths."""
+    from modelcypher.core.domain.cache import ComputationCache
+    from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
+
+    cache = ComputationCache.shared()
+    if clear_cache:
+        cache.clear_all()
+
+    backend.random_seed(48)
+    vectors = backend.random_normal((n_points, n_dims))
+    anchor = backend.random_normal((n_dims,))
+
+    # Cold run
+    start = time.perf_counter()
+    geodesic_cosine_batch(anchor, vectors, backend)
+    cold_time = (time.perf_counter() - start) * 1000
+
+    # Warm runs
+    n_warm = 10
+    start = time.perf_counter()
+    for _ in range(n_warm):
+        geodesic_cosine_batch(anchor, vectors, backend)
+    warm_time = (time.perf_counter() - start) * 1000 / n_warm
+
+    speedup = cold_time / warm_time if warm_time > 0 else float("inf")
+
+    return BenchmarkResult(
+        name=f"Geodesic cosine batch ({n_points}x{n_dims})",
+        cold_time_ms=cold_time,
+        warm_time_ms=warm_time,
+        speedup=speedup,
+        iterations=n_warm,
+    )
+
+
 def _run_realistic_merge_benchmark(backend, clear_cache: bool = True) -> BenchmarkResult:
     """Benchmark a realistic merge scenario: CKA across layer pairs."""
     from modelcypher.core.domain.cache import ComputationCache
@@ -291,6 +329,9 @@ def benchmark_cache(ctx: typer.Context) -> None:
     results.append(_run_geodesic_benchmark(backend, n_points=50, n_dims=64))
     results.append(_run_frechet_benchmark(backend, n_points=20, n_dims=16))
     results.append(_run_frechet_benchmark(backend, n_points=30, n_dims=32))
+    results.append(_run_geodesic_cosine_batch_benchmark(backend, n_points=50, n_dims=32))
+    results.append(_run_geodesic_cosine_batch_benchmark(backend, n_points=100, n_dims=64))
+    results.append(_run_geodesic_cosine_batch_benchmark(backend, n_points=200, n_dims=128))
     results.append(_run_realistic_merge_benchmark(backend))
 
     # Get cache stats

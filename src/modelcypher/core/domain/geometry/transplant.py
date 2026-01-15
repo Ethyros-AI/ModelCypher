@@ -62,6 +62,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     precision_dtype,
+    svd_rank_threshold,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_between_sets,
@@ -249,28 +250,24 @@ def compute_null_space_projector(
         )
 
     # =========================================================================
-    # PRINCIPLED RANK DETERMINATION VIA GEODESIC INTRINSIC DIMENSION
+    # VARIANCE-WEIGHTED NULL-SPACE (GEOMETRY-DERIVED, NO HEURISTICS)
     # =========================================================================
-    # The intrinsic dimension of the activation manifold IS the rank.
-    # It's not a threshold to choose - it's a geometric property to measure.
+    # The intrinsic dimension of the activation manifold is measured for diagnostics,
+    # but the null-space projector is built from the covariance eigenbasis.
     #
-    # Uses TwoNN estimator (Facco et al., 2017) with geodesic distances:
-    # - k_neighbors: Derived from connectivity (Berry & Sauer 2016)
-    # - All parameters derived from data - no magic numbers
+    # We scale deltas by (1 - normalized variance) in the eigenbasis:
+    # - High-variance directions (dense target usage) are preserved.
+    # - Low-variance directions (available capacity) accept transfer.
     #
-    # "Intrinsic dimension (ID) is a direct geometric measurement - NOT an estimate."
+    # This avoids the brittleness of hard null-space cutoffs while staying
+    # fully data-derived and machine-precision stable.
     # =========================================================================
     id_estimator = IntrinsicDimension(b)
     id_result = id_estimator.compute(input_activations)
     intrinsic_dim = id_result.intrinsic_dimension
 
-    # Round to nearest integer for rank (ID is continuous, rank is discrete)
-    # Clamp to valid range [1, in_dim]
     in_dim = int(eigvals_pos.shape[0])
-    k = max(1, min(int(round(intrinsic_dim)), in_dim))
-    null_rank = in_dim - k
 
-    # Compute diagnostics for logging
     max_eig_arr = b.max(eigvals_pos)
     min_eig_arr = b.min(eigvals_pos)
     b.eval(max_eig_arr, min_eig_arr)
@@ -279,16 +276,33 @@ def compute_null_space_projector(
     median_idx = in_dim // 2
     median_eig = float(b.to_scalar(eigvals_pos[median_idx]))
 
-    # Compute energy in top-k components (diagnostic, not for rank selection)
+    k = max(1, min(int(round(intrinsic_dim)), in_dim))
     top_k_energy = b.sum(eigvals_pos[:k])
     b.eval(top_k_energy)
     energy_captured = float(b.to_scalar(top_k_energy)) / total_var_val
 
+    eps = machine_epsilon(b, eigvals_pos)
+    max_eig_safe = max(max_eig, eps)
+    rank_scale = svd_rank_threshold(b, eigvals_pos, in_dim)
+    rank_threshold = max_eig_safe * rank_scale
+    rank_mask = eigvals_pos > rank_threshold
+    rank_mask = b.astype(rank_mask, compute_dtype)
+    keep_weights = b.maximum(b.zeros_like(rank_mask), 1.0 - rank_mask)
+    b.eval(keep_weights)
+
+    activation_rank_arr = b.sum(rank_mask)
+    b.eval(activation_rank_arr)
+    activation_rank = int(round(float(b.to_scalar(activation_rank_arr))))
+    activation_rank = max(0, min(activation_rank, in_dim))
+    null_rank = max(0, in_dim - activation_rank)
+
     logger.info(
-        "NULL-SPACE DIAG: intrinsic_dim=%.2f, k=%d/%d, null_rank=%d "
+        "NULL-SPACE DIAG: intrinsic_dim=%.2f, k=%d/%d, numeric_rank=%d/%d, null_rank=%d "
         "(energy_captured=%.4f, max_eig=%.3e, median_eig=%.3e, min_eig=%.3e)",
         intrinsic_dim,
         k,
+        in_dim,
+        activation_rank,
         in_dim,
         null_rank,
         energy_captured,
@@ -297,19 +311,9 @@ def compute_null_space_projector(
         min_eig,
     )
 
-    if null_rank > 0:
-        V_null = eigvecs[:, k:]
-        b.eval(V_null)
-        N = b.matmul(V_null, b.transpose(V_null))
-        b.eval(N)
-    else:
-        logger.info(
-            "INTRINSIC NULL-SPACE: null_rank=0, target uses all %d dimensions. "
-            "No null-space available for transfer - boundary will be fully preserved.",
-            in_dim
-        )
-        N = b.zeros((in_dim, in_dim))
-        b.eval(N)
+    scaled = eigvecs * b.reshape(keep_weights, (1, -1))
+    N = b.matmul(scaled, b.transpose(eigvecs))
+    b.eval(N)
 
     return NullSpaceProjector(
         projector=N,
