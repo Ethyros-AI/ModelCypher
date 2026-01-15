@@ -37,6 +37,7 @@ def main():
         UnifiedAtlasInventory,
     )
     from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
     from modelcypher.core.domain.geometry.gram_aligner import find_alignment
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
     from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
@@ -126,6 +127,7 @@ def main():
 
     # Compute intrinsic dimension
     id_computer = IntrinsicDimension(backend)
+    er_computer = EffectiveRank(backend)
     try:
         id_result = id_computer.compute(matrix)
         intrinsic_dim = float(id_result.intrinsic_dimension)
@@ -144,6 +146,18 @@ def main():
         logger.warning("Intrinsic dimension computation failed: %s", e)
         intrinsic_dim = None
         id_ci = (None, None)
+
+    # Compute effective rank (Renyi/Shannon)
+    er_result = er_computer.compute(matrix)
+    renyi_rank = float(er_result.renyi_effective_rank)
+    shannon_rank = float(er_result.shannon_effective_rank)
+    spectral_entropy = float(er_result.spectral_entropy)
+    logger.info(
+        "Effective rank: Renyi=%.2f, Shannon=%.2f, Entropy=%.4f",
+        renyi_rank,
+        shannon_rank,
+        spectral_entropy,
+    )
 
     # Compute pairwise similarities
     cos_matrix = geodesic_cosine_matrix(matrix, backend)
@@ -181,6 +195,14 @@ def main():
             "value": intrinsic_dim,
             "ci_lower": id_ci[0],
             "ci_upper": id_ci[1],
+        },
+        "effective_rank": {
+            "renyi": renyi_rank,
+            "shannon": shannon_rank,
+            "spectral_entropy": spectral_entropy,
+            "singular_value_count": er_result.n_singular_values,
+            "sample_count": er_result.sample_count,
+            "feature_dim": er_result.feature_dim,
         },
         "within_category_similarity": within_mean,
         "between_category_similarity": between_mean,
@@ -374,8 +396,24 @@ def main():
             try:
                 id_result = id_computer.compute(mat)
                 layer_id = float(id_result.intrinsic_dimension)
-                logger.info(f"  Layer {layer_idx}: ID = {layer_id:.2f}")
-                layer_ids.append({"layer": layer_idx, "intrinsic_dimension": layer_id})
+                er_result = er_computer.compute(mat)
+                logger.info(
+                    "  Layer %d: ID=%.2f, Renyi=%.2f, Shannon=%.2f",
+                    layer_idx,
+                    layer_id,
+                    er_result.renyi_effective_rank,
+                    er_result.shannon_effective_rank,
+                )
+                layer_ids.append(
+                    {
+                        "layer": layer_idx,
+                        "intrinsic_dimension": layer_id,
+                        "renyi_effective_rank": float(er_result.renyi_effective_rank),
+                        "shannon_effective_rank": float(er_result.shannon_effective_rank),
+                        "spectral_entropy": float(er_result.spectral_entropy),
+                        "singular_value_count": er_result.n_singular_values,
+                    }
+                )
             except Exception:
                 logger.warning(f"  Layer {layer_idx}: ID computation failed")
 

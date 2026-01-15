@@ -73,6 +73,7 @@ _SUBMODULES = {
     "domain_geometry_waypoints",
     "domain_signal_profile",
     "dora_decomposition",
+    "effective_rank",
     "fingerprint_cache",
     "gate_detector",
     "generalized_procrustes",

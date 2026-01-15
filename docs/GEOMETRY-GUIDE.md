@@ -51,6 +51,28 @@ When a threshold or epsilon is needed, derive it from the array dtype using
 `numerical_stability` utilities (e.g., `division_epsilon`, `machine_epsilon`).
 Avoid fixed constants like `1e-8` unless justified by data or machine precision.
 
+## Intrinsic Dimension vs Support Manifold
+
+Intrinsic dimension (ID) is a local diagnostic of how many degrees of freedom
+the data occupies around each point. It does not specify how large the
+functional subspace must be to route and compose those concepts through layers.
+
+ModelCypher treats "support manifold size" as the effective rank of centered
+activation covariance, which captures how many directions carry variance.
+This is the measurement that bounds the routing and composition overhead.
+
+Formulas (implementation references in `src/modelcypher/core/domain/geometry/intrinsic_dimension.py`
+and `src/modelcypher/core/domain/geometry/effective_rank.py`):
+
+- TwoNN ID (Facco et al.): regress log(mu) vs log(1 - F(mu)), where mu = d2 / d1.
+- Renyi effective rank: r_R = (sum_i lambda_i)^2 / sum_i (lambda_i^2)
+- Shannon effective rank: r_S = exp(-sum_i p_i * log(p_i)), p_i = lambda_i / sum_i lambda_i
+
+Here lambda_i are eigenvalues of the activation covariance (equivalently, the
+singular values squared from centered activations). ID and effective rank are
+complementary: ID estimates local manifold complexity, while effective rank
+estimates how much support the model uses to carry that complexity.
+
 ## Geodesic Distance (Core Principle)
 
 **When ModelCypher reports a distance in representation space, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.**

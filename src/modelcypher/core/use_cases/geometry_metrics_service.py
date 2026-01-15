@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
 from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
@@ -71,6 +72,18 @@ class IntrinsicDimensionResult:
     confidence_upper: float
     sample_count: int
     method: str
+
+
+@dataclass(frozen=True)
+class EffectiveRankResult:
+    """Result of effective rank estimation."""
+
+    renyi_effective_rank: float
+    shannon_effective_rank: float
+    spectral_entropy: float
+    sample_count: int
+    feature_dim: int
+    n_singular_values: int
 
 
 @dataclass(frozen=True)
@@ -276,6 +289,27 @@ class GeometryMetricsService:
             confidence_upper=upper,
             sample_count=estimate.sample_count,
             method="TwoNN (Facco et al.)",
+        )
+
+    def compute_effective_rank(
+        self,
+        points: list[list[float]],
+    ) -> EffectiveRankResult:
+        """Compute Renyi/Shannon effective rank from centered activations."""
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+        computer = EffectiveRank(backend)
+        pts = backend.array(points)
+        result = computer.compute(pts)
+
+        return EffectiveRankResult(
+            renyi_effective_rank=result.renyi_effective_rank,
+            shannon_effective_rank=result.shannon_effective_rank,
+            spectral_entropy=result.spectral_entropy,
+            sample_count=result.sample_count,
+            feature_dim=result.feature_dim,
+            n_singular_values=result.n_singular_values,
         )
 
     def compute_topological_fingerprint(
@@ -505,6 +539,18 @@ class GeometryMetricsService:
             "confidenceUpper": result.confidence_upper,
             "sampleCount": result.sample_count,
             "method": result.method,
+        }
+
+    @staticmethod
+    def effective_rank_payload(result: EffectiveRankResult) -> dict:
+        """Convert effective rank result to CLI/MCP payload."""
+        return {
+            "renyiEffectiveRank": result.renyi_effective_rank,
+            "shannonEffectiveRank": result.shannon_effective_rank,
+            "spectralEntropy": result.spectral_entropy,
+            "sampleCount": result.sample_count,
+            "featureDim": result.feature_dim,
+            "singularValueCount": result.n_singular_values,
         }
 
     @staticmethod

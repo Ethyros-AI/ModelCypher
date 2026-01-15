@@ -740,6 +740,7 @@ mc safety adapter-probe --adapter ./my-adapter --base-model ./base
 ```bash
 mc geometry metrics gromov-wasserstein <source_file> <target_file>
 mc geometry metrics intrinsic-dimension <points_file>
+mc geometry metrics effective-rank <points_file>
 mc geometry metrics topological-fingerprint <points_file>
 mc geometry metrics spectral-signature <points_file>
 ```
