@@ -336,6 +336,7 @@ def diagnose_variance_distribution(
     # Total variance
     src_total_var = float(b.to_scalar(b.sum(src_var)))
     tgt_total_var = float(b.to_scalar(b.sum(tgt_var)))
+    eps = division_epsilon(b, src_var)
 
     # Variance in novel vs shared directions
     novel_mask_float = b.astype(novelty_result.novel_mask, precision_dtype(b, reference=src_var))
@@ -359,7 +360,7 @@ def diagnose_variance_distribution(
         "source_shared_variance": src_shared_var,
         "target_novel_variance": tgt_novel_var,
         "target_shared_variance": tgt_shared_var,
-        "novel_fraction_by_variance": src_novel_var / max(src_total_var, 1e-10),
+        "novel_fraction_by_variance": src_novel_var / max(src_total_var, eps),
         "novelty_std": novelty_std,
         "novelty_median": novelty_median,
         "novelty_threshold": novelty_result.threshold,

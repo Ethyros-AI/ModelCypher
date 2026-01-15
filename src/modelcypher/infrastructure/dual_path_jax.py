@@ -22,7 +22,8 @@ This is the JAX implementation. For other backends:
 - MLX/macOS: see dual_path_mlx.py
 - CUDA/PyTorch: see dual_path_cuda.py
 
-Use _platform.get_dual_path_generator() for automatic platform selection.
+Use modelcypher.infrastructure.dual_path_factory.get_dual_path_generator_class()
+for automatic platform selection.
 
 Implementation based on JAX and Flax reference patterns (2025):
 - transformers FlaxAutoModelForCausalLM for model loading

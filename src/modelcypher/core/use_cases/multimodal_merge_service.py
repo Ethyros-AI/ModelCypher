@@ -39,14 +39,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.core.ports.backend import Backend
+    from modelcypher.ports.backend import Backend
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.multimodal import (
-    ModalityType,
-    MultiModalEmbeddingExtractor,
-    ModalityEmbeddings,
-)
+from modelcypher.core.domain.multimodal.types import ModalityEmbeddings, ModalityType
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.cka import (
     geodesic_squared_distances,
@@ -54,6 +50,7 @@ from modelcypher.core.domain.geometry.cka import (
     _rbf_gram_from_sq_distances,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +98,7 @@ class MultiModalMergeService:
     4. Validate preservation
 
     Example:
-        >>> service = MultiModalMergeService()
+        >>> service = MultiModalMergeService(embedding_extractor=embedding_extractor)
         >>> concepts = ["a red ball", "music playing", "running fast"]
         >>> result = service.merge(
         ...     target_model="/path/to/lfm2",
@@ -112,16 +109,23 @@ class MultiModalMergeService:
         >>> print(f"CKA preservation: {result.cka_preservation:.4f}")
     """
 
-    def __init__(self, backend: "Backend | None" = None):
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        embedding_extractor: MultiModalEmbeddingPort | None = None,
+    ):
         """Initialize the service.
 
         Args:
             backend: Optional backend instance. If None, uses default.
+            embedding_extractor: Required port for modality embedding extraction.
         """
         if backend is None:
             backend = get_default_backend()
+        if embedding_extractor is None:
+            raise ValueError("embedding_extractor is required for multimodal merge")
         self._backend = backend
-        self._extractor = MultiModalEmbeddingExtractor(backend=backend)
+        self._extractor = embedding_extractor
         self._aligner = GramAligner(backend=backend)
 
     def merge(

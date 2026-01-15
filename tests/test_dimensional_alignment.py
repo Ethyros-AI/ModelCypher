@@ -28,6 +28,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import Mock
 
+import modelcypher.core.domain.geometry.dimensional_alignment as dimensional_alignment
+
 from modelcypher.core.domain.geometry.dimensional_alignment import (
     DimensionalAlignment,
     measure_1d_alignment,
@@ -141,5 +143,35 @@ class TestMeasureDimensionalAlignment:
         result = measure_dimensional_alignment(
             source_tok, target_tok, probe_metrics
         )
-        
+
         assert isinstance(result, DimensionalAlignment)
+
+    def test_measure_dimensional_alignment_layernorm_optional(self, monkeypatch):
+        """Uses layernorm measurement when provided with a model."""
+        source_tok = Mock()
+        source_tok.get_vocab.return_value = {"a": 0, "b": 1}
+
+        target_tok = Mock()
+        target_tok.get_vocab.return_value = {"a": 0, "c": 1}
+
+        probe_metrics = {"embedding_cka": 0.9}
+
+        def _fake_layernorm(model, tokenizer, texts, backend):
+            return {"layernorm_cka": 0.77}
+
+        monkeypatch.setattr(
+            dimensional_alignment,
+            "measure_3d_alignment",
+            _fake_layernorm,
+        )
+
+        result = measure_dimensional_alignment(
+            source_tok,
+            target_tok,
+            probe_metrics,
+            layernorm_model=object(),
+            layernorm_texts=["hello"],
+            backend=object(),
+        )
+
+        assert result.layernorm_cka == 0.77

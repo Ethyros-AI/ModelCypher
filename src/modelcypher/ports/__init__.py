@@ -62,6 +62,7 @@ from modelcypher.ports.async_embeddings import EmbedderPort
 # Asynchronous Ports
 from modelcypher.ports.async_inference import InferenceEnginePort
 from modelcypher.ports.activation_store import ActivationStore
+from modelcypher.ports.adapter_weights import AdapterWeightsLoader
 from modelcypher.ports.backend import Array, Backend
 from modelcypher.ports.concept_discovery import ConceptDiscoveryPort
 from modelcypher.ports.embedding import EmbeddingProvider
@@ -73,6 +74,7 @@ from modelcypher.ports.hub import HubAdapterPort
 from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
 from modelcypher.ports.model_loader import ModelLoaderPort
 from modelcypher.ports.model_search import ModelSearchService
+from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 
 # Storage Ports
 from modelcypher.ports.storage import (
@@ -97,8 +99,10 @@ __all__ = [
     "ModelSearchService",
     "HubAdapterPort",
     "ModelLoaderPort",
+    "MultiModalEmbeddingPort",
     "ActivationStore",
     "BridgeStore",
+    "AdapterWeightsLoader",
     # Storage
     "ModelStore",
     "JobStore",

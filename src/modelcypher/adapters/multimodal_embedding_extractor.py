@@ -29,41 +29,14 @@ accessing these representations.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from modelcypher.core.ports.backend import Backend
+    from modelcypher.ports.backend import Backend
+
+from modelcypher.core.domain.multimodal.types import ModalityEmbeddings, ModalityType
 
 logger = logging.getLogger(__name__)
-
-
-class ModalityType(Enum):
-    """Supported modality types."""
-
-    TEXT = "text"  # LLM text embeddings
-    VISION = "vision"  # CLIP-style vision encoder
-    AUDIO = "audio"  # Whisper-style audio encoder
-
-
-@dataclass(frozen=True)
-class ModalityEmbeddings:
-    """Embeddings from a single modality.
-
-    Attributes:
-        modality: The type of modality these embeddings come from.
-        embeddings: Shape [n_concepts, hidden_dim] embedding matrix.
-        concepts: List of concept strings that were embedded.
-        hidden_dim: Dimensionality of the embedding space.
-        model_name: Name/path of the model used.
-    """
-
-    modality: ModalityType
-    embeddings: "Backend.Array"  # type: ignore
-    concepts: tuple[str, ...]
-    hidden_dim: int
-    model_name: str
 
 
 class MultiModalEmbeddingExtractor:
@@ -93,6 +66,15 @@ class MultiModalEmbeddingExtractor:
 
             backend = get_default_backend()
         self._backend = backend
+
+    def _as_backend_array(self, array: Any) -> "Backend.Array":  # type: ignore
+        """Convert array-like inputs to backend arrays without forced list copies."""
+        try:
+            return self._backend.array(array)
+        except Exception:
+            if hasattr(array, "tolist"):
+                return self._backend.array(array.tolist())
+            raise
 
     def extract_llm(
         self,
@@ -148,7 +130,7 @@ class MultiModalEmbeddingExtractor:
         mx.eval(embeddings)
 
         # Convert to backend array
-        embeddings_backend = self._backend.array(embeddings.tolist())
+        embeddings_backend = self._as_backend_array(embeddings)
 
         return ModalityEmbeddings(
             modality=ModalityType.TEXT,
@@ -189,7 +171,8 @@ class MultiModalEmbeddingExtractor:
             outputs = model.get_text_features(**inputs)
 
         # Convert to backend array
-        embeddings_backend = self._backend.array(outputs.numpy().tolist())
+        outputs_np = outputs.detach().cpu().numpy()
+        embeddings_backend = self._as_backend_array(outputs_np)
 
         return ModalityEmbeddings(
             modality=ModalityType.VISION,
@@ -242,7 +225,8 @@ class MultiModalEmbeddingExtractor:
         embeddings = torch.cat(all_embeds, dim=0)
 
         # Convert to backend array
-        embeddings_backend = self._backend.array(embeddings.numpy().tolist())
+        embeddings_np = embeddings.detach().cpu().numpy()
+        embeddings_backend = self._as_backend_array(embeddings_np)
 
         return ModalityEmbeddings(
             modality=ModalityType.AUDIO,

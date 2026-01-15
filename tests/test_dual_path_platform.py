@@ -35,7 +35,7 @@ class TestSecurityScanMetrics:
 
     def test_metrics_creation(self):
         """SecurityScanMetrics can be created with all fields."""
-        from modelcypher.core.domain.inference.dual_path_mlx import SecurityScanMetrics
+        from modelcypher.infrastructure.dual_path_mlx import SecurityScanMetrics
 
         metrics = SecurityScanMetrics(
             token_count=100,

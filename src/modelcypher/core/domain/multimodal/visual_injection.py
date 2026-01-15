@@ -162,22 +162,19 @@ class VisualConceptInjector:
         Args:
             weights_path: Path to safetensors file with W and b tensors
         """
-        from safetensors import safe_open
-
         weights_path = Path(weights_path)
+        weights = self._backend.load_safetensors(str(weights_path))
+        if "W" not in weights or "b" not in weights:
+            raise ValueError("Bridge weights must include tensors named 'W' and 'b'")
 
-        with safe_open(str(weights_path), framework="numpy") as f:
-            W_np = f.get_tensor("W")
-            b_np = f.get_tensor("b")
-
-        W = self._backend.array(W_np)
-        b = self._backend.array(b_np)
+        W = weights["W"]
+        b = weights["b"]
         self._backend.eval(W, b)
 
         self._bridge.load_affine_weights(W, b)
         self._bridge_loaded = True
 
-        logger.info(f"Loaded bridge weights from {weights_path}: W={W_np.shape}, b={b_np.shape}")
+        logger.info(f"Loaded bridge weights from {weights_path}: W={W.shape}, b={b.shape}")
 
     def set_vocabulary(self, vocab_embeddings: "Array") -> None:
         """Set LLM vocabulary embeddings for constrained projection.

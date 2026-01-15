@@ -96,6 +96,10 @@ from modelcypher.ports.backend import Backend  # OK - ports are allowed
 from modelcypher.adapters.mlx_backend import MLXBackend  # BAD - domain importing adapter
 ```
 
+**Boundary note**:
+- Multi-modal embedding extraction belongs in adapters; domain/services must accept a
+  `MultiModalEmbeddingPort` rather than importing CLIP/Whisper/MLX loaders directly.
+
 ---
 
 ## Debugging Guide for AI Agents

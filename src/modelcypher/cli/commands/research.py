@@ -396,6 +396,7 @@ def research_multimodal_merge(
     """
     context = _context(ctx)
     from modelcypher.cli.output import write_error
+    from modelcypher.cli.composition import get_registry
     from modelcypher.core.use_cases.multimodal_merge_service import MultiModalMergeService
 
     # Default concepts if not provided
@@ -427,7 +428,11 @@ def research_multimodal_merge(
             write_error(error.as_dict(), context.output_format, context.pretty)
             raise typer.Exit(code=1)
 
-    service = MultiModalMergeService()
+    registry = get_registry()
+    service = MultiModalMergeService(
+        backend=registry.backend,
+        embedding_extractor=registry.multimodal_embedding_extractor,
+    )
 
     try:
         result = service.merge(
@@ -528,9 +533,14 @@ def research_multimodal_offramp(
     """
     context = _context(ctx)
     from modelcypher.cli.output import write_error
+    from modelcypher.cli.composition import get_registry
     from modelcypher.core.domain.multimodal import MultiModalChannelAdapter
 
-    adapter = MultiModalChannelAdapter()
+    registry = get_registry()
+    adapter = MultiModalChannelAdapter(
+        backend=registry.backend,
+        embedding_extractor=registry.multimodal_embedding_extractor,
+    )
 
     try:
         result = adapter.create_offramps(

@@ -83,19 +83,15 @@ def get_dual_path_generator_class() -> type:
     platform_name = _get_inference_platform()
 
     if platform_name == "mlx":
-        from modelcypher.core.domain.inference.dual_path_mlx import DualPathGenerator
+        from modelcypher.infrastructure.dual_path_mlx import DualPathGenerator
 
         return DualPathGenerator
     elif platform_name == "cuda":
-        from modelcypher.core.domain.inference.dual_path_cuda import (
-            DualPathGeneratorCUDA,
-        )
+        from modelcypher.infrastructure.dual_path_cuda import DualPathGeneratorCUDA
 
         return DualPathGeneratorCUDA
     elif platform_name == "jax":
-        from modelcypher.core.domain.inference.dual_path_jax import (
-            DualPathGeneratorJAX,
-        )
+        from modelcypher.infrastructure.dual_path_jax import DualPathGeneratorJAX
 
         return DualPathGeneratorJAX
     else:
@@ -114,19 +110,15 @@ def get_security_scan_metrics_class() -> type:
     platform_name = _get_inference_platform()
 
     if platform_name == "mlx":
-        from modelcypher.core.domain.inference.dual_path_mlx import SecurityScanMetrics
+        from modelcypher.infrastructure.dual_path_mlx import SecurityScanMetrics
 
         return SecurityScanMetrics
     elif platform_name == "cuda":
-        from modelcypher.core.domain.inference.dual_path_cuda import (
-            SecurityScanMetricsCUDA,
-        )
+        from modelcypher.infrastructure.dual_path_cuda import SecurityScanMetricsCUDA
 
         return SecurityScanMetricsCUDA
     elif platform_name == "jax":
-        from modelcypher.core.domain.inference.dual_path_jax import (
-            SecurityScanMetricsJAX,
-        )
+        from modelcypher.infrastructure.dual_path_jax import SecurityScanMetricsJAX
 
         return SecurityScanMetricsJAX
     else:

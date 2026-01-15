@@ -22,7 +22,8 @@ This is the PyTorch/CUDA implementation. For other backends:
 - MLX/macOS: see dual_path_mlx.py
 - JAX/TPU: see dual_path_jax.py
 
-Use _platform.get_dual_path_generator() for automatic platform selection.
+Use modelcypher.infrastructure.dual_path_factory.get_dual_path_generator_class()
+for automatic platform selection.
 
 Implementation based on PyTorch 2.9 and Transformers 4.x (2025):
 - transformers.AutoModelForCausalLM for model loading

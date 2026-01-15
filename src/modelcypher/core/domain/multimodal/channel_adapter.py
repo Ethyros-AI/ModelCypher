@@ -44,7 +44,7 @@ Architecture:
     └─────────────────────────────────────────────────────────────────────┘
 
 Usage:
-    adapter = MultiModalChannelAdapter(backend)
+    adapter = MultiModalChannelAdapter(backend, embedding_extractor=embedding_extractor)
     result = adapter.create_offramps(
         target_model="/path/to/lfm2",
         include_clip=True,
@@ -60,15 +60,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from modelcypher.core.ports.backend import Backend
+    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.multimodal import MultiModalEmbeddingPort
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.multimodal import (
-    ModalityType,
-    MultiModalEmbeddingExtractor,
-    ModalityEmbeddings,
-)
+from modelcypher.core.domain.multimodal.types import ModalityEmbeddings, ModalityType
 
 logger = logging.getLogger(__name__)
 
@@ -136,16 +133,23 @@ class MultiModalChannelAdapter:
             - Inverse: modality_embed @ P_inverse projects to LLM token space
     """
 
-    def __init__(self, backend: "Backend | None" = None):
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        embedding_extractor: MultiModalEmbeddingPort | None = None,
+    ):
         """Initialize the adapter.
 
         Args:
             backend: Optional backend instance. If None, uses default.
+            embedding_extractor: Required port for modality embedding extraction.
         """
         if backend is None:
             backend = get_default_backend()
+        if embedding_extractor is None:
+            raise ValueError("embedding_extractor is required for multimodal alignment")
         self._backend = backend
-        self._extractor = MultiModalEmbeddingExtractor(backend=backend)
+        self._extractor = embedding_extractor
         self._aligner = GramAligner(backend=backend)
 
     def create_offramps(

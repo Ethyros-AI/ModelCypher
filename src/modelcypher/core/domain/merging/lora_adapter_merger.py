@@ -31,6 +31,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_svd,
 )
 from modelcypher.core.domain.merging.exceptions import MergeError
+from modelcypher.ports.adapter_weights import AdapterWeightsLoader
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -67,12 +68,16 @@ class LoRAAdapterMerger:
         adapter_directories: list[Path],
         output_directory: Path,
         backend: "Backend | None" = None,
+        weights_loader: AdapterWeightsLoader | None = None,
     ) -> MergeReport:
         if len(adapter_directories) < 2:
             raise MergeError("At least two adapters are required for merge")
 
         b = backend or get_default_backend()
-        adapters = [LoRAAdapterMerger._load_adapter(path, backend=b) for path in adapter_directories]
+        adapters = [
+            LoRAAdapterMerger._load_adapter(path, backend=b, weights_loader=weights_loader)
+            for path in adapter_directories
+        ]
 
         merged_parameters = 0
         errors: list[float] = []
@@ -109,7 +114,11 @@ class LoRAAdapterMerger:
         )
 
     @staticmethod
-    def _load_adapter(directory: Path, backend: "Backend | None" = None) -> AdapterPayload:
+    def _load_adapter(
+        directory: Path,
+        backend: "Backend | None" = None,
+        weights_loader: AdapterWeightsLoader | None = None,
+    ) -> AdapterPayload:
         if not directory.exists():
             raise MergeError(f"Adapter directory not found: {directory}")
 
@@ -136,30 +145,20 @@ class LoRAAdapterMerger:
 
         # Actually load the weights from the file
         if weights_path.suffix == ".safetensors":
-            try:
-                import safetensors.numpy
-                raw_weights = safetensors.numpy.load_file(str(weights_path))
-                for key, value in raw_weights.items():
-                    weights[key] = backend.array(value)
-                    module_keys.append(key)
-            except ImportError:
-                raise MergeError(
-                    "safetensors package required for .safetensors files. "
-                    "Install with: pip install safetensors"
-                )
+            raw_weights = backend.load_safetensors(str(weights_path))
+            for key, value in raw_weights.items():
+                weights[key] = backend.array(value)
+                module_keys.append(key)
         elif weights_path.suffix in (".bin", ".pt"):
-            try:
-                import torch
-                raw_weights = torch.load(str(weights_path), map_location="cpu", weights_only=True)
-                for key, value in raw_weights.items():
-                    # Convert torch tensor to backend array
-                    weights[key] = backend.array(value)
-                    module_keys.append(key)
-            except ImportError:
+            if weights_loader is None:
                 raise MergeError(
-                    "torch package required for .bin/.pt files. "
-                    "Install with: pip install torch"
+                    "Adapter weights loader required for .bin/.pt files. "
+                    "Provide a loader port or convert to .safetensors."
                 )
+            raw_weights = weights_loader.load(weights_path, backend)
+            for key, value in raw_weights.items():
+                weights[key] = backend.array(value)
+                module_keys.append(key)
 
         if not weights:
             raise MergeError(f"No weights loaded from {weights_path}")

@@ -46,6 +46,7 @@ if TYPE_CHECKING:
         InferenceEngine,
         JobStore,
         ManifoldProfileStore,
+        MultiModalEmbeddingPort,
         ModelLoaderPort,
         ModelProbePort,
         ModelSearchService,
@@ -85,6 +86,7 @@ class PortRegistry:
     hub_adapter: "HubAdapterPort"
     activation_store: "ActivationStore"
     bridge_store: "BridgeStore"
+    multimodal_embedding_extractor: "MultiModalEmbeddingPort"
 
     # Backend
     backend: "Backend"
@@ -110,6 +112,9 @@ class PortRegistry:
             LocalManifoldProfileStore,
         )
         from modelcypher.adapters.local_training import LocalTrainingEngine
+        from modelcypher.adapters.multimodal_embedding_extractor import (
+            MultiModalEmbeddingExtractor,
+        )
         from modelcypher.backends import default_backend, initialize_default_backend
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
@@ -149,6 +154,7 @@ class PortRegistry:
             hub_adapter=HfHubAdapter(),
             activation_store=NPZActivationStore(),
             bridge_store=SafetensorsBridgeStore(),
+            multimodal_embedding_extractor=MultiModalEmbeddingExtractor(),
             # Backend
             backend=LazyBackend(default_backend),
             # Paths

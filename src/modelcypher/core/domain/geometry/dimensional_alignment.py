@@ -33,6 +33,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
@@ -300,6 +302,10 @@ def measure_dimensional_alignment(
     target_tokenizer: Any,
     probe_metrics: dict[str, Any],
     test_texts: list[str] | None = None,
+    layernorm_model: Any | None = None,
+    layernorm_tokenizer: Any | None = None,
+    layernorm_texts: list[str] | None = None,
+    backend: "Backend | None" = None,
 ) -> DimensionalAlignment:
     """
     Compile full dimensional alignment report from probe metrics.
@@ -309,6 +315,10 @@ def measure_dimensional_alignment(
         target_tokenizer: Target model tokenizer
         probe_metrics: Metrics from probe stage (contains 2D, 4D+ CKA)
         test_texts: Optional texts for 1D sequence agreement test
+        layernorm_model: Optional model for 3D LayerNorm measurement
+        layernorm_tokenizer: Tokenizer for the layernorm model (defaults to target_tokenizer)
+        layernorm_texts: Optional texts for LayerNorm measurement (defaults to test_texts)
+        backend: Backend for LayerNorm measurement (defaults to global backend)
 
     Returns:
         DimensionalAlignment with all metrics
@@ -319,8 +329,20 @@ def measure_dimensional_alignment(
     # 2D: Embedding (from probe stage)
     embedding_cka = probe_metrics.get("embedding_cka")
 
-    # 3D: LayerNorm (TODO: would need model to compute)
+    # 3D: LayerNorm (compute if model is available)
     layernorm_cka = probe_metrics.get("layernorm_cka")
+    if layernorm_cka is None and layernorm_model is not None:
+        ln_texts = layernorm_texts or test_texts
+        if ln_texts:
+            ln_backend = backend or get_default_backend()
+            ln_tokenizer = layernorm_tokenizer or target_tokenizer
+            layernorm_metrics = measure_3d_alignment(
+                layernorm_model,
+                ln_tokenizer,
+                ln_texts,
+                ln_backend,
+            )
+            layernorm_cka = layernorm_metrics.get("layernorm_cka")
 
     # 4D+: Transformer (from probe stage)
     layer_ckas = [

@@ -22,7 +22,8 @@ This is the MLX/macOS implementation. For other backends:
 - CUDA/PyTorch: see dual_path_cuda.py
 - JAX/TPU: see dual_path_jax.py
 
-Use _platform.get_dual_path_generator() for automatic platform selection.
+Use modelcypher.infrastructure.dual_path_factory.get_dual_path_generator_class()
+for automatic platform selection.
 
 NOTE: This module has infrastructure dependencies (mlx_lm for model loading)
 that cannot be fully abstracted via the Backend protocol. The model loading

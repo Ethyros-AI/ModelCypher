@@ -26,8 +26,8 @@ from modelcypher.core.domain.inference.adapter_pool import (
 )
 from modelcypher.core.domain.inference.comparison import CheckpointComparisonCoordinator
 
-# Import Implementations (Currently in core/domain/inference, acting as MLX internals)
-from modelcypher.core.domain.inference.dual_path_mlx import DualPathGenerator
+# Import implementation (infrastructure-specific dual-path generator)
+from modelcypher.infrastructure.dual_path_mlx import DualPathGenerator
 from modelcypher.core.domain.inference.types import (
     AdapterSwapResult,
     ComparisonEvent,

@@ -45,6 +45,12 @@ Instead, we provide:
 
 **Why?** Thresholds are model-specific, task-specific, and evolve over time. A researcher knows their domain; we provide measurements, they decide meaning.
 
+## Numerical thresholds (dtype-derived)
+
+When a threshold or epsilon is needed, derive it from the array dtype using
+`numerical_stability` utilities (e.g., `division_epsilon`, `machine_epsilon`).
+Avoid fixed constants like `1e-8` unless justified by data or machine precision.
+
 ## Geodesic Distance (Core Principle)
 
 **When ModelCypher reports a distance in representation space, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.**

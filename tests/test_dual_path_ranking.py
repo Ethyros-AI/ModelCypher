@@ -23,7 +23,7 @@ which is derived directly from score geometry rather than probability.
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.inference.dual_path_mlx import compute_token_rank_metrics
+from modelcypher.infrastructure.dual_path_mlx import compute_token_rank_metrics
 
 
 def _eps(backend, *values: float) -> float:

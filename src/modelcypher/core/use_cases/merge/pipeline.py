@@ -438,6 +438,32 @@ def run_merge(
         )
     else:
         logger.info("STAGE 3: TRANSPLANT (graft-all mode, density unavailable)")
+
+    # =================================================================
+    # NOVEL_FRACTION GATING: Scale delta based on subspace novelty
+    # =================================================================
+    # When source and target encode identical structure (novel_fraction ≈ 0),
+    # there's no novel knowledge to transfer. Injecting delta would corrupt
+    # the target model. Scale delta_scale by novel_fraction to prevent this.
+    split_cka = probe_metrics.get("split_cka") or {}
+    novel_fraction = split_cka.get("novel_fraction", 1.0)
+
+    # Use smooth gating: effective_delta = delta_scale * max(novel_fraction, 0.1)
+    # The floor of 0.1 prevents complete zero-out, allowing minimal transfer
+    # even when models appear identical (they may differ in ways not captured by probes).
+    MIN_NOVEL_FLOOR = 0.1
+    effective_delta_scale = delta_scale * max(novel_fraction, MIN_NOVEL_FLOOR)
+
+    if novel_fraction < 0.5:
+        logger.warning(
+            "LOW NOVELTY: novel_fraction=%.4f (%.1f%% shared structure). "
+            "Scaling delta_scale from %.3f to %.3f to prevent corruption.",
+            novel_fraction,
+            (1.0 - novel_fraction) * 100,
+            delta_scale,
+            effective_delta_scale,
+        )
+
     merged_weights, transplant_metrics = stage_transplant(
         source_weights=loaded_source_weights,
         target_weights=loaded_target_weights,
@@ -469,7 +495,7 @@ def run_merge(
         prior_occupancy_by_layer=prior_occupancy_by_layer,
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
-        delta_scale=delta_scale,  # Delta budget control for sequential stacking
+        delta_scale=effective_delta_scale,  # Delta budget scaled by novel_fraction
     )
 
     # =================================================================

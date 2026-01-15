@@ -34,12 +34,14 @@ from __future__ import annotations
 
 import logging
 import math
-import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    precision_dtype,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -355,7 +357,7 @@ class DeviationTracker:
             return 1.0
 
         # Effective dimensionality: d_eff = (Σσ)² / Σσ²
-        eps = math.sqrt(sys.float_info.epsilon)
+        eps = division_epsilon(backend, S)
         sum_s = float(backend.sum(S))
         sum_s_sq = float(backend.sum(S * S))
 
@@ -378,11 +380,12 @@ class DeviationTracker:
         if null_capacity < eps:
             null_capacity = eps
 
-        # Scale = capacity / magnitude
-        scale = null_capacity / delta_magnitude
+        # Scale = capacity / magnitude (bounded by available delta magnitude)
+        scale = null_capacity / max(delta_magnitude, eps)
+        scale = min(1.0, scale)
 
-        # Clamp to reasonable range
-        return min(1.0, max(0.01, scale))
+        # Avoid vanishing scales without imposing arbitrary floors.
+        return max(scale, eps)
 
 
 # Backward compatibility alias

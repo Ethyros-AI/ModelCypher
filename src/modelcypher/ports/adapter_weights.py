@@ -15,25 +15,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Inference domain - model inference utilities and types.
-
-Platform-specific dual-path generators live in infrastructure; use
-`modelcypher.infrastructure.dual_path_factory.get_dual_path_generator_class`.
-
-For orchestration (CheckpointComparisonCoordinator), use:
-    from modelcypher.core.use_cases.inference import CheckpointComparisonCoordinator
-"""
-
 from __future__ import annotations
 
-from .activation_stream import ActivationFrame, ActivationStream
-from .adapter_pool import *  # noqa: F401,F403
-from .entropy_dynamics import *  # noqa: F401,F403
-from .types import *  # noqa: F401,F403
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-__all__ = [
-    # Activation streaming for real-time visualization
-    "ActivationFrame",
-    "ActivationStream",
-]
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
+
+
+@runtime_checkable
+class AdapterWeightsLoader(Protocol):
+    """Port for loading adapter weight files."""
+
+    def load(self, weights_path: Path, backend: "Backend") -> dict[str, Any]:
+        """Load adapter weights and return a name -> array mapping."""
+        ...
+
+
+__all__ = ["AdapterWeightsLoader"]
