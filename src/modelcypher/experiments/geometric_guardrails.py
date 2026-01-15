@@ -28,6 +28,7 @@ from modelcypher.core.domain.geometry.alignment_boundary import (
     BoundaryViolationType,
     check_boundary,
     compute_alignment_boundary,
+    optimize_boundary_thresholds,
     steer_to_boundary,
 )
 from modelcypher.core.domain.geometry.refusal_direction_detector import (
@@ -108,8 +109,7 @@ class GuardrailResult:
 def run_geometric_guardrails(
     model_path: str,
     detection_layer: int | None = None,
-    refusal_percentile: float = 5.0,
-    distance_percentile: float = 95.0,
+    target_fpr: float = 0.10,
     output_path: Path | None = None,
     backend: "Backend | None" = None,
 ) -> GuardrailResult:
@@ -118,8 +118,7 @@ def run_geometric_guardrails(
     Args:
         model_path: Path to instruct model
         detection_layer: Layer to use for detection (auto-detect if None)
-        refusal_percentile: Percentile for refusal threshold (lower = stricter)
-        distance_percentile: Percentile for distance threshold (higher = stricter)
+        target_fpr: Target false positive rate for threshold optimization (default 10%)
         output_path: Where to save results
         backend: Backend for tensor operations
 
@@ -227,32 +226,43 @@ def run_geometric_guardrails(
                 f_projs_list.append(proj)
                 f_dists_list.append(dist)
 
-            # Compute boundary thresholds from harmless distribution
+            # Find best thresholds for this layer via grid search
             sorted_projs = sorted(h_projs_list)
-            refusal_thresh_idx = int(refusal_percentile / 100.0 * len(sorted_projs))
-            refusal_thresh_idx = max(0, min(refusal_thresh_idx, len(sorted_projs) - 1))
-            refusal_threshold = sorted_projs[refusal_thresh_idx]
-
             sorted_dists = sorted(h_dists_list)
-            dist_thresh_idx = int(distance_percentile / 100.0 * len(sorted_dists))
-            dist_thresh_idx = max(0, min(dist_thresh_idx, len(sorted_dists) - 1))
-            safe_radius = sorted_dists[dist_thresh_idx]
 
-            # Check violations (below refusal threshold OR outside safe radius)
-            harmless_violations = sum(
-                1 for p, d in zip(h_projs_list, h_dists_list)
-                if p < refusal_threshold or d > safe_radius
-            )
-            harmful_violations = sum(
-                1 for p, d in zip(f_projs_list, f_dists_list)
-                if p < refusal_threshold or d > safe_radius
-            )
+            best_layer_score = -1.0
+            for refusal_pct in [3, 5, 10, 15]:
+                for dist_pct in [85, 90, 95]:
+                    proj_idx = int(refusal_pct / 100.0 * n_harmless)
+                    proj_idx = max(0, min(proj_idx, n_harmless - 1))
+                    refusal_threshold = sorted_projs[proj_idx]
 
-            harmless_viol_rate = harmless_violations / max(n_harmless, 1)
-            harmful_viol_rate = harmful_violations / max(n_harmful, 1)
+                    dist_idx = int(dist_pct / 100.0 * n_harmless)
+                    dist_idx = max(0, min(dist_idx, n_harmless - 1))
+                    safe_radius = sorted_dists[dist_idx]
 
-            # Score = harmful detection rate - harmless false positive rate
-            score = harmful_viol_rate - harmless_viol_rate
+                    # Check violations
+                    harmless_violations = sum(
+                        1 for p, d in zip(h_projs_list, h_dists_list)
+                        if p < refusal_threshold or d > safe_radius
+                    )
+                    harmful_violations = sum(
+                        1 for p, d in zip(f_projs_list, f_dists_list)
+                        if p < refusal_threshold or d > safe_radius
+                    )
+
+                    fpr = harmless_violations / max(n_harmless, 1)
+                    tpr = harmful_violations / max(n_harmful, 1)
+
+                    # Skip if FPR too high
+                    if fpr > target_fpr + 0.05:
+                        continue
+
+                    layer_score = tpr - fpr
+                    if layer_score > best_layer_score:
+                        best_layer_score = layer_score
+
+            score = best_layer_score
 
             if score > best_score:
                 best_score = score
@@ -286,14 +296,14 @@ def run_geometric_guardrails(
     refusal_direction = refusal_result.direction
     b.eval(refusal_direction)
 
-    # Compute alignment boundary from harmless (safe) activations
-    logger.info("Computing alignment boundary from safe activations...")
-    boundary = compute_alignment_boundary(
+    # Optimize alignment boundary using both harmless and harmful activations
+    logger.info("Optimizing alignment boundary from model geometry...")
+    boundary = optimize_boundary_thresholds(
         refusal_direction=refusal_direction,
-        safe_activations=train_harmless_acts,
-        refusal_percentile=refusal_percentile,
-        distance_percentile=distance_percentile,
+        harmless_activations=train_harmless_acts,
+        harmful_activations=train_harmful_acts,
         layer_index=detection_layer,
+        target_fpr=target_fpr,
         backend=b,
     )
 

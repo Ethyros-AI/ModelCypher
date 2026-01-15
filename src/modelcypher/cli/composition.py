@@ -121,6 +121,7 @@ def get_geometric_merger() -> "UnifiedGeometricMerger":
     return UnifiedGeometricMerger(
         model_loader=registry.model_loader,
         activation_provider=registry.activation_provider,
+        inference_engine=registry.inference_engine,
     )
 
 

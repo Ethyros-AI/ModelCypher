@@ -60,6 +60,7 @@ from .pipeline import run_merge
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 __all__ = [
@@ -89,6 +90,7 @@ class UnifiedGeometricMerger:
         self,
         model_loader: "ModelLoaderPort",
         activation_provider: "ActivationProvider | None" = None,
+        inference_engine: "InferenceEngine | None" = None,
         backend: "Backend | None" = None,
     ) -> None:
         """Initialize with required dependencies.
@@ -100,6 +102,7 @@ class UnifiedGeometricMerger:
         """
         self._model_loader = model_loader
         self._activation_provider = activation_provider
+        self._inference_engine = inference_engine
 
         # Default to configured backend (respects MC_BACKEND/MODELCYPHER_BACKEND)
         self._backend = backend or get_default_backend()
@@ -120,6 +123,7 @@ class UnifiedGeometricMerger:
         target_tokenizer: Any | None = None,
         # Delta budget control for sequential stacking
         delta_scale: float = 1.0,
+        inference_engine: "InferenceEngine | None" = None,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides).
 
@@ -144,6 +148,7 @@ class UnifiedGeometricMerger:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             activation_provider=self._activation_provider,
+            inference_engine=inference_engine or self._inference_engine,
             delta_scale=delta_scale,
         )
 

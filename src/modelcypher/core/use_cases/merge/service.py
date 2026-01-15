@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     )
     from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
     from modelcypher.core.use_cases.merge.models import UnifiedMergeResult
+    from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ class MergePipelineService:
         waypoint_service: "DomainGeometryWaypointService",
         geometric_merger: "UnifiedGeometricMerger",
         model_loader: "ModelLoaderPort",
+        inference_engine: "InferenceEngine | None" = None,
     ):
         """Initialize the pipeline service with dependencies.
 
@@ -136,6 +138,7 @@ class MergePipelineService:
         self._waypoint_service = waypoint_service
         self._geometric_merger = geometric_merger
         self._model_loader = model_loader
+        self._inference_engine = inference_engine
 
     def run(
         self,
@@ -478,6 +481,7 @@ class MergePipelineService:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             delta_scale=delta_scale,
+            inference_engine=self._inference_engine,
         )
 
     def _extract_post_merge_validation(

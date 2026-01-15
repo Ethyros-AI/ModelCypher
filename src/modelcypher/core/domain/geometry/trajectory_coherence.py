@@ -257,7 +257,7 @@ def validate_merge_coherence(
 
     Args:
         model_path: Path to merged model
-        inference_engine: Inference engine (if None, uses factory)
+        inference_engine: Inference engine (required)
         test_prompts: Prompts to test (if None, uses default set)
         max_tokens: Maximum tokens per inference
         repetition_threshold: Max repetition score before flagging
@@ -281,11 +281,8 @@ def validate_merge_coherence(
             "A neural network consists of layers that",
         ]
 
-    # Get inference engine if not provided
     if inference_engine is None:
-        from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
-
-        inference_engine = get_inference_engine()
+        raise ValueError("validate_merge_coherence requires an inference_engine")
 
     model_str = str(model_path)
     metrics_list: list[CoherenceMetrics] = []

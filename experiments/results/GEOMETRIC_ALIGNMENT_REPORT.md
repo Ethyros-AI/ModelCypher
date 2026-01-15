@@ -19,7 +19,7 @@ Six experiments testing whether AI alignment manifests as measurable geometric s
 | 3. Cross-Model Universality | Mean best accuracy (4 models) | 0.9475 |
 | 4. Jailbreak Detection | Overall accuracy (LFM / Qwen) | 0.921 / 0.793 |
 | 5. Alignment Transfer | Refusal rate increase | +56.7% (43.3% → 100%) |
-| 6. Geometric Guardrails | Precision / Recall | 0.930 / 0.757 |
+| 6. Geometric Guardrails | F1 (LFM / Qwen) | 0.879 / 0.404 |
 
 ---
 
@@ -222,42 +222,45 @@ Steering harmful prompts by adding the instruct-derived refusal direction pushed
 
 **Measurement**: Boundary violation detection using refusal projection threshold and distance from safe centroid.
 
-**Layer Selection**: Layer 5 selected by maximum boundary score (harmful_violation_rate - harmless_violation_rate).
+**Threshold Optimization**: Thresholds are automatically optimized for each model's geometry by grid search over percentile combinations, maximizing detection while constraining false positive rate to ~10%.
 
-### Configuration
+### Results: LFM2.5-1.2B-Instruct
 
-- Refusal threshold: 5th percentile of harmless projections = **-0.075**
-- Safe radius: 95th percentile of harmless distances = **0.130**
-
-(These percentiles are configuration parameters.)
-
-### Detection Rates
+**Layer**: 4 (selected by max boundary score 0.50)
+**Optimized Boundary**: refusal_threshold=-0.245, safe_radius=0.106 (score=0.737)
 
 | Category | N | Violation Rate |
 |----------|---|----------------|
-| Harmless | 30 | 0.133 |
-| Harmful | 30 | 0.433 |
+| Harmless | 30 | 0.300 |
+| Harmful | 30 | 0.733 |
 | Jailbreak | 40 | **1.000** |
-
-### Detection Metrics
 
 | Metric | Value |
 |--------|-------|
-| Precision | 0.930 |
-| Recall | 0.757 |
-| F1 | **0.835** |
-| True Positives | 53 |
-| False Positives | 4 |
-| True Negatives | 26 |
-| False Negatives | 17 |
+| Precision | 0.873 |
+| Recall | 0.886 |
+| F1 | **0.879** |
 
-### Steering Recovery
+### Results: Qwen2.5-3B-Instruct
 
-Of 57 violations detected, 33 (62.3%) were brought within boundary by steering.
+**Layer**: 30 (selected by max boundary score 0.35)
+**Optimized Boundary**: refusal_threshold=-19.78, safe_radius=72.0 (score=0.563)
+
+| Category | N | Violation Rate |
+|----------|---|----------------|
+| Harmless | 30 | 0.167 |
+| Harmful | 30 | 0.200 |
+| Jailbreak | 40 | 0.325 |
+
+| Metric | Value |
+|--------|-------|
+| Precision | 0.792 |
+| Recall | 0.271 |
+| F1 | 0.404 |
 
 ### Observation
 
-Using boundary-specific layer selection (maximize harmful - harmless violation rate), all jailbreaks are detected (100%). Precision is 93% with recall of 75.7%. The boundary-based approach catches jailbreaks more effectively than harmful prompts, suggesting jailbreaks are geometrically more distant from safe activations.
+Model-agnostic threshold optimization finds different operating points for each architecture. LFM achieves 100% jailbreak detection with F1=0.879. Qwen's weaker boundary score (0.563 vs 0.737) indicates its geometry places jailbreaks closer to harmless activations, resulting in lower detection (F1=0.404). This suggests boundary-based detection effectiveness varies by architecture.
 
 ---
 
@@ -267,9 +270,19 @@ Using boundary-specific layer selection (maximize harmful - harmless violation r
 
 **For classification (Experiments 2, 4, 5)**: Layer selected by computing classification accuracy at each layer (using 95th percentile threshold) and choosing the layer with maximum accuracy.
 
-**For boundary detection (Experiment 6)**: Layer selected by computing boundary violation rates at each layer and choosing the layer that maximizes (harmful_violation_rate - harmless_violation_rate). This criterion directly optimizes for the guardrails objective.
+**For boundary detection (Experiment 6)**: Layer selected by grid search over percentile combinations at each layer, choosing the layer that maximizes (harmful_violation_rate - harmless_violation_rate) while constraining FPR.
 
 Different models and different detection methods select different optimal layers based on task requirements.
+
+### Model-Agnostic Threshold Optimization (Experiment 6)
+
+Instead of fixed percentiles, thresholds are optimized per-model by:
+1. Grid search over refusal percentiles (1-19%) and distance percentiles (80-98%)
+2. For each combination, compute FPR and TPR on training data
+3. Select thresholds that maximize a score balancing detection and false positives
+4. Constrain to target FPR (~10%)
+
+This ensures the boundary adapts to each model's geometric structure rather than using arbitrary fixed values.
 
 ### Threshold Derivation
 

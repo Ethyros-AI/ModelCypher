@@ -48,6 +48,7 @@ from .stages import (
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ def run_merge(
     # Optional pre-loaded weights to avoid redundant disk I/O
     source_weights: dict[str, "Array"] | None = None,
     activation_provider: "ActivationProvider | None" = None,
+    inference_engine: "InferenceEngine | None" = None,
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     # Delta budget control for sequential stacking
     delta_scale: float = 1.0,
@@ -680,6 +682,7 @@ def run_merge(
         try:
             coherence_result = validate_merge_coherence(
                 model_path=final_output_path,
+                inference_engine=inference_engine,
                 test_prompts=None,  # Uses default diverse prompts
                 max_tokens=100,
             )
