@@ -46,8 +46,23 @@ def register(app: typer.Typer) -> None:
         layer: int | None = typer.Option(
             None, "--layer", help="Layer index (defaults to middle layer)"
         ),
+        layers: str | None = typer.Option(
+            None, "--layers", help="Comma-separated list of layer indices"
+        ),
+        all_layers: bool = typer.Option(
+            False, "--all-layers", help="Run evidence across all layers"
+        ),
         probe_count: int | None = typer.Option(
             None, "--probe-count", help="Optional cap on number of probes"
+        ),
+        batch_size: int = typer.Option(
+            8, "--batch-size", help="Batch size for activation collection"
+        ),
+        pooling: str = typer.Option(
+            "mean", "--pooling", help="Token pooling: mean or frechet"
+        ),
+        layer_chunk_size: int | None = typer.Option(
+            None, "--layer-chunk-size", help="Layers per activation pass"
         ),
         output: Path | None = typer.Option(
             None, "--output-file", help="Path to save evidence JSON"
@@ -61,10 +76,19 @@ def register(app: typer.Typer) -> None:
             from modelcypher.core.domain.geometry.manifold_evidence import (
                 compute_manifold_evidence,
             )
+            from modelcypher.adapters.model_loader import load_model_for_training
+            from modelcypher.cli.commands.geometry.atlas import AtlasActivationCache
+            from modelcypher.cli.commands.geometry.helpers import resolve_model_backbone
+            from modelcypher.core.domain._backend import get_default_backend
 
             probes = UnifiedAtlasInventory.all_probes()
             if not probes:
                 raise ValueError("No atlas probes available.")
+
+            if all_layers and layers:
+                raise ValueError("Use either --all-layers or --layers, not both.")
+            if layer is not None and (all_layers or layers):
+                raise ValueError("Use --layer for a single layer, or --layers/--all-layers.")
 
             selected = _select_probes(probe_count, probes)
             prompts = []
@@ -73,6 +97,97 @@ def register(app: typer.Typer) -> None:
                     prompts.append(probe.support_texts[0])
                 else:
                     prompts.append(probe.name)
+
+            pool_mode = pooling.strip().lower()
+            if pool_mode not in {"mean", "frechet"}:
+                raise ValueError("Pooling must be 'mean' or 'frechet'.")
+            if batch_size < 1:
+                raise ValueError("batch-size must be >= 1.")
+
+            if all_layers or layers:
+                model_obj, tokenizer = load_model_for_training(str(model))
+                resolved = resolve_model_backbone(
+                    model_obj, getattr(model_obj, "model_type", None)
+                )
+                if not resolved:
+                    raise ValueError("Could not resolve model architecture.")
+                embed_tokens, layers_module, norm = resolved
+                num_layers = len(layers_module)
+                backend = get_default_backend()
+
+                if layers:
+                    layer_indices = [
+                        int(value.strip())
+                        for value in layers.split(",")
+                        if value.strip()
+                    ]
+                else:
+                    layer_indices = list(range(num_layers))
+                if not layer_indices:
+                    raise ValueError("No layers specified.")
+                for layer_idx in layer_indices:
+                    if layer_idx < 0 or layer_idx >= num_layers:
+                        raise ValueError(
+                            f"Layer {layer_idx} out of range for model with {num_layers} layers."
+                        )
+
+                chunk_size = (
+                    len(layer_indices)
+                    if layer_chunk_size is None or layer_chunk_size <= 0
+                    else min(layer_chunk_size, len(layer_indices))
+                )
+                chunks = [
+                    layer_indices[i : i + chunk_size]
+                    for i in range(0, len(layer_indices), chunk_size)
+                ]
+
+                provider = AtlasActivationCache(
+                    tokenizer,
+                    embed_tokens,
+                    layers_module,
+                    norm,
+                    backend,
+                    pooling=pool_mode,
+                    batch_size=batch_size,
+                    frechet_k_neighbors=None,
+                    frechet_max_k_neighbors=None,
+                    progress_callback=None,
+                )
+
+                layer_reports = []
+                for chunk in chunks:
+                    provider.preload_layers(prompts, chunk)
+                    for layer_idx in chunk:
+                        activations = provider.get_activations(prompts, layer_idx)
+                        arr = backend.array(activations)
+                        backend.eval(arr)
+                        report = compute_manifold_evidence(arr, backend=backend)
+                        layer_reports.append(
+                            {
+                                "layer": layer_idx,
+                                "activationCount": len(activations),
+                                "evidence": asdict(report),
+                            }
+                        )
+                    provider.clear_layers(chunk)
+
+                cleanup_memory()
+
+                payload = {
+                    "_schema": "mc.geometry.research.manifold_evidence_sweep.v1",
+                    "modelPath": str(model),
+                    "probeCount": len(selected),
+                    "layers": sorted(layer_indices),
+                    "layerReports": layer_reports,
+                }
+                if output:
+                    from modelcypher.utils.json import dump_json
+
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_text(dump_json(payload, pretty=True))
+
+                write_output(payload, context.output_format, context.pretty)
+                return
 
             model_obj, _tokenizer, backend, provider, num_layers = load_model_and_provider(
                 str(model)
