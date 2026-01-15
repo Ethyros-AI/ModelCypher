@@ -367,9 +367,195 @@ def diagnose_variance_distribution(
     }
 
 
+def compute_subspace_novelty(
+    source_activations: "Array",
+    target_activations: "Array",
+    stitch: "Array | None" = None,
+    backend: "Backend | None" = None,
+) -> DirectionNoveltyResult:
+    """Compute novelty using principal angle analysis (geometry-faithful).
+
+    This is the correct approach for cross-architecture merging where source and
+    target have different dimensions. Instead of comparing variances (which are
+    distorted by dimension compression), we compare SUBSPACES using principal angles.
+
+    Mathematical Foundation:
+        1. Extract principal subspaces via SVD
+        2. Compute principal angles between source and target subspaces
+        3. Novel directions = source directions orthogonal to target's subspace
+        4. This is invariant to dimension mismatch and scaling
+
+    For same-dimension merging, this is equivalent to variance-based novelty but
+    more robust. For cross-dimension merging, this is the ONLY correct approach.
+
+    Args:
+        source_activations: Source activation matrix [n, d_src]
+        target_activations: Target activation matrix [n, d_tgt]
+        stitch: Optional alignment matrix [d_tgt, d_src] for cross-arch.
+            If provided, source is aligned to target space before analysis.
+            The stitch is orthonormalized (U @ V^T) to remove scaling artifacts.
+        backend: Backend for tensor operations
+
+    Returns:
+        DirectionNoveltyResult with geometry-derived novelty classification
+    """
+    from modelcypher.core.domain.geometry.subspace import compute_subspace_overlap
+
+    b = backend or get_default_backend()
+
+    src_arr = b.array(source_activations)
+    tgt_arr = b.array(target_activations)
+
+    shape_src = b.shape(src_arr)
+    shape_tgt = b.shape(tgt_arr)
+    n_src = int(shape_src[0])
+    n_tgt = int(shape_tgt[0])
+    d_src = int(shape_src[1])
+    d_tgt = int(shape_tgt[1])
+
+    if n_src != n_tgt:
+        raise ValueError(f"Sample count mismatch: source {n_src} vs target {n_tgt}")
+
+    compute_dtype = precision_dtype(b, reference=src_arr)
+    src_arr = b.astype(src_arr, compute_dtype)
+    tgt_arr = b.astype(tgt_arr, compute_dtype)
+
+    # Handle cross-architecture: align source to target dimension
+    if d_src != d_tgt:
+        if stitch is None:
+            raise ValueError(
+                f"Dimension mismatch (src={d_src}, tgt={d_tgt}) requires stitch matrix"
+            )
+        stitch_arr = b.astype(b.array(stitch), compute_dtype)
+        stitch_shape = b.shape(stitch_arr)
+
+        # Verify stitch dimensions
+        if int(stitch_shape[0]) != d_tgt or int(stitch_shape[1]) != d_src:
+            raise ValueError(
+                f"Stitch shape {stitch_shape} incompatible with dims (tgt={d_tgt}, src={d_src})"
+            )
+
+        # Orthonormalize stitch via SVD: U @ V^T removes scaling artifacts
+        # while preserving the rotation/alignment
+        U, S, Vt = b.svd(stitch_arr, compute_uv=True)
+        b.eval(U, S, Vt)
+
+        # Handle full vs thin SVD: for [m, n] matrix with k = min(m, n),
+        # full SVD gives U [m, m], Vt [n, n] - we need U[:, :k] @ Vt[:k, :]
+        k = min(d_tgt, d_src)
+        U_thin = U[:, :k]  # [d_tgt, k]
+        Vt_thin = Vt[:k, :]  # [k, d_src]
+        ortho_stitch = b.matmul(U_thin, Vt_thin)
+        b.eval(ortho_stitch)
+
+        # Align source: src_aligned = src @ stitch^T
+        src_aligned = b.matmul(src_arr, b.transpose(ortho_stitch))
+        b.eval(src_aligned)
+
+        logger.info(
+            "SUBSPACE NOVELTY: Cross-arch alignment %d → %d (orthonormalized stitch)",
+            d_src, d_tgt
+        )
+    else:
+        src_aligned = src_arr
+
+    # Compute subspace overlap using principal angle analysis
+    subspace_result = compute_subspace_overlap(src_aligned, tgt_arr, backend=b)
+
+    # Build novelty mask in target dimension space
+    # Novel directions are those in source's subspace but orthogonal to target's
+    novel_basis = subspace_result.novel_basis  # [k_novel, d_tgt]
+    shared_basis = subspace_result.shared_basis  # [k_shared, d_tgt]
+
+    n_novel = int(b.shape(novel_basis)[0])
+    n_shared = int(b.shape(shared_basis)[0])
+
+    # Create per-direction novelty by projecting onto novel subspace
+    # For each direction i, novelty[i] = how much of direction i is in novel subspace
+    if n_novel > 0:
+        # Novel projector: P_novel = V_novel^T @ V_novel
+        novel_projector = b.matmul(b.transpose(novel_basis), novel_basis)
+        b.eval(novel_projector)
+
+        # Novelty score for each direction = diagonal of projector
+        # (how much of direction i overlaps with novel subspace)
+        novelty_ratio = b.diag(novel_projector)
+        b.eval(novelty_ratio)
+    else:
+        novelty_ratio = b.zeros((d_tgt,))
+        b.eval(novelty_ratio)
+
+    # Clamp to [0, 1]
+    novelty_ratio = b.clip(novelty_ratio, 0.0, 1.0)
+    b.eval(novelty_ratio)
+
+    # Threshold is geometry-derived: 0.5 means equal projection to novel and shared
+    threshold = 0.5
+    threshold_arr = b.array([threshold])
+    novel_mask = novelty_ratio > threshold_arr
+    shared_mask = novelty_ratio <= threshold_arr
+    b.eval(novel_mask, shared_mask)
+
+    # Count
+    count_dtype = precision_dtype(b, reference=novelty_ratio)
+    novel_count = int(b.to_scalar(b.sum(b.astype(novel_mask, count_dtype))))
+    shared_count = int(b.to_scalar(b.sum(b.astype(shared_mask, count_dtype))))
+    mean_novelty = float(b.to_scalar(b.mean(novelty_ratio)))
+
+    # Compute variance for diagnostics (not used for classification)
+    src_mean = b.mean(src_aligned, axis=0)
+    tgt_mean = b.mean(tgt_arr, axis=0)
+    src_centered = src_aligned - src_mean
+    tgt_centered = tgt_arr - tgt_mean
+    source_variance = b.mean(src_centered * src_centered, axis=0)
+    target_variance = b.mean(tgt_centered * tgt_centered, axis=0)
+    b.eval(source_variance, target_variance)
+
+    # Get indices of novel directions
+    novel_indices_list: list[int] = []
+    if novel_count > 0:
+        novel_idx_result = b.nonzero(novel_mask)
+        if len(novel_idx_result) > 0 and novel_idx_result[0].shape[0] > 0:
+            novel_idx_arr = novel_idx_result[0]
+            novel_values = b.take(novelty_ratio, novel_idx_arr, axis=0)
+            b.eval(novel_values)
+            sort_idx = b.argsort(novel_values)
+            rev_idx = b.arange(int(b.shape(sort_idx)[0]) - 1, -1, -1)
+            sort_idx_desc = b.take(sort_idx, rev_idx, axis=0)
+            sorted_novel_idx = b.take(novel_idx_arr, sort_idx_desc, axis=0)
+            b.eval(sorted_novel_idx)
+            novel_indices_list = [
+                int(b.to_scalar(b.take(sorted_novel_idx, b.array([i]), axis=0)))
+                for i in range(int(b.shape(sorted_novel_idx)[0]))
+            ]
+
+    logger.info(
+        "SUBSPACE NOVELTY: %d novel (%.1f%%), %d shared, subspace_overlap=%.1f%%, mean=%.4f",
+        novel_count,
+        novel_count / max(d_tgt, 1) * 100,
+        shared_count,
+        subspace_result.overlap_fraction * 100,
+        mean_novelty,
+    )
+
+    return DirectionNoveltyResult(
+        novelty_ratio=novelty_ratio,
+        novel_mask=novel_mask,
+        shared_mask=shared_mask,
+        novel_count=novel_count,
+        shared_count=shared_count,
+        threshold=threshold,
+        source_variance=source_variance,
+        target_variance=target_variance,
+        mean_novelty=mean_novelty,
+        novel_indices=novel_indices_list,
+    )
+
+
 __all__ = [
     "DirectionNoveltyResult",
     "compute_per_direction_novelty",
+    "compute_subspace_novelty",
     "compute_direction_projector",
     "compute_weighted_direction_projector",
     "diagnose_variance_distribution",

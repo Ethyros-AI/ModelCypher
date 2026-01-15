@@ -72,6 +72,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 from modelcypher.core.domain.geometry.direction_novelty import (
     DirectionNoveltyResult,
     compute_per_direction_novelty,
+    compute_subspace_novelty,
 )
 
 if TYPE_CHECKING:
@@ -335,6 +336,7 @@ def compute_weight_space_transplant(
     null_space_projector: "NullSpaceProjector | None" = None,
     direction_novelty_result: "DirectionNoveltyResult | None" = None,
     apply_novelty_filter: bool = True,
+    novelty_stitch: "Array | None" = None,
     delta_scale: float = 1.0,
     backend: "Backend | None" = None,
 ) -> WeightSpaceTransplantResult:
@@ -361,15 +363,19 @@ def compute_weight_space_transplant(
         input_activations: INPUT activations to this weight [n, in_dim].
             For hidden→X weights: use hidden activations.
             For intermediate→X weights: use intermediate activations.
-        source_activations_for_density: Source activations for density comparison [n, d].
+        source_activations_for_density: Source activations for density comparison [n, d_src].
             If None, density weighting is disabled (uniform transfer).
-        target_activations_for_density: Target activations for density comparison [n, d].
+            For cross-arch, this can have different dimension than target.
+        target_activations_for_density: Target activations for density comparison [n, d_tgt].
             If None, density weighting is disabled (uniform transfer).
         direction_novelty_result: Optional per-direction novelty analysis.
             If provided and apply_novelty_filter=True, only transfers knowledge in
             directions where source has high variance but target has low variance.
         apply_novelty_filter: Whether to apply direction novelty filtering.
             Default True. Set False to use only null-space projection.
+        novelty_stitch: Optional alignment matrix [d_tgt, d_src] for cross-arch novelty.
+            Required when source and target density activations have different dimensions.
+            Used by compute_subspace_novelty for geometry-faithful novelty in shared basis.
         backend: Compute backend.
 
     Returns:
@@ -534,29 +540,65 @@ def compute_weight_space_transplant(
     elif apply_novelty_filter and source_activations_for_density is not None and target_activations_for_density is not None:
         # Compute novelty on the fly if not provided
         try:
-            novelty_result = compute_per_direction_novelty(
-                source_activations_for_density,
-                target_activations_for_density,
-                backend=b,
-            )
-            novel_mask = novelty_result.novel_mask
-            mask_shape = b.shape(novel_mask)
+            src_density_shape = b.shape(source_activations_for_density)
+            tgt_density_shape = b.shape(target_activations_for_density)
+            d_src = int(src_density_shape[1])
+            d_tgt = int(tgt_density_shape[1])
 
-            # Only apply if dimensions match
-            if int(mask_shape[0]) == in_dim:
-                novel_mask_float = b.astype(novel_mask, compute_dtype)
-                b.eval(novel_mask_float)
-                delta_W_proj = delta_W_proj * novel_mask_float
-                b.eval(delta_W_proj)
-                novelty_filtered = True
+            if d_src != d_tgt:
+                # Cross-architecture: use geometry-faithful subspace novelty
+                if novelty_stitch is None:
+                    logger.warning(
+                        "NOVELTY FILTER: cross-arch (src=%d, tgt=%d) but no stitch provided, skipping",
+                        d_src, d_tgt
+                    )
+                else:
+                    novelty_result = compute_subspace_novelty(
+                        source_activations_for_density,
+                        target_activations_for_density,
+                        stitch=novelty_stitch,
+                        backend=b,
+                    )
+                    novel_mask = novelty_result.novel_mask
+                    mask_shape = b.shape(novel_mask)
 
-                logger.info(
-                    "NOVELTY FILTER (computed): %d/%d novel directions",
-                    novelty_result.novel_count,
-                    int(mask_shape[0]),
+                    if int(mask_shape[0]) == in_dim:
+                        novel_mask_float = b.astype(novel_mask, compute_dtype)
+                        b.eval(novel_mask_float)
+                        delta_W_proj = delta_W_proj * novel_mask_float
+                        b.eval(delta_W_proj)
+                        novelty_filtered = True
+
+                        logger.info(
+                            "NOVELTY FILTER (subspace): %d/%d novel directions (cross-arch %d→%d)",
+                            novelty_result.novel_count,
+                            int(mask_shape[0]),
+                            d_src, d_tgt
+                        )
+            else:
+                # Same-architecture: use variance-based novelty
+                novelty_result = compute_per_direction_novelty(
+                    source_activations_for_density,
+                    target_activations_for_density,
+                    backend=b,
                 )
+                novel_mask = novelty_result.novel_mask
+                mask_shape = b.shape(novel_mask)
+
+                if int(mask_shape[0]) == in_dim:
+                    novel_mask_float = b.astype(novel_mask, compute_dtype)
+                    b.eval(novel_mask_float)
+                    delta_W_proj = delta_W_proj * novel_mask_float
+                    b.eval(delta_W_proj)
+                    novelty_filtered = True
+
+                    logger.info(
+                        "NOVELTY FILTER (variance): %d/%d novel directions",
+                        novelty_result.novel_count,
+                        int(mask_shape[0]),
+                    )
         except Exception as e:
-            logger.debug("NOVELTY FILTER: computation failed, skipping: %s", e)
+            logger.warning("NOVELTY FILTER: computation failed: %s", e)
 
     # Compute projected norm (geodesic Frobenius)
     projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)
