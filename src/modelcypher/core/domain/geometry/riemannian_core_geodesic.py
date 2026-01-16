@@ -75,9 +75,56 @@ class RiemannianGeodesicMixin:
         k_neighbors: int | None = None,
         use_cache: bool = True,
         refine_iterations: int = 1,
+        method: str = "spectral",
     ) -> GeodesicDistanceResult:
         """
-        Compute geodesic distances using a k-NN graph and shortest paths.
+        Compute geodesic distances on the manifold.
+
+        Supports two methods:
+        - "spectral" (default): Uses Varadhan's formula via Laplacian eigenvectors.
+          Faster O(n²k) and provides spectral signature for free.
+        - "floyd-warshall": Uses Isomap-style k-NN graph shortest paths.
+          More accurate for highly irregular graphs but O(n³).
+
+        When k_neighbors is None, finds the MINIMUM k that makes the graph
+        connected - a geometric property of the point cloud.
+
+        Args:
+            points: Point cloud [n, d]
+            k_neighbors: Number of neighbors for graph. If None, automatically
+                         finds the minimum k that ensures graph connectivity.
+            use_cache: Whether to use session-scoped caching.
+            refine_iterations: For Floyd-Warshall method, number of geodesic
+                refinement passes (ignored for spectral method).
+            method: "spectral" or "floyd-warshall".
+
+        Returns:
+            GeodesicDistanceResult with pairwise geodesic distances
+        """
+        if method == "spectral":
+            result, _ = self.geodesic_distances_spectral(
+                points, k_neighbors=k_neighbors, use_cache=use_cache
+            )
+            return result
+        elif method == "floyd-warshall":
+            return self._geodesic_distances_floyd_warshall(
+                points,
+                k_neighbors=k_neighbors,
+                use_cache=use_cache,
+                refine_iterations=refine_iterations,
+            )
+        else:
+            raise ValueError(f"Unknown geodesic method: {method}. Use 'spectral' or 'floyd-warshall'.")
+
+    def _geodesic_distances_floyd_warshall(
+        self,
+        points: "Array",
+        k_neighbors: int | None = None,
+        use_cache: bool = True,
+        refine_iterations: int = 1,
+    ) -> GeodesicDistanceResult:
+        """
+        Compute geodesic distances using Floyd-Warshall shortest paths.
 
         This implements the Isomap-style geodesic computation:
         1. Build a k-NN graph where edge weights are Euclidean (chord) distances
@@ -87,27 +134,8 @@ class RiemannianGeodesicMixin:
 
         CHORD BOOTSTRAP: Local edge weights use Euclidean distances, which
         approximate geodesic distances when k is small (local flatness).
-        For highly curved manifolds, alternatives like heat kernel method
-        (Varadhan's formula) would provide more accurate local distances.
-        See _chord_distance_matrix() docstring for details.
-
-        When k_neighbors is None, the method finds the MINIMUM k that makes
-        the graph connected. This is a geometric property of the point cloud -
-        the connectivity threshold reveals the manifold's intrinsic structure.
-
-        Uses session-scoped caching to avoid redundant computation when the
-        same point set is used multiple times.
-
-        Args:
-            points: Point cloud [n, d]
-            k_neighbors: Number of neighbors for graph. If None, automatically
-                         finds the minimum k that ensures graph connectivity.
-            refine_iterations: Number of geodesic refinement passes. Each pass
-                rebuilds k-NN using geodesic distances and recomputes shortest
-                paths to reduce chord bootstrap influence.
-
-        Returns:
-            GeodesicDistanceResult with pairwise geodesic distances
+        For highly curved manifolds, the spectral method (Varadhan's formula)
+        provides more accurate distances.
         """
         backend = self._backend
         points = _promote_precision(backend.array(points), backend)
@@ -285,24 +313,79 @@ class RiemannianGeodesicMixin:
         points: "Array",
         chord_dist: "Array | None" = None,
         use_cache: bool = True,
+        use_mst: bool = True,
     ) -> tuple[int, "Array", "Array"]:
         """Find the minimum k that makes the k-NN graph connected.
 
-        Uses a smarter starting bound based on graph connectivity theory:
-        for n points in general position, k >= log2(n) is typically sufficient.
-        This reduces the number of iterations in the doubling phase.
-        """
-        import math
+        Args:
+            points: Point cloud array [n, d].
+            chord_dist: Pre-computed chord distance matrix (optional).
+            use_cache: Whether to use caching for distance matrix.
+            use_mst: If True, use MST-based O(n²) approach. If False,
+                use binary search with repeated connectivity checks.
 
+        Returns:
+            Tuple of (k, k-NN indices, chord distance matrix).
+        """
         backend = self._backend
         n = int(points.shape[0])
         if n <= 1:
             return 0, backend.zeros((n, 0)), backend.zeros((n, n))
 
-        # Binary search: use log2(n) as smarter starting bound
         if chord_dist is None:
             chord_dist = self._chord_distance_matrix(points, use_cache=use_cache)
             backend.eval(chord_dist)
+
+        if use_mst:
+            return self._minimum_connected_k_mst(chord_dist)
+        return self._minimum_connected_k_binary_search(chord_dist)
+
+    def _minimum_connected_k_mst(
+        self,
+        chord_dist: "Array",
+    ) -> tuple[int, "Array", "Array"]:
+        """Find minimum k using MST max degree.
+
+        The maximum vertex degree in the MST gives a lower bound for k.
+        This approach is O(n²) - one MST computation plus one k-NN build.
+        """
+        from modelcypher.core.domain.geometry.mst import minimum_k_from_mst
+
+        backend = self._backend
+        n = int(chord_dist.shape[0])
+
+        k, mst_result = minimum_k_from_mst(chord_dist, backend)
+
+        # Handle disconnected case
+        if mst_result.component_count > 1:
+            # Graph is inherently disconnected - use max k
+            k = n - 1
+
+        # Ensure k is at least 1 and at most n-1
+        k = max(1, min(k, n - 1))
+
+        # Build k-NN with this k
+        knn, _ = self._knn_indices_from_chord(chord_dist, k)
+
+        # Verify connectivity - if not connected, fall back to binary search
+        if not self._is_knn_connected(knn):
+            return self._minimum_connected_k_binary_search(chord_dist)
+
+        return k, knn, chord_dist
+
+    def _minimum_connected_k_binary_search(
+        self,
+        chord_dist: "Array",
+    ) -> tuple[int, "Array", "Array"]:
+        """Find minimum k using binary search with connectivity checks.
+
+        Uses a smarter starting bound based on graph connectivity theory:
+        for n points in general position, k >= log2(n) is typically sufficient.
+        """
+        import math
+
+        backend = self._backend
+        n = int(chord_dist.shape[0])
 
         k_low = 1
         k_high = n - 1
@@ -314,7 +397,6 @@ class RiemannianGeodesicMixin:
             return k_low, knn_low, chord_dist
 
         # Use theoretical bound: for random graphs, k >= log2(n) typically sufficient
-        # This is exact - we're just starting the search at a smarter point
         k_theoretical = max(int(math.ceil(math.log2(max(2, n)))), 2)
         k_test = min(k_theoretical, k_high)
         while k_test < k_high:

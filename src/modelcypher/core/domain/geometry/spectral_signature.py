@@ -317,7 +317,19 @@ class SpectralSignature:
         self,
         points: "Array",
         k_neighbors: int | None,
+        mutual_knn: bool = False,
     ) -> tuple["Array", "Array", float, int, "Array"]:
+        """Build k-NN adjacency matrix from point cloud.
+
+        Args:
+            points: Point cloud array [n, d].
+            k_neighbors: Number of neighbors (auto-detected if None).
+            mutual_knn: If True, use mutual k-NN (edge only if both i→j and j→i).
+                This is stricter and reduces shortcut edges in sparse manifolds.
+
+        Returns:
+            Tuple of (adjacency, geodesic_dist, inf_value, k_neighbors, neighbor_indices).
+        """
         backend = self._backend
         n = int(points.shape[0])
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -343,13 +355,23 @@ class SpectralSignature:
         edge_eps_arr = backend.full(geodesic_dist.shape, edge_eps)
         weights = backend.maximum(geodesic_dist, edge_eps_arr)
 
-        col_indices = backend.arange(n)
-        col_indices_row = backend.reshape(col_indices, (1, n))
-        for neighbor_rank in range(k_neighbors):
-            neighbor_cols = neighbor_indices[:, neighbor_rank]
-            mask = backend.reshape(neighbor_cols, (n, 1)) == col_indices_row
-            adj = backend.where(mask, weights, adj)
-        adj = backend.minimum(adj, backend.transpose(adj))
+        # Vectorized adjacency construction using put_along_axis
+        # Gather weights at neighbor positions: [n, k]
+        neighbor_weights = backend.take_along_axis(weights, neighbor_indices, axis=1)
+        # Put neighbor weights into adjacency matrix at correct positions
+        adj = backend.put_along_axis(adj, neighbor_indices, neighbor_weights, axis=1)
+
+        # Symmetrization
+        inf_thresh = infinity_threshold(backend, adj)
+        adj_t = backend.transpose(adj)
+        if mutual_knn:
+            # Mutual k-NN: edge exists only if both i→j AND j→i
+            # This reduces shortcut edges in sparse/holed manifolds
+            mutual_mask = (adj < inf_thresh) & (adj_t < inf_thresh)
+            adj = backend.where(mutual_mask, backend.minimum(adj, adj_t), inf_val)
+        else:
+            # Union k-NN: edge exists if i→j OR j→i (standard)
+            adj = backend.minimum(adj, adj_t)
 
         return adj, geodesic_dist, inf_val, k_neighbors, neighbor_indices
 

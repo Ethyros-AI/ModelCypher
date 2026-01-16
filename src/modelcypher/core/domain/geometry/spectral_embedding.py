@@ -27,7 +27,10 @@ One eigendecomposition produces both:
 - Geodesic distances (as Euclidean distance in embedding space)
 - Spectral signature (eigenvalues for heat trace, entropy, etc.)
 
-This eliminates the redundant Floyd-Warshall computation.
+CRITICAL: The Laplacian is built from CHORD (local Euclidean) distances,
+NOT geodesic distances. The eigendecomposition then produces an embedding
+where Euclidean distance approximates geodesic distance. This is the
+mathematical content of Varadhan's formula.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.mst import minimum_k_from_mst
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
@@ -132,40 +136,73 @@ def compute_spectral_embedding(
     if n == 1:
         return _single_point_embedding(backend, points_arr, 0.0)
 
-    # Build k-NN adjacency using geodesic distances
-    from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+    # Compute chord (Euclidean) distance matrix directly
+    # This is the correct input for Varadhan's formula - NOT geodesic distances
+    chord_dist = _chord_distance_matrix(points_arr, backend)
+    backend.eval(chord_dist)
 
-    rg = RiemannianGeometry(backend)
+    # Handle degenerate case: all points identical (all distances near zero)
+    max_dist_arr = backend.max(chord_dist)
+    backend.eval(max_dist_arr)
+    max_dist = float(backend.to_scalar(max_dist_arr))
+    if max_dist < tiny_value(backend, chord_dist):
+        # All points at same location - return degenerate embedding
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        return SpectralEmbeddingResult(
+            embedding=backend.zeros((n, 1)),
+            eigenvalues=backend.zeros((1,)),
+            eigenvectors=backend.ones((n, 1)) / float(n) ** 0.5,
+            all_eigenvalues=backend.zeros((n,)),
+            k_used=1,
+            k_neighbors=k_neighbors if k_neighbors is not None else 0,
+            component_count=1,
+            kernel_bandwidth=0.0,
+            adjacency=backend.zeros((n, n)),
+            inf_value=float("inf"),
+            compute_time_ms=elapsed_ms,
+        )
 
-    # Get geodesic result to reuse k-NN structure
-    # This uses Floyd-Warshall for the initial geodesic computation,
-    # but we only do it once, then use the spectral embedding for distances
-    geo_result = rg.geodesic_distances(points_arr, k_neighbors=k_neighbors)
-    geodesic_dist = geo_result.distances
-    adj = geo_result.adjacency
-    inf_val = geo_result.inf_value
-    k_neighbors = geo_result.k_neighbors
-    backend.eval(geodesic_dist, adj)
+    # Find minimum k for connectivity using MST if not specified
+    if k_neighbors is None:
+        k_neighbors, mst_result = minimum_k_from_mst(chord_dist, backend)
+        component_count_from_mst = mst_result.component_count
+    else:
+        component_count_from_mst = None  # Will be determined from eigenvalues
 
-    # Build neighbor indices from adjacency
+    # Clamp k to valid range
+    k_neighbors = max(1, min(k_neighbors, n - 1))
+
+    # Build k-NN adjacency from chord distances
+    inf_val = infinity_threshold(backend, chord_dist) * 2.0
     self_mask = backend.eye(n) > 0.0
-    dist_no_self = backend.where(self_mask, inf_val, geodesic_dist)
+    dist_no_self = backend.where(self_mask, inf_val, chord_dist)
     kth = max(0, min(k_neighbors - 1, n - 1))
     neighbor_indices = backend.argpartition(dist_no_self, kth, axis=1)[:, :k_neighbors]
     backend.eval(neighbor_indices)
 
+    # Build adjacency matrix with chord distances at k-NN edges
+    adj = backend.full((n, n), inf_val)
+    neighbor_weights = backend.take_along_axis(chord_dist, neighbor_indices, axis=1)
+    adj = backend.put_along_axis(adj, neighbor_indices, neighbor_weights, axis=1)
+    adj = adj * (1.0 - backend.eye(n))  # Zero diagonal
+
+    # Symmetrize: edge exists if either direction is a k-NN
+    adj_t = backend.transpose(adj)
+    adj = backend.minimum(adj, adj_t)
+    backend.eval(adj)
+
     # Compute kernel bandwidth from median neighbor distance
-    neighbor_dists = backend.take(geodesic_dist, neighbor_indices, axis=1)
+    neighbor_dists = backend.take_along_axis(chord_dist, neighbor_indices, axis=1)
     backend.eval(neighbor_dists)
     kernel_bandwidth = _median_flattened(neighbor_dists, backend)
 
-    bandwidth_floor = tiny_value(backend, geodesic_dist)
+    bandwidth_floor = tiny_value(backend, chord_dist)
     if kernel_bandwidth <= bandwidth_floor:
         kernel_bandwidth = bandwidth_floor
 
-    # Build normalized graph Laplacian with heat kernel weights
+    # Build normalized graph Laplacian with heat kernel weights from CHORD distances
     inf_thresh = infinity_threshold(backend, adj)
-    weights_dtype = precision_dtype(backend, reference=geodesic_dist)
+    weights_dtype = precision_dtype(backend, reference=chord_dist)
     weights_arr = backend.zeros((n, n), dtype=weights_dtype)
 
     edge_mask = backend.where(
@@ -179,7 +216,8 @@ def compute_spectral_embedding(
 
     if edge_count > n:  # More than just diagonal
         sigma_sq = kernel_bandwidth * kernel_bandwidth * 2.0
-        weights_arr = backend.exp(-(geodesic_dist * geodesic_dist) / sigma_sq)
+        # Use CHORD distances for heat kernel weights - this is the key fix
+        weights_arr = backend.exp(-(chord_dist * chord_dist) / sigma_sq)
         weights_arr = weights_arr * edge_mask
         weights_arr = weights_arr * (1.0 - backend.eye(n))
         weights_arr = backend.astype(weights_arr, weights_dtype)
