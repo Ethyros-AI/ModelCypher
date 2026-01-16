@@ -344,8 +344,10 @@ def geodesic_cosine_matrix(
     if n == 0:
         return backend.array([])
     if n < 3:
-        # Too few points to infer a manifold; fall back to chord cosine.
-        return _chord_cosine_matrix(vectors_arr, backend)
+        raise ValueError(
+            f"geodesic_cosine_matrix requires n >= 3 points to infer manifold structure, got n={n}. "
+            "Use chord_cosine_matrix explicitly if chord distance is acceptable."
+        )
 
     # Compute geodesic distances among points; attach origin as a query only.
     geo_result, d0 = _geodesic_origin_distances(
@@ -444,22 +446,10 @@ def geodesic_cosine_batch(
 
     n, d = shape_vectors
     if n < 3:
-        # Too few points to infer a manifold; fall back to chord cosine.
-        dot = backend.sum(
-            vectors_arr * backend.reshape(anchor_arr, (1, d)),
-            axis=1,
+        raise ValueError(
+            f"geodesic_cosine_from_anchor requires n >= 3 points to infer manifold structure, got n={n}. "
+            "Use chord cosine explicitly if chord distance is acceptable."
         )
-        anchor_norm = backend.sqrt(backend.sum(anchor_arr * anchor_arr))
-        vector_norms = backend.sqrt(backend.sum(vectors_arr * vectors_arr, axis=1))
-        eps = division_epsilon(backend, vectors_arr)
-        denom = anchor_norm * vector_norms
-        denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
-        cos_vals = dot / denom_safe
-        cos_vals = backend.clip(cos_vals, -1.0, 1.0)
-        valid = denom > eps
-        cos_vals = backend.where(valid, cos_vals, backend.zeros_like(cos_vals))
-        backend.eval(cos_vals)
-        return cos_vals
 
     rg = _get_riemannian_geometry(backend)
     k_neighbors = derive_k_neighbors(vectors_arr, backend) if n > 1 else None
@@ -642,21 +632,10 @@ def geodesic_pairwise_metrics(
 
     n, d = shape_a
     if n < 3:
-        # Too few points to infer a manifold; fall back to chord metrics.
-        diff = a_arr - b_arr
-        distances = backend.sqrt(backend.sum(diff * diff, axis=1))
-        dot = backend.sum(a_arr * b_arr, axis=1)
-        norm_a = backend.sqrt(backend.sum(a_arr * a_arr, axis=1))
-        norm_b = backend.sqrt(backend.sum(b_arr * b_arr, axis=1))
-        eps = division_epsilon(backend, a_arr)
-        denom = norm_a * norm_b
-        denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
-        cos_vals = dot / denom_safe
-        cos_vals = backend.clip(cos_vals, -1.0, 1.0)
-        valid = denom > eps
-        cos_vals = backend.where(valid, cos_vals, backend.zeros_like(cos_vals))
-        backend.eval(cos_vals, distances)
-        return cos_vals, distances
+        raise ValueError(
+            f"geodesic_pairwise_metrics requires n >= 3 points to infer manifold structure, got n={n}. "
+            "Use chord distance explicitly if chord metrics are acceptable."
+        )
 
     # Interleave a and b for efficient geodesic computation
     interleaved = backend.reshape(

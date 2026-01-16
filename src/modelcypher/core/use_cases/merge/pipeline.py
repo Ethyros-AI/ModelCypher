@@ -442,29 +442,21 @@ def run_merge(
         logger.info("STAGE 3: TRANSPLANT (graft-all mode, density unavailable)")
 
     # =================================================================
-    # NOVEL_FRACTION GATING: Scale delta based on subspace novelty
+    # NULL-SPACE PROJECTION IS THE GEOMETRY
     # =================================================================
-    # When source and target encode identical structure (novel_fraction ≈ 0),
-    # there's no novel knowledge to transfer. Injecting delta would corrupt
-    # the target model. Scale delta_scale by novel_fraction to prevent this.
-    split_cka = probe_metrics.get("split_cka") or {}
-    novel_fraction = split_cka.get("novel_fraction", 1.0)
-
-    # Use smooth gating: effective_delta = delta_scale * max(novel_fraction, 0.1)
-    # The floor of 0.1 prevents complete zero-out, allowing minimal transfer
-    # even when models appear identical (they may differ in ways not captured by probes).
-    MIN_NOVEL_FLOOR = 0.1
-    effective_delta_scale = delta_scale * max(novel_fraction, MIN_NOVEL_FLOOR)
-
-    if novel_fraction < 0.5:
-        logger.warning(
-            "LOW NOVELTY: novel_fraction=%.4f (%.1f%% shared structure). "
-            "Scaling delta_scale from %.3f to %.3f to prevent corruption.",
-            novel_fraction,
-            (1.0 - novel_fraction) * 100,
-            delta_scale,
-            effective_delta_scale,
-        )
+    # The null-space projection in transplant.py determines what to transfer:
+    # - It projects source delta into directions the target doesn't actively use
+    # - Dense directions (high activation variance) are scaled down
+    # - Sparse directions (low variance) are preserved
+    #
+    # We do NOT apply additional subspace-based novelty gating here.
+    # The geometry (null-space projection) IS the filter. High structural
+    # overlap (CKA ≈ 1) simply means the models use similar coordinate systems,
+    # not that there's nothing to transfer. The weights can still differ.
+    #
+    # Previous code scaled delta_scale by novel_fraction, which was a heuristic
+    # that contradicted the geometric principle. Removed per user directive:
+    # "we do NOT apply a filter. the fucking geometry does."
 
     merged_weights, transplant_metrics = stage_transplant(
         source_weights=loaded_source_weights,
@@ -497,7 +489,7 @@ def run_merge(
         prior_occupancy_by_layer=prior_occupancy_by_layer,
         source_tokenizer=source_tokenizer,  # For token correspondence
         target_tokenizer=target_tokenizer,  # For token correspondence
-        delta_scale=effective_delta_scale,  # Delta budget scaled by novel_fraction
+        delta_scale=delta_scale,  # User-specified delta budget (geometry handles the rest)
     )
 
     # =================================================================

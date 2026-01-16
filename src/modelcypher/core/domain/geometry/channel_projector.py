@@ -292,90 +292,63 @@ class ChannelProjector:
         # STEP 1: ALIGN (geodesic CKA diagnostic)
         # =================================================================
         # Find feature transform F such that CKA(source @ F, target) = 1.0
-        try:
-            alignment = self._aligner.find_perfect_alignment(
-                source_activations, target_activations
-            )
-            cka_achieved = alignment.achieved_cka  # 1.0 (invariant)
-            numerical_deviation = alignment.numerical_deviation
-            scale_ratio = alignment.scale_ratio
-            alignment_successful = True
-        except Exception as e:
-            logger.warning(
-                "CHANNEL PROJECTOR: Alignment failed for channel '%s': %s",
-                channel_id, e
-            )
-            # Fallback: use pinv projection
-            alignment = None
-            cka_achieved = 0.0
-            numerical_deviation = 1.0
-            scale_ratio = 1.0
-            alignment_successful = False
+        # Procrustes alignment is closed-form via SVD - it always succeeds.
+        # If this fails, there's a bug in the input or implementation.
+        alignment = self._aligner.find_perfect_alignment(
+            source_activations, target_activations
+        )
+        cka_achieved = alignment.achieved_cka  # 1.0 (invariant)
+        numerical_deviation = alignment.numerical_deviation
+        scale_ratio = alignment.scale_ratio
 
         # =================================================================
         # STEP 2: COMPUTE ALIGNED DELTA (WITH DUAL-STITCH FOR CROSS-ARCH)
         # =================================================================
-        if alignment is not None:
-            F = alignment.feature_transform  # [d_src, d_tgt]
+        F = alignment.feature_transform  # [d_src, d_tgt]
 
-            # Check for output dimension mismatch (cross-architecture)
-            src_out_dim = int(source_weights.shape[0])
-            tgt_out_dim = int(target_weights.shape[0])
-            needs_dual_stitch = (src_out_dim != tgt_out_dim)
+        # Check for output dimension mismatch (cross-architecture)
+        src_out_dim = int(source_weights.shape[0])
+        tgt_out_dim = int(target_weights.shape[0])
+        needs_dual_stitch = (src_out_dim != tgt_out_dim)
 
-            if needs_dual_stitch:
-                # DUAL-STITCH: Compute output stitch compositionally
-                # G @ W @ F where G transforms output dimension
-                #
-                # This is mathematically guaranteed because:
-                # - Hidden alignment reports geodesic CKA
-                # - Output projections are linear functions of hidden
+        if needs_dual_stitch:
+            # DUAL-STITCH: Compute output stitch compositionally
+            # G @ W @ F where G transforms output dimension
+            #
+            # This is mathematically guaranteed because:
+            # - Hidden alignment reports geodesic CKA
+            # - Output projections are linear functions of hidden
 
-                # Compute output stitch compositionally from hidden alignment + weights
-                H = backend.transpose(F)  # [d_tgt, d_src]
-                backend.eval(H)
+            # Compute output stitch compositionally from hidden alignment + weights
+            H = backend.transpose(F)  # [d_tgt, d_src]
+            backend.eval(H)
 
-                G = self._aligner.compositional_stitch(
-                    hidden_transform=F,  # [d_src, d_tgt]
-                    source_weight=source_weights,
-                    target_weight=target_weights,
-                )
-                backend.eval(G)  # G: [tgt_out, src_out]
+            G = self._aligner.compositional_stitch(
+                hidden_transform=F,  # [d_src, d_tgt]
+                source_weight=source_weights,
+                target_weight=target_weights,
+            )
+            backend.eval(G)  # G: [tgt_out, src_out]
 
-                # Apply dual-stitch: G @ W @ F
-                aligned_source = backend.matmul(G, source_weights)  # [tgt_out, d_src]
-                aligned_source = backend.matmul(aligned_source, F)   # [tgt_out, d_tgt]
-                backend.eval(aligned_source)
+            # Apply dual-stitch: G @ W @ F
+            aligned_source = backend.matmul(G, source_weights)  # [tgt_out, d_src]
+            aligned_source = backend.matmul(aligned_source, F)   # [tgt_out, d_tgt]
+            backend.eval(aligned_source)
 
-                logger.info(
-                    "DUAL-STITCH for channel '%s': [%d,%d] @ [%d,%d] @ [%d,%d] → [%d,%d]",
-                    channel_id,
-                    int(G.shape[0]), int(G.shape[1]),
-                    src_out_dim, int(source_weights.shape[1]),
-                    int(F.shape[0]), int(F.shape[1]),
-                    int(aligned_source.shape[0]), int(aligned_source.shape[1])
-                )
-            else:
-                # SINGLE-STITCH: Same dimensions, just apply F
-                # source_weights: [out_dim, d_source]
-                # F: [d_source, d_target]
-                # aligned_source: [out_dim, d_target]
-                aligned_source = backend.matmul(source_weights, F)
-                backend.eval(aligned_source)
+            logger.info(
+                "DUAL-STITCH for channel '%s': [%d,%d] @ [%d,%d] @ [%d,%d] → [%d,%d]",
+                channel_id,
+                int(G.shape[0]), int(G.shape[1]),
+                src_out_dim, int(source_weights.shape[1]),
+                int(F.shape[0]), int(F.shape[1]),
+                int(aligned_source.shape[0]), int(aligned_source.shape[1])
+            )
         else:
-            # Fallback: use pinv to project weights
-            logger.warning(
-                "CHANNEL PROJECTOR: Using pinv fallback for channel '%s'",
-                channel_id
-            )
-            source_pinv = backend.pinv(source_activations)
-            backend.eval(source_pinv)
-            # This gives an approximate projection, not exact kernel alignment
-            # source_weights @ pinv(source_acts) @ target_acts ≈ aligned
-            aligned_source = backend.matmul(
-                backend.matmul(source_weights, source_pinv),
-                target_activations
-            )
+            # SINGLE-STITCH: Same dimensions, just apply F
+            # source_weights: [out_dim, d_source]
+            # F: [d_source, d_target]
+            # aligned_source: [out_dim, d_target]
+            aligned_source = backend.matmul(source_weights, F)
             backend.eval(aligned_source)
 
         # Compute delta

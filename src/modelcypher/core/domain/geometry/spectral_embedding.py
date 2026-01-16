@@ -172,33 +172,41 @@ def compute_spectral_embedding(
     # Clamp k to valid range
     k_neighbors = max(1, min(k_neighbors, n - 1))
 
-    # Build k-NN adjacency from chord distances
+    # Build k-NN adjacency from chord distances with proper tie handling
+    # Include ALL points at distance <= k-th nearest (handles duplicate points)
     inf_val = infinity_threshold(backend, chord_dist) * 2.0
+    eps = machine_epsilon(backend, chord_dist)
     self_mask = backend.eye(n) > 0.0
     dist_no_self = backend.where(self_mask, inf_val, chord_dist)
-    kth = max(0, min(k_neighbors - 1, n - 1))
-    neighbor_indices = backend.argpartition(dist_no_self, kth, axis=1)[:, :k_neighbors]
-    backend.eval(neighbor_indices)
 
-    # Build adjacency matrix with chord distances at k-NN edges
-    adj = backend.full((n, n), inf_val)
-    neighbor_weights = backend.take_along_axis(chord_dist, neighbor_indices, axis=1)
-    adj = backend.put_along_axis(adj, neighbor_indices, neighbor_weights, axis=1)
+    # Find the k-th smallest distance for each row
+    kth = max(0, min(k_neighbors - 1, n - 1))
+    partitioned = backend.argpartition(dist_no_self, kth, axis=1)
+    kth_indices = partitioned[:, kth : kth + 1]  # [n, 1]
+    kth_distances = backend.take_along_axis(dist_no_self, kth_indices, axis=1)  # [n, 1]
+    backend.eval(kth_distances)
+
+    # Include all points with distance <= k-th distance (with small epsilon for ties)
+    kth_dist_broadcast = backend.broadcast_to(kth_distances, (n, n))
+    within_knn = dist_no_self <= (kth_dist_broadcast + eps)
+    adj = backend.where(within_knn, chord_dist, inf_val)
     adj = adj * (1.0 - backend.eye(n))  # Zero diagonal
 
-    # Symmetrize: edge exists if either direction is a k-NN
+    # Symmetrize: edge exists if either direction qualifies
     adj_t = backend.transpose(adj)
     adj = backend.minimum(adj, adj_t)
     backend.eval(adj)
 
-    # Compute kernel bandwidth from median neighbor distance
-    neighbor_dists = backend.take_along_axis(chord_dist, neighbor_indices, axis=1)
-    backend.eval(neighbor_dists)
-    kernel_bandwidth = _median_flattened(neighbor_dists, backend)
+    # Compute kernel bandwidth from median POSITIVE neighbor distance
+    # (Exclude zero distances from duplicate points and non-edges)
+    inf_thresh = infinity_threshold(backend, adj)
+    edge_dists = backend.where(adj < inf_thresh, adj, inf_val)
+    kernel_bandwidth = _median_positive(edge_dists, backend)
 
-    bandwidth_floor = tiny_value(backend, chord_dist)
-    if kernel_bandwidth <= bandwidth_floor:
-        kernel_bandwidth = bandwidth_floor
+    # If all neighbor distances are zero (duplicates), use fraction of max distance
+    # This ensures bandwidth reflects the actual data scale
+    if kernel_bandwidth <= 0.0:
+        kernel_bandwidth = max_dist * 0.1  # 10% of max distance as bandwidth
 
     # Build normalized graph Laplacian with heat kernel weights from CHORD distances
     inf_thresh = infinity_threshold(backend, adj)
@@ -274,6 +282,13 @@ def compute_spectral_embedding(
     embedding, used_eigvals, used_eigvecs, k_actual = _build_embedding(
         eigvals, eigvecs, k_eigenvectors, component_count, backend
     )
+    backend.eval(embedding)
+
+    # Collapse identical points: eigenvectors for repeated eigenvalues can give
+    # different values to geometrically identical points. For correct geodesic
+    # distances (d=0 for identical points), we assign the same embedding to all
+    # points that have zero chord distance to each other.
+    embedding = _collapse_identical_points(embedding, chord_dist, backend)
     backend.eval(embedding)
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -483,3 +498,168 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
     high_val = backend.squeeze(high_val)
     backend.eval(low_val, high_val)
     return 0.5 * (float(backend.to_scalar(low_val)) + float(backend.to_scalar(high_val)))
+
+
+def _collapse_identical_points(
+    embedding: "Array",
+    chord_dist: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Collapse identical points to have the same embedding.
+
+    When points have zero chord distance (are geometrically identical),
+    eigenvectors for repeated eigenvalues may give them different values.
+    This function assigns the mean embedding to all points in each
+    equivalence class.
+    """
+    n = int(embedding.shape[0])
+    if n <= 1:
+        return embedding
+
+    eps = machine_epsilon(backend, chord_dist)
+
+    # Find equivalence classes via Union-Find on chord_dist = 0
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
+
+    def union(x: int, y: int) -> None:
+        px, py = find(x), find(y)
+        if px != py:
+            parent[px] = py
+
+    # Build equivalence classes from zero-distance pairs
+    backend.eval(chord_dist)
+    for i in range(n):
+        for j in range(i + 1, n):
+            d_ij = float(backend.to_scalar(chord_dist[i, j]))
+            if d_ij <= eps:
+                union(i, j)
+
+    # Group points by their equivalence class
+    classes: dict[int, list[int]] = {}
+    for i in range(n):
+        root = find(i)
+        if root not in classes:
+            classes[root] = []
+        classes[root].append(i)
+
+    # Check if any class has more than one point
+    has_duplicates = any(len(members) > 1 for members in classes.values())
+    if not has_duplicates:
+        return embedding
+
+    # Collapse each class to its mean embedding
+    result = embedding
+    for members in classes.values():
+        if len(members) <= 1:
+            continue
+
+        # Compute mean embedding for this class
+        member_indices = backend.array(members, dtype="int32")
+        member_embeddings = backend.take(embedding, member_indices, axis=0)
+        mean_embedding = backend.mean(member_embeddings, axis=0)
+        mean_embedding = backend.reshape(mean_embedding, (1, -1))
+        backend.eval(mean_embedding)
+
+        # Assign mean to all members
+        for idx in members:
+            # Use scatter update pattern
+            result = _replace_row(result, idx, mean_embedding, backend)
+
+    backend.eval(result)
+    return result
+
+
+def _replace_row(
+    matrix: "Array",
+    row_idx: int,
+    new_row: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Replace a single row in a matrix."""
+    n = int(matrix.shape[0])
+    k = int(matrix.shape[1])
+
+    # Create mask for the row to replace
+    row_mask = backend.arange(n) == row_idx
+    row_mask = backend.reshape(row_mask, (n, 1))
+    row_mask = backend.broadcast_to(row_mask, (n, k))
+
+    # Broadcast new_row to full matrix shape
+    new_row_broadcast = backend.broadcast_to(new_row, (n, k))
+
+    # Select new_row where mask is True, else keep original
+    result = backend.where(row_mask, new_row_broadcast, matrix)
+    return result
+
+
+def _median_positive(values: "Array", backend: "Backend") -> float:
+    """Compute median of positive values only (excluding zeros).
+
+    Returns 0.0 if no positive values exist.
+    """
+    flat = backend.reshape(values, (-1,))
+    backend.eval(flat)
+
+    # Filter to positive values
+    eps = machine_epsilon(backend, flat)
+    positive_mask = flat > eps
+    positive_count_arr = backend.sum(backend.astype(positive_mask, "int32"))
+    backend.eval(positive_count_arr)
+    count = int(backend.to_scalar(positive_count_arr))
+
+    if count == 0:
+        return 0.0
+
+    # Replace non-positive with inf, then find median via sort
+    inf_val = infinity_threshold(backend, flat) * 2.0
+    masked = backend.where(positive_mask, flat, inf_val)
+    sorted_vals = backend.sort(masked)
+    backend.eval(sorted_vals)
+
+    # Median of the positive values (first `count` elements after sort)
+    mid = count // 2
+    if count % 2 == 1:
+        median_arr = sorted_vals[mid]
+    else:
+        median_arr = (sorted_vals[mid - 1] + sorted_vals[mid]) / 2.0
+    backend.eval(median_arr)
+
+    return float(backend.to_scalar(median_arr))
+
+
+def _chord_distance_matrix(points: "Array", backend: "Backend") -> "Array":
+    """Compute pairwise Euclidean (chord) distance matrix.
+
+    Args:
+        points: Point cloud [n, d].
+        backend: Backend for tensor operations.
+
+    Returns:
+        Pairwise distance matrix [n, n].
+    """
+    n = int(points.shape[0])
+    if n == 0:
+        return backend.zeros((0, 0))
+
+    # ||a - b||² = ||a||² + ||b||² - 2<a,b>
+    norms_sq = backend.sum(points * points, axis=1)
+    norms_col = backend.reshape(norms_sq, (n, 1))
+    norms_row = backend.reshape(norms_sq, (1, n))
+    cross = backend.matmul(points, backend.transpose(points))
+
+    dist_sq = norms_col + norms_row - 2.0 * cross
+
+    # Numerical cleanup
+    dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+    distances = backend.sqrt(dist_sq)
+
+    # Zero diagonal
+    distances = distances * (1.0 - backend.eye(n))
+    backend.eval(distances)
+
+    return distances

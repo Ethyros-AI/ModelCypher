@@ -192,8 +192,10 @@ class DeviationTracker:
                 continue
 
         if sigma_max_global <= eps or sigma_min_global == float("inf"):
-            logger.warning("Could not compute condition number, using fallback")
-            return 1e4
+            # No valid singular values found - weights are degenerate (all-zero or empty)
+            # Return inf to indicate ill-conditioned. Don't invent magic constants.
+            logger.warning("Could not compute condition number - degenerate weights (σ_max=%.2e)", sigma_max_global)
+            return float("inf")
 
         if sigma_min_global <= eps:
             sigma_min_global = eps
