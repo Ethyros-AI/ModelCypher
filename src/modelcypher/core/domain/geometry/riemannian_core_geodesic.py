@@ -75,16 +75,12 @@ class RiemannianGeodesicMixin:
         k_neighbors: int | None = None,
         use_cache: bool = True,
         refine_iterations: int = 1,
-        method: str = "spectral",
     ) -> GeodesicDistanceResult:
         """
-        Compute geodesic distances on the manifold.
+        Compute geodesic distances on the manifold using Floyd-Warshall.
 
-        Supports two methods:
-        - "spectral" (default): Uses Varadhan's formula via Laplacian eigenvectors.
-          Faster O(n²k) and provides spectral signature for free.
-        - "floyd-warshall": Uses Isomap-style k-NN graph shortest paths.
-          More accurate for highly irregular graphs but O(n³).
+        Uses Isomap-style k-NN graph shortest paths via Floyd-Warshall algorithm.
+        This gives EXACT shortest paths on the discrete k-NN graph - no approximation.
 
         When k_neighbors is None, finds the MINIMUM k that makes the graph
         connected - a geometric property of the point cloud.
@@ -94,27 +90,17 @@ class RiemannianGeodesicMixin:
             k_neighbors: Number of neighbors for graph. If None, automatically
                          finds the minimum k that ensures graph connectivity.
             use_cache: Whether to use session-scoped caching.
-            refine_iterations: For Floyd-Warshall method, number of geodesic
-                refinement passes (ignored for spectral method).
-            method: "spectral" or "floyd-warshall".
+            refine_iterations: Number of geodesic refinement passes.
 
         Returns:
             GeodesicDistanceResult with pairwise geodesic distances
         """
-        if method == "spectral":
-            result, _ = self.geodesic_distances_spectral(
-                points, k_neighbors=k_neighbors, use_cache=use_cache
-            )
-            return result
-        elif method == "floyd-warshall":
-            return self._geodesic_distances_floyd_warshall(
-                points,
-                k_neighbors=k_neighbors,
-                use_cache=use_cache,
-                refine_iterations=refine_iterations,
-            )
-        else:
-            raise ValueError(f"Unknown geodesic method: {method}. Use 'spectral' or 'floyd-warshall'.")
+        return self._geodesic_distances_floyd_warshall(
+            points,
+            k_neighbors=k_neighbors,
+            use_cache=use_cache,
+            refine_iterations=refine_iterations,
+        )
 
     def _geodesic_distances_floyd_warshall(
         self,
@@ -862,6 +848,10 @@ class RiemannianGeodesicMixin:
         # Safety clamp (should not be needed with stable formula, but belt-and-suspenders)
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         result = backend.sqrt(dist_sq)
+
+        # Explicitly zero the diagonal: d(x, x) = 0 always
+        result = result * (1.0 - backend.eye(n))
+        backend.eval(result)
 
         # Cache the result
         if use_cache:

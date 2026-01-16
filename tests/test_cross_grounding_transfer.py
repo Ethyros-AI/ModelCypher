@@ -245,26 +245,25 @@ class TestCrossGroundingSynthesizer:
         eps = _eps(backend, ghost.synthesis_confidence, expected)
         assert abs(ghost.synthesis_confidence - expected) <= eps
 
-    def test_insufficient_anchors_returns_zero_preservation(self, backend):
-        """Insufficient common anchors should return zero preservation."""
+    def test_insufficient_anchors_raises_error(self, backend):
+        """Insufficient common anchors should raise ValueError.
+
+        No fallbacks - ghost anchor synthesis requires at least 3 common
+        anchors to define a valid coordinate transformation.
+        """
         synthesizer = CrossGroundingSynthesizer(backend)
 
         source_anchors = {"a": backend.array([1.0, 0.0, 0.0])}
         target_anchors = {"b": backend.array([0.0, 1.0, 0.0])}
         concept = backend.array([0.5, 0.5, 0.0])
 
-        ghost = synthesizer.synthesize_ghost_anchor(
-            concept_id="test",
-            source_activation=concept,
-            source_anchors=source_anchors,
-            target_anchors=target_anchors,
-        )
-
-        assert ghost.common_anchor_count == 0
-        assert ghost.source_anchor_count == len(source_anchors)
-        assert ghost.target_anchor_count == len(target_anchors)
-        eps = _eps(backend, ghost.stress_preservation)
-        assert abs(ghost.stress_preservation - 0.0) <= eps
+        with pytest.raises(ValueError, match="at least 3 common anchors"):
+            synthesizer.synthesize_ghost_anchor(
+                concept_id="test",
+                source_activation=concept,
+                source_anchors=source_anchors,
+                target_anchors=target_anchors,
+            )
 
 
 class TestCrossGroundingTransferEngine:

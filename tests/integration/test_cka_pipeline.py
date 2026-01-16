@@ -96,13 +96,16 @@ class TestCKAPipeline:
 
         assert cka_self == pytest.approx(1.0, rel=1e-5)
 
-    def test_scaled_activations_change_cka(self, backend):
-        """Geodesic CKA should change when activations are scaled.
+    def test_scaled_activations_preserve_linear_cka(self, backend):
+        """Linear CKA is scale-invariant: uniform scaling should not change CKA.
 
-        RBF CKA adapts sigma to the data distribution, so scaling activations
-        shifts geodesic distances and changes CKA.
+        CKA = HSIC(K_x, K_y) / sqrt(HSIC(K_x, K_x) * HSIC(K_y, K_y))
+
+        The normalization makes linear CKA (with linear kernel K = X @ X.T)
+        invariant to uniform scaling. Note: Geodesic/RBF CKA is NOT
+        scale-invariant because scaling affects distances and kernel bandwidth.
         """
-        from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
+        from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
             sqrt_scalar,
@@ -114,15 +117,24 @@ class TestCKAPipeline:
         Y = backend.random_normal((50, 32))
         backend.eval(X, Y)
 
-        # Scale X by a constant using backend element-wise multiplication
+        # Scale X by a constant
         X_scaled = X * 100.0
         backend.eval(X_scaled)
 
-        cka_original = compute_geodesic_cka(X, Y, backend)
-        cka_scaled = compute_geodesic_cka(X_scaled, Y, backend)
+        # Linear Gram matrices: K = X @ X.T
+        gram_x = backend.matmul(X, backend.transpose(X))
+        gram_x_scaled = backend.matmul(X_scaled, backend.transpose(X_scaled))
+        gram_y = backend.matmul(Y, backend.transpose(Y))
+        backend.eval(gram_x, gram_x_scaled, gram_y)
 
+        cka_original = compute_cka_from_grams(gram_x, gram_y, backend)
+        cka_scaled = compute_cka_from_grams(gram_x_scaled, gram_y, backend)
+
+        # Linear CKA should be scale-invariant
         precision = float(sqrt_scalar(machine_epsilon(backend, X), backend))
-        assert abs(cka_original - cka_scaled) > precision
+        assert abs(cka_original - cka_scaled) <= precision, (
+            f"Linear CKA should be scale-invariant: original={cka_original}, scaled={cka_scaled}"
+        )
 
 
 class TestCKACacheIntegration:

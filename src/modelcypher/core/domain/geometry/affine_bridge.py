@@ -313,14 +313,31 @@ class AffineBridge:
         backend.eval(mse_arr)
         mse = float(backend.to_scalar(mse_arr))
 
-        # Geodesic cosine similarity (per sample, then mean)
-        # Uses law of cosines with geodesic distances for manifold-correct similarity
-        cosines, _ = geodesic_pairwise_metrics(pred, Y, backend)
+        # Cosine similarity (per sample, then mean)
+        n = int(X.shape[0])
+        if n >= 3:
+            # Geodesic cosine for manifold-correct similarity
+            cosines, _ = geodesic_pairwise_metrics(pred, Y, backend)
+        else:
+            # Chord cosine for small samples (geodesic requires n >= 3)
+            cosines = self._chord_cosine_paired(pred, Y)
         mean_cosine_arr = backend.mean(cosines)
         backend.eval(mean_cosine_arr)
         mean_cosine = float(backend.to_scalar(mean_cosine_arr))
 
         return mse, mean_cosine
+
+    def _chord_cosine_paired(self, a: "Array", b: "Array") -> "Array":
+        """Compute chord (Euclidean) cosine for paired vectors."""
+        backend = self._backend
+        eps = division_epsilon(backend, a)
+        norm_a = backend.sqrt(backend.sum(a * a, axis=1))
+        norm_b = backend.sqrt(backend.sum(b * b, axis=1))
+        dot = backend.sum(a * b, axis=1)
+        denom = norm_a * norm_b
+        safe_denom = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+        cosines = dot / safe_denom
+        return backend.clip(cosines, -1.0, 1.0)
 
     def transform(self, X: "Array") -> "Array":
         """

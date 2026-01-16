@@ -197,7 +197,11 @@ class TestCrossGroundingSynthesizer:
         assert 0.0 <= ghost.stress_preservation <= 1.0
 
     def test_synthesize_ghost_anchor_insufficient_common(self, backend):
-        """Insufficient common anchors should return degenerate ghost."""
+        """Insufficient common anchors should raise ValueError.
+
+        No fallbacks - ghost anchor synthesis requires at least 3 common
+        anchors to define a valid coordinate transformation.
+        """
         synthesizer = CrossGroundingSynthesizer(backend)
 
         source_anchors = {
@@ -212,16 +216,13 @@ class TestCrossGroundingSynthesizer:
         for arr in [*source_anchors.values(), *target_anchors.values(), concept]:
             backend.eval(arr)
 
-        ghost = synthesizer.synthesize_ghost_anchor(
-            concept_id="test",
-            source_activation=concept,
-            source_anchors=source_anchors,
-            target_anchors=target_anchors,
-        )
-
-        # Should return degenerate ghost with zero preservation
-        assert ghost.stress_preservation == 0.0
-        assert ghost.synthesis_confidence == 0.0
+        with pytest.raises(ValueError, match="at least 3 common anchors"):
+            synthesizer.synthesize_ghost_anchor(
+                concept_id="test",
+                source_activation=concept,
+                source_anchors=source_anchors,
+                target_anchors=target_anchors,
+            )
 
     def test_synthesize_ghost_anchor_same_model(self, backend, sample_anchors):
         """Same source/target should produce valid preservation."""

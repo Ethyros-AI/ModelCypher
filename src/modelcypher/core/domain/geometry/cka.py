@@ -475,7 +475,7 @@ def compute_cka(
     hsic_scale = max(hsic_xx, hsic_yy, tiny_value(backend, gram_x))
     eps = machine_epsilon(backend, gram_x) * sqrt_scalar(hsic_scale, backend)
 
-    if denom < eps:
+    if denom <= 0.0 or denom < eps:
         return CKAResult(0.0, hsic_xy, hsic_xx, hsic_yy, n)
     
     cka = hsic_xy / denom

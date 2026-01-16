@@ -115,8 +115,46 @@ def alignment_signal_from_matrices(
             iteration=iteration,
             metadata={"phase_tol": float(phase_tol)},
         )
-    n_samples = b.shape(source_matrix)[0]
+    n_samples = int(b.shape(source_matrix)[0])
     labels = list(labels) if labels is not None else [f"sample:{i}" for i in range(n_samples)]
+
+    # Edge case: fewer than 3 samples - can't infer manifold structure
+    # Return degenerate signal with chord-based distance approximation
+    if n_samples < 3:
+        sample_labels = list(labels) if labels is not None else [f"sample:{i}" for i in range(n_samples)]
+        if n_samples == 0:
+            return AlignmentSignal(
+                dimension=dimension,
+                cka_achieved=float(cka_achieved),
+                cka_target=1.0,
+                iteration=iteration,
+                anchor_labels=tuple(sample_labels),
+                anchor_divergence=(),
+                metadata={"degenerate": True, "n_samples": 0, "phase_tol": float(phase_tol)},
+            )
+        # For 1-2 samples, use chord distance as approximation
+        diff = source_matrix - target_matrix
+        chord_dist = b.sqrt(b.sum(diff * diff, axis=1))
+        b.eval(chord_dist)
+        dist_list = b.tolist(chord_dist)
+        mean_dist = float(b.to_scalar(b.mean(chord_dist)))
+        max_dist = float(b.to_scalar(b.max(chord_dist)))
+        return AlignmentSignal(
+            dimension=dimension,
+            cka_achieved=float(cka_achieved),
+            cka_target=1.0,
+            iteration=iteration,
+            anchor_labels=tuple(sample_labels),
+            anchor_divergence=tuple(dist_list),
+            misaligned_anchors=tuple(sample_labels),  # All samples are "misaligned" for degenerate case
+            metadata={
+                "degenerate": True,
+                "n_samples": n_samples,
+                "mean_distance": mean_dist,
+                "max_distance": max_dist,
+                "phase_tol": float(phase_tol),
+            },
+        )
 
     # Per-anchor divergence: geodesic distance respects manifold curvature.
     # Chord distance is systematically wrong in high dimensions.

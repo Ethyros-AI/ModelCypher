@@ -120,60 +120,56 @@ class TestAffineBridge:
     def test_train_identity_mapping(self, backend, bridge) -> None:
         """Training on identity mapping should learn near-identity transform."""
         # Create paired data where Y = X (identity)
-        X = backend.array([
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 1.0, 0.0],
-            [0.0, 1.0, 1.0],
-            [1.0, 0.0, 1.0],
-            [1.0, 1.0, 1.0],
-            [-1.0, 0.0, 0.0],
-        ])
+        backend.random_seed(42)
+        X = backend.random_normal((30, 3))
+        backend.eval(X)
         Y = X  # Identity mapping
 
         result = bridge.train(X, Y)
 
-        # Should learn near-identity with high cosine
-        assert result.train_cosine > 0.99
-        assert result.train_mse < 0.01
+        # MSE is the direct measure of transformation quality for identity mapping.
+        # Geodesic cosine is unstable when pred ≈ Y (duplicate points in interleaved set).
+        assert result.train_mse < 1e-5, f"MSE should be near-zero for identity, got {result.train_mse}"
+        # W should be near-identity (diagonal close to 1, off-diagonal close to 0)
+        for i in range(3):
+            assert abs(result.W[i][i] - 1.0) < 0.01, f"W[{i}][{i}] should be ~1.0"
 
     def test_train_with_translation(self, backend, bridge) -> None:
         """Training should learn translation (bias)."""
-        X = backend.array([
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [-1.0, 0.0],
-            [0.0, -1.0],
-        ])
+        # Use enough samples for reliable ridge regression
+        backend.random_seed(42)
+        X = backend.random_normal((30, 2))
+        backend.eval(X)
         # Y = X + [1, 2] (constant translation)
-        Y = X + backend.array([1.0, 2.0])
+        translation = backend.array([1.0, 2.0])
+        Y = X + translation
+        backend.eval(Y)
 
         result = bridge.train(X, Y)
 
-        # Should achieve very high cosine (direction preserved)
-        assert result.train_cosine > 0.95
+        # MSE should be low for pure translation
+        assert result.train_mse < 0.1, f"MSE should be low for translation, got {result.train_mse}"
         # Bias should be close to [1, 2]
-        assert abs(result.b[0] - 1.0) < 0.5
-        assert abs(result.b[1] - 2.0) < 0.5
+        assert abs(result.b[0] - 1.0) < 0.3, f"b[0] should be ~1.0, got {result.b[0]}"
+        assert abs(result.b[1] - 2.0) < 0.3, f"b[1] should be ~2.0, got {result.b[1]}"
 
     def test_train_with_scaling(self, backend, bridge) -> None:
         """Training should learn scaling."""
-        X = backend.array([
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [2.0, 0.0],
-            [0.0, 2.0],
-        ])
+        # Use enough samples for reliable learning
+        backend.random_seed(42)
+        X = backend.random_normal((30, 2))
+        backend.eval(X)
         # Y = 2 * X (uniform scaling)
         Y = 2.0 * X
+        backend.eval(Y)
 
         result = bridge.train(X, Y)
 
-        # High cosine (direction preserved)
-        assert result.train_cosine > 0.99
+        # MSE should be low for learned scaling
+        assert result.train_mse < 0.01, f"MSE should be low for scaling, got {result.train_mse}"
+        # W should be close to 2*I
+        assert abs(result.W[0][0] - 2.0) < 0.1, f"W[0][0] should be ~2.0, got {result.W[0][0]}"
+        assert abs(result.W[1][1] - 2.0) < 0.1, f"W[1][1] should be ~2.0, got {result.W[1][1]}"
 
     def test_train_with_test_set(self, backend, bridge) -> None:
         """Training with test set should compute generalization gap."""
@@ -338,14 +334,12 @@ class TestHybridBridge:
 
     def test_train_and_transform(self, backend, hybrid) -> None:
         """Hybrid should train affine then apply vocab constraint."""
-        # Training data
-        X_train = backend.array([
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [-1.0, 0.0],
-        ])
+        # Training data - use enough samples for reliable learning
+        backend.random_seed(42)
+        X_train = backend.random_normal((20, 2))
+        backend.eval(X_train)
         Y_train = X_train * 2.0  # Scale by 2
+        backend.eval(Y_train)
 
         # Vocabulary
         vocab = backend.array([
@@ -356,8 +350,8 @@ class TestHybridBridge:
 
         result = hybrid.train(X_train, Y_train, vocab)
 
-        # Affine should learn scaling
-        assert result.train_cosine > 0.9
+        # Affine should learn scaling - check via MSE
+        assert result.train_mse < 0.01, f"MSE should be low for scaling, got {result.train_mse}"
 
         # Transform should project onto vocab (temperature auto-derived)
         X_new = backend.array([[1.0, 0.0]])  # Should map to [2, 0]

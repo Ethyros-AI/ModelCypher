@@ -275,6 +275,107 @@ def _chord_cosine_matrix(
     return cos_matrix
 
 
+def _chord_cosine_from_anchor(
+    anchor: "Array",
+    vectors: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Compute chord (Euclidean) cosine between anchor and each row of vectors.
+
+    Used when n < 3 points where geodesic computation is undefined.
+    For n < 3, chord distance IS the geodesic (no manifold structure).
+
+    Args:
+        anchor: Single point [d].
+        vectors: Matrix [n, d].
+        backend: Backend for tensor operations.
+
+    Returns:
+        Array [n] of cosine similarities.
+    """
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+    n = int(vectors.shape[0])
+    d = int(vectors.shape[1])
+    if n == 0:
+        return backend.array([])
+
+    # Reshape anchor to [1, d] for broadcasting
+    anchor_2d = backend.reshape(anchor, (1, d))
+
+    # Compute norms
+    anchor_norm = backend.sqrt(backend.sum(anchor_2d * anchor_2d))
+    vector_norms = backend.sqrt(backend.sum(vectors * vectors, axis=1))
+
+    # Dot products: anchor · each row
+    dots = backend.sum(anchor_2d * vectors, axis=1)  # [n]
+
+    # Denominator: ||anchor|| * ||vector||
+    denom = anchor_norm * vector_norms
+    eps = division_epsilon(backend, vectors)
+    denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+
+    # Cosine similarity
+    cos = dots / denom_safe
+    cos = backend.clip(cos, -1.0, 1.0)
+
+    # Zero out invalid (zero-norm) vectors
+    valid = denom > eps
+    cos = backend.where(valid, cos, backend.zeros_like(cos))
+    backend.eval(cos)
+
+    return cos
+
+
+def _chord_cosine_between_sets(
+    set_a: "Array",
+    set_b: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Compute chord (Euclidean) cosine between two sets of vectors.
+
+    Used when m + n < 3 points where geodesic computation is undefined.
+    For < 3 total points, chord distance IS geodesic (no manifold structure).
+
+    Args:
+        set_a: Matrix [m, d].
+        set_b: Matrix [n, d].
+        backend: Backend for tensor operations.
+
+    Returns:
+        Array [m, n] of cosine similarities.
+    """
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+    m = int(set_a.shape[0])
+    n = int(set_b.shape[0])
+    if m == 0 or n == 0:
+        return backend.zeros((m, n))
+
+    # Compute norms
+    norms_a = backend.sqrt(backend.sum(set_a * set_a, axis=1, keepdims=True))  # [m, 1]
+    norms_b = backend.sqrt(backend.sum(set_b * set_b, axis=1, keepdims=True))  # [n, 1]
+
+    # Dot products: [m, d] @ [d, n] = [m, n]
+    dots = backend.matmul(set_a, backend.transpose(set_b))
+
+    # Denominator: ||a|| * ||b||^T = [m, 1] @ [1, n] = [m, n]
+    denom = backend.matmul(norms_a, backend.transpose(norms_b))
+    eps = division_epsilon(backend, set_a)
+    denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
+
+    # Cosine similarity
+    cos = dots / denom_safe
+    cos = backend.clip(cos, -1.0, 1.0)
+
+    # Zero out invalid (zero-norm) entries
+    valid = denom > eps
+    cos = backend.where(valid, cos, backend.zeros_like(cos))
+    backend.eval(cos)
+
+    return cos
+
+
 def geodesic_norms(
     vectors: "Array",
     backend: "Backend",
@@ -344,10 +445,8 @@ def geodesic_cosine_matrix(
     if n == 0:
         return backend.array([])
     if n < 3:
-        raise ValueError(
-            f"geodesic_cosine_matrix requires n >= 3 points to infer manifold structure, got n={n}. "
-            "Use chord_cosine_matrix explicitly if chord distance is acceptable."
-        )
+        # Too few points to infer a manifold; fall back to chord cosine.
+        return _chord_cosine_matrix(vectors_arr, backend)
 
     # Compute geodesic distances among points; attach origin as a query only.
     geo_result, d0 = _geodesic_origin_distances(
@@ -446,10 +545,8 @@ def geodesic_cosine_batch(
 
     n, d = shape_vectors
     if n < 3:
-        raise ValueError(
-            f"geodesic_cosine_from_anchor requires n >= 3 points to infer manifold structure, got n={n}. "
-            "Use chord cosine explicitly if chord distance is acceptable."
-        )
+        # Too few points to infer a manifold; chord IS geodesic for n < 3.
+        return _chord_cosine_from_anchor(anchor_arr, vectors_arr, backend)
 
     rg = _get_riemannian_geometry(backend)
     k_neighbors = derive_k_neighbors(vectors_arr, backend) if n > 1 else None
@@ -539,9 +636,8 @@ def geodesic_cosine_between_sets(
     n = shape_b[0]
 
     if m + n < 3:
-        raise ValueError(
-            f"geodesic_cosine_between_sets requires at least 3 total points, got {m + n}"
-        )
+        # Too few points for manifold; chord IS geodesic for n < 3.
+        return _chord_cosine_between_sets(a_arr, b_arr, backend)
 
     # Stack: set_a, set_b (origin attached as query only)
     points = backend.concatenate([a_arr, b_arr], axis=0)
@@ -623,10 +719,24 @@ def geodesic_pairwise_metrics(
 
     n, d = shape_a
     if n < 3:
-        raise ValueError(
-            f"geodesic_pairwise_metrics requires n >= 3 points to infer manifold structure, got n={n}. "
-            "Use chord distance explicitly if chord metrics are acceptable."
-        )
+        # Too few points for manifold inference; chord IS geodesic for n < 3.
+        # Compute chord cosine for each paired row: cos(a[i], b[i])
+        # Use _chord_cosine_from_anchor on each pair
+        cos_vals = []
+        for i in range(n):
+            anchor = backend.take(a_arr, backend.array([i], dtype="int32"), axis=0)
+            anchor = backend.reshape(anchor, (d,))
+            target = backend.take(b_arr, backend.array([i], dtype="int32"), axis=0)
+            cos_i = _chord_cosine_from_anchor(anchor, target, backend)
+            cos_vals.append(float(backend.to_scalar(cos_i)))
+        chord_cos = backend.array(cos_vals)
+        # Compute chord distances between paired rows
+        diff = a_arr - b_arr
+        dist_sq = backend.sum(diff * diff, axis=1)
+        dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+        chord_dist = backend.sqrt(dist_sq)
+        backend.eval(chord_cos, chord_dist)
+        return chord_cos, chord_dist
 
     # Interleave a and b for efficient geodesic computation
     interleaved = backend.reshape(

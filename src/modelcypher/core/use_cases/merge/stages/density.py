@@ -181,40 +181,29 @@ def stage_density(
 
     # Build simple concept density profiles from activations
     # This is a streamlined version that works with pre-collected activations
-    import traceback
-    try:
-        if layer_mapping:
-            mapped_source_activations: dict[int, Any] = {}
-            for layer_idx in layers:
-                source_layer_idx = layer_mapping.get(layer_idx, layer_idx)
-                mapped_source_activations[layer_idx] = source_activations.get(source_layer_idx)
-        else:
-            mapped_source_activations = source_activations
+    if layer_mapping:
+        mapped_source_activations: dict[int, Any] = {}
+        for layer_idx in layers:
+            source_layer_idx = layer_mapping.get(layer_idx, layer_idx)
+            mapped_source_activations[layer_idx] = source_activations.get(source_layer_idx)
+    else:
+        mapped_source_activations = source_activations
 
-        source_profile = _build_density_profile_from_activations(
-            activations=mapped_source_activations,
-            probe_ids=probe_ids,
-            probe_domains=probe_domains,
-            layers=layers,
-            backend=b,
-        )
-    except Exception as e:
-        logger.error("DENSITY BUG: source_profile failed: %s", e)
-        logger.error("DENSITY TRACEBACK:\n%s", traceback.format_exc())
-        raise
+    source_profile = _build_density_profile_from_activations(
+        activations=mapped_source_activations,
+        probe_ids=probe_ids,
+        probe_domains=probe_domains,
+        layers=layers,
+        backend=b,
+    )
 
-    try:
-        target_profile = _build_density_profile_from_activations(
-            activations=target_activations,
-            probe_ids=probe_ids,
-            probe_domains=probe_domains,
-            layers=layers,
-            backend=b,
-        )
-    except Exception as e:
-        logger.error("DENSITY BUG: target_profile failed: %s", e)
-        logger.error("DENSITY TRACEBACK:\n%s", traceback.format_exc())
-        raise
+    target_profile = _build_density_profile_from_activations(
+        activations=target_activations,
+        probe_ids=probe_ids,
+        probe_domains=probe_domains,
+        layers=layers,
+        backend=b,
+    )
 
     # Compute knowledge diff
     differ = KnowledgeDiffer()
