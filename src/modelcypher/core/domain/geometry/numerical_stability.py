@@ -1068,7 +1068,7 @@ def gpu_lstsq(
     B: "Array",
     stats: dict[str, float] | None = None,
 ) -> "Array":
-    """Least squares via closed-form normal equations or CGLS fallback.
+    """Least squares via closed-form normal equations.
 
     Solves: minimize ||A @ X - B||² for X
 
@@ -1083,13 +1083,15 @@ def gpu_lstsq(
     may fall back to CPU for the linear system solve, but matmuls remain
     on GPU. Performance is still excellent due to small matrix dimensions.
 
-    Falls back to iterative CGLS only if direct solve fails.
+    Raises ValueError if the matrix is singular (no fallback to iterative
+    methods, as that would change mathematical semantics and violate the
+    CKA=1.0 invariant for alignment).
 
     If stats is provided, populates:
-    - iterations: 0 for direct solve, count for CGLS
+    - iterations: 0 for direct solve
     - residual_norm: final residual norm
     - rhs_norm: right-hand-side norm
-    - method: 'normal_equations', 'normal_equations_dual', or 'cgls'
+    - method: 'normal_equations' or 'normal_equations_dual'
     """
     b = backend
 
@@ -1184,11 +1186,10 @@ def gpu_lstsq(
             return X
 
         except Exception as e:
-            # Direct solve failed, fall back to CGLS
-            logger.warning(
-                "NORMAL_EQ: Direct solve failed (%s), falling back to CGLS",
-                str(e)
-            )
+            # Don't fall back to CGLS - that changes mathematical semantics
+            raise ValueError(
+                f"Normal equations solve failed (singular matrix): {e}"
+            ) from e
 
     # =========================================================================
     # DIRECT SOLVE for Underdetermined Systems (when n < d)
@@ -1270,183 +1271,13 @@ def gpu_lstsq(
             return X
 
         except Exception as e:
-            logger.warning(
-                "NORMAL_EQ_DUAL: Direct solve failed (%s), falling back to CGLS",
-                str(e)
-            )
+            # Don't fall back to CGLS - that changes mathematical semantics
+            raise ValueError(
+                f"Dual normal equations solve failed (singular matrix): {e}"
+            ) from e
 
-    # =========================================================================
-    # CGLS Fallback (only if direct solves failed or n == d exactly)
-    # =========================================================================
-
-    # Precondition: scale columns to unit norm
-    col_norms = b.norm(A, axis=0)
-    col_norms = col_norms + eps
-    inv_col_norms = 1.0 / col_norms
-    row_scale = b.reshape(inv_col_norms, (int(d), 1))
-    diag_reg = b.reshape(inv_col_norms * inv_col_norms * eps, (int(d), 1))
-    A_T = b.transpose(A)
-    b.eval(col_norms, inv_col_norms, row_scale, diag_reg, A_T)
-
-    # Right-hand side: A_hat^T B
-    rhs = b.matmul(A_T, B)
-    rhs = rhs * row_scale
-    b.eval(rhs)
-
-    # Solve (A_hat^T A_hat + diag_reg) Y = rhs
-    Y = b.zeros((int(d), int(b.shape(B)[1])), dtype=precision_dtype(b, reference=A))
-    R = rhs
-    P = rhs
-    b.eval(Y, R, P)
-
-    rhs_norm_sq = b.sum(rhs * rhs)
-    b.eval(rhs_norm_sq)
-    rhs_norm_sq_val = float(b.to_scalar(rhs_norm_sq))
-    rhs_norm = sqrt_scalar(rhs_norm_sq_val, b)
-    sqrt_d = sqrt_scalar(float(d), b)
-    rhs_scale = rhs_norm / max(sqrt_d, 1.0)
-    tol = sqrt_eps * max(rhs_scale, eps)
-
-    B_norm_arr = b.norm(B)
-    b.eval(B_norm_arr)
-    B_norm_val = float(b.to_scalar(B_norm_arr))
-    sqrt_n = sqrt_scalar(float(n), b)
-    tol_primal = sqrt_eps * max(B_norm_val / max(sqrt_n, 1.0), eps)
-
-    rnorm_sq_val = rhs_norm_sq_val
-    rnorm_val = rhs_norm
-    prev_rnorm = rnorm_val
-
-    refresh_interval = max(1, int(min(n, d)))
-    restart_budget = int(max(1, ceil_scalar(log2_scalar(1.0 / eps, b), b)))
-    max_iter = max(1, int(d)) * restart_budget
-
-    # Log CGLS start
-    start_time = time.perf_counter()
-    log_interval = max(500, max_iter // 20)  # Log ~20 times during run
-    logger.info(
-        "CGLS: Starting [%d x %d] -> [%d x %d], max_iter=%d, tol=%.2e",
-        n, d, d, int(b.shape(B)[1]), max_iter, tol
-    )
-
-    iterations_used = 0
-    last_log_time = start_time
-    for step in range(max_iter):
-        # Apply normal equations with preconditioning + Tikhonov
-        P_scaled = P * row_scale
-        AP = b.matmul(A, P_scaled)
-        ATAP = b.matmul(A_T, AP)
-        ATAP = ATAP * row_scale
-        ATAP = ATAP + diag_reg * P
-        b.eval(ATAP)
-
-        denom = b.sum(P * ATAP)
-        b.eval(denom)
-        denom_val = float(b.to_scalar(denom))
-        if denom_val <= eps:
-            denom_val = eps
-
-        alpha = rnorm_sq_val / denom_val
-        Y = Y + alpha * P
-        R = R - alpha * ATAP
-        b.eval(Y, R)
-
-        old_rnorm_sq = rnorm_sq_val
-        rnorm_sq = b.sum(R * R)
-        b.eval(rnorm_sq)
-        rnorm_sq_val = float(b.to_scalar(rnorm_sq))
-        rnorm_val = sqrt_scalar(rnorm_sq_val, b)
-
-        iterations_used = step + 1
-
-        # Progress logging
-        if iterations_used % log_interval == 0:
-            elapsed = time.perf_counter() - start_time
-            iters_per_sec = iterations_used / max(elapsed, 0.001)
-            remaining = (max_iter - iterations_used) / max(iters_per_sec, 0.001)
-            logger.info(
-                "CGLS: iter %d/%d (%.1f%%), residual=%.2e, %.1f iter/s, ~%.0fs remaining",
-                iterations_used, max_iter, 100.0 * iterations_used / max_iter,
-                rnorm_val, iters_per_sec, remaining
-            )
-
-        if rnorm_val <= tol:
-            X_tmp = b.matmul(A, Y * row_scale)
-            res = X_tmp - B
-            res_norm = b.norm(res)
-            b.eval(res_norm)
-            res_norm_val = float(b.to_scalar(res_norm))
-            if res_norm_val <= tol_primal:
-                elapsed = time.perf_counter() - start_time
-                logger.info(
-                    "CGLS: Converged at iter %d (%.2fs), residual=%.2e, primal=%.2e",
-                    iterations_used, elapsed, rnorm_val, res_norm_val
-                )
-                break
-
-        # Refresh residuals on drift or periodic cadence
-        stagnation_threshold = sqrt_eps * max(prev_rnorm, rhs_norm, eps)
-        if (
-            not is_finite(rnorm_val, b)
-            or rnorm_val > prev_rnorm * (1.0 + sqrt_eps)
-            or rnorm_val >= prev_rnorm - stagnation_threshold
-        ):
-            X_tmp = b.matmul(A, Y * row_scale)
-            R = b.matmul(A_T, X_tmp)
-            R = rhs - R * row_scale - diag_reg * Y
-            b.eval(R)
-            rnorm_sq = b.sum(R * R)
-            b.eval(rnorm_sq)
-            rnorm_sq_val = float(b.to_scalar(rnorm_sq))
-            rnorm_val = sqrt_scalar(rnorm_sq_val, b)
-            P = R
-            prev_rnorm = rnorm_val
-            continue
-
-        if (step + 1) % refresh_interval == 0:
-            X_tmp = b.matmul(A, Y * row_scale)
-            R = b.matmul(A_T, X_tmp)
-            R = rhs - R * row_scale - diag_reg * Y
-            b.eval(R)
-            rnorm_sq = b.sum(R * R)
-            b.eval(rnorm_sq)
-            rnorm_sq_val = float(b.to_scalar(rnorm_sq))
-            rnorm_val = sqrt_scalar(rnorm_sq_val, b)
-            P = R
-            prev_rnorm = rnorm_val
-            continue
-
-        beta = rnorm_sq_val / max(old_rnorm_sq, eps)
-        P = R + beta * P
-        b.eval(P)
-        prev_rnorm = rnorm_val
-
-    X = Y * row_scale
-    b.eval(X)
-
-    # Log completion
-    total_elapsed = time.perf_counter() - start_time
-    if iterations_used >= max_iter:
-        logger.warning(
-            "CGLS: Hit max_iter=%d (%.2fs), residual=%.2e (may not have converged)",
-            max_iter, total_elapsed, rnorm_val
-        )
-    else:
-        logger.info(
-            "CGLS: Completed in %d iters (%.2fs), final residual=%.2e",
-            iterations_used, total_elapsed, rnorm_val
-        )
-
-    if stats is not None:
-        stats["iterations"] = float(iterations_used)
-        stats["residual_norm"] = float(rnorm_val)
-        stats["rhs_norm"] = float(rhs_norm)
-        stats["method"] = "cgls"
-
-    if squeeze_output:
-        X = b.reshape(X, (-1,))
-
-    return X
+    # Both branches above return or raise. This point is unreachable.
+    raise RuntimeError("Unreachable: gpu_lstsq should have returned or raised")
 
 
 # =============================================================================

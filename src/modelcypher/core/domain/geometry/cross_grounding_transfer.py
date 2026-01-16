@@ -609,29 +609,11 @@ class CrossGroundingSynthesizer:
         common = set(source_stress.anchor_distances.keys()) & set(target_anchors.keys())
         common_anchor_count = len(common)
         if common_anchor_count < 3:
-            # Return degenerate GhostAnchor with zero preservation
-            # when there are insufficient common anchors
-            target_stress = RelationalStressProfile(
-                anchor_distances={},
-                normalized_distances={},
-                local_density=0.0,
-                curvature_signature=(),
-                activation_magnitude=0.0,
-                nearest_anchors=(),
-                stress_vector=(),
-            )
-            return GhostAnchor(
-                concept_id=concept_id,
-                source_position=source_pos,
-                target_position=source_pos,  # Use source position as fallback
-                stress_preservation=0.0,
-                grounding_rotation=grounding_rotation,
-                common_anchor_count=common_anchor_count,
-                source_anchor_count=source_anchor_count,
-                target_anchor_count=target_anchor_count,
-                source_stress=source_stress,
-                target_stress=target_stress,
-                synthesis_confidence=0.0,
+            # Need at least 3 non-collinear points to define affine transformation
+            raise ValueError(
+                f"Ghost anchor synthesis requires at least 3 common anchors, "
+                f"got {common_anchor_count}. Source has {source_anchor_count}, "
+                f"target has {target_anchor_count}."
             )
 
         # Solve for target position that preserves relational stress

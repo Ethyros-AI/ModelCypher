@@ -300,6 +300,7 @@ class ChannelProjector:
         cka_achieved = alignment.achieved_cka  # 1.0 (invariant)
         numerical_deviation = alignment.numerical_deviation
         scale_ratio = alignment.scale_ratio
+        alignment_successful = True  # Procrustes is closed-form, always succeeds
 
         # =================================================================
         # STEP 2: COMPUTE ALIGNED DELTA (WITH DUAL-STITCH FOR CROSS-ARCH)

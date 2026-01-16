@@ -198,7 +198,9 @@ class DeviationTracker:
             return float("inf")
 
         if sigma_min_global <= eps:
-            sigma_min_global = eps
+            # Singular matrix - σ_min effectively zero means infinite condition number
+            logger.warning("Singular weights detected (σ_min=%.2e <= eps)", sigma_min_global)
+            return float("inf")
 
         return max(1.0, sigma_max_global / sigma_min_global)
 

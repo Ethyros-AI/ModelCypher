@@ -22,9 +22,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.numerical_stability import (
-    regularization_epsilon,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -64,7 +61,12 @@ def _promote_precision(
 
 
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
-    """Compute exact Moore-Penrose pseudo-inverse with stable fallback."""
+    """Compute exact Moore-Penrose pseudo-inverse.
+
+    Raises ValueError if SVD fails (ill-conditioned matrix).
+    Regularization is NOT used as it changes the mathematical semantics
+    and violates the CKA=1.0 invariant for alignment.
+    """
     b = backend
     F = _promote_precision(F, b)
     b.eval(F)
@@ -73,27 +75,10 @@ def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
         F_pinv = b.pinv(F)
         b.eval(F_pinv)
     except Exception as e:
-        logger.warning(
-            "GEODESIC PINV: SVD failed (%s), using regularized fallback",
-            str(e)[:50],
-        )
-        eps = regularization_epsilon(b, F)
-
-        n, m = b.shape(F)
-        dtype = getattr(F, "dtype", None)
-        if int(n) >= int(m):
-            FtF = b.matmul(b.transpose(F), F)
-            reg = b.multiply(eps, b.eye(int(m), dtype=dtype))
-            FtF_reg = b.add(FtF, reg)
-            inv_part = b.inv(FtF_reg)
-            F_pinv = b.matmul(inv_part, b.transpose(F))
-        else:
-            FFt = b.matmul(F, b.transpose(F))
-            reg = b.multiply(eps, b.eye(int(n), dtype=dtype))
-            FFt_reg = b.add(FFt, reg)
-            inv_part = b.inv(FFt_reg)
-            F_pinv = b.matmul(b.transpose(F), inv_part)
-        b.eval(F_pinv)
+        # Don't regularize - that changes the answer and violates CKA=1.0 invariant
+        raise ValueError(
+            f"Alignment matrix too ill-conditioned for exact pinv: {e}"
+        ) from e
 
     return F_pinv
 

@@ -666,7 +666,7 @@ class ConceptVolume:
             total_dists = neighbor_dists + neighbor_geo
             geo_dist = backend.min(total_dists, axis=1)
 
-        # Chord length from centroid to each point (geodesic equals chord for 2 points).
+        # Chord length from centroid to each point (direction vector for tangent).
         diff_sq = backend.sum(diff * diff, axis=1)
         diff_sq = backend.maximum(diff_sq, backend.zeros_like(diff_sq))
         diff_norms = backend.sqrt(diff_sq)

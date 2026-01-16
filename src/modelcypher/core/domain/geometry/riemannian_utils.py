@@ -539,18 +539,9 @@ def geodesic_cosine_between_sets(
     n = shape_b[0]
 
     if m + n < 3:
-        norms_a = backend.sqrt(backend.sum(a_arr * a_arr, axis=1, keepdims=True))
-        norms_b = backend.sqrt(backend.sum(b_arr * b_arr, axis=1, keepdims=True))
-        denom = backend.matmul(norms_a, backend.transpose(norms_b))
-        eps = division_epsilon(backend, a_arr)
-        denom_safe = backend.maximum(denom, backend.full(backend.shape(denom), eps))
-        dot = backend.matmul(a_arr, backend.transpose(b_arr))
-        cos_matrix = dot / denom_safe
-        cos_matrix = backend.clip(cos_matrix, -1.0, 1.0)
-        valid = denom > eps
-        cos_matrix = backend.where(valid, cos_matrix, backend.zeros_like(cos_matrix))
-        backend.eval(cos_matrix)
-        return cos_matrix
+        raise ValueError(
+            f"geodesic_cosine_between_sets requires at least 3 total points, got {m + n}"
+        )
 
     # Stack: set_a, set_b (origin attached as query only)
     points = backend.concatenate([a_arr, b_arr], axis=0)

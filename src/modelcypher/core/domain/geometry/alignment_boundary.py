@@ -463,12 +463,22 @@ def optimize_boundary_thresholds(
                 best_refusal_thresh = refusal_thresh
                 best_safe_radius = safe_radius
 
-    # If no good threshold found, fall back to reasonable defaults
+    # If no good threshold found, use MAD-based robust statistics
     if best_f1 < 0:
-        proj_idx = int(0.05 * n_harmless)
-        best_refusal_thresh = sorted_harmless_projs[max(0, min(proj_idx, n_harmless - 1))]
-        dist_idx = int(0.95 * n_harmless)
-        best_safe_radius = sorted_harmless_dists[max(0, min(dist_idx, n_harmless - 1))]
+        # Median Absolute Deviation (MAD) with Gaussian scale factor
+        # For a Gaussian, MAD * 1.4826 ≈ σ
+        import statistics
+        mad_scale = 1.4826  # MAD to σ conversion for Gaussian
+
+        # Refusal threshold: lower bound (median - 3σ)
+        proj_median = statistics.median(harmless_projs)
+        proj_mad = statistics.median([abs(p - proj_median) for p in harmless_projs])
+        best_refusal_thresh = proj_median - 3 * mad_scale * proj_mad
+
+        # Safe radius: upper bound (median + 3σ)
+        dist_median = statistics.median(harmless_dists)
+        dist_mad = statistics.median([abs(d - dist_median) for d in harmless_dists])
+        best_safe_radius = dist_median + 3 * mad_scale * dist_mad
 
     logger.info(
         "Optimized boundary: refusal_threshold=%.4f, safe_radius=%.4f (score=%.4f)",
