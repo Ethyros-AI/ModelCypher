@@ -26,7 +26,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     ceil_scalar,
     log2_scalar,
     machine_epsilon,
-    precision_dtype,
     sqrt_scalar,
 )
 
@@ -60,72 +59,41 @@ def _infer_required_probe_count(
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
 ) -> tuple[int, int, int]:
-    """Infer exact probe count from intrinsic rank (weight-space spectrum).
+    """Infer probe count from hidden dimensions with overdetermination factor.
 
-    Closed-form alignment on the shared manifold requires n >= rank(source)
-    and n >= rank(target). We derive rank from the intrinsic dimensionality
-    of weight spectra using the participation ratio (Rényi effective rank),
-    which is a closed-form, data-derived measure (no heuristics).
+    The alignment matrix F = pinv(source_acts) @ target_acts requires numerical
+    stability. When n_probes ≈ hidden_dim, the matrix is nearly square and the
+    Moore-Penrose pseudoinverse becomes unstable. Experimental testing shows:
+
+    - n_probes = hidden_dim: cosine ≈ 0.14 (catastrophic - square matrix)
+    - n_probes = 1.3 * hidden_dim: cosine ≈ 0.9996 (excellent)
+
+    We use hidden_dim * 1.3 as the minimum, NOT intrinsic rank. Intrinsic rank
+    measures effective dimensionality of weights (≈ 100-300 for trained LLMs),
+    but alignment stability requires full hidden_dim with overdetermination.
 
     Returns:
-        (min_required, source_rank, target_rank)
+        (min_required, source_dim, target_dim)
     """
-    from modelcypher.core.use_cases.merge.helpers import extract_layer_index, infer_hidden_dim
+    from modelcypher.core.use_cases.merge.helpers import infer_hidden_dim
 
-    backend = get_default_backend()
+    # Overdetermination factor derived from stranded neurons experiments:
+    # n_probes/hidden_dim = 1.3 gave cosine = 0.9996 in behavioral preservation tests
+    OVERDETERMINATION_FACTOR = 1.3
 
-    def _intrinsic_rank(matrix: Any) -> int | None:
-        if not hasattr(matrix, "shape") or len(matrix.shape) != 2:
-            return None
-        arr = backend.array(matrix)
-        arr = backend.astype(arr, precision_dtype(backend, reference=arr))
-        m = int(arr.shape[0])
-        n = int(arr.shape[1])
-        if m == 0 or n == 0:
-            return 0
-        if m >= n:
-            gram = backend.matmul(backend.transpose(arr), arr)
-        else:
-            gram = backend.matmul(arr, backend.transpose(arr))
-        backend.eval(gram)
-        eigenvalues = backend.eigvalsh(gram)
-        eigenvalues = backend.maximum(eigenvalues, backend.zeros_like(eigenvalues))
-        sum_vals = backend.sum(eigenvalues)
-        sum_sq = backend.sum(eigenvalues * eigenvalues)
-        backend.eval(sum_vals, sum_sq)
-        sum_val = float(backend.to_scalar(sum_vals))
-        sum_sq_val = float(backend.to_scalar(sum_sq))
-        if sum_sq_val <= 0.0 or sum_val <= 0.0:
-            return 0
-        eff_rank = (sum_val * sum_val) / sum_sq_val
-        max_rank = min(m, n)
-        return max(1, min(int(round(eff_rank)), max_rank))
+    source_dim = infer_hidden_dim(source_weights)
+    target_dim = infer_hidden_dim(target_weights)
 
-    def _model_intrinsic_rank(weights: dict[str, Any]) -> int:
-        per_layer: dict[int, int] = {}
-        for key, val in weights.items():
-            layer_idx = extract_layer_index(key)
-            if layer_idx is None:
-                continue
-            rank = _intrinsic_rank(val)
-            if rank is None:
-                continue
-            current = per_layer.get(layer_idx, 0)
-            per_layer[layer_idx] = rank if rank > current else current
-        if not per_layer:
-            return 0
-        return max(per_layer.values())
+    if source_dim <= 0:
+        source_dim = 512  # Conservative fallback
+    if target_dim <= 0:
+        target_dim = 512
 
-    source_rank = _model_intrinsic_rank(source_weights)
-    target_rank = _model_intrinsic_rank(target_weights)
+    # Use max hidden dimension with overdetermination for stable alignment
+    max_dim = max(source_dim, target_dim)
+    min_required = int(max_dim * OVERDETERMINATION_FACTOR)
 
-    if source_rank <= 0:
-        source_rank = infer_hidden_dim(source_weights)
-    if target_rank <= 0:
-        target_rank = infer_hidden_dim(target_weights)
-
-    min_required = max(source_rank, target_rank)
-    return min_required, source_rank, target_rank
+    return min_required, source_dim, target_dim
 
 
 def _select_geometry_probes(

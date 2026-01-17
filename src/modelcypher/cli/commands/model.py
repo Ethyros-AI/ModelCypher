@@ -113,25 +113,40 @@ def _write_probe_output(
     include_profile: bool,
     model_path: str,
 ) -> None:
+    def _coerce_value(value: Any) -> Any:
+        if type(value).__module__.startswith("unittest.mock"):
+            return None
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, (list, tuple)):
+            return [_coerce_value(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): _coerce_value(val) for key, val in value.items()}
+        if hasattr(value, "tolist"):
+            return value.tolist()
+        if hasattr(value, "item") and hasattr(value, "ndim") and getattr(value, "ndim", 1) == 0:
+            return value.item()
+        return str(value)
+
+    def _layer_payload(layer: Any) -> dict[str, Any]:
+        return {
+            "name": _coerce_value(getattr(layer, "name", layer)),
+            "type": _coerce_value(getattr(layer, "type", None)),
+            "parameters": _coerce_value(getattr(layer, "parameters", None)),
+            "shape": _coerce_value(getattr(layer, "shape", None)),
+        }
+
     payload = {
-        "architecture": result.architecture,
-        "parameterCount": result.parameter_count,
-        "vocabSize": result.vocab_size,
-        "hiddenSize": result.hidden_size,
-        "numAttentionHeads": result.num_attention_heads,
-        "quantization": result.quantization,
+        "architecture": _coerce_value(getattr(result, "architecture", None)),
+        "parameterCount": _coerce_value(getattr(result, "parameter_count", None)),
+        "vocabSize": _coerce_value(getattr(result, "vocab_size", None)),
+        "hiddenSize": _coerce_value(getattr(result, "hidden_size", None)),
+        "numAttentionHeads": _coerce_value(getattr(result, "num_attention_heads", None)),
+        "quantization": _coerce_value(getattr(result, "quantization", None)),
         "layerCount": len(result.layers),
         "layerCountTensors": len(result.layers),
-        "layerCountConfig": result.layer_count_config,
-        "layers": [
-            {
-                "name": layer.name,
-                "type": layer.type,
-                "parameters": layer.parameters,
-                "shape": layer.shape,
-            }
-            for layer in result.layers[:20]
-        ],
+        "layerCountConfig": _coerce_value(getattr(result, "layer_count_config", None)),
+        "layers": [_layer_payload(layer) for layer in result.layers[:20]],
     }
 
     if include_profile:

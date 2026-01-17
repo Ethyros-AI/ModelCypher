@@ -41,7 +41,7 @@ from modelcypher.ports.storage import (
     ModelStore,
 )
 from modelcypher.utils.locks import FileLock
-from modelcypher.utils.paths import ensure_dir, get_modelcypher_home
+from modelcypher.utils.paths import ensure_dir, expand_path, get_modelcypher_home
 
 
 class StoragePaths:

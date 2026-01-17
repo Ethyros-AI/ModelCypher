@@ -25,6 +25,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.adapters.model_loader import (
+    load_model_for_training as _load_model_for_training,
+)
+from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
 from modelcypher.ports.model_loader import ModelLoaderPort
 
 if TYPE_CHECKING:
@@ -54,11 +58,6 @@ class MLXModelLoader(ModelLoaderPort):
         Returns:
             Tuple of (model, tokenizer)
         """
-        # Import here to avoid circular imports and MLX dependency at module level
-        from modelcypher.adapters.model_loader import (
-            load_model_for_training as _load_model_for_training,
-        )
-
         return _load_model_for_training(
             model_path,
             lora_settings,
@@ -77,10 +76,6 @@ class MLXModelLoader(ModelLoaderPort):
             Dictionary mapping weight names to mx.array (runs on GPU)
         """
         from pathlib import Path
-        from modelcypher.core.domain._backend import (
-            get_mlx_probe_error,
-            probe_mlx_available,
-        )
 
         if not probe_mlx_available(explicit=True):
             detail = get_mlx_probe_error() or "Unknown MLX initialization error"

@@ -30,6 +30,7 @@ from pathlib import Path
 import typer
 
 from modelcypher.cli.commands.model import prevent_sleep
+from modelcypher.cli.composition import get_model_probe_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.validation import validate_model_path
@@ -52,8 +53,6 @@ def _run_dry_run(
     output_dir: str,
 ) -> None:
     """Show what a merge would do without actually running it."""
-    from modelcypher.cli.composition import get_model_probe_service
-
     context = _context(ctx)
     service = get_model_probe_service()
 
@@ -772,16 +771,29 @@ def multi_channel(
     context = _context(ctx)
     backend = get_default_backend()
 
+    def _fail_channel(detail: str) -> None:
+        error = ErrorDetail(
+            code="MC-1201",
+            title="Invalid channel format",
+            detail=detail,
+            hint="Use 'name:path' format for each channel.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
     # Parse channel arguments (format: "name:path")
     channel_paths: dict[str, str] = {}
     for channel_spec in channels:
         if ":" not in channel_spec:
-            typer.echo(f"Error: Invalid channel format '{channel_spec}'. Use 'name:path' format.", err=True)
-            raise typer.Exit(code=1)
+            _fail_channel(
+                f"Invalid channel format '{channel_spec}'. Use 'name:path' format."
+            )
         name, path = channel_spec.split(":", 1)
         if not name or not path:
-            typer.echo(f"Error: Invalid channel format '{channel_spec}'. Both name and path required.", err=True)
-            raise typer.Exit(code=1)
+            _fail_channel(
+                f"Invalid channel format '{channel_spec}'. Both name and path required."
+            )
         channel_paths[name] = path
 
     # Validate paths

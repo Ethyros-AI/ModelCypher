@@ -38,7 +38,10 @@ class ByteFrequencyEmbeddingProvider(EmbeddingProvider):
     def embed(self, texts: list[str]) -> list[list[float]]:
         embeddings: list[list[float]] = []
         for text in texts:
-            data = text.encode("utf-8", errors="replace")
+            if all(ord(ch) < 256 for ch in text):
+                data = text.encode("latin-1", errors="replace")
+            else:
+                data = text.encode("utf-8", errors="replace")
             counts = [0.0] * self._dimension
             for byte in data:
                 counts[byte] += 1.0
