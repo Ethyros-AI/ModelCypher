@@ -32,6 +32,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 )
 from modelcypher.core.domain.geometry.transplant import (
     NullSpaceProjector,
+    compute_cross_dimensional_transplant,
     compute_null_space_projector,
     compute_weight_space_transplant,
 )
@@ -79,6 +80,95 @@ def _silu(backend: "Backend", values: "Array") -> "Array":
     silu = values * sigmoid
     b.eval(silu)
     return silu
+
+
+def _is_cross_dimensional(
+    source_shape: tuple[int, ...],
+    target_shape: tuple[int, ...],
+) -> bool:
+    """Check if this is a cross-dimensional merge (different hidden/intermediate dims).
+
+    Returns True if source and target have different shapes, indicating
+    cross-architecture merging that requires behavioral reconstruction.
+    """
+    return source_shape != target_shape
+
+
+def _apply_behavioral_reconstruction(
+    source_weight: "Array",
+    target_weight: "Array",
+    source_activations: "Array",
+    target_activations: "Array",
+    alignment_in: "Array",
+    alignment_out: "Array",
+    source_density_acts: "Array | None",
+    target_density_acts: "Array | None",
+    delta_scale: float,
+    backend: "Backend",
+    weight_key: str,
+) -> "tuple[Array, dict[str, float]] | None":
+    """Apply behavioral reconstruction for cross-dimensional weight transfer.
+
+    Instead of direct matrix transforms (P @ W @ Q) which distort magnitudes,
+    this reconstructs the weight by preserving input→output BEHAVIOR across
+    different coordinate systems.
+
+    Args:
+        source_weight: Source weight [out_src, in_src]
+        target_weight: Target weight [out_tgt, in_tgt]
+        source_activations: Input activations in source space [n, in_src]
+        target_activations: Input activations in target space [n, in_tgt]
+        alignment_in: Transform for input space [in_src, in_tgt]
+        alignment_out: Transform for output space [out_src, out_tgt]
+        source_density_acts: Source activations for density comparison
+        target_density_acts: Target activations for density comparison
+        delta_scale: Scaling factor for delta (0-1)
+        backend: Compute backend
+        weight_key: For logging
+
+    Returns:
+        (merged_weight, metrics_dict) or None if behavioral reconstruction fails
+    """
+    b = backend
+
+    try:
+        result = compute_cross_dimensional_transplant(
+            source_weight=source_weight,
+            target_weight=target_weight,
+            input_activations_source=source_activations,
+            input_activations_target=target_activations,
+            alignment_in=alignment_in,
+            alignment_out=alignment_out,
+            source_activations_for_density=source_density_acts,
+            target_activations_for_density=target_density_acts,
+            delta_scale=delta_scale,
+            backend=b,
+        )
+
+        metrics = {
+            "delta_norm": result.delta_norm,
+            "projected_norm": result.projected_norm,
+            "preserved_fraction": result.preserved_fraction,
+            "transfer_strength": result.transfer_strength,
+            "null_rank": result.null_rank,
+        }
+
+        logger.info(
+            "BEHAVIORAL RECONSTRUCTION: %s preserved=%.1f%%, delta_norm=%.4f",
+            weight_key,
+            100.0 * result.preserved_fraction,
+            result.delta_norm,
+        )
+
+        return result.merged_weight, metrics
+
+    except Exception as e:
+        logger.warning(
+            "Behavioral reconstruction failed for %s: %s. Falling back to direct stitch.",
+            weight_key,
+            e,
+        )
+        return None
 
 
 @dataclass
@@ -342,6 +432,169 @@ def process_layer_weights(
                 "feed_forward.w1", "feed_forward.w2", "feed_forward.w3",
                 "mlp.gate", "mlp.up", "mlp.down",
             ])
+
+            # =========================================================================
+            # BEHAVIORAL RECONSTRUCTION FOR CROSS-DIMENSIONAL MERGING
+            # =========================================================================
+            # Instead of direct matrix transforms (P @ W @ Q) which distort magnitudes,
+            # use behavioral reconstruction to find the weight that produces the SAME
+            # input→output behavior in target coordinates.
+            #
+            # This is the geometrically correct approach: the weight matrix encodes a
+            # transformation, and different coordinate systems encode the SAME
+            # transformation with DIFFERENT matrix values.
+            # =========================================================================
+            behavioral_reconstruction_applied = False
+
+            if (
+                hidden_stitch_output is not None
+                and source_activations is not None
+                and target_activations is not None
+            ):
+                # Get source layer index for activation lookup
+                mapped_src_layer = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
+
+                # Get source activations (in source coordinates)
+                src_hidden_acts = None
+                if mapped_src_layer in source_activations:
+                    src_acts = source_activations[mapped_src_layer]
+                    if src_acts is not None:
+                        if hasattr(src_acts, "shape") and len(b.shape(src_acts)) == 2:
+                            src_hidden_acts = _promote_precision(b.array(src_acts), b)
+                        elif hasattr(src_acts, "__len__") and len(src_acts) > 0:
+                            src_hidden_acts = b.stack([b.array(a) for a in src_acts], axis=0)
+                            src_hidden_acts = _promote_precision(src_hidden_acts, b)
+
+                # Get target activations (in target coordinates)
+                tgt_hidden_acts = None
+                if layer_idx in target_activations:
+                    tgt_acts = target_activations[layer_idx]
+                    if tgt_acts is not None:
+                        if hasattr(tgt_acts, "shape") and len(b.shape(tgt_acts)) == 2:
+                            tgt_hidden_acts = _promote_precision(b.array(tgt_acts), b)
+                        elif hasattr(tgt_acts, "__len__") and len(tgt_acts) > 0:
+                            tgt_hidden_acts = b.stack([b.array(a) for a in tgt_acts], axis=0)
+                            tgt_hidden_acts = _promote_precision(tgt_hidden_acts, b)
+
+                # Determine alignment transforms based on weight type
+                dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
+                src_hidden_dim = stitch_dims.get("src_hidden", 0) if stitch_dims else 0
+                src_inter_dim = stitch_dims.get("src_inter", 0) if stitch_dims else 0
+
+                alignment_in = None
+                alignment_out = None
+                source_acts_for_behavior = None
+                target_acts_for_behavior = None
+
+                # Hidden transform: transpose stitch_output to get [src, tgt]
+                alignment_hidden = b.transpose(hidden_stitch_output) if hidden_stitch_output is not None else None
+                alignment_inter = b.transpose(intermediate_stitch_output) if intermediate_stitch_output is not None else None
+
+                if is_mlp and src_hidden_dim > 0 and src_inter_dim > 0:
+                    is_gate_or_up = any(
+                        n in key for n in ["gate_proj", "up_proj", "mlp.gate", "mlp.up",
+                                           "feed_forward.w1", "feed_forward.w3", ".w1", ".w3"]
+                    )
+                    is_down = any(n in key for n in ["down_proj", "mlp.down", "feed_forward.w2", ".w2", "mlp.fc2"])
+
+                    if is_gate_or_up and dim0 == src_inter_dim and dim1 == src_hidden_dim:
+                        # gate/up: input=hidden, output=intermediate
+                        if alignment_hidden is not None and alignment_inter is not None:
+                            # Use gate-specific alignment if available
+                            if gate_stitch_output is not None:
+                                alignment_out = b.transpose(gate_stitch_output)
+                            else:
+                                alignment_out = alignment_inter
+                            alignment_in = alignment_hidden
+                            source_acts_for_behavior = src_hidden_acts
+                            target_acts_for_behavior = tgt_hidden_acts
+
+                    elif is_down and dim0 == src_hidden_dim and dim1 == src_inter_dim:
+                        # down: input=intermediate, output=hidden
+                        if alignment_hidden is not None and alignment_inter is not None:
+                            alignment_in = alignment_inter
+                            alignment_out = alignment_hidden
+                            # For down_proj, we need intermediate activations
+                            if source_intermediate_activations is not None and mapped_src_layer in source_intermediate_activations:
+                                src_inter_acts = source_intermediate_activations[mapped_src_layer]
+                                if src_inter_acts is not None:
+                                    if hasattr(src_inter_acts, "shape") and len(b.shape(src_inter_acts)) == 2:
+                                        source_acts_for_behavior = _promote_precision(b.array(src_inter_acts), b)
+                                    elif hasattr(src_inter_acts, "__len__") and len(src_inter_acts) > 0:
+                                        source_acts_for_behavior = b.stack([b.array(a) for a in src_inter_acts], axis=0)
+                                        source_acts_for_behavior = _promote_precision(source_acts_for_behavior, b)
+                            if target_intermediate_activations is not None and layer_idx in target_intermediate_activations:
+                                tgt_inter_acts = target_intermediate_activations[layer_idx]
+                                if tgt_inter_acts is not None:
+                                    if hasattr(tgt_inter_acts, "shape") and len(b.shape(tgt_inter_acts)) == 2:
+                                        target_acts_for_behavior = _promote_precision(b.array(tgt_inter_acts), b)
+                                    elif hasattr(tgt_inter_acts, "__len__") and len(tgt_inter_acts) > 0:
+                                        target_acts_for_behavior = b.stack([b.array(a) for a in tgt_inter_acts], axis=0)
+                                        target_acts_for_behavior = _promote_precision(target_acts_for_behavior, b)
+
+                elif dim0 == src_hidden_dim and dim1 == src_hidden_dim:
+                    # Hidden→Hidden weight (e.g., some attention projections)
+                    if alignment_hidden is not None:
+                        alignment_in = alignment_hidden
+                        alignment_out = alignment_hidden
+                        source_acts_for_behavior = src_hidden_acts
+                        target_acts_for_behavior = tgt_hidden_acts
+
+                # Attempt behavioral reconstruction if we have all required data
+                if (
+                    alignment_in is not None
+                    and alignment_out is not None
+                    and source_acts_for_behavior is not None
+                    and target_acts_for_behavior is not None
+                ):
+                    b.eval(alignment_in, alignment_out, source_acts_for_behavior, target_acts_for_behavior)
+
+                    result = _apply_behavioral_reconstruction(
+                        source_weight=source_w,
+                        target_weight=target_w,
+                        source_activations=source_acts_for_behavior,
+                        target_activations=target_acts_for_behavior,
+                        alignment_in=alignment_in,
+                        alignment_out=alignment_out,
+                        source_density_acts=source_acts_for_behavior,
+                        target_density_acts=target_acts_for_behavior,
+                        delta_scale=delta_scale,
+                        backend=b,
+                        weight_key=key,
+                    )
+
+                    if result is not None:
+                        merged_weight, behavior_metrics = result
+                        merged[key] = merged_weight
+                        if mlp_role in ("gate", "up"):
+                            mlp_weights[mlp_role] = merged_weight
+                            merged_intermediate = None
+                        metrics["weights_transplanted"] += 1
+                        metrics["preserved_fractions"].append(behavior_metrics["preserved_fraction"])
+                        metrics["projection_losses"].append(1.0 - behavior_metrics["preserved_fraction"])
+                        metrics["null_dims"].append(behavior_metrics["null_rank"])
+                        metrics.setdefault("behavioral_reconstructed", 0)
+                        metrics["behavioral_reconstructed"] += 1
+                        layer_transplanted = True
+                        behavioral_reconstruction_applied = True
+
+                        logger.info(
+                            "CROSS-DIM BEHAVIORAL: %s [%s] → [%s] preserved=%.1f%%",
+                            key,
+                            list(original_source_shape),
+                            list(target_w.shape),
+                            100.0 * behavior_metrics["preserved_fraction"],
+                        )
+
+            # Skip direct stitch if behavioral reconstruction succeeded
+            if behavioral_reconstruction_applied:
+                continue
+
+            # =========================================================================
+            # FALLBACK: Direct stitch transforms (P @ W @ Q)
+            # Used when behavioral reconstruction is not available or fails.
+            # WARNING: This can distort weight magnitudes in cross-dimensional cases.
+            # =========================================================================
 
             # =========================================================================
             # CONV LAYER HANDLING (LFM2 hybrid architecture)

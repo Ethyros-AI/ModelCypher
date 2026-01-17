@@ -144,6 +144,291 @@ class NullSpaceProjector:
     projector: "Array | None" = None
 
 
+@dataclass(frozen=True)
+class BehavioralReconstructionResult:
+    """Result of behavioral weight reconstruction for cross-dimensional transfer.
+
+    Instead of transforming weights directly (P @ W @ Q), we reconstruct the
+    weight that produces the same input→output behavior in the target space.
+
+    This preserves the FUNCTION of the layer, not the MATRIX values.
+
+    Attributes:
+        reconstructed_weight: Weight that reproduces source behavior in target coords.
+        reconstruction_error: Mean absolute error of behavior matching.
+        source_behavior_norm: Norm of source outputs (for diagnostics).
+        target_behavior_norm: Norm of reconstructed outputs (for diagnostics).
+        condition_number: Condition number of the lstsq solve.
+    """
+
+    reconstructed_weight: "Array"
+    reconstruction_error: float
+    source_behavior_norm: float
+    target_behavior_norm: float
+    condition_number: float
+
+
+def reconstruct_weight_from_behavior(
+    source_weight: "Array",
+    input_activations_source: "Array",
+    alignment_in: "Array",
+    alignment_out: "Array",
+    backend: "Backend | None" = None,
+) -> BehavioralReconstructionResult:
+    """Reconstruct weight by preserving input→output behavior across dimensions.
+
+    Instead of directly transforming weights (which distorts magnitudes), this
+    function finds the weight in target space that produces the SAME behavior
+    as the source weight in source space.
+
+    The insight: The weight matrix encodes a transformation. Different coordinate
+    systems encode the SAME transformation with DIFFERENT matrices. We want the
+    matrix that performs the same operation, not a transformed matrix.
+
+    Algorithm:
+        1. Compute source layer behavior: output_src = input_src @ W_src.T
+        2. Project to target coordinates:
+           - input_tgt = input_src @ F_in
+           - output_tgt = output_src @ F_out
+        3. Solve for weight: W_behavior = lstsq(input_tgt, output_tgt).T
+           This finds W such that input_tgt @ W.T ≈ output_tgt
+
+    Args:
+        source_weight: Source weight matrix [out_src, in_src].
+        input_activations_source: Input activations in source space [n, in_src].
+        alignment_in: Procrustes transform for inputs [in_src, in_tgt].
+        alignment_out: Procrustes transform for outputs [out_src, out_tgt].
+        backend: Compute backend.
+
+    Returns:
+        BehavioralReconstructionResult with reconstructed weight and diagnostics.
+    """
+    b = backend or get_default_backend()
+
+    source_weight = b.array(source_weight)
+    input_activations_source = b.array(input_activations_source)
+    alignment_in = b.array(alignment_in)
+    alignment_out = b.array(alignment_out)
+
+    # Use high precision for the reconstruction
+    compute_dtype = precision_dtype(b, reference=source_weight)
+    source_weight = b.astype(source_weight, compute_dtype)
+    input_activations_source = b.astype(input_activations_source, compute_dtype)
+    alignment_in = b.astype(alignment_in, compute_dtype)
+    alignment_out = b.astype(alignment_out, compute_dtype)
+    b.eval(source_weight, input_activations_source, alignment_in, alignment_out)
+
+    # Get dimensions
+    out_src = int(source_weight.shape[0])
+    in_src = int(source_weight.shape[1])
+    n_samples = int(input_activations_source.shape[0])
+    in_tgt = int(alignment_in.shape[1])
+    out_tgt = int(alignment_out.shape[1])
+
+    logger.info(
+        "BEHAVIORAL RECONSTRUCTION: [%d, %d] -> [%d, %d], n_samples=%d",
+        out_src, in_src, out_tgt, in_tgt, n_samples
+    )
+
+    # Step 1: Compute source layer behavior
+    # output_src = input_src @ W_src.T  [n, out_src]
+    output_source = b.matmul(input_activations_source, b.transpose(source_weight))
+    b.eval(output_source)
+
+    # Step 2: Project to target coordinates
+    # input_tgt = input_src @ F_in  [n, in_tgt]
+    input_target = b.matmul(input_activations_source, alignment_in)
+    b.eval(input_target)
+
+    # output_tgt = output_src @ F_out  [n, out_tgt]
+    output_target = b.matmul(output_source, alignment_out)
+    b.eval(output_target)
+
+    # Step 3: Solve for weight via least squares
+    # Find W such that input_tgt @ W.T = output_tgt
+    # Equivalently: W.T = lstsq(input_tgt, output_tgt)
+    # So: W = lstsq(input_tgt, output_tgt).T
+
+    # Use geodesic-aware pseudoinverse for robustness
+    from modelcypher.core.domain.geometry.numerical_stability import geodesic_pinv
+
+    # pinv(input_tgt) @ output_tgt gives us W.T
+    input_tgt_pinv = geodesic_pinv(b, input_target)
+    b.eval(input_tgt_pinv)
+
+    W_T = b.matmul(input_tgt_pinv, output_target)  # [in_tgt, out_tgt]
+    b.eval(W_T)
+
+    reconstructed_weight = b.transpose(W_T)  # [out_tgt, in_tgt]
+    b.eval(reconstructed_weight)
+
+    # Step 4: Compute reconstruction error
+    output_reconstructed = b.matmul(input_target, W_T)  # [n, out_tgt]
+    b.eval(output_reconstructed)
+
+    error = b.mean(b.abs(output_reconstructed - output_target))
+    reconstruction_error = float(b.to_scalar(error))
+
+    # Compute norms for diagnostics
+    source_norm = float(b.to_scalar(b.sqrt(b.sum(output_source * output_source))))
+    target_norm = float(b.to_scalar(b.sqrt(b.sum(output_target * output_target))))
+
+    # Estimate condition number from Gram matrix
+    gram = b.matmul(b.transpose(input_target), input_target)
+    b.eval(gram)
+    eigvals = b.eigvalsh(gram)
+    b.eval(eigvals)
+    eps = float(machine_epsilon(b, gram))
+    max_eig = float(b.to_scalar(b.max(eigvals)))
+    min_eig = float(b.to_scalar(b.min(b.abs(eigvals))))
+    condition_number = max_eig / max(min_eig, eps)
+
+    logger.info(
+        "BEHAVIORAL RESULT: error=%.6f, src_norm=%.2f, tgt_norm=%.2f, cond=%.2e",
+        reconstruction_error, source_norm, target_norm, condition_number
+    )
+
+    return BehavioralReconstructionResult(
+        reconstructed_weight=reconstructed_weight,
+        reconstruction_error=reconstruction_error,
+        source_behavior_norm=source_norm,
+        target_behavior_norm=target_norm,
+        condition_number=condition_number,
+    )
+
+
+def compute_cross_dimensional_transplant(
+    source_weight: "Array",
+    target_weight: "Array",
+    input_activations_source: "Array",
+    input_activations_target: "Array",
+    alignment_in: "Array",
+    alignment_out: "Array",
+    source_activations_for_density: "Array | None" = None,
+    target_activations_for_density: "Array | None" = None,
+    delta_scale: float = 1.0,
+    backend: "Backend | None" = None,
+) -> "WeightSpaceTransplantResult":
+    """Cross-dimensional weight transplant via behavioral reconstruction.
+
+    This is the correct approach for merging models with different dimensions.
+    Instead of transforming the weight matrix (which distorts magnitudes),
+    we reconstruct the weight that produces the same BEHAVIOR.
+
+    Algorithm:
+        1. Reconstruct source behavior in target coordinates:
+           W_behavior = reconstruct_weight_from_behavior(source_weight, ...)
+        2. Compute delta from target: delta = W_behavior - target_weight
+        3. Apply null-space projection to preserve target behavior
+        4. Merge: merged = target_weight + delta_scale * delta_projected
+
+    Args:
+        source_weight: Source weight matrix [out_src, in_src].
+        target_weight: Target weight matrix [out_tgt, in_tgt].
+        input_activations_source: Input activations in source space [n, in_src].
+        input_activations_target: Input activations in target space [n, in_tgt].
+        alignment_in: Procrustes transform for inputs [in_src, in_tgt].
+        alignment_out: Procrustes transform for outputs [out_src, out_tgt].
+        source_activations_for_density: For density-weighted transfer [n, d_src].
+        target_activations_for_density: For density-weighted transfer [n, d_tgt].
+        delta_scale: Scaling factor for the delta (default 1.0).
+        backend: Compute backend.
+
+    Returns:
+        WeightSpaceTransplantResult with merged weight and diagnostics.
+    """
+    b = backend or get_default_backend()
+
+    target_weight = b.array(target_weight)
+    input_activations_target = b.array(input_activations_target)
+    output_dtype = b.dtype(target_weight)
+
+    # Step 1: Reconstruct source weight in target coordinates
+    reconstruction = reconstruct_weight_from_behavior(
+        source_weight=source_weight,
+        input_activations_source=input_activations_source,
+        alignment_in=alignment_in,
+        alignment_out=alignment_out,
+        backend=b,
+    )
+
+    source_behavioral = reconstruction.reconstructed_weight
+    b.eval(source_behavioral)
+
+    logger.info(
+        "CROSS-DIM TRANSPLANT: reconstruction_error=%.6f, condition=%.2e",
+        reconstruction.reconstruction_error,
+        reconstruction.condition_number,
+    )
+
+    # Step 2: Compute delta between behavioral source and target
+    compute_dtype = precision_dtype(b, reference=target_weight)
+    source_behavioral = b.astype(source_behavioral, compute_dtype)
+    target_weight_compute = b.astype(target_weight, compute_dtype)
+    b.eval(source_behavioral, target_weight_compute)
+
+    delta_W = source_behavioral - target_weight_compute
+    b.eval(delta_W)
+
+    delta_norm = _geodesic_frobenius_norm(delta_W, b)
+
+    # Step 3: Compute null-space projector on TARGET activations
+    null_space_projector = compute_null_space_projector(
+        input_activations=input_activations_target,
+        source_activations_for_density=source_activations_for_density,
+        target_activations_for_density=target_activations_for_density,
+        backend=b,
+    )
+
+    # Step 4: Project delta through null-space
+    N = null_space_projector.projector
+    null_rank = null_space_projector.null_rank
+    transfer_strength = null_space_projector.transfer_strength
+
+    if N is None:
+        A_weighted = null_space_projector.weighted_activations
+        gram_inv = null_space_projector.gram_inv
+        b.eval(A_weighted, gram_inv)
+
+        delta_row = b.matmul(delta_W, b.transpose(A_weighted))
+        correction = b.matmul(delta_row, gram_inv)
+        correction = b.matmul(correction, A_weighted)
+        delta_W_proj = delta_W - correction
+        b.eval(delta_W_proj)
+    else:
+        delta_W_proj = b.matmul(delta_W, N)
+        b.eval(delta_W_proj)
+
+    projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)
+
+    # Preserved fraction
+    eps = float(division_epsilon(b, delta_W))
+    if delta_norm > eps:
+        preserved_fraction = projected_norm / delta_norm
+    else:
+        preserved_fraction = 1.0
+
+    # Step 5: Apply to target weight
+    merged_weight = target_weight_compute + delta_scale * delta_W_proj
+    if str(b.dtype(merged_weight)) != str(output_dtype):
+        merged_weight = b.astype(merged_weight, output_dtype)
+    b.eval(merged_weight)
+
+    logger.info(
+        "CROSS-DIM RESULT: delta_norm=%.4f, proj_norm=%.4f, preserved=%.1f%%",
+        delta_norm, projected_norm, 100.0 * preserved_fraction
+    )
+
+    return WeightSpaceTransplantResult(
+        merged_weight=merged_weight,
+        delta_norm=delta_norm,
+        projected_norm=projected_norm,
+        preserved_fraction=preserved_fraction,
+        transfer_strength=transfer_strength,
+        null_rank=null_rank,
+    )
+
+
 def compute_null_space_projector(
     input_activations: "Array",
     *,

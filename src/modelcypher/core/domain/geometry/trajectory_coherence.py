@@ -184,6 +184,94 @@ def _compute_unique_token_ratio(tokens: list[str]) -> float:
     return len(set(tokens)) / len(tokens)
 
 
+def _detect_script_mixing(text: str) -> tuple[bool, str | None]:
+    """Detect if text mixes multiple writing scripts (indicates garbage output).
+
+    A coherent response in English shouldn't contain random Japanese, Arabic,
+    or Korean characters. Mixed scripts = broken model.
+
+    Returns:
+        (is_mixed, reason) - True if problematic script mixing detected
+    """
+    import unicodedata
+
+    if len(text) < 10:
+        return False, None
+
+    # Count characters by script category
+    script_counts: dict[str, int] = {}
+
+    for char in text:
+        if char.isspace() or char in '.,!?;:\'"()-[]{}':
+            continue
+        try:
+            # Get Unicode script/category
+            name = unicodedata.name(char, "UNKNOWN")
+            if "CJK" in name or "HIRAGANA" in name or "KATAKANA" in name:
+                script = "CJK"
+            elif "ARABIC" in name:
+                script = "ARABIC"
+            elif "HANGUL" in name:
+                script = "KOREAN"
+            elif "CYRILLIC" in name:
+                script = "CYRILLIC"
+            elif "LATIN" in name or char.isascii():
+                script = "LATIN"
+            else:
+                script = "OTHER"
+            script_counts[script] = script_counts.get(script, 0) + 1
+        except Exception:
+            continue
+
+    total_chars = sum(script_counts.values())
+    if total_chars < 5:
+        return False, None
+
+    # Count how many scripts have significant presence (>5% of text)
+    significant_scripts = [s for s, c in script_counts.items() if c / total_chars > 0.05]
+
+    # More than 2 significant scripts = garbage
+    if len(significant_scripts) > 2:
+        return True, f"Mixed scripts detected: {significant_scripts}"
+
+    # CJK + Latin is okay (e.g., Japanese with English terms)
+    # But CJK + Arabic + Latin = definitely garbage
+    if "ARABIC" in significant_scripts and "CJK" in significant_scripts:
+        return True, "Arabic + CJK script mixing"
+
+    if "KOREAN" in significant_scripts and "ARABIC" in significant_scripts:
+        return True, "Korean + Arabic script mixing"
+
+    return False, None
+
+
+def _detect_special_token_leakage(text: str) -> tuple[bool, str | None]:
+    """Detect if special tokens appear in output (indicates broken generation).
+
+    Special tokens like <|startoftext|>, <|endoftext|>, <|pad|> should never
+    appear in model output - they indicate the model is broken.
+    """
+    special_patterns = [
+        r"<\|startoftext\|>",
+        r"<\|endoftext\|>",
+        r"<\|pad\|>",
+        r"<\|im_start\|>",
+        r"<\|im_end\|>",
+        r"\[PAD\]",
+        r"\[SEP\]",
+        r"\[CLS\]",
+        r"\[UNK\]",
+        r"<unk>",
+        r"<pad>",
+    ]
+
+    for pattern in special_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True, f"Special token leaked: {pattern}"
+
+    return False, None
+
+
 def analyze_output_coherence(
     prompt: str,
     output: str,
@@ -227,6 +315,16 @@ def analyze_output_coherence(
         most_common = Counter(tokens).most_common(1)[0]
         if most_common[1] / len(tokens) > 0.5:
             degenerate_reasons.append(f"Single-token collapse: '{most_common[0]}' repeated")
+
+    # Check for script mixing (Japanese + Arabic + English = garbage)
+    is_mixed, mix_reason = _detect_script_mixing(output)
+    if is_mixed and mix_reason:
+        degenerate_reasons.append(mix_reason)
+
+    # Check for special token leakage (<|startoftext|> in output = broken)
+    has_leakage, leak_reason = _detect_special_token_leakage(output)
+    if has_leakage and leak_reason:
+        degenerate_reasons.append(leak_reason)
 
     is_degenerate = len(degenerate_reasons) > 0
     degenerate_reason = "; ".join(degenerate_reasons) if degenerate_reasons else None
