@@ -15,45 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Concept Detection Using Embedding Geometry.
+"""Concept detection using embedding geometry.
 
 Detects semantic concept activations in text by comparing segment embeddings
-to probe centroids on the representation manifold.
-
-Mathematical Foundation:
-    Each probe defines a concept region via its support texts. Detection involves:
-
-    1. Probe Centroid: μ_p = Fréchet mean of embedded support texts
-       Uses geodesic-aware averaging to find Riemannian center of mass
-
-    2. Segment Embedding: e_s = embed(text_segment)
-       Segments are typically sentences or clauses
-
-    3. Similarity: sim(e_s, μ_p) via geodesic cosine
-       Respects manifold curvature unlike Euclidean cosine
-
-    4. Acceptance Floor: Derived from inter-probe separation
-       floor = min(sim_matrix) over all probe pairs
-       Ensures detection threshold adapts to probe geometry
-
-    5. Detection: Concept activated if sim(e_s, μ_p) > acceptance_floor
-
-Cross-Modal Comparison:
-    Compares concept detection patterns between models to assess alignment:
-    - Overlap: Jaccard similarity of detected concepts
-    - Order correlation: Agreement on concept activation sequence
-
-Algorithm:
-    1. Embed all probe support texts, compute Fréchet centroids
-    2. Segment response text, embed each segment
-    3. Compute geodesic cosine between segments and probe centroids
-    4. Select best-matching probe per segment if above acceptance floor
-    5. Collapse consecutive activations of same concept
-
-See Also:
-    - atlas_protocols.AtlasProbeProtocol: Probe interface
-    - riemannian_utils.frechet_mean: Geodesic centroid
-    - embedding_cache: Caches embeddings for efficiency
+to probe centroids.
 """
 
 from __future__ import annotations

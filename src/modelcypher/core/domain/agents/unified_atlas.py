@@ -15,28 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Unified Atlas.
+"""Unified atlas.
 
-Provides a unified probe system for cross-domain triangulation in layer mapping
-operations. Probes are loaded from JSON files in data/probes/.
-
-Philosophy IS conceptual math. These probes measure the fundamental categories of
-thought - the structural preconditions for coherent reasoning that are INVARIANT
-across all models. Knowledge occupies fixed probability clouds in hyperspace.
-
-The probes span multiple domains:
-- Mathematical: Sequence invariants, numeric concepts, prime numbers
-- Logical: Computational gates, abstract relations
-- Linguistic: Semantic primes, syntax, compositional semantics
-- Mental: Philosophical concepts, emotion concepts
-- Affective: Emotions, social concepts, moral foundations
-- Temporal/Spatial: Time and space grounding
-- Physical: Embodied grounding, perceptual concepts
-- Safety: Ethics and safety concepts
-
-All probes are loaded from JSON files in data/probes/ for easy adaptation
-without modifying Python code.
+Provides a unified probe inventory for cross-domain triangulation in layer
+mapping operations. Probes are loaded from JSON files in `data/probes/`.
 """
 
 from __future__ import annotations

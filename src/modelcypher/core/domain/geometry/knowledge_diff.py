@@ -18,21 +18,7 @@
 """Knowledge state diffing for model merging.
 
 Compares knowledge density profiles between source and target models to
-identify graft opportunities - concepts where source has dense representation
-but target is sparse.
-
-Key insight: Don't merge everything. Only graft into gaps.
-
-Graft Opportunity = source_density - target_density
-
-High positive values indicate concepts where:
-- Source knows the concept well (dense)
-- Target has gaps (sparse)
-- Grafting would add value
-
-Negative values indicate concepts where:
-- Target already knows well
-- Grafting would waste computation or cause interference
+identify graft opportunities (source density minus target density).
 """
 
 from __future__ import annotations

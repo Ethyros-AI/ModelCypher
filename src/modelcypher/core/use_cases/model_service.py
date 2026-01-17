@@ -119,8 +119,6 @@ class ModelService:
         """Merge two models using pure geometric alignment.
 
         Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
-
-        The geometry determines the transplant. No blending or interpolation.
         """
         from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
 

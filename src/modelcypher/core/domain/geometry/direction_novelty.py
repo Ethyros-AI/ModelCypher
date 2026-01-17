@@ -17,35 +17,7 @@
 
 """Per-direction novelty analysis for model merging.
 
-Identifies which directions (neurons/features) are "activated" in source but
-"dormant" in target. These are the directions where knowledge transfer is most
-beneficial and least destructive.
-
-Mathematical Foundation:
-    For each direction i in the activation space:
-        - source_var[i] = variance of source activations along direction i
-        - target_var[i] = variance of target activations along direction i
-        - novelty_ratio[i] = source_var[i] / (source_var[i] + target_var[i])
-
-    Interpretation:
-        - novelty_ratio ≈ 1.0: Source uses this direction heavily, target doesn't
-          → NOVEL: Safe to transfer knowledge here
-        - novelty_ratio ≈ 0.5: Both use this direction similarly
-          → SHARED: Be careful, might interfere
-        - novelty_ratio ≈ 0.0: Target uses heavily, source doesn't
-          → PRESERVE: Don't touch, target's knowledge
-
-Why This Matters:
-    The current merge algorithm uses density-weighted null-space projection,
-    but doesn't explicitly identify which directions are "activated in source,
-    dormant in target." This analysis provides that missing piece, allowing
-    us to be surgical about knowledge transfer.
-
-Integration:
-    Combined with subspace analysis, we can:
-    1. Identify shared subspace (from principal angles) - don't disturb
-    2. Within the "novel" subspace, identify specific directions with high novelty
-    3. Only inject delta in those high-novelty directions
+Computes per-dimension variance ratios to estimate source-vs-target novelty.
 """
 
 from __future__ import annotations
@@ -373,20 +345,7 @@ def compute_subspace_novelty(
     stitch: "Array | None" = None,
     backend: "Backend | None" = None,
 ) -> DirectionNoveltyResult:
-    """Compute novelty using principal angle analysis (geometry-faithful).
-
-    This is the correct approach for cross-architecture merging where source and
-    target have different dimensions. Instead of comparing variances (which are
-    distorted by dimension compression), we compare SUBSPACES using principal angles.
-
-    Mathematical Foundation:
-        1. Extract principal subspaces via SVD
-        2. Compute principal angles between source and target subspaces
-        3. Novel directions = source directions orthogonal to target's subspace
-        4. This is invariant to dimension mismatch and scaling
-
-    For same-dimension merging, this is equivalent to variance-based novelty but
-    more robust. For cross-dimension merging, this is the ONLY correct approach.
+    """Compute novelty using principal angle analysis.
 
     Args:
         source_activations: Source activation matrix [n, d_src]
@@ -397,7 +356,7 @@ def compute_subspace_novelty(
         backend: Backend for tensor operations
 
     Returns:
-        DirectionNoveltyResult with geometry-derived novelty classification
+        DirectionNoveltyResult with novelty classification
     """
     from modelcypher.core.domain.geometry.subspace import compute_subspace_overlap
 

@@ -15,33 +15,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Birkhoff Polytope Projector for manifold-constrained weight transformations.
+"""Birkhoff polytope projector for matrix normalization.
 
-Based on DeepSeek mHC (Manifold-Constrained Hyper-Connections, arXiv:2512.24880):
-Projects matrices onto the Birkhoff polytope (doubly stochastic matrices) using
-Sinkhorn-Knopp normalization, then bounds spectral norm to ensure compositional
-stability across layer chains.
+Projects matrices onto the set of doubly stochastic matrices using
+Sinkhorn-Knopp normalization and optional spectral norm bounding.
 
-Key insight: Doubly stochastic matrices have spectral norm <= 1 and are closed
-under multiplication. This prevents gradient explosion when chaining weight
-transformations across many layers.
-
-Mathematical background:
-    The Birkhoff polytope B_n is the set of n x n doubly stochastic matrices:
-    {M : M_ij >= 0, sum_j M_ij = 1, sum_i M_ij = 1}
-
-    Properties:
-    - Convex hull of permutation matrices (vertices)
-    - Spectral norm ||M||_2 <= 1 for all M in B_n
-    - Closed under multiplication: A, B in B_n => A @ B in B_n
-
-Usage:
-    projector = BirkhoffProjector(backend)
-    result = projector.project(matrix)
-    doubly_stochastic = result.projected_matrix  # Row/col sums = 1
-
-All parameters are derived from the data and dtype - no user configuration.
+Reference:
+    - DeepSeek mHC (Manifold-Constrained Hyper-Connections, arXiv:2512.24880)
 """
 
 from __future__ import annotations
@@ -64,10 +44,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded constants from DeepSeek mHC paper (arXiv:2512.24880)
-# These are NOT tunable - they are mathematically derived from the paper.
+# Constants from DeepSeek mHC paper (arXiv:2512.24880).
 _SINKHORN_MAX_ITERATIONS = 20  # Eq. 8-9 in mHC paper
-_MAX_SPECTRAL_NORM = 1.0  # Compositional stability guarantee
+_MAX_SPECTRAL_NORM = 1.0  # Spectral norm bound used in the paper
 
 
 @dataclass
@@ -101,15 +80,7 @@ class BirkhoffProjector:
     """
     Projects matrices onto the Birkhoff polytope (doubly stochastic matrices).
 
-    This class implements the core algorithm from DeepSeek's mHC paper:
-    1. Sinkhorn-Knopp iteration for doubly stochastic projection
-    2. Spectral norm bounding to ensure ||M||_2 <= 1.0
-
-    The combination guarantees that chained transformations remain stable:
-    if A, B are doubly stochastic with spectral norm <= 1, then A @ B
-    has the same properties.
-
-    All parameters are derived from the data's dtype - no configuration required.
+    Implements Sinkhorn-Knopp normalization and optional spectral norm bounding.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:

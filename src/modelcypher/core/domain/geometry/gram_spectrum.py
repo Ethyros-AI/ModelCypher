@@ -15,36 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Gram Matrix Spectrum Analysis for Null-Space Diagnostics.
+"""Gram matrix spectrum analysis for null-space diagnostics.
 
-Analyzes the eigenvalue spectrum of the Gram matrix (A @ A.T) to understand
-the geometry of the null-space projector used in knowledge transplant.
-
-Key Questions This Module Answers:
-----------------------------------
-1. What is the effective rank of activations? (How many "real" directions?)
-2. What is the condition number? (Numerical stability of pseudoinverse?)
-3. How much energy is in the top-k dimensions? (How compressible?)
-4. What is the spectral gap? (Separation between "used" and "unused"?)
-
-Mathematical Foundation:
-------------------------
-For activations A ∈ R^{n×d} (n samples, d features):
-
-    Gram matrix: G = A @ A.T ∈ R^{n×n}
-    Eigendecomposition: G = V @ Λ @ V.T
-
-The eigenvalues λ_i tell us:
-- λ_i ≈ 0 → direction i is "null" (available for transplant)
-- λ_i >> 0 → direction i is "active" (must be preserved)
-
-The null-space projector P = I - A.T @ (A @ A.T)^+ @ A operates correctly
-only when:
-1. The pseudoinverse is numerically stable (condition number not too high)
-2. There exists meaningful null space (some λ_i truly small)
-3. The spectral gap separates "used" from "unused" directions
-
-This module provides RAW MEASUREMENTS only. No interpretation, no thresholds.
+Analyzes eigenvalues of the Gram matrix (A @ A.T) to derive rank and
+stability metrics used in transplant workflows.
 """
 
 from __future__ import annotations

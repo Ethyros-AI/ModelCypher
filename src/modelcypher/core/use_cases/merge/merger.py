@@ -15,30 +15,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Unified Geometric Merge Pipeline.
+"""Unified geometric merge pipeline.
 
-Pipeline:
+Stages:
     PROBE → DENSITY → TRANSPLANT
 
-Stage 1: PROBE - Build intersection map from probe responses, compute GramAlign transforms
-Stage 2: DENSITY - Knowledge density profiling for graft mask
-Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
-
-Key Principles:
-1. Null-space projection guarantees: A_boundary @ W' = A_boundary @ W_target
-2. Layer targeting enables surgical transplants
-3. Cross-dimensional projection via GramAligner yields closed-form linear alignment
-4. Geometric alignment subsumes discrete permutation alignment
-
 References:
-- AlphaEdit (null-space): Fang et al. (2025) ICLR Outstanding Paper
-
-REMOVED (proven redundant):
-- PERMUTE: GramAligner alignment subsumes discrete permutation alignment
-- ROTATE/PROPAGATE: No boundary preservation guarantee
-
-Stage implementations are in merge/stages for modularity.
+    - Fang et al. (2025). "AlphaEdit" (null-space projection).
 """
 
 from __future__ import annotations
@@ -75,15 +58,7 @@ class UnifiedGeometricMerger:
     """
     Unified geometric merge pipeline.
 
-    Pipeline: PROBE → DENSITY → TRANSPLANT
-
-    - PROBE (GramAlign): Computes closed-form linear transforms; geodesic CKA is diagnostic.
-      This continuous alignment subsumes discrete permutation alignment.
-    - DENSITY: Identifies regions where source is denser than target.
-    - TRANSPLANT: Null-space constrained projection preserves boundary behavior
-      while transferring knowledge.
-
-    Stage implementations are in merge/stages for modularity.
+    Pipeline: PROBE → DENSITY → TRANSPLANT.
     """
 
     def __init__(
@@ -256,43 +231,17 @@ class UnifiedGeometricMerger:
     ) -> UnifiedMergeResult:
         """Merge multiple source models into a single target (N→1 merging).
 
-        This is optimized for merging many models into one compact target (e.g., LFM2).
-        The target is loaded and probed ONCE, then reused for all source merges.
+        Optimized for merging many sources into one target. The target is loaded
+        and probed once, then reused for all source merges.
 
         When consensus_mode=True, uses two-phase merging:
-        1. CORRECTION: Fix concepts where target disagrees with source consensus
-        2. ADDITION: Add source-only knowledge via null-space projection
+        1. Consensus correction for outlier concepts.
+        2. Addition of source-only knowledge via null-space projection.
 
-        Mathematical Foundation:
-        -----------------------
-        Linear alignment is closed-form on the shared manifold. The alignment
-        transform F is computed directly via F = pinv(source) @ target. Geodesic
-        CKA is reported as a diagnostic of overlap/coverage, not a target.
+        When accumulative=True, each source delta is projected into the target
+        null space and accumulated additively.
 
-        With fast_mode=True, we skip CKA diagnostics since the closed-form
-        solution is already computed. This provides significant speedup for batch ops.
-
-        Accumulative Merging:
-        --------------------
-        When accumulative=True (default), knowledge from all sources is projected
-        into the target's null-space and accumulated additively:
-
-            merged = target + sum(project_null(delta_i, target))
-
-        where delta_i = source_i - target.
-
-        Each projection is orthogonal to target's active subspace, so:
-        1. Target's behavior is preserved
-        2. All source knowledge is added (not averaged)
-        3. Sources can be processed in parallel
-
-        Deviation Budget:
-        ----------------
-        When track_budget=True (default), cumulative deviation from baseline is
-        tracked. Empirical findings show:
-        - L2 deviation < 35: Safe, full generation quality
-        - L2 deviation 35-50: Warning, approaching degradation threshold
-        - L2 deviation > 50: Danger, generation degradation likely
+        When track_budget=True, cumulative deviation from baseline is logged.
 
         Parameters
         ----------
@@ -307,7 +256,6 @@ class UnifiedGeometricMerger:
             If False, merge sequentially (result = merge(merge(target, A), B)).
         fast_mode : bool
             If True (default), skip CKA diagnostics in GramAligner.
-            Safe because alignment is closed-form.
         delta_scale : float
             Scale factor for knowledge injection (0.0-1.0). Use <1.0 for
             sequential stacking to stay within deviation budget (1% of weight norm).
@@ -810,21 +758,8 @@ class UnifiedGeometricMerger:
         3. Combines channels via doubly stochastic routing (spectral norm ≤ 1.0)
         4. Applies geometric addition (not interpolation)
 
-        Mathematical Foundation:
-        -----------------------
-        From docs/research/mhc_null_space_connection.md:
-
-            W' = W_target + Σ_j H[i,j] × P_null(A_target) @ δW_j
-
-        Where:
-        - H is doubly stochastic routing matrix [n_channels, n_channels]
-        - P_null projects into target's null-space (shared-manifold geometry preserved)
-        - δW_j is aligned delta from channel j
-
-        Properties:
-        - Linear alignment per channel (shared-manifold geometry preserved)
-        - Spectral norm ≤ 1.0 (stable combination)
-        - No interference (channels add, not blend)
+        Notes:
+            See docs/research/mhc_null_space_connection.md for routing details.
 
         Parameters
         ----------

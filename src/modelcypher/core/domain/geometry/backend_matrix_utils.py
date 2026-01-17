@@ -150,8 +150,7 @@ class BackendMatrixUtils:
     def pairwise_squared_distances(self, X: Array) -> Array:
         """Compute pairwise squared geodesic distances.
 
-        Uses k-NN graph shortest paths to estimate true manifold distances.
-        This is the correct metric for curved high-dimensional spaces.
+        Uses k-NN graph shortest paths to estimate manifold distances.
 
         Args:
             X: Data matrix of shape (n_samples, n_features)
@@ -170,7 +169,7 @@ class BackendMatrixUtils:
     def pairwise_distances(self, X: Array) -> Array:
         """Compute pairwise geodesic distances.
 
-        Uses k-NN graph shortest paths for true manifold distances.
+        Uses k-NN graph shortest paths for manifold distances.
 
         Args:
             X: Data matrix of shape (n_samples, n_features)

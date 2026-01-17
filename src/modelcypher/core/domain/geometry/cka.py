@@ -6,25 +6,15 @@
 # it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-"""
-Geodesic RBF CKA - Centered Kernel Alignment on Riemannian Manifolds.
+"""Geodesic RBF CKA (Centered Kernel Alignment).
 
-This module implements Centered Kernel Alignment (CKA) using RBF kernels with
-geodesic distances. This is the mathematically correct construction for
-high-dimensional neural representation spaces.
+Implements CKA using an RBF kernel over geodesic distances, with optional
+caching for distance and Gram computations.
 
-Mathematical Foundation:
-    1. Geodesic Distance: d_geo(x, y) = shortest path on manifold
-    2. RBF Gram: K(x, y) = exp(-d_geo²(x, y) / 2σ²)
-    3. Centering: K_c = H @ K @ H where H = I - (1/n)11ᵀ
-    4. CKA: HSIC(K_a, K_b) / √(HSIC(K_a, K_a) × HSIC(K_b, K_b))
-
-The computation chain:
-    activations → geodesic distances → RBF Gram → centered Gram → CKA
-                     ↑ cache            ↑ cache      ↑ cache
-
-Geodesic distances are cached. Gram/centering caches are used only when
-per-array sigma is used; shared-sigma paths skip caching to avoid key collisions.
+References:
+    - Kornblith et al. (2019). "Similarity of Neural Network Representations
+      Revisited." arXiv:1905.00414
+    - Tenenbaum et al. (2000). "Isomap" - geodesic distance via k-NN graph
 """
 
 from __future__ import annotations

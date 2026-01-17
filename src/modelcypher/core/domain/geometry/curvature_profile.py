@@ -17,14 +17,8 @@
 
 """Curvature profiles for model family baselines.
 
-This module provides infrastructure for:
-1. Computing per-layer curvature profiles for models
-2. Aggregating profiles into family baselines
-3. Computing curvature alignment for merge decisions
-
-Key insight: Knowledge density profiles tell us WHAT is encoded (semantics),
-while curvature profiles tell us HOW it's encoded (geometry/manifold shape).
-These are complementary measurements for understanding model representations.
+Computes per-layer curvature profiles, aggregates baselines, and serializes
+profiles for analysis and comparison.
 
 Schema: mc.geometry.research.curvature_profile.v1
 """

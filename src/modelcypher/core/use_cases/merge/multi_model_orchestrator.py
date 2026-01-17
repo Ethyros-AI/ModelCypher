@@ -17,17 +17,12 @@
 
 """Multi-model merge orchestrator with consensus correction.
 
-Orchestrates N-model merging with two distinct phases:
-1. CORRECTION: Fix concepts the target learned wrong (move to consensus)
-2. ADDITION: Add concepts from sources that target doesn't have
+Orchestrates N-model merging with two phases:
+1. Correction: align target concepts to a consensus representation.
+2. Addition: add concepts from sources that the target lacks.
 
-The key insight: when 5 models agree on a concept's position and the 6th
-differs, the 6th is WRONG. We use GPA (Generalized Procrustes Analysis)
-to find consensus and detect outliers.
-
-Unlike standard null-space addition which preserves target behavior,
-correction intentionally CHANGES behavior because the current behavior
-is incorrect.
+Uses GPA (Generalized Procrustes Analysis) to form a consensus geometry and
+identify outlier concepts for correction.
 """
 
 from __future__ import annotations
@@ -104,8 +99,8 @@ class MultiModelMergeOrchestrator:
     """Orchestrate N-model merge with correction + addition.
 
     Two-phase pipeline:
-    1. CORRECT: Move outlier concepts to consensus (no null-space)
-    2. ADD: Add source-only concepts via Ghost Anchors (null-space)
+    1. Consensus correction for outlier concepts (no null-space).
+    2. Addition of source-only concepts via Ghost Anchors (null-space).
     """
 
     def __init__(

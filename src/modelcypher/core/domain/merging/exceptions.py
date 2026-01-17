@@ -167,13 +167,13 @@ class PreconditionError(MergeValidationError):
 
 
 class PostconditionError(MergeValidationError):
-    """A postcondition guarantee was violated after processing.
+    """A postcondition was not met after processing.
 
     This is raised at the end of a pipeline stage when the output
-    doesn't meet expected guarantees.
+    doesn't meet expected postconditions.
 
     Context typically includes:
-    - guarantee: What should have been true
+    - postcondition: What should have been true
     - actual: What was actually observed
     """
 

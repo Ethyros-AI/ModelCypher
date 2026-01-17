@@ -232,12 +232,9 @@ class GeometricLoRAGenerator:
     in the model's latent space, computes the low-rank weight perturbation
     that achieves that geometry.
 
-    The key insight is that LoRA weights can be computed analytically
-    by solving for the perturbation that maps a representative input
-    to the target activation, then applying rank truncation via SVD.
-
-    All numerical parameters (regularization, condition threshold, rank)
-    are derived from the data. No configuration needed.
+    LoRA weights are computed by solving for the perturbation that maps
+    a representative input to the target activation, then applying rank
+    truncation via SVD. Numerical parameters are derived from data.
     """
 
     def generate(

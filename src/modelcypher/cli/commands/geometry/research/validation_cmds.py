@@ -267,36 +267,12 @@ def register(app: typer.Typer) -> None:
     ) -> None:
         """Measure coordinate alignment quality between two models.
 
-        PREMISE: All LLMs encode the same invariant shape of knowledge. Different
-        models are different compressions/projections of this universal geometry.
-        The relationship between concepts (apple/orange, cause/effect) is invariant
-        across all models - this is why they all converge on the same semantics.
+        Measures how well coordinate systems align between two models and reports
+        CKA diagnostics.
 
-        This command measures how well we've aligned the coordinate systems between
-        two models. Linear alignment is closed-form; geodesic CKA reports overlap
-        on the shared manifold.
-
-        LOW TEST CKA MEANS:
-        - The probe set didn't cover the shared manifold regions
-        - The alignment captured only part of the structure
-        - More diverse probes are needed
-
-        LOW TEST CKA DOES NOT MEAN:
-        - "Models don't share structure" (they do - geometry guarantees it)
-        - "The thesis is wrong" (it's axiomatic, not empirical)
-        - "These models are incompatible" (all models can be merged)
-
-        TWO MODES:
-
-        1. UNDERDETERMINED MODE (--invariant-mode): Uses n < d.
-           - Linear alignment on probes is exact (closed-form Procrustes)
-           - Tests whether alignment generalizes to held-out concepts
-           - Low geodesic CKA = probe coverage issue, not structure issue
-
-        2. OVERLAP MODE (default): Uses n > d.
-           - Measures how much structure the probe set captures
-           - Train CKA < 1.0 = probes don't span full shared structure
-           - Useful for quantifying probe quality
+        Modes:
+        1. --invariant-mode: n < d, tests generalization to held-out concepts.
+        2. Default: n > d, measures probe coverage of shared structure.
 
         Example:
             mc geometry research strong-test \\

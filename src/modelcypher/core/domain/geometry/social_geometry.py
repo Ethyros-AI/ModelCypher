@@ -15,19 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Social Geometry Analysis for Language Models.
+"""Social geometry analysis for language models.
 
-This module probes the emergent "Social Manifold" in language models - the geometric
-structure encoding power hierarchies, kinship relations, and formality gradients.
-
-Key insight: Language models trained on human text absorb implicit social structures.
-These structures manifest as geometric relationships in latent space:
-- Power axis: slave → servant → citizen → noble → emperor
-- Kinship axis: enemy → stranger → acquaintance → friend → family
-- Formality axis: hey → hi → hello → greetings → salutations
-
-Reference: Emergent Social Geometry (ModelCypher 2025)
+Probes social axes (power, kinship, formality) from atlas anchors and reports
+geometry-based measurements.
 """
 
 from __future__ import annotations
@@ -68,7 +59,7 @@ _AXIS_FORMALITY = "formality"
 class AxisOrthogonality:
     """Measures how independent the social axes are."""
 
-    power_kinship: float  # 1.0 = exactly orthogonal
+    power_kinship: float  # 1.0 = orthogonal
     power_formality: float
     kinship_formality: float
     mean_orthogonality: float

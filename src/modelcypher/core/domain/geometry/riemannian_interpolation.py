@@ -163,7 +163,7 @@ class RiemannianInterpolationMixin:
         Uses the property that for any point k on the shortest path from i to j:
             d(i, k) + d(k, j) = d(i, j)
 
-        This is the triangle equality (not inequality) that holds exactly
+        This is the triangle equality (not inequality) that holds
         for points on the geodesic.
 
         Args:

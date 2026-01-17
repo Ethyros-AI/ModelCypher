@@ -15,38 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Riemannian geometry for high-dimensional representation spaces.
+"""Riemannian geometry utilities for representation spaces.
 
-This module provides the main API for Riemannian geometry operations.
-It re-exports classes and functions from the implementation modules:
-
-- RiemannianGeometry: Main class for geodesic and Fréchet mean computation
-- Result types: FrechetMeanResult, GeodesicDistanceResult, CurvatureEstimate, etc.
-- Validation helpers: count_nan, count_inf, all_finite, etc.
-- Convenience functions: frechet_mean, geodesic_distance_matrix, etc.
-
-Mathematical Background:
-    On a Riemannian manifold (M, g), the geodesic distance d(p, q) is the
-    length of the shortest path between p and q. The Fréchet mean minimizes:
-
-        μ = argmin_{p ∈ M} Σᵢ d²(p, xᵢ)
-
-    For discrete point clouds, the manifold is represented by a k-NN graph.
-    Geodesic distance = shortest path on this graph. This is exact for the
-    discrete manifold structure.
+Provides geodesic distances, Fréchet means, and related helpers. This module
+re-exports classes and functions from the core implementation modules.
 
 References:
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"
     - Tenenbaum et al. (2000) "Isomap" - geodesic distance via graph
     - Sra & Hosseini (2015) "Conic Geometric Optimization on the Manifold"
-
-Research Connections:
-    Geodesic distance is the correct metric for neural representations because
-    curvature is inherent in high-dimensional spaces. This aligns with the
-    Platonic Representation Hypothesis (Huh et al., ICML 2024).
-
-    See also: docs/RESEARCH-CONNECTIONS.md
 """
 
 from __future__ import annotations
@@ -217,7 +194,7 @@ def find_sparse_direction(
 # Geodesic Vector Operations
 # =============================================================================
 # These replace the Euclidean operations from the deleted vector_math.py.
-# ALL distance computations use k-NN geodesic (correct in high dimensions).
+# All distance computations use k-NN geodesic distances (curvature-aware).
 
 
 def _geodesic_origin_distances(
@@ -383,9 +360,9 @@ def geodesic_norms(
 ) -> "Array":
     """Compute geodesic norms (distance from origin) for each row.
 
-    This computes the TRUE geodesic distance from the origin to each point,
-    using k-NN graph shortest paths. In high dimensions (4D+), Euclidean
-    distance is systematically wrong due to curvature.
+    Computes geodesic distance from the origin to each point using k-NN
+    graph shortest paths. In high dimensions (4D+), Euclidean distance
+    ignores manifold curvature.
 
     Args:
         vectors: Matrix [n, d] where each row is a point

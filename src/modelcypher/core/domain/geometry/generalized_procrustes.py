@@ -57,18 +57,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-# =============================================================================
-# NO CONFIGURATION CLASSES
-# =============================================================================
-# All parameters are derived from data:
-# - max_iterations: from dimension or model count (10 * k safety limit)
-# - convergence_threshold: from machine epsilon
-# - Fréchet mean: ALWAYS enabled (arithmetic mean is WRONG on curved manifolds)
-# - Reflections: NEVER allowed (preserves orientation)
-# - Scaling: NEVER allowed (preserves magnitudes)
-# - min_models: 2 (fixed - need at least 2 models to align)
-# - smoothness_threshold: derived from smoothness ratio distribution
-# =============================================================================
+# Parameters are derived from data; Fréchet mean is used, reflections and scaling are disabled.
 
 
 @dataclass(frozen=True)
@@ -491,17 +480,7 @@ class GeneralizedProcrustes:
 
 @dataclass(frozen=True)
 class LayerRotationResult:
-    """
-    Result of Procrustes alignment at a single layer.
-
-    When aligning two models, each layer may require a different rotation
-    to optimally map source → target. This captures that per-layer rotation
-    and measures how much it deviates from the previous layer.
-
-    Key insight: If rotations change smoothly across layers, models share
-    similar "information flow" structure. If rotations jump erratically,
-    the models organize information differently at different depths.
-    """
+    """Result of Procrustes alignment at a single layer."""
 
     layer_index: int
     rotation: list[list[float]]  # [k × k] orthogonal rotation matrix
@@ -512,29 +491,7 @@ class LayerRotationResult:
 
 @dataclass
 class RotationContinuityResult:
-    """
-    Analysis of how rotation requirements change across layers.
-
-    ## What This Measures
-
-    When merging two LLMs, you need to rotate one model's representation
-    space to match the other's. The key question: can you use ONE rotation
-    for all layers, or does each layer need its own rotation?
-
-    - **smoothness_ratio < 0.7**: Per-layer rotations yield lower error
-      → The models organize information differently at different depths
-      → Need layer-specific alignment for low-error merging
-
-    - **smoothness_ratio ≥ 0.7**: Global rotation is sufficient
-      → The models have similar "information flow" structure
-      → A single rotation works across all layers
-
-    ## Key Metrics
-
-    - **rotation_roughness**: Σ||R_{L+1} - R_L||² - how much rotations "jump"
-    - **mean_angular_velocity**: Average rotation angle change per layer (radians)
-    - **requires_per_layer_alignment**: True if single rotation is insufficient
-    """
+    """Analysis of how rotation requirements change across layers."""
 
     source_model: str
     target_model: str
@@ -578,32 +535,7 @@ class RotationContinuityResult:
 
 
 class RotationContinuityAnalyzer:
-    """
-    Analyzes whether cross-model alignment requires per-layer or global rotation.
-
-    ## Purpose
-
-    When merging two LLMs (e.g., merging a specialized LoRA into a base model),
-    you need to align their representation spaces. This analyzer determines:
-
-    1. Does a single global rotation suffice for all layers?
-    2. Or do different layers need different rotations?
-
-    ## Algorithm
-
-    For each layer independently:
-    1. Compute optimal Procrustes rotation (SVD-based)
-    2. Measure alignment error after rotation
-    3. Track angular deviation from previous layer
-
-    Then compare: sum(per-layer errors) vs global rotation error
-
-    ## Use Cases
-
-    - **Model merging**: Determine if simple global transform works
-    - **Architecture comparison**: Quantify structural similarity
-    - **Transfer learning**: Predict how well representations transfer
-    """
+    """Analyze rotation continuity across layers."""
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()

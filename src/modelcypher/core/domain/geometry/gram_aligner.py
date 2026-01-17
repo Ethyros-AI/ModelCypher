@@ -130,16 +130,14 @@ class AlignmentResult:
     # Dtype-derived precision threshold: sqrt(machine_epsilon)
     precision_threshold: float
 
-    # GEODESIC CKA achieved by the alignment.
-    # This is the manifold-overlap diagnostic (k-NN graph + RBF kernel).
-    # Linear CKA is guaranteed on the shared manifold; geodesic CKA may be < 1.0.
+    # Geodesic CKA achieved by the alignment.
+    # Manifold-overlap diagnostic (k-NN graph + RBF kernel).
     achieved_cka: float = 1.0
 
     # Diagnostic signal describing any residual gap
     diagnostic: "AlignmentSignal | None" = None
 
-    # EXACT SCALE FACTOR: ||target|| / ||source @ F||
-    # When linear alignment is correct on the shared manifold, this ratio preserves magnitude.
+    # Scale factor: ||target|| / ||source @ F||
     # Apply to stitched weights: W_merged = scale_ratio * W_stitched
     scale_ratio: float = 1.0
 
@@ -307,11 +305,11 @@ class GramAligner:
             return self._identity_result(int(n_s), int(d_s), precision)
 
         # =================================================================
-        # LINEAR ALIGNMENT CHECK (exact solution on shared manifold)
+        # LINEAR ALIGNMENT CHECK (closed-form on probes)
         # =================================================================
-        # Closed-form alignment guarantees CKA=1.0 on training probes when the
-        # target is a linear transform of the source. If this already achieves
-        # numerical precision, skip geodesic alignment entirely.
+        # Closed-form alignment yields CKA=1.0 on training probes when the
+        # target is a linear transform of the source. If this already reaches
+        # numerical precision, skip geodesic alignment.
         linear_start = time.perf_counter()
         F_linear = b.matmul(geodesic_pinv(b, source_activations), target_activations)
         b.eval(F_linear)
@@ -564,18 +562,9 @@ class GramAligner:
         W_tgt = b.astype(W_tgt, compute_dtype)
         b.eval(H, W_src, W_tgt)
 
-        # CORRECTED FORMULA:
-        # ==================
-        # The application chain is: source_aligned = S @ W_src @ H
-        # We want: source_aligned = W_tgt
-        # So: S @ (W_src @ H) = W_tgt
-        #
-        # Previous (wrong) formula solved: S @ W_src = W_tgt @ H.T
-        # Which gives: source_aligned = (W_tgt @ H.T) @ H = W_tgt @ (H.T @ H)
-        # And H.T @ H ≠ I for dimension-reducing Procrustes!
-        #
-        # Correct formula solves: S @ (W_src @ H) = W_tgt directly.
-        # This ensures source_aligned = W_tgt after applying @ H.
+        # Solve for S in: S @ (W_src @ H) = W_tgt.
+        # Avoid solving S @ W_src = W_tgt @ H.T, since H.T @ H != I when H is
+        # dimension-reducing.
 
         # Compute W_src @ H = [src_proj, src_hidden] @ [src_hidden, tgt_hidden]
         #                   = [src_proj, tgt_hidden]

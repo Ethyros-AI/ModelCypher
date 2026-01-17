@@ -131,7 +131,7 @@ class DoRADecomposition:
             return None
 
         b = self._backend
-        # Compute magnitudes using geodesic norm (correct for high-dimensional manifolds)
+        # Compute magnitudes using geodesic norm (curvature-aware).
         base_flat = b.reshape(base_weight, (1, -1))
         current_flat = b.reshape(current_weight, (1, -1))
 

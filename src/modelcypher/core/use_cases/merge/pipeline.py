@@ -83,7 +83,7 @@ def run_merge(
     Transplant formula:
         W' = W_target + P_null(A_boundary) @ (W_source_aligned - W_target)
 
-    Guarantee:
+    Boundary constraint:
         A_boundary @ W' = A_boundary @ W_target  (boundary preserved)
     """
     logger.info("=== PURE GEOMETRIC MERGE ===")

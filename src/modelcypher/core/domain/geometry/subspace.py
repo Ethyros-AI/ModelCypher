@@ -17,25 +17,8 @@
 
 """Subspace overlap analysis for manifold splitting.
 
-Computes the overlap between source and target activation subspaces using
-SVD-based principal angle analysis. This is mathematically rigorous and
-replaces the fragile gap-threshold heuristic in split CKA.
-
-Mathematical Foundation:
-    The shared manifold between two models can have at most min(src_rank, tgt_rank)
-    dimensions. We use SVD to find the principal subspaces and compute principal
-    angles between them to determine which directions are genuinely shared vs novel.
-
-    Principal angles θᵢ between subspaces U and V are defined by:
-        cos(θᵢ) = max min |uᵢ · vⱼ| subject to orthogonality constraints
-
-    In practice, cos(θᵢ) = singular values of Uᵏ @ Vᵏᵀ where k = min(rank_U, rank_V).
-
-Why This Works:
-    1. No arbitrary threshold: Split is determined by intrinsic geometry (rank)
-    2. Subspace analysis: Identifies which DIRECTIONS are shared vs novel, not samples
-    3. Principal angles: Mathematically rigorous measure of subspace overlap
-    4. Validates novelty: If novel_cka is high, the "novel" subspace isn't novel
+Computes overlap between source and target activation subspaces using
+principal angle analysis.
 
 References:
     - Björck & Golub (1973) "Numerical Methods for Computing Angles Between Linear Subspaces"

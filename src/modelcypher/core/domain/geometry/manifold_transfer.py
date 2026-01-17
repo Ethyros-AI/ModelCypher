@@ -18,24 +18,7 @@
 """Cross-manifold projection via landmark MDS with geodesic distances.
 
 Computes distance-preserving projections between representation manifolds
-using anchor points as landmarks. This enables transferring concepts that
-exist in one model's representation space to another model where they
-may not have a direct counterpart.
-
-Mathematical Framework:
-    Given a concept X in source manifold M_s with anchor set A = {P_1, ..., P_n}:
-    1. Compute anchor distance profile: d_s = [d(X, P_1), ..., d(X, P_n)]
-    2. Find point X' in target manifold M_t minimizing stress:
-       σ(X') = Σᵢ wᵢ |d_t(X', P_i) - d_s(X, P_i)|²
-
-    Distances are computed as geodesics on the k-NN graph of the point cloud.
-    Chord distance is incorrect in high-dimensional curved manifolds:
-    - Positive curvature: chord underestimates true distance
-    - Negative curvature: chord overestimates true distance
-
-    The k-NN graph represents the discrete manifold structure. Geodesic
-    distance = shortest path on this graph. This is exact for the
-    discrete manifold (not an approximation).
+using anchor points as landmarks.
 
 References:
     - de Silva, V., & Tenenbaum, J. B. (2004). Sparse multidimensional scaling
@@ -280,8 +263,8 @@ class CrossManifoldProjector:
         """Compute anchor distance profile for a concept.
 
         Computes geodesic distances from the concept's centroid to all anchor
-        centroids via k-NN graph shortest paths. Geodesic distance is the
-        correct metric in curved high-dimensional spaces.
+        centroids via k-NN graph shortest paths. Geodesic distance accounts
+        for manifold curvature.
 
         Args:
             concept_activations: Activation samples for the concept (n x d).

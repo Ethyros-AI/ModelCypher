@@ -17,15 +17,7 @@
 
 """Multi-modal domain components.
 
-Provides alignment and injection utilities for cross-modal knowledge transfer.
-
-Key insight: All modalities encode the same conceptual shapes. CLIP, Whisper,
-and LLMs all discover the same high-dimensional geometry because they all
-represent knowledge itself. The difference is coordinate system, not content.
-
-Components:
-    - MultiModalChannelAdapter: Bridge encoders with multi-channel merge pipeline
-    - OfframpProjection: Bidirectional projection for modality access
+Provides alignment and injection utilities for cross-modal workflows.
 """
 
 from modelcypher.core.domain.multimodal.types import ModalityEmbeddings, ModalityType

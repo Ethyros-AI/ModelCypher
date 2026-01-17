@@ -92,11 +92,6 @@ class ManifoldViewer:
     - Size by density: Denser regions have smaller markers
     - Animated token trajectories through the space
 
-    The visualization is the ACTUAL geometry:
-    - Gram transport preserves relational structure exactly
-    - Curvature values are exact Ollivier-Ricci measurements
-    - The 3D "shadow" IS the manifold shape, not an approximation
-
     Usage:
         viewer = ManifoldViewer(backend)
 
@@ -237,8 +232,7 @@ class ManifoldViewer:
         # Build figure
         fig = go.Figure()
 
-        # Get k-NN neighbor indices from density result for topology visualization
-        # This shows the ACTUAL manifold structure - which points are neighbors
+        # Get k-NN neighbor indices for topology visualization.
         neighbor_indices_raw = array_to_list(b, density_result.neighbors)
         neighbor_indices = [
             [int(idx) for idx in row] for row in neighbor_indices_raw
@@ -247,7 +241,7 @@ class ManifoldViewer:
 
         # Add point cloud
         if target_dim == 3:
-            # Draw k-NN graph edges - the TRUE manifold topology
+            # Draw k-NN graph edges for neighborhood topology.
             # Each edge connects a point to its k nearest neighbors in the projected space
             edge_x, edge_y, edge_z = [], [], []
             for i in range(n_points):
@@ -301,7 +295,7 @@ class ManifoldViewer:
                 title=self.title,
             )
         elif target_dim == 2:
-            # Draw k-NN graph edges - the TRUE manifold topology
+            # Draw k-NN graph edges for neighborhood topology.
             edge_x, edge_y = [], []
             for i in range(n_points):
                 for j_idx in range(neighbor_count):

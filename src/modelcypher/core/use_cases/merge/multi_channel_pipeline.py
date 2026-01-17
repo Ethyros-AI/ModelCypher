@@ -15,34 +15,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Multi-Channel Merge Pipeline for world model compression.
+"""Multi-channel merge pipeline.
 
-This module implements the extended merge pipeline supporting multiple knowledge
-channels from different source models. Based on the unified theory connecting
-DeepSeek mHC and null-space projection (docs/research/mhc_null_space_connection.md).
-
-Mathematical Foundation:
-    For each layer:
-    1. Project each channel to null space: δW_safe_i = P_null(target) @ δW_i
-    2. Route channels: combined = Σ_j H[i,j] × δW_safe_j (doubly stochastic)
-    3. Merge: W' = W_target + combined (geometric addition)
-
-    Properties:
-    - Geodesic CKA per channel is reported as overlap diagnostics
-    - Stable combination (Birkhoff spectral norm ≤ 1.0)
-    - No interference (channels add, not blend)
-
-Usage:
-    pipeline = MultiChannelMergePipeline(backend)
-    result = pipeline.run_merge(
-        sources={"spatial": spatial_model, "temporal": temporal_model},
-        target=target_model,
-        config=MultiChannelMergeConfig(channels=["spatial", "temporal"]),
-    )
+Implements a merge pipeline that combines multiple knowledge channels into a
+single target model.
 
 References:
-    - docs/DIMENSIONAL_COMPRESSION.md (Multi-Modal Extension)
+    - docs/DIMENSIONAL_COMPRESSION.md
     - docs/architecture/multi_channel_merge.md
     - docs/research/mhc_null_space_connection.md
 """

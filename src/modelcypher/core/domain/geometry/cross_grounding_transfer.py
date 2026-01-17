@@ -73,15 +73,10 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class RelationalStressProfile:
     """
-    Coordinate-invariant fingerprint of a concept's position in the manifold.
+    Coordinate-invariant profile of a concept's position in the manifold.
 
-    This is the "DNA" of a concept's location - it captures WHERE the concept
-    sits relative to universal anchors, without depending on any specific
-    coordinate system.
-
-    The key insight: distances are rotation-invariant. If you know the distance
-    from a point to 10 reference points, you can reconstruct its position
-    (up to reflection) regardless of how the axes are oriented.
+    Captures distances to anchor points and local geometry without depending on
+    a specific coordinate system.
     """
 
     # Core invariants
@@ -398,7 +393,7 @@ class GroundingRotationEstimator:
         to universal anchors in both models. If the relative distances are
         similar, the axes are aligned. If they're different, there's rotation.
 
-        Uses geodesic distances - chord distance is incorrect in curved manifolds.
+        Uses geodesic distances for curved manifolds.
         """
         b = self._backend
 
@@ -659,18 +654,7 @@ class CrossGroundingSynthesizer:
         """
         Solve for the position in target space that minimizes relational stress residual.
 
-        Uses closed-form multilateration via linearization and least squares.
-        The key insight: given distances d_i to anchor positions a_i, we can
-        eliminate the quadratic ||p||² term by subtracting pairs of equations,
-        yielding a linear system solvable in O(n*d²) instead of O(iterations*n²).
-
-        Mathematical derivation:
-        ||p - a_i||² = d_i²  =>  ||p||² - 2*a_i·p + ||a_i||² = d_i²
-
-        Subtracting equation for a_0 from equation for a_i:
-        2*(a_0 - a_i)·p = d_i² - d_0² + ||a_0||² - ||a_i||²
-
-        This gives linear system A·p = b, solved via least squares.
+        Uses multilateration via linearization and least squares.
         """
         b = self._backend
 

@@ -17,25 +17,8 @@
 
 """Consensus correction for outlier concepts.
 
-Moves outlier concepts to the consensus position. Unlike null-space addition
-which PRESERVES target behavior, correction CHANGES target behavior because
-the current behavior is WRONG.
-
-Mathematical Background:
-    Given:
-    - target_stress: Target model's stress profile for a concept
-    - consensus_stress: Fréchet mean of consensus models' stress profiles
-
-    Compute:
-    - consensus_position: Position in target space matching consensus_stress
-    - delta_activation: consensus_position - target_position
-    - delta_weight: lstsq(target_activations, delta_activation)
-
-    Apply:
-    - merged = target + delta_weight.T
-
-    Key difference from addition: NO null-space projection.
-    We WANT to change behavior because target learned it wrong.
+Computes weight deltas that move target concepts toward a consensus position
+without null-space projection.
 """
 
 from __future__ import annotations
@@ -78,8 +61,7 @@ class CorrectionResult:
 class ConsensusCorrector:
     """Compute correction deltas to move outlier concepts to consensus.
 
-    Unlike null-space projection which preserves target behavior,
-    correction intentionally changes behavior because target is wrong.
+    Produces a direct correction delta (no null-space projection).
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -128,8 +110,7 @@ class ConsensusCorrector:
         delta_activation_2d = b.reshape(delta_activation, (1, -1))
 
         # Step 3: Compute weight delta via least squares
-        # Unlike addition, we do NOT project into null-space
-        # We WANT to change behavior because it's wrong
+        # Unlike addition, we do NOT project into null-space.
         #
         # Solve: activations @ W_delta.T = delta_activations
         # => W_delta = lstsq(activations.T, delta_activations.T).T
@@ -147,8 +128,7 @@ class ConsensusCorrector:
         b.eval(delta_broadcast)
 
         # Compute weight delta via least squares
-        # Unlike addition, we do NOT project into null-space
-        # We WANT to change behavior because it's wrong
+        # Unlike addition, we do NOT project into null-space.
         #
         # Solve: activations @ W_delta.T = delta_broadcast
         # => W_delta.T = lstsq(activations, delta_broadcast)

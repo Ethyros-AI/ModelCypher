@@ -17,35 +17,13 @@
 
 """Intrinsic dimension estimation for neural network representations.
 
-Measures the true dimensionality of the manifold on which activations lie,
-independent of the ambient (embedding) dimension. A 4096-dimensional embedding
-may have intrinsic dimension of only 50-200.
-
-Mathematical Foundation:
-    TwoNN Estimator (Facco et al., 2017): Uses ratio of distances to first and
-    second nearest neighbors. For a d-dimensional manifold, the ratio r = d₂/d₁
-    follows a specific distribution that depends only on d.
-
-    The estimator uses geodesic distances (not chord) because curvature is
-    inherent in high-dimensional spaces. Chord distance systematically
-    under/overestimates true manifold distance depending on local curvature.
+Implements TwoNN- and MLE-based intrinsic dimension estimators using
+geodesic distances when available.
 
 References:
     - Facco et al. (2017) "Estimating the intrinsic dimension of datasets by a
       minimal neighborhood information" Scientific Reports 7:12140
     - Levina & Bickel (2005) "Maximum Likelihood Estimation of Intrinsic Dimension"
-
-Research Connections:
-    Intrinsic dimension tracking during training reveals geometric evolution of
-    representations. Shen et al. (arXiv 2507.01966) found that brain-AI alignment
-    precedes performance improvements—suggesting models develop brain-like
-    representational structure as a stepping stone to capability.
-
-    Our hypothesis: Models may show dimension expansion (learning) followed by
-    compression (abstraction), analogous to the Blue Brain Project's "build then
-    raze" pattern in biological circuits.
-
-    See also: docs/RESEARCH-CONNECTIONS.md
 """
 
 from __future__ import annotations
@@ -68,18 +46,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-# =============================================================================
-# NO CONFIGURATION CLASSES
-# =============================================================================
-# All parameters are derived from the data:
-# - k_neighbors: Minimum k for connected graph (Berry & Sauer 2016)
-# - distance_power: Always 2.0 (squared geodesic is the correct metric)
-# - use_regression: Always True (Facco et al.'s variant is more robust)
-# - bootstrap resamples: Derived from sample size
-# - convergence: Derived from machine epsilon
-#
-# There is exactly ONE correct way to estimate intrinsic dimension.
-# =============================================================================
+# Parameters are derived from data and literature defaults (no config class).
 
 
 @dataclass
@@ -98,8 +65,8 @@ class ConfidenceInterval:
 class TwoNNEstimate:
     """Result of global intrinsic dimension estimation.
 
-    Always uses:
-    - Geodesic distances (curvature-correct)
+    Uses:
+    - Geodesic distances
     - Regression variant (Facco et al., more robust)
     - Data-derived k for graph connectivity
     """

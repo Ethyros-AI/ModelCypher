@@ -15,15 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Multi-Modal Embedding Extractor.
+"""Multi-modal embedding extractor.
 
-Extracts embeddings from different modality models (LLM, vision, audio) for
-cross-modal alignment and knowledge transfer.
-
-Key insight: All modalities encode the same conceptual geometry. A "red ball"
-activates geometrically similar representations in CLIP (vision), Whisper (audio
-description), and LLMs (text). This extractor provides a unified interface for
-accessing these representations.
+Extracts embeddings from text, vision, and audio encoders for cross-modal
+alignment and transfer workflows.
 """
 
 from __future__ import annotations
@@ -84,10 +79,6 @@ class MultiModalEmbeddingExtractor:
     ) -> ModalityEmbeddings:
         """Extract embeddings from an LLM's semantic highway.
 
-        The semantic highway (typically layers 7-9 in smaller models) is where
-        conceptual representations consolidate before output. Averaging across
-        these layers captures stable semantic geometry.
-
         Args:
             model_path: Path to the MLX model directory.
             concepts: List of concept strings to embed.
@@ -147,10 +138,6 @@ class MultiModalEmbeddingExtractor:
     ) -> ModalityEmbeddings:
         """Extract embeddings from CLIP's text encoder.
 
-        CLIP's text encoder produces visual-semantic embeddings - text descriptions
-        that are geometrically aligned with visual representations. This allows
-        transferring visual knowledge to LLMs via geometric alignment.
-
         Args:
             concepts: List of concept strings to embed.
             model_name: HuggingFace model identifier for CLIP.
@@ -189,12 +176,8 @@ class MultiModalEmbeddingExtractor:
     ) -> ModalityEmbeddings:
         """Extract embeddings from Whisper's decoder.
 
-        Whisper's decoder embedding layer encodes audio-semantic relationships.
-        While Whisper is primarily an audio model, its decoder embeddings capture
-        the relationship between audio concepts and language.
-
         Note: This uses text tokenization as a proxy for audio concepts. In
-        production, actual audio embeddings would be extracted.
+        production, actual audio embeddings should be extracted.
 
         Args:
             concepts: List of concept strings to embed.

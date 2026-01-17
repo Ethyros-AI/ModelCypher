@@ -15,18 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Real-time manifold geometry visualization CLI commands.
-
-Visualizes the ACTUAL geometry of neural network activations:
-- 3D point cloud of activation positions (structure-preserving projection)
-- Curvature coloring: Red = walls (positive ORC), Blue = funnels (negative ORC)
-- Density-sized markers: Denser regions = smaller markers
-- Animated token trajectory through concept space
-
-The geometry you see is REAL:
-- Gram transport finds exact structure-preserving coupling
-- Ollivier-Ricci curvature reflects true manifold curvature
-- The 3D "shadow" IS the manifold shape, not an approximation
+"""Manifold geometry visualization CLI commands.
 
 Commands:
     mc geometry visualize create <model_path> <prompt> --output <file.html>
@@ -85,11 +74,6 @@ def geometry_visualize_create(
     Runs a prompt through the model, captures hidden state activations,
     projects them through a dimension cascade (high-D → 4D → 3D),
     and renders an interactive visualization.
-
-    The visualization shows ACTUAL geometry:
-    - Gram transport preserves relational structure exactly
-    - Ollivier-Ricci curvature reflects true manifold curvature
-    - The 3D "shadow" IS the manifold shape
 
     Example:
         mc geometry visualize create /path/to/model "What is justice?" -o justice.html

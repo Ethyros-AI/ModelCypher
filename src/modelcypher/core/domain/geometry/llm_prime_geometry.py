@@ -15,37 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-LLM Prime Geometry Analysis.
+"""LLM prime geometry analysis.
 
-Tests whether prime numbers have hidden geometric structure in LLM representation
-space. Extends the mathematical prime analysis modules to analyze
-how neural networks represent numbers.
-
-Core Hypothesis:
-    Primes appear random in 1D because we're viewing them in the wrong dimension.
-    LLMs, trained on vast mathematical text, may have encoded prime structure
-    in their high-dimensional representation space.
-
-Hypotheses (L1-L12):
-    L1: Spectral Concentration - primes have lower participation ratio
-    L2: Lower Spectral Entropy - primes have more concentrated eigenvalues
-    L3: Distinct Intrinsic Dimension - primes live on different-dim manifold
-    L4: Curvature Signature - primes have different manifold curvature
-    L5: Cross-Model Invariance - pattern appears across all models (CKA > 0.9)
-    L6: Prompt Invariance - pattern stable across prompt formats
-    L7: Scale Invariance - effect sizes stable across prime ranges
-    L8: Separability - clustering separates primes from composites
-    L9: Layer Emergence - where does prime structure appear?
-    L10: Manifold Substructure - primes form distinct sub-manifold
-    L11: Twin Prime Clustering - twin primes closer than average
-    L12: Gap Encoding - prime gaps correlate with representation distance
-
-Usage:
-    from modelcypher.core.domain.geometry.llm_prime_geometry import LLMPrimeAnalyzer
-
-    analyzer = LLMPrimeAnalyzer(backend)
-    result = analyzer.run_pilot(model, tokenizer, n_primes=100)
+Runs geometry analyses on prime-number representations in LLMs.
 """
 
 from __future__ import annotations

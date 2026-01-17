@@ -15,42 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Affine Bridge: Tuned-Lens Style Coordinate Alignment.
+"""Affine bridge for coordinate alignment.
 
-Inspired by the Tuned Lens paper (arXiv:2303.08112), which shows that
-affine transformations dramatically outperform simple projections for
-mapping between representation spaces.
-
-Key insight: Procrustes only learns orthogonal rotation R (Y = X @ R).
-Affine learns: Y = X @ W + b
-  - W: Full transformation matrix (rotation + scaling + shearing)
-  - b: Bias vector (translation in coordinate space)
-
-This gives more degrees of freedom to align cross-modal representations
-while maintaining generalization through ridge regularization.
-
-Mathematical Foundation:
-    Given paired samples:
-        X = [source_1, source_2, ..., source_n]  # Source embeddings
-        Y = [target_1, target_2, ..., target_n]  # Target embeddings
-
-    Ridge regression closed-form solution:
-        W = (X^T X + λI)^(-1) X^T Y
-        b = mean(Y - X @ W)
-
-    The regularization λ prevents overfitting by penalizing large weights,
-    enabling generalization to unseen concepts.
-
-Vocabulary-Constrained Projection:
-    Standard affine outputs can land anywhere in embedding space.
-    Vocabulary-constrained projection forces output onto the vocabulary manifold:
-
-        attention = softmax(X @ vocab.T / temperature)
-        aligned = attention @ vocab
-
-    This guarantees the output is a weighted sum of actual vocabulary embeddings,
-    improving nearest-neighbor token retrieval.
+Fits an affine mapping between representation spaces using ridge regression.
 
 References:
     - Belrose et al. (2023) "Eliciting Latent Predictions from Transformers
@@ -380,24 +347,11 @@ class VocabConstrainedProjection:
     """
     Vocabulary-constrained projection for token-space alignment.
 
-    All parameters are auto-derived from the data. No user-configurable knobs.
-
-    Standard affine transformation outputs can land anywhere in embedding space.
-    This doesn't guarantee the output is in a region that maps to meaningful tokens.
-
     Vocabulary-constrained projection forces output onto the vocabulary manifold:
         attention = softmax(X @ vocab.T / temperature)
         aligned = attention @ vocab
 
-    This guarantees the output is a weighted sum of actual vocabulary embeddings,
-    dramatically improving nearest-neighbor token retrieval.
-
-    Key insight from experiments:
-    - Affine achieves 0.61 test cosine (excellent angle alignment)
-    - But token retrieval fails because high cosine != same vocabulary neighborhood
-    - Vocabulary-constrained projection forces output to BE a vocabulary embedding
-
-    Temperature is AUTO-DERIVED from effective dimensionality:
+    Temperature is derived from effective dimensionality:
         d_eff = (Σλ)² / Σλ² (Rényi entropy-based effective rank)
         temperature = 1 / √(d_eff)
     """

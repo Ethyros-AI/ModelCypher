@@ -397,9 +397,7 @@ def register(app: typer.Typer) -> None:
         """Compute alignment guidance from curvature profiles.
 
         Analyzes curvature differences between source and target models to
-        determine the transformation needed for alignment. Key insight:
-        curvature differences represent rotation/projection needed, NOT
-        fundamental incompatibility.
+        determine the transformation needed for alignment.
 
         The output includes:
         - Per-layer dimension scales and curvature deltas

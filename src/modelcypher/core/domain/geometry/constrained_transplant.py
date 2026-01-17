@@ -17,13 +17,7 @@
 
 """Constrained transplant validation utilities.
 
-Provides verification that null-space constrained transplant preserves
-boundary outputs as mathematically guaranteed:
-
-    A_boundary @ W' = A_boundary @ W_target
-
-This is the core invariant of the transplant approach, validated by
-AlphaEdit (ICLR 2025 Outstanding Paper).
+Verifies boundary output preservation after null-space constrained transplant.
 """
 
 from __future__ import annotations
@@ -53,11 +47,7 @@ def verify_boundary_invariance(
 ) -> dict[str, Any]:
     """Verify that boundary outputs are preserved after transplant.
 
-    The null-space constrained transplant guarantees:
-        A_boundary @ W' = A_boundary @ W_target
-
-    This function measures the relative difference and reports whether
-    the guarantee holds within numerical tolerance.
+    Measures relative differences and reports whether they are within tolerance.
 
     Args:
         transplanted_weights: Merged weights W' after transplant [out_dim, in_dim]

@@ -15,48 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Attention-Based Memory Token Injection.
+"""Attention-based memory token injection.
 
-Research finding (2026-01-09): Memory token approach allows 20x+ scale tolerance
-vs 2x for direct injection. Instead of forcing visual information into every
-token position (which causes degeneration), we prepend a virtual "memory" token
-that the model can naturally ATTEND to.
-
-Key insight: The model's attention mechanism is trained to pull relevant
-information from context. A properly-aligned embedding serves as retrievable
-"memory" that the model queries when needed.
-
-Fundamental difference from direct injection:
-    - Injection: FORCE visual info into every token
-    - Memory: OFFER visual info, let attention decide
-
-For hybrid architectures (e.g., LFM2 with conv + attention):
-    - Only full attention layers can attend to the memory token
-    - Conv layers ignore the memory token position
-    - Optimal placement is at semantic highway attention layers
-
-Usage:
-    injector = AttentionMemoryInjector(backend)
-
-    # Detect layer types for hybrid architecture
-    layer_types = injector.detect_layer_types(model_config)
-
-    # Compute memory content from source embedding
-    memory = injector.compute_memory_content(
-        source_embed=visual_embedding,
-        neutral_embed=neutral_reference,
-        null_basis=layer_null_basis,
-        scale=10.0,  # Much higher than direct injection
-    )
-
-    # Check safety via deviation budget
-    status = deviation_budget.check_injection_scale(
-        memory, layer_activations, scale=10.0, use_null_space=True
-    )
-
-    # Inject at attention layers in semantic highway
-    attention_layers = [l for l, t in layer_types.items() if t == "attention"]
-    # Apply memory at layers [8, 10] for LFM2
+Provides helpers to build a memory token embedding, detect layer types, and
+inject the token into attention layers for multimodal workflows.
 """
 
 from __future__ import annotations

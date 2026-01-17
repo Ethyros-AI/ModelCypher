@@ -17,15 +17,7 @@
 
 """Curvature-guided alignment for model merging.
 
-Key insight: Curvature differences between models represent different "views"
-of the same underlying topology - the transformation needed to align, not
-fundamental incompatibility.
-
-This module provides:
-1. Curvature-weighted Procrustes alignment
-2. Layer-wise curvature and dimension deltas
-3. Intrinsic dimension scaling for projection
-4. Curvature-guided correspondence matching
+Provides curvature-weighted alignment and per-layer curvature/dimension deltas.
 """
 
 from __future__ import annotations
@@ -94,11 +86,6 @@ def compute_alignment_guidance(
     target_profile: "CurvatureProfile",
 ) -> AlignmentPlan:
     """Compute alignment guidance from curvature profiles.
-
-    The key mathematical insight:
-    - Curvature differences = rotation/transformation needed
-    - Intrinsic dimension differences = projection/embedding needed
-    - Similar curvature patterns at different scales = same topology, different "zoom"
 
     Args:
         source_profile: Curvature profile of source model

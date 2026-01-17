@@ -15,32 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Birkhoff Router for multi-channel model merging.
+"""Birkhoff router for multi-channel model merging.
 
-This module implements multi-channel routing via doubly stochastic matrices,
-enabling stable combination of knowledge channels from multiple source models.
-Based on DeepSeek mHC (arXiv:2512.24880) principles.
-
-Key insight from mHC-null-space connection (docs/research/mhc_null_space_connection.md):
-Both doubly stochastic routing and null-space projection are "invariant-preserving
-projections onto constrained manifolds." Combining them enables multi-modal
-knowledge addition without interference.
-
-Properties:
-    1. Geodesic CKA per channel reported as overlap diagnostics
-    2. Stable combination (doubly stochastic spectral norm ≤ 1.0)
-    3. No interference (channels add, not blend)
-
-Usage:
-    router = BirkhoffRouter(backend)
-    result = router.compute_routing(channel_deltas)
-    combined = router.apply_routing(result.routing_matrix, channel_deltas)
+Implements routing via doubly stochastic matrices to combine channel deltas.
 
 References:
     - DeepSeek-AI (2025), mHC: Manifold-Constrained Hyper-Connections
     - docs/research/mhc_null_space_connection.md
-    - docs/DIMENSIONAL_COMPRESSION.md (Multi-Modal Extension)
+    - docs/DIMENSIONAL_COMPRESSION.md
 """
 
 from __future__ import annotations
@@ -126,36 +108,7 @@ class BirkhoffRouter:
     Routes multiple knowledge channels via doubly stochastic mixing.
 
     This class implements multi-channel routing for model merging, where
-    each channel represents knowledge from a different source model
-    (e.g., spatial from world model, temporal from video model, text from LLM).
-
-    The routing matrix H satisfies:
-    - All entries ≥ 0
-    - All rows sum to 1
-    - All columns sum to 1
-    - Spectral norm ≤ 1.0
-
-    These properties ensure:
-    1. Stable combination (no signal explosion)
-    2. Conservation (total information preserved)
-    3. Bounded mixing (no single channel dominates unboundedly)
-
-    Mathematical Foundation:
-        From the unified formula in mhc_null_space_connection.md:
-
-        combined_delta = Σ_i Σ_j H[i,j] × δW_safe_j
-
-        Where:
-        - H is doubly stochastic [n_channels, n_channels]
-        - δW_safe_j is the null-space-projected delta for channel j
-        - The result is a weighted sum with bounded total weight
-
-    Integration with Null-Space:
-        This router is designed to work with GeodesicNullSpaceFilter:
-
-        1. Each channel's delta is projected to target's null space (geodesic CKA diagnostic)
-        2. Channels are combined via this router (stable mixing)
-        3. Result is added to target weights (geometric addition)
+    each channel represents knowledge from a different source model.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:

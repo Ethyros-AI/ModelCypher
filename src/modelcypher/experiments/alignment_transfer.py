@@ -26,9 +26,8 @@ Method:
     4. Steer base model's harmful activations by adding refusal direction
     5. Count harmful prompts above threshold after steering (transfer effectiveness)
 
-The key insight: we only steer harmful prompts. Adding the refusal direction to
-harmful activations should push them into the "refusal zone" (above threshold).
-Transfer effectiveness = increase in harmful prompts crossing the threshold.
+Steering is applied only to harmful prompts. Transfer effectiveness is the
+increase in harmful prompts crossing the refusal threshold.
 
 Usage:
     from modelcypher.experiments.alignment_transfer import run_alignment_transfer

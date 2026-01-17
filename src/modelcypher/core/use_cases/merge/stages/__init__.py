@@ -27,11 +27,6 @@ Stage 1: PROBE - Compute GramAlign transforms from probe responses
 Stage 2: DENSITY - Knowledge density profiling for graft mask
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
 
-REMOVED (proven redundant):
-- PERMUTE: GramAligner alignment in RKHS subsumes discrete permutation alignment.
-  Permutation is a special case of continuous linear transforms already optimized by probe.
-- ROTATE/PROPAGATE: No mathematical guarantee of boundary preservation.
-
 References:
 - AlphaEdit (null-space transplant): Fang et al. (2025) ICLR Outstanding Paper
 """

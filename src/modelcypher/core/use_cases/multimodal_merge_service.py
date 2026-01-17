@@ -15,21 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Multi-Modal Merge Service.
+"""Multi-modal merge service.
 
-Orchestrates cross-modal knowledge transfer from vision (CLIP) and audio
-(Whisper) models into an LLM's null space.
-
-Key insight: The 99% null space in LLMs isn't waste - it's capacity waiting
-to be filled. Multi-modal knowledge from CLIP and Whisper can be projected
-into this capacity, giving the LLM richer multi-modal understanding without
-destroying existing knowledge.
-
-Pipeline:
-1. Extract embeddings from all modalities for shared concepts
-2. Align each modality to target LLM geometry (closed-form linear alignment)
-3. Project aligned knowledge into null space
-4. Validate geometry preservation (geodesic CKA diagnostics)
+Orchestrates cross-modal knowledge transfer from vision and audio models into
+an LLM's null space.
 """
 
 from __future__ import annotations
@@ -90,12 +79,6 @@ class MultiModalMergeResult:
 
 class MultiModalMergeService:
     """Service for merging multi-modal knowledge into LLMs.
-
-    This service orchestrates the complete pipeline:
-    1. Extract embeddings from target LLM and source modalities
-    2. Align each source to target geometry (linear alignment; geodesic CKA diagnostics)
-    3. Merge into null space
-    4. Validate preservation
 
     Example:
         >>> service = MultiModalMergeService(embedding_extractor=embedding_extractor)

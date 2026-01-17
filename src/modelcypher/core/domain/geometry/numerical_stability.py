@@ -983,7 +983,7 @@ def newton_schulz_inverse(
 ) -> "Array":
     """Pure matmul matrix inverse via Newton-Schulz iteration.
 
-    Solves: X = A^{-1} using only matmuls (guaranteed GPU).
+    Solves: X = A^{-1} using only matmuls (backend-only).
 
     Algorithm: X_{k+1} = X_k @ (2I - A @ X_k)
     Converges quadratically when ||I - X_0 @ A|| < 1.
@@ -1014,8 +1014,8 @@ def newton_schulz_inverse(
         # Near-zero matrix
         return b.eye(n, dtype=dtype) / eps
 
-    # Scale A to have spectral radius < 1 for convergence
-    # Use 1/||A||_F as conservative scaling (guarantees spectral radius < 1)
+    # Scale A to have spectral radius < 1 for convergence.
+    # Use 1/||A||_F as conservative scaling.
     scale = 1.0 / A_norm_val
     A_scaled = A * scale
 
@@ -1228,8 +1228,8 @@ def gpu_lstsq(
         #   A @ X = B - λ(A @ A^T + λI)^{-1} @ B
         #
         # So λ must be minimal - just enough to handle numerical conditioning,
-        # NOT scaled by underdetermination ratio. That scaling is mathematically
-        # WRONG and creates artificial residual where none should exist.
+        # not scaled by underdetermination ratio. That scaling introduces
+        # artificial residual where none should exist.
         G_diag = b.diag(G)
         max_diag = b.max(b.abs(G_diag))
         b.eval(max_diag)

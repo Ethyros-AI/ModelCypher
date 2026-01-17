@@ -19,13 +19,6 @@
 
 Usage:
     mc merge -s SOURCE -t TARGET -o OUTPUT
-
-There is exactly ONE correct way to merge high-dimensional Legos:
-1. Find geometric correspondence (CKA alignment)
-2. Project source knowledge into target's null space
-3. Add (not blend) the projected knowledge
-
-This command runs the complete pipeline automatically; geometry decides grafts and alignment.
 """
 
 from __future__ import annotations
@@ -765,16 +758,8 @@ def multi_channel(
     Unlike 'batch' (sequential), this method:
     1. Probes all channels simultaneously
     2. Projects all channels into target's null-space (shared basis)
-    3. Combines channels via doubly stochastic routing (spectral norm <= 1.0)
-    4. Applies geometric addition (not interpolation)
-
-    Mathematical Foundation (from mHC-null-space connection):
-        W' = W_target + sum_j H[i,j] * P_null(A_target) @ delta_W_j
-
-    Properties:
-    - Geodesic CKA per channel is reported as overlap diagnostics
-    - Spectral norm <= 1.0 (stable combination)
-    - No interference (channels add, not blend)
+    3. Combines channels via doubly stochastic routing
+    4. Applies geometric addition
 
     Examples:
         mc merge multi-channel -c spatial:/path/to/world -c text:/path/to/llm -t ./lfm2 -o ./merged
@@ -864,18 +849,13 @@ def bridge(
     Geodesic CKA reports manifold overlap for the aligned embeddings.
 
     Uses semantic concept probes from the atlas system (4596 probes across 23
-    categories). These structured concepts span the semantic manifold systematically,
-    improving probe coverage for geodesic alignment diagnostics.
+    categories) to build alignment probes.
 
     The bridge is saved in safetensors format and includes:
     - Forward transform (source → target)
     - Inverse transform (target → source)
     - Scale ratio for magnitude normalization
     - Metadata (dimensions, names, CKA achieved)
-
-    Mathematical Foundation:
-        F = pinv(source) @ target  (closed-form linear alignment)
-        Geodesic CKA reports overlap on the aligned probes.
 
     Examples:
         mc merge bridge /path/to/clip /path/to/lfm2 -o clip_to_lfm2.safetensors

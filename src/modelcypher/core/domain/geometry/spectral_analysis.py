@@ -15,30 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Spectral Analysis for Model Weight Matrices.
+"""Spectral analysis for model weight matrices.
 
 Computes spectral metrics (condition numbers, singular value ratios) to assess
-the geometric relationship between source and target weight matrices.
-
-This module provides RAW MEASUREMENTS only. No alpha blending, no interpretation.
-Use these metrics to understand transformation effort - decisions are yours.
-
-Mathematical Foundation
------------------------
-For weight matrices W_source and W_target:
-
-1. Spectral ratio = σ_max(W_source) / σ_max(W_target)
-   - σ_max = largest singular value
-   - Ratio near 1.0 = similar representation scales
-
-2. Spectral ratio symmetry = min(ratio, 1/ratio)
-   - Symmetric: both 2.0 and 0.5 give same symmetry
-   - Range: [0, 1], higher = more similar scales
-
-3. Condition number = σ_max / σ_min
-   - Higher = more ill-conditioned
-   - Derived threshold from dtype precision
+relationships between source and target weight matrices.
 """
 
 from __future__ import annotations

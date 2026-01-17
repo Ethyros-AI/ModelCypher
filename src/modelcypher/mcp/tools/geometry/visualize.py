@@ -17,15 +17,7 @@
 
 """Geometry visualization MCP tools.
 
-Contains tools for real-time manifold visualization:
-- Create 3D visualization from model activations
-- Create visualization from pre-computed activations
-- Export to HTML or JSON
-
-The geometry is REAL, not approximate:
-- Gram transport finds exact structure-preserving coupling
-- Ollivier-Ricci curvature reflects true manifold curvature
-- The 3D "shadow" IS the manifold shape
+Creates 3D visualizations from model activations and exports to HTML or JSON.
 
 Requires: poetry install -E viz (installs plotly>=5.18.0)
 """
@@ -46,10 +38,9 @@ from ..common import (
 def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
     """Register manifold visualization tools.
 
-    These tools create 3D visualizations of the ACTUAL geometry of neural
-    network activations. The visualization shows:
-    - 3D point cloud (structure-preserving projection from high-D)
-    - Curvature coloring: Red = walls (positive ORC), Blue = funnels (negative ORC)
+    These tools create 3D visualizations of neural network activations:
+    - 3D point cloud (projection from high-D)
+    - Curvature coloring: Red = positive ORC, Blue = negative ORC
     - Density-sized markers: Denser regions = smaller markers
     """
     mcp = ctx.mcp
@@ -68,11 +59,6 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             Runs a prompt through the model, captures hidden state activations,
             projects them through a dimension cascade (high-D → 4D → 3D),
             and renders an interactive visualization.
-
-            The visualization shows ACTUAL geometry:
-            - Gram transport preserves relational structure exactly
-            - Ollivier-Ricci curvature reflects true manifold curvature
-            - The 3D "shadow" IS the manifold shape
 
             Requires: poetry install -E viz (plotly>=5.18.0)
 
@@ -280,11 +266,8 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
         def mc_geometry_visualize_info() -> dict:
             """Get information about the manifold visualization system.
 
-            Returns details about what the visualization shows and how it works.
-            The visualization represents ACTUAL geometry, not approximations:
-            - Gram transport preserves relational structure exactly
-            - Ollivier-Ricci curvature reflects true manifold curvature
-            - The 3D "shadow" IS the manifold shape
+            Returns details about what the visualization shows and how it works,
+            including the geometry signals it displays.
 
             Returns:
                 Information about the visualization system and its capabilities

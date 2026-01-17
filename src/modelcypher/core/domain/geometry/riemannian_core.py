@@ -15,36 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Riemannian geometry core operations for high-dimensional representation spaces.
+"""Riemannian geometry core operations for representation spaces.
 
-Neural network activations define points on a manifold. This module computes
-exact geometric quantities on that manifold:
-
-1. **Fréchet Mean (Karcher Mean)**: The Riemannian center of mass.
-   Minimizes sum of squared geodesic distances: μ = argmin_p Σ d²(p, x_i)
-
-2. **Geodesic Distance**: Shortest path along the manifold surface.
-   Computed via k-NN graph - the discrete representation of the manifold.
-
-3. **Riemannian Covariance**: Covariance computed in tangent space,
-   respecting manifold curvature.
-
-Mathematical Background:
-    On a Riemannian manifold (M, g), the geodesic distance d(p, q) is the
-    length of the shortest path between p and q. The Fréchet mean minimizes:
-
-        μ = argmin_{p ∈ M} Σᵢ d²(p, xᵢ)
-
-    The gradient of this objective is:
-
-        ∇f(p) = -2 Σᵢ Log_p(xᵢ)
-
-    where Log_p is the Riemannian logarithm (inverse of exponential map).
-
-    For discrete point clouds, the manifold is represented by a k-NN graph.
-    Geodesic distance = shortest path on this graph. This is exact for the
-    discrete manifold structure.
+Provides Fréchet mean, geodesic distances, and curvature-aware covariance.
 
 References:
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"

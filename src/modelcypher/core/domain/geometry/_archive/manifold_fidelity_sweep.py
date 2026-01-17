@@ -330,7 +330,7 @@ class ManifoldFidelitySweep:
         """k-NN neighborhood preservation using geodesic distances.
 
         Geodesic distances account for manifold curvature. Chord distance
-        would give incorrect neighbor rankings in curved spaces.
+        can change neighbor rankings in curved spaces.
         """
         from .riemannian_utils import RiemannianGeometry
 
@@ -384,7 +384,7 @@ class ManifoldFidelitySweep:
         """Geodesic correlation of pairwise geodesic distances.
 
         Geodesic distances account for manifold curvature. Comparing chord
-        distances would give incorrect correlation in curved spaces.
+        distances can distort correlation in curved spaces.
         """
         from .riemannian_utils import RiemannianGeometry
 

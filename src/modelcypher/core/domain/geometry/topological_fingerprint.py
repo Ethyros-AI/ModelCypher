@@ -15,49 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Topological fingerprinting for architecture-invariant model comparison.
+"""Topological fingerprinting for architecture-invariant model comparison.
 
-Mathematical Foundation:
-    Persistent homology studies topological features (connected components,
-    loops, voids) across multiple scales. Given a point cloud, we construct
-    a Vietoris-Rips filtration by connecting points within increasing distance
-    thresholds and track when features appear (birth) and disappear (death).
-
-Key Concepts:
-    - Betti Numbers: β₀ = connected components, β₁ = loops, β₂ = voids
-    - Persistence Diagram: (birth, death) pairs for each topological feature
-    - Bottleneck Distance: Maximum matching cost between diagrams
-    - Wasserstein Distance: Total matching cost between diagrams
-
-Algorithm Overview:
-    1. Compute pairwise distances between points
-    2. Build Vietoris-Rips filtration (edges sorted by distance)
-    3. Track 0-dimensional persistence via Union-Find with elder rule
-    4. Track 1-dimensional persistence via cycle/triangle detection
-    5. Compute summary statistics (Betti numbers, persistence entropy)
-
-Complexity:
-    O(n² log n) for edge sorting, O(n³) for cycle detection.
-    Practical for n < 5000 points.
+Implements persistent homology on activation point clouds and reports summary
+statistics (Betti numbers, persistence entropy, and diagram distances).
 
 References:
     - Edelsbrunner & Harer (2010) "Computational Topology: An Introduction"
     - Carlsson (2009) "Topology and Data"
-
-Research Connections:
-    This implementation enables analysis similar to the Blue Brain Project's
-    discovery of 11-dimensional structures in neural circuits (Reimann et al.,
-    Frontiers in Computational Neuroscience 2017). They found that neurons form
-    high-dimensional simplicial complexes (cliques) with topological cavities
-    that appear during stimulus processing and collapse afterward—"building
-    then razing towers of multi-dimensional blocks."
-
-    Our hypothesis: LLMs may implement similar transient high-dimensional
-    structures during inference. Betti numbers (β₀, β₁, β₂) provide
-    architecture-invariant fingerprints for cross-model comparison.
-
-    See also: docs/RESEARCH-CONNECTIONS.md
 
 See also: docs/geometry/topological_fingerprints.md
 """

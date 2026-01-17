@@ -15,59 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Concept Response Matrix (CRM) for model fingerprinting and layer correspondence.
+"""Concept Response Matrix (CRM) for model fingerprinting.
 
-A CRM captures how a model responds to a fixed set of anchor concepts across all
-layers, producing a unique geometric fingerprint. This fingerprint enables layer
-correspondence discovery between models of different architectures and sizes.
+Captures anchor activations across layers and supports layer correspondence
+via CKA-based comparisons.
 
-Mathematical Foundation:
-    The CRM is a tensor M[anchor, layer, hidden_dim] where each entry records the
-    mean-pooled activation for a given anchor concept at a given layer.
-
-    For cross-model comparison, we compute Gram matrices K = M @ M^T per layer,
-    then measure CKA similarity between corresponding layers:
-
-        CKA(source_layer, target_layer) = HSIC(K_source, K_target) /
-                                          sqrt(HSIC(K_source, K_source) * HSIC(K_target, K_target))
-
-    Layer correspondence is discovered via optimal CKA assignment (Hungarian):
-    global one-to-one matching that maximizes total CKA.
-
-Key Concepts:
-    - Anchor concepts: Semantic primes and computational gates that probe specific
-      model capabilities. See semantic_primes.py for the anchor vocabulary.
-    - Layer correspondence: The mapping from source model layers to target model
-      layers that maximizes representational similarity.
-    - Transition alignment: Compares layer-to-layer deltas between models, measuring
-      whether models transform representations in similar ways.
-
-Diagnostic:
-    Geodesic CKA near 1.0 for matched layers indicates strong overlap on the
-    shared manifold. Lower values reflect divergent structure or limited probe
-    coverage, not model incompatibility.
-
-Usage:
-    crm_source = ConceptResponseMatrix(model_id="source", layer_count=32, ...)
-    crm_target = ConceptResponseMatrix(model_id="target", layer_count=24, ...)
-
-    # Record activations for each anchor
-    for anchor_id in anchor_ids:
-        crm_source.record_activations(anchor_id, layer_states)
-        crm_target.record_activations(anchor_id, layer_states)
-
-    # Discover layer correspondence
-    report = crm_source.compare(crm_target)
-    for match in report.layer_correspondence:
-        print(f"Layer {match.source_layer} -> {match.target_layer}: CKA={match.cka}")
-
-    # Transition alignment (compare how layers transform)
-    transition = crm_source.compute_transition_alignment(crm_target)
-
-See Also:
-    - cka.py: CKA implementation with HSIC estimators and feature-sampling correction
-    - semantic_primes.py: Anchor concept vocabulary (Wierzbicka's semantic primes)
+References:
+    - Kornblith et al. (2019). "Similarity of Neural Network Representations
+      Revisited." arXiv:1905.00414
 """
 
 from __future__ import annotations
@@ -327,19 +282,13 @@ class ConceptResponseMatrix:
     def compute_alignment_transform(self, other: ConceptResponseMatrix) -> tuple[float, list[list[float]] | None]:
         """Compute the alignment transform between representation spaces.
 
-        We align in GRAM SPACE using geodesic RBF kernels. The transform
-        T = K_t^{1/2} @ K_s^{-1/2} satisfies T @ K_s @ T^T = K_t exactly.
-
-        This method verifies alignment in GRAM SPACE (pairwise relationships),
-        NOT in feature space. Feature-space least-squares does NOT guarantee
-        kernel alignment.
+        Aligns Gram matrices using geodesic RBF kernels and returns the
+        transform along with a precision score.
 
         Returns:
             (numerical_precision, T) where:
-            - numerical_precision: How close Gram alignment got to exact (1.0 = perfect)
+            - numerical_precision: Alignment score (1.0 is best)
             - T: The Gram-space transform matrix [n_samples, n_samples]
-
-        If numerical_precision < 1.0, it's a numerical precision issue.
         """
         from modelcypher.core.domain.geometry.cka import (
             _center_gram_matrix,

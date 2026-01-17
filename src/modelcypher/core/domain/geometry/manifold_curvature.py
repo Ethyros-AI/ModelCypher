@@ -15,26 +15,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Manifold curvature estimation for latent representation spaces.
+"""Manifold curvature estimation for representation spaces.
 
-Provides sectional curvature estimation for understanding the geometry
-of representation manifolds. Used by Riemannian density estimator for
-curvature-aware covariance computation.
-
-Mathematical Background:
-- Sectional curvature K(σ) measures how geodesics diverge/converge
-- Positive curvature: geodesics converge (like a sphere)
-- Negative curvature: geodesics diverge (like a saddle)
-- Zero curvature: geodesics stay parallel (flat)
-
-For neural network latent spaces, curvature indicates:
-- High positive: concepts are tightly clustered, interference likely
-- Negative: concepts have room to spread, safer for merging
-- Variable: complex topology, needs careful analysis
+Provides sectional curvature estimates used by curvature-aware density and
+alignment analyses.
 
 References:
     - do Carmo, M. P. (1992). "Riemannian Geometry." Birkhäuser.
-      ISBN: 978-0-8176-3490-2
     - Fefferman, C., Mitter, S., & Narayanan, H. (2016).
       "Testing the Manifold Hypothesis." J. American Mathematical Society.
       https://doi.org/10.1090/jams/852
@@ -89,16 +76,7 @@ class CurvatureSign(str, Enum):
 
 
 
-# =============================================================================
-# NO CONFIGURATION CLASSES
-# =============================================================================
-# All parameters are derived from the data:
-# - epsilon: from data scale (mean neighbor distance)
-# - num_directions: from dimension d (at least d, at most d(d-1)/2 for full coverage)
-# - use_parallel_transport: always True (geometrically correct)
-#
-# There is exactly ONE correct way to estimate curvature.
-# =============================================================================
+# Parameters are derived from data; no configuration class required.
 
 
 @dataclass

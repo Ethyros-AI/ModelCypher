@@ -15,21 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Transcoder for Cross-Layer MLP Replacement.
+"""Transcoder for cross-layer MLP mapping.
 
-Transcoders are like SAEs but trained to predict MLP output from MLP input.
-This enables replacing the MLP computation with an interpretable sparse
-representation, allowing circuit tracing through the network.
-
-Architecture:
-    encode: mlp_input -> ReLU(W_enc @ mlp_input + b_enc) -> sparse features
-    decode: features -> W_dec @ features + b_dec -> mlp_output_approximation
-    loss:   geodesic_mse(mlp_output, decoded) + lambda * L1(features)
-
-Key insight: Unlike SAEs which reconstruct the same activation, transcoders
-transform from MLP input space to MLP output space. This captures what
-computation the MLP performs in interpretable terms.
+Learns an encoder/decoder that maps MLP input to MLP output with a sparse
+latent representation.
 
 References:
     - "Transcoders Find Interpretable LLM Feature Circuits" (Anthropic, 2024)

@@ -15,71 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Shared Subspace Projector - CCA/SVCCA alignment for cross-model representation matching.
+"""Shared subspace projector (CCA/SVCCA) for representation matching.
 
-Discovers the shared geometric subspace between two models' representations,
-enabling dimension-agnostic alignment for model merging. When models encode
-the same knowledge in different coordinate systems, this module finds the
-common subspace where their representations align.
-
-Mathematical Foundation:
-========================
-
-Canonical Correlation Analysis (CCA) finds pairs of linear projections that
-maximize correlation between two sets of variables. Given centered activations
-X_s [n, d_s] and X_t [n, d_t]:
-
-    1. Covariance whitening: Transform each space to have identity covariance
-       C_ss^{-1/2} @ X_s and C_tt^{-1/2} @ X_t
-
-    2. Cross-covariance SVD: Decompose the whitened cross-covariance
-       SVD(C_ss^{-1/2} @ C_st @ C_tt^{-1/2}) = U @ S @ V^T
-
-    3. Canonical correlations: Singular values S are the canonical correlations
-       representing alignment strength in each shared dimension
-
-    4. Projection matrices: Final projections combine PCA reduction, whitening,
-       and SVD components to map both representations to the shared subspace
-
-SVCCA (Singular Vector CCA) adds a PCA preprocessing step to reduce each
-representation to its high-variance subspace before CCA. This improves
-numerical stability when d >> n and filters noise dimensions.
-
-Key Concepts:
-=============
-
-PcaMode enum:
-    - auto: Choose based on n vs d (Gram-space when d > n)
-    - svd: Direct SVD on activations (stable for n >= d)
-    - gram: Eigendecomposition of Gram matrix (efficient for d >> n)
-
-Spectral gap detection:
-    When variance_threshold is None, component count is determined by finding
-    the largest relative drop in the sorted variance spectrum. This is
-    geometry-derived, not an arbitrary cutoff.
-
-Properties:
-===========
-
-- Dimension-agnostic: Works across ANY dimensions via Gram matrices
-- Linear alignment is closed-form; geodesic CKA reports overlap for aligned layers
-- No interpolation: Projects to shared subspace, doesn't blend representations
-- Numerically stable: Uses regularization derived from dtype, not heuristics
-
-Usage:
-    from modelcypher.core.domain.geometry.shared_subspace_projector import (
-        SharedSubspaceProjector,
-    )
-
-    result = SharedSubspaceProjector.discover(
-        source_crm, target_crm, layer=12
-    )
-    if result is not None:
-        # result.source_projection @ source_activations -> shared space
-        # result.target_projection @ target_activations -> shared space
-        print(f"Shared dimension: {result.shared_dimension}")
-        print(f"Top correlation: {result.alignment_strengths[0]:.4f}")
+Discovers linear projections that map two representations into a shared
+subspace using CCA or SVCCA.
 
 References:
     - Raghu, M., et al. (2017). "SVCCA: Singular Vector Canonical Correlation
@@ -132,20 +71,7 @@ class PcaMode(str, Enum):
     gram = "gram"
 
 
-# =============================================================================
-# NO CONFIGURATION CLASSES
-# =============================================================================
-# All parameters are derived from data:
-# - variance_threshold: Uses spectral gap detection
-# - pca_variance_threshold: Uses spectral gap detection
-# - max_shared_dimension: min(source_dim, target_dim)
-# - cca_regularization: sqrt(machine_epsilon)
-# - min_samples: sqrt(n_features)
-# - min_canonical_correlation: sqrt(machine_epsilon)
-# - alignment_method: Always CCA (mathematically correct method)
-# - pca_mode: Always auto (chooses based on data shape)
-# - All anchors: Used with uniform weights
-# =============================================================================
+# Parameters are derived from data; alignment uses CCA with uniform anchor weights.
 
 
 def validate_crm_uses_atlas(
@@ -247,8 +173,7 @@ class SharedSubspaceProjector:
     ) -> Result | None:
         """Discover shared subspace between source and target CRMs.
 
-        All parameters are derived from data - no configuration needed.
-        Always uses CCA (mathematically correct method) with all anchors
+        All parameters are derived from data. Uses CCA with all anchors
         equally weighted.
         """
         source_layer = int(layer)
@@ -273,7 +198,7 @@ class SharedSubspaceProjector:
         if len(source_matrix) != len(target_matrix) or n < min_samples:
             return None
 
-        # Always use CCA - the mathematically correct method for finding shared subspace
+        # Use CCA to find shared subspace.
         return SharedSubspaceProjector._discover_with_cca(
             source_matrix, target_matrix, n, d_source, d_target
         )

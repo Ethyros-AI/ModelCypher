@@ -15,22 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Relative Representations for Dimension-Agnostic Transfer.
+"""Relative representations for dimension-agnostic transfer.
 
-Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot
-Latent Space Communication"
-https://arxiv.org/abs/2209.15430
+Implements anchor-relative representations based on cosine similarities to a
+fixed probe set.
 
-Key insight: Pairwise similarities to a fixed anchor set are quasi-isometric
-across models, regardless of their hidden dimension. This enables transfer
-between models of different sizes (e.g., 2048-dim to 896-dim) by working in
-anchor-relative space.
-
-The atlas registry anchors serve as the universal bridge:
-- Any hidden state h in R^d maps to s in R^N via cosine similarities
-- Alignment happens in R^N (dimension-agnostic)
-- Transfer back to target space uses pseudo-inverse projection
+Reference:
+    - Moschella et al. (2023). "Relative Representations Enable Zero-Shot
+      Latent Space Communication." https://arxiv.org/abs/2209.15430
 """
 
 from __future__ import annotations

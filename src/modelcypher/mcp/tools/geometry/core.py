@@ -420,7 +420,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             - k_neighbors: derived from graph connectivity requirements
             - kernel_bandwidth: derived from median neighbor distance
             - heat_trace_times: derived from eigenvalue spectrum
-            - normalized_laplacian: always True (correct for graph Laplacians)
+            - normalized_laplacian: always True
             """
             result = ctx.geometry_metrics_service.compute_spectral_signature(
                 points=points,

@@ -85,23 +85,9 @@ class MultiModalChannelAdapter:
     access knowledge from different modalities (vision, audio) that has been
     merged into its embedding space.
 
-    The key innovation is that offramps are BIDIRECTIONAL:
+    Offramps are bidirectional:
     1. Forward projection: LLM hidden state → modality-aligned space
-       (for cross-modal reasoning during generation)
     2. Inverse projection: modality embeddings → LLM token space
-       (for embedding lookup from multi-modal inputs)
-
-    Mathematical Foundation:
-        From GramAligner, we get transform F such that:
-            CKA(source @ F, target) = 1.0
-
-        The offramp projection is:
-            P_forward = F^T (transpose of alignment transform)
-            P_inverse = F (the alignment transform itself)
-
-        This ensures:
-            - Forward: llm_hidden @ P_forward projects to modality-aligned space
-            - Inverse: modality_embed @ P_inverse projects to LLM token space
     """
 
     def __init__(

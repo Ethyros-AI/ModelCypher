@@ -48,12 +48,7 @@ if TYPE_CHECKING:
 SUITE_VERSION = "1.0"
 
 
-# =============================================================================
-# NO CONFIGURATION CLASSES
-# =============================================================================
-# All algorithm parameters are derived from data (machine epsilon, dtype).
-# There is exactly ONE correct way to validate geometry.
-# =============================================================================
+# Parameters are derived from data (machine epsilon, dtype).
 
 
 @dataclass(frozen=True)
@@ -570,7 +565,7 @@ class GeometryValidationSuite:
         )
         eig_eps = regularization_epsilon(backend, eig_arr)
 
-        # Normalized Laplacian is always used (it's the correct approach)
+        # Normalized Laplacian is used for eigenvalue bounds.
         eigen_bounds_ok = eig_min >= -eig_eps and eig_max <= 2.0 + eig_eps
 
         heat_arr = backend.array(

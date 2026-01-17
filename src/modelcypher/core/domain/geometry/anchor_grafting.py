@@ -263,19 +263,12 @@ def compute_anchor_grafting_with_ghost_anchors(
 ) -> AnchorGraftingResult:
     """Anchor grafting with Ghost Anchor synthesis for novel concepts.
 
-    This is the SINGULAR PIPELINE for perfect knowledge addition:
-
-    1. Compute relative representations and Procrustes alignment (ONCE)
-    2. Compute per-sample alignment residuals
-    3. Identify samples beyond a data-derived residual gap (novel concepts)
-    4. For novel samples, synthesize Ghost Anchors (coordinate-invariant positions)
-    5. Replace target activations with Ghost Anchor positions for novel samples
-    6. Complete the pipeline with corrected targets (reusing alignment)
-
-    The key insight: Novel concepts (high residual) have no meaningful target
-    representation. Ghost Anchors provide synthetic target positions that
-    preserve the concept's Relational Stress (distance pattern to anchors).
-    This is coordinate-invariant and survives rotation between models.
+    Steps:
+        1. Compute relative representations and alignment.
+        2. Compute per-sample alignment residuals.
+        3. Identify high-residual samples (novel concepts).
+        4. Synthesize Ghost Anchors for those samples.
+        5. Replace target activations for novel samples and reuse alignment.
 
     Args:
         source_activations: Source activations [n, d_source]

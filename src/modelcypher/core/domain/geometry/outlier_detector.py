@@ -17,16 +17,8 @@
 
 """Outlier detection for multi-model consensus.
 
-Identifies models that disagree with the consensus position of a concept.
-When 5 models agree on where "authority" lives and 1 differs, the 1 is WRONG.
-
-Mathematical Background:
-    Given per-model alignment errors from GPA, or pairwise stress profile
-    distances, we detect outliers using gap-derived thresholds from the
-    error distribution (no fixed constants).
-
-    For stress profiles, we compute pairwise distances and identify models
-    with high mean distance to others as outliers using the same gap rule.
+Identifies models that deviate from consensus using data-derived thresholds
+over alignment error distributions.
 """
 
 from __future__ import annotations
@@ -64,11 +56,7 @@ class OutlierResult:
 
 
 class OutlierDetector:
-    """Detect models that disagree with consensus.
-
-    Uses data-derived thresholds based on error distribution.
-    No hardcoded magic numbers.
-    """
+    """Detect models that disagree with consensus."""
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         """Initialize detector.
@@ -83,9 +71,6 @@ class OutlierDetector:
         per_model_errors: list[float],
     ) -> OutlierResult:
         """Detect outliers from GPA per-model alignment errors.
-
-        Uses gap-derived thresholds based on the distribution of errors.
-        No fixed constants or manual parameters are used.
 
         Args:
             per_model_errors: Per-model alignment errors from GPA result.

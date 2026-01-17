@@ -433,17 +433,9 @@ def process_layer_weights(
                 "mlp.gate", "mlp.up", "mlp.down",
             ])
 
-            # =========================================================================
-            # BEHAVIORAL RECONSTRUCTION FOR CROSS-DIMENSIONAL MERGING
-            # =========================================================================
-            # Instead of direct matrix transforms (P @ W @ Q) which distort magnitudes,
-            # use behavioral reconstruction to find the weight that produces the SAME
-            # input→output behavior in target coordinates.
-            #
-            # This is the geometrically correct approach: the weight matrix encodes a
-            # transformation, and different coordinate systems encode the SAME
-            # transformation with DIFFERENT matrix values.
-            # =========================================================================
+            # Behavioral reconstruction for cross-dimensional merging.
+            # Instead of direct matrix transforms (P @ W @ Q), reconstruct a weight
+            # that matches source input/output behavior in target coordinates.
             behavioral_reconstruction_applied = False
 
             if (
@@ -766,7 +758,7 @@ def process_layer_weights(
                     # Use gate_stitch_output (PRE-SiLU alignment) for gate/up weights
                     # instead of intermediate_stitch_output (POST-SiLU alignment).
                     # Compressions don't commute with SiLU, so POST-SiLU alignment
-                    # gives wrong results for PRE-SiLU weight outputs.
+                    # does not match PRE-SiLU weight outputs.
                     if is_gate_or_up and gate_stitch_output is not None:
                         output_stitch = gate_stitch_output
                         logger.info(
@@ -856,14 +848,10 @@ def process_layer_weights(
                     # This derives input stitch from hidden alignment + weights,
                     # ensuring consistency with how gate/up stitches are computed.
                     #
-                    # While intermediate_stitch_input (Procrustes on POST-SiLU) is
-                    # theoretically correct, it causes consistency issues:
-                    # - down_proj aligned using TARGET intermediates
-                    # - but at inference, receives MERGED intermediates (from gate/up)
-                    # - the 2% difference in gate/up + SiLU nonlinearity = divergence
-                    #
-                    # Compositional stitch derives input from hidden+weights,
-                    # which is more consistent with the merged gate/up.
+                    # intermediate_stitch_input (POST-SiLU) can diverge at inference
+                    # because merged gate/up intermediates differ after nonlinearity.
+                    # Compositional stitch derives input from hidden+weights for
+                    # consistency with merged gate/up outputs.
                     input_stitch = None
                     if target_w is not None:
                         try:
@@ -1235,7 +1223,7 @@ def process_layer_weights(
         activation_space = "hidden"
         merged_intermediate_used = False
 
-        # For cross-architecture, use layer_mapping to find the correct source layer
+        # For cross-architecture, use layer_mapping to find the mapped source layer.
         mapped_src_layer = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
 
         if weight_in_dim == tgt_inter_dim and tgt_inter_dim > 0:
@@ -1338,8 +1326,7 @@ def process_layer_weights(
         if tgt_density_acts is not None:
             b.eval(tgt_density_acts)
 
-        # Verify activation dimension matches weight input dimension
-        # This should NOT trigger after the fix - if it does, something else is wrong
+        # Verify activation dimension matches weight input dimension.
         input_act_dim = int(b.shape(input_activations)[1])
         if input_act_dim != weight_in_dim:
             logger.debug(

@@ -15,51 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Geodesic Null-Space Filtering for interference-free model merging.
+"""Geodesic null-space filtering for model merging.
 
-This module provides GPU-accelerated geodesic null-space filtering for model merging.
-Flat-space linear algebra (SVD, pinv, eigendecomposition) is mathematically wrong for
-high-dimensional manifolds (8kD+) - it only works up to 3D. This module uses geodesic
-geometry to find directions orthogonal to the manifold structure accurately.
-
-Key insight: In high-dimensional spaces with curvature, the "null space" concept
-from linear algebra (flat space) should be replaced with "geodesic-orthogonal
-directions" - directions that don't disturb the manifold's geodesic structure.
-
-Mathematical Foundation:
-    On a Riemannian manifold (M, g), we want to find directions orthogonal to
-    the local tangent space structure. Instead of:
-
-        null(A) = {v : Av = 0}  (linear, flat space)
-
-    We compute:
-
-        geodesic_orthogonal(X) = {v : ∇_v d(x, y) = 0 for all x, y ∈ neighbors}
-
-    In practice, we approximate this by:
-    1. Building k-NN graph (captures local manifold structure)
-    2. Computing geodesic distances (exact on discrete manifold)
-    3. Finding directions that preserve geodesic structure
-
-GPU Acceleration:
-    All operations use only GPU-friendly primitives:
-    - matmul: Pairwise distance computation
-    - argsort: k-NN construction
-    - vectorized min: Floyd-Warshall shortest paths
-    - Gram matrix operations: Tangent space projection
-
-    All linear algebra stays on the backend (no CPU fallbacks).
-
-Usage:
-    filter = GeodesicNullSpaceFilter(backend)
-    result = filter.filter_delta(weight_delta, prior_activations)
-    safe_delta = result.filtered_delta
+Implements null-space filtering using geodesic distances on a k-NN graph and
+keeps all computation on the backend.
 
 References:
     - Tenenbaum et al. (2000) "Isomap" - geodesic via graph
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"
-    - ModelCypher CLAUDE.md: "Geodesic is Correct"
 """
 
 from __future__ import annotations
@@ -219,10 +182,6 @@ class GeodesicNullSpaceFilter:
     Instead of computing the exact linear null space via SVD (CPU-only on MLX),
     this filter finds geodesic-orthogonal directions using only GPU operations.
 
-    The key insight is that on curved manifolds, "null space" should mean
-    "directions that don't disturb the manifold structure" - not just
-    "directions orthogonal in flat space."
-
     All operations are GPU-accelerated:
     - Pairwise distances: matmul
     - k-NN graph: argsort
@@ -265,11 +224,6 @@ class GeodesicNullSpaceFilter:
         MODE 2 (density-aware): Source+target relative density
             Transfers knowledge where source is dense AND target is sparse:
             transfer = source_confidence * (1 - target_confidence) * (1 - magnitude)
-
-            - Source dense, target sparse → transfer ≈ 1 (source's unique knowledge)
-            - Source sparse, target dense → transfer ≈ 0 (protect target)
-            - Both dense → transfer ≈ 0 (target already knows it)
-            - Both sparse → transfer ≈ 0 (neither knows, ignore)
 
         Algorithm:
             1. Build k-NN graph from activations (GPU: matmul + argsort)
@@ -551,30 +505,10 @@ class GeodesicNullSpaceFilter:
         # =====================================================================
         # UNIFIED SALIENCY PROJECTION (Variance + Magnitude)
         # =====================================================================
-        # The shape is invariant. All models encode the same manifold.
-        # What differs is DENSITY and SENSITIVITY across dimensions.
-        #
-        # Binary null-space projection (Q @ Q^T) is WRONG because:
-        # - With many samples, Q spans all dimensions
-        # - orthogonal_dim = 0, so delta_safe = delta - delta = 0
-        #
-        # Unified saliency projection is CORRECT because it combines:
-        #
-        # 1. VARIANCE (occupancy): How spread are concepts in this direction?
-        #    High variance = densely populated = protect
-        #    Low variance = sparse = room for new concepts
-        #
-        # 2. MAGNITUDE (sensitivity, from AIM arXiv:2502.02421):
-        #    High activation magnitude = perturbations cause large errors = protect
-        #    Low magnitude = insensitive to changes = safe to modify
-        #
-        # Combined formula (probabilistic AND for "safe to modify"):
+        # Combines occupancy (variance) and sensitivity (activation magnitude)
+        # into a per-dimension weight:
         #   keep[i] = (1 - variance_norm[i]) * (1 - magnitude_norm[i])
         #   delta_safe = delta * keep
-        #
-        # This means: keep delta only where BOTH variance AND magnitude are low.
-        # Either high variance OR high magnitude triggers protection.
-        # No hyperparameters - pure geometry.
         # =====================================================================
 
         # Compute per-dimension statistics from activations.
@@ -809,18 +743,11 @@ def filter_delta_svd(
 ) -> GeodesicNullSpaceResult:
     """SVD-based delta filtering with low-rank truncation.
 
-    This is a closed-form approach that replaces variance-based filtering.
-    Task matrices (deltas) are inherently low-rank - research shows only ~3%
-    of singular components capture 98.5% of task-specific information.
-
     Algorithm:
         1. Decompose delta: U, S, Vt = SVD(delta)
         2. Auto-rank: k = first index where cumsum(S^2) >= 0.99 * total
         3. Truncate: delta_k = U[:,:k] @ diag(S[:k]) @ Vt[:k,:]
         4. Return: low-rank filtered delta
-
-    This separates signal (top-k singular components) from noise (remaining)
-    without arbitrary variance/magnitude thresholds.
 
     Parameters
     ----------
@@ -830,7 +757,7 @@ def filter_delta_svd(
         Backend for tensor operations.
     energy_threshold : float
         Fraction of total energy (Frobenius norm squared) to preserve.
-        Default 0.99 captures nearly all task information.
+        Default is 0.99.
 
     Returns
     -------
@@ -1031,22 +958,14 @@ def filter_merge_delta_geodesic(
     return merged, result
 
 
-# =============================================================================
-# TRUE ORTHOGONAL NULL-SPACE PROJECTION
-# =============================================================================
-# This is the mathematically correct implementation that guarantees:
-#     A @ delta_safe.T = 0  (boundary activations preserved)
-#
-# The heuristic variance-weighted approach above does NOT guarantee this.
-# Use this function for precise boundary preservation.
-# =============================================================================
+# Orthogonal null-space projection for boundary preservation.
 
 
 @dataclass
 class NullSpaceProjectionResult:
-    """Result of true orthogonal null-space projection."""
+    """Result of orthogonal null-space projection."""
 
-    # The projected delta (guaranteed: A @ delta.T = 0)
+    # The projected delta (A @ delta.T ~= 0 within numerical precision)
     projected_delta: Any
 
     # Original delta before projection
@@ -1078,66 +997,10 @@ def project_to_null_space(
     backend: "Backend | None" = None,
     verify: bool = True,
 ) -> NullSpaceProjectionResult:
-    """Project delta into the true orthogonal null-space of boundary activations.
+    """Project delta into the orthogonal null-space of boundary activations.
 
-    MATHEMATICAL GUARANTEE:
-    =======================
-    Given boundary activations A [n_samples, d], this function computes:
-
-        P_null = I - A.T @ pinv(A @ A.T) @ A
-
-    And returns:
-
-        delta_safe = delta @ P_null
-
-    This GUARANTEES:
-
-        A @ delta_safe.T = 0
-
-    Meaning the boundary behavior is EXACTLY preserved (within numerical precision).
-
-    EFFICIENT COMPUTATION:
-    ======================
-    We avoid materializing the d×d projection matrix by computing:
-
-        delta_safe = delta - (delta @ A.T) @ pinv(A @ A.T) @ A
-
-    This is efficient when n_samples << d (typical: 45-2048 probes, 576-4096 dims).
-
-    Parameters
-    ----------
-    delta : Array
-        Weight delta to project. Shape: [out_dim, in_dim].
-        in_dim must match boundary_activations feature dimension.
-    boundary_activations : Array
-        Target activations defining the boundary. Shape: [n_samples, d].
-        These are the activations we want to preserve exactly.
-    backend : Backend, optional
-        Computation backend. Defaults to MLX.
-    verify : bool
-        If True, compute and return boundary violation metric.
-
-    Returns
-    -------
-    NullSpaceProjectionResult
-        Contains projected_delta with boundary_violation ≈ 0.
-
-    Mathematical Derivation
-    -----------------------
-    For weight matrix W: [out, in] and activations A: [n, in]:
-        output = A @ W.T  [n, out]
-
-    We want: A @ (W_target + delta_safe).T = A @ W_target.T
-    Therefore: A @ delta_safe.T = 0
-    So delta_safe.T must be in null(A) = {v : A @ v = 0}
-
-    The projection onto null(A) is:
-        P_null = I - A.T @ (A @ A.T)^{-1} @ A  (when invertible)
-        P_null = I - A.T @ pinv(A @ A.T) @ A   (general)
-
-    For delta [out, in]:
-        delta_safe = delta @ P_null
-                   = delta - delta @ A.T @ pinv(A @ A.T) @ A
+    Uses a pseudoinverse-based projection and can optionally report
+    the boundary violation magnitude.
     """
     b = backend or get_default_backend()
 
@@ -1300,18 +1163,7 @@ def filter_merge_delta_null_space(
     boundary_activations: Any,
     backend: "Backend | None" = None,
 ) -> tuple[Any, NullSpaceProjectionResult]:
-    """Merge weights using TRUE orthogonal null-space projection.
-
-    This is the mathematically correct merge formula:
-
-        delta = source_aligned - target
-        delta_safe = project_to_null_space(delta, boundary_activations)
-        merged = target + delta_safe
-
-    GUARANTEE:
-        boundary_activations @ merged.T = boundary_activations @ target.T
-
-    The target's behavior on boundary activations is EXACTLY preserved.
+    """Merge weights using orthogonal null-space projection.
 
     Parameters
     ----------
@@ -1353,7 +1205,7 @@ __all__ = [
     "GeodesicNullSpaceFilter",
     "filter_delta_svd",  # SVD-based low-rank filtering
     "filter_merge_delta_geodesic",  # Legacy variance-based filtering (HEURISTIC)
-    # TRUE ORTHOGONAL NULL-SPACE PROJECTION (mathematically correct)
+    # Orthogonal null-space projection
     "NullSpaceProjectionResult",
     "project_to_null_space",
     "filter_merge_delta_null_space",

@@ -157,7 +157,7 @@ def alignment_signal_from_matrices(
         )
 
     # Per-anchor divergence: geodesic distance respects manifold curvature.
-    # Chord distance is systematically wrong in high dimensions.
+    # Chord distance ignores curvature in high dimensions.
     if b.shape(source_matrix) != b.shape(target_matrix):
         # Gram-space comparison when dimensions differ
         source_gram = _cache.get_or_compute_gram(source_matrix, b)

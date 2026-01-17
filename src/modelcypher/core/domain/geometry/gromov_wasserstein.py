@@ -15,51 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Gromov-Wasserstein distance computation for representation space comparison.
+"""Gromov-Wasserstein distance computation for representation space comparison.
 
-GPU-accelerated implementation using the Backend protocol (MLX/JAX/CUDA).
-
-Mathematical Foundation:
-    The Gromov-Wasserstein distance measures structural similarity between
-    metric spaces without requiring point-to-point correspondence. Given
-    source (X, dX) and target (Y, dY) metric spaces with probability measures
-    μ and ν, the GW objective minimizes:
-
-        GW(μ, ν) = min_γ ∑_{i,j,k,l} L(dX(xi, xk), dY(yj, yl)) · γij · γkl
-
-    where γ is a coupling matrix with marginals μ and ν.
-
-Algorithm:
-    This implementation uses the Conditional Gradient (Frank-Wolfe) algorithm
-    following Peyré, Cuturi, and Solomon (2016) "Gromov-Wasserstein Averaging
-    of Kernel and Distance Matrices" (ICML).
-
-    Key insight: For squared loss L(a,b) = (a-b)², the objective decomposes as:
-        L(a,b) = a² + b² - 2ab = f₁(a) + f₂(b) - h₁(a)·h₂(b)
-
-    where f₁(a) = a², f₂(b) = b², h₁(a) = a, h₂(b) = 2b.
-
-    This allows O(n²m + nm²) tensor product computation instead of O(n²m²).
-
-    Frank-Wolfe iteration:
-        1. Compute gradient via tensor product
-        2. Solve LINEAR OT problem (not full GW) to get descent direction
-        3. Line search for optimal step size (analytic for quadratic)
-        4. Update coupling: T ← (1-α)T + αG
-
-    IMPORTANT: The update T ← (1-α)T + αG is NOT blending/interpolation in the
-    "vibes" sense. This is the mathematically correct Frank-Wolfe convex combination:
-    - G is the descent direction (solution to a linear subproblem)
-    - α is computed ANALYTICALLY via line search minimizing a quadratic objective
-    - The formula comes from Peyré et al. (2016), not arbitrary choice
-    - This is standard convex optimization, not weight mixing
-
-    DO NOT REFACTOR this to "remove blending" - it would break the algorithm.
-
-Complexity:
-    O(n²m + nm²) per outer iteration for gradient computation.
-    Linear OT subproblem: O(nm log nm) with Sinkhorn.
+GPU-accelerated implementation using the Backend protocol (MLX/JAX/CUDA),
+following a Frank-Wolfe optimization approach.
 
 References:
     - Peyré, Cuturi, Solomon (2016) "GW Averaging" ICML
@@ -348,9 +307,9 @@ class GromovWassersteinDistance:
         C2_permuted = backend.matmul(PC2, P_T)  # [n_perms, n, n]
 
         # Compute Frobenius norm squared: ||C1 - C2_permuted||^2_F for each perm
-        # Compute both directions and average for exact symmetry:
+        # Compute both directions and average for symmetry:
         # loss = 0.5 * (||C1 - P @ C2 @ P.T||² + ||C2 - P.T @ C1 @ P||²)
-        # This ensures GW(A,B) = GW(B,A) exactly in floating point.
+        # This enforces symmetry in floating point.
 
         # Forward: ||C1 - P @ C2 @ P.T||² using C2_permuted = P @ C2 @ P.T
         C1_expanded = backend.reshape(C1, (1, n, n))  # [1, n, n]

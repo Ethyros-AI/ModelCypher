@@ -322,8 +322,8 @@ def diagnose_probe_conflict(
     """
     Diagnose why a probe is giving conflicting constraints.
 
-    When a probe disagrees with others about layer mapping, the MEASUREMENT
-    is wrong, not the concept. This function helps identify what's wrong:
+    When a probe disagrees with others about layer mapping, the measurement
+    may be unreliable. This function helps identify potential causes:
     - Weak activation (probe text doesn't capture concept well)
     - Multiple peaks (concept splits across layers - maybe probe is ambiguous)
     - Low CKA at peak (layer extraction or embedding has issues)

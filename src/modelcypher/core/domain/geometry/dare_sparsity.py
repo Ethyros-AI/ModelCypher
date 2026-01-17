@@ -31,16 +31,7 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 
-# =============================================================================
-# NO CONFIGURATION CLASSES
-# =============================================================================
-# All thresholds derived from data:
-# - Zero threshold: machine epsilon relative to max magnitude
-# - Drop threshold: spectral gap in magnitude distribution
-#
-# Always analyze ALL layers. Always compute per-layer metrics.
-# There is exactly ONE correct way to analyze sparsity.
-# =============================================================================
+# Thresholds derived from data; analyze all layers with per-layer metrics.
 
 
 @dataclass(frozen=True)

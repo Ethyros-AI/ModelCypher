@@ -93,22 +93,7 @@ def project_cross_dimensional(
     method: ProjectionMethod | str = ProjectionMethod.GRAM_TRANSPORT,
     backend: "Backend | None" = None,
 ) -> ProjectionResult:
-    """
-    Project source weights to target shape using geometry-preserving methods.
-
-    THE UNIFIED API for all dimension mismatches.
-
-    PRECISION MATTERS. Deviations on the order of machine epsilon compound
-    through layers and cause hallucinations at inference. No shortcuts.
-    No approximations.
-
-    The key insight: Gram matrices K = X @ X^T capture relational geometry
-    independent of feature dimension. For weight matrix [m, d]:
-    - Row Gram: W @ W^T is [m, m] - can be huge for embeddings
-    - Col Gram: W^T @ W is [d, d] - always tractable (hidden_dim sized)
-
-    GW on column-space Grams is O(d_s² + d_t²) - independent of vocab size.
-    The coupling π[d_s, d_t] is then applied EXACTLY: W @ π
+    """Project source weights to target shape using geometry-preserving methods.
 
     Args:
         source: Source weight matrix [m_s, d_s]
@@ -163,27 +148,8 @@ def _project_gram_transport(
     """
     Project using Gromov-Wasserstein on Gram matrices.
 
-    CRITICAL: Column-space first. Always.
-
-    The key insight:
-    - Column Gram: G_col = W^T @ W is [d×d] - ALWAYS tractable (hidden_dim sized)
-    - Row Gram: G_row = W @ W^T is [m×m] - can be INTRACTABLE (vocab_size)
-
-    For weight matrix [m, d]:
-    - d is typically hidden_dim (896, 2048, 4096) - tractable
-    - m is typically hidden_dim OR vocab_size (150k) - may be intractable
-
-    The algorithm:
-    1. ALWAYS compute column Grams first (O(d²) - tractable)
-    2. Get column coupling π_col [d_s, d_t]
-    3. Apply EXACTLY: W_col_aligned = W @ π_col -> [m_s, d_t]
-    4. For row mismatch:
-       - If rows tractable (< 20k): compute row GW
-       - If rows huge (embeddings): token identity alignment must be handled outside this projector
-
-    Projection:
-    - Column dimension: source @ π_col projects columns
-    - Row dimension: π_row^T @ source projects rows (only if tractable)
+    Uses column-space Grams first (d x d). Row-space Grams (m x m) are
+    computed only when tractable; embeddings require external row alignment.
     """
     from modelcypher.core.domain.geometry.gromov_wasserstein import (
         GromovWassersteinDistance,
@@ -629,8 +595,8 @@ def _project_svd(
     # basis vectors V_s_k and V_t_k may represent different directions.
     # We need to find the optimal rotation R such that source_k @ R ≈ target_k.
     #
-    # This is the critical step that was missing - without it, SVD projection
-    # produces weights with similar magnitude but wrong direction (cosine sim ≈ 0).
+    # Without this step, SVD projection can yield misaligned directions
+    # (cosine similarity ≈ 0).
     target_k = b.matmul(target, V_t_k)  # [m_t, k]
     b.eval(target_k)
 

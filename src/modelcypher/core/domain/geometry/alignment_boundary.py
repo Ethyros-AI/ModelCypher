@@ -15,26 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometric alignment boundary for AI safety guardrails.
+"""Geometric alignment boundary utilities.
 
-Defines mathematical boundaries in activation space that enforce alignment.
-When activations leave the safe region, interventions can steer them back.
-
-Mathematical Foundation:
-    The alignment boundary is defined by two geometric constraints:
-    1. Minimum projection onto refusal direction: r·x > threshold
-       - Ensures the model maintains its "alignment" position on the manifold
-    2. Maximum distance from safe centroid: ||x - centroid|| < radius
-       - Ensures activations stay within the learned distribution
-
-Both thresholds are data-derived (not arbitrary):
-    - refusal_threshold: percentile of projections from training safe prompts
-    - safe_radius: percentile of distances from training safe prompts
-
-Usage:
-    1. Compute boundary from training data (safe prompts)
-    2. At inference time, check if activations are within boundary
-    3. If outside, optionally steer back by adding refusal direction
+Defines activation-space boundaries based on refusal projections and distance
+to a safe centroid.
 
 References:
     - Arditi et al. (2024). "Refusal in Language Models Is Mediated by a Single Direction."

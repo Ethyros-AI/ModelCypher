@@ -15,24 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Optimal Transport solvers for representation alignment.
+"""Optimal transport solvers for representation alignment.
 
-Provides GPU-accelerated Sinkhorn algorithm for computing optimal transport
-plans between probability distributions. Used by:
-- Gromov-Wasserstein distance (as Frank-Wolfe inner loop)
-- Soft Procrustes alignment (for non-corresponding anchors)
-- Representation matching across models
-
-Mathematical Foundation:
-    The Sinkhorn algorithm solves the entropy-regularized optimal transport:
-
-        min_P <C, P> + epsilon * H(P)
-        subject to: P @ 1 = mu, P.T @ 1 = nu
-
-    where C is the cost matrix, P is the transport plan, and H(P) is entropy.
-
-    As epsilon -> 0, the solution approaches exact optimal transport.
+Provides a GPU-accelerated Sinkhorn algorithm for entropy-regularized optimal
+transport plans.
 
 References:
     - Cuturi (2013) "Sinkhorn Distances" NeurIPS

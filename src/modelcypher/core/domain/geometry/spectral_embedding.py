@@ -17,20 +17,9 @@
 
 """Unified spectral embedding for geodesic distance and spectral signature.
 
-The key insight (Varadhan's formula): Laplacian eigenvectors define a spectral
-embedding where geodesic distance becomes Euclidean distance:
-
-    Φ: x → (φ₁(x)/√λ₁, φ₂(x)/√λ₂, ..., φₖ(x)/√λₖ)
-    d_geodesic(x, y) = ‖Φ(x) - Φ(y)‖₂
-
-One eigendecomposition produces both:
-- Geodesic distances (as Euclidean distance in embedding space)
-- Spectral signature (eigenvalues for heat trace, entropy, etc.)
-
-CRITICAL: The Laplacian is built from CHORD (local Euclidean) distances,
-NOT geodesic distances. The eigendecomposition then produces an embedding
-where Euclidean distance approximates geodesic distance. This is the
-mathematical content of Varadhan's formula.
+Computes Laplacian eigenvectors from a k-NN graph built on chord distances.
+The resulting embedding supports approximate geodesic distances and spectral
+signature outputs.
 """
 
 from __future__ import annotations

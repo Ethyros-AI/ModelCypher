@@ -15,42 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Metaphor Convergence Analyzer.
+"""Metaphor convergence analyzer.
 
-Computes layer-wise convergence for metaphor invariants across two models,
-revealing how universal conceptual structures emerge at different depths.
-
-Mathematical Foundation:
-    Universal metaphors (e.g., CHANGE IS MOTION, UNDERSTANDING IS GRASPING)
-    activate at predictable layers across architectures. For each metaphor
-    family f and layer pair (l_s, l_t), we compute:
-
-    1. Sparse anchor vectors: v_anchor[dim] = activation magnitude
-    2. Average activation per family: v_f = (1/|A_f|) Σ v_anchor
-    3. Dimension alignment: map source dims → target dims via intersection
-    4. Geodesic cosine: sim(v_s, v_t) on aligned dimension space
-
-Layer Alignment Modes:
-    - LAYER: Exact layer index matching (intersection of available layers)
-    - NORMALIZED: Relative depth matching with d = (l_s/L_s + l_t/L_t) / 2
-
-Output Structure:
-    - Heatmap: families × layers matrix of cosine similarities
-    - Per-family means: identifies which metaphors are most stable
-    - Per-layer means: identifies which depths show strongest alignment
-
-Geodesic Rationale:
-    Metaphor activations lie on a curved manifold. Standard cosine on raw
-    embeddings underestimates divergence when curvature is positive (concepts
-    cluster) and overestimates when negative (concepts spread). Geodesic
-    cosine (via sparse vector protocol) respects this geometry.
-
-See Also:
-    - anchor_invariance_analyzer: Multi-run stability analysis
-    - atlas_registry.get_metaphor_invariants: Source of metaphor probes
-
-Ported 1:1 from the reference Swift implementation.
+Computes layer-wise similarity for metaphor invariants across two models.
 """
 
 from __future__ import annotations

@@ -15,32 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Cross-Architecture Layer Matcher.
+"""Cross-architecture layer matcher.
 
-Finds optimal layer correspondence between cross-architecture models using
-dynamic programming for monotonic alignment with CKA similarity.
-
-Notes
------
-Fundamental Principle:
-    Concepts occupy fixed probability clouds in hyperspace. Knowledge is a
-    high-dimensional shape that is invariant across models. Every LLM learns
-    the same conceptual shapes because those shapes represent knowledge itself.
-    Model family (Qwen, Llama, Mistral, etc.) is irrelevant - the geometry
-    of knowledge is universal. Think of LLM weights as high-dimensional
-    Legos that precisely fit every other Lego.
-
-Theoretical Foundation:
-    Different neural architectures have functionally equivalent layers at different indices.
-    A 12-layer transformer and a 24-layer transformer may have corresponding "attention to
-    syntax" functionality at layers 4 and 8 respectively. This matcher finds such correspondences.
-
-Algorithm:
-    1. Compute CKA similarity matrix between all layer pairs
-    2. Use dynamic programming for monotonic alignment (layers must correspond in order)
-
-    Unlike greedy matching, DP-based alignment respects the sequential nature of neural
-    network layers - earlier layers in model A should map to earlier layers in model B.
+Finds layer correspondence between models using CKA similarity with a
+monotonic dynamic-programming alignment.
 """
 
 from __future__ import annotations
@@ -125,12 +103,7 @@ class AnchorCategoryWeights:
         return {k: v / total for k, v in weights.items()}
 
 
-# =============================================================================
-# NO CONFIGURATION CLASSES
-# =============================================================================
-# All matching uses uniform anchor weights - all concept types contribute equally.
-# There is exactly ONE correct way to match layers across architectures.
-# =============================================================================
+# All matching uses uniform anchor weights; all concept types contribute equally.
 
 
 # ConfidenceLevel enum removed - use raw CKA values directly.
@@ -221,8 +194,7 @@ class CrossArchitectureLayerMatcher:
         Uses dynamic programming to find optimal monotonic alignment between layers,
         respecting the sequential nature of neural network processing.
 
-        All anchor categories contribute equally (uniform weights). There is exactly
-        ONE correct way to match layers across architectures.
+        All anchor categories contribute equally (uniform weights).
 
         Args:
             source_crm: Concept response matrix from source model.

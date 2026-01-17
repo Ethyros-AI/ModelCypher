@@ -15,35 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Channel Projector for multi-channel knowledge merging.
+"""Channel projector for multi-channel knowledge merging.
 
-This module projects multiple knowledge channels into a target model's null space,
-enabling interference-free knowledge addition from multiple source models.
-
-Mathematical Foundation (from docs/research/mhc_null_space_connection.md):
-    For each channel i:
-    1. Align: F_i = find_alignment(source_acts_i, target_acts); geodesic CKA is diagnostic
-    2. Compute delta: δW_i = (source_weights_i @ F_i) - target_weights
-    3. Project to null space: δW_safe_i = P_null(target_acts) @ δW_i
-
-    Properties:
-    - Geodesic CKA per channel reported as overlap diagnostics
-    - δW_safe_i is orthogonal to target's tangent space (no interference)
-    - Channels can be safely combined via Birkhoff routing
-
-Usage:
-    projector = ChannelProjector(backend)
-    results = projector.project_channels(
-        source_activations={"spatial": spatial_acts, "temporal": temporal_acts},
-        source_weights={"spatial": spatial_w, "temporal": temporal_w},
-        target_activations=target_acts,
-        target_weights=target_w,
-    )
-    # Each result has: filtered_delta, cka_achieved, projection_loss
+Projects multiple knowledge channels into a target model's null space.
 
 References:
-    - docs/DIMENSIONAL_COMPRESSION.md (Multi-Modal Extension)
+    - docs/DIMENSIONAL_COMPRESSION.md
     - docs/research/mhc_null_space_connection.md
     - docs/architecture/multi_channel_merge.md
 """
@@ -292,15 +269,14 @@ class ChannelProjector:
         # STEP 1: ALIGN (geodesic CKA diagnostic)
         # =================================================================
         # Find feature transform F such that CKA(source @ F, target) = 1.0
-        # Procrustes alignment is closed-form via SVD - it always succeeds.
-        # If this fails, there's a bug in the input or implementation.
+        # Procrustes alignment is closed-form via SVD.
         alignment = self._aligner.find_perfect_alignment(
             source_activations, target_activations
         )
         cka_achieved = alignment.achieved_cka  # 1.0 (invariant)
         numerical_deviation = alignment.numerical_deviation
         scale_ratio = alignment.scale_ratio
-        alignment_successful = True  # Procrustes is closed-form, always succeeds
+        alignment_successful = True  # Closed-form result
 
         # =================================================================
         # STEP 2: COMPUTE ALIGNED DELTA (WITH DUAL-STITCH FOR CROSS-ARCH)
@@ -315,10 +291,6 @@ class ChannelProjector:
         if needs_dual_stitch:
             # DUAL-STITCH: Compute output stitch compositionally
             # G @ W @ F where G transforms output dimension
-            #
-            # This is mathematically guaranteed because:
-            # - Hidden alignment reports geodesic CKA
-            # - Output projections are linear functions of hidden
 
             # Compute output stitch compositionally from hidden alignment + weights
             H = backend.transpose(F)  # [d_tgt, d_src]

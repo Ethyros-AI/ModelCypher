@@ -21,11 +21,6 @@ Streaming activation extraction from model forward pass.
 MLX does NOT support PyTorch-style hooks (register_forward_hook).
 We use the callback-based wrapper pattern from local_inference.py
 which temporarily wraps layers with callbacks during inference.
-
-The key insight for real-time visualization:
-1. Coupling matrices (π_col) computed via GRAM_TRANSPORT are REUSABLE
-2. For streaming: token @ π_composite = 3D point (single matmul!)
-3. No recomputation of GW needed - geometry is FIXED after calibration
 """
 
 from __future__ import annotations

@@ -841,9 +841,7 @@ class RiemannianDensityEstimator:
         geodesic_context = rg.geodesic_distances(activations, k_neighbors=None)
         k_neighbors = geodesic_context.k_neighbors
 
-        # Compute centroid using Fréchet mean - the only correct method on curved manifolds
-        # Arithmetic mean is WRONG as it doesn't minimize squared geodesic distances
-        # No fallback to arithmetic mean - if this fails, it's a bug we need to fix
+        # Compute centroid using Fréchet mean (minimizes squared geodesic distances).
         result = rg.frechet_mean(
             activations,
             tolerance=regularization_epsilon(backend, activations),
@@ -861,7 +859,7 @@ class RiemannianDensityEstimator:
         )
         backend.eval(geo_from_centroid)
 
-        # Estimate local curvature at centroid (always enabled - manifolds are curved)
+        # Estimate local curvature at centroid when sample count allows.
         local_curvature = None
         if n >= d + 2:
             try:
@@ -1458,7 +1456,7 @@ class RiemannianDensityEstimator:
 
         For same-dimension: Uses principal angles between covariance eigenspaces.
         For cross-dimension: Uses CKA on Gram matrices (dimension-agnostic).
-        Returns value in [0, 1] where 1 = exactly aligned.
+        Returns value in [0, 1] where 1 = aligned.
         """
         backend = get_default_backend()
 

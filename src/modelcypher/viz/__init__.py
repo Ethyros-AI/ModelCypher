@@ -15,21 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Visualization package for real-time manifold geometry rendering.
+"""Visualization package for manifold geometry rendering.
 
-This package provides tools for visualizing the actual geometry of
-neural network representations during inference:
-
-- ManifoldViewer: 3D visualization of activation trajectories
-- Curvature coloring: Red = walls (positive ORC), Blue = funnels (negative ORC)
-- Density clouds: Volumetric rendering of concept clusters
-- Token trajectories: Animated paths through concept space
-
-The visualizations show ACTUAL geometry, not approximations:
-- Gram transport preserves relational structure exactly
-- Ollivier-Ricci curvature reflects true manifold curvature
-- The 3D "shadow" IS the manifold shape
+Provides tools for 3D visualization of activation trajectories and related
+geometry overlays.
 
 Requires: plotly>=5.18.0
 """

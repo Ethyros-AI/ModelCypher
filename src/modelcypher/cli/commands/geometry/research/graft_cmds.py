@@ -40,15 +40,11 @@ def register(app: typer.Typer) -> None:
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
-    ) -> None:
+        ) -> None:
         """Analyze graft boundary by correlating density with null space.
 
         Analyzes the relationship between concept density and null space availability
         without introducing thresholds.
-
-        Key insight: Sparse concepts (low density) should have more null space
-        available, making grafting safer. Dense concepts have less null space,
-        making grafting risky.
 
         Outputs:
         - Per-density-bracket analysis

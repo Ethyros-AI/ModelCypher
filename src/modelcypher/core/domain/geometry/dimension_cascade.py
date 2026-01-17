@@ -15,27 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Dimension cascade for structure-preserving projection from high-D to 3D.
+"""Dimension cascade for projection from high-D to low-D.
 
-The core insight: Coupling matrices computed via GRAM_TRANSPORT are REUSABLE.
-This enables real-time streaming projection during token generation.
-
-Calibration Phase (run ONCE):
-1. Capture initial activations [N, hidden_dim]
-2. Compute coupling matrices via Gromov-Wasserstein on Gram matrices
-3. Chain multiply for composite coupling: π_composite = [hidden_dim, 3]
-
-Streaming Phase (per-token):
-1. Get hidden state [hidden_dim]
-2. Project: point_3d = hidden @ π_composite  # Single matmul!
-
-Mathematical Guarantee:
-- Gram matrices K = X @ X^T capture relational geometry
-- GW finds structure-preserving coupling between Gram spaces
-- The 3D projection IS the manifold shape, not an approximation
-
-The visualization you see is the ACTUAL geometry of the representation space.
+Computes coupling matrices for projecting activations into lower-dimensional
+spaces and supports reuse for streaming projection.
 """
 
 from __future__ import annotations
@@ -73,14 +56,6 @@ logger = logging.getLogger(__name__)
 class CascadeResult:
     """Result of projecting through dimension cascade.
 
-    All values are exact geometric measurements, not approximations:
-    - original_dim: Ambient dimension of input activations
-    - intrinsic_dim: True dimensionality of the manifold (via TwoNN)
-    - projections: Structure-preserving projections at each target dimension
-    - couplings: REUSABLE coupling matrices for streaming projection
-    - curvatures: Ollivier-Ricci curvature at each dimension
-    - geodesic_distortion: How much geodesic structure is distorted (lower indicates less distortion)
-
     Attributes:
         original_dim: Original hidden dimension (e.g., 4096)
         intrinsic_dim: Measured intrinsic dimension (typically 50-200)
@@ -101,14 +76,6 @@ class CascadeResult:
 class DimensionCascade:
     """
     Project high-D to 4D→3D→2D→1D with structure preservation.
-
-    KEY INSIGHT: Coupling matrices are computed ONCE and reused for streaming.
-    This enables real-time visualization during token generation.
-
-    The geometry you see is REAL:
-    - Gram transport finds exact structure-preserving coupling
-    - Ollivier-Ricci curvature reflects true manifold curvature
-    - Walls (positive ORC) and funnels (negative ORC) are geometric facts
 
     Usage:
         cascade = DimensionCascade(backend)
@@ -196,8 +163,7 @@ class DimensionCascade:
             b.eval(activations)
             logger.debug("Promoted activations for numerical stability")
 
-        # Compute intrinsic dimension - this is the TRUE dimensionality
-        # All parameters derived from data (Berry & Sauer 2016 for k, Facco et al. for method)
+        # Compute intrinsic dimension estimate (parameters derived from data).
         id_estimator = IntrinsicDimension(b)
         id_result = id_estimator.compute(activations)
         intrinsic_dim = id_result.intrinsic_dimension
@@ -228,9 +194,8 @@ class DimensionCascade:
 
             logger.debug("Projecting %d -> %d via Isomap", current_dim, target_dim)
 
-            # Use Isomap for GEODESIC-preserving projection
-            # Isomap preserves manifold structure via geodesic distances
-            # PCA only preserves linear variance - WRONG for curved manifolds
+            # Use Isomap for geodesic-preserving projection.
+            # PCA preserves linear variance; Isomap uses geodesic distances.
             projected, coupling_matrix = self._project_via_isomap(current, target_dim)
             logger.debug(
                 "Stored Isomap coupling: [%d, %d]",

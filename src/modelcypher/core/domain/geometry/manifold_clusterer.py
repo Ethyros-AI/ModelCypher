@@ -153,7 +153,7 @@ class ManifoldClusterer:
         # For incremental assignment, compute geodesic distance between each new point
         # and region centroids. When comparing a single point to a single centroid,
         # the k-NN graph has exactly one edge, so geodesic = chord by construction.
-        # We still use the geodesic code path for correctness and consistency.
+        # We still use the geodesic code path for consistency.
         region_point_additions: dict[str, list[ManifoldPoint]] = {}
         for point in new_points:
             nearest_region = None
@@ -216,10 +216,8 @@ class ManifoldClusterer:
     def _compute_geodesic_matrix(self, points: list[ManifoldPoint]):
         """Compute pairwise geodesic distances via k-NN graph.
 
-        Geodesic distance is the correct metric on curved manifolds.
-        Chord distance is only valid in flat spaces and systematically
-        underestimates (positive curvature) or overestimates (negative curvature)
-        true manifold distances.
+        Geodesic distance accounts for curvature. Chord distance can
+        under- or overestimate distances in curved spaces.
 
         Returns a Backend array (not numpy).
         """
@@ -295,7 +293,7 @@ class ManifoldClusterer:
 
         For exactly 2 points, the k-NN graph has a single edge, so
         geodesic = chord by construction. We use the geodesic code
-        path for consistency and correctness.
+        path for consistency.
         """
         backend = get_default_backend()
         matrix = self._compute_geodesic_matrix([p1, p2])

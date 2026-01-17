@@ -15,50 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Output Layer Stability Analysis for Model Merging.
+"""Output layer stability analysis for model merging.
 
-Measures numerical stability properties of weight matrices that affect generation quality.
-Specifically designed to track changes in the output layer (lm_head) across merges.
-
-Mathematical Foundation
------------------------
-For a weight matrix W with singular values σ₁ ≥ σ₂ ≥ ... ≥ σᵣ:
-
-1. **Condition Number** κ(W) = σ₁ / σᵣ
-   - Measures sensitivity of outputs to input perturbations
-   - High κ = small input changes → large output changes = numerically unstable
-   - Critical for generation: high κ means token predictions are volatile
-
-2. **Spectral Entropy** H(W) = -∑ (σᵢ/∑σⱼ) * log(σᵢ/∑σⱼ)
-   - Measures how "spread out" the singular value distribution is
-   - High entropy = energy distributed across many dimensions
-   - Low entropy = energy concentrated in few dimensions (potentially brittle)
-
-3. **Effective Rank** r(W) = (∑σᵢ)² / ∑σᵢ²
-   - Smooth measure of "how many dimensions matter"
-   - Range: [1, min(m,n)]
-   - Stable models have effective rank >> 1
-
-These metrics track numerical stability - distinct from geometric alignment (CKA).
-A merged model can have high geodesic CKA (geometry overlap) but degraded stability
-(high condition number) leading to broken generation.
-
-Usage:
-    from modelcypher.core.domain.geometry.output_stability import (
-        compute_output_stability,
-        OutputStabilityMetrics,
-    )
-
-    # Analyze a weight matrix
-    metrics = compute_output_stability(lm_head_weights, backend)
-    print(f"Condition number: {metrics.condition_number}")
-    print(f"Spectral entropy: {metrics.spectral_entropy}")
-
-    # Compare before/after merge
-    before = compute_output_stability(target_lm_head, backend)
-    after = compute_output_stability(merged_lm_head, backend)
-    delta = compare_stability(before, after)
+Computes stability metrics (condition number, spectral entropy, effective rank)
+for weight matrices, with helpers to compare pre/post-merge changes.
 """
 
 from __future__ import annotations

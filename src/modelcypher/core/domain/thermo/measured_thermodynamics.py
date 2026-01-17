@@ -15,23 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Measured thermodynamics - real physics from real observations.
+"""Measured thermodynamics utilities.
 
-This module replaces hardcoded energy levels and intensity scores with
-values derived from empirical measurement. The thermodynamics of language
-models is not metaphorical - it IS thermodynamics. The math is identical.
-
-Key insight: If we observe a probability distribution p(x) at temperature T,
-the energy of state x is:
+Derives relative energies from observed probabilities using the Boltzmann
+relation:
 
     E(x) = -T * log(p(x)) + constant
 
-This is exact. The constant drops out when computing relative energies:
-
-    E(x) - E(y) = -T * log(p(x)/p(y))
-
-We measure p(x) from observed behavioral outcomes. We derive E(x) from the
-measurement. No guessing. No vibes. Just physics.
+References:
+    - Jaynes, E. T. (1957). "Information Theory and Statistical Mechanics."
+      Physical Review 106(4):620-630.
 """
 
 from __future__ import annotations

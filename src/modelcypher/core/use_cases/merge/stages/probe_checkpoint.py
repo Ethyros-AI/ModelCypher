@@ -113,9 +113,8 @@ def save_probe_activations(
 ) -> None:
     """Save all activation dicts to NPZ file for checkpoint resume.
 
-    This is CRITICAL for correct checkpoint resume. Without saving activations,
-    the resume logic skips completed probes but their activations are lost,
-    leading to incomplete activation matrices and incorrect alignment.
+    Without saving activations, resumed probes skip completed work but lose
+    the activation matrices needed for alignment.
     """
     activation_path = checkpoint_path.with_suffix(".activations.npz")
 
