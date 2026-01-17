@@ -418,7 +418,7 @@ def align_layers(
         if result["feature_transform"] is None:
             raise RuntimeError(
                 f"GramAligner returned no transform for {src_layers} -> {tgt_layer}. "
-                "This should never happen if the geometry is correct."
+                "Unexpected empty transform."
             )
         feature_transforms[tgt_layer] = result["feature_transform"]
         layer_cka_scores[tgt_layer] = result["achieved_cka"]

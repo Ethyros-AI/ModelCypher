@@ -101,7 +101,7 @@ class LocalCurvature:
     sign: CurvatureSign
     # Scalar curvature (trace of Ricci tensor, sum of sectional)
     scalar_curvature: float
-    # True Ollivier-Ricci curvature at this point (aggregated from incident edges)
+    # Ollivier-Ricci curvature at this point (aggregated from incident edges)
     # Computed via optimal transport: kappa = 1 - W_1(m_x, m_y) / d(x, y)
     # None if not yet computed (use OllivierRicciCurvature.compute() to populate)
     ollivier_ricci: float | None = None
@@ -175,8 +175,8 @@ class ManifoldCurvatureProfile:
     def curvature_at_point(self, point: "Array") -> LocalCurvature | None:
         """Find curvature at nearest measured point (k-NN interpolation).
 
-        Uses geodesic distances for neighbor finding - chord distance
-        is incorrect in curved spaces where curvature itself affects distances.
+        Uses geodesic distances for neighbor finding; chord distance
+        ignores curvature in curved spaces.
         """
         if not self.local_curvatures:
             return None
@@ -479,9 +479,8 @@ class SectionalCurvatureEstimator:
     ) -> ManifoldCurvatureProfile:
         """Estimate curvature profile across all points.
 
-        Uses geodesic distances for neighbor finding - this is critical
-        because chord k-NN in curved spaces will systematically
-        misidentify neighbors, leading to incorrect curvature estimates.
+        Uses geodesic distances for neighbor finding; chord k-NN in curved
+        spaces can misidentify neighbors and distort curvature estimates.
 
         k_neighbors is derived from data via Berry & Sauer (2016):
         minimum k for graph connectivity, plus log(n) for local structure.
@@ -512,10 +511,9 @@ class SectionalCurvatureEstimator:
         # 2. At least ceil(log(n)) for local structure
         # 3. Cap at n-1 (can't have more neighbors than other points exist)
         #
-        # Note: The d+1 requirement was mathematically incorrect.
-        # Sectional curvature estimation needs enough neighbors for local
-        # covariance estimation, not d+1 neighbors. With k < d, we use
-        # regularized pseudoinverse for metric tensor estimation.
+        # Note: The d+1 requirement is not needed here. Sectional curvature
+        # estimation uses local covariance; when k < d, use a regularized
+        # pseudoinverse for metric tensor estimation.
         riemannian = RiemannianGeometry(backend=backend)
         result = riemannian.geodesic_distances(points, k_neighbors=None)
         k_connectivity = result.k_neighbors

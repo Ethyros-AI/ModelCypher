@@ -1544,35 +1544,10 @@ def geodesic_invariant_alignment(
 ) -> "Array":
     """Find alignment F that preserves geodesic manifold structure.
 
-    THE MATHEMATICS:
-    ================
-    Instead of minimizing ||source @ F - target||_F (Euclidean distance),
-    this finds F that preserves pairwise geodesic relationships.
+    Computes geodesic cosine matrices, aligns them via Procrustes, and
+    recovers a feature-space transform.
 
-    The algorithm:
-    1. Compute geodesic cosine matrices G_s and G_t (relative representations)
-       - G[i,j] = geodesic_cos(point_i, point_j) using k-NN graph distances
-       - Each row represents a point by its geodesic similarities to all others
-    2. Find rotation R via Procrustes on the relative representations
-       - SVD: G_s.T @ G_t = U @ S @ V.T
-       - R = U @ V.T (orthogonal alignment in relative space)
-    3. Transfer through aligned relative space:
-       - transferred = G_s @ R @ pinv(G_t) @ target
-    4. Recover feature-space transform:
-       - F = lstsq(source, transferred)
-
-    This preserves manifold structure because geodesic cosines capture the
-    intrinsic geometry (curvature, topology) that Euclidean distance ignores.
-
-    WHY THIS WORKS:
-    ===============
-    Neural manifolds are curved in high dimensions. Euclidean distance treats
-    the space as flat, leading to alignment errors that compound through layers.
-    Geodesic cosines "linearize" the curved structure - after this transform,
-    linear alignment (Procrustes) correctly preserves relationships.
-
-    Reference: Yu et al. 2025 "Relative Geodesic Representations" (NeurIPS)
-    showed geodesic achieves 0.99 alignment vs 0.01 for linear methods.
+    Reference: Yu et al. 2025 "Relative Geodesic Representations" (NeurIPS).
     """
     from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
 

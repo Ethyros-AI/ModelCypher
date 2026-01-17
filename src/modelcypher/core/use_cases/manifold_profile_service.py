@@ -339,7 +339,7 @@ class ManifoldProfileService:
         """Find similar points using geodesic distance.
 
         Computes geodesic distances from the query point to all candidates
-        via k-NN graph. Geodesic is the correct metric on curved manifolds.
+        via k-NN graph. Geodesic distance accounts for curvature.
 
         Threshold is derived from data: 25th percentile of the distance distribution.
         This captures the "nearby" points relative to the actual data geometry.

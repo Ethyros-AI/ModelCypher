@@ -125,8 +125,7 @@ def compute_spectral_embedding(
     if n == 1:
         return _single_point_embedding(backend, points_arr, 0.0)
 
-    # Compute chord (Euclidean) distance matrix directly
-    # This is the correct input for Varadhan's formula - NOT geodesic distances
+    # Compute chord (Euclidean) distance matrix for Laplacian construction.
     chord_dist = _chord_distance_matrix(points_arr, backend)
     backend.eval(chord_dist)
 
@@ -274,9 +273,8 @@ def compute_spectral_embedding(
     backend.eval(embedding)
 
     # Collapse identical points: eigenvectors for repeated eigenvalues can give
-    # different values to geometrically identical points. For correct geodesic
-    # distances (d=0 for identical points), we assign the same embedding to all
-    # points that have zero chord distance to each other.
+    # different values to identical points. Assign the same embedding to any
+    # points with zero chord distance.
     embedding = _collapse_identical_points(embedding, chord_dist, backend)
     backend.eval(embedding)
 

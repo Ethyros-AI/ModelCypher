@@ -858,7 +858,7 @@ __all__ = [
     "geodesic_distance_matrix",
     "farthest_point_sampling",
     "find_sparse_direction",
-    # Geodesic vector operations (correct in high dimensions)
+    # Geodesic vector operations
     "geodesic_norms",
     "geodesic_cosine_matrix",
     "geodesic_cosine_batch",

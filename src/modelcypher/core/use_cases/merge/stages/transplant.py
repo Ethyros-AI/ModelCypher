@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-# NOTE: ProjectionMethod import removed - always use GRAM_TRANSPORT (the only correct method)
+# NOTE: ProjectionMethod import removed - use GRAM_TRANSPORT.
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
 )

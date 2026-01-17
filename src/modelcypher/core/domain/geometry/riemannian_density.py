@@ -166,7 +166,7 @@ class InfluenceType(str, Enum):
 #   - kurtosis ≈ 3 → Gaussian
 # - student_t_df: derived from kurtosis: df = 4 + 6/(kurtosis - 3)
 # - covariance_regularization: from machine epsilon
-# - curvature_correction: always enabled (manifolds are curved)
+# - curvature_correction: enabled by default
 # - k_neighbors: minimum k that yields a connected geodesic graph
 # =============================================================================
 
@@ -764,7 +764,7 @@ class ConceptVolumeRelation:
     overlap_coefficient: float  # Szymkiewicz-Simpson coefficient
     jaccard_index: float  # Intersection / Union volume ratio
     bhattacharyya_coefficient: float  # Distribution similarity
-    # Distance metrics (both geodesic - the correct metric for curved manifolds)
+    # Distance metrics (geodesic, curvature-aware)
     centroid_distance: float  # Geodesic between centroids
     geodesic_centroid_distance: float  # Geodesic between centroids (same value)
     mahalanobis_distance_ab: float  # Mahal from A's perspective

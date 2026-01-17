@@ -380,7 +380,7 @@ class GeometryMetricsService:
         - k_neighbors: derived from graph connectivity requirements
         - kernel_bandwidth: derived from median neighbor distance
         - heat_trace_times: derived from eigenvalue spectrum
-        - normalized_laplacian: always True (correct for graph Laplacians)
+        - normalized_laplacian: always True
         """
         cached = self._cache.get_spectral_result(points)
         if cached is not None:

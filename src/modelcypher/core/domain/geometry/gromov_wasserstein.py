@@ -664,7 +664,7 @@ class GromovWassersteinDistance:
         Compute pairwise geodesic distances using GPU-accelerated operations.
 
         In high-dimensional spaces, curvature is inherent. Geodesic distance
-        follows the manifold surface - this is the correct metric.
+        follows the manifold surface and accounts for curvature.
 
         Args:
             points: Point matrix [n, d]

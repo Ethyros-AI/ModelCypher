@@ -192,8 +192,7 @@ class OutlierDetector:
     ) -> "Array":
         """Compute Fréchet mean of stress vectors from consensus models.
 
-        This gives the "correct" stress profile that outliers should be
-        moved toward.
+        This gives the consensus stress profile used for correction.
 
         Args:
             profiles: All stress profiles.

@@ -107,8 +107,7 @@ class ManifoldClusterer:
             member_indices = [idx for idx, label in enumerate(labels) if label == cluster]
             member_points = [points[idx] for idx in member_indices]
             # Recompute geodesic matrix for cluster points only.
-            # This is more correct than extracting a submatrix because the k-NN
-            # graph structure of the cluster subset may differ from the full set.
+            # The k-NN graph structure of the subset may differ from the full set.
             cluster_geodesic = self._compute_geodesic_matrix(member_points)
             region = self._build_region_geodesic(member_points, cluster_geodesic)
             if region is not None:

@@ -165,7 +165,7 @@ def stage_probe(
         target_tokenizer = target_tokenizer or tokenizer
 
     # ALWAYS use precise mode - this is not configurable.
-    # Activation-level CKA is required for correct geometric alignment.
+    # Activation-level CKA is required for alignment.
 
     if activation_provider is None:
         raise ValueError("Activation provider required for probe stage")
@@ -438,9 +438,8 @@ def _probe_precise(
     # CKA < 1.0: Target has structure outside source's column space (EXPECTED
     #            for cross-dimensional alignment, e.g., 896 → 1024 hidden dims)
     #
-    # This is NOT an alignment bug - it's measuring how much of target's
-    # geometry is captured by source. The null-space projection handles this
-    # correctly: it preserves target's unique structure while adding source's.
+    # This reflects how much of target's geometry is captured by source.
+    # Null-space projection preserves target-unique structure while adding source.
     # =========================================================================
     layer_status: dict[int, str] = {}
     converged_layers: list[int] = []
@@ -459,8 +458,8 @@ def _probe_precise(
             converged_layers.append(layer_idx)
         else:
             # CKA < 1.0 means target has structure outside source's column space.
-            # This is EXPECTED for cross-dimensional alignment (different hidden dims).
-            # Not a bug - the null-space projection handles this correctly.
+            # This is expected for cross-dimensional alignment (different hidden dims).
+            # Null-space projection preserves target-unique structure.
             logger.info(
                 "LAYER %d: structural overlap CKA=%.4f (target has %.1f%% unique structure)",
                 layer_idx, cka, (1.0 - cka) * 100
@@ -479,7 +478,7 @@ def _probe_precise(
     # =========================================================================
     # Proportional mapping defines transforms for all target layers.
     # If any transforms are missing, it indicates missing activations or
-    # an alignment bug - fail fast instead of propagating incorrect transforms.
+    # an alignment issue; fail fast instead of propagating incomplete transforms.
     all_target_layers = sorted(set(target_layer_activations.keys()))
     if not feature_transforms:
         raise RuntimeError("PROBE FAILED: No feature transforms computed.")

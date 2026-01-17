@@ -129,8 +129,8 @@ class IntrinsicDimension:
 
         All parameters are derived from the data:
         - k_neighbors: Minimum k for connected graph (Berry & Sauer 2016)
-        - Uses geodesic distances (curvature-correct)
-        - Uses regression variant (more robust than MLE)
+        - Uses geodesic distances (curvature-aware)
+        - Uses regression variant
 
         Args:
             points: [N, D] array or list of points
@@ -160,8 +160,8 @@ class IntrinsicDimension:
         - k_neighbors: Connectivity-based selection (Berry & Sauer 2016) -
           binary search for minimum k that makes the k-NN graph connected.
           This is a geometric property of the point cloud itself.
-        - Always uses geodesic distances (curvature-correct)
-        - Always uses regression variant (Facco et al., more robust)
+        - Uses geodesic distances (curvature-aware)
+        - Uses regression variant (Facco et al.)
 
         Args:
             points: [N, D] array of points
@@ -175,12 +175,12 @@ class IntrinsicDimension:
             raise EstimatorError.insufficient_samples(N)
 
         # k_neighbors=None triggers connectivity-based selection (Berry & Sauer 2016)
-        # distance_power=2.0 is always correct (squared geodesic distances)
+        # distance_power=2.0 uses squared geodesic distances.
         dist_sq = self._geodesic_distance_matrix_squared(points)
 
         mu = self._compute_two_nn_mu_from_distances(dist_sq)
 
-        # Always use regression variant (Facco et al.) - more robust than MLE
+        # Use regression variant (Facco et al.)
         dimension = self._compute_from_mu(mu)
 
         ci = None
@@ -428,7 +428,7 @@ class IntrinsicDimension:
 
         geodesic_dist = result.distances
 
-        # Return squared distances (always the correct metric)
+        # Return squared distances.
         return geodesic_dist * geodesic_dist
 
     def _compute_two_nn_mu_from_distances(self, dist_sq: "Array") -> "Array":

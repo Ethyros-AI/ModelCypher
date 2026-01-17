@@ -832,10 +832,9 @@ def compute_null_space_projector(
         min_eig,
     )
 
-    # Compute Moore-Penrose pseudoinverse of Gram matrix
-    # This is the mathematically correct operation for null-space projection:
-    # P = I - A^T (A A^T)^+ A projects onto null(A^T)
-    # The pseudoinverse handles rank deficiency correctly (rank determined by data)
+    # Compute Moore-Penrose pseudoinverse of Gram matrix.
+    # P = I - A^T (A A^T)^+ A projects onto null(A^T).
+    # The pseudoinverse handles rank deficiency (rank determined by data).
     from modelcypher.core.domain.geometry.numerical_stability import geodesic_pinv
     AAt_inv = geodesic_pinv(b, AAt)
     b.eval(AAt_inv)
@@ -1013,10 +1012,8 @@ def compute_weight_space_transplant(
     else:
         preserved_fraction = 1.0
 
-    # Step 5: Apply to target weight
-    # NOTE: The null-space projection IS the geometry. No additional filtering needed.
-    # If we've correctly projected delta into null-space, the merged weight will
-    # preserve target behavior by construction.
+    # Step 5: Apply to target weight.
+    # Null-space projection preserves target behavior along boundary activations.
     merged_weight = target_weight + delta_scale * delta_W_proj
     if str(b.dtype(merged_weight)) != str(output_dtype):
         merged_weight = b.astype(merged_weight, output_dtype)

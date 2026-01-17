@@ -88,8 +88,7 @@ class AnchorExtractor:
         """Extract semantic anchors from model token embeddings.
 
         Uses the complete UnifiedAtlasInventory (~450 probes) to extract anchors.
-        Fréchet mean is used throughout - the correct geometric center on curved
-        manifolds.
+        Fréchet mean is used throughout as a curvature-aware center.
 
         Args:
             model_path: Path to model directory (must contain tokenizer.json)
