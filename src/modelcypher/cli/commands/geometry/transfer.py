@@ -35,6 +35,10 @@ import typer
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    precision_dtype,
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -292,8 +296,7 @@ def transfer_compare(
     cov_ab = backend.mean(centered_a * centered_b)
     std_a = backend.sqrt(backend.mean(centered_a * centered_a))
     std_b = backend.sqrt(backend.mean(centered_b * centered_b))
-    import sys
-    eps = sys.float_info.epsilon
+    eps = division_epsilon(backend, backend.array([1.0], dtype=precision_dtype(backend)))
     corr_arr = cov_ab / (std_a * std_b + eps)
     backend.eval(corr_arr)
     correlation = float(backend.to_scalar(corr_arr))

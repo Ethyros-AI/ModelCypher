@@ -42,8 +42,6 @@ spatial concepts—one shaped by tactile/auditory experience, one by visual.
 from __future__ import annotations
 
 import logging
-import math
-import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -253,7 +251,8 @@ def _scalar_isnan(x: float) -> bool:
 
 def _scalar_isinf(x: float) -> bool:
     """Check if a scalar Python float is infinite."""
-    max_finite = sys.float_info.max * math.sqrt(sys.float_info.epsilon)
+    b = get_default_backend()
+    max_finite = infinity_threshold(b, b.array([1.0], dtype=precision_dtype(b)))
     return abs(x) > max_finite
 
 

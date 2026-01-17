@@ -30,13 +30,19 @@ Use z-scores relative to model baseline, not absolute thresholds.
 """
 
 from __future__ import annotations
-
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    precision_dtype,
+)
+
+
+def _model_eps() -> float:
+    b = get_default_backend()
+    return machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
 
 
 # Z-score to confidence level mapping (one-sided, derived from normal CDF)
@@ -79,7 +85,8 @@ class EntropyBaseline:
 
     def z_score(self, entropy: float) -> float:
         """Compute z-score of entropy relative to baseline."""
-        if self.std < _MACHINE_EPS:
+        eps = _model_eps()
+        if self.std < eps:
             return 0.0
         return (entropy - self.mean) / self.std
 
@@ -99,7 +106,8 @@ class EntropyBaseline:
 
     def normalized(self, entropy: float) -> float:
         """Normalize entropy to [0, 1] using theoretical max."""
-        if self.max_theoretical < _MACHINE_EPS:
+        eps = _model_eps()
+        if self.max_theoretical < eps:
             return 0.0
         return entropy / self.max_theoretical
 

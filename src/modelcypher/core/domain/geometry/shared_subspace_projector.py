@@ -30,8 +30,6 @@ References:
 """
 
 from __future__ import annotations
-
-import sys
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -45,6 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     power_iteration_eigh,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -561,9 +560,8 @@ class SharedSubspaceProjector:
         if len(positive) < 2:
             return len(positive)
 
-        # Numerical floor derived from Python float dtype (float64)
-        # Uses sqrt(machine_eps) consistent with division_epsilon pattern
-        eps = sqrt_scalar(sys.float_info.epsilon, get_default_backend())
+        b = get_default_backend()
+        eps = division_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
         max_gap = 0.0
         gap_index = 1  # Keep at least 1 component
 
@@ -800,11 +798,12 @@ class SharedSubspaceProjector:
             return None
         eigen_float = [float(val) for val in eigenvalues]
         # Use machine epsilon as threshold for meaningful eigenvalues
-        eps = sys.float_info.epsilon
+        b = get_default_backend()
+        eps = machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
         min_eigen = min([val for val in eigen_float if val > eps], default=eps)
 
         inv_sqrt = [0.0 for _ in range(dim * dim)]
         for i in range(dim):
             diag_val = cov[i * dim + i]
-            inv_sqrt[i * dim + i] = 1.0 / sqrt_scalar(max(diag_val, min_eigen), get_default_backend())
+            inv_sqrt[i * dim + i] = 1.0 / sqrt_scalar(max(diag_val, min_eigen), b)
         return inv_sqrt, eigen_float

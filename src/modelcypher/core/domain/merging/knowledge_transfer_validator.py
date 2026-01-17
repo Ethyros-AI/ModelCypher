@@ -34,6 +34,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    precision_dtype,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -503,8 +509,8 @@ class KnowledgeRetentionResult:
     @property
     def retention_score(self) -> float:
         """Retention = merged / source (capped at 1.0)."""
-        # sqrt(float64 machine epsilon) for division safety: 2^-52 → sqrt → 2^-26
-        eps = 2.0 ** -26
+        _b = get_default_backend()
+        eps = division_epsilon(_b, _b.array([1.0], dtype=precision_dtype(_b)))
         if self.source_pass_rate <= eps:
             return 1.0  # Avoid division by zero/near-zero
         return min(1.0, self.merged_pass_rate / self.source_pass_rate)

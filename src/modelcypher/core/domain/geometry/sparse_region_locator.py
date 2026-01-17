@@ -18,10 +18,14 @@
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    precision_dtype,
+)
 from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 
 logger = logging.getLogger(__name__)
@@ -155,7 +159,8 @@ class SparseRegionLocator:
             for layer, sparsity in layer_sparsity.items()
             if sparsity >= sparsity_threshold
         )
-        eps = sys.float_info.epsilon
+        b = get_default_backend()
+        eps = machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
         skip_layers = sorted(
             layer for layer, sparsity in layer_sparsity.items() if sparsity <= eps
         )

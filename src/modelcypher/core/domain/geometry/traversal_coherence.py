@@ -16,8 +16,6 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
-
-import sys
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -25,11 +23,10 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
+    machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
 )
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
 
 
 @dataclass(frozen=True)
@@ -82,9 +79,10 @@ class TraversalCoherence:
         raw = TraversalCoherence.transition_inner_product(gram, n, a, b, c, d)
         norm_ab = TraversalCoherence.transition_norm_squared(gram, n, a, b)
         norm_cd = TraversalCoherence.transition_norm_squared(gram, n, c, d)
-        if norm_ab <= _MACHINE_EPS or norm_cd <= _MACHINE_EPS:
-            return float("nan")
         _b = get_default_backend()
+        eps = machine_epsilon(_b, _b.array([1.0], dtype=precision_dtype(_b)))
+        if norm_ab <= eps or norm_cd <= eps:
+            return float("nan")
         return raw / sqrt_scalar(norm_ab * norm_cd, _b)
 
     @staticmethod

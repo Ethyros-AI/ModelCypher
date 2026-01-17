@@ -40,7 +40,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import sys
 import time
 from dataclasses import dataclass, field
 from contextlib import nullcontext
@@ -50,10 +49,11 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    precision_dtype,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.inference.activation_stream import ActivationFrame
@@ -173,7 +173,7 @@ class LinguisticCalorimeter:
         model_path: str | None = None,
         adapter_path: str | None = None,
         simulated: bool = False,
-        epsilon: float = _MACHINE_EPS,
+        epsilon: float | None = None,
         backend: "Backend | None" = None,
         model: object | None = None,
         tokenizer: object | None = None,
@@ -202,8 +202,13 @@ class LinguisticCalorimeter:
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
         self.simulated = simulated or (model_path is None and model is None)
-        self.epsilon = epsilon
         self._backend = backend or get_default_backend()
+        if epsilon is None:
+            epsilon = machine_epsilon(
+                self._backend,
+                self._backend.array([1.0], dtype=precision_dtype(self._backend)),
+            )
+        self.epsilon = epsilon
         self._calibration = calibration
         self._refusal_direction = refusal_direction
         self._refusal_direction_checked = False

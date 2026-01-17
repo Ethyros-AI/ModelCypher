@@ -109,8 +109,9 @@ class EffectSize:
         pooled_var = ((n1 - 1) * std1**2 + (n2 - 1) * std2**2) / (n1 + n2 - 2)
         pooled_std = pooled_var**0.5
 
-        # sqrt(float64 machine epsilon) for division safety: 2^-52 → sqrt → 2^-26
-        if pooled_std < 2.0 ** -26:
+        _b = get_default_backend()
+        eps = division_epsilon(_b, _b.array([1.0], dtype=precision_dtype(_b)))
+        if pooled_std < eps:
             return EffectSize(d=0.0)
 
         d = (mean1 - mean2) / pooled_std

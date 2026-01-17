@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.geometry.numerical_stability import precision_dtype
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
@@ -31,25 +33,8 @@ def _dtype_name(dtype: Any) -> str:
 
 
 def _default_float_dtype(backend: "Backend") -> Any:
-    """Return the default float dtype that works on the backend's compute device.
-
-    On MLX, float64 can be created but doesn't work on GPU, so we stick with float32.
-    The function tests actual GPU usability, not just array creation.
-    """
-    default_dtype = backend.array([1.0]).dtype
-    try:
-        float64_arr = backend.array([1.0], dtype="float64")
-        # Test if float64 actually works on GPU by trying an operation
-        # that would fail on MLX GPU (e.g., astype from float32 to float64)
-        test_arr = backend.array([1.0])
-        converted = backend.astype(test_arr, float64_arr.dtype)
-        backend.eval(converted)  # Force evaluation to detect GPU errors
-        float64_dtype = float64_arr.dtype
-        if backend.finfo(float64_dtype).eps < backend.finfo(default_dtype).eps:
-            return float64_dtype
-    except Exception:
-        return default_dtype
-    return default_dtype
+    """Return the model-driven compute dtype for Riemannian operations."""
+    return precision_dtype(backend)
 
 
 def _float_dtype_for(array: "Array | None", backend: "Backend") -> Any:

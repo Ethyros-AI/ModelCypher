@@ -45,8 +45,6 @@ MLX-Specific:
 """
 
 from __future__ import annotations
-
-import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -57,10 +55,17 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import exp_scalar, log_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    exp_scalar,
+    log_scalar,
+    precision_dtype,
+    safe_log_epsilon,
+)
 
-# Smallest positive float for log safety (prevents log(0))
-_LOG_SAFE_MIN = sys.float_info.min
+
+def _log_safe_min() -> float:
+    b = get_default_backend()
+    return safe_log_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
 
 
 class EvaluationMetric(str, Enum):
@@ -271,7 +276,7 @@ class EvaluationEngine:
 
         # Cross-entropy without reduction
         # CE = -log(softmax(logits)[target])
-        log_probs = mx.log(mx.softmax(logits_flat, axis=-1) + _LOG_SAFE_MIN)
+        log_probs = mx.log(mx.softmax(logits_flat, axis=-1) + _log_safe_min())
 
         # Gather target log probs
         batch_indices = mx.arange(targets_flat.shape[0])

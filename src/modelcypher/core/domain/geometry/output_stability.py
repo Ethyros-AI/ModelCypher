@@ -255,10 +255,8 @@ def compare_stability(
     Returns:
         StabilityComparison with ratios and deltas
     """
-    # Use sqrt(machine_epsilon) for safe division
-    import math
-    import sys
-    eps = math.sqrt(sys.float_info.epsilon)
+    b = get_default_backend()
+    eps = division_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
 
     return StabilityComparison(
         condition_number_ratio=after.condition_number / max(before.condition_number, eps),

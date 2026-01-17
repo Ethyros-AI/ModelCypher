@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -42,14 +41,11 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     log_scalar,
+    machine_epsilon,
+    precision_dtype,
+    safe_log_epsilon,
     sqrt_scalar,
 )
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
-
-# Smallest positive float for log safety (prevents log(0))
-_LOG_SAFE_MIN = sys.float_info.min
 
 logger = logging.getLogger(__name__)
 
@@ -192,8 +188,10 @@ class EntropyCalibrationResult:
         Returns:
             Number of standard deviations from the mean.
         """
-        if self.std_dev < _MACHINE_EPS:
-            return 0.0 if abs(entropy - self.mean) < _MACHINE_EPS else float("inf")
+        _b = get_default_backend()
+        eps = machine_epsilon(_b, _b.array([1.0], dtype=precision_dtype(_b)))
+        if self.std_dev < eps:
+            return 0.0 if abs(entropy - self.mean) < eps else float("inf")
         return (entropy - self.mean) / self.std_dev
 
     def is_outlier(self, entropy: float, sigma: float) -> bool:
@@ -549,7 +547,10 @@ class EntropyCalibrationService:
 
         # Shannon entropy: -sum(p * log(p))
         # Add smallest positive float to avoid log(0)
-        log_probs = backend.log(probs + _LOG_SAFE_MIN)
+        log_safe_min = safe_log_epsilon(
+            backend, backend.array([1.0], dtype=precision_dtype(backend))
+        )
+        log_probs = backend.log(probs + log_safe_min)
         entropy = -backend.sum(probs * log_probs)
 
         backend.eval(entropy)

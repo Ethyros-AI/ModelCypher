@@ -25,6 +25,10 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_precision_for_merge,
+    set_model_compute_dtype,
+)
 
 from .helpers import (
     copy_config_files,
@@ -109,6 +113,20 @@ def run_merge(
         target_format = "safetensors"  # Assume safetensors for pre-loaded weights
     else:
         loaded_target_weights, target_format = load_weights(model_loader, target_path)
+
+    # =================================================================
+    # MODEL-DRIVEN PRECISION DETECTION
+    # =================================================================
+    # Detect the native precision of source/target weights and set the
+    # compute dtype accordingly. This ensures we don't waste computation
+    # on float64 when models are bf16/fp16, and don't lose precision
+    # when mixing models of different precisions.
+    compute_dtype = compute_precision_for_merge(
+        source_weights=loaded_source_weights,
+        target_weights=loaded_target_weights,
+        backend=backend,
+    )
+    set_model_compute_dtype(compute_dtype)
 
     occupancy_source = "provided"
     if prior_occupancy_by_layer is None:
@@ -765,5 +783,8 @@ def run_merge(
         result.mean_preserved_fraction,
         result.mean_procrustes_error,
     )
+
+    # Reset model-driven precision (cleanup for next merge)
+    set_model_compute_dtype(None)
 
     return result

@@ -25,16 +25,15 @@ Ported 1:1 from the reference Swift implementation.
 """
 
 from __future__ import annotations
-
-import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    precision_dtype,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -103,6 +102,7 @@ class GradientSmoothnessEstimator:
             return None
 
         b = backend or get_default_backend()
+        eps = machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
 
         # Flatten all gradients for each sample into a single vector (conceptually)
         # or compute norms/variances per parameter and aggregate.
@@ -166,7 +166,7 @@ class GradientSmoothnessEstimator:
             mean_norm = float(b.to_scalar(mean_norm_arr))
             mean_grad_norm_sq = mean_norm * mean_norm
 
-        snr = mean_grad_norm_sq / (variance + _MACHINE_EPS)
+        snr = mean_grad_norm_sq / (variance + eps)
 
         return LayerGradientQuality(
             variance=variance, snr=snr, mean_norm=mean_norm, sample_count=count

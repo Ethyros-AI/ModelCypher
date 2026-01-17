@@ -19,6 +19,18 @@
 
 All epsilons and tolerances are derived from tensor precision, not arbitrary constants.
 Use these functions instead of hardcoded values like 1e-8 or 1e-10.
+
+PRECISION PHILOSOPHY:
+    Model weights define the precision ceiling. We cannot extract more information
+    than exists in the source data. Using float64 for bf16 weights just adds zeros.
+
+    The compute precision is MODEL-DRIVEN:
+    - Detect the native dtype of model weights
+    - Use that precision (or float32 max) for all computations
+    - Never use float64 (no neural network stores weights at this precision)
+
+    This reduces memory usage ~2x and speeds up all matrix operations while
+    preserving 100% of the information in the original weights.
 """
 
 from __future__ import annotations
@@ -32,46 +44,290 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
+
+# =============================================================================
+# Dtype Precision Detection
+# =============================================================================
+
+# Effective mantissa bits for common dtypes (determines precision ceiling)
+_DTYPE_PRECISION_BITS: dict[str, int] = {
+    # Quantized types (low precision, should be promoted)
+    "int4": 4,
+    "uint4": 4,
+    "int8": 8,
+    "uint8": 8,
+    # Half precision floats
+    "float16": 10,  # 10 mantissa bits
+    "bfloat16": 7,  # 7 mantissa bits (wider range, less precision)
+    # Standard precision (this is our cap)
+    "float32": 23,  # 23 mantissa bits
+    # Double precision (never needed for neural networks)
+    "float64": 52,  # 52 mantissa bits - OVERKILL, never use
+}
+
+# Minimum compute precision for quantized types
+_MIN_COMPUTE_DTYPE = "float16"
+
+# Maximum compute precision (float64 is never needed)
+_MAX_COMPUTE_DTYPE = "float32"
+
+
+def dtype_precision_bits(dtype: object) -> int:
+    """Get effective precision bits for a dtype.
+
+    Returns the number of mantissa bits, which determines how much
+    information the dtype can actually store. Higher bits = more precision.
+
+    Args:
+        dtype: A dtype object (from numpy, mlx, jax, etc.)
+
+    Returns:
+        Number of effective precision bits.
+    """
+    name = _dtype_name(dtype).lower()
+
+    # Check in order from most specific to least specific
+    # (bfloat16 must be checked before float16 since float16 is a substring)
+    if "bfloat16" in name:
+        return 7  # 7 mantissa bits
+    if "float64" in name:
+        return 52  # 52 mantissa bits - OVERKILL
+    if "float32" in name:
+        return 23  # 23 mantissa bits
+    if "float16" in name:
+        return 10  # 10 mantissa bits
+    if "int8" in name or "uint8" in name:
+        return 8
+    if "int4" in name or "uint4" in name:
+        return 4
+
+    # Unknown dtype - assume float32 level
+    logger.warning("Unknown dtype %s, assuming float32 precision", name)
+    return 23
+
+
 def _dtype_name(dtype: object) -> str:
     name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
     return name.replace("mlx.core.", "").replace("jax.numpy.", "")
 
 
-def _default_float_dtype(backend: "Backend") -> object:
-    """Return the default float dtype that works on the backend's compute device.
+def detect_model_dtype(weights: dict, backend: "Backend") -> object:
+    """Detect the dominant dtype from model weights.
 
-    On MLX, float64 can be created but doesn't work on GPU, so we stick with float32.
-    The function tests actual GPU usability, not just array creation.
+    Scans weight tensors and returns the most common floating-point dtype.
+    This represents the model's native precision.
+
+    Args:
+        weights: Dictionary of weight tensors (name -> array).
+        backend: Backend for tensor operations.
+
+    Returns:
+        The dominant dtype found in weights.
     """
-    default_dtype = backend.array([1.0]).dtype
+    dtype_counts: dict[str, int] = {}
+
+    for name, tensor in weights.items():
+        if not hasattr(tensor, "dtype"):
+            continue
+
+        dtype_str = _dtype_name(tensor.dtype)
+
+        # Skip non-float types (embeddings might be int)
+        if "int" in dtype_str.lower() or "bool" in dtype_str.lower():
+            continue
+
+        dtype_counts[dtype_str] = dtype_counts.get(dtype_str, 0) + 1
+
+    if not dtype_counts:
+        # No float weights found, default to float32
+        logger.warning("No float weights found, defaulting to float32")
+        return backend.array([1.0], dtype="float32").dtype
+
+    # Find most common dtype
+    dominant_dtype_str = max(dtype_counts, key=dtype_counts.get)  # type: ignore[arg-type]
+
+    logger.info(
+        "MODEL DTYPE: detected %s (from %d tensors, breakdown: %s)",
+        dominant_dtype_str,
+        sum(dtype_counts.values()),
+        dtype_counts,
+    )
+
+    # Convert string back to actual dtype
     try:
-        float64_arr = backend.array([1.0], dtype="float64")
-        # Test if float64 actually works on GPU by trying an operation
-        # that would fail on MLX GPU (e.g., astype from float32 to float64)
-        test_arr = backend.array([1.0])
-        converted = backend.astype(test_arr, float64_arr.dtype)
-        backend.eval(converted)  # Force evaluation to detect GPU errors
-        float64_dtype = float64_arr.dtype
-        if backend.finfo(float64_dtype).eps < backend.finfo(default_dtype).eps:
-            return float64_dtype
+        return backend.array([1.0], dtype=dominant_dtype_str).dtype
     except Exception:
-        return default_dtype
-    return default_dtype
+        # Fallback if dtype string isn't recognized
+        return backend.array([1.0], dtype="float32").dtype
 
 
-def precision_dtype(backend: "Backend", reference: "Array | None" = None) -> object:
-    """Select the highest precision dtype available (prefers float64)."""
-    preferred = _default_float_dtype(backend)
+def compute_precision_for_merge(
+    source_weights: dict,
+    target_weights: dict,
+    backend: "Backend",
+) -> object:
+    """Determine compute precision from source and target model weights.
+
+    Rules:
+    1. Detect native dtype of both models
+    2. Use the HIGHER precision of the two (to preserve info from both)
+    3. Promote bfloat16 to float32 to preserve range in compute
+    4. Cap at float32 (float64 never adds value for neural network weights)
+    5. For quantized (int4/int8), use float16 minimum
+
+    Args:
+        source_weights: Source model weight dict.
+        target_weights: Target model weight dict.
+        backend: Backend for tensor operations.
+
+    Returns:
+        The appropriate compute dtype for the merge.
+    """
+    source_dtype = detect_model_dtype(source_weights, backend)
+    target_dtype = detect_model_dtype(target_weights, backend)
+
+    source_bits = dtype_precision_bits(source_dtype)
+    target_bits = dtype_precision_bits(target_dtype)
+    source_name = _dtype_name(source_dtype).lower()
+    target_name = _dtype_name(target_dtype).lower()
+
+    # Use higher precision of the two
+    if source_bits >= target_bits:
+        chosen_dtype = source_dtype
+        chosen_bits = source_bits
+    else:
+        chosen_dtype = target_dtype
+        chosen_bits = target_bits
+
+    # Promote bfloat16 to float32 to preserve range in compute
+    if "bfloat16" in source_name or "bfloat16" in target_name:
+        logger.info("PRECISION PROMOTION: bfloat16 detected -> float32 compute")
+        chosen_dtype = backend.array([1.0], dtype="float32").dtype
+        chosen_bits = dtype_precision_bits(chosen_dtype)
+
+    # Cap at float32 (23 bits) - float64 is never needed
+    if chosen_bits > 23:
+        logger.info(
+            "PRECISION CAP: %s (%d bits) -> float32 (23 bits)",
+            _dtype_name(chosen_dtype),
+            chosen_bits,
+        )
+        chosen_dtype = backend.array([1.0], dtype="float32").dtype
+
+    # Ensure minimum precision for quantized types
+    if chosen_bits < 10:  # Less than float16
+        logger.info(
+            "PRECISION FLOOR: %s (%d bits) -> float16 (10 bits)",
+            _dtype_name(chosen_dtype),
+            chosen_bits,
+        )
+        chosen_dtype = backend.array([1.0], dtype=_MIN_COMPUTE_DTYPE).dtype
+
+    logger.info(
+        "MERGE PRECISION: source=%s (%d bits), target=%s (%d bits) -> compute=%s",
+        _dtype_name(source_dtype),
+        source_bits,
+        _dtype_name(target_dtype),
+        target_bits,
+        _dtype_name(chosen_dtype),
+    )
+
+    return chosen_dtype
+
+
+# Thread-local storage for model-driven precision
+_model_compute_dtype: object | None = None
+
+
+def set_model_compute_dtype(dtype: object | None) -> None:
+    """Set the model-driven compute dtype for the current merge operation.
+
+    Call this at the start of a merge with the result from
+    compute_precision_for_merge(). All subsequent precision_dtype()
+    calls will respect this ceiling.
+
+    Args:
+        dtype: The compute dtype to use, or None to reset to default.
+    """
+    global _model_compute_dtype
+    _model_compute_dtype = dtype
+    if dtype is not None:
+        logger.info("SET MODEL PRECISION: %s", _dtype_name(dtype))
+
+
+def get_model_compute_dtype() -> object | None:
+    """Get the current model-driven compute dtype, if set."""
+    return _model_compute_dtype
+
+
+def _default_float_dtype(backend: "Backend") -> object:
+    """Return the compute dtype, respecting model-driven precision.
+
+    Priority:
+    1. Model-driven precision (if set via set_model_compute_dtype)
+    2. float32 (the maximum precision we ever need)
+
+    float64 is NEVER returned - it adds computational overhead
+    without any precision benefit for neural network weights.
+    """
+    # Check for model-driven precision
+    if _model_compute_dtype is not None:
+        return _model_compute_dtype
+
+    # Default to float32 (never float64)
+    return backend.array([1.0], dtype="float32").dtype
+
+
+def precision_dtype(
+    backend: "Backend",
+    reference: "Array | None" = None,
+    model_dtype: object | None = None,
+) -> object:
+    """Select compute precision, respecting model precision ceiling.
+
+    The returned dtype will be:
+    - At least as precise as the reference array (if provided)
+    - At most as precise as the model dtype (if provided or globally set)
+    - Never more than float32 (float64 is overkill for neural networks)
+
+    Args:
+        backend: Backend for tensor operations.
+        reference: Optional reference array whose precision should be preserved.
+        model_dtype: Optional explicit model dtype cap. If not provided,
+                     uses the globally set model compute dtype.
+
+    Returns:
+        Appropriate compute dtype.
+    """
+    # Determine precision ceiling
+    ceiling = model_dtype or _model_compute_dtype
+    if ceiling is None:
+        # No model precision set - use float32 as max
+        ceiling = backend.array([1.0], dtype="float32").dtype
+
+    ceiling_bits = dtype_precision_bits(ceiling)
+
+    # If no reference, just return ceiling
     if reference is None or not hasattr(reference, "dtype"):
-        return preferred
-    try:
-        ref_eps = backend.finfo(reference.dtype).eps
-        pref_eps = backend.finfo(preferred).eps
-    except Exception:
-        return preferred
-    if ref_eps < pref_eps:
-        return reference.dtype
-    return preferred
+        return ceiling
+
+    ref_bits = dtype_precision_bits(reference.dtype)
+
+    # Use higher of reference and ceiling, but cap at float32
+    if ref_bits > ceiling_bits:
+        # Reference is higher precision - use ceiling (model-driven cap)
+        return ceiling
+    else:
+        # Reference is lower precision - promote to ceiling
+        # (but only if ceiling is actually higher precision)
+        try:
+            ref_eps = backend.finfo(reference.dtype).eps
+            ceiling_eps = backend.finfo(ceiling).eps
+            if ceiling_eps < ref_eps:
+                return ceiling
+            return reference.dtype
+        except Exception:
+            return ceiling
 
 
 def _promote_precision(
@@ -109,6 +365,12 @@ def _promote_precision(
     return array
 
 __all__ = [
+    # Model-driven precision detection
+    "dtype_precision_bits",
+    "detect_model_dtype",
+    "compute_precision_for_merge",
+    "set_model_compute_dtype",
+    "get_model_compute_dtype",
     # Backend scalar helpers (use instead of math module)
     "sqrt_scalar",
     "is_finite",

@@ -17,12 +17,15 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import log_scalar, machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    log_scalar,
+    machine_epsilon,
+    precision_dtype,
+)
 
 
 class GeometricInstrumentationLevel(str, Enum):
@@ -236,11 +239,8 @@ class GeometricTrainingMetrics:
         grad_frac_suffix = "/grad_frac"
 
         def _default_threshold(values: list[float]) -> float:
-            try:
-                backend = get_default_backend()
-                return machine_epsilon(backend, backend.array(values or [0.0]))
-            except Exception:
-                return sys.float_info.epsilon
+            backend = get_default_backend()
+            return machine_epsilon(backend, backend.array([1.0], dtype=precision_dtype(backend)))
 
         effective_active_threshold = (
             active_layer_threshold
