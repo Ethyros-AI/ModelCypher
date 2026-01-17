@@ -21,7 +21,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -105,7 +108,8 @@ def select_shared_full_rank_indices(
     backend.eval(sorted_indices)
     ranked = [int(x) for x in backend.tolist(sorted_indices)]
 
-    eps = machine_epsilon(backend, combined) * 100.0
+    # Use sqrt(eps) for orthogonalization tolerance - standard for accumulated error
+    eps = sqrt_scalar(machine_epsilon(backend, combined), backend)
 
     def _orthonormalize(
         vec: "Array",
@@ -158,7 +162,10 @@ def select_full_rank_indices(
     *,
     center: bool = True,
 ) -> list[int]:
-    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        machine_epsilon,
+        sqrt_scalar,
+    )
 
     data = points
     if center:
@@ -179,7 +186,8 @@ def select_full_rank_indices(
     backend.eval(sorted_indices)
     ranked = [int(x) for x in backend.tolist(sorted_indices)]
 
-    eps = machine_epsilon(backend, data) * 100.0
+    # Use sqrt(eps) for orthogonalization tolerance - standard for accumulated error
+    eps = sqrt_scalar(machine_epsilon(backend, data), backend)
     selected: list[int] = []
     basis: list["Array"] = []
 

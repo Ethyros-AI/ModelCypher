@@ -340,7 +340,8 @@ def _detect_intrinsic_rank(
     # Compute cumulative variance
     S2 = S * S
     total_var = b.sum(S2)
-    cumvar = b.cumsum(S2) / (total_var + 1e-15)
+    eps = division_epsilon(b, total_var)
+    cumvar = b.cumsum(S2) / (total_var + eps)
     b.eval(cumvar)
 
     # Find rank for variance threshold

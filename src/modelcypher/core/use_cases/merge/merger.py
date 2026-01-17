@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.deviation_budget import DeviationBudget
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 from . import helpers as merge_helpers
 from . import stages as merge_stages
@@ -703,7 +704,8 @@ class UnifiedGeometricMerger:
             # Scale based on fit quality: scale = 1 - (residual / delta)
             # If residual is 0 (perfect fit), scale = 1.0
             # If residual equals delta (no fit), scale = 0.0
-            fit_quality = 1.0 - min(1.0, residual_norm / (delta_norm + 1e-8))
+            eps = division_epsilon(b, output_weight)
+            fit_quality = 1.0 - min(1.0, residual_norm / (delta_norm + eps))
 
             # Geodesic Frobenius-like norm for weight matrices
             # Treat rows as points, compute geodesic norms, aggregate
@@ -719,7 +721,7 @@ class UnifiedGeometricMerger:
 
             weight_delta_norm = _geodesic_frobenius(weight_delta)
             weight_norm = _geodesic_frobenius(output_weight)
-            magnitude_ratio = min(1.0, weight_norm / (weight_delta_norm + 1e-8))
+            magnitude_ratio = min(1.0, weight_norm / (weight_delta_norm + eps))
 
             # Final scale is the more conservative of fit quality and magnitude ratio
             scale = min(fit_quality, magnitude_ratio)
