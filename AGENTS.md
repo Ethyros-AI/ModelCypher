@@ -258,6 +258,33 @@ weight_norm = backend.sqrt(backend.sum(weight * weight))  # Frobenius norm
 
 **Don't use geodesic on weight matrices.** It's 400x slower with marginal accuracy difference because weight space isn't curved.
 
+### Behavioral Norm for Transplant Metrics
+
+When measuring weight deltas in transplant, use **behavioral norm**, not Frobenius norm.
+
+**Why?** Frobenius measures weight magnitude. Behavioral measures actual output change.
+
+```python
+# WRONG: Frobenius norm (ignores activation structure)
+delta_norm = sqrt(sum(delta_W ** 2))  # Misleading
+
+# CORRECT: Behavioral norm (measures actual impact)
+output_change = input_activations @ delta_W.T
+delta_norm = sqrt(sum(output_change ** 2))  # True impact
+```
+
+**Key insight**: After null-space projection:
+- Frobenius might say "47% preserved" (weight mass)
+- Behavioral shows "0.0002% preserved" (actual impact on target)
+
+The behavioral norm is the TRUTH. Null-space projection preserves weight magnitude but eliminates behavioral impact on target activations. That's the design.
+
+For `preserved_fraction`:
+- Use: `behavioral_after / behavioral_before`
+- NOT: `frobenius_after / frobenius_before`
+
+This answers "What fraction of behavioral change transferred?" - which is what we actually care about.
+
 ### All Models Encode the Same Shape
 
 **Demonstrated by alignment experiments.**

@@ -81,15 +81,55 @@ def _weight_frobenius_norm(
     return float(b.to_scalar(frob_norm))
 
 
+def _behavioral_norm(
+    delta_W: "Array",
+    input_activations: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute behavioral impact norm for a weight delta.
+
+    The behavioral impact measures how much the layer's OUTPUT would change
+    if we applied this weight delta. This is the correct metric for transplant
+    because it measures actual behavioral change, not just weight magnitude.
+
+    Mathematically: ||A @ ΔW.T||_F where A is [n, in_dim] and ΔW is [out, in].
+    This computes the Frobenius norm of the output change across all samples.
+
+    Why this is correct:
+    - Frobenius norm ignores activation structure (misleading)
+    - Behavioral norm measures actual output change (correct)
+    - After null-space projection, behavioral norm on TARGET activations → 0
+    - preserved_fraction = behavioral_after / behavioral_before
+
+    Args:
+        delta_W: Weight delta [out_dim, in_dim]
+        input_activations: Activations that flow through this weight [n, in_dim]
+        backend: Backend for tensor operations
+
+    Returns:
+        Behavioral impact norm (scalar)
+    """
+    b = backend
+
+    # Compute output change: [n, in_dim] @ [in_dim, out_dim] -> [n, out_dim]
+    output_change = b.matmul(input_activations, b.transpose(delta_W))
+
+    # Frobenius norm of output change
+    behavioral = b.sqrt(b.sum(output_change * output_change))
+    return float(b.to_scalar(behavioral))
+
+
 @dataclass(frozen=True)
 class WeightSpaceTransplantResult:
     """Result of weight-space null-space transplant.
 
     Attributes:
         merged_weight: The transplanted weight [out_dim, in_dim].
-        delta_norm: Frobenius norm of weight delta before projection.
-        projected_norm: Frobenius norm of delta after null-space projection.
+        delta_norm: BEHAVIORAL norm of weight delta before projection.
+            This is ||A @ ΔW.T||_F - the output change magnitude.
+        projected_norm: BEHAVIORAL norm of delta after null-space projection.
         preserved_fraction: Ratio of projected_norm / delta_norm (1.0 = no loss).
+            Measures behavioral transfer, not weight magnitude.
         transfer_strength: Mean density-derived transfer weight (0-1).
         null_rank: Approximate rank of the null-space projector.
     """
@@ -951,8 +991,11 @@ def compute_weight_space_transplant(
     delta_W = source_normalized - target_weight  # [out_dim, in_dim]
     b.eval(delta_W)
 
-    # Compute delta norm before projection (Euclidean - weight space is flat)
-    delta_norm = _weight_frobenius_norm(delta_W, b)
+    # Compute BEHAVIORAL norm before projection
+    # This measures actual output change: ||A @ ΔW.T||_F
+    # Unlike Frobenius norm, this captures how much the layer's behavior changes.
+    delta_norm = _behavioral_norm(delta_W, input_activations, b)
+    delta_frob = _weight_frobenius_norm(delta_W, b)  # For logging comparison
 
     # Compute cosine similarity between normalized source and target weights
     # Uses standard Euclidean cosine - weight space is NOT a curved manifold.
@@ -966,11 +1009,11 @@ def compute_weight_space_transplant(
     cosine_sim = float(b.to_scalar(dot_prod / (src_norm * tgt_norm)))
 
     logger.info(
-        "STITCH QUALITY: cosine_sim=%.4f, delta_norm=%.4f, target_norm=%.4f (ratio=%.2f)",
+        "STITCH QUALITY: cosine=%.4f, behavioral=%.4f, frobenius=%.4f, target=%.4f",
         cosine_sim,
         delta_norm,
+        delta_frob,
         target_norm_val,
-        delta_norm / (target_norm_val + eps),
     )
 
     if null_space_projector is None:
@@ -1003,14 +1046,25 @@ def compute_weight_space_transplant(
         delta_W_proj = b.matmul(delta_W, N)
         b.eval(delta_W_proj)
 
-    # Compute projected norm (Euclidean Frobenius - weight space is flat)
-    projected_norm = _weight_frobenius_norm(delta_W_proj, b)
+    # Compute BEHAVIORAL norm after projection
+    # This measures: "How much behavioral change survived the projection?"
+    # For pure null-space projection, this should be ~0 on input_activations.
+    projected_norm = _behavioral_norm(delta_W_proj, input_activations, b)
+    projected_frob = _weight_frobenius_norm(delta_W_proj, b)  # For logging
 
-    # Preserved fraction
+    # Preserved fraction = behavioral_after / behavioral_before
+    # This answers: "What fraction of the behavioral change transferred?"
     if delta_norm > 0:
         preserved_fraction = projected_norm / delta_norm
     else:
         preserved_fraction = 1.0
+
+    logger.debug(
+        "BEHAVIORAL TRANSFER: before=%.4f, after=%.4f, preserved=%.1f%% "
+        "(frob: before=%.4f, after=%.4f, preserved=%.1f%%)",
+        delta_norm, projected_norm, 100 * preserved_fraction,
+        delta_frob, projected_frob, 100 * projected_frob / delta_frob if delta_frob > 0 else 0,
+    )
 
     # Step 5: Apply to target weight.
     # Null-space projection preserves target behavior along boundary activations.
