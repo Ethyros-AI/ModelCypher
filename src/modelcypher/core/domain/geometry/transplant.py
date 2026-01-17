@@ -35,10 +35,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     svd_rank_threshold,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import (
-    geodesic_norms,
-    geodesic_pairwise_metrics,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -46,24 +42,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _geodesic_frobenius_norm(
+def _weight_frobenius_norm(
     weight: "Array",
     backend: "Backend",
 ) -> float:
-    """Compute geodesic analogue of Frobenius norm for weight matrices.
+    """Compute Frobenius norm for weight matrices.
 
-    Treats each row of the weight matrix as a point in feature space,
-    computes geodesic distance from origin for each row, then aggregates
-    as sqrt(sum(geodesic_norms²)).
+    Uses Euclidean (not geodesic) norm because weight space is NOT a curved
+    Riemannian manifold. Research shows:
 
-    This properly accounts for manifold curvature in the weight space.
+    - Weight space has SPECTRAL structure (Hessian eigenvalues), not manifold
+      curvature. See Fort & Ganguli "Emergent properties of the local geometry
+      of neural loss landscapes" and ICLR 2026 "From Memorization to Reasoning
+      in the Spectrum of Loss Curvature".
+    - High-curvature directions = shared generalizable structure.
+    - Low-curvature directions = memorized/idiosyncratic examples.
+    - The space is mostly FLAT with spectral outliers.
+
+    Activation space IS curved (geodesic appropriate there), but weight space
+    is geometrically different.
 
     Args:
         weight: Weight matrix [out_dim, in_dim]
         backend: Backend for tensor operations
 
     Returns:
-        Geodesic Frobenius-like norm (scalar)
+        Frobenius norm (scalar)
     """
     b = backend
     shape = b.shape(weight)
@@ -72,15 +76,9 @@ def _geodesic_frobenius_norm(
     elif shape[0] < 1:
         return 0.0
 
-    # Treat each row as a point, get geodesic norms
-    geo_norms = geodesic_norms(weight, backend, use_cache=False)
-    b.eval(geo_norms)
-
-    # Geodesic Frobenius = sqrt(sum(geodesic_norms²))
-    sum_sq = b.sum(geo_norms * geo_norms)
-    geo_frob = b.sqrt(sum_sq)
-    # Note: to_scalar forces eval, so no explicit eval needed here
-    return float(b.to_scalar(geo_frob))
+    # Standard Frobenius norm: sqrt(sum(w_ij²))
+    frob_norm = b.sqrt(b.sum(weight * weight))
+    return float(b.to_scalar(frob_norm))
 
 
 @dataclass(frozen=True)
@@ -605,7 +603,7 @@ def compute_cross_dimensional_transplant(
     delta_W = source_behavioral - target_weight_compute
     b.eval(delta_W)
 
-    delta_norm = _geodesic_frobenius_norm(delta_W, b)
+    delta_norm = _weight_frobenius_norm(delta_W, b)
 
     # Step 3: Compute null-space projector on TARGET activations
     null_space_projector = compute_null_space_projector(
@@ -634,7 +632,7 @@ def compute_cross_dimensional_transplant(
         delta_W_proj = b.matmul(delta_W, N)
         b.eval(delta_W_proj)
 
-    projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)
+    projected_norm = _weight_frobenius_norm(delta_W_proj, b)
 
     # Preserved fraction
     eps = float(division_epsilon(b, delta_W))
@@ -927,8 +925,8 @@ def compute_weight_space_transplant(
     eps = division_epsilon(b, target_weight)
 
     # Geodesic Frobenius norms (treat rows as points on manifold)
-    source_norm_val = _geodesic_frobenius_norm(source_aligned, b)
-    target_norm_val = _geodesic_frobenius_norm(target_weight, b)
+    source_norm_val = _weight_frobenius_norm(source_aligned, b)
+    target_norm_val = _weight_frobenius_norm(target_weight, b)
 
     # Normalize source_aligned to match target magnitude
     if source_norm_val > eps:
@@ -953,17 +951,19 @@ def compute_weight_space_transplant(
     delta_W = source_normalized - target_weight  # [out_dim, in_dim]
     b.eval(delta_W)
 
-    # Compute delta norm before projection (geodesic Frobenius)
-    delta_norm = _geodesic_frobenius_norm(delta_W, b)
+    # Compute delta norm before projection (Euclidean - weight space is flat)
+    delta_norm = _weight_frobenius_norm(delta_W, b)
 
-    # Compute geodesic cosine similarity between normalized source and target
-    # This measures alignment quality BEFORE null-space projection
-    # Uses geodesic law of cosines: cos(θ) = (d²(0,a) + d²(0,b) - d²(a,b)) / (2·d(0,a)·d(0,b))
-    # geodesic_pairwise_metrics computes paired cosines via geodesic graph - precision over efficiency
-    cos_vals, _ = geodesic_pairwise_metrics(
-        source_normalized, target_weight, b, use_cache=False
-    )
-    cosine_sim = float(b.to_scalar(b.mean(cos_vals)))
+    # Compute cosine similarity between normalized source and target weights
+    # Uses standard Euclidean cosine - weight space is NOT a curved manifold.
+    # The spectral structure (Hessian eigenvalues) matters, not manifold curvature.
+    src_flat = b.reshape(source_normalized, (-1,))
+    tgt_flat = b.reshape(target_weight, (-1,))
+    dot_prod = b.sum(src_flat * tgt_flat)
+    eps_div = division_epsilon(b, src_flat)
+    src_norm = b.sqrt(b.sum(src_flat * src_flat)) + eps_div
+    tgt_norm = b.sqrt(b.sum(tgt_flat * tgt_flat)) + eps_div
+    cosine_sim = float(b.to_scalar(dot_prod / (src_norm * tgt_norm)))
 
     logger.info(
         "STITCH QUALITY: cosine_sim=%.4f, delta_norm=%.4f, target_norm=%.4f (ratio=%.2f)",
@@ -1003,8 +1003,8 @@ def compute_weight_space_transplant(
         delta_W_proj = b.matmul(delta_W, N)
         b.eval(delta_W_proj)
 
-    # Compute projected norm (geodesic Frobenius)
-    projected_norm = _geodesic_frobenius_norm(delta_W_proj, b)
+    # Compute projected norm (Euclidean Frobenius - weight space is flat)
+    projected_norm = _weight_frobenius_norm(delta_W_proj, b)
 
     # Preserved fraction
     if delta_norm > 0:
@@ -1154,21 +1154,16 @@ def _compute_transplant_delta_anchor_relative(
         merged_weight = b.astype(merged_weight, output_dtype)
     b.eval(merged_weight)
 
-    # Compute metrics
-    delta_W_norm_arr = geodesic_norms(
-        b.reshape(delta_W, (1, -1)), b, use_cache=False
-    )
-    delta_W_unc_norm_arr = geodesic_norms(
-        b.reshape(delta_W_unc, (1, -1)), b, use_cache=False
-    )
-    delta_A_norm_arr = geodesic_norms(
-        b.reshape(delta_activations, (1, -1)), b, use_cache=False
-    )
-    b.eval(delta_W_norm_arr, delta_W_unc_norm_arr, delta_A_norm_arr)
+    # Compute metrics using Euclidean norms
+    # Weight space is flat (spectral structure, not manifold curvature).
+    # Even for activations, geodesic on a single flattened vector is Euclidean.
+    delta_W_flat = b.reshape(delta_W, (-1,))
+    delta_W_unc_flat = b.reshape(delta_W_unc, (-1,))
+    delta_A_flat = b.reshape(delta_activations, (-1,))
 
-    delta_W_norm = float(b.to_scalar(delta_W_norm_arr[0]))
-    delta_W_unc_norm = float(b.to_scalar(delta_W_unc_norm_arr[0]))
-    delta_A_norm = float(b.to_scalar(delta_A_norm_arr[0]))
+    delta_W_norm = float(b.to_scalar(b.sqrt(b.sum(delta_W_flat * delta_W_flat))))
+    delta_W_unc_norm = float(b.to_scalar(b.sqrt(b.sum(delta_W_unc_flat * delta_W_unc_flat))))
+    delta_A_norm = float(b.to_scalar(b.sqrt(b.sum(delta_A_flat * delta_A_flat))))
 
     if delta_W_unc_norm > 0:
         preserved_fraction = delta_W_norm / delta_W_unc_norm

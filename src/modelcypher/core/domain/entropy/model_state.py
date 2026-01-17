@@ -156,7 +156,8 @@ class EntropyTransition:
 
     def z_score_delta(self, baseline: EntropyBaseline) -> float:
         """Change in z-score terms (model-appropriate significance)."""
-        if baseline.std < _MACHINE_EPS:
+        eps = _model_eps()
+        if baseline.std < eps:
             return 0.0
         return self.entropy_delta / baseline.std
 

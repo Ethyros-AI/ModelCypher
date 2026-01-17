@@ -147,6 +147,8 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "jax_gpu: tests that require JAX with GPU/TPU backend")
     config.addinivalue_line("markers", "cuda: tests that require CUDA")
     config.addinivalue_line("markers", "accelerator: tests that require any GPU/accelerator")
+    config.addinivalue_line("markers", "slow: tests that take more than 1 second")
+    config.addinivalue_line("markers", "real_model: tests that load real models from HuggingFace")
 
 
 def pytest_sessionfinish(session, exitstatus):

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +32,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain._backend import get_mlx_probe_error, probe_mlx_available
 from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
+    machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
@@ -43,8 +44,9 @@ from modelcypher.utils.model_config import (
     resolve_vocab_size,
 )
 
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
+def _model_eps() -> float:
+    b = get_default_backend()
+    return machine_epsilon(b, b.array([1.0], dtype=precision_dtype(b)))
 
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,
@@ -242,7 +244,7 @@ class MLXModelProbe(BaseModelProbe):
                 )
                 continue
             # Use epsilon tolerance instead of exact zero check
-            if std_drift is None or std_drift <= _MACHINE_EPS:
+            if std_drift is None or std_drift <= _model_eps():
                 z_score = 0.0
             else:
                 z_score = (drift - mean_drift) / std_drift
@@ -351,7 +353,7 @@ class MLXModelProbe(BaseModelProbe):
         norm_a = float(_b.to_scalar(norm_a_arr))
         norm_b = float(_b.to_scalar(norm_b_arr))
 
-        max_norm = max(norm_a, norm_b, _MACHINE_EPS)
+        max_norm = max(norm_a, norm_b, _model_eps())
         relative_drift = norm_diff / max_norm
 
         # Normalize to [0, 1] using exponential decay

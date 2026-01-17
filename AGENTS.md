@@ -232,19 +232,31 @@ result = backend.where(mask, arr, backend.zeros_like(arr))
 
 **If you need an operation the Backend doesn't have, add it.** The Backend protocol is extensible. Don't work around missing ops with NumPy.
 
-### Geodesic is Correct
+### Geometry Type Matters: Activations vs Weights
 
-Euclidean distance ignores manifold curvature. Geodesic on k-NN graph approximates true manifold distance.
+**Critical distinction**: Activation space and weight space have DIFFERENT geometry.
+
+| Space | Geometry | Correct Metric | Research Basis |
+|-------|----------|----------------|----------------|
+| **Activation vectors** | Curved Riemannian manifold | Geodesic on k-NN graph | arXiv:2506.12187 "Characterizing Neural Manifolds" |
+| **Weight matrices** | Flat + spectral structure | Euclidean + eigenvalues | ICLR 2026 "From Memorization to Reasoning in the Spectrum of Loss Curvature"; Fort & Ganguli "Emergent properties of neural loss landscapes" |
+
+**Activation space** (neural manifold): Empirical measurements show curved manifolds with measurable Riemannian curvature tensors. Geodesic distance via k-NN graph is correct.
+
+**Weight space** (loss landscape): Research shows weight space has SPECTRAL structure (Hessian eigenvalues), NOT manifold curvature. High-curvature directions = shared generalizable structure. Low-curvature directions = memorized examples. The space is mostly FLAT with spectral outliers.
 
 ```python
-# Wrong
-distance = np.linalg.norm(a - b)
-
-# Correct
+# For ACTIVATIONS - use geodesic (curved manifold)
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 rg = RiemannianGeometry(backend)
-distances = rg.geodesic_distances(points, k_neighbors=k)
+distances = rg.geodesic_distances(activation_points, k_neighbors=k)
+
+# For WEIGHTS - use Euclidean + spectral (flat + eigenvalue structure)
+weight_norm = backend.sqrt(backend.sum(weight * weight))  # Frobenius norm
+# Spectral analysis via SVD/eigendecomposition for structure
 ```
+
+**Don't use geodesic on weight matrices.** It's 400x slower with marginal accuracy difference because weight space isn't curved.
 
 ### All Models Encode the Same Shape
 

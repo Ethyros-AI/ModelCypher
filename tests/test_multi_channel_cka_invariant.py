@@ -54,6 +54,8 @@ def _skip_if_model_missing():
         pytest.skip(f"Test model not found at {TEST_MODEL_PATH}. Run: poetry run python -c 'from tests.fixtures.models import ensure_model; ensure_model()'")
 
 
+@pytest.mark.slow
+@pytest.mark.real_model
 class TestCKAInvariantWithRealModel:
     """Test CKA invariants using real SmolLM-135M activations."""
 
@@ -291,6 +293,8 @@ class TestBirkhoffRouterWithRealData:
         assert min_val_float >= -tol, f"Negative entry found: {min_val_float}"
 
 
+@pytest.mark.slow
+@pytest.mark.real_model
 class TestGeometryIsDiscovered:
     """Test the core thesis: geometry is discovered, not created.
 
