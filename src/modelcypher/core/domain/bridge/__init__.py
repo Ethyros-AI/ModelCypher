@@ -17,12 +17,8 @@
 
 """Bridge module for cross-modal knowledge transfer.
 
-This module provides tools for creating affine bridges between encoder spaces.
-Linear alignment is closed-form; geodesic CKA reports manifold overlap across
-modalities (vision, audio, text, diffusion).
-
-Key insight: The geometry is discovered, not created. Different encoders learn
-the same invariant shape - bridges are just coordinate transforms.
+Provides tools for creating affine bridges between encoder spaces and reporting
+CKA diagnostics across modalities (vision, audio, text, diffusion).
 """
 
 from modelcypher.core.domain.bridge.generator import (

@@ -179,14 +179,8 @@ class MLXActivationProvider:
         """
         Collect per-layer PRE-SiLU gate_proj activations for a text input.
 
-        Captures the OUTPUT of gate_proj BEFORE SiLU is applied.
-        This is the correct activation space for gate_proj weight stitching.
-
-        CRITICAL FOR CROSS-ARCHITECTURE MERGING:
-        - Post-SiLU activations (SiLU(gate) * up) are used for down_proj
-        - But gate_proj/up_proj weights output to PRE-SiLU space
-        - Compressions don't commute with nonlinearities (unlike rotations)
-        - So we need separate alignments for pre and post nonlinearity
+        Captures the gate_proj output before SiLU is applied. Use this
+        pre-nonlinearity space for gate_proj/up_proj alignment.
 
         Shape: [intermediate_dim] (e.g., 2560 for SmolLM, 4864 for Qwen)
 
@@ -306,11 +300,10 @@ class MLXActivationProvider:
         Collect per-layer MLP intermediate activations for a text input.
 
         Captures the activation INSIDE the MLP (after gate_proj * up_proj, before down_proj).
-        This is the POST-nonlinearity space: SiLU(gate) * up
+        This is the post-nonlinearity space: SiLU(gate) * up.
 
-        NOTE: This is correct for down_proj input stitching, but NOT for gate_proj/up_proj
-        output stitching. For cross-architecture merging, use collect_gate_activations()
-        to get the PRE-SiLU space alignment.
+        Use this for down_proj input stitching. For gate_proj/up_proj stitching,
+        use collect_gate_activations() to get the pre-SiLU space.
 
         Shape: [intermediate_dim] (e.g., 2560 for SmolLM, 4864 for Qwen)
 
@@ -968,8 +961,7 @@ class MLXActivationProvider:
         """
         Collect per-layer PRE-SiLU gate_proj activations for multiple texts.
 
-        This is the correct activation space for gate_proj/up_proj weight stitching.
-        For cross-architecture merging, compressions don't commute with SiLU.
+        Captures gate_proj output before SiLU for gate_proj/up_proj stitching.
 
         Returns list of dicts, one per input text.
         """

@@ -15,78 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Cross-architecture model merging via manifold alignment.
+"""Cross-architecture alignment and stitching utilities.
 
-Models with different architectures encode knowledge on the same underlying
-geometric structure. This module aligns and stitches these representations
-by finding the correct transformation between coordinate systems.
-
-Mathematical Foundation:
-    Neural network activations define points on a Riemannian manifold. Alignment
-    requires computing distances and means on this curved space:
-
-    1. Geodesic Distance: Shortest path along the manifold surface, computed via
-       k-NN graph. Chord distance systematically errs:
-       - Positive curvature: chord underestimates true distance
-       - Negative curvature: chord overestimates true distance
-
-    2. Frechet Mean (Karcher Mean): Riemannian center of mass.
-       Minimizes sum of squared geodesic distances: mu = argmin_p sum(d^2(p, x_i))
-
-    3. Local Procrustes: SVD-based rotation that minimizes ||X @ R - Y||_F
-       subject to det(R) = +1 (proper rotation, not reflection).
-
-Algorithm:
-    1. Triangulated Probing: Collect activation fingerprints across multiple
-       semantic domains (semantic primes, sequence invariants, metaphor invariants).
-       Cross-domain agreement triangulates to robust alignment.
-
-    2. Continuous Fingerprinting: Preserve full activation vectors with magnitude,
-       entropy, and sparsity metadata. CKA measures structural similarity.
-
-    3. Riemannian K-Means: Cluster activations using geodesic distances and
-       Frechet centroids. Groups activation regions for local alignment.
-
-    4. Local Procrustes: Compute rotation matrices within each cluster using
-       SVD. The Schonemann (1966) sign correction ensures det(R) = +1.
-
-Key Principles:
-    - Curvature is inherent: Always use geodesic distance, not chord.
-      The k-NN graph IS the discrete manifold representation.
-
-    - Proper rotations only: det(R) = +1. Reflections (det = -1) are corrected
-      by flipping the sign of the last column of U in the SVD.
-
-    - No interpolation: Model merging is geometric ADDITION via geodesic
-      null-space projection, not weighted averaging. See geodesic_null_space.py.
-
-Usage:
-    from modelcypher.core.domain.geometry.manifold_stitcher import ManifoldStitcher
-
-    # Compute CKA alignment between models at a specific layer
-    cka_matrix, source_ids, target_ids = ManifoldStitcher.compute_cka_matrix(
-        source_fingerprints, target_fingerprints, layer=12
-    )
-
-    # Cluster activations for local alignment
-    clusters = ManifoldStitcher.cluster_activations(
-        source_activations, target_activations, cluster_count=8
-    )
-
-    # Build triangulated probes for robust fingerprinting
-    probes = TriangulatedProbeBuilder.build_triangulated_probes()
+Provides activation fingerprinting, clustering, and local Procrustes alignment
+to support cross-architecture merging.
 
 References:
     - Schonemann (1966) "A Generalized Solution of the Orthogonal Procrustes Problem"
     - Tenenbaum et al. (2000) "Isomap" - geodesic distance via graph
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"
-
-See Also:
-    - riemannian_utils.py: Geodesic distance, Frechet mean, curvature estimation
-    - generalized_procrustes.py: Multi-shape alignment with proper rotations
-    - cka.py: Centered Kernel Alignment for representation similarity
-    - geodesic_null_space.py: Interference-free weight delta projection (GPU-only)
 """
 
 from __future__ import annotations
@@ -162,9 +99,7 @@ class IntersectionMap:
 
     Attributes:
         mean_layer_cka: Mean CKA across layer correlations from sparse dimension
-            matching. This is NOT a geometric invariant - it just measures how
-            well the sparse fingerprints correlate. The true invariant CKA is
-            computed separately from actual activation vectors.
+            matching.
     """
 
     source_model: str
@@ -730,8 +665,6 @@ class ManifoldStitcher:
         """Clusters activations to identify alignment regions.
 
         Uses Riemannian K-means with geodesic distances and Fréchet centroids.
-        In high-dimensional spaces, curvature is inherent - geodesic distance
-        is the correct metric.
 
         Args:
             source_activations: Source model activations (PrimeID -> vector)
@@ -835,14 +768,9 @@ class ManifoldStitcher:
     ) -> tuple[list[int], list[list[float]]]:
         """Riemannian K-means clustering with geodesic distances.
 
-        In high-dimensional spaces, curvature is inherent. Uses geodesic
-        distances and geodesic medoids (exact discrete Fréchet means):
+        Uses geodesic distances and geodesic medoids (discrete Fréchet means):
         1. Geodesic distances (via k-NN graph) for assignment step
         2. Medoid update on the discrete manifold (minimizes sum of squared geodesic distances)
-
-        This correctly handles curved manifolds where chord K-means fails:
-        - Positive curvature: chord underestimates distances → clusters too spread
-        - Negative curvature: chord overestimates distances → clusters too tight
 
         Args:
             points: [N, D] list of points to cluster

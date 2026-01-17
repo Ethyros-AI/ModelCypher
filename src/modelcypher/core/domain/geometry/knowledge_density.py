@@ -17,20 +17,8 @@
 
 """Knowledge density estimation for model merging.
 
-Measures how "densely" a model represents each concept. Dense concepts are
-well-learned and should not be modified during merge. Sparse concepts are
-gaps in knowledge where grafting from another model adds value.
-
-Key insight: Merge is not "blend two models" but "fill gaps in target with
-source knowledge." This module identifies where those gaps are.
-
-Density Metrics:
-    - Intrinsic dimension: Lower = more compressed = denser representation
-    - Activation variance: Lower = more stable = denser representation
-    - Cluster tightness: Higher = concepts cluster tightly = denser
-
-The null space of sparse concepts is larger - the model hasn't filled
-that capacity yet. Dense concepts have "used up" their null space.
+Computes per-concept density metrics (intrinsic dimension, activation variance,
+cluster tightness) and aggregates them at layer and model levels.
 """
 
 from __future__ import annotations

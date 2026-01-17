@@ -17,23 +17,8 @@
 
 """Generalized Procrustes Analysis (GPA) for multi-model alignment.
 
-Aligns multiple neural network representations to a common consensus space
-using orthogonal Procrustes transformations. Uses Fréchet mean
-(curvature-aware) for consensus computation.
-
-Mathematical Background:
-    Given k models with representations X_1, ..., X_k, GPA finds:
-    - Consensus C: The common reference representation
-    - Rotations R_1, ..., R_k: Orthogonal matrices aligning each X_i to C
-    - Scales s_1, ..., s_k: Optional scaling factors
-
-    Minimizes: Σᵢ ||sᵢ Xᵢ Rᵢ - C||²_F
-
-    Uses iterative refinement:
-    1. Initialize consensus as first model
-    2. Align each model to consensus via SVD
-    3. Update consensus as (Fréchet) mean of aligned models
-    4. Repeat until convergence
+Aligns multiple representation matrices to a consensus space using orthogonal
+Procrustes transforms and a consensus update step.
 
 References:
     - Gower, J. C. (1975). "Generalized Procrustes Analysis."
@@ -141,13 +126,17 @@ class GeneralizedProcrustes:
         self,
         aligned_X: "Array",
     ) -> "Array":
-        """Compute consensus using Fréchet mean (the only correct method on curved manifolds).
+        """Compute consensus using a Fréchet mean for curved embedding spaces.
 
         Args:
             aligned_X: [M, N, K] aligned activation tensor
 
         Returns:
             [N, K] consensus matrix
+
+        References:
+            - Karcher, H. (1977). "Riemannian Center of Mass and Mollifier
+              Smoothing." Communications on Pure and Applied Mathematics.
         """
         # With two models, each sample has two points. The k-NN graph collapses
         # to a single edge, so the Fréchet mean is the midpoint along that edge.
@@ -187,12 +176,7 @@ class GeneralizedProcrustes:
     ) -> Result | None:
         """Align multiple model activations using Generalized Procrustes Analysis.
 
-        All parameters are derived from data - no configuration needed.
-        - Fréchet mean: always enabled (arithmetic mean is WRONG)
-        - Reflections: never allowed (preserves orientation)
-        - Scaling: never allowed (preserves magnitudes)
-        - Convergence: derived from machine epsilon
-        - Max iterations: derived from model count
+        All parameters are derived from data; no configuration needed.
         """
         model_count = len(activations)
         if model_count < 2:  # Need at least 2 models

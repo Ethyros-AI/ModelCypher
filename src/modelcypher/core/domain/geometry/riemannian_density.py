@@ -945,10 +945,11 @@ class RiemannianDensityEstimator:
 
         Uses CKA (Centered Kernel Alignment) for all comparisons when raw
         activations are available. CKA computes Gram matrices (n x n) that are
-        dimension-agnostic and GPU-accelerated. This is the correct approach:
-        - Dimensions are compression/expansion choices, not fundamental structure
-        - CKA captures the invariant representational geometry
-        - Runs entirely on GPU (no SciPy/NumPy fallback)
+        dimension-agnostic and GPU-accelerated.
+
+        References:
+            - Kornblith et al. (2019). "Similarity of Neural Network Representations
+              Revisited." arXiv:1905.00414
 
         Args:
             volume_a: First concept volume

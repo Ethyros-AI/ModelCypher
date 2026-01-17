@@ -15,19 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Deviation Measurement for Model Merging.
+"""Deviation measurement for model merging.
 
-Philosophy: If null-space projection is working correctly, the geometry
-constrains deviation by construction. We don't need thresholds or safety
-checks - the math handles it.
-
-This module provides:
-1. **Measurement**: Report deviation for transparency and logging
-2. **Scale derivation**: Compute geometrically-correct scales from SVD
-3. **No gating**: Never block operations based on thresholds
-
-The geometry determines everything. Thresholds are vestigial.
+Provides deviation measurements and scale derivation for logging. No gating
+thresholds are applied in this module.
 """
 
 from __future__ import annotations
@@ -52,12 +43,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DeviationMeasurement:
-    """Measurement of deviation from baseline (informational only).
-
-    This is purely observational - not a safety check. If null-space projection
-    is working correctly, the geometry constrains deviation by construction.
-    We report measurements for transparency, not for gating decisions.
-    """
+    """Measurement of deviation from baseline (informational only)."""
 
     # Current deviation from baseline (geodesic norm)
     deviation: float
@@ -76,15 +62,8 @@ class DeviationTracker:
     """
     Tracks and measures deviation from baseline for merging operations.
 
-    Philosophy: If null-space projection is working correctly, the geometry
-    constrains deviation by construction. We don't need thresholds or safety
-    checks - the math handles it. This class provides:
-
-    1. **Measurement**: Report deviation for transparency and logging
-    2. **Scale derivation**: Compute geometrically-correct scales from data
-    3. **No gating**: Never block operations based on thresholds
-
-    The geometry determines everything.
+    Provides deviation measurements and scale derivation for logging. This
+    class does not apply gating thresholds.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:

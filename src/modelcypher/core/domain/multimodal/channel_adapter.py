@@ -15,42 +15,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Multi-Modal Channel Adapter.
+"""Multi-modal channel adapter.
 
-Bridges multi-modal encoder models (CLIP, Whisper) with the multi-channel
-merge infrastructure, creating "offramp" projections for inference-time access.
+Bridges multi-modal encoder models (e.g., CLIP, Whisper) with the multi-channel
+merge infrastructure by creating offramp projections for inference-time access.
 
-Key insight from mHC-null-space connection (docs/research/mhc_null_space_connection.md):
-Both doubly stochastic routing and null-space projection are "invariant-preserving
-projections onto constrained manifolds." The adapter creates entry/exit ramps
-for different modalities to access the shared geometry.
-
-Architecture:
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │                    MULTI-MODAL ADAPTER                               │
-    │                                                                     │
-    │  CLIP Encoder ──────┐                                               │
-    │                     │   ┌──────────────┐   ┌───────────────┐        │
-    │  Whisper Encoder ───┼──►│  GramAligner │──►│  Null Space   │        │
-    │                     │   │ (CKA diag)  │   │  Projection   │        │
-    │  Target LLM ────────┘   └──────────────┘   └───────┬───────┘        │
-    │                                                    │                │
-    │                         ┌──────────────────────────┴───────────┐    │
-    │                         │           OFFRAMPS                    │    │
-    │                         │  ┌─────────────┐  ┌─────────────┐    │    │
-    │                         │  │ Vision Ramp │  │ Audio Ramp  │    │    │
-    │                         │  └─────────────┘  └─────────────┘    │    │
-    │                         └──────────────────────────────────────┘    │
-    └─────────────────────────────────────────────────────────────────────┘
-
-Usage:
-    adapter = MultiModalChannelAdapter(backend, embedding_extractor=embedding_extractor)
-    result = adapter.create_offramps(
-        target_model="/path/to/lfm2",
-        include_clip=True,
-        include_whisper=True,
-    )
-    # result.offramps contains projection matrices for inference-time access
+References:
+    - docs/research/mhc_null_space_connection.md
 """
 
 from __future__ import annotations

@@ -15,38 +15,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Bridge Generator for cross-modal knowledge transfer.
+"""Bridge generator for cross-modal knowledge transfer.
 
-Creates affine bridges between encoder spaces using GramAlign. Linear alignment
-is closed-form; geodesic CKA reports manifold overlap and coverage.
-
-Validated Experimentally (January 2026):
-    | Modality Pair     | Raw CKA | Aligned CKA (probes) |
-    |-------------------|---------|-------------|
-    | Text ↔ Vision     | 0.7842  | 1.0000      |
-    | Text ↔ Audio      | 0.5469  | 1.0000      |
-    | Text ↔ Diffusion  | 0.7230  | 1.0000      |
-    | Vision ↔ Audio    | 0.6653  | 1.0000      |
-    | Vision ↔ Diffusion| 0.8647  | 1.0000      |
-    | Audio ↔ Diffusion | 0.7099  | 1.0000      |
-
-Usage:
-    from modelcypher.core.domain.bridge import BridgeGenerator
-    from modelcypher.core.use_cases.bridge_service import BridgeService
-
-    generator = BridgeGenerator(backend)
-    result = generator.generate(source_acts, target_acts)
-    bridge_service = BridgeService(store=bridge_store, backend=backend)
-    bridge_service.save(result, "bridge.safetensors")
-
-    # Later, apply the bridge
-    bridge = bridge_service.load("bridge.safetensors")
-    transformed = bridge.apply(source_embeddings)
+Creates affine bridges between encoder spaces using GramAlign and reports
+CKA diagnostics.
 
 References:
     - docs/research/multi_modal_cka_validation.md
-    - /Volumes/CodeCypher/experiments/multi-modal-compression-2026-01-09/
 """
 
 from __future__ import annotations
@@ -200,11 +175,7 @@ class CrossModalBridge:
 class BridgeGenerator:
     """Generates affine bridges between encoder spaces.
 
-    Uses GramAlign to find the transform F such that CKA(source @ F, target) = 1.0.
-    The bridge is a linear transform - no neural network training required.
-
-    The key insight: neural networks discover the same invariant geometry.
-    Different encoders are just different coordinate systems for the same shape.
+    Uses GramAlign to find a linear transform and reports CKA diagnostics.
     """
 
     def __init__(

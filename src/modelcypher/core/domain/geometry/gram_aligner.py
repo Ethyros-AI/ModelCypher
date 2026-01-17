@@ -15,28 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Gram Matrix Aligner - Geodesic manifold-preserving alignment.
+"""Gram matrix alignment utilities with geodesic CKA diagnostics.
 
-Core Principle: Geodesic Distance is the Truth
-==============================================
-Neural representation spaces are curved manifolds. Geodesic distance (shortest
-path on k-NN graph) is the correct metric - it respects intrinsic geometry.
-
-This module uses geodesic_invariant_alignment which:
-1. Computes pairwise geodesic cosines (relative representations)
-2. Finds optimal rotation in relative space via Procrustes
-3. Transfers through aligned relative space back to feature space
-
-This preserves manifold structure that flat-space methods destroy.
-
-Geodesic CKA uses K = exp(-D_geo²/2σ²) (RBF kernel on geodesic distances).
-Geodesic CKA < 1.0 indicates models carry novel structure or probes don't
-span the full shared manifold.
-
-No User-Configurable Thresholds
-===============================
-All tolerances are derived from machine epsilon of the input dtype.
+Computes a closed-form linear alignment between activation sets and reports
+geodesic CKA using k-NN graph distances. Tolerances are derived from dtype
+machine epsilon.
 
 References:
     - Yu et al. (2025). "Relative Geodesic Representations" - NeurIPS
@@ -114,7 +97,7 @@ def find_alignment(
     -------
     >>> result = find_alignment(source_acts, target_acts)
     >>> aligned_source = source_acts @ result.feature_transform
-    >>> # Linear CKA(aligned_source, target_acts) ≈ 1.0 on the shared manifold
+    >>> # Linear CKA(aligned_source, target_acts) can be evaluated separately
     """
     aligner = GramAligner(backend)
     return aligner.find_perfect_alignment(source_activations, target_activations)
@@ -190,14 +173,11 @@ class AlignmentResult:
 
 
 class GramAligner:
-    """Finds linear alignment with geodesic diagnostics between activation spaces.
+    """Find linear alignment with geodesic diagnostics between activation spaces.
 
-    This is a SOLVER, not a test. Given two sets of activations, it finds the
-    closed-form linear transform on the shared manifold (F = pinv(S) @ T).
-    Geodesic CKA is diagnostic; optional geodesic-invariant alignment can be
-    enabled when desired.
-
-    All tolerances are derived from the input dtype's machine epsilon.
+    Computes a closed-form linear transform and reports geodesic CKA. Optional
+    geodesic-invariant alignment can be enabled when needed. All tolerances are
+    derived from the input dtype's machine epsilon.
 
     Usage
     -----
@@ -429,17 +409,10 @@ class GramAligner:
         target: "Array",
         F_init: "Array",
     ) -> tuple["Array", int, float]:
-        """Measure geodesic CKA of the linear alignment.
+        """Measure geodesic CKA for the linear alignment.
 
-        Geodesic CKA uses k-NN graph + RBF kernel. The k-NN graph construction
-        is not differentiable, so gradient-based refinement doesn't work.
-
-        Linear Procrustes (F = pinv(source) @ target) guarantees linear CKA = 1.0.
-        Geodesic CKA measures how well this transfers to the manifold.
-
-        If geodesic CKA < 1.0:
-        - Probes don't fully span the shared manifold, or
-        - Models contain novel structure outside the overlap
+        Geodesic CKA uses k-NN graph distances with an RBF kernel. The alignment
+        is not iteratively refined because the k-NN graph is non-differentiable.
 
         Parameters
         ----------
@@ -448,7 +421,7 @@ class GramAligner:
         target : Array
             Target activations [n, d_target].
         F_init : Array
-            Transform from linear Procrustes [d_source, d_target].
+            Transform from linear alignment [d_source, d_target].
 
         Returns
         -------
@@ -535,26 +508,13 @@ class GramAligner:
     ) -> "Array":
         """Derive projection stitch from hidden alignment + weight geometry.
 
-        For cross-architecture merging where attention/projection dimensions differ,
-        we need to derive the output stitch S from the hidden alignment H and weights.
-
-        The application chain is:
-            source_aligned = S @ W_src @ H
-
-        We want source_aligned = W_tgt, so we solve:
-            S @ (W_src @ H) = W_tgt
-
-        CRITICAL: The naive approach of solving S @ W_src = W_tgt @ H.T is WRONG!
-        That gives source_aligned = (W_tgt @ H.T) @ H = W_tgt @ (H.T @ H).
-        For dimension-reducing Procrustes, H.T @ H ≠ I, causing garbage results.
-
-        The correct approach solves S @ (W_src @ H) = W_tgt directly.
-        This ensures source_aligned = W_tgt after the full application chain.
+        Solves for S in the chain S @ W_src @ H ≈ W_tgt to align projection
+        weights across architectures.
 
         Parameters
         ----------
         hidden_transform : Array
-            The hidden alignment transform H [d_source_hidden, d_target_hidden].
+            Hidden alignment transform H [d_source_hidden, d_target_hidden].
             Maps source hidden states to target hidden space.
         source_weight : Array
             Source projection weight [d_source_proj, d_source_hidden].
@@ -641,18 +601,8 @@ class GramAligner:
     ) -> "Array":
         """Derive input stitch for down projections from hidden alignment + weights.
 
-        For down_proj, the weight alignment chain is:
-            aligned_W = P @ W_src @ S_in
-
-        Where P = H^T is the hidden output stitch. We want:
-            P @ W_src @ S_in ≈ W_tgt
-
-        Rearranging: (P @ W_src) @ S_in ≈ W_tgt
-        Let A = P @ W_src, solve: A @ S_in ≈ W_tgt
-
-        This is the CORRECT equation. The previous version solved:
-            W_tgt @ S_in = H^T @ W_src
-        which is a different (incorrect) formulation.
+        Solves for S_in in (P @ W_src) @ S_in ≈ W_tgt, where P = H^T is the
+        hidden output stitch.
 
         Parameters
         ----------

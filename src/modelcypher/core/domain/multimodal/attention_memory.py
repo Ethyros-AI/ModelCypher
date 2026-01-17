@@ -377,17 +377,17 @@ class AttentionMemoryInjector:
         memory_content: MemoryTokenContent,
         layer_activations: Any,
     ) -> tuple[bool, str]:
-        """Measure memory token magnitude relative to layer activations (informational only).
+        """Measure memory token magnitude relative to layer activations.
 
-        The geometry (null-space projection) handles safety by construction.
-        This method measures and reports the relative magnitude for transparency.
+        This reports a relative magnitude measurement for logging and does not
+        enforce a threshold.
 
         Args:
             memory_content: Computed memory token content
             layer_activations: Activations at target layer for reference
 
         Returns:
-            Tuple of (is_valid, info_message) - always True, geometry handles safety
+            Tuple of (is_valid, info_message) for callers that expect a check
         """
         backend = self._backend
 

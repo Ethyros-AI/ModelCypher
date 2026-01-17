@@ -1477,23 +1477,14 @@ def invariant_alignment(
     target: "Array",
     stats: dict[str, float] | None = None,
 ) -> "Array":
-    """Compute the alignment transform F where linear CKA = 1.0 is GUARANTEED.
+    """Compute the linear alignment transform F = pinv(source) @ target.
 
-    THE MATHEMATICS:
-    ================
-    F = pinv(source) @ target
+    Uses the Moore-Penrose pseudoinverse to solve the least-squares alignment and
+    optionally truncates to the effective rank from the source Gram spectrum.
 
-    This gives:
-        aligned = source @ F = source @ pinv(source) @ target = P @ target
-
-    Where P = source @ pinv(source) is the orthogonal projector onto source's
-    column space. Linear CKA = 1.0 by construction.
-
-    LOW-RANK TRUNCATION:
-    ====================
-    The full-rank F overfits when n_samples < d_source. We truncate F to the
-    effective rank of the source Gram matrix, derived from spectral gap detection.
-    This prevents overfitting while preserving the shared manifold structure.
+    References:
+        - Penrose, R. (1955). "A generalized inverse for matrices."
+          Proceedings of the Cambridge Philosophical Society.
     """
     b = backend
 

@@ -274,7 +274,7 @@ class ActivationProvider(Protocol):
         """
         Collect per-layer PRE-SiLU gate activations for multiple texts in one pass.
 
-        This is the correct activation space for gate_proj/up_proj stitching.
+        Used for gate_proj/up_proj stitching.
 
         Args:
             model: The loaded model.
