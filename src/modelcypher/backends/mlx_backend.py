@@ -1004,6 +1004,10 @@ class MLXBackend(Backend):
         """Sample from categorical distribution defined by logits."""
         return self.mx.random.categorical(logits, num_samples=num_samples)
 
+    def randperm(self, n: int) -> Array:
+        """Generate a random permutation of integers from 0 to n-1."""
+        return self.mx.random.permutation(n)
+
     def _map_dtype(self, dtype: Any | None) -> Any | None:
         if dtype is None:
             return None

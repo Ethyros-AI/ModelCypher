@@ -558,6 +558,11 @@ class JAXBackend(Backend):
         # and returns samples of shape (..., num_samples)
         return self.jax.random.categorical(key, logits, shape=(num_samples,))
 
+    def randperm(self, n: int) -> Array:
+        """Generate a random permutation of integers from 0 to n-1."""
+        key = self._next_key()
+        return self.jax.random.permutation(key, n)
+
     # --- Type Conversion ---
     def astype(self, array: Array, dtype: Any) -> Array:
         return array.astype(self._map_dtype(dtype))

@@ -1,0 +1,116 @@
+{
+  "config": {
+    "experiment_name": "exp1_alignment_invariance",
+    "experiment_id": "1768675599",
+    "random_seed": 42,
+    "timestamp": "2026-01-17T12:46:39.193560",
+    "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
+    "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+    "source_model_hash": "a1fe6f43e20f7a6c",
+    "target_model_hash": "ce0883eb3405e21c",
+    "platform_info": "macOS-26.2-arm64-arm-64bit",
+    "python_version": "3.11.14",
+    "backend_name": "MLXBackend",
+    "backend_version": "unknown",
+    "hyperparameters": {
+      "probe_count": 700,
+      "layers_to_test": [
+        "25%",
+        "50%",
+        "75%",
+        "100%"
+      ]
+    }
+  },
+  "metrics": {
+    "total_tests": 4,
+    "min_aligned_cka": 0.9924998614342222,
+    "max_aligned_cka": 0.9972949714860216,
+    "mean_aligned_cka": 0.9945015472945113,
+    "max_condition_number": 31970650508.88185,
+    "stable_tests_count": 0,
+    "all_stable_perfect": false,
+    "success": false,
+    "success_criteria": "aligned_cka >= 0.9999 for all pairs with \u03ba < 1e5"
+  },
+  "raw_data": {
+    "alignment_tests": [
+      {
+        "raw_cka": 0.06103427268001031,
+        "aligned_cka": 0.9924998614342222,
+        "condition_number": 29617723.822704103,
+        "is_perfect": false,
+        "numerical_deviation": 0.007500138565777803,
+        "precision_threshold": 0.0003452669770922512,
+        "depth": "25%",
+        "source_layer": 7,
+        "target_layer": 4
+      },
+      {
+        "raw_cka": 0.5659609835920633,
+        "aligned_cka": 0.9938199888783527,
+        "condition_number": 31970650508.88185,
+        "is_perfect": false,
+        "numerical_deviation": 0.006180011121647344,
+        "precision_threshold": 0.0003452669770922512,
+        "depth": "50%",
+        "source_layer": 15,
+        "target_layer": 8
+      },
+      {
+        "raw_cka": 0.048297131065048605,
+        "aligned_cka": 0.9972949714860216,
+        "condition_number": 1663178348.9539597,
+        "is_perfect": false,
+        "numerical_deviation": 0.002705028513978358,
+        "precision_threshold": 0.0003452669770922512,
+        "depth": "75%",
+        "source_layer": 22,
+        "target_layer": 12
+      },
+      {
+        "raw_cka": 0.09386223718690082,
+        "aligned_cka": 0.9943913673794489,
+        "condition_number": 6701267.148328793,
+        "is_perfect": false,
+        "numerical_deviation": 0.005608632620551113,
+        "precision_threshold": 0.0003452669770922512,
+        "depth": "100%",
+        "source_layer": 29,
+        "target_layer": 15
+      }
+    ],
+    "controls": {
+      "random_baseline": {
+        "shuffled_cka": 0.0,
+        "expected": "near 0 (random baseline)"
+      },
+      "self_alignment_source": {
+        "self_cka": 1.0,
+        "condition_number": 1.0,
+        "is_perfect": true,
+        "expected": "CKA = 1.0, F \u2248 I"
+      },
+      "self_alignment_target": {
+        "self_cka": 1.0,
+        "condition_number": 1.0,
+        "is_perfect": true,
+        "expected": "CKA = 1.0, F \u2248 I"
+      }
+    },
+    "summary": {
+      "total_tests": 4,
+      "min_aligned_cka": 0.9924998614342222,
+      "max_aligned_cka": 0.9972949714860216,
+      "mean_aligned_cka": 0.9945015472945113,
+      "max_condition_number": 31970650508.88185,
+      "stable_tests_count": 0,
+      "all_stable_perfect": false,
+      "success": false,
+      "success_criteria": "aligned_cka >= 0.9999 for all pairs with \u03ba < 1e5"
+    }
+  },
+  "duration_seconds": 97.30652562499745,
+  "success": false,
+  "error_message": ""
+}

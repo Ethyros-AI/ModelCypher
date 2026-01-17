@@ -392,6 +392,17 @@ class Backend(Protocol):
         """Sample from categorical distribution defined by logits."""
         ...
 
+    def randperm(self, n: int) -> Array:
+        """Generate a random permutation of integers from 0 to n-1.
+
+        Args:
+            n: Number of elements in the permutation.
+
+        Returns:
+            1D array of shape (n,) containing a random permutation of [0, n).
+        """
+        ...
+
     # --- Type Conversion ---
     def astype(self, array: Array, dtype: Any) -> Array: ...
     def to_numpy(self, array: Array) -> Any: ...

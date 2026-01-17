@@ -1,0 +1,338 @@
+{
+  "config": {
+    "experiment_name": "exp1b_domain_stratified_alignment",
+    "experiment_id": "1768675923",
+    "random_seed": 42,
+    "timestamp": "2026-01-17T12:52:03.297740",
+    "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
+    "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+    "source_model_hash": "a1fe6f43e20f7a6c",
+    "target_model_hash": "ce0883eb3405e21c",
+    "platform_info": "macOS-26.2-arm64-arm-64bit",
+    "python_version": "3.11.14",
+    "backend_name": "MLXBackend",
+    "backend_version": "unknown",
+    "hyperparameters": {
+      "analysis_type": "domain_stratified",
+      "theory": "CKA reflects shared manifold coverage"
+    }
+  },
+  "metrics": {
+    "n_domains_tested": 15,
+    "mean_raw_cka": 0.3089779856067744,
+    "mean_aligned_cka": 0.9960163747250214,
+    "min_aligned_cka": 0.9722551077025923,
+    "max_aligned_cka": 1.0,
+    "aligned_cka_variance": 5.603345793639568e-05,
+    "aligned_cka_range": 0.02774489229740773,
+    "domain_ranking": [
+      {
+        "domain": "moral",
+        "aligned_cka": 1.0,
+        "raw_cka": 0.2581869699615971
+      },
+      {
+        "domain": "philosophical",
+        "aligned_cka": 1.0,
+        "raw_cka": 0.2267310070958922
+      },
+      {
+        "domain": "spatial",
+        "aligned_cka": 1.0,
+        "raw_cka": 0.1912765199735407
+      },
+      {
+        "domain": "temporal",
+        "aligned_cka": 1.0,
+        "raw_cka": 0.21887112084904467
+      },
+      {
+        "domain": "relational",
+        "aligned_cka": 0.999999991433444,
+        "raw_cka": 0.19289026794607467
+      },
+      {
+        "domain": "safety",
+        "aligned_cka": 0.9999999809531391,
+        "raw_cka": 0.2205258940786262
+      },
+      {
+        "domain": "affective",
+        "aligned_cka": 0.9999999259432047,
+        "raw_cka": 0.22316746040371432
+      },
+      {
+        "domain": "mental",
+        "aligned_cka": 0.9999998912179519,
+        "raw_cka": 0.2336703148624815
+      },
+      {
+        "domain": "factual",
+        "aligned_cka": 0.9997686592286678,
+        "raw_cka": 0.023453598387201763
+      },
+      {
+        "domain": "mathematical",
+        "aligned_cka": 0.9986380962661096,
+        "raw_cka": 0.7603122859276972
+      },
+      {
+        "domain": "computational",
+        "aligned_cka": 0.9955479093941288,
+        "raw_cka": 0.09698829142720057
+      },
+      {
+        "domain": "physical",
+        "aligned_cka": 0.9945696274953238,
+        "raw_cka": 0.08612509592738751
+      },
+      {
+        "domain": "linguistic",
+        "aligned_cka": 0.9945669406733046,
+        "raw_cka": 0.7993846303091446
+      },
+      {
+        "domain": "structural",
+        "aligned_cka": 0.9848994905674514,
+        "raw_cka": 0.40191633425284967
+      },
+      {
+        "domain": "logical",
+        "aligned_cka": 0.9722551077025923,
+        "raw_cka": 0.7011699926991641
+      }
+    ],
+    "hypothesis_domains_differ": false,
+    "interpretation": "Domains show similar alignment quality, suggesting uniform manifold coverage"
+  },
+  "raw_data": {
+    "domain_tests": {
+      "factual": {
+        "raw_cka": 0.023453598387201763,
+        "aligned_cka": 0.9997686592286678,
+        "condition_number": 1229304.4079842006,
+        "is_perfect": true,
+        "n_probes": 3633,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "affective": {
+        "raw_cka": 0.22316746040371432,
+        "aligned_cka": 0.9999999259432047,
+        "condition_number": 1749220996451.7554,
+        "is_perfect": true,
+        "n_probes": 29,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "computational": {
+        "raw_cka": 0.09698829142720057,
+        "aligned_cka": 0.9955479093941288,
+        "condition_number": 883464834913500.8,
+        "is_perfect": false,
+        "n_probes": 133,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "linguistic": {
+        "raw_cka": 0.7993846303091446,
+        "aligned_cka": 0.9945669406733046,
+        "condition_number": 1748347812128999.2,
+        "is_perfect": false,
+        "n_probes": 108,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "logical": {
+        "raw_cka": 0.7011699926991641,
+        "aligned_cka": 0.9722551077025923,
+        "condition_number": 243069148258807.06,
+        "is_perfect": false,
+        "n_probes": 91,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "mathematical": {
+        "raw_cka": 0.7603122859276972,
+        "aligned_cka": 0.9986380962661096,
+        "condition_number": 369721743180923.4,
+        "is_perfect": false,
+        "n_probes": 117,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "mental": {
+        "raw_cka": 0.2336703148624815,
+        "aligned_cka": 0.9999998912179519,
+        "condition_number": 8795309780055.868,
+        "is_perfect": true,
+        "n_probes": 23,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "moral": {
+        "raw_cka": 0.2581869699615971,
+        "aligned_cka": 1.0,
+        "condition_number": 530047181691.2703,
+        "is_perfect": true,
+        "n_probes": 23,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "philosophical": {
+        "raw_cka": 0.2267310070958922,
+        "aligned_cka": 1.0,
+        "condition_number": 3797583915137.2,
+        "is_perfect": true,
+        "n_probes": 33,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "physical": {
+        "raw_cka": 0.08612509592738751,
+        "aligned_cka": 0.9945696274953238,
+        "condition_number": 446975795527895.25,
+        "is_perfect": false,
+        "n_probes": 178,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "relational": {
+        "raw_cka": 0.19289026794607467,
+        "aligned_cka": 0.999999991433444,
+        "condition_number": 1818607395580.7295,
+        "is_perfect": true,
+        "n_probes": 41,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "safety": {
+        "raw_cka": 0.2205258940786262,
+        "aligned_cka": 0.9999999809531391,
+        "condition_number": 9718937907601.771,
+        "is_perfect": true,
+        "n_probes": 34,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "spatial": {
+        "raw_cka": 0.1912765199735407,
+        "aligned_cka": 1.0,
+        "condition_number": 1182698124317.6692,
+        "is_perfect": true,
+        "n_probes": 38,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "structural": {
+        "raw_cka": 0.40191633425284967,
+        "aligned_cka": 0.9848994905674514,
+        "condition_number": 128560164869350.75,
+        "is_perfect": false,
+        "n_probes": 80,
+        "source_dim": 576,
+        "target_dim": 1024
+      },
+      "temporal": {
+        "raw_cka": 0.21887112084904467,
+        "aligned_cka": 1.0,
+        "condition_number": 1063185624084.8618,
+        "is_perfect": true,
+        "n_probes": 35,
+        "source_dim": 576,
+        "target_dim": 1024
+      }
+    },
+    "summary": {
+      "n_domains_tested": 15,
+      "mean_raw_cka": 0.3089779856067744,
+      "mean_aligned_cka": 0.9960163747250214,
+      "min_aligned_cka": 0.9722551077025923,
+      "max_aligned_cka": 1.0,
+      "aligned_cka_variance": 5.603345793639568e-05,
+      "aligned_cka_range": 0.02774489229740773,
+      "domain_ranking": [
+        {
+          "domain": "moral",
+          "aligned_cka": 1.0,
+          "raw_cka": 0.2581869699615971
+        },
+        {
+          "domain": "philosophical",
+          "aligned_cka": 1.0,
+          "raw_cka": 0.2267310070958922
+        },
+        {
+          "domain": "spatial",
+          "aligned_cka": 1.0,
+          "raw_cka": 0.1912765199735407
+        },
+        {
+          "domain": "temporal",
+          "aligned_cka": 1.0,
+          "raw_cka": 0.21887112084904467
+        },
+        {
+          "domain": "relational",
+          "aligned_cka": 0.999999991433444,
+          "raw_cka": 0.19289026794607467
+        },
+        {
+          "domain": "safety",
+          "aligned_cka": 0.9999999809531391,
+          "raw_cka": 0.2205258940786262
+        },
+        {
+          "domain": "affective",
+          "aligned_cka": 0.9999999259432047,
+          "raw_cka": 0.22316746040371432
+        },
+        {
+          "domain": "mental",
+          "aligned_cka": 0.9999998912179519,
+          "raw_cka": 0.2336703148624815
+        },
+        {
+          "domain": "factual",
+          "aligned_cka": 0.9997686592286678,
+          "raw_cka": 0.023453598387201763
+        },
+        {
+          "domain": "mathematical",
+          "aligned_cka": 0.9986380962661096,
+          "raw_cka": 0.7603122859276972
+        },
+        {
+          "domain": "computational",
+          "aligned_cka": 0.9955479093941288,
+          "raw_cka": 0.09698829142720057
+        },
+        {
+          "domain": "physical",
+          "aligned_cka": 0.9945696274953238,
+          "raw_cka": 0.08612509592738751
+        },
+        {
+          "domain": "linguistic",
+          "aligned_cka": 0.9945669406733046,
+          "raw_cka": 0.7993846303091446
+        },
+        {
+          "domain": "structural",
+          "aligned_cka": 0.9848994905674514,
+          "raw_cka": 0.40191633425284967
+        },
+        {
+          "domain": "logical",
+          "aligned_cka": 0.9722551077025923,
+          "raw_cka": 0.7011699926991641
+        }
+      ],
+      "hypothesis_domains_differ": false,
+      "interpretation": "Domains show similar alignment quality, suggesting uniform manifold coverage"
+    }
+  },
+  "duration_seconds": 155.0831369160005,
+  "success": true,
+  "error_message": ""
+}
