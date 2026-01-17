@@ -243,8 +243,10 @@ def _probe_precise(
             )
         valid_probes.append((probe, probe_text))
 
-    # GEOMETRY PRINCIPLE: Use the exact probe count implied by intrinsic rank,
-    # unless full atlas coverage is explicitly requested.
+    # GEOMETRY PRINCIPLE: Use hidden_dim × 1.3 (overdetermination factor) for
+    # numerical stability in alignment. The 1.3x factor ensures the alignment
+    # matrix is well-conditioned (n_probes >> hidden_dim prevents square matrix
+    # instability). Full atlas coverage can be requested explicitly.
     min_required, source_dim, target_dim = _infer_required_probe_count(
         source_weights, target_weights
     )

@@ -643,7 +643,8 @@ def compute_cross_dimensional_transplant(
     delta_W = source_behavioral - target_weight_compute
     b.eval(delta_W)
 
-    delta_norm = _weight_frobenius_norm(delta_W, b)
+    # Use BEHAVIORAL norm (not Frobenius) to measure actual output change
+    delta_norm = _behavioral_norm(delta_W, input_activations_target, b)
 
     # Step 3: Compute null-space projector on TARGET activations
     null_space_projector = compute_null_space_projector(
@@ -672,7 +673,8 @@ def compute_cross_dimensional_transplant(
         delta_W_proj = b.matmul(delta_W, N)
         b.eval(delta_W_proj)
 
-    projected_norm = _weight_frobenius_norm(delta_W_proj, b)
+    # Use BEHAVIORAL norm (not Frobenius) to measure actual output change after projection
+    projected_norm = _behavioral_norm(delta_W_proj, input_activations_target, b)
 
     # Preserved fraction
     eps = float(division_epsilon(b, delta_W))

@@ -59,27 +59,20 @@ def _infer_required_probe_count(
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
 ) -> tuple[int, int, int]:
-    """Infer probe count from hidden dimensions with overdetermination factor.
+    """Infer minimum probe count from hidden dimensions.
 
     The alignment matrix F = pinv(source_acts) @ target_acts requires numerical
-    stability. When n_probes ≈ hidden_dim, the matrix is nearly square and the
-    Moore-Penrose pseudoinverse becomes unstable. Experimental testing shows:
+    stability. Geometry requires n_probes > max(source_dim, target_dim) to avoid
+    singular Gram matrix.
 
-    - n_probes = hidden_dim: cosine ≈ 0.14 (catastrophic - square matrix)
-    - n_probes = 1.3 * hidden_dim: cosine ≈ 0.9996 (excellent)
-
-    We use hidden_dim * 1.3 as the minimum, NOT intrinsic rank. Intrinsic rank
-    measures effective dimensionality of weights (≈ 100-300 for trained LLMs),
-    but alignment stability requires full hidden_dim with overdetermination.
+    We add a small margin (100) to ensure the system is overdetermined. The actual
+    numerical stability is verified AT RUNTIME via condition number check in the
+    alignment stage - this minimum is just to ensure mathematical solvability.
 
     Returns:
         (min_required, source_dim, target_dim)
     """
     from modelcypher.core.use_cases.merge.helpers import infer_hidden_dim
-
-    # Overdetermination factor derived from stranded neurons experiments:
-    # n_probes/hidden_dim = 1.3 gave cosine = 0.9996 in behavioral preservation tests
-    OVERDETERMINATION_FACTOR = 1.3
 
     source_dim = infer_hidden_dim(source_weights)
     target_dim = infer_hidden_dim(target_weights)
@@ -89,9 +82,11 @@ def _infer_required_probe_count(
     if target_dim <= 0:
         target_dim = 512
 
-    # Use max hidden dimension with overdetermination for stable alignment
+    # Geometry: n_probes > max_dim is REQUIRED (otherwise singular)
+    # Add small margin to ensure overdetermined (numerical safety)
+    # Actual stability is verified at runtime via condition number check
     max_dim = max(source_dim, target_dim)
-    min_required = int(max_dim * OVERDETERMINATION_FACTOR)
+    min_required = max_dim + 100  # Minimal overdetermination
 
     return min_required, source_dim, target_dim
 

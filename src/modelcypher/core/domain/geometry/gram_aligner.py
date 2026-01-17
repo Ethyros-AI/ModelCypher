@@ -145,6 +145,10 @@ class AlignmentResult:
     linear_iterations: int = 0  # 0 = direct solve via normal equations
     linear_residual: float = 0.0
 
+    # Gram matrix condition number (numerical stability indicator)
+    # Higher = less stable. If > 1e5, alignment may be unreliable.
+    gram_condition_number: float = 1.0
+
     @property
     def is_perfect(self) -> bool:
         """True if geodesic CKA is within precision threshold of 1.0."""
@@ -310,6 +314,43 @@ class GramAligner:
         # Closed-form alignment yields CKA=1.0 on training probes when the
         # target is a linear transform of the source. If this already reaches
         # numerical precision, skip geodesic alignment.
+
+        # GEOMETRY CHECK: Verify Gram matrix condition number for stability
+        # The alignment F = pinv(A) @ B depends on the Gram matrix A.T @ A.
+        # If condition number is too high, the alignment is numerically unstable.
+        gram = b.matmul(b.transpose(source_activations), source_activations)
+        b.eval(gram)
+        eigvals = b.eigvalsh(gram)
+        b.eval(eigvals)
+
+        eps_safe = machine_epsilon(b, gram)
+        max_eig = float(b.to_scalar(b.max(eigvals)))
+        # Find minimum positive eigenvalue
+        pos_mask = eigvals > eps_safe
+        pos_inf = float(b.finfo().max)
+        min_candidates = b.where(pos_mask, eigvals, b.full(eigvals.shape, pos_inf))
+        min_eig = float(b.to_scalar(b.min(min_candidates)))
+
+        if min_eig > 0 and min_eig < pos_inf:
+            condition_number = max_eig / min_eig
+        else:
+            condition_number = float("inf")
+
+        # Warn if condition number is too high (recommend --full-atlas)
+        # For float32, eps ≈ 1e-7, so κ > 1e5 means < 2 significant digits
+        CONDITION_THRESHOLD = 1e5
+        if condition_number > CONDITION_THRESHOLD:
+            logger.warning(
+                "ALIGNMENT UNSTABLE: Gram condition number %.2e > threshold %.2e. "
+                "n_samples=%d, d_source=%d. Consider using --full-atlas for more probes.",
+                condition_number, CONDITION_THRESHOLD, n_s, d_s
+            )
+        else:
+            logger.debug(
+                "ALIGNMENT STABLE: Gram condition number %.2e, n_samples=%d, d_source=%d",
+                condition_number, n_s, d_s
+            )
+
         linear_start = time.perf_counter()
         F_linear = b.matmul(geodesic_pinv(b, source_activations), target_activations)
         b.eval(F_linear)
@@ -399,6 +440,7 @@ class GramAligner:
             scale_ratio=scale_ratio,
             linear_iterations=0,  # Legacy field - geodesic alignment is direct
             linear_residual=alignment_stats.get("relative_space_alignment_error", 0.0),
+            gram_condition_number=condition_number,
         )
 
     def _geodesic_refine(

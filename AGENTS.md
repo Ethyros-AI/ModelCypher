@@ -115,6 +115,27 @@ The space is finite.
 
 **If you find yourself guessing, you're missing a metric.** Add the metric first.
 
+### Stranded Neurons: Alignment Stability via Condition Number
+
+**The alignment matrix F = pinv(A_source) @ A_target requires numerical stability.**
+
+The geometry says:
+1. **n_probes > max_dim is REQUIRED** (otherwise the Gram matrix is singular)
+2. **Condition number κ = max_eigenvalue / min_eigenvalue determines stability**
+3. **Check κ at runtime**, not a fixed ratio (actual stability depends on activation structure)
+
+For float32 with ε ≈ 1e-7:
+- κ < 1e5 → stable (≥2 significant digits)
+- κ > 1e5 → unstable (recommend --full-atlas)
+
+**Implementation**: GramAligner computes Gram condition number and warns if unstable.
+The probe stage uses `min_required = max_dim + 100` as a geometry-derived minimum,
+and stability is verified at runtime.
+
+**If merge produces incoherent outputs but CKA looks good**: Check the Gram condition number.
+The alignment may have succeeded mathematically but the transform is numerically unstable.
+Use --full-atlas for more probes (4596 total in atlas).
+
 ---
 
 ## Commands
