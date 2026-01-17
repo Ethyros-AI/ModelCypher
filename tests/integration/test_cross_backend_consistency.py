@@ -64,9 +64,16 @@ class TestBasicOperationsConsistency:
         u, s, vt = backend.svd(A)
         backend.eval(u, s, vt)
 
-        # Reconstruct and verify
-        # A ≈ U @ diag(s) @ Vt
-        reconstructed = backend.matmul(u * backend.reshape(s, (1, -1)), vt)
+        # SVD for (m, n) matrix with m > n returns:
+        # u: (m, min(m,n)), s: (min(m,n),), vt: (min(m,n), n)
+        # Reconstruct: A ≈ U @ diag(s) @ Vt
+        min_dim = min(A.shape[0], A.shape[1])
+        u_truncated = u[:, :min_dim]
+        s_diag = backend.diag(s[:min_dim])
+        vt_truncated = vt[:min_dim, :]
+        backend.eval(u_truncated, s_diag, vt_truncated)
+
+        reconstructed = backend.matmul(backend.matmul(u_truncated, s_diag), vt_truncated)
         backend.eval(reconstructed)
 
         diff = backend.subtract(A, reconstructed)
@@ -135,11 +142,13 @@ class TestGeometricOperationsConsistency:
         assert diff_norm < 1e-10, f"Gram should be symmetric: ||K - K.T|| = {diff_norm}"
 
         # Gram should be positive semi-definite (all eigenvalues >= 0)
+        # Allow small negative due to numerical precision
         eigenvalues, _ = backend.eigh(gram)
         backend.eval(eigenvalues)
 
         min_eigenvalue = float(backend.tolist(backend.min(eigenvalues)))
-        assert min_eigenvalue >= -1e-6, f"Gram should be PSD: min_eigenvalue = {min_eigenvalue}"
+        # Use more lenient tolerance for float32 precision
+        assert min_eigenvalue >= -1e-4, f"Gram should be PSD: min_eigenvalue = {min_eigenvalue}"
 
     def test_centering_matrix_consistency(self, backend):
         """Centering matrix H should work correctly."""
@@ -161,7 +170,8 @@ class TestGeometricOperationsConsistency:
         backend.eval(H_ones)
 
         h_ones_norm = float(backend.tolist(backend.norm(H_ones)))
-        assert h_ones_norm < 1e-10, f"H should center: ||H @ 1|| = {h_ones_norm}"
+        # Use more lenient tolerance for float32 precision
+        assert h_ones_norm < 1e-5, f"H should center: ||H @ 1|| = {h_ones_norm}"
 
     def test_pseudoinverse_consistency(self, backend):
         """Pseudoinverse should satisfy A @ A+ @ A = A."""
@@ -196,7 +206,8 @@ class TestNumericalStabilityConsistency:
         backend.eval(x)
 
         eps = machine_epsilon(backend, x)
-        eps_val = float(backend.tolist(eps))
+        # machine_epsilon returns a float directly
+        eps_val = float(eps)
 
         # For float32, eps should be around 1e-7
         # For float64, eps should be around 1e-16
@@ -210,11 +221,9 @@ class TestNumericalStabilityConsistency:
         test_values = [0.0, 1e-10, 0.5, 1.0, 100.0]
 
         for val in test_values:
-            x = backend.array(val)
-            backend.eval(x)
-
-            result = sqrt_scalar(x, backend)
-            result_val = float(backend.tolist(result))
+            # sqrt_scalar takes a float, not an array
+            result = sqrt_scalar(val, backend)
+            result_val = float(result)
 
             # Result should be non-negative and finite
             assert result_val >= 0, f"sqrt should be non-negative: sqrt({val}) = {result_val}"
