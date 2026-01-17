@@ -44,3 +44,32 @@ def get_jobs_dir() -> Path:
         Path to ~/.modelcypher/jobs
     """
     return ensure_dir(Path.home() / ".modelcypher" / "jobs")
+
+
+def get_logs_dir() -> Path:
+    """Get the logs directory, creating it if necessary.
+
+    Returns:
+        Path to ~/.modelcypher/logs
+    """
+    return ensure_dir(get_modelcypher_home() / "logs")
+
+
+def get_merge_log_path(pipeline_id: str | None = None) -> Path:
+    """Get a log file path for a merge operation.
+
+    Args:
+        pipeline_id: Optional pipeline ID. If None, generates timestamp-based name.
+
+    Returns:
+        Path to log file (e.g., ~/.modelcypher/logs/merge-2025-01-16-123456.log)
+    """
+    from datetime import datetime
+
+    logs_dir = get_logs_dir()
+    if pipeline_id:
+        filename = f"merge-{pipeline_id}.log"
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        filename = f"merge-{timestamp}.log"
+    return logs_dir / filename

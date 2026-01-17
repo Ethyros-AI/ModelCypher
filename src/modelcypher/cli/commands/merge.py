@@ -168,6 +168,7 @@ def _run_merge(
     Uses atlas probes with geometry-derived count unless full atlas is requested.
     """
     from modelcypher.cli.composition import get_merge_pipeline_service
+    from modelcypher.utils.logging import add_file_logger, remove_file_loggers
 
     context = _context(ctx)
 
@@ -179,6 +180,12 @@ def _run_merge(
     if dry_run:
         _run_dry_run(ctx, source, target, output_dir)
         return
+
+    # Set up automatic file logging for merge operations
+    log_path = add_file_logger()
+    if log_path:
+        typer.echo(f"LOG FILE: {log_path}")
+        typer.echo("")
 
     service = get_merge_pipeline_service()
 
@@ -201,6 +208,7 @@ def _run_merge(
             "sourceModel": result.source_model,
             "targetModel": result.target_model,
             "outputDir": result.output_dir,
+            "logFile": log_path,
             "preMerge": {
                 "domainsAnalyzed": result.pre_merge.domains_analyzed,
                 "meanOverlap": result.pre_merge.mean_overlap,
@@ -285,10 +293,18 @@ def _run_merge(
                 f"  Pre-merge: {result.pre_merge_duration_s:.2f}s",
                 f"  Merge: {result.merge_duration_s:.2f}s",
                 f"  Validation: {result.validation_duration_s:.2f}s",
-                "=" * 70,
             ])
 
+            if log_path:
+                lines.extend([
+                    "",
+                    f"LOG FILE: {log_path}",
+                ])
+
+            lines.append("=" * 70)
+
             write_output("\n".join(lines), context.output_format, context.pretty)
+            remove_file_loggers()
             return
 
         write_output(payload, context.output_format, context.pretty)
@@ -298,11 +314,14 @@ def _run_merge(
             code="MC-1100",
             title="Pipeline failed",
             detail=str(e),
-            hint="Check model paths and merge parameters",
+            hint=f"Check model paths and merge parameters. Log file: {log_path}" if log_path else "Check model paths and merge parameters",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict())
         raise typer.Exit(code=1)
+    finally:
+        # Always clean up file loggers
+        remove_file_loggers()
 
 
 @app.callback()
@@ -451,6 +470,14 @@ def batch(
     if not validate_model_path(target):
         typer.echo(f"Error: Target path not found: {target}", err=True)
         raise typer.Exit(code=1)
+
+    # Set up automatic file logging for merge operations
+    from modelcypher.utils.logging import add_file_logger, remove_file_loggers
+
+    log_path = add_file_logger()
+    if log_path:
+        typer.echo(f"LOG FILE: {log_path}")
+        typer.echo("")
 
     typer.echo(f"BATCH MERGE: {len(sources)} sources → {target}")
     typer.echo(f"  Mode: {'accumulative' if accumulative else 'sequential'}")
@@ -643,6 +670,11 @@ def batch(
     typer.echo(f"  Sources merged: {len(sources)}")
     if consensus_mode:
         typer.echo("  Mode: Consensus (correction applied before addition)")
+    if log_path:
+        typer.echo(f"  Log file: {log_path}")
+
+    # Clean up file loggers
+    remove_file_loggers()
 
 
 @app.command()
