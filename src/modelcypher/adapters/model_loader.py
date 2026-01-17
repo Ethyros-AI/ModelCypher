@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Model loading infrastructure for training."""
+"""Model loading infrastructure for training and inference."""
 
 import json
 import logging
@@ -28,6 +28,93 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 mlx_lm_load: Any | None = None
+
+
+def load_model(
+    model_path: str | Path,
+    adapter_path: str | None = None,
+) -> tuple[Any, Any]:
+    """Load model and tokenizer for inference.
+
+    This is a simple wrapper around mlx_lm.load for inference use cases.
+    For training with LoRA, use load_model_for_training() instead.
+
+    Parameters
+    ----------
+    model_path : str or Path
+        Path to model directory.
+    adapter_path : str or None
+        Optional adapter directory to load (e.g., LoRA weights).
+
+    Returns
+    -------
+    tuple of (model, tokenizer)
+        The loaded model and tokenizer ready for inference.
+
+    Raises
+    ------
+    RuntimeError
+        If MLX is not available.
+    ImportError
+        If mlx_lm is not installed.
+    """
+    _ensure_mlx()
+
+    model_path = Path(model_path).expanduser().resolve()
+    adapter_dir = Path(adapter_path).expanduser().resolve() if adapter_path else None
+
+    # Check model type from config
+    config_path = model_path / "config.json"
+    model_type = "unknown"
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                full_config = json.load(f)
+                model_type = full_config.get("model_type", "unknown")
+        except Exception:
+            pass
+
+    # Multimodal VL model types that require mlx_vlm
+    MULTIMODAL_TYPES = {"glm4v", "qwen2_vl", "llava", "paligemma", "idefics2", "phi3_v"}
+
+    if model_type in MULTIMODAL_TYPES:
+        logger.info("Multimodal model detected (%s), loading with mlx_vlm", model_type)
+        try:
+            from mlx_vlm import load as mlx_vlm_load
+
+            if adapter_dir is not None:
+                model, tokenizer = mlx_vlm_load(
+                    str(model_path),
+                    adapter_path=str(adapter_dir),
+                )
+            else:
+                model, tokenizer = mlx_vlm_load(str(model_path))
+            return model, tokenizer
+
+        except ImportError as e:
+            raise ImportError(
+                f"mlx_vlm is required to load {model_type} models. "
+                f"Install with: poetry add mlx-vlm"
+            ) from e
+
+    # Standard text model
+    try:
+        from mlx_lm import load as _mlx_lm_load
+    except ModuleNotFoundError as exc:
+        raise ImportError(
+            "mlx_lm is required to load text models. "
+            "Install with: pip install mlx-lm"
+        ) from exc
+
+    if adapter_dir is not None:
+        model, tokenizer = _mlx_lm_load(
+            str(model_path),
+            adapter_path=str(adapter_dir),
+        )
+    else:
+        model, tokenizer = _mlx_lm_load(str(model_path))
+
+    return model, tokenizer
 
 
 def _ensure_mlx() -> tuple[Any, Any]:
