@@ -271,3 +271,118 @@ def geometry_metrics_spectral_signature(
     payload = service.spectral_signature_payload(result)
     payload["_schema"] = "mc.geometry.spectral_signature.v1"
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("gram-spectrum")
+def geometry_metrics_gram_spectrum(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        ..., "--model", help="Path to model directory for activation probing"
+    ),
+    prompts: str = typer.Option(
+        ..., "--prompts", help="Path to prompts file (JSON array or newline-separated)"
+    ),
+    layer: int | None = typer.Option(
+        None, "--layer", help="Layer index (defaults to all layers)"
+    ),
+) -> None:
+    """Analyze Gram matrix eigenvalue spectrum for null-space diagnostics.
+
+    Computes eigenvalues of A @ A.T where A is the activation matrix, revealing:
+    - Condition number: Numerical stability of pseudoinverse
+    - Numeric rank: How many "real" directions are used
+    - Null rank: Dimensions available for transplant
+    - Energy distribution: How compressible the activations are
+    - Spectral gap: Separation between used and unused directions
+
+    This diagnostic helps understand WHY null-space projection may fail
+    when transferring knowledge at scale=1.0 vs scale=0.1.
+    """
+    context = _context(ctx)
+
+    validate_model_path(model, context=context)
+    prompt_list = _load_prompts(prompts, context)
+
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.gram_spectrum import compute_gram_spectrum
+
+    model_obj, tokenizer = load_model_for_training(model)
+    backbone = resolve_model_backbone(model_obj, getattr(model_obj, "model_type", None))
+    if backbone is None:
+        raise typer.BadParameter("Failed to resolve model backbone.")
+    embed_tokens, layers_list, norm = backbone
+    num_layers = len(layers_list)
+    backend = get_default_backend()
+
+    class PromptAnchor:
+        def __init__(self, name: str, prompt: str) -> None:
+            self.name = name
+            self.prompt = prompt
+
+    anchors = [
+        PromptAnchor(f"prompt_{idx}", prompt)
+        for idx, prompt in enumerate(prompt_list)
+    ]
+
+    # Determine which layers to analyze
+    if layer is not None:
+        if layer < 0 or layer >= num_layers:
+            raise typer.BadParameter(
+                f"Layer {layer} out of range for model with {num_layers} layers."
+            )
+        layer_indices = [layer]
+    else:
+        # Analyze all layers
+        layer_indices = list(range(num_layers))
+
+    layer_results = {}
+
+    for layer_idx in layer_indices:
+        activations = extract_anchor_activations(
+            anchors=anchors,
+            tokenizer=tokenizer,
+            embed_tokens=embed_tokens,
+            layers=layers_list,
+            norm=norm,
+            target_layer=layer_idx,
+            backend=backend,
+            prompt_attr="prompt",
+            name_attr="name",
+        )
+        if not activations:
+            continue
+
+        names = list(activations.keys())
+        vectors = [activations[name] for name in names]
+        matrix = backend.stack(vectors, axis=0)
+        backend.eval(matrix)
+
+        spectrum = compute_gram_spectrum(matrix, backend)
+
+        layer_results[str(layer_idx)] = {
+            "n_samples": spectrum.n_samples,
+            "d_features": spectrum.d_features,
+            "total_variance": spectrum.total_variance,
+            "max_eigenvalue": spectrum.max_eigenvalue,
+            "min_eigenvalue": spectrum.min_eigenvalue,
+            "condition_number": spectrum.condition_number,
+            "numeric_rank": spectrum.numeric_rank,
+            "null_rank": spectrum.null_rank,
+            "intrinsic_dimension": spectrum.intrinsic_dimension,
+            "energy_50_dims": spectrum.energy_50_dims,
+            "energy_90_dims": spectrum.energy_90_dims,
+            "energy_99_dims": spectrum.energy_99_dims,
+            "spectral_gap": spectrum.spectral_gap,
+            "rank_threshold": spectrum.rank_threshold,
+            "eigenvalues_top10": spectrum.eigenvalues[:10],
+        }
+
+    payload = {
+        "_schema": "mc.geometry.gram_spectrum.v1",
+        "model_path": model,
+        "num_layers": num_layers,
+        "prompt_count": len(prompt_list),
+        "layers": layer_results,
+    }
+    write_output(payload, context.output_format, context.pretty)

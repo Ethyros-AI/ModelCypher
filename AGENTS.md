@@ -41,6 +41,82 @@ See `experiments/results/geometry_validation.json` for full data.
 
 ---
 
+## The Research Methodology
+
+**We solve through increasing constraint on the geometry.**
+
+This is not trial-and-error. This is systematic elimination of unknown pathways:
+
+### CKA = 1.0 is the Invariant Unlock
+
+The key mathematical discovery: after Procrustes alignment, CKA = 1.0 on shared concepts. This proves:
+- The relational structure is **identical** across models
+- Only the coordinates differ
+- Alignment is **closed-form**: `F = pinv(source) @ target`
+
+From this single invariant, everything else derives:
+- **Alignment** → closed-form rotation finding
+- **Transfer** → null-space projection onto unused capacity
+- **Density** → k-NN comparison identifies where to transfer
+- **Coherence** → trajectory validity on the merged manifold
+
+### Tokens Are Shadows, Not the Thing Itself
+
+When a prompt enters, it becomes a trajectory through the manifold. The model is a passthrough - concepts have gravity and pull the trajectory through high-dimensional space. Tokens are the powder flying off the skis - the residue of geometry, not the thought itself.
+
+**Implication**: Don't debug tokens. Debug the geometry that produces them.
+
+### Hallucination is Geometric, Not Moral
+
+Hallucination is NOT the model "lying." It's one of two geometric phenomena:
+1. **Sparse interpolation**: Query lands in under-sampled region; nearest-neighbor gives plausible but wrong path
+2. **Tangent hop**: Trajectory follows dimensionally-adjacent but logically-unrelated concept
+
+The model can't "see" cliff edges in sparse regions. It's not malicious - it's topology.
+
+**Implication**: Fix by characterizing the manifold (dense sampling), not by "training honesty."
+
+### One Variable Per Day
+
+When something breaks:
+1. **Pick one variable** - sample coverage, condition number, spectral gap, density weighting
+2. **Characterize it fully** - what does it mean geometrically? Where in the trajectory does it matter?
+3. **Measure before/during/after** - activation geometry in, projection geometry during, coherence out
+4. **Work backward from failure** - which metric changed? In which direction? At which stage?
+
+The problem space is finite. Every variable is discoverable. Every interaction is measurable.
+
+### Metrics, Not Vibes
+
+Every diagnostic must return raw measurements:
+- **Coverage ratio**: n_samples / hidden_dim (must be > 1.0, ideally > 4.0)
+- **Condition number**: max_eigenvalue / min_eigenvalue (numerical stability)
+- **Null rank**: dimensions available for transfer
+- **Transfer strength**: mean density weight applied
+- **Preserved fraction**: how much delta survived projection
+- **Spectral gap**: separation between used and unused directions
+
+When something fails, one of these metrics will tell you why.
+
+### The Debugging Contract
+
+```
+If coherence fails:
+    → Check coverage_ratio (was manifold properly sampled?)
+    → Check condition_number (was projection numerically stable?)
+    → Check density_weights (did transfer happen in right places?)
+    → Check spectral_gap (were used/unused directions separated?)
+    → Check preserved_fraction (how much delta survived?)
+
+Each metric points to a different failure mode.
+Each failure mode has a different fix.
+The space is finite.
+```
+
+**If you find yourself guessing, you're missing a metric.** Add the metric first.
+
+---
+
 ## Commands
 
 Always use `poetry` to run or install anything in this repo.
