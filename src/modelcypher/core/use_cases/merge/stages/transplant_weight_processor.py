@@ -446,8 +446,7 @@ def process_layer_weights(
             )
             if source_w is None and "conv.conv" not in key:
                 metrics.setdefault("unmapped_weights", [])
-                if len(metrics["unmapped_weights"]) < 20:
-                    metrics["unmapped_weights"].append(key)
+                metrics["unmapped_weights"].append(key)
             continue
 
         metrics["weights_considered"] += 1

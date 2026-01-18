@@ -459,9 +459,11 @@ def batch(
             _rbf_gram_from_sq_distances,
         )
         from modelcypher.core.domain.agents.probe_loader import ProbeLoader
+        from modelcypher.core.use_cases.merge.helpers import get_hidden_state
 
         model_loader = MLXModelLoader()
         all_paths = [target] + list(sources)
+        path_names = [Path(path).name for path in all_paths]
 
         # Load probes for quick Gram comparison
         # Use sqrt(available) probes - balances coverage vs speed
@@ -470,14 +472,9 @@ def batch(
         n_probes = max(len(all_paths) + 2, int(len(available_probes) ** 0.5))
         n_probes = min(n_probes, 128)  # Cap for pre-merge speed
         probes = available_probes[:n_probes]
+        min_valid = len(all_paths) + 1
 
-        # Collect Gram matrices for each model
-        gram_matrices = []
-        for path in all_paths:
-            model, tokenizer = model_loader.load_model(path)
-
-            # Get activations for probes (middle layer)
-            from modelcypher.core.use_cases.merge.helpers import get_hidden_state
+        def _collect_probe_activations(model: object, tokenizer: object) -> list[object]:
             activations = []
             for probe in probes:
                 try:
@@ -486,9 +483,26 @@ def batch(
                         activations.append(act)
                 except Exception:
                     continue
+            return activations
+
+        def _build_gram_matrix(activations: list[object]) -> object:
+            X = backend.stack(activations, axis=0)
+            backend.eval(X)
+            sq_dist = geodesic_squared_distances(X, backend)
+            sigma = _shared_rbf_sigma(sq_dist, sq_dist, backend)
+            K = _rbf_gram_from_sq_distances(sq_dist, sigma, backend)
+            backend.eval(K)
+            return K
+
+        # Collect Gram matrices for each model
+        gram_matrices = []
+        for path in all_paths:
+            model, tokenizer = model_loader.load_model(path)
+
+            # Get activations for probes (middle layer)
+            activations = _collect_probe_activations(model, tokenizer)
 
             # Need at least n_models + 1 valid probes for meaningful Gram comparison
-            min_valid = len(all_paths) + 1
             if len(activations) < min_valid:
                 typer.echo(f"  Warning: Too few valid probes ({len(activations)} < {min_valid}) for {path}")
                 gram_matrices.append(None)
@@ -496,14 +510,7 @@ def batch(
 
             # Build geodesic RBF Gram matrix (n_probes × n_probes, dimension-invariant)
             # Uses k-NN graph shortest paths for proper manifold distances
-            X = backend.stack(activations, axis=0)
-            backend.eval(X)
-            sq_dist = geodesic_squared_distances(X, backend)
-            # Use median heuristic for sigma (data-derived, no hardcoded values)
-            sigma = _shared_rbf_sigma(sq_dist, sq_dist, backend)
-            K = _rbf_gram_from_sq_distances(sq_dist, sigma, backend)
-            backend.eval(K)
-            gram_matrices.append(K)
+            gram_matrices.append(_build_gram_matrix(activations))
 
             # Clean up model
             del model
@@ -512,7 +519,6 @@ def batch(
 
         # Compare Gram matrices using geodesic CKA (overlap diagnostic)
         detector = OutlierDetector(backend)
-        n_models = len(gram_matrices)
         valid_grams = [(i, K) for i, K in enumerate(gram_matrices) if K is not None]
 
         if len(valid_grams) < 2:
@@ -520,23 +526,26 @@ def batch(
             result_detect = None
         else:
             # Compute pairwise CKA distances (1 - CKA = distance)
-            pairwise_cka = {}
-            for i, (idx_i, K_i) in enumerate(valid_grams):
-                for j, (idx_j, K_j) in enumerate(valid_grams):
-                    if i < j:
-                        cka_val = compute_cka_from_grams(K_i, K_j, backend)
-                        pairwise_cka[(idx_i, idx_j)] = cka_val
+            pairwise_cka: dict[tuple[int, int], float] = {}
+            cka_sums = {idx: 0.0 for idx, _ in valid_grams}
+            cka_counts = {idx: 0 for idx, _ in valid_grams}
 
-            # Compute mean CKA for each model (higher = more aligned with others)
-            mean_cka = []
-            for idx, _ in valid_grams:
-                cka_sum = 0.0
-                count = 0
-                for (i, j), cka in pairwise_cka.items():
-                    if i == idx or j == idx:
-                        cka_sum += cka
-                        count += 1
-                mean_cka.append((idx, cka_sum / count if count > 0 else 0.0))
+            for i in range(len(valid_grams)):
+                idx_i, K_i = valid_grams[i]
+                for j in range(i + 1, len(valid_grams)):
+                    idx_j, K_j = valid_grams[j]
+                    cka_val = compute_cka_from_grams(K_i, K_j, backend)
+                    pairwise_cka[(idx_i, idx_j)] = cka_val
+                    cka_sums[idx_i] += cka_val
+                    cka_sums[idx_j] += cka_val
+                    cka_counts[idx_i] += 1
+                    cka_counts[idx_j] += 1
+
+            mean_cka = [
+                (idx, cka_sums[idx] / cka_counts[idx] if cka_counts[idx] > 0 else 0.0)
+                for idx, _ in valid_grams
+            ]
+            mean_cka_map = {idx: mean for idx, mean in mean_cka}
 
             # Outliers have LOW mean CKA (far from others in representation space)
             # Convert to "errors" (1 - mean_cka) for the detector
@@ -567,19 +576,15 @@ def batch(
             # Show pairwise CKA values for transparency
             typer.echo("  Pairwise CKA (representation similarity):")
             for (i, j), cka in pairwise_cka.items():
-                path_i = all_paths[i].split("/")[-1]
-                path_j = all_paths[j].split("/")[-1]
-                typer.echo(f"    {path_i} <-> {path_j}: CKA={cka:.4f}")
+                typer.echo(f"    {path_names[i]} <-> {path_names[j]}: CKA={cka:.4f}")
             typer.echo("")
 
             if result_detect.outlier_indices:
                 typer.echo("  OUTLIERS DETECTED (low CKA with others):")
                 for idx in result_detect.outlier_indices:
-                    model_path = all_paths[idx]
-                    # Find mean CKA for this model
-                    model_mean_cka = mean_cka[valid_indices.index(idx)][1] if idx in valid_indices else 0.0
+                    model_mean_cka = mean_cka_map.get(idx, 0.0)
                     role = "TARGET" if idx == 0 else f"SOURCE-{idx}"
-                    typer.echo(f"    [{role}] {model_path.split('/')[-1]} (mean CKA: {model_mean_cka:.4f})")
+                    typer.echo(f"    [{role}] {path_names[idx]} (mean CKA: {model_mean_cka:.4f})")
                 typer.echo("")
                 if 0 in result_detect.outlier_indices:
                     typer.echo("  WARNING: Target model is an outlier!")
@@ -1123,11 +1128,14 @@ def validate(
     skip_density: bool = typer.Option(
         False, "--skip-density", help="Skip intrinsic dimension and null space measurements"
     ),
-    num_prompts: int = typer.Option(
-        10, "--num-prompts", "-n", help="Number of test prompts for coherence validation"
+    num_prompts: int | None = typer.Option(
+        None, "--num-prompts", "-n", help="Number of test prompts for coherence validation"
     ),
-    max_tokens: int = typer.Option(
-        100, "--max-tokens", "-m", help="Max tokens per generation for coherence test"
+    max_tokens: int | None = typer.Option(
+        None, "--max-tokens", "-m", help="Max tokens per generation for coherence test"
+    ),
+    baseline_model: str | None = typer.Option(
+        None, "--baseline-model", help="Baseline model path for coherence comparison"
     ),
 ) -> None:
     """Validate a merged model for coherence and density.
@@ -1179,7 +1187,9 @@ def validate(
         "A good explanation should be clear and",
         "The relationship between input and output in a system",
         "When debugging code, the first step is usually to",
-    ][:num_prompts]
+    ]
+    if num_prompts is not None:
+        test_prompts = test_prompts[:num_prompts]
 
     try:
         inference_engine = get_inference_engine()
@@ -1190,29 +1200,46 @@ def validate(
             inference_engine=inference_engine,
             test_prompts=test_prompts,
             max_tokens=max_tokens,
+            baseline_model_path=baseline_model,
         )
 
+        passed_count = (
+            coherence_result.total_count - coherence_result.failed_count
+            if coherence_result.failed_count is not None
+            else None
+        )
         validation_results["coherence"] = {
             "is_coherent": coherence_result.is_coherent,
-            "passed_count": coherence_result.total_count - coherence_result.failed_count,
+            "passed_count": passed_count,
             "failed_count": coherence_result.failed_count,
             "total_count": coherence_result.total_count,
             "mean_repetition_score": round(coherence_result.mean_repetition_score, 4),
             "failed_prompts": coherence_result.failed_prompts,
         }
 
-        if coherence_result.is_coherent:
-            typer.echo(f"  [PASS] Coherence: {coherence_result.total_count - coherence_result.failed_count}/{coherence_result.total_count} prompts passed")
+        if coherence_result.is_coherent is True:
+            typer.echo(
+                f"  [PASS] Coherence: {passed_count}/{coherence_result.total_count} prompts passed"
+            )
             typer.echo(f"  Mean repetition score: {coherence_result.mean_repetition_score:.4f}")
-        else:
-            typer.echo(f"  [FAIL] Coherence: {coherence_result.failed_count}/{coherence_result.total_count} prompts failed")
+        elif coherence_result.is_coherent is False:
+            typer.echo(
+                f"  [FAIL] Coherence: {coherence_result.failed_count}/{coherence_result.total_count} prompts failed"
+            )
             typer.echo(f"  Mean repetition score: {coherence_result.mean_repetition_score:.4f}")
             typer.echo("")
             typer.echo("  FAILED PROMPTS:")
-            for i, (prompt, metrics) in enumerate(zip(coherence_result.failed_prompts,
-                                                       [m for m in coherence_result.metrics if m.is_degenerate])):
+            for i, (prompt, metrics) in enumerate(
+                zip(
+                    coherence_result.failed_prompts,
+                    [m for m in coherence_result.metrics if m.is_degenerate],
+                )
+            ):
                 typer.echo(f"    {i+1}. '{prompt[:40]}...'")
                 typer.echo(f"       Reason: {metrics.degenerate_reason}")
+        else:
+            typer.echo("  [INFO] Coherence metrics computed (no baseline model).")
+            typer.echo(f"  Mean repetition score: {coherence_result.mean_repetition_score:.4f}")
 
     except Exception as e:
         typer.echo(f"  [ERROR] Coherence validation failed: {e}")

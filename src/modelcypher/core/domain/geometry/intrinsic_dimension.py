@@ -592,8 +592,9 @@ class IntrinsicDimension:
         if n < 10:  # Bootstrap needs reasonable sample size
             return None
 
-        # Derive resamples from sample size - no magic numbers
-        # Rule: min(n, 1000) gives sufficient coverage without waste
+        # Derive resamples from sample size
+        # B >= 1000 for CI estimation (Efron & Tibshirani, 1993)
+        # min(n, 1000) gives sufficient coverage without waste
         resamples = min(sample_size, 1000)
 
         # 95% CI is standard (2.5th and 97.5th percentiles)

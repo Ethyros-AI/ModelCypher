@@ -732,10 +732,11 @@ def run_merge(
                 model_path=final_output_path,
                 inference_engine=inference_engine,
                 test_prompts=None,  # Uses default diverse prompts
-                max_tokens=100,
+                max_tokens=None,
+                baseline_model_path=target_path,
             )
 
-            if not coherence_result.is_coherent:
+            if coherence_result.is_coherent is False:
                 # Log detailed failure info but don't raise yet
                 # (we already saved, so give the user the analysis)
                 logger.error(
@@ -759,7 +760,7 @@ def run_merge(
                     "failed_count": coherence_result.failed_count,
                     "total_count": coherence_result.total_count,
                     "mean_repetition_score": coherence_result.mean_repetition_score,
-                    "failed_prompts": coherence_result.failed_prompts[:3],  # First 3
+                    "failed_prompts": coherence_result.failed_prompts,
                 }
                 analysis_path.write_text(json.dumps(analysis_report, indent=2, default=str))
             else:

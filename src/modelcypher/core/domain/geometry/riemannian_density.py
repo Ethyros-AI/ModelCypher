@@ -42,11 +42,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     tiny_value,
 )
-from modelcypher.core.domain.geometry.precision_utils import (
-    _float_dtype_for,
-    _mask_sum,
-    _promote_precision,
-)
+from modelcypher.core.domain.geometry.precision_utils import _mask_sum, _promote_precision
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:

@@ -753,7 +753,7 @@ def _check_refusal_preservation(
         harmful_activations: list[Any] = []
         harmless_activations: list[Any] = []
 
-        for pair in STANDARD_CONTRASTIVE_PAIRS[:3]:
+        for pair in STANDARD_CONTRASTIVE_PAIRS:
             try:
                 harmful_acts = collect_activations_fn(target_model, tokenizer, pair.harmful)
                 if mid_layer in harmful_acts:

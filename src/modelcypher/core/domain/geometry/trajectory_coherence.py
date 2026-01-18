@@ -18,17 +18,9 @@
 """Trajectory coherence validation for merged models.
 
 Validates that a merged model produces coherent output by running inference
-on test prompts and detecting degenerate patterns like repetition or
-high perplexity.
-
-This is BLOCKING validation: if degenerate output is detected, the merge
-should be aborted rather than saving a broken model.
-
-Detection Patterns:
-    1. Repetition detection: Count n-gram repetitions in output
-       - If any 3-gram appears > threshold times, flag as repetitive
-    2. Truncation detection: Output ends mid-word or is unexpectedly short
-    3. Semantic collapse: Output is single repeated token
+on test prompts and comparing raw coherence metrics to a baseline model.
+No fixed thresholds are used: regression is defined as any metric worsening
+relative to the baseline for the same prompts.
 
 Why This Matters:
     Degenerate model behavior (repeating "topology topology topology") is

@@ -40,7 +40,7 @@ def _select_probe_text(probe: Any) -> str | None:
     """Pick a usable probe text from the probe definition."""
     probe_text = None
     for candidate in probe.support_texts or []:
-        if not candidate or len(candidate.strip()) < 2:
+        if not candidate or not candidate.strip():
             continue
         probe_text = candidate
         break
@@ -53,7 +53,7 @@ def _select_probe_text(probe: Any) -> str | None:
             fallback = probe.name
         elif probe.description:
             fallback = probe.description
-        if fallback and len(fallback.strip()) >= 2:
+        if fallback and fallback.strip():
             probe_text = fallback
     return probe_text
 

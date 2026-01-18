@@ -69,7 +69,11 @@ class InterpolationMethod(Enum):
 
 @dataclass
 class ModeConnectivityResult:
-    """Result of mode connectivity analysis."""
+    """Result of mode connectivity analysis.
+
+    Contains raw measurements only. No interpretations or recommendations.
+    Threshold decisions are left to the caller.
+    """
 
     # Loss values along the interpolation path
     path_losses: list[float]
@@ -81,7 +85,7 @@ class ModeConnectivityResult:
     barrier_height: float
 
     # Normalized barrier: barrier_height / mean(endpoint_losses)
-    # Lower is better. < 0.05 suggests same basin.
+    # Lower indicates models are closer in the loss landscape.
     normalized_barrier: float
 
     # Loss at source (t=0)
@@ -95,13 +99,6 @@ class ModeConnectivityResult:
 
     # Interpolation method used
     method: InterpolationMethod
-
-    # Whether models appear to be in the same basin
-    # Based on normalized barrier < threshold
-    same_basin: bool
-
-    # Recommendation for merge strategy
-    recommendation: str
 
 
 @dataclass
@@ -287,13 +284,12 @@ def analyze_mode_connectivity(
     loss_fn: Callable[["Array"], float],
     n_steps: int = 21,
     method: InterpolationMethod = InterpolationMethod.LINEAR,
-    barrier_threshold: float = 0.05,
     backend: "Backend | None" = None,
 ) -> ModeConnectivityResult:
     """Analyze mode connectivity between two weight configurations.
 
-    Computes the loss barrier along the interpolation path and determines
-    if the models are in the same basin.
+    Computes the loss barrier along the interpolation path. Returns raw
+    measurements only - threshold interpretation is left to the caller.
 
     Parameters
     ----------
@@ -307,15 +303,13 @@ def analyze_mode_connectivity(
         Number of points along the path.
     method : InterpolationMethod
         Interpolation method.
-    barrier_threshold : float
-        Threshold for normalized barrier to consider same basin.
     backend : Backend, optional
         Compute backend.
 
     Returns
     -------
     ModeConnectivityResult
-        Analysis result with barrier height and recommendation.
+        Analysis result with raw barrier metrics.
     """
     t_values, losses = compute_path_losses(
         source_weights,
@@ -340,23 +334,12 @@ def analyze_mode_connectivity(
     else:
         normalized_barrier = 0.0
 
-    same_basin = normalized_barrier < barrier_threshold
-
-    # Generate recommendation
-    if same_basin:
-        recommendation = "Low barrier - linear interpolation merge is safe"
-    elif normalized_barrier < 0.2:
-        recommendation = "Moderate barrier - consider geodesic interpolation"
-    elif normalized_barrier < 0.5:
-        recommendation = "High barrier - models may be in different basins"
-    else:
-        recommendation = "Very high barrier - merge likely to degrade performance"
-
     logger.info(
-        "MODE CONNECTIVITY: barrier=%.4f (normalized=%.3f), same_basin=%s",
+        "MODE CONNECTIVITY: barrier=%.4f, normalized=%.3f, source_loss=%.4f, target_loss=%.4f",
         barrier_height,
         normalized_barrier,
-        same_basin,
+        source_loss,
+        target_loss,
     )
 
     return ModeConnectivityResult(
@@ -368,8 +351,6 @@ def analyze_mode_connectivity(
         target_loss=target_loss,
         barrier_location=t_values[max_idx],
         method=method,
-        same_basin=same_basin,
-        recommendation=recommendation,
     )
 
 
@@ -379,7 +360,6 @@ def compute_loss_barrier_profile(
     loss_fn: Callable[["Array"], float],
     n_steps: int = 51,
     method: InterpolationMethod = InterpolationMethod.LINEAR,
-    barrier_threshold: float = 0.05,
     backend: "Backend | None" = None,
 ) -> LossBarrierProfile:
     """Compute detailed loss barrier profile.
@@ -399,8 +379,6 @@ def compute_loss_barrier_profile(
         Number of points along the path (more = finer resolution).
     method : InterpolationMethod
         Interpolation method.
-    barrier_threshold : float
-        Threshold for same-basin determination.
     backend : Backend, optional
         Compute backend.
 
@@ -415,7 +393,6 @@ def compute_loss_barrier_profile(
         loss_fn,
         n_steps=n_steps,
         method=method,
-        barrier_threshold=barrier_threshold,
         backend=backend,
     )
 
@@ -459,88 +436,6 @@ def compute_loss_barrier_profile(
     )
 
 
-def predict_merge_success(
-    source_weights: "Array",
-    target_weights: "Array",
-    loss_fn: Callable[["Array"], float],
-    n_steps: int = 11,
-    backend: "Backend | None" = None,
-) -> tuple[bool, str, float]:
-    """Quick prediction of whether a merge will succeed.
-
-    A simple API that returns a yes/no prediction with explanation.
-
-    Parameters
-    ----------
-    source_weights : Array
-        Source model weights.
-    target_weights : Array
-        Target model weights.
-    loss_fn : Callable
-        Function that takes weights and returns loss value.
-    n_steps : int
-        Number of points to sample along path.
-    backend : Backend, optional
-        Compute backend.
-
-    Returns
-    -------
-    tuple[bool, str, float]
-        (success_predicted, explanation, confidence)
-        - success_predicted: True if merge is likely to succeed
-        - explanation: Human-readable explanation
-        - confidence: Confidence in prediction (0-1)
-    """
-    result = analyze_mode_connectivity(
-        source_weights,
-        target_weights,
-        loss_fn,
-        n_steps=n_steps,
-        method=InterpolationMethod.LINEAR,
-        backend=backend,
-    )
-
-    # Convert normalized barrier to confidence
-    # Lower barrier = higher confidence in success
-    if result.normalized_barrier < 0.05:
-        success = True
-        confidence = 0.95
-        explanation = (
-            f"Models are in the same basin (barrier={result.barrier_height:.4f}). "
-            "Merge should preserve performance."
-        )
-    elif result.normalized_barrier < 0.1:
-        success = True
-        confidence = 0.8
-        explanation = (
-            f"Low barrier ({result.barrier_height:.4f}) suggests compatible modes. "
-            "Merge is likely to succeed."
-        )
-    elif result.normalized_barrier < 0.3:
-        success = True
-        confidence = 0.5
-        explanation = (
-            f"Moderate barrier ({result.barrier_height:.4f}). "
-            "Merge may work but consider geodesic interpolation."
-        )
-    elif result.normalized_barrier < 0.5:
-        success = False
-        confidence = 0.6
-        explanation = (
-            f"High barrier ({result.barrier_height:.4f}). "
-            "Models may be in different basins. Merge likely to degrade."
-        )
-    else:
-        success = False
-        confidence = 0.9
-        explanation = (
-            f"Very high barrier ({result.barrier_height:.4f}). "
-            "Models are in disconnected modes. Merge will likely fail."
-        )
-
-    return success, explanation, confidence
-
-
 __all__ = [
     "InterpolationMethod",
     "ModeConnectivityResult",
@@ -550,5 +445,4 @@ __all__ = [
     "compute_path_losses",
     "analyze_mode_connectivity",
     "compute_loss_barrier_profile",
-    "predict_merge_success",
 ]
