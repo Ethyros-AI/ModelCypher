@@ -33,7 +33,9 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain._backend import get_default_backend
 # NOTE: ProjectionMethod import removed - use GRAM_TRANSPORT.
 from modelcypher.core.domain.geometry.numerical_stability import (
+    get_model_compute_dtype,
     machine_epsilon,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.transplant import (
     partition_core_boundary,
@@ -926,6 +928,43 @@ def stage_transplant(
     if metrics["cka_after"]:
         ckas = metrics["cka_after"]
         metrics["mean_cka_after"] = sum(ckas) / len(ckas)
+
+    # =========================================================================
+    # PRECISION-DERIVED WARNINGS FOR TRANSPLANT QUALITY
+    # =========================================================================
+    # Get model precision ceiling for threshold derivation
+    model_dtype = get_model_compute_dtype()
+    if model_dtype is not None:
+        eps_ref = b.array([1.0], dtype=model_dtype)
+        model_eps = machine_epsilon(b, eps_ref)
+    else:
+        # Fallback: assume float32 (never float64)
+        model_eps = 1e-7
+    sqrt_eps = sqrt_scalar(model_eps, b)
+
+    # Warning 1: Preserved fraction below noise floor
+    mean_pres = metrics.get("mean_preserved_fraction")
+    if mean_pres is not None and mean_pres < sqrt_eps:
+        logger.warning(
+            "TRANSPLANT QUALITY: Mean preserved fraction %.6f is below "
+            "noise floor sqrt(ε)=%.6f. Delta was almost entirely erased by "
+            "null-space projection. Target may have no capacity for additional "
+            "knowledge.",
+            mean_pres,
+            sqrt_eps,
+        )
+
+    # Warning 2: No null space capacity
+    mean_null = metrics.get("mean_null_dim")
+    if mean_null is not None and mean_null < 1.0:
+        logger.warning(
+            "TRANSPLANT QUALITY: Mean null dimension %.1f ≈ 0. Target has "
+            "no spare capacity. Knowledge transfer cannot occur without "
+            "overwriting target structure. Consider a different target model "
+            "with lower occupancy.",
+            mean_null,
+        )
+
     if occupancy_by_layer:
         occupancy_payload: dict[str, list[float]] = {}
         for layer_idx, occ in occupancy_by_layer.items():

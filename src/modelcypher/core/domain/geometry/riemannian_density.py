@@ -15,18 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Riemannian density estimation for concept manifolds.
-
-Models concepts as probability distributions over the representation manifold.
-Provides volume-based overlap for interference prediction and curvature-aware
-covariance estimation.
-
-Notes
------
-Each concept is modeled as a Riemannian Gaussian: a normal distribution on
-the curved manifold where covariance accounts for the local metric tensor.
-Geodesic radius measures extent along the manifold, not chord distance.
-"""
+"""Riemannian density estimation on representation manifolds."""
 
 from __future__ import annotations
 
@@ -102,25 +91,7 @@ class InfluenceType(str, Enum):
 
 @dataclass
 class ConceptVolume:
-    """A concept modeled as a probability distribution on the manifold.
-
-    Attributes
-    ----------
-    concept_id : str
-        Identifier for this concept.
-    centroid : Array
-        Mean position in activation space.
-    covariance : Array
-        Covariance matrix (curvature-corrected if configured).
-    geodesic_radius : float
-        Extent along manifold (accounts for curvature).
-    local_curvature : LocalCurvature or None
-        Estimated curvature at centroid.
-    num_samples : int
-        Number of activations used to estimate volume.
-    influence_type : InfluenceType
-        Type of influence function (gaussian, laplacian, etc).
-    """
+    """Concept volume as a distribution on the manifold."""
 
     concept_id: str
     centroid: "Array"
@@ -156,13 +127,13 @@ class ConceptVolume:
 
     @property
     def dimension(self) -> int:
-        """Dimensionality of the concept space."""
+        """Feature dimension."""
         shape = self.centroid.shape
         return int(shape[0]) if len(shape) == 1 else int(shape[-1])
 
     @property
     def precision(self) -> "Array":
-        """Precision matrix (inverse covariance)."""
+        """Inverse covariance."""
         if self._precision is None:
             backend = get_default_backend()
             # Use safe_inverse with automatic condition checking and regularization
@@ -173,7 +144,7 @@ class ConceptVolume:
 
     @property
     def log_det_covariance(self) -> float:
-        """Log determinant of covariance for normalization."""
+        """Log determinant of covariance."""
         if self._log_det_cov is None:
             backend = get_default_backend()
             # slogdet returns (sign, logdet) - we compute via eigenvalues (geodesic - GPU-only)
@@ -194,11 +165,7 @@ class ConceptVolume:
 
     @property
     def volume(self) -> float:
-        """Approximate volume of the concept region.
-
-        For Gaussian, this is sqrt(det(2*pi*e*Cov)) ≈ exp(0.5 * log_det + d/2 * log(2*pi*e))
-        For uniform ball, this is volume of d-dimensional sphere with geodesic_radius.
-        """
+        """Approximate concept volume."""
         if self._volume is None:
             backend = get_default_backend()
             d = self.dimension
@@ -228,7 +195,7 @@ class ConceptVolume:
 
     @property
     def effective_radius(self) -> float:
-        """Effective radius from covariance (geometric mean of eigenvalues)."""
+        """Geometric-mean radius from covariance."""
         backend = get_default_backend()
         # Geodesic eigendecomposition (GPU-only)
         eigenvalues, _ = self._covariance_eigendecomposition()
@@ -298,33 +265,20 @@ class ConceptVolume:
             object.__setattr__(self, "_cached_uniform_norm", inv)
         return self._cached_uniform_norm
 
-    def _compute_tangent_vector(self, point: "Array") -> "Array":
-        """Compute tangent vector from centroid to point using log map.
-
-        Requires geodesic context; chord-only fallback is invalid on curved manifolds.
-
-        Args:
-            point: Point in activation space
-
-        Returns:
-            Tangent vector at centroid pointing toward point
-        """
+    def _geodesic_distance_from_centroid(
+        self,
+        point_arr: "Array",
+        centroid_arr: "Array",
+    ) -> float:
+        """Compute geodesic distance from centroid using cached graph."""
         backend = get_default_backend()
-        point_arr = _promote_precision(backend.array(point), backend)
-        centroid_arr = _promote_precision(self.centroid, backend)
-        diff = point_arr - centroid_arr
-
-        # Geodesic context is mandatory for curvature-correct log maps
         if self._geodesic_context is None or self.raw_activations is None:
             raise ValueError(
                 "Geodesic context required for Riemannian log map. "
                 "Build volumes with store_raw_activations=True."
             )
 
-        # Compute geodesic distance from centroid to point
         rg = RiemannianGeometry(backend)
-
-        # Distances from centroid to all activations
         geo_from_centroid = self._geo_from_centroid
         if geo_from_centroid is None:
             geo_from_centroid = rg._geodesic_distances_from_query(
@@ -335,8 +289,6 @@ class ConceptVolume:
             backend.eval(geo_from_centroid)
             self._geo_from_centroid = geo_from_centroid
 
-        # Geodesic distance from centroid to point uses discrete manifold paths:
-        # min_i(geo_centroid_to_i + geo_query_to_i).
         geo_from_query = rg._geodesic_distances_from_query(
             self.raw_activations,
             point_arr,
@@ -346,7 +298,15 @@ class ConceptVolume:
         total_dists = geo_from_centroid + geo_from_query
         geo_dist = backend.min(total_dists)
         backend.eval(geo_dist)
-        geo_dist_float = float(backend.to_scalar(geo_dist))
+        return float(backend.to_scalar(geo_dist))
+
+    def _compute_tangent_vector(self, point: "Array") -> "Array":
+        """Compute log-map tangent from centroid to point."""
+        backend = get_default_backend()
+        point_arr = _promote_precision(backend.array(point), backend)
+        centroid_arr = _promote_precision(self.centroid, backend)
+        diff = point_arr - centroid_arr
+        geo_dist_float = self._geodesic_distance_from_centroid(point_arr, centroid_arr)
 
         # Tangent norm via geodesic distance from origin
         diff_vec = backend.reshape(diff, (1, -1))
@@ -398,17 +358,7 @@ class ConceptVolume:
         return backend.zeros(mahal_sq.shape)
 
     def density_at(self, point: "Array") -> float:
-        """Compute probability density at a point.
-
-        Uses proper Riemannian log map when geodesic context is available,
-        scaling the tangent vector by geodesic/chord ratio.
-
-        Args:
-            point: Point in activation space (d-dimensional)
-
-        Returns:
-            Probability density value
-        """
+        """Compute density at a point (requires geodesic context)."""
         backend = get_default_backend()
 
         # Compute tangent vector (log map if geodesic context available)
@@ -423,7 +373,7 @@ class ConceptVolume:
         return float(backend.to_scalar(densities))
 
     def mahalanobis_distance(self, point: "Array") -> float:
-        """Compute Mahalanobis distance from centroid to point."""
+        """Mahalanobis distance from centroid."""
         backend = get_default_backend()
         diff = point - self.centroid
         # mahal_sq = diff @ precision @ diff
@@ -434,38 +384,18 @@ class ConceptVolume:
         return sqrt_scalar(mahal_sq, backend)
 
     def geodesic_distance(self, point: "Array") -> float:
-        """Compute geodesic distance from centroid to point."""
+        """Geodesic distance from centroid."""
         return self.geodesic_distance_to(point)
 
     def geodesic_distance_to(self, point: "Array") -> float:
-        """Compute geodesic distance from centroid to point using cached graph."""
+        """Geodesic distance from centroid using cached graph when available."""
         backend = get_default_backend()
         point_arr = backend.array(point)
-        centroid_arr = backend.array(self.centroid)
 
         # Use cached geodesic context when available for precision and speed.
         if self._geodesic_context is not None and self.raw_activations is not None:
-            rg = RiemannianGeometry(backend)
-            geo_from_centroid = self._geo_from_centroid
-            if geo_from_centroid is None:
-                geo_from_centroid = rg._geodesic_distances_from_query(
-                    self.raw_activations,
-                    centroid_arr,
-                    geo_result=self._geodesic_context,
-                )
-                backend.eval(geo_from_centroid)
-                self._geo_from_centroid = geo_from_centroid
-
-            geo_from_query = rg._geodesic_distances_from_query(
-                self.raw_activations,
-                point_arr,
-                geo_result=self._geodesic_context,
-            )
-            backend.eval(geo_from_query)
-            total_dists = geo_from_centroid + geo_from_query
-            geo_dist = backend.min(total_dists)
-            backend.eval(geo_dist)
-            return float(backend.to_scalar(geo_dist))
+            centroid_arr = backend.array(self.centroid)
+            return self._geodesic_distance_from_centroid(point_arr, centroid_arr)
 
         # Fallback for volumes without raw activations: 2-point geodesic.
         from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -484,30 +414,12 @@ class ConceptVolume:
         return float(backend.to_scalar(geo_elem))
 
     def contains(self, point: "Array") -> bool:
-        """Check if point is within concept volume.
-
-        Uses geodesic radius criterion: point is inside if its geodesic
-        distance from centroid is within the volume's extent. The geodesic
-        radius is derived from the data during volume estimation.
-
-        Args:
-            point: Point to check
-
-        Returns:
-            True if point is within volume
-        """
+        """Check if point lies within the geodesic radius."""
         dist = self.geodesic_distance_to(point)
         return dist <= self.geodesic_radius
 
     def mahalanobis_distance_batch(self, points: "Array") -> "Array":
-        """Compute Mahalanobis distance from centroid to multiple points.
-
-        Args:
-            points: Array of points (n x d)
-
-        Returns:
-            Array of Mahalanobis distances (n,)
-        """
+        """Mahalanobis distances from centroid for a batch."""
         backend = get_default_backend()
         # diff: (n, d)
         diff = points - self.centroid
@@ -518,16 +430,7 @@ class ConceptVolume:
         return backend.sqrt(backend.maximum(mahal_sq, backend.zeros_like(mahal_sq)))
 
     def _compute_tangent_vectors_batch(self, points: "Array") -> "Array":
-        """Compute tangent vectors from centroid to multiple points using log map.
-
-        Requires geodesic context; scales by geodesic/chord ratio.
-
-        Args:
-            points: Array of points (n x d)
-
-        Returns:
-            Tangent vectors at centroid (n x d)
-        """
+        """Compute log-map tangents from centroid for a batch."""
         backend = get_default_backend()
         points_arr = _promote_precision(backend.array(points), backend)
         centroid_arr = _promote_precision(self.centroid, backend)
@@ -620,18 +523,8 @@ class ConceptVolume:
         return tangent_vectors
 
     def density_at_batch(self, points: "Array") -> "Array":
-        """Compute probability density at multiple points (vectorized).
-
-        Uses proper Riemannian log map when geodesic context is available.
-
-        Args:
-            points: Array of points (n x d)
-
-        Returns:
-            Array of probability density values (n,)
-        """
+        """Compute density at multiple points."""
         backend = get_default_backend()
-        d = self.dimension
         # Compute tangent vectors (log map if geodesic context available)
         tangent = self._compute_tangent_vectors_batch(points)
 
@@ -644,18 +537,7 @@ class ConceptVolume:
         return densities
 
     def contains_batch(self, points: "Array") -> "Array":
-        """Check if multiple points are within concept volume (vectorized).
-
-        Uses Mahalanobis distance criterion: points within geodesic_radius
-        of centroid are inside. The geodesic_radius is derived from the
-        data during volume estimation.
-
-        Args:
-            points: Array of points (n x d)
-
-        Returns:
-            Boolean array indicating membership (n,)
-        """
+        """Check if multiple points are within the geodesic radius."""
         backend = get_default_backend()
         mahal_dist = self.mahalanobis_distance_batch(points)
         result = mahal_dist <= self.geodesic_radius
@@ -685,16 +567,7 @@ class ConceptVolumeRelation:
 
 
 class RiemannianDensityEstimator:
-    """Estimates concept volumes with curvature awareness.
-
-    This is the core class for CABE-4, providing:
-    1. ConceptVolume estimation from activations
-    2. Curvature-corrected covariance
-    3. Volume overlap computation
-    4. Interference prediction foundation
-
-    All parameters are derived from data - no configuration needed.
-    """
+    """Estimate concept volumes with curvature awareness."""
 
     def __init__(self) -> None:
         self.curvature_estimator = SectionalCurvatureEstimator()
@@ -706,18 +579,7 @@ class RiemannianDensityEstimator:
         metric_fn: Callable[["Array"], "Array"] | None = None,
         store_raw_activations: bool = True,
     ) -> ConceptVolume:
-        """Estimate concept volume from activation samples.
-
-        Args:
-            concept_id: Identifier for the concept
-            activations: Array of activation vectors (n x d)
-            metric_fn: Optional metric tensor function for Riemannian geometry
-            store_raw_activations: If True, store raw activations for CKA comparison
-                                   across different dimensions (required for geodesic log map)
-
-        Returns:
-            ConceptVolume modeling the concept's distribution
-        """
+        """Estimate a concept volume from activation samples."""
         backend = get_default_backend()
         # Convert to backend array if needed (handles numpy from tests)
         activations = _promote_precision(backend.array(activations), backend)
@@ -846,25 +708,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> ConceptVolumeRelation:
-        """Compute relationship between two concept volumes.
-
-        This is the foundation for interference prediction.
-
-        Uses CKA (Centered Kernel Alignment) for all comparisons when raw
-        activations are available. CKA computes Gram matrices (n x n) that are
-        dimension-agnostic and GPU-accelerated.
-
-        References:
-            - Kornblith et al. (2019). "Similarity of Neural Network Representations
-              Revisited." arXiv:1905.00414
-
-        Args:
-            volume_a: First concept volume
-            volume_b: Second concept volume
-
-        Returns:
-            ConceptVolumeRelation with all overlap/distance metrics
-        """
+        """Compute overlap and distance metrics between two volumes."""
         # Use CKA for all comparisons when raw_activations available
         # CKA is dimension-agnostic and GPU-accelerated
         if volume_a.raw_activations is not None and volume_b.raw_activations is not None:
@@ -879,11 +723,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> ConceptVolumeRelation:
-        """Fallback: geodesic-based comparison for cached volumes without activations.
-
-        Uses backend Floyd-Warshall for geodesic distance computation.
-        Only used when raw_activations not available.
-        """
+        """Geodesic-only comparison for cached volumes without activations."""
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
@@ -956,29 +796,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> ConceptVolumeRelation:
-        """Compute relation between volumes using geodesic CKA (GPU-accelerated).
-
-        CKA (Centered Kernel Alignment) computes Gram matrices (n x n) which
-        are dimension-agnostic - it measures representational similarity
-        regardless of dimensionality. This is the primary method:
-        - Works for same or different dimensions
-        - Runs entirely on GPU
-        - Captures invariant representational geometry
-
-        GEODESIC PRECISION: Uses RBF kernel CKA with geodesic distances in the
-        kernel K = exp(-d_geo²/2σ²). This respects manifold curvature, unlike
-        linear CKA (K = X @ X^T) which assumes flat geometry.
-
-        Geodesic CKA near 1.0 indicates strong representational overlap
-        CKA = 0.0 means orthogonal representations (no overlap)
-
-        Args:
-            volume_a: First concept volume
-            volume_b: Second concept volume
-
-        Returns:
-            ConceptVolumeRelation with CKA-derived metrics
-        """
+        """CKA-based comparison with geodesic RBF kernels."""
         from modelcypher.core.domain.geometry.cka import compute_cka
 
         backend = get_default_backend()
@@ -1051,14 +869,7 @@ class RiemannianDensityEstimator:
         geo_result: GeodesicDistanceResult | None = None,
         geo_from_centroid: "Array | None" = None,
     ) -> "Array":
-        """Estimate covariance with optional curvature correction.
-
-        Standard covariance assumes flat (ambient) space. In curved
-        spaces, we compute covariance in the tangent space at the Fréchet mean,
-        using the logarithmic map to project points onto the tangent space.
-
-        This is the proper Riemannian covariance that respects manifold geometry.
-        """
+        """Estimate covariance in tangent space with optional metric correction."""
         backend = get_default_backend()
         shape = activations.shape
         d = int(shape[1])
@@ -1091,11 +902,7 @@ class RiemannianDensityEstimator:
         centroid: "Array",
         metric_fn: Callable[["Array"], "Array"],
     ) -> "Array":
-        """Apply metric tensor correction to covariance.
-
-        Transforms covariance to metric coordinates:
-        Cov_metric = M^{-1/2} @ Cov @ M^{-1/2}
-        """
+        """Apply metric-tensor correction to covariance."""
         backend = get_default_backend()
         try:
             metric = metric_fn(centroid)
@@ -1123,18 +930,7 @@ class RiemannianDensityEstimator:
         covariance: "Array",
         local_curvature: LocalCurvature,
     ) -> "Array":
-        """Apply curvature-based correction to covariance.
-
-        In positively curved spaces, covariance underestimates spread.
-        In negatively curved spaces, covariance overestimates spread.
-
-        Uses Taylor expansion: correction ≈ 1 + K*r²/6 (positive K)
-
-        The Taylor remainder is (K*r²)²/36. This correction is only applied
-        when the remainder is distinguishable from machine precision. If the
-        remainder term exceeds sqrt(eps), the correction is numerically
-        meaningless and we return the uncorrected covariance.
-        """
+        """Apply curvature-based correction when numerically meaningful."""
         backend = get_default_backend()
         K = local_curvature.mean_sectional
         eps = machine_epsilon(backend, covariance)
@@ -1186,11 +982,7 @@ class RiemannianDensityEstimator:
         geo_from_centroid: "Array | None" = None,
         geo_result: GeodesicDistanceResult | None = None,
     ) -> float:
-        """Compute geodesic radius (95th percentile distance from centroid).
-
-        Uses geodesic distances via k-NN graph. No chord fallback -
-        if this fails, it's a bug we need to fix.
-        """
+        """Compute 95th-percentile geodesic radius."""
         backend = get_default_backend()
         shape = activations.shape
         n = int(shape[0])
@@ -1230,12 +1022,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> float:
-        """Compute Bhattacharyya coefficient between two Gaussian volumes.
-
-        BC = exp(-D_B), where D_B is Bhattacharyya distance.
-        D_B = (1/8)(μ_a - μ_b)^T Σ^{-1} (μ_a - μ_b) + (1/2)ln(det(Σ)/sqrt(det(Σ_a)det(Σ_b)))
-        where Σ = (Σ_a + Σ_b)/2
-        """
+        """Bhattacharyya coefficient between Gaussian volumes."""
         backend = get_default_backend()
         diff = volume_a.centroid - volume_b.centroid
         cov_avg = (volume_a.covariance + volume_b.covariance) / 2
@@ -1280,12 +1067,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> float:
-        """Estimate Szymkiewicz-Simpson overlap coefficient.
-
-        OC = |A ∩ B| / min(|A|, |B|)
-
-        For Gaussian distributions, we approximate using Monte Carlo.
-        """
+        """Estimate Szymkiewicz-Simpson overlap coefficient."""
         backend = get_default_backend()
         # Monte Carlo estimation with samples from both distributions.
         # Use sqrt(n*d) to match Monte Carlo error ~ 1/sqrt(N) to data scale.
@@ -1343,10 +1125,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> float:
-        """Estimate Jaccard index (intersection over union).
-
-        J = |A ∩ B| / |A ∪ B|
-        """
+        """Estimate Jaccard index (intersection over union)."""
         # Use Bhattacharyya as proxy for intersection
         bc = self._bhattacharyya_coefficient(volume_a, volume_b)
 
@@ -1364,7 +1143,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> float:
-        """Compute curvature mismatch between two volumes."""
+        """Compute curvature mismatch between volumes."""
         if volume_a.local_curvature is None or volume_b.local_curvature is None:
             return 0.0
 
@@ -1381,12 +1160,7 @@ class RiemannianDensityEstimator:
         volume_a: ConceptVolume,
         volume_b: ConceptVolume,
     ) -> float:
-        """Compute alignment of principal subspaces.
-
-        For same-dimension: Uses principal angles between covariance eigenspaces.
-        For cross-dimension: Uses CKA on Gram matrices (dimension-agnostic).
-        Returns value in [0, 1] where 1 = aligned.
-        """
+        """Compute alignment of principal subspaces."""
         backend = get_default_backend()
 
         dim_a = int(volume_a.covariance.shape[0])
@@ -1444,16 +1218,7 @@ def batch_estimate_volumes(
     concept_activations: dict[str, "Array"],
     metric_fn: Callable[["Array"], "Array"] | None = None,
 ) -> dict[str, ConceptVolume]:
-    """Estimate volumes for multiple concepts.
-
-    Args:
-        estimator: RiemannianDensityEstimator instance
-        concept_activations: Dict mapping concept_id to activation array
-        metric_fn: Optional metric tensor function
-
-    Returns:
-        Dict mapping concept_id to ConceptVolume
-    """
+    """Estimate volumes for multiple concepts."""
     volumes = {}
     for concept_id, activations in concept_activations.items():
         try:
@@ -1469,15 +1234,7 @@ def compute_pairwise_relations(
     estimator: RiemannianDensityEstimator,
     volumes: dict[str, ConceptVolume],
 ) -> dict[tuple[str, str], ConceptVolumeRelation]:
-    """Compute relations between all pairs of volumes.
-
-    Args:
-        estimator: RiemannianDensityEstimator instance
-        volumes: Dict of concept volumes
-
-    Returns:
-        Dict mapping (concept_a, concept_b) to relation
-    """
+    """Compute relations between all pairs of volumes."""
     relations = {}
     concept_ids = list(volumes.keys())
 

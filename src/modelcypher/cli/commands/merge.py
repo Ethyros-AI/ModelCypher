@@ -15,11 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Merge models via null-space knowledge transplant.
-
-Usage:
-    mc merge -s SOURCE -t TARGET -o OUTPUT
-"""
+"""Merge models via null-space knowledge transplant."""
 
 from __future__ import annotations
 
@@ -52,7 +48,7 @@ def _run_dry_run(
     target: str,
     output_dir: str,
 ) -> None:
-    """Show what a merge would do without actually running it."""
+    """Show merge inputs and compatibility without running."""
     context = _context(ctx)
     service = get_model_probe_service()
 
@@ -153,12 +149,7 @@ def _run_merge(
     full_atlas: bool = False,
     dry_run: bool = False,
 ) -> None:
-    """Core merge logic shared by callback and run command.
-
-    Scale is always 1.0 for single merges - the null-space projection
-    already ensures safe knowledge addition. No user-configurable knobs.
-    Uses atlas probes with geometry-derived count unless full atlas is requested.
-    """
+    """Run a single-source merge with atlas probes and fixed scale."""
     from modelcypher.cli.composition import get_merge_pipeline_service
     from modelcypher.utils.logging import add_file_logger, remove_file_loggers
 
@@ -332,14 +323,7 @@ def merge_callback(
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
-    Takes knowledge from SOURCE and adds it to TARGET without destroying
-    TARGET's existing capabilities. The result is a denser model.
-
-    Uses semantic concept probes from the atlas system to align manifolds.
-    All geometric parameters (scale, alignment) are auto-derived.
-
-    Examples:
-        mc merge -s ./qwen -t ./smol -o ./merged
+    Example: mc merge -s ./qwen -t ./smol -o ./merged
     """
     # If a subcommand was invoked (like 'run'), don't do anything here
     if ctx.invoked_subcommand is not None:
@@ -391,14 +375,7 @@ def run(
 ) -> None:
     """Merge two models via null-space knowledge transplant.
 
-    Takes knowledge from SOURCE and adds it to TARGET without destroying
-    TARGET's existing capabilities. The result is a denser model.
-
-    Uses semantic concept probes from the atlas system to align manifolds.
-    All geometric parameters (scale, alignment) are auto-derived.
-
-    Examples:
-        mc merge run -s ./qwen -t ./smol -o ./merged
+    Example: mc merge run -s ./qwen -t ./smol -o ./merged
     """
     _run_merge(
         ctx,
@@ -422,46 +399,24 @@ def batch(
     detect_outliers: bool = typer.Option(False, "--detect-outliers", help="Analyze concept alignment before merging (shows which models disagree)"),
     consensus_mode: bool = typer.Option(False, "--consensus/--no-consensus", help="Use consensus-based correction: fix misaligned concepts before adding"),
 ) -> None:
-    """Merge multiple source models into a single target (N→1 merging).
-
-    This is optimized for dumping knowledge from many models into one compact
-    target (e.g., LFM2). The target is loaded and probed ONCE, then reused
-    for all source merges.
-
-    Linear alignment is closed-form. Geodesic CKA reports manifold overlap
-    and can be < 1.0 when probes miss shared structure.
-
-    Accumulative mode (default) projects all sources into the ORIGINAL target's
-    null-space. This preserves target behavior while adding all source knowledge.
-
-    Consensus mode (--consensus) enables two-phase merging:
-    1. CORRECTION: Fix concepts where target disagrees with source consensus
-    2. ADDITION: Add source-only knowledge via null-space projection
-
-    Scale is automatically computed for each merge based on measured delta
-    magnitude and remaining budget (1% of weight norm). The math determines
-    the safe injection amount - no user-configurable knobs.
+    """Merge multiple source models into one target.
 
     Examples:
-        mc merge batch -s ./model1 -s ./model2 -s ./model3 -t ./lfm2 -o ./merged
-        mc merge batch -s ./qwen -s ./llama -s ./mistral -t ./smol -o ./super_merged --consensus
+        mc merge batch -s ./m1 -s ./m2 -t ./target -o ./out
+        mc merge batch -s ./qwen -s ./llama -t ./smol -o ./out --consensus
         mc merge batch -s ./m1 -s ./m2 -t ./target -o ./out --detect-outliers
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
 
-    context = _context(ctx)
     backend = get_default_backend()
 
     # Validate paths
+    context = _context(ctx)
     for source in sources:
-        if not validate_model_path(source):
-            typer.echo(f"Error: Source path not found: {source}", err=True)
-            raise typer.Exit(code=1)
-    if not validate_model_path(target):
-        typer.echo(f"Error: Target path not found: {target}", err=True)
-        raise typer.Exit(code=1)
+        validate_model_path(source, context=context)
+    validate_model_path(target, context=context)
 
     # Set up automatic file logging for merge operations
     from modelcypher.utils.logging import add_file_logger, remove_file_loggers
@@ -503,7 +458,6 @@ def batch(
             _shared_rbf_sigma,
             _rbf_gram_from_sq_distances,
         )
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
         from modelcypher.core.domain.agents.probe_loader import ProbeLoader
 
         model_loader = MLXModelLoader()
@@ -675,14 +629,9 @@ def deviation(
     baseline: str = typer.Option(..., "--baseline", "-b", help="Path to original baseline model"),
     current: str = typer.Option(..., "--current", "-c", help="Path to current (merged) model"),
 ) -> None:
-    """Measure deviation from baseline (informational only).
+    """Measure deviation from a baseline model.
 
-    The geometry handles safety by construction via null-space projection.
-    This command measures and reports deviation for transparency - it does
-    NOT gate operations or recommend actions.
-
-    Examples:
-        mc merge deviation --baseline ./original --current ./merged2
+    Example: mc merge deviation --baseline ./original --current ./merged2
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
@@ -692,12 +641,8 @@ def deviation(
     backend = get_default_backend()
 
     # Validate paths
-    if not validate_model_path(baseline):
-        typer.echo(f"Error: Baseline path not found: {baseline}", err=True)
-        raise typer.Exit(code=1)
-    if not validate_model_path(current):
-        typer.echo(f"Error: Current path not found: {current}", err=True)
-        raise typer.Exit(code=1)
+    validate_model_path(baseline, context=context)
+    validate_model_path(current, context=context)
 
     typer.echo(f"DEVIATION MEASUREMENT: {current} vs baseline {baseline}")
 
@@ -749,20 +694,11 @@ def multi_channel(
     ),
     fast_mode: bool = typer.Option(True, "--fast/--precise", help="Fast mode skips CKA precision checks"),
 ) -> None:
-    """Merge multiple channels simultaneously via Birkhoff routing.
-
-    This is the preferred method for multi-modal merging (e.g., world model +
-    vision-language model + text model → unified model).
-
-    Unlike 'batch' (sequential), this method:
-    1. Probes all channels simultaneously
-    2. Projects all channels into target's null-space (shared basis)
-    3. Combines channels via doubly stochastic routing
-    4. Applies geometric addition
+    """Merge multiple channels via Birkhoff routing.
 
     Examples:
-        mc merge multi-channel -c spatial:/path/to/world -c text:/path/to/llm -t ./lfm2 -o ./merged
-        mc merge multi-channel -c spatial:./world -c temporal:./video -c text:./llm -t ./target -o ./out
+        mc merge multi-channel -c spatial:/path -c text:/path -t ./lfm2 -o ./merged
+        mc merge multi-channel -c spatial:./world -c text:./llm -t ./target -o ./out
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
@@ -798,12 +734,8 @@ def multi_channel(
 
     # Validate paths
     for name, path in channel_paths.items():
-        if not validate_model_path(path):
-            typer.echo(f"Error: Channel '{name}' path not found: {path}", err=True)
-            raise typer.Exit(code=1)
-    if not validate_model_path(target):
-        typer.echo(f"Error: Target path not found: {target}", err=True)
-        raise typer.Exit(code=1)
+        validate_model_path(path, context=context)
+    validate_model_path(target, context=context)
 
     # Validate routing mode
     valid_modes = ["uniform", "identity", "diagonal_weighted"]
@@ -855,24 +787,11 @@ def bridge(
     source_name: str | None = typer.Option(None, "--source-name", help="Optional name for source encoder"),
     target_name: str | None = typer.Option(None, "--target-name", help="Optional name for target encoder"),
 ) -> None:
-    """Generate a cross-modal bridge between two encoders.
-
-    Creates a linear transform that maps embeddings from SOURCE space to TARGET.
-    Geodesic CKA reports manifold overlap for the aligned embeddings.
-
-    Uses semantic concept probes from the atlas system (4596 probes across 23
-    categories) to build alignment probes.
-
-    The bridge is saved in safetensors format and includes:
-    - Forward transform (source → target)
-    - Inverse transform (target → source)
-    - Scale ratio for magnitude normalization
-    - Metadata (dimensions, names, CKA achieved)
+    """Generate an embedding bridge between two encoders.
 
     Examples:
         mc merge bridge /path/to/clip /path/to/lfm2 -o clip_to_lfm2.safetensors
-        mc merge bridge /path/to/whisper /path/to/lfm2 -o audio_to_lfm2.safetensors --samples 200
-        mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semantic_prime,emotion_concept
+        mc merge bridge ./model_a ./model_b -o bridge.safetensors --samples 200
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain._backend import get_default_backend
@@ -882,12 +801,8 @@ def bridge(
     backend = get_default_backend()
 
     # Validate paths
-    if not validate_model_path(source):
-        typer.echo(f"Error: Source path not found: {source}", err=True)
-        raise typer.Exit(code=1)
-    if not validate_model_path(target):
-        typer.echo(f"Error: Target path not found: {target}", err=True)
-        raise typer.Exit(code=1)
+    validate_model_path(source, context=context)
+    validate_model_path(target, context=context)
 
     output_path = Path(output)
     if output_path.exists():
@@ -985,17 +900,9 @@ def apply_bridge(
 ) -> None:
     """Apply a bridge transform to embeddings.
 
-    Transforms embeddings from source space to target space (or vice versa with
-    --inverse) using a previously generated bridge.
-
-    Supports input/output in:
-    - NumPy (.npy) format
-    - Safetensors (.safetensors) format
-
     Examples:
-        mc merge apply-bridge clip_to_lfm2.safetensors image_embeds.npy -o lfm2_embeds.npy
-        mc merge apply-bridge bridge.safetensors source.safetensors -o target.safetensors
-        mc merge apply-bridge bridge.safetensors target_embeds.npy -o source_embeds.npy --inverse
+        mc merge apply-bridge bridge.safetensors source.npy -o target.npy
+        mc merge apply-bridge bridge.safetensors target.npy -o source.npy --inverse
     """
     import numpy as np
     from safetensors.numpy import load_file as load_safetensors
@@ -1121,23 +1028,7 @@ def _sample_atlas_probes(
     n_samples: int,
     probe_sources: str | None = None,
 ) -> tuple[any, any]:
-    """Sample embeddings using atlas semantic probes.
-
-    Loads conceptual probes from the atlas system, tokenizes them using each
-    model's tokenizer, and collects the corresponding embeddings.
-
-    Args:
-        backend: Backend for array operations
-        source_embed: Source embedding table [vocab_size, hidden_dim]
-        target_embed: Target embedding table [vocab_size, hidden_dim]
-        source_path: Path to source model (for tokenizer)
-        target_path: Path to target model (for tokenizer)
-        n_samples: Maximum number of probe samples
-        probe_sources: Optional comma-separated list of atlas sources to use
-
-    Returns:
-        Tuple of (source_activations, target_activations)
-    """
+    """Sample embeddings using atlas semantic probes."""
     from modelcypher.cli.composition import get_model_loader
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
     from modelcypher.core.use_cases.merge.helpers import load_tokenizer
@@ -1239,15 +1130,7 @@ def validate(
         100, "--max-tokens", "-m", help="Max tokens per generation for coherence test"
     ),
 ) -> None:
-    """Validate a merged model for coherent generation and density.
-
-    This command runs post-merge validation to ensure the model:
-    1. Generates coherent, non-repetitive output
-    2. Has increased density (intrinsic dimension)
-    3. Has reduced null space (more utilized capacity)
-
-    Success criterion: Model generates coherently. If coherence fails,
-    the merge damaged the model's generation capability.
+    """Validate a merged model for coherence and density.
 
     Examples:
         mc merge validate /path/to/merged

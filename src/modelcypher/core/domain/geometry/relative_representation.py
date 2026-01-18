@@ -36,6 +36,8 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
+    machine_epsilon,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_between_sets,
@@ -390,13 +392,12 @@ def cross_dimension_transfer(
 
     # Find common anchors
     common_ids = set(source_ids) & set(target_ids)
-    if len(common_ids) < 100:
-        expected_count = max(len(source_ids), len(target_ids))
-        logger.warning(
-            "Only %d common anchors found (expected ~%d). Transfer may be unreliable.",
-            len(common_ids),
-            expected_count,
-        )
+    expected_count = max(len(source_ids), len(target_ids))
+    logger.info(
+        "Cross-dimension transfer: %d common anchors of %d expected",
+        len(common_ids),
+        expected_count,
+    )
 
     # Filter to common anchors
     source_mask = [i for i, aid in enumerate(source_ids) if aid in common_ids]
@@ -418,6 +419,36 @@ def cross_dimension_transfer(
         target_anchors_common,
         target_anchors_common,
     )
+
+    # Precision-derived condition number check for transfer stability
+    # Replaces arbitrary count threshold with actual numerical stability validation
+    _, S_anchor, _ = geodesic_svd(backend, target_anchor_rel)
+    backend.eval(S_anchor)
+    eps = machine_epsilon(backend, target_anchors_common)
+    max_sv = float(backend.to_scalar(backend.max(S_anchor)))
+    # Find minimum non-zero singular value
+    sv_threshold = eps * max_sv * len(common_ids)
+    S_nonzero = backend.where(
+        S_anchor > sv_threshold,
+        S_anchor,
+        backend.full(S_anchor.shape, float("inf")),
+    )
+    backend.eval(S_nonzero)
+    min_sv = float(backend.to_scalar(backend.min(S_nonzero)))
+
+    if max_sv > eps and min_sv < float("inf"):
+        condition_number = max_sv / min_sv
+        sqrt_eps = sqrt_scalar(eps, backend)
+        kappa_threshold = 1.0 / sqrt_eps
+        if condition_number > kappa_threshold:
+            logger.warning(
+                "ANCHOR STABILITY: Anchor Gram condition number κ=%.2e exceeds "
+                "precision threshold 1/sqrt(ε)=%.2e. Cross-dimension transfer "
+                "may be numerically unstable. Consider using more diverse probes.",
+                condition_number,
+                kappa_threshold,
+            )
+
     R, error = align_relative_representations(source_anchor_rel, target_anchor_rel)
 
     # Apply alignment and transfer
