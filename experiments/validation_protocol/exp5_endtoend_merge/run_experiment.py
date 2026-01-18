@@ -134,12 +134,14 @@ def run_merge(source_path: Path, target_path: Path, output_path: Path, dry_run: 
     Returns:
         Dict with merge results
     """
+    # Use geometry-min (default) instead of full atlas for faster execution
+    # geometry-min uses the minimum probes needed for reliable alignment
     cmd = [
         "poetry", "run", "mc", "merge", "run",
         "-s", str(source_path),
         "-t", str(target_path),
         "-o", str(output_path),
-        "--full-atlas",
+        # Default is --geometry-min (smaller probe set)
     ]
 
     if dry_run:
@@ -152,7 +154,7 @@ def run_merge(source_path: Path, target_path: Path, output_path: Path, dry_run: 
             cmd,
             capture_output=True,
             text=True,
-            timeout=1800,  # 30 minute timeout
+            timeout=3600,  # 60 minute timeout for merge
         )
 
         return {

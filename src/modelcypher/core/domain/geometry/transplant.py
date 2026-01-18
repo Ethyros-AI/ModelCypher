@@ -32,6 +32,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimens
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    orthogonalize_alignment,
     precision_dtype,
     svd_rank_threshold,
 )
@@ -194,13 +195,21 @@ def reconstruct_weight_from_behavior(
     systems encode the SAME transformation with DIFFERENT matrices. We want the
     matrix that performs the same operation, not a transformed matrix.
 
+    **Lie Algebra Fix (2026-01-17)**: The alignment transforms F_in and F_out may
+    include scaling components when dimensions differ. We decompose them via polar
+    decomposition into rotation (orthogonal, norm-preserving) and scaling parts.
+    The rotation is used for coordinate transformation; scaling is corrected after.
+
     Algorithm:
-        1. Compute source layer behavior: output_src = input_src @ W_src.T
-        2. Project to target coordinates:
-           - input_tgt = input_src @ F_in
-           - output_tgt = output_src @ F_out
-        3. Solve for weight: W_behavior = lstsq(input_tgt, output_tgt).T
-           This finds W such that input_tgt @ W.T ≈ output_tgt
+        1. Orthogonalize alignments: F = U @ P (polar decomposition)
+           - Use U (rotation) for coordinate transform
+           - Track scale factor s = mean(singular_values(F))
+        2. Compute source layer behavior: output_src = input_src @ W_src.T
+        3. Project to target coordinates using orthogonalized transforms:
+           - input_tgt = input_src @ U_in
+           - output_tgt = output_src @ U_out
+        4. Solve for weight: W_behavior = lstsq(input_tgt, output_tgt).T
+        5. Apply scale correction: W_corrected = W_behavior * (s_out / s_in)
 
     Args:
         source_weight: Source weight matrix [out_src, in_src].
@@ -239,18 +248,34 @@ def reconstruct_weight_from_behavior(
         out_src, in_src, out_tgt, in_tgt, n_samples
     )
 
-    # Step 1: Compute source layer behavior
+    # Step 1: Orthogonalize alignment transforms via polar decomposition
+    # This separates rotation (norm-preserving) from scaling
+    U_in, scale_in = orthogonalize_alignment(alignment_in, b)
+    U_out, scale_out = orthogonalize_alignment(alignment_out, b)
+    b.eval(U_in, U_out)
+
+    # Compute scale correction factor: output scaling / input scaling
+    # This corrects for the non-orthogonal part of the alignment
+    eps = float(division_epsilon(b, alignment_in))
+    scale_correction = scale_out / max(scale_in, eps)
+
+    logger.info(
+        "ORTHOGONALIZATION: scale_in=%.4f, scale_out=%.4f, correction=%.4f",
+        scale_in, scale_out, scale_correction
+    )
+
+    # Step 2: Compute source layer behavior
     # output_src = input_src @ W_src.T  [n, out_src]
     output_source = b.matmul(input_activations_source, b.transpose(source_weight))
     b.eval(output_source)
 
-    # Step 2: Project to target coordinates
-    # input_tgt = input_src @ F_in  [n, in_tgt]
-    input_target = b.matmul(input_activations_source, alignment_in)
+    # Step 3: Project to target coordinates using ORTHOGONALIZED transforms
+    # input_tgt = input_src @ U_in  [n, in_tgt]
+    input_target = b.matmul(input_activations_source, U_in)
     b.eval(input_target)
 
-    # output_tgt = output_src @ F_out  [n, out_tgt]
-    output_target = b.matmul(output_source, alignment_out)
+    # output_tgt = output_src @ U_out  [n, out_tgt]
+    output_target = b.matmul(output_source, U_out)
     b.eval(output_target)
 
     # Step 3: Solve for weight via least squares
@@ -258,6 +283,7 @@ def reconstruct_weight_from_behavior(
     # Equivalently: W.T = lstsq(input_tgt, output_tgt)
     # So: W = lstsq(input_tgt, output_tgt).T
 
+    # Step 4: Solve for weight via least squares
     # Use geodesic-aware pseudoinverse for robustness
     from modelcypher.core.domain.geometry.numerical_stability import geodesic_pinv
 
@@ -268,10 +294,24 @@ def reconstruct_weight_from_behavior(
     W_T = b.matmul(input_tgt_pinv, output_target)  # [in_tgt, out_tgt]
     b.eval(W_T)
 
-    reconstructed_weight = b.transpose(W_T)  # [out_tgt, in_tgt]
+    reconstructed_weight_raw = b.transpose(W_T)  # [out_tgt, in_tgt]
+    b.eval(reconstructed_weight_raw)
+
+    # Step 5: Apply scale correction for non-orthogonal alignment
+    # The orthogonalization removes scaling from the coordinate transform,
+    # but the weight magnitudes may need adjustment based on the original scaling.
+    # scale_correction = scale_out / scale_in compensates for this.
+    if abs(scale_correction - 1.0) > 1e-6:
+        reconstructed_weight = reconstructed_weight_raw * scale_correction
+        logger.info(
+            "SCALE CORRECTION: applied factor %.4f to reconstructed weight",
+            scale_correction
+        )
+    else:
+        reconstructed_weight = reconstructed_weight_raw
     b.eval(reconstructed_weight)
 
-    # Step 4: Compute reconstruction error
+    # Step 6: Compute reconstruction error
     output_reconstructed = b.matmul(input_target, W_T)  # [n, out_tgt]
     b.eval(output_reconstructed)
 
@@ -478,20 +518,35 @@ def reconstruct_weight_manifold_aware(
     in_tgt = int(alignment_in.shape[1])
     out_tgt = int(alignment_out.shape[1])
 
-    # Step 1: Compute source layer behavior
+    # Step 1: Orthogonalize alignment transforms via polar decomposition
+    # This separates rotation (norm-preserving) from scaling
+    U_in, scale_in = orthogonalize_alignment(alignment_in, b)
+    U_out, scale_out = orthogonalize_alignment(alignment_out, b)
+    b.eval(U_in, U_out)
+
+    # Compute scale correction factor: output scaling / input scaling
+    eps = float(division_epsilon(b, alignment_in))
+    scale_correction = scale_out / max(scale_in, eps)
+
+    logger.info(
+        "MANIFOLD ORTHOGONALIZATION: scale_in=%.4f, scale_out=%.4f, correction=%.4f",
+        scale_in, scale_out, scale_correction
+    )
+
+    # Step 2: Compute source layer behavior
     output_source = b.matmul(input_activations_source, b.transpose(source_weight))
     b.eval(output_source)
 
-    # Step 2: Project to target coordinates
-    input_target = b.matmul(input_activations_source, alignment_in)
-    output_target = b.matmul(output_source, alignment_out)
+    # Step 3: Project to target coordinates using ORTHOGONALIZED transforms
+    input_target = b.matmul(input_activations_source, U_in)
+    output_target = b.matmul(output_source, U_out)
     b.eval(input_target, output_target)
 
-    # Step 3: Detect intrinsic rank from input activations
+    # Step 4: Detect intrinsic rank from input activations
     from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
 
-    U, S, Vt = geodesic_svd(b, input_target)
-    b.eval(U, S, Vt)
+    U_svd, S, Vt = geodesic_svd(b, input_target)
+    b.eval(U_svd, S, Vt)
 
     intrinsic_rank = _detect_intrinsic_rank(
         S, b, variance_threshold=variance_threshold
@@ -502,7 +557,7 @@ def reconstruct_weight_manifold_aware(
         out_src, in_src, out_tgt, in_tgt, n_samples, intrinsic_rank
     )
 
-    # Step 4: Rank-truncated lstsq
+    # Step 5: Rank-truncated lstsq
     # W.T = pinv_k(input_target) @ output_target
     input_tgt_pinv_k = _truncated_pinv(input_target, intrinsic_rank, b)
     b.eval(input_tgt_pinv_k)
@@ -510,24 +565,37 @@ def reconstruct_weight_manifold_aware(
     W_T = b.matmul(input_tgt_pinv_k, output_target)  # [in_tgt, out_tgt]
     b.eval(W_T)
 
-    reconstructed_weight = b.transpose(W_T)  # [out_tgt, in_tgt]
+    reconstructed_weight_raw = b.transpose(W_T)  # [out_tgt, in_tgt]
+    b.eval(reconstructed_weight_raw)
+
+    # Step 6: Apply scale correction for non-orthogonal alignment
+    # The orthogonalization removes scaling from the coordinate transform,
+    # but the weight magnitudes may need adjustment based on the original scaling.
+    if abs(scale_correction - 1.0) > 1e-6:
+        reconstructed_weight = reconstructed_weight_raw * scale_correction
+        logger.info(
+            "MANIFOLD SCALE CORRECTION: applied factor %.4f to reconstructed weight",
+            scale_correction
+        )
+    else:
+        reconstructed_weight = reconstructed_weight_raw
     b.eval(reconstructed_weight)
 
-    # Step 5: Compute reconstruction error
+    # Step 7: Compute reconstruction error
     output_reconstructed = b.matmul(input_target, W_T)  # [n, out_tgt]
     b.eval(output_reconstructed)
 
     # Also verify using only manifold dimensions
     # Project output_target to manifold
-    U_out, S_out, Vt_out = geodesic_svd(b, output_target)
-    b.eval(U_out, S_out)
+    U_out_svd, S_out, Vt_out = geodesic_svd(b, output_target)
+    b.eval(U_out_svd, S_out)
 
     # Full error
     error_full = b.mean(b.abs(output_reconstructed - output_target))
     reconstruction_error = float(b.to_scalar(error_full))
 
     # Manifold-only error (project both to rank-k)
-    U_k = U[:, :intrinsic_rank]
+    U_k = U_svd[:, :intrinsic_rank]
     output_target_manifold = b.matmul(U_k, b.matmul(b.transpose(U_k), output_target))
     output_recon_manifold = b.matmul(U_k, b.matmul(b.transpose(U_k), output_reconstructed))
     error_manifold = b.mean(b.abs(output_recon_manifold - output_target_manifold))

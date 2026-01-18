@@ -31,6 +31,7 @@ Where $P$ is the orthogonal Procrustes rotation matrix derived from Semantic Pri
 
 Roughness measures how non-uniformly the rotation field varies across layers.
 -   **What it measures**: The variance in Procrustes rotation matrices between adjacent layers.
+-   **Metric**: Sum of squared SO(n) geodesic distances (Lie log norms) between consecutive rotations.
 -   **Lower values**: More consistent rotation across layers (uniform transformation).
 -   **Higher values**: Rotation varies significantly between layers (non-uniform mapping).
 

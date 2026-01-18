@@ -40,12 +40,12 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.numerical_stability import (
-    acos_scalar,
     division_epsilon,
     geodesic_svd,
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.lie_rotation import so_geodesic_distance
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
@@ -485,8 +485,8 @@ class LayerRotationResult:
     layer_index: int
     rotation: list[list[float]]  # [k × k] orthogonal rotation matrix
     error: float  # Frobenius alignment error after rotation
-    angular_deviation: float | None = None  # Radians from previous layer's rotation
-    rotation_delta: float | None = None  # Frobenius norm ||R_L - R_{L-1}||
+    angular_deviation: float | None = None  # SO(n) geodesic distance from previous rotation
+    rotation_delta: float | None = None  # ||log(R_L^T R_{L-1})||_F (Lie algebra norm)
 
 
 @dataclass
@@ -664,20 +664,8 @@ class RotationContinuityAnalyzer:
             angular_deviation = None
             rotation_delta = None
             if prev_rotation is not None:
-                R_diff = backend.matmul(rotation, backend.transpose(prev_rotation))
-                trace_arr = backend.sum(backend.diag(R_diff))
-                backend.eval(trace_arr)
-                trace = float(backend.to_scalar(trace_arr))
-                # Clamp for numerical stability
-                cos_angle = (trace - 1) / 2
-                cos_angle = max(-1.0, min(1.0, cos_angle))
-                angular_deviation = acos_scalar(cos_angle, backend)
-
-                # Frobenius norm of difference using geodesic norms
-                diff = rotation - prev_rotation
-                fro_norm_arr = geodesic_norms(backend.reshape(diff, (1, -1)), backend)
-                backend.eval(fro_norm_arr)
-                rotation_delta = float(backend.to_scalar(fro_norm_arr))
+                angular_deviation = so_geodesic_distance(prev_rotation, rotation, backend=backend)
+                rotation_delta = angular_deviation * sqrt_scalar(2.0, backend)
 
             prev_rotation = rotation
 

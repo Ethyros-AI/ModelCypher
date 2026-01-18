@@ -94,6 +94,7 @@ _SUBMODULES = {
     "invariant_layer_mapper",
     "knowledge_density",
     "knowledge_diff",
+    "lie_rotation",
     "low_rank_gw",
     "manifold_clusterer",
     "manifold_accuracy",

@@ -1077,6 +1077,61 @@ def geodesic_svd(
     return U, S, Vt
 
 
+def orthogonalize_alignment(
+    alignment: "Array",
+    backend: "Backend",
+) -> tuple["Array", float]:
+    """Extract orthogonal part of alignment transform via polar decomposition.
+
+    Given an alignment transform F (which may include scaling), extract the
+    orthogonal component U such that F = U @ P where U is orthogonal and P
+    is positive semidefinite.
+
+    This is the Lie algebra decomposition: the alignment lives on the manifold
+    of linear maps, and we extract its rotation component (element of SO(n)/O(n))
+    separate from its scaling component.
+
+    For cross-dimensional alignment F [d_src, d_tgt], computes:
+        U, S, Vt = SVD(F)
+        U_orth = U @ Vt  (orthogonal part)
+        scale_factor = mean(S)  (average scaling)
+
+    The orthogonal part U_orth preserves norms: ||x @ U_orth|| = ||x||
+    when U_orth is square. For non-square, it preserves as much as possible.
+
+    Args:
+        alignment: Alignment transform [d_src, d_tgt].
+        backend: Compute backend.
+
+    Returns:
+        (U_orth, scale_factor) where U_orth is the orthogonal part and
+        scale_factor is the average singular value (measure of scaling).
+    """
+    b = backend
+    F = _promote_precision(b.array(alignment), b)
+    b.eval(F)
+
+    m, n = int(F.shape[0]), int(F.shape[1])
+    k = min(m, n)
+
+    # Compute SVD
+    U, S, Vt = geodesic_svd(b, F, k=k)
+    b.eval(U, S, Vt)
+
+    # Extract orthogonal part via polar decomposition
+    # U_orth = U @ Vt gives the closest orthogonal matrix
+    U_orth = b.matmul(U, Vt)
+    b.eval(U_orth)
+
+    # Compute scale factor as mean of singular values
+    # This measures how much F scales on average
+    eps = division_epsilon(b, S)
+    n_singular = max(1, int(S.shape[0]))
+    scale_factor = float(b.to_scalar(b.sum(S))) / n_singular
+
+    return U_orth, max(scale_factor, float(eps))
+
+
 def svd_auto_rank(
     singular_values: "Array",
     backend: "Backend",

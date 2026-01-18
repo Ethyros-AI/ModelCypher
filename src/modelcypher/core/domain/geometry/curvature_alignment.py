@@ -31,6 +31,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
 )
+from modelcypher.core.domain.geometry.lie_rotation import so_scale_rotation
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
@@ -263,10 +264,10 @@ def curvature_weighted_procrustes(
     R = backend.matmul(U, Vt)
 
     # Step 4: Apply curvature correction
-    # Dampen rotation based on curvature mismatch (hyperbolic decay, no arbitrary constants)
+    # Dampen rotation geodesically to preserve orthogonality.
     # relative_diff=0 → damping=1.0 (full rotation), relative_diff→∞ → damping→0 (identity)
     damping = 1.0 / (1.0 + guidance.ollivier_ricci_relative_diff)
-    R = R * damping + backend.eye(backend.shape(R)[0]) * (1 - damping)
+    R = so_scale_rotation(R, damping, backend=backend)
 
     return R
 

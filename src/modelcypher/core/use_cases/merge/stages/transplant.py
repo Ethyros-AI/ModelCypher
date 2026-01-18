@@ -249,6 +249,8 @@ def stage_transplant(
         merged=merged,
         metrics=metrics,
         backend=b,
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
     )
 
     # ==========================================================================
