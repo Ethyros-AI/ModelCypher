@@ -339,21 +339,22 @@ class TestGromovWassersteinDistanceIdentity:
 
 
 # =============================================================================
-# GromovWassersteinDistance Tests - Random Coupling
+# GromovWassersteinDistance Tests - Uniform Coupling
 # =============================================================================
 
 
-class TestRandomCoupling:
-    """Tests for random coupling generation."""
+class TestUniformCoupling:
+    """Tests for uniform coupling generation."""
 
-    def test_random_coupling_valid_marginals(self, any_backend: "Backend") -> None:
-        """Random coupling should have valid marginals."""
+    def test_uniform_coupling_valid_marginals(self, any_backend: "Backend") -> None:
+        """Uniform coupling should have valid marginals."""
         gw = GromovWassersteinDistance(backend=any_backend)
         b = any_backend
-        b.random_seed(42)
 
         n, m = 5, 5
-        coupling = gw._random_coupling(n, m, b)
+        p = b.ones((n,)) / n
+        q = b.ones((m,)) / m
+        coupling = gw._uniform_coupling(p, q)
         b.eval(coupling)
 
         # Check row sums (should be 1/n)
@@ -374,13 +375,14 @@ class TestRandomCoupling:
             eps = _eps(b, value, expected)
             assert abs(value - expected) <= eps
 
-    def test_random_coupling_positive(self, any_backend: "Backend") -> None:
-        """Random coupling should be non-negative."""
+    def test_uniform_coupling_positive(self, any_backend: "Backend") -> None:
+        """Uniform coupling should be non-negative."""
         gw = GromovWassersteinDistance(backend=any_backend)
         b = any_backend
-        b.random_seed(42)
-
-        coupling = gw._random_coupling(4, 4, b)
+        n = 4
+        p = b.ones((n,)) / n
+        q = b.ones((n,)) / n
+        coupling = gw._uniform_coupling(p, q)
         b.eval(coupling)
 
         min_val = float(b.min(coupling))
@@ -400,7 +402,7 @@ class TestPermutationSearch:
         gw = GromovWassersteinDistance(backend=any_backend)
         b = any_backend
 
-        # 3x3 matrix (within permutation search threshold of n<=8)
+        # 3x3 matrix (within precision-derived permutation budget)
         dist = b.array([[0.0, 1.0, 2.0], [1.0, 0.0, 1.5], [2.0, 1.5, 0.0]])
         b.eval(dist)
 
@@ -538,8 +540,7 @@ class TestSinkhorn:
 
         epsilon = division_epsilon(b, cost)
         threshold = division_epsilon(b, cost)
-        max_iterations = n * m
-        G = solver.solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
+        G = solver.solve_linear_ot(cost, p, q, epsilon=epsilon, threshold=threshold)
         b.eval(G)
 
         # Check row sums
@@ -572,8 +573,7 @@ class TestSinkhorn:
 
         epsilon = division_epsilon(b, cost)
         threshold = division_epsilon(b, cost)
-        max_iterations = 0
-        G = solver.solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
+        G = solver.solve_linear_ot(cost, p, q, epsilon=epsilon, threshold=threshold)
         b.eval(G)
 
         assert b.shape(G) == (0, 0)
@@ -591,7 +591,6 @@ class TestStepSize:
         """Step size should be in [0, 1]."""
         gw = GromovWassersteinDistance(backend=any_backend)
         b = any_backend
-        b.random_seed(42)
 
         n = 4
         C1 = b.abs(b.random_normal((n, n)))
@@ -599,7 +598,7 @@ class TestStepSize:
         p = b.ones((n,)) / n
         q = b.ones((n,)) / n
         T = b.matmul(b.reshape(p, (n, 1)), b.reshape(q, (1, n)))
-        G = gw._random_coupling(n, n, b)
+        G = gw._uniform_coupling(p, q)
         b.eval(C1, C2, p, q, T, G)
 
         constC, hC1, hC2 = gw._init_loss_matrices(C1, C2, p, q)

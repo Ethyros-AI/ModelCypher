@@ -156,6 +156,12 @@ class AlignmentResult:
     target_numerical_rank: int = 0  # Rank of target activations
     alignment_rank: int = 0  # min(source_rank, target_rank) - dimensions actually used
 
+    # Alignment residual: ||source @ F - target||_F / ||target||_F
+    # This is THE closed-form measure of whether linear alignment succeeded.
+    # If < sqrt(eps): alignment is within numerical precision
+    # If >> sqrt(eps): source and target are NOT linearly related
+    alignment_residual: float = 0.0
+
     @property
     def is_perfect(self) -> bool:
         """True if geodesic CKA is within precision threshold of 1.0."""
@@ -299,7 +305,7 @@ class GramAligner:
 
         # Use numerical-rank-truncated least squares instead of full pinv
         # This guarantees the condition number is bounded in the truncated space
-        F_linear, source_rank, target_rank, alignment_rank, condition_number = (
+        F_linear, source_rank, target_rank, alignment_rank, condition_number, alignment_residual = (
             numerical_rank_truncated_lstsq(b, source_activations, target_activations)
         )
         b.eval(F_linear)
@@ -322,25 +328,6 @@ class GramAligner:
             condition_number,
             linear_elapsed,
         )
-
-        # =================================================================
-        # CONDITION NUMBER WARNING (Precision-Derived)
-        # =================================================================
-        # Error bound: relative_error ≤ κ × ε (proven numerical analysis)
-        # Warning threshold: κ × ε > sqrt(ε) means we lose more than half
-        # our significant digits. This is κ > 1/sqrt(ε).
-        kappa_threshold = 1.0 / precision  # precision = sqrt(eps)
-        expected_error = condition_number * eps
-        if condition_number > kappa_threshold:
-            logger.warning(
-                "ALIGNMENT QUALITY: Gram condition number κ=%.2e is high relative "
-                "to precision. Expected error κ×ε=%.2e exceeds sqrt(ε)=%.2e. "
-                "Alignment may be numerically unstable. Consider --full-atlas for "
-                "more probes.",
-                condition_number,
-                expected_error,
-                precision,
-            )
 
         # =================================================================
         # PHASE 1: Geodesic alignment (manifold-preserving)
@@ -422,6 +409,7 @@ class GramAligner:
             source_numerical_rank=source_rank,
             target_numerical_rank=target_rank,
             alignment_rank=alignment_rank,
+            alignment_residual=alignment_residual,
         )
 
     def _geodesic_refine(

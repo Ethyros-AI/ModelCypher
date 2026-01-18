@@ -34,6 +34,9 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median,
     division_epsilon,
+    is_finite,
+    log_scalar,
+    machine_epsilon,
     precision_dtype,
     regularization_epsilon,
     safe_log_epsilon,
@@ -57,21 +60,6 @@ class SinkhornResult:
     iterations: int
     marginal_error: float
     cost: float
-
-
-def _derive_max_iterations(n: int, m: int) -> int:
-    """Derive max Sinkhorn iterations from problem size.
-
-    Uses logarithmic scaling: max_iter = max(50, 10 * ceil(log2(max(n, m) + 1)))
-    This gives reasonable upper bounds that scale with problem size:
-    - n=m=10: 50 iterations
-    - n=m=100: 70 iterations
-    - n=m=1000: 100 iterations
-
-    Convergence-based stopping typically triggers well before this bound.
-    """
-    import math
-    return max(50, 10 * int(math.ceil(math.log2(max(n, m) + 1))))
 
 
 class SinkhornSolver:
@@ -125,7 +113,6 @@ class SinkhornSolver:
         # Derive all tolerances from data - no configuration
         epsilon = self._derive_epsilon(cost_matrix)
         convergence_threshold = regularization_epsilon(backend, cost_matrix)
-        stability_epsilon = division_epsilon(backend, cost_matrix)
 
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
@@ -145,15 +132,12 @@ class SinkhornSolver:
         backend.eval(mu, nu)
 
         # Always use log-domain for numerical stability
-        max_iterations = _derive_max_iterations(n, m)
         return self._solve_log_domain(
             cost_matrix,
             mu,
             nu,
             epsilon,
             convergence_threshold,
-            stability_epsilon,
-            max_iterations,
         )
 
     def _derive_epsilon(self, cost: "Array") -> float:
@@ -168,9 +152,35 @@ class SinkhornSolver:
         if median_val == 0.0:
             return float(division_epsilon(backend, cost))
 
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         eps = float(machine_epsilon(backend, cost))
         return max(median_val * (eps ** 0.5), eps)
+
+    def _precision_update_floor(self, reference: "Array", *values: "Array") -> float:
+        """Compute the smallest representable update scale for the given values."""
+        backend = self._backend
+        scale = backend.array([1.0])
+        for value in values:
+            value_abs = backend.abs(value)
+            value_max = backend.max(value_abs)
+            scale = backend.maximum(scale, value_max)
+        backend.eval(scale)
+        eps = machine_epsilon(backend, reference)
+        return eps * float(self._to_scalar(scale))
+
+    def _entropy_precision_floor(self, cost: "Array", floor: float) -> float:
+        """Compute the minimum epsilon to keep entropy kernel representable."""
+        backend = self._backend
+        if floor <= 0.0:
+            return 0.0
+        log_floor = log_scalar(floor, backend)
+        if log_floor >= 0.0:
+            return 0.0
+        max_cost = backend.max(cost)
+        backend.eval(max_cost)
+        max_cost_val = float(self._to_scalar(max_cost))
+        if max_cost_val <= 0.0:
+            return 0.0
+        return max_cost_val / (-log_floor)
 
     def solve_linear_ot(
         self,
@@ -179,7 +189,7 @@ class SinkhornSolver:
         q: "Array",
         epsilon: float,
         max_iterations: int | None = None,
-        threshold: float = 0.0,
+        threshold: float | None = None,
     ) -> "Array":
         """Solve linear optimal transport - fast version for inner loops.
 
@@ -192,8 +202,9 @@ class SinkhornSolver:
             p: Source marginal [n]
             q: Target marginal [m]
             epsilon: Entropy regularization strength
-            max_iterations: Maximum Sinkhorn iterations (derived from problem size if None)
-            threshold: Convergence threshold (0 = run all iterations)
+            max_iterations: Optional explicit cap on Sinkhorn iterations.
+            threshold: Optional convergence threshold for scaling updates. When None,
+                derives from dtype precision.
 
         Returns:
             Transport plan [n, m]
@@ -202,12 +213,14 @@ class SinkhornSolver:
         n = int(cost.shape[0])
         m = int(cost.shape[1])
 
-        # Derive max iterations from problem size if not specified
-        if max_iterations is None:
-            max_iterations = _derive_max_iterations(n, m)
-
         if n == 0 or m == 0:
             return backend.zeros((n, m))
+
+        convergence_threshold = (
+            float(threshold)
+            if threshold is not None and threshold > 0.0
+            else regularization_epsilon(backend, cost)
+        )
 
         # Use precision-aware epsilon and tiny value
         eps = division_epsilon(backend, cost)
@@ -219,10 +232,13 @@ class SinkhornSolver:
         # Stabilized Sinkhorn with row-wise centering
         cost_min = backend.min(cost, axis=1, keepdims=True)
         cost_centered = cost - cost_min
+        epsilon_floor = self._entropy_precision_floor(cost_centered, floor)
+        epsilon = max(epsilon, epsilon_floor)
         log_K = -cost_centered / max(epsilon, eps)
 
-        # Clamp to avoid underflow
-        log_K = backend.maximum(log_K, backend.full((n, m), -80.0))
+        # Clamp to dtype-safe log floor to avoid underflow
+        log_floor = log_scalar(floor, backend)
+        log_K = backend.maximum(log_K, backend.full((n, m), log_floor))
         K = backend.exp(log_K)
         K = backend.maximum(K, floor_mat)
 
@@ -231,7 +247,9 @@ class SinkhornSolver:
         v = backend.ones((m,))
 
         K_T = backend.transpose(K)
-        for _ in range(max_iterations):
+        iterations = 0
+        while True:
+            iterations += 1
             # Row scaling: u = p / (K @ v)
             Kv = backend.matmul(K, v)
             Kv = backend.maximum(Kv, floor_vec_n)
@@ -242,21 +260,25 @@ class SinkhornSolver:
             Ktu = backend.maximum(Ktu, floor_vec_m)
             v_new = q / Ktu
 
-            # Check convergence if threshold > 0
-            if threshold > 0:
-                u_diff = backend.max(backend.abs(u_new - u))
-                v_diff = backend.max(backend.abs(v_new - v))
-                backend.eval(u_diff, v_diff)
-                if max(
-                    float(backend.to_scalar(u_diff)),
-                    float(backend.to_scalar(v_diff)),
-                ) < threshold:
-                    u = u_new
-                    v = v_new
-                    break
+            plan = K * backend.reshape(u_new, (n, 1)) * backend.reshape(v_new, (1, m))
+            row_sums = backend.sum(plan, axis=1)
+            col_sums = backend.sum(plan, axis=0)
+            row_error = backend.max(backend.abs(row_sums - p))
+            col_error = backend.max(backend.abs(col_sums - q))
+            backend.eval(row_error, col_error)
+            max_error = max(
+                float(self._to_scalar(row_error)),
+                float(self._to_scalar(col_error)),
+            )
 
             u = u_new
             v = v_new
+            if not is_finite(max_error, backend):
+                break
+            if max_error <= convergence_threshold:
+                break
+            if max_iterations is not None and iterations >= max_iterations:
+                break
 
         # Recover transport plan: G = diag(u) @ K @ diag(v)
         G = K * backend.reshape(u, (n, 1)) * backend.reshape(v, (1, m))
@@ -269,8 +291,6 @@ class SinkhornSolver:
         nu: "Array",
         epsilon: float,
         convergence_threshold: float,
-        stability_epsilon: float,
-        max_iterations: int,
     ) -> SinkhornResult:
         """Log-domain Sinkhorn for improved numerical stability."""
         backend = self._backend
@@ -285,7 +305,12 @@ class SinkhornSolver:
         log_nu = backend.log(
             backend.maximum(nu, backend.full(nu.shape, log_eps))
         )
-        logK = -cost_matrix / epsilon
+        cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
+        cost_centered = cost_matrix - cost_min
+        floor = tiny_value(backend, cost_matrix)
+        epsilon_floor = self._entropy_precision_floor(cost_centered, floor)
+        epsilon = max(epsilon, epsilon_floor)
+        logK = -cost_centered / epsilon
         backend.eval(log_mu, log_nu, logK)
 
         log_dtype = precision_dtype(backend, reference=cost_matrix)
@@ -296,10 +321,12 @@ class SinkhornSolver:
         converged = False
         iterations = 0
         marginal_error = float("inf")
+        prev_error: float | None = None
+        prev_diff: float | None = None
 
         logK_T = backend.transpose(logK)
-        for i in range(max_iterations):
-            iterations = i + 1
+        while True:
+            iterations += 1
             logK_plus_g = logK + g.reshape((1, m))
             f_new = log_mu - self._logsumexp(logK_plus_g, axis=1)
             logKT_plus_f = logK_T + f_new.reshape((1, n))
@@ -324,11 +351,26 @@ class SinkhornSolver:
                 float(self._to_scalar(row_error)), float(self._to_scalar(col_error))
             )
 
+            update_floor = self._precision_update_floor(cost_matrix, f_new, g_new)
+            effective_threshold = max(convergence_threshold, update_floor)
+
             f = f_new
             g = g_new
-            if marginal_error < convergence_threshold or max_diff < convergence_threshold:
+            if not is_finite(max_diff, backend) or not is_finite(marginal_error, backend):
+                break
+            if marginal_error <= effective_threshold and max_diff <= effective_threshold:
                 converged = True
                 break
+            if prev_error is not None and prev_diff is not None:
+                error_delta = abs(prev_error - marginal_error)
+                diff_delta = abs(prev_diff - max_diff)
+                progress_floor = machine_epsilon(backend, cost_matrix) * max(
+                    abs(prev_error), abs(marginal_error), abs(prev_diff), abs(max_diff), 1.0
+                )
+                if error_delta <= progress_floor and diff_delta <= progress_floor and max_diff <= update_floor:
+                    break
+            prev_error = marginal_error
+            prev_diff = max_diff
 
         logP = f.reshape((n, 1)) + logK + g.reshape((1, m))
         plan = backend.exp(logP)

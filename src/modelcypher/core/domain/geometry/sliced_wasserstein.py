@@ -44,8 +44,10 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    geodesic_svd,
     precision_dtype,
     regularization_epsilon,
+    svd_auto_rank,
 )
 
 if TYPE_CHECKING:
@@ -122,6 +124,38 @@ def random_unit_vectors(
     backend.eval(unit_vectors)
 
     return unit_vectors
+
+
+def _derive_slice_count(
+    points: "Array",
+    backend: "Backend",
+    extras: list["Array"] | None = None,
+) -> int:
+    """Derive slice count from numeric rank of centered points."""
+    arrays = [backend.array(points)]
+    if extras:
+        arrays.extend(backend.array(extra) for extra in extras)
+    pts = backend.concatenate(arrays, axis=0) if len(arrays) > 1 else arrays[0]
+    pts = backend.astype(pts, precision_dtype(backend, reference=pts))
+    backend.eval(pts)
+
+    n = int(backend.shape(pts)[0])
+    d = int(backend.shape(pts)[1])
+    if n <= 1 or d <= 1:
+        return max(1, min(n, d))
+
+    try:
+        mean = backend.mean(pts, axis=0, keepdims=True)
+        centered = pts - mean
+        backend.eval(centered)
+
+        _u, singular_values, _v = geodesic_svd(backend, centered)
+        backend.eval(singular_values)
+
+        rank = svd_auto_rank(singular_values, backend, max_dim=max(n, d))
+        return max(1, rank)
+    except Exception:
+        return max(1, min(n, d))
 
 
 def wasserstein_1d(
@@ -220,7 +254,7 @@ def wasserstein_1d(
 def sliced_wasserstein_distance(
     X: "Array",
     Y: "Array",
-    n_slices: int = 100,
+    n_slices: int | None = None,
     p: int = 2,
     backend: "Backend | None" = None,
     seed: int | None = None,
@@ -242,9 +276,9 @@ def sliced_wasserstein_distance(
         First point cloud, shape [n, d].
     Y : Array
         Second point cloud, shape [m, d].
-    n_slices : int
-        Number of random projections (default 100).
-        More slices = lower variance but higher cost.
+    n_slices : int | None
+        Number of random projections. If None, derived from numeric rank of
+        the concatenated point cloud.
     p : int
         Order of Wasserstein distance (default 2).
     backend : Backend, optional
@@ -263,8 +297,7 @@ def sliced_wasserstein_distance(
     -----
     Complexity: O(n_slices × max(n,m) × log(max(n,m)))
 
-    For d-dimensional data, n_slices ~ d gives reasonable approximation.
-    For higher accuracy, use n_slices ~ d × 10.
+    When n_slices is None, the count is derived from numeric rank.
     """
     b = backend or get_default_backend()
 
@@ -292,6 +325,9 @@ def sliced_wasserstein_distance(
         )
 
     d = d_x
+
+    if n_slices is None:
+        n_slices = _derive_slice_count(X, b, extras=[Y])
 
     # Generate random unit vectors
     directions = random_unit_vectors(n_slices, d, b, seed=seed)
@@ -347,7 +383,7 @@ def sliced_wasserstein_distance(
 def sliced_wasserstein_batch(
     X: "Array",
     Y_list: list["Array"],
-    n_slices: int = 100,
+    n_slices: int | None = None,
     p: int = 2,
     backend: "Backend | None" = None,
     seed: int | None = None,
@@ -363,8 +399,9 @@ def sliced_wasserstein_batch(
         Reference point cloud, shape [n, d].
     Y_list : list[Array]
         List of point clouds to compare against X.
-    n_slices : int
-        Number of random projections.
+    n_slices : int | None
+        Number of random projections. If None, derived from numeric rank of
+        the concatenated point cloud.
     p : int
         Order of Wasserstein distance.
     backend : Backend, optional
@@ -387,6 +424,22 @@ def sliced_wasserstein_batch(
     d = int(b.shape(X)[1])
     n = int(b.shape(X)[0])
 
+    if n_slices is None:
+        n_slices = _derive_slice_count(X, b, extras=Y_list)
+
+    Y_arrays: list["Array"] = []
+    for Y in Y_list:
+        Y_arr = b.array(Y)
+        Y_arr = b.astype(Y_arr, compute_dtype)
+        b.eval(Y_arr)
+        d_y = int(b.shape(Y_arr)[1])
+        if d_y != d:
+            raise ValueError(f"Y dimension {d_y} != X dimension {d}")
+        Y_arrays.append(Y_arr)
+
+    if n_slices is None:
+        n_slices = _derive_slice_count(X, b, extras=Y_arrays)
+
     # Generate shared random directions
     directions = random_unit_vectors(n_slices, d, b, seed=seed)
 
@@ -404,17 +457,8 @@ def sliced_wasserstein_batch(
         X_sorted_slices.append(x_sorted)
 
     results = []
-    for Y in Y_list:
-        Y = b.array(Y)
-        Y = b.astype(Y, compute_dtype)
-        b.eval(Y)
-
+    for Y in Y_arrays:
         m = int(b.shape(Y)[0])
-        d_y = int(b.shape(Y)[1])
-
-        if d_y != d:
-            raise ValueError(f"Y dimension {d_y} != X dimension {d}")
-
         Y_proj = b.matmul(Y, b.transpose(directions))
         b.eval(Y_proj)
 
@@ -451,7 +495,7 @@ def sliced_wasserstein_batch(
 def sliced_wasserstein_similarity(
     X: "Array",
     Y: "Array",
-    n_slices: int = 100,
+    n_slices: int | None = None,
     backend: "Backend | None" = None,
     seed: int | None = None,
 ) -> float:
@@ -468,8 +512,8 @@ def sliced_wasserstein_similarity(
         First point cloud.
     Y : Array
         Second point cloud.
-    n_slices : int
-        Number of random projections.
+    n_slices : int | None
+        Number of random projections. If None, derived from numeric rank.
     backend : Backend, optional
         Compute backend.
     seed : int, optional

@@ -1181,7 +1181,7 @@ def numerical_rank_truncated_lstsq(
     backend: "Backend",
     source: "Array",
     target: "Array",
-) -> tuple["Array", int, int, int, float]:
+) -> tuple["Array", int, int, int, float, float]:
     """Solve least squares with numerical-rank truncation.
 
     Drops singular values below sigma_max * sqrt(eps) and solves
@@ -1193,7 +1193,14 @@ def numerical_rank_truncated_lstsq(
         target: Target activations [n_samples, d_target].
 
     Returns:
-        Tuple (F, source_rank, target_rank, alignment_rank, condition_number).
+        Tuple (F, source_rank, target_rank, alignment_rank, condition_number, residual).
+
+        residual is ||source @ F - target||_F / ||target||_F, the relative
+        alignment error. This is the closed-form measure of whether the
+        linear alignment succeeded. If residual < sqrt(eps), the alignment
+        is within numerical precision. If residual >> sqrt(eps), the
+        relationship between source and target is not well-approximated
+        by a linear transform.
     """
     b = backend
 
@@ -1305,7 +1312,29 @@ def numerical_rank_truncated_lstsq(
     F = b.matmul(V_k, scaled)
     b.eval(F)
 
-    return F, source_rank, target_rank, alignment_rank, condition_number
+    # =========================================================================
+    # ALIGNMENT RESIDUAL: ||source @ F - target||_F / ||target||_F
+    # =========================================================================
+    # This is the closed-form measure of whether the alignment succeeded.
+    # If residual < sqrt(eps), the linear transform is within precision.
+    # If residual >> sqrt(eps), source and target are NOT linearly related.
+    reconstructed = b.matmul(A, F)
+    diff = reconstructed - B
+    diff_norm = b.sqrt(b.sum(diff * diff))
+    target_norm = b.sqrt(b.sum(B * B))
+    b.eval(diff_norm, target_norm)
+
+    div_eps = division_epsilon(b, target_norm)
+    target_norm_safe = max(float(b.to_scalar(target_norm)), div_eps)
+    residual = float(b.to_scalar(diff_norm)) / target_norm_safe
+
+    logger.info(
+        "ALIGNMENT RESIDUAL: ||A@F - B||/||B|| = %.6f (precision floor = %.2e)",
+        residual,
+        precision_thresh,
+    )
+
+    return F, source_rank, target_rank, alignment_rank, condition_number, residual
 
 
 def safe_inverse(

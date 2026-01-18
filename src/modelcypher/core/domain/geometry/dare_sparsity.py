@@ -52,10 +52,9 @@ class MagnitudeStatistics:
     median: float
     max: float
     min_non_zero: float
-    percentile1: float
-    percentile5: float
-    percentile95: float
-    percentile99: float
+    zero_threshold: float
+    gap_threshold: float
+    drop_threshold: float
 
 
 @dataclass(frozen=True)
@@ -96,17 +95,7 @@ class DARESparsityAnalyzer:
 
         sorted_magnitudes = sorted(all_magnitudes)
         magnitude_stats = DARESparsityAnalyzer._compute_magnitude_stats(sorted_magnitudes)
-
-        # Derive thresholds from data, not arbitrary constants:
-        # 1. Machine epsilon threshold: values below eps * max are numerical noise
-        eps = ulp_scalar(1.0, get_default_backend())
-        zero_threshold = magnitude_stats.max * eps
-
-        # 2. Spectral gap: find natural break in magnitude distribution
-        gap_threshold = find_magnitude_gap_threshold(sorted_magnitudes, eps=eps)
-
-        # Use the larger of the two thresholds
-        drop_threshold = max(zero_threshold, gap_threshold)
+        drop_threshold = magnitude_stats.drop_threshold
 
         backend = get_default_backend()
         mag_arr = backend.array(sorted_magnitudes)
@@ -208,29 +197,29 @@ class DARESparsityAnalyzer:
 
         # Derive thresholds from data:
         # 1. Machine epsilon threshold (values below this are numerical noise)
-        eps = b.finfo(next(iter(per_layer_arrays.values())).dtype).eps
-        zero_threshold = global_max * eps
+        zero_threshold = ulp_scalar(global_max, b)
 
         all_magnitudes = b.concatenate(list(per_layer_arrays.values()))
         b.eval(all_magnitudes)
         sorted_mags = b.sort(all_magnitudes)
         b.eval(sorted_mags)
 
-        def find_percentile_sorted(p: float) -> float:
-            kth = max(0, min(int(p * total_count), total_count - 1))
-            val = b.take(sorted_mags, b.array([kth]), axis=0)
-            val = b.squeeze(val)
-            b.eval(val)
-            return float(b.to_scalar(val))
-
-        p1 = find_percentile_sorted(0.01)
-        p5 = find_percentile_sorted(0.05)
-        median = find_percentile_sorted(0.50)
-        p95 = find_percentile_sorted(0.95)
-        p99 = find_percentile_sorted(0.99)
+        mid = total_count // 2
+        if total_count % 2 == 1:
+            median_val = b.take(sorted_mags, b.array([mid]), axis=0)
+            median_val = b.squeeze(median_val)
+            b.eval(median_val)
+            median = float(b.to_scalar(median_val))
+        else:
+            lower_val = b.take(sorted_mags, b.array([mid - 1]), axis=0)
+            upper_val = b.take(sorted_mags, b.array([mid]), axis=0)
+            lower_val = b.squeeze(lower_val)
+            upper_val = b.squeeze(upper_val)
+            b.eval(lower_val, upper_val)
+            median = (float(b.to_scalar(lower_val)) + float(b.to_scalar(upper_val))) / 2.0
 
         # 2. Spectral gap: find largest relative jump in sorted magnitudes
-        gap_threshold = find_magnitude_gap_threshold(sorted_mags, eps=eps, backend=b)
+        gap_threshold = find_magnitude_gap_threshold(sorted_mags, eps=zero_threshold, backend=b)
 
         drop_threshold = max(zero_threshold, gap_threshold)
 
@@ -281,10 +270,9 @@ class DARESparsityAnalyzer:
                 median=median,
                 max=global_max,
                 min_non_zero=min_non_zero,
-                percentile1=p1,
-                percentile5=p5,
-                percentile95=p95,
-                percentile99=p99,
+                zero_threshold=zero_threshold,
+                gap_threshold=gap_threshold,
+                drop_threshold=drop_threshold,
             ),
             computed_at=datetime.now(timezone.utc),
         )
@@ -297,10 +285,11 @@ class DARESparsityAnalyzer:
         if not magnitudes:
             return {name: set() for name in delta_weights}
 
-        eps = ulp_scalar(1.0, get_default_backend())
         sorted_magnitudes = sorted(magnitudes)
+        max_val = max(sorted_magnitudes)
+        eps = ulp_scalar(max_val, get_default_backend())
         gap_threshold = find_magnitude_gap_threshold(sorted_magnitudes, eps=eps)
-        zero_threshold = max(sorted_magnitudes) * eps
+        zero_threshold = eps
         drop_threshold = max(zero_threshold, gap_threshold)
 
         precision = ulp_scalar(drop_threshold, get_default_backend())
@@ -335,10 +324,9 @@ class DARESparsityAnalyzer:
                 median=0.0,
                 max=0.0,
                 min_non_zero=0.0,
-                percentile1=0.0,
-                percentile5=0.0,
-                percentile95=0.0,
-                percentile99=0.0,
+                zero_threshold=0.0,
+                gap_threshold=0.0,
+                drop_threshold=0.0,
             ),
             computed_at=datetime.now(timezone.utc),
         )
@@ -352,10 +340,9 @@ class DARESparsityAnalyzer:
                 median=0.0,
                 max=0.0,
                 min_non_zero=0.0,
-                percentile1=0.0,
-                percentile5=0.0,
-                percentile95=0.0,
-                percentile99=0.0,
+                zero_threshold=0.0,
+                gap_threshold=0.0,
+                drop_threshold=0.0,
             )
 
         backend = get_default_backend()
@@ -373,7 +360,7 @@ class DARESparsityAnalyzer:
         variance = float(backend.to_scalar(variance_arr))
         std_dev = variance**0.5
 
-        # Direct indexing for percentiles (array is already sorted)
+        # Direct indexing for median (array is already sorted)
         median = sorted_values[count // 2]
         max_value = sorted_values[-1]
 
@@ -385,10 +372,11 @@ class DARESparsityAnalyzer:
         min_nz_val = float(backend.to_scalar(min_nz_arr))
         min_non_zero = 0.0 if min_nz_val == inf_val else min_nz_val
 
-        p1 = sorted_values[int(count * 0.01)]
-        p5 = sorted_values[int(count * 0.05)]
-        p95 = sorted_values[min(int(count * 0.95), count - 1)]
-        p99 = sorted_values[min(int(count * 0.99), count - 1)]
+        max_val = float(max_value)
+        eps = ulp_scalar(max_val, backend)
+        gap_threshold = find_magnitude_gap_threshold(sorted_values, eps=eps, backend=backend)
+        zero_threshold = eps
+        drop_threshold = max(zero_threshold, gap_threshold)
 
         return MagnitudeStatistics(
             mean=float(mean),
@@ -396,10 +384,9 @@ class DARESparsityAnalyzer:
             median=float(median),
             max=float(max_value),
             min_non_zero=float(min_non_zero),
-            percentile1=float(p1),
-            percentile5=float(p5),
-            percentile95=float(p95),
-            percentile99=float(p99),
+            zero_threshold=float(zero_threshold),
+            gap_threshold=float(gap_threshold),
+            drop_threshold=float(drop_threshold),
         )
 
     @staticmethod

@@ -1,0 +1,481 @@
+{
+  "config": {
+    "experiment_name": "exp9_residual_decomposition",
+    "experiment_id": "1768759902",
+    "random_seed": 42,
+    "timestamp": "2026-01-18T12:11:42.735335",
+    "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
+    "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+    "source_model_hash": "a1fe6f43e20f7a6c",
+    "target_model_hash": "ce0883eb3405e21c",
+    "platform_info": "macOS-26.2-arm64-arm-64bit",
+    "python_version": "3.11.14",
+    "backend_name": "MLXBackend",
+    "backend_version": "unknown",
+    "hyperparameters": {
+      "probe_count": 500,
+      "train_fraction": 0.8,
+      "layers_to_test": [
+        "25%",
+        "50%",
+        "75%"
+      ]
+    }
+  },
+  "metrics": {
+    "total_layers_tested": 3,
+    "mean_residual": 0.08172051568548955,
+    "all_orthogonal": true,
+    "all_generalize": false,
+    "thesis_supported": true,
+    "success_criteria": {
+      "orthogonality": "||A.T @ novel|| / (||A|| x ||novel||) < sqrt(eps)",
+      "generalization": "|test_residual - train_residual| < sqrt(eps)"
+    }
+  },
+  "raw_data": {
+    "precision": {
+      "eps": 1.1920928955078125e-07,
+      "sqrt_eps": 0.0003452669770922512
+    },
+    "phase1_decomposition": [
+      {
+        "depth": "25%",
+        "source_layer": 7,
+        "target_layer": 4,
+        "residual": 0.023036942873237348,
+        "reconstructed_fraction": 1.0036779403686524,
+        "source_rank": 467,
+        "target_rank": 500,
+        "alignment_rank": 467,
+        "condition_number": 2856.1314913713604
+      },
+      {
+        "depth": "50%",
+        "source_layer": 15,
+        "target_layer": 8,
+        "residual": 0.11362291946196228,
+        "reconstructed_fraction": 0.9971840687287159,
+        "source_rank": 121,
+        "target_rank": 463,
+        "alignment_rank": 121,
+        "condition_number": 2894.19775388556
+      },
+      {
+        "depth": "75%",
+        "source_layer": 22,
+        "target_layer": 12,
+        "residual": 0.10850168472126905,
+        "reconstructed_fraction": 0.9964813783944372,
+        "source_rank": 254,
+        "target_rank": 500,
+        "alignment_rank": 254,
+        "condition_number": 2886.1585628237526
+      }
+    ],
+    "phase2_orthogonality": [
+      {
+        "depth": "25%",
+        "orthogonality": 0.00026063514043739853,
+        "sqrt_eps": 0.0003452669770922512,
+        "is_truly_orthogonal": true
+      },
+      {
+        "depth": "50%",
+        "orthogonality": 0.00021746795167866003,
+        "sqrt_eps": 0.0003452669770922512,
+        "is_truly_orthogonal": true
+      },
+      {
+        "depth": "75%",
+        "orthogonality": 0.0002160272205679825,
+        "sqrt_eps": 0.0003452669770922512,
+        "is_truly_orthogonal": true
+      }
+    ],
+    "phase3_generalization": [
+      {
+        "depth": "25%",
+        "train_residual": 0.0034812859024007234,
+        "test_residual": 0.6105674525669643,
+        "generalization_gap": 0.6070861666645636,
+        "sqrt_eps": 0.0003452669770922512,
+        "generalizes": false
+      },
+      {
+        "depth": "50%",
+        "train_residual": 0.08899027994017264,
+        "test_residual": 0.309222265846371,
+        "generalization_gap": 0.22023198590619839,
+        "sqrt_eps": 0.0003452669770922512,
+        "generalizes": false
+      },
+      {
+        "depth": "75%",
+        "train_residual": 0.08290794557373782,
+        "test_residual": 0.3241420405926091,
+        "generalization_gap": 0.24123409501887128,
+        "sqrt_eps": 0.0003452669770922512,
+        "generalizes": false
+      }
+    ],
+    "phase4_probe_analysis": [
+      {
+        "depth": "25%",
+        "statistics": {
+          "mean": 0.02885451751491265,
+          "median": 0.01754438756296192,
+          "stdev": 0.02704316799998725,
+          "min": 0.0007499156872162948,
+          "max": 0.10312648862600327
+        },
+        "top_10_highest_residual": [
+          {
+            "index": 362,
+            "residual": 0.10312648862600327,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 308,
+            "residual": 0.09804033350061488,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 346,
+            "residual": 0.0962770567165585,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 336,
+            "residual": 0.09515617429748062,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 289,
+            "residual": 0.09469584296731388,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 367,
+            "residual": 0.09466139725812776,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 324,
+            "residual": 0.09417103230953217,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 304,
+            "residual": 0.0931319970350999,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 413,
+            "residual": 0.09187753535499257,
+            "probe": "A 42-year-old woman comes to the physician because of a 1-year history of vagina"
+          },
+          {
+            "index": 319,
+            "residual": 0.09108389218648275,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          }
+        ],
+        "bottom_10_lowest_residual": [
+          {
+            "index": 46,
+            "residual": 0.0007499156872162948,
+            "probe": "match"
+          },
+          {
+            "index": 49,
+            "residual": 0.0007889148307173219,
+            "probe": "depend"
+          },
+          {
+            "index": 22,
+            "residual": 0.0007987708501193834,
+            "probe": "curriculum"
+          },
+          {
+            "index": 471,
+            "residual": 0.0008451541693046175,
+            "probe": "thirst"
+          },
+          {
+            "index": 17,
+            "residual": 0.0008608054849180845,
+            "probe": "symptom"
+          },
+          {
+            "index": 499,
+            "residual": 0.0008896355972672902,
+            "probe": "make"
+          },
+          {
+            "index": 63,
+            "residual": 0.0009153408325271101,
+            "probe": "measure"
+          },
+          {
+            "index": 61,
+            "residual": 0.0009572496016820272,
+            "probe": "next"
+          },
+          {
+            "index": 476,
+            "residual": 0.0009614906872913336,
+            "probe": "tree"
+          },
+          {
+            "index": 16,
+            "residual": 0.0009932903682484345,
+            "probe": "cell"
+          }
+        ]
+      },
+      {
+        "depth": "50%",
+        "statistics": {
+          "mean": 0.31992749429634476,
+          "median": 0.25529122191431364,
+          "stdev": 0.27667910255814526,
+          "min": 0.009285026317020115,
+          "max": 2.1520402238175675
+        },
+        "top_10_highest_residual": [
+          {
+            "index": 418,
+            "residual": 2.1520402238175675,
+            "probe": "A 52-year-old man is admitted to the hospital because of severe dyspnea and coug"
+          },
+          {
+            "index": 435,
+            "residual": 1.7291518467937024,
+            "probe": "A 5-year-old boy is brought to the physician because of a 2-day history of fever"
+          },
+          {
+            "index": 172,
+            "residual": 1.5554653842753343,
+            "probe": " Construct a complete truth table for the following argument. Then, using the tr"
+          },
+          {
+            "index": 163,
+            "residual": 1.5454170260078464,
+            "probe": "Identify the conclusion of the following argument. It is hard not to verify in o"
+          },
+          {
+            "index": 100,
+            "residual": 1.541425895690918,
+            "probe": "Nitronyl nitroxides are stable radicals in which the unpaired electron is couple"
+          },
+          {
+            "index": 93,
+            "residual": 1.4556118435329861,
+            "probe": "Which of the following must be true about a binary liquid mixture that obeys Rao"
+          },
+          {
+            "index": 167,
+            "residual": 1.446539426317402,
+            "probe": " Construct a complete truth table for the following argument. Then, using the tr"
+          },
+          {
+            "index": 173,
+            "residual": 1.370244037674134,
+            "probe": " Construct a complete truth table for the following argument. Then, using the tr"
+          },
+          {
+            "index": 275,
+            "residual": 1.3001244284889915,
+            "probe": " One objection to care ethics is thatit seems to imply that we areresponsible fo"
+          },
+          {
+            "index": 112,
+            "residual": 1.2414435540045892,
+            "probe": "Excited states of the helium atom can be characterized as para- (antiparallel el"
+          }
+        ],
+        "bottom_10_lowest_residual": [
+          {
+            "index": 47,
+            "residual": 0.009285026317020115,
+            "probe": "surround"
+          },
+          {
+            "index": 472,
+            "residual": 0.009497759100624118,
+            "probe": "wall"
+          },
+          {
+            "index": 63,
+            "residual": 0.009535555425844236,
+            "probe": "measure"
+          },
+          {
+            "index": 37,
+            "residual": 0.00968484083811442,
+            "probe": "this"
+          },
+          {
+            "index": 59,
+            "residual": 0.011874701295580183,
+            "probe": "fourteen"
+          },
+          {
+            "index": 480,
+            "residual": 0.013190113625875334,
+            "probe": "fruit"
+          },
+          {
+            "index": 49,
+            "residual": 0.01364170443949275,
+            "probe": "depend"
+          },
+          {
+            "index": 497,
+            "residual": 0.01516896529163388,
+            "probe": "jump"
+          },
+          {
+            "index": 476,
+            "residual": 0.01665831906763137,
+            "probe": "tree"
+          },
+          {
+            "index": 22,
+            "residual": 0.018360905787524057,
+            "probe": "curriculum"
+          }
+        ]
+      },
+      {
+        "depth": "75%",
+        "statistics": {
+          "mean": 0.2383639271714301,
+          "median": 0.22862064887083552,
+          "stdev": 0.1369287067005057,
+          "min": 0.011085715969051935,
+          "max": 0.8934451969525287
+        },
+        "top_10_highest_residual": [
+          {
+            "index": 108,
+            "residual": 0.8934451969525287,
+            "probe": "Let R be a ring and let U and V be (two-sided) ideals of R. Which of the followi"
+          },
+          {
+            "index": 418,
+            "residual": 0.8320524913098843,
+            "probe": "A 52-year-old man is admitted to the hospital because of severe dyspnea and coug"
+          },
+          {
+            "index": 383,
+            "residual": 0.6834723013418692,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 210,
+            "residual": 0.646612302718624,
+            "probe": "A particle of mass m and charge Q and velocity V is directed toward a uniform el"
+          },
+          {
+            "index": 93,
+            "residual": 0.6395985659431008,
+            "probe": "Which of the following must be true about a binary liquid mixture that obeys Rao"
+          },
+          {
+            "index": 439,
+            "residual": 0.6165942842998202,
+            "probe": "A previously healthy 24-year-old woman who is a college student comes to the off"
+          },
+          {
+            "index": 379,
+            "residual": 0.6043100771696671,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 66,
+            "residual": 0.6028179403123909,
+            "probe": "Is this reasoning deductive or inductive: All observed swans are white, so all s"
+          },
+          {
+            "index": 358,
+            "residual": 0.5930942766594164,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          },
+          {
+            "index": 315,
+            "residual": 0.5748527299112348,
+            "probe": "For which of these two scenarios does the main character (who uses I/me/my) do s"
+          }
+        ],
+        "bottom_10_lowest_residual": [
+          {
+            "index": 17,
+            "residual": 0.011085715969051935,
+            "probe": "symptom"
+          },
+          {
+            "index": 61,
+            "residual": 0.01192726904742196,
+            "probe": "next"
+          },
+          {
+            "index": 468,
+            "residual": 0.012253099186405254,
+            "probe": "sour"
+          },
+          {
+            "index": 47,
+            "residual": 0.012418038315243192,
+            "probe": "surround"
+          },
+          {
+            "index": 49,
+            "residual": 0.0133049258120774,
+            "probe": "depend"
+          },
+          {
+            "index": 38,
+            "residual": 0.013955030652040935,
+            "probe": "when"
+          },
+          {
+            "index": 63,
+            "residual": 0.014175864078538835,
+            "probe": "measure"
+          },
+          {
+            "index": 16,
+            "residual": 0.014331239543549002,
+            "probe": "cell"
+          },
+          {
+            "index": 35,
+            "residual": 0.01446552493355491,
+            "probe": "she"
+          },
+          {
+            "index": 475,
+            "residual": 0.015433957658965013,
+            "probe": "pants"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "total_layers_tested": 3,
+      "mean_residual": 0.08172051568548955,
+      "all_orthogonal": true,
+      "all_generalize": false,
+      "thesis_supported": true,
+      "success_criteria": {
+        "orthogonality": "||A.T @ novel|| / (||A|| x ||novel||) < sqrt(eps)",
+        "generalization": "|test_residual - train_residual| < sqrt(eps)"
+      }
+    }
+  },
+  "duration_seconds": 95.56484266699954,
+  "success": true,
+  "error_message": ""
+}

@@ -41,7 +41,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     is_finite,
     machine_epsilon,
-    tiny_value,
 )
 from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
 
@@ -78,41 +77,6 @@ class Result:
         return abs(self.distance) <= eps
 
 
-# Algorithm constants - derived from numerical analysis and problem size
-
-
-def _derive_outer_iterations(n: int, m: int) -> int:
-    """Derive max Frank-Wolfe iterations from problem size.
-
-    Frank-Wolfe converges at O(1/k) rate. Upper bound scales logarithmically
-    with problem size: max_iter = max(20, 10 * ceil(log2(max(n, m) + 1)))
-    Early convergence typically triggers well before this bound (10-20 iterations).
-    """
-    return max(20, 10 * int(math.ceil(math.log2(max(n, m) + 1))))
-
-
-def _derive_min_outer_iterations(n: int, m: int) -> int:
-    """Derive minimum iterations before checking convergence.
-
-    Uses ceil(log2(max(n, m))) + 1 as the geometric convergence minimum.
-    """
-    return int(math.ceil(math.log2(max(2, n, m)))) + 1
-
-
-# Nominal values retained for cache key compatibility and external imports.
-# Actual computation uses _derive_outer_iterations() based on problem size.
-_MAX_OUTER_ITERATIONS = 30  # Typical upper bound; actual value derived from n, m
-_MIN_OUTER_ITERATIONS = 5  # Typical minimum; actual value derived from n, m
-# Sinkhorn iterations - now derived from problem size inside solve_linear_ot
-# This nominal value is retained for cache key compatibility only
-_SINKHORN_ITERATIONS = 50  # Typical value; actual derived from n, m
-# Sinkhorn epsilon is now derived from cost matrix scale (see _derive_sinkhorn_epsilon)
-# This nominal value is retained for cache key compatibility only
-_SINKHORN_EPSILON = "data_derived"  # Not used in computation; epsilon is computed per-call
-# Random restarts to escape local minima (GW is non-convex)
-_NUM_RESTARTS = 10
-_RANDOM_SEED = 42
-
 
 class GromovWassersteinDistance:
     """GPU-accelerated Gromov-Wasserstein distance using Frank-Wolfe algorithm."""
@@ -129,9 +93,9 @@ class GromovWassersteinDistance:
         """
         Compute Gromov-Wasserstein distance between two metric spaces.
 
-        Uses Conditional Gradient (Frank-Wolfe) algorithm with multiple restarts
-        to escape local minima (GW is non-convex). All parameters are derived
-        from numerical precision of the input dtype - no configuration needed.
+        Uses Conditional Gradient (Frank-Wolfe) algorithm with deterministic
+        initialization. All parameters are derived from numerical precision
+        of the input dtype - no configuration needed.
 
         Args:
             source_distances: Pairwise distance matrix for source [n, n]
@@ -170,11 +134,12 @@ class GromovWassersteinDistance:
                 coupling = backend.eye(n) / n
                 return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
-        # For small square matrices, exhaustively search permutations
-        # GW with uniform marginals is equivalent to the Quadratic Assignment Problem (QAP)
-        # which has n! solutions. For n≤8, exhaustive search is tractable and exact.
-        if n == m and n <= 8:
-            return self._solve_by_permutation_search(C1, C2, n, backend)
+        # For square matrices, exhaustively search permutations when resolution allows it.
+        # We bound n! by the number of distinguishable states at machine precision.
+        if n == m:
+            perm_budget = max(1, int(1.0 / machine_epsilon(backend, C1)))
+            if math.factorial(n) <= perm_budget:
+                return self._solve_by_permutation_search(C1, C2, n, backend)
 
         # Uniform marginals
         p = backend.ones((n,)) / n
@@ -183,69 +148,23 @@ class GromovWassersteinDistance:
         # Precompute loss decomposition matrices once (reuse across restarts)
         constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
 
-        # Multiple restarts to escape local minima
-        best_result: Result | None = None
-        total_iterations = 0
+        # Deterministic initialization: uniform coupling (outer product of marginals)
+        T0 = self._uniform_coupling(p, q)
+        result = self._frank_wolfe(C1, C2, p, q, T0, constC=constC, hC1=hC1, hC2=hC2)
 
-        # Fixed seed for reproducibility
-        backend.random_seed(_RANDOM_SEED)
-
-        restart_budget = max(
-            1,
-            min(_NUM_RESTARTS, int(math.ceil(math.log2(max(min(n, m), 2))))),
-        )
-
-        for restart in range(restart_budget):
-            # Generate initial coupling
-            if restart == 0:
-                # First: uniform coupling (outer product of marginals)
-                T0 = backend.matmul(backend.reshape(p, (n, 1)), backend.reshape(q, (1, m)))
-            else:
-                # Random perturbation of uniform, projected to valid transport polytope
-                T0 = self._random_coupling(n, m, backend)
-
-            result = self._frank_wolfe(C1, C2, p, q, T0, constC=constC, hC1=hC1, hC2=hC2)
-            total_iterations += result.iterations
-
-            if best_result is None or result.distance < best_result.distance:
-                prev_best = best_result.distance if best_result is not None else None
-                best_result = result
-                if prev_best is not None:
-                    improvement = prev_best - result.distance
-                    eps = float(machine_epsilon(backend, C1))
-                    if improvement <= eps * max(prev_best, 1.0):
-                        break
-
-            # Early termination if we found near-zero distance
-            # Use dtype-derived epsilon for precision-aware comparison
-            zero_dist_eps = float(machine_epsilon(backend, C1))
-            if result.distance < zero_dist_eps:
-                break
-
-        assert best_result is not None
         return Result(
-            distance=best_result.distance,
-            coupling=best_result.coupling,
-            converged=best_result.converged,
-            iterations=total_iterations,
+            distance=result.distance,
+            coupling=result.coupling,
+            converged=result.converged,
+            iterations=result.iterations,
         )
 
-    def _random_coupling(self, n: int, m: int, backend: "Backend") -> "Array":
-        """Generate a random valid coupling matrix with uniform marginals."""
-        # Random positive matrix - ensure all values are positive to avoid numerical issues
-        # Use tiny_value as floor to ensure strictly positive entries
-        coupling = backend.random_uniform(shape=(n, m))
-        floor = tiny_value(backend, coupling)
-        coupling = backend.maximum(coupling, backend.full(coupling.shape, floor))
-
-        # Project onto transport polytope via Sinkhorn iterations
-        for _ in range(20):
-            row_sums = backend.sum(coupling, axis=1, keepdims=True)
-            coupling = coupling / row_sums * (1.0 / n)
-            col_sums = backend.sum(coupling, axis=0, keepdims=True)
-            coupling = coupling / col_sums * (1.0 / m)
-
-        return coupling
+    def _uniform_coupling(self, p: "Array", q: "Array") -> "Array":
+        """Deterministic coupling with uniform marginals."""
+        backend = self._backend
+        n = int(p.shape[0])
+        m = int(q.shape[0])
+        return backend.matmul(backend.reshape(p, (n, 1)), backend.reshape(q, (1, m)))
 
     def _solve_by_permutation_search(
         self,
@@ -573,12 +492,6 @@ class GromovWassersteinDistance:
         """
         backend = self._backend
 
-        # Derive iteration bounds from problem size
-        n = int(C1.shape[0])
-        m = int(C2.shape[0])
-        max_outer_iterations = _derive_outer_iterations(n, m)
-        min_outer_iterations = _derive_min_outer_iterations(n, m)
-
         # Initialize loss decomposition matrices (reuse across restarts when provided)
         if constC is None or hC1 is None or hC2 is None:
             constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
@@ -597,8 +510,8 @@ class GromovWassersteinDistance:
         converged = False
         iterations = 0
 
-        for outer in range(max_outer_iterations):
-            iterations = outer + 1
+        while True:
+            iterations += 1
 
             # Current loss
             tens = constC - backend.matmul(backend.matmul(hC1, T), hC2_T)
@@ -607,13 +520,13 @@ class GromovWassersteinDistance:
             loss = float(backend.to_scalar(loss_arr))
 
             # Check convergence
-            if iterations >= min_outer_iterations:
+            if is_finite(prev_loss, backend):
                 abs_change = abs(loss - prev_loss)
                 # Use precision-aware epsilon for relative change
                 eps = division_epsilon(backend, T)
-                rel_change = abs_change / max(abs(prev_loss), eps) if is_finite(prev_loss, backend) else float("inf")
+                rel_change = abs_change / max(abs(prev_loss), eps)
 
-                if abs_change < conv_threshold or rel_change < rel_threshold:
+                if abs_change <= conv_threshold and rel_change <= rel_threshold:
                     converged = True
                     break
 
@@ -636,14 +549,26 @@ class GromovWassersteinDistance:
 
             # Step 3: Line search for optimal step size
             alpha = self._compute_step_size(constC, hC1, hC2, T, G, grad_T=grad, hC2_T=hC2_T)
+            if not is_finite(alpha, backend):
+                break
 
             # Step 4: Update coupling via Frank-Wolfe convex combination
             # NOTE: This is NOT arbitrary blending. The step size α is computed
             # analytically by _compute_step_size() via line search on the quadratic
             # GW objective. This is standard convex optimization from Peyré et al.
-            step_eps = division_epsilon(backend, T)
-            if alpha > step_eps:  # Only update if step is meaningful
-                T = (1.0 - alpha) * T + alpha * G
+            deltaT = G - T
+            T_candidate = T + alpha * deltaT
+            diff_arr = backend.max(backend.abs(T_candidate - T))
+            max_abs_T = backend.max(backend.abs(T))
+            backend.eval(diff_arr, max_abs_T)
+            diff_val = float(backend.to_scalar(diff_arr))
+            max_abs_val = float(backend.to_scalar(max_abs_T))
+            update_floor = machine_epsilon(backend, T) * max(max_abs_val, 1.0)
+            T = T_candidate
+            if not is_finite(diff_val, backend):
+                break
+            if diff_val <= update_floor:
+                break
 
         # Final loss
         final_loss = self._gw_loss(constC, hC1, hC2, T)

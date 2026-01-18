@@ -1,0 +1,23 @@
+{
+  "experiment_name": "exp10_rank_saturation",
+  "experiment_id": "1768760707",
+  "random_seed": 42,
+  "timestamp": "2026-01-18T12:25:07.685298",
+  "source_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/HuggingFaceTB--SmolLM-135M",
+  "target_model_path": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+  "source_model_hash": "a1fe6f43e20f7a6c",
+  "target_model_hash": "ce0883eb3405e21c",
+  "platform_info": "macOS-26.2-arm64-arm-64bit",
+  "python_version": "3.11.14",
+  "backend_name": "MLXBackend",
+  "backend_version": "unknown",
+  "hyperparameters": {
+    "batch_size": 100,
+    "max_probes": 4596,
+    "layers_to_test": [
+      "25%",
+      "50%",
+      "75%"
+    ]
+  }
+}
