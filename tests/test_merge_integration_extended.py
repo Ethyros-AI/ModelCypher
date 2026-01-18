@@ -37,7 +37,10 @@ from modelcypher.core.domain.geometry.cka import compute_linear_cka
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     filter_delta_svd,
 )
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    division_epsilon,
+)
 
 
 @pytest.fixture
@@ -356,7 +359,9 @@ class TestSVDFilterInvariants:
         backend.eval(proj_norm)
 
         # Projection norm <= original norm (can't add energy)
-        assert float(backend.to_scalar(proj_norm)) <= float(backend.to_scalar(original_norm)) + 1e-5
+        original_norm_val = float(backend.to_scalar(original_norm))
+        tol = division_epsilon(backend, delta) * original_norm_val
+        assert float(backend.to_scalar(proj_norm)) <= original_norm_val + tol
 
     def test_high_energy_threshold_preserves_more(self, backend):
         """Higher energy threshold should preserve more of the delta."""
@@ -390,7 +395,10 @@ class TestSVDFilterInvariants:
         backend.eval(high_norm)
 
         # High threshold should preserve more (or equal)
-        assert float(backend.to_scalar(high_norm)) >= float(backend.to_scalar(low_norm)) - 1e-5
+        high_norm_val = float(backend.to_scalar(high_norm))
+        low_norm_val = float(backend.to_scalar(low_norm))
+        tol = division_epsilon(backend, delta_high) * max(high_norm_val, low_norm_val)
+        assert high_norm_val >= low_norm_val - tol
 
     def test_low_threshold_removes_more(self, backend):
         """Low energy threshold should filter more aggressively."""
@@ -417,7 +425,8 @@ class TestSVDFilterInvariants:
         backend.eval(original_norm)
 
         # Projected should be smaller than original
-        ratio = float(backend.to_scalar(proj_norm)) / (float(backend.to_scalar(original_norm)) + 1e-10)
+        denom = float(backend.to_scalar(original_norm)) + division_epsilon(backend, original_norm)
+        ratio = float(backend.to_scalar(proj_norm)) / denom
         assert ratio < 1.0  # At least some reduction
 
 

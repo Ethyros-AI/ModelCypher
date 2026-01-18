@@ -31,7 +31,11 @@ from modelcypher.core.domain.geometry.anchor_decoder import (
     compute_anchor_decoder,
     decode_to_activation_space,
 )
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    division_epsilon,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
@@ -183,7 +187,8 @@ class TestDecodeToActivationSpace:
         # All zeros weights should produce zero output
         mean_abs = backend.mean(backend.abs(delta_activations))
         backend.eval(mean_abs)
-        assert float(backend.to_scalar(mean_abs)) < 1e-6
+        tol = regularization_epsilon(backend, delta_activations)
+        assert float(backend.to_scalar(mean_abs)) <= tol
 
     def test_decode_full_weights(self, backend):
         """Unit weights should pass through the full delta."""
@@ -209,7 +214,8 @@ class TestDecodeToActivationSpace:
 
         diff = backend.mean(backend.abs(delta_activations - expected))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-5
+        tol = regularization_epsilon(backend, expected)
+        assert float(backend.to_scalar(diff)) <= tol
 
     def test_decode_half_weights(self, backend):
         """Half weights should scale output by half."""
@@ -242,7 +248,8 @@ class TestDecodeToActivationSpace:
         # Half weights should produce half the magnitude
         ratio = backend.mean(backend.abs(delta_half)) / backend.mean(backend.abs(delta_full))
         backend.eval(ratio)
-        assert abs(float(backend.to_scalar(ratio)) - 0.5) < 0.01
+        tol = division_epsilon(backend, ratio)
+        assert abs(float(backend.to_scalar(ratio)) - 0.5) <= tol
 
 
 class TestAnchorDecoderRoundtrip:

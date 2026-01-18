@@ -61,10 +61,11 @@ class TestVarianceWeighting:
 
         # Variance should be non-negative
         min_var = float(backend.tolist(backend.min(variance)))
-        assert min_var >= -1e-10, f"Variance should be non-negative: {min_var}"
+        tol = division_epsilon(backend, variance)
+        assert min_var >= -tol, f"Variance should be non-negative: {min_var}"
 
         # Inverse variance weights (with regularization)
-        eps = 1e-6
+        eps = division_epsilon(backend, variance)
         weights = backend.divide(
             backend.ones((d,)),
             backend.add(variance, backend.full((d,), eps)),
@@ -137,8 +138,9 @@ class TestNullSpaceIdentification:
 
         # Check gap exists
         s_list = backend.tolist(s_modified)
+        eps = division_epsilon(backend, s_modified)
         if len(s_list) > k_used:
-            gap = s_list[k_used - 1] / s_list[k_used] if s_list[k_used] > 1e-10 else float("inf")
+            gap = s_list[k_used - 1] / s_list[k_used] if s_list[k_used] > eps else float("inf")
             assert gap > 10, f"Spectral gap should be significant: {gap}"
 
     @pytest.mark.parametrize("seed", range(5))
@@ -164,7 +166,8 @@ class TestNullSpaceIdentification:
         s_list = backend.tolist(s)
 
         # Count significant singular values
-        threshold = max(s_list) * 1e-6
+        eps = division_epsilon(backend, s)
+        threshold = max(s_list) * eps
         effective_rank = sum(1 for sv in s_list if sv > threshold)
 
         assert effective_rank <= true_rank + 2, (
@@ -225,7 +228,8 @@ class TestConditionNumber:
         s_max = float(backend.tolist(backend.max(s)))
         s_min = float(backend.tolist(backend.min(s)))
 
-        cond = s_max / s_min if s_min > 1e-10 else float("inf")
+        eps = division_epsilon(backend, s)
+        cond = s_max / s_min if s_min > eps else float("inf")
 
         assert cond > 0, f"Condition number should be positive: {cond}"
 
@@ -245,9 +249,10 @@ class TestConditionNumber:
         s_max = float(backend.tolist(backend.max(s)))
         s_min = float(backend.tolist(backend.min(s)))
 
-        cond = s_max / s_min if s_min > 1e-10 else float("inf")
+        eps = division_epsilon(backend, s)
+        cond = s_max / s_min if s_min > eps else float("inf")
 
-        assert cond == pytest.approx(1.0, rel=1e-5), (
+        assert abs(cond - 1.0) <= eps, (
             f"Orthogonal matrix should have cond = 1: {cond}"
         )
 
@@ -323,7 +328,8 @@ class TestDensityHypothesis:
 
         s_list = backend.tolist(s)
 
+        eps = division_epsilon(backend, s)
         for i in range(len(s_list) - 1):
-            assert s_list[i] >= s_list[i + 1] - 1e-6, (
+            assert s_list[i] >= s_list[i + 1] - eps, (
                 f"Singular values should be descending: {s_list}"
             )

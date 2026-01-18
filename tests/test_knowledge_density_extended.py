@@ -31,7 +31,10 @@ from modelcypher.core.domain.geometry.knowledge_density import (
     compute_density_weights,
     compute_knn_point_cloud_density,
 )
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
@@ -81,10 +84,12 @@ class TestComputeKNNPointCloudDensity:
         tgt_max = backend.max(result.target_densities)
         backend.eval(src_min, src_max, tgt_min, tgt_max)
 
-        assert float(backend.to_scalar(src_min)) >= -1e-6
-        assert float(backend.to_scalar(src_max)) <= 1.0 + 1e-6
-        assert float(backend.to_scalar(tgt_min)) >= -1e-6
-        assert float(backend.to_scalar(tgt_max)) <= 1.0 + 1e-6
+        tol_src = regularization_epsilon(backend, result.source_densities)
+        tol_tgt = regularization_epsilon(backend, result.target_densities)
+        assert float(backend.to_scalar(src_min)) >= -tol_src
+        assert float(backend.to_scalar(src_max)) <= 1.0 + tol_src
+        assert float(backend.to_scalar(tgt_min)) >= -tol_tgt
+        assert float(backend.to_scalar(tgt_max)) <= 1.0 + tol_tgt
 
     def test_degenerate_single_point(self, backend):
         """Single point should return zeros gracefully."""
@@ -170,8 +175,9 @@ class TestComputeDensityWeights:
         max_w = backend.max(weights)
         backend.eval(min_w, max_w)
 
-        assert float(backend.to_scalar(min_w)) >= -1e-6
-        assert float(backend.to_scalar(max_w)) <= 1.0 + 1e-6
+        tol = regularization_epsilon(backend, weights)
+        assert float(backend.to_scalar(min_w)) >= -tol
+        assert float(backend.to_scalar(max_w)) <= 1.0 + tol
 
     def test_high_source_high_weight(self, backend):
         """High source density, low target → high weight (transfer)."""
@@ -184,8 +190,8 @@ class TestComputeDensityWeights:
         )
         backend.eval(weights)
 
-        # Should be close to 1.0
-        assert float(backend.to_scalar(weights[0])) > 0.9
+        tol = regularization_epsilon(backend, weights)
+        assert abs(float(backend.to_scalar(weights[0])) - 1.0) <= tol
 
     def test_low_source_low_weight(self, backend):
         """Low source density, high target → low weight (preserve)."""
@@ -198,8 +204,8 @@ class TestComputeDensityWeights:
         )
         backend.eval(weights)
 
-        # Should be close to 0.0
-        assert float(backend.to_scalar(weights[0])) < 0.1
+        tol = regularization_epsilon(backend, weights)
+        assert float(backend.to_scalar(weights[0])) <= tol
 
     def test_equal_densities_half_weight(self, backend):
         """Equal densities should give weight ~0.5."""
@@ -215,7 +221,8 @@ class TestComputeDensityWeights:
         mean_w = backend.mean(weights)
         backend.eval(mean_w)
 
-        assert abs(float(backend.to_scalar(mean_w)) - 0.5) < 0.1
+        tol = regularization_epsilon(backend, weights)
+        assert abs(float(backend.to_scalar(mean_w)) - 0.5) <= tol
 
     def test_zero_densities_handled(self, backend):
         """Both zero densities should not cause division by zero."""
@@ -273,7 +280,8 @@ class TestDensityMathematicalProperties:
         diff = backend.mean(backend.abs(one_minus_w - expected))
         backend.eval(diff)
 
-        assert float(backend.to_scalar(diff)) < 1e-5
+        tol = regularization_epsilon(backend, expected)
+        assert float(backend.to_scalar(diff)) <= tol
 
     @given(
         n_points=st.integers(min_value=8, max_value=24),

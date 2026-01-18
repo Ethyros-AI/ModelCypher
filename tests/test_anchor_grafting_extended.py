@@ -31,6 +31,7 @@ from modelcypher.core.domain.geometry.anchor_grafting import (
     compute_anchor_grafting_delta,
     compute_anchor_grafting_with_ghost_anchors,
 )
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
 
 @pytest.fixture
@@ -123,8 +124,9 @@ class TestComputeAnchorGraftingDelta:
         max_w = backend.max(result.density_weights)
         backend.eval(min_w, max_w)
 
-        assert float(backend.to_scalar(min_w)) >= -1e-6
-        assert float(backend.to_scalar(max_w)) <= 1.0 + 1e-6
+        tol = regularization_epsilon(backend, result.density_weights)
+        assert float(backend.to_scalar(min_w)) >= -tol
+        assert float(backend.to_scalar(max_w)) <= 1.0 + tol
 
     def test_transfer_fraction_bounded(self, backend):
         """Transfer fraction should be in [0, 1]."""
@@ -245,8 +247,9 @@ class TestComputeAnchorGraftingWithGhostAnchors:
         max_w = backend.max(result.density_weights)
         backend.eval(min_w, max_w)
 
-        assert float(backend.to_scalar(min_w)) >= -1e-6
-        assert float(backend.to_scalar(max_w)) <= 1.0 + 1e-6
+        tol = regularization_epsilon(backend, result.density_weights)
+        assert float(backend.to_scalar(min_w)) >= -tol
+        assert float(backend.to_scalar(max_w)) <= 1.0 + tol
 
     def test_identical_produces_small_delta(self, backend):
         """Identical activations should produce small delta even with ghost anchors."""
@@ -338,8 +341,9 @@ class TestAnchorGraftingMathematicalProperties:
         max_w = backend.max(result.density_weights)
         backend.eval(min_w, max_w)
 
-        assert float(backend.to_scalar(min_w)) >= -1e-6
-        assert float(backend.to_scalar(max_w)) <= 1.0 + 1e-6
+        tol = regularization_epsilon(backend, result.density_weights)
+        assert float(backend.to_scalar(min_w)) >= -tol
+        assert float(backend.to_scalar(max_w)) <= 1.0 + tol
 
     @given(
         n_samples=st.integers(min_value=8, max_value=24),

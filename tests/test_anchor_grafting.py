@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.relative_representation import (
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 class TestAnchorDecoder:
@@ -155,7 +156,8 @@ class TestAnchorDecoder:
 
         # All-zero weights should produce all-zero delta
         delta_norm = float(b.to_scalar(b.sum(b.abs(delta_activations))))
-        assert delta_norm < 1e-6, f"Expected zero delta, got norm {delta_norm}"
+        tol = division_epsilon(b, delta_activations)
+        assert delta_norm <= tol, f"Expected zero delta, got norm {delta_norm}"
 
 
 class TestAnchorGrafting:
@@ -338,8 +340,10 @@ class TestAnchorRelativeTransplant:
         diff_norm = float(b.to_scalar(b.sum(b.abs(diff))))
         output_norm = float(b.to_scalar(b.sum(b.abs(output_before))))
 
-        relative_diff = diff_norm / (output_norm + 1e-10)
-        assert relative_diff < 1e-5, (
+        denom = output_norm + division_epsilon(b, output_before)
+        relative_diff = diff_norm / denom
+        tol = division_epsilon(b, output_before)
+        assert relative_diff <= tol, (
             f"Boundary output changed by {relative_diff:.2e} (should be ~0)"
         )
 
@@ -445,7 +449,8 @@ class TestAnchorRelativeTransplant:
         diff = merged_weight - weight_target
         diff_norm = float(b.to_scalar(b.sum(b.abs(diff))))
 
-        assert diff_norm < 1e-5, (
+        tol = division_epsilon(b, merged_weight)
+        assert diff_norm <= tol, (
             f"Zero delta produced weight change of {diff_norm:.2e}"
         )
 
@@ -521,8 +526,10 @@ class TestEndToEndAnchorGrafting:
         diff_norm = float(b.to_scalar(b.sum(b.abs(diff))))
         output_norm = float(b.to_scalar(b.sum(b.abs(output_before))))
 
-        relative_diff = diff_norm / (output_norm + 1e-10)
-        assert relative_diff < 1e-4, (
+        denom = output_norm + division_epsilon(b, output_before)
+        relative_diff = diff_norm / denom
+        tol = division_epsilon(b, output_before)
+        assert relative_diff <= tol, (
             f"Boundary changed by {relative_diff:.2e}"
         )
 

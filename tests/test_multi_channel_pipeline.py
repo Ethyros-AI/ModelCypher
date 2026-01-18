@@ -194,7 +194,8 @@ class TestRoutingModes:
         )
 
         # Routing should be doubly stochastic with spectral norm <= 1
-        assert result.spectral_norm <= 1.0 + 1e-6
+        tol = regularization_epsilon(backend, backend.array([result.spectral_norm, 1.0]))
+        assert result.spectral_norm <= 1.0 + tol
 
     def test_identity_routing(self) -> None:
         """Identity routing should keep channels separate."""
@@ -483,7 +484,8 @@ class TestMetrics:
         )
 
         # Spectral norm should be bounded (mHC guarantee)
-        assert result.spectral_norm <= 1.0 + 1e-6
+        tol = regularization_epsilon(backend, backend.array([result.spectral_norm, 1.0]))
+        assert result.spectral_norm <= 1.0 + tol
 
     def test_per_channel_cka_tracked(self) -> None:
         """Per-channel CKA should be tracked (all should be 1.0)."""

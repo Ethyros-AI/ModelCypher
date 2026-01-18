@@ -97,7 +97,8 @@ def test_compute_diff_basis_shapes(backend):
     assert basis.rank >= 1
     assert basis.basis_vectors.shape == (dim, basis.rank)
     assert basis.singular_values.shape[0] == basis.rank
-    assert 0.0 < basis.explained_variance_ratio <= 1.0 + 1e-6
+    tol = division_epsilon(backend, basis.singular_values)
+    assert 0.0 < basis.explained_variance_ratio <= 1.0 + tol
 
 
 def test_diff_transfer_reduces_core_error(backend):

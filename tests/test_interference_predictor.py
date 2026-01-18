@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 import pytest
 from unittest.mock import MagicMock, Mock, PropertyMock
 from modelcypher.core.domain.geometry.interference_predictor import MergeAnalyzer, MergeAnalysisResult
@@ -89,4 +90,5 @@ class TestInterferencePredictor:
         
         # Distance score = dist / (r1 + r2) = 4 / 4 = 1.0
         score = analyzer._compute_distance_score(relation)
-        assert abs(score - 1.0) < 1e-5
+        tol = math.ulp(1.0)
+        assert abs(score - 1.0) <= tol

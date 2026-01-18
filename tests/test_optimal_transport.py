@@ -88,8 +88,8 @@ class TestSinkhornSolve:
         row_sums = backend.sum(result.plan, axis=1)
         backend.eval(row_sums)
         row_sum_list = backend.tolist(row_sums)
-        # Use marginal_error as tolerance (solver reports its own precision)
-        tol = max(result.marginal_error * 10, 1e-4)
+        # Use solver-reported marginal error with dtype-derived floor
+        tol = max(result.marginal_error, regularization_epsilon(backend, result.plan))
         assert all(abs(s - 0.5) < tol for s in row_sum_list)
 
     def test_solve_with_custom_marginals(self, solver, backend):
@@ -106,7 +106,7 @@ class TestSinkhornSolve:
         backend.eval(row_sums)
         row_list = backend.tolist(row_sums)
         # Sinkhorn converges to marginal_error precision
-        tol = max(result.marginal_error * 10, 1e-4)
+        tol = max(result.marginal_error, regularization_epsilon(backend, result.plan))
         assert abs(row_list[0] - 0.3) < tol
 
     def test_solve_returns_convergence_info(self, solver, backend):
@@ -145,7 +145,8 @@ class TestTransportPlanProperties:
 
         min_val = backend.min(result.plan)
         backend.eval(min_val)
-        assert float(backend.to_scalar(min_val)) >= -1e-10  # Allow tiny numerical error
+        tol = regularization_epsilon(backend, result.plan)
+        assert float(backend.to_scalar(min_val)) >= -tol
 
     def test_plan_sums_to_one(self, solver, backend):
         """Transport plan should sum to 1 (for probability distributions)."""
@@ -197,8 +198,9 @@ class TestCostMatrices:
         min_val = backend.min(cost)
         max_val = backend.max(cost)
         backend.eval(min_val, max_val)
-        assert float(backend.to_scalar(min_val)) >= -1e-10
-        assert float(backend.to_scalar(max_val)) <= 2.0 + 1e-10
+        tol = regularization_epsilon(backend, cost)
+        assert float(backend.to_scalar(min_val)) >= -tol
+        assert float(backend.to_scalar(max_val)) <= 2.0 + tol
 
     def test_cosine_cost_identical_vectors(self, solver, backend):
         """Identical vectors should have zero cosine distance."""

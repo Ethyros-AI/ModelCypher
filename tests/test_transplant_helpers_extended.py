@@ -29,7 +29,11 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    machine_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.use_cases.merge.stages.transplant_helpers import (
     _compute_dimension_projection,
     _geodesic_pinv,
@@ -94,7 +98,8 @@ class TestPromotePrecision:
         diff = backend.mean(backend.abs(result - arr_f32))
         backend.eval(diff)
 
-        assert float(backend.to_scalar(diff)) < 1e-3  # Within float16 precision
+        tol = machine_epsilon(backend, arr)
+        assert float(backend.to_scalar(diff)) <= tol  # Within float16 precision
 
 
 class TestGeodesicPinv:
@@ -147,7 +152,8 @@ class TestGeodesicPinv:
         diff = backend.mean(backend.abs(reconstructed - A))
         backend.eval(diff)
 
-        assert float(backend.to_scalar(diff)) < 1e-4
+        tol = regularization_epsilon(backend, A)
+        assert float(backend.to_scalar(diff)) <= tol
 
     def test_pinv_property_Apinv_A_Apinv(self, backend):
         """A_pinv @ A @ A_pinv should approximately equal A_pinv."""
@@ -163,7 +169,8 @@ class TestGeodesicPinv:
         diff = backend.mean(backend.abs(reconstructed - A_pinv))
         backend.eval(diff)
 
-        assert float(backend.to_scalar(diff)) < 1e-4
+        tol = regularization_epsilon(backend, A_pinv)
+        assert float(backend.to_scalar(diff)) <= tol
 
 
 class TestSetSubmatrix:
@@ -243,7 +250,8 @@ class TestSetSubmatrix:
         diff_top = backend.mean(backend.abs(result[0, :] - target[0, :]))
         backend.eval(diff_top)
 
-        assert float(backend.to_scalar(diff_top)) < 1e-6
+        tol = regularization_epsilon(backend, result)
+        assert float(backend.to_scalar(diff_top)) <= tol
 
 
 class TestComputeDimensionProjection:
@@ -257,7 +265,8 @@ class TestComputeDimensionProjection:
         diff = backend.mean(backend.abs(proj - expected))
         backend.eval(diff)
 
-        assert float(backend.to_scalar(diff)) < 1e-6
+        tol = regularization_epsilon(backend, proj)
+        assert float(backend.to_scalar(diff)) <= tol
 
     def test_downproject(self, backend):
         """Larger src_dim should produce [I; 0] projection."""
@@ -276,8 +285,9 @@ class TestComputeDimensionProjection:
         sum_bottom = backend.sum(backend.abs(bottom))
         backend.eval(sum_bottom)
 
-        assert float(backend.to_scalar(diff_top)) < 1e-6
-        assert float(backend.to_scalar(sum_bottom)) < 1e-6
+        tol = regularization_epsilon(backend, proj)
+        assert float(backend.to_scalar(diff_top)) <= tol
+        assert float(backend.to_scalar(sum_bottom)) <= tol
 
     def test_upproject(self, backend):
         """Smaller src_dim should produce [I | 0] projection."""
@@ -296,8 +306,9 @@ class TestComputeDimensionProjection:
         sum_right = backend.sum(backend.abs(right))
         backend.eval(sum_right)
 
-        assert float(backend.to_scalar(diff_left)) < 1e-6
-        assert float(backend.to_scalar(sum_right)) < 1e-6
+        tol = regularization_epsilon(backend, proj)
+        assert float(backend.to_scalar(diff_left)) <= tol
+        assert float(backend.to_scalar(sum_right)) <= tol
 
 
 class TestTransplantHelpersMathematicalProperties:

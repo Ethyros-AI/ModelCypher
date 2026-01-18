@@ -34,6 +34,10 @@ from modelcypher.core.domain.geometry.geodesic_null_space import (
     filter_delta_svd,
     filter_merge_delta_geodesic,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
@@ -270,7 +274,8 @@ class TestFilterMergeDeltaGeodesic:
         # Delta is zero, so merged should equal target
         diff = backend.mean(backend.abs(merged - weights))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-6
+        tol = regularization_epsilon(backend, merged)
+        assert float(backend.to_scalar(diff)) <= tol
 
     def test_density_aware_merge(self, backend):
         """Merge with source activations should work."""
@@ -307,8 +312,9 @@ class TestNullSpaceMathematicalProperties:
         gns = GeodesicNullSpaceFilter(backend)
         result = gns.filter_delta(delta, activations)
 
-        # Allow small numerical tolerance
-        assert result.filtered_norm <= result.original_norm + 1e-5
+        scale = result.original_norm
+        tol = division_epsilon(backend, delta) * scale
+        assert result.filtered_norm <= result.original_norm + tol
 
     @given(
         m=st.integers(min_value=4, max_value=32),
@@ -324,7 +330,8 @@ class TestNullSpaceMathematicalProperties:
         result = filter_delta_svd(delta, backend)
 
         total = result.preserved_fraction + result.projection_loss
-        assert abs(total - 1.0) < 1e-6
+        tol = division_epsilon(backend, delta)
+        assert abs(total - 1.0) <= tol
 
     @given(
         n_samples=st.integers(min_value=8, max_value=32),

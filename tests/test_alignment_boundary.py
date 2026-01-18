@@ -30,6 +30,7 @@ from modelcypher.core.domain.geometry.alignment_boundary import (
     compute_alignment_boundary,
     steer_to_boundary,
 )
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
 
 @pytest.fixture
@@ -224,7 +225,8 @@ class TestSteerToBoundary:
         # Should be unchanged
         diff = backend.sum(backend.abs(steered - activation))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-6
+        tol = regularization_epsilon(backend, diff)
+        assert float(backend.to_scalar(diff)) <= tol
 
     def test_low_projection_steered_up(self, backend, simple_boundary):
         """Test that low projection activation gets refusal direction added."""
