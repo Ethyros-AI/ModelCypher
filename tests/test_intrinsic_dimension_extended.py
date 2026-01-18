@@ -104,16 +104,18 @@ class TestIntrinsicDimensionCompute:
         assert result.ci.upper >= result.intrinsic_dimension
         assert result.ci.resamples > 0
 
-    def test_small_sample_no_ci(self, backend):
-        """Small samples should return None for CI."""
+    def test_small_sample_ci(self, backend):
+        """Small samples still produce CI via bootstrap resampling."""
         points = backend.random_normal((8, 16))
         backend.eval(points)
 
         estimator = IntrinsicDimension(backend)
         result = estimator.compute(points, with_ci=True)
 
-        # CI requires at least 10 samples for bootstrap
-        assert result.ci is None
+        # Bootstrap works with any resample count >= 2
+        # No arbitrary minimum - the math handles small samples correctly
+        assert result.ci is not None
+        assert result.ci.resamples == 8  # resamples = sample_count
 
     def test_usable_count_valid(self, backend):
         """Usable count should be <= sample count."""

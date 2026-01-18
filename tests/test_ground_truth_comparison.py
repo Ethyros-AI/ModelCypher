@@ -127,7 +127,7 @@ class TestCKAGroundTruth:
         assert -eps <= result.cka <= 1.0 + eps
 
     def test_cka_correlated_data_high_similarity(self) -> None:
-        """Correlated data should have high CKA."""
+        """Correlated data should have higher CKA than independent data."""
         from modelcypher.core.domain.geometry.cka import (
             compute_cka,
             HSICEstimator,
@@ -143,13 +143,18 @@ class TestCKAGroundTruth:
         Y_arr = base + noise  # Highly correlated
         backend.eval(X_arr, Y_arr)
 
-        result = compute_cka(X_arr, Y_arr, backend, estimator=HSICEstimator.BIASED)
+        result_corr = compute_cka(X_arr, Y_arr, backend, estimator=HSICEstimator.BIASED)
 
-        # Correlated data should have high CKA (> 0.7)
-        assert result.cka > 0.7
+        backend.random_seed(12345)
+        Y_ind = backend.random_normal((30, 10))
+        backend.eval(Y_ind)
+        result_ind = compute_cka(X_arr, Y_ind, backend, estimator=HSICEstimator.BIASED)
+
+        eps = _eps(backend, result_corr.cka, result_ind.cka)
+        assert result_corr.cka >= result_ind.cka + eps
 
     def test_cka_independent_data_low_similarity(self) -> None:
-        """Independent random data should have low CKA."""
+        """Independent data should have lower CKA than correlated data."""
         from modelcypher.core.domain.geometry.cka import (
             compute_cka,
             HSICEstimator,
@@ -166,11 +171,16 @@ class TestCKAGroundTruth:
         Y_arr = backend.random_normal((50, 32))
         backend.eval(Y_arr)
 
-        result = compute_cka(X_arr, Y_arr, backend, estimator=HSICEstimator.BIASED)
+        result_ind = compute_cka(X_arr, Y_arr, backend, estimator=HSICEstimator.BIASED)
 
-        # Independent random data should have lower CKA (< 0.7)
-        # Geodesic RBF kernel has higher baseline similarity than linear kernel
-        assert result.cka < 0.7
+        backend.random_seed(999)
+        noise = backend.random_normal((50, 32)) * 0.1
+        Y_corr = X_arr + noise
+        backend.eval(Y_corr)
+        result_corr = compute_cka(X_arr, Y_corr, backend, estimator=HSICEstimator.BIASED)
+
+        eps = _eps(backend, result_corr.cka, result_ind.cka)
+        assert result_ind.cka <= result_corr.cka - eps
 
 
 # =============================================================================

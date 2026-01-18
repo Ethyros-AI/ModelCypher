@@ -331,7 +331,8 @@ class TestComputeClusterTightness:
         tightness = analyzer._compute_cluster_tightness(activations)
 
         # Identical normalized vectors have cosine similarity 1.0
-        assert tightness > 0.99
+        tol = regularization_epsilon(backend, activations)
+        assert abs(tightness - 1.0) <= tol
 
     def test_single_sample_returns_zero(self, backend):
         """Single sample should return 0."""

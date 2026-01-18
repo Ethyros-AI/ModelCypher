@@ -19,6 +19,7 @@
 Tests for knowledge transfer validation.
 """
 
+import math
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -169,7 +170,8 @@ class TestKnowledgeRetentionResult:
             probes_tested=10,
         )
 
-        assert abs(result.retention_score - 0.75) < 0.01  # 0.6 / 0.8
+        expected = 0.75
+        assert abs(result.retention_score - expected) <= math.ulp(expected)
 
     def test_retention_capped_at_one(self):
         """Retention should not exceed 1.0."""
