@@ -123,7 +123,8 @@ class TestRBFGramMatrix:
         # With geodesic distances, sigma affects the RBF scaling
         # Small sigma = rapid decay = values closer to 0 for distant points
         # Large sigma = slow decay = values closer to 1 for distant points
-        assert large_01 > small_01 or abs(large_01 - small_01) < 1e-10
+        tol = division_epsilon(backend, gram_small)
+        assert large_01 > small_01 or abs(large_01 - small_01) <= tol
 
 
 class TestCKARBFKernel:
@@ -144,7 +145,8 @@ class TestCKARBFKernel:
         """Similar activations should have high CKA."""
         backend = get_default_backend()
         X = _random_matrix(backend, 20, 10, 42)
-        noise = _random_matrix(backend, 20, 10, 43) * 1e-6
+        noise_scale = division_epsilon(backend, X)
+        noise = _random_matrix(backend, 20, 10, 43) * noise_scale
         Y_similar = X + noise
         Y_random = _random_matrix(backend, 20, 10, 44)
 

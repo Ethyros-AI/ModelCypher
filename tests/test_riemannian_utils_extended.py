@@ -29,7 +29,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     farthest_point_sampling,
@@ -66,7 +69,8 @@ class TestFrechetMean:
 
         diff = backend.mean(backend.abs(mean - backend.squeeze(point, axis=0)))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-5
+        tol = regularization_epsilon(backend, mean)
+        assert float(backend.to_scalar(diff)) <= tol
 
     def test_with_weights(self, backend):
         """Weighted Frechet mean should work."""
@@ -89,10 +93,12 @@ class TestFrechetMean:
         arithmetic_mean = backend.mean(points, axis=0)
         backend.eval(fmean, arithmetic_mean)
 
-        # Frechet mean should be reasonably close to arithmetic mean
+        # Frechet mean should be within the data's own spread
         diff = backend.mean(backend.abs(fmean - arithmetic_mean))
-        backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1.0
+        spread = backend.mean(backend.abs(points - arithmetic_mean))
+        backend.eval(diff, spread)
+        tol = regularization_epsilon(backend, points)
+        assert float(backend.to_scalar(diff)) <= float(backend.to_scalar(spread)) + tol
 
 
 class TestGeodesicDistanceMatrix:
@@ -120,7 +126,8 @@ class TestGeodesicDistanceMatrix:
         backend.eval(diagonal)
         max_diag = backend.max(backend.abs(diagonal))
         backend.eval(max_diag)
-        assert float(backend.to_scalar(max_diag)) < 1e-5
+        tol = regularization_epsilon(backend, dist_matrix)
+        assert float(backend.to_scalar(max_diag)) <= tol
 
     def test_symmetric(self, backend):
         """Distance matrix should be symmetric."""
@@ -132,7 +139,8 @@ class TestGeodesicDistanceMatrix:
         diff = dist_matrix - backend.transpose(dist_matrix)
         max_diff = backend.max(backend.abs(diff))
         backend.eval(max_diff)
-        assert float(backend.to_scalar(max_diff)) < 1e-5
+        tol = regularization_epsilon(backend, dist_matrix)
+        assert float(backend.to_scalar(max_diff)) <= tol
 
     def test_non_negative(self, backend):
         """All distances should be non-negative."""
@@ -143,7 +151,8 @@ class TestGeodesicDistanceMatrix:
 
         min_dist = backend.min(dist_matrix)
         backend.eval(min_dist)
-        assert float(backend.to_scalar(min_dist)) >= -1e-6
+        tol = regularization_epsilon(backend, dist_matrix)
+        assert float(backend.to_scalar(min_dist)) >= -tol
 
     def test_explicit_k_neighbors(self, backend):
         """Explicit k_neighbors should be used."""
@@ -271,7 +280,8 @@ class TestRiemannianMathematicalProperties:
         diff = dist_matrix - backend.transpose(dist_matrix)
         max_diff = backend.max(backend.abs(diff))
         backend.eval(max_diff)
-        assert float(backend.to_scalar(max_diff)) < 1e-5
+        tol = regularization_epsilon(backend, dist_matrix)
+        assert float(backend.to_scalar(max_diff)) <= tol
 
     @given(
         n_points=st.integers(min_value=8, max_value=32),
@@ -288,7 +298,8 @@ class TestRiemannianMathematicalProperties:
 
         min_dist = backend.min(dist_matrix)
         backend.eval(min_dist)
-        assert float(backend.to_scalar(min_dist)) >= -1e-6
+        tol = regularization_epsilon(backend, dist_matrix)
+        assert float(backend.to_scalar(min_dist)) >= -tol
 
     @given(
         n_points=st.integers(min_value=8, max_value=32),

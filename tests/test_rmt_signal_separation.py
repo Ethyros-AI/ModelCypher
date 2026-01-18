@@ -26,6 +26,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.rmt_signal_separation import (
     MPSignalNoiseResult,
     compute_rmt_null_space_weights,
@@ -74,8 +75,9 @@ class TestMarchenkoPasturEdges:
         # gamma = 1
         # lower = (1 - 1)^2 = 0
         # upper = (1 + 1)^2 = 4
-        assert lower == pytest.approx(0.0, abs=1e-6)
-        assert upper == pytest.approx(4.0, abs=1e-6)
+        eps = regularization_epsilon(backend, backend.array([lower, upper]))
+        assert lower == pytest.approx(0.0, abs=eps)
+        assert upper == pytest.approx(4.0, abs=eps)
 
     def test_edges_with_gamma_greater_than_one(self, backend):
         """Test MP edges when n_samples < n_features (underdetermined)."""
@@ -100,7 +102,8 @@ class TestMarchenkoPasturEdges:
         lower2, upper2 = marchenko_pastur_edges(n_samples, n_features, sigma2, backend)
 
         # Edges should scale with sigma^2
-        assert upper2 == pytest.approx(upper1 * 2.0, rel=1e-6)
+        eps = regularization_epsilon(backend, backend.array([upper1, upper2]))
+        assert upper2 == pytest.approx(upper1 * 2.0, rel=eps)
 
     def test_edges_symmetric_in_aspect_ratio(self, backend):
         """Test MP edge formula properties."""
@@ -111,8 +114,11 @@ class TestMarchenkoPasturEdges:
         lower2, upper2 = marchenko_pastur_edges(100, 50, noise_variance, backend)
 
         # Same gamma = 0.5, should give same edges
-        assert lower1 == pytest.approx(lower2, rel=1e-6)
-        assert upper1 == pytest.approx(upper2, rel=1e-6)
+        eps = regularization_epsilon(
+            backend, backend.array([lower1, lower2, upper1, upper2])
+        )
+        assert lower1 == pytest.approx(lower2, rel=eps)
+        assert upper1 == pytest.approx(upper2, rel=eps)
 
 
 class TestNoiseVarianceEstimation:
@@ -253,7 +259,8 @@ class TestSeparateSignalNoise:
         result = separate_signal_noise(activations, backend=backend)
 
         expected_gamma = n_features / n_samples
-        assert result.aspect_ratio == pytest.approx(expected_gamma, rel=1e-6)
+        eps = regularization_epsilon(backend, backend.array([expected_gamma]))
+        assert result.aspect_ratio == pytest.approx(expected_gamma, rel=eps)
 
     def test_signal_and_noise_indices_partition_correctly(self, backend):
         """Test that signal and noise indices form a valid partition."""
@@ -328,8 +335,9 @@ class TestComputeRMTNullSpaceWeights:
         min_weight = float(backend.to_scalar(backend.min(keep_weights)))
         max_weight = float(backend.to_scalar(backend.max(keep_weights)))
 
-        assert min_weight >= 0.0 - 1e-6
-        assert max_weight <= 1.0 + 1e-6
+        eps = regularization_epsilon(backend, keep_weights)
+        assert min_weight >= 0.0 - eps
+        assert max_weight <= 1.0 + eps
 
     def test_pure_noise_high_keep_weights(self, backend):
         """Test that pure noise gives high keep weights (all dimensions available)."""
@@ -384,7 +392,8 @@ class TestComputeRMTNullSpaceWeights:
         # Same input should give same output
         diff = backend.max(backend.abs(keep_weights1 - keep_weights2))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-6
+        eps = regularization_epsilon(backend, keep_weights1)
+        assert float(backend.to_scalar(diff)) < eps
 
 
 class TestRMTMathematicalProperties:
@@ -564,8 +573,9 @@ def test_rmt_weights_always_valid(n_samples, n_features):
     min_w = float(backend.to_scalar(backend.min(keep_weights)))
     max_w = float(backend.to_scalar(backend.max(keep_weights)))
 
-    assert min_w >= -1e-6
-    assert max_w <= 1.0 + 1e-6
+    eps = regularization_epsilon(backend, keep_weights)
+    assert min_w >= -eps
+    assert max_w <= 1.0 + eps
 
     # Result should be valid
     assert result.signal_rank >= 0

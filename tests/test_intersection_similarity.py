@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import pytest
+import math
 from unittest.mock import Mock, MagicMock
 from modelcypher.core.domain.geometry.intersection_similarity import (
     compute_jaccard_similarity,
@@ -59,19 +60,24 @@ class TestIntersectionSimilarity:
         
         # 1.0 / 1.7 approx 0.588
         score = compute_weighted_jaccard_similarity(dict_a, dict_b)
-        assert abs(score - (1.0 / 1.7)) < 1e-5
+        expected = 1.0 / 1.7
+        eps = math.ulp(expected)
+        assert abs(score - expected) < eps
 
     def test_compute_cosine_similarity(self):
         """Cosine similarity for sparse dicts."""
         # Orthogonal
         d1 = {1: 1.0}
         d2 = {2: 1.0}
-        assert abs(compute_cosine_similarity(d1, d2)) < 1e-5
+        eps = math.ulp(1.0)
+        assert abs(compute_cosine_similarity(d1, d2)) < eps
         
         # Aligned
         d3 = {1: 1.0, 2: 0.0}
         d4 = {1: 2.0, 2: 0.0}
-        assert abs(compute_cosine_similarity(d3, d4) - 1.0) < 1e-5
+        expected = 1.0
+        eps = math.ulp(expected)
+        assert abs(compute_cosine_similarity(d3, d4) - expected) < eps
 
     def _create_mock_fingerprint(self, dims: list[tuple[int, float]]):
         fp = Mock(spec=ActivationFingerprint)
