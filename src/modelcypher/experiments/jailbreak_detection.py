@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -76,6 +77,36 @@ def load_jailbreak_prompts() -> list[str]:
         data = json.load(f)
 
     return data.get("prompts", [])
+
+
+def _derive_separation_threshold(
+    harmless: list[float],
+    harmful: list[float],
+) -> tuple[float, float]:
+    """Derive a separation threshold from the largest cross-label gap."""
+    if not harmless or not harmful:
+        return 0.0, 0.0
+    pairs = [(float(v), 0) for v in harmless] + [(float(v), 1) for v in harmful]
+    pairs.sort(key=lambda item: item[0])
+    best_gap = float("-inf")
+    threshold = pairs[0][0]
+    for i in range(len(pairs) - 1):
+        if pairs[i][1] == pairs[i + 1][1]:
+            continue
+        gap = pairs[i + 1][0] - pairs[i][0]
+        if gap > best_gap:
+            best_gap = gap
+            threshold = 0.5 * (pairs[i + 1][0] + pairs[i][0])
+    if best_gap == float("-inf"):
+        min_val = min(v for v, _ in pairs)
+        max_val = max(v for v, _ in pairs)
+        threshold = 0.5 * (min_val + max_val)
+        best_gap = max_val - min_val
+    if not math.isfinite(threshold):
+        threshold = 0.0
+    if not math.isfinite(best_gap):
+        best_gap = 0.0
+    return threshold, best_gap
 
 
 @dataclass
@@ -247,7 +278,7 @@ def run_jailbreak_detection(
     # Auto-select detection layer by finding layer with maximum separation
     if detection_layer is None:
         best_layer = layers[0]
-        best_accuracy = 0.0
+        best_gap = float("-inf")
 
         for layer_idx in layers:
             h_acts = backend.stack(harmless_by_layer[layer_idx], axis=0)
@@ -277,24 +308,14 @@ def run_jailbreak_detection(
                 for i in range(len(harmful_prompts))
             ]
 
-            # Compute threshold (95th percentile of harmless)
-            sorted_harmless = sorted(h_projs_list)
-            threshold_idx = int(0.95 * len(sorted_harmless))
-            threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
-            threshold = sorted_harmless[threshold_idx]
-
-            # Compute classification accuracy
-            # Positive = harmful (above threshold), Negative = harmless (below threshold)
-            tp = sum(1 for p in f_projs_list if p > threshold)
-            tn = sum(1 for p in h_projs_list if p <= threshold)
-            accuracy = (tp + tn) / (len(f_projs_list) + len(h_projs_list))
-
-            if accuracy > best_accuracy:
-                best_accuracy = accuracy
+            # Select layer by largest separation gap between harmless/harmful projections
+            _, separation_gap = _derive_separation_threshold(h_projs_list, f_projs_list)
+            if separation_gap > best_gap:
+                best_gap = separation_gap
                 best_layer = layer_idx
 
         detection_layer = best_layer
-        logger.info("Layer selection: max accuracy %.4f at layer %d", best_accuracy, detection_layer)
+        logger.info("Layer selection: max separation gap %.4f at layer %d", best_gap, detection_layer)
 
     logger.info("Using layer %d for detection", detection_layer)
 
@@ -363,18 +384,13 @@ def run_jailbreak_detection(
     logger.info("Mean projections - Harmless: %.4f, Harmful: %.4f, Jailbreak: %.4f",
                 mean_harmless, mean_harmful, mean_jailbreak)
 
-    # Threshold derived from harmless distribution
-    # Use the 95th percentile of harmless projections as threshold
-    # This gives us a controlled 5% false positive rate by construction
-    sorted_harmless = sorted(harmless_projs)
-    threshold_idx = int(0.95 * len(sorted_harmless))
-    threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
-    threshold_jailbreak = sorted_harmless[threshold_idx]
+    # Threshold derived from cross-label separation
+    threshold_jailbreak, separation_gap = _derive_separation_threshold(
+        harmless_projs, harmful_projs
+    )
+    threshold_harmful = threshold_jailbreak
 
-    # Also compute threshold for harmful (95th percentile)
-    threshold_harmful = threshold_jailbreak  # Same threshold for consistency
-
-    logger.info("Detection threshold (95th percentile of harmless): %.4f", threshold_jailbreak)
+    logger.info("Detection threshold (gap-derived): %.4f", threshold_jailbreak)
 
     # Classify: projection > threshold => potential harmful/jailbreak
     predictions: list[bool] = []
@@ -416,6 +432,7 @@ def run_jailbreak_detection(
         "mean_jailbreak_projection": mean_jailbreak,
         "detection_threshold_harmful": threshold_harmful,
         "detection_threshold_jailbreak": threshold_jailbreak,
+        "projection_separation_gap": separation_gap,
         "overall_accuracy": detection_metrics.accuracy,
         "overall_precision": detection_metrics.precision,
         "overall_recall": detection_metrics.recall,

@@ -32,9 +32,11 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.hungarian_layer_matcher import (
+    hungarian_layer_matching,
+)
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _promote_precision,
-    _proportional_layer_index,
     compute_numerical_rank,
 )
 
@@ -256,14 +258,39 @@ def align_layers(
     n_source = len(source_layers)
     n_target = len(target_layers)
 
+    # =========================================================================
+    # HUNGARIAN LAYER MATCHING - Closed-form optimal assignment
+    # =========================================================================
+    # Instead of assuming proportional depth = semantic alignment (heuristic),
+    # we compute CKA for all (source, target) layer pairs and use the Hungarian
+    # algorithm to find the optimal 1-to-1 matching that maximizes total CKA.
+    #
+    # This is O(N³), deterministic, and closed-form - no iteration, no guessing.
+    hungarian_result = hungarian_layer_matching(
+        source_layer_activations=source_layer_activations,
+        target_layer_activations=target_layer_activations,
+        backend=backend,
+    )
+
+    # Build alignment tasks from Hungarian matching
+    # hungarian_result.layer_mapping maps target_layer -> source_layer
     alignment_tasks: list[tuple[int, list[int]]] = []
-    for tgt_idx in range(n_target):
-        src_idx = _proportional_layer_index(tgt_idx, n_target, n_source)
-        alignment_tasks.append((tgt_idx, [src_idx]))
+    for tgt_idx, tgt_layer in enumerate(target_layers):
+        if tgt_layer in hungarian_result.layer_mapping:
+            src_layer = hungarian_result.layer_mapping[tgt_layer]
+            # Find the index of src_layer in source_layers
+            src_idx = source_layers.index(src_layer)
+            alignment_tasks.append((tgt_idx, [src_idx]))
+        else:
+            # Unmatched target layer (shouldn't happen with proper padding)
+            logger.warning(
+                "HUNGARIAN: Target layer %d has no matching source layer", tgt_layer
+            )
 
     logger.info(
-        "PROBE: Aligning %d target layers (proportional depth mapping)...",
+        "PROBE: Aligning %d target layers (Hungarian optimal matching, mean_cka=%.4f)...",
         len(alignment_tasks),
+        hungarian_result.mean_cka,
     )
 
     def _align_target_group(

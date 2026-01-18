@@ -17,10 +17,11 @@
 
 from __future__ import annotations
 
+import math
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_pearson_correlation,
-    is_finite,
     machine_epsilon,
 )
 from modelcypher.core.domain.geometry.transfer_fidelity import TransferFidelityPrediction
@@ -44,6 +45,9 @@ def test_transfer_fidelity_identical():
     eps = machine_epsilon(backend, backend.array([1.0]))
     assert abs(result.expected_fidelity - 1.0) <= eps
     assert result.sample_size == 3
+    assert math.isnan(result.confidence)
+    assert math.isnan(result.correlation_ci95[0])
+    assert math.isnan(result.correlation_ci95[1])
 
 
 def test_transfer_fidelity_orthogonal():
@@ -120,7 +124,7 @@ def test_transfer_fidelity_raw_measurements():
 
 
 def test_transfer_fidelity_fisher_z_confidence_interval():
-    """Fisher z-transform produces valid 95% CI."""
+    """Fisher z-transform computes standard error without CI."""
     gram = [
         1.0,
         0.5,
@@ -154,14 +158,13 @@ def test_transfer_fidelity_fisher_z_confidence_interval():
     backend = get_default_backend()
     eps = machine_epsilon(backend, backend.array([result.expected_fidelity, 1.0]))
     assert abs(result.expected_fidelity - 1.0) <= eps
-    # CI bounds should be finite and reasonable (close to 1.0)
+    assert math.isnan(result.confidence)
     lower, upper = result.correlation_ci95
-    backend = get_default_backend()
-    assert is_finite(lower, backend)
-    assert is_finite(upper, backend)
-    assert lower <= upper + eps
-    assert lower >= -1.0 - eps
-    assert upper <= 1.0 + eps
+    assert math.isnan(lower)
+    assert math.isnan(upper)
+    # sample_size is n*(n-1)/2 with n=5 => 10
+    expected_se = 1.0 / math.sqrt(result.sample_size - 3)
+    assert abs(result.fisher_z_standard_error - expected_se) <= eps
 
 
 def test_transfer_fidelity_with_null_distribution():
@@ -198,6 +201,8 @@ def test_transfer_fidelity_with_null_distribution():
     eps = machine_epsilon(backend, backend.array([result.confidence, 0.0, 1.0]))
     assert result.confidence >= -eps
     assert result.confidence <= 1.0 + eps
+    assert math.isnan(result.correlation_ci95[0])
+    assert math.isnan(result.correlation_ci95[1])
 
 
 def test_transfer_fidelity_empty_null_distribution():
@@ -223,3 +228,6 @@ def test_transfer_fidelity_empty_null_distribution():
     backend = get_default_backend()
     eps = machine_epsilon(backend, backend.array([result.expected_fidelity, 1.0]))
     assert abs(result.expected_fidelity - 1.0) <= eps
+    assert math.isnan(result.confidence)
+    assert math.isnan(result.correlation_ci95[0])
+    assert math.isnan(result.correlation_ci95[1])

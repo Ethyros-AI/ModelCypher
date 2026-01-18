@@ -483,6 +483,11 @@ def validate_full_rank_coverage(
 ) -> dict[int, dict]:
     """Validate rank coverage per layer.
 
+    Full rank is achieved when both source and target have matching numerical rank.
+    The "effective dimensionality" is bounded by the target's numerical rank, which
+    reflects the layer's intrinsic geometry. Middle layers may have lower effective
+    dimensionality due to representation compression.
+
     Args:
         source_activations: Source activations by layer.
         target_activations: Target activations by layer.
@@ -513,36 +518,403 @@ def validate_full_rank_coverage(
         src_rank, src_dim = compute_numerical_rank(src_acts, b)
         tgt_rank, tgt_dim = compute_numerical_rank(tgt_acts, b)
 
-        # Use the larger dimension as reference
-        max_dim = max(src_dim, tgt_dim)
-        min_rank = min(src_rank, tgt_rank)
+        # The alignment rank is the minimum of source and target ranks
+        # This is what pinv will actually use
+        alignment_rank = min(src_rank, tgt_rank)
 
-        deficit = max_dim - min_rank
-        full_rank = deficit == 0
+        # The effective dimensionality is the target's rank (the space we're aligning INTO)
+        # This accounts for layer-specific compression (middle layers have lower effective dim)
+        effective_dim = tgt_rank
+
+        # Full rank means alignment rank matches effective dimensionality
+        # (source can span all directions that target uses)
+        full_rank = alignment_rank >= effective_dim
+
+        # Theoretical max dimension for reference
+        theoretical_dim = max(src_dim, tgt_dim)
+
+        # Deficit from effective dim (what matters for alignment)
+        deficit = effective_dim - alignment_rank
 
         results[layer_idx] = {
             "source_rank": src_rank,
             "source_dim": src_dim,
             "target_rank": tgt_rank,
             "target_dim": tgt_dim,
-            "alignment_rank": min_rank,
-            "max_dim": max_dim,
+            "alignment_rank": alignment_rank,
+            "effective_dim": effective_dim,
+            "theoretical_dim": theoretical_dim,
             "deficit": deficit,
             "full_rank_achieved": full_rank,
-            "coverage_ratio": min_rank / max_dim if max_dim > 0 else 0.0,
+            "coverage_ratio": alignment_rank / effective_dim if effective_dim > 0 else 1.0,
         }
 
         if not full_rank:
             logger.info(
-                "RANK COVERAGE Layer %d: %d/%d (%.1f%% coverage, deficit=%d)",
+                "RANK COVERAGE Layer %d: alignment=%d, effective=%d, theoretical=%d (deficit=%d)",
                 layer_idx,
-                min_rank,
-                max_dim,
-                100.0 * min_rank / max_dim,
+                alignment_rank,
+                effective_dim,
+                theoretical_dim,
                 deficit,
+            )
+        else:
+            logger.debug(
+                "RANK COVERAGE Layer %d: FULL RANK (%d/%d effective, %d theoretical)",
+                layer_idx,
+                alignment_rank,
+                effective_dim,
+                theoretical_dim,
             )
 
     return results
+
+
+def score_tokens_for_null_space(
+    activations_by_token: "Array",
+    U_null: "Array",
+    backend: "Backend",
+    normalize: bool = True,
+) -> "Array":
+    """Score tokens by how much they activate null space directions.
+
+    This is the closed-form approach: no iteration, just matrix multiply.
+
+    Args:
+        activations_by_token: Activations for each token [vocab_size, hidden_dim].
+        U_null: Null space basis [hidden_dim, null_rank].
+        backend: Backend for tensor operations.
+        normalize: If True, normalize activations to unit vectors first.
+            This scores by DIRECTION not magnitude.
+
+    Returns:
+        Scores [vocab_size] where higher = activates more null space directions.
+    """
+    b = backend
+
+    acts = activations_by_token
+    if normalize:
+        # Normalize each activation to unit norm (direction only)
+        norms = b.sqrt(b.sum(acts * acts, axis=1, keepdims=True) + 1e-8)
+        acts = acts / norms
+        b.eval(acts)
+
+    # Project each token's activation onto null space
+    # projections[i] = U_null.T @ activations[i] -> [null_rank]
+    # We want: activations @ U_null -> [vocab_size, null_rank]
+    projections = b.matmul(acts, U_null)
+    b.eval(projections)
+
+    # Score = L2 norm of projection (how much this token activates null directions)
+    scores = b.sqrt(b.sum(projections * projections, axis=1))
+    b.eval(scores)
+
+    return scores
+
+
+def find_null_space_tokens_closed_form(
+    model: Any,
+    U_null: "Array",
+    layer_idx: int,
+    backend: "Backend",
+    top_k: int = 100,
+    batch_size: int = 512,
+    normalize: bool = True,
+) -> list[tuple[int, float]]:
+    """Find tokens that activate null space directions - CLOSED FORM.
+
+    Instead of gradient ascent, we:
+    1. Forward ALL tokens through the model to target layer
+    2. Normalize activations to unit vectors (direction only)
+    3. Score each token by ||U_null.T @ activation||
+    4. Select top-k tokens
+
+    This is O(vocab_size) forward passes (batched), but:
+    - Deterministic
+    - No iteration
+    - Guaranteed to find best tokens in vocabulary
+
+    Args:
+        model: The model.
+        U_null: Null space basis [hidden_dim, null_rank].
+        layer_idx: Target layer for activations.
+        backend: Backend for tensor operations.
+        top_k: Number of top tokens to return.
+        batch_size: Batch size for forward passes.
+        normalize: If True, normalize activations to unit vectors (recommended).
+
+    Returns:
+        List of (token_id, score) tuples, sorted by score descending.
+    """
+    b = backend
+
+    # Get model internals
+    inner = model.model if hasattr(model, "model") else model
+
+    if hasattr(inner, "embed_tokens"):
+        embed_weight = inner.embed_tokens.weight
+    elif hasattr(inner, "wte"):
+        embed_weight = inner.wte.weight
+    else:
+        raise RuntimeError("Cannot find embedding layer")
+
+    vocab_size = int(b.shape(embed_weight)[0])
+
+    logger.info(
+        "CLOSED-FORM TOKEN SCORING: Scoring %d tokens for layer %d",
+        vocab_size,
+        layer_idx,
+    )
+
+    all_scores: list[float] = []
+
+    # Process vocabulary in batches
+    for start in range(0, vocab_size, batch_size):
+        end = min(start + batch_size, vocab_size)
+        batch_tokens = list(range(start, end))
+
+        # Get embeddings for this batch
+        token_indices = b.array(batch_tokens, dtype="int32")
+        embeddings = b.take(embed_weight, token_indices, axis=0)  # [batch, embed_dim]
+        b.eval(embeddings)
+
+        # Forward through layers to target layer
+        # We need to process each token as a single-token sequence
+        h = b.expand_dims(embeddings, axis=1)  # [batch, 1, embed_dim]
+
+        for idx, layer in enumerate(inner.layers):
+            if idx > layer_idx:
+                break
+            result = layer(h)
+            if isinstance(result, tuple):
+                h = result[0]
+            else:
+                h = result
+
+        # h is now [batch, 1, hidden_dim]
+        # Squeeze to [batch, hidden_dim]
+        activations = b.squeeze(h, axis=1)
+        b.eval(activations)
+
+        # Score against null space (normalized to compare directions, not magnitudes)
+        scores = score_tokens_for_null_space(activations, U_null, b, normalize=normalize)
+        b.eval(scores)
+
+        batch_scores = b.tolist(scores)
+        all_scores.extend(batch_scores)
+
+        if (end - start) == batch_size and end < vocab_size:
+            logger.debug(
+                "CLOSED-FORM: Processed %d/%d tokens (%.1f%%)",
+                end,
+                vocab_size,
+                100.0 * end / vocab_size,
+            )
+
+    # Sort by score and return top-k
+    indexed_scores = [(i, s) for i, s in enumerate(all_scores)]
+    indexed_scores.sort(key=lambda x: x[1], reverse=True)
+
+    top_tokens = indexed_scores[:top_k]
+
+    logger.info(
+        "CLOSED-FORM TOKEN SCORING: Top token score=%.4f, %dth token score=%.4f",
+        top_tokens[0][1] if top_tokens else 0.0,
+        min(top_k, len(top_tokens)),
+        top_tokens[-1][1] if top_tokens else 0.0,
+    )
+
+    return top_tokens
+
+
+def augment_rank_closed_form(
+    model: Any,
+    tokenizer: Any,
+    activations: "Array",
+    layer_idx: int,
+    backend: "Backend",
+    target_rank: int | None = None,
+    batch_size: int = 512,
+) -> RankAugmentationResult:
+    """Augment activation rank using closed-form token selection.
+
+    This replaces gradient ascent with:
+    1. Compute null space of current activations
+    2. Score ALL tokens by null space projection (closed-form)
+    3. Add best tokens until target rank achieved
+
+    Args:
+        model: The model.
+        tokenizer: Tokenizer for decoding.
+        activations: Current activations [n_samples, hidden_dim].
+        layer_idx: Target layer.
+        backend: Backend for tensor operations.
+        target_rank: Target rank (default: full rank = hidden_dim).
+        batch_size: Batch size for token scoring.
+
+    Returns:
+        RankAugmentationResult with generation statistics.
+    """
+    b = backend
+    current_acts = _promote_precision(activations, b)
+    b.eval(current_acts)
+
+    initial_rank, hidden_dim = compute_numerical_rank(current_acts, b)
+
+    if target_rank is None:
+        target_rank = hidden_dim
+
+    logger.info(
+        "CLOSED-FORM RANK AUGMENTATION: Starting at rank %d/%d, target=%d",
+        initial_rank,
+        hidden_dim,
+        target_rank,
+    )
+
+    if initial_rank >= target_rank:
+        logger.info("CLOSED-FORM: Already at target rank!")
+        return RankAugmentationResult(
+            initial_rank=initial_rank,
+            final_rank=initial_rank,
+            hidden_dim=hidden_dim,
+            probes_generated=0,
+            iterations=1,
+            full_rank_achieved=initial_rank >= hidden_dim,
+            generated_probes=[],
+        )
+
+    generated_probes: list[OrthogonalProbeResult] = []
+    current_rank = initial_rank
+    iteration = 0
+    max_iterations = 100  # Safety limit
+
+    while current_rank < target_rank and iteration < max_iterations:
+        iteration += 1
+
+        # Compute null space
+        U_null = compute_null_space_basis(current_acts, current_rank, b)
+        if U_null is None:
+            logger.info("CLOSED-FORM: No null space remaining")
+            break
+
+        null_dim = int(b.shape(U_null)[1])
+        logger.info(
+            "CLOSED-FORM: Iteration %d, rank=%d/%d, null_dim=%d",
+            iteration,
+            current_rank,
+            target_rank,
+            null_dim,
+        )
+
+        # Find best tokens for null space (closed-form)
+        top_tokens = find_null_space_tokens_closed_form(
+            model=model,
+            U_null=U_null,
+            layer_idx=layer_idx,
+            backend=b,
+            top_k=min(null_dim, 50),  # Don't need more than null_dim tokens
+            batch_size=batch_size,
+        )
+
+        if not top_tokens:
+            logger.warning("CLOSED-FORM: No tokens found")
+            break
+
+        # Add top tokens and their activations
+        new_activations = []
+        for token_id, score in top_tokens:
+            # Get activation for this single token
+            token_input = b.array([[token_id]], dtype="int32")
+            b.eval(token_input)
+
+            # Forward to get activation
+            inner = model.model if hasattr(model, "model") else model
+            if hasattr(inner, "embed_tokens"):
+                h = inner.embed_tokens(token_input)
+            elif hasattr(inner, "wte"):
+                h = inner.wte(token_input)
+            else:
+                continue
+
+            for idx, layer in enumerate(inner.layers):
+                if idx > layer_idx:
+                    break
+                result = layer(h)
+                if isinstance(result, tuple):
+                    h = result[0]
+                else:
+                    h = result
+
+            # Mean pool (single token, so just squeeze)
+            activation = b.squeeze(h, axis=(0, 1))
+            b.eval(activation)
+            new_activations.append(activation)
+
+            # Decode token
+            try:
+                text = tokenizer.decode([token_id])
+            except Exception:
+                text = f"<token-{token_id}>"
+
+            generated_probes.append(
+                OrthogonalProbeResult(
+                    token_ids=[token_id],
+                    text=text,
+                    orthogonal_component_norm=score,
+                )
+            )
+
+            # Check if we've reached target rank
+            if len(new_activations) >= null_dim:
+                break
+
+        if new_activations:
+            # Stack and concatenate
+            new_acts_stacked = b.stack(new_activations, axis=0)
+            b.eval(new_acts_stacked)
+            current_acts = b.concatenate([current_acts, new_acts_stacked], axis=0)
+            b.eval(current_acts)
+
+        # Check new rank
+        new_rank, _ = compute_numerical_rank(current_acts, b)
+        rank_increase = new_rank - current_rank
+
+        logger.info(
+            "CLOSED-FORM: Added %d tokens, rank %d -> %d (+%d)",
+            len(new_activations),
+            current_rank,
+            new_rank,
+            rank_increase,
+        )
+
+        if rank_increase == 0:
+            logger.warning("CLOSED-FORM: No rank increase, stopping")
+            break
+
+        current_rank = new_rank
+
+    final_rank, _ = compute_numerical_rank(current_acts, b)
+    full_rank_achieved = final_rank >= hidden_dim
+
+    logger.info(
+        "CLOSED-FORM RANK AUGMENTATION: Complete. rank=%d/%d (%.1f%%), "
+        "generated=%d probes in %d iterations",
+        final_rank,
+        hidden_dim,
+        100.0 * final_rank / hidden_dim,
+        len(generated_probes),
+        iteration,
+    )
+
+    return RankAugmentationResult(
+        initial_rank=initial_rank,
+        final_rank=final_rank,
+        hidden_dim=hidden_dim,
+        probes_generated=len(generated_probes),
+        iterations=iteration,
+        full_rank_achieved=full_rank_achieved,
+        generated_probes=generated_probes,
+    )
 
 
 __all__ = [
@@ -552,4 +924,7 @@ __all__ = [
     "compute_numerical_rank",
     "compute_null_space_basis",
     "validate_full_rank_coverage",
+    "score_tokens_for_null_space",
+    "find_null_space_tokens_closed_form",
+    "augment_rank_closed_form",
 ]

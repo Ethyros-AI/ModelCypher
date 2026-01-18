@@ -40,7 +40,7 @@ class Prediction:
     expected_fidelity : float
         Geodesic correlation between Gram matrices.
     confidence : float
-        Statistical confidence (1 - CI width).
+        Null distribution percentile when provided; NaN otherwise.
     sample_size : int
         Number of off-diagonal elements compared.
     fisher_z : float
@@ -48,7 +48,7 @@ class Prediction:
     fisher_z_standard_error : float
         Standard error of Fisher z.
     correlation_ci95 : tuple of float
-        95% confidence interval for correlation.
+        Confidence interval not computed without null distribution (NaN bounds).
     """
 
     expected_fidelity: float
@@ -95,7 +95,7 @@ class TransferFidelityPrediction:
         if sample_size <= 3:
             return Prediction(
                 expected_fidelity=correlation,
-                confidence=0.0,
+                confidence=float("nan"),
                 sample_size=sample_size,
                 fisher_z=fisher_z,
                 fisher_z_standard_error=float("nan"),
@@ -103,21 +103,14 @@ class TransferFidelityPrediction:
             )
 
         fisher_z_se = 1.0 / sqrt_scalar(sample_size - 3, _b)
-        z_lower = fisher_z - 1.96 * fisher_z_se
-        z_upper = fisher_z + 1.96 * fisher_z_se
-        r_lower = _inverse_fisher_z(z_lower)
-        r_upper = _inverse_fisher_z(z_upper)
-
-        ci_width = r_upper - r_lower
-        confidence = max(0.0, min(1.0, 1.0 - ci_width))
 
         return Prediction(
             expected_fidelity=correlation,
-            confidence=confidence,
+            confidence=float("nan"),
             sample_size=sample_size,
             fisher_z=fisher_z,
             fisher_z_standard_error=fisher_z_se,
-            correlation_ci95=(r_lower, r_upper),
+            correlation_ci95=(float("nan"), float("nan")),
         )
 
     @staticmethod

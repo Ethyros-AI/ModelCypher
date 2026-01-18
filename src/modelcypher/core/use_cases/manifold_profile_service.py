@@ -31,6 +31,8 @@ from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldRegion,
     RegionQueryResult,
 )
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+from modelcypher.core.domain.geometry.numerical_stability import find_magnitude_gap_threshold
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.thermo_path_integration import CombinedMeasurement
 from modelcypher.ports.storage import ManifoldProfileStore
@@ -44,7 +46,7 @@ class ManifoldProfileService:
     # ==========================================================================
     # All parameters are derived from data:
     # - Clustering: always attempted, algorithm determines if enough structure exists
-    # - Distance thresholds: derived from data distribution (percentiles)
+    # - Distance thresholds: derived from data distribution (gap-based)
     # - All clustering parameters: derived from data by ManifoldClusterer
     # ==========================================================================
 
@@ -74,7 +76,11 @@ class ManifoldProfileService:
     def record_point(self, point: ManifoldPoint, model_id: str, model_name: str) -> None:
         self._pending_points.setdefault(model_id, []).append(point)
         pending_count = len(self._pending_points.get(model_id, []))
-        if pending_count >= 10:
+        min_required = max(
+            IntrinsicDimension.local_dimension_min_samples(),
+            ManifoldPoint.feature_dimension + 1,
+        )
+        if pending_count >= min_required:
             self.flush_pending_points(model_id=model_id, model_name=model_name)
         logger.debug("Recorded point for %s (pending=%s)", model_id, pending_count)
 
@@ -143,7 +149,7 @@ class ManifoldProfileService:
         profile = self.store.load(model_id)
         if profile is None:
             # Derive thresholds from the single point (degenerate case)
-            thresholds = RegionThresholds.from_percentiles(
+            thresholds = RegionThresholds.from_data(
                 [point.mean_entropy], [point.entropy_variance], [point.mean_gate_similarity]
             )
             return RegionQueryResult(
@@ -172,11 +178,8 @@ class ManifoldProfileService:
             return InterventionSuggestion.no_history()
 
         query_result = self.clusterer.find_nearest_region(point=point, regions=profile.regions)
-        similar_points = self._find_similar_points(
-            point=point,
-            points=profile.recent_points + [region.centroid for region in profile.regions],
-            max_results=10,
-        )
+        candidate_points = profile.recent_points + [region.centroid for region in profile.regions]
+        similar_points = self._find_similar_points(point=point, points=candidate_points)
         historical_levels = [
             item.intervention_level
             for item in similar_points
@@ -209,20 +212,18 @@ class ManifoldProfileService:
                     entropies = [point.mean_entropy]
                     variances = [point.entropy_variance]
                     coherences = [point.mean_gate_similarity]
-                thresholds = RegionThresholds.from_percentiles(
-                    entropies, variances, coherences
-                )
+                thresholds = RegionThresholds.from_data(entropies, variances, coherences)
                 suggested_level = (
                     0 if ManifoldRegion.classify(point, thresholds) == ManifoldRegion.RegionCharacter.DENSE else 1
                 )
                 reason = "No historical data - suggestion based on point features"
 
         if query_result.is_within_region:
-            confidence = min(1.0, query_result.confidence + 0.2)
+            confidence = query_result.confidence
         elif similar_points:
-            confidence = float(len(similar_points)) / 10.0
+            confidence = float(len(similar_points)) / float(max(len(candidate_points), 1))
         else:
-            confidence = 0.2
+            confidence = 0.0
 
         return InterventionSuggestion(
             level=suggested_level,
@@ -334,15 +335,14 @@ class ManifoldProfileService:
         self,
         point: ManifoldPoint,
         points: list[ManifoldPoint],
-        max_results: int = 10,
     ) -> list[ManifoldPoint]:
         """Find similar points using geodesic distance.
 
         Computes geodesic distances from the query point to all candidates
         via k-NN graph. Geodesic distance accounts for curvature.
 
-        Threshold is derived from data: 25th percentile of the distance distribution.
-        This captures the "nearby" points relative to the actual data geometry.
+        Threshold is derived from data: magnitude gap in the distance distribution.
+        This captures the nearby points relative to the actual geometry.
         """
         if not points:
             return []
@@ -355,9 +355,7 @@ class ManifoldProfileService:
         features = backend.stack(rows, axis=0)
 
         rg = RiemannianGeometry(backend)
-        n = len(all_points)
-        k_neighbors = max(2, min(n - 1, int(n**0.5)))
-        result = rg.geodesic_distances(features, k_neighbors=k_neighbors)
+        result = rg.geodesic_distances(features, k_neighbors=None)
 
         # Extract distances from query (row 0) to each candidate (rows 1..n)
         row0 = result.distances[0, 1:]
@@ -366,12 +364,10 @@ class ManifoldProfileService:
         if count == 0:
             return []
 
-        # Derive threshold from data: 25th percentile of distance distribution
-        percentile_idx = max(0, int(count * 0.25) - 1)
-        part = backend.argpartition(row0, percentile_idx)
-        prefix = backend.take(part, backend.arange(percentile_idx + 1), axis=0)
-        threshold_arr = backend.max(backend.take(row0, prefix, axis=0))
-        backend.eval(threshold_arr)
+        sorted_row = backend.sort(row0)
+        backend.eval(sorted_row)
+        threshold_val = find_magnitude_gap_threshold(sorted_row, backend=backend)
+        threshold_arr = backend.array([threshold_val])
 
         # Count candidates within threshold
         within = row0 <= threshold_arr
@@ -380,15 +376,15 @@ class ManifoldProfileService:
         within_count = int(backend.to_scalar(within_count_arr))
         if within_count == 0:
             return []
-        take_count = min(within_count, max_results)
 
-        # Take closest results via partial sort
-        kth = max(0, take_count - 1)
-        part_top = backend.argpartition(row0, kth)
-        selected_idx = backend.take(part_top, backend.arange(take_count), axis=0)
-        selected_vals = backend.take(row0, selected_idx, axis=0)
-        order = backend.argsort(selected_vals)
-        selected_idx = backend.take(selected_idx, order, axis=0)
+        # Take all candidates within threshold, ordered by distance
+        order = backend.argsort(row0)
+        sorted_row = backend.take(row0, order, axis=0)
+        within_sorted = sorted_row <= threshold_arr
+        within_count_arr = backend.sum(backend.astype(within_sorted, "int32"))
+        backend.eval(within_count_arr)
+        within_count = int(backend.to_scalar(within_count_arr))
+        selected_idx = backend.take(order, backend.arange(within_count), axis=0)
         backend.eval(selected_idx)
         selected_list = backend.tolist(selected_idx)
         return [points[int(i)] for i in selected_list]

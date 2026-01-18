@@ -1,0 +1,33 @@
+{
+  "model_path": "HuggingFaceTB/SmolLM-135M",
+  "n_layers": 30,
+  "hidden_dim": 576,
+  "vocab_size": 49152,
+  "layers": {
+    "7": {
+      "tokens_used": 599,
+      "sequences_used": 2,
+      "final_rank": 575,
+      "method": "hybrid",
+      "full_rank": false,
+      "elapsed_seconds": 29.794237852096558
+    },
+    "15": {
+      "tokens_used": 100,
+      "sequences_used": 1,
+      "final_rank": 159,
+      "method": "hybrid",
+      "full_rank": false,
+      "elapsed_seconds": 35.34828424453735
+    },
+    "22": {
+      "tokens_used": 100,
+      "sequences_used": 0,
+      "final_rank": 153,
+      "method": "single_tokens",
+      "full_rank": false,
+      "elapsed_seconds": 34.67671084403992
+    }
+  },
+  "all_layers_full_rank": false
+}

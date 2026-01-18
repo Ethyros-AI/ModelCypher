@@ -23,6 +23,8 @@ from enum import Enum
 from typing import ClassVar
 from uuid import UUID, uuid4
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import ulp_scalar
 
 @dataclass
 class ManifoldProfile:
@@ -221,7 +223,7 @@ class RegionThresholds:
     Thresholds define boundaries between topological regions (DENSE/SPARSE/TRANSITIONAL).
     These are geometric classifications, not quality judgments.
 
-    Use `from_percentiles()` to derive thresholds from observed data distributions.
+    Use `from_data()` to derive thresholds directly from observed distributions.
     """
 
     low_entropy: float
@@ -231,51 +233,61 @@ class RegionThresholds:
     high_coherence: float
     low_coherence: float
 
+    @staticmethod
+    def _gap_thresholds(values: list[float]) -> tuple[float, float]:
+        if not values:
+            return 0.0, 0.0
+        sorted_vals = sorted(float(v) for v in values)
+        if len(sorted_vals) == 1:
+            return sorted_vals[0], sorted_vals[0]
+        backend = get_default_backend()
+        scale = max(max(abs(v) for v in sorted_vals), 1.0)
+        eps = ulp_scalar(scale, backend)
+        gaps: list[tuple[float, int]] = []
+        for i in range(len(sorted_vals) - 1):
+            denom = max(abs(sorted_vals[i]), eps)
+            rel_gap = (sorted_vals[i + 1] - sorted_vals[i]) / denom
+            gaps.append((rel_gap, i))
+        gaps_sorted = sorted(gaps, key=lambda item: item[0], reverse=True)
+        idxs = sorted(i for _, i in gaps_sorted[:2])
+        if len(idxs) == 1:
+            threshold = sorted_vals[idxs[0]]
+            return threshold, threshold
+        low = sorted_vals[idxs[0]]
+        high = sorted_vals[idxs[1]]
+        if high < low:
+            low, high = high, low
+        return low, high
+
     @classmethod
-    def from_percentiles(
+    def from_data(
         cls,
         entropies: list[float],
         variances: list[float],
         coherences: list[float],
-        low_percentile: float = 25.0,
-        high_percentile: float = 75.0,
     ) -> "RegionThresholds":
         """Derive thresholds from observed data distributions.
 
-        Args:
-            entropies: Observed entropy values from calibration data.
-            variances: Observed variance values from calibration data.
-            coherences: Observed coherence values from calibration data.
-            low_percentile: Percentile for "low" thresholds (default 25th).
-            high_percentile: Percentile for "high" thresholds (default 75th).
-
-        Returns:
-            Config with thresholds derived from the data.
+        Uses largest relative gaps in each distribution to split low/high regimes.
+        No fixed percentiles or external parameters are required.
         """
-
-        def percentile(values: list[float], p: float) -> float:
-            if not values:
-                return 0.0
-            sorted_vals = sorted(values)
-            k = (len(sorted_vals) - 1) * (p / 100.0)
-            f = int(k)
-            c = f + 1 if f + 1 < len(sorted_vals) else f
-            return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
-
+        low_entropy, high_entropy = cls._gap_thresholds(entropies)
+        low_variance, high_variance = cls._gap_thresholds(variances)
+        low_coherence, high_coherence = cls._gap_thresholds(coherences)
         return cls(
-            low_entropy=percentile(entropies, low_percentile),
-            high_entropy=percentile(entropies, high_percentile),
-            low_variance=percentile(variances, low_percentile),
-            high_variance=percentile(variances, high_percentile),
-            high_coherence=percentile(coherences, high_percentile),
-            low_coherence=percentile(coherences, low_percentile),
+            low_entropy=low_entropy,
+            high_entropy=high_entropy,
+            low_variance=low_variance,
+            high_variance=high_variance,
+            high_coherence=high_coherence,
+            low_coherence=low_coherence,
         )
 
 
 # =============================================================================
 # NO DEFAULT THRESHOLDS
 # =============================================================================
-# All thresholds must be derived from data using RegionThresholds.from_percentiles().
+# All thresholds must be derived from data using RegionThresholds.from_data().
 # There are no "standard" thresholds - they depend on the data distribution.
 # =============================================================================
 
@@ -327,8 +339,8 @@ class ManifoldRegion:
 
         Args:
             centroid: The centroid point to classify.
-            thresholds: Classification thresholds. MUST be derived from your data using
-                `RegionThresholds.from_percentiles()`. No defaults exist.
+            thresholds: Classification thresholds derived from data using
+                `RegionThresholds.from_data()`.
 
         Returns:
             Topological character (DENSE, SPARSE, or TRANSITIONAL).

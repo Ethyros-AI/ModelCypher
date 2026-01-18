@@ -20,15 +20,10 @@ from __future__ import annotations
 from uuid import uuid4
 
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
     RegionThresholds,
-)
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    find_magnitude_gap_threshold,
 )
 
 
@@ -50,29 +45,11 @@ def _make_point(
 
 
 def test_region_classification() -> None:
-    backend = get_default_backend()
     # Use values with clear gaps to ensure robust threshold detection
     entropies = [0.5, 0.6, 5.0, 5.5]  # Clear gap between 0.6 and 5.0
     variances = [0.01, 0.02, 0.5, 0.6]  # Clear gap between 0.02 and 0.5
     coherences = [0.95, 0.92, 0.2, 0.1]  # Clear gap between 0.92 and 0.2
-    eps = division_epsilon(backend, backend.array(entropies))
-    entropy_threshold = find_magnitude_gap_threshold(sorted(entropies), eps=eps)
-    variance_threshold = find_magnitude_gap_threshold(sorted(variances), eps=eps)
-    coherence_threshold = find_magnitude_gap_threshold(sorted(coherences), eps=eps)
-    entropy_low = max(v for v in entropies if v <= entropy_threshold)
-    entropy_high = min(v for v in entropies if v > entropy_threshold)
-    variance_low = max(v for v in variances if v <= variance_threshold)
-    variance_high = min(v for v in variances if v > variance_threshold)
-    coherence_low = max(v for v in coherences if v <= coherence_threshold)
-    coherence_high = min(v for v in coherences if v > coherence_threshold)
-    thresholds = RegionThresholds(
-        low_entropy=entropy_low,
-        high_entropy=entropy_high,
-        low_variance=variance_low,
-        high_variance=variance_high,
-        high_coherence=coherence_high,
-        low_coherence=coherence_low,
-    )
+    thresholds = RegionThresholds.from_data(entropies, variances, coherences)
     # Create point clearly in DENSE region: low entropy, low variance, high coherence
     point = ManifoldPoint(
         id=uuid4(),

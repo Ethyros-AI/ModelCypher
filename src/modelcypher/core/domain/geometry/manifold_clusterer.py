@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -77,7 +78,7 @@ class ManifoldClusterer:
         geodesic_matrix = self._compute_geodesic_matrix(points)
 
         epsilon = self._resolve_epsilon(geodesic_matrix)
-        min_cluster_size = 2
+        min_cluster_size = self._derive_min_cluster_size(points)
 
         labels = [-1 for _ in points]
         cluster_id = 0
@@ -147,7 +148,7 @@ class ManifoldClusterer:
         assigned_to_existing = 0
         new_clusters_formed = 0
         epsilon = self._resolve_epsilon(self._compute_geodesic_matrix(new_points))
-        min_cluster_size = 2
+        min_cluster_size = self._derive_min_cluster_size(new_points)
 
         # For incremental assignment, compute geodesic distance between each new point
         # and region centroids. When comparing a single point to a single centroid,
@@ -398,9 +399,7 @@ class ManifoldClusterer:
         entropies = [pt.mean_entropy for pt in points]
         variances = [pt.entropy_variance for pt in points]
         coherences = [pt.mean_gate_similarity for pt in points]
-        thresholds = RegionThresholds.from_percentiles(
-            entropies, variances, coherences
-        )
+        thresholds = RegionThresholds.from_data(entropies, variances, coherences)
         region_type = ManifoldRegion.classify(centroid, thresholds)
 
         return ManifoldRegion(
@@ -535,10 +534,29 @@ class ManifoldClusterer:
 
         sorted_categories = sorted(category_counts.items(), key=lambda item: item[1], reverse=True)
         dominant_gates: list[str] = []
-        for index, _ in sorted_categories[:3]:
+        for index, _ in sorted_categories:
             if index < len(known_gates):
                 dominant_gates.append(known_gates[index])
         return dominant_gates
+
+    def _derive_min_cluster_size(self, points: list[ManifoldPoint]) -> int:
+        """Derive minimum cluster size from intrinsic dimension."""
+        total = len(points)
+        if total <= 1:
+            return total
+        min_required = IntrinsicDimension.local_dimension_min_samples()
+        if total < min_required:
+            return total
+        backend = get_default_backend()
+        rows = [backend.array(p.feature_vector) for p in points]
+        features = backend.stack(rows, axis=0)
+        try:
+            estimate = IntrinsicDimension(backend).compute(features)
+            intrinsic_dim = estimate.intrinsic_dimension
+            min_size = int(math.ceil(intrinsic_dim + 1.0))
+        except EstimatorError:
+            min_size = min_required
+        return max(1, min(total, max(min_required, min_size)))
 
     def _estimate_intrinsic_dimension(self, points: list[ManifoldPoint]) -> float | None:
         if len(points) < 3:
@@ -568,9 +586,7 @@ class ManifoldClusterer:
             entropies = [point.mean_entropy]
             variances = [point.entropy_variance]
             coherences = [point.mean_gate_similarity]
-        thresholds = RegionThresholds.from_percentiles(
-            entropies, variances, coherences
-        )
+        thresholds = RegionThresholds.from_data(entropies, variances, coherences)
 
         if not regions:
             return RegionQueryResult(

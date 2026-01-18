@@ -21,7 +21,7 @@ Transfers alignment from instruct model to base model using geometric steering.
 
 Method:
     1. Extract refusal direction and threshold from instruct model
-    2. Compute threshold as 95th percentile of instruct's harmless projections
+    2. Compute threshold from the largest cross-label separation gap
     3. On base model: count harmful prompts above threshold (baseline refusal rate)
     4. Steer base model's harmful activations by adding refusal direction
     5. Count harmful prompts above threshold after steering (transfer effectiveness)
@@ -42,12 +42,14 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.refusal_direction_detector import (
     RefusalDirectionDetector,
 )
@@ -60,6 +62,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _derive_separation_threshold(
+    harmless: list[float],
+    harmful: list[float],
+) -> tuple[float, float]:
+    """Derive a separation threshold from the largest cross-label gap."""
+    if not harmless or not harmful:
+        return 0.0, 0.0
+    pairs = [(float(v), 0) for v in harmless] + [(float(v), 1) for v in harmful]
+    pairs.sort(key=lambda item: item[0])
+    best_gap = float("-inf")
+    threshold = pairs[0][0]
+    for i in range(len(pairs) - 1):
+        if pairs[i][1] == pairs[i + 1][1]:
+            continue
+        gap = pairs[i + 1][0] - pairs[i][0]
+        if gap > best_gap:
+            best_gap = gap
+            threshold = 0.5 * (pairs[i + 1][0] + pairs[i][0])
+    if best_gap == float("-inf"):
+        min_val = min(v for v, _ in pairs)
+        max_val = max(v for v, _ in pairs)
+        threshold = 0.5 * (min_val + max_val)
+        best_gap = max_val - min_val
+    if not math.isfinite(threshold):
+        threshold = 0.0
+    if not math.isfinite(best_gap):
+        best_gap = 0.0
+    return threshold, best_gap
+
+
 @dataclass
 class SteeringResult:
     """Result of steering a single prompt."""
@@ -68,7 +100,7 @@ class SteeringResult:
     original_projection: float
     steered_projection: float
     projection_increase: float
-    steering_strength: float
+    required_strength: float
 
 
 @dataclass
@@ -78,14 +110,15 @@ class AlignmentTransferResult:
     instruct_model_path: str
     base_model_path: str
     steering_layer: int
-    steering_strength: float
+    mean_required_strength: float
+    max_required_strength: float
     num_harmful_prompts: int
     num_harmless_prompts: int
     # Refusal direction metrics
     refusal_direction_strength: float
     refusal_direction_explained_var: float
     # Threshold from instruct model
-    refusal_threshold: float  # 95th percentile of instruct harmless projections
+    refusal_threshold: float  # gap-derived threshold from instruct projections
     # Instruct model rates (baseline for comparison)
     instruct_harmful_refusal_rate: float  # % harmful above threshold
     instruct_harmless_refusal_rate: float  # % harmless above threshold (false positives)
@@ -104,31 +137,39 @@ class AlignmentTransferResult:
 def compute_steered_projection(
     activation: "Array",
     refusal_direction: "Array",
-    steering_strength: float,
+    target_threshold: float,
     backend: "Backend",
-) -> tuple[float, float, "Array"]:
+) -> tuple[float, float, "Array", float]:
     """Apply steering and compute projections.
 
     Args:
         activation: Original activation [hidden_dim]
         refusal_direction: Refusal direction [hidden_dim]
-        steering_strength: How much to add (multiplier on direction)
+        target_threshold: Projection threshold to reach (minimum steering)
         backend: Backend
 
     Returns:
-        Tuple of (original_projection, steered_projection, steered_activation)
+        Tuple of (original_projection, steered_projection, steered_activation, required_strength)
     """
     # Original projection
     orig_proj = float(backend.to_scalar(backend.sum(activation * refusal_direction)))
 
-    # Apply steering: add refusal direction scaled by strength
-    steered = activation + steering_strength * refusal_direction
+    # Apply minimal steering needed to reach threshold
+    dir_norm_sq = float(
+        backend.to_scalar(backend.sum(refusal_direction * refusal_direction))
+    )
+    eps = division_epsilon(backend, refusal_direction)
+    denom = max(dir_norm_sq, float(eps))
+    required_strength = (target_threshold - orig_proj) / denom
+    if required_strength < 0.0:
+        required_strength = 0.0
+    steered = activation + required_strength * refusal_direction
     backend.eval(steered)
 
     # Steered projection
     steered_proj = float(backend.to_scalar(backend.sum(steered * refusal_direction)))
 
-    return orig_proj, steered_proj, steered
+    return orig_proj, steered_proj, steered, required_strength
 
 
 def run_alignment_transfer(
@@ -137,7 +178,6 @@ def run_alignment_transfer(
     harmful_prompts: list[str] | None = None,
     harmless_prompts: list[str] | None = None,
     steering_layer: int | None = None,
-    steering_strength: float = 1.0,
     output_path: str | Path | None = None,
 ) -> AlignmentTransferResult:
     """Run the alignment transfer experiment.
@@ -148,7 +188,6 @@ def run_alignment_transfer(
         harmful_prompts: List of harmful prompts (uses default if None)
         harmless_prompts: List of harmless prompts (uses default if None)
         steering_layer: Layer to apply steering (auto-select if None)
-        steering_strength: Multiplier for refusal direction (default 1.0)
         output_path: Path to save results JSON (optional)
 
     Returns:
@@ -164,10 +203,6 @@ def run_alignment_transfer(
         harmful_prompts = load_harmful_prompts()
     if harmless_prompts is None:
         harmless_prompts = load_harmless_prompts()
-
-    # Use subset for faster experimentation
-    harmful_prompts = harmful_prompts[:30]
-    harmless_prompts = harmless_prompts[:30]
 
     if not harmful_prompts or not harmless_prompts:
         raise ValueError("Missing prompts. Check datasets directory.")
@@ -195,7 +230,7 @@ def run_alignment_transfer(
 
     # Auto-select steering layer (use layer with best separation)
     if steering_layer is None:
-        best_accuracy = 0.0
+        best_gap = float("-inf")
         best_layer = layers[len(layers) // 2]
         for layer_idx in layers:
             harmful_acts = backend.stack(instruct_harmful_by_layer[layer_idx], axis=0)
@@ -225,23 +260,13 @@ def run_alignment_transfer(
                     for i in range(n_harmful)
                 ]
 
-                # Compute threshold (95th percentile of harmless)
-                sorted_harmless = sorted(h_projs_list)
-                threshold_idx = int(0.95 * len(sorted_harmless))
-                threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
-                threshold = sorted_harmless[threshold_idx]
-
-                # Compute classification accuracy
-                tp = sum(1 for p in f_projs_list if p > threshold)
-                tn = sum(1 for p in h_projs_list if p <= threshold)
-                accuracy = (tp + tn) / (n_harmful + n_harmless)
-
-                if accuracy > best_accuracy:
-                    best_accuracy = accuracy
+                _, separation_gap = _derive_separation_threshold(h_projs_list, f_projs_list)
+                if separation_gap > best_gap:
+                    best_gap = separation_gap
                     best_layer = layer_idx
 
         steering_layer = best_layer
-        logger.info("Layer selection: max accuracy %.4f at layer %d", best_accuracy, steering_layer)
+        logger.info("Layer selection: max separation gap %.4f at layer %d", best_gap, steering_layer)
 
     logger.info("Using steering layer: %d", steering_layer)
 
@@ -284,14 +309,12 @@ def run_alignment_transfer(
         for i in range(len(harmless_prompts))
     ]
 
-    # Compute refusal threshold: 95th percentile of instruct harmless projections
-    # Prompts above this threshold are in the "refusal zone"
-    sorted_harmless = sorted(instruct_harmless_projs_list)
-    threshold_idx = int(0.95 * len(sorted_harmless))
-    threshold_idx = min(threshold_idx, len(sorted_harmless) - 1)
-    refusal_threshold = sorted_harmless[threshold_idx]
+    # Compute refusal threshold from cross-label separation
+    refusal_threshold, separation_gap = _derive_separation_threshold(
+        instruct_harmless_projs_list, instruct_harmful_projs_list
+    )
 
-    logger.info("Refusal threshold (95th percentile of instruct harmless): %.4f", refusal_threshold)
+    logger.info("Refusal threshold (gap-derived): %.4f", refusal_threshold)
 
     # Compute instruct model refusal rates
     instruct_harmful_refusal_rate = sum(
@@ -364,7 +387,7 @@ def run_alignment_transfer(
     # =========================================================================
     # STEP 3: Apply steering to harmful prompts ONLY and measure effect
     # =========================================================================
-    logger.info("Applying alignment steering to harmful prompts (strength=%.2f)...", steering_strength)
+    logger.info("Applying minimal steering to reach refusal threshold...")
 
     steering_results: list[SteeringResult] = []
 
@@ -372,8 +395,8 @@ def run_alignment_transfer(
     steered_harmful_projs_list = []
     for i, prompt in enumerate(harmful_prompts):
         act = base_harmful_by_layer[steering_layer][i]
-        orig_proj, steered_proj, _ = compute_steered_projection(
-            act, refusal_direction, steering_strength, backend
+        orig_proj, steered_proj, _, required_strength = compute_steered_projection(
+            act, refusal_direction, refusal_threshold, backend
         )
         steered_harmful_projs_list.append(steered_proj)
 
@@ -382,7 +405,7 @@ def run_alignment_transfer(
             original_projection=orig_proj,
             steered_projection=steered_proj,
             projection_increase=steered_proj - orig_proj,
-            steering_strength=steering_strength,
+            required_strength=required_strength,
         ))
 
     # Compute steered harmful refusal rate
@@ -403,14 +426,12 @@ def run_alignment_transfer(
     # Transfer effectiveness: how close is steered base's refusal rate to instruct's?
     # 1.0 = perfect transfer (steered base refuses harmful at same rate as instruct)
     # 0.0 = no transfer (steered same as base)
-    if abs(instruct_harmful_refusal_rate - base_harmful_refusal_rate) > 1e-6:
-        transfer_effectiveness = (steered_harmful_refusal_rate - base_harmful_refusal_rate) / (
-            instruct_harmful_refusal_rate - base_harmful_refusal_rate
-        )
-        transfer_effectiveness = max(0.0, min(1.0, transfer_effectiveness))
+    denom = instruct_harmful_refusal_rate - base_harmful_refusal_rate
+    denom_eps = division_epsilon(backend, backend.array([denom]))
+    if abs(denom) > float(denom_eps):
+        transfer_effectiveness = (steered_harmful_refusal_rate - base_harmful_refusal_rate) / denom
     else:
-        # If instruct and base have same refusal rate, check if steering changed anything
-        transfer_effectiveness = 1.0 if abs(refusal_rate_increase) < 1e-6 else 0.0
+        transfer_effectiveness = float("inf") if abs(refusal_rate_increase) > float(denom_eps) else 1.0
 
     logger.info("Refusal rate increase: +%.1f%%", refusal_rate_increase * 100)
     logger.info("Transfer effectiveness: %.1f%%", transfer_effectiveness * 100)
@@ -418,6 +439,7 @@ def run_alignment_transfer(
     # Aggregate metrics
     aggregate_metrics = {
         "refusal_threshold": refusal_threshold,
+        "projection_separation_gap": separation_gap,
         "instruct_harmful_refusal_rate": instruct_harmful_refusal_rate,
         "instruct_harmless_refusal_rate": instruct_harmless_refusal_rate,
         "base_harmful_refusal_rate": base_harmful_refusal_rate,
@@ -425,16 +447,18 @@ def run_alignment_transfer(
         "steered_harmful_refusal_rate": steered_harmful_refusal_rate,
         "refusal_rate_increase": refusal_rate_increase,
         "transfer_effectiveness": transfer_effectiveness,
-        "steering_strength": steering_strength,
         "steering_layer": steering_layer,
         "mean_projection_increase": sum(r.projection_increase for r in steering_results) / len(steering_results),
+        "mean_required_strength": sum(r.required_strength for r in steering_results) / len(steering_results),
+        "max_required_strength": max(r.required_strength for r in steering_results),
     }
 
     result = AlignmentTransferResult(
         instruct_model_path=str(instruct_model_path),
         base_model_path=str(base_model_path),
         steering_layer=steering_layer,
-        steering_strength=steering_strength,
+        mean_required_strength=aggregate_metrics["mean_required_strength"],
+        max_required_strength=aggregate_metrics["max_required_strength"],
         num_harmful_prompts=len(harmful_prompts),
         num_harmless_prompts=len(harmless_prompts),
         refusal_direction_strength=refusal_direction_result.strength,
@@ -460,7 +484,8 @@ def run_alignment_transfer(
             "instruct_model_path": result.instruct_model_path,
             "base_model_path": result.base_model_path,
             "steering_layer": result.steering_layer,
-            "steering_strength": result.steering_strength,
+            "mean_required_strength": result.mean_required_strength,
+            "max_required_strength": result.max_required_strength,
             "num_harmful_prompts": result.num_harmful_prompts,
             "num_harmless_prompts": result.num_harmless_prompts,
             "refusal_direction_strength": result.refusal_direction_strength,
@@ -480,6 +505,7 @@ def run_alignment_transfer(
                     "original_projection": r.original_projection,
                     "steered_projection": r.steered_projection,
                     "projection_increase": r.projection_increase,
+                    "required_strength": r.required_strength,
                     "crossed_threshold": r.steered_projection > refusal_threshold,
                 }
                 for r in steering_results
@@ -498,12 +524,13 @@ def run_alignment_transfer(
     logger.info("Instruct (donor): %s", Path(instruct_model_path).name)
     logger.info("Base (recipient): %s", Path(base_model_path).name)
     logger.info("Steering layer: %d", steering_layer)
-    logger.info("Steering strength: %.2f", steering_strength)
+    logger.info("Mean required strength: %.4f", result.mean_required_strength)
+    logger.info("Max required strength: %.4f", result.max_required_strength)
     logger.info("-" * 60)
     logger.info("Refusal Direction:")
     logger.info("  Strength: %.4f", refusal_direction_result.strength)
     logger.info("  Explained variance: %.4f", refusal_direction_result.explained_variance)
-    logger.info("  Threshold (95th pct harmless): %.4f", refusal_threshold)
+    logger.info("  Threshold (gap-derived): %.4f", refusal_threshold)
     logger.info("-" * 60)
     logger.info("Harmful Refusal Rates (above threshold):")
     logger.info("  Instruct model:        %.1f%%", instruct_harmful_refusal_rate * 100)

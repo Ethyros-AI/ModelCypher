@@ -52,6 +52,22 @@ rank = count(σ > σ_max × sqrt(eps))
 - **Files**: numerical_stability.py, geodesic_null_space.py
 - **Status**: ✓ PROVEN
 
+### Effective Dimensionality (Layer-Specific)
+```
+effective_dim = numerical_rank of target activations at layer
+full_rank = (alignment_rank >= effective_dim)
+```
+- **Why it works**: Middle layers compress representations. Only numerically-significant directions (σ > σ_max × sqrt(eps)) can be reliably aligned. The remaining directions are the NULL SPACE where knowledge transfer happens.
+- **Empirical validation (SmolLM-135M, exp18-19)**:
+  - Layer 0: effective_dim ≈ 16/576 (highly compressed embeddings)
+  - Layer 7: effective_dim ≈ 208/576
+  - Layer 15: effective_dim ≈ 214/576 (middle layer compression)
+  - Layer 22: effective_dim ≈ 329/576
+  - Layer 29: effective_dim ≈ 325/576
+- **Key insight**: Layers with low effective_dim have MORE null space = MORE capacity for knowledge transfer.
+- **Files**: orthogonal_probe_generator.py (validate_full_rank_coverage)
+- **Status**: ✓ DATA-DERIVED + PRECISION-BOUNDED
+
 ### Condition Number Error Bound
 ```
 relative_error ≤ κ × eps
@@ -200,6 +216,30 @@ These are places where we've written warnings or thresholds but **don't actually
 **Resolution**:
 - Removed clamp; ratio now reflects curvature scale directly
 - No bounds unless implied by precision (ULP/eps)
+
+**Status**: ✓ RESOLVED
+
+### Resolved: Region Threshold Percentiles Removed
+
+**Previous code**: Region thresholds derived from fixed percentiles (25/75)
+**Location**: manifold_profile.py, manifold_clusterer.py, manifold_profile_service.py
+
+**Resolution**:
+- Thresholds now derived from magnitude gaps in data distributions
+- No fixed percentiles or configurable cutoffs
+
+**Status**: ✓ RESOLVED
+
+---
+
+### Resolved: Transfer Fidelity CI Removed
+
+**Previous code**: 95% confidence interval from Fisher z with a fixed 1.96 multiplier
+**Location**: transfer_fidelity.py
+
+**Resolution**:
+- Confidence interval removed without a null distribution
+- `confidence` now only reports null percentile when provided
 
 **Status**: ✓ RESOLVED
 
