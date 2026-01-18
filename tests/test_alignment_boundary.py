@@ -30,7 +30,10 @@ from modelcypher.core.domain.geometry.alignment_boundary import (
     compute_alignment_boundary,
     steer_to_boundary,
 )
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    regularization_epsilon,
+    ulp_scalar,
+)
 
 
 @pytest.fixture
@@ -49,16 +52,19 @@ def simple_boundary(backend):
     )
     backend.eval(refusal_direction)
 
-    # Safe centroid: origin
-    safe_centroid = backend.zeros((10,))
-    backend.eval(safe_centroid)
+    # Safe activations with known structure
+    base = backend.zeros((10,))
+    base = backend.put_along_axis(base, backend.array([0]), backend.array([1.0]), axis=0)
+    offset = backend.zeros((10,))
+    offset = backend.put_along_axis(offset, backend.array([1]), backend.array([1.0]), axis=0)
+    safe_acts = backend.stack([base, base + offset], axis=0)
+    backend.eval(safe_acts)
 
-    return AlignmentBoundary(
+    return compute_alignment_boundary(
         refusal_direction=refusal_direction,
-        safe_centroid=safe_centroid,
-        refusal_threshold=0.5,  # Must have projection >= 0.5 onto refusal direction
-        safe_radius=2.0,  # Must be within distance 2.0 of centroid
+        safe_activations=safe_acts,
         layer_index=0,
+        backend=backend,
     )
 
 
@@ -90,23 +96,34 @@ class TestComputeAlignmentBoundary:
         boundary = compute_alignment_boundary(
             refusal_direction=refusal_dir,
             safe_activations=safe_acts,
-            refusal_percentile=5.0,
-            distance_percentile=95.0,
             layer_index=5,
             backend=backend,
         )
 
-        # Check that boundary has reasonable values
+        # Check that boundary matches tight safe envelope
         assert boundary.layer_index == 5
-        assert boundary.refusal_threshold > 0  # Should be positive since safe acts have positive projection
-        assert boundary.safe_radius > 0  # Should be positive
+        projections = backend.sum(safe_acts * boundary.refusal_direction, axis=1)
+        centered = safe_acts - boundary.safe_centroid
+        distances = backend.sqrt(backend.sum(centered * centered, axis=1))
+        backend.eval(projections, distances)
 
-    def test_percentile_affects_threshold(self, backend):
-        """Test that percentile parameters affect threshold values."""
-        n_samples = 100
-        hidden_dim = 10
+        min_proj = float(backend.to_scalar(backend.min(projections)))
+        max_dist = float(backend.to_scalar(backend.max(distances)))
+        proj_eps = ulp_scalar(max(abs(min_proj), 1.0), backend)
+        dist_eps = ulp_scalar(max(abs(max_dist), 1.0), backend)
+
+        assert boundary.refusal_threshold <= min_proj + proj_eps
+        assert boundary.safe_radius >= max_dist - dist_eps
+
+    def test_boundary_is_tight_on_safe_set(self, backend):
+        """Boundary should include all safe activations with precision margin."""
+        n_samples = 50
+        hidden_dim = 8
 
         safe_acts = backend.random_normal((n_samples, hidden_dim))
+        offset = backend.zeros((hidden_dim,))
+        offset = backend.put_along_axis(offset, backend.array([0]), backend.array([1.0]), axis=0)
+        safe_acts = safe_acts + offset
         backend.eval(safe_acts)
 
         refusal_dir = backend.zeros((hidden_dim,))
@@ -115,27 +132,24 @@ class TestComputeAlignmentBoundary:
         )
         backend.eval(refusal_dir)
 
-        # Stricter boundary (lower refusal percentile = higher threshold requirement)
-        strict_boundary = compute_alignment_boundary(
+        boundary = compute_alignment_boundary(
             refusal_direction=refusal_dir,
             safe_activations=safe_acts,
-            refusal_percentile=10.0,
-            distance_percentile=90.0,
             backend=backend,
         )
 
-        # Looser boundary
-        loose_boundary = compute_alignment_boundary(
-            refusal_direction=refusal_dir,
-            safe_activations=safe_acts,
-            refusal_percentile=1.0,
-            distance_percentile=99.0,
-            backend=backend,
-        )
+        projections = backend.sum(safe_acts * boundary.refusal_direction, axis=1)
+        centered = safe_acts - boundary.safe_centroid
+        distances = backend.sqrt(backend.sum(centered * centered, axis=1))
+        backend.eval(projections, distances)
 
-        # Looser boundary should have lower threshold and larger radius
-        assert loose_boundary.refusal_threshold < strict_boundary.refusal_threshold
-        assert loose_boundary.safe_radius > strict_boundary.safe_radius
+        min_proj = float(backend.to_scalar(backend.min(projections)))
+        max_dist = float(backend.to_scalar(backend.max(distances)))
+        proj_eps = ulp_scalar(max(abs(min_proj), 1.0), backend)
+        dist_eps = ulp_scalar(max(abs(max_dist), 1.0), backend)
+
+        assert boundary.refusal_threshold <= min_proj + proj_eps
+        assert boundary.safe_radius >= max_dist - dist_eps
 
 
 class TestCheckBoundary:
@@ -159,10 +173,16 @@ class TestCheckBoundary:
 
     def test_low_refusal_projection_fails(self, backend, simple_boundary):
         """Test that activation with low refusal projection fails."""
-        # Create activation perpendicular to refusal direction
-        activation = backend.zeros((10,))
+        # Create activation near centroid but with reduced refusal projection
+        activation = backend.array(simple_boundary.safe_centroid)
+        delta = ulp_scalar(
+            max(abs(simple_boundary.refusal_threshold), 1.0), backend
+        )
         activation = backend.put_along_axis(
-            activation, backend.array([1]), backend.array([0.1]), axis=0
+            activation,
+            backend.array([0]),
+            backend.array([simple_boundary.refusal_threshold - delta]),
+            axis=0,
         )
         backend.eval(activation)
 

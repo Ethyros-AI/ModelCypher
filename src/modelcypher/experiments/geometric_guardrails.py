@@ -28,7 +28,6 @@ from modelcypher.core.domain.geometry.alignment_boundary import (
     BoundaryViolationType,
     check_boundary,
     compute_alignment_boundary,
-    optimize_boundary_thresholds,
     steer_to_boundary,
 )
 from modelcypher.core.domain.geometry.refusal_direction_detector import (
@@ -109,7 +108,6 @@ class GuardrailResult:
 def run_geometric_guardrails(
     model_path: str,
     detection_layer: int | None = None,
-    target_fpr: float = 0.10,
     output_path: Path | None = None,
     backend: "Backend | None" = None,
 ) -> GuardrailResult:
@@ -118,7 +116,6 @@ def run_geometric_guardrails(
     Args:
         model_path: Path to instruct model
         detection_layer: Layer to use for detection (auto-detect if None)
-        target_fpr: Target false positive rate for threshold optimization (default 10%)
         output_path: Where to save results
         backend: Backend for tensor operations
 
@@ -178,11 +175,10 @@ def run_geometric_guardrails(
 
     layers = sorted(train_harmful_by_layer.keys())
 
-    # Auto-select detection layer by finding layer with best boundary detection
-    # For guardrails, we want to maximize (harmful_violation_rate - harmless_violation_rate)
+    # Auto-select detection layer by maximizing separation margins
     if detection_layer is None:
         best_layer = layers[0]
-        best_score = -1.0
+        best_score = float("-inf")
 
         for layer_idx in layers:
             h_acts = b.stack(train_harmless_by_layer[layer_idx], axis=0)
@@ -197,72 +193,24 @@ def run_geometric_guardrails(
             direction = direction / norm
             b.eval(direction)
 
-            # Compute safe centroid (mean of harmless)
-            safe_centroid = h_mean
+            # Compute projections and distances
+            h_projs = b.sum(h_acts * direction, axis=1)
+            f_projs = b.sum(f_acts * direction, axis=1)
+            centered_h = h_acts - h_mean
+            centered_f = f_acts - h_mean
+            h_dists = b.sqrt(b.sum(centered_h * centered_h, axis=1))
+            f_dists = b.sqrt(b.sum(centered_f * centered_f, axis=1))
+            b.eval(h_projs, f_projs, h_dists, f_dists)
 
-            # Compute projections onto refusal direction
-            n_harmless = h_acts.shape[0]
-            n_harmful = f_acts.shape[0]
+            # Separation margins (positive = separable)
+            min_h_proj = float(b.to_scalar(b.min(h_projs)))
+            max_f_proj = float(b.to_scalar(b.max(f_projs)))
+            max_h_dist = float(b.to_scalar(b.max(h_dists)))
+            min_f_dist = float(b.to_scalar(b.min(f_dists)))
 
-            h_projs_list = []
-            h_dists_list = []
-            for i in range(n_harmless):
-                act = b.take(h_acts, b.array([i]), axis=0)
-                act = b.reshape(act, (act.shape[1],))
-                proj = float(b.to_scalar(b.sum(act * direction)))
-                diff = act - safe_centroid
-                dist = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
-                h_projs_list.append(proj)
-                h_dists_list.append(dist)
-
-            f_projs_list = []
-            f_dists_list = []
-            for i in range(n_harmful):
-                act = b.take(f_acts, b.array([i]), axis=0)
-                act = b.reshape(act, (act.shape[1],))
-                proj = float(b.to_scalar(b.sum(act * direction)))
-                diff = act - safe_centroid
-                dist = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
-                f_projs_list.append(proj)
-                f_dists_list.append(dist)
-
-            # Find best thresholds for this layer via grid search
-            sorted_projs = sorted(h_projs_list)
-            sorted_dists = sorted(h_dists_list)
-
-            best_layer_score = -1.0
-            for refusal_pct in [3, 5, 10, 15]:
-                for dist_pct in [85, 90, 95]:
-                    proj_idx = int(refusal_pct / 100.0 * n_harmless)
-                    proj_idx = max(0, min(proj_idx, n_harmless - 1))
-                    refusal_threshold = sorted_projs[proj_idx]
-
-                    dist_idx = int(dist_pct / 100.0 * n_harmless)
-                    dist_idx = max(0, min(dist_idx, n_harmless - 1))
-                    safe_radius = sorted_dists[dist_idx]
-
-                    # Check violations
-                    harmless_violations = sum(
-                        1 for p, d in zip(h_projs_list, h_dists_list)
-                        if p < refusal_threshold or d > safe_radius
-                    )
-                    harmful_violations = sum(
-                        1 for p, d in zip(f_projs_list, f_dists_list)
-                        if p < refusal_threshold or d > safe_radius
-                    )
-
-                    fpr = harmless_violations / max(n_harmless, 1)
-                    tpr = harmful_violations / max(n_harmful, 1)
-
-                    # Skip if FPR too high
-                    if fpr > target_fpr + 0.05:
-                        continue
-
-                    layer_score = tpr - fpr
-                    if layer_score > best_layer_score:
-                        best_layer_score = layer_score
-
-            score = best_layer_score
+            proj_margin = min_h_proj - max_f_proj
+            dist_margin = min_f_dist - max_h_dist
+            score = min(proj_margin, dist_margin)
 
             if score > best_score:
                 best_score = score
@@ -270,7 +218,7 @@ def run_geometric_guardrails(
 
         detection_layer = best_layer
         logger.info(
-            "Layer selection: max boundary score %.4f at layer %d",
+            "Layer selection: max separation score %.4f at layer %d",
             best_score, detection_layer
         )
 
@@ -296,14 +244,12 @@ def run_geometric_guardrails(
     refusal_direction = refusal_result.direction
     b.eval(refusal_direction)
 
-    # Optimize alignment boundary using both harmless and harmful activations
-    logger.info("Optimizing alignment boundary from model geometry...")
-    boundary = optimize_boundary_thresholds(
+    # Compute tight alignment boundary from harmless activations
+    logger.info("Computing alignment boundary from safe activations...")
+    boundary = compute_alignment_boundary(
         refusal_direction=refusal_direction,
-        harmless_activations=train_harmless_acts,
-        harmful_activations=train_harmful_acts,
+        safe_activations=train_harmless_acts,
         layer_index=detection_layer,
-        target_fpr=target_fpr,
         backend=b,
     )
 
@@ -340,7 +286,7 @@ def run_geometric_guardrails(
             # Test steering effectiveness
             if not check_result.is_within_boundary:
                 violations += 1
-                steered = steer_to_boundary(act, boundary, strength=1.0, backend=b)
+                steered = steer_to_boundary(act, boundary, backend=b)
                 steered_result = check_boundary(steered, boundary, backend=b)
                 steering_fixed = steered_result.is_within_boundary
             else:

@@ -1175,4 +1175,137 @@ def get_activation_provider() -> MLXActivationProvider:
     return MLXActivationProvider()
 
 
-__all__ = ["MLXActivationProvider", "get_activation_provider"]
+def get_embedding_weights(model: Any) -> "Array":
+    """Return embedding matrix [vocab_size, embed_dim] from model.
+
+    Args:
+        model: The MLX model.
+
+    Returns:
+        Embedding weight matrix.
+
+    Raises:
+        RuntimeError: If embedding layer cannot be found.
+    """
+    inner = model.model if hasattr(model, "model") else model
+
+    if hasattr(inner, "embed_tokens"):
+        return inner.embed_tokens.weight
+    elif hasattr(inner, "wte"):
+        return inner.wte.weight
+    else:
+        raise RuntimeError(
+            "Cannot find embedding layer (embed_tokens or wte). "
+            "Model architecture not supported for embedding access."
+        )
+
+
+def get_layer_activation(
+    model: Any,
+    input_ids: "Array",
+    layer_idx: int,
+) -> "Array | None":
+    """Get mean-pooled activation at specific layer for given input.
+
+    Args:
+        model: The MLX model.
+        input_ids: Token IDs [batch, seq_len] or [seq_len].
+        layer_idx: Target layer index.
+
+    Returns:
+        Mean-pooled activation [hidden_dim], or None if failed.
+    """
+    import mlx.core as mx
+
+    inner = model.model if hasattr(model, "model") else model
+
+    if not hasattr(inner, "layers"):
+        return None
+
+    # Ensure 2D input
+    if len(input_ids.shape) == 1:
+        input_ids = mx.expand_dims(input_ids, axis=0)
+
+    # Get embeddings
+    if hasattr(inner, "embed_tokens"):
+        h = inner.embed_tokens(input_ids)
+    elif hasattr(inner, "wte"):
+        h = inner.wte(input_ids)
+    else:
+        return None
+
+    # Forward through layers
+    for idx, layer in enumerate(inner.layers):
+        if idx > layer_idx:
+            break
+        result = layer(h)
+        if isinstance(result, tuple):
+            h = result[0]
+        else:
+            h = result
+
+        if idx == layer_idx:
+            # Mean pool over batch and sequence
+            pooled = mx.mean(h, axis=(0, 1))
+            mx.eval(pooled)
+            return pooled
+
+    return None
+
+
+def forward_embeddings_to_layer(
+    model: Any,
+    embeddings: "Array",
+    layer_idx: int,
+) -> "Array | None":
+    """Forward continuous embeddings (not token IDs) to get activation at layer.
+
+    This enables gradient-based probe generation by forwarding continuous
+    embeddings through the model without tokenization.
+
+    Args:
+        model: The MLX model.
+        embeddings: Continuous embeddings [batch, seq_len, embed_dim] or [seq_len, embed_dim].
+        layer_idx: Target layer index.
+
+    Returns:
+        Mean-pooled activation [hidden_dim], or None if failed.
+    """
+    import mlx.core as mx
+
+    inner = model.model if hasattr(model, "model") else model
+
+    if not hasattr(inner, "layers"):
+        return None
+
+    # Ensure 3D input
+    h = embeddings
+    if len(h.shape) == 2:
+        h = mx.expand_dims(h, axis=0)
+
+    # Forward through layers
+    for idx, layer in enumerate(inner.layers):
+        if idx > layer_idx:
+            break
+        result = layer(h)
+        if isinstance(result, tuple):
+            h = result[0]
+        else:
+            h = result
+
+        if idx == layer_idx:
+            # Mean pool over batch and sequence
+            pooled = mx.mean(h, axis=(0, 1))
+            mx.eval(pooled)
+            return pooled
+
+    return None
+
+
+__all__ = [
+    "MLXActivationProvider",
+    "get_activation_provider",
+    "get_embedding_weights",
+    "get_layer_activation",
+    "forward_embeddings_to_layer",
+]

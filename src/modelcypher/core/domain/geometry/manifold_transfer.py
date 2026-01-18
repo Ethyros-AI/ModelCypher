@@ -403,8 +403,6 @@ class CrossManifoldProjector:
         profile: AnchorDistanceProfile,
         target_anchor_activations: dict[str, "Array"],
         target_manifold_profile: ManifoldCurvatureProfile | None = None,
-        initial_position: "Array | None" = None,
-        use_curvature_correction: bool = True,
     ) -> TransferPoint:
         """Project a concept to target manifold via stress minimization.
 
@@ -418,9 +416,6 @@ class CrossManifoldProjector:
             profile: Anchor distance profile from source manifold.
             target_anchor_activations: Target model anchor activations.
             target_manifold_profile: Curvature profile of target (optional, for metadata).
-            initial_position: Starting point for optimization (optional).
-            use_curvature_correction: Whether to apply curvature correction to projected volumes.
-
         Returns:
             TransferPoint with computed position and quality metrics.
         """
@@ -481,21 +476,24 @@ class CrossManifoldProjector:
         convergence_tolerance = regularization_epsilon(backend, target_centroids_arr)
         n_anchors = len(matching_anchor_ids)
 
-        # Initialize position
-        if initial_position is not None:
-            position = backend.array(initial_position)
-        else:
-            # Use weighted centroid of anchors as initial guess
-            # Weighted average: sum(w_i * x_i) / sum(w_i)
-            weights_expanded = backend.reshape(weights, (-1, 1))
-            weighted_centroids = target_centroids_arr * weights_expanded
-            position = backend.sum(weighted_centroids, axis=0)
-            backend.eval(position)
+        # Initialize position from weighted centroid of anchors
+        # Weighted average: sum(w_i * x_i) / sum(w_i)
+        weights_expanded = backend.reshape(weights, (-1, 1))
+        weighted_centroids = target_centroids_arr * weights_expanded
+        position = backend.sum(weighted_centroids, axis=0)
+        backend.eval(position)
 
         position_reshaped = backend.reshape(position, (1, -1))
         all_points = backend.concatenate([position_reshaped, target_centroids_arr], axis=0)
         points_arr = backend.astype(all_points, compute_dtype)
         k_neighbors = derive_k_neighbors(points_arr, backend)
+
+        # Precompute anchor scale for step tolerance
+        anchor_norms = geodesic_norms(target_centroids_arr, backend)
+        backend.eval(anchor_norms)
+        anchor_scale_arr = backend.max(anchor_norms)
+        backend.eval(anchor_scale_arr)
+        anchor_scale = float(backend.to_scalar(anchor_scale_arr))
 
         # Gradient descent to minimize stress (precision-derived stopping)
         best_position = position
@@ -562,7 +560,9 @@ class CrossManifoldProjector:
             backend.eval(pos_norm_arr, update_norm_arr)
             pos_norm = float(backend.to_scalar(pos_norm_arr))
             update_norm = float(backend.to_scalar(update_norm_arr))
-            step_tol = float(division_epsilon(backend, position)) * max(1.0, pos_norm)
+            step_tol = float(division_epsilon(backend, position)) * max(
+                anchor_scale, pos_norm
+            )
             if update_norm <= step_tol:
                 break
 
@@ -607,7 +607,7 @@ class CrossManifoldProjector:
 
         # Project volume if available
         projected_volume = None
-        if profile.source_volume is not None and use_curvature_correction:
+        if profile.source_volume is not None:
             target_curvature = (
                 target_manifold_profile.curvature_at_point(best_position)
                 if target_manifold_profile

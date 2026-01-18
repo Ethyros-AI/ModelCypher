@@ -109,13 +109,11 @@ bin_width = 2 × IQR × n^(-1/3)
 - **Files**: intrinsic_dimension.py
 - **Status**: ✓ CITED
 
-### MAD-to-Standard-Deviation
-```
-scale = 1.4826 = 1/Φ⁻¹(0.75)
-```
-- **Why**: Exact conversion for Gaussian distribution. Mathematical constant.
-- **Files**: alignment_boundary.py
-- **Status**: ✓ PROVEN
+### Resolved: Alignment Boundary Percentiles/MAD Removed
+- Alignment boundary now uses tight min/max envelopes with ULP margins
+- No percentiles, no MAD scaling, no target FPR
+- **Files**: alignment_boundary.py, geometric_guardrails.py
+- **Status**: ✓ RESOLVED
 
 ---
 
@@ -194,20 +192,16 @@ These are places where we've written warnings or thresholds but **don't actually
 
 ---
 
-### Research Question 5: Manifold Transfer Ratio Clamp
+### Resolved: Manifold Transfer Ratio Clamp Removed
 
-**Current code**: Clamps ratio to [0.5, 2.0]
+**Previous code**: Ratio clamp in curvature-based volume projection
 **Location**: manifold_transfer.py
 
-**What we're really saying**: "We don't trust ratios outside this range."
+**Resolution**:
+- Removed clamp; ratio now reflects curvature scale directly
+- No bounds unless implied by precision (ULP/eps)
 
-**The actual questions**:
-1. What does a ratio < 0.5 or > 2.0 mean geometrically?
-2. Is this a failure mode, or valid behavior we don't understand?
-3. Should we derive bounds from geodesic curvature or variance envelopes?
-4. What happens if we remove the clamp entirely?
-
-**What we need**: Either derive bounds from geometry, or understand why extreme ratios occur.
+**Status**: ✓ RESOLVED
 
 ---
 

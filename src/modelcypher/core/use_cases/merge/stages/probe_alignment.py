@@ -35,6 +35,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _promote_precision,
     _proportional_layer_index,
+    compute_numerical_rank,
 )
 
 if TYPE_CHECKING:
@@ -141,7 +142,27 @@ def align_layers(
     source_gate_activations: dict[int, "Array"] | None = None,
     target_gate_activations: dict[int, "Array"] | None = None,
     backend: "Backend",
+    require_full_rank: bool = False,
 ) -> AlignmentResult:
+    """Align layers between source and target models.
+
+    Args:
+        source_layer_activations: Source model hidden state activations by layer.
+        target_layer_activations: Target model hidden state activations by layer.
+        source_intermediate_activations: Source intermediate (FFN) activations.
+        target_intermediate_activations: Target intermediate (FFN) activations.
+        source_gate_activations: Optional source gate activations.
+        target_gate_activations: Optional target gate activations.
+        backend: Backend for tensor operations.
+        require_full_rank: If True, raise RuntimeError when activation rank < hidden_dim.
+            This ensures alignment is only attempted with full-rank activation matrices.
+
+    Returns:
+        AlignmentResult with transforms and diagnostics.
+
+    Raises:
+        RuntimeError: If require_full_rank=True and any layer has rank < hidden_dim.
+    """
     layer_mapping: dict[int, int] = {}
     feature_transforms: dict[int, Any] = {}
     scale_ratios: dict[int, float] = {}
@@ -178,6 +199,57 @@ def align_layers(
             fisher_compatibility_by_layer=fisher_compatibility_by_layer,
             fisher_recommendations_by_layer=fisher_recommendations_by_layer,
         )
+
+    # =========================================================================
+    # RANK VALIDATION (when require_full_rank=True)
+    # =========================================================================
+    # Full-rank activation matrices ensure no information loss during alignment.
+    # If rank < hidden_dim, some directions aren't mapped, which can cause
+    # knowledge loss during merge transfer.
+    if require_full_rank:
+        rank_deficient_layers: list[tuple[int, int, int, str]] = []
+
+        # Check source layers
+        for layer_idx, acts in source_layer_activations.items():
+            if hasattr(acts, "shape"):
+                stacked = _promote_precision(acts, backend)
+            else:
+                stacked = _promote_precision(
+                    backend.stack(acts, axis=0), backend
+                )
+            rank, hidden_dim = compute_numerical_rank(stacked, backend)
+            if rank < hidden_dim:
+                rank_deficient_layers.append((layer_idx, rank, hidden_dim, "source"))
+
+        # Check target layers
+        for layer_idx, acts in target_layer_activations.items():
+            if hasattr(acts, "shape"):
+                stacked = _promote_precision(acts, backend)
+            else:
+                stacked = _promote_precision(
+                    backend.stack(acts, axis=0), backend
+                )
+            rank, hidden_dim = compute_numerical_rank(stacked, backend)
+            if rank < hidden_dim:
+                rank_deficient_layers.append((layer_idx, rank, hidden_dim, "target"))
+
+        if rank_deficient_layers:
+            # Build detailed diagnostic message
+            diagnostics = []
+            for layer_idx, rank, hidden_dim, model in rank_deficient_layers:
+                coverage = 100.0 * rank / hidden_dim if hidden_dim > 0 else 0.0
+                diagnostics.append(
+                    f"  {model} layer {layer_idx}: rank={rank}/{hidden_dim} ({coverage:.1f}%)"
+                )
+            raise RuntimeError(
+                f"ALIGNMENT FAILED: Rank-deficient activations detected.\n"
+                f"Full-rank coverage is required but the following layers have deficits:\n"
+                + "\n".join(diagnostics)
+                + "\n\nTo fix this, either:\n"
+                "1. Add more diverse probes to the atlas\n"
+                "2. Use orthogonal probe generation to augment rank\n"
+                "3. Set require_full_rank=False to proceed with partial coverage (not recommended)"
+            )
 
     source_layers = sorted(source_layer_activations.keys())
     target_layers = sorted(target_layer_activations.keys())

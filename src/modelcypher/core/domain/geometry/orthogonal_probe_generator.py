@@ -1,0 +1,555 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Orthogonal probe generation for full-rank alignment.
+
+Generates probes via gradient ascent to maximize activation in directions
+orthogonal to the current probe subspace. This enables systematic rank
+augmentation until activations span the full hidden dimension.
+
+The algorithm:
+1. Compute current activation rank via SVD
+2. Find null space basis (eigenvectors of A^T @ A with small eigenvalues)
+3. Gradient ascent on embeddings to maximize ||U_null^T @ activation||
+4. Discretize continuous embeddings to nearest token IDs
+
+Reference: Exp14 validation (experiments/validation_protocol/exp14_gradient_probe_generation/)
+showed ~1.0 rank per generated probe (theoretical optimum).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Callable
+
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
+from modelcypher.core.domain.geometry.precision_utils import (
+    _promote_precision_float32 as _promote_precision,
+)
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array, Backend
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class OrthogonalProbeResult:
+    """Result of generating a single orthogonal probe."""
+
+    token_ids: list[int]
+    text: str
+    orthogonal_component_norm: float
+
+
+@dataclass
+class RankAugmentationResult:
+    """Result of iterative rank augmentation."""
+
+    initial_rank: int
+    final_rank: int
+    hidden_dim: int
+    probes_generated: int
+    iterations: int
+    full_rank_achieved: bool
+    generated_probes: list[OrthogonalProbeResult]
+
+
+def compute_numerical_rank(
+    activations: "Array",
+    backend: "Backend",
+) -> tuple[int, int]:
+    """Compute numerical rank of activation matrix via SVD.
+
+    Uses threshold sigma_max * sqrt(eps) for numerical stability.
+
+    Args:
+        activations: Activation matrix [n_samples, hidden_dim].
+        backend: Backend for tensor operations.
+
+    Returns:
+        Tuple (rank, hidden_dim).
+    """
+    b = backend
+    acts = _promote_precision(activations, b)
+    b.eval(acts)
+
+    shape = b.shape(acts)
+    n_samples = int(shape[0])
+    hidden_dim = int(shape[1])
+
+    if n_samples == 0 or hidden_dim == 0:
+        return 0, hidden_dim
+
+    # SVD to get singular values
+    _, S, _ = b.svd(acts, compute_uv=True)
+    b.eval(S)
+
+    # Threshold: sigma_max * sqrt(eps)
+    eps = machine_epsilon(b, acts)
+    threshold_factor = sqrt_scalar(eps, b)
+
+    max_s_arr = b.max(S)
+    b.eval(max_s_arr)
+    max_s = float(b.to_scalar(max_s_arr))
+
+    threshold = max_s * threshold_factor
+
+    # Count singular values above threshold
+    rank_mask = S > threshold
+    rank_arr = b.sum(b.astype(rank_mask, "int32"))
+    b.eval(rank_arr)
+    rank = int(b.to_scalar(rank_arr))
+
+    return rank, hidden_dim
+
+
+def compute_null_space_basis(
+    activations: "Array",
+    rank: int,
+    backend: "Backend",
+) -> "Array | None":
+    """Compute basis for orthogonal complement of probe subspace.
+
+    Uses eigendecomposition of A^T @ A to find directions with smallest
+    eigenvalues (the null space of the current probe coverage).
+
+    Args:
+        activations: Activation matrix [n_samples, hidden_dim].
+        rank: Current numerical rank of activations.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Null space basis [hidden_dim, null_rank], or None if already full rank.
+    """
+    b = backend
+    acts = _promote_precision(activations, b)
+    b.eval(acts)
+
+    hidden_dim = int(b.shape(acts)[1])
+    null_rank = hidden_dim - rank
+
+    if null_rank <= 0:
+        return None  # Already full rank
+
+    # Covariance in hidden_dim space: A^T @ A
+    cov = b.matmul(b.transpose(acts), acts)
+    b.eval(cov)
+
+    # Eigendecomposition (eigh returns ascending eigenvalues)
+    eigvals, eigvecs = b.eigh(cov)
+    b.eval(eigvals, eigvecs)
+
+    # First null_rank eigenvectors (smallest eigenvalues) form the null space
+    U_null = eigvecs[:, :null_rank]
+    b.eval(U_null)
+
+    return U_null
+
+
+class OrthogonalProbeGenerator:
+    """Generates probes that activate in orthogonal directions.
+
+    Uses gradient ascent on continuous embeddings to find token sequences
+    that maximize activation in the null space of current probes.
+    """
+
+    def __init__(
+        self,
+        backend: "Backend",
+        n_steps: int = 30,
+        learning_rate: float = 0.05,
+        seq_len: int = 10,
+    ) -> None:
+        """Initialize generator.
+
+        Args:
+            backend: Backend for tensor operations.
+            n_steps: Number of gradient ascent steps per probe.
+            learning_rate: Step size for gradient ascent.
+            seq_len: Length of generated token sequences.
+        """
+        self.backend = backend
+        self.n_steps = n_steps
+        self.learning_rate = learning_rate
+        self.seq_len = seq_len
+
+    def generate_orthogonal_probe(
+        self,
+        model: Any,
+        tokenizer: Any,
+        U_null: "Array",
+        layer_idx: int,
+        get_layer_activation_fn: Callable[..., "Array"],
+        seed_tokens: list[int] | None = None,
+    ) -> OrthogonalProbeResult | None:
+        """Generate a probe that activates in the null space.
+
+        Uses gradient ascent on continuous embeddings, then discretizes
+        to nearest tokens.
+
+        Args:
+            model: The model to generate probes for.
+            tokenizer: Tokenizer for decoding.
+            U_null: Null space basis [hidden_dim, null_rank].
+            layer_idx: Target layer index for activation.
+            get_layer_activation_fn: Function(model, input_ids, layer_idx) -> activation.
+            seed_tokens: Optional initial token IDs.
+
+        Returns:
+            OrthogonalProbeResult or None if generation fails.
+        """
+        b = self.backend
+
+        # Get inner model and embedding weights
+        inner = model.model if hasattr(model, "model") else model
+
+        if hasattr(inner, "embed_tokens"):
+            embed_weight = inner.embed_tokens.weight
+        elif hasattr(inner, "wte"):
+            embed_weight = inner.wte.weight
+        else:
+            logger.warning("Cannot find embedding layer for probe generation")
+            return None
+
+        vocab_size = int(b.shape(embed_weight)[0])
+        embed_dim = int(b.shape(embed_weight)[1])
+
+        # Initialize token IDs
+        if seed_tokens is not None:
+            init_ids = b.array(seed_tokens[: self.seq_len])
+            current_len = int(b.shape(init_ids)[0])
+            if current_len < self.seq_len:
+                # Pad with zeros
+                pad = b.zeros((self.seq_len - current_len,), dtype="int32")
+                init_ids = b.concatenate([init_ids, pad], axis=0)
+        else:
+            # Random initialization avoiding edge tokens
+            init_ids = b.random_randint(100, vocab_size - 100, (self.seq_len,))
+        b.eval(init_ids)
+
+        # Get initial embeddings
+        embeds = b.take(embed_weight, init_ids, axis=0)  # [seq_len, embed_dim]
+        b.eval(embeds)
+
+        # Gradient ascent to maximize projection onto null space
+        for step in range(self.n_steps):
+            # Objective: maximize ||U_null^T @ activation||
+            # We use value_and_grad to compute gradient
+
+            def objective(e: "Array") -> "Array":
+                # Forward through layers to get activation
+                h = b.expand_dims(e, axis=0)  # [1, seq_len, embed_dim]
+
+                # Forward through layers up to target
+                for idx, layer in enumerate(inner.layers):
+                    if idx > layer_idx:
+                        break
+                    result = layer(h)
+                    if isinstance(result, tuple):
+                        h = result[0]
+                    else:
+                        h = result
+
+                # Mean pool over sequence
+                activation = b.mean(h, axis=(0, 1))  # [hidden_dim]
+
+                # Project onto null space
+                proj = b.matmul(U_null, b.matmul(b.transpose(U_null), activation))
+
+                # Return negative norm (we want to maximize)
+                norm_sq = b.sum(proj * proj)
+                return -b.sqrt(norm_sq + 1e-8)
+
+            # Compute gradient
+            loss_and_grad = b.value_and_grad(objective)
+            loss, grad = loss_and_grad(embeds)
+            b.eval(loss, grad)
+
+            # Gradient descent (actually ascent since objective is negated)
+            embeds = embeds - self.learning_rate * grad
+            b.eval(embeds)
+
+            if step % 10 == 0:
+                logger.debug(
+                    "Step %d: null_proj_norm = %.4f", step, -float(b.to_scalar(loss))
+                )
+
+        # Discretize: find nearest tokens for each position
+        final_ids = []
+        for pos in range(self.seq_len):
+            embed_pos = embeds[pos]  # [embed_dim]
+            # Distance to all vocab embeddings
+            diff = embed_weight - b.expand_dims(embed_pos, axis=0)
+            dists = b.sum(diff * diff, axis=1)
+            b.eval(dists)
+            nearest_id = int(b.to_scalar(b.argmin(dists)))
+            final_ids.append(nearest_id)
+
+        # Decode to text
+        try:
+            text = tokenizer.decode(final_ids)
+        except Exception:
+            text = "<decode-failed>"
+
+        # Compute final orthogonal component norm
+        final_input = b.array([final_ids])
+        b.eval(final_input)
+        activation = get_layer_activation_fn(model, final_input, layer_idx)
+        if activation is not None:
+            b.eval(activation)
+            proj = b.matmul(U_null, b.matmul(b.transpose(U_null), activation))
+            norm = b.sqrt(b.sum(proj * proj))
+            b.eval(norm)
+            orthogonal_norm = float(b.to_scalar(norm))
+        else:
+            orthogonal_norm = 0.0
+
+        return OrthogonalProbeResult(
+            token_ids=final_ids,
+            text=text,
+            orthogonal_component_norm=orthogonal_norm,
+        )
+
+    def augment_rank_iteratively(
+        self,
+        model: Any,
+        tokenizer: Any,
+        activations: "Array",
+        layer_idx: int,
+        get_layer_activation_fn: Callable[..., "Array"],
+        batch_size: int = 10,
+        max_iterations: int = 100,
+    ) -> RankAugmentationResult:
+        """Generate probes in batches until full rank is achieved.
+
+        Args:
+            model: The model to generate probes for.
+            tokenizer: Tokenizer for decoding.
+            activations: Current activation matrix [n_samples, hidden_dim].
+            layer_idx: Target layer index.
+            get_layer_activation_fn: Function(model, input_ids, layer_idx) -> activation.
+            batch_size: Number of probes to generate per iteration.
+            max_iterations: Maximum number of augmentation iterations.
+
+        Returns:
+            RankAugmentationResult with generation statistics.
+        """
+        b = self.backend
+        current_acts = _promote_precision(activations, b)
+        b.eval(current_acts)
+
+        initial_rank, hidden_dim = compute_numerical_rank(current_acts, b)
+        logger.info(
+            "RANK AUGMENTATION: Starting at rank %d/%d (%.1f%% coverage)",
+            initial_rank,
+            hidden_dim,
+            100.0 * initial_rank / hidden_dim,
+        )
+
+        if initial_rank >= hidden_dim:
+            logger.info("RANK AUGMENTATION: Already at full rank!")
+            return RankAugmentationResult(
+                initial_rank=initial_rank,
+                final_rank=initial_rank,
+                hidden_dim=hidden_dim,
+                probes_generated=0,
+                iterations=0,
+                full_rank_achieved=True,
+                generated_probes=[],
+            )
+
+        generated_probes: list[OrthogonalProbeResult] = []
+        total_generated = 0
+
+        for iteration in range(max_iterations):
+            # Compute current rank
+            current_rank, _ = compute_numerical_rank(current_acts, b)
+
+            if current_rank >= hidden_dim:
+                logger.info(
+                    "RANK AUGMENTATION: Full rank achieved at iteration %d", iteration
+                )
+                break
+
+            # Compute null space basis
+            U_null = compute_null_space_basis(current_acts, current_rank, b)
+            if U_null is None:
+                logger.info("RANK AUGMENTATION: No null space (full rank)")
+                break
+
+            null_dim = int(b.shape(U_null)[1])
+            logger.info(
+                "RANK AUGMENTATION: Iteration %d, rank=%d/%d, null_dim=%d",
+                iteration,
+                current_rank,
+                hidden_dim,
+                null_dim,
+            )
+
+            # Generate batch of probes
+            batch_activations = []
+            for _ in range(min(batch_size, null_dim)):
+                probe_result = self.generate_orthogonal_probe(
+                    model=model,
+                    tokenizer=tokenizer,
+                    U_null=U_null,
+                    layer_idx=layer_idx,
+                    get_layer_activation_fn=get_layer_activation_fn,
+                )
+
+                if probe_result is not None:
+                    generated_probes.append(probe_result)
+                    total_generated += 1
+
+                    # Get activation for this probe
+                    input_ids = b.array([probe_result.token_ids])
+                    b.eval(input_ids)
+                    activation = get_layer_activation_fn(model, input_ids, layer_idx)
+                    if activation is not None:
+                        b.eval(activation)
+                        batch_activations.append(activation)
+
+            if batch_activations:
+                # Stack new activations and concatenate with current
+                new_acts = b.stack(batch_activations, axis=0)
+                b.eval(new_acts)
+                current_acts = b.concatenate([current_acts, new_acts], axis=0)
+                b.eval(current_acts)
+
+            # Progress check
+            new_rank, _ = compute_numerical_rank(current_acts, b)
+            rank_increase = new_rank - current_rank
+            logger.info(
+                "RANK AUGMENTATION: Generated %d probes, rank increased by %d (%d -> %d)",
+                len(batch_activations),
+                rank_increase,
+                current_rank,
+                new_rank,
+            )
+
+            if rank_increase == 0:
+                logger.warning(
+                    "RANK AUGMENTATION: No rank increase in iteration %d, may be stuck",
+                    iteration,
+                )
+
+        final_rank, _ = compute_numerical_rank(current_acts, b)
+        full_rank_achieved = final_rank >= hidden_dim
+
+        logger.info(
+            "RANK AUGMENTATION: Complete. Final rank=%d/%d (%.1f%%), "
+            "generated=%d probes in %d iterations",
+            final_rank,
+            hidden_dim,
+            100.0 * final_rank / hidden_dim,
+            total_generated,
+            iteration + 1,
+        )
+
+        return RankAugmentationResult(
+            initial_rank=initial_rank,
+            final_rank=final_rank,
+            hidden_dim=hidden_dim,
+            probes_generated=total_generated,
+            iterations=iteration + 1,
+            full_rank_achieved=full_rank_achieved,
+            generated_probes=generated_probes,
+        )
+
+
+def validate_full_rank_coverage(
+    source_activations: dict[int, "Array"],
+    target_activations: dict[int, "Array"],
+    backend: "Backend",
+) -> dict[int, dict]:
+    """Validate rank coverage per layer.
+
+    Args:
+        source_activations: Source activations by layer.
+        target_activations: Target activations by layer.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Dict mapping layer -> {rank, dim, deficit, full_rank_achieved}.
+    """
+    b = backend
+    results: dict[int, dict] = {}
+
+    # Get common layers
+    common_layers = set(source_activations.keys()) & set(target_activations.keys())
+
+    for layer_idx in sorted(common_layers):
+        src_acts = source_activations[layer_idx]
+        tgt_acts = target_activations[layer_idx]
+
+        # Stack if list
+        if isinstance(src_acts, list):
+            src_acts = b.stack(src_acts, axis=0)
+        if isinstance(tgt_acts, list):
+            tgt_acts = b.stack(tgt_acts, axis=0)
+
+        b.eval(src_acts, tgt_acts)
+
+        # Compute ranks
+        src_rank, src_dim = compute_numerical_rank(src_acts, b)
+        tgt_rank, tgt_dim = compute_numerical_rank(tgt_acts, b)
+
+        # Use the larger dimension as reference
+        max_dim = max(src_dim, tgt_dim)
+        min_rank = min(src_rank, tgt_rank)
+
+        deficit = max_dim - min_rank
+        full_rank = deficit == 0
+
+        results[layer_idx] = {
+            "source_rank": src_rank,
+            "source_dim": src_dim,
+            "target_rank": tgt_rank,
+            "target_dim": tgt_dim,
+            "alignment_rank": min_rank,
+            "max_dim": max_dim,
+            "deficit": deficit,
+            "full_rank_achieved": full_rank,
+            "coverage_ratio": min_rank / max_dim if max_dim > 0 else 0.0,
+        }
+
+        if not full_rank:
+            logger.info(
+                "RANK COVERAGE Layer %d: %d/%d (%.1f%% coverage, deficit=%d)",
+                layer_idx,
+                min_rank,
+                max_dim,
+                100.0 * min_rank / max_dim,
+                deficit,
+            )
+
+    return results
+
+
+__all__ = [
+    "OrthogonalProbeGenerator",
+    "OrthogonalProbeResult",
+    "RankAugmentationResult",
+    "compute_numerical_rank",
+    "compute_null_space_basis",
+    "validate_full_rank_coverage",
+]

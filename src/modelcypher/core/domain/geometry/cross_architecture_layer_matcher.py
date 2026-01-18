@@ -133,6 +133,33 @@ class LayerMapping:
 
 
 @dataclass(frozen=True)
+class WeightedLayerSource:
+    """Weighted source layers for a target layer.
+
+    Used when multiple source layers contribute to one target (many-to-one),
+    weighted by CKA similarity.
+    """
+
+    target_layer: int
+    source_weights: dict[int, float]  # source_layer -> weight (normalized to sum=1)
+
+
+@dataclass(frozen=True)
+class InterpolatedLayerMapping:
+    """Interpolated mapping for one-to-many case.
+
+    When target has more layers than source, a target layer may fall
+    between two source layers. This provides interpolation weights.
+    """
+
+    target_layer: int
+    source_layer_low: int  # Lower source layer index
+    source_layer_high: int  # Higher source layer index (may equal low)
+    weight_low: float  # Weight for lower source (0-1)
+    weight_high: float  # Weight for higher source (0-1)
+
+
+@dataclass(frozen=True)
 class H2ValidationResult:
     """H2 validation result for layer correspondence.
 
@@ -174,6 +201,9 @@ class Result:
     visualization_data: VisualizationData
     source_model: str
     target_model: str
+    # Weighted mappings for cross-architecture transfer
+    many_to_one_weights: list[WeightedLayerSource] | None = None
+    one_to_many_interpolation: list[InterpolatedLayerMapping] | None = None
 
 
 class CrossArchitectureLayerMatcher:
@@ -257,6 +287,14 @@ class CrossArchitectureLayerMatcher:
             target_layer_count=target_count,
         )
 
+        # Compute weighted mappings for cross-architecture transfer
+        many_to_one = CrossArchitectureLayerMatcher.compute_many_to_one_weights(
+            cka_matrix, dp_path
+        )
+        one_to_many = CrossArchitectureLayerMatcher.compute_one_to_many_interpolation(
+            cka_matrix, dp_path
+        )
+
         return Result(
             mappings=mappings,
             mean_cka=float(mean_cka),
@@ -265,6 +303,8 @@ class CrossArchitectureLayerMatcher:
             visualization_data=visualization,
             source_model=source_crm.model_identifier,
             target_model=target_crm.model_identifier,
+            many_to_one_weights=many_to_one,
+            one_to_many_interpolation=one_to_many,
         )
 
     @staticmethod
@@ -322,6 +362,170 @@ class CrossArchitectureLayerMatcher:
             j = parent[i][j]
         path.reverse()
         return path, best_score
+
+    @staticmethod
+    def compute_many_to_one_weights(
+        cka_matrix: list[list[float]],
+        alignment_path: list[tuple[int, int]],
+    ) -> list[WeightedLayerSource]:
+        """Compute weighted source contributions for each target layer.
+
+        When multiple source layers map to the same target layer (many-to-one),
+        weights are derived from CKA similarity values - the invariant structure
+        determines contribution, not an arbitrary blend parameter.
+
+        Args:
+            cka_matrix: CKA similarity matrix [source_layers x target_layers].
+            alignment_path: DTW alignment path as (source, target) pairs.
+
+        Returns:
+            List of WeightedLayerSource, one per target layer.
+        """
+        if not alignment_path or not cka_matrix:
+            return []
+
+        backend = get_default_backend()
+        n_target = len(cka_matrix[0]) if cka_matrix else 0
+
+        # Group source layers by target
+        target_to_sources: dict[int, list[tuple[int, float]]] = {}
+        for source, target in alignment_path:
+            cka = cka_matrix[source][target] if source < len(cka_matrix) else 0.0
+            if target not in target_to_sources:
+                target_to_sources[target] = []
+            target_to_sources[target].append((source, cka))
+
+        result: list[WeightedLayerSource] = []
+        eps = division_epsilon(backend, backend.array([1.0]))
+
+        for target_layer in range(n_target):
+            if target_layer in target_to_sources:
+                sources = target_to_sources[target_layer]
+                # Normalize weights by CKA
+                total_cka = sum(cka for _, cka in sources)
+                if total_cka < eps:
+                    # Equal weights if all CKA near zero
+                    n = len(sources)
+                    weights = {src: 1.0 / n for src, _ in sources}
+                else:
+                    weights = {src: cka / total_cka for src, cka in sources}
+                result.append(WeightedLayerSource(target_layer, weights))
+            else:
+                # Target layer not in path - find nearest source by CKA
+                best_source = 0
+                best_cka = 0.0
+                for src in range(len(cka_matrix)):
+                    if cka_matrix[src][target_layer] > best_cka:
+                        best_cka = cka_matrix[src][target_layer]
+                        best_source = src
+                result.append(WeightedLayerSource(target_layer, {best_source: 1.0}))
+
+        return result
+
+    @staticmethod
+    def compute_one_to_many_interpolation(
+        cka_matrix: list[list[float]],
+        alignment_path: list[tuple[int, int]],
+    ) -> list[InterpolatedLayerMapping]:
+        """Compute interpolated source mapping for each target layer.
+
+        When source has fewer layers than target (one-to-many), target layers
+        between alignment points are interpolated from adjacent source layers.
+        Interpolation weights are derived from relative position and CKA values.
+
+        Args:
+            cka_matrix: CKA similarity matrix [source_layers x target_layers].
+            alignment_path: DTW alignment path as (source, target) pairs.
+
+        Returns:
+            List of InterpolatedLayerMapping, one per target layer.
+        """
+        if not alignment_path or not cka_matrix:
+            return []
+
+        backend = get_default_backend()
+        n_source = len(cka_matrix)
+        n_target = len(cka_matrix[0]) if cka_matrix else 0
+
+        # Build mapping from alignment path
+        # For each target layer, find bounding source layers
+        path_targets = [t for _, t in alignment_path]
+        path_sources = [s for s, _ in alignment_path]
+
+        result: list[InterpolatedLayerMapping] = []
+        eps = division_epsilon(backend, backend.array([1.0]))
+
+        for target_layer in range(n_target):
+            # Find where this target falls in the alignment path
+            if target_layer in path_targets:
+                # Direct mapping exists
+                idx = path_targets.index(target_layer)
+                source = path_sources[idx]
+                result.append(InterpolatedLayerMapping(
+                    target_layer=target_layer,
+                    source_layer_low=source,
+                    source_layer_high=source,
+                    weight_low=1.0,
+                    weight_high=0.0,
+                ))
+            else:
+                # Target not in path - interpolate between adjacent path points
+                # Find bounding path entries
+                low_idx = -1
+                high_idx = len(path_targets)
+
+                for i, t in enumerate(path_targets):
+                    if t < target_layer:
+                        low_idx = i
+                    elif t > target_layer and high_idx == len(path_targets):
+                        high_idx = i
+                        break
+
+                if low_idx < 0:
+                    # Before first path point - use first source
+                    source = path_sources[0]
+                    result.append(InterpolatedLayerMapping(
+                        target_layer=target_layer,
+                        source_layer_low=source,
+                        source_layer_high=source,
+                        weight_low=1.0,
+                        weight_high=0.0,
+                    ))
+                elif high_idx >= len(path_targets):
+                    # After last path point - use last source
+                    source = path_sources[-1]
+                    result.append(InterpolatedLayerMapping(
+                        target_layer=target_layer,
+                        source_layer_low=source,
+                        source_layer_high=source,
+                        weight_low=1.0,
+                        weight_high=0.0,
+                    ))
+                else:
+                    # Interpolate between low and high
+                    source_low = path_sources[low_idx]
+                    source_high = path_sources[high_idx]
+                    target_low = path_targets[low_idx]
+                    target_high = path_targets[high_idx]
+
+                    # Linear interpolation based on target position
+                    span = target_high - target_low
+                    if span < eps:
+                        weight_low = 0.5
+                    else:
+                        weight_low = (target_high - target_layer) / span
+
+                    weight_high = 1.0 - weight_low
+
+                    result.append(InterpolatedLayerMapping(
+                        target_layer=target_layer,
+                        source_layer_low=source_low,
+                        source_layer_high=source_high,
+                        weight_low=weight_low,
+                        weight_high=weight_high,
+                    ))
+
+        return result
 
     # _classify_confidence method removed - use raw CKA values directly.
 

@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    precision_dtype,
+    ulp_scalar,
 )
 
 if TYPE_CHECKING:
@@ -96,23 +96,19 @@ class BoundaryCheckResult:
 def compute_alignment_boundary(
     refusal_direction: "Array",
     safe_activations: "Array",
-    refusal_percentile: float = 5.0,
-    distance_percentile: float = 95.0,
     layer_index: int = 0,
     backend: "Backend | None" = None,
 ) -> AlignmentBoundary:
-    """Compute alignment boundary from safe training activations.
+    """Compute tight alignment boundary from safe training activations.
 
     Args:
         refusal_direction: The refusal/alignment vector (normalized) [d]
         safe_activations: Activations from safe prompts [n_samples, d]
-        refusal_percentile: Percentile for refusal threshold (lower = stricter)
-        distance_percentile: Percentile for distance threshold (higher = stricter)
         layer_index: Which transformer layer this boundary is for
         backend: Backend for tensor operations
 
     Returns:
-        AlignmentBoundary with data-derived thresholds
+        AlignmentBoundary with data-derived thresholds that include all safe samples
     """
     b = backend or get_default_backend()
 
@@ -137,29 +133,25 @@ def compute_alignment_boundary(
     distances = b.sqrt(b.sum(centered * centered, axis=1))  # [n_samples]
     b.eval(distances)
 
-    # Compute percentile-based thresholds
-    n = int(b.shape(projections)[0])
+    # Tight boundary: include all safe samples (no percentiles)
+    proj_min_arr = b.min(projections)
+    proj_max_arr = b.max(projections)
+    dist_max_arr = b.max(distances)
+    b.eval(proj_min_arr, proj_max_arr, dist_max_arr)
 
-    # Sort projections to find percentile
-    sorted_proj = b.sort(projections, axis=0)
-    b.eval(sorted_proj)
-    proj_idx = int(refusal_percentile / 100.0 * n)
-    proj_idx = max(0, min(proj_idx, n - 1))
-    refusal_threshold = float(b.to_scalar(b.take(sorted_proj, b.array([proj_idx]), axis=0)))
+    proj_min = float(b.to_scalar(proj_min_arr))
+    proj_max = float(b.to_scalar(proj_max_arr))
+    dist_max = float(b.to_scalar(dist_max_arr))
 
-    # Sort distances to find percentile
-    sorted_dist = b.sort(distances, axis=0)
-    b.eval(sorted_dist)
-    dist_idx = int(distance_percentile / 100.0 * n)
-    dist_idx = max(0, min(dist_idx, n - 1))
-    safe_radius = float(b.to_scalar(b.take(sorted_dist, b.array([dist_idx]), axis=0)))
+    proj_scale = max(abs(proj_min), abs(proj_max), 1.0)
+    dist_scale = max(abs(dist_max), 1.0)
+    refusal_threshold = proj_min - ulp_scalar(proj_scale, b)
+    safe_radius = dist_max + ulp_scalar(dist_scale, b)
 
     logger.info(
-        "Alignment boundary computed: refusal_threshold=%.4f (p%d), safe_radius=%.4f (p%d)",
+        "Alignment boundary computed: refusal_threshold=%.6f, safe_radius=%.6f",
         refusal_threshold,
-        int(refusal_percentile),
         safe_radius,
-        int(distance_percentile),
     )
 
     return AlignmentBoundary(
@@ -228,19 +220,16 @@ def check_boundary(
 def steer_to_boundary(
     activation: "Array",
     boundary: AlignmentBoundary,
-    strength: float = 1.0,
     backend: "Backend | None" = None,
 ) -> "Array":
     """Steer activation back within boundary if outside.
 
     If the activation has low projection onto the refusal direction,
-    add the refusal direction to increase it. The strength parameter
-    controls how aggressively to steer.
+    add the refusal direction to increase it.
 
     Args:
         activation: Single activation vector [d]
         boundary: The alignment boundary
-        strength: Steering strength multiplier (default 1.0)
         backend: Backend for tensor operations
 
     Returns:
@@ -264,7 +253,7 @@ def steer_to_boundary(
         # Calculate how much to add to reach threshold
         deficit = boundary.refusal_threshold - check_result.refusal_projection
         # Add direction scaled by deficit and strength
-        steered = steered + strength * deficit * boundary.refusal_direction
+        steered = steered + deficit * boundary.refusal_direction
         b.eval(steered)
 
     # If too far from centroid, pull toward centroid
@@ -282,7 +271,7 @@ def steer_to_boundary(
         # Calculate how much to move to get within radius
         excess = check_result.distance_to_centroid - boundary.safe_radius
         # Move toward centroid
-        steered = steered + strength * excess * to_centroid_unit
+        steered = steered + excess * to_centroid_unit
         b.eval(steered)
 
     return steered
@@ -325,161 +314,6 @@ def batch_check_boundary(
     return results, violation_rate
 
 
-def optimize_boundary_thresholds(
-    refusal_direction: "Array",
-    harmless_activations: "Array",
-    harmful_activations: "Array",
-    layer_index: int = 0,
-    target_fpr: float = 0.10,
-    backend: "Backend | None" = None,
-) -> AlignmentBoundary:
-    """Optimize boundary thresholds directly from model geometry.
-
-    Instead of using fixed percentiles, this function finds optimal thresholds
-    by maximizing detection rate (recall) subject to a target false positive rate.
-
-    The optimization:
-    1. Compute projections and distances for both harmless and harmful
-    2. For refusal threshold: find value that achieves target FPR on harmless
-    3. For safe radius: find value that achieves target FPR on harmless
-    4. Select the threshold combination that maximizes harmful detection
-
-    Args:
-        refusal_direction: The refusal/alignment vector (normalized) [d]
-        harmless_activations: Activations from harmless prompts [n_harmless, d]
-        harmful_activations: Activations from harmful prompts [n_harmful, d]
-        layer_index: Which transformer layer this boundary is for
-        target_fpr: Target false positive rate (default 10%)
-        backend: Backend for tensor operations
-
-    Returns:
-        AlignmentBoundary with geometry-optimized thresholds
-    """
-    b = backend or get_default_backend()
-
-    # Ensure direction is normalized
-    direction = refusal_direction
-    dir_norm = b.sqrt(b.sum(direction * direction))
-    eps = division_epsilon(b, direction)
-    direction = direction / b.maximum(dir_norm, b.array([eps]))
-    b.eval(direction)
-
-    # Compute safe centroid from harmless activations
-    safe_centroid = b.mean(harmless_activations, axis=0)
-    b.eval(safe_centroid)
-
-    n_harmless = int(b.shape(harmless_activations)[0])
-    n_harmful = int(b.shape(harmful_activations)[0])
-
-    # Compute projections and distances for harmless
-    harmless_projs = []
-    harmless_dists = []
-    for i in range(n_harmless):
-        act = b.take(harmless_activations, b.array([i]), axis=0)
-        act = b.reshape(act, (act.shape[1],))
-        proj = float(b.to_scalar(b.sum(act * direction)))
-        diff = act - safe_centroid
-        dist = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
-        harmless_projs.append(proj)
-        harmless_dists.append(dist)
-
-    # Compute projections and distances for harmful
-    harmful_projs = []
-    harmful_dists = []
-    for i in range(n_harmful):
-        act = b.take(harmful_activations, b.array([i]), axis=0)
-        act = b.reshape(act, (act.shape[1],))
-        proj = float(b.to_scalar(b.sum(act * direction)))
-        diff = act - safe_centroid
-        dist = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
-        harmful_projs.append(proj)
-        harmful_dists.append(dist)
-
-    # Find optimal thresholds by grid search
-    # Try percentiles from 1% to 20% for refusal (lower projection = violation)
-    # Try percentiles from 80% to 99% for distance (higher distance = violation)
-    best_f1 = -1.0
-    best_refusal_thresh = 0.0
-    best_safe_radius = 0.0
-
-    sorted_harmless_projs = sorted(harmless_projs)
-    sorted_harmless_dists = sorted(harmless_dists)
-
-    for refusal_pct in range(1, 21, 2):  # 1%, 3%, 5%, ..., 19%
-        for dist_pct in range(80, 100, 2):  # 80%, 82%, ..., 98%
-            # Compute thresholds at these percentiles
-            proj_idx = int(refusal_pct / 100.0 * n_harmless)
-            proj_idx = max(0, min(proj_idx, n_harmless - 1))
-            refusal_thresh = sorted_harmless_projs[proj_idx]
-
-            dist_idx = int(dist_pct / 100.0 * n_harmless)
-            dist_idx = max(0, min(dist_idx, n_harmless - 1))
-            safe_radius = sorted_harmless_dists[dist_idx]
-
-            # Count violations
-            harmless_violations = sum(
-                1 for p, d in zip(harmless_projs, harmless_dists)
-                if p < refusal_thresh or d > safe_radius
-            )
-            harmful_violations = sum(
-                1 for p, d in zip(harmful_projs, harmful_dists)
-                if p < refusal_thresh or d > safe_radius
-            )
-
-            # Compute metrics
-            fpr = harmless_violations / max(n_harmless, 1)
-            tpr = harmful_violations / max(n_harmful, 1)
-
-            # Skip if FPR is too high
-            if fpr > target_fpr + 0.05:
-                continue
-
-            # Compute F1-like score (using TPR as recall, 1-FPR as "negative precision")
-            # We want high TPR and low FPR
-            if tpr + (1 - fpr) > 0:
-                # Score that balances detection and false positives
-                score = 2 * tpr * (1 - fpr) / (tpr + (1 - fpr))
-            else:
-                score = 0.0
-
-            if score > best_f1:
-                best_f1 = score
-                best_refusal_thresh = refusal_thresh
-                best_safe_radius = safe_radius
-
-    # If no good threshold found, use MAD-based robust statistics
-    if best_f1 < 0:
-        # Median Absolute Deviation (MAD) with Gaussian scale factor
-        # For a Gaussian, MAD * 1.4826 ≈ σ
-        import statistics
-        mad_scale = 1.4826  # MAD to σ conversion for Gaussian
-
-        # Refusal threshold: lower bound (median - 3σ)
-        proj_median = statistics.median(harmless_projs)
-        proj_mad = statistics.median([abs(p - proj_median) for p in harmless_projs])
-        best_refusal_thresh = proj_median - 3 * mad_scale * proj_mad
-
-        # Safe radius: upper bound (median + 3σ)
-        dist_median = statistics.median(harmless_dists)
-        dist_mad = statistics.median([abs(d - dist_median) for d in harmless_dists])
-        best_safe_radius = dist_median + 3 * mad_scale * dist_mad
-
-    logger.info(
-        "Optimized boundary: refusal_threshold=%.4f, safe_radius=%.4f (score=%.4f)",
-        best_refusal_thresh,
-        best_safe_radius,
-        best_f1,
-    )
-
-    return AlignmentBoundary(
-        refusal_direction=direction,
-        safe_centroid=safe_centroid,
-        refusal_threshold=best_refusal_thresh,
-        safe_radius=best_safe_radius,
-        layer_index=layer_index,
-    )
-
-
 __all__ = [
     "AlignmentBoundary",
     "BoundaryCheckResult",
@@ -487,6 +321,5 @@ __all__ = [
     "batch_check_boundary",
     "check_boundary",
     "compute_alignment_boundary",
-    "optimize_boundary_thresholds",
     "steer_to_boundary",
 ]

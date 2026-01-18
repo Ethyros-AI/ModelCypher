@@ -216,3 +216,58 @@ class TestCrossArchitectureEdgeCases:
 
         # Should not crash on zero activations
         assert result is not None
+
+    def test_many_to_one_weights(self) -> None:
+        """Test many-to-one weighted mapping when source has more layers."""
+        source = _build_crm_with_dims("source-deep", hidden_dim=4, layer_count=8)
+        target = _build_crm_with_dims("target-shallow", hidden_dim=4, layer_count=4)
+
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
+
+        # Should have many-to-one weights
+        assert result.many_to_one_weights is not None
+        # One entry per target layer
+        assert len(result.many_to_one_weights) == 4
+
+        # Weights should sum to 1 for each target
+        for weighted in result.many_to_one_weights:
+            total = sum(weighted.source_weights.values())
+            assert abs(total - 1.0) < 1e-6, f"Weights sum to {total}, expected 1.0"
+
+    def test_one_to_many_interpolation(self) -> None:
+        """Test one-to-many interpolation when target has more layers."""
+        source = _build_crm_with_dims("source-shallow", hidden_dim=4, layer_count=4)
+        target = _build_crm_with_dims("target-deep", hidden_dim=4, layer_count=8)
+
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
+
+        # Should have one-to-many interpolation
+        assert result.one_to_many_interpolation is not None
+        # One entry per target layer
+        assert len(result.one_to_many_interpolation) == 8
+
+        # Weights should sum to 1 for each target
+        for interp in result.one_to_many_interpolation:
+            total = interp.weight_low + interp.weight_high
+            assert abs(total - 1.0) < 1e-6, f"Weights sum to {total}, expected 1.0"
+
+    def test_weighted_mappings_same_layer_count(self) -> None:
+        """Test weighted mappings when models have same layer count."""
+        source = _build_crm_with_dims("source", hidden_dim=4, layer_count=4)
+        target = _build_crm_with_dims("target", hidden_dim=4, layer_count=4)
+
+        result = CrossArchitectureLayerMatcher.find_correspondence(source, target)
+
+        # Both should exist
+        assert result.many_to_one_weights is not None
+        assert result.one_to_many_interpolation is not None
+
+        # DTW produces a path - many-to-one weights should sum to 1
+        for weighted in result.many_to_one_weights:
+            total = sum(weighted.source_weights.values())
+            assert abs(total - 1.0) < 1e-6
+
+        # Interpolation weights should also sum to 1
+        for interp in result.one_to_many_interpolation:
+            total = interp.weight_low + interp.weight_high
+            assert abs(total - 1.0) < 1e-6

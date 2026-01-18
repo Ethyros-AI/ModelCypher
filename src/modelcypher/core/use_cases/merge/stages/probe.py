@@ -51,6 +51,14 @@ from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _precision_reference,
     _promote_precision,
     _select_probe_text,
+    compute_numerical_rank,
+    validate_full_rank_coverage,
+)
+from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+    OrthogonalProbeGenerator,
+)
+from modelcypher.adapters.mlx_activation_provider import (
+    get_layer_activation,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
 
@@ -319,6 +327,207 @@ def _probe_precise(
         probes_processed,
         probes_failed,
     )
+
+    # =========================================================================
+    # RANK VALIDATION AND AUGMENTATION - Ensure full rank before alignment
+    # =========================================================================
+    # Full rank (rank == hidden_dim) ensures NO information loss during alignment.
+    # If rank is deficient, we MUST augment until full rank is achieved.
+    # This is not optional. Alignment without full rank loses directions.
+    rank_coverage: dict[int, dict] | None = None
+    rank_augmentation_metrics: dict[str, Any] = {
+        "initial_coverage": {},
+        "final_coverage": {},
+        "probes_generated_per_layer": {},
+        "augmentation_iterations": 0,
+        "full_rank_achieved": False,
+    }
+
+    # Check initial rank coverage
+    rank_coverage = validate_full_rank_coverage(
+        source_activations=source_layer_activations,
+        target_activations=target_layer_activations,
+        backend=b,
+    )
+
+    if rank_coverage:
+        # Record initial state
+        for layer_idx, info in rank_coverage.items():
+            rank_augmentation_metrics["initial_coverage"][layer_idx] = {
+                "rank": info["alignment_rank"],
+                "dim": info["max_dim"],
+                "coverage": info["coverage_ratio"],
+                "deficit": info["deficit"],
+            }
+
+        # Identify deficient layers
+        deficient_layers = [
+            (layer_idx, info)
+            for layer_idx, info in rank_coverage.items()
+            if not info["full_rank_achieved"]
+        ]
+
+        if deficient_layers:
+            logger.info(
+                "RANK AUGMENTATION: %d layers have rank deficit. Augmenting...",
+                len(deficient_layers),
+            )
+
+            # Initialize generator for augmentation
+            generator = OrthogonalProbeGenerator(
+                backend=b,
+                n_steps=30,
+                learning_rate=0.05,
+                seq_len=10,
+            )
+
+            # Define activation getter for the generator
+            def get_activation_for_layer(model: Any, input_ids: Any, layer_idx: int) -> Any:
+                return get_layer_activation(model, input_ids, layer_idx)
+
+            total_probes_generated = 0
+            augmentation_round = 0
+            max_augmentation_rounds = 50  # Safety limit
+
+            while deficient_layers and augmentation_round < max_augmentation_rounds:
+                augmentation_round += 1
+                logger.info(
+                    "RANK AUGMENTATION: Round %d, %d deficient layers remaining",
+                    augmentation_round,
+                    len(deficient_layers),
+                )
+
+                for layer_idx, info in deficient_layers:
+                    # Get current activations for this layer
+                    src_acts = source_layer_activations.get(layer_idx)
+                    tgt_acts = target_layer_activations.get(layer_idx)
+
+                    if src_acts is None or tgt_acts is None:
+                        continue
+
+                    # Stack if list
+                    if isinstance(src_acts, list):
+                        src_stacked = b.stack(src_acts, axis=0)
+                    else:
+                        src_stacked = src_acts
+
+                    # Run augmentation for source model
+                    aug_result = generator.augment_rank_iteratively(
+                        model=source_model,
+                        tokenizer=source_tokenizer,
+                        activations=src_stacked,
+                        layer_idx=layer_idx,
+                        get_layer_activation_fn=get_activation_for_layer,
+                        batch_size=10,
+                        max_iterations=10,
+                    )
+
+                    probes_this_layer = aug_result.probes_generated
+                    total_probes_generated += probes_this_layer
+
+                    if layer_idx not in rank_augmentation_metrics["probes_generated_per_layer"]:
+                        rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] = 0
+                    rank_augmentation_metrics["probes_generated_per_layer"][layer_idx] += probes_this_layer
+
+                    # Collect activations for generated probes on BOTH models
+                    for probe_result in aug_result.generated_probes:
+                        token_ids = probe_result.token_ids
+
+                        # Source activation
+                        src_input = b.array([token_ids])
+                        b.eval(src_input)
+                        src_act = get_layer_activation(source_model, src_input, layer_idx)
+                        if src_act is not None:
+                            b.eval(src_act)
+                            if isinstance(source_layer_activations[layer_idx], list):
+                                source_layer_activations[layer_idx].append(src_act)
+                            else:
+                                source_layer_activations[layer_idx] = b.concatenate(
+                                    [source_layer_activations[layer_idx], b.expand_dims(src_act, 0)],
+                                    axis=0,
+                                )
+
+                        # Target activation (same tokens)
+                        tgt_input = b.array([token_ids])
+                        b.eval(tgt_input)
+                        tgt_act = get_layer_activation(target_model, tgt_input, layer_idx)
+                        if tgt_act is not None:
+                            b.eval(tgt_act)
+                            if isinstance(target_layer_activations[layer_idx], list):
+                                target_layer_activations[layer_idx].append(tgt_act)
+                            else:
+                                target_layer_activations[layer_idx] = b.concatenate(
+                                    [target_layer_activations[layer_idx], b.expand_dims(tgt_act, 0)],
+                                    axis=0,
+                                )
+
+                    logger.info(
+                        "RANK AUGMENTATION: Layer %d generated %d probes (rank %d -> %d)",
+                        layer_idx,
+                        probes_this_layer,
+                        info["alignment_rank"],
+                        aug_result.final_rank,
+                    )
+
+                # Re-check rank coverage after this round
+                rank_coverage = validate_full_rank_coverage(
+                    source_activations=source_layer_activations,
+                    target_activations=target_layer_activations,
+                    backend=b,
+                )
+
+                # Update deficient layers list
+                deficient_layers = [
+                    (layer_idx, info)
+                    for layer_idx, info in rank_coverage.items()
+                    if not info["full_rank_achieved"]
+                ]
+
+            rank_augmentation_metrics["augmentation_iterations"] = augmentation_round
+            rank_augmentation_metrics["total_probes_generated"] = total_probes_generated
+
+            if deficient_layers:
+                # Still have deficits after max rounds - this is a FAILURE
+                deficit_summary = ", ".join(
+                    f"layer {idx}: {info['alignment_rank']}/{info['max_dim']}"
+                    for idx, info in deficient_layers
+                )
+                raise RuntimeError(
+                    f"RANK AUGMENTATION FAILED: Could not achieve full rank after "
+                    f"{max_augmentation_rounds} rounds. Remaining deficits: {deficit_summary}. "
+                    f"Alignment would lose information. Cannot proceed."
+                )
+
+            logger.info(
+                "RANK AUGMENTATION: Complete. Generated %d total probes in %d rounds.",
+                total_probes_generated,
+                augmentation_round,
+            )
+
+        # Record final state
+        for layer_idx, info in rank_coverage.items():
+            rank_augmentation_metrics["final_coverage"][layer_idx] = {
+                "rank": info["alignment_rank"],
+                "dim": info["max_dim"],
+                "coverage": info["coverage_ratio"],
+                "deficit": info["deficit"],
+            }
+
+        rank_augmentation_metrics["full_rank_achieved"] = all(
+            info["full_rank_achieved"] for info in rank_coverage.values()
+        )
+
+        # Final coverage summary
+        coverage_ratios = [v["coverage_ratio"] for v in rank_coverage.values()]
+        mean_coverage = sum(coverage_ratios) / len(coverage_ratios) if coverage_ratios else 0.0
+        min_coverage = min(coverage_ratios) if coverage_ratios else 0.0
+
+        logger.info(
+            "RANK COVERAGE FINAL: mean=%.1f%%, min=%.1f%%, all_full_rank=%s",
+            100.0 * mean_coverage,
+            100.0 * min_coverage,
+            rank_augmentation_metrics["full_rank_achieved"],
+        )
 
     intersection_map_obj: Any | None = None
     dimension_correlations: dict = {}
@@ -663,6 +872,8 @@ def _probe_precise(
             "n_shared": split_cka_result.n_shared if split_cka_result else None,
             "n_novel": split_cka_result.n_novel if split_cka_result else None,
         } if split_cka_result else None,
+        # Rank coverage metrics for alignment validation
+        "rank_augmentation": rank_augmentation_metrics if rank_augmentation_metrics else None,
     }
 
     if split_cka_result:
