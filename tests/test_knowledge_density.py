@@ -450,16 +450,23 @@ class TestDensityScoreRange:
             score = analyzer._compute_density_score(result)
             assert score > 0.0
 
-    def test_density_score_bounded(self, backend):
-        """Density score should be bounded by 1.0."""
+    def test_density_score_inverse_relationship(self, backend):
+        """Density score = 1/intrinsic_dimension (no artificial bounds)."""
         from modelcypher.core.domain.geometry.concept_dimensionality import (
             ConceptDimensionalityResult,
         )
 
         analyzer = KnowledgeDensityAnalyzer(backend)
 
-        # Various intrinsic dimensions
-        for id_val in [0.1, 0.5, 1.0, 5.0, 10.0]:
+        # Various intrinsic dimensions - score = 1/ID
+        test_cases = [
+            (0.1, 10.0),   # ID < 1 => score > 1
+            (0.5, 2.0),    # ID < 1 => score > 1
+            (1.0, 1.0),    # ID = 1 => score = 1
+            (5.0, 0.2),    # ID > 1 => score < 1
+            (10.0, 0.1),   # ID > 1 => score < 1
+        ]
+        for id_val, expected_score in test_cases:
             result = ConceptDimensionalityResult(
                 probe_id="test",
                 name="Test",
@@ -476,7 +483,7 @@ class TestDensityScoreRange:
                 ci_upper=None,
             )
             score = analyzer._compute_density_score(result)
-            assert score <= 1.0
+            assert abs(score - expected_score) < 1e-9, f"ID={id_val}: expected {expected_score}, got {score}"
 
 
 class TestGeodesicMath:

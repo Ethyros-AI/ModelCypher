@@ -182,15 +182,20 @@ class TestTrajectoryCoherence:
     """Tests for trajectory coherence validation."""
 
     def test_repetitive_output_detected(self):
-        """Repetitive output should be flagged as degenerate."""
+        """Repetitive output should have high repetition metrics.
+
+        Note: is_degenerate is only set when comparing to baseline (no fixed thresholds).
+        This test verifies raw metrics indicate repetition.
+        """
         prompt = "The capital of France is"
         output = "topology topology topology topology topology topology topology"
 
         metrics = analyze_output_coherence(prompt, output)
 
-        assert metrics.is_degenerate, "Repetitive output should be degenerate"
+        # Check raw metrics indicate repetition (no fixed threshold for is_degenerate)
         assert metrics.repetition_score > 0.5, "Should have high repetition score"
-        assert "repeat" in metrics.degenerate_reason.lower() or "collapse" in metrics.degenerate_reason.lower()
+        assert metrics.unique_token_ratio < 0.2, "Should have low unique token ratio"
+        assert metrics.max_token_ratio == 1.0, "Single token should dominate"
 
     def test_coherent_output_passes(self):
         """Coherent output should not be flagged."""
@@ -203,14 +208,20 @@ class TestTrajectoryCoherence:
         assert metrics.repetition_score < 0.5, "Should have low repetition score"
 
     def test_single_token_collapse_detected(self):
-        """Single token repeated many times should be detected."""
+        """Single token repeated many times should show extreme repetition metrics.
+
+        Note: is_degenerate is only set when comparing to baseline (no fixed thresholds).
+        This test verifies raw metrics indicate single-token collapse.
+        """
         prompt = "What is 2+2?"
         output = "the the the the the the the the the the the the"
 
         metrics = analyze_output_coherence(prompt, output)
 
-        assert metrics.is_degenerate, "Single token collapse should be degenerate"
-        assert "collapse" in metrics.degenerate_reason.lower() or "repeat" in metrics.degenerate_reason.lower()
+        # Check raw metrics indicate collapse (no fixed threshold for is_degenerate)
+        assert metrics.repetition_score > 0.9, "Should have very high repetition score"
+        assert metrics.unique_token_ratio < 0.1, "Should have very low unique token ratio"
+        assert metrics.max_token_ratio == 1.0, "Single token should be 100% of output"
 
     def test_short_output_handled(self):
         """Very short output should be handled gracefully."""

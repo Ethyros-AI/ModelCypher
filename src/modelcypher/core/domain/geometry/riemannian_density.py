@@ -25,7 +25,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     e_value,
@@ -59,7 +58,21 @@ from .riemannian_utils import (
 
 logger = logging.getLogger(__name__)
 
-_cache = ComputationCache.shared()
+
+def _logdet_from_eigenvalues(
+    backend: "Backend",
+    eigenvalues: "Array",
+) -> float | None:
+    """Return log(det) from eigenvalues, or None if non-positive."""
+    min_eig = backend.min(eigenvalues)
+    backend.eval(min_eig)
+    if float(backend.to_scalar(min_eig)) <= 0.0:
+        return None
+    tiny = tiny_value(backend, eigenvalues)
+    clamped = backend.maximum(eigenvalues, backend.full(eigenvalues.shape, tiny))
+    logdet_arr = backend.sum(backend.log(clamped))
+    backend.eval(logdet_arr)
+    return float(backend.to_scalar(logdet_arr))
 
 
 class InfluenceType(str, Enum):
@@ -76,8 +89,8 @@ class InfluenceType(str, Enum):
 # =============================================================================
 # All parameters are derived from data:
 # - influence_type: derived from data kurtosis
-#   - kurtosis > 3 + threshold → Student-t (heavy tails)
-#   - kurtosis ≈ 3 → Gaussian
+#   - kurtosis > 3 + eps → Student-t (heavy tails)
+#   - kurtosis <= 3 + eps → Gaussian
 # - student_t_df: derived from kurtosis: df = 4 + 6/(kurtosis - 3)
 # - covariance_regularization: from machine epsilon
 # - curvature_correction: enabled by default
@@ -145,17 +158,9 @@ class ConceptVolume:
             backend = get_default_backend()
             # slogdet returns (sign, logdet) - we compute via eigenvalues (geodesic - GPU-only)
             eigenvalues, _ = self._covariance_eigendecomposition()
-            min_eig = backend.min(eigenvalues)
-            backend.eval(min_eig)
-            if float(backend.to_scalar(min_eig)) <= 0.0:
+            logdet = _logdet_from_eigenvalues(backend, eigenvalues)
+            if logdet is None:
                 logdet = -inf_value(backend)
-            else:
-                # Clamp eigenvalues to tiny_value before log for numerical stability
-                tiny = tiny_value(backend, eigenvalues)
-                clamped_eigenvalues = backend.maximum(eigenvalues, backend.full(eigenvalues.shape, tiny))
-                logdet_arr = backend.sum(backend.log(clamped_eigenvalues))
-                backend.eval(logdet_arr)
-                logdet = float(backend.to_scalar(logdet_arr))
             object.__setattr__(self, "_log_det_cov", logdet)
         return self._log_det_cov
 
@@ -268,11 +273,7 @@ class ConceptVolume:
     ) -> float:
         """Compute geodesic distance from centroid using cached graph."""
         backend = get_default_backend()
-        if self._geodesic_context is None or self.raw_activations is None:
-            raise ValueError(
-                "Geodesic context required for Riemannian log map. "
-                "Build volumes with store_raw_activations=True."
-            )
+        self._require_geodesic_context()
 
         rg = RiemannianGeometry(backend)
         geo_from_centroid = self._geo_from_centroid
@@ -295,6 +296,13 @@ class ConceptVolume:
         geo_dist = backend.min(total_dists)
         backend.eval(geo_dist)
         return float(backend.to_scalar(geo_dist))
+
+    def _require_geodesic_context(self) -> None:
+        if self._geodesic_context is None or self.raw_activations is None:
+            raise ValueError(
+                "Geodesic context required for Riemannian log map. "
+                "Build volumes with store_raw_activations=True."
+            )
 
     def _compute_tangent_vector(self, point: "Array") -> "Array":
         """Compute log-map tangent from centroid to point."""
@@ -433,11 +441,7 @@ class ConceptVolume:
         diff = points_arr - centroid_arr  # (n, d)
 
         # Geodesic context is required - no chord-only fallback on curved manifolds
-        if self._geodesic_context is None or self.raw_activations is None:
-            raise ValueError(
-                "Geodesic context required for Riemannian log map. "
-                "Build volumes with store_raw_activations=True."
-            )
+        self._require_geodesic_context()
 
         backend.eval(points_arr)
         rg = RiemannianGeometry(backend)
@@ -597,7 +601,7 @@ class RiemannianDensityEstimator:
                 local_curvature=None,
                 num_samples=n,
                 influence_type=InfluenceType.GAUSSIAN,  # Default for single point
-                student_t_df=30.0,  # High df approaches Gaussian
+                student_t_df=0.0,
                 raw_activations=activations if store_raw_activations else None,
                 _geodesic_context=geodesic_context if store_raw_activations else None,
             )
@@ -659,8 +663,9 @@ class RiemannianDensityEstimator:
         # Student-t with df=3 has kurtosis=inf, df→∞ approaches Gaussian (kurtosis=3)
         # Compute excess kurtosis from centered activations
         centered = activations - centroid
-        var = backend.mean(centered * centered)
-        fourth = backend.mean(centered * centered * centered * centered)
+        centered_sq = centered * centered
+        var = backend.mean(centered_sq)
+        fourth = backend.mean(centered_sq * centered_sq)
         backend.eval(var, fourth)
         var_val = float(backend.to_scalar(var))
         fourth_val = float(backend.to_scalar(fourth))
@@ -670,20 +675,15 @@ class RiemannianDensityEstimator:
         else:
             kurtosis = 3.0  # Default to Gaussian kurtosis
 
-        # Derive influence_type and student_t_df from kurtosis
-        # Gaussian kurtosis = 3.0 (exact mathematical constant)
-        # Threshold: kurtosis significantly > 3 → use Student-t
-        # Standard error of kurtosis ≈ sqrt(24/n), use 2σ for significance
-        se_kurtosis = sqrt_scalar(24.0 / float(n), backend) if n > 0 else 0.0
-        kurtosis_threshold = 3.0 + 2.0 * se_kurtosis  # Data-derived threshold
-        if kurtosis > kurtosis_threshold:
+        # Derive influence_type and student_t_df from kurtosis.
+        # Student-t kurtosis: 3 + 6/(df - 4) for df > 4.
+        kurtosis_floor = 3.0 + division_epsilon(backend, activations)
+        if kurtosis > kurtosis_floor:
             influence_type = InfluenceType.STUDENT_T
-            # df = 4 + 6/(kurtosis - 3), clamped to [2, 30]
             student_t_df = 4.0 + 6.0 / (kurtosis - 3.0)
-            student_t_df = max(2.0, min(30.0, student_t_df))
         else:
             influence_type = InfluenceType.GAUSSIAN
-            student_t_df = 30.0  # High df (unused for Gaussian, but consistent)
+            student_t_df = 0.0
 
         return ConceptVolume(
             concept_id=concept_id,
@@ -978,7 +978,7 @@ class RiemannianDensityEstimator:
         geo_from_centroid: "Array | None" = None,
         geo_result: GeodesicDistanceResult | None = None,
     ) -> float:
-        """Compute 95th-percentile geodesic radius."""
+        """Compute max geodesic radius from centroid."""
         backend = get_default_backend()
         shape = activations.shape
         n = int(shape[0])
@@ -998,20 +998,16 @@ class RiemannianDensityEstimator:
                 backend.eval(points_arr)
 
                 # Get geodesic distances from centroid (index 0) to all points
-                k_neighbors = min(max(3, n // 3), n)
-                geo_result = rg.geodesic_distances(points_arr, k_neighbors=k_neighbors)
+                geo_result = rg.geodesic_distances(points_arr, k_neighbors=None)
                 geo_from_centroid = geo_result.distances[0, 1:]
 
         centroid_to_points = geo_from_centroid
         count = int(centroid_to_points.shape[0])
         if count == 0:
             return 0.0
-        idx = min(int(count * 0.95), count - 1)
-        partitioned = backend.argpartition(centroid_to_points, idx)
-        prefix = backend.take(partitioned, backend.arange(idx + 1), axis=0)
-        elem = backend.max(backend.take(centroid_to_points, prefix, axis=0))
-        backend.eval(elem)
-        return float(backend.to_scalar(elem))
+        max_val = backend.max(centroid_to_points)
+        backend.eval(max_val)
+        return float(backend.to_scalar(max_val))
 
     def _bhattacharyya_coefficient(
         self,
@@ -1037,16 +1033,9 @@ class RiemannianDensityEstimator:
             n_cov_avg = int(cov_avg.shape[0])
             eigenvalues, _ = power_iteration_eigh(backend, cov_avg, k=n_cov_avg)
             backend.eval(eigenvalues)
-            min_eig = backend.min(eigenvalues)
-            backend.eval(min_eig)
-            if float(backend.to_scalar(min_eig)) <= 0.0:
+            logdet_avg = _logdet_from_eigenvalues(backend, eigenvalues)
+            if logdet_avg is None:
                 return 0.0
-            # Clamp eigenvalues to tiny_value before log for numerical stability
-            tiny = tiny_value(backend, eigenvalues)
-            clamped_eigenvalues = backend.maximum(eigenvalues, backend.full(eigenvalues.shape, tiny))
-            logdet_arr = backend.sum(backend.log(clamped_eigenvalues))
-            backend.eval(logdet_arr)
-            logdet_avg = float(backend.to_scalar(logdet_arr))
 
             term2 = 0.5 * (
                 logdet_avg - 0.5 * (volume_a.log_det_covariance + volume_b.log_det_covariance)
@@ -1065,56 +1054,22 @@ class RiemannianDensityEstimator:
     ) -> float:
         """Estimate Szymkiewicz-Simpson overlap coefficient."""
         backend = get_default_backend()
-        # Monte Carlo estimation with samples from both distributions.
-        # Use sqrt(n*d) to match Monte Carlo error ~ 1/sqrt(N) to data scale.
-        import math
 
-        d = volume_a.dimension
-        n_data = max(1, min(volume_a.num_samples, volume_b.num_samples))
-        n_samples = max(2, int(math.ceil(math.sqrt(n_data * d))))
+        if volume_a.raw_activations is not None and volume_b.raw_activations is not None:
+            a_in_b_mask = volume_b.contains_batch(volume_a.raw_activations)
+            b_in_a_mask = volume_a.contains_batch(volume_b.raw_activations)
 
-        # Sample from multivariate normal: X = mean + L @ Z where L is Cholesky of cov
-        # Z ~ N(0, I)
-        def sample_mvn(centroid: "Array", covariance: "Array", n: int) -> "Array":
-            # Cholesky decomposition: cov = L @ L^T
-            try:
-                chol = backend.cholesky(covariance)
-            except Exception:
-                # If Cholesky fails, use regularized covariance
-                reg_eps = regularization_epsilon(backend, covariance)
-                reg_cov = covariance + reg_eps * backend.eye(d)
-                chol = backend.cholesky(reg_cov)
+            a_in_b_sum = _mask_sum(a_in_b_mask, backend, dtype_source=volume_b.centroid)
+            b_in_a_sum = _mask_sum(b_in_a_mask, backend, dtype_source=volume_a.centroid)
+            backend.eval(a_in_b_sum, b_in_a_sum)
 
-            # Generate standard normal samples
-            backend.random_seed(42)
-            z = backend.random_normal((n, d))
+            n_a = max(1, int(volume_a.raw_activations.shape[0]))
+            n_b = max(1, int(volume_b.raw_activations.shape[0]))
+            frac_a = float(backend.to_scalar(a_in_b_sum)) / n_a
+            frac_b = float(backend.to_scalar(b_in_a_sum)) / n_b
+            return max(frac_a, frac_b)
 
-            # Transform: samples = centroid + z @ chol^T
-            samples = centroid + backend.matmul(z, backend.transpose(chol))
-            backend.eval(samples)
-            return samples
-
-        # Sample from volume_a
-        samples_a = sample_mvn(volume_a.centroid, volume_a.covariance, n_samples)
-
-        # Sample from volume_b
-        samples_b = sample_mvn(volume_b.centroid, volume_b.covariance, n_samples)
-
-        # Count samples using vectorized batch operations (GPU-accelerated)
-        # Membership uses geodesic_radius - derived from each volume's data
-        a_in_b_mask = volume_b.contains_batch(samples_a)
-        b_in_a_mask = volume_a.contains_batch(samples_b)
-
-        # Sum boolean masks to get counts
-        a_in_b_sum = _mask_sum(a_in_b_mask, backend, dtype_source=volume_b.centroid)
-        b_in_a_sum = _mask_sum(b_in_a_mask, backend, dtype_source=volume_a.centroid)
-        backend.eval(a_in_b_sum, b_in_a_sum)
-
-        a_in_b = int(backend.to_scalar(a_in_b_sum))
-        b_in_a = int(backend.to_scalar(b_in_a_sum))
-
-        # Overlap coefficient
-        return max(a_in_b, b_in_a) / n_samples
+        return self._bhattacharyya_coefficient(volume_a, volume_b)
 
     def _jaccard_index(
         self,
