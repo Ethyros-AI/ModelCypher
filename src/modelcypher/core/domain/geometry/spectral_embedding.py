@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     power_iteration_eigh,
     precision_dtype,
+    sqrt_scalar,
     tiny_value,
 )
 
@@ -162,7 +163,7 @@ def compute_spectral_embedding(
 
     # Build k-NN adjacency from chord distances with proper tie handling
     # Include ALL points at distance <= k-th nearest (handles duplicate points)
-    inf_val = infinity_threshold(backend, chord_dist) * 2.0
+    inf_val = infinity_threshold(backend, chord_dist)
     eps = machine_epsilon(backend, chord_dist)
     self_mask = backend.eye(n) > 0.0
     dist_no_self = backend.where(self_mask, inf_val, chord_dist)
@@ -194,7 +195,8 @@ def compute_spectral_embedding(
     # If all neighbor distances are zero (duplicates), use fraction of max distance
     # This ensures bandwidth reflects the actual data scale
     if kernel_bandwidth <= 0.0:
-        kernel_bandwidth = max_dist * 0.1  # 10% of max distance as bandwidth
+        eps = machine_epsilon(backend, chord_dist)
+        kernel_bandwidth = max(max_dist * eps, tiny_value(backend, chord_dist))
 
     # Build normalized graph Laplacian with heat kernel weights from CHORD distances
     inf_thresh = infinity_threshold(backend, adj)
@@ -248,7 +250,9 @@ def compute_spectral_embedding(
     backend.eval(eigvals, eigvecs)
 
     # Count zero eigenvalues (connected components)
-    zero_thresh = machine_epsilon(backend, eigvals) * 10.0
+    eps = machine_epsilon(backend, eigvals)
+    max_eig = float(backend.to_scalar(eigvals[-1]))
+    zero_thresh = max(max_eig, eps) * sqrt_scalar(eps, backend)
     zero_mask = backend.abs(eigvals) < zero_thresh
     zero_count_arr = backend.sum(backend.astype(zero_mask, "int32"))
     backend.eval(zero_count_arr)

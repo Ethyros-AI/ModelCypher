@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import time
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -191,8 +192,9 @@ class GramAligner:
     """Find linear alignment with geodesic diagnostics between activation spaces.
 
     Computes a closed-form linear transform and reports geodesic CKA. Optional
-    geodesic-invariant alignment can be enabled when needed. All tolerances are
-    derived from the input dtype's machine epsilon.
+    geodesic-invariant alignment runs only when linear alignment fails to reach
+    dtype-derived precision. All tolerances are derived from the input dtype's
+    machine epsilon.
 
     Usage
     -----
@@ -204,7 +206,6 @@ class GramAligner:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        use_geodesic_alignment: bool = False,
     ) -> None:
         """Initialize the aligner.
 
@@ -212,15 +213,10 @@ class GramAligner:
         ----------
         backend : Backend, optional
             Backend for tensor operations.
-        use_geodesic_alignment : bool
-            If True, run geodesic-invariant alignment after linear alignment.
-            Default False - use linear alignment only.
-
-            RESEARCH QUESTION: When does geodesic alignment help?
-            See docs/GEOMETRY-MATH-AUDIT.md for open questions.
+        Geodesic alignment is attempted only when linear alignment fails to
+        reach dtype-derived precision.
         """
         self._backend = backend or get_default_backend()
-        self._use_geodesic_alignment = use_geodesic_alignment
 
     def _identity_result(
         self, n: int, d: int, precision: float
@@ -338,7 +334,7 @@ class GramAligner:
         iterations = linear_iterations
         geodesic_cka = linear_cka
 
-        if self._use_geodesic_alignment and geodesic_cka < (1.0 - precision):
+        if (not math.isfinite(geodesic_cka)) or geodesic_cka < (1.0 - precision):
             start_time = time.perf_counter()
             F_geo = geodesic_invariant_alignment(
                 b, source_activations, target_activations, stats=alignment_stats
@@ -366,7 +362,9 @@ class GramAligner:
                 geodesic_cka_geo, refine_elapsed, total_elapsed
             )
 
-            if geodesic_cka_geo >= geodesic_cka:
+            if math.isfinite(geodesic_cka_geo) and (
+                (not math.isfinite(geodesic_cka)) or geodesic_cka_geo >= geodesic_cka
+            ):
                 F = F_geo
                 iterations = geo_iterations
                 geodesic_cka = geodesic_cka_geo
@@ -393,7 +391,9 @@ class GramAligner:
         diagnostic = self._diagnose(source_aligned, target_centered, geodesic_cka)
 
         # Numerical deviation from geodesic CKA = 1.0
-        numerical_deviation = max(0.0, 1.0 - geodesic_cka)
+        numerical_deviation = (
+            max(0.0, 1.0 - geodesic_cka) if math.isfinite(geodesic_cka) else float("nan")
+        )
 
         return AlignmentResult(
             feature_transform=F,
@@ -404,7 +404,7 @@ class GramAligner:
             precision_threshold=precision,
             scale_ratio=scale_ratio,
             linear_iterations=0,  # Legacy field - geodesic alignment is direct
-            linear_residual=alignment_stats.get("relative_space_alignment_error", 0.0),
+            linear_residual=alignment_stats.get("relative_space_alignment_error", float("nan")),
             gram_condition_number=condition_number,
             source_numerical_rank=source_rank,
             target_numerical_rank=target_rank,
@@ -445,10 +445,12 @@ class GramAligner:
         aligned = b.matmul(source, F_init)
         b.eval(aligned)
         result = compute_cka(aligned, target, b)
-        geodesic_cka = result.cka if result.is_valid else 0.0
+        geodesic_cka = result.cka if result.is_valid else float("nan")
 
         precision = sqrt_scalar(machine_epsilon(b, source), b)
-        if geodesic_cka < (1.0 - precision):
+        if not math.isfinite(geodesic_cka):
+            logger.debug("Linear alignment geodesic CKA invalid.")
+        elif geodesic_cka < (1.0 - precision):
             logger.debug(
                 "Linear alignment geodesic CKA=%.6f (shared-manifold coverage + novelty).",
                 geodesic_cka

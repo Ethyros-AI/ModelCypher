@@ -232,21 +232,30 @@ Since effective_load < 1.0 in all tested cases: **delta_scale = 1.0 is correct**
 
 ---
 
-### Research Question 3: Zero Null Space
+### Resolved: Zero Null Space
 
-**Current code**: Warning when mean_null_dim < 1
-**Location**: transplant.py:958-966
+**Previous claim**: Warning when mean_null_dim < 1
+**Location**: transplant.py (warning does not exist)
 
-**What we're really saying**: "We don't know how to create capacity."
+**Resolution via code audit**:
 
-**The actual questions**:
-1. What does "no null space" mean geometrically? (Target is "full"? Target uses all directions?)
-2. Can we CREATE null space by transforming the target?
-3. Is there a way to compress existing knowledge to make room?
-4. Or is "full" genuinely full - no solution exists?
-5. What is the relationship between null space and intrinsic dimension?
+The warning referenced in the original audit does not exist. Zero null space is handled correctly:
 
-**What we need**: Either a closed-form method to create capacity, or proof that full is full.
+1. **deviation_budget.py:363-364**: Floors `null_capacity` at machine epsilon
+2. **derive_delta_scale()**: Returns √ε when null_rank = 0
+3. **Null-space projector**: Moore-Penrose closed-form (mathematically correct)
+
+**Mathematical reality**: When activations fully span the hidden dimension (null_rank = 0):
+- There is literally no unused capacity
+- Transfer scales to ~0 (correctly)
+- This is a geometric property, not a failure mode
+
+**What "creating capacity" would require**:
+- Compressing existing target knowledge (lossy)
+- This is out of scope for null-space projection
+- Fine-tuning achieves this through gradient updates
+
+**Status**: ✓ RESOLVED - Correct handling already exists
 
 ---
 
@@ -340,20 +349,30 @@ Since effective_load < 1.0 in all tested cases: **delta_scale = 1.0 is correct**
 
 ---
 
-### Research Question 6: DARE Sparsity Percentiles
+### Resolved: DARE Sparsity Percentiles Replaced
 
-**Current code**: Uses p99 percentile
-**Location**: dare_sparsity.py
+**Previous claim**: Uses p99 percentile
+**Location**: dare_sparsity.py (percentile does not exist)
 
-**What we're really saying**: "We guessed that the top 1% matters."
+**Resolution via code audit**:
 
-**The actual questions**:
-1. What is the geometric meaning of sparsity in weight deltas?
-2. Is 99th percentile derived from anything, or just "sounds high"?
-3. Should we use magnitude gap detection instead?
-4. What does the RMT noise floor say about which weights are signal?
+The percentile referenced in the original audit does not exist. DARE sparsity already uses geometry-derived thresholds:
 
-**What we need**: Replace percentile with magnitude gap or RMT-derived threshold.
+1. **Zero threshold**: `ulp_scalar(max_magnitude)` - machine epsilon for the scale
+2. **Gap threshold**: `find_magnitude_gap_threshold()` - detects natural magnitude breaks
+3. **Drop threshold**: `max(zero_threshold, gap_threshold)` - both geometry-derived
+
+**How magnitude gap detection works** (numerical_stability.py:657-741):
+- Computes relative gap between consecutive sorted magnitudes
+- Finds the largest relative jump (natural separation)
+- Returns threshold BEFORE the gap
+
+**Why this is principled**:
+- No arbitrary percentile selection
+- Threshold emerges from the data's spectral structure
+- Machine epsilon ensures numerical stability
+
+**Status**: ✓ RESOLVED - Magnitude gap detection already implemented
 
 ---
 
@@ -380,7 +399,6 @@ These have no derivation. They must be replaced or removed.
 | Constant | Location | Problem | Proposed Fix |
 |----------|----------|---------|--------------|
 | `[0.5, 2.0]` clamp | manifold_transfer.py | Arbitrary bounds | Derive from curvature or remove |
-| `p99` percentile | dare_sparsity.py | Arbitrary percentile | Magnitude gap detection |
 | `[100, 500, 1000, 5000, 10000]` | prime_geometry_analysis.py | Arbitrary scales | Derive from data or remove |
 
 ### Performance Caps (Lower Priority)
@@ -493,3 +511,4 @@ Priority order based on merge pipeline criticality:
 - 2025-01-18: Added research questions, fundamental questions, methodology
 - 2025-01-18: Resolved Research Question 2 (preserved_fraction) via scaling investigation experiment
 - 2025-01-18: Resolved Research Question 1 (ill-conditioned alignment) - truncation is closed-form solution
+- 2025-01-18: Resolved Research Question 3 (zero null space) - warning never existed, closed-form handling confirmed

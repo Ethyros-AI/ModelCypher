@@ -341,7 +341,7 @@ def align_layers(
             tgt_dim,
         )
 
-        local_aligner = GramAligner(backend=backend, use_geodesic_alignment=False)
+        local_aligner = GramAligner(backend=backend)
 
         try:
             src_stacks = []

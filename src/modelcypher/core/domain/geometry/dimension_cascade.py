@@ -556,7 +556,7 @@ class DimensionCascade:
 
         except Exception as exc:
             logger.warning("Geodesic distortion measurement failed: %s", exc)
-            return 0.5  # Unknown distortion
+            return float("nan")
 
     def _create_target_basis(self, points: "Array", target_dim: int) -> "Array":
         """

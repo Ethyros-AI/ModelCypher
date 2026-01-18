@@ -735,7 +735,7 @@ def _probe_precise(
             f"Available transforms: {sorted(v_transforms.keys())}"
         )
 
-    gram_aligner = GramAligner(backend=b, use_geodesic_alignment=False)
+    gram_aligner = GramAligner(backend=b)
     embedding_cka: float | None = None
     embedding_alignment: dict[str, float | int] | None = None
 
