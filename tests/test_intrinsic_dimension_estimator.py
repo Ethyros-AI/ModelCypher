@@ -67,10 +67,10 @@ def test_two_nn_estimate_basic() -> None:
 
 
 def test_two_nn_bootstrap_ci() -> None:
-    """Bootstrap CI requires >= 10 samples for meaningful statistics."""
+    """Bootstrap CI requires enough samples to resolve quantiles."""
     backend = get_default_backend()
-    # Need 15+ samples for bootstrap to be statistically meaningful
-    points = backend.array([[float(i), float(i % 3)] for i in range(20)])
+    # Use a moderate sample size to ensure quantiles are defined
+    points = backend.array([[float(i), float(i % 3)] for i in range(50)])
     computer = IntrinsicDimension(backend)
     estimate = computer.compute(points, with_ci=True)
     assert estimate.ci is not None
@@ -181,14 +181,10 @@ class TestConfidenceIntervalInvariants:
     """Tests for confidence interval invariants."""
 
     def test_ci_lower_lte_upper(self) -> None:
-        """CI lower bound must be ≤ upper bound.
-
-        Mathematical property: By construction of confidence intervals.
-        Bootstrap uses 95% CI by default (standard choice).
-        """
+        """CI lower bound must be ≤ upper bound."""
         backend = get_default_backend()
         backend.random_seed(42)
-        data = backend.random_normal((30, 3))
+        data = backend.random_normal((50, 3))  # Sufficient for bootstrap quantiles
         backend.eval(data)
 
         computer = IntrinsicDimension(backend)

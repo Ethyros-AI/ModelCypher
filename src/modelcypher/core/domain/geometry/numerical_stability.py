@@ -654,7 +654,7 @@ def find_magnitude_gap_threshold(
     eps: float | None = None,
     backend: "Backend | None" = None,
 ) -> float:
-    """Find the natural break point in a sorted magnitude distribution."""
+    """Return the value before the largest relative gap in a sorted magnitude list."""
     if backend is None:
         from modelcypher.core.domain._backend import get_default_backend
 
@@ -687,8 +687,6 @@ def find_magnitude_gap_threshold(
         return float(backend.to_scalar(first_val))
 
     if n == 2:
-        # Two values - check for a significant relative gap
-        # If gap > 50%, return the smaller (threshold), else return larger (no outlier)
         first_val = backend.take(values_arr, backend.array([0]), axis=0)
         second_val = backend.take(values_arr, backend.array([1]), axis=0)
         first_val = backend.squeeze(first_val)
@@ -698,9 +696,11 @@ def find_magnitude_gap_threshold(
         v1 = float(backend.to_scalar(second_val))
         if v0 > eps:
             rel_gap = (v1 - v0) / v0
-            if rel_gap > 0.5:  # Significant gap - return smaller as threshold
-                return v0
-        return v1  # No significant gap - return larger (nothing will be flagged)
+        else:
+            rel_gap = 0.0
+        if rel_gap <= eps:
+            return v1
+        return v0
 
     idx = backend.arange(0, n - 1)
     next_idx = backend.arange(1, n)
@@ -722,12 +722,12 @@ def find_magnitude_gap_threshold(
     backend.eval(gap_index_arr)
     max_gap = float(backend.to_scalar(max_gap_arr))
 
-    if max_gap <= 0.0:
-        mid_idx = backend.array([n // 2])
-        mid_val = backend.take(values_arr, mid_idx, axis=0)
-        mid_val = backend.squeeze(mid_val)
-        backend.eval(mid_val)
-        return float(backend.to_scalar(mid_val))
+    if max_gap <= eps:
+        last_idx = backend.array([n - 1])
+        last_val = backend.take(values_arr, last_idx, axis=0)
+        last_val = backend.squeeze(last_val)
+        backend.eval(last_val)
+        return float(backend.to_scalar(last_val))
 
     gap_index = int(backend.to_scalar(gap_index_arr))
     gap_val = backend.take(values_arr, backend.array([gap_index]), axis=0)
@@ -1093,22 +1093,35 @@ def orthogonalize_alignment(
 def svd_auto_rank(
     singular_values: "Array",
     backend: "Backend",
-    energy_threshold: float = 0.99,
+    energy_threshold: float | None = None,
+    max_dim: int | None = None,
 ) -> int:
-    """Choose SVD rank by cumulative energy.
-
-    Returns the smallest k with sum(S[:k]^2) / sum(S^2) >= energy_threshold.
-    """
+    """Choose SVD rank by numeric threshold or energy fraction."""
     b = backend
-    S = b.astype(
-        b.array(singular_values),
-        precision_dtype(b, reference=b.array(singular_values)),
-    )
+    S_arr = b.array(singular_values)
+    S = b.astype(S_arr, precision_dtype(b, reference=S_arr))
     b.eval(S)
 
     n = int(S.shape[0])
     if n == 0:
         return 0
+
+    if energy_threshold is None:
+        max_s_arr = b.max(S)
+        b.eval(max_s_arr)
+        max_s = float(b.to_scalar(max_s_arr))
+        if max_s <= 0.0:
+            return 0
+        max_dim = max_dim or n
+        rank_scale = svd_rank_threshold(b, S, max_dim)
+        threshold = max_s * rank_scale
+        rank_mask = S > threshold
+        rank_arr = b.sum(b.astype(rank_mask, "int32"))
+        b.eval(rank_arr)
+        return int(b.to_scalar(rank_arr))
+
+    if not (0.0 < energy_threshold <= 1.0):
+        raise ValueError("energy_threshold must be in (0, 1].")
 
     # Compute squared singular values (energy per component)
     S_sq = S * S

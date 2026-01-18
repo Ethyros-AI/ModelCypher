@@ -149,12 +149,12 @@ class TestComputeTwoNNStatic:
 
     def test_with_ci_flag(self, backend):
         """with_ci flag should be passed through."""
-        points = backend.random_normal((32, 16))
+        points = backend.random_normal((50, 16))  # Sufficient for bootstrap quantiles
         backend.eval(points)
 
         result = IntrinsicDimension.compute_two_nn(points, backend=backend, with_ci=True)
 
-        # Should have CI (sample size is large enough)
+        # Should have CI (sample size supports quantile resolution)
         assert result.ci is not None
 
 

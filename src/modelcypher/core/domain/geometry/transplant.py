@@ -31,6 +31,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     machine_epsilon,
     orthogonalize_alignment,
     precision_dtype,
@@ -185,41 +186,10 @@ def reconstruct_weight_from_behavior(
     alignment_out: "Array",
     backend: "Backend | None" = None,
 ) -> BehavioralReconstructionResult:
-    """Reconstruct weight by preserving input→output behavior across dimensions.
+    """Reconstruct weight to preserve input→output behavior across dimensions.
 
-    Instead of directly transforming weights (which distorts magnitudes), this
-    function finds the weight in target space that produces the SAME behavior
-    as the source weight in source space.
-
-    The insight: The weight matrix encodes a transformation. Different coordinate
-    systems encode the SAME transformation with DIFFERENT matrices. We want the
-    matrix that performs the same operation, not a transformed matrix.
-
-    **Lie Algebra Fix (2026-01-17)**: The alignment transforms F_in and F_out may
-    include scaling components when dimensions differ. We decompose them via polar
-    decomposition into rotation (orthogonal, norm-preserving) and scaling parts.
-    The rotation is used for coordinate transformation; scaling is corrected after.
-
-    Algorithm:
-        1. Orthogonalize alignments: F = U @ P (polar decomposition)
-           - Use U (rotation) for coordinate transform
-           - Track scale factor s = mean(singular_values(F))
-        2. Compute source layer behavior: output_src = input_src @ W_src.T
-        3. Project to target coordinates using orthogonalized transforms:
-           - input_tgt = input_src @ U_in
-           - output_tgt = output_src @ U_out
-        4. Solve for weight: W_behavior = lstsq(input_tgt, output_tgt).T
-        5. Apply scale correction: W_corrected = W_behavior * (s_out / s_in)
-
-    Args:
-        source_weight: Source weight matrix [out_src, in_src].
-        input_activations_source: Input activations in source space [n, in_src].
-        alignment_in: Procrustes transform for inputs [in_src, in_tgt].
-        alignment_out: Procrustes transform for outputs [out_src, out_tgt].
-        backend: Compute backend.
-
-    Returns:
-        BehavioralReconstructionResult with reconstructed weight and diagnostics.
+    Uses orthogonalized alignments (polar decomposition) for coordinate changes,
+    solves least squares in target space, then applies scale correction.
     """
     b = backend or get_default_backend()
 
@@ -403,28 +373,7 @@ def reconstruct_weight_manifold_aware(
     alignment_out: "Array",
     backend: "Backend | None" = None,
 ) -> BehavioralReconstructionResult:
-    """Manifold-aware weight reconstruction for cross-dimensional transfer.
-
-    Uses RMT Marchenko-Pastur distribution for principled intrinsic rank detection.
-
-    Algorithm:
-        1. Orthogonalize alignment transforms via polar decomposition (SO(n))
-        2. Compute source behavior: output_src = input_src @ W_src.T
-        3. Project to target coordinates using orthogonalized transforms
-        4. Detect intrinsic rank using RMT Marchenko-Pastur signal/noise separation
-        5. Use rank-truncated lstsq for reconstruction
-        6. Apply scale correction from polar decomposition
-
-    Args:
-        source_weight: Source weight matrix [out_src, in_src].
-        input_activations_source: Input activations in source space [n, in_src].
-        alignment_in: Procrustes transform for inputs [in_src, in_tgt].
-        alignment_out: Procrustes transform for outputs [out_src, out_tgt].
-        backend: Compute backend.
-
-    Returns:
-        BehavioralReconstructionResult with reconstructed weight and diagnostics.
-    """
+    """Manifold-aware reconstruction using RMT signal/noise rank detection."""
     b = backend or get_default_backend()
 
     source_weight = b.array(source_weight)
@@ -472,8 +421,6 @@ def reconstruct_weight_manifold_aware(
     b.eval(input_target, output_target)
 
     # Step 4: Detect intrinsic rank using Marchenko-Pastur signal/noise separation
-    # This replaces heuristic gap detection with principled RMT thresholds
-    from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
     from modelcypher.core.domain.geometry.rmt_signal_separation import separate_signal_noise
 
     U_svd, S, Vt = geodesic_svd(b, input_target)
@@ -482,7 +429,8 @@ def reconstruct_weight_manifold_aware(
     # Use RMT Marchenko-Pastur distribution to determine true signal rank
     # Eigenvalues above the MP bulk edge are TRUE SIGNAL, within bulk are NOISE
     mp_result = separate_signal_noise(input_target, backend=b)
-    intrinsic_rank = max(1, mp_result.signal_rank)  # At least rank 1
+    n_sv = int(S.shape[0])
+    intrinsic_rank = max(0, min(int(mp_result.signal_rank), n_sv))
 
     logger.info(
         "RMT SIGNAL/NOISE: signal_rank=%d, noise_rank=%d, MP_edge=%.6f, signal_var=%.1f%%",
@@ -524,32 +472,33 @@ def reconstruct_weight_manifold_aware(
     output_reconstructed = b.matmul(input_target, W_T)  # [n, out_tgt]
     b.eval(output_reconstructed)
 
-    # Also verify using only manifold dimensions
-    # Project output_target to manifold
-    U_out_svd, S_out, Vt_out = geodesic_svd(b, output_target)
-    b.eval(U_out_svd, S_out)
-
     # Full error
     error_full = b.mean(b.abs(output_reconstructed - output_target))
     reconstruction_error = float(b.to_scalar(error_full))
 
     # Manifold-only error (project both to rank-k)
-    U_k = U_svd[:, :intrinsic_rank]
-    output_target_manifold = b.matmul(U_k, b.matmul(b.transpose(U_k), output_target))
-    output_recon_manifold = b.matmul(U_k, b.matmul(b.transpose(U_k), output_reconstructed))
-    error_manifold = b.mean(b.abs(output_recon_manifold - output_target_manifold))
-    manifold_error = float(b.to_scalar(error_manifold))
+    if intrinsic_rank > 0:
+        U_k = U_svd[:, :intrinsic_rank]
+        output_target_manifold = b.matmul(U_k, b.matmul(b.transpose(U_k), output_target))
+        output_recon_manifold = b.matmul(U_k, b.matmul(b.transpose(U_k), output_reconstructed))
+        error_manifold = b.mean(b.abs(output_recon_manifold - output_target_manifold))
+        manifold_error = float(b.to_scalar(error_manifold))
+    else:
+        manifold_error = reconstruction_error
 
     # Compute norms
     source_norm = float(b.to_scalar(b.sqrt(b.sum(output_source * output_source))))
     target_norm = float(b.to_scalar(b.sqrt(b.sum(output_target * output_target))))
 
     # Condition number of truncated system
-    S_k = S[:intrinsic_rank]
-    eps = float(machine_epsilon(b, S))
-    max_s = float(b.to_scalar(b.max(S_k)))
-    min_s = float(b.to_scalar(b.min(S_k)))
-    condition_number = max_s / max(min_s, eps)
+    if intrinsic_rank > 0:
+        S_k = S[:intrinsic_rank]
+        eps = float(machine_epsilon(b, S))
+        max_s = float(b.to_scalar(b.max(S_k)))
+        min_s = float(b.to_scalar(b.min(S_k)))
+        condition_number = max_s / max(min_s, eps)
+    else:
+        condition_number = float("inf")
 
     logger.info(
         "MANIFOLD RESULT: full_error=%.6f, manifold_error=%.10f, rank=%d, cond=%.2e",
@@ -1236,9 +1185,22 @@ def _compute_transplant_delta_anchor_relative(
         preserved_fraction = 1.0
         projection_loss = 0.0
 
-    # Compute null-space dimension (rank of N minus full rank)
-    # Approximation: use n_boundary as indicator
-    null_dim = n_boundary if n_boundary > 0 else 0
+    # Compute null-space dimension from boundary rank
+    boundary_rank = 0
+    if n_boundary > 0:
+        _, S_b, _ = geodesic_svd(b, boundary_activations)
+        b.eval(S_b)
+        n_sv = int(S_b.shape[0])
+        if n_sv > 0:
+            max_s = float(b.to_scalar(b.max(S_b)))
+            if max_s > 0.0:
+                rank_scale = svd_rank_threshold(b, S_b, max(in_dim, n_boundary))
+                threshold = max_s * rank_scale
+                rank_mask = S_b > threshold
+                rank_arr = b.sum(b.astype(rank_mask, "int32"))
+                b.eval(rank_arr)
+                boundary_rank = int(b.to_scalar(rank_arr))
+    null_dim = max(0, in_dim - boundary_rank)
 
     logger.info(
         "ANCHOR-RELATIVE RESULT: delta_A_norm=%.4f, delta_W_norm=%.4f, "

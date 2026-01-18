@@ -613,15 +613,9 @@ class GeodesicNullSpaceFilter:
 def filter_delta_svd(
     weight_delta: Any,
     backend: "Backend | None" = None,
-    energy_threshold: float = 0.99,
+    energy_threshold: float | None = None,
 ) -> GeodesicNullSpaceResult:
     """SVD-based delta filtering with low-rank truncation.
-
-    Algorithm:
-        1. Decompose delta: U, S, Vt = SVD(delta)
-        2. Auto-rank: k = first index where cumsum(S^2) >= 0.99 * total
-        3. Truncate: delta_k = U[:,:k] @ diag(S[:k]) @ Vt[:k,:]
-        4. Return: low-rank filtered delta
 
     Parameters
     ----------
@@ -629,9 +623,9 @@ def filter_delta_svd(
         Weight difference (source_aligned - target). Shape: [out, in] or [d].
     backend : Backend, optional
         Backend for tensor operations.
-    energy_threshold : float
+    energy_threshold : float, optional
         Fraction of total energy (Frobenius norm squared) to preserve.
-        Default is 0.99.
+        If None, uses numerical rank from precision-derived SVD cutoff.
 
     Returns
     -------
@@ -697,9 +691,35 @@ def filter_delta_svd(
             mean_geodesic_distance=0.0,
         )
 
-    # Auto-determine rank by energy threshold
-    k = svd_auto_rank(S, b, energy_threshold)
-    k = max(1, min(k, n_sv))  # Ensure k is valid
+    # Auto-determine rank by energy threshold (or numeric rank if None)
+    k = svd_auto_rank(S, b, energy_threshold, max_dim=max(m, n))
+    k = max(0, min(k, n_sv))
+
+    if k == 0:
+        zero_2d = b.zeros_like(delta_2d)
+        if original_ndim == 1:
+            delta_filtered = b.reshape(zero_2d, original_shape)
+        else:
+            delta_filtered = zero_2d
+        b.eval(delta_filtered)
+
+        if delta_norm > 0:
+            preserved_fraction = 0.0
+        else:
+            preserved_fraction = 1.0
+
+        return GeodesicNullSpaceResult(
+            filtered_delta=delta_filtered,
+            original_delta=weight_delta,
+            orthogonal_dim=0,
+            projection_loss=1.0 - preserved_fraction,
+            preserved_fraction=preserved_fraction,
+            original_norm=delta_norm,
+            filtered_norm=0.0,
+            filtering_applied=True,
+            k_neighbors=0,
+            mean_geodesic_distance=0.0,
+        )
 
     # Truncate to top-k components
     U_k = U[:, :k]
@@ -1107,25 +1127,10 @@ class TSVMergeResult:
 def filter_deltas_tsv(
     weight_deltas: list[Any],
     backend: "Backend | None" = None,
-    energy_threshold: float = 0.95,
+    energy_threshold: float | None = None,
     max_rank: int | None = None,
 ) -> TSVMergeResult:
     """Merge multiple weight deltas using Task Singular Vector orthogonalization.
-
-    This implements the TSV-Merge approach from CVPR 2025, which reduces interference
-    between task-specific singular vectors when merging multiple source models.
-
-    Key insight: "Don't use Gram-Schmidt, use Procrustes" - Procrustes orthogonalization
-    preserves task-specific directions better than arbitrary prioritization.
-
-    Algorithm:
-        1. For each delta_i: compute SVD → U_i, S_i, V_i^T
-        2. Truncate to top-k singular vectors (by energy threshold)
-        3. Stack all U matrices: M = [U_1 | U_2 | ... | U_n]  (column-wise)
-        4. Procrustes orthogonalize: Q = orth(M) via SVD (Q = U_M @ V_M^T)
-        5. Partition Q back into per-task blocks: Q_1, Q_2, ..., Q_n
-        6. Reconstruct: delta_i' = Q_i @ diag(S_i) @ V_i^T
-        7. Merge: delta_merged = sum(delta_i')
 
     Parameters
     ----------
@@ -1134,11 +1139,11 @@ def filter_deltas_tsv(
         Each delta should be 2D [out, in] with matching shapes.
     backend : Backend, optional
         Compute backend. Uses default if not provided.
-    energy_threshold : float
+    energy_threshold : float, optional
         Fraction of singular value energy to preserve per task.
-        Default 0.95 keeps top singular vectors covering 95% of Frobenius norm.
+        If None, uses numerical rank from precision-derived SVD cutoff.
     max_rank : int, optional
-        Maximum rank per task. If None, determined by energy_threshold only.
+        Maximum rank per task. If None, determined by rank selection only.
 
     Returns
     -------
@@ -1149,16 +1154,6 @@ def filter_deltas_tsv(
     ----------
     - CVPR 2025 "TSV-Merge: Task Singular Vectors for Multi-Task Model Merging"
     - Zhang et al. (2025) "STF: Superpose Task-specific Features"
-
-    Notes
-    -----
-    The Procrustes orthogonalization finds rotation Q such that:
-        ||M - Q||_F is minimized, subject to Q^T @ Q = I
-
-    Solution: Q = U_M @ V_M^T where M = U_M @ S_M @ V_M^T
-
-    This treats all tasks equally (unlike Gram-Schmidt which prioritizes
-    the first vectors arbitrarily).
     """
     b = backend or get_default_backend()
     n_tasks = len(weight_deltas)
@@ -1200,6 +1195,7 @@ def filter_deltas_tsv(
 
     m, n = int(ref_shape[0]), int(ref_shape[1])
     min_dim = min(m, n)
+    max_dim = max(m, n)
     reg = regularization_epsilon(b, deltas[0])
 
     # Step 1: Compute SVD for each delta and determine ranks
@@ -1220,10 +1216,16 @@ def filter_deltas_tsv(
             continue
 
         # Determine rank by energy threshold
-        k = svd_auto_rank(S, b, energy_threshold)
+        k = svd_auto_rank(S, b, energy_threshold, max_dim=max_dim)
         if max_rank is not None:
             k = min(k, max_rank)
-        k = max(1, min(k, n_sv))
+        k = max(0, min(k, n_sv))
+
+        if k == 0:
+            task_svds.append((None, None, None))
+            task_ranks.append(0)
+            task_energy_preserved.append(0.0)
+            continue
 
         # Compute energy preserved
         S_sq = S * S
@@ -1363,7 +1365,7 @@ def merge_weights_tsv(
     source_weights_list: list[Any],
     target_weights: Any,
     backend: "Backend | None" = None,
-    energy_threshold: float = 0.95,
+    energy_threshold: float | None = None,
     max_rank: int | None = None,
 ) -> tuple[Any, TSVMergeResult]:
     """Merge multiple source weights into target using TSV orthogonalization.
@@ -1378,8 +1380,9 @@ def merge_weights_tsv(
         Target weights to add knowledge to.
     backend : Backend, optional
         Compute backend.
-    energy_threshold : float
+    energy_threshold : float, optional
         Fraction of singular value energy to preserve per task.
+        If None, uses numerical rank from precision-derived SVD cutoff.
     max_rank : int, optional
         Maximum rank per task.
 

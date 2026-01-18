@@ -147,7 +147,7 @@ class AlignmentResult:
     linear_residual: float = 0.0
 
     # Gram matrix condition number (numerical stability indicator)
-    # Higher = less stable. If > 1e5, alignment may be unreliable.
+    # Higher = more error amplification. Error bound: relative_error ≤ κ × ε
     gram_condition_number: float = 1.0
 
     # Numerical rank metrics (from truncated SVD alignment)
@@ -198,12 +198,7 @@ class GramAligner:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        max_iterations: int | None = None,  # IGNORED - kept for backward compat
-        tolerance: float | None = None,  # IGNORED
-        regularization: float | None = None,  # IGNORED
-        max_steps: int = 5000,  # Kept for backward compatibility (no iterative refinement)
-        fast_mode: bool = False,  # Skip CKA diagnostics for speed
-        use_geodesic_alignment: bool = False,  # Optional geodesic alignment pass
+        use_geodesic_alignment: bool = False,
     ) -> None:
         """Initialize the aligner.
 
@@ -211,27 +206,14 @@ class GramAligner:
         ----------
         backend : Backend, optional
             Backend for tensor operations.
-        max_iterations : int
-            IGNORED. Kept for backward compatibility only.
-        tolerance : float
-            IGNORED. Derived from dtype.
-        regularization : float
-            IGNORED. Derived from dtype.
-        max_steps : int
-            IGNORED. Kept for backward compatibility.
-        fast_mode : bool
-            If True, skip CKA diagnostics after computing F.
         use_geodesic_alignment : bool
-            If True, run geodesic-invariant alignment when geodesic CKA indicates
-            non-overlap. Default False to keep the closed-form linear alignment
-            on the shared manifold and use geodesic CKA purely as a diagnostic.
+            If True, run geodesic-invariant alignment after linear alignment.
+            Default False - use linear alignment only.
+
+            RESEARCH QUESTION: When does geodesic alignment help?
+            See docs/GEOMETRY-MATH-AUDIT.md for open questions.
         """
         self._backend = backend or get_default_backend()
-        self._max_iterations = max_iterations
-        self._tolerance = tolerance
-        self._regularization = regularization
-        self._max_steps = max_steps
-        self._fast_mode = fast_mode
         self._use_geodesic_alignment = use_geodesic_alignment
 
     def _identity_result(
@@ -263,9 +245,6 @@ class GramAligner:
         self,
         source_activations: "Array",
         target_activations: "Array",
-        strict: bool = True,
-        max_refinement_passes: int = 10,
-        F_init: "Array | None" = None,
     ) -> AlignmentResult:
         """Find alignment transform that preserves geodesic manifold structure.
 
@@ -279,12 +258,6 @@ class GramAligner:
             Source activations [n_samples, d_source].
         target_activations : Array
             Target activations [n_samples, d_target].
-        strict : bool
-            IGNORED. Kept for backward compatibility.
-        max_refinement_passes : int
-            IGNORED. Kept for backward compatibility.
-        F_init : Array | None
-            IGNORED. Kept for backward compatibility.
 
         Returns
         -------
@@ -351,27 +324,11 @@ class GramAligner:
         )
 
         # =================================================================
-        # PRECISION-DERIVED CONDITION NUMBER WARNING
+        # CONDITION NUMBER: Raw measurement, no interpretation
         # =================================================================
-        # Threshold: κ such that κ×ε = sqrt(ε), i.e. κ_threshold = 1/sqrt(ε)
-        # If κ > κ_threshold, the alignment solution loses more than half its
-        # significant digits and may be numerically unreliable.
-        eps = machine_epsilon(b, source_activations)
-        sqrt_eps = sqrt_scalar(eps, b)
-        kappa_threshold = 1.0 / sqrt_eps
-        expected_error = condition_number * eps
-
-        if condition_number > kappa_threshold:
-            logger.warning(
-                "NUMERICAL STABILITY: Gram condition number κ=%.2e exceeds "
-                "precision threshold 1/sqrt(ε)=%.2e. Expected error κ×ε=%.2e "
-                "exceeds sqrt(ε)=%.2e. Alignment may be numerically unstable. "
-                "Consider --full-atlas for more probes.",
-                condition_number,
-                kappa_threshold,
-                expected_error,
-                sqrt_eps,
-            )
+        # Error bound: relative_error ≤ κ × ε (proven numerical analysis)
+        # We log κ as data. What to DO about high κ is a research question.
+        # See docs/GEOMETRY-MATH-AUDIT.md "Research Question 1: Ill-Conditioned Alignment"
 
         # =================================================================
         # PHASE 1: Geodesic alignment (manifold-preserving)

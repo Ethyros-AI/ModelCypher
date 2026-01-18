@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 class ConfidenceInterval:
     """Confidence interval for intrinsic dimension.
 
-    Computed via bootstrap resampling with sample-size-derived parameters.
+    Computed via bootstrap resampling with precision- and sample-size-derived quantiles.
     """
 
     lower: float
@@ -580,25 +580,21 @@ class IntrinsicDimension:
     def _bootstrap_two_nn(self, mu: "Array", sample_size: int) -> ConfidenceInterval | None:
         """Compute bootstrap confidence interval for the ID estimate.
 
-        Resamples are derived from sample size:
-        - min(sample_size, 1000) ensures we don't over-sample small datasets
-        - For very small n, bootstrap may not be meaningful
-
-        Returns 95% CI (2.5th and 97.5th percentiles) - the standard choice.
+        Resamples follow sample size; quantile resolution is derived from
+        numeric precision and resample count.
         No seed is used - bootstrap variance is part of the measurement.
         """
         backend = self._backend
         n = mu.shape[0]
-        if n < 10:  # Bootstrap needs reasonable sample size
+
+        # Resamples = sample_size (derived from data resolution, no arbitrary cap)
+        resamples = sample_size
+
+        if n < 2 or resamples < 2:
             return None
 
-        # Derive resamples from sample size
-        # B >= 1000 for CI estimation (Efron & Tibshirani, 1993)
-        # min(n, 1000) gives sufficient coverage without waste
-        resamples = min(sample_size, 1000)
-
-        # 95% CI is standard (2.5th and 97.5th percentiles)
-        alpha = 0.025
+        # Quantile resolution limited by precision and resample count
+        alpha = max(float(division_epsilon(backend, mu)), 1.0 / float(resamples))
 
         dimensions: list[float] = []
         for _ in range(resamples):
@@ -612,12 +608,14 @@ class IntrinsicDimension:
             except EstimatorError:
                 continue
 
-        if len(dimensions) < 10:  # Require minimum successful computations
+        if len(dimensions) < 2:
             return None
 
         dimensions.sort()
         lower_idx = int(len(dimensions) * alpha)
         upper_idx = int(len(dimensions) * (1.0 - alpha))
+        if lower_idx >= upper_idx:
+            return None
 
         return ConfidenceInterval(
             lower=dimensions[lower_idx],
