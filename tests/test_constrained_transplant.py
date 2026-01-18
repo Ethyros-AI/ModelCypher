@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.constrained_transplant import verify_boundary_invariance
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 class TestConstrainedTransplant:
     """Tests for boundary invariance verification."""
@@ -39,7 +40,8 @@ class TestConstrainedTransplant:
         
         res = verify_boundary_invariance(w_trans, w_target, boundary, backend=backend)
         assert res["passed"] is True
-        assert res["max_relative_diff"] < 1e-6
+        eps = division_epsilon(backend, w_target)
+        assert res["max_relative_diff"] < eps
 
     def test_verify_boundary_invariance_fail(self):
         """Should fail if weights differ significantly on boundary subspace."""

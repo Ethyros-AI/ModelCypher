@@ -30,7 +30,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    regularization_epsilon,
+)
 from modelcypher.core.use_cases.merge.stages.probe_alignment import (
     AlignmentResult,
     _activation_count,
@@ -281,8 +284,9 @@ class TestAlignLayers:
             backend=backend,
         )
 
+        eps = regularization_epsilon(backend, next(iter(source_activations.values())))
         for score in result.layer_cka_scores.values():
-            assert 0.0 <= score <= 1.0 + 1e-5
+            assert 0.0 <= score <= 1.0 + eps
 
     def test_transforms_have_correct_shape(self, backend):
         """Feature transforms should have correct shape."""

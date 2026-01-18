@@ -168,9 +168,10 @@ def test_geodesic_distances_from_embedding_shape(any_backend) -> None:
     assert distances.shape == (n, n)
 
     # Diagonal should be zero
+    eps = division_epsilon(any_backend, distances)
     for i in range(n):
         d_ii = float(any_backend.to_scalar(distances[i, i]))
-        assert abs(d_ii) < 1e-6
+        assert abs(d_ii) < eps
 
 
 def test_spectral_embedding_empty_and_single(any_backend) -> None:

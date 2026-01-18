@@ -35,7 +35,10 @@ from modelcypher.core.domain.geometry.cross_grounding_transfer import (
     GroundingRotationEstimator,
     RelationalStressComputer,
 )
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
@@ -116,7 +119,8 @@ class TestRelationalStressComputer:
 
         # Distance to itself should be very small
         self_distance = profile.distance_to(profile)
-        assert self_distance < 1e-5
+        eps = regularization_epsilon(backend, concept)
+        assert self_distance < eps
 
 
 class TestGroundingRotationEstimator:

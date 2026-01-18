@@ -25,6 +25,10 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
@@ -80,8 +84,10 @@ class TestBasicOperationsConsistency:
         diff_norm = float(backend.tolist(backend.norm(diff)))
         a_norm = float(backend.tolist(backend.norm(A)))
 
-        relative_error = diff_norm / a_norm if a_norm > 1e-10 else diff_norm
-        assert relative_error < 1e-5, f"SVD reconstruction error: {relative_error}"
+        denom_eps = division_epsilon(backend, A)
+        tol = regularization_epsilon(backend, A)
+        relative_error = diff_norm / a_norm if a_norm > denom_eps else diff_norm
+        assert relative_error < tol, f"SVD reconstruction error: {relative_error}"
 
     def test_eigh_consistency(self, backend):
         """Eigendecomposition should produce valid results for symmetric matrices."""
@@ -97,8 +103,9 @@ class TestBasicOperationsConsistency:
         # Verify: A @ v = lambda * v for each eigenpair
         # Just check that eigenvalues are sorted (ascending by convention)
         eigenvalues_list = backend.tolist(eigenvalues)
+        eps = regularization_epsilon(backend, eigenvalues)
         for i in range(len(eigenvalues_list) - 1):
-            assert eigenvalues_list[i] <= eigenvalues_list[i + 1] + 1e-6, (
+            assert eigenvalues_list[i] <= eigenvalues_list[i + 1] + eps, (
                 f"Eigenvalues should be sorted: {eigenvalues_list}"
             )
 
@@ -119,7 +126,8 @@ class TestBasicOperationsConsistency:
         diff = backend.subtract(QtQ, identity)
         diff_norm = float(backend.tolist(backend.norm(diff)))
 
-        assert diff_norm < 1e-5, f"Q should be orthonormal: ||Q.T @ Q - I|| = {diff_norm}"
+        eps = regularization_epsilon(backend, Q)
+        assert diff_norm < eps, f"Q should be orthonormal: ||Q.T @ Q - I|| = {diff_norm}"
 
 
 class TestGeometricOperationsConsistency:
@@ -139,7 +147,8 @@ class TestGeometricOperationsConsistency:
         diff = backend.subtract(gram, backend.transpose(gram))
         diff_norm = float(backend.tolist(backend.norm(diff)))
 
-        assert diff_norm < 1e-10, f"Gram should be symmetric: ||K - K.T|| = {diff_norm}"
+        eps = regularization_epsilon(backend, gram)
+        assert diff_norm < eps, f"Gram should be symmetric: ||K - K.T|| = {diff_norm}"
 
         # Gram should be positive semi-definite (all eigenvalues >= 0)
         # Allow small negative due to numerical precision
@@ -148,7 +157,8 @@ class TestGeometricOperationsConsistency:
 
         min_eigenvalue = float(backend.tolist(backend.min(eigenvalues)))
         # Use more lenient tolerance for float32 precision
-        assert min_eigenvalue >= -1e-4, f"Gram should be PSD: min_eigenvalue = {min_eigenvalue}"
+        eps = regularization_epsilon(backend, eigenvalues)
+        assert min_eigenvalue >= -eps, f"Gram should be PSD: min_eigenvalue = {min_eigenvalue}"
 
     def test_centering_matrix_consistency(self, backend):
         """Centering matrix H should work correctly."""
@@ -162,7 +172,8 @@ class TestGeometricOperationsConsistency:
         # H should be symmetric
         diff = backend.subtract(H, backend.transpose(H))
         diff_norm = float(backend.tolist(backend.norm(diff)))
-        assert diff_norm < 1e-10, f"H should be symmetric: {diff_norm}"
+        eps = regularization_epsilon(backend, H)
+        assert diff_norm < eps, f"H should be symmetric: {diff_norm}"
 
         # H @ 1 = 0 (centering removes mean)
         ones = backend.ones((n, 1))
@@ -171,7 +182,8 @@ class TestGeometricOperationsConsistency:
 
         h_ones_norm = float(backend.tolist(backend.norm(H_ones)))
         # Use more lenient tolerance for float32 precision
-        assert h_ones_norm < 1e-5, f"H should center: ||H @ 1|| = {h_ones_norm}"
+        eps = regularization_epsilon(backend, H_ones)
+        assert h_ones_norm < eps, f"H should center: ||H @ 1|| = {h_ones_norm}"
 
     def test_pseudoinverse_consistency(self, backend):
         """Pseudoinverse should satisfy A @ A+ @ A = A."""
@@ -190,8 +202,10 @@ class TestGeometricOperationsConsistency:
         diff_norm = float(backend.tolist(backend.norm(diff)))
         a_norm = float(backend.tolist(backend.norm(A)))
 
-        relative_error = diff_norm / a_norm if a_norm > 1e-10 else diff_norm
-        assert relative_error < 1e-5, f"Pseudoinverse error: {relative_error}"
+        denom_eps = division_epsilon(backend, A)
+        tol = regularization_epsilon(backend, A)
+        relative_error = diff_norm / a_norm if a_norm > denom_eps else diff_norm
+        assert relative_error < tol, f"Pseudoinverse error: {relative_error}"
 
 
 class TestNumericalStabilityConsistency:
@@ -209,9 +223,8 @@ class TestNumericalStabilityConsistency:
         # machine_epsilon returns a float directly
         eps_val = float(eps)
 
-        # For float32, eps should be around 1e-7
-        # For float64, eps should be around 1e-16
-        assert 1e-20 < eps_val < 1e-3, f"Epsilon should be reasonable: {eps_val}"
+        expected = backend.finfo(x.dtype).eps
+        assert eps_val == expected, f"Epsilon should match dtype finfo: {eps_val}"
 
     def test_safe_sqrt_consistency(self, backend):
         """Safe sqrt should handle near-zero values."""
@@ -243,7 +256,8 @@ class TestCKAConsistency:
 
         result = compute_cka(X, X, backend)
 
-        assert result.cka == pytest.approx(1.0, rel=1e-5), (
+        eps = regularization_epsilon(backend, X)
+        assert result.cka == pytest.approx(1.0, rel=eps), (
             f"CKA(X, X) should be 1.0: got {result.cka}"
         )
 
@@ -264,7 +278,8 @@ class TestCKAConsistency:
             result = compute_cka(X, Y, backend)
 
             # Allow small tolerance below 0 for numerical precision
-            assert -1e-6 <= result.cka <= 1.0 + 1e-6, (
+            eps = regularization_epsilon(backend, X)
+            assert -eps <= result.cka <= 1.0 + eps, (
                 f"CKA should be in [0, 1]: got {result.cka}"
             )
 
@@ -281,7 +296,8 @@ class TestCKAConsistency:
         result_xy = compute_cka(X, Y, backend)
         result_yx = compute_cka(Y, X, backend)
 
-        assert result_xy.cka == pytest.approx(result_yx.cka, rel=1e-6), (
+        eps = regularization_epsilon(backend, X)
+        assert result_xy.cka == pytest.approx(result_yx.cka, rel=eps), (
             f"CKA should be symmetric: CKA(X,Y)={result_xy.cka}, CKA(Y,X)={result_yx.cka}"
         )
 
@@ -315,7 +331,8 @@ class TestAlignmentConsistency:
         target_norm = float(backend.tolist(backend.norm(target)))
 
         # Residual should be reasonable (not necessarily zero due to rank)
-        relative_residual = diff_norm / target_norm if target_norm > 1e-10 else diff_norm
+        denom_eps = division_epsilon(backend, target)
+        relative_residual = diff_norm / target_norm if target_norm > denom_eps else diff_norm
 
         # For random data, residual won't be zero but should be bounded
         assert relative_residual < 2.0, f"Alignment residual too large: {relative_residual}"

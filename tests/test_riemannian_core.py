@@ -30,6 +30,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_core import (
     RiemannianGeometry,
     _get_riemannian_geometry,
@@ -77,7 +78,8 @@ class TestFrechetMean:
         
         # Should be identical
         diff = backend.to_scalar(backend.sum(backend.abs(point - result.mean)))
-        assert diff < 1e-6
+        eps = division_epsilon(backend, point)
+        assert diff < eps
 
     def test_frechet_mean_identical_points(self):
         """Fréchet mean of identical points is the point."""
@@ -88,7 +90,8 @@ class TestFrechetMean:
         result = geom.frechet_mean(points)
         
         result_list = backend.tolist(result.mean)
-        assert abs(result_list[0] - 1.0) < 1e-6
+        eps = division_epsilon(backend, points)
+        assert abs(result_list[0] - 1.0) < eps
 
     def test_frechet_mean_euclidean_approx(self):
         """test that it runs (approximation checks are tricky without known curvature)."""

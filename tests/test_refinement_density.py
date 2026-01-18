@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
 
 import pytest
 
@@ -125,11 +126,17 @@ class TestRefinementDensityAnalyzer:
             layer_count=2,
         )
 
-        assert result.max_directional_drift == pytest.approx(2.0, abs=1e-6)
-        assert result.layer_scores[0].directional_contribution == pytest.approx(1.0, abs=1e-6)
-        assert result.layer_scores[1].directional_contribution == pytest.approx(0.5, abs=1e-6)
+        assert result.max_directional_drift == pytest.approx(2.0, abs=math.ulp(2.0))
+        assert result.layer_scores[0].directional_contribution == pytest.approx(
+            1.0, abs=math.ulp(1.0)
+        )
+        assert result.layer_scores[1].directional_contribution == pytest.approx(
+            0.5, abs=math.ulp(0.5)
+        )
         assert result.layer_scores[0].component_count == 1
-        assert result.layer_scores[0].composite_score == pytest.approx(1.0, abs=1e-6)
+        assert result.layer_scores[0].composite_score == pytest.approx(
+            1.0, abs=math.ulp(1.0)
+        )
 
     def test_transition_normalization(self) -> None:
         analyzer = RefinementDensityAnalyzer()
@@ -158,9 +165,13 @@ class TestRefinementDensityAnalyzer:
             layer_count=2,
         )
 
-        assert result.max_transition_advantage == pytest.approx(2.0, abs=1e-6)
-        assert result.layer_scores[0].transition_contribution == pytest.approx(1.0, abs=1e-6)
-        assert result.layer_scores[1].transition_contribution == pytest.approx(0.5, abs=1e-6)
+        assert result.max_transition_advantage == pytest.approx(2.0, abs=math.ulp(2.0))
+        assert result.layer_scores[0].transition_contribution == pytest.approx(
+            1.0, abs=math.ulp(1.0)
+        )
+        assert result.layer_scores[1].transition_contribution == pytest.approx(
+            0.5, abs=math.ulp(0.5)
+        )
 
     def test_extract_layer_index(self) -> None:
         assert RefinementDensityAnalyzer._extract_layer_index("layers.0.mlp.gate_proj") == 0

@@ -27,7 +27,10 @@ from modelcypher.core.domain.geometry.gram_aligner import (
     find_alignment,
 )
 from modelcypher.core.domain.geometry.cka import compute_cka
-from modelcypher.core.domain.geometry.numerical_stability import is_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    is_finite,
+)
 
 
 class TestGramAlignerInit:
@@ -290,7 +293,7 @@ class TestGramAlignerConditionNumber:
         base = b.random_normal((52, 50))
         # Make last column nearly identical to first (creates near-singularity)
         col0 = base[:, 0:1]
-        noise = b.random_normal((52, 1)) * 1e-6
+        noise = b.random_normal((52, 1)) * division_epsilon(b, base)
         near_dependent = col0 + noise
         # Replace last column
         source = b.concatenate([base[:, :-1], near_dependent], axis=1)

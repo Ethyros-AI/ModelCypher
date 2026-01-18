@@ -28,6 +28,10 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
@@ -121,7 +125,8 @@ class TestMergeWorkflowComponents:
 
         # Check that used component is near zero
         used_norm = float(backend.tolist(backend.norm(used_component)))
-        assert used_norm < 1e-5, f"Used component should be near zero: {used_norm}"
+        eps = regularization_epsilon(backend, used_component)
+        assert used_norm < eps, f"Used component should be near zero: {used_norm}"
 
     def test_variance_weighting_scales_by_activation(self, backend):
         """Variance-weighted projection should scale delta by inverse variance."""
@@ -203,14 +208,16 @@ class TestMergeQualityMetrics:
 
         s_max = float(backend.tolist(backend.max(s_well)))
         s_min = float(backend.tolist(backend.min(s_well)))
-        cond_well = s_max / s_min if s_min > 1e-10 else float("inf")
+        eps = division_epsilon(backend, s_well)
+        cond_well = s_max / s_min if s_min > eps else float("inf")
 
         # Ill-conditioned matrix (near-singular)
         ill_cond = backend.random_normal((n, d))
         # Make some columns nearly identical
         ill_cond = backend.concatenate([
             ill_cond[:, :d // 2],
-            ill_cond[:, :d // 2] + backend.random_normal((n, d // 2)) * 1e-6,
+            ill_cond[:, :d // 2]
+            + backend.random_normal((n, d // 2)) * division_epsilon(backend, ill_cond),
         ], axis=1)
         backend.eval(ill_cond)
 
@@ -219,7 +226,7 @@ class TestMergeQualityMetrics:
 
         s_max_ill = float(backend.tolist(backend.max(s_ill)))
         s_min_ill = float(backend.tolist(backend.min(s_ill)))
-        cond_ill = s_max_ill / s_min_ill if s_min_ill > 1e-10 else float("inf")
+        cond_ill = s_max_ill / s_min_ill if s_min_ill > eps else float("inf")
 
         # Ill-conditioned should have higher condition number
         assert cond_ill > cond_well, (
@@ -283,7 +290,8 @@ class TestMergePreservation:
         s_list = backend.tolist(singular_values)
 
         # Check gap between k-th and (k+1)-th singular values
-        gap = s_list[k_used - 1] / s_list[k_used] if s_list[k_used] > 1e-10 else float("inf")
+        eps = division_epsilon(backend, singular_values)
+        gap = s_list[k_used - 1] / s_list[k_used] if s_list[k_used] > eps else float("inf")
         assert gap > 10, f"Spectral gap should be significant: {gap:.1f}"
 
 
@@ -306,7 +314,8 @@ class TestCrossBackendConsistency:
         backend.eval(X2, Y2)
         cka2 = compute_cka(X2, Y2, backend)
 
-        assert cka1.cka == pytest.approx(cka2.cka, rel=1e-6), (
+        eps = regularization_epsilon(backend, X1)
+        assert cka1.cka == pytest.approx(cka2.cka, rel=eps), (
             f"CKA should be reproducible: {cka1.cka:.6f} vs {cka2.cka:.6f}"
         )
 
@@ -332,4 +341,5 @@ class TestCrossBackendConsistency:
         diff = backend.subtract(result1.feature_transform, result2.feature_transform)
         diff_norm = float(backend.tolist(backend.norm(diff)))
 
-        assert diff_norm < 1e-6, f"Alignment should be reproducible: diff_norm={diff_norm}"
+        eps = regularization_epsilon(backend, result1.feature_transform)
+        assert diff_norm < eps, f"Alignment should be reproducible: diff_norm={diff_norm}"

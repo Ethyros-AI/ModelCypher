@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, Mock
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.shared_subspace_projector import SharedSubspaceProjector
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
@@ -69,7 +70,8 @@ class TestSharedSubspaceProjector:
         assert result.shared_dimension > 0
         # For identical data, top correlation should be 1.0
         assert result.alignment_strengths[0] > 0.99
-        assert result.alignment_error < 1e-5
+        eps = regularization_epsilon(self.backend, self.backend.array([result.alignment_error]))
+        assert result.alignment_error < eps
 
     def test_discover_orthogonal(self):
         """Orthogonal datasets might still have some structure if dimensions align by chance, but here we construct unrelated."""

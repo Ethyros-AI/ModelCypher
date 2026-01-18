@@ -32,7 +32,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    regularization_epsilon,
+)
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _proportional_layer_index,
     _promote_precision,
@@ -127,7 +130,8 @@ class TestPromotePrecision:
         # Should be same array (or same values)
         diff = backend.mean(backend.abs(arr - result))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-6
+        eps = regularization_epsilon(backend, arr)
+        assert float(backend.to_scalar(diff)) < eps
 
     def test_float16_promoted(self, backend):
         """Float16 array should be promoted to float32."""
@@ -159,7 +163,8 @@ class TestPromotePrecision:
 
         diff = backend.max(backend.abs(arr - result))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-5
+        eps = regularization_epsilon(backend, arr)
+        assert float(backend.to_scalar(diff)) < eps
 
 
 class TestPrecisionReference:

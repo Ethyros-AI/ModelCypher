@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -343,7 +344,9 @@ class TestEntropyMathInvariants:
 
         if result.entropy_trajectory:
             expected_mean = sum(result.entropy_trajectory) / len(result.entropy_trajectory)
-            assert result.mean_entropy == pytest.approx(expected_mean, rel=1e-6)
+            assert result.mean_entropy == pytest.approx(
+                expected_mean, abs=math.ulp(expected_mean)
+            )
 
     def test_first_token_entropy_matches_trajectory_start(self) -> None:
         """First token entropy should match trajectory[0]."""
@@ -352,8 +355,9 @@ class TestEntropyMathInvariants:
         result = cal.measure_entropy("Test prompt")
 
         if result.entropy_trajectory:
+            expected = result.entropy_trajectory[0]
             assert result.first_token_entropy == pytest.approx(
-                result.entropy_trajectory[0], rel=1e-6
+                expected, abs=math.ulp(expected)
             )
 
 
@@ -375,7 +379,9 @@ class TestVarianceComputation:
             squared_diff_sum = sum((e - mean) ** 2 for e in result.entropy_trajectory)
             expected_var = squared_diff_sum / (len(result.entropy_trajectory) - 1)
 
-            assert result.entropy_variance == pytest.approx(expected_var, rel=1e-6)
+            assert result.entropy_variance == pytest.approx(
+                expected_var, abs=math.ulp(expected_var)
+            )
 
     def test_single_point_variance_is_zero(self) -> None:
         """Variance of single point should be 0."""
@@ -403,7 +409,9 @@ class TestBaselineStatistics:
         cal._baseline_cache.clear()
         baseline = cal.establish_baseline(corpus)
 
-        assert baseline.mean_generation_entropy == pytest.approx(expected_mean, rel=1e-6)
+        assert baseline.mean_generation_entropy == pytest.approx(
+            expected_mean, abs=math.ulp(expected_mean)
+        )
 
     def test_baseline_std_is_population_std(self) -> None:
         """Std dev should follow the population formula.
@@ -424,7 +432,9 @@ class TestBaselineStatistics:
         cal._baseline_cache.clear()
         baseline = cal.establish_baseline(corpus)
 
-        assert baseline.std_generation_entropy == pytest.approx(expected_std, rel=1e-6)
+        assert baseline.std_generation_entropy == pytest.approx(
+            expected_std, abs=math.ulp(expected_std)
+        )
 
     def test_percentile_ordering(self) -> None:
         """Percentiles should be monotonically increasing."""
@@ -459,7 +469,7 @@ class TestTrajectoryAnalysis:
 
         for i, cum in enumerate(result.cumulative_entropy):
             expected = sum(result.per_token_entropy[: i + 1]) / (i + 1)
-            assert cum == pytest.approx(expected, rel=1e-6)
+            assert cum == pytest.approx(expected, abs=math.ulp(expected))
 
     def test_per_token_variance_is_sliding_window(self) -> None:
         """Per-token variance should use data-derived sliding window."""
@@ -482,7 +492,9 @@ class TestTrajectoryAnalysis:
             else:
                 expected_var = 0.0
 
-            assert result.per_token_variance[i] == pytest.approx(expected_var, rel=1e-6)
+            assert result.per_token_variance[i] == pytest.approx(
+                expected_var, abs=math.ulp(expected_var)
+            )
 
     def test_trend_detection_increasing(self) -> None:
         """Should detect INCREASE trend when second half > first half."""

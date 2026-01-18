@@ -186,7 +186,8 @@ class TestTinyValue:
         arr = b.zeros((2, 2))
         tiny = tiny_value(b, arr)
         assert tiny > 0
-        assert tiny < 1e-30
+        expected = b.finfo(arr.dtype).tiny
+        assert tiny == expected
 
     def test_tiny_value_smaller_than_epsilon(self, any_backend: "Backend") -> None:
         """Tiny value should be smaller than machine epsilon."""

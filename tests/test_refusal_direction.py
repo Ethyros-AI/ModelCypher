@@ -19,6 +19,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 from modelcypher.core.domain.geometry.refusal_direction_cache import RefusalDirectionCache
 from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirectionDetector
 
@@ -46,7 +49,8 @@ def test_refusal_direction_compute_and_distance() -> None:
     # Activation [1,-1] is parallel to refusal direction [1,-1] (from harmful-harmless)
     # Distance should be ~0 (on the direction line)
     # Projection should be positive (same direction, not opposite)
-    assert abs(metrics.distance_to_refusal) < 1e-6
+    eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+    assert abs(metrics.distance_to_refusal) < eps
     assert metrics.projection_magnitude > 0  # Same direction as refusal, not opposite
 
 
@@ -97,8 +101,10 @@ class TestRefusalDirectionStability:
         assert dir1 is not None
         assert dir2 is not None
         # Same direction vector
+        b = get_default_backend()
+        eps = division_epsilon(b, b.array(dir1.direction))
         for i in range(len(dir1.direction)):
-            assert abs(dir1.direction[i] - dir2.direction[i]) < 1e-10
+            assert abs(dir1.direction[i] - dir2.direction[i]) < eps
 
     def test_direction_robust_to_sample_ordering(self) -> None:
         """Direction should be robust to ordering of samples."""
@@ -243,7 +249,8 @@ class TestRefusalDirectionKnownExamples:
 
         # Direction magnitude should be 1.0 (normalized)
         magnitude = sum(d * d for d in direction.direction) ** 0.5
-        assert abs(magnitude - 1.0) < 1e-6
+        eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+        assert abs(magnitude - 1.0) < eps
 
     def test_direction_strength_reflects_separation(self) -> None:
         """Direction strength should reflect how well it separates."""

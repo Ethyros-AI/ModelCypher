@@ -20,6 +20,7 @@
 Validates that cross-modal bridges can be generated, saved, loaded, and applied.
 """
 
+import math
 import tempfile
 from pathlib import Path
 
@@ -138,7 +139,9 @@ class TestBridgeSaveLoad:
             assert loaded.target_dim == 64
             assert loaded.source_name == "clip"
             assert loaded.target_name == "lfm2"
-            assert loaded.scale_ratio == pytest.approx(result.scale_ratio, rel=1e-5)
+            assert loaded.scale_ratio == pytest.approx(
+                result.scale_ratio, abs=math.ulp(result.scale_ratio)
+            )
 
 
 class TestBridgeApplication:

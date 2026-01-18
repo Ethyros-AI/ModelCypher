@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 import pytest
 
 from modelcypher.adapters.embedding_stub import ByteFrequencyEmbeddingProvider
@@ -177,4 +178,4 @@ class TestByteFrequencyEmbeddingProviderEmbed:
         # Each byte appears once, so all frequencies should be equal
         expected_freq = 1.0 / 256
         for i in range(256):
-            assert result[0][i] == pytest.approx(expected_freq, rel=1e-6)
+            assert result[0][i] == pytest.approx(expected_freq, abs=math.ulp(expected_freq))

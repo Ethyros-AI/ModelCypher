@@ -31,6 +31,7 @@ Tests critical edge cases:
 
 from __future__ import annotations
 
+import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -74,8 +75,8 @@ class TestNumericalStabilityEdgeCases:
 
         eps = division_epsilon(backend, arr)
 
-        # sqrt(float32 eps) is around 1e-4 to 1e-3
-        assert 1e-5 < eps < 1e-2, f"Unexpected division epsilon: {eps}"
+        expected = sqrt_scalar(backend.finfo(arr.dtype).eps, backend)
+        assert eps == expected, f"Unexpected division epsilon: {eps}"
 
     def test_machine_epsilon_reasonable(self):
         """Machine epsilon should be reasonable for dtype."""
@@ -85,8 +86,8 @@ class TestNumericalStabilityEdgeCases:
 
         eps = machine_epsilon(backend, arr)
 
-        # For float32, eps should be around 1e-7
-        assert 1e-10 < eps < 1e-3, f"Unexpected machine epsilon: {eps}"
+        expected = backend.finfo(arr.dtype).eps
+        assert eps == expected, f"Unexpected machine epsilon: {eps}"
 
     def test_tiny_value_positive(self):
         """Tiny value should be positive and very small."""
@@ -97,7 +98,8 @@ class TestNumericalStabilityEdgeCases:
         tiny = tiny_value(backend, arr)
 
         assert tiny > 0, f"Tiny value should be positive: {tiny}"
-        assert tiny < 1e-20, f"Tiny value should be very small: {tiny}"
+        expected = backend.finfo(arr.dtype).tiny
+        assert tiny == expected, f"Tiny value should match dtype tiny: {tiny}"
 
     def test_safe_log_epsilon_prevents_log_zero(self):
         """Safe log epsilon should prevent log(0)."""
@@ -107,9 +109,8 @@ class TestNumericalStabilityEdgeCases:
 
         eps = safe_log_epsilon(backend, arr)
 
-        # eps should be positive and small
-        assert eps > 0, f"Epsilon should be positive: {eps}"
-        assert eps < 1e-30, f"Epsilon should be tiny: {eps}"
+        expected = backend.finfo(arr.dtype).tiny
+        assert eps == expected, f"Epsilon should match dtype tiny: {eps}"
 
     def test_condition_threshold_high(self):
         """Condition threshold should be high (1/eps)."""
@@ -119,8 +120,8 @@ class TestNumericalStabilityEdgeCases:
 
         thresh = condition_threshold(backend, arr)
 
-        # For float32, 1/eps is around 1e7
-        assert thresh > 1e5, f"Condition threshold should be high: {thresh}"
+        expected = 1.0 / backend.finfo(arr.dtype).eps
+        assert thresh == expected, f"Condition threshold should match 1/eps: {thresh}"
 
     def test_svd_rank_threshold_dimension_scaled(self):
         """SVD rank threshold should scale with dimension."""
@@ -132,7 +133,8 @@ class TestNumericalStabilityEdgeCases:
         thresh_100 = svd_rank_threshold(backend, arr, max_dim=100)
 
         assert thresh_100 > thresh_10, "Threshold should scale with dimension"
-        assert thresh_100 == pytest.approx(10 * thresh_10, rel=1e-5)
+        expected = 10 * thresh_10
+        assert thresh_100 == pytest.approx(expected, abs=math.ulp(expected))
 
 
 class TestNearSingularMatrices:
@@ -187,7 +189,8 @@ class TestNearSingularMatrices:
         diff_norm = float(backend.tolist(backend.norm(diff)))
         matrix_norm = float(backend.tolist(backend.norm(matrix)))
 
-        rel_error = diff_norm / matrix_norm if matrix_norm > 1e-10 else diff_norm
+        eps = division_epsilon(backend, matrix)
+        rel_error = diff_norm / matrix_norm if matrix_norm > eps else diff_norm
         assert rel_error < 0.1, f"Reconstruction error too large: {rel_error}"
 
     def test_safe_inverse_high_condition(self):
@@ -275,7 +278,7 @@ class TestDegenerateEigenvalues:
         expected = [5.0, 5.0, 5.0, 1.0, 1.0]
 
         for actual, exp in zip(s_list, expected):
-            assert actual == pytest.approx(exp, rel=1e-5), f"Expected {exp}, got {actual}"
+            assert actual == pytest.approx(exp, abs=math.ulp(exp)), f"Expected {exp}, got {actual}"
 
     def test_zero_eigenvalues(self):
         """SVD should handle matrices with zero eigenvalues."""
@@ -340,7 +343,8 @@ class TestZeroNearZeroCases:
         # All singular values should be zero (or empty if rank 0)
         if S.shape[0] > 0:
             max_s = float(backend.tolist(backend.max(S)))
-            assert max_s < 1e-10, f"Zero matrix should have zero singular values: {max_s}"
+            eps = regularization_epsilon(backend, S)
+            assert max_s < eps, f"Zero matrix should have zero singular values: {max_s}"
 
     def test_pinv_zero_matrix(self):
         """Pseudoinverse of zero matrix should be zero."""
@@ -391,7 +395,10 @@ class TestCKAEdgeCases:
 
         result = compute_cka(X, X, backend)
 
-        assert result.cka == pytest.approx(1.0, rel=1e-5), f"CKA(X, X) should be 1.0: {result.cka}"
+        eps = regularization_epsilon(backend, X)
+        assert result.cka == pytest.approx(1.0, rel=eps), (
+            f"CKA(X, X) should be 1.0: {result.cka}"
+        )
 
     def test_cka_scaled_representations(self):
         """CKA should handle scaled representations."""
@@ -406,7 +413,8 @@ class TestCKAEdgeCases:
         cka_original = compute_linear_cka(X, X, backend)
         cka_scaled = compute_linear_cka(X_scaled, X_scaled, backend)
 
-        assert cka_original == pytest.approx(cka_scaled, rel=1e-5), (
+        eps = regularization_epsilon(backend, X)
+        assert cka_original == pytest.approx(cka_scaled, rel=eps), (
             f"Linear CKA should be scale-invariant: {cka_original} vs {cka_scaled}"
         )
 

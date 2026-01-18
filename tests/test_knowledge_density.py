@@ -24,6 +24,10 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.knowledge_density import (
     ConceptDensity,
     LayerDensityProfile,
@@ -297,7 +301,8 @@ class TestComputeActivationVariance:
 
         variance = analyzer._compute_activation_variance(activations)
 
-        assert variance < 1e-10
+        eps = regularization_epsilon(backend, activations)
+        assert variance < eps
 
     def test_nonzero_variance_different_activations(self, backend):
         """Different activations should have nonzero variance."""
@@ -483,7 +488,10 @@ class TestDensityScoreRange:
                 ci_upper=None,
             )
             score = analyzer._compute_density_score(result)
-            assert abs(score - expected_score) < 1e-9, f"ID={id_val}: expected {expected_score}, got {score}"
+            eps = machine_epsilon(backend, backend.array([expected_score]))
+            assert abs(score - expected_score) < eps, (
+                f"ID={id_val}: expected {expected_score}, got {score}"
+            )
 
 
 class TestGeodesicMath:

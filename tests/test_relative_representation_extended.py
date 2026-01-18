@@ -29,7 +29,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import all_finite
+from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.relative_representation import (
     compute_relative_representation,
     align_relative_representations,
@@ -90,8 +93,9 @@ class TestComputeRelativeRepresentation:
         max_val = backend.max(rel_rep)
         backend.eval(min_val, max_val)
 
-        assert float(backend.to_scalar(min_val)) >= -1.0 - 1e-5
-        assert float(backend.to_scalar(max_val)) <= 1.0 + 1e-5
+        eps = regularization_epsilon(backend, rel_rep)
+        assert float(backend.to_scalar(min_val)) >= -1.0 - eps
+        assert float(backend.to_scalar(max_val)) <= 1.0 + eps
 
     def test_single_sample(self, backend):
         """Single sample should work."""
@@ -202,7 +206,8 @@ class TestAlignRelativeRepresentations:
         I = backend.eye(8)
         diff = backend.mean(backend.abs(R - I))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-5
+        eps = regularization_epsilon(backend, R)
+        assert float(backend.to_scalar(diff)) < eps
 
 
 class TestTransferViaRelativeSpace:

@@ -19,6 +19,7 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.cka import compute_cka, compute_cka_from_grams
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
 
 @pytest.fixture
@@ -46,7 +47,8 @@ class TestCKAPipeline:
 
         result = compute_cka(X, X, backend)
 
-        assert result.cka == pytest.approx(1.0, rel=1e-5)
+        eps = regularization_epsilon(backend, X)
+        assert result.cka == pytest.approx(1.0, rel=eps)
 
     def test_random_activations_cka_less_than_one(self, backend):
         """Independent random activations should have CKA < 1."""
@@ -72,7 +74,8 @@ class TestCKAPipeline:
         result_xy = compute_cka(X, Y, backend)
         result_yx = compute_cka(Y, X, backend)
 
-        assert result_xy.cka == pytest.approx(result_yx.cka, rel=1e-6)
+        eps = regularization_epsilon(backend, X)
+        assert result_xy.cka == pytest.approx(result_yx.cka, rel=eps)
 
     def test_cka_from_grams_self_consistent(self, backend):
         """CKA from Gram matrices should be self-consistent.
@@ -94,7 +97,8 @@ class TestCKAPipeline:
         # Self-similarity should be 1.0
         cka_self = compute_cka_from_grams(gram_x, gram_x, backend)
 
-        assert cka_self == pytest.approx(1.0, rel=1e-5)
+        eps = regularization_epsilon(backend, gram_x)
+        assert cka_self == pytest.approx(1.0, rel=eps)
 
     def test_scaled_activations_preserve_linear_cka(self, backend):
         """Linear CKA is scale-invariant: uniform scaling should not change CKA.
@@ -192,12 +196,14 @@ class TestCKACacheIntegration:
 
         # Verify diagonal elements are 1.0
         for i in range(n_layers):
-            assert cka_matrix[i][i] == pytest.approx(1.0, rel=1e-5)
+            eps = regularization_epsilon(backend, layers[i])
+            assert cka_matrix[i][i] == pytest.approx(1.0, rel=eps)
 
         # Verify symmetry
         for i in range(n_layers):
             for j in range(i + 1, n_layers):
-                assert cka_matrix[i][j] == pytest.approx(cka_matrix[j][i], rel=1e-6)
+                eps = regularization_epsilon(backend, layers[i])
+                assert cka_matrix[i][j] == pytest.approx(cka_matrix[j][i], rel=eps)
 
 
 class TestCKAWithDifferentDimensions:

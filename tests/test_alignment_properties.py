@@ -30,7 +30,10 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 
 def _random_matrix(backend, rows: int, cols: int, seed: int):
@@ -174,7 +177,8 @@ class TestAlignmentInvariants:
         diff_norm = float(backend.tolist(backend.norm(diff)))
         source_norm = float(backend.tolist(backend.norm(source)))
 
-        relative_diff = diff_norm / source_norm if source_norm > 1e-10 else diff_norm
+        eps = division_epsilon(backend, source)
+        relative_diff = diff_norm / source_norm if source_norm > eps else diff_norm
         assert relative_diff < 0.1, f"Self-alignment should approximately preserve: {relative_diff}"
 
     @pytest.mark.parametrize("seed", range(5))
@@ -205,7 +209,8 @@ class TestAlignmentInvariants:
         diff = backend.subtract(aligned_scaled, aligned * scale)
         diff_norm = float(backend.tolist(backend.norm(diff)))
 
-        assert diff_norm < 1e-4, f"Alignment should be linear: diff={diff_norm}"
+        tol = regularization_epsilon(backend, aligned)
+        assert diff_norm < tol, f"Alignment should be linear: diff={diff_norm}"
 
 
 class TestCrossArchitectureAlignment:

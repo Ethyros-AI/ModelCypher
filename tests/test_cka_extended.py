@@ -46,6 +46,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
     all_finite,
+    regularization_epsilon,
 )
 
 
@@ -178,7 +179,8 @@ class TestCKASplit:
         result = compute_cka_split(source, target, backend)
 
         # Note: some samples may be neither (both low response)
-        assert result.shared_fraction + result.novel_fraction <= 1.0 + 1e-6
+        eps = regularization_epsilon(backend, source)
+        assert result.shared_fraction + result.novel_fraction <= 1.0 + eps
 
     def test_identical_data_all_shared(self, backend):
         """With identical source and target, all samples should be shared."""
@@ -385,7 +387,8 @@ class TestRBFGramWithSigma:
         # Should be identical
         diff = backend.sum((gram1 - gram2) ** 2)
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-10
+        eps = regularization_epsilon(backend, gram1)
+        assert float(backend.to_scalar(diff)) < eps
 
         # Sigma should match
         assert sigma == sigma2

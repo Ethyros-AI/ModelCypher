@@ -26,6 +26,7 @@ Tests cover all public APIs:
 
 from __future__ import annotations
 
+import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -540,7 +541,9 @@ class TestAnalyzeSummary:
         # Overall mean should be average of individual anchor means
         if report.anchors:
             expected_mean = sum(a.mean_cosine for a in report.anchors) / len(report.anchors)
-            assert report.summary.overall_mean_cosine == pytest.approx(expected_mean, rel=1e-6)
+            assert report.summary.overall_mean_cosine == pytest.approx(
+                expected_mean, abs=math.ulp(expected_mean)
+            )
 
 
 # =============================================================================

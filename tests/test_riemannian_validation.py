@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import pytest
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_validation import (
     all_finite,
     count_finite,
@@ -91,4 +92,5 @@ class TestRiemannianValidation:
         backend.eval(mat)
         
         val = float(backend.to_scalar(mat[0, 1]))
-        assert abs(val - 5.0) < 1e-6
+        eps = division_epsilon(backend, mat)
+        assert abs(val - 5.0) < eps

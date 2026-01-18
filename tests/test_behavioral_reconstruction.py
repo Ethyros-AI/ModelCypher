@@ -32,6 +32,10 @@ from hypothesis import strategies as st
 import numpy as np
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.transplant import (
     BehavioralReconstructionResult,
     WeightSpaceTransplantResult,
@@ -336,7 +340,8 @@ class TestComputeCrossDimensionalTransplant:
         b.eval(diff)
         diff_val = float(b.to_scalar(diff))
 
-        assert diff_val < 1e-5, f"delta_scale=0 should preserve target, got diff={diff_val}"
+        tol = regularization_epsilon(b, target_weight)
+        assert diff_val < tol, f"delta_scale=0 should preserve target, got diff={diff_val}"
 
     def test_same_source_target_dimensions(self, backend):
         """When source and target have same dims, should still work."""
@@ -602,7 +607,8 @@ class TestCrossDimensionalTransplantProperties:
 
         # Key property: magnitude should not explode by more than 5x
         # This was the bug we fixed - direct stitch caused 50x explosion
-        ratio = merged_std / max(target_std, 1e-8)
+        denom = max(target_std, division_epsilon(b, result.merged_weight))
+        ratio = merged_std / denom
         assert ratio < 5.0, f"Magnitude exploded: {ratio:.2f}x (merged_std={merged_std}, target_std={target_std})"
 
     @given(
@@ -645,7 +651,8 @@ class TestCrossDimensionalTransplantProperties:
         b.eval(diff)
         diff_val = float(b.to_scalar(diff))
 
-        assert diff_val < 1e-5, f"delta_scale=0 should give target, got diff={diff_val}"
+        tol = regularization_epsilon(b, target_weight)
+        assert diff_val < tol, f"delta_scale=0 should give target, got diff={diff_val}"
 
 
 # ============================================================================
@@ -661,7 +668,9 @@ class TestBehavioralReconstructionEdgeCases:
         dim = 32
         n_samples = 64
 
-        source_weight = make_random_weight(b, dim, dim, scale=1e-6)
+        source_weight = make_random_weight(
+            b, dim, dim, scale=division_epsilon(b, b.array([1.0]))
+        )
         input_acts = make_random_activations(b, n_samples, dim)
 
         alignment_in = b.eye(dim)

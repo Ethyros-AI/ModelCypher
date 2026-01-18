@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.tangent_space_alignment import (
     LayerResult,
     TangentAlignmentReport,
@@ -351,7 +352,7 @@ class TestPrincipalCosines:
         basis = backend.eye(dim)[:, :rank]  # First 3 columns of identity
         backend.eval(basis)
 
-        epsilon = 1e-6
+        epsilon = division_epsilon(backend, basis)
         cosines = aligner._principal_cosines(basis, basis, epsilon)
 
         assert len(cosines) == rank
@@ -365,7 +366,8 @@ class TestPrincipalCosines:
         basis_a = backend.random_normal((10, 3))
         basis_b = backend.random_normal((20, 3))  # Different first dimension
 
-        cosines = aligner._principal_cosines(basis_a, basis_b, 1e-6)
+        epsilon = division_epsilon(backend, basis_a)
+        cosines = aligner._principal_cosines(basis_a, basis_b, epsilon)
 
         assert cosines == []
 
@@ -376,6 +378,7 @@ class TestPrincipalCosines:
         basis_a = backend.random_normal((10, 0))  # Zero columns
         basis_b = backend.random_normal((10, 0))
 
-        cosines = aligner._principal_cosines(basis_a, basis_b, 1e-6)
+        epsilon = division_epsilon(backend, basis_a)
+        cosines = aligner._principal_cosines(basis_a, basis_b, epsilon)
 
         assert cosines == []

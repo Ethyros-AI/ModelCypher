@@ -47,7 +47,10 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.riemannian_density import (
     InfluenceType,
     RiemannianDensityEstimator,
@@ -360,7 +363,7 @@ class TestConceptVolumeRelation:
         # Similar distributions should be at least as aligned as orthogonal ones
         # (geometry determines the actual values; we just check ordering)
         # Use tolerance for floating point comparison
-        eps = 1e-6
+        eps = division_epsilon(backend, samples_a)
         assert relation_similar.subspace_alignment >= relation_orthogonal.subspace_alignment - eps
         # And self-alignment should be the maximum
         assert relation_self.subspace_alignment >= relation_similar.subspace_alignment - eps
@@ -650,7 +653,7 @@ class TestEdgeCases:
 
         ones = backend.ones((20, 5))
         noise = backend.random_normal((20, 5))
-        noise = noise * 1e-10
+        noise = noise * division_epsilon(backend, ones)
         samples = ones + noise
         backend.eval(samples)
 

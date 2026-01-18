@@ -24,6 +24,7 @@ Tests:
 - Loss landscape computation
 """
 
+import math
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -128,8 +129,8 @@ class TestLRSchedules:
         schedule = LinearWarmupSchedule(base_lr=1e-4, warmup_steps=100)
 
         # During warmup
-        assert schedule.get_lr(0) == pytest.approx(1e-6, rel=0.01)
-        assert schedule.get_lr(50) == pytest.approx(0.51e-4, rel=0.01)
+        assert schedule.get_lr(0) == pytest.approx(1e-6, abs=math.ulp(1e-6))
+        assert schedule.get_lr(50) == pytest.approx(0.51e-4, abs=math.ulp(0.51e-4))
 
         # After warmup
         assert schedule.get_lr(100) == 1e-4
@@ -148,7 +149,7 @@ class TestLRSchedules:
         assert lr_50 < schedule.get_lr(100)
 
         # At warmup end
-        assert schedule.get_lr(100) == pytest.approx(1e-4, rel=0.01)
+        assert schedule.get_lr(100) == pytest.approx(1e-4, abs=math.ulp(1e-4))
 
         # Midpoint should be ~half
         lr_mid = schedule.get_lr(550)  # Middle of decay phase
@@ -156,7 +157,7 @@ class TestLRSchedules:
         assert lr_mid > 1e-6
 
         # End should be min_lr
-        assert schedule.get_lr(1000) == pytest.approx(1e-6, rel=0.01)
+        assert schedule.get_lr(1000) == pytest.approx(1e-6, abs=math.ulp(1e-6))
 
     def test_step_decay_schedule(self):
         schedule = StepDecaySchedule(
@@ -167,8 +168,8 @@ class TestLRSchedules:
 
         assert schedule.get_lr(0) == 1e-4
         assert schedule.get_lr(99) == 1e-4
-        assert schedule.get_lr(100) == pytest.approx(1e-5, rel=0.01)
-        assert schedule.get_lr(200) == pytest.approx(1e-6, rel=0.01)
+        assert schedule.get_lr(100) == pytest.approx(1e-5, abs=math.ulp(1e-5))
+        assert schedule.get_lr(200) == pytest.approx(1e-6, abs=math.ulp(1e-6))
 
     def test_schedule_factory(self):
         config = ScheduleConfig(

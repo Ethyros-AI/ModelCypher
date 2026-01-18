@@ -116,7 +116,8 @@ class TestGeodesicSVD:
 
         diff = backend.mean(backend.abs(A - reconstructed))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-4
+        tol = regularization_epsilon(backend, A)
+        assert float(backend.to_scalar(diff)) < tol
 
     def test_svd_singular_values_ordered(self, backend):
         """Singular values should be in descending order."""
@@ -128,8 +129,9 @@ class TestGeodesicSVD:
 
         # Check descending order
         S_list = backend.tolist(S)
+        eps = regularization_epsilon(backend, S)
         for i in range(len(S_list) - 1):
-            assert S_list[i] >= S_list[i + 1] - 1e-6
+            assert S_list[i] >= S_list[i + 1] - eps
 
     def test_svd_singular_values_nonnegative(self, backend):
         """Singular values should be non-negative."""
@@ -140,7 +142,8 @@ class TestGeodesicSVD:
 
         min_s = backend.min(S)
         backend.eval(min_s)
-        assert float(backend.to_scalar(min_s)) >= -1e-6
+        eps = regularization_epsilon(backend, S)
+        assert float(backend.to_scalar(min_s)) >= -eps
 
     def test_zero_matrix(self, backend):
         """Zero matrix should return empty SVD."""
@@ -217,7 +220,8 @@ class TestGeodesicPinv:
 
         diff = backend.mean(backend.abs(A - reconstructed))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-4
+        tol = regularization_epsilon(backend, A)
+        assert float(backend.to_scalar(diff)) < tol
 
     def test_pinv_square_invertible(self, backend):
         """Pseudo-inverse of invertible matrix ≈ inverse."""
@@ -232,7 +236,8 @@ class TestGeodesicPinv:
 
         diff = backend.mean(backend.abs(A_pinv - A_inv))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-3
+        tol = regularization_epsilon(backend, A)
+        assert float(backend.to_scalar(diff)) < tol
 
 
 class TestPowerIterationEigh:
@@ -261,8 +266,9 @@ class TestPowerIterationEigh:
         backend.eval(eigenvalues)
 
         e_list = backend.tolist(eigenvalues)
+        eps = regularization_epsilon(backend, eigenvalues)
         for i in range(len(e_list) - 1):
-            assert e_list[i] >= e_list[i + 1] - 1e-6
+            assert e_list[i] >= e_list[i + 1] - eps
 
     def test_eigenvector_orthogonality(self, backend):
         """Eigenvectors should be orthonormal."""
@@ -279,7 +285,8 @@ class TestPowerIterationEigh:
 
         diff = backend.mean(backend.abs(VtV - I))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-4
+        tol = regularization_epsilon(backend, eigenvectors)
+        assert float(backend.to_scalar(diff)) < tol
 
 
 class TestGpuLstsq:
@@ -387,7 +394,8 @@ class TestSafeInverse:
 
         diff = backend.mean(backend.abs(product - I))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 1e-3
+        tol = regularization_epsilon(backend, A)
+        assert float(backend.to_scalar(diff)) < tol
 
     def test_condition_number_returned(self, backend):
         """Condition number should be returned."""
@@ -638,7 +646,8 @@ class TestScalarHelpers:
     def test_sqrt_scalar(self, backend):
         """sqrt_scalar should work."""
         result = sqrt_scalar(4.0, backend)
-        assert abs(result - 2.0) < 1e-6
+        eps = machine_epsilon(backend, backend.array([2.0]))
+        assert abs(result - 2.0) < eps
 
     def test_sqrt_scalar_negative(self, backend):
         """sqrt_scalar with negative should return 0."""

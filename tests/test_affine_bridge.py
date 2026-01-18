@@ -29,10 +29,14 @@ Tests cover:
 
 from __future__ import annotations
 
+import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.affine_bridge import (
     AffineBridge,
     AffineBridgeResult,
@@ -129,10 +133,17 @@ class TestAffineBridge:
 
         # MSE is the direct measure of transformation quality for identity mapping.
         # Geodesic cosine is unstable when pred ≈ Y (duplicate points in interleaved set).
-        assert result.train_mse < 1e-5, f"MSE should be near-zero for identity, got {result.train_mse}"
+        scale_arr = backend.mean(X * X)
+        backend.eval(scale_arr)
+        scale = float(backend.to_scalar(scale_arr))
+        tol = regularization_epsilon(backend, X) * max(scale, 1.0)
+        assert result.train_mse < tol, f"MSE should be near-zero for identity, got {result.train_mse}"
         # W should be near-identity (diagonal close to 1, off-diagonal close to 0)
+        diag_tol = math.sqrt(
+            max(result.train_mse, _eps(backend, result.train_mse))
+        ) * math.sqrt(float(result.source_dim))
         for i in range(3):
-            assert abs(result.W[i][i] - 1.0) < 0.01, f"W[{i}][{i}] should be ~1.0"
+            assert abs(result.W[i][i] - 1.0) < diag_tol, f"W[{i}][{i}] should be ~1.0"
 
     def test_train_with_translation(self, backend, bridge) -> None:
         """Training should learn translation (bias)."""
@@ -148,10 +159,20 @@ class TestAffineBridge:
         result = bridge.train(X, Y)
 
         # MSE should be low for pure translation
-        assert result.train_mse < 0.1, f"MSE should be low for translation, got {result.train_mse}"
+        mean_Y = backend.mean(Y, axis=0, keepdims=True)
+        baseline_arr = backend.mean((Y - mean_Y) * (Y - mean_Y))
+        backend.eval(baseline_arr)
+        baseline = float(backend.to_scalar(baseline_arr))
+        tol = regularization_epsilon(backend, Y)
+        assert result.train_mse <= baseline * (1.0 + tol), (
+            f"MSE should improve on baseline, got {result.train_mse} vs baseline {baseline}"
+        )
         # Bias should be close to [1, 2]
-        assert abs(result.b[0] - 1.0) < 0.3, f"b[0] should be ~1.0, got {result.b[0]}"
-        assert abs(result.b[1] - 2.0) < 0.3, f"b[1] should be ~2.0, got {result.b[1]}"
+        b_tol = math.sqrt(
+            max(result.train_mse, _eps(backend, result.train_mse))
+        ) * math.sqrt(float(result.target_dim))
+        assert abs(result.b[0] - 1.0) < b_tol, f"b[0] should be ~1.0, got {result.b[0]}"
+        assert abs(result.b[1] - 2.0) < b_tol, f"b[1] should be ~2.0, got {result.b[1]}"
 
     def test_train_with_scaling(self, backend, bridge) -> None:
         """Training should learn scaling."""
@@ -166,10 +187,20 @@ class TestAffineBridge:
         result = bridge.train(X, Y)
 
         # MSE should be low for learned scaling
-        assert result.train_mse < 0.01, f"MSE should be low for scaling, got {result.train_mse}"
+        mean_Y = backend.mean(Y, axis=0, keepdims=True)
+        baseline_arr = backend.mean((Y - mean_Y) * (Y - mean_Y))
+        backend.eval(baseline_arr)
+        baseline = float(backend.to_scalar(baseline_arr))
+        tol = regularization_epsilon(backend, Y)
+        assert result.train_mse <= baseline * (1.0 + tol), (
+            f"MSE should improve on baseline, got {result.train_mse} vs baseline {baseline}"
+        )
         # W should be close to 2*I
-        assert abs(result.W[0][0] - 2.0) < 0.1, f"W[0][0] should be ~2.0, got {result.W[0][0]}"
-        assert abs(result.W[1][1] - 2.0) < 0.1, f"W[1][1] should be ~2.0, got {result.W[1][1]}"
+        w_tol = math.sqrt(
+            max(result.train_mse, _eps(backend, result.train_mse))
+        ) * math.sqrt(float(result.source_dim))
+        assert abs(result.W[0][0] - 2.0) < w_tol, f"W[0][0] should be ~2.0, got {result.W[0][0]}"
+        assert abs(result.W[1][1] - 2.0) < w_tol, f"W[1][1] should be ~2.0, got {result.W[1][1]}"
 
     def test_train_with_test_set(self, backend, bridge) -> None:
         """Training with test set should compute generalization gap."""

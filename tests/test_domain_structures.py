@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 import pytest
 from unittest.mock import Mock, patch
 from datetime import datetime
@@ -54,17 +55,17 @@ class TestSignatureMixin:
         s1 = SimpleSignature([1.0, 0.0])
         s2 = SimpleSignature([0.0, 1.0])
         # Orthogonal
-        assert abs(s1.cosine_similarity(s2)) < 1e-5
+        assert abs(s1.cosine_similarity(s2)) < math.ulp(1.0)
         
         s3 = SimpleSignature([2.0, 0.0])
         # Aligned
-        assert abs(s1.cosine_similarity(s3) - 1.0) < 1e-5
+        assert abs(s1.cosine_similarity(s3) - 1.0) < math.ulp(1.0)
 
     def test_normalization(self):
         s = SimpleSignature([3.0, 4.0])
         norm = s.l2_normalized()
-        assert abs(norm.values[0] - 0.6) < 1e-5
-        assert abs(norm.values[1] - 0.8) < 1e-5
+        assert abs(norm.values[0] - 0.6) < math.ulp(0.6)
+        assert abs(norm.values[1] - 0.8) < math.ulp(0.8)
 
 class TestDomainSignalProfile:
     """Tests for DomainSignalProfile serialization and creation."""
@@ -215,4 +216,4 @@ class TestSpectralAnalysis:
         
         assert metrics.spectral_ratio == 2.0
         assert metrics.spectral_ratio_symmetry == 0.5 # 1/2.0
-        assert abs(metrics.condition_number - 2.0) < 1e-5
+        assert abs(metrics.condition_number - 2.0) < math.ulp(2.0)
