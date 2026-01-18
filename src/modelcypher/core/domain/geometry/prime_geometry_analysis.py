@@ -27,6 +27,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision,
     machine_epsilon,
     power_iteration_eigh,
+    sqrt_scalar,
 )
 
 from .prime_geometry_baselines import generate_baseline, generate_random_gaps
@@ -525,9 +526,6 @@ def run_perturbation_study(
     """
     backend = backend or get_default_backend()
 
-    if noise_levels is None:
-        noise_levels = [0.0, 0.1, 0.2, 0.5, 1.0]
-
     results = []
 
     # Generate primes and compute baseline
@@ -537,16 +535,26 @@ def run_perturbation_study(
     if embedding_dim is None:
         embedding_dim = derive_embedding_dim(primes.gaps, 1, backend)
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
-    mean_gap_arr = backend.mean(_promote_precision(primes.gaps, backend))
+
+    gaps_arr = _promote_precision(primes.gaps, backend)
+    mean_gap_arr = backend.mean(gaps_arr)
     backend.eval(mean_gap_arr)
     mean_gap = float(backend.to_scalar(mean_gap_arr))
+
+    if noise_levels is None:
+        centered = gaps_arr - mean_gap_arr
+        variance_arr = backend.mean(centered * centered)
+        backend.eval(variance_arr)
+        variance = float(backend.to_scalar(variance_arr))
+        std_gap = sqrt_scalar(variance, backend)
+        eps = machine_epsilon(backend, gaps_arr)
+        noise_levels = [0.0, std_gap / (mean_gap + eps)]
 
     prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, 1, backend)
     prime_gram = compute_gram_matrix(prime_embedded, backend)
     original_ev = analyze_eigenvalues(prime_gram, backend)
     original_pr = original_ev.participation_ratio
 
-    gaps_arr = _promote_precision(primes.gaps, backend)
     n_gaps = int(backend.shape(gaps_arr)[0])
     noise_dtype = gaps_arr.dtype if hasattr(gaps_arr, "dtype") else None
 

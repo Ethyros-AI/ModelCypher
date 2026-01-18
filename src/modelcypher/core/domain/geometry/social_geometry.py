@@ -92,7 +92,7 @@ class PowerGradientResult:
 class SocialGeometryReport:
     """Complete social geometry analysis report."""
 
-    social_manifold_score: float  # 0-1, overall quality
+    social_manifold_score: float  # Aggregate score (NaN when not computed)
     axis_orthogonality: AxisOrthogonality
     gradient_consistency: GradientConsistency
     power_gradient: PowerGradientResult
@@ -472,20 +472,7 @@ class SocialGeometryAnalyzer:
         gradient = self._compute_gradient_consistency(names, X_pca)
         power = self._analyze_power_gradient(activations, names, X_pca)
 
-        # Compute overall score
-        # Weighted combination of:
-        # - Axis orthogonality (30%)
-        # - Gradient consistency (40%)
-        # - Power detection (30%)
-        ortho_score = axis_ortho.mean_orthogonality
-        gradient_score = (
-            gradient.power_correlation
-            + gradient.kinship_correlation
-            + gradient.formality_correlation
-        ) / 3
-        power_score = abs(power.status_correlation)
-
-        social_score = 0.3 * ortho_score + 0.4 * gradient_score + 0.3 * power_score
+        social_score = float("nan")
 
         return SocialGeometryReport(
             social_manifold_score=social_score,

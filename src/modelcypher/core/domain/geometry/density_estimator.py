@@ -36,7 +36,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
 
 if TYPE_CHECKING:
@@ -220,8 +223,8 @@ class DensityEstimator:
         max_vals = b.max(points, axis=0)
         b.eval(min_vals, max_vals)
 
-        # Add 10% padding in backend space
-        padding = (max_vals - min_vals) * 0.1
+        eps = machine_epsilon(b, points)
+        padding = (max_vals - min_vals) * eps
         min_pad = min_vals - padding
         max_pad = max_vals + padding
         b.eval(min_pad, max_pad)

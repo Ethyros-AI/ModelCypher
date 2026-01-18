@@ -314,14 +314,29 @@ The warning referenced in the original audit does not exist. Zero null space is 
 
 ### Resolved: Manifold Transfer Ratio Clamp Removed
 
-**Previous code**: Ratio clamp in curvature-based volume projection
+**Previous code**: `[0.5, 2.0]` ratio clamp in curvature-based volume projection
 **Location**: manifold_transfer.py
 
-**Resolution**:
-- Removed clamp; ratio now reflects curvature scale directly
-- No bounds unless implied by precision (ULP/eps)
+**Resolution via `_space_form_scale()` (differential geometry)**:
 
-**Status**: ✓ RESOLVED
+The ratio is now derived from constant-curvature space forms. For a manifold with sectional curvature K and geodesic radius r, the metric scaling is:
+
+```
+K > 0 (spherical):   scale = sin(√K·r) / (√K·r)
+K < 0 (hyperbolic):  scale = sinh(√|K|·r) / (√|K|·r)
+K = 0 (flat):        scale = 1.0
+```
+
+This is the standard Jacobian determinant for geodesic balls in spaces of constant curvature. The formula emerges from the metric tensor, not arbitrary bounds.
+
+**Why no clamp is needed**:
+- sin(x)/x ∈ (0, 1] for x > 0 (bounded by geometry)
+- sinh(x)/x ≥ 1 for x > 0 (bounded by geometry)
+- Near-zero curvature handled via precision threshold (|K| ≤ ε → scale = 1.0)
+
+**Implementation**: `_space_form_scale()` in manifold_transfer.py:94-124
+
+**Status**: ✓ RESOLVED - Scale derived from Riemannian geometry
 
 ### Resolved: Region Threshold Percentiles Removed
 
@@ -398,7 +413,6 @@ These have no derivation. They must be replaced or removed.
 
 | Constant | Location | Problem | Proposed Fix |
 |----------|----------|---------|--------------|
-| `[0.5, 2.0]` clamp | manifold_transfer.py | Arbitrary bounds | Derive from curvature or remove |
 | `[100, 500, 1000, 5000, 10000]` | prime_geometry_analysis.py | Arbitrary scales | Derive from data or remove |
 
 ### Performance Caps (Lower Priority)
