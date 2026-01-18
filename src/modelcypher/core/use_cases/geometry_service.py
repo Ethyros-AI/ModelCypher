@@ -198,26 +198,14 @@ class GeometryService:
 
     @staticmethod
     def validation_payload(report: Report, include_schema: bool = False) -> dict:
-        # Import GW constants (derived from numerical analysis, not configurable)
-        from modelcypher.core.domain.geometry.gromov_wasserstein import (
-            _MAX_OUTER_ITERATIONS,
-            _MIN_OUTER_ITERATIONS,
-            _NUM_RESTARTS,
-            _SINKHORN_EPSILON,
-            _SINKHORN_ITERATIONS,
-        )
-
         payload = {
             "suiteVersion": report.suite_version,
             "timestamp": GeometryService._iso_timestamp(report.timestamp),
             "config": {
-                "note": "All parameters derived from data and numerical analysis at runtime",
+                "note": "All GW parameters derived from input precision at runtime",
                 "gromovWasserstein": {
-                    "sinkhornEpsilon": _SINKHORN_EPSILON,
-                    "sinkhornIterations": _SINKHORN_ITERATIONS,
-                    "maxOuterIterations": _MAX_OUTER_ITERATIONS,
-                    "minOuterIterations": _MIN_OUTER_ITERATIONS,
-                    "numRestarts": _NUM_RESTARTS,
+                    "method": "precision-derived",
+                    "description": "Convergence thresholds derived from machine epsilon",
                 },
             },
             "gromovWasserstein": {

@@ -37,8 +37,6 @@ from modelcypher.core.domain.geometry.geometry_metrics_cache import (
 )
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
-    _MAX_OUTER_ITERATIONS,
-    _SINKHORN_EPSILON,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -189,12 +187,10 @@ class GeometryMetricsService:
         Returns:
             GromovWassersteinResult with distance metrics
         """
-        # Check cache first (use module constants for cache key)
+        # Check cache first
         cached = self._cache.get_gw_result(
             source_points,
             target_points,
-            _SINKHORN_EPSILON,
-            _MAX_OUTER_ITERATIONS,
         )
         if cached is not None:
             return self._gw_result_from_cached(cached)
@@ -226,8 +222,6 @@ class GeometryMetricsService:
         self._cache.set_gw_result(
             source_points,
             target_points,
-            _SINKHORN_EPSILON,
-            _MAX_OUTER_ITERATIONS,
             cached_result,
         )
 

@@ -34,9 +34,19 @@ from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrec
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
-def _div_eps() -> float:
-    backend = get_default_backend()
-    return division_epsilon(backend, backend.array([1.0]))
+def _scaled_eps(backend: "Backend", *values: object) -> float:
+    if values:
+        ref = values[0]
+        ref_arr = ref if hasattr(ref, "dtype") else backend.array([float(ref)])
+    else:
+        ref_arr = backend.array([1.0])
+    eps = division_epsilon(backend, ref_arr)
+    scale = 0.0
+    for value in values:
+        arr = value if hasattr(value, "shape") else backend.array([float(value)])
+        max_val = float(backend.to_scalar(backend.max(backend.abs(arr))))
+        scale = max(scale, max_val)
+    return eps * (scale + eps)
 
 
 class TestConsensusCorrector:
@@ -81,12 +91,13 @@ class TestConsensusCorrector:
         )
 
         # Activation delta should point toward (5, 5)
-        delta_x = float(result.activation_delta[0])
-        delta_y = float(result.activation_delta[1])
-
-        eps = _div_eps()
-        assert delta_x > 0  # Should move in positive x direction
-        assert delta_y > 0  # Should move in positive y direction
+        anchor_matrix = backend.stack(list(target_anchors.values()), axis=0)
+        consensus_position = backend.mean(anchor_matrix, axis=0)
+        expected_delta = consensus_position - target_position
+        delta_error = result.activation_delta - expected_delta
+        delta_norm = float(backend.sqrt(backend.sum(delta_error ** 2)))
+        eps = _scaled_eps(backend, expected_delta, target_position)
+        assert delta_norm <= eps
 
     def test_apply_correction(self):
         """Applying correction should add delta to weights."""
@@ -98,7 +109,7 @@ class TestConsensusCorrector:
 
         corrected = corrector.apply_correction(target_weights, weight_delta)
 
-        eps = _div_eps()
+        eps = _scaled_eps(backend, target_weights, weight_delta)
         assert abs(float(corrected[0, 0]) - 1.1) < eps
         assert abs(float(corrected[0, 1]) - 2.2) < eps
         assert abs(float(corrected[1, 0]) - 3.3) < eps
@@ -137,7 +148,8 @@ class TestConsensusCorrector:
 
         # Activation delta should be near zero
         delta_norm = float(backend.sqrt(backend.sum(result.activation_delta ** 2)))
-        assert delta_norm < 1.0  # Small correction
+        eps = _scaled_eps(backend, target_position, consensus_stress)
+        assert delta_norm <= eps
 
     def test_stress_from_position(self):
         """Stress computation should return correct distances."""
@@ -156,9 +168,9 @@ class TestConsensusCorrector:
         expected_d0 = math.sqrt(50)  # Distance from (5,5) to (0,0)
         expected_d1 = math.sqrt(50)  # Distance from (5,5) to (10,10)
 
-        eps = _div_eps()
-        assert abs(float(stress[0]) - expected_d0) < 0.1
-        assert abs(float(stress[1]) - expected_d1) < 0.1
+        eps = _scaled_eps(backend, stress, expected_d0, expected_d1)
+        assert abs(float(stress[0]) - expected_d0) <= eps
+        assert abs(float(stress[1]) - expected_d1) <= eps
 
     def test_multilateration_accuracy(self):
         """Multilateration should recover position from distances."""
@@ -191,7 +203,8 @@ class TestConsensusCorrector:
 
         # Should recover approximately the true position
         dist = float(backend.sqrt(backend.sum((recovered - true_position) ** 2)))
-        assert dist < 1.0  # Should be close
+        eps = _scaled_eps(backend, recovered, true_position)
+        assert dist <= eps
 
 
 class TestCorrectionVsAddition:
@@ -228,7 +241,8 @@ class TestCorrectionVsAddition:
 
         # Weight delta should be non-zero
         delta_norm = float(backend.sqrt(backend.sum(result.weight_delta ** 2)))
-        assert delta_norm > 0.01  # Non-trivial correction
+        eps = _scaled_eps(backend, result.weight_delta, target_weights)
+        assert delta_norm > eps
 
         # Apply correction
         corrected_weights = corrector.apply_correction(target_weights, result.weight_delta)
@@ -238,4 +252,5 @@ class TestCorrectionVsAddition:
         corrected_output = backend.matmul(target_activations, backend.transpose(corrected_weights))
 
         output_diff = float(backend.sqrt(backend.sum((corrected_output - original_output) ** 2)))
-        assert output_diff > 0.01  # Behavior changed
+        eps = _scaled_eps(backend, corrected_output, original_output)
+        assert output_diff > eps

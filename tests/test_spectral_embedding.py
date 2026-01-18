@@ -39,6 +39,21 @@ from modelcypher.core.domain.geometry.spectral_embedding import (
 from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 
 
+def _scaled_eps(backend, *values: object) -> float:
+    if values:
+        ref = values[0]
+        ref_arr = ref if hasattr(ref, "dtype") else backend.array([float(ref)])
+    else:
+        ref_arr = backend.array([1.0])
+    eps = division_epsilon(backend, ref_arr)
+    scale = 0.0
+    for value in values:
+        arr = value if hasattr(value, "shape") else backend.array([float(value)])
+        max_val = float(backend.to_scalar(backend.max(backend.abs(arr))))
+        scale = max(scale, max_val)
+    return eps * (scale + eps)
+
+
 def test_spectral_embedding_basic(any_backend) -> None:
     """Test basic spectral embedding computation."""
     points = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]]
@@ -88,29 +103,19 @@ def test_spectral_geodesic_vs_floyd_warshall(any_backend) -> None:
 
     # Compare distances
     n = int(fw_distances.shape[0])
-    eps = division_epsilon(any_backend, fw_distances)
+    eps = _scaled_eps(any_backend, fw_distances, spectral_distances)
 
-    # Compute relative errors for finite distances
-    total_error = 0.0
-    count = 0
+    # Compute max absolute error for finite distances
+    max_error = 0.0
     for i in range(n):
         for j in range(i + 1, n):
             fw_d = float(any_backend.to_scalar(fw_distances[i, j]))
             sp_d = float(any_backend.to_scalar(spectral_distances[i, j]))
 
-            if math.isfinite(fw_d) and fw_d > eps:
-                rel_error = abs(sp_d - fw_d) / fw_d
-                total_error += rel_error
-                count += 1
+            if math.isfinite(fw_d):
+                max_error = max(max_error, abs(sp_d - fw_d))
 
-    if count > 0:
-        mean_error = total_error / count
-        # Spectral approximation is inherently approximate - it preserves
-        # relative distances and structure, not exact values.
-        # The Laplacian eigenvector embedding gives distances that scale
-        # with but don't exactly match graph shortest paths.
-        # 100% relative error on average is acceptable for structural approximation.
-        assert mean_error < 1.0, f"Mean relative error {mean_error:.2%} too high"
+    assert max_error <= eps, f"Max absolute error {max_error:.6f} exceeds {eps:.6f}"
 
 
 def test_spectral_signature_unified_path(any_backend) -> None:
@@ -135,7 +140,8 @@ def test_spectral_signature_unified_path(any_backend) -> None:
 
     # Spectral entropy should be similar (not exact due to different eigenvalue orderings)
     entropy_diff = abs(sig_original.spectral_entropy - sig_unified.spectral_entropy)
-    assert entropy_diff < 0.5, f"Entropy difference {entropy_diff:.3f} too large"
+    eps = _scaled_eps(any_backend, sig_original.spectral_entropy, sig_unified.spectral_entropy)
+    assert entropy_diff <= eps
 
 
 def test_spectral_signature_from_embedding(any_backend) -> None:

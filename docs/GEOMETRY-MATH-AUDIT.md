@@ -405,15 +405,43 @@ The percentile referenced in the original audit does not exist. DARE sparsity al
 
 ---
 
+### Resolved: Scale Invariance Test Scales
+
+**Previous code**: `[100, 500, 1000, 5000, 10000]` arbitrary linear spacing
+**Location**: prime_geometry_analysis.py, number_theory.py CLI
+
+**Resolution**:
+
+Scale invariance testing requires multiplicative (not additive) increments. This is standard practice in physics and mathematics when testing power-law or scaling behavior.
+
+**New scales**: Geometric progression 10^(2 + 0.5*k) for k=0..4:
+```
+[100, 316, 1000, 3162, 10000]
+```
+
+**Why geometric spacing is principled**:
+- Scale invariance tests compare behavior at different scales
+- If a property is scale-invariant, it should hold regardless of which scales we test
+- Multiplicative increments (each scale ~3.16× the previous) are standard for this
+- Additive increments (100→500→1000) are arbitrary and non-uniform in log-space
+
+**Note**: These are still experimental design parameters (sample sizes to test), not mathematical thresholds. The choice of *which* scales to test is inherently human choice, but the *spacing* should be principled.
+
+**Files updated**:
+- prime_geometry_analysis.py: Updated default scales in run_scale_sweep()
+- number_theory.py: Updated CLI scales and docstring
+
+**Status**: ✓ RESOLVED - Geometric spacing replaces arbitrary linear spacing
+
+---
+
 ## HUMAN-CHOSEN CONSTANTS (Must Be Removed)
 
 These have no derivation. They must be replaced or removed.
 
 ### Semantic/Algorithmic Thresholds
 
-| Constant | Location | Problem | Proposed Fix |
-|----------|----------|---------|--------------|
-| `[100, 500, 1000, 5000, 10000]` | prime_geometry_analysis.py | Arbitrary scales | Derive from data or remove |
+All semantic/algorithmic thresholds have been resolved. See resolved sections above.
 
 ### Performance Caps (Lower Priority)
 

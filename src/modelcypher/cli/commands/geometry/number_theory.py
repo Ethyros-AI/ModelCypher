@@ -567,7 +567,7 @@ def scale_study(
     analyze larger ranges of primes. This validates that any detected
     structure is not a small-sample artifact.
 
-    Scales tested: 100, 500, 1000, 5000, 10000 (up to max_primes)
+    Scales tested: 100, 316, 1000, 3162, 10000 (up to max_primes, log-spaced)
 
     Examples:
         mc geometry number-theory scale-study
@@ -582,8 +582,9 @@ def scale_study(
 
     backend = get_default_backend()
 
-    # Define scales up to max_primes
-    all_scales = [100, 500, 1000, 5000, 10000, 50000, 100000]
+    # Geometric progression: 10^(2 + 0.5*k) for k=0..6
+    # Multiplicative spacing is standard for testing scale invariance
+    all_scales = [100, 316, 1000, 3162, 10000, 31623, 100000]
     scales = [s for s in all_scales if s <= max_primes]
 
     result = run_scale_sweep(

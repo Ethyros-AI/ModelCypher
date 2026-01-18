@@ -465,7 +465,9 @@ def run_scale_sweep(
     backend = backend or get_default_backend()
 
     if scales is None:
-        scales = [100, 500, 1000, 5000, 10000]
+        # Geometric progression: 10^(2 + 0.5*k) for k=0..4
+        # Multiplicative spacing is standard for testing scale invariance / power-law behavior
+        scales = [100, 316, 1000, 3162, 10000]
 
     result = ScaleSweepResult(scales=scales)
 

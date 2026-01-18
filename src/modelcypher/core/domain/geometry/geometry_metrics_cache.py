@@ -158,8 +158,6 @@ class GeometryMetricsCache:
         self,
         source_points: list[list[float]],
         target_points: list[list[float]],
-        epsilon: float,
-        max_iterations: int,
     ) -> CachedGWResult | None:
         """
         Get cached Gromov-Wasserstein result.
@@ -167,21 +165,17 @@ class GeometryMetricsCache:
         Args:
             source_points: Source point cloud
             target_points: Target point cloud
-            epsilon: Entropic regularization parameter
-            max_iterations: Maximum iterations
 
         Returns:
             Cached result or None if not found
         """
-        key = self._make_gw_key(source_points, target_points, epsilon, max_iterations)
+        key = self._make_gw_key(source_points, target_points)
         return self._gw_cache.get(key)
 
     def set_gw_result(
         self,
         source_points: list[list[float]],
         target_points: list[list[float]],
-        epsilon: float,
-        max_iterations: int,
         result: CachedGWResult,
     ) -> None:
         """
@@ -190,27 +184,25 @@ class GeometryMetricsCache:
         Args:
             source_points: Source point cloud
             target_points: Target point cloud
-            epsilon: Entropic regularization parameter
-            max_iterations: Maximum iterations
             result: Result to cache
         """
-        key = self._make_gw_key(source_points, target_points, epsilon, max_iterations)
+        key = self._make_gw_key(source_points, target_points)
         self._gw_cache.set(key, result)
 
     def _make_gw_key(
         self,
         source_points: list[list[float]],
         target_points: list[list[float]],
-        epsilon: float,
-        max_iterations: int,
     ) -> str:
-        """Create cache key for GW computation."""
+        """Create cache key for GW computation.
+
+        Note: GW algorithm parameters are derived from numerical precision,
+        so only the point data determines the cache key.
+        """
         return content_hash(
             {
                 "source": sorted([tuple(p) for p in source_points]),
                 "target": sorted([tuple(p) for p in target_points]),
-                "epsilon": epsilon,
-                "max_iterations": max_iterations,
             }
         )
 
