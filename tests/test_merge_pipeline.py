@@ -259,8 +259,15 @@ class TestMergePipelineService:
             mean_preserved_fraction = 0.85
             vocab_aligned = True
             mean_procrustes_error = 0.001
+            merge_strategy = "null_space"
+            probe_metrics = {}
+            permute_metrics = {}
             geometry_metrics = {"mean_preserved_fraction": 0.9}
             transplant_metrics = {"layers_transplanted": 24}
+            density_metrics = {}
+            validation_metrics = {}
+            post_merge_density = None
+            refusal_preserved = None
 
         result = merge_pipeline_service._merge_result_to_dict(MockMergeResult())
         assert result["output_path"] == "/output"
@@ -281,8 +288,15 @@ class TestPipelineServiceInternals:
             mean_preserved_fraction = 0.92
             vocab_aligned = False
             mean_procrustes_error = 0.002
+            merge_strategy = "null_space"
+            probe_metrics = {}
+            permute_metrics = {}
             geometry_metrics = {"mean_cka_after": 0.98}
             transplant_metrics = {"layers_transplanted": 12}
+            density_metrics = {}
+            validation_metrics = {}
+            post_merge_density = None
+            refusal_preserved = None
 
         result = merge_pipeline_service._merge_result_to_dict(MockMergeResult())
         assert result["layer_count"] == 12

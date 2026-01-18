@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -427,37 +427,55 @@ __all__ = [
 # =============================================================================
 
 
-def sqrt_scalar(value: float, backend: "Backend") -> float:
-    """Compute sqrt of scalar using backend with non-negativity guard."""
-    safe_value = max(0.0, value)
-    arr = backend.array([safe_value])
-    result = backend.sqrt(arr)
+def _scalar_unary(
+    value: float,
+    backend: "Backend",
+    op: Callable[["Array"], "Array"],
+) -> float:
+    arr = backend.array([value])
+    result = op(arr)
     backend.eval(result)
     return float(backend.to_scalar(result))
 
 
-def is_finite(value: float, backend: "Backend") -> bool:
-    """Check if scalar is finite using backend."""
+def _scalar_unary_int(
+    value: float,
+    backend: "Backend",
+    op: Callable[["Array"], "Array"],
+) -> int:
+    return int(_scalar_unary(value, backend, op))
+
+
+def _scalar_unary_bool(
+    value: float,
+    backend: "Backend",
+    op: Callable[["Array"], "Array"],
+) -> bool:
     arr = backend.array([value])
-    result = backend.isfinite(arr)
+    result = op(arr)
     backend.eval(result)
     return bool(backend.to_scalar(result))
+
+
+def sqrt_scalar(value: float, backend: "Backend") -> float:
+    """Compute sqrt of scalar using backend with non-negativity guard."""
+    safe_value = max(0.0, value)
+    return _scalar_unary(safe_value, backend, backend.sqrt)
+
+
+def is_finite(value: float, backend: "Backend") -> bool:
+    """Check if scalar is finite using backend."""
+    return _scalar_unary_bool(value, backend, backend.isfinite)
 
 
 def is_inf(value: float, backend: "Backend") -> bool:
     """Check if scalar is infinite using backend."""
-    arr = backend.array([value])
-    result = backend.isinf(arr)
-    backend.eval(result)
-    return bool(backend.to_scalar(result))
+    return _scalar_unary_bool(value, backend, backend.isinf)
 
 
 def is_nan(value: float, backend: "Backend") -> bool:
     """Check if scalar is NaN using backend."""
-    arr = backend.array([value])
-    result = backend.isnan(arr)
-    backend.eval(result)
-    return bool(backend.to_scalar(result))
+    return _scalar_unary_bool(value, backend, backend.isnan)
 
 
 def all_finite(arr: "Array", backend: "Backend") -> bool:
@@ -478,18 +496,12 @@ def all_finite(arr: "Array", backend: "Backend") -> bool:
 
 def log_scalar(value: float, backend: "Backend") -> float:
     """Compute natural log of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.log(arr)
-    backend.eval(result)
-    return float(backend.to_scalar(result))
+    return _scalar_unary(value, backend, backend.log)
 
 
 def exp_scalar(value: float, backend: "Backend") -> float:
     """Compute exp of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.exp(arr)
-    backend.eval(result)
-    return float(backend.to_scalar(result))
+    return _scalar_unary(value, backend, backend.exp)
 
 
 def power_scalar(value: float, exponent: float, backend: "Backend") -> float:
@@ -502,18 +514,12 @@ def power_scalar(value: float, exponent: float, backend: "Backend") -> float:
 
 def ceil_scalar(value: float, backend: "Backend") -> int:
     """Compute ceil of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.ceil(arr)
-    backend.eval(result)
-    return int(backend.to_scalar(result))
+    return _scalar_unary_int(value, backend, backend.ceil)
 
 
 def floor_scalar(value: float, backend: "Backend") -> int:
     """Compute floor of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.floor(arr)
-    backend.eval(result)
-    return int(backend.to_scalar(result))
+    return _scalar_unary_int(value, backend, backend.floor)
 
 
 def ulp_scalar(value: float, backend: "Backend") -> float:
@@ -524,34 +530,22 @@ def ulp_scalar(value: float, backend: "Backend") -> float:
 
 def lgamma_scalar(value: float, backend: "Backend") -> float:
     """Compute log-gamma of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.lgamma(arr)
-    backend.eval(result)
-    return float(backend.to_scalar(result))
+    return _scalar_unary(value, backend, backend.lgamma)
 
 
 def acos_scalar(value: float, backend: "Backend") -> float:
     """Compute arc cosine of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.arccos(arr)
-    backend.eval(result)
-    return float(backend.to_scalar(result))
+    return _scalar_unary(value, backend, backend.arccos)
 
 
 def cos_scalar(value: float, backend: "Backend") -> float:
     """Compute cosine of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.cos(arr)
-    backend.eval(result)
-    return float(backend.to_scalar(result))
+    return _scalar_unary(value, backend, backend.cos)
 
 
 def sin_scalar(value: float, backend: "Backend") -> float:
     """Compute sine of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.sin(arr)
-    backend.eval(result)
-    return float(backend.to_scalar(result))
+    return _scalar_unary(value, backend, backend.sin)
 
 
 def atan2_scalar(y: float, x: float, backend: "Backend") -> float:
@@ -590,10 +584,7 @@ def atan2_scalar(y: float, x: float, backend: "Backend") -> float:
 
 def log2_scalar(value: float, backend: "Backend") -> float:
     """Compute log base 2 of scalar using backend."""
-    arr = backend.array([value])
-    result = backend.log2(arr)
-    backend.eval(result)
-    return float(backend.to_scalar(result))
+    return _scalar_unary(value, backend, backend.log2)
 
 
 def pi_value(backend: "Backend") -> float:
@@ -1245,6 +1236,159 @@ def geodesic_pinv(backend: "Backend", array: "Array") -> "Array":
     A_pinv = cache.get_or_compute_pinv(A, b)
 
     return A_pinv
+
+
+def numerical_rank_truncated_lstsq(
+    backend: "Backend",
+    source: "Array",
+    target: "Array",
+) -> tuple["Array", int, int, int, float]:
+    """Solve least squares with numerical-rank truncation.
+
+    MATHEMATICAL FOUNDATION (not heuristic):
+    ========================================
+    Singular values below σ_max × sqrt(ε_machine) are indistinguishable from
+    floating-point noise. For float32, ε ≈ 1e-7, so threshold is σ_max × ~3e-4.
+
+    Truncating below this threshold removes numerical garbage, not meaningful
+    signal. The alignment operates in k = min(rank_source, rank_target) dimensions
+    where both models actually have signal.
+
+    This is mathematically closed-form in the subspace where both models have
+    signal - not a heuristic approximation.
+
+    Parameters
+    ----------
+    backend : Backend
+        Backend for tensor operations.
+    source : Array
+        Source activations [n_samples, d_source].
+    target : Array
+        Target activations [n_samples, d_target].
+
+    Returns
+    -------
+    tuple containing:
+        F : Array
+            Transform matrix [d_source, d_target] mapping source to target space.
+        source_rank : int
+            Numerical rank of source activations.
+        target_rank : int
+            Numerical rank of target activations.
+        alignment_rank : int
+            Rank used for alignment: min(source_rank, target_rank).
+        condition_number : float
+            Condition number in the truncated space (should be < 1e5 by construction).
+    """
+    b = backend
+
+    # Promote to highest precision available
+    A = _promote_precision(b.array(source), b)
+    B = _promote_precision(b.array(target), b)
+    b.eval(A, B)
+
+    n_samples, d_source = int(A.shape[0]), int(A.shape[1])
+    _, d_target = int(B.shape[0]), int(B.shape[1])
+
+    # Machine precision threshold: sqrt(ε_machine)
+    # This is THE threshold below which singular values are noise
+    eps = machine_epsilon(b, A)
+    precision_thresh = sqrt_scalar(eps, b)
+
+    # SVD of source: A = U @ diag(S) @ Vt
+    U_s, S_s, Vt_s = geodesic_svd(b, A)
+    b.eval(U_s, S_s, Vt_s)
+
+    # Numerical rank of source: count(σ > σ_max × sqrt(ε))
+    if int(S_s.shape[0]) > 0:
+        max_s_source = float(b.to_scalar(S_s[0]))  # Singular values are sorted desc
+        thresh_source = max_s_source * precision_thresh
+        source_rank_mask = S_s > thresh_source
+        source_rank_arr = b.sum(b.astype(source_rank_mask, "int32"))
+        b.eval(source_rank_arr)
+        source_rank = int(b.to_scalar(source_rank_arr))
+    else:
+        source_rank = 0
+        max_s_source = 0.0
+
+    # SVD of target: B = U @ diag(S) @ Vt
+    U_t, S_t, Vt_t = geodesic_svd(b, B)
+    b.eval(U_t, S_t, Vt_t)
+
+    # Numerical rank of target
+    if int(S_t.shape[0]) > 0:
+        max_s_target = float(b.to_scalar(S_t[0]))
+        thresh_target = max_s_target * precision_thresh
+        target_rank_mask = S_t > thresh_target
+        target_rank_arr = b.sum(b.astype(target_rank_mask, "int32"))
+        b.eval(target_rank_arr)
+        target_rank = int(b.to_scalar(target_rank_arr))
+    else:
+        target_rank = 0
+
+    # Alignment rank: min of both ranks (where both have actual signal)
+    alignment_rank = min(source_rank, target_rank)
+    alignment_rank = max(1, alignment_rank)  # At least 1 to avoid degenerate case
+
+    logger.info(
+        "NUMERICAL RANK: source_rank=%d/%d, target_rank=%d/%d, alignment_rank=%d",
+        source_rank, d_source, target_rank, d_target, alignment_rank,
+    )
+
+    # Truncate source to top-k singular components
+    # A_k = U_k @ diag(S_k) @ Vt_k where k = alignment_rank
+    k = alignment_rank
+    U_k = U_s[:, :k]  # [n, k]
+    S_k = S_s[:k]  # [k]
+    Vt_k = Vt_s[:k, :]  # [k, d_source]
+    b.eval(U_k, S_k, Vt_k)
+
+    # Compute condition number in truncated space
+    if k > 0 and int(S_k.shape[0]) > 0:
+        max_s_k = float(b.to_scalar(S_k[0]))
+        min_s_k = float(b.to_scalar(S_k[k - 1]))
+        if min_s_k > 0:
+            condition_number = max_s_k / min_s_k
+        else:
+            condition_number = float("inf")
+    else:
+        condition_number = float("inf")
+
+    logger.info(
+        "TRUNCATED CONDITION: κ=%.2e (should be < 1e5)",
+        condition_number,
+    )
+
+    # Solve in truncated space:
+    # We want F such that A @ F ≈ B
+    # In truncated space: A_k = U_k @ diag(S_k) @ Vt_k
+    # pinv(A_k) = V_k @ diag(1/S_k) @ U_k^T
+    # F = pinv(A_k) @ B
+
+    # Compute S_k_inv with safe division
+    div_eps = division_epsilon(b, S_k)
+    S_k_safe = b.maximum(S_k, b.full(S_k.shape, div_eps))
+    S_k_inv = 1.0 / S_k_safe
+    b.eval(S_k_inv)
+
+    # pinv(A_k) @ B = V_k @ diag(1/S_k) @ U_k^T @ B
+    # Step 1: U_k^T @ B  -> [k, d_target]
+    UtB = b.matmul(b.transpose(U_k), B)
+    b.eval(UtB)
+
+    # Step 2: diag(1/S_k) @ (U_k^T @ B)  -> [k, d_target]
+    # Reshape S_k_inv to [k, 1] for broadcasting
+    S_k_inv_col = b.reshape(S_k_inv, (k, 1))
+    scaled = S_k_inv_col * UtB
+    b.eval(scaled)
+
+    # Step 3: V_k @ (diag(1/S_k) @ U_k^T @ B)  -> [d_source, d_target]
+    # V_k = Vt_k^T  -> [d_source, k]
+    V_k = b.transpose(Vt_k)
+    F = b.matmul(V_k, scaled)
+    b.eval(F)
+
+    return F, source_rank, target_rank, alignment_rank, condition_number
 
 
 def safe_inverse(

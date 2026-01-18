@@ -20,44 +20,17 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from modelcypher.core.domain.geometry.precision_utils import (
+    _promote_precision_float32 as _promote_precision,
+)
 
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-def _dtype_name(dtype: Any) -> str:
-    name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
-    return name.replace("mlx.core.", "").replace("jax.numpy.", "")
-
-
-def _promote_precision(
-    array: "Array",
-    backend: "Backend",
-    *,
-    min_dtype: str = "float32",
-) -> "Array":
-    """Promote lower-precision arrays to at least float32."""
-    if not hasattr(array, "dtype"):
-        return backend.array(array, dtype=min_dtype)
-
-    dtype_name = _dtype_name(array.dtype)
-    if "float16" in dtype_name or "bfloat16" in dtype_name:
-        return backend.astype(array, min_dtype)
-
-    try:
-        current_eps = backend.finfo(array.dtype).eps
-        min_eps = backend.finfo(min_dtype).eps
-    except Exception:
-        return backend.astype(array, min_dtype)
-
-    if current_eps > min_eps:
-        return backend.astype(array, min_dtype)
-
-    return array
 
 
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":

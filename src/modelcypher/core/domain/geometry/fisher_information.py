@@ -360,18 +360,13 @@ def fisher_compatibility_score(
         0.2 * overlap_ratio                   # Structural overlap
     )
 
-    # Generate recommendation
-    if compatibility_score >= 0.7:
-        recommendation = "High compatibility - merge is likely to succeed"
-    elif compatibility_score >= 0.5:
-        recommendation = "Moderate compatibility - merge may succeed with careful probing"
-    elif compatibility_score >= 0.3:
-        recommendation = "Low compatibility - consider using larger probe set"
-    else:
-        recommendation = "Poor compatibility - models may have incompatible structure"
+    # NOTE: Fisher measures loss curvature, NOT semantic compatibility.
+    # Low Fisher scores between different architectures are EXPECTED.
+    # Do not interpret this as "incompatible models" - interpret as
+    # "different loss landscapes" which is normal for cross-architecture merges.
 
     logger.info(
-        "FISHER COMPAT: score=%.3f, cos=%.3f, corr=%.3f, overlap=%.3f",
+        "FISHER: score=%.3f, cos=%.3f, corr=%.3f, overlap=%.3f (measures loss curvature, not semantic structure)",
         compatibility_score,
         cosine_similarity,
         correlation,
@@ -385,7 +380,7 @@ def fisher_compatibility_score(
         overlap_ratio=overlap_ratio,
         source_fisher=source_fisher,
         target_fisher=target_fisher,
-        recommendation=recommendation,
+        recommendation="",  # No recommendation - raw metrics only
     )
 
 

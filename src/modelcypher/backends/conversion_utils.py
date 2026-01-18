@@ -15,37 +15,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared helpers for Riemannian core operations."""
+"""Shared array conversion utilities for backend implementations."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, Callable
 
-from modelcypher.core.domain.geometry.precision_utils import (
-    _float_dtype_for,
-    _mask_sum,
-    _promote_precision,
+
+_NUMPY_DISABLED_MESSAGE = (
+    "to_numpy() is disabled. ModelCypher does not permit CPU arrays. "
+    "Use backend.tolist() for lists, backend.to_scalar() for scalars, "
+    "or backend.save_safetensors() for serialization."
 )
 
-if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+
+def raise_numpy_disabled() -> None:
+    raise RuntimeError(_NUMPY_DISABLED_MESSAGE)
 
 
-def _count_mask(
-    mask: "Array",
-    backend: "Backend",
-    *,
-    dtype_source: "Array | None" = None,
-) -> "Array":
-    return _mask_sum(mask, backend, dtype_source=dtype_source)
+def to_scalar_with_eval(array: Any, eval_fn: Callable[..., None]) -> float | int:
+    if hasattr(array, "shape"):
+        eval_fn(array)
+    if hasattr(array, "item"):
+        return array.item()
+    return float(array)
 
 
-def _count_not_mask(
-    mask: "Array",
-    backend: "Backend",
-    *,
-    dtype_source: "Array | None" = None,
-) -> "Array":
-    dtype = _float_dtype_for(dtype_source, backend)
-    mask_float = backend.astype(mask, dtype)
-    return backend.sum(1 - mask_float)
+def to_list_with_eval(array: Any, eval_fn: Callable[..., None]) -> list | float | int:
+    eval_fn(array)
+    return array.tolist()

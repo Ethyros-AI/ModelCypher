@@ -30,6 +30,11 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable
 
+from modelcypher.backends.conversion_utils import (
+    raise_numpy_disabled,
+    to_list_with_eval,
+    to_scalar_with_eval,
+)
 from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 if TYPE_CHECKING:
@@ -344,11 +349,7 @@ class MLXBackend(Backend):
         Use backend.tolist() or backend.to_scalar() for extracting values.
         Use backend.save_safetensors() for serialization.
         """
-        raise RuntimeError(
-            "to_numpy() is disabled. ModelCypher does not permit CPU arrays. "
-            "Use backend.tolist() for lists, backend.to_scalar() for scalars, "
-            "or backend.save_safetensors() for serialization."
-        )
+        raise_numpy_disabled()
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.
@@ -365,19 +366,14 @@ class MLXBackend(Backend):
         Raises:
             ValueError: If array has more than one element.
         """
-        if hasattr(array, "shape"):
-            self.mx.eval(array)
-        if hasattr(array, "item"):
-            return array.item()
-        return float(array)
+        return to_scalar_with_eval(array, self.eval)
 
     def tolist(self, array: Array) -> list | float | int:
         """Convert array to nested Python lists.
 
         Uses MLX's native tolist() - MUCH faster than element-by-element to_scalar().
         """
-        self.mx.eval(array)
-        return array.tolist()
+        return to_list_with_eval(array, self.eval)
 
     @lru_cache(maxsize=8)
     def finfo(self, dtype: Any | None = None) -> FloatInfo:

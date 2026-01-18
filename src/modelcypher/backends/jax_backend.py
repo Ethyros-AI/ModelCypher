@@ -32,6 +32,11 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from modelcypher.backends.conversion_utils import (
+    raise_numpy_disabled,
+    to_list_with_eval,
+    to_scalar_with_eval,
+)
 from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 
@@ -573,11 +578,7 @@ class JAXBackend(Backend):
         Use backend.tolist() or backend.to_scalar() for extracting values.
         Use backend.save_safetensors() for serialization.
         """
-        raise RuntimeError(
-            "to_numpy() is disabled. ModelCypher does not permit CPU arrays. "
-            "Use backend.tolist() for lists, backend.to_scalar() for scalars, "
-            "or backend.save_safetensors() for serialization."
-        )
+        raise_numpy_disabled()
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.
@@ -594,16 +595,14 @@ class JAXBackend(Backend):
         Raises:
             ValueError: If array has more than one element.
         """
-        self.eval(array)
-        return array.item()
+        return to_scalar_with_eval(array, self.eval)
 
     def tolist(self, array: Array) -> list | float | int:
         """Convert array to nested Python lists.
 
         Uses JAX's native tolist() - MUCH faster than element-by-element to_scalar().
         """
-        self.eval(array)
-        return array.tolist()
+        return to_list_with_eval(array, self.eval)
 
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
         """Return floating-point precision info for the given dtype.

@@ -23,13 +23,14 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    _promote_precision,
     division_epsilon,
     machine_epsilon,
     power_iteration_eigh,
 )
 
 from .prime_geometry_types import EigenvalueDistribution, SpectralComparison
-from .prime_geometry_utils import _array_to_list, _promote_precision
+from .prime_geometry_utils import _array_to_list
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

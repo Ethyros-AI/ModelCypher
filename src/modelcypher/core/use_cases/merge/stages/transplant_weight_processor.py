@@ -99,6 +99,37 @@ def _is_cross_dimensional(
     return source_shape != target_shape
 
 
+def _ensure_dequantized_weight(
+    weight: "Array",
+    *,
+    weight_key: str,
+    lookup_key: str | None,
+    weight_map: dict[str, "Array"],
+    backend: "Backend",
+    role: str,
+) -> tuple["Array | None", str | None]:
+    dtype = str(getattr(weight, "dtype", "")).lower()
+    if "int" not in dtype and "uint" not in dtype:
+        return weight, None
+
+    key = lookup_key or weight_key
+    if key != weight_key:
+        logger.debug("Dequantizing %s weight: %s (lookup: %s)", role, weight_key, key)
+    else:
+        logger.debug("Dequantizing %s weight: %s", role, weight_key)
+    weight = dequantize_if_needed(weight, key, weight_map, backend)
+    if weight is None or not hasattr(weight, "shape"):
+        logger.debug("Failed to dequantize %s weight: %s", role, weight_key)
+        return None, f"{role} dequantization failed"
+
+    dtype = str(getattr(weight, "dtype", "")).lower()
+    if "int" in dtype or "uint" in dtype:
+        logger.debug("Skipping still-quantized %s weight: %s", role, weight_key)
+        return None, f"{role} still quantized after dequantization"
+
+    return weight, None
+
+
 def _apply_behavioral_reconstruction(
     source_weight: "Array",
     target_weight: "Array",
@@ -184,6 +215,32 @@ class LayerWeightResult:
     best_delta_norm: float
 
 
+@dataclass
+class StitchContext:
+    hidden_output: "Array | None"
+    hidden_input: "Array | None"
+    intermediate_output: "Array | None"
+    intermediate_input: "Array | None"
+    gate_output: "Array | None" = None
+    gate_input: "Array | None" = None
+    attention_output: "Array | None" = None
+    attention_input: "Array | None" = None
+    k_output: "Array | None" = None
+    k_input: "Array | None" = None
+    v_output: "Array | None" = None
+    v_input: "Array | None" = None
+    kv_input: "Array | None" = None
+    dims: dict[str, int] | None = None
+
+
+@dataclass
+class ActivationContext:
+    source_hidden: dict[int, list["Array"]] | None
+    target_hidden: dict[int, list["Array"]] | None
+    source_intermediate: dict[int, list["Array"]] | None
+    target_intermediate: dict[int, list["Array"]] | None
+
+
 def process_layer_weights(
     *,
     layer_idx: int,
@@ -198,24 +255,8 @@ def process_layer_weights(
     total_weights: int,
     weights_processed: int,
     progress_callback: Callable[[str, int, int], None] | None,
-    hidden_stitch_output: "Array | None",
-    hidden_stitch_input: "Array | None",
-    intermediate_stitch_output: "Array | None",
-    intermediate_stitch_input: "Array | None",
-    gate_stitch_output: "Array | None" = None,  # PRE-SiLU for gate/up cross-arch
-    gate_stitch_input: "Array | None" = None,   # PRE-SiLU for gate/up cross-arch
-    attention_stitch_output: "Array | None" = None,
-    attention_stitch_input: "Array | None" = None,
-    k_stitch_output: "Array | None" = None,
-    k_stitch_input: "Array | None" = None,
-    v_stitch_output: "Array | None" = None,
-    v_stitch_input: "Array | None" = None,
-    kv_stitch_input: "Array | None" = None,
-    stitch_dims: dict[str, int] | None = None,
-    source_activations: dict[int, list["Array"]] | None = None,
-    target_activations: dict[int, list["Array"]] | None = None,
-    source_intermediate_activations: dict[int, list["Array"]] | None = None,
-    target_intermediate_activations: dict[int, list["Array"]] | None = None,
+    stitches: StitchContext,
+    activations: ActivationContext,
     density_weights_by_layer: dict[int, "Array"] | None = None,
     core_acts: "Array",
     boundary_acts: "Array",
@@ -225,6 +266,24 @@ def process_layer_weights(
     layer_scale_ratios: dict[int, float] | None = None,
 ) -> LayerWeightResult:
     b = backend
+    hidden_stitch_output = stitches.hidden_output
+    hidden_stitch_input = stitches.hidden_input
+    intermediate_stitch_output = stitches.intermediate_output
+    intermediate_stitch_input = stitches.intermediate_input
+    gate_stitch_output = stitches.gate_output
+    gate_stitch_input = stitches.gate_input
+    attention_stitch_output = stitches.attention_output
+    attention_stitch_input = stitches.attention_input
+    k_stitch_output = stitches.k_output
+    k_stitch_input = stitches.k_input
+    v_stitch_output = stitches.v_output
+    v_stitch_input = stitches.v_input
+    kv_stitch_input = stitches.kv_input
+    stitch_dims = stitches.dims
+    source_activations = activations.source_hidden
+    target_activations = activations.target_hidden
+    source_intermediate_activations = activations.source_intermediate
+    target_intermediate_activations = activations.target_intermediate
     layer_transplanted = False
     best_alignment: dict[str, float] | None = None
     best_delta_norm = -1.0
@@ -403,54 +462,44 @@ def process_layer_weights(
             )
             continue
 
-        target_dtype = str(getattr(target_w, "dtype", "")).lower()
-        source_dtype = str(getattr(source_w, "dtype", "")).lower()
+        target_shape = tuple(target_w.shape)
+        source_shape = tuple(source_w.shape)
 
-        if "int" in target_dtype or "uint" in target_dtype:
-            logger.debug("Dequantizing target weight: %s", key)
-            target_w = dequantize_if_needed(target_w, key, target_weights, b)
-            if target_w is None or not hasattr(target_w, "shape"):
-                logger.debug("Failed to dequantize target weight: %s", key)
-                _record_manifest(
-                    key,
-                    WeightStatus.SKIPPED_QUANTIZED,
-                    error_message="target dequantization failed",
-                )
-                continue
-            target_dtype = str(getattr(target_w, "dtype", "")).lower()
-            if "int" in target_dtype or "uint" in target_dtype:
-                logger.debug("Skipping still-quantized target weight: %s", key)
-                _record_manifest(
-                    key,
-                    WeightStatus.SKIPPED_QUANTIZED,
-                    source_shape=tuple(source_w.shape),
-                    target_shape=tuple(target_w.shape),
-                    error_message="target still quantized after dequantization",
-                )
-                continue
+        target_w, target_err = _ensure_dequantized_weight(
+            target_w,
+            weight_key=key,
+            lookup_key=key,
+            weight_map=target_weights,
+            backend=b,
+            role="target",
+        )
+        if target_err:
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_QUANTIZED,
+                source_shape=source_shape,
+                target_shape=target_shape,
+                error_message=target_err,
+            )
+            continue
 
-        if "int" in source_dtype or "uint" in source_dtype:
-            logger.debug("Dequantizing source weight: %s (source_key: %s)", key, source_key)
-            source_w = dequantize_if_needed(source_w, source_key, source_weights, b)
-            if source_w is None or not hasattr(source_w, "shape"):
-                logger.debug("Failed to dequantize source weight: %s", key)
-                _record_manifest(
-                    key,
-                    WeightStatus.SKIPPED_QUANTIZED,
-                    error_message="source dequantization failed",
-                )
-                continue
-            source_dtype = str(getattr(source_w, "dtype", "")).lower()
-            if "int" in source_dtype or "uint" in source_dtype:
-                logger.debug("Skipping still-quantized source weight: %s", key)
-                _record_manifest(
-                    key,
-                    WeightStatus.SKIPPED_QUANTIZED,
-                    source_shape=tuple(source_w.shape),
-                    target_shape=tuple(target_w.shape),
-                    error_message="source still quantized after dequantization",
-                )
-                continue
+        source_w, source_err = _ensure_dequantized_weight(
+            source_w,
+            weight_key=key,
+            lookup_key=source_key,
+            weight_map=source_weights,
+            backend=b,
+            role="source",
+        )
+        if source_err:
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_QUANTIZED,
+                source_shape=source_shape,
+                target_shape=target_shape,
+                error_message=source_err,
+            )
+            continue
 
         if len(source_w.shape) == 1 and len(target_w.shape) == 1:
             src_dim = int(source_w.shape[0])

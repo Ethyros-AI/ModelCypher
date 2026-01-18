@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     geodesic_pinv,
     gpu_lstsq,
     machine_epsilon,
+    numerical_rank_truncated_lstsq,
     precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
@@ -148,6 +149,12 @@ class AlignmentResult:
     # Gram matrix condition number (numerical stability indicator)
     # Higher = less stable. If > 1e5, alignment may be unreliable.
     gram_condition_number: float = 1.0
+
+    # Numerical rank metrics (from truncated SVD alignment)
+    # These are derived from machine precision, not heuristics
+    source_numerical_rank: int = 0  # Rank of source activations (σ > σ_max × sqrt(ε))
+    target_numerical_rank: int = 0  # Rank of target activations
+    alignment_rank: int = 0  # min(source_rank, target_rank) - dimensions actually used
 
     @property
     def is_perfect(self) -> bool:
@@ -309,58 +316,32 @@ class GramAligner:
             return self._identity_result(int(n_s), int(d_s), precision)
 
         # =================================================================
-        # LINEAR ALIGNMENT CHECK (closed-form on probes)
+        # NUMERICAL-RANK TRUNCATED ALIGNMENT (not heuristic)
         # =================================================================
-        # Closed-form alignment yields CKA=1.0 on training probes when the
-        # target is a linear transform of the source. If this already reaches
-        # numerical precision, skip geodesic alignment.
-
-        # GEOMETRY CHECK: Verify Gram matrix condition number for stability
-        # The alignment F = pinv(A) @ B depends on the Gram matrix A.T @ A.
-        # If condition number is too high, the alignment is numerically unstable.
-        gram = b.matmul(b.transpose(source_activations), source_activations)
-        b.eval(gram)
-        eigvals = b.eigvalsh(gram)
-        b.eval(eigvals)
-
-        eps_safe = machine_epsilon(b, gram)
-        max_eig = float(b.to_scalar(b.max(eigvals)))
-        # Find minimum positive eigenvalue
-        pos_mask = eigvals > eps_safe
-        pos_inf = float(b.finfo().max)
-        min_candidates = b.where(pos_mask, eigvals, b.full(eigvals.shape, pos_inf))
-        min_eig = float(b.to_scalar(b.min(min_candidates)))
-
-        if min_eig > 0 and min_eig < pos_inf:
-            condition_number = max_eig / min_eig
-        else:
-            condition_number = float("inf")
-
-        # Warn if condition number is too high (recommend --full-atlas)
-        # For float32, eps ≈ 1e-7, so κ > 1e5 means < 2 significant digits
-        CONDITION_THRESHOLD = 1e5
-        if condition_number > CONDITION_THRESHOLD:
-            logger.warning(
-                "ALIGNMENT UNSTABLE: Gram condition number %.2e > threshold %.2e. "
-                "n_samples=%d, d_source=%d. Consider using --full-atlas for more probes.",
-                condition_number, CONDITION_THRESHOLD, n_s, d_s
-            )
-        else:
-            logger.debug(
-                "ALIGNMENT STABLE: Gram condition number %.2e, n_samples=%d, d_source=%d",
-                condition_number, n_s, d_s
-            )
+        # Uses SVD with truncation at machine precision threshold.
+        # Singular values below σ_max × sqrt(ε_machine) are numerical noise.
+        # The alignment operates in k = min(rank_source, rank_target) dimensions.
 
         linear_start = time.perf_counter()
-        F_linear = b.matmul(geodesic_pinv(b, source_activations), target_activations)
+
+        # Use numerical-rank-truncated least squares instead of full pinv
+        # This guarantees the condition number is bounded in the truncated space
+        F_linear, source_rank, target_rank, alignment_rank, condition_number = (
+            numerical_rank_truncated_lstsq(b, source_activations, target_activations)
+        )
         b.eval(F_linear)
+
+        # Measure geodesic CKA of the alignment
         F_linear, linear_iterations, linear_cka = self._geodesic_refine(
             source_activations, target_activations, F_linear
         )
         linear_elapsed = time.perf_counter() - linear_start
-        logger.debug(
-            "LINEAR ALIGNMENT: geodesic CKA=%.6f (%.2fs)",
+        logger.info(
+            "TRUNCATED ALIGNMENT: geodesic CKA=%.6f, rank=%d/%d, κ=%.2e (%.2fs)",
             linear_cka,
+            alignment_rank,
+            int(d_s),
+            condition_number,
             linear_elapsed,
         )
 
@@ -441,6 +422,9 @@ class GramAligner:
             linear_iterations=0,  # Legacy field - geodesic alignment is direct
             linear_residual=alignment_stats.get("relative_space_alignment_error", 0.0),
             gram_condition_number=condition_number,
+            source_numerical_rank=source_rank,
+            target_numerical_rank=target_rank,
+            alignment_rank=alignment_rank,
         )
 
     def _geodesic_refine(

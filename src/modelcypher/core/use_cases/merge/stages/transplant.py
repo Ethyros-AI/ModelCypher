@@ -57,6 +57,8 @@ from modelcypher.core.use_cases.merge.stages.transplant_embeddings import (
     apply_embedding_alignment,
 )
 from modelcypher.core.use_cases.merge.stages.transplant_weight_processor import (
+    ActivationContext,
+    StitchContext,
     process_layer_weights,
 )
 
@@ -789,6 +791,29 @@ def stage_transplant(
         best_delta_norm = -1.0
         can_measure_alignment = core_acts is not None and int(core_acts.shape[0]) >= 2
 
+        stitches = StitchContext(
+            hidden_output=hidden_stitch_output,
+            hidden_input=hidden_stitch_input,
+            intermediate_output=intermediate_stitch_output,
+            intermediate_input=intermediate_stitch_input,
+            gate_output=gate_stitch_output,
+            gate_input=gate_stitch_input,
+            attention_output=attention_stitch_output,
+            attention_input=attention_stitch_input,
+            k_output=k_stitch_output,
+            k_input=k_stitch_input,
+            v_output=v_stitch_output,
+            v_input=v_stitch_input,
+            kv_input=kv_stitch_input,
+            dims=stitch_dims,
+        )
+        activations = ActivationContext(
+            source_hidden=source_activations,
+            target_hidden=target_activations,
+            source_intermediate=source_intermediate_activations,
+            target_intermediate=target_intermediate_activations,
+        )
+
         weight_result = process_layer_weights(
             layer_idx=layer_idx,
             layer_keys=layer_keys,
@@ -802,24 +827,8 @@ def stage_transplant(
             total_weights=total_weights,
             weights_processed=weights_processed,
             progress_callback=progress_callback,
-            hidden_stitch_output=hidden_stitch_output,
-            hidden_stitch_input=hidden_stitch_input,
-            intermediate_stitch_output=intermediate_stitch_output,
-            intermediate_stitch_input=intermediate_stitch_input,
-            gate_stitch_output=gate_stitch_output,
-            gate_stitch_input=gate_stitch_input,
-            attention_stitch_output=attention_stitch_output,
-            attention_stitch_input=attention_stitch_input,
-            k_stitch_output=k_stitch_output,
-            k_stitch_input=k_stitch_input,
-            v_stitch_output=v_stitch_output,
-            v_stitch_input=v_stitch_input,
-            kv_stitch_input=kv_stitch_input,
-            stitch_dims=stitch_dims,
-            source_activations=source_activations,
-            target_activations=target_activations,
-            source_intermediate_activations=source_intermediate_activations,
-            target_intermediate_activations=target_intermediate_activations,
+            stitches=stitches,
+            activations=activations,
             density_weights_by_layer=density_weights,
             core_acts=core_acts,
             boundary_acts=boundary_acts,

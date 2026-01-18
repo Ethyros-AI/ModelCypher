@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
@@ -47,12 +47,16 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     log_scalar,
     machine_epsilon,
     pi_value,
-    precision_dtype,
     power_iteration_eigh,
     regularization_epsilon,
     safe_inverse,
     sqrt_scalar,
     tiny_value,
+)
+from modelcypher.core.domain.geometry.precision_utils import (
+    _float_dtype_for,
+    _mask_sum,
+    _promote_precision,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
@@ -71,65 +75,6 @@ from .riemannian_utils import (
 logger = logging.getLogger(__name__)
 
 _cache = ComputationCache.shared()
-
-
-def _dtype_name(dtype: Any) -> str:
-    name = getattr(dtype, "name", None) or getattr(dtype, "__name__", None) or str(dtype)
-    return name.replace("mlx.core.", "").replace("jax.numpy.", "")
-
-
-def _default_float_dtype(backend: "Backend") -> Any:
-    """Return the model-driven compute dtype for density estimation."""
-    return precision_dtype(backend)
-
-
-def _float_dtype_for(array: "Array | None", backend: "Backend") -> Any:
-    if array is not None and hasattr(array, "dtype"):
-        name = _dtype_name(array.dtype)
-        if "float" in name:
-            return array.dtype
-    return _default_float_dtype(backend)
-
-
-def _promote_precision(
-    array: "Array",
-    backend: "Backend",
-    *,
-    min_dtype: Any | None = None,
-) -> "Array":
-    """Promote low-precision or integer arrays to at least float32/default float."""
-    if min_dtype is None:
-        min_dtype = _default_float_dtype(backend)
-
-    if not hasattr(array, "dtype"):
-        return backend.array(array, dtype=min_dtype)
-
-    dtype_name = _dtype_name(array.dtype)
-    if (
-        "float16" in dtype_name
-        or "bfloat16" in dtype_name
-        or "int" in dtype_name
-        or "uint" in dtype_name
-        or "bool" in dtype_name
-    ):
-        return backend.astype(array, min_dtype)
-
-    try:
-        current_eps = backend.finfo(array.dtype).eps
-        min_eps = backend.finfo(min_dtype).eps
-    except Exception:
-        return backend.astype(array, min_dtype)
-
-    if current_eps > min_eps:
-        return backend.astype(array, min_dtype)
-
-    return array
-
-
-def _mask_sum(mask: "Array", backend: "Backend", *, dtype_source: "Array | None" = None) -> "Array":
-    dtype = _float_dtype_for(dtype_source, backend)
-    return backend.sum(backend.astype(mask, dtype))
-
 
 
 class InfluenceType(str, Enum):
@@ -417,6 +362,39 @@ class ConceptVolume:
 
         return diff * scale
 
+    def _density_from_mahal_sq(self, mahal_sq: "Array") -> "Array":
+        backend = get_default_backend()
+        d = self.dimension
+
+        if self.influence_type == InfluenceType.GAUSSIAN:
+            log_norm = self._gaussian_log_norm()
+            return backend.exp(backend.array(log_norm) - 0.5 * mahal_sq)
+
+        if self.influence_type == InfluenceType.LAPLACIAN:
+            mahal = backend.sqrt(backend.maximum(mahal_sq, backend.zeros_like(mahal_sq)))
+            norm_val = self._laplacian_norm()
+            return backend.exp(-mahal) * backend.array(norm_val)
+
+        if self.influence_type == InfluenceType.STUDENT_T:
+            nu = float(self.student_t_df)
+            if nu <= 0:
+                raise ValueError("student_t_df must be positive")
+            log_norm = self._student_t_log_norm()
+            return backend.exp(backend.array(log_norm)) * backend.pow(
+                1 + mahal_sq / nu, -(nu + d) / 2
+            )
+
+        if self.influence_type == InfluenceType.UNIFORM:
+            inv_volume = self._uniform_norm()
+            inside = mahal_sq <= self.geodesic_radius**2
+            return backend.where(
+                inside,
+                backend.full(mahal_sq.shape, inv_volume),
+                backend.zeros(mahal_sq.shape),
+            )
+
+        return backend.zeros(mahal_sq.shape)
+
     def density_at(self, point: "Array") -> float:
         """Compute probability density at a point.
 
@@ -437,35 +415,10 @@ class ConceptVolume:
         # mahal_sq = tangent @ precision @ tangent
         temp = backend.matmul(tangent, self.precision)
         mahal_sq_arr = backend.matmul(temp, tangent)
-        backend.eval(mahal_sq_arr)
-        mahal_sq = float(backend.to_scalar(mahal_sq_arr))
-        d = self.dimension
-
-        if self.influence_type == InfluenceType.GAUSSIAN:
-            # Multivariate Gaussian
-            log_norm = self._gaussian_log_norm()
-            return exp_scalar(log_norm - 0.5 * mahal_sq, backend)
-
-        elif self.influence_type == InfluenceType.LAPLACIAN:
-            # Multivariate Laplacian (product of univariate)
-            mahal = sqrt_scalar(mahal_sq, backend)
-            return self._laplacian_norm() * exp_scalar(-mahal, backend)
-
-        elif self.influence_type == InfluenceType.STUDENT_T:
-            # Multivariate t-distribution
-            nu = float(self.student_t_df)
-            if nu <= 0:
-                raise ValueError("student_t_df must be positive")
-            log_norm = self._student_t_log_norm()
-            return exp_scalar(log_norm, backend) * (1 + mahal_sq / nu) ** (-(nu + d) / 2)
-
-        elif self.influence_type == InfluenceType.UNIFORM:
-            # Uniform ball
-            if mahal_sq <= self.geodesic_radius**2:
-                return self._uniform_norm()
-            return 0.0
-
-        return 0.0
+        mahal_sq_arr = backend.reshape(mahal_sq_arr, (1,))
+        densities = self._density_from_mahal_sq(mahal_sq_arr)
+        backend.eval(densities)
+        return float(backend.to_scalar(densities))
 
     def mahalanobis_distance(self, point: "Array") -> float:
         """Compute Mahalanobis distance from centroid to point."""
@@ -684,37 +637,7 @@ class ConceptVolume:
         temp = backend.matmul(tangent, self.precision)  # (n, d)
         mahal_sq = backend.sum(temp * tangent, axis=1)  # (n,)
 
-        if self.influence_type == InfluenceType.GAUSSIAN:
-            # Multivariate Gaussian: exp(log_norm - 0.5 * mahal_sq)
-            log_norm = self._gaussian_log_norm()
-            densities = backend.exp(backend.array(log_norm) - 0.5 * mahal_sq)
-
-        elif self.influence_type == InfluenceType.LAPLACIAN:
-            # Multivariate Laplacian: exp(-sqrt(mahal_sq)) / 2^d
-            mahal = backend.sqrt(backend.maximum(mahal_sq, backend.zeros_like(mahal_sq)))
-            norm_val = self._laplacian_norm()
-            densities = backend.exp(-mahal) * backend.array(norm_val)
-
-        elif self.influence_type == InfluenceType.STUDENT_T:
-            # Multivariate t-distribution
-            nu = float(self.student_t_df)
-            log_norm = self._student_t_log_norm()
-            densities = backend.exp(backend.array(log_norm)) * backend.pow(
-                1 + mahal_sq / nu, -(nu + d) / 2
-            )
-
-        elif self.influence_type == InfluenceType.UNIFORM:
-            # Uniform ball: 1/volume if inside, 0 otherwise
-            inv_volume = self._uniform_norm()
-            inside = mahal_sq <= self.geodesic_radius**2
-            densities = backend.where(
-                inside,
-                backend.full(mahal_sq.shape, inv_volume),
-                backend.zeros(mahal_sq.shape),
-            )
-        else:
-            densities = backend.zeros(mahal_sq.shape)
-
+        densities = self._density_from_mahal_sq(mahal_sq)
         backend.eval(densities)
         return densities
 
