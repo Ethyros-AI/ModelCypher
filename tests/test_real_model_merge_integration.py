@@ -299,11 +299,10 @@ class TestSVDFilterOnRealWeights:
         original_norm = backend.mean(backend.abs(delta))
         backend.eval(original_norm)
 
-        # Project with high energy threshold
+        # Project using precision-derived rank
         result = filter_delta_svd(
             delta,
             backend=backend,
-            energy_threshold=0.99,
         )
         delta_proj = result.filtered_delta
         backend.eval(delta_proj)
@@ -312,7 +311,7 @@ class TestSVDFilterOnRealWeights:
         proj_norm = backend.mean(backend.abs(delta_proj))
         backend.eval(proj_norm)
 
-        # High threshold should preserve most of the signal
+        # Precision-derived rank should preserve most of the signal
         ratio = float(backend.to_scalar(proj_norm)) / float(backend.to_scalar(original_norm))
         assert ratio > 0.5  # At least 50% preserved
 

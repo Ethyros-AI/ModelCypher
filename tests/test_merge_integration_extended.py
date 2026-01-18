@@ -185,7 +185,6 @@ class TestAlignStitchProjectPipeline:
         result = filter_delta_svd(
             delta,
             backend=backend,
-            energy_threshold=0.9,
         )
         delta_proj = result.filtered_delta
         backend.eval(delta_proj)
@@ -212,11 +211,10 @@ class TestAlignStitchProjectPipeline:
         original_norm = backend.mean(backend.abs(delta))
         backend.eval(original_norm)
 
-        # Project with high energy threshold (should preserve most)
+        # Project with precision-derived rank (should preserve most)
         result = filter_delta_svd(
             delta,
             backend=backend,
-            energy_threshold=0.99,
         )
         delta_proj = result.filtered_delta
         backend.eval(delta_proj)
@@ -362,72 +360,6 @@ class TestSVDFilterInvariants:
         original_norm_val = float(backend.to_scalar(original_norm))
         tol = division_epsilon(backend, delta) * original_norm_val
         assert float(backend.to_scalar(proj_norm)) <= original_norm_val + tol
-
-    def test_high_energy_threshold_preserves_more(self, backend):
-        """Higher energy threshold should preserve more of the delta."""
-        backend.random_seed(42)
-        dim = 32
-        in_dim = 64
-
-        delta = backend.random_normal((in_dim, dim))
-        backend.eval(delta)
-
-        # Low threshold = aggressive filtering
-        result_low = filter_delta_svd(
-            delta,
-            backend=backend,
-            energy_threshold=0.5,
-        )
-        delta_low = result_low.filtered_delta
-        backend.eval(delta_low)
-        low_norm = backend.mean(backend.abs(delta_low))
-        backend.eval(low_norm)
-
-        # High threshold = preserve more
-        result_high = filter_delta_svd(
-            delta,
-            backend=backend,
-            energy_threshold=0.99,
-        )
-        delta_high = result_high.filtered_delta
-        backend.eval(delta_high)
-        high_norm = backend.mean(backend.abs(delta_high))
-        backend.eval(high_norm)
-
-        # High threshold should preserve more (or equal)
-        high_norm_val = float(backend.to_scalar(high_norm))
-        low_norm_val = float(backend.to_scalar(low_norm))
-        tol = division_epsilon(backend, delta_high) * max(high_norm_val, low_norm_val)
-        assert high_norm_val >= low_norm_val - tol
-
-    def test_low_threshold_removes_more(self, backend):
-        """Low energy threshold should filter more aggressively."""
-        backend.random_seed(42)
-        dim = 32
-        in_dim = 64
-
-        delta = backend.random_normal((in_dim, dim))
-        backend.eval(delta)
-
-        result = filter_delta_svd(
-            delta,
-            backend=backend,
-            energy_threshold=0.1,  # Very low
-        )
-        delta_proj = result.filtered_delta
-        backend.eval(delta_proj)
-
-        # Should remove significant energy
-        proj_norm = backend.mean(backend.abs(delta_proj))
-        backend.eval(proj_norm)
-
-        original_norm = backend.mean(backend.abs(delta))
-        backend.eval(original_norm)
-
-        # Projected should be smaller than original
-        denom = float(backend.to_scalar(original_norm)) + division_epsilon(backend, original_norm)
-        ratio = float(backend.to_scalar(proj_norm)) / denom
-        assert ratio < 1.0  # At least some reduction
 
 
 class TestCrossArchitectureMathematicalProperties:

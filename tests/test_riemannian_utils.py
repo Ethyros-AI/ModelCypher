@@ -1008,10 +1008,11 @@ class TestEdgeCasesAndNumericalStability:
         backend = any_backend
         rg = RiemannianGeometry(backend)
 
+        eps = _div_eps(backend, 1.0)
         points = backend.array([
             [0.0, 0.0],
-            [1e-8, 0.0],
-            [0.0, 1e-8],
+            [eps, 0.0],
+            [0.0, eps],
         ])
 
         result = rg.geodesic_distances(points)

@@ -228,20 +228,17 @@ These are places where we've written warnings or thresholds but **don't actually
 
 ---
 
-### Research Question 7: Energy Threshold 0.99
+### Resolved: Energy Threshold Removed
 
-**Current code**: Optional parameter energy_threshold=0.99
+**Previous code**: Optional energy_threshold parameter in SVD rank selection
 **Location**: geodesic_null_space.py, numerical_stability.py
 
-**What we're really saying**: "Keeping 99% of the energy seems like enough."
+**Resolution**:
+- Removed energy_threshold as a user-controlled knob
+- Rank now derives exclusively from precision (numeric rank threshold)
+- Tests updated to validate precision-derived behavior
 
-**The actual questions**:
-1. Why 99%? Why not 99.9%? Why not 95%?
-2. Is there a precision-derived answer? (e.g., keep energy until remaining < ε)
-3. What is the geometric meaning of "energy" in this context?
-4. Should we use numeric rank instead of energy threshold?
-
-**What we need**: Either derive from precision, or use numeric rank exclusively.
+**Status**: ✓ RESOLVED
 
 ---
 

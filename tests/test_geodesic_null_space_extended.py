@@ -18,7 +18,7 @@
 """Extended tests for geodesic null-space filtering.
 
 Tests critical APIs:
-- filter_delta_svd(): SVD-based delta filtering with energy threshold
+- filter_delta_svd(): SVD-based delta filtering with precision-derived rank
 - filter_merge_delta_geodesic(): Full merge delta computation
 - GeodesicNullSpaceFilter.prepare_basis(): Basis precomputation
 - GeodesicNullSpaceFilter.filter_delta(): Main filtering with variance weighting
@@ -91,26 +91,18 @@ class TestFilterDeltaSVD:
         assert backend.shape(result.filtered_delta) == (32, 16)
         assert 0 < result.preserved_fraction <= 1.0
 
-    def test_energy_threshold_one_preserves_all(self, backend):
-        """Energy threshold 1.0 should preserve all singular values."""
+    def test_low_rank_delta_preserved(self, backend):
+        """Precision rank should preserve exact low-rank structure."""
         backend.random_seed(789)
-        delta = backend.random_normal((16, 8))
-        result = filter_delta_svd(delta, backend, energy_threshold=1.0)
+        u = backend.random_normal((24, 2))
+        v = backend.random_normal((2, 12))
+        delta = backend.matmul(u, v)  # Rank-2 by construction
+        backend.eval(delta)
 
-        # With threshold=1.0, all singular values should be kept
-        # so preserved_fraction should be very close to 1.0
-        assert result.preserved_fraction > 0.99
-        assert result.projection_loss < 0.01
+        result = filter_delta_svd(delta, backend)
 
-    def test_energy_threshold_low_truncates(self, backend):
-        """Low energy threshold should truncate more aggressively."""
-        backend.random_seed(999)
-        delta = backend.random_normal((32, 16))
-        result_high = filter_delta_svd(delta, backend, energy_threshold=0.99)
-        result_low = filter_delta_svd(delta, backend, energy_threshold=0.5)
-
-        # Lower threshold means more truncation, lower preserved fraction
-        assert result_low.orthogonal_dim <= result_high.orthogonal_dim
+        assert result.orthogonal_dim == 2
+        assert result.preserved_fraction >= 1.0 - division_epsilon(backend, delta)
 
     def test_filtered_norm_leq_original(self, backend):
         """Filtered norm should never exceed original norm by much.
@@ -353,20 +345,18 @@ class TestNullSpaceMathematicalProperties:
     @given(
         m=st.integers(min_value=4, max_value=16),
         n=st.integers(min_value=4, max_value=16),
-        threshold=st.floats(min_value=0.1, max_value=1.0),
     )
     @settings(max_examples=10, deadline=None)
-    def test_svd_monotonic_energy_threshold(self, m, n, threshold):
-        """Higher energy threshold should preserve more (monotonicity)."""
+    def test_svd_rank_is_scale_invariant(self, m, n):
+        """Precision rank should be invariant to uniform scaling."""
         backend = get_default_backend()
         delta = backend.random_normal((m, n))
         backend.eval(delta)
 
-        result_high = filter_delta_svd(delta, backend, energy_threshold=threshold)
-        result_low = filter_delta_svd(delta, backend, energy_threshold=threshold * 0.5)
+        result = filter_delta_svd(delta, backend)
+        result_scaled = filter_delta_svd(delta * 1000.0, backend)
 
-        # Higher threshold should preserve at least as much
-        assert result_high.orthogonal_dim >= result_low.orthogonal_dim
+        assert result.orthogonal_dim == result_scaled.orthogonal_dim
 
 
 class TestPrepareBasis:

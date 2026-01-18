@@ -21,7 +21,7 @@ The transplant.py module uses svd_auto_rank() for rank determination instead
 of a heuristic threshold. This test file verifies:
 
 1. Scale invariance: Same relative rank regardless of eigenvalue magnitude
-2. Energy capture: 99% energy threshold correctly filters noise
+2. Precision cutoff: numeric rank matches precision-derived threshold
 3. Dimension consistency: null_rank + intrinsic_rank = total_dim
 4. Numerical stability: Handles edge cases (near-zero eigenvalues, etc.)
 
@@ -68,13 +68,13 @@ class TestSVDAutoRankScaleInvariance:
         b.eval(singular_values)
 
         # Get rank at original scale
-        rank_original = svd_auto_rank(singular_values, b, energy_threshold=0.99)
+        rank_original = svd_auto_rank(singular_values, b)
 
         # Scale by various factors and verify rank is unchanged
         for scale in [0.001, 0.1, 10.0, 1000.0]:
             scaled = singular_values * scale
             b.eval(scaled)
-            rank_scaled = svd_auto_rank(scaled, b, energy_threshold=0.99)
+            rank_scaled = svd_auto_rank(scaled, b)
             assert rank_original == rank_scaled, (
                 f"Rank changed from {rank_original} to {rank_scaled} "
                 f"when scaling by {scale}"
@@ -87,12 +87,12 @@ class TestSVDAutoRankScaleInvariance:
         # Distribution A: Large absolute values
         sv_large = b.array([1e6, 5e5, 2.5e5, 1e3, 5e2, 2e2])
         b.eval(sv_large)
-        rank_large = svd_auto_rank(sv_large, b, energy_threshold=0.99)
+        rank_large = svd_auto_rank(sv_large, b)
 
         # Distribution B: Small absolute values with SAME relative structure
         sv_small = b.array([1e-6, 5e-7, 2.5e-7, 1e-9, 5e-10, 2e-10])
         b.eval(sv_small)
-        rank_small = svd_auto_rank(sv_small, b, energy_threshold=0.99)
+        rank_small = svd_auto_rank(sv_small, b)
 
         assert rank_large == rank_small, (
             f"Rank changed from {rank_large} to {rank_small} "
@@ -100,48 +100,42 @@ class TestSVDAutoRankScaleInvariance:
         )
 
 
-class TestSVDAutoRankEnergy:
-    """Tests for correct energy capture behavior."""
+class TestSVDAutoRankPrecisionThreshold:
+    """Tests for precision-derived numeric rank behavior."""
 
-    def test_99_percent_threshold_captures_signal(self, backend):
-        """99% energy threshold should capture signal components."""
+    def test_precision_threshold_filters_noise(self, backend):
+        """Precision threshold should drop values below numeric resolution."""
         b = backend
 
-        # Create clear signal + noise structure
-        # Signal: 3 components capturing ~99.9% of energy
-        # Noise: 7 components with negligible energy
-        signal = [10.0, 5.0, 2.5]  # Energy: 100 + 25 + 6.25 = 131.25
-        noise = [0.01] * 7  # Energy: 7 * 0.0001 = 0.0007
-        # Total energy ≈ 131.25, signal fraction ≈ 99.99%
+        signal = [10.0, 5.0, 2.5]
+        max_dim = 10
+        sv = b.array(signal + [0.0] * (max_dim - len(signal)))
+        b.eval(sv)
 
+        eps = machine_epsilon(b, sv)
+        threshold = max(signal) * max_dim * eps
+        noise = [threshold * 0.1] * (max_dim - len(signal))
         sv = b.array(signal + noise)
         b.eval(sv)
 
-        rank = svd_auto_rank(sv, b, energy_threshold=0.99)
+        rank = svd_auto_rank(sv, b, max_dim=max_dim)
+        assert rank == len(signal)
 
-        # Should capture at least the 3 signal components
-        # (might include some noise if energy threshold requires it)
-        assert rank >= 3, f"Expected rank >= 3, got {rank}"
-        assert rank <= 4, f"Expected rank <= 4 (signal + margin), got {rank}"
-
-    def test_different_thresholds_change_rank(self, backend):
-        """Higher energy threshold should give equal or higher rank."""
+    def test_precision_threshold_matches_formula(self, backend):
+        """Rank should equal count of values above max_s * max_dim * eps."""
         b = backend
 
-        # Create gradual decay singular values
-        sv = b.array([10.0, 5.0, 2.5, 1.25, 0.625, 0.3125, 0.15625])
+        sv = b.array([10.0, 5.0, 2.5, 0.1, 0.01, 0.001])
         b.eval(sv)
 
-        rank_90 = svd_auto_rank(sv, b, energy_threshold=0.90)
-        rank_95 = svd_auto_rank(sv, b, energy_threshold=0.95)
-        rank_99 = svd_auto_rank(sv, b, energy_threshold=0.99)
-        rank_999 = svd_auto_rank(sv, b, energy_threshold=0.999)
+        max_dim = int(sv.shape[0])
+        eps = machine_epsilon(b, sv)
+        max_s = float(b.to_scalar(b.max(sv)))
+        threshold = max_s * max_dim * eps
 
-        # Higher threshold should require >= same rank
-        assert rank_90 <= rank_95 <= rank_99 <= rank_999, (
-            f"Rank should increase with threshold: "
-            f"90%={rank_90}, 95%={rank_95}, 99%={rank_99}, 99.9%={rank_999}"
-        )
+        expected = sum(1 for val in [10.0, 5.0, 2.5, 0.1, 0.01, 0.001] if val > threshold)
+        rank = svd_auto_rank(sv, b, max_dim=max_dim)
+        assert rank == expected
 
 
 class TestNullSpaceProjectorRankConsistency:

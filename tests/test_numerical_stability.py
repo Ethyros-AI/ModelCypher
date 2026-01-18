@@ -123,7 +123,8 @@ class TestRegularizationEpsilon:
         mach_eps = machine_epsilon(b, arr)
         div_eps = division_epsilon(b, arr)
         reg_eps = regularization_epsilon(b, arr)
-        assert mach_eps < reg_eps < div_eps
+        assert mach_eps < reg_eps
+        assert reg_eps == div_eps
 
     def test_regularization_epsilon_positive(self, any_backend: "Backend") -> None:
         """Regularization epsilon should be positive."""

@@ -19,11 +19,13 @@
 
 from __future__ import annotations
 
-import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
     BaselineMeasurements,
     EntropyMeasurement,
@@ -35,6 +37,19 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
     PromptLanguage,
 )
+
+
+def _precision_tol(values: list[float] | float) -> float:
+    """Precision-derived tolerance for float32 trajectory math."""
+    backend = get_default_backend()
+    if isinstance(values, (int, float)):
+        arr = backend.array([float(values)])
+        scale = max(1.0, abs(float(values)))
+    else:
+        arr = backend.array(list(values))
+        scale = max(1.0, max(abs(v) for v in values)) if values else 1.0
+    eps = machine_epsilon(backend, arr)
+    return eps * scale
 
 
 class TestLinguisticCalorimeterSimulated:
@@ -345,7 +360,7 @@ class TestEntropyMathInvariants:
         if result.entropy_trajectory:
             expected_mean = sum(result.entropy_trajectory) / len(result.entropy_trajectory)
             assert result.mean_entropy == pytest.approx(
-                expected_mean, abs=math.ulp(expected_mean)
+                expected_mean, abs=_precision_tol(expected_mean)
             )
 
     def test_first_token_entropy_matches_trajectory_start(self) -> None:
@@ -357,7 +372,7 @@ class TestEntropyMathInvariants:
         if result.entropy_trajectory:
             expected = result.entropy_trajectory[0]
             assert result.first_token_entropy == pytest.approx(
-                expected, abs=math.ulp(expected)
+                expected, abs=_precision_tol(expected)
             )
 
 
@@ -380,7 +395,7 @@ class TestVarianceComputation:
             expected_var = squared_diff_sum / (len(result.entropy_trajectory) - 1)
 
             assert result.entropy_variance == pytest.approx(
-                expected_var, abs=math.ulp(expected_var)
+                expected_var, abs=_precision_tol(expected_var)
             )
 
     def test_single_point_variance_is_zero(self) -> None:
@@ -410,7 +425,7 @@ class TestBaselineStatistics:
         baseline = cal.establish_baseline(corpus)
 
         assert baseline.mean_generation_entropy == pytest.approx(
-            expected_mean, abs=math.ulp(expected_mean)
+            expected_mean, abs=_precision_tol(expected_mean)
         )
 
     def test_baseline_std_is_population_std(self) -> None:
@@ -433,7 +448,7 @@ class TestBaselineStatistics:
         baseline = cal.establish_baseline(corpus)
 
         assert baseline.std_generation_entropy == pytest.approx(
-            expected_std, abs=math.ulp(expected_std)
+            expected_std, abs=_precision_tol(expected_std)
         )
 
     def test_percentile_ordering(self) -> None:
@@ -469,7 +484,7 @@ class TestTrajectoryAnalysis:
 
         for i, cum in enumerate(result.cumulative_entropy):
             expected = sum(result.per_token_entropy[: i + 1]) / (i + 1)
-            assert cum == pytest.approx(expected, abs=math.ulp(expected))
+            assert cum == pytest.approx(expected, abs=_precision_tol(expected))
 
     def test_per_token_variance_is_sliding_window(self) -> None:
         """Per-token variance should use data-derived sliding window."""
@@ -493,7 +508,7 @@ class TestTrajectoryAnalysis:
                 expected_var = 0.0
 
             assert result.per_token_variance[i] == pytest.approx(
-                expected_var, abs=math.ulp(expected_var)
+                expected_var, abs=_precision_tol(expected_var)
             )
 
     def test_trend_detection_increasing(self) -> None:

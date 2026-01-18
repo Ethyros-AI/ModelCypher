@@ -1,0 +1,19 @@
+{
+  "model_path": "HuggingFaceTB/SmolLM2-135M-Instruct",
+  "layer_idx": 15,
+  "hidden_dim": 576,
+  "n_probes": 500,
+  "numerical_rank": 50,
+  "rank_coverage": 0.08680555555555555,
+  "sae_hidden_dim": 4608,
+  "n_dormant_features": 607,
+  "n_active_features": 4001,
+  "dormant_ratio": 0.13172743055555555,
+  "sae_recon_loss": 5781.9072265625,
+  "sae_sparsity": 19.243587493896484,
+  "analysis": {
+    "rank_deficiency": 0.9131944444444444,
+    "dormant_ratio": 0.13172743055555555,
+    "correlation_hypothesis": "dormant_ratio should correlate with rank_deficiency"
+  }
+}

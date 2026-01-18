@@ -26,6 +26,7 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.multimodal.visual_injection import (
     VisualConceptInjector,
     VisualMemoryToken,
@@ -61,7 +62,7 @@ class TestVisualConceptInjector:
         vocab = backend.random_normal((100, 1024))
         # Normalize
         norms = backend.sqrt(backend.sum(vocab * vocab, axis=1, keepdims=True))
-        vocab = vocab / (norms + 1e-8)
+        vocab = vocab / (norms + division_epsilon(backend, norms))
         backend.eval(vocab)
         return vocab
 
@@ -129,7 +130,7 @@ class TestVisualConceptInjectorIntegration:
         # Set up mock vocabulary
         vocab = backend.random_normal((100, 1024))
         norms = backend.sqrt(backend.sum(vocab * vocab, axis=1, keepdims=True))
-        vocab = vocab / (norms + 1e-8)
+        vocab = vocab / (norms + division_epsilon(backend, norms))
         backend.eval(vocab)
         injector.set_vocabulary(vocab)
 

@@ -197,7 +197,6 @@ def align_layers(
     def _align_target_group(
         tgt_idx: int,
         src_indices: list[int],
-        F_init: "Array | None" = None,
     ) -> dict:
         tgt_layer = target_layers[tgt_idx]
         src_layers_list = [source_layers[i] for i in src_indices]
@@ -293,7 +292,6 @@ def align_layers(
             alignment_result = local_aligner.find_perfect_alignment(
                 src_combined,
                 tgt_stacked,
-                F_init=F_init,
             )
 
             F_arr = alignment_result.feature_transform
@@ -312,8 +310,6 @@ def align_layers(
             linear_residuals_by_layer[tgt_layer] = alignment_result.linear_residual
             numerical_deviation_by_layer[tgt_layer] = alignment_result.numerical_deviation
             precision_thresholds_by_layer[tgt_layer] = alignment_result.precision_threshold
-            result["F_arr_raw"] = F_arr
-
             split_transforms: dict[int, Any] = {}
             start_idx = 0
             for s_layer, s_dim in zip(src_layers_list, src_dims):
@@ -481,27 +477,10 @@ def align_layers(
 
         return result
 
-    successful_alignments: dict[int, dict] = {}
-
     completed = 0
     for tgt_idx, src_indices in alignment_tasks:
         tgt_layer = target_layers[tgt_idx]
-        F_init = None
-
-        if successful_alignments:
-            aligned_layers = list(successful_alignments.keys())
-            closest_layer = min(aligned_layers, key=lambda l: abs(l - tgt_layer))
-            neighbor_data = successful_alignments[closest_layer]
-            F_init = neighbor_data.get("F")
-            logger.info(
-                "ZIPPER: Layer %d warm-starting from layer %d",
-                tgt_layer,
-                closest_layer,
-            )
-        else:
-            logger.debug("ZIPPER: Layer %d has no successful neighbors yet", tgt_layer)
-
-        result = _align_target_group(tgt_idx, src_indices, F_init=F_init)
+        result = _align_target_group(tgt_idx, src_indices)
 
         tgt_layer = result["tgt_layer"]
         src_layers = result["src_layers"]
@@ -518,12 +497,6 @@ def align_layers(
 
         if "scale_ratio" in result:
             scale_ratios[tgt_layer] = result["scale_ratio"]
-
-        if result.get("F_arr_raw") is not None:
-            successful_alignments[tgt_layer] = {
-                "F": result["F_arr_raw"],
-                "R": result.get("R_raw", None),
-            }
 
         completed += 1
         logger.info(
@@ -551,10 +524,9 @@ def align_layers(
 
         if completed % 5 == 0 or completed == len(alignment_tasks):
             logger.info(
-                "PROBE: Aligned %d/%d target layers (zipper: %d warm-started)...",
+                "PROBE: Aligned %d/%d target layers...",
                 completed,
                 len(alignment_tasks),
-                len(successful_alignments),
             )
 
     logger.info(

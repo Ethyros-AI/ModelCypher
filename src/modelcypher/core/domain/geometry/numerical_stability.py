@@ -1098,10 +1098,9 @@ def orthogonalize_alignment(
 def svd_auto_rank(
     singular_values: "Array",
     backend: "Backend",
-    energy_threshold: float | None = None,
     max_dim: int | None = None,
 ) -> int:
-    """Choose SVD rank by numeric threshold or energy fraction."""
+    """Choose SVD rank by precision-derived numeric threshold."""
     b = backend
     S_arr = b.array(singular_values)
     S = b.astype(S_arr, precision_dtype(b, reference=S_arr))
@@ -1111,56 +1110,19 @@ def svd_auto_rank(
     if n == 0:
         return 0
 
-    if energy_threshold is None:
-        max_s_arr = b.max(S)
-        b.eval(max_s_arr)
-        max_s = float(b.to_scalar(max_s_arr))
-        if max_s <= 0.0:
-            return 0
-        max_dim = max_dim or n
-        rank_scale = svd_rank_threshold(b, S, max_dim)
-        threshold = max_s * rank_scale
-        rank_mask = S > threshold
-        rank_arr = b.sum(b.astype(rank_mask, "int32"))
-        b.eval(rank_arr)
-        return int(b.to_scalar(rank_arr))
-
-    if not (0.0 < energy_threshold <= 1.0):
-        raise ValueError("energy_threshold must be in (0, 1].")
-
-    # Compute squared singular values (energy per component)
-    S_sq = S * S
-    b.eval(S_sq)
-
-    # Total energy (Frobenius norm squared)
-    total_energy = b.sum(S_sq)
-    b.eval(total_energy)
-    total_energy_val = float(b.to_scalar(total_energy))
-
-    if total_energy_val <= 0:
+    max_s_arr = b.max(S)
+    b.eval(max_s_arr)
+    max_s = float(b.to_scalar(max_s_arr))
+    if max_s <= 0.0:
         return 0
 
-    # Cumulative sum of squared singular values
-    cumsum = b.cumsum(S_sq)
-    b.eval(cumsum)
-
-    # Threshold: energy_threshold * total_energy
-    threshold = energy_threshold * total_energy_val
-
-    # Find first index where cumsum >= threshold
-    mask = cumsum >= threshold
-    mask_int = b.astype(mask, "int32")
-    b.eval(mask_int)
-
-    # argmax on mask gives first True index (or 0 if all False)
-    first_idx = b.argmax(mask_int)
-    b.eval(first_idx)
-    k = int(b.to_scalar(first_idx)) + 1  # +1 to include that component
-
-    # Clamp to valid range
-    k = max(1, min(k, n))
-
-    return k
+    max_dim = max_dim or n
+    rank_scale = svd_rank_threshold(b, S, max_dim)
+    threshold = max_s * rank_scale
+    rank_mask = S > threshold
+    rank_arr = b.sum(b.astype(rank_mask, "int32"))
+    b.eval(rank_arr)
+    return int(b.to_scalar(rank_arr))
 
 
 def geodesic_pinv(backend: "Backend", array: "Array") -> "Array":
