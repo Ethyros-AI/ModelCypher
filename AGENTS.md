@@ -125,12 +125,15 @@ The geometry says:
 3. **Check κ at runtime**, not a fixed ratio (actual stability depends on activation structure)
 
 For float32 with ε ≈ 1e-7:
-- κ < 1e5 → stable (≥2 significant digits)
-- κ > 1e5 → unstable (recommend --full-atlas)
+- κ × ε is the relative error in the solution
+- κ = 1e5 → 1e-2 relative error (2 significant digits)
+- κ = 1e3 → 1e-4 relative error (4 significant digits)
 
-**Implementation**: GramAligner computes Gram condition number and warns if unstable.
-The probe stage uses `min_required = max_dim + 100` as a geometry-derived minimum,
-and stability is verified at runtime.
+The threshold is dtype-derived: κ × machine_epsilon must be small enough for your use case.
+
+**Implementation**: GramAligner computes Gram condition number and logs it.
+The probe stage uses Berry & Sauer (2016): `n >= d * (1 + 1/sqrt(d))` for
+well-conditioned Gram matrices on generic point clouds.
 
 **If merge produces incoherent outputs but CKA looks good**: Check the Gram condition number.
 The alignment may have succeeded mathematically but the transform is numerically unstable.
@@ -401,7 +404,75 @@ When thresholds are needed, derive from baselines (z-scores, percentiles).
 
 ### Don't Invent Heuristics
 
-If you need a parameter value, derive it from data or machine epsilon. Don't fabricate "standard heuristics."
+**Every heuristic is an admission of ignorance.**
+
+When you write `if ratio < 0.8` or `threshold = 0.1` or `margin = 100`, you're saying: "I don't understand the geometry well enough to know the real constraint, so I'm guessing."
+
+The problem space is finite. The geometry has answers. If you don't know the answer, you haven't done the research yet.
+
+**The wrong response to uncertainty:**
+```python
+# "I don't know what rank ratio matters, so I'll pick 0.8"
+if rank_ratio < 0.8:
+    logger.warning("Rank mismatch detected")
+
+# "I don't know when curvature correction breaks down, so I'll pick 10%"
+if error > 0.1:
+    skip_correction()
+
+# "I don't know how many probes we need, so I'll add 100"
+min_probes = max_dim + 100
+```
+
+**The correct response to uncertainty:**
+```python
+# Log the measurement. Let the geometry speak.
+logger.info("Alignment: src_rank=%d, tgt_rank=%d, alignment_rank=%d", ...)
+
+# Derive from machine precision - the ONLY thing we know for certain
+if taylor_remainder >= sqrt(machine_epsilon):
+    # Correction is numerically meaningless - not "probably wrong"
+    return uncorrected
+
+# Research until you find the actual constraint
+# Berry & Sauer (2016): n >= d * (1 + 1/sqrt(d)) for well-conditioned Gram
+# But even this assumes "generic point clouds" - is that our data?
+```
+
+**The test:** Can you cite the mathematical derivation for your number? If not, it's a guess.
+
+**When you catch yourself guessing:**
+1. STOP writing code
+2. Add a measurement instead (return raw data, log the value)
+3. Research until you find the actual constraint
+4. The constraint will come from: machine precision, geometric invariants, or experimental measurement on baseline data
+
+**Numbers that ARE allowed:**
+- Machine epsilon (dtype-derived)
+- sqrt(epsilon) for relative precision thresholds
+- Mathematical constants (pi, e, etc.)
+- Formulas from peer-reviewed papers (with citation)
+- Measurements from baseline experiments in this codebase
+
+**Numbers that are NOT allowed:**
+- Round numbers (0.1, 0.5, 0.8, 100)
+- "Standard" values from other codebases
+- Anything described as "works well in practice"
+- Anything you can't derive on a whiteboard
+
+**Watch for math-washing:** Dressing up a guess in mathematical language doesn't make it principled.
+
+```python
+# This LOOKS principled but isn't:
+# "The Taylor remainder is O((K*r²)²). For 10% error: |K*r²| < 0.32"
+# WHERE DID 10% COME FROM? That's a guess. 0.32 is derived from the guess.
+
+# This IS principled:
+# "Taylor remainder must be < sqrt(eps) to be distinguishable from noise"
+# sqrt(eps) comes from numerical analysis, not a guess.
+```
+
+**The smell test:** If you picked a percentage (10%, 20%, 80%), it's a guess. Percentages don't appear in geometry - they appear in human intuition.
 
 ---
 

@@ -301,7 +301,8 @@ def reconstruct_weight_from_behavior(
     # The orthogonalization removes scaling from the coordinate transform,
     # but the weight magnitudes may need adjustment based on the original scaling.
     # scale_correction = scale_out / scale_in compensates for this.
-    if abs(scale_correction - 1.0) > 1e-6:
+    eps = float(machine_epsilon(b, alignment_in))
+    if abs(scale_correction - 1.0) > eps:
         reconstructed_weight = reconstructed_weight_raw * scale_correction
         logger.info(
             "SCALE CORRECTION: applied factor %.4f to reconstructed weight",
@@ -508,7 +509,8 @@ def reconstruct_weight_manifold_aware(
     # Step 6: Apply scale correction for non-orthogonal alignment
     # The orthogonalization removes scaling from the coordinate transform,
     # but the weight magnitudes may need adjustment based on the original scaling.
-    if abs(scale_correction - 1.0) > 1e-6:
+    eps = float(machine_epsilon(b, alignment_in))
+    if abs(scale_correction - 1.0) > eps:
         reconstructed_weight = reconstructed_weight_raw * scale_correction
         logger.info(
             "MANIFOLD SCALE CORRECTION: applied factor %.4f to reconstructed weight",

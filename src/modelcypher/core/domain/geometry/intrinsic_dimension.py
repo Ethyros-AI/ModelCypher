@@ -120,6 +120,15 @@ class IntrinsicDimension:
         self._backend = backend or get_default_backend()
 
     @staticmethod
+    def local_dimension_min_samples() -> int:
+        """Minimum samples required for local TwoNN dimension.
+
+        TwoNN local estimation needs at least two neighbor ratios (r2/r1).
+        That requires k_local >= 3 neighbors, so n_samples >= 4.
+        """
+        return 4
+
+    @staticmethod
     def compute_two_nn(
         points: list[list[float]] | "Array",
         backend: "Backend | None" = None,
@@ -307,9 +316,10 @@ class IntrinsicDimension:
         r1_valid = r1_sq > eps
 
         # Use max of r2 as infinity threshold (avoids median eval)
-        # This is more conservative but stays fully lazy
+        # Anything within machine epsilon of max is treated as infinite.
         max_r2 = backend.max(r2_sq)
-        inf_thresh = max_r2 * 0.99  # Anything at max is likely infinite
+        eps = machine_epsilon(backend, r2_sq)
+        inf_thresh = max_r2 * (1.0 - eps)
         r2_finite = r2_sq < inf_thresh
         valid_mask = r1_valid & r2_finite
 
@@ -480,7 +490,7 @@ class IntrinsicDimension:
 
         # Infinity threshold: anything > median / eps is disconnected
         # This follows the geodesic "infinity" construction: inf ≈ scale/eps.
-        inf_thresh = max(median_val / eps, 1.0)
+        inf_thresh = median_val / eps
         r2_finite = r2_sq < inf_thresh
         valid_mask = r1_valid & r2_finite
 
@@ -654,8 +664,11 @@ class IntrinsicDimension:
         k_actual = geo_result.k_neighbors
         backend.eval(geo_dist)
 
-        # Need at least 3 neighbors for meaningful local ID
-        k_local = max(3, min(k_actual, n - 1))
+        # TwoNN local estimation needs at least two neighbor ratios (r2/r1),
+        # which requires k_local >= 3 neighbors (n_samples >= 4).
+        min_samples = self.local_dimension_min_samples()
+        min_neighbors = max(1, min_samples - 1)
+        k_local = max(min_neighbors, min(k_actual, n - 1))
 
         # Get machine epsilon from the array's dtype - the geometry's precision limit
         eps = machine_epsilon(backend, geo_dist)
@@ -711,9 +724,9 @@ class IntrinsicDimension:
         # Sum of log(mu) per row
         sum_log_mu = backend.sum(log_mu_masked, axis=1)  # [n]
 
-        # Mean log(mu) per row - only where we have enough valid entries
-        # Need at least 2 valid mu values for meaningful estimate
-        min_valid = backend.array(2.0)
+        # Mean log(mu) per row - only where we have enough valid entries.
+        # Need at least two valid mu values (two neighbor ratios).
+        min_valid = backend.array(float(max(1, min_neighbors - 1)))
         has_enough = valid_count >= min_valid
 
         # Safe mean computation
@@ -762,8 +775,8 @@ class IntrinsicDimension:
         mean_dim = backend.to_scalar(mean_dim_arr)
         std_dim = backend.to_scalar(std_dim_arr)
 
-        # Modal dimension: bin dimensions and find most common
-        # Use histogram with bins of width 0.5
+        # Modal dimension: bin dimensions and find most common.
+        # Use Freedman–Diaconis rule for bin width (data-derived).
         pos_inf = backend.array(float("inf"), dtype=local_dims.dtype)
         neg_inf = backend.array(float("-inf"), dtype=local_dims.dtype)
         min_dim_arr = backend.min(backend.where(valid_mask, local_dims, pos_inf))
@@ -773,37 +786,69 @@ class IntrinsicDimension:
         max_dim = backend.to_scalar(max_dim_arr)
 
         if valid_count_scalar > 1.0 and max_dim > min_dim:
-            n_bins = max(1, int((max_dim - min_dim) / 0.5) + 1)
-            bin_width_arr = (max_dim_arr - min_dim_arr + eps) / backend.array(
-                float(n_bins), dtype=local_dims.dtype
-            )
+            import math
 
-            # Compute bin indices
-            bin_indices = backend.astype(
-                (backend.where(valid_mask, local_dims, min_dim_arr) - min_dim_arr)
-                / bin_width_arr,
-                "int32",
-            )
-            # Clamp to valid range
-            max_bin_idx = backend.array(n_bins - 1, dtype="int32")
-            zero_idx = backend.array(0, dtype="int32")
-            bin_indices = backend.where(bin_indices > max_bin_idx, max_bin_idx, bin_indices)
-            bin_indices = backend.where(bin_indices < zero_idx, zero_idx, bin_indices)
+            n_valid = int(valid_count_scalar)
+            eps_dim = division_epsilon(backend, local_dims)
+            valid_vals = backend.where(valid_mask, local_dims, pos_inf)
+            sorted_vals = backend.sort(valid_vals)
+            backend.eval(sorted_vals)
 
-            # Count bins using backend one-hot encoding (fully vectorized)
-            # Create one-hot via eye indexing: one_hot[i] = eye[bin_idx[i]]
-            eye_mat = backend.eye(n_bins)
-            one_hot = eye_mat[bin_indices]  # [n_points, n_bins] with 1 at bin index
-            # Sum columns to get bin counts
-            valid_mask_col = backend.reshape(valid_mask_float, (-1, 1))
-            bin_counts_arr = backend.sum(one_hot * valid_mask_col, axis=0)
+            last_idx = n_valid - 1
+            q1_idx = int(0.25 * last_idx)
+            q3_idx = int(0.75 * last_idx)
+            q1_arr = sorted_vals[q1_idx : q1_idx + 1]
+            q3_arr = sorted_vals[q3_idx : q3_idx + 1]
+            backend.eval(q1_arr, q3_arr)
+            q1 = float(backend.to_scalar(q1_arr))
+            q3 = float(backend.to_scalar(q3_arr))
+            iqr = q3 - q1
 
-            # Find modal bin using backend argmax
-            max_bin_arr = backend.argmax(bin_counts_arr)
-            backend.eval(bin_counts_arr, max_bin_arr, bin_width_arr)
-            max_bin = int(backend.to_scalar(max_bin_arr))
-            bin_width_val = float(backend.to_scalar(bin_width_arr))
-            modal_dim = min_dim + (max_bin + 0.5) * bin_width_val
+            if iqr > eps_dim:
+                bin_width = 2.0 * iqr * (float(n_valid) ** (-1.0 / 3.0))
+            else:
+                bin_width = 0.0
+
+            if bin_width > eps_dim:
+                n_bins = max(1, int(math.ceil((max_dim - min_dim) / bin_width)))
+                bin_width_arr = (max_dim_arr - min_dim_arr + eps_dim) / backend.array(
+                    float(n_bins), dtype=local_dims.dtype
+                )
+
+                # Compute bin indices
+                bin_indices = backend.astype(
+                    (backend.where(valid_mask, local_dims, min_dim_arr) - min_dim_arr)
+                    / bin_width_arr,
+                    "int32",
+                )
+                # Clamp to valid range
+                max_bin_idx = backend.array(n_bins - 1, dtype="int32")
+                zero_idx = backend.array(0, dtype="int32")
+                bin_indices = backend.where(bin_indices > max_bin_idx, max_bin_idx, bin_indices)
+                bin_indices = backend.where(bin_indices < zero_idx, zero_idx, bin_indices)
+
+                # Count bins using backend one-hot encoding (fully vectorized)
+                eye_mat = backend.eye(n_bins)
+                one_hot = eye_mat[bin_indices]  # [n_points, n_bins] with 1 at bin index
+                valid_mask_col = backend.reshape(valid_mask_float, (-1, 1))
+                bin_counts_arr = backend.sum(one_hot * valid_mask_col, axis=0)
+
+                # Find modal bin using backend argmax
+                max_bin_arr = backend.argmax(bin_counts_arr)
+                backend.eval(bin_counts_arr, max_bin_arr, bin_width_arr)
+                max_bin = int(backend.to_scalar(max_bin_arr))
+                bin_width_val = float(backend.to_scalar(bin_width_arr))
+                modal_dim = min_dim + (max_bin + 0.5) * bin_width_val
+            else:
+                mid = n_valid // 2
+                if n_valid % 2 == 1:
+                    median_arr = sorted_vals[mid : mid + 1]
+                else:
+                    low = sorted_vals[mid - 1 : mid]
+                    high = sorted_vals[mid : mid + 1]
+                    median_arr = (low + high) * 0.5
+                backend.eval(median_arr)
+                modal_dim = float(backend.to_scalar(median_arr))
         else:
             idx_range = backend.arange(0, n)
             idx_masked = backend.where(valid_mask, idx_range, backend.array(n, dtype="int32"))

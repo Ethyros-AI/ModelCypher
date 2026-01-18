@@ -15,22 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Dynamic numerical stability utilities.
+"""Numerical stability utilities with model-driven precision.
 
-All epsilons and tolerances are derived from tensor precision, not arbitrary constants.
-Use these functions instead of hardcoded values like 1e-8 or 1e-10.
-
-PRECISION PHILOSOPHY:
-    Model weights define the precision ceiling. We cannot extract more information
-    than exists in the source data. Using float64 for bf16 weights just adds zeros.
-
-    The compute precision is MODEL-DRIVEN:
-    - Detect the native dtype of model weights
-    - Use that precision (or float32 max) for all computations
-    - Never use float64 (no neural network stores weights at this precision)
-
-    This reduces memory usage ~2x and speeds up all matrix operations while
-    preserving 100% of the information in the original weights.
+Epsilons and tolerances derive from tensor precision. Compute precision never
+exceeds the model's ceiling (float32 max); upcasting to float64 adds zeros, not
+information.
 """
 
 from __future__ import annotations
@@ -166,14 +155,10 @@ def compute_precision_for_merge(
     target_weights: dict,
     backend: "Backend",
 ) -> object:
-    """Determine compute precision from source and target model weights.
+    """Select compute dtype from source/target model precision.
 
-    Rules:
-    1. Detect native dtype of both models
-    2. Use the HIGHER precision of the two (to preserve info from both)
-    3. Promote bfloat16 to float32 to preserve range in compute
-    4. Cap at float32 (float64 never adds value for neural network weights)
-    5. For quantized (int4/int8), use float16 minimum
+    Chooses the higher precision of the two, promotes bf16 to float32, caps at
+    float32, and floors quantized weights to float16.
 
     Args:
         source_weights: Source model weight dict.
@@ -181,7 +166,7 @@ def compute_precision_for_merge(
         backend: Backend for tensor operations.
 
     Returns:
-        The appropriate compute dtype for the merge.
+        Compute dtype for merge operations.
     """
     source_dtype = detect_model_dtype(source_weights, backend)
     target_dtype = detect_model_dtype(target_weights, backend)
@@ -756,18 +741,55 @@ def find_magnitude_gap_threshold(
 # =============================================================================
 
 
-def _geodesic_norm_scalar(array: "Array", backend: "Backend") -> float:
-    """Compute a geodesic norm scalar for any array shape."""
-    from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
+def _geodesic_triplet_distances(
+    lhs: "Array",
+    rhs: "Array",
+    backend: "Backend",
+) -> tuple[float, float, float]:
+    """Return geodesic distances (0,lhs), (0,rhs), (lhs,rhs) for two vectors."""
+    from modelcypher.core.domain.geometry.riemannian_core import _get_riemannian_geometry
 
-    vec = backend.reshape(array, (1, -1))
-    zero = backend.zeros_like(vec)
-    points = backend.concatenate([zero, vec], axis=0)
-    rg = RiemannianGeometry(backend)
-    point_count = int(backend.shape(points)[0])
-    geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+    lhs_vec = backend.reshape(lhs, (1, -1))
+    rhs_vec = backend.reshape(rhs, (1, -1))
+    zero = backend.zeros_like(lhs_vec)
+    points = backend.concatenate([zero, lhs_vec, rhs_vec], axis=0)
+    rg = _get_riemannian_geometry(backend)
+    geo_result = rg.geodesic_distances(points, k_neighbors=2)
     backend.eval(geo_result.distances)
-    return max(0.0, float(backend.to_scalar(geo_result.distances[0, 1])))
+
+    d01 = float(backend.to_scalar(geo_result.distances[0, 1]))
+    d02 = float(backend.to_scalar(geo_result.distances[0, 2]))
+    d12 = float(backend.to_scalar(geo_result.distances[1, 2]))
+    return d01, d02, d12
+
+
+def _geodesic_correlation(
+    lhs: "Array",
+    rhs: "Array",
+    backend: "Backend",
+    *,
+    eps: float,
+    default: float,
+) -> float:
+    """Compute geodesic correlation between two arrays."""
+    mean_l = backend.mean(lhs)
+    mean_r = backend.mean(rhs)
+    diff_l = lhs - mean_l
+    diff_r = rhs - mean_r
+    backend.eval(diff_l, diff_r)
+
+    d0a, d0b, dab = _geodesic_triplet_distances(diff_l, diff_r, backend)
+    d0a = max(0.0, d0a)
+    d0b = max(0.0, d0b)
+    if d0a <= eps or d0b <= eps:
+        return default
+
+    denom = 2.0 * d0a * d0b
+    if denom <= eps:
+        return default
+    cos_val = (d0a * d0a + d0b * d0b - dab * dab) / denom
+    corr = max(-1.0, min(1.0, cos_val))
+    return corr if is_finite(corr, backend) else default
 
 
 def compute_median(array: "Array", backend: "Backend") -> float:
@@ -866,34 +888,8 @@ def compute_pearson_correlation(
 
     lhs_arr = backend.array(lhs)
     rhs_arr = backend.array(rhs)
-    mean_l = backend.mean(lhs_arr)
-    mean_r = backend.mean(rhs_arr)
-    diff_l = lhs_arr - mean_l
-    diff_r = rhs_arr - mean_r
-    backend.eval(diff_l, diff_r)
-
     eps = division_epsilon(backend, lhs_arr)
-    d0a = _geodesic_norm_scalar(diff_l, backend)
-    d0b = _geodesic_norm_scalar(diff_r, backend)
-    if d0a <= eps or d0b <= eps:
-        return error_value
-
-    from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
-
-    diff_l_vec = backend.reshape(diff_l, (1, -1))
-    diff_r_vec = backend.reshape(diff_r, (1, -1))
-    points = backend.concatenate([diff_l_vec, diff_r_vec], axis=0)
-    rg = RiemannianGeometry(backend)
-    geo_result = rg.geodesic_distances(points, k_neighbors=1)
-    backend.eval(geo_result.distances)
-    dab = float(backend.to_scalar(geo_result.distances[0, 1]))
-
-    denom = 2.0 * d0a * d0b
-    if denom <= eps:
-        return error_value
-    cos_val = (d0a * d0a + d0b * d0b - dab * dab) / denom
-    corr = max(-1.0, min(1.0, cos_val))
-    return corr if is_finite(corr, backend) else error_value
+    return _geodesic_correlation(lhs_arr, rhs_arr, backend, eps=eps, default=error_value)
 
 
 def compute_spearman_correlation(
@@ -923,34 +919,8 @@ def compute_spearman_correlation(
     lhs_rank = backend.astype(lhs_rank, rank_dtype)
     rhs_rank = backend.astype(rhs_rank, rank_dtype)
 
-    mean_l = backend.mean(lhs_rank)
-    mean_r = backend.mean(rhs_rank)
-    diff_l = lhs_rank - mean_l
-    diff_r = rhs_rank - mean_r
-    backend.eval(diff_l, diff_r)
-
     eps = division_epsilon(backend, lhs_rank)
-    d0a = _geodesic_norm_scalar(diff_l, backend)
-    d0b = _geodesic_norm_scalar(diff_r, backend)
-    if d0a <= eps or d0b <= eps:
-        return error_value
-
-    from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
-
-    diff_l_vec = backend.reshape(diff_l, (1, -1))
-    diff_r_vec = backend.reshape(diff_r, (1, -1))
-    points = backend.concatenate([diff_l_vec, diff_r_vec], axis=0)
-    rg = RiemannianGeometry(backend)
-    geo_result = rg.geodesic_distances(points, k_neighbors=1)
-    backend.eval(geo_result.distances)
-    dab = float(backend.to_scalar(geo_result.distances[0, 1]))
-
-    denom = 2.0 * d0a * d0b
-    if denom <= eps:
-        return error_value
-    cos_val = (d0a * d0a + d0b * d0b - dab * dab) / denom
-    corr = max(-1.0, min(1.0, cos_val))
-    return corr if is_finite(corr, backend) else error_value
+    return _geodesic_correlation(lhs_rank, rhs_rank, backend, eps=eps, default=error_value)
 
 
 # =============================================================================
@@ -964,7 +934,7 @@ def power_iteration_eigh(
     k: int = 10,
     use_ritz: bool = True,
 ) -> tuple["Array", "Array"]:
-    """Compute EXACT eigendecomposition using native backend operation."""
+    """Compute eigendecomposition via backend.eigh."""
     b = backend
     matrix = _promote_precision(b.array(matrix), b)
     b.eval(matrix)
@@ -1002,7 +972,7 @@ def geodesic_svd(
     array: "Array",
     k: int | None = None,
 ) -> tuple["Array", "Array", "Array"]:
-    """Compute EXACT SVD using native backend operation."""
+    """Compute SVD via backend.svd."""
     b = backend
     A = _promote_precision(b.array(array), b)
     b.eval(A)
@@ -1072,31 +1042,10 @@ def orthogonalize_alignment(
     alignment: "Array",
     backend: "Backend",
 ) -> tuple["Array", float]:
-    """Extract orthogonal part of alignment transform via polar decomposition.
+    """Extract the orthogonal factor from an alignment transform.
 
-    Given an alignment transform F (which may include scaling), extract the
-    orthogonal component U such that F = U @ P where U is orthogonal and P
-    is positive semidefinite.
-
-    This is the Lie algebra decomposition: the alignment lives on the manifold
-    of linear maps, and we extract its rotation component (element of SO(n)/O(n))
-    separate from its scaling component.
-
-    For cross-dimensional alignment F [d_src, d_tgt], computes:
-        U, S, Vt = SVD(F)
-        U_orth = U @ Vt  (orthogonal part)
-        scale_factor = mean(S)  (average scaling)
-
-    The orthogonal part U_orth preserves norms: ||x @ U_orth|| = ||x||
-    when U_orth is square. For non-square, it preserves as much as possible.
-
-    Args:
-        alignment: Alignment transform [d_src, d_tgt].
-        backend: Compute backend.
-
-    Returns:
-        (U_orth, scale_factor) where U_orth is the orthogonal part and
-        scale_factor is the average singular value (measure of scaling).
+    Uses SVD(F)=U S Vt and returns U @ Vt plus the mean singular value as a
+    scale summary.
     """
     b = backend
     F = _promote_precision(b.array(alignment), b)
@@ -1146,37 +1095,9 @@ def svd_auto_rank(
     backend: "Backend",
     energy_threshold: float = 0.99,
 ) -> int:
-    """Determine optimal SVD rank by cumulative energy.
+    """Choose SVD rank by cumulative energy.
 
-    Finds the minimum k such that the top-k singular values capture at least
-    energy_threshold fraction of total variance (Frobenius norm squared).
-
-    Formula: k = min{ j : sum(S[:j]^2) / sum(S^2) >= energy_threshold }
-
-    This is the principled way to determine low-rank truncation without
-    arbitrary thresholds. Research shows task matrices are inherently low-rank:
-    - ~3% of singular components capture 98.5% of task information
-    - Remaining components are noise from training dynamics
-
-    Parameters
-    ----------
-    singular_values : Array
-        Singular values from SVD, sorted in descending order.
-    backend : Backend
-        Backend for tensor operations.
-    energy_threshold : float
-        Fraction of total energy to preserve. Default 0.99 captures nearly
-        all task-specific information while filtering noise.
-
-    Returns
-    -------
-    int
-        Optimal rank k (number of singular values to keep).
-
-    References
-    ----------
-    - Yu et al. (2025). "TSV-Merge: Task Singular Vectors for Multi-Task Model Merging"
-    - Zhang et al. (2025). "STF: Superpose Task-specific Features for Multi-task Fine-tuned Models"
+    Returns the smallest k with sum(S[:k]^2) / sum(S^2) >= energy_threshold.
     """
     b = backend
     S = b.astype(
@@ -1245,40 +1166,16 @@ def numerical_rank_truncated_lstsq(
 ) -> tuple["Array", int, int, int, float]:
     """Solve least squares with numerical-rank truncation.
 
-    MATHEMATICAL FOUNDATION (not heuristic):
-    ========================================
-    Singular values below σ_max × sqrt(ε_machine) are indistinguishable from
-    floating-point noise. For float32, ε ≈ 1e-7, so threshold is σ_max × ~3e-4.
+    Drops singular values below sigma_max * sqrt(eps) and solves
+    F = pinv(A_k) @ B in the truncated space.
 
-    Truncating below this threshold removes numerical garbage, not meaningful
-    signal. The alignment operates in k = min(rank_source, rank_target) dimensions
-    where both models actually have signal.
+    Args:
+        backend: Backend for tensor operations.
+        source: Source activations [n_samples, d_source].
+        target: Target activations [n_samples, d_target].
 
-    This is mathematically closed-form in the subspace where both models have
-    signal - not a heuristic approximation.
-
-    Parameters
-    ----------
-    backend : Backend
-        Backend for tensor operations.
-    source : Array
-        Source activations [n_samples, d_source].
-    target : Array
-        Target activations [n_samples, d_target].
-
-    Returns
-    -------
-    tuple containing:
-        F : Array
-            Transform matrix [d_source, d_target] mapping source to target space.
-        source_rank : int
-            Numerical rank of source activations.
-        target_rank : int
-            Numerical rank of target activations.
-        alignment_rank : int
-            Rank used for alignment: min(source_rank, target_rank).
-        condition_number : float
-            Condition number in the truncated space (should be < 1e5 by construction).
+    Returns:
+        Tuple (F, source_rank, target_rank, alignment_rank, condition_number).
     """
     b = backend
 
@@ -1462,17 +1359,9 @@ def newton_schulz_inverse(
     max_iter: int = 15,
     tol: float | None = None,
 ) -> "Array":
-    """Pure matmul matrix inverse via Newton-Schulz iteration.
+    """Invert a matrix with Newton-Schulz iterations using matmuls only.
 
-    Solves: X = A^{-1} using only matmuls (backend-only).
-
-    Algorithm: X_{k+1} = X_k @ (2I - A @ X_k)
-    Converges quadratically when ||I - X_0 @ A|| < 1.
-
-    For SPD matrices (like Gram matrices), we use:
-        X_0 = I / trace(A)  (scales by average eigenvalue)
-
-    This is the GPU-friendly alternative to solve/cholesky which fall back to CPU.
+    Uses X_{k+1} = X_k @ (2I - A @ X_k) with scaling for convergence.
     """
     b = backend
 
@@ -1549,30 +1438,10 @@ def gpu_lstsq(
     B: "Array",
     stats: dict[str, float] | None = None,
 ) -> "Array":
-    """Least squares via closed-form normal equations.
+    """Solve least squares via normal equations.
 
-    Solves: minimize ||A @ X - B||² for X
-
-    When n >= d (overdetermined), uses DIRECT closed-form:
-        F = (A^T @ A + λI)^{-1} @ A^T @ B
-
-    When n < d (underdetermined), uses DUAL closed-form:
-        F = A^T @ (A @ A^T + λI)^{-1} @ B
-
-    Both are O(min(n,d)³) via the backend's solve() which uses the most
-    appropriate method (Cholesky for SPD matrices). Note: MLX's solve()
-    may fall back to CPU for the linear system solve, but matmuls remain
-    on GPU. Performance is still excellent due to small matrix dimensions.
-
-    Raises ValueError if the matrix is singular (no fallback to iterative
-    methods, as that would change mathematical semantics and violate the
-    CKA=1.0 invariant for alignment).
-
-    If stats is provided, populates:
-    - iterations: 0 for direct solve
-    - residual_norm: final residual norm
-    - rhs_norm: right-hand-side norm
-    - method: 'normal_equations' or 'normal_equations_dual'
+    Uses (A^T A + λI)^{-1} A^T B when n >= d and the dual form when n < d.
+    If stats is provided, populates iterations, residual_norm, rhs_norm, method.
     """
     b = backend
 

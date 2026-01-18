@@ -50,7 +50,6 @@ from modelcypher.core.use_cases.merge.stages.probe_helpers import (
     _infer_required_probe_count,
     _precision_reference,
     _promote_precision,
-    _select_geometry_probes,
     _select_probe_text,
 )
 from modelcypher.core.use_cases.merge.stages.probe_inference import run_probe_inference
@@ -244,18 +243,14 @@ def _probe_precise(
             )
         valid_probes.append((probe, probe_text))
 
-    # GEOMETRY PRINCIPLE: Use hidden_dim × 1.3 (overdetermination factor) for
-    # numerical stability in alignment. The 1.3x factor ensures the alignment
-    # matrix is well-conditioned (n_probes >> hidden_dim prevents square matrix
-    # instability). Full atlas coverage can be requested explicitly.
+    # GEOMETRY PRINCIPLE: The strict requirement is n_probes > max(hidden_dim).
+    # We still use the full atlas to maximize manifold coverage; the minimum is
+    # only used for validation (no probe cutoffs).
     min_required, source_dim, target_dim = _infer_required_probe_count(
         source_weights, target_weights
     )
 
-    if probe_mode == "atlas_full":
-        selected_probes = valid_probes
-    else:
-        selected_probes = _select_geometry_probes(valid_probes, min_required)
+    selected_probes = valid_probes
 
     if len(valid_probes) < min_required:
         raise RuntimeError(
@@ -264,22 +259,13 @@ def _probe_precise(
             % (min_required, source_dim, target_dim, len(valid_probes))
         )
 
-    if probe_mode == "atlas_full":
-        logger.info(
-            "PROBE MODE: Using full atlas (%d probes, geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
-            len(selected_probes),
-            min_required,
-            source_dim,
-            target_dim,
-        )
-    else:
-        logger.info(
-            "PROBE MODE: Using %d probes (geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
-            len(selected_probes),
-            min_required,
-            source_dim,
-            target_dim,
-        )
+    logger.info(
+        "PROBE MODE: Using full atlas (%d probes, geometry minimum=%d, src_rank=%d, tgt_rank=%d)",
+        len(selected_probes),
+        min_required,
+        source_dim,
+        target_dim,
+    )
 
     valid_probes = selected_probes
     expected_probe_ids = [probe.probe_id for probe, _ in valid_probes]
@@ -617,7 +603,9 @@ def _probe_precise(
     if embedding_transform is None:
         raise RuntimeError("EMBEDDING GRAMALIGN failed to produce a transform.")
 
-    if split_cka_result and split_cka_result.n_shared >= 4:
+    # CKA is undefined for <2 samples (covariance requires N>=2).
+    min_shared = 2
+    if split_cka_result and split_cka_result.n_shared >= min_shared:
         perfect_alignment = split_cka_result.shared_cka >= 1.0 - precision_threshold
     else:
         perfect_alignment = bool(valid_cka_vals) and min_cka >= 1.0 - precision_threshold

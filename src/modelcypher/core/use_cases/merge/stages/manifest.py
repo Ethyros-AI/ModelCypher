@@ -48,12 +48,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    get_model_compute_dtype,
+    machine_epsilon,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.merging.exceptions import (
     PostconditionError,
     WeightCountMismatchError,
 )
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
 
 
 class WeightStatus(str, Enum):
@@ -72,7 +81,7 @@ class WeightStatus(str, Enum):
     SKIPPED_MISSING_ACTIVATIONS = "skipped_missing_activations"  # Missing activations
     SKIPPED_ACTIVATION_DIM_MISMATCH = "skipped_activation_dim_mismatch"  # Activation dim mismatch
     SKIPPED_DENSITY_FILTER = "skipped_density_filter"  # Density mask rejected layer
-    SKIPPED_BOUNDARY = "skipped_boundary"  # Boundary-preserved layer (layer 0)
+    SKIPPED_BOUNDARY = "skipped_boundary"  # Boundary-preserved layer
 
     # Failure states (numerical or missing prerequisites, not model incompatibility)
     FAILED_STITCH = "failed_stitch"  # Required stitch not available
@@ -205,19 +214,45 @@ class TransplantManifest:
         self,
         target_weight_count: int,
         strict: bool = True,
-        min_preserved_fraction: float = 0.1,
+        min_preserved_fraction: float | None = None,
+        model_weight_reference: "Array | None" = None,
     ) -> None:
         """Validate the manifest against expectations.
 
         Args:
             target_weight_count: Number of weights in target model
             strict: If True, raise exceptions on validation failure
-            min_preserved_fraction: Minimum acceptable mean preserved fraction
+            min_preserved_fraction: Minimum acceptable mean preserved fraction.
+                If None, derived from model precision as sqrt(eps).
+            model_weight_reference: A reference weight array from the model
+                (used to derive precision threshold if min_preserved_fraction is None)
 
         Raises:
             WeightCountMismatchError: If transformed + skipped != expected
             PostconditionError: If any weights failed or preserved fraction too low
         """
+        # Derive threshold from MODEL precision if not explicitly provided
+        # This is critical: signal below sqrt(eps) is numerical noise.
+        # Must use MODEL's epsilon (not compute dtype) - an fp16 model has
+        # eps ≈ 1e-3 (threshold ~0.03), float32 has eps ≈ 1e-7 (threshold ~3e-4)
+        if min_preserved_fraction is None:
+            backend = get_default_backend()
+
+            if model_weight_reference is not None:
+                # Use the actual model weight's precision
+                eps = machine_epsilon(backend, model_weight_reference)
+            else:
+                # Fallback: use session's model dtype if set
+                model_dtype = get_model_compute_dtype()
+                if model_dtype is not None:
+                    ref = backend.array([1.0], dtype=model_dtype)
+                    eps = machine_epsilon(backend, ref)
+                else:
+                    # Last resort: assume float32 (never float64 - that's fake precision)
+                    eps = 1e-7
+
+            min_preserved_fraction = sqrt_scalar(eps, backend)
+
         # Check 1: No unexpected failures
         if self.weights_failed > 0 and strict:
             failure_summary = self.get_failure_summary()
@@ -254,13 +289,17 @@ class TransplantManifest:
             )
 
         # Check 3: Minimum preserved fraction (if filtering was applied)
+        # Threshold is derived from model precision - signal below sqrt(eps) is noise
         mean_preserved = self.get_mean_preserved_fraction()
         if mean_preserved is not None and mean_preserved < min_preserved_fraction:
             if strict:
                 raise PostconditionError(
                     stage="TRANSPLANT_VALIDATION",
                     weight_key=None,
-                    message=f"Mean preserved fraction {mean_preserved:.3f} < {min_preserved_fraction}",
+                    message=(
+                        f"Mean preserved fraction {mean_preserved:.2e} < sqrt(model_eps)={min_preserved_fraction:.2e} "
+                        "(signal indistinguishable from numerical noise)"
+                    ),
                     context={
                         "mean_preserved_fraction": mean_preserved,
                         "min_required": min_preserved_fraction,

@@ -27,6 +27,7 @@ from modelcypher.core.domain.geometry.fisher_information import (
     fisher_compatibility_score,
 )
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
@@ -93,6 +94,42 @@ def _stack_activations(
     else:
         stacked = backend.stack(acts[:n_samples], axis=0)
     return _promote_precision(stacked, backend)
+
+
+def _log_manifold_diagnostic(
+    activations: "Array",
+    layer_idx: int,
+    model_name: str,
+    backend: "Backend",
+) -> float | None:
+    """Log intrinsic dimension as a diagnostic measurement.
+
+    Returns the intrinsic dimension, or None if computation fails.
+    No thresholds, no judgments - just the measurement.
+    """
+    try:
+        estimator = IntrinsicDimension(backend)
+        result = estimator.compute(activations)
+        intrinsic_dim = result.intrinsic_dimension
+        shape = backend.shape(activations)
+        ambient_dim = int(shape[1])
+
+        logger.debug(
+            "MANIFOLD [%s Layer %d]: ID=%.1f, ambient=%d",
+            model_name,
+            layer_idx,
+            intrinsic_dim,
+            ambient_dim,
+        )
+        return intrinsic_dim
+    except Exception as exc:
+        logger.debug(
+            "MANIFOLD [%s Layer %d]: Could not compute ID: %s",
+            model_name,
+            layer_idx,
+            exc,
+        )
+        return None
 
 
 def align_layers(
@@ -225,6 +262,10 @@ def align_layers(
 
             backend.eval(src_combined, tgt_stacked)
 
+            # Log intrinsic dimension as diagnostic (no thresholds - just measurement)
+            _log_manifold_diagnostic(src_combined, tgt_layer, "source", backend)
+            _log_manifold_diagnostic(tgt_stacked, tgt_layer, "target", backend)
+
             # Compute Fisher compatibility BEFORE alignment as an early predictor
             # This measures whether source and target have compatible loss curvature
             try:
@@ -236,19 +277,12 @@ def align_layers(
                 fisher_compatibility_by_layer[tgt_layer] = fisher_result.compatibility_score
                 fisher_recommendations_by_layer[tgt_layer] = fisher_result.recommendation
 
-                if fisher_result.compatibility_score < 0.3:
-                    logger.warning(
-                        "FISHER: Layer %d has low compatibility (%.3f) - %s",
-                        tgt_layer,
-                        fisher_result.compatibility_score,
-                        fisher_result.recommendation,
-                    )
-                elif fisher_result.compatibility_score < 0.5:
-                    logger.info(
-                        "FISHER: Layer %d has moderate compatibility (%.3f)",
-                        tgt_layer,
-                        fisher_result.compatibility_score,
-                    )
+                logger.info(
+                    "FISHER: Layer %d compatibility=%.6f (%s)",
+                    tgt_layer,
+                    fisher_result.compatibility_score,
+                    fisher_result.recommendation,
+                )
             except Exception as fisher_err:
                 logger.debug(
                     "FISHER: Could not compute compatibility for layer %d: %s",
@@ -533,20 +567,16 @@ def align_layers(
 
     # Log summary of Fisher compatibility across layers
     if fisher_compatibility_by_layer:
-        mean_fisher = sum(fisher_compatibility_by_layer.values()) / len(fisher_compatibility_by_layer)
-        low_compat_layers = [l for l, s in fisher_compatibility_by_layer.items() if s < 0.5]
-        if low_compat_layers:
-            logger.warning(
-                "FISHER SUMMARY: Mean compatibility=%.3f, %d layers with low compatibility: %s",
-                mean_fisher,
-                len(low_compat_layers),
-                low_compat_layers[:5],  # Show first 5
-            )
-        else:
-            logger.info(
-                "FISHER SUMMARY: Mean compatibility=%.3f (all layers have good compatibility)",
-                mean_fisher,
-            )
+        scores = list(fisher_compatibility_by_layer.values())
+        mean_fisher = sum(scores) / len(scores)
+        min_fisher = min(scores)
+        max_fisher = max(scores)
+        logger.info(
+            "FISHER SUMMARY: Mean=%.6f, min=%.6f, max=%.6f",
+            mean_fisher,
+            min_fisher,
+            max_fisher,
+        )
 
     return AlignmentResult(
         layer_mapping=layer_mapping,

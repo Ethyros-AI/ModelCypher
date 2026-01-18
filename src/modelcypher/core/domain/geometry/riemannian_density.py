@@ -1127,35 +1127,55 @@ class RiemannianDensityEstimator:
 
         In positively curved spaces, covariance underestimates spread.
         In negatively curved spaces, covariance overestimates spread.
+
+        Uses Taylor expansion: correction ≈ 1 + K*r²/6 (positive K)
+
+        The Taylor remainder is (K*r²)²/36. This correction is only applied
+        when the remainder is distinguishable from machine precision. If the
+        remainder term exceeds sqrt(eps), the correction is numerically
+        meaningless and we return the uncorrected covariance.
         """
         backend = get_default_backend()
         K = local_curvature.mean_sectional
+        eps = machine_epsilon(backend, covariance)
 
-        # Use machine_epsilon for near-zero curvature check
-        if abs(K) < machine_epsilon(backend, covariance):
+        # Curvature indistinguishable from zero
+        if abs(K) < eps:
             return covariance
 
-        # Curvature correction factor
-        # Based on comparison of volume elements in curved vs flat space
-        # For sphere: dV_curved/dV_flat = (sin(r*sqrt(K))/(r*sqrt(K)))^(d-1)
-        # For small curvature: ≈ 1 - K*r^2/6 for positive K
-
-        # Use effective radius
+        # Compute effective radius from covariance trace
         trace_val = backend.trace(covariance)
         shape = covariance.shape
         r_arr = backend.sqrt(trace_val / int(shape[0]))
         backend.eval(r_arr)
         r = float(backend.to_scalar(r_arr))
 
+        # Taylor remainder is (K*r²)²/36
+        # Correction is meaningful only when remainder < sqrt(eps)
+        # (sqrt(eps) is the precision threshold for relative error)
+        kr_squared = abs(K) * r * r
+        taylor_remainder = (kr_squared * kr_squared) / 36.0
+        precision_threshold = sqrt_scalar(eps, backend)
+
+        if taylor_remainder >= precision_threshold:
+            # Correction would be numerically meaningless
+            logger.debug(
+                "Curvature correction skipped: Taylor remainder %.2e >= sqrt(eps)=%.2e",
+                taylor_remainder,
+                precision_threshold,
+            )
+            return covariance
+
+        # Curvature correction factor (Taylor expansion is valid)
+        # Based on comparison of volume elements in curved vs flat space
+        # For sphere: dV_curved/dV_flat = (sin(r*sqrt(K))/(r*sqrt(K)))^(d-1)
+        # For small curvature: ≈ 1 + K*r²/6 for positive K
         if K > 0:
             # Positive curvature - expand covariance
             correction = 1.0 + K * r * r / 6
         else:
             # Negative curvature - shrink covariance
             correction = 1.0 / (1.0 - K * r * r / 6)
-
-        # Clamp to a bounded stability range
-        correction = max(0.5, min(2.0, correction))
 
         return covariance * correction
 

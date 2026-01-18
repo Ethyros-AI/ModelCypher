@@ -59,12 +59,13 @@ def run_probe_inference(
 
     probes_processed = 0
     total_probes = len(valid_probes)
+    if total_probes == 0:
+        return 0, 0
 
-    PROBE_BATCH_SIZE = 4
+    probe_batch_size = total_probes
     logger.info(
-        "PROBE PRECISE: %d valid probes, processing in batches of %d...",
+        "PROBE PRECISE: %d valid probes, processing in a single batch...",
         total_probes,
-        PROBE_BATCH_SIZE,
     )
 
     def _validate_batch(label: str, batch_data: Any, expected: int) -> None:
@@ -85,8 +86,8 @@ def run_probe_inference(
                 f"{label} embedding batch size mismatch: {len(batch_data.embedding)} != {expected}"
             )
 
-    for batch_start in range(0, total_probes, PROBE_BATCH_SIZE):
-        batch_end = min(batch_start + PROBE_BATCH_SIZE, total_probes)
+    for batch_start in range(0, total_probes, probe_batch_size):
+        batch_end = min(batch_start + probe_batch_size, total_probes)
         batch = valid_probes[batch_start:batch_end]
         batch_texts = [probe_text for _, probe_text in batch]
         batch_size = len(batch_texts)

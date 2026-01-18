@@ -36,9 +36,8 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
     ConceptDimensionalityResult,
 )
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    IntrinsicDimension,
-)
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
@@ -289,8 +288,11 @@ class KnowledgeDensityAnalyzer:
         Lower intrinsic dimension = higher density (more compressed).
         """
         # Use inverse relationship: density ~ 1 / intrinsic_dim
-        # Clamp intrinsic dimension to avoid division issues
-        dim = max(1.0, result.intrinsic_dimension)
+        # Clamp using machine precision (no arbitrary floor).
+        b = self._backend
+        dim_val = float(result.intrinsic_dimension)
+        eps = float(machine_epsilon(b, b.array([dim_val])))
+        dim = max(dim_val, eps)
         return 1.0 / dim
 
     def _compute_activation_variance(self, activations: "Array") -> float:

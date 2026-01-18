@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
@@ -213,7 +214,7 @@ def apply_embedding_alignment(
             max_var = b.max(tgt_var)
             b.eval(max_var)
             max_var_val = float(b.to_scalar(max_var))
-            eps = 1e-10
+            eps = float(machine_epsilon(b, tgt_var))
             normalized_var = tgt_var / max(max_var_val, eps)
             # keep_weight = 1 - normalized_var (high variance = low keep = preserve target)
             # But for null-space: we want to ADD where target is sparse (low variance)
@@ -225,35 +226,12 @@ def apply_embedding_alignment(
             merged_matched = matched_tgt_vecs + weighted_delta
             b.eval(merged_matched)
 
-            # Create final embedding matrix using scatter-like update
-            tgt_idx_set = set(tgt_indices)
-            idx_to_merged = {tgt_idx: i for i, tgt_idx in enumerate(tgt_indices)}
-
-            # Process in batches to avoid memory issues
-            batch_size = 10000
-            final_rows = []
-
-            for start in range(0, tgt_vocab_size, batch_size):
-                end = min(start + batch_size, tgt_vocab_size)
-                batch_rows = []
-
-                for i in range(start, end):
-                    if i in tgt_idx_set:
-                        merge_idx = idx_to_merged[i]
-                        batch_rows.append(merged_matched[merge_idx:merge_idx+1])
-                    else:
-                        batch_rows.append(tgt_embed[i:i+1])
-
-                if batch_rows:
-                    batch_arr = b.concatenate(batch_rows, axis=0)
-                    final_rows.append(batch_arr)
-
-                # Clear intermediate results
-                del batch_rows
-                if hasattr(b, "clear_cache"):
-                    b.clear_cache()
-
-            final_embed = b.concatenate(final_rows, axis=0)
+            # Create final embedding matrix using a single indexed update.
+            final_embed = b.array(tgt_embed)
+            tgt_idx_arr = b.array(tgt_indices, dtype="int32")
+            idx_mat = b.reshape(tgt_idx_arr, (-1, 1))
+            idx_mat = b.broadcast_to(idx_mat, (tokens_matched, tgt_hidden_dim))
+            final_embed = b.put_along_axis(final_embed, idx_mat, merged_matched, axis=0)
             b.eval(final_embed)
 
             merged[target_embed_key] = final_embed
@@ -275,7 +253,7 @@ def apply_embedding_alignment(
             )
 
             # Clean up
-            del projected, matched_projected, merged_matched, weighted_delta, final_rows
+            del projected, matched_projected, merged_matched, weighted_delta
             if hasattr(b, "clear_cache"):
                 b.clear_cache()
 

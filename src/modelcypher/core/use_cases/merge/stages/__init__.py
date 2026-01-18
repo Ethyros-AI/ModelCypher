@@ -88,6 +88,8 @@ def stage_probe(
     dict[int, list[list[float]]] | None,  # intermediate_transforms (MLP)
     dict[int, list[list[float]]] | None,  # gate_transforms (PRE-SiLU)
     dict[int, int] | None,  # layer_mapping
+    list["Array"] | "Array" | None,  # source_embedding_activations
+    list["Array"] | "Array" | None,  # target_embedding_activations
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
     result = stage_probe_impl(
@@ -132,6 +134,8 @@ def stage_probe(
         result.intermediate_transforms,  # MLP transforms
         result.gate_transforms,  # PRE-SiLU gate transforms
         result.layer_mapping,
+        result.source_embedding_activations,
+        result.target_embedding_activations,
     )
 
 
@@ -182,6 +186,8 @@ def stage_transplant(
     target_attention_activations: dict | None,
     source_kv_activations: dict | None = None,
     target_kv_activations: dict | None = None,
+    source_embedding_activations: list["Array"] | "Array" | None = None,
+    target_embedding_activations: list["Array"] | "Array" | None = None,
     extract_layer_index_fn: Callable[[str], int | None] = lambda x: None,
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
@@ -216,6 +222,8 @@ def stage_transplant(
         target_attention_activations=target_attention_activations,
         source_kv_activations=source_kv_activations,
         target_kv_activations=target_kv_activations,
+        source_embedding_activations=source_embedding_activations,
+        target_embedding_activations=target_embedding_activations,
         extract_layer_index_fn=extract_layer_index_fn,
         backend=backend,
         graft_mask=graft_mask,

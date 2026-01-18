@@ -258,6 +258,7 @@ def process_layer_weights(
     stitches: StitchContext,
     activations: ActivationContext,
     density_weights_by_layer: dict[int, "Array"] | None = None,
+    density_output_stitch: "Array | None" = None,
     core_acts: "Array",
     boundary_acts: "Array",
     can_measure_alignment: bool,
@@ -1493,7 +1494,8 @@ def process_layer_weights(
             # scale_ratio = ||target|| / ||source @ F|| corrects for this
             if layer_scale_ratios and layer_idx in layer_scale_ratios:
                 sr = layer_scale_ratios[layer_idx]
-                if abs(sr - 1.0) > 1e-6:
+                eps = float(machine_epsilon(b, source_aligned))
+                if abs(sr - 1.0) > eps:
                     logger.info(
                         "SCALE_RATIO: Applying %.4f to cross-dim %s",
                         sr, key,
@@ -1632,7 +1634,8 @@ def process_layer_weights(
 
         # Align density activations to target space
         if activation_space == "hidden":
-            src_density_acts = _align_density_acts(src_density_acts, hidden_stitch_output)
+            density_stitch = density_output_stitch or hidden_stitch_output
+            src_density_acts = _align_density_acts(src_density_acts, density_stitch)
         elif activation_space == "intermediate":
             src_density_acts = _align_density_acts(src_density_acts, intermediate_stitch_output)
 

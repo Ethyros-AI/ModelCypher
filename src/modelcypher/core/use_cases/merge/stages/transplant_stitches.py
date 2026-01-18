@@ -26,6 +26,7 @@ from modelcypher.core.use_cases.merge.stages.transplant_helpers import (
     _geodesic_pinv,
     _promote_precision,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -78,7 +79,8 @@ def compute_composite_stitches(
             # The correction is applied to the stitched weights, not the stitch matrices.
             if layer_scale_ratios and tgt_layer in layer_scale_ratios:
                 sr = layer_scale_ratios[tgt_layer]
-                if abs(sr - 1.0) > 1e-6:
+                eps = float(machine_epsilon(backend, F))
+                if abs(sr - 1.0) > eps:
                     logger.debug(
                         "%s layer %d: scale_ratio=%.4f (not applied to weight stitch)",
                         desc,

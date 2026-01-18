@@ -48,6 +48,7 @@ from modelcypher.core.use_cases.merge.stages.transplant_checkpoint import (
     _save_checkpoint,
 )
 from modelcypher.core.use_cases.merge.stages.transplant_helpers import (
+    _geodesic_pinv,
     _promote_precision,
 )
 from modelcypher.core.use_cases.merge.stages.transplant_stitches import (
@@ -107,6 +108,8 @@ def stage_transplant(
     target_attention_activations: dict[int, list["Array"]] | None = None,
     source_kv_activations: dict[int, list["Array"]] | None = None,
     target_kv_activations: dict[int, list["Array"]] | None = None,
+    source_embedding_activations: list["Array"] | "Array" | None = None,
+    target_embedding_activations: list["Array"] | "Array" | None = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
     density_weights: dict[int, "Array"] | None = None,  # Per-probe source density ratios
     feature_transforms: dict[int, "Array"] | None = None,  # GPU arrays from GramAligner
@@ -140,8 +143,7 @@ def stage_transplant(
     Args:
         delta_scale: Scale factor for projected deltas (0.0-1.0). Use < 1.0 for
             sequential stacking to stay within cumulative delta budget. Default
-            1.0 = full projection. Threshold is 1% of baseline weight norm -
-            exceeding causes generation degradation.
+            1.0 = full projection.
     """
     b = backend or get_default_backend()
     # Release probe/density geodesic caches before heavy transplant work.
@@ -371,6 +373,19 @@ def stage_transplant(
     metrics["per_layer_gate_alignment"] = bool(layer_gate_stitches)
 
     # ==========================================================================
+    # EMBEDDING ALIGNMENT STITCH (Input side for layer 0)
+    # ==========================================================================
+    embedding_stitch_output = None
+    embedding_stitch_input = None
+    if embedding_transform is not None:
+        emb_F = _promote_precision(b.array(embedding_transform), b)
+        b.eval(emb_F)
+        embedding_stitch_output = b.transpose(emb_F)  # F.T
+        emb_pinv = _geodesic_pinv(b, emb_F)
+        embedding_stitch_input = b.transpose(emb_pinv)  # pinv(F).T
+        b.eval(embedding_stitch_output, embedding_stitch_input)
+
+    # ==========================================================================
     # RIGOROUS GEOMETRY: All transforms handled above via _compute_composite_stitches.
     # No fallbacks - if transforms missing, the per-weight logic handles errors.
     # ==========================================================================
@@ -403,35 +418,6 @@ def stage_transplant(
                 # Still process the layer - don't give up
             # All layers fall through to normal transplant
 
-        # =======================================================================
-        # LAYER 0 BOUNDARY: Preserve embedding-to-hidden interface
-        # =======================================================================
-        # Layer 0 directly receives embeddings. Transplanted weights were trained
-        # on source's embedding scale, but we're feeding target's embeddings.
-        # 
-        # This creates a 21x scale mismatch: merged Layer 0 output = 0.05x target.
-        # 
-        # GEOMETRY: Layer 0 is the 1D→2D→ND transition boundary. Preserve it
-        # from target to maintain embedding scale compatibility.
-        # =======================================================================
-        if layer_idx == 0:
-            layer_keys = weights_by_layer.get(layer_idx, [])
-            weights_processed += len(layer_keys)
-            for key in layer_keys:
-                target_w = target_weights.get(key)
-                _record_manifest(
-                    key,
-                    WeightStatus.SKIPPED_BOUNDARY,
-                    target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
-                    error_message="layer 0 boundary preserved",
-                )
-            logger.info(
-                "TRANSPLANT: Layer 0 PRESERVED (embedding-to-hidden boundary)"
-            )
-            metrics.setdefault("boundary_preserved_layers", []).append(layer_idx)
-            metrics["layer_0_preserved"] = True
-            continue
-
         layer_keys = weights_by_layer.get(layer_idx, [])
         if not layer_keys:
             continue
@@ -443,9 +429,27 @@ def stage_transplant(
         )
 
         # Get REAL activations from collected probes (required)
-        act_list = target_activations.get(layer_idx)
+        # Layer 0 input space is embeddings; use embedding activations for null-space projection.
+        layer_acts = target_activations.get(layer_idx)
+        if layer_idx == 0:
+            if target_embedding_activations is None or source_embedding_activations is None:
+                raise AlignmentFailureError(
+                    stage="LAYER_ACTIVATION_VALIDATION",
+                    weight_key=None,
+                    message="Missing embedding activations for layer 0",
+                    context={"layer_idx": layer_idx},
+                )
+            if embedding_stitch_input is None:
+                raise AlignmentFailureError(
+                    stage="LAYER_ACTIVATION_VALIDATION",
+                    weight_key=None,
+                    message="Missing embedding transform for layer 0",
+                    context={"layer_idx": layer_idx},
+                )
+            layer_acts = target_embedding_activations
+
         # Check for missing activations (handle both list and array formats)
-        if act_list is None or (hasattr(act_list, '__len__') and len(act_list) == 0):
+        if layer_acts is None or (hasattr(layer_acts, '__len__') and len(layer_acts) == 0):
             raise AlignmentFailureError(
                 stage="LAYER_ACTIVATION_VALIDATION",
                 weight_key=None,
@@ -454,7 +458,7 @@ def stage_transplant(
             )
 
         # Get number of activations (works for both list and 2D array)
-        n_acts = len(act_list) if hasattr(act_list, '__len__') else int(b.shape(act_list)[0])
+        n_acts = len(layer_acts) if hasattr(layer_acts, '__len__') else int(b.shape(layer_acts)[0])
         if n_acts != len(probe_ids):
             raise AlignmentFailureError(
                 stage="LAYER_ACTIVATION_VALIDATION",
@@ -640,12 +644,12 @@ def stage_transplant(
             stitch_dims['tgt_v'] = int(v_stitch_output.shape[0])
 
         # Handle both formats: list of 1D arrays (legacy) or 2D array (memory-optimized)
-        if hasattr(act_list, 'shape') and len(b.shape(act_list)) == 2:
+        if hasattr(layer_acts, 'shape') and len(b.shape(layer_acts)) == 2:
             # Already a 2D array [n_probes, hidden_dim] - use directly
-            stacked = act_list
+            stacked = layer_acts
         else:
             # List of 1D arrays - stack them
-            stacked = b.stack(act_list, axis=0)
+            stacked = b.stack(layer_acts, axis=0)
         # Convert to float32 for numerical stability in linalg operations.
         stacked = _promote_precision(stacked, b)
         b.eval(stacked)
@@ -791,6 +795,23 @@ def stage_transplant(
         best_delta_norm = -1.0
         can_measure_alignment = core_acts is not None and int(core_acts.shape[0]) >= 2
 
+        density_output_stitch = None
+        density_weights_layer = density_weights
+        source_hidden_ctx = source_activations
+        target_hidden_ctx = target_activations
+
+        if layer_idx == 0 and embedding_stitch_input is not None:
+            hidden_stitch_input = embedding_stitch_input
+
+            target_hidden_ctx = {layer_idx: target_embedding_activations}
+            if source_embedding_activations is not None:
+                mapped_src_layer = (
+                    layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
+                )
+                source_hidden_ctx = {mapped_src_layer: source_embedding_activations}
+                density_output_stitch = embedding_stitch_output
+                density_weights_layer = None
+
         stitches = StitchContext(
             hidden_output=hidden_stitch_output,
             hidden_input=hidden_stitch_input,
@@ -808,8 +829,8 @@ def stage_transplant(
             dims=stitch_dims,
         )
         activations = ActivationContext(
-            source_hidden=source_activations,
-            target_hidden=target_activations,
+            source_hidden=source_hidden_ctx,
+            target_hidden=target_hidden_ctx,
             source_intermediate=source_intermediate_activations,
             target_intermediate=target_intermediate_activations,
         )
@@ -829,7 +850,8 @@ def stage_transplant(
             progress_callback=progress_callback,
             stitches=stitches,
             activations=activations,
-            density_weights_by_layer=density_weights,
+            density_weights_by_layer=density_weights_layer,
+            density_output_stitch=density_output_stitch,
             core_acts=core_acts,
             boundary_acts=boundary_acts,
             can_measure_alignment=can_measure_alignment,

@@ -68,28 +68,35 @@ def _infer_required_probe_count(
     stability. Geometry requires n_probes > max(source_dim, target_dim) to avoid
     singular Gram matrix.
 
-    We add a small margin (100) to ensure the system is overdetermined. The actual
-    numerical stability is verified AT RUNTIME via condition number check in the
-    alignment stage - this minimum is just to ensure mathematical solvability.
+    We use the strict algebraic minimum: n > max_dim (i.e., n = max_dim + 1).
+    This is the smallest count that guarantees a non-singular Gram matrix.
+
+    The runtime condition number check in GramAligner determines actual stability.
+    If κ × ε is too large, the alignment will warn and the user can add more probes
+    via --full-atlas. We don't pretend to know the "right" overdetermination factor
+    for neural activations - that depends on the actual activation structure.
 
     Returns:
         (min_required, source_dim, target_dim)
+
+    Raises:
+        RuntimeError: If hidden dimensions cannot be inferred from weights.
     """
     from modelcypher.core.use_cases.merge.helpers import infer_hidden_dim
 
     source_dim = infer_hidden_dim(source_weights)
     target_dim = infer_hidden_dim(target_weights)
 
-    if source_dim <= 0:
-        source_dim = 512  # Conservative fallback
-    if target_dim <= 0:
-        target_dim = 512
+    if source_dim <= 0 or target_dim <= 0:
+        raise RuntimeError(
+            "PROBE: Unable to infer hidden dimensions from weights. "
+            "Hidden dimensions are required to derive the minimum probe count."
+        )
 
-    # Geometry: n_probes > max_dim is REQUIRED (otherwise singular)
-    # Add small margin to ensure overdetermined (numerical safety)
-    # Actual stability is verified at runtime via condition number check
+    # Strict algebraic minimum: n > max_dim for non-singular Gram matrix.
+    # Runtime condition number check determines actual numerical stability.
     max_dim = max(source_dim, target_dim)
-    min_required = max_dim + 100  # Minimal overdetermination
+    min_required = max_dim + 1
 
     return min_required, source_dim, target_dim
 

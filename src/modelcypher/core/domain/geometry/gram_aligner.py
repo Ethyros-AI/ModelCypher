@@ -336,9 +336,14 @@ class GramAligner:
             source_activations, target_activations, F_linear
         )
         linear_elapsed = time.perf_counter() - linear_start
+        # Log raw measurements - no thresholds, no warnings, just data.
+        # source_rank, target_rank, alignment_rank are already in AlignmentResult.
         logger.info(
-            "TRUNCATED ALIGNMENT: geodesic CKA=%.6f, rank=%d/%d, κ=%.2e (%.2fs)",
+            "TRUNCATED ALIGNMENT: geodesic CKA=%.6f, src_rank=%d, tgt_rank=%d, "
+            "alignment_rank=%d/%d, κ=%.2e (%.2fs)",
             linear_cka,
+            source_rank,
+            target_rank,
             alignment_rank,
             int(d_s),
             condition_number,

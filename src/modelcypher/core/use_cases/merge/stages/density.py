@@ -394,6 +394,7 @@ def _build_density_profile_from_activations(
 
     b = backend
     id_estimator = IntrinsicDimension(backend=b)
+    min_required = id_estimator.local_dimension_min_samples()
 
     layer_profiles: dict[int, LayerDensityProfile] = {}
     all_concepts: list[ConceptDensity] = []
@@ -409,9 +410,9 @@ def _build_density_profile_from_activations(
         if isinstance(act_list, list):
             if len(act_list) == 0:
                 raise RuntimeError(f"DENSITY: Missing activations for layer {layer_idx}")
-            if len(act_list) < 4:
+            if len(act_list) < min_required:
                 raise RuntimeError(
-                    f"DENSITY: Need at least 4 probes for local dimension at layer {layer_idx}"
+                    f"DENSITY: Need at least {min_required} probes for local dimension at layer {layer_idx}"
                 )
             act_vectors = []
             for act in act_list:
@@ -432,9 +433,9 @@ def _build_density_profile_from_activations(
             n_probes = int(act_matrix.shape[0])
             if n_probes == 0:
                 raise RuntimeError(f"DENSITY: Missing activations for layer {layer_idx}")
-            if n_probes < 4:
+            if n_probes < min_required:
                 raise RuntimeError(
-                    f"DENSITY: Need at least 4 probes for local dimension at layer {layer_idx}"
+                    f"DENSITY: Need at least {min_required} probes for local dimension at layer {layer_idx}"
                 )
 
         b.eval(act_matrix)
