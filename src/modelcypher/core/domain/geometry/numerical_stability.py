@@ -1326,8 +1326,10 @@ def numerical_rank_truncated_lstsq(
     else:
         target_rank = 0
 
-    # Alignment rank: min of both ranks (where both have actual signal)
-    alignment_rank = min(source_rank, target_rank)
+    # Alignment rank: use source_rank for the pseudoinverse computation
+    # The target rank is informative but doesn't constrain the solution
+    # We truncate to source_rank to remove numerical noise, not to match target
+    alignment_rank = source_rank
     alignment_rank = max(1, alignment_rank)  # At least 1 to avoid degenerate case
 
     logger.info(
@@ -1336,7 +1338,7 @@ def numerical_rank_truncated_lstsq(
     )
 
     # Truncate source to top-k singular components
-    # A_k = U_k @ diag(S_k) @ Vt_k where k = alignment_rank
+    # A_k = U_k @ diag(S_k) @ Vt_k where k = source_rank (numerical rank of source)
     k = alignment_rank
     U_k = U_s[:, :k]  # [n, k]
     S_k = S_s[:k]  # [k]

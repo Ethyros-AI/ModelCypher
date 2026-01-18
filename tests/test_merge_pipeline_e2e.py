@@ -83,6 +83,9 @@ def test_pipeline_uses_null_space_selectivity(monkeypatch) -> None:
     def fake_infer_hidden_dim(_weights):
         return 2
 
+    def fake_serialize_density_detail(*_args, **_kwargs):
+        return {}  # Skip serialization in this test
+
     monkeypatch.setattr(pipeline, "load_weights", fake_load_weights)
     monkeypatch.setattr(pipeline, "load_tokenizer", fake_load_tokenizer)
     monkeypatch.setattr(pipeline, "load_model_for_probing", fake_load_model_for_probing)
@@ -90,6 +93,7 @@ def test_pipeline_uses_null_space_selectivity(monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "stage_density", fake_stage_density)
     monkeypatch.setattr(pipeline, "stage_transplant", fake_stage_transplant)
     monkeypatch.setattr(pipeline, "infer_hidden_dim", fake_infer_hidden_dim)
+    monkeypatch.setattr(pipeline, "_serialize_density_detail", fake_serialize_density_detail)
 
     pipeline.run_merge(
         model_loader=object(),

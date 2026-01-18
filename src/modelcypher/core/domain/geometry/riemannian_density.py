@@ -380,9 +380,11 @@ class ConceptVolume:
             if nu <= 0:
                 raise ValueError("student_t_df must be positive")
             log_norm = self._student_t_log_norm()
-            return backend.exp(backend.array(log_norm)) * backend.pow(
-                1 + mahal_sq / nu, -(nu + d) / 2
-            )
+            # Use exp(exponent * log(base)) instead of pow since backend doesn't have pow
+            base = 1 + mahal_sq / nu
+            exponent = -(nu + d) / 2
+            power_term = backend.exp(exponent * backend.log(base))
+            return backend.exp(backend.array(log_norm)) * power_term
 
         if self.influence_type == InfluenceType.UNIFORM:
             inv_volume = self._uniform_norm()
