@@ -18,11 +18,19 @@
 """Geodesic null-space filtering for model merging.
 
 Implements null-space filtering using geodesic distances on a k-NN graph and
-keeps all computation on the backend.
+Random Matrix Theory (Marchenko-Pastur distribution) for signal/noise separation.
+All computation stays on the backend.
+
+Key innovation: Instead of arbitrary variance heuristics for null-space detection,
+uses RMT-derived thresholds based on the eigenvalue spectrum of the activation
+covariance matrix. Eigenvalues above the Marchenko-Pastur bulk edge are true
+signal (occupied, protect); eigenvalues in the bulk are noise (available for
+transfer).
 
 References:
     - Tenenbaum et al. (2000) "Isomap" - geodesic via graph
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"
+    - Marchenko & Pastur (1967) "Distribution of eigenvalues for random matrices"
 """
 
 from __future__ import annotations
@@ -44,6 +52,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
+)
+from modelcypher.core.domain.geometry.rmt_signal_separation import (
+    compute_rmt_null_space_weights,
 )
 
 if TYPE_CHECKING:
@@ -187,6 +198,10 @@ class GeodesicNullSpaceFilter:
     - k-NN graph: argsort
     - Geodesic distances: vectorized Floyd-Warshall
     - Projection: Gram matrix operations
+
+    Uses Random Matrix Theory (Marchenko-Pastur distribution) to separate
+    true signal from noise, providing principled, data-derived thresholds
+    instead of arbitrary variance heuristics.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
@@ -209,35 +224,36 @@ class GeodesicNullSpaceFilter:
         occupancy_weights: Any | None = None,
         basis: GeodesicNullSpaceBasis | None = None,
         source_activations: Any | None = None,
-        source_sample_weights: Any | None = None,
-        target_sample_weights: Any | None = None,
     ) -> GeodesicNullSpaceResult:
         """
-        Filter weight delta using unified saliency projection.
+        Filter weight delta using RMT-based null-space projection.
 
-        Two modes depending on whether source_activations is provided:
+        Uses Random Matrix Theory (Marchenko-Pastur distribution) to separate
+        true signal from noise, providing principled thresholds for null-space
+        detection.
 
-        MODE 1 (legacy): Target-only filtering
-            Combines variance and magnitude signals from target:
-            keep = (1 - target_variance) * (1 - target_magnitude)
+        If source_activations is provided:
+            transfer = target_noise × source_signal
+            Transfer where target has room AND source has knowledge.
 
-        MODE 2 (density-aware): Source+target relative density
-            Transfers knowledge where source is dense AND target is sparse:
-            transfer = source_confidence * (1 - target_confidence) * (1 - magnitude)
+        If source_activations is not provided:
+            transfer = target_noise
+            Transfer where target has unused capacity.
 
         Algorithm:
             1. Build k-NN graph from activations (GPU: matmul + argsort)
             2. Compute geodesic distances (GPU: Floyd-Warshall)
-            3. Compute per-dimension variance for source AND target
+            3. Use RMT to compute per-dimension signal/noise separation
             4. Scale delta by transfer weights per dimension
 
         Args:
             weight_delta: Weight update to filter. Shape: [out, in] or [d].
             prior_activations: Target activation matrix. Shape: [n_samples, d].
             k_neighbors: k for k-NN graph. If None, auto-derived.
+            occupancy_weights: Optional prior occupancy weights to combine with RMT.
             basis: Optional precomputed geodesic basis for reuse.
             source_activations: Optional source activations (already aligned).
-                If provided, enables density-aware transfer mode.
+                If provided, enables density-aware transfer.
 
         Returns:
             GeodesicNullSpaceResult with filtered delta and diagnostics.
@@ -293,8 +309,6 @@ class GeodesicNullSpaceFilter:
             prior_activations,
             k_neighbors=k_neighbors,
             source_activations=source_activations,
-            source_sample_weights=source_sample_weights,
-            target_sample_weights=target_sample_weights,
         )
 
         # Step 4: Compute tangent space projection matrix (GPU)
@@ -426,21 +440,23 @@ class GeodesicNullSpaceFilter:
         prior_activations: Any,
         k_neighbors: int | None = None,
         source_activations: Any | None = None,
-        source_sample_weights: Any | None = None,
-        target_sample_weights: Any | None = None,
     ) -> GeodesicNullSpaceBasis:
         """Compute a reusable geodesic null-space basis for projections.
+
+        Uses Random Matrix Theory (Marchenko-Pastur distribution) to separate
+        true signal from noise, providing principled thresholds instead of
+        arbitrary variance heuristics.
 
         Args:
             prior_activations: Target model activations defining the manifold.
             k_neighbors: k-NN connectivity for geodesic computation.
             source_activations: Optional source model activations (already aligned).
                 If provided, transfer weights are computed as:
-                    transfer = source_confidence * (1 - target_confidence)
-                This transfers knowledge where source is dense AND target is sparse.
+                    transfer = target_noise × source_signal
+                This transfers knowledge where target has room AND source has knowledge.
 
-                If not provided (legacy mode), uses target-only filtering:
-                    keep = (1 - target_variance) * (1 - target_magnitude)
+                If not provided, uses target-only RMT filtering:
+                    keep = target_noise_fraction (available dimensions)
         """
         backend = self._backend
         # Only wrap if not already a backend array - avoid breaking id()-based cache
@@ -448,7 +464,8 @@ class GeodesicNullSpaceFilter:
             prior_activations = backend.array(prior_activations)
         backend.eval(prior_activations)
 
-        cache_enabled = source_sample_weights is None and target_sample_weights is None
+        # Cache only if no source activations (source changes the basis computation)
+        cache_enabled = source_activations is None
         cache_key = _cache.make_basis_key(prior_activations, backend, k_neighbors)
         if cache_enabled:
             cached = _cache.get_basis(cache_key)
@@ -502,211 +519,68 @@ class GeodesicNullSpaceFilter:
         )
         backend.eval(tangent_vectors)
 
-        # =====================================================================
-        # UNIFIED SALIENCY PROJECTION (Variance + Magnitude)
-        # =====================================================================
-        # Combines occupancy (variance) and sensitivity (activation magnitude)
-        # into a per-dimension weight:
-        #   keep[i] = (1 - variance_norm[i]) * (1 - magnitude_norm[i])
-        #   delta_safe = delta * keep
-        # =====================================================================
-
-        # Compute per-dimension statistics from activations.
-        A = backend.transpose(tangent_vectors)  # [d, n_samples]
-        stats_dtype = precision_dtype(backend, reference=A)
-        if str(backend.dtype(A)) != str(stats_dtype):
-            A = backend.astype(A, stats_dtype)
-        reg = regularization_epsilon(backend, A)
-
-        def _weighted_variance(
-            activations: "Any",
-            sample_weights: "Any | None",
-        ) -> "Any":
-            acts = backend.astype(activations, stats_dtype)
-            if sample_weights is None:
-                mean = backend.mean(acts, axis=0)
-                centered = acts - backend.reshape(mean, (1, d))
-                var = backend.mean(centered * centered, axis=0)
-                backend.eval(var)
-                return var
-
-            weights = sample_weights
-            if not hasattr(weights, "shape"):
-                weights = backend.array(weights)
-            weights = backend.astype(weights, stats_dtype)
-            weights = backend.reshape(weights, (-1, 1))
-            backend.eval(weights)
-
-            weight_sum = backend.sum(weights)
-            backend.eval(weight_sum)
-            weight_sum_val = float(backend.to_scalar(weight_sum))
-            if weight_sum_val <= reg:
-                var = backend.zeros((d,))
-                backend.eval(var)
-                return var
-
-            weighted_sum = backend.sum(weights * acts, axis=0)
-            mean = weighted_sum / weight_sum
-            centered = acts - backend.reshape(mean, (1, d))
-            var = backend.sum(weights * centered * centered, axis=0) / weight_sum
-            backend.eval(var)
-            return var
-
-        def _weighted_mean_abs(
-            activations: "Any",
-            sample_weights: "Any | None",
-        ) -> "Any":
-            acts = backend.astype(activations, stats_dtype)
-            if sample_weights is None:
-                mean_abs = backend.mean(backend.abs(acts), axis=0)
-                backend.eval(mean_abs)
-                return mean_abs
-
-            weights = sample_weights
-            if not hasattr(weights, "shape"):
-                weights = backend.array(weights)
-            weights = backend.astype(weights, stats_dtype)
-            weights = backend.reshape(weights, (-1, 1))
-            backend.eval(weights)
-
-            weight_sum = backend.sum(weights)
-            backend.eval(weight_sum)
-            weight_sum_val = float(backend.to_scalar(weight_sum))
-            if weight_sum_val <= reg:
-                mean_abs = backend.zeros((d,))
-                backend.eval(mean_abs)
-                return mean_abs
-
-            weighted_sum = backend.sum(weights * backend.abs(acts), axis=0)
-            mean_abs = weighted_sum / weight_sum
-            backend.eval(mean_abs)
-            return mean_abs
-
-        def _coerce_sample_weights(
-            sample_weights: "Any | None",
-            expected_len: int,
-            label: str,
-        ) -> "Any | None":
-            if sample_weights is None:
-                return None
-            weights = sample_weights
-            if not hasattr(weights, "shape"):
-                weights = backend.array(weights)
-            weights = backend.reshape(weights, (-1,))
-            backend.eval(weights)
-            if int(backend.shape(weights)[0]) != expected_len:
-                logger.warning(
-                    "DENSITY: %s sample weights len %d != %d; ignoring",
-                    label,
-                    int(backend.shape(weights)[0]),
-                    expected_len,
-                )
-                return None
-            return weights
+        reg = regularization_epsilon(backend, prior_activations)
 
         # =================================================================
-        # COMBINED SALIENCY: Unified projection weights
+        # RMT-BASED NULL-SPACE DETECTION
         # =================================================================
-        # Two modes depending on whether source activations are available:
+        # Uses Random Matrix Theory (Marchenko-Pastur distribution) to
+        # separate true signal from noise in a principled, data-derived way.
         #
-        # MODE 1 (legacy, source_activations=None):
-        #   keep_weights = (1 - target_variance) * (1 - target_magnitude)
-        #   This finds "room" in target but ignores source knowledge density.
+        # For TARGET activations:
+        #   - Eigenvalues above MP bulk edge = SIGNAL (occupied, protect)
+        #   - Eigenvalues in MP bulk = NOISE (unused, available for transfer)
+        #   - target_noise_fraction = how much of each dimension is noise
         #
-        # MODE 2 (density-aware, source_activations provided):
-        #   transfer_weights = source_confidence * (1 - target_confidence)
-        #   This transfers knowledge where source is DENSE and target is SPARSE.
+        # For SOURCE activations (if available):
+        #   - Eigenvalues above MP bulk edge = SIGNAL (knowledge to transfer)
+        #   - source_signal_fraction = how much knowledge each dimension has
         #
-        #   - Source dense, target sparse → transfer ≈ 1 (source's unique knowledge)
-        #   - Source sparse, target dense → transfer ≈ 0 (protect target)
-        #   - Both dense → transfer ≈ 0 (target already knows it)
-        #   - Both sparse → transfer ≈ 0 (neither knows, ignore)
-        #
-        # Mode 2 implements the "fog cloud overlay" principle:
-        # Transfer density from source where target has gaps, don't dilute.
+        # Transfer weight = target_noise × source_signal
+        #   - Transfer where target has room AND source has knowledge
+        #   - If no source: transfer weight = target_noise
         # =================================================================
+
+        # Compute target noise fraction using RMT
+        target_keep_weights, target_mp = compute_rmt_null_space_weights(
+            prior_activations, backend=backend
+        )
+        backend.eval(target_keep_weights)
 
         if source_activations is not None:
-            # MODE 2: Density-aware transfer using source vs target variance.
-            # If sample weights are provided and aligned, use weighted variance.
+            # Compute source signal fraction using RMT
             if not hasattr(source_activations, "shape"):
                 source_activations = backend.array(source_activations)
             backend.eval(source_activations)
 
-            # Compute per-dimension variance for each activation set
-            source_weights = _coerce_sample_weights(
-                source_sample_weights,
-                int(backend.shape(source_activations)[0]),
-                "source",
+            source_keep_weights, source_mp = compute_rmt_null_space_weights(
+                source_activations, backend=backend
             )
-            target_weights = _coerce_sample_weights(
-                target_sample_weights,
-                n_samples,
-                "target",
-            )
-            source_variance = _weighted_variance(source_activations, source_weights)
-            target_variance = _weighted_variance(prior_activations, target_weights)
+            backend.eval(source_keep_weights)
 
-            src_max = backend.max(source_variance)
-            tgt_max = backend.max(target_variance)
-            backend.eval(src_max, tgt_max)
-            src_max_val = float(backend.to_scalar(src_max))
-            tgt_max_val = float(backend.to_scalar(tgt_max))
+            # Source signal = 1 - source_noise (dimensions where source has knowledge)
+            source_signal = 1.0 - source_keep_weights
+            backend.eval(source_signal)
 
-            source_confidence = (
-                source_variance / src_max_val if src_max_val > reg else backend.zeros((d,))
-            )
-            target_confidence = (
-                target_variance / tgt_max_val if tgt_max_val > reg else backend.zeros((d,))
-            )
-            backend.eval(source_confidence, target_confidence)
-
-            # Transfer where source is denser than target (no tunable thresholds).
-            diff = source_confidence - target_confidence
-            diff_pos = backend.maximum(diff, backend.zeros_like(diff))
-            denom = backend.maximum(
-                source_confidence + target_confidence,
-                backend.full(backend.shape(diff), reg),
-            )
-            keep_weights = diff_pos / denom
+            # Transfer = target_noise × source_signal
+            # High where target has room AND source has knowledge
+            keep_weights = target_keep_weights * source_signal
             backend.eval(keep_weights)
 
             logger.debug(
-                "DENSITY-AWARE transfer: source_conf_mean=%.3f, target_conf_mean=%.3f, keep_mean=%.3f",
-                float(backend.to_scalar(backend.mean(source_confidence))),
-                float(backend.to_scalar(backend.mean(target_confidence))),
+                "RMT transfer: target_noise_mean=%.3f, source_signal_mean=%.3f, keep_mean=%.3f",
+                float(backend.to_scalar(backend.mean(target_keep_weights))),
+                float(backend.to_scalar(backend.mean(source_signal))),
                 float(backend.to_scalar(backend.mean(keep_weights))),
             )
         else:
-            # MODE 1 (legacy): Target-only filtering (variance + magnitude).
-            target_weights = _coerce_sample_weights(
-                target_sample_weights,
-                n_samples,
-                "target",
+            # Target-only: transfer where target has room (noise dimensions)
+            keep_weights = target_keep_weights
+
+            logger.debug(
+                "RMT transfer (target-only): noise_mean=%.3f",
+                float(backend.to_scalar(backend.mean(keep_weights))),
             )
-            variance_per_dim = _weighted_variance(prior_activations, target_weights)
-            magnitude_per_dim = _weighted_mean_abs(prior_activations, target_weights)
-
-            max_var = backend.max(variance_per_dim)
-            max_mag = backend.max(magnitude_per_dim)
-            backend.eval(max_var, max_mag)
-            max_var_val = float(backend.to_scalar(max_var))
-            max_mag_val = float(backend.to_scalar(max_mag))
-
-            if max_var_val > reg:
-                variance_weights = variance_per_dim / max_var_val
-            else:
-                variance_weights = backend.zeros((d,))
-            backend.eval(variance_weights)
-
-            if max_mag_val > reg:
-                magnitude_weights = magnitude_per_dim / max_mag_val
-            else:
-                magnitude_weights = backend.zeros((d,))
-            backend.eval(magnitude_weights)
-
-            keep_weights = (1.0 - variance_weights) * (1.0 - magnitude_weights)
-            backend.eval(keep_weights)
 
         combined_weights = 1.0 - keep_weights  # For compatibility with filter_delta
         backend.eval(combined_weights)

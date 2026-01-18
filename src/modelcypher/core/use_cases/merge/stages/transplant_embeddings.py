@@ -166,30 +166,68 @@ def apply_embedding_alignment(
             matched_src = b.take(src_embed_proj, src_idx_arr, axis=0)
             matched_tgt = b.take(tgt_embed, tgt_idx_arr, axis=0)
 
-            # Compute Procrustes rotation (CPU-friendly version)
+            # Compute Procrustes rotation with SO(n) enforcement (det=+1)
+            # This ensures proper rotation, not reflection, for Lie-group correctness
+            from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
+
             src_mean = b.mean(matched_src, axis=0, keepdims=True)
             tgt_mean = b.mean(matched_tgt, axis=0, keepdims=True)
             src_centered = matched_src - src_mean
             tgt_centered = matched_tgt - tgt_mean
 
             cross_cov = b.matmul(b.transpose(src_centered), tgt_centered)
-            U, _, Vt = b.svd(cross_cov)
+            U, _, Vt = geodesic_svd(b, cross_cov)
+            # rotation = U @ Vt is already orthogonal from cross-cov SVD
+            # Enforce det=+1 to get SO(n) (rotation, not reflection)
             rotation = b.matmul(U, Vt)
+            b.eval(rotation)
+
+            # Check determinant for square matrices
+            if rotation.shape[0] == rotation.shape[1]:
+                det_val = b.det(rotation)
+                b.eval(det_val)
+                if float(b.to_scalar(det_val)) < 0:
+                    # Flip last column of U to make det=+1
+                    U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+                    rotation = b.matmul(U_fixed, Vt)
+                    b.eval(rotation)
 
             # Project all source embeddings
             src_centered_all = src_embed_proj - src_mean
             projected = b.matmul(src_centered_all, rotation) + tgt_mean
             b.eval(projected)
 
-            # Blend matched tokens: 50% projected source + 50% target
-            blend_weight = 0.5
+            # NULL-SPACE ADDITION (not blending) for matched tokens
+            # Blending dilutes information; null-space addition preserves target
+            # and adds source knowledge where target has unused capacity.
             matched_projected = b.take(projected, src_idx_arr, axis=0)
-            blended = blend_weight * matched_projected + (1 - blend_weight) * matched_tgt
+            matched_tgt_vecs = b.take(tgt_embed, tgt_idx_arr, axis=0)
+
+            # Compute delta (source - target after projection)
+            delta = matched_projected - matched_tgt_vecs
+
+            # Compute variance-based null-space weights for target embeddings
+            # High variance = actively used = preserve; Low variance = available = transfer
+            tgt_var = b.var(matched_tgt_vecs, axis=0)
+            b.eval(tgt_var)
+            max_var = b.max(tgt_var)
+            b.eval(max_var)
+            max_var_val = float(b.to_scalar(max_var))
+            eps = 1e-10
+            normalized_var = tgt_var / max(max_var_val, eps)
+            # keep_weight = 1 - normalized_var (high variance = low keep = preserve target)
+            # But for null-space: we want to ADD where target is sparse (low variance)
+            transfer_weight = 1.0 - normalized_var  # Transfer more where variance is low
+            b.eval(transfer_weight)
+
+            # Apply weighted delta addition (null-space constrained)
+            weighted_delta = delta * transfer_weight  # [n_matched, hidden_dim]
+            merged_matched = matched_tgt_vecs + weighted_delta
+            b.eval(merged_matched)
 
             # Create final embedding matrix using scatter-like update
-            # Use index_put equivalent: build mask and blend
             tgt_idx_set = set(tgt_indices)
-            idx_to_blend = {tgt_idx: i for i, tgt_idx in enumerate(tgt_indices)}
+            idx_to_merged = {tgt_idx: i for i, tgt_idx in enumerate(tgt_indices)}
 
             # Process in batches to avoid memory issues
             batch_size = 10000
@@ -201,8 +239,8 @@ def apply_embedding_alignment(
 
                 for i in range(start, end):
                     if i in tgt_idx_set:
-                        blend_idx = idx_to_blend[i]
-                        batch_rows.append(blended[blend_idx:blend_idx+1])
+                        merge_idx = idx_to_merged[i]
+                        batch_rows.append(merged_matched[merge_idx:merge_idx+1])
                     else:
                         batch_rows.append(tgt_embed[i:i+1])
 
@@ -219,17 +257,25 @@ def apply_embedding_alignment(
             b.eval(final_embed)
 
             merged[target_embed_key] = final_embed
-            metrics["tokens_blended"] = tokens_matched
-            metrics["blend_weight"] = blend_weight
+            metrics["tokens_merged_nullspace"] = tokens_matched
+
+            # Compute transfer metrics
+            delta_norm = float(b.to_scalar(b.sqrt(b.sum(weighted_delta * weighted_delta))))
+            mean_transfer = float(b.to_scalar(b.mean(transfer_weight)))
+            metrics["embedding_delta_norm"] = delta_norm
+            metrics["embedding_mean_transfer_weight"] = mean_transfer
 
             logger.info(
-                "CROSS-VOCAB MERGE: Blended %d token embeddings (%.1f%% of target vocab)",
+                "CROSS-VOCAB MERGE: Null-space merged %d embeddings (%.1f%% of target vocab), "
+                "delta_norm=%.4f, mean_transfer=%.3f",
                 tokens_matched,
                 100.0 * tokens_matched / tgt_vocab_size,
+                delta_norm,
+                mean_transfer,
             )
 
             # Clean up
-            del projected, matched_projected, blended, final_rows
+            del projected, matched_projected, merged_matched, weighted_delta, final_rows
             if hasattr(b, "clear_cache"):
                 b.clear_cache()
 

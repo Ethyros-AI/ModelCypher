@@ -346,80 +346,6 @@ def reconstruct_weight_from_behavior(
     )
 
 
-def _detect_intrinsic_rank(
-    singular_values: "Array",
-    backend: "Backend",
-    variance_threshold: float = 0.999,
-    gap_ratio_threshold: float = 10.0,
-) -> int:
-    """Detect intrinsic rank from singular value spectrum.
-
-    Uses two criteria:
-    1. Cumulative variance threshold (default 99.9%)
-    2. Spectral gap detection (ratio > 10x between consecutive values)
-
-    Returns the smaller of the two to be conservative.
-
-    Args:
-        singular_values: Sorted (descending) singular values.
-        backend: Compute backend.
-        variance_threshold: Cumulative variance to capture (default 0.999).
-        gap_ratio_threshold: Minimum ratio for spectral gap (default 10.0).
-
-    Returns:
-        Detected intrinsic rank.
-    """
-    b = backend
-    S = b.array(singular_values)
-    b.eval(S)
-
-    n = int(S.shape[0])
-    if n == 0:
-        return 0
-
-    # Compute cumulative variance
-    S2 = S * S
-    total_var = b.sum(S2)
-    eps = division_epsilon(b, total_var)
-    cumvar = b.cumsum(S2) / (total_var + eps)
-    b.eval(cumvar)
-
-    # Find rank for variance threshold
-    cumvar_np = [float(b.to_scalar(cumvar[i])) for i in range(n)]
-    rank_var = 1
-    for i, cv in enumerate(cumvar_np):
-        if cv >= variance_threshold:
-            rank_var = i + 1
-            break
-    else:
-        rank_var = n
-
-    # Find spectral gap
-    eps = float(division_epsilon(b, S))
-    rank_gap = n  # Default to full rank if no gap found
-
-    for i in range(min(n - 1, 200)):  # Check first 200 values
-        s_curr = float(b.to_scalar(S[i]))
-        s_next = float(b.to_scalar(S[i + 1]))
-        if s_next < eps:
-            rank_gap = i + 1
-            break
-        ratio = s_curr / s_next
-        if ratio > gap_ratio_threshold:
-            rank_gap = i + 1
-            break
-
-    # Use the smaller (more conservative) rank
-    intrinsic_rank = min(rank_var, rank_gap)
-
-    logger.debug(
-        "INTRINSIC RANK: variance_rank=%d, gap_rank=%d, chosen=%d",
-        rank_var, rank_gap, intrinsic_rank
-    )
-
-    return max(1, intrinsic_rank)
-
-
 def _truncated_pinv(
     matrix: "Array",
     rank: int,
@@ -475,15 +401,18 @@ def reconstruct_weight_manifold_aware(
     alignment_in: "Array",
     alignment_out: "Array",
     backend: "Backend | None" = None,
-    variance_threshold: float = 0.999,
 ) -> BehavioralReconstructionResult:
     """Manifold-aware weight reconstruction for cross-dimensional transfer.
 
+    Uses RMT Marchenko-Pastur distribution for principled intrinsic rank detection.
+
     Algorithm:
-        1. Compute source behavior: output_src = input_src @ W_src.T
-        2. Project to target coordinates
-        3. Detect intrinsic rank from spectral gap
-        4. Use rank-truncated lstsq for reconstruction
+        1. Orthogonalize alignment transforms via polar decomposition (SO(n))
+        2. Compute source behavior: output_src = input_src @ W_src.T
+        3. Project to target coordinates using orthogonalized transforms
+        4. Detect intrinsic rank using RMT Marchenko-Pastur signal/noise separation
+        5. Use rank-truncated lstsq for reconstruction
+        6. Apply scale correction from polar decomposition
 
     Args:
         source_weight: Source weight matrix [out_src, in_src].
@@ -491,7 +420,6 @@ def reconstruct_weight_manifold_aware(
         alignment_in: Procrustes transform for inputs [in_src, in_tgt].
         alignment_out: Procrustes transform for outputs [out_src, out_tgt].
         backend: Compute backend.
-        variance_threshold: Cumulative variance for rank detection (default 0.999).
 
     Returns:
         BehavioralReconstructionResult with reconstructed weight and diagnostics.
@@ -542,14 +470,23 @@ def reconstruct_weight_manifold_aware(
     output_target = b.matmul(output_source, U_out)
     b.eval(input_target, output_target)
 
-    # Step 4: Detect intrinsic rank from input activations
+    # Step 4: Detect intrinsic rank using Marchenko-Pastur signal/noise separation
+    # This replaces heuristic gap detection with principled RMT thresholds
     from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
+    from modelcypher.core.domain.geometry.rmt_signal_separation import separate_signal_noise
 
     U_svd, S, Vt = geodesic_svd(b, input_target)
     b.eval(U_svd, S, Vt)
 
-    intrinsic_rank = _detect_intrinsic_rank(
-        S, b, variance_threshold=variance_threshold
+    # Use RMT Marchenko-Pastur distribution to determine true signal rank
+    # Eigenvalues above the MP bulk edge are TRUE SIGNAL, within bulk are NOISE
+    mp_result = separate_signal_noise(input_target, backend=b)
+    intrinsic_rank = max(1, mp_result.signal_rank)  # At least rank 1
+
+    logger.info(
+        "RMT SIGNAL/NOISE: signal_rank=%d, noise_rank=%d, MP_edge=%.6f, signal_var=%.1f%%",
+        mp_result.signal_rank, mp_result.noise_rank,
+        mp_result.mp_upper_edge, 100.0 * mp_result.signal_variance_fraction
     )
 
     logger.info(

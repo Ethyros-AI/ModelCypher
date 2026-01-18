@@ -204,7 +204,19 @@ class EmbeddingProjector:
         cross_cov = backend.matmul(backend.transpose(source_centered), target_centered)
         # Geodesic SVD (GPU-only)
         U, _, Vt = geodesic_svd(self._backend, cross_cov)
-        # MLX det() has unstable behavior for some sizes; use the raw orthogonal solution.
+        # rotation = U @ Vt is already orthogonal from cross-cov SVD
+        # Enforce det=+1 to get SO(n) (rotation, not reflection)
         rotation = backend.matmul(U, Vt)
         backend.eval(rotation)
+
+        # Check determinant for square matrices
+        if rotation.shape[0] == rotation.shape[1]:
+            det_val = backend.det(rotation)
+            backend.eval(det_val)
+            if float(backend.to_scalar(det_val)) < 0:
+                # Flip last column of U to make det=+1
+                U_fixed = backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+                rotation = backend.matmul(U_fixed, Vt)
+                backend.eval(rotation)
+
         return rotation, source_mean, target_mean
