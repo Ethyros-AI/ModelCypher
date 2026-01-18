@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import math
+
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
@@ -232,7 +234,8 @@ class TestCrossArchitectureEdgeCases:
         # Weights should sum to 1 for each target
         for weighted in result.many_to_one_weights:
             total = sum(weighted.source_weights.values())
-            assert abs(total - 1.0) < 1e-6, f"Weights sum to {total}, expected 1.0"
+            eps = math.ulp(1.0) * max(1.0, abs(total))
+            assert abs(total - 1.0) <= eps, f"Weights sum to {total}, expected 1.0"
 
     def test_one_to_many_interpolation(self) -> None:
         """Test one-to-many interpolation when target has more layers."""
@@ -249,7 +252,8 @@ class TestCrossArchitectureEdgeCases:
         # Weights should sum to 1 for each target
         for interp in result.one_to_many_interpolation:
             total = interp.weight_low + interp.weight_high
-            assert abs(total - 1.0) < 1e-6, f"Weights sum to {total}, expected 1.0"
+            eps = math.ulp(1.0) * max(1.0, abs(total))
+            assert abs(total - 1.0) <= eps, f"Weights sum to {total}, expected 1.0"
 
     def test_weighted_mappings_same_layer_count(self) -> None:
         """Test weighted mappings when models have same layer count."""
@@ -265,9 +269,11 @@ class TestCrossArchitectureEdgeCases:
         # DTW produces a path - many-to-one weights should sum to 1
         for weighted in result.many_to_one_weights:
             total = sum(weighted.source_weights.values())
-            assert abs(total - 1.0) < 1e-6
+            eps = math.ulp(1.0) * max(1.0, abs(total))
+            assert abs(total - 1.0) <= eps
 
         # Interpolation weights should also sum to 1
         for interp in result.one_to_many_interpolation:
             total = interp.weight_low + interp.weight_high
-            assert abs(total - 1.0) < 1e-6
+            eps = math.ulp(1.0) * max(1.0, abs(total))
+            assert abs(total - 1.0) <= eps

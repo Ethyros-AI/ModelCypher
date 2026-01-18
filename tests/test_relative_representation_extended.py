@@ -31,6 +31,7 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     all_finite,
+    division_epsilon,
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.relative_representation import (
@@ -137,7 +138,9 @@ class TestComputeRelativeRepresentation:
 
         mean_diag = backend.mean(diagonal)
         backend.eval(mean_diag)
-        assert float(backend.to_scalar(mean_diag)) > 0.99
+        mean_val = float(backend.to_scalar(mean_diag))
+        eps = division_epsilon(backend, rel_rep) * max(1.0, abs(mean_val))
+        assert abs(mean_val - 1.0) <= eps
 
 
 class TestAlignRelativeRepresentations:
@@ -154,8 +157,10 @@ class TestAlignRelativeRepresentations:
         I = backend.eye(8)
         diff = backend.mean(backend.abs(R - I))
         backend.eval(diff)
-        assert float(backend.to_scalar(diff)) < 0.1
-        assert error < 0.1
+        diff_val = float(backend.to_scalar(diff))
+        tol = division_epsilon(backend, rel_rep) * max(1.0, diff_val)
+        assert diff_val <= tol
+        assert abs(error) <= tol
 
     def test_rotation_shape(self, backend):
         """Rotation matrix should be [n_anchors, n_anchors]."""

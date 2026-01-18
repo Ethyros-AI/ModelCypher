@@ -22,6 +22,7 @@ Geometric tests for the static analysis probe that uses metadata embeddings.
 
 from __future__ import annotations
 
+import math
 import pytest
 
 from modelcypher.core.domain.safety.behavioral_probes import (
@@ -96,8 +97,9 @@ class TestRedTeamProbe:
         result = probe.evaluate(context)
         assert result.finding_counts is not None
         # Similar items should have very small mean distances (near-zero due to floating point)
-        assert result.finding_counts["mean_distance"] < 0.01
-        assert result.finding_counts["max_distance"] < 0.01
+        eps = math.ulp(1.0)
+        assert result.finding_counts["mean_distance"] <= eps
+        assert result.finding_counts["max_distance"] <= eps
 
     def test_evaluate_detects_outlier(self, probe):
         """Outlier metadata field is detected via geodesic distances."""

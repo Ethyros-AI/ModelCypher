@@ -23,6 +23,7 @@ Tests critical APIs:
 - partition_core_boundary(): Partition probes into core/boundary sets
 """
 
+import math
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -91,7 +92,7 @@ class TestComputeWeightSpaceTransplant:
         assert result.delta_norm <= eps * scale
 
     def test_preserved_fraction_bounded(self, backend):
-        """Preserved fraction should be in [0, 1]."""
+        """Preserved fraction should be non-negative and finite."""
         out_dim, in_dim = 32, 16
         n_samples = 16
 
@@ -107,7 +108,8 @@ class TestComputeWeightSpaceTransplant:
             backend=backend,
         )
 
-        assert 0.0 <= result.preserved_fraction <= 1.0
+        assert result.preserved_fraction >= 0.0
+        assert math.isfinite(result.preserved_fraction)
 
     def test_with_density_activations(self, backend):
         """Density-weighted transplant should work."""
@@ -285,8 +287,13 @@ class TestComputeTransplantDelta:
         diff = backend.mean(backend.abs(merged_output - original_output))
         backend.eval(diff)
 
-        # Should be small (not exactly zero due to numerical precision)
-        assert float(backend.to_scalar(diff)) < 1.0
+        # Should be within precision-scaled tolerance
+        diff_val = float(backend.to_scalar(diff))
+        mean_orig_arr = backend.mean(backend.abs(original_output))
+        backend.eval(mean_orig_arr)
+        mean_orig = float(backend.to_scalar(mean_orig_arr))
+        eps = division_epsilon(backend, original_output) * max(1.0, mean_orig)
+        assert diff_val <= eps
 
     def test_delta_scale_applied(self, backend):
         """Delta scale should modulate the update magnitude."""

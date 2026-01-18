@@ -483,8 +483,7 @@ class TestAlignmentMathematicalProperties:
 
         result = find_alignment(X, X, backend=backend)
 
-        # Geodesic alignment preserves manifold structure; CKA > 0.95 is good
-        assert result.achieved_cka >= 0.95
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
     @given(
         n_samples=st.integers(min_value=30, max_value=100),

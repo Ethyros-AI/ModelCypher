@@ -69,8 +69,10 @@ class TestInterferencePredictor:
         assert isinstance(result, MergeAnalysisResult)
         assert result.volume_a_id == "A"
         assert result.volume_b_id == "B"
-        assert result.overlap_score > 0.7 # Average of high overlap metrics
-        assert result.distance_score < 0.5 # Normalized distance
+        expected_overlap = (0.8 + 0.7 + 0.9) / 3.0
+        expected_distance = 0.5 / (1.0 + 1.0)
+        assert abs(result.overlap_score - expected_overlap) <= math.ulp(expected_overlap)
+        assert abs(result.distance_score - expected_distance) <= math.ulp(expected_distance)
         assert result.aligned is False # 0.95 is not within eps of 1.0
 
     def test_compute_distance_score(self):

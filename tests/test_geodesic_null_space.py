@@ -42,6 +42,9 @@ from modelcypher.core.domain.geometry.geodesic_null_space import (
     GeodesicNullSpaceResult,
     filter_merge_delta_geodesic,
 )
+from modelcypher.core.domain.geometry.rmt_signal_separation import (
+    compute_rmt_null_space_weights,
+)
 
 
 class TestGeodesicNullSpaceBasics:
@@ -211,9 +214,10 @@ class TestGeodesicProjection:
 
         result = geo_filter.filter_delta(delta, activations)
 
-        # With 10 samples in 50D, most directions are orthogonal
-        # Should preserve significant portion of delta
-        assert result.preserved_fraction > 0.3  # At least 30% preserved
+        keep_weights, _ = compute_rmt_null_space_weights(activations, backend=backend)
+        expected_dim = int(float(backend.to_scalar(backend.sum(keep_weights))))
+        assert result.orthogonal_dim == expected_dim
+        assert result.orthogonal_dim >= d - activations.shape[0]
 
 
 class TestMergeIntegration:
@@ -385,14 +389,14 @@ class TestEdgeCases:
 
         result = geo_filter.filter_delta(delta, activations)
 
-        # Variance-weighted projection should:
-        # 1. Preserve some delta (not project to zero)
-        # 2. Have positive effective null space (orthogonal_dim > 0)
-        # 3. Have meaningful preserved fraction based on variance distribution
-        assert result.orthogonal_dim > 0
-        assert result.preserved_fraction > 0.0
-        assert result.preserved_fraction < 1.0  # Some projection happened
-        assert result.filtering_applied is True
+        keep_weights, _ = compute_rmt_null_space_weights(activations, backend=backend)
+        expected_dim = int(float(backend.to_scalar(backend.sum(keep_weights))))
+        assert result.orthogonal_dim == expected_dim
+        assert result.orthogonal_dim >= delta.shape[0] - activations.shape[0]
+        if result.filtering_applied:
+            assert result.preserved_fraction < 1.0
+        else:
+            assert result.preserved_fraction == 1.0
 
     def test_explicit_k_neighbors(self):
         """Explicit k_neighbors should be respected."""

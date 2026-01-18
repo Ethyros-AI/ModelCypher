@@ -17,6 +17,7 @@
 
 """Tests for training_benchmark module."""
 
+import math
 import pytest
 
 from modelcypher.core.domain.training.training_benchmark import (
@@ -204,7 +205,8 @@ class TestTrainingBenchmark:
 
         results = benchmark.results()
 
-        assert abs(results.average_step_latency - 0.2) < 0.001  # (0.1+0.2+0.3)/3
+        expected = 0.2
+        assert abs(results.average_step_latency - expected) <= math.ulp(expected)
 
     def test_throughput_score_memory_penalty_formula_at_128gb(self):
         """Test that 128GB memory applies exactly 20% penalty as per formula."""
@@ -225,7 +227,7 @@ class TestTrainingBenchmark:
         # Score = tokens_per_second * (1 - 0.2) = tokens_per_second * 0.8
         expected_ratio = 0.8
         actual_ratio = results.throughput_score / results.tokens_per_second
-        assert actual_ratio == pytest.approx(expected_ratio, rel=0.001)
+        assert abs(actual_ratio - expected_ratio) <= math.ulp(expected_ratio)
 
     def test_throughput_score_with_low_memory(self):
         """Test throughput score with low memory usage."""
@@ -241,10 +243,10 @@ class TestTrainingBenchmark:
 
         results = benchmark.results()
 
-        # Score should be close to tokens_per_second with low memory
-        # Memory penalty: (1/128) * 0.2 = 0.00156 -> 99.84% of throughput
+        # Memory penalty: (1/128) * 0.2 = 0.0015625
+        expected_ratio = 1.0 - (1.0 / 128.0) * 0.2
         ratio = results.throughput_score / results.tokens_per_second
-        assert ratio > 0.99
+        assert abs(ratio - expected_ratio) <= math.ulp(expected_ratio)
 
     def test_formatted_summary_contains_recorded_values(self):
         """Test formatted summary contains the actual recorded metrics."""

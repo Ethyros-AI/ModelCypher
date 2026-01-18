@@ -249,8 +249,9 @@ class TestAffineBridge:
         y_list = backend.tolist(Y_pred)[0]
 
         # Should be close to [0.5 + 1, 0.5 + 2] = [1.5, 2.5]
-        assert abs(y_list[0] - 1.5) < 0.5
-        assert abs(y_list[1] - 2.5) < 0.5
+        tol = regularization_epsilon(backend, Y_pred) * max(1.0, max(abs(v) for v in y_list))
+        assert abs(y_list[0] - 1.5) <= tol
+        assert abs(y_list[1] - 2.5) <= tol
 
     def test_load_weights(self, backend, bridge) -> None:
         """Loading weights should enable transform without training."""
@@ -266,8 +267,9 @@ class TestAffineBridge:
         y_list = backend.tolist(Y)[0]
 
         # Y = X @ W + b = [1, 1] @ [[2, 0], [0, 2]] + [1, 1] = [2, 2] + [1, 1] = [3, 3]
-        assert abs(y_list[0] - 3.0) < 0.01
-        assert abs(y_list[1] - 3.0) < 0.01
+        tol = regularization_epsilon(backend, Y) * max(1.0, max(abs(v) for v in y_list))
+        assert abs(y_list[0] - 3.0) <= tol
+        assert abs(y_list[1] - 3.0) <= tol
 
 
 # =============================================================================
@@ -326,7 +328,8 @@ class TestVocabConstrainedProjection:
         assert result.temperature_used > 0
         # Attention weights should sum to 1
         attn = result.attention_weights[0]
-        assert abs(sum(attn) - 1.0) < 0.01
+        tol = regularization_epsilon(backend, backend.array(attn))
+        assert abs(sum(attn) - 1.0) <= tol
 
     def test_aligned_is_vocab_mixture(self, backend, proj) -> None:
         """Aligned output should be weighted sum of vocabulary."""
@@ -382,7 +385,11 @@ class TestHybridBridge:
         result = hybrid.train(X_train, Y_train, vocab)
 
         # Affine should learn scaling - check via MSE
-        assert result.train_mse < 0.01, f"MSE should be low for scaling, got {result.train_mse}"
+        mean_abs = backend.mean(backend.abs(Y_train))
+        backend.eval(mean_abs)
+        scale = float(backend.to_scalar(mean_abs))
+        tol = regularization_epsilon(backend, Y_train) * max(1.0, scale)
+        assert result.train_mse <= tol, f"MSE should be within precision, got {result.train_mse}"
 
         # Transform should project onto vocab (temperature auto-derived)
         X_new = backend.array([[1.0, 0.0]])  # Should map to [2, 0]

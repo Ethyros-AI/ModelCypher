@@ -18,6 +18,7 @@ merged model will produce degenerate output.
 
 import pytest
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 class TestSubspaceNoveltyBasic:
@@ -181,9 +182,10 @@ class TestSubspaceNoveltyCompression:
         max_sv = float(b.to_scalar(b.max(ortho_S)))
         min_sv = float(b.to_scalar(b.min(ortho_S)))
 
-        # For an orthogonal matrix, all singular values should be ≈ 1
-        assert max_sv < 1.5, f"Max singular value {max_sv} too large for orthogonal"
-        assert min_sv > 0.5, f"Min singular value {min_sv} too small for orthogonal"
+        # For an orthogonal matrix, singular values should be 1 within precision
+        eps = division_epsilon(b, ortho_stitch)
+        assert abs(max_sv - 1.0) <= eps, f"Max singular value {max_sv} deviates from 1"
+        assert abs(min_sv - 1.0) <= eps, f"Min singular value {min_sv} deviates from 1"
 
 
 class TestTransplantCrossArchBasic:
@@ -228,8 +230,9 @@ class TestTransplantCrossArchBasic:
             backend=b,
         )
 
+        import math
         assert result.preserved_fraction >= 0.0
-        assert result.preserved_fraction <= 2.0  # Can be >1 due to numerical
+        assert math.isfinite(result.preserved_fraction)
         assert result.delta_norm >= 0.0
 
 

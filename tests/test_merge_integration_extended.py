@@ -225,7 +225,8 @@ class TestAlignStitchProjectPipeline:
 
         # Projected should retain most of the signal
         ratio = float(backend.to_scalar(proj_norm)) / float(backend.to_scalar(original_norm))
-        assert ratio > 0.8  # At least 80% preserved
+        eps = division_epsilon(backend, delta) * max(1.0, abs(ratio))
+        assert abs(ratio - 1.0) <= eps
 
 
 class TestSequentialStacking:
@@ -292,7 +293,8 @@ class TestSequentialStacking:
 
         # Scaled should be half the norm
         ratio = float(backend.to_scalar(scaled_norm)) / float(backend.to_scalar(full_norm))
-        assert 0.45 < ratio < 0.55
+        eps = division_epsilon(backend, delta_full) * max(1.0, abs(ratio))
+        assert abs(ratio - 0.5) <= eps
 
     def test_three_sequential_merges(self, backend):
         """Three sequential merges should all contribute."""

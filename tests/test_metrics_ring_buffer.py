@@ -24,6 +24,7 @@ This tests the high-performance ring buffer for entropy visualization.
 from __future__ import annotations
 
 from datetime import datetime
+import math
 
 from modelcypher.core.domain.entropy.metrics_ring_buffer import (
     EventMarkerBuffer,
@@ -376,7 +377,7 @@ class TestMetricsRingBuffer:
         # With 5 points, sqrt(5) ≈ 2.2 → window_size = 2.
         # Loss values: 0.0, 0.1, 0.2, 0.3, 0.4
         # Average of last 2: 0.3, 0.4 = 0.35
-        assert abs(buffer.average_loss() - 0.35) < 0.001
+        assert abs(buffer.average_loss() - 0.35) <= math.ulp(0.35)
 
     def test_current_entropy(self) -> None:
         """Test current entropy property."""

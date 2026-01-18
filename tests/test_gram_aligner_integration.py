@@ -123,9 +123,7 @@ class TestGramAlignerFunctionality:
         
         result = find_alignment(data, data, backend)
         
-        assert result.achieved_cka >= 0.95, (
-            f"Self-alignment should achieve CKA=1.0, got {result.achieved_cka}"
-        )
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
         assert result.is_perfect
     
     def test_same_dim_alignment_completes(self) -> None:

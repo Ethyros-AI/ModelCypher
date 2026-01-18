@@ -151,7 +151,10 @@ class ConceptDimensionalityAnalyzer:
             layer: Layer index to analyze
             calibration_weights: Optional per-probe weights
             progress_callback: Optional callback(current, total, analyzed, skipped)
-            batch_size: Number of probes to process per GPU batch (default 64)
+            batch_size: Engineering constant for GPU sync optimization. Does not
+                affect ID accuracy - only controls how many probes are batched
+                per GPU eval() call. TDA literature (Carrière et al. 2021) confirms
+                batching affects memory/sync tradeoffs, not topological correctness.
         """
         results: list[ConceptDimensionalityResult] = []
         skipped: list[SkippedProbe] = []

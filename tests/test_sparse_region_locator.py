@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import math
+
 from modelcypher.core.domain.geometry.sparse_region_locator import (
     LayerActivationStats,
     SparseRegionLocator,
@@ -204,6 +206,6 @@ def test_sparse_region_locator_threshold_derived_from_data() -> None:
     result = locator.analyze(
         domain_stats=domain_stats, baseline_stats=baseline_stats, domain="test"
     )
-    # Threshold derived from maximum gap between 0.2 and 0.7
-    # Should be around (0.2 + 0.7) / 2 = 0.45
-    assert 0.2 < result.sparsity_threshold < 0.7
+    expected = (0.2 + 0.7) / 2.0
+    eps = math.ulp(expected)
+    assert abs(result.sparsity_threshold - expected) <= eps

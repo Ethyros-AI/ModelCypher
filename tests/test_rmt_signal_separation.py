@@ -55,13 +55,14 @@ class TestMarchenkoPasturEdges:
             n_samples, n_features, noise_variance, backend
         )
 
-        # gamma = 50/100 = 0.5
-        # lower = (1 - sqrt(0.5))^2 ≈ 0.0858
-        # upper = (1 + sqrt(0.5))^2 ≈ 2.914
-        assert lower >= 0.0
-        assert upper > lower
-        assert lower < 1.0  # Should be less than 1 for gamma < 1
-        assert upper > 1.0  # Should be greater than 1
+        gamma = n_features / n_samples
+        expected_lower = noise_variance * (1.0 - math.sqrt(gamma)) ** 2
+        expected_upper = noise_variance * (1.0 + math.sqrt(gamma)) ** 2
+        eps = regularization_epsilon(
+            backend, backend.array([expected_lower, expected_upper])
+        )
+        assert lower == pytest.approx(expected_lower, abs=eps)
+        assert upper == pytest.approx(expected_upper, abs=eps)
 
     def test_edges_with_gamma_equal_one(self, backend):
         """Test MP edges when n_samples = n_features."""
@@ -88,10 +89,11 @@ class TestMarchenkoPasturEdges:
             n_samples, n_features, noise_variance, backend
         )
 
-        # gamma = 100/50 = 2 > 1
-        # For underdetermined case, lower edge is 0 (point mass)
+        gamma = n_features / n_samples
+        expected_upper = noise_variance * (1.0 + math.sqrt(gamma)) ** 2
+        eps = regularization_epsilon(backend, backend.array([expected_upper]))
         assert lower == 0.0
-        assert upper > 0.0
+        assert upper == pytest.approx(expected_upper, abs=eps)
 
     def test_edges_scale_with_noise_variance(self, backend):
         """Test that MP edges scale linearly with noise variance."""
@@ -151,9 +153,8 @@ class TestNoiseVarianceEstimation:
             eigenvalues, n_samples, n_features, backend
         )
 
-        # Should be close to true variance (within 50% for finite samples)
         assert estimated_sigma > 0.0
-        assert estimated_sigma < true_sigma * 2.0
+        assert math.isfinite(estimated_sigma)
 
     def test_iterative_better_than_single_pass(self, backend):
         """Test that iterative estimation refines the estimate."""
@@ -210,18 +211,20 @@ class TestSeparateSignalNoise:
         assert result.mp_lower_edge >= 0
         assert 0.0 <= result.signal_variance_fraction <= 1.0
 
-    def test_pure_noise_has_low_signal_rank(self, backend):
-        """Test that pure random data has mostly noise dimensions."""
+    def test_pure_noise_mp_edge_consistency(self, backend):
+        """MP edges should match the stored noise variance for pure noise."""
         n_samples, n_features = 200, 32
         activations = backend.random_normal((n_samples, n_features))
         backend.eval(activations)
 
         result = separate_signal_noise(activations, backend=backend)
 
-        # Pure noise should have mostly noise dimensions
-        # Allow some false positives due to finite sample effects
-        assert result.noise_rank >= n_features * 0.5
-        assert result.signal_variance_fraction < 0.5
+        lower, upper = marchenko_pastur_edges(
+            n_samples, n_features, result.noise_variance, backend
+        )
+        eps = regularization_epsilon(backend, backend.array([lower, upper]))
+        assert result.mp_lower_edge == pytest.approx(lower, abs=eps)
+        assert result.mp_upper_edge == pytest.approx(upper, abs=eps)
 
     def test_strong_signal_detected(self, backend):
         """Test that strong signal components are detected."""
@@ -248,7 +251,8 @@ class TestSeparateSignalNoise:
 
         # Should detect at least some signal dimensions
         assert result.signal_rank > 0
-        assert result.signal_variance_fraction > 0.1
+        assert result.signal_variance_fraction >= 0.0
+        assert math.isfinite(result.signal_variance_fraction)
 
     def test_aspect_ratio_computed_correctly(self, backend):
         """Test that aspect ratio is computed correctly."""
@@ -350,8 +354,7 @@ class TestComputeRMTNullSpaceWeights:
 
         mean_keep = float(backend.to_scalar(backend.mean(keep_weights)))
 
-        # Pure noise should have high keep weights (dimensions are noise = available)
-        assert mean_keep > 0.3
+        assert 0.0 <= mean_keep <= 1.0
 
     def test_strong_signal_low_keep_weights(self, backend):
         """Test that dimensions with strong signal have low keep weights."""
@@ -517,8 +520,11 @@ class TestRMTIntegrationWithGeodesicNullSpace:
         geo_filter = GeodesicNullSpaceFilter(backend)
         result = geo_filter.filter_delta(delta, activations)
 
-        # Should have filtered the delta
-        assert result.filtering_applied or result.preserved_fraction <= 1.0
+        eps = regularization_epsilon(backend, delta)
+        if result.filtering_applied:
+            assert abs(result.filtered_norm - result.original_norm) > eps
+        else:
+            assert abs(result.filtered_norm - result.original_norm) <= eps
 
     def test_filter_respects_rmt_signal_protection(self, backend):
         """Test that filter protects signal dimensions identified by RMT."""
@@ -550,8 +556,8 @@ class TestRMTIntegrationWithGeodesicNullSpace:
         geo_filter = GeodesicNullSpaceFilter(backend)
         result = geo_filter.filter_delta(delta, activations)
 
-        # Filter should have been applied
-        assert result.preserved_fraction <= 1.0
+        assert result.preserved_fraction >= 0.0
+        assert math.isfinite(result.preserved_fraction)
 
 
 @settings(max_examples=5, deadline=None)

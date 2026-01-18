@@ -203,6 +203,106 @@ class IntrinsicDimension:
             ci=ci,
         )
 
+    def compute_with_convergence(
+        self,
+        points: "Array",
+        min_samples: int | None = None,
+        growth_factor: float = 1.5,
+        with_ci: bool = False,
+    ) -> TwoNNEstimate:
+        """Compute ID using block analysis to find stable plateau.
+
+        Implements Facco et al. (2017) block analysis pattern:
+        - Compute ID on increasing subsample sizes
+        - Find plateau where estimate stabilizes (relative change < sqrt(eps))
+        - Return the converged estimate with sample size used
+
+        This addresses the known issue that ID estimates depend on sample size N
+        (Facco et al. 2017, Nature Scientific Reports). Smaller batches tend to
+        overestimate ID due to larger average distances.
+
+        Args:
+            points: [N, D] array of points
+            min_samples: Starting sample size. If None, derived from dimension.
+            growth_factor: Multiplicative increase per iteration (default 1.5)
+            with_ci: Whether to compute confidence interval on final estimate
+
+        Returns:
+            TwoNNEstimate with converged dimension and usable_count = samples used
+        """
+        backend = self._backend
+        backend.eval(points)
+
+        N = int(points.shape[0])
+        D = int(points.shape[1])
+
+        if N < 4:
+            raise EstimatorError.insufficient_samples(N)
+
+        # Minimum samples: at least 4 (TwoNN requirement), scale with dimension
+        min_n = min_samples if min_samples is not None else max(4, D + 1)
+
+        prev_id: float | None = None
+        n = min_n
+        eps = machine_epsilon(backend, points)
+        convergence_threshold = float(backend.sqrt(backend.array(eps)))
+
+        converged_n: int | None = None
+        converged_id: float | None = None
+
+        while n <= N:
+            # Random subsample
+            indices = backend.randperm(N)[:n]
+            backend.eval(indices)
+            subsample = backend.take(points, indices, axis=0)
+            backend.eval(subsample)
+
+            # Compute TwoNN on subsample
+            try:
+                estimate = self.compute(subsample, with_ci=False)
+                current_id = estimate.intrinsic_dimension
+            except EstimatorError:
+                n = int(n * growth_factor)
+                continue
+
+            # Check for plateau
+            if prev_id is not None and prev_id > eps:
+                relative_change = abs(current_id - prev_id) / prev_id
+                if relative_change < convergence_threshold:
+                    # Plateau found
+                    converged_n = n
+                    converged_id = current_id
+                    break
+
+            prev_id = current_id
+            n = int(n * growth_factor)
+
+        # If no plateau found, use full data
+        if converged_n is None:
+            estimate = self.compute(points, with_ci=with_ci)
+            return estimate
+
+        # Optionally compute CI on the converged subsample
+        if with_ci:
+            indices = backend.randperm(N)[:converged_n]
+            backend.eval(indices)
+            subsample = backend.take(points, indices, axis=0)
+            backend.eval(subsample)
+            estimate = self.compute(subsample, with_ci=True)
+            return TwoNNEstimate(
+                intrinsic_dimension=converged_id,
+                sample_count=N,
+                usable_count=converged_n,
+                ci=estimate.ci,
+            )
+
+        return TwoNNEstimate(
+            intrinsic_dimension=converged_id,
+            sample_count=N,
+            usable_count=converged_n,
+            ci=None,
+        )
+
     def batch_compute(
         self,
         point_clouds: list["Array"],

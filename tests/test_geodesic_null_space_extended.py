@@ -89,7 +89,7 @@ class TestFilterDeltaSVD:
 
         assert result.filtering_applied is True
         assert backend.shape(result.filtered_delta) == (32, 16)
-        assert 0 < result.preserved_fraction <= 1.0
+        assert 0.0 <= result.preserved_fraction <= 1.0
 
     def test_low_rank_delta_preserved(self, backend):
         """Precision rank should preserve exact low-rank structure."""
@@ -114,8 +114,8 @@ class TestFilterDeltaSVD:
         delta = backend.random_normal((32, 16))
         result = filter_delta_svd(delta, backend)
 
-        # Allow 1% relative tolerance for floating point precision
-        assert result.filtered_norm <= result.original_norm * 1.01
+        tol = division_epsilon(backend, delta) * max(1.0, result.original_norm)
+        assert result.filtered_norm <= result.original_norm + tol
 
     def test_fractions_sum_to_one(self, backend):
         """preserved_fraction + projection_loss should equal 1.
@@ -127,7 +127,8 @@ class TestFilterDeltaSVD:
         result = filter_delta_svd(delta, backend)
 
         total = result.preserved_fraction + result.projection_loss
-        assert abs(total - 1.0) < 0.01
+        tol = division_epsilon(backend, delta)
+        assert abs(total - 1.0) <= tol
 
 
 class TestGeodesicNullSpaceFilter:

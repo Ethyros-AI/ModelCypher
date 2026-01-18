@@ -171,7 +171,9 @@ class TestComputeCompositeStitches:
         ratio = backend.mean(P_scaled) / backend.mean(P_unscaled)
         backend.eval(ratio)
 
-        assert abs(float(backend.to_scalar(ratio)) - 1.0) < 0.1
+        ratio_val = float(backend.to_scalar(ratio))
+        eps = division_epsilon(backend, P_scaled) * max(1.0, abs(ratio_val))
+        assert abs(ratio_val - 1.0) <= eps
 
     def test_stitch_roundtrip_approximate(self, backend):
         """P @ Q should approximate identity (for well-conditioned F)."""

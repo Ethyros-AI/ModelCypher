@@ -110,8 +110,7 @@ class TestHiddenStitchCorrectness:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(A, A)
 
-        # Should achieve perfect CKA
-        assert result.achieved_cka >= 0.99, f"Self-alignment CKA too low: {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
         # F should be close to identity
         # Note: GramAligner uses iterative geodesic optimization, so perfect identity
@@ -124,9 +123,9 @@ class TestHiddenStitchCorrectness:
         backend.eval(diff)
 
         diff_val = float(backend.to_scalar(diff))
-        # Tolerance: allow small deviation from identity (2% of ||I||)
-        identity_tolerance = 0.02 * float(backend.to_scalar(backend.norm(I)))
-        assert diff_val <= identity_tolerance, f"F not near identity: ||F-I||={diff_val} > {identity_tolerance}"
+        norm_I = float(backend.to_scalar(backend.norm(I)))
+        tol = division_epsilon(backend, I) * max(1.0, norm_I)
+        assert diff_val <= tol, f"F not near identity: ||F-I||={diff_val} > {tol}"
 
     def test_hidden_stitch_recovers_transform(self):
         """GramAligner should recover a known transformation."""
@@ -152,7 +151,7 @@ class TestHiddenStitchCorrectness:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(A_source, A_target)
 
-        assert result.achieved_cka >= 0.95, f"Alignment CKA too low: {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
         # The recovered F should work (doesn't have to equal T exactly - just same effect)
         F = backend.array(result.feature_transform)
@@ -201,8 +200,8 @@ class TestHiddenStitchCorrectness:
         result_in = aligner.find_perfect_alignment(A_in_source, A_in_target)
         result_out = aligner.find_perfect_alignment(A_out_source, A_out_target)
 
-        assert result_in.achieved_cka >= 0.95, f"Input alignment CKA too low: {result_in.achieved_cka}"
-        assert result_out.achieved_cka >= 0.95, f"Output alignment CKA too low: {result_out.achieved_cka}"
+        assert abs(result_in.achieved_cka - 1.0) <= result_in.precision_threshold
+        assert abs(result_out.achieved_cka - 1.0) <= result_out.precision_threshold
 
         F_in = backend.array(result_in.feature_transform)  # [d_source, d_target]
         F_out = backend.array(result_out.feature_transform)  # [d_source, d_target]
@@ -253,7 +252,7 @@ class TestAttentionStitchCorrectness:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(A_source, A_target)
 
-        assert result.achieved_cka >= 0.95, f"Attention alignment CKA too low: {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
         F = backend.array(result.feature_transform)
         backend.eval(F)
@@ -298,7 +297,7 @@ class TestKVStitchCorrectness:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(A_source, A_target)
 
-        assert result.achieved_cka >= 0.95, f"KV alignment CKA too low: {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
         F = backend.array(result.feature_transform)
         backend.eval(F)
@@ -330,7 +329,7 @@ class TestIntermediateStitchCorrectness:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(A_source, A_target)
 
-        assert result.achieved_cka >= 0.95, f"Intermediate alignment CKA too low: {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
 
 class TestMLPWeightFolding:
@@ -371,8 +370,8 @@ class TestMLPWeightFolding:
         hidden_result = aligner.find_perfect_alignment(A_hidden_source, A_hidden_target)
         inter_result = aligner.find_perfect_alignment(A_inter_source, A_inter_target)
 
-        assert hidden_result.achieved_cka >= 0.95, f"Hidden alignment CKA too low: {hidden_result.achieved_cka}"
-        assert inter_result.achieved_cka >= 0.95, f"Intermediate alignment CKA too low: {inter_result.achieved_cka}"
+        assert abs(hidden_result.achieved_cka - 1.0) <= hidden_result.precision_threshold
+        assert abs(inter_result.achieved_cka - 1.0) <= inter_result.precision_threshold
 
         F_hidden = backend.array(hidden_result.feature_transform)  # [src_hidden, tgt_hidden]
         F_inter = backend.array(inter_result.feature_transform)  # [src_inter, tgt_inter]
@@ -586,7 +585,7 @@ class TestEndToEndEquivalence:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(A_in_source, A_in_target)
 
-        assert result.achieved_cka >= 0.95, f"Alignment CKA too low: {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
         F = backend.array(result.feature_transform)  # [d_in_source, d_in_target]
         backend.eval(F)
@@ -638,8 +637,8 @@ class TestEndToEndEquivalence:
         hidden_result = aligner.find_perfect_alignment(A_hidden_source, A_hidden_target)
         inter_result = aligner.find_perfect_alignment(A_inter_source, A_inter_target)
 
-        assert hidden_result.achieved_cka >= 0.95
-        assert inter_result.achieved_cka >= 0.95
+        assert abs(hidden_result.achieved_cka - 1.0) <= hidden_result.precision_threshold
+        assert abs(inter_result.achieved_cka - 1.0) <= inter_result.precision_threshold
 
         F_hidden = backend.array(hidden_result.feature_transform)
         F_inter = backend.array(inter_result.feature_transform)

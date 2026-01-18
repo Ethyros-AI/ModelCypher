@@ -62,8 +62,7 @@ class TestGramAlignerConvergence:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(source, target)
         
-        # CKA is scale-invariant, should achieve 1.0
-        assert result.achieved_cka >= 0.99, f"Scale-invariant CKA should be high, got {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
     
     def test_same_dim_alignment_completes(self) -> None:
         """Same-dimension alignment should complete and produce valid output."""
@@ -84,9 +83,7 @@ class TestGramAlignerConvergence:
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(source, target)
         
-        # Rescaled+shifted data should achieve very high CKA (near 1.0)
-        # because CKA is mostly scale-invariant
-        assert result.achieved_cka >= 0.9, f"Rescaled data should align, got {result.achieved_cka}"
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
     
     def test_no_early_exit_below_threshold(self) -> None:
         """GramAligner should produce valid alignment for independent data."""

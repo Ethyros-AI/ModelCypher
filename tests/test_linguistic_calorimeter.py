@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -529,7 +530,8 @@ class TestTrajectoryAnalysis:
         first_mean = sum(first_half) / len(first_half)
         second_mean = sum(second_half) / len(second_half)
 
-        assert second_mean > first_mean + 0.1
+        eps = math.ulp(max(abs(first_mean), abs(second_mean), 1.0))
+        assert second_mean - first_mean > eps
         assert trajectory.entropy_trend == EntropyDirection.INCREASE
 
     def test_trend_detection_decreasing(self) -> None:
@@ -549,8 +551,9 @@ class TestTrajectoryAnalysis:
         )
 
         # The simulated mode has decay, so second half should be lower
-        if first_mean - second_mean > 0.1:
-            assert result.entropy_trend == EntropyDirection.DECREASE
+        eps = math.ulp(max(abs(first_mean), abs(second_mean), 1.0))
+        assert first_mean - second_mean > eps
+        assert result.entropy_trend == EntropyDirection.DECREASE
 
     def test_inflection_points_are_valid_indices(self) -> None:
         """Inflection points should be valid indices in trajectory."""
@@ -765,9 +768,9 @@ class TestTemperatureEffects:
         low = cal.measure_entropy("Test", temperature=0.5)
         high = cal.measure_entropy("Test", temperature=2.0)
 
-        # Delta should be approximately (2.0 - 0.5) * 0.5 = 0.75
+        expected_delta = (2.0 - 0.5) * 0.5
         delta = high.mean_entropy - low.mean_entropy
-        assert 0.5 < delta < 1.0
+        assert abs(delta - expected_delta) <= math.ulp(expected_delta)
 
 
 class TestPropertyBasedInvariants:

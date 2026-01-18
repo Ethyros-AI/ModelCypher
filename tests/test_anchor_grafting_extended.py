@@ -31,7 +31,10 @@ from modelcypher.core.domain.geometry.anchor_grafting import (
     compute_anchor_grafting_delta,
     compute_anchor_grafting_with_ghost_anchors,
 )
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
@@ -99,10 +102,14 @@ class TestComputeAnchorGraftingDelta:
             activations, activations, source_anchors, source_anchors, backend
         )
 
-        # Delta should be very small when source == target
+        # Delta should be within precision when source == target
         delta_mean = backend.mean(backend.abs(result.delta_activations))
-        backend.eval(delta_mean)
-        assert float(backend.to_scalar(delta_mean)) < 0.1
+        mean_act = backend.mean(backend.abs(activations))
+        backend.eval(delta_mean, mean_act)
+        delta_val = float(backend.to_scalar(delta_mean))
+        scale = float(backend.to_scalar(mean_act))
+        eps = division_epsilon(backend, activations) * max(1.0, scale)
+        assert delta_val <= eps
 
     def test_density_weights_bounded(self, backend):
         """Density weights should be in [0, 1]."""
@@ -265,10 +272,14 @@ class TestComputeAnchorGraftingWithGhostAnchors:
             activations, activations, anchors, anchors, backend=backend
         )
 
-        # Delta should be very small when source == target
+        # Delta should be within precision when source == target
         delta_mean = backend.mean(backend.abs(result.delta_activations))
-        backend.eval(delta_mean)
-        assert float(backend.to_scalar(delta_mean)) < 0.1
+        mean_act = backend.mean(backend.abs(activations))
+        backend.eval(delta_mean, mean_act)
+        delta_val = float(backend.to_scalar(delta_mean))
+        scale = float(backend.to_scalar(mean_act))
+        eps = division_epsilon(backend, activations) * max(1.0, scale)
+        assert delta_val <= eps
 
 
 class TestAnchorGraftingMathematicalProperties:
