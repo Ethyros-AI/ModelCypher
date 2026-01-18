@@ -284,9 +284,8 @@ def run_merge(
     # Log transform results from probe stage
     if feature_transforms:
         logger.info(
-            "PROBE: Computed %d hidden transforms (layers: %s)",
+            "PROBE: Computed %d hidden transforms",
             len(feature_transforms),
-            sorted(feature_transforms.keys())[:5],  # First 5 for brevity
         )
     else:
         raise RuntimeError("PROBE: No hidden transforms computed; cannot proceed.")
@@ -312,9 +311,8 @@ def run_merge(
 
     if layer_mapping:
         logger.info(
-            "PROBE: Layer mapping has %d entries (first 5: %s)",
+            "PROBE: Layer mapping has %d entries",
             len(layer_mapping),
-            dict(list(layer_mapping.items())[:5]),
         )
     else:
         raise RuntimeError("PROBE: No layer mapping computed; cannot proceed.")
@@ -749,8 +747,8 @@ def run_merge(
                 for metrics in coherence_result.metrics:
                     if metrics.is_degenerate:
                         logger.error(
-                            "  FAILED: '%s...' -> %s",
-                            metrics.prompt[:30],
+                            "  FAILED: '%s' -> %s",
+                            metrics.prompt,
                             metrics.degenerate_reason,
                         )
 

@@ -303,8 +303,7 @@ def stage_transplant(
     # Log scale_ratios status for debugging
     if scale_ratios:
         logger.info("SCALE RATIOS: %d layers with scale factors", len(scale_ratios))
-        sample_layers = list(sorted(scale_ratios.keys()))[:3]
-        for l in sample_layers:
+        for l in sorted(scale_ratios.keys()):
             logger.info("  Layer %d scale_ratio=%.4f", l, scale_ratios[l])
     else:
         logger.warning("SCALE RATIOS: Empty or None!")
@@ -938,8 +937,9 @@ def stage_transplant(
         eps_ref = b.array([1.0], dtype=model_dtype)
         model_eps = machine_epsilon(b, eps_ref)
     else:
-        # Fallback: assume float32 (never float64)
-        model_eps = 1e-7
+        # Fallback: use backend default precision
+        eps_ref = b.array([1.0])
+        model_eps = machine_epsilon(b, eps_ref)
     sqrt_eps = sqrt_scalar(model_eps, b)
 
     # Warning 1: Preserved fraction below noise floor

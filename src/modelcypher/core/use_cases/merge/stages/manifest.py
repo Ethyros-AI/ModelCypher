@@ -248,17 +248,17 @@ class TransplantManifest:
                     ref = backend.array([1.0], dtype=model_dtype)
                     eps = machine_epsilon(backend, ref)
                 else:
-                    # Last resort: assume float32 (never float64 - that's fake precision)
-                    eps = 1e-7
+                    # Last resort: use backend default precision
+                    ref = backend.array([1.0])
+                    eps = machine_epsilon(backend, ref)
 
             min_preserved_fraction = sqrt_scalar(eps, backend)
 
         # Check 1: No unexpected failures
         if self.weights_failed > 0 and strict:
             failure_summary = self.get_failure_summary()
-            sample_failures = self.failed_weights[:5]
             sample_errors = [
-                f"{k}: {self.weights[k].error_message}" for k in sample_failures
+                f"{k}: {self.weights[k].error_message}" for k in self.failed_weights
             ]
 
             raise PostconditionError(

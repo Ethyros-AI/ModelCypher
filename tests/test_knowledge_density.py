@@ -263,7 +263,7 @@ class TestComputeDensityScore:
 
         analyzer = KnowledgeDensityAnalyzer(backend)
 
-        # Sub-1 intrinsic dimension (edge case)
+        # Sub-1 intrinsic dimension - valid mathematically, just means tighter cluster
         result = ConceptDimensionalityResult(
             probe_id="test",
             name="Test",
@@ -280,7 +280,8 @@ class TestComputeDensityScore:
             ci_upper=None,
         )
         score = analyzer._compute_density_score(result)
-        assert score == 1.0  # Clamped to 1 / 1 = 1
+        # Score = 1.0 / 0.5 = 2.0 (dimension above machine epsilon is used directly)
+        assert score == 2.0
 
 
 class TestComputeActivationVariance:

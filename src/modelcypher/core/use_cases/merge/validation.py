@@ -108,7 +108,7 @@ class MergeValidationResult:
                     "name": p.name,
                     "prompt": p.prompt,
                     "expectedPattern": p.expected_pattern,
-                    "output": p.output[:500] if p.output else None,  # Truncate
+                    "output": p.output if p.output else None,
                     "matchDetails": p.match_details,
                 }
                 for p in self.task_probe_results

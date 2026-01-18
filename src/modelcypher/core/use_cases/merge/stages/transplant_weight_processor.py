@@ -1530,8 +1530,10 @@ def process_layer_weights(
                 )
             elif layer_idx not in target_intermediate_activations:
                 logger.warning(
-                    "INTERMEDIATE MISS: Layer %d not in target_intermediate_activations for %s (keys=%s)",
-                    layer_idx, key, list(target_intermediate_activations.keys())[:10]
+                    "INTERMEDIATE MISS: Layer %d not in target_intermediate_activations for %s (key_count=%d)",
+                    layer_idx,
+                    key,
+                    len(target_intermediate_activations),
                 )
 
             if (

@@ -281,7 +281,7 @@ def stage_validate(
             logger.warning(
                 "VALIDATE: Heavy transformations needed for %d layers: %s",
                 len(profile.heavy_transform_layers),
-                profile.heavy_transform_layers[:5],
+                profile.heavy_transform_layers,
             )
         else:
             logger.info(
