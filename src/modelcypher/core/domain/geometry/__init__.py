@@ -75,6 +75,7 @@ _SUBMODULES = {
     "dora_decomposition",
     "effective_rank",
     "fingerprint_cache",
+    "fisher_information",  # Fisher Information Geometry for merge compatibility
     "gate_detector",
     "generalized_procrustes",
     "geodesic_null_space",
@@ -103,6 +104,7 @@ _SUBMODULES = {
     "manifold_evidence",
     "manifold_fidelity_sweep",
     "manifold_profile",
+    "mode_connectivity",  # Mode Connectivity for merge compatibility prediction
     "prompt_manifold",
     "manifold_stitcher",
     "manifold_transfer",
@@ -130,6 +132,7 @@ _SUBMODULES = {
     "refusal_direction_cache",
     "refusal_direction_detector",
     "relative_representation",
+    "rmt_signal_separation",  # Random Matrix Theory for null-space detection
     "riemannian_core_covariance",
     "riemannian_core_curvature",
     "riemannian_core_geodesic",
@@ -140,6 +143,7 @@ _SUBMODULES = {
     "safety_polytope",
     "shared_subspace_projector",
     "shared_manifold",
+    "sliced_wasserstein",  # Sliced Wasserstein for scalable distribution comparison
     "social_geometry",
     "sparse_region_domains",
     "sparse_region_locator",

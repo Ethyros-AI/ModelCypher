@@ -68,6 +68,11 @@ class WeightStatus(str, Enum):
     SKIPPED_NON_WEIGHT = "skipped_non_weight"  # Not a .weight tensor
     SKIPPED_NON_2D = "skipped_non_2d"  # Not a 2D weight matrix
     SKIPPED_EMBEDDING = "skipped_embedding"  # Embedding layer (handled separately)
+    SKIPPED_UNMAPPED = "skipped_unmapped"  # No corresponding source weight
+    SKIPPED_MISSING_ACTIVATIONS = "skipped_missing_activations"  # Missing activations
+    SKIPPED_ACTIVATION_DIM_MISMATCH = "skipped_activation_dim_mismatch"  # Activation dim mismatch
+    SKIPPED_DENSITY_FILTER = "skipped_density_filter"  # Density mask rejected layer
+    SKIPPED_BOUNDARY = "skipped_boundary"  # Boundary-preserved layer (layer 0)
 
     # Failure states (numerical or missing prerequisites, not model incompatibility)
     FAILED_STITCH = "failed_stitch"  # Required stitch not available
@@ -88,6 +93,11 @@ class WeightStatus(str, Enum):
             WeightStatus.SKIPPED_NON_WEIGHT,
             WeightStatus.SKIPPED_NON_2D,
             WeightStatus.SKIPPED_EMBEDDING,
+            WeightStatus.SKIPPED_UNMAPPED,
+            WeightStatus.SKIPPED_MISSING_ACTIVATIONS,
+            WeightStatus.SKIPPED_ACTIVATION_DIM_MISMATCH,
+            WeightStatus.SKIPPED_DENSITY_FILTER,
+            WeightStatus.SKIPPED_BOUNDARY,
         )
 
     def is_failure(self) -> bool:

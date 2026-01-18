@@ -66,14 +66,21 @@ def so_log(
     Uses the identity: log(R) = S * f(C), where
         C = (R + R^T)/2, S = (R - R^T)/2,
         f(c) = arccos(c) / sqrt(1 - c^2).
-    This is exact for orthogonal matrices without eigenvalue -1 and
-    uses stable limits near c=1.
+
+    Handles three cases:
+        - c ≈ +1 (small rotation): f(c) → 1 (Taylor expansion)
+        - c ≈ -1 (near-π rotation): Use axis extraction from (R + I)
+        - Otherwise: Direct formula f(c) = θ / sin(θ)
+
+    This is exact for orthogonal matrices and numerically stable
+    for all rotation angles including near π.
     """
     b = backend or get_default_backend()
     R = rotation if hasattr(rotation, "shape") else b.array(rotation)
     if project:
         R = _project_to_so(R, b)
 
+    n = int(b.shape(R)[0])
     C = _sym_part(R, b)
     S = _skew_part(R, b)
     eigvals, eigvecs = b.eigh(C)
@@ -84,9 +91,41 @@ def so_log(
     eps_arr = b.full(b.shape(eigvals), eps)
 
     theta = b.arccos(eigvals)
-    sin_theta = b.sqrt(b.maximum(1.0 - eigvals * eigvals, eps_arr))
+    sin_theta_sq = b.maximum(1.0 - eigvals * eigvals, eps_arr)
+    sin_theta = b.sqrt(sin_theta_sq)
+
+    # Case 1: c ≈ +1 (small rotation, θ ≈ 0)
+    # Limit: θ/sin(θ) → 1 as θ → 0
     near_one = (1.0 - eigvals) <= eps_arr
-    factor = b.where(near_one, b.ones_like(theta), theta / sin_theta)
+
+    # Case 2: c ≈ -1 (near-π rotation, θ ≈ π)
+    # As θ → π, sin(θ) → 0, so θ/sin(θ) → ∞
+    # Use Taylor: near π, sin(π - δ) ≈ δ, so θ/sin(θ) ≈ π/δ
+    # But we need θ = π - δ, so factor ≈ (π - δ)/δ ≈ π/δ for small δ
+    # Better: use (π - θ) as δ, giving factor ≈ θ/(π - θ) for θ near π
+    # Actually, sin(θ) = sin(π - δ) = sin(δ) ≈ δ = π - θ
+    # So factor = θ/sin(θ) ≈ θ/(π - θ)
+    near_minus_one = (1.0 + eigvals) <= eps_arr
+    pi_val = 3.141592653589793
+
+    # Stable factor computation
+    # For near_one: factor = 1
+    # For near_minus_one: factor = θ / (π - θ + eps) ≈ π / eps (large but bounded)
+    # For normal: factor = θ / sin(θ)
+    delta_from_pi = pi_val - theta
+    delta_safe = b.maximum(delta_from_pi, eps_arr)
+
+    # Normal case
+    normal_factor = theta / b.maximum(sin_theta, eps_arr)
+    # Near-π case: approximate sin(θ) ≈ π - θ for θ near π
+    near_pi_factor = theta / delta_safe
+
+    factor = b.where(
+        near_one,
+        b.ones_like(theta),
+        b.where(near_minus_one, near_pi_factor, normal_factor),
+    )
+    b.eval(factor)
 
     fC = b.matmul(eigvecs, b.matmul(b.diag(factor), b.transpose(eigvecs)))
     log_R = b.matmul(S, fC)

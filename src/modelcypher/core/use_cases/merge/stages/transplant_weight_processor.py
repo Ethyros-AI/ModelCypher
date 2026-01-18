@@ -51,6 +51,11 @@ from modelcypher.core.use_cases.merge.stages.transplant_mapping import (
 from modelcypher.core.use_cases.merge.stages.transplant_metrics import (
     _compute_alignment_metrics,
 )
+from modelcypher.core.use_cases.merge.stages.manifest import (
+    TransplantManifest,
+    WeightStatus,
+    WeightTransformRecord,
+)
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
@@ -215,6 +220,7 @@ def process_layer_weights(
     core_acts: "Array",
     boundary_acts: "Array",
     can_measure_alignment: bool,
+    manifest: TransplantManifest | None = None,
     delta_scale: float = 1.0,
 ) -> LayerWeightResult:
     b = backend
@@ -224,6 +230,32 @@ def process_layer_weights(
     mlp_weights: dict[str, "Array"] = {}
     merged_intermediate: "Array | None" = None
     null_space_cache: dict[str, NullSpaceProjector] = {}
+
+    def _record_manifest(
+        key: str,
+        status: WeightStatus,
+        source_shape: tuple[int, ...] | None = None,
+        target_shape: tuple[int, ...] | None = None,
+        stitch_type: str | None = None,
+        preserved_fraction: float | None = None,
+        cka_achieved: float | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        if manifest is None:
+            return
+        manifest.record(
+            key,
+            WeightTransformRecord(
+                key=key,
+                status=status,
+                source_shape=source_shape,
+                target_shape=target_shape,
+                stitch_type=stitch_type,
+                preserved_fraction=preserved_fraction,
+                cka_achieved=cka_achieved,
+                error_message=error_message,
+            ),
+        )
 
     def _mlp_role(weight_key: str) -> str | None:
         key_lower = weight_key.lower()
@@ -302,8 +334,18 @@ def process_layer_weights(
         mlp_role = _mlp_role(key)
 
         if key.endswith(".scales") or key.endswith(".biases"):
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_QUANTIZED,
+                error_message="quantization parameter",
+            )
             continue
         if not key.endswith(".weight"):
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_NON_WEIGHT,
+                error_message="non-weight tensor",
+            )
             continue
 
         if progress_callback:
@@ -324,6 +366,13 @@ def process_layer_weights(
         source_w = source_weights.get(source_key) if source_key else None
 
         if target_w is None or source_w is None:
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_UNMAPPED,
+                source_shape=tuple(source_w.shape) if hasattr(source_w, "shape") else None,
+                target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
+                error_message="missing source weight" if source_w is None else "missing target weight",
+            )
             if source_w is None and "conv.conv" not in key:
                 metrics.setdefault("unmapped_weights", [])
                 if len(metrics["unmapped_weights"]) < 20:
@@ -333,12 +382,24 @@ def process_layer_weights(
         metrics["weights_considered"] += 1
 
         if not hasattr(target_w, "shape") or not hasattr(source_w, "shape"):
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_NON_2D,
+                error_message="missing shape metadata",
+            )
             continue
         ndim_t = len(target_w.shape)
         ndim_s = len(source_w.shape)
         if ndim_t != 2 or ndim_s != 2:
             metrics.setdefault("weights_skipped_non_2d", 0)
             metrics["weights_skipped_non_2d"] += 1
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_NON_2D,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                error_message="non-2d weight",
+            )
             continue
 
         target_dtype = str(getattr(target_w, "dtype", "")).lower()
@@ -349,10 +410,22 @@ def process_layer_weights(
             target_w = dequantize_if_needed(target_w, key, target_weights, b)
             if target_w is None or not hasattr(target_w, "shape"):
                 logger.debug("Failed to dequantize target weight: %s", key)
+                _record_manifest(
+                    key,
+                    WeightStatus.SKIPPED_QUANTIZED,
+                    error_message="target dequantization failed",
+                )
                 continue
             target_dtype = str(getattr(target_w, "dtype", "")).lower()
             if "int" in target_dtype or "uint" in target_dtype:
                 logger.debug("Skipping still-quantized target weight: %s", key)
+                _record_manifest(
+                    key,
+                    WeightStatus.SKIPPED_QUANTIZED,
+                    source_shape=tuple(source_w.shape),
+                    target_shape=tuple(target_w.shape),
+                    error_message="target still quantized after dequantization",
+                )
                 continue
 
         if "int" in source_dtype or "uint" in source_dtype:
@@ -360,10 +433,22 @@ def process_layer_weights(
             source_w = dequantize_if_needed(source_w, source_key, source_weights, b)
             if source_w is None or not hasattr(source_w, "shape"):
                 logger.debug("Failed to dequantize source weight: %s", key)
+                _record_manifest(
+                    key,
+                    WeightStatus.SKIPPED_QUANTIZED,
+                    error_message="source dequantization failed",
+                )
                 continue
             source_dtype = str(getattr(source_w, "dtype", "")).lower()
             if "int" in source_dtype or "uint" in source_dtype:
                 logger.debug("Skipping still-quantized source weight: %s", key)
+                _record_manifest(
+                    key,
+                    WeightStatus.SKIPPED_QUANTIZED,
+                    source_shape=tuple(source_w.shape),
+                    target_shape=tuple(target_w.shape),
+                    error_message="source still quantized after dequantization",
+                )
                 continue
 
         if len(source_w.shape) == 1 and len(target_w.shape) == 1:
@@ -374,6 +459,14 @@ def process_layer_weights(
                 metrics.setdefault("norm_weights_preserved", 0)
                 metrics["norm_weights_preserved"] += 1
                 logger.debug("PRESERVING target LayerNorm: %s (scale adapter)", key)
+                _record_manifest(
+                    key,
+                    WeightStatus.IDENTITY,
+                    source_shape=tuple(source_w.shape),
+                    target_shape=tuple(target_w.shape),
+                    stitch_type="layernorm",
+                    error_message="preserved target layernorm",
+                )
                 continue
 
             if src_dim != tgt_dim and hidden_stitch_output is not None:
@@ -403,14 +496,42 @@ def process_layer_weights(
                     metrics.setdefault("norm_weights_stitched", 0)
                     metrics["norm_weights_stitched"] += 1
                     metrics["weights_transplanted"] += 1
+                    _record_manifest(
+                        key,
+                        WeightStatus.TRANSFORMED,
+                        source_shape=tuple(source_w.shape),
+                        target_shape=tuple(target_w.shape),
+                        stitch_type="hidden_1d",
+                    )
                 continue
             if src_dim == tgt_dim:
                 merged[key] = source_w
                 metrics["weights_transplanted"] += 1
+                _record_manifest(
+                    key,
+                    WeightStatus.TRANSFORMED,
+                    source_shape=tuple(source_w.shape),
+                    target_shape=tuple(target_w.shape),
+                    stitch_type="direct_1d",
+                )
                 continue
+            _record_manifest(
+                key,
+                WeightStatus.FAILED_DIMENSION,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                error_message="1d dimension mismatch",
+            )
             continue
 
         if len(target_w.shape) != 2 or len(source_w.shape) != 2:
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_NON_2D,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                error_message="non-2d weight after dequantization",
+            )
             continue
 
         try:
@@ -421,6 +542,13 @@ def process_layer_weights(
             logger.debug("Converted %s: target=%s, source=%s", key, target_w.shape, source_w.shape)
         except Exception as e:
             logger.warning("Failed to convert weight %s: %s", key, e)
+            _record_manifest(
+                key,
+                WeightStatus.FAILED_NUMERICAL,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                error_message=str(e),
+            )
             continue
 
         source_candidate = source_w
@@ -569,6 +697,14 @@ def process_layer_weights(
                         metrics["behavioral_reconstructed"] += 1
                         layer_transplanted = True
                         behavioral_reconstruction_applied = True
+                        _record_manifest(
+                            key,
+                            WeightStatus.TRANSFORMED,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="behavioral",
+                            preserved_fraction=behavior_metrics.get("preserved_fraction"),
+                        )
 
                         logger.info(
                             "CROSS-DIM BEHAVIORAL: %s [%s] → [%s] preserved=%.1f%%",
@@ -660,6 +796,14 @@ def process_layer_weights(
                             "Conv in_proj %s shape [%d,%d] unexpected for hidden=%d - skipping",
                             key, dim0, dim1, src_hidden_dim,
                         )
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_DIMENSION,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="conv_in_proj",
+                            error_message="conv in_proj shape mismatch",
+                        )
                         continue
 
                 elif "conv.out_proj" in key:
@@ -681,6 +825,14 @@ def process_layer_weights(
                         logger.warning(
                             "Conv out_proj %s shape [%d,%d] unexpected for hidden=%d - skipping",
                             key, dim0, dim1, src_hidden_dim,
+                        )
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_DIMENSION,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="conv_out_proj",
+                            error_message="conv out_proj shape mismatch",
                         )
                         continue
 
@@ -708,6 +860,14 @@ def process_layer_weights(
                         logger.warning(
                             "Conv conv.weight %s shape %s unexpected for hidden=%d - skipping",
                             key, original_source_shape, src_hidden_dim,
+                        )
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_DIMENSION,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="conv_conv",
+                            error_message="conv weight shape mismatch",
                         )
                         continue
 
@@ -809,6 +969,14 @@ def process_layer_weights(
                                 output_stitch = intermediate_stitch_output
 
                     if output_stitch is None:
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_STITCH,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="mlp_gate_up",
+                            error_message="missing intermediate stitch for gate/up projection",
+                        )
                         raise StitchUnavailableError(
                             stage="MLP_GATE_UP_STITCH",
                             weight_key=key,
@@ -833,6 +1001,14 @@ def process_layer_weights(
 
                 elif dim0 == src_hidden_dim and dim1 == src_inter_dim:
                     if hidden_stitch_output is None:
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_STITCH,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="mlp_down",
+                            error_message="missing hidden stitch for down projection",
+                        )
                         raise StitchUnavailableError(
                             stage="MLP_DOWN_STITCH",
                             weight_key=key,
@@ -893,6 +1069,14 @@ def process_layer_weights(
                             )
 
                     if input_stitch is None:
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_STITCH,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="mlp_down",
+                            error_message="missing intermediate stitch for down projection",
+                        )
                         raise StitchUnavailableError(
                             stage="MLP_DOWN_STITCH",
                             weight_key=key,
@@ -924,6 +1108,14 @@ def process_layer_weights(
                         src_hidden_dim,
                         src_inter_dim,
                     )
+                    _record_manifest(
+                        key,
+                        WeightStatus.FAILED_DIMENSION,
+                        source_shape=tuple(source_w.shape),
+                        target_shape=tuple(target_w.shape),
+                        stitch_type="mlp",
+                        error_message="mlp weight shape mismatch",
+                    )
                     continue
 
                 metrics.setdefault("dual_stitch_applied", 0)
@@ -940,6 +1132,14 @@ def process_layer_weights(
                 if is_attention and attention_stitch_output is None and k_stitch_output is None and v_stitch_output is None:
                     metrics.setdefault("attention_preserved", 0)
                     metrics["attention_preserved"] += 1
+                    _record_manifest(
+                        key,
+                        WeightStatus.IDENTITY,
+                        source_shape=tuple(source_w.shape),
+                        target_shape=tuple(target_w.shape),
+                        stitch_type="attention",
+                        error_message="attention stitch unavailable",
+                    )
                     continue
 
                 if is_attention and attention_stitch_output is not None:
@@ -1019,6 +1219,14 @@ def process_layer_weights(
                         else:
                             metrics.setdefault("attention_preserved", 0)
                             metrics["attention_preserved"] += 1
+                            _record_manifest(
+                                key,
+                                WeightStatus.IDENTITY,
+                                source_shape=tuple(source_w.shape),
+                                target_shape=tuple(target_w.shape),
+                                stitch_type="attention",
+                                error_message="k/v stitch unavailable",
+                            )
                             continue
 
                     elif is_o and dim0 == src_hidden_dim and dim1 == src_attn_dim:
@@ -1110,6 +1318,14 @@ def process_layer_weights(
                         attention_stitch_applied = True
 
                     else:
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_DIMENSION,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="attention",
+                            error_message="attention weight shape mismatch",
+                        )
                         raise DimensionMismatchError(
                             stage="ATTENTION_WEIGHT_STITCH",
                             weight_key=key,
@@ -1131,6 +1347,14 @@ def process_layer_weights(
                 elif is_attention and attention_stitch_output is None:
                     metrics.setdefault("attention_preserved", 0)
                     metrics["attention_preserved"] += 1
+                    _record_manifest(
+                        key,
+                        WeightStatus.IDENTITY,
+                        source_shape=tuple(source_w.shape),
+                        target_shape=tuple(target_w.shape),
+                        stitch_type="attention",
+                        error_message="attention stitch unavailable",
+                    )
                     continue
 
                 if not attention_stitch_applied:
@@ -1173,6 +1397,14 @@ def process_layer_weights(
                         )
 
                     else:
+                        _record_manifest(
+                            key,
+                            WeightStatus.FAILED_DIMENSION,
+                            source_shape=tuple(source_w.shape),
+                            target_shape=tuple(target_w.shape),
+                            stitch_type="hidden",
+                            error_message="hidden weight shape mismatch",
+                        )
                         raise DimensionMismatchError(
                             stage="HIDDEN_WEIGHT_STITCH",
                             weight_key=key,
@@ -1188,6 +1420,13 @@ def process_layer_weights(
                     metrics["hidden_stitch_applied"] += 1
 
             else:
+                _record_manifest(
+                    key,
+                    WeightStatus.FAILED_STITCH,
+                    source_shape=tuple(source_w.shape),
+                    target_shape=tuple(target_w.shape),
+                    error_message="no stitch transformation available",
+                )
                 raise StitchUnavailableError(
                     stage="CROSS_ARCHITECTURE_STITCH",
                     weight_key=key,
@@ -1200,6 +1439,13 @@ def process_layer_weights(
                 )
 
             if source_aligned.shape != target_w.shape:
+                _record_manifest(
+                    key,
+                    WeightStatus.FAILED_DIMENSION,
+                    source_shape=tuple(source_w.shape),
+                    target_shape=tuple(target_w.shape),
+                    error_message="shape mismatch after stitch",
+                )
                 raise DimensionMismatchError(
                     stage="POST_STITCH_VALIDATION",
                     weight_key=key,
@@ -1312,6 +1558,13 @@ def process_layer_weights(
             )
             metrics.setdefault("no_activation_preserved", 0)
             metrics["no_activation_preserved"] += 1
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_MISSING_ACTIVATIONS,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                error_message=f"missing {activation_space} activations",
+            )
             continue
 
         # Align density activations to target space
@@ -1336,6 +1589,13 @@ def process_layer_weights(
             )
             metrics.setdefault("activation_dim_mismatch", 0)
             metrics["activation_dim_mismatch"] += 1
+            _record_manifest(
+                key,
+                WeightStatus.SKIPPED_ACTIVATION_DIM_MISMATCH,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                error_message="activation dimension mismatch",
+            )
             continue
 
         # Debug logging for shape verification
@@ -1405,6 +1665,14 @@ def process_layer_weights(
         )
 
         if result.preserved_fraction > 0:
+            _record_manifest(
+                key,
+                WeightStatus.TRANSFORMED,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                stitch_type=activation_space,
+                preserved_fraction=result.preserved_fraction,
+            )
             final_merged_weight = result.merged_weight
 
             merged[key] = final_merged_weight
@@ -1480,6 +1748,15 @@ def process_layer_weights(
 
                 metrics["boundary_relative_diffs"].append(relative_diff)
             layer_transplanted = True
+        else:
+            _record_manifest(
+                key,
+                WeightStatus.IDENTITY,
+                source_shape=tuple(source_w.shape),
+                target_shape=tuple(target_w.shape),
+                stitch_type=activation_space,
+                preserved_fraction=result.preserved_fraction,
+            )
 
     return LayerWeightResult(
         weights_processed=weights_processed,

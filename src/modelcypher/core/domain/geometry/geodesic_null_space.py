@@ -1199,6 +1199,350 @@ def filter_merge_delta_null_space(
     return merged, result
 
 
+@dataclass
+class TSVMergeResult:
+    """Result of Task Singular Vector merging for N-to-1 merge.
+
+    References:
+        CVPR 2025 "TSV-Merge: Task Singular Vectors for Multi-Task Model Merging"
+    """
+
+    # The merged delta (sum of orthogonalized task deltas)
+    merged_delta: Any
+
+    # Original deltas before orthogonalization
+    original_deltas: list[Any]
+
+    # Number of source tasks merged
+    n_tasks: int
+
+    # Rank used for each task (after truncation)
+    task_ranks: list[int]
+
+    # Energy preserved for each task (fraction of singular value energy kept)
+    task_energy_preserved: list[float]
+
+    # Interference reduction: ||original_sum - orthogonalized_sum|| / ||original_sum||
+    # Lower is better - indicates less destructive interference
+    interference_reduction: float
+
+    # Geodesic norm of merged delta
+    merged_norm: float
+
+
+def filter_deltas_tsv(
+    weight_deltas: list[Any],
+    backend: "Backend | None" = None,
+    energy_threshold: float = 0.95,
+    max_rank: int | None = None,
+) -> TSVMergeResult:
+    """Merge multiple weight deltas using Task Singular Vector orthogonalization.
+
+    This implements the TSV-Merge approach from CVPR 2025, which reduces interference
+    between task-specific singular vectors when merging multiple source models.
+
+    Key insight: "Don't use Gram-Schmidt, use Procrustes" - Procrustes orthogonalization
+    preserves task-specific directions better than arbitrary prioritization.
+
+    Algorithm:
+        1. For each delta_i: compute SVD → U_i, S_i, V_i^T
+        2. Truncate to top-k singular vectors (by energy threshold)
+        3. Stack all U matrices: M = [U_1 | U_2 | ... | U_n]  (column-wise)
+        4. Procrustes orthogonalize: Q = orth(M) via SVD (Q = U_M @ V_M^T)
+        5. Partition Q back into per-task blocks: Q_1, Q_2, ..., Q_n
+        6. Reconstruct: delta_i' = Q_i @ diag(S_i) @ V_i^T
+        7. Merge: delta_merged = sum(delta_i')
+
+    Parameters
+    ----------
+    weight_deltas : list[Array]
+        List of N weight deltas from different source models.
+        Each delta should be 2D [out, in] with matching shapes.
+    backend : Backend, optional
+        Compute backend. Uses default if not provided.
+    energy_threshold : float
+        Fraction of singular value energy to preserve per task.
+        Default 0.95 keeps top singular vectors covering 95% of Frobenius norm.
+    max_rank : int, optional
+        Maximum rank per task. If None, determined by energy_threshold only.
+
+    Returns
+    -------
+    TSVMergeResult
+        Result containing merged delta and diagnostics.
+
+    References
+    ----------
+    - CVPR 2025 "TSV-Merge: Task Singular Vectors for Multi-Task Model Merging"
+    - Zhang et al. (2025) "STF: Superpose Task-specific Features"
+
+    Notes
+    -----
+    The Procrustes orthogonalization finds rotation Q such that:
+        ||M - Q||_F is minimized, subject to Q^T @ Q = I
+
+    Solution: Q = U_M @ V_M^T where M = U_M @ S_M @ V_M^T
+
+    This treats all tasks equally (unlike Gram-Schmidt which prioritizes
+    the first vectors arbitrarily).
+    """
+    b = backend or get_default_backend()
+    n_tasks = len(weight_deltas)
+
+    if n_tasks == 0:
+        raise ValueError("weight_deltas must contain at least one delta")
+
+    if n_tasks == 1:
+        # Single delta: just apply standard SVD filtering
+        svd_result = filter_delta_svd(
+            weight_deltas[0],
+            backend=b,
+            energy_threshold=energy_threshold,
+        )
+        return TSVMergeResult(
+            merged_delta=svd_result.filtered_delta,
+            original_deltas=weight_deltas,
+            n_tasks=1,
+            task_ranks=[svd_result.orthogonal_dim],
+            task_energy_preserved=[svd_result.preserved_fraction],
+            interference_reduction=0.0,
+            merged_norm=svd_result.filtered_norm,
+        )
+
+    # Ensure all deltas are arrays with consistent dtype
+    compute_dtype = precision_dtype(b, reference=b.array(weight_deltas[0]))
+    deltas = [b.astype(b.array(d), compute_dtype) for d in weight_deltas]
+    for d in deltas:
+        b.eval(d)
+
+    # Validate shapes match
+    ref_shape = b.shape(deltas[0])
+    for i, d in enumerate(deltas):
+        if b.shape(d) != ref_shape:
+            raise ValueError(
+                f"Shape mismatch: delta[0] has shape {ref_shape}, "
+                f"delta[{i}] has shape {b.shape(d)}"
+            )
+
+    m, n = int(ref_shape[0]), int(ref_shape[1])
+    min_dim = min(m, n)
+    reg = regularization_epsilon(b, deltas[0])
+
+    # Step 1: Compute SVD for each delta and determine ranks
+    task_svds: list[tuple[Any, Any, Any]] = []
+    task_ranks: list[int] = []
+    task_energy_preserved: list[float] = []
+
+    for i, delta in enumerate(deltas):
+        U, S, Vt = geodesic_svd(b, delta)
+        b.eval(U, S, Vt)
+
+        n_sv = int(b.shape(S)[0])
+        if n_sv == 0:
+            # Zero delta
+            task_svds.append((None, None, None))
+            task_ranks.append(0)
+            task_energy_preserved.append(1.0)
+            continue
+
+        # Determine rank by energy threshold
+        k = svd_auto_rank(S, b, energy_threshold)
+        if max_rank is not None:
+            k = min(k, max_rank)
+        k = max(1, min(k, n_sv))
+
+        # Compute energy preserved
+        S_sq = S * S
+        total_energy = b.sum(S_sq)
+        kept_energy = b.sum(S_sq[:k])
+        b.eval(total_energy, kept_energy)
+        energy_frac = float(b.to_scalar(kept_energy)) / max(
+            float(b.to_scalar(total_energy)), reg
+        )
+
+        task_svds.append((U[:, :k], S[:k], Vt[:k, :]))
+        task_ranks.append(k)
+        task_energy_preserved.append(energy_frac)
+
+    # Step 2: Stack all U matrices column-wise
+    # M = [U_1 | U_2 | ... | U_n]  where each U_i is [m, k_i]
+    U_blocks = [svd[0] for svd in task_svds if svd[0] is not None]
+    if len(U_blocks) == 0:
+        # All deltas are zero
+        zero_delta = b.zeros(ref_shape)
+        b.eval(zero_delta)
+        return TSVMergeResult(
+            merged_delta=zero_delta,
+            original_deltas=weight_deltas,
+            n_tasks=n_tasks,
+            task_ranks=task_ranks,
+            task_energy_preserved=task_energy_preserved,
+            interference_reduction=0.0,
+            merged_norm=0.0,
+        )
+
+    M = b.concatenate(U_blocks, axis=1)  # [m, sum(k_i)]
+    b.eval(M)
+
+    total_cols = int(b.shape(M)[1])
+
+    # Step 3: Procrustes orthogonalization via SVD
+    # Q = U_M @ V_M^T where M = U_M @ S_M @ V_M^T
+    # This finds the closest orthonormal matrix to M
+    U_M, S_M, Vt_M = geodesic_svd(b, M)
+    b.eval(U_M, S_M, Vt_M)
+
+    # Q = U_M @ Vt_M (closest orthonormal to M)
+    # But we only take as many columns as we had in M
+    n_cols = min(int(b.shape(U_M)[1]), total_cols)
+    Q = b.matmul(U_M[:, :n_cols], Vt_M[:n_cols, :n_cols])
+    b.eval(Q)
+
+    # Step 4: Partition Q back into per-task blocks
+    # Q_i = Q[:, start_i:end_i] where ranges correspond to original U_i blocks
+    Q_blocks: list[Any | None] = []
+    col_idx = 0
+    valid_task_idx = 0
+    for i in range(n_tasks):
+        if task_svds[i][0] is None:
+            Q_blocks.append(None)
+        else:
+            k_i = task_ranks[i]
+            if col_idx + k_i <= n_cols:
+                Q_i = Q[:, col_idx : col_idx + k_i]
+                Q_blocks.append(Q_i)
+                b.eval(Q_i)
+            else:
+                # Edge case: not enough orthogonalized columns
+                Q_blocks.append(None)
+            col_idx += k_i
+            valid_task_idx += 1
+
+    # Step 5: Reconstruct orthogonalized deltas: delta_i' = Q_i @ diag(S_i) @ V_i^T
+    ortho_deltas: list[Any] = []
+    for i in range(n_tasks):
+        if Q_blocks[i] is None or task_svds[i][0] is None:
+            # Zero delta or insufficient rank
+            ortho_deltas.append(b.zeros(ref_shape))
+            continue
+
+        Q_i = Q_blocks[i]
+        S_i = task_svds[i][1]
+        Vt_i = task_svds[i][2]
+
+        k_i = task_ranks[i]
+        # Q_i: [m, k_i], S_i: [k_i], Vt_i: [k_i, n]
+        S_diag = b.reshape(S_i, (k_i, 1))  # [k_i, 1] for broadcasting
+        scaled_Vt = S_diag * Vt_i  # [k_i, n]
+        delta_ortho = b.matmul(Q_i, scaled_Vt)  # [m, n]
+        b.eval(delta_ortho)
+        ortho_deltas.append(delta_ortho)
+
+    for d in ortho_deltas:
+        b.eval(d)
+
+    # Step 6: Merge = sum of orthogonalized deltas
+    merged_delta = ortho_deltas[0]
+    for d in ortho_deltas[1:]:
+        merged_delta = merged_delta + d
+    b.eval(merged_delta)
+
+    # Compute interference reduction metric
+    # Compare naive sum vs orthogonalized sum
+    naive_sum = deltas[0]
+    for d in deltas[1:]:
+        naive_sum = naive_sum + d
+    b.eval(naive_sum)
+
+    naive_norm = _geodesic_frobenius_norm(naive_sum, b)
+    merged_norm = _geodesic_frobenius_norm(merged_delta, b)
+
+    # Interference reduction: how much the orthogonalization changed the result
+    # Lower difference suggests less destructive interference in original
+    if naive_norm > reg:
+        diff = naive_sum - merged_delta
+        b.eval(diff)
+        diff_norm = _geodesic_frobenius_norm(diff, b)
+        interference_reduction = diff_norm / naive_norm
+    else:
+        interference_reduction = 0.0
+
+    logger.info(
+        "TSV MERGE: %d tasks, ranks=%s, interference_reduction=%.3f",
+        n_tasks,
+        task_ranks,
+        interference_reduction,
+    )
+
+    return TSVMergeResult(
+        merged_delta=merged_delta,
+        original_deltas=weight_deltas,
+        n_tasks=n_tasks,
+        task_ranks=task_ranks,
+        task_energy_preserved=task_energy_preserved,
+        interference_reduction=interference_reduction,
+        merged_norm=merged_norm,
+    )
+
+
+def merge_weights_tsv(
+    source_weights_list: list[Any],
+    target_weights: Any,
+    backend: "Backend | None" = None,
+    energy_threshold: float = 0.95,
+    max_rank: int | None = None,
+) -> tuple[Any, TSVMergeResult]:
+    """Merge multiple source weights into target using TSV orthogonalization.
+
+    This is the high-level API for N-to-1 model merging with reduced interference.
+
+    Parameters
+    ----------
+    source_weights_list : list[Array]
+        List of N source model weights (each already aligned to target space).
+    target_weights : Array
+        Target weights to add knowledge to.
+    backend : Backend, optional
+        Compute backend.
+    energy_threshold : float
+        Fraction of singular value energy to preserve per task.
+    max_rank : int, optional
+        Maximum rank per task.
+
+    Returns
+    -------
+    tuple[Array, TSVMergeResult]
+        (merged_weights, tsv_result)
+    """
+    b = backend or get_default_backend()
+
+    target = b.array(target_weights)
+    b.eval(target)
+
+    # Compute deltas: source_i - target
+    deltas = []
+    for source in source_weights_list:
+        src = b.array(source)
+        b.eval(src)
+        delta = src - target
+        b.eval(delta)
+        deltas.append(delta)
+
+    # Apply TSV merging
+    result = filter_deltas_tsv(
+        deltas,
+        backend=b,
+        energy_threshold=energy_threshold,
+        max_rank=max_rank,
+    )
+
+    # Merge = target + orthogonalized_merged_delta
+    merged = target + result.merged_delta
+    b.eval(merged)
+
+    return merged, result
+
+
 __all__ = [
     "GeodesicNullSpaceBasis",
     "GeodesicNullSpaceResult",
@@ -1209,4 +1553,8 @@ __all__ = [
     "NullSpaceProjectionResult",
     "project_to_null_space",
     "filter_merge_delta_null_space",
+    # Task Singular Vector merging (N-to-1)
+    "TSVMergeResult",
+    "filter_deltas_tsv",
+    "merge_weights_tsv",
 ]

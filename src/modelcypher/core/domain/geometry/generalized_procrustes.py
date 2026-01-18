@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
@@ -483,7 +483,7 @@ class LayerRotationResult:
     """Result of Procrustes alignment at a single layer."""
 
     layer_index: int
-    rotation: list[list[float]]  # [k × k] orthogonal rotation matrix
+    rotation: list[list[float]] | None  # [k × k] orthogonal rotation matrix (optional)
     error: float  # Frobenius alignment error after rotation
     angular_deviation: float | None = None  # SO(n) geodesic distance from previous rotation
     rotation_delta: float | None = None  # ||log(R_L^T R_{L-1})||_F (Lie algebra norm)
@@ -543,6 +543,24 @@ class RotationContinuityAnalyzer:
     def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
         """Convert 2D array to nested Python list using native tolist()."""
         return self._backend.tolist(array)
+
+    def _stack_layer_activations(self, activations: Any) -> "Array | None":
+        """Stack activations into a 2D array, handling list or array formats."""
+        backend = self._backend
+        if activations is None:
+            return None
+        if hasattr(activations, "shape"):
+            arr = backend.array(activations)
+            shape = backend.shape(arr)
+            if len(shape) == 1:
+                arr = backend.reshape(arr, (1, shape[0]))
+            backend.eval(arr)
+            return arr
+        if not activations:
+            return None
+        arr = backend.stack([backend.array(a) for a in activations], axis=0)
+        backend.eval(arr)
+        return arr
 
     def compute_per_layer_alignments(
         self,
@@ -773,4 +791,177 @@ class RotationContinuityAnalyzer:
             source_dimension=source_dim,
             target_dimension=target_dim,
             anchor_count=len(common_anchors),
+        )
+
+    def compute_per_layer_alignments_from_arrays(
+        self,
+        source_layer_activations: dict[int, "Array | Any"],
+        target_layer_activations: dict[int, "Array | Any"],
+        source_model: str,
+        target_model: str,
+        smoothness_ratios: list[float] | None = None,
+    ) -> RotationContinuityResult | None:
+        """Analyze rotation continuity using per-layer activation arrays."""
+        backend = self._backend
+
+        common_layers = sorted(
+            set(source_layer_activations.keys()) & set(target_layer_activations.keys())
+        )
+        if not common_layers:
+            return None
+
+        layer_results: list[LayerRotationResult] = []
+        prev_rotation: "Array | None" = None
+        layer_payloads: list[tuple[int, "Array", "Array"]] = []
+        m_matrices: list["Array"] = []
+        source_dim = 0
+        target_dim = 0
+        anchor_count = 0
+
+        for layer_idx in common_layers:
+            src_raw = self._stack_layer_activations(source_layer_activations.get(layer_idx))
+            tgt_raw = self._stack_layer_activations(target_layer_activations.get(layer_idx))
+            if src_raw is None or tgt_raw is None:
+                continue
+
+            n_samples = min(int(src_raw.shape[0]), int(tgt_raw.shape[0]))
+            if n_samples < 3:
+                continue
+            if anchor_count == 0:
+                anchor_count = n_samples
+
+            src = src_raw[:n_samples, :]
+            tgt = tgt_raw[:n_samples, :]
+            backend.eval(src, tgt)
+
+            src_dim = int(src.shape[1])
+            tgt_dim = int(tgt.shape[1])
+            if source_dim == 0:
+                source_dim = src_dim
+                target_dim = tgt_dim
+
+            shared_dim = min(src_dim, tgt_dim)
+            src = src[:, :shared_dim]
+            tgt = tgt[:, :shared_dim]
+
+            src = src - backend.mean(src, axis=0)
+            tgt = tgt - backend.mean(tgt, axis=0)
+
+            M = backend.matmul(backend.transpose(src), tgt)
+            layer_payloads.append((layer_idx, src, tgt))
+            m_matrices.append(M)
+
+        if not layer_payloads:
+            return None
+
+        m_batch = backend.stack(m_matrices, axis=0)
+        U_batch, _, Vt_batch = geodesic_svd(backend, m_batch)
+        rotations_batch = backend.matmul(U_batch, Vt_batch)
+
+        for idx, (layer_idx, source_arr, target_arr) in enumerate(layer_payloads):
+            rotation = rotations_batch[idx]
+
+            det_val = backend.det(rotation)
+            backend.eval(det_val)
+            if float(backend.to_scalar(det_val)) < 0:
+                U_i = U_batch[idx]
+                Vt_i = Vt_batch[idx]
+                U_fixed = backend.concatenate([U_i[:, :-1], -U_i[:, -1:]], axis=1)
+                rotation = backend.matmul(U_fixed, Vt_i)
+
+            aligned_source = backend.matmul(source_arr, rotation)
+            _, error_dist = geodesic_pairwise_metrics(aligned_source, target_arr, backend)
+            error_arr = backend.sum(error_dist * error_dist)
+            backend.eval(error_arr)
+            error = float(backend.to_scalar(error_arr))
+
+            angular_deviation = None
+            rotation_delta = None
+            if prev_rotation is not None:
+                angular_deviation = so_geodesic_distance(prev_rotation, rotation, backend=backend)
+                rotation_delta = angular_deviation * sqrt_scalar(2.0, backend)
+
+            prev_rotation = rotation
+
+            layer_results.append(
+                LayerRotationResult(
+                    layer_index=layer_idx,
+                    rotation=None,
+                    error=error,
+                    angular_deviation=angular_deviation,
+                    rotation_delta=rotation_delta,
+                )
+            )
+
+        if not layer_results:
+            return None
+
+        all_source = [payload[1] for payload in layer_payloads]
+        all_target = [payload[2] for payload in layer_payloads]
+        global_source = backend.concatenate(all_source, axis=0)
+        global_target = backend.concatenate(all_target, axis=0)
+        global_source = global_source - backend.mean(global_source, axis=0)
+        global_target = global_target - backend.mean(global_target, axis=0)
+
+        M_global = backend.matmul(backend.transpose(global_source), global_target)
+        U_g, _, Vt_g = geodesic_svd(backend, M_global)
+        global_rotation = backend.matmul(U_g, Vt_g)
+
+        det_val = backend.det(global_rotation)
+        backend.eval(det_val)
+        if float(backend.to_scalar(det_val)) < 0:
+            U_g_fixed = backend.concatenate([U_g[:, :-1], -U_g[:, -1:]], axis=1)
+            global_rotation = backend.matmul(U_g_fixed, Vt_g)
+
+        aligned_global = backend.matmul(global_source, global_rotation)
+        _, global_dist = geodesic_pairwise_metrics(aligned_global, global_target, backend)
+        global_error_arr = backend.sum(global_dist * global_dist)
+        backend.eval(global_error_arr)
+        global_error = float(backend.to_scalar(global_error_arr))
+
+        mean_layer_error = sum(layer_r.error for layer_r in layer_results) / len(layer_results)
+        error_eps = float(division_epsilon(backend, global_error_arr))
+        smoothness_ratio = mean_layer_error / max(global_error, error_eps)
+
+        rotation_roughness = sum(
+            layer_r.rotation_delta**2 for layer_r in layer_results if layer_r.rotation_delta is not None
+        )
+
+        angular_devs = [
+            layer_r.angular_deviation for layer_r in layer_results if layer_r.angular_deviation is not None
+        ]
+        mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
+
+        if smoothness_ratios and len(smoothness_ratios) >= 2:
+            mean_sr = sum(smoothness_ratios) / len(smoothness_ratios)
+            variance_sr = sum((r - mean_sr) ** 2 for r in smoothness_ratios) / len(smoothness_ratios)
+            std_sr = variance_sr ** 0.5
+            smoothness_threshold = max(0.0, mean_sr - std_sr)
+        else:
+            ratios = []
+            for layer_r in layer_results:
+                ratio = layer_r.error / max(global_error, error_eps)
+                ratios.append(ratio)
+            if len(ratios) >= 2:
+                mean_sr = sum(ratios) / len(ratios)
+                variance_sr = sum((r - mean_sr) ** 2 for r in ratios) / len(ratios)
+                std_sr = variance_sr ** 0.5
+                smoothness_threshold = max(0.0, mean_sr - std_sr)
+            else:
+                smoothness_threshold = smoothness_ratio
+
+        requires_per_layer = smoothness_ratio < smoothness_threshold
+
+        return RotationContinuityResult(
+            source_model=source_model,
+            target_model=target_model,
+            layers=layer_results,
+            global_rotation_error=global_error,
+            smoothness_ratio=smoothness_ratio,
+            rotation_roughness=rotation_roughness,
+            mean_angular_velocity=mean_angular_velocity,
+            requires_per_layer_alignment=requires_per_layer,
+            source_dimension=source_dim,
+            target_dimension=target_dim,
+            anchor_count=anchor_count,
         )

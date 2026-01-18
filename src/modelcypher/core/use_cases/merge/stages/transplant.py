@@ -165,6 +165,31 @@ def stage_transplant(
         "cka_after": [],
         "core_probes": 0,
     }
+    manifest = TransplantManifest()
+
+    def _record_manifest(
+        key: str,
+        status: WeightStatus,
+        source_shape: tuple[int, ...] | None = None,
+        target_shape: tuple[int, ...] | None = None,
+        stitch_type: str | None = None,
+        preserved_fraction: float | None = None,
+        cka_achieved: float | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        manifest.record(
+            key,
+            WeightTransformRecord(
+                key=key,
+                status=status,
+                source_shape=source_shape,
+                target_shape=target_shape,
+                stitch_type=stitch_type,
+                preserved_fraction=preserved_fraction,
+                cka_achieved=cka_achieved,
+                error_message=error_message,
+            ),
+        )
 
     occupancy_by_layer: dict[int, "Array"] = {}
     prior_occupancy_arrays: dict[int, "Array"] = {}
@@ -388,7 +413,16 @@ def stage_transplant(
         # from target to maintain embedding scale compatibility.
         # =======================================================================
         if layer_idx == 0:
-            weights_processed += len(weights_by_layer.get(layer_idx, []))
+            layer_keys = weights_by_layer.get(layer_idx, [])
+            weights_processed += len(layer_keys)
+            for key in layer_keys:
+                target_w = target_weights.get(key)
+                _record_manifest(
+                    key,
+                    WeightStatus.SKIPPED_BOUNDARY,
+                    target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
+                    error_message="layer 0 boundary preserved",
+                )
             logger.info(
                 "TRANSPLANT: Layer 0 PRESERVED (embedding-to-hidden boundary)"
             )
@@ -707,6 +741,14 @@ def stage_transplant(
             )
             metrics.setdefault("layers_skipped_by_density", 0)
             metrics["layers_skipped_by_density"] += 1
+            for key in layer_keys:
+                target_w = target_weights.get(key)
+                _record_manifest(
+                    key,
+                    WeightStatus.SKIPPED_DENSITY_FILTER,
+                    target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
+                    error_message="density graft mask filtered layer",
+                )
             continue
 
         # boundary_k and geodesic_k_neighbors are derived from geodesic connectivity
@@ -719,6 +761,14 @@ def stage_transplant(
         )
 
         if not partition.core_indices:
+            for key in layer_keys:
+                target_w = target_weights.get(key)
+                _record_manifest(
+                    key,
+                    WeightStatus.SKIPPED_DENSITY_FILTER,
+                    target_shape=tuple(target_w.shape) if hasattr(target_w, "shape") else None,
+                    error_message="no core probes after density partition",
+                )
             continue
 
         core_indices = b.array(partition.core_indices, dtype="int32")
@@ -774,6 +824,7 @@ def stage_transplant(
             core_acts=core_acts,
             boundary_acts=boundary_acts,
             can_measure_alignment=can_measure_alignment,
+            manifest=manifest,
             delta_scale=delta_scale,
         )
         weights_processed = weight_result.weights_processed
@@ -853,6 +904,7 @@ def stage_transplant(
     # Stage completion summary
     stage_elapsed = time.time() - stage_start_time
     metrics["total_time_seconds"] = stage_elapsed
+    metrics["manifest"] = manifest.to_dict()
     logger.info(
         "TRANSPLANT: Stage 3 complete - %.2fs total (%d/%d layers, %d/%d weights)",
         stage_elapsed,
@@ -881,7 +933,11 @@ def stage_transplant(
         else:
             output_weights[key] = weight
 
-    return TransplantStageResult(merged_weights=output_weights, metrics=metrics)
+    return TransplantStageResult(
+        merged_weights=output_weights,
+        metrics=metrics,
+        manifest=manifest,
+    )
 
 
 __all__ = [

@@ -58,6 +58,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _serialize_density_detail(
+    density_result: "DensityStageResult",
+    backend: "Backend",
+    source_model: str,
+    target_model: str,
+) -> dict[str, Any]:
+    point_cloud_payload: dict[str, Any] = {}
+    for layer_idx, result in density_result.point_cloud_densities.items():
+        point_cloud_payload[str(layer_idx)] = result.to_dict(backend)
+
+    density_weights_payload: dict[str, Any] = {}
+    for layer_idx, weights in density_result.density_weights.items():
+        backend.eval(weights)
+        density_weights_payload[str(layer_idx)] = backend.tolist(weights)
+
+    return {
+        "source_model": source_model,
+        "target_model": target_model,
+        "metrics": density_result.metrics,
+        "graft_mask": density_result.graft_mask,
+        "density_weights": density_weights_payload,
+        "point_cloud_densities": point_cloud_payload,
+        "source_profile": density_result.source_profile.to_dict(),
+        "target_profile": density_result.target_profile.to_dict(),
+        "knowledge_diff": density_result.knowledge_diff.to_dict(),
+    }
+
+
 def run_merge(
     model_loader: "ModelLoaderPort",
     backend: "Backend",
@@ -355,7 +383,13 @@ def run_merge(
     )
     graft_mask = density_result.graft_mask
     density_weights = density_result.density_weights
-    density_metrics = density_result.metrics
+    density_metrics = dict(density_result.metrics)
+    density_metrics["detail"] = _serialize_density_detail(
+        density_result,
+        backend,
+        source_model=source_path,
+        target_model=target_path,
+    )
 
     logger.info(
         "DENSITY: %d concepts analyzed, %d graft opportunities (source denser), %d skip (target dense)",
@@ -586,6 +620,7 @@ def run_merge(
     # OUTPUT
     # =================================================================
     final_output_path: str | None = None
+    post_merge_density: float | None = None
     if effective_output and not dry_run:
         save_weights(effective_output, merged_weights, target_format, backend)
         copy_config_files(target_path, effective_output)
@@ -608,7 +643,6 @@ def run_merge(
         # - graft_mask (which concepts were grafted)
         # - preserved_fraction (how much delta was added)
         logger.info("STAGE 4: VALIDATE (density estimation from transplant metrics)")
-        post_merge_density = None
         source_density = density_metrics.get("overall_source_density", 0)
         target_density = density_metrics.get("overall_target_density", 0)
         opportunity = density_metrics.get("overall_opportunity", 0)
@@ -759,6 +793,25 @@ def run_merge(
     projection_losses = transplant_metrics.get("projection_losses", [])
     mean_error = sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
 
+    if final_output_path:
+        import json
+
+        diagnostics_payload = {
+            "_schema": "mc.merge.diagnostics.v1",
+            "timestamp": datetime.utcnow().isoformat(),
+            "source_model": source_path,
+            "target_model": target_path,
+            "output_path": final_output_path,
+            "probe": probe_metrics,
+            "density": density_metrics,
+            "transplant": transplant_metrics,
+            "geometry": geometry_metrics,
+            "post_merge_density": post_merge_density,
+        }
+        diagnostics_path = Path(final_output_path) / "merge_diagnostics.json"
+        diagnostics_path.write_text(json.dumps(diagnostics_payload, indent=2, default=str))
+        logger.info("Saved merge diagnostics to %s", diagnostics_path)
+
     result = UnifiedMergeResult(
         merged_weights=merged_weights,
         probe_metrics=probe_metrics,
@@ -774,6 +827,7 @@ def run_merge(
         refusal_preserved=True,
         geometry_metrics=geometry_metrics,
         density_metrics=density_metrics,
+        post_merge_density=post_merge_density,
     )
 
     logger.info(

@@ -511,8 +511,15 @@ class MergePipelineService:
             "weight_count": merge_result.weight_count,
             "mean_preserved_fraction": merge_result.mean_preserved_fraction,
             "mean_procrustes_error": merge_result.mean_procrustes_error,
+            "merge_strategy": merge_result.merge_strategy,
+            "probe_metrics": merge_result.probe_metrics,
+            "permute_metrics": merge_result.permute_metrics,
             "geometry_metrics": merge_result.geometry_metrics,
             "transplant_metrics": merge_result.transplant_metrics,
+            "density_metrics": merge_result.density_metrics,
+            "validation_metrics": merge_result.validation_metrics,
+            "post_merge_density": merge_result.post_merge_density,
+            "refusal_preserved": merge_result.refusal_preserved,
         }
 
 

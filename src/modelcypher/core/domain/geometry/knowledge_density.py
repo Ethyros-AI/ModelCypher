@@ -27,7 +27,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from statistics import median
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
@@ -68,6 +68,18 @@ class ConceptDensity:
     # Mean pairwise similarity within concept (higher = tighter cluster)
     cluster_tightness: float | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "probe_id": self.probe_id,
+            "name": self.name,
+            "domain": self.domain,
+            "layer": self.layer,
+            "intrinsic_dimension": self.intrinsic_dimension,
+            "density_score": self.density_score,
+            "activation_variance": self.activation_variance,
+            "cluster_tightness": self.cluster_tightness,
+        }
+
 
 @dataclass(frozen=True)
 class LayerDensityProfile:
@@ -79,6 +91,14 @@ class LayerDensityProfile:
     # Aggregate statistics
     mean_density: float
     median_density: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "layer": self.layer,
+            "concept_densities": [c.to_dict() for c in self.concept_densities],
+            "mean_density": self.mean_density,
+            "median_density": self.median_density,
+        }
 
 
 @dataclass(frozen=True)
@@ -94,6 +114,18 @@ class ModelDensityProfile:
 
     # Overall model density
     overall_density: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model_path": self.model_path,
+            "layers": list(self.layers),
+            "layer_profiles": {
+                str(layer): profile.to_dict()
+                for layer, profile in self.layer_profiles.items()
+            },
+            "domain_densities": dict(self.domain_densities),
+            "overall_density": self.overall_density,
+        }
 
 
 class KnowledgeDensityAnalyzer:
@@ -333,6 +365,19 @@ class PointCloudDensityResult:
     mean_density_diff: float
     positive_diff_count: int  # Points where source is denser
     negative_diff_count: int  # Points where target is denser
+
+    def to_dict(self, backend: "Backend") -> dict[str, Any]:
+        backend.eval(self.source_densities, self.target_densities, self.density_diff)
+        return {
+            "source_densities": backend.tolist(self.source_densities),
+            "target_densities": backend.tolist(self.target_densities),
+            "density_diff": backend.tolist(self.density_diff),
+            "mean_source_density": self.mean_source_density,
+            "mean_target_density": self.mean_target_density,
+            "mean_density_diff": self.mean_density_diff,
+            "positive_diff_count": self.positive_diff_count,
+            "negative_diff_count": self.negative_diff_count,
+        }
 
 
 def compute_knn_point_cloud_density(

@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
@@ -51,6 +51,10 @@ class AlignmentResult:
     gate_transforms: dict[int, Any]  # PRE-SiLU for gate_proj/up_proj stitching
     layer_cka_scores: dict[int, float]  # Geodesic CKA only
     cgls_iterations_by_layer: dict[int, int]
+    gram_condition_numbers_by_layer: dict[int, float] = field(default_factory=dict)
+    linear_residuals_by_layer: dict[int, float] = field(default_factory=dict)
+    numerical_deviation_by_layer: dict[int, float] = field(default_factory=dict)
+    precision_thresholds_by_layer: dict[int, float] = field(default_factory=dict)
 
 
 def _activation_count(backend: "Backend", acts: Any) -> int:
@@ -105,6 +109,10 @@ def align_layers(
     gate_transforms: dict[int, Any] = {}  # PRE-SiLU for cross-arch gate/up stitching
     layer_cka_scores: dict[int, float] = {}
     cgls_iterations_by_layer: dict[int, int] = {}
+    gram_condition_numbers_by_layer: dict[int, float] = {}
+    linear_residuals_by_layer: dict[int, float] = {}
+    numerical_deviation_by_layer: dict[int, float] = {}
+    precision_thresholds_by_layer: dict[int, float] = {}
 
     if not (source_layer_activations and target_layer_activations):
         return AlignmentResult(
@@ -118,6 +126,10 @@ def align_layers(
             gate_transforms=gate_transforms,
             layer_cka_scores=layer_cka_scores,
             cgls_iterations_by_layer=cgls_iterations_by_layer,
+            gram_condition_numbers_by_layer=gram_condition_numbers_by_layer,
+            linear_residuals_by_layer=linear_residuals_by_layer,
+            numerical_deviation_by_layer=numerical_deviation_by_layer,
+            precision_thresholds_by_layer=precision_thresholds_by_layer,
         )
 
     source_layers = sorted(source_layer_activations.keys())
@@ -219,6 +231,10 @@ def align_layers(
             result["geodesic_cka"] = geodesic_cka  # Same as achieved_cka (for clarity)
             result["linear_iterations"] = alignment_result.linear_iterations
             cgls_iterations_by_layer[tgt_layer] = alignment_result.linear_iterations
+            gram_condition_numbers_by_layer[tgt_layer] = alignment_result.gram_condition_number
+            linear_residuals_by_layer[tgt_layer] = alignment_result.linear_residual
+            numerical_deviation_by_layer[tgt_layer] = alignment_result.numerical_deviation
+            precision_thresholds_by_layer[tgt_layer] = alignment_result.precision_threshold
             result["F_arr_raw"] = F_arr
 
             split_transforms: dict[int, Any] = {}
@@ -483,4 +499,8 @@ def align_layers(
         gate_transforms=gate_transforms,
         layer_cka_scores=layer_cka_scores,
         cgls_iterations_by_layer=cgls_iterations_by_layer,
+        gram_condition_numbers_by_layer=gram_condition_numbers_by_layer,
+        linear_residuals_by_layer=linear_residuals_by_layer,
+        numerical_deviation_by_layer=numerical_deviation_by_layer,
+        precision_thresholds_by_layer=precision_thresholds_by_layer,
     )

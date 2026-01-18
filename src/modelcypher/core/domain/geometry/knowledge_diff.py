@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.knowledge_density import (
     ConceptDensity,
@@ -81,6 +81,17 @@ class GraftOpportunity:
     # Negative = target already knows, don't touch
     opportunity_score: float
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "probe_id": self.probe_id,
+            "name": self.name,
+            "domain": self.domain,
+            "layer": self.layer,
+            "source_density": self.source_density,
+            "target_density": self.target_density,
+            "opportunity_score": self.opportunity_score,
+        }
+
 
 @dataclass(frozen=True)
 class LayerDiff:
@@ -96,6 +107,15 @@ class LayerDiff:
     positive_opportunity_count: int
     nonpositive_opportunity_count: int
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "layer": self.layer,
+            "opportunities": [opp.to_dict() for opp in self.opportunities],
+            "mean_opportunity": self.mean_opportunity,
+            "positive_opportunity_count": self.positive_opportunity_count,
+            "nonpositive_opportunity_count": self.nonpositive_opportunity_count,
+        }
+
 
 @dataclass(frozen=True)
 class DomainDiff:
@@ -107,6 +127,16 @@ class DomainDiff:
     mean_opportunity: float
     concept_count: int
     positive_opportunity_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "domain": self.domain,
+            "mean_source_density": self.mean_source_density,
+            "mean_target_density": self.mean_target_density,
+            "mean_opportunity": self.mean_opportunity,
+            "concept_count": self.concept_count,
+            "positive_opportunity_count": self.positive_opportunity_count,
+        }
 
 
 @dataclass(frozen=True)
@@ -134,6 +164,29 @@ class KnowledgeDiff:
     total_concepts: int
     positive_opportunity_count: int
     nonpositive_opportunity_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source_path": self.source_path,
+            "target_path": self.target_path,
+            "layer_diffs": {
+                str(layer): layer_diff.to_dict()
+                for layer, layer_diff in self.layer_diffs.items()
+            },
+            "domain_diffs": {
+                domain: domain_diff.to_dict()
+                for domain, domain_diff in self.domain_diffs.items()
+            },
+            "overall_source_density": self.overall_source_density,
+            "overall_target_density": self.overall_target_density,
+            "overall_opportunity": self.overall_opportunity,
+            "ranked_opportunities": [
+                opp.to_dict() for opp in self.ranked_opportunities
+            ],
+            "total_concepts": self.total_concepts,
+            "positive_opportunity_count": self.positive_opportunity_count,
+            "nonpositive_opportunity_count": self.nonpositive_opportunity_count,
+        }
 
 
 class KnowledgeDiffer:

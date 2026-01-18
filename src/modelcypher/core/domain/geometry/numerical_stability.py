@@ -1119,9 +1119,27 @@ def orthogonalize_alignment(
     b.eval(U, S, Vt)
 
     # Extract orthogonal part via polar decomposition
-    # U_orth = U @ Vt gives the closest orthogonal matrix
+    # U_orth = U @ Vt gives the closest orthogonal matrix in O(n)
     U_orth = b.matmul(U, Vt)
     b.eval(U_orth)
+
+    # Enforce det=+1 to get SO(n) (proper rotation) not O(n) (may be reflection)
+    # If det < 0, flip the sign of the last column of U before computing U @ Vt
+    # This ensures we get a rotation, not a reflection
+    if m == n:  # Only check determinant for square matrices
+        det_val = b.det(U_orth)
+        b.eval(det_val)
+        if float(b.to_scalar(det_val)) < 0:
+            # Flip last column of U to get det=+1
+            # This is equivalent to: U[:, -1] *= -1; U_orth = U @ Vt
+            # We can do this post-hoc by flipping the last column of U_orth
+            # Since U_orth = U @ Vt, and we want U' @ Vt where U'[:,-1] = -U[:,-1]
+            # U' @ Vt = U @ Vt - 2 * U[:,-1:] @ Vt[-1:,:]
+            # Simpler: just flip the last column of U_orth
+            U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+            b.eval(U_fixed)
+            U_orth = b.matmul(U_fixed, Vt)
+            b.eval(U_orth)
 
     # Compute scale factor as mean of singular values
     # This measures how much F scales on average

@@ -1,0 +1,41 @@
+{
+  "_schema": "mc.merge.analysis.v1",
+  "timestamp": "2026-01-18T04:18:16.692558",
+  "source_model": "/Volumes/codecypher/models/mlx-community/Qwen2.5-Coder-0.5B-Instruct-bf16",
+  "target_model": "/Users/jasonkempf/ModelCypher/tests/fixtures/.models/mlx-community--LFM2-350M-MLX-bf16",
+  "output_path": "/Users/jasonkempf/ModelCypher/experiments/validation_protocol/exp5_qwen_to_lfm2/merged_model",
+  "density": {
+    "source_density": 0.015961236646143098,
+    "target_density_before": 0.015985215056396964,
+    "target_density_after": 0.015985215056396964,
+    "density_change_pct": 0.0,
+    "opportunity": -2.3978410253828396e-05,
+    "concepts_analyzed": 73536,
+    "grafted_count": 44749,
+    "skipped_count": 28787
+  },
+  "geometry": {
+    "mean_preserved_fraction": 0.3046546681878691,
+    "layers_transplanted": 15,
+    "weights_transplanted": 57
+  },
+  "probe": {
+    "layer_count": null,
+    "geodesic_cka": 0.7922299285260087,
+    "split_cka": {
+      "shared_cka": 0.9749200113079223,
+      "novel_cka": 0.0,
+      "full_cka": 0.9997015502664073,
+      "shared_fraction": 1.0,
+      "novel_fraction": 0.0,
+      "n_shared": 4,
+      "n_novel": 0
+    }
+  },
+  "coherence": {
+    "is_coherent": true,
+    "failed_count": 0,
+    "total_count": 5,
+    "mean_repetition_score": 0.0
+  }
+}

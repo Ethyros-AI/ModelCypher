@@ -33,7 +33,7 @@ Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Tr
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -43,6 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.cka import compute_cka_split
+from modelcypher.core.domain.geometry.generalized_procrustes import RotationContinuityAnalyzer
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.use_cases.merge.stages.probe_alignment import align_layers
 from modelcypher.core.use_cases.merge.stages.probe_helpers import (
@@ -358,6 +359,23 @@ def _probe_precise(
     gate_transforms = alignment_result.gate_transforms
     layer_cka_scores = alignment_result.layer_cka_scores
     cgls_iterations_by_layer = alignment_result.cgls_iterations_by_layer
+    gram_condition_numbers_by_layer = alignment_result.gram_condition_numbers_by_layer
+    linear_residuals_by_layer = alignment_result.linear_residuals_by_layer
+    numerical_deviation_by_layer = alignment_result.numerical_deviation_by_layer
+    precision_thresholds_by_layer = alignment_result.precision_thresholds_by_layer
+    rotation_continuity: dict[str, Any] | None = None
+    try:
+        rotation_analyzer = RotationContinuityAnalyzer(backend=b)
+        rotation_result = rotation_analyzer.compute_per_layer_alignments_from_arrays(
+            source_layer_activations=source_layer_activations,
+            target_layer_activations=target_layer_activations,
+            source_model=source_path or "source",
+            target_model=target_path or "target",
+        )
+        if rotation_result is not None:
+            rotation_continuity = asdict(rotation_result)
+    except Exception as exc:
+        logger.warning("PROBE: Rotation continuity analysis failed: %s", exc)
 
     # Extract layer confidences (CKA-only, no fallbacks)
     layer_confidences: dict[int, float] = {}
@@ -524,6 +542,7 @@ def _probe_precise(
 
     gram_aligner = GramAligner(backend=b, use_geodesic_alignment=False)
     embedding_cka: float | None = None
+    embedding_alignment: dict[str, float | int] | None = None
 
     # =========================================================================
     # EMBEDDING GRAMALIGN (2D layer)
@@ -573,6 +592,16 @@ def _probe_precise(
         # Geodesic CKA from alignment
         emb_geodesic_cka = emb_result.achieved_cka
         embedding_cka = emb_geodesic_cka
+        embedding_alignment = {
+            "achieved_cka": emb_result.achieved_cka,
+            "numerical_deviation": emb_result.numerical_deviation,
+            "precision_threshold": emb_result.precision_threshold,
+            "gram_condition_number": emb_result.gram_condition_number,
+            "linear_residual": emb_result.linear_residual,
+            "iterations": emb_result.iterations,
+            "linear_iterations": emb_result.linear_iterations,
+            "scale_ratio": emb_result.scale_ratio,
+        }
 
         linear_transform = b.matmul(geodesic_pinv(b, src_stacked), tgt_stacked)
         b.eval(linear_transform)
@@ -598,6 +627,10 @@ def _probe_precise(
         "probes_total": len(probes),
         "probes_processed": probes_processed,
         "probes_failed": probes_failed,
+        "probes_selected": len(valid_probes),
+        "probes_required_min": min_required,
+        "source_hidden_dim": source_dim,
+        "target_hidden_dim": target_dim,
         "layers_analyzed": len(layer_confidences),
         "layers_with_cka": len(layer_cka_scores),
         "layers_with_data": len(layers_with_data),
@@ -605,11 +638,23 @@ def _probe_precise(
         "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
         "cgls_iterations_by_layer": cgls_iterations_by_layer,
+        "alignment_diagnostics": {
+            "gram_condition_numbers_by_layer": gram_condition_numbers_by_layer,
+            "linear_residuals_by_layer": linear_residuals_by_layer,
+            "numerical_deviation_by_layer": numerical_deviation_by_layer,
+            "precision_thresholds_by_layer": precision_thresholds_by_layer,
+        },
+        "rotation_continuity": rotation_continuity,
+        "layer_mapping": layer_mapping,
+        "scale_ratios": scale_ratios,
+        "probe_ids": probe_ids,
+        "probe_domains": probe_domains,
         "mean_cka": mean_cka,
         "min_cka": min_cka,
         "cka_estimator": "geodesic",
         "perfect_alignment": perfect_alignment,
         "embedding_cka": embedding_cka,
+        "embedding_alignment": embedding_alignment,
         # Layer classification for adaptive barometer
         "layer_status": layer_status,
         "converged_layers": converged_layers,
