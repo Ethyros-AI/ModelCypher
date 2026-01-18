@@ -205,6 +205,67 @@ class TestNamedBaselines(unittest.TestCase):
         self.assertEqual(deviation, 0.0)
 
 
+class TestDeriveDeltaScale(unittest.TestCase):
+    """Tests for geometry-derived delta_scale computation.
+
+    The derive_delta_scale function computes scale from null_rank/in_dim ratio,
+    which is geometry-derived (not heuristic):
+    - null_rank comes from eigenvalue rank threshold (sqrt(eps) cutoff)
+    - in_dim is the fixed input dimension
+    - The ratio represents actual available capacity
+    """
+
+    def test_half_capacity_gives_half_scale(self):
+        """Test that half null-space capacity gives scale ≈ 0.5."""
+        from modelcypher.core.domain.geometry.deviation_budget import derive_delta_scale
+
+        scale = derive_delta_scale(null_rank=50, in_dim=100)
+        self.assertAlmostEqual(scale, 0.5, places=4)
+
+    def test_full_capacity_gives_full_scale(self):
+        """Test that full null-space capacity gives scale = 1.0."""
+        from modelcypher.core.domain.geometry.deviation_budget import derive_delta_scale
+
+        scale = derive_delta_scale(null_rank=100, in_dim=100)
+        self.assertEqual(scale, 1.0)
+
+    def test_zero_capacity_gives_eps(self):
+        """Test that zero null-space capacity gives scale ≈ eps."""
+        from modelcypher.core.domain.geometry.deviation_budget import derive_delta_scale
+
+        scale = derive_delta_scale(null_rank=0, in_dim=100)
+        self.assertLess(scale, 1e-6)
+        self.assertGreater(scale, 0.0)
+
+    def test_sequential_stacking_divides_capacity(self):
+        """Test that n_merges divides the capacity ratio."""
+        from modelcypher.core.domain.geometry.deviation_budget import derive_delta_scale
+
+        # 50% capacity, 2 merges -> 25% each
+        scale = derive_delta_scale(null_rank=50, in_dim=100, n_merges=2)
+        self.assertAlmostEqual(scale, 0.25, places=4)
+
+        # 50% capacity, 4 merges -> 12.5% each
+        scale = derive_delta_scale(null_rank=50, in_dim=100, n_merges=4)
+        self.assertAlmostEqual(scale, 0.125, places=4)
+
+    def test_edge_cases(self):
+        """Test edge cases don't cause errors."""
+        from modelcypher.core.domain.geometry.deviation_budget import derive_delta_scale
+
+        # Zero in_dim should return 1.0 (no constraint)
+        scale = derive_delta_scale(null_rank=0, in_dim=0)
+        self.assertEqual(scale, 1.0)
+
+        # Zero n_merges treated as 1
+        scale = derive_delta_scale(null_rank=50, in_dim=100, n_merges=0)
+        self.assertAlmostEqual(scale, 0.5, places=4)
+
+        # Negative n_merges treated as 1
+        scale = derive_delta_scale(null_rank=50, in_dim=100, n_merges=-1)
+        self.assertAlmostEqual(scale, 0.5, places=4)
+
+
 class TestBackwardCompatibility(unittest.TestCase):
     """Test backward compatibility alias."""
 

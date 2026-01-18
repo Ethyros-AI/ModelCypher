@@ -145,7 +145,7 @@ def compute_empirical_fisher_diagonal(
         F_diag[j] = E[(d(loss)/d(W[:,j]))^2]
 
     For activations (pre-nonlinearity), this simplifies to:
-        F_diag[j] ≈ E[x_j^2] * variance_factor
+        F_diag[j] ≈ E[x_j^2]
 
     High F_diag[j] means dimension j strongly influences the output,
     so it should be protected during merging.
@@ -172,39 +172,12 @@ def compute_empirical_fisher_diagonal(
         n_features,
     )
 
-    # Center activations
-    mean_A = b.mean(A, axis=0, keepdims=True)
-    A_centered = A - mean_A
-    b.eval(A_centered)
-
     # Compute per-dimension second moment: E[x_j^2]
     # This is proportional to diagonal FIM for linear layers
     second_moment = b.mean(A * A, axis=0)  # E[x_j^2]
     b.eval(second_moment)
 
-    # Compute per-dimension variance: Var[x_j] = E[x_j^2] - E[x_j]^2
-    mean_sq = mean_A * mean_A
-    mean_sq = b.squeeze(mean_sq)
-    variance = second_moment - mean_sq
-    variance = b.maximum(variance, b.full(b.shape(variance), 0.0))
-    b.eval(variance)
-
-    # The diagonal FIM is proportional to the second moment weighted by variance
-    # Higher variance and higher magnitude = more important direction
-    # F_diag ≈ second_moment * (1 + variance_normalized)
-    max_var = b.max(variance)
-    b.eval(max_var)
-    max_var_val = float(b.to_scalar(max_var))
-
-    if max_var_val > reg:
-        var_normalized = variance / max_var_val
-    else:
-        var_normalized = b.zeros_like(variance)
-    b.eval(var_normalized)
-
-    # Combine second moment with variance weighting
-    # This gives higher weight to dimensions with both high magnitude AND high variance
-    diagonal_fim = second_moment * (1.0 + var_normalized)
+    diagonal_fim = second_moment
     b.eval(diagonal_fim)
 
     # Compute diagnostics

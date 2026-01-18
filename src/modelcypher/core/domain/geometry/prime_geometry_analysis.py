@@ -305,7 +305,6 @@ def run_comprehensive_analysis(
     embedding_dim: int | None = None,
     delay: int = 1,
     baselines: list[BaselineType] | None = None,
-    n_bootstrap: int | None = None,
     backend: "Backend | None" = None,
     seed: int = 42,
 ) -> ComprehensiveResult:
@@ -317,8 +316,6 @@ def run_comprehensive_analysis(
             using Takens' theorem: dim = ceil(2*d_eff + 1).
         delay: Time delay for embedding.
         baselines: List of baseline types to test against.
-        n_bootstrap: Number of bootstrap samples for CIs. If None, auto-derived
-            from ceil(sqrt(n_samples)).
         backend: Compute backend.
         seed: Random seed.
 
@@ -343,10 +340,9 @@ def run_comprehensive_analysis(
         embedding_dim = derive_embedding_dim(primes.gaps, delay, backend)
         logger.info(f"Auto-derived embedding dimension: {embedding_dim} (Takens' theorem)")
 
-    # Auto-derive bootstrap count if not specified
-    if n_bootstrap is None:
-        n_bootstrap = _derive_bootstrap_count(primes.gap_count, backend)
-        logger.info(f"Auto-derived bootstrap count: {n_bootstrap} (sqrt formula)")
+    # Auto-derive bootstrap count from data
+    n_bootstrap = _derive_bootstrap_count(primes.gap_count, backend)
+    logger.info(f"Auto-derived bootstrap count: {n_bootstrap} (sqrt formula)")
 
     result = ComprehensiveResult(
         n_primes=n_primes,
@@ -367,7 +363,7 @@ def run_comprehensive_analysis(
     # Collect bootstrap samples for primes
     prime_participation_samples = []
     gaps_list = _array_to_list(backend, primes.gaps)
-    n_subsample = int(primes.gap_count * 0.8)
+    n_subsample = primes.gap_count
     for _ in range(n_bootstrap):
         # Subsample and re-analyze
         indices = _randint_list(backend, 0, primes.gap_count, n_subsample)
@@ -414,7 +410,6 @@ def run_comprehensive_analysis(
             prime_ev.participation_ratio,
             baseline_ev.participation_ratio,
             prime_samples=prime_participation_samples if prime_participation_samples else None,
-            one_sided=True,
             backend=backend,
         )
         result.hypothesis_tests[f"H1_{baseline_type.value}"] = h1
@@ -427,7 +422,6 @@ def run_comprehensive_analysis(
             f"Lower spectral entropy vs {baseline_type.value}",
             prime_ev.spectral_entropy,
             baseline_ev.spectral_entropy,
-            one_sided=True,
             backend=backend,
         )
         result.hypothesis_tests[f"H2_{baseline_type.value}"] = h2
@@ -436,13 +430,12 @@ def run_comprehensive_analysis(
     result.summary["prime_participation_ratio"] = prime_ev.participation_ratio
     result.summary["prime_spectral_entropy"] = prime_ev.spectral_entropy
     result.summary["n_baselines_tested"] = float(len(baselines))
-    # Count only determinable tests (passed is not None)
     h1_tests = [v for k, v in result.hypothesis_tests.items() if k.startswith("H1")]
-    determinable = [t for t in h1_tests if t.passed is not None]
-    if determinable:
-        result.summary["h1_pass_rate"] = sum(1 for t in determinable if t.passed) / len(determinable)
+    p_values = [t.p_value for t in h1_tests if t.p_value is not None]
+    if p_values:
+        result.summary["h1_mean_p_value"] = sum(p_values) / len(p_values)
     else:
-        result.summary["h1_pass_rate"] = float("nan")  # No determinable tests
+        result.summary["h1_mean_p_value"] = float("nan")
 
     logger.info("Comprehensive analysis complete.")
     return result
@@ -485,7 +478,6 @@ def run_scale_sweep(
                 embedding_dim=embedding_dim,  # Auto-derived if None
                 delay=delay,
                 baselines=[BaselineType.EXPONENTIAL],  # Just one for speed
-                n_bootstrap=None,  # Auto-derived from sqrt(n_samples)
                 backend=backend,
                 seed=seed,
             )
@@ -496,18 +488,17 @@ def run_scale_sweep(
             if h1_key in analysis.hypothesis_tests:
                 h1 = analysis.hypothesis_tests[h1_key]
                 result.effect_size_trend.append(h1.effect_size.d)
-                result.p_value_trend.append(h1.p_value)
+                result.p_value_trend.append(
+                    h1.p_value if h1.p_value is not None else float("nan")
+                )
 
         except Exception as e:
             logger.warning(f"Scale {n_primes} failed: {e}")
             continue
 
-    # Evaluate scale invariance (H7)
-    # Effect should be stable or increase with scale
-    if len(result.effect_size_trend) >= 3:
-        # Check if effect sizes are consistently negative (primes more concentrated)
+    if result.effect_size_trend:
         negative_effects = sum(1 for e in result.effect_size_trend if e < 0)
-        result.scale_invariance_passed = negative_effects >= len(result.effect_size_trend) * 0.8
+        result.scale_invariance_fraction = negative_effects / len(result.effect_size_trend)
 
     return result
 

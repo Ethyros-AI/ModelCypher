@@ -225,6 +225,7 @@ _ATTR_TO_MODULE = {
     "DeviationBudget": ("deviation_budget", "DeviationBudget"),
     "DeviationTracker": ("deviation_budget", "DeviationTracker"),
     "DeviationMeasurement": ("deviation_budget", "DeviationMeasurement"),
+    "derive_delta_scale": ("deviation_budget", "derive_delta_scale"),
     # Metaphor geometry
     "MetaphorTrajectory": ("metaphor_trajectory", "MetaphorTrajectory"),
     "MetaphorTrajectoryPoint": ("metaphor_trajectory", "MetaphorTrajectoryPoint"),

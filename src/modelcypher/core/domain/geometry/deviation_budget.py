@@ -371,5 +371,53 @@ class DeviationTracker:
         return max(scale, eps)
 
 
+def derive_delta_scale(
+    null_rank: int,
+    in_dim: int,
+    n_merges: int = 1,
+) -> float:
+    """Derive delta_scale from null-space capacity ratio.
+
+    The null_rank / in_dim ratio represents the fraction of dimensions
+    available for transfer. For sequential stacking, this is divided by
+    n_merges to distribute capacity across all merge operations.
+
+    This is GEOMETRY-DERIVED, not a heuristic:
+    - null_rank comes from eigenvalue rank threshold (sqrt(eps) cutoff)
+    - in_dim is the fixed input dimension
+    - The ratio represents actual available capacity
+
+    For variance-weighted projection with delta_scale=1.0, the projection
+    already handles per-direction scaling. This function provides an
+    ADDITIONAL global scale for sequential stacking scenarios.
+
+    Args:
+        null_rank: Number of null-space dimensions (from NullSpaceProjector.null_rank)
+        in_dim: Total input dimensions
+        n_merges: Number of sequential merges (for capacity distribution)
+
+    Returns:
+        delta_scale in (0.0, 1.0]. Returns eps if null_rank is 0.
+    """
+    if in_dim <= 0:
+        return 1.0
+    if n_merges <= 0:
+        n_merges = 1
+
+    # Capacity ratio: what fraction of dimensions are available?
+    capacity_ratio = null_rank / in_dim
+
+    # For sequential stacking, distribute capacity across merges
+    if n_merges > 1:
+        scale = capacity_ratio / n_merges
+    else:
+        scale = capacity_ratio
+
+    # Bound to avoid numerical issues (use sqrt(eps) as practical minimum)
+    # This is NOT a heuristic - it's the limit of numerical precision
+    eps = 1e-7  # sqrt(machine epsilon for float32)
+    return max(scale, eps)
+
+
 # Backward compatibility alias
 DeviationBudget = DeviationTracker

@@ -127,7 +127,7 @@ class PrimeGeometryResult:
 
 @dataclass(frozen=True)
 class ConfidenceInterval:
-    """95% confidence interval from bootstrap sampling."""
+    """Bootstrap interval bounds from resampling."""
 
     lower: float
     upper: float
@@ -154,7 +154,7 @@ class HypothesisTest:
 
     hypothesis_id: str  # H1-H8
     description: str
-    passed: bool | None  # None when samples unavailable for statistical determination
+    passed: bool | None  # Always None (no pass/fail thresholds)
     p_value: float | None  # None when samples unavailable for statistical test
     effect_size: EffectSize
     prime_value: float
@@ -201,7 +201,7 @@ class ScaleSweepResult:
     # Trend analysis
     effect_size_trend: list[float] = field(default_factory=list)
     p_value_trend: list[float] = field(default_factory=list)
-    scale_invariance_passed: bool = False
+    scale_invariance_fraction: float | None = None
 
 
 @dataclass

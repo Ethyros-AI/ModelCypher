@@ -104,10 +104,10 @@ class UnifiedGeometricMerger:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides).
 
         Args:
-            delta_scale: Scale factor for projected deltas (0.0-1.0). Use < 1.0 for
-                sequential stacking to stay within cumulative delta budget.
-                Threshold is 1% of baseline weight norm - exceeding causes
-                generation degradation. Default 1.0 = full projection.
+            delta_scale: Scale factor for projected deltas (0.0-1.0). The variance-weighted
+                null-space projection handles per-direction scaling geometrically, so
+                delta_scale=1.0 is typically correct. For sequential stacking, use
+                derive_delta_scale() to compute from null-space capacity ratio.
         """
         return run_merge(
             model_loader=self._model_loader,

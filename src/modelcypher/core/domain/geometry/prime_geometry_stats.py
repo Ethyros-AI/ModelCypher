@@ -29,7 +29,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 from .prime_geometry_types import ConfidenceInterval, EffectSize, HypothesisTest
-from .prime_geometry_utils import _randint_list, _uniform_list
+from .prime_geometry_utils import _randint_list
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -46,33 +46,31 @@ def _derive_bootstrap_count(n_samples: int, backend: "Backend") -> int:
     - Therefore n_bootstrap ~ sqrt(n_samples) is the data-derived minimum
 
     Returns:
-        Number of bootstrap samples, minimum 10.
+        Number of bootstrap samples.
     """
     import math
 
-    if n_samples < 1:
-        return 10
+    if n_samples < 2:
+        return 0
     n_boot = int(math.ceil(sqrt_scalar(float(n_samples), backend)))
-    return max(10, n_boot)
+    return max(1, n_boot)
 
 
 def bootstrap_confidence_interval(
     values: list[float],
     n_bootstrap: int | None = None,
-    confidence: float = 0.95,
     backend: "Backend | None" = None,
 ) -> ConfidenceInterval:
-    """Compute bootstrap confidence interval for a statistic.
+    """Compute bootstrap interval bounds for a statistic.
 
     Args:
         values: List of observed values.
         n_bootstrap: Number of bootstrap samples. If None, auto-derived from
             ceil(sqrt(n_samples)) based on bootstrap standard error formula.
-        confidence: Confidence level (default 0.95 for 95% CI).
         backend: Compute backend.
 
     Returns:
-        ConfidenceInterval with lower, upper bounds and statistics.
+        ConfidenceInterval with bounds and statistics.
     """
     backend = backend or get_default_backend()
 
@@ -98,19 +96,15 @@ def bootstrap_confidence_interval(
         sample = [values[i] for i in indices]
         bootstrap_means.append(sum(sample) / len(sample))
 
-    # Sort for percentiles
-    bootstrap_means.sort()
-
-    alpha = 1 - confidence
-    lower_idx = int(alpha / 2 * n_bootstrap)
-    upper_idx = int((1 - alpha / 2) * n_bootstrap) - 1
+    lower_bound = min(bootstrap_means)
+    upper_bound = max(bootstrap_means)
 
     mean_val = sum(values) / len(values)
     std_val = sqrt_scalar(sum((v - mean_val) ** 2 for v in values) / (len(values) - 1), backend)
 
     return ConfidenceInterval(
-        lower=bootstrap_means[lower_idx],
-        upper=bootstrap_means[upper_idx],
+        lower=lower_bound,
+        upper=upper_bound,
         mean=mean_val,
         std=std_val,
         n_bootstrap=n_bootstrap,
@@ -158,10 +152,9 @@ def compute_cohens_d(
 def permutation_test(
     values1: list[float],
     values2: list[float],
-    n_permutations: int = 1000,
     backend: "Backend | None" = None,
 ) -> float:
-    """Compute p-value via permutation test.
+    """Compute exact two-tailed p-value via permutation test.
 
     Tests the null hypothesis that the two groups come from the same
     distribution, specifically testing if the difference in means is
@@ -170,7 +163,6 @@ def permutation_test(
     Args:
         values1: First group of values.
         values2: Second group of values.
-        n_permutations: Number of permutations.
         backend: Compute backend.
 
     Returns:
@@ -178,34 +170,35 @@ def permutation_test(
     """
     backend = backend or get_default_backend()
 
+    if not values1 or not values2:
+        return float("nan")
+
     observed_diff = abs(sum(values1) / len(values1) - sum(values2) / len(values2))
     combined = values1 + values2
     n1 = len(values1)
     n_total = len(combined)
+    n2 = n_total - n1
+    if n2 == 0:
+        return float("nan")
+
+    from itertools import combinations
+
+    total_sum = sum(combined)
+    backend = backend or get_default_backend()
+    eps = float(machine_epsilon(backend, backend.array(combined)))
 
     count_extreme = 0
-
-    for _ in range(n_permutations):
-        # Shuffle combined data
-        shuffled = combined.copy()
-        rand_vals = _uniform_list(backend, n_total - 1)
-        rand_idx = 0
-        for i in range(n_total - 1, 0, -1):
-            u_val = rand_vals[rand_idx]
-            rand_idx += 1
-            j = int(u_val * (i + 1))
-            j = min(j, i)
-            shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-
-        # Split and compute difference
-        perm_mean1 = sum(shuffled[:n1]) / n1
-        perm_mean2 = sum(shuffled[n1:]) / (n_total - n1)
-        perm_diff = abs(perm_mean1 - perm_mean2)
-
-        if perm_diff >= observed_diff:
+    total = 0
+    for combo in combinations(range(n_total), n1):
+        sum1 = sum(combined[idx] for idx in combo)
+        mean1 = sum1 / n1
+        mean2 = (total_sum - sum1) / n2
+        perm_diff = abs(mean1 - mean2)
+        total += 1
+        if perm_diff + eps >= observed_diff:
             count_extreme += 1
 
-    return (count_extreme + 1) / (n_permutations + 1)
+    return count_extreme / total
 
 
 def run_hypothesis_test(
@@ -215,7 +208,6 @@ def run_hypothesis_test(
     baseline_value: float,
     prime_samples: list[float] | None = None,
     baseline_samples: list[float] | None = None,
-    one_sided: bool = True,
     backend: "Backend | None" = None,
 ) -> HypothesisTest:
     """Run a single hypothesis test.
@@ -227,7 +219,6 @@ def run_hypothesis_test(
         baseline_value: Observed value for baseline.
         prime_samples: Bootstrap samples for primes (if available).
         baseline_samples: Bootstrap samples for baseline (if available).
-        one_sided: If True, test if prime < baseline (for concentration metrics).
         backend: Compute backend.
 
     Returns:
@@ -251,19 +242,8 @@ def run_hypothesis_test(
         p_value = None  # Cannot compute without samples
         ci = None
 
-    # Determine pass/fail
-    # With samples: require statistical significance (p < 0.05)
-    # Without samples: cannot determine statistically (passed = None)
-    passed: bool | None
-    if p_value is not None:
-        if one_sided:
-            passed = prime_value < baseline_value and p_value < 0.05
-        else:
-            passed = prime_value != baseline_value and p_value < 0.05
-    else:
-        # No samples = no statistical determination possible
-        # Effect size is still reported; consumer decides interpretation
-        passed = None
+    # No pass/fail. Return raw metrics only.
+    passed = None
 
     return HypothesisTest(
         hypothesis_id=hypothesis_id,

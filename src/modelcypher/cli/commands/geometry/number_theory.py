@@ -605,7 +605,7 @@ def scale_study(
         "n_successful": len(result.results),
         "effect_size_trend": result.effect_size_trend,
         "p_value_trend": result.p_value_trend,
-        "scale_invariance_passed": result.scale_invariance_passed,
+        "scale_invariance_fraction": result.scale_invariance_fraction,
         "scale_results": [],
     }
 
@@ -613,7 +613,7 @@ def scale_study(
         scale_data = {
             "n_primes": analysis.n_primes,
             "prime_participation_ratio": analysis.summary.get("prime_participation_ratio", 0.0),
-            "h1_pass_rate": analysis.summary.get("h1_pass_rate", 0.0),
+            "h1_mean_p_value": analysis.summary.get("h1_mean_p_value", float("nan")),
         }
         payload["scale_results"].append(scale_data)
 
@@ -635,14 +635,14 @@ def scale_study(
             "RESULTS BY SCALE",
             "-" * 70,
             "",
-            f"{'Scale':<12} | {'Participation':<15} | {'H1 Pass Rate':<15}",
+            f"{'Scale':<12} | {'Participation':<15} | {'H1 Mean p':<15}",
             "-" * 50,
         ]
 
         for analysis in result.results:
             pr = analysis.summary.get("prime_participation_ratio", 0.0)
-            h1_rate = analysis.summary.get("h1_pass_rate", 0.0)
-            lines.append(f"{analysis.n_primes:<12} | {pr:<15.3f} | {h1_rate:<15.3f}")
+            h1_mean_p = analysis.summary.get("h1_mean_p_value", float("nan"))
+            lines.append(f"{analysis.n_primes:<12} | {pr:<15.3f} | {h1_mean_p:<15.3f}")
 
         lines.extend([
             "",
@@ -661,7 +661,7 @@ def scale_study(
             "H7: SCALE INVARIANCE",
             "-" * 70,
             "",
-            f"  Status: {'✓ PASSED' if result.scale_invariance_passed else '✗ FAILED'}",
+            f"  Negative effect fraction: {result.scale_invariance_fraction!s}",
             "",
             "=" * 70,
         ])

@@ -191,20 +191,16 @@ These are places where we've written warnings or thresholds but **don't actually
 
 ---
 
-### Research Question 4: Fisher Information Significance
+### Resolved: Fisher Information Significance Threshold
 
-**Current code**: Uses mean × 0.1 as threshold
+**Previous code**: Mean-based heuristic threshold
 **Location**: fisher_information.py
 
-**What we're really saying**: "We guessed that 10% of the mean is significant."
+**Resolution**:
+- Significance threshold now derived from magnitude gap + precision noise floor
+- No mean-scaled constants; diagonal FIM remains a raw second moment
 
-**The actual questions**:
-1. What is the geometric meaning of Fisher information in neural activations?
-2. Is there a precision-derived threshold (spectral gap, numeric rank)?
-3. What does "significant" mean in this context?
-4. Is Fisher information even the right metric for what we're measuring?
-
-**What we need**: Replace 0.1 with spectral gap or numeric rank derivation. Or prove Fisher info isn't the right metric.
+**Status**: ✓ RESOLVED
 
 ---
 
@@ -284,7 +280,6 @@ These have no derivation. They must be replaced or removed.
 
 | Constant | Location | Problem | Proposed Fix |
 |----------|----------|---------|--------------|
-| `mean * 0.1` | fisher_information.py | Arbitrary 10% | Spectral gap or numeric rank |
 | `[0.5, 2.0]` clamp | manifold_transfer.py | Arbitrary bounds | Derive from curvature or remove |
 | `p99` percentile | dare_sparsity.py | Arbitrary percentile | Magnitude gap detection |
 | `[100, 500, 1000, 5000, 10000]` | prime_geometry_analysis.py | Arbitrary scales | Derive from data or remove |

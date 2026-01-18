@@ -1018,10 +1018,18 @@ def compute_weight_space_transplant(
     else:
         preserved_fraction = 1.0
 
-    logger.debug(
-        "BEHAVIORAL TRANSFER: before=%.4f, after=%.4f, preserved=%.1f%% "
-        "(frob: before=%.4f, after=%.4f, preserved=%.1f%%)",
+    # Log at INFO level for key metrics (behavioral norm is the truth, not Frobenius)
+    # preserved_fraction ≈ 0 means projection is working (delta projected to null-space)
+    # preserved_fraction > 0 means some delta leaked into used directions
+    logger.info(
+        "BEHAVIORAL TRANSFER: behavioral_before=%.4f, behavioral_after=%.4f, "
+        "preserved=%.2f%%, null_rank=%d/%d (capacity=%.1f%%)",
         delta_norm, projected_norm, 100 * preserved_fraction,
+        null_rank, in_dim, 100 * null_rank / in_dim if in_dim > 0 else 0,
+    )
+    logger.debug(
+        "BEHAVIORAL TRANSFER (frob comparison): frob_before=%.4f, frob_after=%.4f, "
+        "frob_preserved=%.1f%%",
         delta_frob, projected_frob, 100 * projected_frob / delta_frob if delta_frob > 0 else 0,
     )
 
