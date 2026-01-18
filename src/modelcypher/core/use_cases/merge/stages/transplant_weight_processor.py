@@ -222,6 +222,7 @@ def process_layer_weights(
     can_measure_alignment: bool,
     manifest: TransplantManifest | None = None,
     delta_scale: float = 1.0,
+    layer_scale_ratios: dict[int, float] | None = None,
 ) -> LayerWeightResult:
     b = backend
     layer_transplanted = False
@@ -1437,6 +1438,19 @@ def process_layer_weights(
                         "reason": "No hidden or attention stitch computed",
                     },
                 )
+
+            # Apply scale_ratio for cross-dimensional merges
+            # F = pinv(A_s) @ A_t is NOT norm-preserving when d_s != d_t
+            # scale_ratio = ||target|| / ||source @ F|| corrects for this
+            if layer_scale_ratios and layer_idx in layer_scale_ratios:
+                sr = layer_scale_ratios[layer_idx]
+                if abs(sr - 1.0) > 1e-6:
+                    logger.info(
+                        "SCALE_RATIO: Applying %.4f to cross-dim %s",
+                        sr, key,
+                    )
+                    source_aligned = source_aligned * sr
+                    b.eval(source_aligned)
 
             if source_aligned.shape != target_w.shape:
                 _record_manifest(

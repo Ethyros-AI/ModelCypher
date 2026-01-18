@@ -108,9 +108,51 @@ class CoherenceResult:
 
 def _tokenize_simple(text: str) -> list[str]:
     """Simple whitespace tokenization for n-gram analysis."""
-    # Split on whitespace and punctuation
-    tokens = re.findall(r'\b\w+\b', text.lower())
+    # Split on whitespace and punctuation, handling Unicode
+    # Use \w+ which matches Unicode word characters in Python 3
+    tokens = re.findall(r'\w+', text.lower(), re.UNICODE)
     return tokens
+
+
+def _detect_char_repetition(text: str, min_pattern_len: int = 2, max_pattern_len: int = 10) -> tuple[float, str | None]:
+    """Detect character-level repetition patterns like 'merkmerkmerkmerk'.
+
+    This catches gibberish that word tokenization misses because there are
+    no word boundaries (spaces) between repeated patterns.
+
+    Returns:
+        (repetition_ratio, repeated_pattern) where:
+        - repetition_ratio: 0 = no repetition, 1 = fully repetitive
+        - repeated_pattern: The detected repeated substring, if any
+    """
+    if len(text) < min_pattern_len * 3:
+        return 0.0, None
+
+    # Check for repeated substrings of various lengths
+    text_lower = text.lower()
+
+    for pattern_len in range(min_pattern_len, min(max_pattern_len + 1, len(text_lower) // 3)):
+        # Slide through the text looking for repeated patterns
+        for start in range(len(text_lower) - pattern_len * 2):
+            pattern = text_lower[start:start + pattern_len]
+
+            # Skip patterns that are all same character (handled elsewhere)
+            if len(set(pattern)) <= 1:
+                continue
+
+            # Count consecutive occurrences of this pattern
+            count = 0
+            pos = start
+            while pos + pattern_len <= len(text_lower) and text_lower[pos:pos + pattern_len] == pattern:
+                count += 1
+                pos += pattern_len
+
+            # If pattern repeats 4+ times consecutively, flag it
+            if count >= 4:
+                repetition_ratio = (count * pattern_len) / len(text_lower)
+                return repetition_ratio, pattern
+
+    return 0.0, None
 
 
 def _compute_ngram_repetition(tokens: list[str], n: int = 3) -> tuple[float, int]:
@@ -300,6 +342,13 @@ def analyze_output_coherence(
 
     # Check for degenerate patterns
     degenerate_reasons: list[str] = []
+
+    # Check for character-level repetition (catches "merkmerkmerkmerk" with no spaces)
+    char_rep_ratio, char_pattern = _detect_char_repetition(output)
+    if char_rep_ratio > 0.3:
+        degenerate_reasons.append(f"Character repetition: '{char_pattern}' covers {char_rep_ratio:.0%} of output")
+        # Override repetition_score to reflect character-level repetition
+        repetition_score = max(repetition_score, char_rep_ratio)
 
     if repetition_score > repetition_threshold:
         degenerate_reasons.append(f"High repetition score: {repetition_score:.2f}")

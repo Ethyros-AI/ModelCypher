@@ -23,6 +23,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.geometry.fisher_information import (
+    fisher_compatibility_score,
+)
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
@@ -55,6 +58,9 @@ class AlignmentResult:
     linear_residuals_by_layer: dict[int, float] = field(default_factory=dict)
     numerical_deviation_by_layer: dict[int, float] = field(default_factory=dict)
     precision_thresholds_by_layer: dict[int, float] = field(default_factory=dict)
+    # Fisher compatibility scores for merge success prediction
+    fisher_compatibility_by_layer: dict[int, float] = field(default_factory=dict)
+    fisher_recommendations_by_layer: dict[int, str] = field(default_factory=dict)
 
 
 def _activation_count(backend: "Backend", acts: Any) -> int:
@@ -113,6 +119,8 @@ def align_layers(
     linear_residuals_by_layer: dict[int, float] = {}
     numerical_deviation_by_layer: dict[int, float] = {}
     precision_thresholds_by_layer: dict[int, float] = {}
+    fisher_compatibility_by_layer: dict[int, float] = {}
+    fisher_recommendations_by_layer: dict[int, str] = {}
 
     if not (source_layer_activations and target_layer_activations):
         return AlignmentResult(
@@ -130,6 +138,8 @@ def align_layers(
             linear_residuals_by_layer=linear_residuals_by_layer,
             numerical_deviation_by_layer=numerical_deviation_by_layer,
             precision_thresholds_by_layer=precision_thresholds_by_layer,
+            fisher_compatibility_by_layer=fisher_compatibility_by_layer,
+            fisher_recommendations_by_layer=fisher_recommendations_by_layer,
         )
 
     source_layers = sorted(source_layer_activations.keys())
@@ -169,6 +179,8 @@ def align_layers(
             "gate_transform": None,  # PRE-SiLU for cross-arch gate/up stitching
             "linear_iterations": 0,
             "error": None,
+            "fisher_compatibility": 0.0,
+            "fisher_recommendation": "",
         }
 
         src_act_lists = [source_layer_activations[s] for s in src_layers_list]
@@ -212,6 +224,37 @@ def align_layers(
                 src_combined = backend.concatenate(src_stacks, axis=1)
 
             backend.eval(src_combined, tgt_stacked)
+
+            # Compute Fisher compatibility BEFORE alignment as an early predictor
+            # This measures whether source and target have compatible loss curvature
+            try:
+                fisher_result = fisher_compatibility_score(
+                    src_combined, tgt_stacked, backend=backend
+                )
+                result["fisher_compatibility"] = fisher_result.compatibility_score
+                result["fisher_recommendation"] = fisher_result.recommendation
+                fisher_compatibility_by_layer[tgt_layer] = fisher_result.compatibility_score
+                fisher_recommendations_by_layer[tgt_layer] = fisher_result.recommendation
+
+                if fisher_result.compatibility_score < 0.3:
+                    logger.warning(
+                        "FISHER: Layer %d has low compatibility (%.3f) - %s",
+                        tgt_layer,
+                        fisher_result.compatibility_score,
+                        fisher_result.recommendation,
+                    )
+                elif fisher_result.compatibility_score < 0.5:
+                    logger.info(
+                        "FISHER: Layer %d has moderate compatibility (%.3f)",
+                        tgt_layer,
+                        fisher_result.compatibility_score,
+                    )
+            except Exception as fisher_err:
+                logger.debug(
+                    "FISHER: Could not compute compatibility for layer %d: %s",
+                    tgt_layer,
+                    fisher_err,
+                )
 
             alignment_result = local_aligner.find_perfect_alignment(
                 src_combined,
@@ -488,6 +531,23 @@ def align_layers(
         n_target,
     )
 
+    # Log summary of Fisher compatibility across layers
+    if fisher_compatibility_by_layer:
+        mean_fisher = sum(fisher_compatibility_by_layer.values()) / len(fisher_compatibility_by_layer)
+        low_compat_layers = [l for l, s in fisher_compatibility_by_layer.items() if s < 0.5]
+        if low_compat_layers:
+            logger.warning(
+                "FISHER SUMMARY: Mean compatibility=%.3f, %d layers with low compatibility: %s",
+                mean_fisher,
+                len(low_compat_layers),
+                low_compat_layers[:5],  # Show first 5
+            )
+        else:
+            logger.info(
+                "FISHER SUMMARY: Mean compatibility=%.3f (all layers have good compatibility)",
+                mean_fisher,
+            )
+
     return AlignmentResult(
         layer_mapping=layer_mapping,
         feature_transforms=feature_transforms,
@@ -503,4 +563,6 @@ def align_layers(
         linear_residuals_by_layer=linear_residuals_by_layer,
         numerical_deviation_by_layer=numerical_deviation_by_layer,
         precision_thresholds_by_layer=precision_thresholds_by_layer,
+        fisher_compatibility_by_layer=fisher_compatibility_by_layer,
+        fisher_recommendations_by_layer=fisher_recommendations_by_layer,
     )
