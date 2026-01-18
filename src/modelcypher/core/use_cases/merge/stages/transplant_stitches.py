@@ -72,11 +72,10 @@ def compute_composite_stitches(
             stitch_input_full = backend.transpose(F_pinv)
             backend.eval(stitch_output_full, stitch_input_full)
 
-            # NOTE: scale_ratio is NOT applied here.
-            # scale_ratio normalizes activation magnitudes during alignment computation,
-            # but should NOT scale weight stitch transforms. The Procrustes transformation F
-            # already handles coordinate rotation correctly - scaling it would shrink weights.
-            # Weight norms should be preserved through the stitch transformation.
+            # NOTE: scale_ratio is applied in transplant_weight_processor.py after stitching.
+            # For cross-dimensional merges (d_s != d_t), F = pinv(A_s) @ A_t is NOT
+            # norm-preserving. scale_ratio = ||target|| / ||source @ F|| compensates.
+            # The correction is applied to the stitched weights, not the stitch matrices.
             if layer_scale_ratios and tgt_layer in layer_scale_ratios:
                 sr = layer_scale_ratios[tgt_layer]
                 if abs(sr - 1.0) > 1e-6:
