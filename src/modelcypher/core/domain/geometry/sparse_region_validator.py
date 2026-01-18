@@ -73,19 +73,13 @@ class ValidationPhase(str, Enum):
 @dataclass(frozen=True)
 class ValidationProgress:
     phase: ValidationPhase
-    current_prompt: int
-    total_prompts: int
+    current_step: int
+    total_steps: int
     status: str
 
     @property
     def percentage(self) -> float:
-        if self.phase == ValidationPhase.baseline:
-            return float(self.current_prompt) / float(max(1, self.total_prompts)) * 0.4
-        if self.phase == ValidationPhase.perturbation:
-            return 0.4 + float(self.current_prompt) / float(max(1, self.total_prompts)) * 0.1
-        if self.phase == ValidationPhase.post_measurement:
-            return 0.5 + float(self.current_prompt) / float(max(1, self.total_prompts)) * 0.4
-        return 0.9 + float(self.current_prompt) / float(max(1, self.total_prompts)) * 0.1
+        return float(self.current_step) / float(max(1, self.total_steps))
 
 
 class SparseRegionValidator:
@@ -121,26 +115,29 @@ class SparseRegionValidator:
         Returns:
             ValidationResult with baseline and post-perturbation metrics.
         """
+        layers_to_perturb = sorted(set(perturbed_layers))
+        total_steps = len(validation_prompts) * 2 + len(layers_to_perturb)
+        baseline_steps = len(validation_prompts)
+        perturb_steps = len(layers_to_perturb)
+
         if progress:
             progress(
                 ValidationProgress(
                     phase=ValidationPhase.baseline,
-                    current_prompt=0,
-                    total_prompts=len(validation_prompts),
+                    current_step=0,
+                    total_steps=total_steps,
                     status="Measuring baseline...",
                 )
             )
 
         baseline = measure_metrics(validation_prompts)
 
-        layers_to_perturb = sorted(set(perturbed_layers))
-
         if progress:
             progress(
                 ValidationProgress(
                     phase=ValidationPhase.perturbation,
-                    current_prompt=0,
-                    total_prompts=len(layers_to_perturb),
+                    current_step=baseline_steps,
+                    total_steps=total_steps,
                     status="Applying perturbation...",
                 )
             )
@@ -151,8 +148,8 @@ class SparseRegionValidator:
             progress(
                 ValidationProgress(
                     phase=ValidationPhase.post_measurement,
-                    current_prompt=0,
-                    total_prompts=len(validation_prompts),
+                    current_step=baseline_steps + perturb_steps,
+                    total_steps=total_steps,
                     status="Measuring post-perturbation...",
                 )
             )
@@ -164,8 +161,8 @@ class SparseRegionValidator:
             progress(
                 ValidationProgress(
                     phase=ValidationPhase.analysis,
-                    current_prompt=0,
-                    total_prompts=1,
+                    current_step=total_steps,
+                    total_steps=total_steps,
                     status="Analyzing results...",
                 )
             )

@@ -56,22 +56,6 @@ class TestSuiteExecution:
         assert report.spectral_signature_connected is not None
         assert report.dimension_constraint is not None
 
-    def test_suite_reports_pass_status(self) -> None:
-        """Suite should report overall pass/fail status correctly."""
-        suite = GeometryValidationSuite()
-        report = suite.run()
-
-        # Overall pass should be AND of all component passes
-        expected_pass = (
-            report.gromov_wasserstein.passed
-            and report.traversal_coherence.passed
-            and report.path_signature.passed
-            and report.spectral_signature.passed
-            and report.spectral_signature_connected.passed
-            and report.dimension_constraint.passed
-        )
-        assert report.passed == expected_pass
-
 
 class TestGromovWassersteinValidation:
     """Tests for GW validation component."""

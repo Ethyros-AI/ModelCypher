@@ -210,7 +210,6 @@ class GeometryService:
         payload = {
             "suiteVersion": report.suite_version,
             "timestamp": GeometryService._iso_timestamp(report.timestamp),
-            "passed": report.passed,
             "config": {
                 "note": "All parameters derived from data and numerical analysis at runtime",
                 "gromovWasserstein": {
@@ -229,21 +228,18 @@ class GeometryService:
                 "maxColumnMassError": report.gromov_wasserstein.max_column_mass_error,
                 "converged": report.gromov_wasserstein.converged,
                 "iterations": report.gromov_wasserstein.iterations,
-                "passed": report.gromov_wasserstein.passed,
             },
             "traversalCoherence": {
                 "selfCorrelation": report.traversal_coherence.self_correlation,
                 "perturbedCorrelation": report.traversal_coherence.perturbed_correlation,
                 "transitionCount": report.traversal_coherence.transition_count,
                 "pathCount": report.traversal_coherence.path_count,
-                "passed": report.traversal_coherence.passed,
             },
             "pathSignature": {
                 "signatureSimilarity": report.path_signature.signature_similarity,
                 "signedArea": report.path_signature.signed_area,
                 "signatureNorm": report.path_signature.signature_norm,
                 "frechetDistance": report.path_signature.frechet_distance,
-                "passed": report.path_signature.passed,
             },
             "spectralSignature": {
                 "eigenvalueMin": report.spectral_signature.eigenvalue_min,
@@ -253,7 +249,6 @@ class GeometryService:
                 "heatTrace": report.spectral_signature.heat_trace,
                 "heatTimes": report.spectral_signature.heat_times,
                 "connected": report.spectral_signature.connected,
-                "passed": report.spectral_signature.passed,
             },
             "spectralSignatureConnected": {
                 "eigenvalueMin": report.spectral_signature_connected.eigenvalue_min,
@@ -263,7 +258,6 @@ class GeometryService:
                 "heatTrace": report.spectral_signature_connected.heat_trace,
                 "heatTimes": report.spectral_signature_connected.heat_times,
                 "connected": report.spectral_signature_connected.connected,
-                "passed": report.spectral_signature_connected.passed,
             },
             "dimensionConstraint": {
                 "baseDimension": report.dimension_constraint.base_dimension,
@@ -296,7 +290,6 @@ class GeometryService:
                     "maxPersistenceBase": report.dimension_constraint.max_persistence_base,
                     "maxPersistencePadded": report.dimension_constraint.max_persistence_padded,
                 },
-                "passed": report.dimension_constraint.passed,
             },
         }
         if include_schema:
@@ -308,4 +301,3 @@ class GeometryService:
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.isoformat().replace("+00:00", "Z")
-

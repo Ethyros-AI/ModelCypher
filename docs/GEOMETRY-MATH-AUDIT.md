@@ -137,21 +137,49 @@ bin_width = 2 × IQR × n^(-1/3)
 
 These are places where we've written warnings or thresholds but **don't actually understand the math**.
 
-### Research Question 1: Ill-Conditioned Alignment
+### Resolved: Ill-Conditioned Alignment
 
-**Current code**: Warning when κ > 1/sqrt(ε)
-**Location**: gram_aligner.py:364-374
+**Previous code**: Warning when κ > 1/sqrt(ε)
+**Location**: relative_representation.py (warning removed)
 
-**What we're really saying**: "We don't know how to align when the Gram matrix is ill-conditioned."
+**Resolution via experiment** (experiments/ill_conditioned_alignment.py):
 
-**The actual questions**:
-1. When κ is high, what does that mean geometrically? (Probes don't span the space well? Probes are collinear?)
-2. Is there a closed-form solution that works for ill-conditioned cases?
-3. Can we transform to a better-conditioned basis before aligning?
-4. Is ill-conditioning a property of the probe set, the model, or both?
-5. What is the CORRECT behavior when κ is high - fail, regularize, or something else?
+The numeric rank truncation handles ill-conditioning by construction. Key findings:
 
-**What we need**: Either a closed-form solution for ill-conditioned alignment, or proof that no solution exists.
+**How truncation works**:
+```
+1. Compute SVD of source activations
+2. Truncate to numerical rank: count(σ > σ_max × sqrt(ε))
+3. Solve least-squares in truncated space only
+4. Condition number after truncation is always bounded (~1e3-3e3)
+```
+
+**Experimental results (synthetic activations, float32)**:
+| Input κ | Truncated κ | Alignment Residual | CKA | Numerical Rank |
+|---------|-------------|-------------------|-----|----------------|
+| 1e3 | 1.00e+03 | 7.4e-07 | 1.0 | 64/64 |
+| 1e5 | 2.59e+03 | 3.1e-04 | 1.0 | 44/64 |
+| 1e7 | 2.78e+03 | 2.9e-04 | 1.0 | 32/64 |
+| 1e10 | 2.15e+03 | 3.2e-04 | 1.0 | 22/64 |
+| 1e15 | 2.15e+03 | 2.5e-04 | 1.0 | 15/64 |
+
+**Key insight**: Truncation reduces the working rank so that κ_truncated < 1/√ε ALWAYS.
+As input κ increases, more singular values fall below the threshold and are dropped.
+The alignment operates only on the well-conditioned subspace.
+
+**Failure boundary**: κ ≈ 5.42e+19 (essentially unreachable, beyond float32 range)
+
+**Why the warning was unnecessary**:
+1. `numerical_rank_truncated_lstsq` truncates before solving
+2. `transfer_via_relative_space` truncates singular values below `eps × max_s × n`
+3. Both code paths handle ill-conditioning automatically
+4. The warning added no value - the math handles it
+
+**Files updated**:
+- relative_representation.py: Removed condition number warning
+- numerical_stability.py: Truncation already handles this (no change)
+
+**Status**: ✓ RESOLVED - Truncation is the closed-form solution
 
 ---
 
@@ -244,6 +272,32 @@ Since effective_load < 1.0 in all tested cases: **delta_scale = 1.0 is correct**
 - Bootstrap interval now reports min/max bounds from resampling (no confidence level)
 - Hypothesis tests return raw effect size and interval bounds with no pass/fail
 - P-values are not inferred without closed-form support
+
+**Status**: ✓ RESOLVED
+
+---
+
+### Resolved: Gram Spectrum Energy Percentiles Removed
+
+**Previous code**: 50/90/99% energy cutoffs for eigenvalue cumulative sums
+**Location**: gram_spectrum.py
+
+**Resolution**:
+- Energy summaries now reported at numeric_rank and intrinsic_dim only
+- No fixed percentile cutoffs
+
+**Status**: ✓ RESOLVED
+
+---
+
+### Resolved: Geometry Validation Pass/Fail Removed
+
+**Previous code**: Validation suite emitted pass/fail booleans for invariants
+**Location**: geometry_validation_suite.py, geometry_service.py
+
+**Resolution**:
+- Validation suite now returns raw measurements only
+- CLI and payloads no longer emit pass/fail summaries
 
 **Status**: ✓ RESOLVED
 
@@ -438,3 +492,4 @@ Priority order based on merge pipeline criticality:
 - 2025-01-18: Initial audit structure
 - 2025-01-18: Added research questions, fundamental questions, methodology
 - 2025-01-18: Resolved Research Question 2 (preserved_fraction) via scaling investigation experiment
+- 2025-01-18: Resolved Research Question 1 (ill-conditioned alignment) - truncation is closed-form solution

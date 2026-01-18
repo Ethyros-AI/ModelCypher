@@ -28,11 +28,6 @@ from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 
 _cache = ComputationCache.shared()
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    precision_dtype,
-    regularization_epsilon,
-)
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
@@ -60,7 +55,6 @@ class GromovWassersteinValidation:
     max_column_mass_error: float
     converged: bool
     iterations: int
-    passed: bool
 
 
 @dataclass(frozen=True)
@@ -69,7 +63,6 @@ class TraversalCoherenceValidation:
     perturbed_correlation: float
     transition_count: int
     path_count: int
-    passed: bool
 
 
 @dataclass(frozen=True)
@@ -78,7 +71,6 @@ class PathSignatureValidation:
     signed_area: float
     signature_norm: float
     frechet_distance: float
-    passed: bool
 
 
 @dataclass(frozen=True)
@@ -90,7 +82,6 @@ class SpectralSignatureValidation:
     heat_trace: tuple[float, ...]
     heat_times: tuple[float, ...]
     connected: bool
-    passed: bool
 
 
 @dataclass(frozen=True)
@@ -119,14 +110,10 @@ class DimensionConstraintValidation:
     persistence_entropy_padded: float
     max_persistence_base: float
     max_persistence_padded: float
-    passed: bool
 
 
 @dataclass(frozen=True)
 class GromovWassersteinFixture:
-    points_a: tuple[tuple[float, ...], ...]
-    points_b: tuple[tuple[float, ...], ...]
-    permutation: tuple[int, ...]
     source_distances: tuple[tuple[float, ...], ...]
     target_distances: tuple[tuple[float, ...], ...]
     symmetry_source_distances: tuple[tuple[float, ...], ...]
@@ -151,8 +138,6 @@ class PathSignatureFixture:
 @dataclass(frozen=True)
 class SpectralSignatureFixture:
     points: tuple[tuple[float, ...], ...]
-    expected_component_count: int
-    expected_connected: bool
 
 
 @dataclass(frozen=True)
@@ -175,7 +160,6 @@ class Fixtures:
 class Report:
     suite_version: str
     timestamp: datetime
-    passed: bool
     gromov_wasserstein: GromovWassersteinValidation
     traversal_coherence: TraversalCoherenceValidation
     path_signature: PathSignatureValidation
@@ -221,19 +205,9 @@ class GeometryValidationSuite:
             fixture=fixtures.dimension_constraint,
         )
 
-        passed = (
-            gw_validation.passed
-            and traversal_validation.passed
-            and path_validation.passed
-            and spectral_validation.passed
-            and spectral_connected_validation.passed
-            and dimension_constraint_validation.passed
-        )
-
         return Report(
             suite_version=SUITE_VERSION,
             timestamp=datetime.utcnow(),
-            passed=passed,
             gromov_wasserstein=gw_validation,
             traversal_coherence=traversal_validation,
             path_signature=path_validation,
@@ -274,9 +248,6 @@ class GeometryValidationSuite:
             (1.0, 2.0, 0.0),
         )
         gw_fixture = GromovWassersteinFixture(
-            points_a=tuple(tuple(p) for p in points_a_list),
-            points_b=tuple(tuple(p) for p in points_b_list),
-            permutation=tuple(permutation_list),
             source_distances=source_distances,
             target_distances=target_distances,
             symmetry_source_distances=symmetry_source_distances,
@@ -357,15 +328,11 @@ class GeometryValidationSuite:
                 (0.0, 0.0), (1.0, 0.0), (2.0, 0.0),  # Cluster A
                 (100.0, 0.0), (101.0, 0.0), (102.0, 0.0),  # Cluster B
             ),
-            expected_component_count=1,
-            expected_connected=True,
         )
         # Fixture points for connected component test.
         # Linear arrangement ensures connectivity with any k >= 1.
         spectral_connected_fixture = SpectralSignatureFixture(
             points=((0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)),
-            expected_component_count=1,
-            expected_connected=True,
         )
         dimension_constraint_fixture = DimensionConstraintFixture(
             points=(
@@ -419,17 +386,6 @@ class GeometryValidationSuite:
         symmetry_delta = abs(symmetry_forward.distance - symmetry_reverse.distance)
         row_error, column_error = self._coupling_mass_errors(permuted.coupling)
 
-        distance_eps = machine_epsilon(backend, source_dist)
-        coupling_eps = regularization_epsilon(backend, permuted.coupling)
-        passed = (
-            abs(identity.distance) <= distance_eps
-            and abs(permuted.distance) <= distance_eps
-            and symmetry_delta <= distance_eps
-            and row_error <= coupling_eps
-            and column_error <= coupling_eps
-            and permuted.converged
-        )
-
         return GromovWassersteinValidation(
             distance_identity=float(identity.distance),
             distance_permutation=float(permuted.distance),
@@ -438,7 +394,6 @@ class GeometryValidationSuite:
             max_column_mass_error=float(column_error),
             converged=permuted.converged,
             iterations=permuted.iterations,
-            passed=passed,
         )
 
     def _coupling_mass_errors(self, coupling: "Array") -> tuple[float, float]:
@@ -490,23 +445,11 @@ class GeometryValidationSuite:
         transition_count = self_result.transition_count if self_result else 0
         path_count = self_result.path_count if self_result else 0
 
-        corr_arr = backend.array(
-            [self_corr, perturbed_corr], dtype=precision_dtype(backend)
-        )
-        corr_eps = machine_epsilon(backend, corr_arr)
-        passed = (
-            self_corr == self_corr
-            and perturbed_corr == perturbed_corr
-            and abs(self_corr - 1.0) <= corr_eps
-            and perturbed_corr <= self_corr - corr_eps
-        )
-
         return TraversalCoherenceValidation(
             self_correlation=float(self_corr),
             perturbed_correlation=float(perturbed_corr),
             transition_count=transition_count,
             path_count=path_count,
-            passed=passed,
         )
 
     def _validate_path_signature(
@@ -529,23 +472,11 @@ class GeometryValidationSuite:
             gate_embeddings=fixture.gate_embeddings,
         )
 
-        signature_eps = machine_epsilon(
-            backend,
-            backend.array([signature.signature_norm, shifted_signature.signature_norm]),
-        )
-        similarity_eps = machine_epsilon(backend, backend.array([similarity]))
-        frechet_eps = machine_epsilon(backend, backend.array([frechet.distance]))
-        passed = (
-            abs(similarity - 1.0) <= similarity_eps
-            and abs(frechet.distance) <= frechet_eps
-        )
-
         return PathSignatureValidation(
             signature_similarity=float(similarity),
             signed_area=float(signature.signed_area),
             signature_norm=float(signature.signature_norm),
             frechet_distance=float(frechet.distance),
-            passed=passed,
         )
 
     def _validate_spectral_signature(
@@ -560,38 +491,6 @@ class GeometryValidationSuite:
         eig_min = min(signature.eigenvalues) if signature.eigenvalues else 0.0
         eig_max = max(signature.eigenvalues) if signature.eigenvalues else 0.0
 
-        eig_arr = backend.array(
-            signature.eigenvalues or [0.0], dtype=precision_dtype(backend)
-        )
-        eig_eps = regularization_epsilon(backend, eig_arr)
-
-        # Normalized Laplacian is used for eigenvalue bounds.
-        eigen_bounds_ok = eig_min >= -eig_eps and eig_max <= 2.0 + eig_eps
-
-        heat_arr = backend.array(
-            signature.heat_trace or [0.0], dtype=precision_dtype(backend)
-        )
-        heat_eps = regularization_epsilon(backend, heat_arr)
-
-        # Vectorized monotonicity check: heat[i] + eps >= heat[i+1] for all i
-        if len(signature.heat_trace) > 1:
-            heat_diff = heat_arr[:-1] - heat_arr[1:]  # heat[i] - heat[i+1]
-            # If any diff < -eps, it's not monotone
-            violations = backend.sum(heat_diff < -heat_eps)
-            backend.eval(violations)
-            heat_monotone = int(backend.to_scalar(violations)) == 0
-        else:
-            heat_monotone = True
-
-        component_ok = signature.component_count == fixture.expected_component_count
-        connected_ok = signature.connected == fixture.expected_connected
-        if fixture.expected_connected:
-            connectivity_ok = signature.algebraic_connectivity > eig_eps
-        else:
-            connectivity_ok = signature.algebraic_connectivity <= eig_eps
-
-        passed = eigen_bounds_ok and heat_monotone and component_ok and connected_ok and connectivity_ok
-
         return SpectralSignatureValidation(
             eigenvalue_min=float(eig_min),
             eigenvalue_max=float(eig_max),
@@ -600,7 +499,6 @@ class GeometryValidationSuite:
             heat_trace=tuple(signature.heat_trace) if signature.heat_trace else (),
             heat_times=tuple(signature.heat_times) if signature.heat_times else (),
             connected=signature.connected,
-            passed=passed,
         )
 
     def _validate_dimension_constraint(
@@ -637,8 +535,6 @@ class GeometryValidationSuite:
         geodesic_mean_abs_diff = float(backend.to_scalar(geo_mean))
         geodesic_max_abs_diff = float(backend.to_scalar(geo_max))
 
-        geo_eps = regularization_epsilon(backend, geo_base.distances)
-
         # All parameters derived from data - no config needed
         spectral = SpectralSignature(backend)
         sig_base = spectral.compute(points=points)
@@ -659,8 +555,6 @@ class GeometryValidationSuite:
             spectral_eigen_mean_abs_diff = 0.0
             spectral_eigen_max_abs_diff = 0.0
 
-        spectral_entropy_diff = abs(sig_base.spectral_entropy - sig_padded.spectral_entropy)
-
         # Vectorized heat trace diff computation
         if sig_base.heat_trace and sig_padded.heat_trace:
             min_heat_len = min(len(sig_base.heat_trace), len(sig_padded.heat_trace))
@@ -675,58 +569,6 @@ class GeometryValidationSuite:
 
         fp_base = TopologicalFingerprint.compute(points)
         fp_padded = TopologicalFingerprint.compute(padded_points)
-
-        persistence_entropy_diff = abs(
-            fp_base.summary.persistence_entropy - fp_padded.summary.persistence_entropy
-        )
-        max_persistence_diff = abs(
-            fp_base.summary.max_persistence - fp_padded.summary.max_persistence
-        )
-        topology_matches = (
-            fp_base.betti_numbers == fp_padded.betti_numbers
-            and fp_base.summary.component_count == fp_padded.summary.component_count
-            and fp_base.summary.cycle_count == fp_padded.summary.cycle_count
-        )
-
-        cka_eps = machine_epsilon(backend, gram_base)
-        eigen_eps = regularization_epsilon(
-            backend,
-            backend.array(
-                sig_base.eigenvalues or [0.0], dtype=precision_dtype(backend)
-            ),
-        )
-        entropy_eps = machine_epsilon(
-            backend,
-            backend.array([sig_base.spectral_entropy, sig_padded.spectral_entropy]),
-        )
-        heat_eps = regularization_epsilon(
-            backend,
-            backend.array(sig_base.heat_trace or [0.0], dtype=precision_dtype(backend)),
-        )
-        topo_eps = machine_epsilon(
-            backend,
-            backend.array(
-                [
-                    fp_base.summary.persistence_entropy,
-                    fp_padded.summary.persistence_entropy,
-                    fp_base.summary.max_persistence,
-                    fp_padded.summary.max_persistence,
-                ],
-                dtype=precision_dtype(backend),
-            ),
-        )
-        passed = (
-            abs(float(gram_cka) - 1.0) <= cka_eps
-            and geodesic_mean_abs_diff <= geo_eps
-            and geodesic_max_abs_diff <= geo_eps
-            and spectral_eigen_mean_abs_diff <= eigen_eps
-            and spectral_eigen_max_abs_diff <= eigen_eps
-            and spectral_entropy_diff <= entropy_eps
-            and heat_trace_max_abs_diff <= heat_eps
-            and topology_matches
-            and persistence_entropy_diff <= topo_eps
-            and max_persistence_diff <= topo_eps
-        )
 
         return DimensionConstraintValidation(
             base_dimension=base_dim,
@@ -753,5 +595,4 @@ class GeometryValidationSuite:
             persistence_entropy_padded=fp_padded.summary.persistence_entropy,
             max_persistence_base=fp_base.summary.max_persistence,
             max_persistence_padded=fp_padded.summary.max_persistence,
-            passed=passed,
         )

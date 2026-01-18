@@ -751,9 +751,8 @@ def geometry_validate(
         Path(file).write_text(dump_json(payload, pretty=context.pretty), encoding="utf-8")
 
     if context.output_format == "text":
-        status = "PASS" if report.passed else "FAIL"
         lines = [
-            f"Geometry validation: {status}",
+            "Geometry validation metrics:",
             f"GW distance (perm): {report.gromov_wasserstein.distance_permutation:.6f}",
             f"GW symmetry delta: {report.gromov_wasserstein.symmetry_delta:.6f}",
             f"Traversal coherence (self): {report.traversal_coherence.self_correlation:.5f}",

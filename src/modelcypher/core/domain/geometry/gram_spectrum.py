@@ -24,6 +24,7 @@ stability metrics used in transplant workflows.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -58,9 +59,8 @@ class GramSpectrumResult:
         numeric_rank: Number of eigenvalues above rank threshold.
         null_rank: d_features - numeric_rank (dimensions available for transplant).
         intrinsic_dimension: TwoNN estimate of manifold dimensionality.
-        energy_50_dims: Dimensions needed for 50% variance.
-        energy_90_dims: Dimensions needed for 90% variance.
-        energy_99_dims: Dimensions needed for 99% variance.
+        energy_ratio_numeric_rank: Cumulative energy fraction up to numeric_rank.
+        energy_ratio_intrinsic_dim: Cumulative energy fraction up to intrinsic_dim.
         spectral_gap: Ratio of (eigenvalue at ID) / (max eigenvalue).
         rank_threshold: Computed threshold for numeric rank.
     """
@@ -75,9 +75,8 @@ class GramSpectrumResult:
     numeric_rank: int
     null_rank: int
     intrinsic_dimension: float
-    energy_50_dims: int
-    energy_90_dims: int
-    energy_99_dims: int
+    energy_ratio_numeric_rank: float
+    energy_ratio_intrinsic_dim: float
     spectral_gap: float
     rank_threshold: float
 
@@ -177,22 +176,25 @@ def compute_gram_spectrum(
 
     # Energy distribution (cumulative sum)
     cumsum = 0.0
-    energy_50_dims = n_samples
-    energy_90_dims = n_samples
-    energy_99_dims = n_samples
-
-    for i, val in enumerate(eigvals_np):
+    cumulative_energy: list[float] = []
+    for val in eigvals_np:
         cumsum += val
-        if energy_50_dims == n_samples and cumsum >= 0.5 * total_var_val:
-            energy_50_dims = i + 1
-        if energy_90_dims == n_samples and cumsum >= 0.9 * total_var_val:
-            energy_90_dims = i + 1
-        if energy_99_dims == n_samples and cumsum >= 0.99 * total_var_val:
-            energy_99_dims = i + 1
+        cumulative_energy.append(cumsum)
+
+    energy_denom = max(total_var_val, eps)
+    if numeric_rank > 0:
+        energy_ratio_numeric_rank = cumulative_energy[min(numeric_rank, len(cumulative_energy)) - 1] / energy_denom
+    else:
+        energy_ratio_numeric_rank = 0.0
 
     # Spectral gap: eigenvalue at intrinsic_dim / max eigenvalue
-    id_idx = min(max(0, int(round(intrinsic_dim)) - 1), len(eigvals_np) - 1)
-    spectral_gap = eigvals_np[id_idx] / max(max_eig, eps) if max_eig > eps else 0.0
+    if math.isfinite(intrinsic_dim):
+        id_idx = min(max(0, int(round(intrinsic_dim)) - 1), len(eigvals_np) - 1)
+        spectral_gap = eigvals_np[id_idx] / max(max_eig, eps) if max_eig > eps else 0.0
+        energy_ratio_intrinsic_dim = cumulative_energy[id_idx] / energy_denom
+    else:
+        spectral_gap = float("nan")
+        energy_ratio_intrinsic_dim = float("nan")
 
     return GramSpectrumResult(
         n_samples=n_samples,
@@ -205,9 +207,8 @@ def compute_gram_spectrum(
         numeric_rank=numeric_rank,
         null_rank=null_rank,
         intrinsic_dimension=intrinsic_dim,
-        energy_50_dims=energy_50_dims,
-        energy_90_dims=energy_90_dims,
-        energy_99_dims=energy_99_dims,
+        energy_ratio_numeric_rank=energy_ratio_numeric_rank,
+        energy_ratio_intrinsic_dim=energy_ratio_intrinsic_dim,
         spectral_gap=spectral_gap,
         rank_threshold=rank_threshold,
     )
